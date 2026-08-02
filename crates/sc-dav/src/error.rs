@@ -111,7 +111,7 @@ impl From<CoreError> for DavError {
 }
 
 pub fn security_headers(resp: &mut Response) {
-    // DESIGN-API.md §9.1. A DAV endpoint never renders anything, so it gets
+    // A DAV endpoint never renders anything, so it gets
     // the strictest possible CSP rather than the web-UI one.
     let h = resp.headers_mut();
     h.insert(

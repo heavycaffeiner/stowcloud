@@ -1,6 +1,6 @@
 //! `CoreError` — the protocol-agnostic error type every `sc-core` operation
-//! returns. `sc-http`/`sc-dav` map this to their own error envelopes
-//! (`DESIGN-API.md` §1.1); it deliberately mirrors that envelope's `code`
+//! returns. `sc-http`/`sc-dav` map this to their own error envelopes;
+//! it deliberately mirrors that envelope's `code`
 //! space closely enough that the mapping is mechanical.
 
 use sc_vfs::VfsError;

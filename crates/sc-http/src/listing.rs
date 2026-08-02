@@ -1,4 +1,4 @@
-//! Directory listing sessions — `DESIGN-API.md` §4.2.
+//! Directory listing sessions —
 //!
 //! A server-side short-lived cache of a **sorted name vector** for a
 //! directory, so paging through a 100k-entry directory doesn't re-sort on
@@ -20,7 +20,7 @@ use crate::core_api::{Entry, Order, SortKey};
 
 pub const PAGE_SIZE_DEFAULT: usize = 200;
 pub const SESSION_TTL: Duration = Duration::from_secs(60);
-/// Per-user cap on live listing sessions (`DESIGN-API.md` §4.2: "cap of 4 per user").
+/// Per-user cap on live listing sessions ("cap of 4 per user").
 pub const PER_USER_CAP: usize = 4;
 /// Global memory cap: keep at most this many listing sessions across all
 /// users regardless of per-user caps, bounding worst-case memory.
@@ -32,7 +32,7 @@ pub struct ListingSession {
     pub sort: SortKey,
     pub order: Order,
     /// Already-sorted full entry set for this directory at creation time.
-    /// `DESIGN-API.md` puts only *names* in the session and stats each page
+    /// puts only *names* in the session and stats each page
     /// lazily; we keep already-materialized `Entry`s here since sc-http
     /// doesn't yet have a live stat backend to call per-page (`sc-core` is a
     /// placeholder — see `core_api.rs`). Swapping to lazy per-page `statx`
@@ -93,7 +93,7 @@ struct PerUser {
     order: std::collections::VecDeque<String>,
 }
 
-/// `LISTINGS` from `DESIGN-API.md` §4.2, plus the per-user cap it specifies.
+/// `LISTINGS` from, plus the per-user cap it specifies.
 pub struct ListingCache {
     sessions: Mutex<LruCache<String, ListingSession>>,
     per_user: Mutex<std::collections::HashMap<u32, PerUser>>,
@@ -145,7 +145,7 @@ impl ListingCache {
     /// Fetch the next page for an existing session. `current_dir_etag` is
     /// checked against the cached one; a mismatch discards the session and
     /// returns a *fresh first page* with `stale = true` instead of erroring
-    /// (`DESIGN-API.md` §4.2: "the client refreshes silently while keeping
+    /// ("the client refreshes silently while keeping
     /// its scroll position" — the caller is responsible for re-listing to build
     /// `fresh_entries` when `dir_etag` mismatches; this method only flags it).
     pub fn page(

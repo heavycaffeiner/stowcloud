@@ -1,8 +1,8 @@
 // web/src/lib/api/http.ts — real HTTP implementation of the same surface as
-// mock.ts. Talks to the Rust backend per DESIGN-API.md. This module is only
+// mock.ts. Talks to the Rust backend per. This module is only
 // ever exercised once VITE_API_MOCK is unset/0 — it is untested against a
 // live server here (the backend does not exist yet) but the shape mirrors
-// DESIGN-API.md exactly so swapping the flag is the only integration step.
+// exactly so swapping the flag is the only integration step.
 import {
   ApiError,
   type ActiveSession,
@@ -131,8 +131,7 @@ async function logout(): Promise<void> {
 
 async function list(path: string, opts: ListOpts): Promise<ListResponse> {
   if (opts.listing) {
-    // `offset` takes precedence over `cursor` server-side (DESIGN-API.md
-    // §4.2's session already holds the sorted vector, so a random-access
+    // `offset` takes precedence over `cursor` server-side ('s session already holds the sorted vector, so a random-access
     // slice by index needs no cursor walk) — used for scroll-driven windowed
     // fetches instead of chaining `more()` one page at a time.
     return request(
@@ -202,7 +201,7 @@ async function archive(paths: string[]): Promise<{ job: string }> {
   return request('/fs/archive', { method: 'POST', body: JSON.stringify({ paths }) })
 }
 
-// ── long-running jobs (DESIGN-API.md §6) ──
+// ── long-running jobs ──
 // Every `fs_move`/`fs_copy`/`fs_delete`/`fs_archive` request always answers
 // `202 { job }` (`crates/sc-http/src/routes.rs`) — there is no size/count
 // threshold and no synchronous fallback. `copy`/`del`/`archive` above return
@@ -237,7 +236,7 @@ async function jobDownload(id: string): Promise<Blob> {
   return res.blob()
 }
 
-// ── trash (DESIGN-API.md §5, FEATURES.md #18) ──
+// ── trash (FEATURES.md #18) ──
 
 async function trashList(): Promise<TrashEntry[]> {
   return request('/trash')

@@ -1,4 +1,4 @@
-// web/src/lib/api/mock.ts — in-memory mock of DESIGN-API.md, swapped in via
+// web/src/lib/api/mock.ts — in-memory mock of, swapped in via
 // VITE_API_MOCK=1 (see client.ts). Implements listing sessions + cursor
 // pagination exactly like the real server so FileTable/BrowseState code
 // never has to know which backend it's talking to.
@@ -183,7 +183,7 @@ function dirEtagFor(dirPath: string): string {
   return `v${v}-${count}-${deadCount}-${addCount}`
 }
 
-// ── listing sessions (DESIGN-API.md §4.2) ──
+// ── listing sessions ──
 interface ListingSession {
   id: string
   path: string
@@ -242,8 +242,8 @@ export interface ListOpts {
   cursor?: string
   /**
    * Random-access window start within an existing listing session — the
-   * server-side session already holds the fully sorted name vector
-   * (DESIGN-API.md §4.2), so "start at index N" is just a slice, not a
+   * server-side session already holds the fully sorted name vector,
+   * so "start at index N" is just a slice, not a
    * sequential cursor walk. Used for scroll-driven windowed fetches instead
    * of chaining `cursor` one page at a time. Takes precedence over `cursor`
    * when both are present.
@@ -278,7 +278,7 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
       }
     }
     if (opts.offset !== undefined) {
-      // Random-access window: DESIGN-API.md §4.2's listing session already
+      // Random-access window:'s listing session already
       // holds the sorted vector, so any offset is a plain slice.
       const offset = Math.max(0, opts.offset)
       const page = session.entries.slice(offset, offset + limit)
@@ -305,7 +305,7 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
   }
 
   if (opts.cursor) {
-    // cursor without a listing id: session presumed expired (DESIGN-API.md §4.2).
+    // cursor without a listing id: session presumed expired.
     throw new ApiError(409, { code: 'fs.listing_expired', message: 'listing session expired' })
   }
 
@@ -463,7 +463,7 @@ async function del(paths: string[], permanent = false): Promise<{ job: string }>
   return { job: makeMockJob('delete', paths.length, results) }
 }
 
-// ── long-running jobs (DESIGN-API.md §6) — the real server always answers
+// ── long-running jobs — the real server always answers
 // `202 { job }`, never a synchronous result, so this mock must too for UI
 // code-path parity. Unlike the real backend, this mock's file operations
 // above already ran to completion synchronously by the time `{ job }` is

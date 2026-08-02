@@ -22,8 +22,8 @@ use http::StatusCode;
 
 use crate::app::App;
 
-/// The name this layer contributes to `capabilities.features.extensions`
-/// (`DESIGN-API.md` §8). The core owns the *list*; the string is ours.
+/// The name this layer contributes to `capabilities.features.extensions`.
+/// The core owns the *list*; the string is ours.
 pub const EXTENSION_NAME: &str = "compat-nc";
 
 fn port_io<E: std::fmt::Display>(e: E) -> PortError {

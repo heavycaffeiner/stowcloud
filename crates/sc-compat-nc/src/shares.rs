@@ -119,7 +119,7 @@ pub fn format_share(s: &CoreShare, shares: &dyn SharePort) -> Val {
                 "httpd/unix-directory"
             } else {
                 // We deliberately do not sniff or guess a MIME type
-                // (DESIGN-API.md §4.3: the server saying a MIME type risks it
+                // (the server saying a MIME type risks it
                 // being trusted for a serving decision). Clients fall back to
                 // extension-based detection.
                 "application/octet-stream"

@@ -1,4 +1,4 @@
-//! Runtime configuration for the middleware stack (`DESIGN-API.md` §9).
+//! Runtime configuration for the middleware stack.
 
 use std::net::IpAddr;
 
@@ -10,7 +10,7 @@ pub struct HttpConfig {
     /// Host header allowlist for the *content* origin (serves signed URLs
     /// only, no cookies ever parsed —).
     pub content_hosts: Vec<String>,
-    /// CIDRs trusted to supply `CF-Connecting-IP` (`DESIGN-API.md` §9 step 2).
+    /// CIDRs trusted to supply `CF-Connecting-IP` ( step 2).
     pub trusted_proxy_cidrs: Vec<Cidr>,
     /// Origins accepted by CSRF's `Origin` header check
     /// (`DESIGN-AUTH.md` §3.3).
@@ -22,7 +22,7 @@ pub struct HttpConfig {
     /// Body size limit applied to everything except `/api/uploads/**`.
     pub body_limit_bytes: usize,
     /// Names of the compatibility layers this build has mounted, reported
-    /// verbatim as `capabilities.features.extensions` (`DESIGN-API.md` §8).
+    /// verbatim as `capabilities.features.extensions`.
     ///
     /// A *list of layer names* rather than one boolean per vendor: a field
     /// called `<vendor>_compat` would put that vendor's name in the core API

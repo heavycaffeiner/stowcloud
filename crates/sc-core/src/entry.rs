@@ -72,7 +72,7 @@ pub struct Listing {
 }
 
 /// Server-side cache of a sorted name vector for one directory listing,
-/// keyed by `(dir, dir_etag, sort, order)` (`DESIGN-API.md` §4.2). Kept for
+/// keyed by `(dir, dir_etag, sort, order)`. Kept for
 /// `LISTING_TTL`; a `dir_etag` change makes the key itself miss, so there is
 /// nothing to actively invalidate.
 pub(crate) struct ListingSession {

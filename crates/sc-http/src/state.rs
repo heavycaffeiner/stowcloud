@@ -64,7 +64,7 @@ pub struct JobStatus {
     pub id: String,
     /// Whoever's request created this job — checked by `job_status`/
     /// `job_cancel`/`job_download` before anything else about the job is
-    /// revealed (`DESIGN-API.md` §6, a job id must not be readable or
+    /// revealed (a job id must not be readable or
     /// cancellable by another account).
     pub owner: UserId,
     pub kind: JobKind,
@@ -240,7 +240,7 @@ fn sweep(conn: &Connection) {
 /// SQLite-backed (`jobs.db`, opened once by `sc_server::App::build` the same
 /// way as `shares.db`/`upload.db`/`index.db`) so a job — and, per item, an
 /// honest record of what has actually happened so far — survives a restart.
-/// `DESIGN-API.md` §6 described this model before it existed; this is that.
+/// described this model before it existed; this is that.
 ///
 /// Two things stay in memory only, deliberately:
 /// - `cancel_flags`: the hot per-item cancellation check (`spawn_batch_job`'s
@@ -293,7 +293,7 @@ impl JobStore {
         conn.execute_batch(SCHEMA)?;
 
         let now = now_unix();
-        // Startup recovery (`DESIGN-API.md` §6). Any row still `running`
+        // Startup recovery. Any row still `running`
         // here belongs to a runner that no longer exists — the previous
         // process crashed or was restarted (including an admin-triggered
         // one, `routes::admin_restart_server`) with the job mid-flight. It
@@ -810,7 +810,7 @@ impl ResizableSemaphore {
 pub struct ClientIp(pub std::net::IpAddr);
 
 /// Request extension set by `HostGuard` — which of the two hosts this
-/// request arrived on (`DESIGN-API.md` §9 /).
+/// request arrived on ( /).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HostOrigin {
     App,
@@ -877,7 +877,7 @@ pub struct AppState {
     /// `.await`) because an exhausted budget should reject immediately with
     /// `429 Retry-After`, not make the caller wait server-side.
     pub search_concurrency: Arc<SearchConcurrency>,
-    /// Global concurrent-archive-stream cap (`DESIGN-API.md` §1.1's rate-
+    /// Global concurrent-archive-stream cap ('s rate-
     /// limit shape; each stream holds an open fd and walks a tree for its
     /// entire duration, so unbounded concurrency here is a resource-
     /// exhaustion vector). Default 4 — see `crate::routes::fs_archive`.

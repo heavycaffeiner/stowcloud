@@ -185,7 +185,7 @@ impl AuthService {
     /// so it inherits the same floor.
     ///
     /// Destructive and irreversible — the HTTP layer is expected to require
-    /// explicit confirmation before calling this (`DESIGN-API.md`-style
+    /// explicit confirmation before calling this (style
     /// "type the name to confirm" pattern), not to guard it itself.
     pub fn delete_user(&self, u: UserId) -> Result<(), AdminGuardError> {
         let mut conn = self.pool.get().map_err(|e| AdminGuardError::Internal(e.to_string()))?;

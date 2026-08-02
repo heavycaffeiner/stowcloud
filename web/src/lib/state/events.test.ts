@@ -1,6 +1,5 @@
 // web/src/lib/state/events.test.ts — EventsHub's subscribe/unsubscribe
-// bookkeeping, message routing, and reconnect-with-backoff (DESIGN-API.md
-// §7), independent of a real WebSocket: `../api/events-transport` is
+// bookkeeping, message routing, and reconnect-with-backoff, independent of a real WebSocket: `../api/events-transport` is
 // replaced with a fake whose `connect`/`send`/`close` this file drives by
 // hand and inspects.
 //

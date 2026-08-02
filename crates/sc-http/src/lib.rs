@@ -1,5 +1,5 @@
 //! `sc-http` — native REST API + WebSocket + middleware stack for the web
-//! UI. See `docs/DESIGN-API.md` (authoritative). This crate is intentionally
+//! UI. See `docs/ (authoritative). This crate is intentionally
 //! isolated from the *other* cloud-storage compatibility protocol this
 //! workspace also speaks — those routes live entirely in the sibling
 //! `sc-compat-nc` crate, and a CI check enforces that none of that
@@ -71,8 +71,7 @@ pub const OIDC_FLOW_COOKIE: &str = "__Host-sc_oidc";
 
 pub use state::AppState;
 
-/// Assembles the full router with the middleware stack in `DESIGN-API.md`
-/// §9's exact order.
+/// Assembles the full router with the middleware stack in's exact order.
 ///
 /// Axum layers wrap in last-added-is-outermost order, so to get the
 /// documented request-phase execution order (`RequestId` first ...

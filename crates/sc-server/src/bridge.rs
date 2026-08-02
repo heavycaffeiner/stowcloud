@@ -20,8 +20,8 @@
 //!   status itself confirms the path exists — which `sc-core` does not model:
 //!   its `Denied` covers both. [`CoreBridge::dav_err`] recovers it by asking
 //!   whether the caller can read the path at all.
-//! * `sc-http` needs JSON-shaped DTOs with nanosecond times as strings
-//!   (`DESIGN-API.md` §1), which `sc-core` deliberately doesn't know about.
+//! * `sc-http` needs JSON-shaped DTOs with nanosecond times as strings,
+//! which `sc-core` deliberately doesn't know about.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -346,7 +346,7 @@ impl sc_dav::CoreApi for CoreBridge {
     fn copy_to(&self, user: UserId, from: &str, to: &str) -> sc_dav::backend::CoreResult<()> {
         // `Core::copy_to` is a primitive, not `copy_entries` + `rename`:
         // faking it that way deletes the source on a same-directory copy
-        // (Finder's "Duplicate"). See `DESIGN-API.md` §5.1.
+        // (Finder's "Duplicate"). See
         self.core
             .copy_to(user, from, to, true)
             .map(|_| ())
@@ -2626,7 +2626,7 @@ fn collect_paths_for_index(
     Ok(true)
 }
 
-/// Extension-group filter (`kind=image` etc., `DESIGN-API.md` §2/§4.3) —
+/// Extension-group filter (`kind=image` etc.) —
 /// never opens a file to decide, matching `sc-search::Matcher::exts`'s own
 /// contract.
 fn kind_extensions(kind: &str) -> &'static [&'static str] {

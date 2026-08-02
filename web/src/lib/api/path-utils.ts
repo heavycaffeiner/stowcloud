@@ -1,5 +1,5 @@
 // web/src/lib/api/path-utils.ts — small virtual-path helpers shared by the
-// mock backend. DESIGN-API.md §1: all path params are virtual paths
+// mock backend.: all path params are virtual paths
 // (`/{label}/sub/path`); there is no real filesystem path here.
 
 export function normalizePath(p: string): string {

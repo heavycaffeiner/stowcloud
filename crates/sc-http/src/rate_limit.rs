@@ -1,5 +1,5 @@
 //! Generic per-IP token bucket for the `RateLimit` middleware
-//! (`DESIGN-API.md` §9 step 5 — sits *before* `Auth`, so unauthenticated
+//! ( step 5 — sits *before* `Auth`, so unauthenticated
 //! floods get `429` without ever reaching Argon2/session lookups).
 //!
 //! This is deliberately separate from `sc_auth`'s login-specific

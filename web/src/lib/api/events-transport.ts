@@ -1,5 +1,5 @@
 // web/src/lib/api/events-transport.ts — WebSocket transport for
-// `GET /api/events` (DESIGN-API.md §7, `crates/sc-http/src/ws.rs`). Split out
+// `GET /api/events` (`crates/sc-http/src/ws.rs`). Split out
 // from `state/events.ts` the same way `upload/transport.ts` is split from
 // `state/upload-tray.svelte.ts`: this file only knows how to open a socket
 // and shuttle JSON frames. Reconnection policy, which paths are "wanted",

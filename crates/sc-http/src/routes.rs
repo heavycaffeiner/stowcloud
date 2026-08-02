@@ -1,4 +1,4 @@
-//! Route handlers — `DESIGN-API.md` §2.
+//! Route handlers —
 //!
 //! Handlers for `/api/fs/**`, `/api/trash*`, `/api/shares*` go through
 //! [`crate::core_api::CoreApi`] (currently [`crate::core_api::UnimplementedCore`]
@@ -26,7 +26,7 @@ use crate::middleware::SessionToken;
 use crate::state::{AppState, ClientIp, HostOrigin, JobKind, JobState, JobStatus};
 
 /// Every route except `/api/uploads/**` — this is the sub-router the
-/// `RequestBodyLimitLayer` gets applied to (`DESIGN-API.md` §9 step 6).
+/// `RequestBodyLimitLayer` gets applied to ( step 6).
 pub fn protected_routes(state: AppState) -> Router {
     Router::new()
         .route("/api/capabilities", get(capabilities))
@@ -164,7 +164,7 @@ struct FeatureCaps {
     trash: bool,
     shares: bool,
     search: &'static str,
-    /// `DESIGN-API.md` §8: the names of the compatibility layers that are
+    /// the names of the compatibility layers that are
     /// actually mounted. See `HttpConfig::extensions` for why this is a list
     /// of neutral strings and not one boolean per vendor.
     extensions: Vec<String>,
@@ -183,7 +183,7 @@ fn feature_caps(state: &AppState) -> FeatureCaps {
         trash: true,
         // Advertised from the backend, not hardcoded: a deployment with no
         // share-link store must not tell the UI to draw a button that every
-        // click will `501` on (`DESIGN-API.md` §8, "only features actually enabled on the server").
+        // click will `501` on ("only features actually enabled on the server").
         shares: state.core.shares_enabled(),
         search: "walk",
         extensions: state.cfg.extensions.clone(),
@@ -666,7 +666,7 @@ async fn list_app_passwords(State(state): State<AppState>, principal: Option<Ext
         Err(e) => return e.into_response(),
     };
     match state.auth.list_app_passwords(principal.user) {
-        // `DESIGN-API.md` §1: times are `i64` nanoseconds serialized as a
+        // times are `i64` nanoseconds serialized as a
         // JSON *string* — a raw JSON number silently loses precision past
         // 2^53, which a nanosecond epoch timestamp (~1.8e18) is nowhere near
         // fitting inside. Every other ns-bearing field in this file already
@@ -987,7 +987,7 @@ async fn auth_smb_settings(
 //
 // The two transports here are not interchangeable, and §5-2 splits its error
 // tables for exactly that reason. Every JSON route answers with a status code
-// and the `DESIGN-API.md` §1.1 envelope. The callback answers with a redirect
+// and the envelope. The callback answers with a redirect
 // for every outcome except rate limiting, because a person arrives there in a
 // browser: a JSON error body would render as a white page of JSON, and the
 // only useful thing to do with them is put them back on a screen that can say
@@ -1888,7 +1888,7 @@ async fn fs_move(State(state): State<AppState>, principal: Option<Extension<Prin
         Err(e) => return e.into_response(),
     };
     if q.dry_run {
-        // `DESIGN-API.md` §5.2: actually inspect the move instead of always
+        // actually inspect the move instead of always
         // answering "no copy needed" — a hardcoded `false` here means the
         // cross-device pre-notice this endpoint exists to give never fires.
         return match state.core.move_entries_dry_run(principal.user, &q.paths, &q.dest, q.on_conflict.into(), &q.if_match) {
@@ -2009,10 +2009,9 @@ fn new_job_id() -> String {
 /// `sc-core` change was needed to get per-item progress and cancellation.
 /// Cancellation is only checked *before* an item starts: the item already
 /// running always finishes, so a cancelled copy/move never leaves that one
-/// item half-written — only items after it are skipped (`DESIGN-API.md`
-/// §6: "an in-progress item is finished... before the job actually stops").
+/// item half-written — only items after it are skipped ("an in-progress item is finished... before the job actually stops").
 ///
-/// Record-before-act (`DESIGN-API.md` §6, the zero-loss requirement):
+/// Record-before-act (the zero-loss requirement):
 /// `begin_result` commits an `attempting` row *before* `op(p)` runs, so a
 /// crash mid-item leaves that row exactly where it was — never an absent
 /// one for a path the operation may already have removed, moved, or
@@ -2163,7 +2162,7 @@ struct ArchiveReq {
     paths: Vec<String>,
 }
 
-/// / `DESIGN-API.md` §6: ZIP64/STORE archive of a
+/// /: ZIP64/STORE archive of a
 /// batch selection, always run as a durable job (`spawn_archive_job`) — the
 /// per-selection nature of an archive request doesn't fit the single-`fid`
 /// `Claim` shape the rest of `/c/{token}` uses, so the finished bytes are
@@ -2180,7 +2179,7 @@ async fn fs_archive(State(state): State<AppState>, principal: Option<Extension<P
     // Each archive walk holds an open fd and walks a tree for its entire
     // duration — unbounded concurrency here is a trivial resource-
     // exhaustion vector, so it gets the same global-cap-plus-429 treatment
-    // as search (`DESIGN-API.md` §1.1's `rate.limited` shape). Held by the
+    // as search ('s `rate.limited` shape). Held by the
     // job for its whole duration, released when `spawn_archive_job`'s
     // blocking task ends.
     let permit = match state.archive_concurrency.current().try_acquire_owned() {
@@ -3324,7 +3323,7 @@ async fn search_stream(State(state): State<AppState>, principal: Option<Extensio
 /// the same way `job_status`/`job_cancel` are (`JobStore::list_open`).
 /// `JobTray` calls this once on mount so a browser refresh (or a job started
 /// in a different tab) re-attaches to whatever `jobs.db` already has, rather
-/// than losing track of it client-side (`DESIGN-API.md` §6).
+/// than losing track of it client-side.
 async fn job_list(State(state): State<AppState>, principal: Option<Extension<Principal>>) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
@@ -4739,7 +4738,7 @@ fn path_is_under(path: &str, prefix: &str) -> bool {
     }
 }
 
-/// This crate's own URL vocabulary — `DESIGN-API.md` §2 — never a candidate
+/// This crate's own URL vocabulary — — never a candidate
 /// for the `embed-ui` SPA fallback no matter what else is merged in beside
 /// it. Unlike [`crate::config::HttpConfig::reserved_path_prefixes`], these
 /// never need to be supplied by an assembler: this crate already knows they
@@ -4758,7 +4757,7 @@ pub(crate) fn is_reserved_path(cfg: &crate::config::HttpConfig, path: &str) -> b
         || cfg.reserved_path_prefixes.iter().any(|p| path_is_under(path, p))
 }
 
-/// The router's single global fallback (`DESIGN-API.md` §9). It is the
+/// The router's single global fallback. It is the
 /// *only* one in the whole merged application, not only this crate's own
 /// `/api/**`: `sc-server`'s `App::router` merges the WebDAV tree and
 /// (feature-gated) the compatibility layer in beside this router's output,
@@ -6448,7 +6447,7 @@ mod tests {
         }
 
         /// Logging out closes every WebSocket this user has open, not just
-        /// the one behind this cookie — `DESIGN-API.md` §7 / `WsHub::revoke_user`.
+        /// the one behind this cookie — / `WsHub::revoke_user`.
         #[tokio::test]
         async fn logout_revokes_every_socket_of_that_user() {
             let (state, _dir) = test_state_with_core(Arc::new(crate::core_api::UnimplementedCore));
@@ -7073,7 +7072,7 @@ mod tests {
 
         /// Every `fs.delete` request is a durable job now, no matter how
         /// small — a single-file batch must still answer `202 {"job": id}`,
-        /// never an inline `results` array (`DESIGN-API.md` §6: no size
+        /// never an inline `results` array (no size
         /// below which an operation is allowed to run outside the job/
         /// `jobs.db` machinery).
         #[tokio::test]

@@ -34,7 +34,7 @@ pub struct RouteInfo {
 /// `GET /api/health` — liveness only. It deliberately reports nothing about
 /// configuration, versions, share count or user count: it is reachable
 /// unauthenticated, and anything richer is a fingerprinting surface
-/// (`DESIGN-API.md` §8's "leaks nothing beyond the fact the server exists" applies here
+/// ('s "leaks nothing beyond the fact the server exists" applies here
 /// even more strictly than to `capabilities`).
 async fn health() -> Json<serde_json::Value> {
     // Two states, and only two. `"ok"` was hardcoded, so this said the server

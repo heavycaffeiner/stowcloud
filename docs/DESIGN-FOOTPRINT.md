@@ -280,7 +280,7 @@ So the service keeps browsing, downloading and uploading while the floor holds �
 
 ### 4.5 What actually happens when the guard trips
 
-An earlier draft specified a five-step automatic "degrade ladder" — reap dead `node` rows, halve audit-log retention, run an incremental vacuum, tighten lazy allocation, then block writes with a banner. **None of that runs automatically today.** Crossing `max_bytes` while `size_guard = true` does exactly one thing: it flips `degraded_reasons()` to include `"db_size_guard_tripped"`, which `GET /api/health` can report (as a bare degraded/not-degraded signal, never the reason itself — `DESIGN-API.md` §8 forbids leaking configuration detail to an unauthenticated caller).
+An earlier draft specified a five-step automatic "degrade ladder" — reap dead `node` rows, halve audit-log retention, run an incremental vacuum, tighten lazy allocation, then block writes with a banner. **None of that runs automatically today.** Crossing `max_bytes` while `size_guard = true` does exactly one thing: it flips `degraded_reasons()` to include `"db_size_guard_tripped"`, which `GET /api/health` can report (as a bare degraded/not-degraded signal, never the reason itself — `proposals/stowcloud-9-api.md` forbids leaking configuration detail to an unauthenticated caller).
 
 Reclaiming space is a **manual operation**: `sc-server gc` walks every share, reaps `node` rows whose `(dev, ino)` no longer exists, and runs `PRAGMA incremental_vacuum`. An operator (or a cron job calling the CLI) has to run it; nothing triggers it from the guard tripping.
 

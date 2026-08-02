@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
-description = "Native REST API + WebSocket + middleware stack for the web UI. Zero compat-protocol vocabulary — see DESIGN-API.md."
+description = "Native REST API + WebSocket + middleware stack for the web UI. Zero compat-protocol vocabulary — see."
 
 [features]
 default = []

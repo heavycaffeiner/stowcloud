@@ -16,8 +16,7 @@ use crate::error::CoreError;
 use crate::resolve::Resolved;
 use crate::Listing;
 
-/// First page returned by `list()` when no cursor is in play. `DESIGN-API.md`
-/// §4.2 shows 200 as the example page size; there is no way to override it
+/// First page returned by `list()` when no cursor is in play. shows 200 as the example page size; there is no way to override it
 /// through the contracted `list()` signature, so it's a fixed constant here.
 pub(crate) const DEFAULT_PAGE_SIZE: usize = 200;
 pub(crate) const LISTING_CACHE_CAP: usize = 256;
@@ -607,7 +606,7 @@ impl crate::Core {
         Ok(results)
     }
 
-    /// `DESIGN-API.md` §5.2: inspect without mutating, so the UI can warn
+    /// inspect without mutating, so the UI can warn
     /// "this will copy, not move" before the user commits.
     pub fn move_entries_dry_run(
         &self,
@@ -702,7 +701,7 @@ impl crate::Core {
     }
 
     /// Free/used accounting for the filesystem backing `vpath`
-    /// (`DESIGN-API.md` §8, and the RFC 4331 properties `sc-dav` derives from
+    /// (and the RFC 4331 properties `sc-dav` derives from
     /// it). `available` is `None` — never `0` — when the backend cannot
     /// answer.
     pub fn quota(&self, user: UserId, vpath: &str) -> Result<crate::entry::Quota, CoreError> {
@@ -716,7 +715,7 @@ impl crate::Core {
         }
     }
 
-    /// Copy one entry to a **named destination** (`DESIGN-API.md` §5.1).
+    /// Copy one entry to a **named destination**.
     ///
     /// `copy_entries(paths, dest_dir)` means "copy these into that directory,
     /// keeping their names", which cannot express a rename-on-copy at all.

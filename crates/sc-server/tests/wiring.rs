@@ -88,7 +88,7 @@ async fn capabilities_comes_from_sc_http() {
         .to_bytes();
     let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
 
-    // `DESIGN-API.md` §8: a neutral list of mounted compatibility layers, not
+    // a neutral list of mounted compatibility layers, not
     // a boolean named after a vendor.
     let ext = json["features"]["extensions"]
         .as_array()

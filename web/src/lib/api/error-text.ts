@@ -2,7 +2,7 @@
 // turns into a sentence.
 //
 // The server never sends prose meant for a screen. A refusal travels as the
-// stable `code` of `DESIGN-API.md` §1.1's envelope, plus — for the validation
+// stable `code` of's envelope, plus — for the validation
 // refusals that need to name a path or a field — a catalogue key and its
 // placeholders in `detail.reason_key` / `detail.reason_params`
 // (`AppError::invalid_keyed`). This module renders that into whatever

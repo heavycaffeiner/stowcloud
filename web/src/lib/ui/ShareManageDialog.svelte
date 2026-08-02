@@ -1,6 +1,6 @@
 <script lang="ts">
   // ShareManageDialog.svelte — owner-side share-link CRUD for one file/folder
-  // path (DESIGN-API.md `/api/shares[/:id]`). Creation
+  // path ( `/api/shares[/:id]`). Creation
   // is the only piece of this surface any part of the app touched before —
   // in fact none did (`grep -rn "shares" web/src` before this change turned
   // up zero create/view/edit/revoke UI, only the unrelated public `/s/{token}`

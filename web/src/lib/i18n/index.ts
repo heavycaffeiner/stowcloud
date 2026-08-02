@@ -49,7 +49,7 @@ export function localeTag(): string {
   return i18nState.locale === 'ko' ? 'ko-KR' : 'en-US'
 }
 
-/** mtime_ns (nanoseconds-as-string, per DESIGN-API.md §1) → localized date/time. */
+/** mtime_ns (nanoseconds-as-string, per) → localized date/time. */
 export function formatDateNs(mtimeNs: string): string {
   const ms = Number(BigInt(mtimeNs) / 1_000_000n)
   return new Intl.DateTimeFormat(localeTag(), { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(ms))

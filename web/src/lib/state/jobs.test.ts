@@ -1,6 +1,5 @@
 // web/src/lib/state/jobs.test.ts — pollJob's terminal-state resolution,
-// error/timeout rejection, and its WebSocket-push shortcut (DESIGN-API.md
-// §6: "progress is also pushed over the websocket; polling is the
+// error/timeout rejection, and its WebSocket-push shortcut ("progress is also pushed over the websocket; polling is the
 // fallback"). Independent of a live server or a real WebSocket:
 // `api.jobStatus` is spied on directly (`api`
 // is a plain object — no module mock/reset needed), and the WebSocket push

@@ -1,4 +1,4 @@
-// web/src/lib/state/browse.svelte.ts —, §5 / DESIGN-API.md §4.2.
+// web/src/lib/state/browse.svelte.ts —, §5 /
 // Svelte 5 runes class. No global store library.
 //
 // Rows are addressed by absolute index within the server's sorted listing
@@ -102,7 +102,7 @@ export class BrowseState {
   /** Unsubscribes the live-invalidation watch (`state/events.ts`) for
    *  whichever directory `open()` last subscribed to — reassigned, never
    *  left dangling, so a stale directory never keeps triggering `refresh()`
-   *  after the user has navigated away from it (DESIGN-API.md §7: "the
+   *  after the user has navigated away from it ("the
    *  subscription is limited to the directory currently being viewed"). */
   #eventsUnsub: (() => void) | null = null
 
@@ -141,8 +141,8 @@ export class BrowseState {
 
     // Watch the directory we're actually about to be looking at, not the
     // one we just left — so a change SMB/a sync client/another browser
-    // tab makes while this page is open shows up without a manual refresh
-    // (DESIGN-API.md §7). Unsubscribe-then-resubscribe even when navigating
+    // tab makes while this page is open shows up without a manual refresh.
+    // Unsubscribe-then-resubscribe even when navigating
     // to the same path: `open()` is also how a sort change re-lists, and
     // there is no cheaper way to tell "still this path" apart from "this
     // path again after leaving it" that's worth the bookkeeping.

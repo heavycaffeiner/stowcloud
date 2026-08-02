@@ -1,5 +1,5 @@
 // web/src/lib/state/events.ts — live change notifications (`GET /api/events`,
-// DESIGN-API.md §7). Owns the one WebSocket connection the whole app shares:
+// ). Owns the one WebSocket connection the whole app shares:
 // reconnect-with-backoff, re-subscribing every "wanted" path after a
 // reconnect, and the 30s client ping §7 calls for (Cloudflare's own idle
 // timeout is 100s — a connection that never speaks gets dropped by the
@@ -98,7 +98,7 @@ class EventsHub {
         for (const cb of this.#jobCbs) cb(msg.id, msg.done, msg.total)
         break
       case 'revoked':
-        // DESIGN-API.md §7: "session revoked → immediate logout". `noteUnauthorized`
+        // "session revoked → immediate logout". `noteUnauthorized`
         // is the same single choke point every 401 already goes through
         // (`api/http.ts`'s `request`) — routing through it here instead of a
         // bespoke logout path keeps "what a dead session looks like" to one
@@ -108,7 +108,7 @@ class EventsHub {
         break
       case 'quota':
       case 'pong':
-        // Both defined by DESIGN-API.md §7; neither has a UI consumer yet
+        // Both defined by; neither has a UI consumer yet
         // (no quota display, no connection-health indicator in this app).
         // Matched explicitly rather than falling off the end of the switch
         // so the next thing that needs one has an obvious place to add it,
@@ -142,7 +142,7 @@ class EventsHub {
   }
 
   /** Job progress pushes (`{"t":"job",...}`) — `state/jobs.ts`'s poller is
-   *  the fallback DESIGN-API.md §6 describes ("progress is also pushed over
+   *  the fallback describes ("progress is also pushed over
    *  the websocket; polling is the fallback"); a connected hub delivers
    *  these without a request round-trip per tick. */
   onJob(cb: JobCb): () => void {

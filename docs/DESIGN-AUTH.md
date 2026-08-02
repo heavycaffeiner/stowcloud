@@ -328,8 +328,7 @@ state-changing, cookie-authenticated request:
 3. `Origin` is checked against `allowed_origins`. Missing or unlisted →
    rejected.
 
-Both (2) and (3) must pass (`sc-http`'s `csrf` middleware, `DESIGN-API.md`
-§9 step 8) — a valid header from a disallowed origin, or a valid origin with
+Both (2) and (3) must pass (`sc-http`'s `csrf` middleware, `proposals/stowcloud-9-api.md` step 8) — a valid header from a disallowed origin, or a valid origin with
 no header, both fail closed with `403`.
 
 ---
@@ -542,7 +541,7 @@ either half of it, keeps minting `Scope::default()` (unrestricted) exactly as
 before scoping existed, so old clients that only ever send `{"name": "..."}`
 are unaffected.
 
-Enforcement (`sc-http::middleware::scope_gate`, `DESIGN-API.md` §9 step 9)
+Enforcement (`sc-http::middleware::scope_gate`, `proposals/stowcloud-9-api.md` step 9)
 is a static per-route table, and it **fails closed**: a route this table
 hasn't been taught about denies a *restricted* credential outright rather
 than granting it by default. An unrestricted credential (`None`) is

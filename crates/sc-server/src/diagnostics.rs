@@ -295,7 +295,7 @@ impl Diagnostics {
     /// Every non-fatal degraded condition currently in effect, named by a
     /// stable internal key — for logs and an *authenticated* status surface,
     /// never for `GET /api/health` directly. That route is reachable
-    /// unauthenticated and `DESIGN-API.md` §8 forbids leaking anything past
+    /// unauthenticated and forbids leaking anything past
     /// "the server exists" to an anonymous caller, and a reason string here
     /// is exactly the kind of configuration detail that rule exists to
     /// withhold (e.g. naming which share was rejected leaks a host path

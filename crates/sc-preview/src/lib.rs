@@ -5,7 +5,7 @@
 //! worker-pool abstraction, and archive listing only. It knows nothing
 //! about HTTP, signed URLs, or share links -- `sc-http` is expected to call
 //! into [`PreviewService`] and [`archive::list_archive`] from its content
-//! origin routes (`DESIGN-API.md` section 2.2 describes the token format that
+//! origin routes ( section 2.2 describes the token format that
 //! gates access to those routes, but issuing/verifying that token is
 //! `sc-http`'s job, not this crate's).
 //!

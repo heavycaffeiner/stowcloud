@@ -24,7 +24,7 @@ use sc_vfs::{FileHandle, Kind, SafePath, ShareRoot, Stat, UserId};
 use crate::error::CoreError;
 
 /// Bytes read per `read_at` call, regardless of the caller's buffer size
-/// (`DESIGN-API.md`/: "memory must not scale with file
+/// (/: "memory must not scale with file
 /// size").
 pub const CHUNK: usize = 256 * 1024;
 

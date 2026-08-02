@@ -6,7 +6,7 @@
 //
 // Talks to `GET/POST /s/{token}[...]` — NOT `/api/shares/{id}`. That second
 // path exists too, but it's the *owner's* authenticated CRUD surface for
-// managing their own share links (DESIGN-API.md), keyed by numeric id and
+// managing their own share links, keyed by numeric id and
 // gated by session cookie + CSRF. An anonymous visitor opening a share link
 // has neither, so calling it here always 401'd — this page never actually
 // worked against the real backend until this fixed the endpoint. The public,

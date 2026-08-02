@@ -1,5 +1,4 @@
-// web/src/lib/state/jobs.ts — progress polling for `GET /api/jobs/{id}`
-// (DESIGN-API.md §6). `fs_move`/`fs_copy`/`fs_delete`/`fs_archive` produce a
+// Progress polling for `GET /api/jobs/{id}`. `fs_move`/`fs_copy`/`fs_delete`/`fs_archive` produce a
 // job id once a batch crosses the threshold (`crates/sc-http/src/state.rs`);
 // `api/http.ts`'s `copy`/`del`/`archive` hand that `{ job }` envelope straight
 // to the caller instead of awaiting it. `state/job-tray.svelte.ts` is that
@@ -45,8 +44,7 @@ export class JobFailedError extends Error {
 /**
  * Polls `GET /api/jobs/{id}` until it reaches a terminal state, calling
  * `onProgress` on every observed update — including ones delivered faster,
- * over the WebSocket `job` push (`state/events.ts`'s `onJob`; DESIGN-API.md
- * §6: "progress is also pushed over the websocket; polling is the
+ * over the WebSocket `job` push (`state/events.ts`'s `onJob`;: "progress is also pushed over the websocket; polling is the
  * fallback"). Resolves with the final
  * `JobStatus` on `done`; rejects with `JobFailedError` for `error`/
  * `cancelled`/`interrupted` (all three are "did not complete successfully"
@@ -71,7 +69,7 @@ export function pollJob(id: string, kind: JobKindWire, onProgress?: (status: Job
     const unsubJob = events.onJob((jobId, done, total) => {
       if (jobId !== id || settled) return
       // The push frame doesn't carry `current`/`errors`/`results`/`download`
-      // (DESIGN-API.md §7's wire shape is narrower than the REST one) —
+      // ('s wire shape is narrower than the REST one) —
       // report what it has and let the next poll tick, or the terminal state
       // itself, fill in the rest rather than fabricating fields the server
       // didn't send. `id`/`kind` are the caller's own (`track()` already knew

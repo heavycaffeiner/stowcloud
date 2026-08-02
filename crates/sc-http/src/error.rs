@@ -1,4 +1,4 @@
-//! Error envelope — `DESIGN-API.md` §1.1.
+//! Error envelope —
 //!
 //! ```json
 //! { "error": { "code": "fs.conflict", "message": "...", "detail": {...} } }
@@ -15,7 +15,7 @@ use axum::Json;
 use serde::Serialize;
 use serde_json::Value;
 
-/// Stable, machine-readable error codes from `DESIGN-API.md` §1.1.
+/// Stable, machine-readable error codes from
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
     AuthRequired,
@@ -179,7 +179,7 @@ impl ErrorCode {
     }
 }
 
-/// Application error. `IntoResponse` renders it as the `DESIGN-API.md` §1.1
+/// Application error. `IntoResponse` renders it as the
 /// envelope directly — this is the single source of truth for the shape, so
 /// no separate "error mapper" needs to duplicate the logic; the `error_mapper`
 /// middleware (`middleware::error_mapper`) exists purely as defense in depth
@@ -345,7 +345,7 @@ impl From<anyhow::Error> for AppError {
 impl AppError {
     /// The `{code, message, detail}` object as it appears both inside the
     /// top-level `{"error": ...}` envelope and inside a batch
-    /// (`DESIGN-API.md` §5.1) per-item `error` field.
+    /// per-item `error` field.
     pub fn to_wire(&self) -> Value {
         let detail = if matches!(self.code, ErrorCode::Internal) { None } else { self.detail.clone() };
         serde_json::json!({ "code": self.code.as_str(), "message": self.message, "detail": detail })

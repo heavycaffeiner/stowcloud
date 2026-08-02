@@ -230,7 +230,7 @@ impl App {
             cfg.search.rate_per_minute,
             std::time::Duration::from_secs(60),
         ));
-        // `DESIGN-API.md` §1.1's rate-limit shape, config-reachable via
+        // 's rate-limit shape, config-reachable via
         // `[archive]`; resizable so a live `archive.max_concurrent` change
         // from the settings screen takes effect without a restart.
         let archive_concurrency = Arc::new(sc_http::state::ResizableSemaphore::new(
@@ -1099,7 +1099,7 @@ fn build_http_state(
     }
 
     // Each compatibility layer contributes its own name; the core API never
-    // learns what any of them mean (`DESIGN-API.md` §8).
+    // learns what any of them mean.
     #[cfg(feature = "compat-nc")]
     http_cfg
         .extensions
@@ -1160,7 +1160,7 @@ fn build_http_state(
         // caller (`App::build`) already opens under `data_dir` (`shares.db`,
         // `upload.db`, `index.db`) — a job, and the per-item record of what
         // it has actually done so far, must survive a restart just like
-        // those do (`DESIGN-API.md` §6).
+        // those do.
         jobs: Arc::new(sc_http::state::JobStore::open(&cfg.data_dir.join("jobs.db"))?),
         rate_limiter: Arc::new(sc_http::rate_limit::IpTokenBucket::new(
             60,
@@ -1189,7 +1189,7 @@ fn build_http_state(
         // `search_concurrency` construction, shared with `SearchBridge` so
         // the walk deadline and this cap always agree on the tier in play.
         search_concurrency,
-        // `DESIGN-API.md` §1.1's rate-limit shape, config-reachable via
+        // 's rate-limit shape, config-reachable via
         // `[archive]` — see `crate::routes` / `sc_http::routes::fs_archive`.
         // Shared with `SettingsBridge` (`App::build`), same reasoning as
         // `search_rate` above.
@@ -1201,7 +1201,7 @@ fn build_http_state(
     })
 }
 
-/// `DESIGN-API.md` §7: READ is re-checked at *event delivery* time, not only
+/// READ is re-checked at *event delivery* time, not only
 /// at subscription time — otherwise a user whose grant was revoked keeps
 /// receiving change notifications, which leaks the existence of paths they
 /// can no longer see.
@@ -1234,7 +1234,7 @@ impl sc_http::ws::ReadPermCheck for AclReadCheck {
     // revoke a grant out from under a live subscription (not a client
     // action, and not triggered by ordinary use), and the leaked watch is
     // one entry for one real directory, not unbounded growth — `sc-watch`'s
-    // hot-set cap (`DESIGN-API.md` §7 / `WatchConfig::hot_set_max`) is what
+    // hot-set cap ( / `WatchConfig::hot_set_max`) is what
     // guards against that.
     fn watch_subscribe(&self, user: UserId, vpath: &str) {
         let Some(w) = &self.watcher else { return };

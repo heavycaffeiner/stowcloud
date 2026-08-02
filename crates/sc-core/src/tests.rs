@@ -480,7 +480,7 @@ fn listing_pagination_and_name_sort_avoids_full_stat() {
 
 // -------------------------------------------------------------- copy_to --
 
-/// The failure this operation exists to prevent (`DESIGN-API.md` §5.1).
+/// The failure this operation exists to prevent.
 ///
 /// Faking a named copy as `copy_entries(&[src], parent_of(dst))` followed by
 /// `rename(landed, dst)` looks correct until the destination is in the

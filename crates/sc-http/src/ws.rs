@@ -1,4 +1,4 @@
-//! WebSocket invalidation hub — `DESIGN-API.md` §7.
+//! WebSocket invalidation hub —
 //!
 //! ```text
 //! C→S {"t":"sub","paths":[...]}      # only watched directories
@@ -148,7 +148,7 @@ impl WsHub {
     /// current one, so reusing this method there would wrongly kill the
     /// tab performing the revoke too.
     ///
-    /// `DESIGN-API.md` §7: `{"t":"revoked"}` → immediate client logout.
+    /// `{"t":"revoked"}` → immediate client logout.
     /// Sending it does not itself close the socket: the frontend hub reacts
     /// to `revoked` by closing its own connection
     /// (`web/src/lib/state/events.ts`'s `#onMessage`), which is what
@@ -294,7 +294,7 @@ impl WsHub {
     /// Pushes job progress to every connection open for `user` (a job has
     /// one owner but may have zero or several live sockets — one per tab).
     /// `job_status`/`job_cancel` already enforce ownership on the poll path;
-    /// this is the WS-push half of the same job (`DESIGN-API.md` §6/§7).
+    /// this is the WS-push half of the same job.
     pub fn send_job_to_user(&self, user: UserId, job_id: &str, done: u64, total: u64) {
         let conns = self.conns.lock();
         for c in conns.values().filter(|c| c.user == user) {

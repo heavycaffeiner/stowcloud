@@ -15,7 +15,7 @@ pub struct SearchQuery {
     /// Restrict the walk to this virtual path (and below). `None` means
     /// every root the caller can read.
     pub scope: Option<String>,
-    /// Extension-group filter (`kind=image` etc, `DESIGN-API.md` §2) — never
+    /// Extension-group filter (`kind=image` etc.) — never
     /// opens a file to decide.
     pub kind: Option<String>,
     pub mtime_after_ns: Option<i128>,

@@ -180,7 +180,7 @@
   // `Content-Disposition: attachment` bytes -- no CORS/blob juggling needed,
   // since the signed URL is itself the whole authorization story.
   // Multi-selection (and any directory): `POST /api/fs/archive` is always a
-  // durable job now (DESIGN-API.md §6) -- JobTray tracks progress/cancel and
+  // durable job now -- JobTray tracks progress/cancel and
   // offers a download button once the job reports bytes waiting.
 
   async function downloadAsArchive(entries: Entry[]): Promise<void> {
@@ -256,7 +256,7 @@
     browse.clearSelection()
     try {
       const { job } = await api.delete(paths)
-      // Every delete is a durable job now (DESIGN-API.md §6) -- JobTray
+      // Every delete is a durable job now -- JobTray
       // shows progress/cancel. The files aren't actually gone until the job
       // settles, so the refresh waits for that instead of firing now.
       jobTray
@@ -320,7 +320,7 @@
     try {
       const req = { paths, dest, on_conflict: onConflict }
       const { job } = mode === 'move' ? await api.move(req) : await api.copy(req)
-      // Every move/copy is a durable job (DESIGN-API.md §6) -- a per-item
+      // Every move/copy is a durable job -- a per-item
       // conflict/quota failure still ends the job in `error` state
       // (`spawn_batch_job`'s `all_ok` check), so conflict detection happens in
       // `JobFailedError`'s `status.results` once the job actually rejects,

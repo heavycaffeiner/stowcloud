@@ -1,4 +1,4 @@
-//! The middleware stack, `DESIGN-API.md` §9, in the exact documented order.
+//! The middleware stack,, in the exact documented order.
 //!
 //! ```text
 //! 1. RequestId       2. TrustedProxy   3. HostGuard       4. SecurityHeaders
@@ -222,7 +222,7 @@ fn html_script_src_extra() -> &'static str {
     ""
 }
 
-/// `DESIGN-API.md` §9.1 for the app origin; for the
+/// for the app origin; for the
 /// content origin (stricter — `default-src 'none'; sandbox`).
 pub async fn security_headers(req: Request, next: Next) -> Response {
     let origin = req.extensions().get::<HostOrigin>().copied();
@@ -295,7 +295,7 @@ pub async fn security_headers(req: Request, next: Next) -> Response {
 // ---------------------------------------------------------------- 5. RateLimit --
 
 /// Runs *before* Auth so a flood of unauthenticated requests gets `429`
-/// without ever reaching Argon2/session lookups (`DESIGN-API.md` §9 step 5).
+/// without ever reaching Argon2/session lookups ( step 5).
 /// Is this a plain `GET`/`HEAD` for a static file out of the embedded SPA?
 ///
 /// Loading the app fetches several dozen hashed modules and stylesheets in one
@@ -571,7 +571,7 @@ enum RouteScope {
     /// Any authenticated caller may reach this regardless of `scope_perms` —
     /// bookkeeping (job status, the event socket, logout) that carries no
     /// filesystem capability of its own. Re-checked per-path where it
-    /// matters (`ws::ReadPermCheck`, `DESIGN-API.md` §7) independently of
+    /// matters (`ws::ReadPermCheck`) independently of
     /// this gate.
     NoPermsRequired,
     /// Must hold every one of these bits, unless the credential is
@@ -600,7 +600,7 @@ fn path_is_under(path: &str, prefix: &str) -> bool {
 
 /// The per-route table this gate enforces — see `RouteScope`'s doc comment
 /// for the three-way split and why "not listed" isn't the same as
-/// "no restriction". Mirrors `DESIGN-API.md` §2's route list exactly; a
+/// "no restriction". Mirrors's route list exactly; a
 /// route added there needs an entry here too, or it falls to `Unmapped` and
 /// a scope-restricted app password loses access to it (fails closed, not
 /// open — see `RouteScope::Unmapped`).
@@ -726,7 +726,7 @@ fn route_scope(method: &Method, path: &str) -> RouteScope {
 /// rather than relied upon, so a future caller that *does* attach a
 /// restricted `Scope` to a session gets the same enforcement for free.
 ///
-/// Placed after `Csrf` (`DESIGN-API.md` §9 step 9, "AclScope"): it needs
+/// Placed after `Csrf` ( step 9, "AclScope"): it needs
 /// `Auth`'s `Principal` extension and must run before the handler, but has
 /// no opinion about CSRF.
 pub async fn scope_gate(State(state): State<AppState>, req: Request, next: Next) -> Response {
@@ -996,7 +996,7 @@ pub async fn audit_sink(req: Request, next: Next) -> Response {
 
 /// Used by `lib.rs` to build the `tower_http::limit::RequestBodyLimitLayer`
 /// applied to everything *except* `/api/uploads/**`
-/// (`DESIGN-API.md` §9 step 6 /·§8).
+/// ( step 6 /·§8).
 pub fn is_upload_path(path: &str) -> bool {
     path.starts_with("/api/uploads")
 }

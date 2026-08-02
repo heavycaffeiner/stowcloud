@@ -4,7 +4,7 @@
 //! `roots`, `list`, `stat_entry`, `mkdir`, `rename`, `move_entries`,
 //! `copy_entries`, `delete`, `read_text`, `write_text`,
 //! `trash_list/restore/purge`, `aggregate`, and the share/link/job surface),
-//! plus the response DTOs (`DESIGN-API.md` §4.3, §5, §6) `sc-http`
+//! plus the response DTOs (§5, §6) `sc-http`
 //! serializes. `sc-server`'s `CoreBridge` is the real implementation; the
 //! tests in this crate supply small in-memory ones.
 //!
@@ -71,7 +71,7 @@ pub struct SymlinkInfo {
     pub blocked: bool,
 }
 
-/// `DESIGN-API.md` §4.3.
+/// 
 #[derive(Clone, Debug, Serialize)]
 pub struct Entry {
     pub name: String,
@@ -113,7 +113,7 @@ pub enum Order {
     Desc,
 }
 
-/// One page of a directory listing (`DESIGN-API.md` §4.2).
+/// One page of a directory listing.
 #[derive(Clone, Debug, Serialize)]
 pub struct Listing {
     pub listing: String,
@@ -132,7 +132,7 @@ pub enum OnConflict {
     Skip,
 }
 
-/// Per-item batch result (`DESIGN-API.md` §5.1).
+/// Per-item batch result.
 #[derive(Clone, Debug, Serialize)]
 pub struct OpResult {
     pub path: String,
@@ -144,7 +144,7 @@ pub struct OpResult {
 }
 
 /// Result of resolving a virtual path to a concrete `(ShareRoot, SafePath)` —
-/// the single entry point `AclScope` calls (`DESIGN-API.md` §9).
+/// the single entry point `AclScope` calls.
 #[derive(Clone, Debug)]
 pub struct Resolved {
     pub share: ShareId,
@@ -243,7 +243,7 @@ pub struct Aggregate {
     pub total_bytes: u64,
 }
 
-/// One item in the trash (`DESIGN-API.md` §5).
+/// One item in the trash.
 ///
 /// The id is an **opaque string**, not a `FileId`: a trashed entry has no
 /// live fileid to be addressed by — the core names trash items by their own
@@ -540,7 +540,7 @@ impl GrantPatchReq {
 }
 
 // ---------------------------------------------------------------- shares --
-// / `DESIGN-API.md` §2 `/api/shares[/:id]`. The store
+// / `/api/shares[/:id]`. The store
 // itself lives in `sc-core` (`sc_core::LinkStore`) because both this crate and
 // the compatibility layer are translations of the same rows; what is defined
 // here is only the wire shape.
@@ -714,7 +714,7 @@ pub trait CoreApi: Send + Sync {
     ) -> Result<Vec<OpResult>, CoreError> {
         Err(not_wired())
     }
-    /// `DESIGN-API.md` §5.2: inspect a move without mutating anything, so the
+    /// inspect a move without mutating anything, so the
     /// caller can warn "this will copy, not move" (cross-device / cross-share)
     /// before the user commits. A default that answers `not_wired()` rather
     /// than a blanket "no copy needed" is deliberate: a caller that forgets to

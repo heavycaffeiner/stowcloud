@@ -13,7 +13,6 @@ Svelte frontend. Linux / Docker only.
 | [DESIGN-FOOTPRINT.md](DESIGN-FOOTPRINT.md) | 32 GB SSD / 12 TB RAID budget validation, DB size math, immediacy guarantees, HDD mitigations | **Before assuming a resource budget** |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Docker seccomp reality, filesystem matrix, EXDEV, uid/gid, watch backends, Samba sidecar, Cloudflare | Deployment and operations |
 | [DESIGN-AUTH.md](DESIGN-AUTH.md) | Argon2 parameters, sessions, app passwords, TOTP, brute-force defense, audit | Before implementing auth |
-| [DESIGN-API.md](DESIGN-API.md) | Native REST routes, error envelope, listing sessions, WebSocket, middleware stack | API / frontend contract |
 
 ## Five principles, everything else follows from these
 

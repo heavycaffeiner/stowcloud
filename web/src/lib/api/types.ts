@@ -1,4 +1,4 @@
-// web/src/lib/api/types.ts — shapes mirroring DESIGN-API.md.
+// web/src/lib/api/types.ts — shapes mirroring.
 
 export type Kind = 'file' | 'dir' | 'symlink' | 'other'
 
@@ -505,7 +505,7 @@ export interface BatchResult {
   results: BatchItemResult[]
 }
 
-// ── trash (DESIGN-API.md §5, FEATURES.md #18) ──
+// ── trash (FEATURES.md #18) ──
 
 /** One row of `GET /api/trash` (`crates/sc-http/src/core_api.rs::TrashEntry`).
  *  `id` is an opaque string (`"{share}:{uuid}"` — `sc-server/src/bridge.rs`'s
@@ -529,7 +529,7 @@ export interface LinkResponse {
   url: string
 }
 
-// ── share links, owner side (DESIGN-API.md) ──
+// ── share links, owner side ──
 
 /** `POST/PATCH /api/shares[/:id]` request body's `perms` field
  *  (`crates/sc-http/src/core_api.rs::PermsReq`) — every key optional/defaults
@@ -610,7 +610,7 @@ export interface MovePreflight {
   reason: string
 }
 
-// ── long-running jobs (DESIGN-API.md §6) ──
+// ── long-running jobs ──
 
 export type JobState = 'running' | 'done' | 'error' | 'cancelled' | 'interrupted'
 
@@ -658,7 +658,7 @@ export interface JobListResponse {
   jobs: JobStatus[]
 }
 
-// ── live change notifications (`GET /api/events`, DESIGN-API.md §7,
+// ── live change notifications (`GET /api/events`,,
 // `crates/sc-http/src/ws.rs::ServerMsg`/`ClientMsg`) — a WebSocket, not SSE,
 // despite `search/stream` above using SSE for a superficially similar
 // "server pushes named events" shape: this one is bidirectional (the client
