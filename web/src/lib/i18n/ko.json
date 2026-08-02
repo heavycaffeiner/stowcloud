@@ -284,6 +284,7 @@
   "login.sign_with": "{provider}(으)로 로그인",
   "login.sign_with_single_sign": "싱글 사인온으로 로그인",
   "login.sign_your_account": "계정으로 로그인하세요",
+  "login.source": "소스 코드",
   "login.too_many_sign_attempts_try": "로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.",
   "login.username": "아이디",
   "login.verification_code": "인증 코드",

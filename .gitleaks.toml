@@ -1,0 +1,25 @@
+# Scanner policy for the three PKCS#8 blobs under `crates/sc-oidc/src/testdata/`.
+#
+# They are real private keys and they are committed on purpose. `ring` verifies
+# RSA and ECDSA signatures but cannot generate a key pair, so the fake IdP the
+# OIDC tests run against needs key material from somewhere; the alternative is a
+# key-generation dependency in the crate whose whole point is to have as few as
+# possible. `crates/sc-oidc/src/tests/keys.rs` carries the full reasoning, and
+# `#[cfg(test)] mod tests` is the only thing that `include_bytes!`s them — no
+# deployment reads them and nothing outside the test profile links them.
+#
+# Path allowlist rather than a `.gitleaksignore`: that file matches
+# `commit:file:rule:line` fingerprints, so every entry goes stale the moment a
+# commit is amended or rebased. A path survives that.
+#
+# This governs gitleaks only. GitHub's own secret scanning does not read it —
+# its private-key rules look for the PEM `-----BEGIN` armour and these files are
+# raw DER, so they are unlikely to trip it, but if an alert does appear it has
+# to be dismissed in the repository's Security tab.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "OIDC test-only signing keys — see crates/sc-oidc/src/tests/keys.rs"
+paths = ['''crates/sc-oidc/src/testdata/.*\.der$''']

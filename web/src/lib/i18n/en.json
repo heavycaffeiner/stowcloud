@@ -284,6 +284,7 @@
   "login.sign_with": "Sign in with {provider}",
   "login.sign_with_single_sign": "Sign in with single sign-on",
   "login.sign_your_account": "Sign in to your account",
+  "login.source": "Source",
   "login.too_many_sign_attempts_try": "Too many sign-in attempts. Try again in a moment.",
   "login.username": "Username",
   "login.verification_code": "Verification code",

@@ -1906,14 +1906,21 @@ the running UI has to carry a visible route to the source of *the exact build
 they are talking to* — not to this repository, unless this repository is what
 you deployed.
 
-**There is no such link in the UI today**, and adding one is a prerequisite for
-the first non-private deployment, not a nice-to-have. The customary shape is a
-footer line on the login screen — the one page every user of a network service
-sees — reading `AGPL-3.0-or-later · Source`, pointing at a public URL that
-serves the tree the binary was built from.
+That offer is the footer line on the login screen — the one page every user of
+a network service reaches — reading `AGPL-3.0-or-later · Source`. It sits
+outside both `{#if}` branches in `web/src/routes/login/+page.svelte`, so the
+credentials step and the two-factor step both carry it.
 
-`web/src/routes/login/+page.svelte` is the place. Nothing in `web/src` mentions
-the licence at present.
+Its target is `SOURCE_URL`, a constant at the top of that same file, and it
+points at this repository — correct only for a build *of* this repository.
+**A modified deployment has to repoint it at its own source.** Leaving it is
+worse than having no link: the offer then names a tree the service is not
+running.
+
+It is a constant rather than a configuration key on purpose. §13 binds whoever
+modified the Program, and modifying it already means editing and rebuilding
+this tree — a config knob would not remove the need to notice this line, it
+would only move where you fail to notice it.
 
 ### 14.2 Attribution — `THIRD-PARTY-NOTICES.md`
 

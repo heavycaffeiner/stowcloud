@@ -11,6 +11,15 @@
   import Button from '../../lib/ui/Button.svelte'
   import TextField from '../../lib/ui/TextField.svelte'
 
+  // AGPL §13 (docs/DEPLOYMENT.md §14.1): a network service built from modified
+  // source must offer that source to everyone who reaches it, not just to
+  // whoever received the binary. This URL has to serve the tree the running
+  // build came from — **if you modify Stowcloud and run it for anyone but
+  // yourself, repoint this at your own source.** Left as-is, a modified
+  // deployment's offer points at code it is not running, which is worse than
+  // no offer at all.
+  const SOURCE_URL = 'https://github.com/heavycaffeiner/stowcloud'
+
   // Login Flow v2's `returnTo` (`sc-compat-nc::login_flow::LoginFlowService::
   // login_redirect`): an unauthenticated visit to
   // `/index.php/login/v2/flow/<token>` — the URL a compat-protocol mobile app
@@ -203,6 +212,15 @@
     {#if step === 'credentials'}
       <a class="sc-auth-card__setup-link sc-focus-ring" href="/setup">{t('login.first_time_here_create_administrator')}</a>
     {/if}
+
+    <!-- Outside every `{#if}`: this is the one page every user of the service
+         reaches, and the offer has to be there on both steps to count as
+         prominent. The licence identifier is an SPDX string, not prose, so it
+         is not translated. -->
+    <p class="sc-auth-card__licence">
+      AGPL-3.0-or-later ·
+      <a class="sc-focus-ring" href={SOURCE_URL} target="_blank" rel="noreferrer">{t('login.source')}</a>
+    </p>
   </form>
 </div>
 
@@ -289,5 +307,14 @@
   }
   .sc-auth-card__setup-link:hover {
     text-decoration: underline;
+  }
+  .sc-auth-card__licence {
+    margin: 0;
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
+    text-align: center;
+  }
+  .sc-auth-card__licence a {
+    color: inherit;
   }
 </style>

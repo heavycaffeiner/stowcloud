@@ -35,6 +35,12 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Nothing in this workflow writes to the repository — it checks out, builds and
+# runs the gate. Declaring the scope here pins it to that regardless of what the
+# repository's default `GITHUB_TOKEN` permission is set to.
+permissions:
+  contents: read
+
 # A second push to the same branch makes the first run's answer irrelevant.
 # Cancelling it frees the runner instead of queueing behind stale work.
 concurrency:

@@ -32,6 +32,12 @@ on:
       - ".github/workflows/docker.yml"
   workflow_dispatch:
 
+# Both jobs build with `push: false` and never touch a registry, so a read-only
+# token is all they need. Raise this to `packages: write` if these images ever
+# start being published.
+permissions:
+  contents: read
+
 jobs:
   build-amd64-and-smoke:
     name: build (amd64) + run + smoke test

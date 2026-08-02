@@ -34,6 +34,12 @@ on:
     - cron: "0 6 * * 1"
   workflow_dispatch:
 
+# `cargo deny` reads, and `actions/upload-artifact` authenticates with the
+# runner's own artifact token rather than `GITHUB_TOKEN`, so nothing here needs
+# write access to the repository.
+permissions:
+  contents: read
+
 env:
   # 1.88, the same value verify.yml and the Dockerfile's RUST_IMAGE carry.
   # This file was left behind at 1.85 when Cargo.toml's `rust-version` was
