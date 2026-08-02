@@ -504,7 +504,7 @@ Order affects security. Top to bottom, in actual request-processing order:
 5. RateLimit            → per IP. Runs before Auth so a flood gets 429
                           without reaching Argon2/session lookups
 6. BodyLimit            → per route. **Not applied to upload routes**
-                          (no chunk cap, streamed — DESIGN-UPLOAD §1.3/§8)
+                          (no chunk cap, streamed)
 7. Auth                 → cookie/Bearer/Basic (per-path allow matrix)
 8. Csrf                 → state-changing methods, cookie auth only
                           (DESIGN-AUTH.md §3.3)
