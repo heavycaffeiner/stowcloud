@@ -946,7 +946,7 @@ impl hapi::CoreApi for CoreBridge {
     }
 
     fn index_estimate(&self) -> Result<hapi::IndexEstimate, hapi::CoreError> {
-        //: every coefficient is *measured* from a
+        // Every coefficient is *measured* from a
         // sample of the real corpus rather than assumed, because a CJK
         // corpus and a Latin one of the same file count cost very different
         // amounts — the distinct-trigram term is what makes the difference,
@@ -2687,7 +2687,7 @@ impl sc_http::search_api::SearchApi for SearchBridge {
         let tier = self.effective_tier(&roots);
         let rotational = tier == sc_http::search_limits::SearchTier::Slow;
         let matcher = Self::matcher_for(q);
-        //, config-reachable via `[search]` — see
+        // Storage-tier walk deadline, config-reachable via `[search]` — see
         // `SearchBridge::limits` doc comment for why this is the same
         // object the HTTP layer's concurrency cap reads.
         let budget = sc_search::WalkBudget::new(self.limits.walk_deadline(tier));
@@ -2711,7 +2711,7 @@ impl sc_http::search_api::SearchApi for SearchBridge {
             .map(to_search_hit)
             .chain(rx.try_iter().map(to_search_hit))
             .collect();
-        //: ranking is meaningful once the full (or
+        // Ranking is meaningful once the full (or
         // budget-exhausted) result set is in hand, which is exactly the case
         // for the non-streaming endpoint — the streaming one leaves this to
         // the client on purpose (§3.5).

@@ -1,4 +1,4 @@
-// web/src/lib/i18n/index.ts — DESIGN-FRONTEND.md §10.
+// web/src/lib/i18n/index.ts —
 // ko default + en, Intl for dates/relative-time/numbers.
 //
 // A call site names a key (`t('nav.files')`); the Korean and English text

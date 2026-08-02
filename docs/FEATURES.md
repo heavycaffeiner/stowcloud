@@ -54,7 +54,7 @@ shipped.
 20. Atomic replace — same-directory temp file + `renameat2` + parent `fsync`
 21. Ownership/permission/xattr carry-over (on replacing an existing file)
 22. mtime preservation/restore
-23. Optimistic concurrency — `If-Match` required, `412` + conflict-resolution UI. Frontend deliberately has no optimistic UI on top of this (`DESIGN-FRONTEND.md` §4) — a shared folder makes `412` common enough that undoing an optimistic change would be the normal case
+23. Optimistic concurrency — `If-Match` required, `412` + conflict-resolution UI. Frontend deliberately has no optimistic UI on top of this (`proposals/stowcloud-3-frontend.md`) — a shared folder makes `412` common enough that undoing an optimistic change would be the normal case
 24. Streaming ZIP64 download of a multi-selection (unpermitted entries silently excluded + `_skipped.txt`). UI wiring: item 163
 25. Long-running job queue — progress, per-item cancel, WebSocket push. `JobTray.svelte` (mounted in `(app)/+layout.svelte` beside `UploadTray`) shows per-item progress and offers cancel; `web/src/lib/state/job-tray.svelte.ts` drives it through `pollJob`/`jobCancel`
 26. Stable `fileid` — survives rename, derived from `(dev, ino, btime)`
@@ -199,7 +199,7 @@ Management UI (create/list/revoke, all of the above): item 164.
 ## 12. Frontend (14)
 
 135. MD3 tokens — light / dark, from m3-svelte's own palette generation
-     (`DESIGN-FRONTEND.md` §2.1). The build-time generator this item used to
+     (`proposals/stowcloud-3-frontend.md`). The build-time generator this item used to
      describe (`web/tools/gen-tokens.mjs` → `tokens.generated.css`) is gone
      with the hand-rolled component kit it fed. **High contrast is a ✗
      non-goal**, waived by the operator: the two themes already meet the

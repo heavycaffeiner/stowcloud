@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Public share link page — DESIGN-FRONTEND.md §7: a separate, lightweight
+  // Public share link page —: a separate, lightweight
   // bundle. No admin UI, no auth flows, no upload machinery are imported
   // here on purpose, keeping this route's JS well under the 60 KB budget.
   import { t } from '../../../lib/i18n'

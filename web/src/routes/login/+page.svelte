@@ -1,6 +1,6 @@
 <script lang="ts">
   // Top-level route (sibling of `(app)` and `s/[token]`), not inside the
-  // `(app)` group on purpose — DESIGN-FRONTEND.md §7's nav rail/upload tray
+  // `(app)` group on purpose —'s nav rail/upload tray
   // shell has no business existing before the user is authenticated.
   import { t } from '../../lib/i18n'
   import { goto } from '$app/navigation'

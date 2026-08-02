@@ -673,7 +673,7 @@ export type ServerMsg =
 
 export type ClientMsg = { t: 'sub'; paths: string[] } | { t: 'unsub'; paths: string[] } | { t: 'ping' }
 
-// ── text editor (`/edit/[...path]`, DESIGN-FRONTEND.md §7) ──
+// ── text editor (`/edit/[...path]`,) ──
 
 /** `GET /api/fs/read` response shape. No etag on purpose — the server
  *  derives it fresh from `stat` at write time (`AppError::precondition`), so

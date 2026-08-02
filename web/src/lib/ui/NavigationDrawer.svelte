@@ -1,5 +1,5 @@
 <script lang="ts">
-  // NavigationDrawer.svelte — DESIGN-FRONTEND.md §3 names this in the
+  // NavigationDrawer.svelte — names this in the
   // component inventory ("navigation" group) and §3 pairs it with NavigationRail
   // for the ≥905px layout, but nothing built it: the rail listed every
   // granted root directly, which is fine at two grants and wrong by
@@ -31,7 +31,7 @@
     items: DrawerItem[]
     active: string
     onselect: (item: DrawerItem) => void
-    /** MD3 modal vs. standard navigation drawer (DESIGN-FRONTEND.md §3) --
+    /** MD3 modal vs. standard navigation drawer --
      *  same breakpoint signal FileTree.svelte's `overlay` prop reads. */
     overlay?: boolean
     onclose?: () => void

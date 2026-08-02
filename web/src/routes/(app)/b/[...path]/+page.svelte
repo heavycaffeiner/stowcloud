@@ -43,7 +43,7 @@
 
   // `/` is not a directory.: the root a user sees is a
   // projection of their grant list, not a real path — every API path is
-  // `/{label}/...`, and the labels arrive in the session. So `DESIGN-FRONTEND.md`
+  // `/{label}/...`, and the labels arrive in the session. So
   // §7 says `/` redirects to the first root.
   //
   // That was never implemented because the mock answered `list('/')` with the
@@ -126,7 +126,7 @@
   let dragOver = $state(false)
   let searchCancel: (() => void) | null = null
   let shareOpen = $state(false)
-  /** DESIGN-FRONTEND.md §3 component inventory: `FileTree` alongside
+  /** component inventory: `FileTree` alongside
    *  `FileTable`/`FileGrid`. Off by default -- most of the time the
    *  breadcrumb + table is all a user needs, and a 240px side panel is a
    *  real bite out of a phone/tablet width (§3). */

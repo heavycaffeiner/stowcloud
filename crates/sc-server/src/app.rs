@@ -210,7 +210,7 @@ impl App {
                 core: core.clone(),
                 preview,
             });
-        //: shared between `SearchBridge` (picks the
+        // Shared between `SearchBridge` (picks the
         // walk deadline) and `AppState` (acquires the concurrency permit) so
         // the two can never disagree about which tier's numbers apply to a
         // given search — see `SearchBridge::limits`.
@@ -1172,7 +1172,7 @@ fn build_http_state(
             10,
             std::time::Duration::from_secs(3600),
         )),
-        //, config-reachable via `[search]` — shared
+        // Per-user search rate limit, config-reachable via `[search]` — shared
         // with `SettingsBridge` (`App::build`) so a live rate-limit change
         // reconfigures the same bucket this state serves requests through.
         search_rate,

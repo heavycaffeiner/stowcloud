@@ -108,7 +108,7 @@ pub mod embed {
     //! `sc-server` — so the crate (and the real binary) builds before the
     //! frontend exists: `web/build` is `.gitignore`d, so a fresh checkout has
     //! none, and `#[derive(RustEmbed)]` reads this folder at *compile* time.
-    //! `ARCHITECTURE.md` §7 / `DESIGN-FRONTEND.md` §1.
+    //! `ARCHITECTURE.md` §7 /
     //!
     //! The actual mount point is `routes::admin_catch_all` — the router's
     //! single global fallback — not a route of its own; see that function's
@@ -230,7 +230,7 @@ pub mod embed {
         if let Some(file) = Assets::get(rel) {
             return Some(respond(rel, file, headers, method));
         }
-        // SPA fallback (`DESIGN-FRONTEND.md` §1): anything that isn't a real
+        // SPA fallback: anything that isn't a real
         // built asset is a client-routed page — only the app itself, once
         // loaded, knows whether `/b/Documents/Reports` is a real folder, so
         // a deep link has to survive a refresh by getting the same document

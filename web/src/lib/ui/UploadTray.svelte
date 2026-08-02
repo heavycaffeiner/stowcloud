@@ -13,7 +13,7 @@
   const totalActive = $derived(uploadTray.items.filter((i) => i.status === 'uploading' || i.status === 'paused').length)
 
   // --- Screen-reader announcements ------------------------------------------
-  // DESIGN-FRONTEND.md §9 used to list this as a known gap: Snackbar was the
+  // used to list this as a known gap: Snackbar was the
   // only aria-live region in the app and nothing routed uploads to it.
   //
   // Not reused from Snackbar: Snackbar is instantiated per-route (`/b/[...path]`,

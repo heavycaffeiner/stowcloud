@@ -36,7 +36,7 @@ compat-nc = ["dep:sc-compat-nc"]
 # `oidc.disabled` -- which is exactly what a deployment with no IdP sees.
 oidc = ["dep:sc-oidc", "dep:async-trait"]
 # Embeds the built frontend (`web/build`) into the binary and serves it —
-# `ARCHITECTURE.md` §7 / `DESIGN-FRONTEND.md` §1's "single static binary".
+# `ARCHITECTURE.md` §7 /'s "single static binary".
 # Not in `default`: `web/build` is `.gitignore`d, so a fresh checkout has
 # none, and `sc-http`'s `embed-ui` (which this forwards to) embeds that
 # folder's contents at *compile* time via `#[derive(RustEmbed)]` — turning

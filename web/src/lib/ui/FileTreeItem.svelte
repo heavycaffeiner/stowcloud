@@ -4,7 +4,7 @@
   //
   // Deliberately NOT virtualized like FileTable/FileGrid: a directory tree's
   // *expanded* node count is bounded by how much the user has chosen to open,
-  // not by the total file count, so the 100k-row concern DESIGN-FRONTEND.md
+  // not by the total file count, so the 100k-row concern
   // §5/§9 raises for the listing doesn't apply here. Per-node focus is a
   // plain native tab stop for the same reason (a small tree is not the "100k
   // tab stops" case §9 warns about).

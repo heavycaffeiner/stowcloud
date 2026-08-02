@@ -1,7 +1,7 @@
 // web/src/lib/api/share.ts — standalone client for the public share page.
 // Deliberately does NOT import ./client, ./mock, or ./http: those pull in
 // the full fs mock (100k-row generator) and admin-adjacent surface. The
-// public share bundle (DESIGN-FRONTEND.md §7) must stay small and must not
+// public share bundle must stay small and must not
 // ship code the anonymous visitor has no use for.
 //
 // Talks to `GET/POST /s/{token}[...]` — NOT `/api/shares/{id}`. That second

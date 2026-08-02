@@ -1,6 +1,6 @@
 <script lang="ts">
   // FileGrid.svelte — virtual-scrolled thumbnail/icon grid view.
-  // DESIGN-FRONTEND.md §3 lists `FileGrid` alongside `FileTable` in the
+  // lists `FileGrid` alongside `FileTable` in the
   // app-specific component inventory; §5 says the grid view "uses the same
   // technique with a fixed cell size" as the virtualized table. This reuses
   // `computeWindow` (built for 1D rows) by treating each *visual grid row* of
@@ -11,7 +11,7 @@
   // Same accessibility contract as FileTable: one tab stop (`tabindex=0` on
   // the grid container), `aria-activedescendant` tracks the "virtually
   // focused" cell, and per-cell tabindex is intentionally never given
-  // (DESIGN-FRONTEND.md §9 — a 100k-entry directory cannot have 100k tab stops).
+  // ( — a 100k-entry directory cannot have 100k tab stops).
   import { t } from '../i18n'
   import type { Entry } from '../api/client'
   import type { BrowseState } from '../state/browse.svelte'
@@ -398,7 +398,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    /* DESIGN-FRONTEND.md §2.3: truncate filenames from the front so the
+    /*: truncate filenames from the front so the
        extension (the part that disambiguates) survives. */
     direction: rtl;
     text-align: center;

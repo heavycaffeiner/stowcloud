@@ -31,7 +31,7 @@ function detectDrawer(): boolean | null {
 export const uiState = $state({
   theme: detectTheme() as ThemePref,
   drawer: detectDrawer() as boolean | null,
-  /** MD3 window class breakpoint (DESIGN-FRONTEND.md §3): rail vs bar+drawer. */
+  /** MD3 window class breakpoint: rail vs bar+drawer. */
   compact: typeof window !== 'undefined' ? window.innerWidth < 905 : false
 })
 

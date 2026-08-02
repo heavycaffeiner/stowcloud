@@ -392,7 +392,7 @@
   /* Named container so the header can respond to the space it actually has
    * (this section's own width) rather than the viewport — consistent with
    * how FileTable/FileTree already do compact-width layout switches
-   * (DESIGN-FRONTEND.md §3 window-size classes via container queries). */
+   * ( window-size classes via container queries). */
   .sc-user-mgmt {
     container-name: sc-user-mgmt;
     container-type: inline-size;
@@ -404,7 +404,7 @@
     gap: 24px;
     margin-bottom: 16px;
   }
-  /* Compact (<600px, DESIGN-FRONTEND.md §3): a row that fits the button
+  /* Compact (<600px,): a row that fits the button
    * beside 3-4 lines of body text at 1280px does not have to survive at
    * 390px — stack instead of squeezing the hint into a 6-line, half-width
    * column next to the button. */

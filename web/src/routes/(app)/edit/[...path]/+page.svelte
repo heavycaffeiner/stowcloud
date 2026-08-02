@@ -1,5 +1,5 @@
 <script lang="ts">
-  // /edit/[...path] — DESIGN-FRONTEND.md §7: CodeMirror behind a dynamic
+  // /edit/[...path] —: CodeMirror behind a dynamic
   // import (see CodeEditor.svelte), backed by `GET /api/fs/read` (size-capped,
   // `MAX_INLINE_READ` in `crates/sc-server/src/bridge.rs`) and
   // `PUT /api/fs/write` with `If-Match`.

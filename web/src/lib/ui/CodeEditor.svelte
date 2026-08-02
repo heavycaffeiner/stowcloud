@@ -1,8 +1,7 @@
 <script lang="ts">
   // CodeEditor.svelte — CodeMirror 6 wrapper for `/edit/[...path]`.
   //
-  // DESIGN-FRONTEND.md §1/§7: "CodeMirror 6 — dynamically imported, never in
-  // the initial bundle." Every
+  // CodeMirror 6 is dynamically imported, never in the initial bundle. Every
   // `codemirror`/`@codemirror/*` import below is inside `onMount`'s async
   // callback, not at module top level — Vite/Rollup only pulls those chunks
   // in once this component actually mounts (i.e. once the `/edit` route is

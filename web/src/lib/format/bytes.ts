@@ -1,5 +1,5 @@
 // web/src/lib/format/bytes.ts — one unit vocabulary for the whole product:
-// KB/MB/GB, each 1024 of the one below (`DESIGN-FRONTEND.md` §10).
+// KB/MB/GB, each 1024 of the one below.
 //
 // That is the consumer convention (Windows Explorer, macOS pre-10.6, every
 // storage device's own settings screen), not the SI one, and it is the

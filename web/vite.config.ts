@@ -26,9 +26,8 @@ export default defineConfig({
     port: 5173,
     strictPort: false,
     // Dev only. In production the built SPA is embedded in the Rust binary and
-    // served same-origin (`ARCHITECTURE.md` §44, `DESIGN-FRONTEND.md` §1), so
-    // no proxy exists and none should: the app calls `/api` relative and the
-    // server answers it. This exists purely so `vite dev` can reach a
+    // served same-origin, so no proxy exists and none should: the app calls
+    // `/api` relative and the server answers it. This exists purely so `vite dev` can reach a
     // separately-running `sc-server` while keeping those paths same-origin
     // from the browser's point of view — cookies are `__Host-` prefixed and
     // would not survive a cross-origin hop.

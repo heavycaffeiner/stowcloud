@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Admin-only screen — DESIGN-FRONTEND.md §7 requires `/admin/*` to "never
+  // Admin-only screen — requires `/admin/*` to "never
   // load at all" for a non-admin. This thin gate component may still load
   // (route entry itself can't be blocked), so the requirement is kept by
   // wrapping the subcomponents that touch real data in `{#await import(...)}`

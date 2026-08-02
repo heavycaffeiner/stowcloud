@@ -147,8 +147,8 @@ fn rejects_reserved_control_prefixes() {
 
 #[test]
 fn parse_never_panics_on_arbitrary_bytes() {
-    // A cheap stand-in for the cargo-fuzz target described in
-    //: throw a grab-bag of nasty inputs at `parse` and
+    // A cheap stand-in for a cargo-fuzz target: throw a grab-bag of nasty
+    // inputs at `parse` and
     // make sure none of them panic, and that anything which *is* accepted
     // contains no '..' or absolute-path component.
     let long = "a".repeat(10_000);

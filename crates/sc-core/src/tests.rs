@@ -474,8 +474,7 @@ fn listing_pagination_and_name_sort_avoids_full_stat() {
     assert_eq!(listing.entries[0].name, "f0000.txt");
 
     // One stat for the directory itself + one per returned page entry — the
-    // 50 entries beyond the page must never be stat-ed for a name sort
-    //.
+    // 50 entries beyond the page must never be stat-ed for a name sort.
     assert_eq!(stats_used, 1 + 200, "name sort must only stat the returned page, not the whole directory");
 }
 

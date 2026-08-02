@@ -2,7 +2,7 @@
   // True root layout — shared by EVERY route, including /s/[token]. Kept
   // minimal on purpose: global styles + theme init only. Anything heavier
   // (nav rail, upload tray) lives in (app)/+layout.svelte so the public
-  // share bundle never pays for it (DESIGN-FRONTEND.md §7, §8).
+  // share bundle never pays for it (§8).
   import '../app.css'
   // m3-svelte's ripple: one set of document listeners driving every element
   // tagged `.m3-layer`, imported for side effect. It belongs here rather than

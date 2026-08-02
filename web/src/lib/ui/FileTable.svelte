@@ -1,5 +1,5 @@
 <script lang="ts">
-  // FileTable.svelte — virtual-scrolled directory table. DESIGN-FRONTEND.md §5, §9.
+  // FileTable.svelte — virtual-scrolled directory table., §9.
   //
   // Accessibility note: a11y spec asks for a "roving tabindex" so the whole
   // 100k-row grid is a single tab stop. With virtualization, rows that are
@@ -97,7 +97,7 @@
     measure()
   })
 
-  // DESIGN-FRONTEND.md §5: the spacer (and therefore the scrollbar) is sized
+  // The spacer (and therefore the scrollbar) is sized
   // from the directory's *total* row count, not from how many rows happen
   // to be loaded — that is what lets the scrollbar tell the truth (and a
   // drag-to-50% jump land near row 50,000) from the very first render.
@@ -136,7 +136,7 @@
     if (!viewportEl) return
     // Uses the same scale mapping as computeWindow so this stays correct
     // even past the ~15M px threshold where scrollTop no longer addresses
-    // rows 1:1 (DESIGN-FRONTEND.md §5). `rowTop`/`rowBottom` are in this
+    // rows 1:1. `rowTop`/`rowBottom` are in this
     // element's own local scroll coordinates (same as `scrollTop` above);
     // the document scrolls now, so reaching them means scrolling the
     // *window* to `viewportDocumentTop + <local offset>`, not setting
@@ -161,7 +161,7 @@
       browse.toggle(entry)
       return
     }
-    // Compact (<905px, i.e. touch in practice — DESIGN-FRONTEND.md §3): a
+    // Compact (<905px, i.e. touch in practice —): a
     // click/tap has no modifier key available at all, so a plain tap on the
     // row body can't mean "select only this" the way it does with a mouse —
     // that leaves no way to ever open anything by tapping (every mobile file
@@ -311,7 +311,7 @@
        element doesn't have. */
     contain: content;
     background: var(--m3c-surface);
-    /* MD3 window classes (DESIGN-FRONTEND.md §3), queried against this
+    /* MD3 window classes, queried against this
        element's own inline size rather than the viewport. `container-type:
        inline-size` only contains the *inline* axis (width) -- unlike
        `contain: strict`/`size`, it has no opinion on block-size (height),

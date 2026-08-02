@@ -1,5 +1,5 @@
 // web/src/lib/virtual/windowing.ts — pure virtual-scroll windowing maths.
-// DESIGN-FRONTEND.md §5. Kept out of the Svelte component so it is testable
+// Kept out of the Svelte component so it is testable
 // without a DOM and so the maths that must "stay bounded at 100k rows" can
 // be asserted directly.
 
@@ -23,7 +23,7 @@ export interface WindowResult {
 
 /**
  * Browser scroll-height ceilings: Chrome ~33.5M px, Firefox ~17.8M px.
- * Recorded for reference (DESIGN-FRONTEND.md §5) — the mapping itself kicks
+ * Recorded for reference — the mapping itself kicks
  * in earlier, at SCALE_MAPPING_THRESHOLD_PX, so there is headroom below the
  * tighter (Firefox) ceiling even for browsers we haven't measured.
  */
@@ -32,7 +32,7 @@ export const CHROME_SCROLL_HEIGHT_LIMIT_PX = 33_500_000
 
 /**
  * Above this natural height (itemCount * rowHeight), a real spacer element
- * would risk clamping by the browser (DESIGN-FRONTEND.md §5). Past this
+ * would risk clamping by the browser. Past this
  * point we cap the spacer at this height and remap scroll position to row
  * index through a linear scale factor instead of pretending scrollTop can
  * address itemCount * rowHeight px of real scrollable space.

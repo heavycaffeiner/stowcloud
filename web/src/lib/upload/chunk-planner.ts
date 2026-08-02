@@ -1,5 +1,5 @@
 // web/src/lib/upload/chunk-planner.ts — pure upload-chunk planning.
-// DESIGN-FRONTEND.md §6 / DESIGN-UPLOAD.md §1.3, §8.
+// / DESIGN-UPLOAD.md §1.3, §8.
 //
 // Deliberately does not use an IntervalSet: a client only ever resumes from
 // a single contiguous prefix (the value HEAD returns, per DESIGN-UPLOAD.md
@@ -64,7 +64,7 @@ interface TrackedFile extends FileTask {
 
 /**
  * Hands out chunk work across many concurrently-uploading files under a
- * single GLOBAL concurrency cap (DESIGN-FRONTEND.md §6: "parallel by chunk,
+ * single GLOBAL concurrency cap ("parallel by chunk,
  * not by file" — one large file alone still gets full parallelism).
  * Round-robins across files so no single huge file starves the others.
  */

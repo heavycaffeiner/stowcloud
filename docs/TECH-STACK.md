@@ -97,7 +97,7 @@ This is not "off by default"; `sc-search`'s own module doc states it plainly:
 | **Signed URLs** — stateless HMAC-SHA256 (128-bit truncated) | `sc-http` | Zero DB lookups. Bound to the ETag, so it self-invalidates on change |
 | **Single-flight** — per-key `Arc<Mutex>` | Thumbnails, directory ETag | Prevents duplicate concurrent work on the same key |
 | **Debounce/coalesce** — 200 ms | Invalidation, events, audit | Caps write storms during bulk copies |
-| **Virtual scroll** — fixed row-height windowing | `web` | O(viewport). `contain: content` + `translate3d` — not `strict`, which needs a definite size these elements no longer have (`DESIGN-FRONTEND.md` §5) |
+| **Virtual scroll** — fixed row-height windowing | `web` | O(viewport). `contain: content` + `translate3d` — not `strict`, which needs a definite size these elements no longer have (`proposals/stowcloud-3-frontend.md`) |
 | **MD3 color generation** — HCT tonal palette | m3-svelte's `genCSS`, run once by hand | Zero runtime *and* zero build-time dependency: the output is a static table in `app.css` |
 
 ---

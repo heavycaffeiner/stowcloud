@@ -269,7 +269,7 @@ async function shareDelete(id: number): Promise<void> {
   await request(`/shares/${id}`, { method: 'DELETE' })
 }
 
-// ── text editor (`/edit/[...path]`, DESIGN-FRONTEND.md §7) ──
+// ── text editor (`/edit/[...path]`,) ──
 
 async function readFile(path: string): Promise<ReadFileResponse> {
   return request(`/fs/read${qs({ path })}`)

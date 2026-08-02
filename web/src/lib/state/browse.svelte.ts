@@ -1,4 +1,4 @@
-// web/src/lib/state/browse.svelte.ts — DESIGN-FRONTEND.md §4, §5 / DESIGN-API.md §4.2.
+// web/src/lib/state/browse.svelte.ts —, §5 / DESIGN-API.md §4.2.
 // Svelte 5 runes class. No global store library.
 //
 // Rows are addressed by absolute index within the server's sorted listing
@@ -19,7 +19,7 @@ export interface Sort {
 const PAGE_LIMIT = 200
 /** Upper bound on how many rows are ever held in memory at once (task requirement: don't accumulate all 100k rows after a long scroll). */
 const MAX_CACHED_ROWS = 2000
-/** Coalesces rapid scroll events into a single request per "settle" (mirrors the 150ms idle rule DESIGN-FRONTEND.md §5 applies to thumbnails). */
+/** Coalesces rapid scroll events into a single request per "settle" (mirrors the 150ms idle rule applies to thumbnails). */
 const WINDOW_DEBOUNCE_MS = 80
 
 /** Toolbar preferences that outlive the page. Same `sc.`-prefixed
@@ -167,7 +167,7 @@ export class BrowseState {
   /**
    * Requests the window [start, end) be loaded, debounced so a fast scroll
    * (or a single big jump) issues one request per "settle" instead of one
-   * per scroll event — DESIGN-FRONTEND.md §5 / task requirement #2.
+   * per scroll event — / task requirement #2.
    */
   scheduleWindow(start: number, end: number): void {
     this.#pendingRange = { start, end }
@@ -245,7 +245,7 @@ export class BrowseState {
     await this.open(this.path)
   }
 
-  /** DESIGN-FRONTEND.md §4: refresh() preserves scroll position and selection (by name). */
+  /** Re-lists the same path, preserving scroll position and selection (by name). */
   async refresh(): Promise<void> {
     const gen = ++this.#generation
     // deliberately not setting `loading = true` — this is a silent background
@@ -336,7 +336,7 @@ export class BrowseState {
     this.#lru = this.#lru.filter((idx) => this.#rows.has(idx))
   }
 
-  // ── selection (DESIGN-FRONTEND.md §4, §9: kept by name, roving tabindex) ──
+  // ── selection (§9: kept by name, roving tabindex) ──
 
   selectOnly(entry: Entry): void {
     selOnly(this.selection, entry.name)

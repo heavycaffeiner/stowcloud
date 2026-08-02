@@ -1,6 +1,5 @@
-// web/src/lib/upload/directory-picker.ts — directory upload entry points.
-// DESIGN-FRONTEND.md §6: showDirectoryPicker() first, <input webkitdirectory>
-// fallback; drag-drop via getAsFileSystemHandle(), webkitGetAsEntry() fallback.
+// Directory upload entry points: showDirectoryPicker() first, with an
+// <input webkitdirectory> fallback; drag-drop via getAsFileSystemHandle(), webkitGetAsEntry() fallback.
 
 export interface PickedFile {
   file: File

@@ -1,5 +1,5 @@
 // web/src/lib/upload/worker.ts — dedicated upload Worker.
-// DESIGN-FRONTEND.md §6. Slicing + hashing on the main thread would jank the
+// Slicing + hashing on the main thread would jank the
 // virtual-scrolled table, so every byte-pushing step happens here instead.
 import {
   CHUNK_SIZE_DEFAULT,
@@ -13,7 +13,7 @@ import { deleteResumeRecord, getResumeRecord, putResumeRecord, resumeKey } from 
 import { setCsrfToken, UploadHttpError, mockTransport, transport } from './transport'
 
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
-const MAX_INFLIGHT = 4 // global, per-chunk — not per file (DESIGN-FRONTEND.md §6)
+const MAX_INFLIGHT = 4 // global, per-chunk — not per file
 const MAX_RETRIES = 5
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 8000]
 const PROGRESS_HZ_MS = 100 // ≤10 Hz

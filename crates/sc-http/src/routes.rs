@@ -503,7 +503,7 @@ struct RootEntryWire {
 /// (`DESIGN-AUTH.md` §6.3: the login response is thin on purpose, the app
 /// re-fetches this immediately after). Settings screens key their gating and
 /// initial toggle state directly off these fields: `is_admin` decides whether
-/// `/admin/*` even fetches anything (`DESIGN-FRONTEND.md` §7), the rest seed
+/// `/admin/*` even fetches anything, the rest seed
 /// the password/TOTP/SMB sections without a second round trip.
 #[derive(Serialize)]
 struct SessionUserWire {
@@ -647,7 +647,7 @@ async fn auth_session(State(state): State<AppState>, principal: Option<Extension
     .into_response()
 }
 
-/// Shared by every admin-only handler (`DESIGN-FRONTEND.md` §7: `/admin/*`
+/// Shared by every admin-only handler (`/admin/*`
 /// must not even load for a non-admin, and the API has to enforce that too —
 /// a hidden button is not access control). Looks the account up fresh rather
 /// than trusting anything cached on `Principal`, since `Principal` carries
@@ -2888,7 +2888,7 @@ async fn public_link_get(
     // from under it. But that means *this* handler is the only place left
     // that can hand a fresh browser navigation anything to render at all —
     // the fallback will never see this path. Serve the same embedded SPA
-    // document `admin_catch_all` would have (`DESIGN-FRONTEND.md` §7's
+    // document `admin_catch_all` would have ('s
     // separate, lightweight `/s/[token]` bundle; the code-splitting that
     // keeps it small is a build-time property of that bundle, not something
     // this handler needs to know about) — it then calls this very endpoint
@@ -3250,7 +3250,7 @@ async fn search(State(state): State<AppState>, principal: Option<Extension<Princ
     }
     let query = q.into_api();
     let user = principal.user;
-    //: global concurrency cap, split per storage-class
+    // Global concurrency cap, split per storage-class
     // tier — T2 is I/O-heavy enough that unbounded concurrent walks would
     // starve other services sharing the disk, and an HDD-bound walk needs a
     // tighter cap than an NVMe-bound one. `search_tier` is cheap (no tree
@@ -3440,7 +3440,7 @@ async fn admin_storage(State(state): State<AppState>, principal: Option<Extensio
         Ok(p) => p,
         Err(e) => return e.into_response(),
     };
-    // `/admin/*` not loading in the SPA for a non-admin (`DESIGN-FRONTEND.md`
+    // `/admin/*` not loading in the SPA for a non-admin (
     // §7) is a UI nicety, not access control — the route itself has to
     // refuse, or a non-admin curling the API directly would still get the
     // DB/share storage breakdown.
@@ -8391,7 +8391,7 @@ mod tests {
             assert_eq!(json_of(empty).await["error"]["code"], "oidc.invalid_subject");
         }
 
-        /// A hidden button is not access control (`DESIGN-FRONTEND.md` §7),
+        /// A hidden button is not access control,
         /// so every one of the three answers `acl.denied` to a plain account.
         #[tokio::test]
         async fn the_admin_routes_are_closed_to_a_non_admin() {

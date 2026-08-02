@@ -666,7 +666,7 @@ async function archive(paths: string[]): Promise<{ job: string }> {
   return { job: id }
 }
 
-// ── text editor (`/edit/[...path]`, DESIGN-FRONTEND.md §7) ──
+// ── text editor (`/edit/[...path]`,) ──
 
 async function readFile(path: string): Promise<{ content: string }> {
   await delay(20)

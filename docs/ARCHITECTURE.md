@@ -824,7 +824,7 @@ and heights (the nav components are `position: fixed`), `--sc-page-pad` (MD3
 window-class margins, 16/24/32px), and the `.sc-*` utility classes.
 
 Every spacing/size/alignment value still snaps to the 4px grid — enforced on
-literal px by a stylelint plugin (`DESIGN-FRONTEND.md` §2.4), not by a
+literal px by a stylelint plugin (`proposals/stowcloud-3-frontend.md`), not by a
 convention around named variables. Icons 24px, touch targets minimum 48px,
 40px in dense mode.
 

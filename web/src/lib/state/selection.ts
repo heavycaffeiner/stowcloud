@@ -1,5 +1,5 @@
 // web/src/lib/state/selection.ts — pure selection-model logic.
-// DESIGN-FRONTEND.md §4: "selection is kept by name, never index" — so a
+// Selection is kept by name, never by index — so a
 // list refresh never strands the selection on the wrong row. Kept as plain
 // functions over a Set<string> so it is trivially unit-testable and so the
 // app layer can wrap it around a SvelteSet for reactivity (browse.svelte.ts).

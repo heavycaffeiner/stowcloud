@@ -1,5 +1,5 @@
 // web/src/lib/state/upload-tray.svelte.ts — UploadTray state, backed by the
-// dedicated upload Worker (DESIGN-FRONTEND.md §6). Survives route changes
+// dedicated upload Worker. Survives route changes
 // because it is instantiated once at the app root, not per-page.
 import { api } from '../api/client'
 import { bytesToMb } from '../format/bytes'

@@ -26,7 +26,7 @@
   // Rows are intentionally NOT individually focusable — FileTable.svelte owns
   // the single tab stop and roving "virtual focus" via aria-activedescendant
   // (see the comment at the top of FileTable.svelte). Per-row tabindex would
-  // give a 100k-row directory 100k tab stops, which DESIGN-FRONTEND.md §9
+  // give a 100k-row directory 100k tab stops, which
   // calls out explicitly as broken accessibility. The row's click/dblclick/
   // contextmenu handlers are deliberately mouse-only for the same reason;
   // FileTable.svelte's onkeydown covers the equivalent keyboard actions
@@ -153,7 +153,7 @@
     color: var(--m3c-error);
   }
 
-  /* MD3 window class "compact" (<600px, DESIGN-FRONTEND.md §3): the
+  /* MD3 window class "compact" (<600px,): the
      select + size + mtime columns alone already add up to more than a phone
      screen, which otherwise squeezes the name column -- the one thing a
      file browser can't afford to truncate -- down to a handful of pixels.

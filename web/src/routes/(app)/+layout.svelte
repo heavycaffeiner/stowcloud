@@ -1,7 +1,7 @@
 <script lang="ts">
   // (app) route group: the authenticated shell (nav rail/bar + upload tray).
   // Kept OUT of the true root layout so /s/[token] (outside this group)
-  // never pulls this chunk in — DESIGN-FRONTEND.md §7's "separate lightweight
+  // never pulls this chunk in —'s "separate lightweight
   // bundle" for the public share page.
   import { t } from '../../lib/i18n'
   import type { Snippet } from 'svelte'
@@ -36,7 +36,7 @@
   // contents of the *same* place ("Files"). So the fixed nav is now Files +
   // [Admin] + Settings (2-3 items, independent of grant count), and "Files"
   // doesn't navigate anywhere itself -- it opens `NavigationDrawer`
-  // (DESIGN-FRONTEND.md §3 names this component; §3 already pairs it
+  // ( names this component; §3 already pairs it
   // with NavigationRail for ≥905px, which is a strong hint this is where
   // root-switching belongs), which lists the actual roots. That component is
   // where the fix for "every root must stay reachable" lives now -- see its
@@ -254,7 +254,7 @@
        would grow tall enough to contain a long list, on the theory that
        `NavigationBar` could then `position: sticky; bottom: 0` against it.
        That doesn't work and isn't needed: (1) `height: 100%` chains inside
-       (`.sc-browse`, DESIGN-FRONTEND.md §5 machinery) resolve against a
+       (`.sc-browse`, machinery) resolve against a
        *definite* ancestor height -- once the shell's own height became
        content-dependent, every percentage-height descendant lost its
        definite size too (the classic "flex `flex: 1` can't grow into
