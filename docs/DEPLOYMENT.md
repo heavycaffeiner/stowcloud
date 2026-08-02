@@ -408,26 +408,43 @@ SMB off entirely for that account.
 1. `sc-core` writes the `smbpasswd`-format file directly (LM hash marked
    disabled, NT hash only):
    ```
-   alice:1000:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:<32-hex NT hash>:[U          ]:LCT-00000000:
+   alice:1001:XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:<32-hex NT hash>:[U          ]:LCT-00000000:
    ```
    No Samba binary invocation needed, and **plaintext never crosses the
    volume.** File mode `0600`, dedicated volume, sidecar mounts it read-only.
 
-   Field 2 is `smb.service_uid` — the same uid point 3's passwd entries carry,
-   not the account's row id. Samba resolves each line through it, and
-   `pdbedit -i` **imports nothing at all** when it names no passwd entry: exit
-   0, no error, no log line, an empty passdb, and every login answered
-   `NT_STATUS_NO_SUCH_USER`. `export_smbpasswd` wrote the row id until
-   2026-08-03, so any deployment whose ids did not coincide with the service
-   uid could not authenticate a single SMB session — see §12.3.
+   Field 2 is `smb.service_uid + <account row id>` — the uid point 3's passwd
+   entry for that same account carries. Two rules, both enforced by
+   construction because `pdbedit -i` breaks silently under either:
+
+   * **It must match the passwd entry.** Samba resolves the line through this
+     uid, and an import that names no passwd entry writes *nothing*: exit 0,
+     no error, no log line, an empty passdb, every login answered
+     `NT_STATUS_NO_SUCH_USER`.
+   * **It must be unique per account.** `pdbedit -i` matches by uid, not by
+     name, so several names on one uid all import as whichever name
+     `getpwuid` answers with — one entry, for all of them.
 2. The sidecar detects the change, imports with `pdbedit -i
    smbpasswd:/config/smb/smbpasswd -e tdbsam:…`, checks that every name in
    `passwd` actually landed in the passdb (the import's silence is the whole
    problem above), then `smbcontrol all reload-config`.
 3. Samba requires `getpwnam` to succeed, so the sidecar creates `/etc/passwd`
-   entries. **Every SMB user shares one uid** (our service uid) with
-   distinct names; real access control is `valid users` / `read list` /
-   `write list`.
+   entries: **one uid per SMB user** (`smb.service_uid` + row id) on **one
+   shared gid** (`smb.service_gid`).
+
+   The uid is per-account for point 1's second rule, and it costs nothing
+   elsewhere — `force user`/`force group = scsvc` decides what a connection
+   actually writes as, so what a second account uploads still lands
+   `scsvc:scsvc` (measured, not assumed). The gid is shared because §7.3's
+   group ACE on a 0775 share root is checked against the connecting token's
+   group. Real access control remains `valid users` / `read list` /
+   `write list` — neither id grants anything.
+
+   This said "every SMB user shares one uid" until 2026-08-03, which is the
+   model `pdbedit -i` cannot import for more than one account. Pick
+   `smb.service_uid` so that `service_uid + row id` stays clear of the host's
+   real login accounts; the bare-metal agent refuses to sync on a collision
+   rather than let a credential import under someone else's name.
 4. **Password-change propagation**: Argon2 re-hash -> NT hash recompute ->
    `smbpasswd` regenerate -> sidecar import. The regenerate step is the
    running server's own, not an operator's (`DESIGN-AUTH.md` §13.6); §13.7
@@ -1294,6 +1311,21 @@ Proven both ways on a pristine sidecar: the renderer's own output gives an
 empty passdb and no session; the same file with field 2 rewritten to 1000
 gives `admin:1000:` and a working one. That single field was the entire
 difference.
+
+**1b. And aligning both files on the service uid only fixed it for one
+account.** With a second user the render was correct — `admin:1000`,
+`bob:1000`, both in `smb.conf` — and `pdbedit -i` still imported one of them,
+announcing `Importing account for admin...ok` *twice* for the two-line file:
+it resolves a line to an account by **uid**, so two names on one uid are one
+account. §7.2 point 3's "every SMB user shares one uid" was the defect, not
+the deviation from it. Each account now renders on `service_uid + row id` in
+both files; measured on the testbed, that imports both, authenticates both,
+and still lands a second account's uploads as `scsvc:scsvc`, because
+`force user` — not this uid — decides ownership.
+
+The lesson worth keeping: every test here matched a rendered *string*, and one
+account's render is indistinguishable from a correct one. Only a real
+`pdbedit -i` against two accounts showed it.
 
 Why nothing caught it: `sc-auth`'s tests all assert on the NT-hash substring,
 `the_bootstrapped_admin_is_smb_ready_without_a_password_reset` asserted
