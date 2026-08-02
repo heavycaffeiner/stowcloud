@@ -1,0 +1,41 @@
+[package]
+name = "sc-auth"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sc-vfs = { path = "../sc-vfs" }
+
+tokio        = { workspace = true }
+rusqlite     = { workspace = true }
+r2d2         = { workspace = true }
+r2d2_sqlite  = { workspace = true }
+
+argon2        = { workspace = true }
+password-hash = { workspace = true }
+chacha20poly1305 = { workspace = true }
+totp-rs      = { workspace = true }
+zeroize      = { workspace = true }
+subtle       = { workspace = true }
+getrandom    = { workspace = true }
+data-encoding = { workspace = true }
+secrecy      = { workspace = true }
+sha2         = { workspace = true }
+hmac         = { workspace = true }
+md4          = { workspace = true }
+
+lru          = { workspace = true }
+parking_lot  = { workspace = true }
+
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+
+tracing      = { workspace = true }
+thiserror    = { workspace = true }
+anyhow       = { workspace = true }
+
+[dev-dependencies]
+tempfile     = { workspace = true }

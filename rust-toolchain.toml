@@ -1,0 +1,12 @@
+# Pin local builds to the toolchain CI and the Dockerfile use.
+#
+# `.github/workflows/verify.yml` sets RUST_TOOLCHAIN=1.88.0 and the builder
+# image is `rust:1.88-slim-bookworm`; nothing here made a developer's `cargo`
+# agree. A newer host stable then passed `cargo clippy -D warnings` locally
+# while 1.88's clippy rejected the same code in CI
+# (`only_used_in_recursion` on `Ops::delete_recursive`). Move this and the two
+# CI pins together, never one alone.
+[toolchain]
+channel = "1.88.0"
+components = ["clippy"]
+targets = ["x86_64-unknown-linux-musl"]

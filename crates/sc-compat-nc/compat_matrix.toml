@@ -1,0 +1,87 @@
+# Compat version advertised to clients, and the client versions that
+# combination has been verified against.
+#
+# ---------------------------------------------------------------------------
+# WHY NOT THE VERSION OF THE CLONED REFERENCE
+# ---------------------------------------------------------------------------
+# the reference server's `version.php` is master:
+#
+#     $OC_Version       = [35, 0, 0, 1];
+#     $OC_VersionString = '35.0.0 dev';
+#     $OC_Channel       = 'git';
+#
+# We deliberately do NOT claim that. Three reasons:
+#
+#   1. It is not a release. `versionstring` containing " dev" is parsed by the
+#      desktop client's version comparison and by several mobile clients; a
+#      non-numeric suffix puts them on unreleased-server code paths and, in the
+#      desktop client, triggers the "you are running an unsupported server"
+#      banner.
+#   2. Version is the primary feature gate. Every major we claim above what we
+#      implement is a set of endpoints clients will call and we will 404.
+#      Claiming 35 promises four majors of features we have explicitly ruled
+#      out (DESIGN-COMPAT.md §13).
+#   3. Claiming too LOW is equally bad: clients refuse to connect below their
+#      minimum, and older claims disable chunking v2 and bulk-upload probing.
+#
+# ---------------------------------------------------------------------------
+# WHY 31.0.4.1
+# ---------------------------------------------------------------------------
+#   * It is a real, shipped, maintenance release — not a dev build, not a
+#     hypothetical future version.
+#   * It is >= the floor every currently supported client enforces, so no
+#     client refuses the handshake.
+#   * Everything a client gates on at this version is something we actually
+#     implement: chunking v2 upload, OCS v2, Login Flow v2, the `oc:`/`nc:`
+#     PROPFIND vocabulary, share types 0/1/3.
+#   * It is low enough that clients do not probe for the newer surfaces we
+#     have declared non-goals.
+#
+# `productname` MUST stay "Nextcloud": clients branch on it (theming, capability
+# assumptions, and in some clients the decision to speak the NC dialect at all).
+# It is not a place to advertise our identity — /api/capabilities and the
+# `Server:` header do that (DESIGN-COMPAT.md §3).
+#
+# When bumping `claim`, re-run the client integration matrix and update
+# `[verified]`. Do not bump it because upstream released; bump it because a
+# client we care about needs the higher number.
+
+[claim]
+# <major>.<minor>.<patch>.<build> — the 4-element array status.php joins with '.'
+version = "31.0.4.1"
+# The human-readable 3-element string.
+versionstring = "31.0.4"
+edition = ""
+productname = "Nextcloud"
+extended_support = false
+
+# ---------------------------------------------------------------------------
+# WHAT "VERIFIED" MEANS HERE
+# ---------------------------------------------------------------------------
+# Two different claims, kept apart on purpose. `source_audited` means we read
+# that client's own network layer and made our responses match what its code
+# requires. `device_verified` means a real build of that client actually
+# talked to this server and worked.
+#
+# Only the second is evidence. The first has already been wrong once: the
+# desktop-derived implementation emitted `<D:multistatus>`, which is valid XML
+# and correct for every namespace-aware parser, and which made iOS see every
+# directory as empty while reporting success. Reading the source found it;
+# reading the source is also what missed it for months.
+#
+# `device_verified` is empty. Leave it empty until a device has actually run.
+
+[source_audited]
+# Client network layers read directly, at the commit cloned into .ref/.
+desktop = "desktop @ master"
+android = "android-library @ master"   # the network layer, not the app repo
+ios = "iOS SDK @ master"
+
+[device_verified]
+# Nothing yet. See DESIGN-COMPAT.md §15 for the checks that need real
+# hardware: 40 MB chunks through a production proxy, the 302 hop to the
+# content origin returning image bytes, and iOS conditional-request handling.
+desktop = []
+android = []
+ios = []
+rclone = []

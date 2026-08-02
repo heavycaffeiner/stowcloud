@@ -1,0 +1,47 @@
+# Design doc index
+
+A lightweight file-management service on the native filesystem. Rust backend,
+Svelte frontend. Linux / Docker only.
+
+## Reading order
+
+| Doc | Content | When to read it |
+|---|---|---|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Design principles, crate structure, full overview | **First** |
+| [TECH-STACK.md](TECH-STACK.md) | Single reference table: technology, algorithms, crypto primitives, rejected alternatives | Quick lookup |
+| [FEATURES.md](FEATURES.md) | Full feature inventory, each marked shipped / implemented-but-unreachable / non-goal | Scope check |
+| [DESIGN-CORE.md](DESIGN-CORE.md) | VFS API / syscall contract, `SafePath`, ACL evaluation, directory aggregate ETag, concurrency | Before core implementation work |
+| [DESIGN-FOOTPRINT.md](DESIGN-FOOTPRINT.md) | 32 GB SSD / 12 TB RAID budget validation, DB size math, immediacy guarantees, HDD mitigations | **Before assuming a resource budget** |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Docker seccomp reality, filesystem matrix, EXDEV, uid/gid, watch backends, Samba sidecar, Cloudflare | Deployment and operations |
+| [DESIGN-AUTH.md](DESIGN-AUTH.md) | Argon2 parameters, sessions, app passwords, TOTP, brute-force defense, audit | Before implementing auth |
+| [DESIGN-API.md](DESIGN-API.md) | Native REST routes, error envelope, listing sessions, WebSocket, middleware stack | API / frontend contract |
+| [DESIGN-UPLOAD.md](DESIGN-UPLOAD.md) | TUS spec, `IntervalSet`, crash-safe ordering, 413 negotiation, NC chunking mapping | Before upload work |
+| [DESIGN-WEBDAV.md](DESIGN-WEBDAV.md) | RFC 4918 Class 2, XML hardening, streaming PROPFIND, LOCK, client quirks | Before WebDAV work |
+| [DESIGN-COMPAT.md](DESIGN-COMPAT.md) | Isolation contract and CI gate, capabilities, Login Flow v2, `oc:permissions` mapping | Before compat-layer work |
+| [DESIGN-PREVIEW.md](DESIGN-PREVIEW.md) | Content origin, signed URLs, worker-process jail, archive defenses, share links | Before preview/share work |
+| [DESIGN-SEARCH.md](DESIGN-SEARCH.md) | Tiered model, trigram index, ACL post-filtering, existence-leak prevention | Before search work |
+| [DESIGN-FRONTEND.md](DESIGN-FRONTEND.md) | MD3 token generation, 4px grid enforcement, virtual scroll, upload worker, performance budget | Before frontend work |
+
+## Five principles, everything else follows from these
+
+1. **The filesystem is the only source of truth.** The DB is a cache you can
+   delete and rebuild at any time.
+2. **A path is a kernel handle, not a string.** `openat2(RESOLVE_BENEATH)`
+   removes TOCTOU by construction, not by convention.
+3. **A shared folder is not ours.** Jellyfin, `*arr`, rsync, and Samba are
+   assumed to touch the same directory at the same time.
+4. **The compat layer does not invade the core.** Test: *"would this feature
+   need to exist without the compat layer?"* — enforced, not aspirational: see
+   ARCHITECTURE.md §10.1 and the CI gate in `scripts/verify.sh` that greps
+   core crates for `oc:`/`ocs`/`remote.php` and fails the build if it finds
+   any.
+5. **The default is least privilege.** No user homes, no symlinks, SMB off,
+   no inline content rendering.
+
+## Roadmap
+
+See `ARCHITECTURE.md` §14. M1 (core) → M2 (web) → M3 (coexistence) → M4
+(WebDAV) → M5 (compat layer) → M6 (SMB + hardening). All six are
+reachable by a real client. What is still missing is listed there too:
+Litmus conformance in CI, an automated sync-client regression suite,
+and an external security review.

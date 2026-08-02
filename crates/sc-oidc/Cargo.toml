@@ -1,0 +1,77 @@
+[package]
+name = "sc-oidc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "OpenID Connect relying-party core: discovery, JWKS, ID token verification, PKCE/state/nonce, token exchange. See docs/proposals/stowcloud-0-oidc-login.md §4.1."
+
+[features]
+# `net` is ON by default, and that is deliberate even though it is the only
+# thing here that links a TLS stack.
+#
+# The tempting layout is to make it opt-in the way `sc-compat-nc`'s `sqlite`
+# is. It would be wrong: `cargo clippy --all-targets`, this repo's hard gate,
+# only ever compiles what the default feature set turns on, so an off-by-
+# default rustls connector is a connector nobody ever compiles. Section 4.1.1
+# of the proposal makes the same call for `sc-server`'s `oidc` feature and for
+# the same reason.
+#
+# What `--no-default-features` drops is the whole outbound HTTP and TLS stack.
+# What it keeps is everything in this crate that matters to a reviewer: the
+# `HttpFetch` trait, discovery, JWKS, JWS verification, the flow secrets, and
+# the token exchange, all of which talk to the trait and never to hyper.
+default = ["net"]
+net = [
+  "dep:hyper",
+  "dep:hyper-util",
+  "dep:hyper-rustls",
+  "dep:rustls",
+  "dep:webpki-roots",
+  "dep:tower-service",
+  "dep:http",
+  "dep:http-body-util",
+  "dep:bytes",
+  "dep:tokio",
+]
+
+[dependencies]
+# --- always on: the protocol core ---
+async-trait  = { workspace = true }
+url          = { workspace = true }
+# JWS verification only. No `jsonwebtoken`, no `rsa`: the first wraps this
+# crate for no net gain and the second is under RUSTSEC-2023-0071, which
+# `deny.toml`'s empty `[advisories] ignore` is not going to grow an exception
+# for. See proposal §4.1.2.
+ring         = { workspace = true }
+
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+base64       = { workspace = true }
+sha2         = { workspace = true }
+subtle       = { workspace = true }
+getrandom    = { workspace = true }
+secrecy      = { workspace = true }
+
+lru          = { workspace = true }
+parking_lot  = { workspace = true }
+
+tracing      = { workspace = true }
+thiserror    = { workspace = true }
+
+# --- feature = "net": the rustls-backed `HttpFetch` ---
+hyper        = { workspace = true, optional = true }
+hyper-util   = { workspace = true, optional = true }
+hyper-rustls = { workspace = true, optional = true }
+rustls       = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
+tower-service = { workspace = true, optional = true }
+http         = { workspace = true, optional = true }
+http-body-util = { workspace = true, optional = true }
+bytes        = { workspace = true, optional = true }
+tokio        = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Every test in this crate drives an in-process fake `HttpFetch`; the runtime
+# is here to poll those futures, not to open a socket.
+tokio        = { workspace = true, features = ["rt", "macros", "time"] }

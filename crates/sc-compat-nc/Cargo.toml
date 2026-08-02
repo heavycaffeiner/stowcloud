@@ -1,0 +1,61 @@
+[package]
+name = "sc-compat-nc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Compatibility layer for legacy sync clients. Removable in its entirety via feature = \"compat-nc\" in sc-server."
+
+[features]
+# The SQLite-backed `NcStore` is OPT-IN, not default.
+#
+# Rationale (measured, not guessed): `rusqlite/bundled` compiles sqlite3.c via
+# cc-rs, and the mandated `cargo check --target x86_64-unknown-linux-musl` runs
+# build scripts. On the Windows dev box there is no `x86_64-linux-musl-gcc`, so
+# enabling it by default makes the required musl check fail with
+# `error occurred in cc-rs: failed to find tool "x86_64-linux-musl-gcc"`.
+#
+# The crate therefore depends on the `NcStore` *trait* only. `sc-server` turns
+# this feature on for real deployments (Linux, where the C toolchain exists);
+# tests here run against `MemStore` and, when the feature is on, `SqliteStore`.
+default = []
+sqlite = ["dep:rusqlite"]
+
+[dependencies]
+# One-directional by contract (`DESIGN-COMPAT.md` §1): this crate consumes
+# the core crates' public APIs, and no core crate may depend on it.
+# `scripts/verify.sh` enforces both halves.
+sc-vfs    = { path = "../sc-vfs" }
+sc-acl    = { path = "../sc-acl" }
+sc-meta   = { path = "../sc-meta" }
+sc-core   = { path = "../sc-core" }
+sc-upload = { path = "../sc-upload" }
+
+axum         = { workspace = true }
+http         = { workspace = true }
+bytes        = { workspace = true }
+
+serde        = { workspace = true }
+serde_json   = { workspace = true }
+toml         = { workspace = true }
+
+sha2         = { workspace = true }
+hmac         = { workspace = true }
+getrandom    = { workspace = true }
+data-encoding = { workspace = true }
+subtle       = { workspace = true }
+
+bitflags     = { workspace = true }
+parking_lot  = { workspace = true }
+percent-encoding = { workspace = true }
+
+tracing      = { workspace = true }
+thiserror    = { workspace = true }
+
+rusqlite     = { workspace = true, optional = true }
+
+[dev-dependencies]
+tower        = { workspace = true, features = ["util"] }
+http-body-util = { workspace = true }
+tokio        = { workspace = true, features = ["rt", "macros"] }

@@ -1,0 +1,56 @@
+{
+  "name": "sc-web",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "//engines": "jsdom 30 declares `^22.22.2 || ^24.15.0 || >=26.0.0`, so 24.15.0 is a real floor now rather than a preference. CI's NODE_VERSION is \"24\", which setup-node floats to the newest 24.x (24.18.1, the Active LTS), and the Dockerfile pins node:24-alpine — both satisfy it. Stated here so a developer on an older 24.x gets a warning at install time instead of an unexplained vitest failure.",
+  "engines": {
+    "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
+  },
+  "scripts": {
+    "dev": "vite dev",
+    "build": "npm run lint:css && npm run lint:i18n && vite build",
+    "preview": "vite preview",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint:css": "stylelint \"src/**/*.{css,svelte}\"",
+    "lint:i18n": "node tools/i18n-check.mjs",
+    "check:bundle-size": "node tools/check-bundle-size.mjs"
+  },
+  "devDependencies": {
+    "@fontsource-variable/google-sans-flex": "^5.3.0",
+    "@ktibow/material-color-utilities-nightly": "^0.4.1772748028000",
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.70.2",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "@testing-library/svelte": "^5.2.0",
+    "jsdom": "^30.0.1",
+    "postcss": "^8.5.23",
+    "postcss-html": "^1.8.1",
+    "postcss-value-parser": "^4.2.0",
+    "stylelint": "^17.14.1",
+    "svelte": "^5.56.8",
+    "svelte-check": "^4.1.0",
+    "tslib": "^2.8.0",
+    "typescript": "^5.7.0",
+    "vite": "^7.3.6",
+    "vite-plugin-functions-mixins": "^0.4.1",
+    "vitest": "^4.1.10"
+  },
+  "//overrides": "GHSA-pxg6-pf52-xh8x (cookie < 0.7.0 accepts out-of-bounds characters in a name/path/domain). @sveltejs/kit is on ^0.6.0 as of 2.70.2, the latest, with no fixed release — pinning the transitive copy is the only way to clear it. ^0.7.2 rather than 1.x/2.x: 0.7.0 is the fix release and keeps the 0.x API kit was written against.",
+  "overrides": {
+    "cookie": "^0.7.2"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.10.4",
+    "@codemirror/language": "^6.12.4",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/state": "^6.7.1",
+    "@codemirror/view": "^6.43.7",
+    "@ktibow/iconset-material-symbols": "~0.0.1764827375",
+    "codemirror": "^6.0.2",
+    "m3-svelte": "^7.2.0"
+  }
+}

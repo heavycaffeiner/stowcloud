@@ -1,0 +1,20 @@
+/target
+/.ref
+/.vm
+node_modules
+web/.svelte-kit
+web/build
+*.qcow2
+*.log
+.env
+/.smoke
+/.demo
+/.dev
+# Unanchored: the token lands in `<data_dir>/setup-token`, and a data dir is
+# wherever sc.toml points. The root-anchored form missed every dir but one.
+setup-token
+
+# Screenshots and fixtures left behind by browser verification runs.
+# A broad `git add -A` swept four of these into a commit once.
+.tmp-*
+web/.tmp-*

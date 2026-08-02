@@ -1,0 +1,267 @@
+name: docker
+
+# Builds the `sc:core` image and actually runs it — the verification this
+# repo's own dev machine cannot do (no Docker on that Windows box; see the
+# deploy-work report this workflow accompanies). ubuntu-latest runners ship
+# Docker preinstalled, so this is the first place any of this gets proven
+# for real rather than dry-read.
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "Dockerfile"
+      - "Dockerfile.smb"
+      - ".dockerignore"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "web/**"
+      - "deploy/smb/**"
+      - ".github/workflows/docker.yml"
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "Dockerfile.smb"
+      - ".dockerignore"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/**"
+      - "web/**"
+      - "deploy/smb/**"
+      - ".github/workflows/docker.yml"
+  workflow_dispatch:
+
+jobs:
+  build-amd64-and-smoke:
+    name: build (amd64) + run + smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build sc:core (amd64, loaded into local Docker)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: sc:core-ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Report image size against the < 30 MB target (DEPLOYMENT.md §1)
+        run: |
+          docker image inspect sc:core-ci --format '{{.Size}}' | \
+            awk '{printf "sc:core size: %.2f MB\n", $1/1024/1024}'
+          docker history sc:core-ci --no-trunc
+
+      - name: Prepare a throwaway data/secrets dir owned by uid 1000
+        run: |
+          mkdir -p /tmp/sc-data /tmp/sc-secrets
+          sudo chown -R 1000:1000 /tmp/sc-data /tmp/sc-secrets
+
+      - name: Run the container
+        run: |
+          docker run -d --name sc-smoke \
+            --user 1000:1000 \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --read-only --tmpfs /tmp:size=64m \
+            -v /tmp/sc-data:/var/lib/sc \
+            -v /tmp/sc-secrets:/run/sc-secrets \
+            -e SC_DATA_DIR=/var/lib/sc \
+            -e SC_MASTER_KEY_FILE=/run/sc-secrets/master.key \
+            -p 127.0.0.1:8080:8080 \
+            sc:core-ci
+
+      - name: Wait for the server to come up
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
+              echo "up after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "server never became reachable"
+          docker logs sc-smoke || true
+          exit 1
+
+      - name: GET /api/health
+        run: |
+          out=$(curl -fsS http://127.0.0.1:8080/api/health)
+          echo "$out"
+          echo "$out" | grep -q '"status"' || { echo "unexpected /api/health body"; exit 1; }
+
+      - name: GET / serves the SPA document
+        run: |
+          out=$(curl -fsS http://127.0.0.1:8080/)
+          echo "$out" | grep -qi '<html' || { echo "/ did not return an HTML document"; echo "$out"; exit 1; }
+
+      - name: GET /api/setup proves a fresh deployment can bootstrap
+        run: |
+          out=$(curl -fsS http://127.0.0.1:8080/api/setup)
+          echo "$out"
+          echo "$out" | grep -q '"required":true' || { echo "unexpected /api/setup body — a fresh container should report setup required"; exit 1; }
+
+      - name: exec `/sc-server healthcheck` directly (proves it runs with no shell in the image)
+        run: |
+          docker exec sc-smoke /sc-server healthcheck
+          echo "healthcheck subcommand exited 0"
+
+      - name: Wait for Docker's own HEALTHCHECK to report healthy
+        # Proves the Dockerfile's HEALTHCHECK instruction itself, not just
+        # the binary in isolation. A distroless image has no shell and no
+        # curl for an exec-form probe to call, so this is the one part that
+        # can only be proven inside a real container.
+        run: |
+          for i in $(seq 1 60); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' sc-smoke)
+            echo "health status after ${i}s: ${status}"
+            if [ "$status" = "healthy" ]; then exit 0; fi
+            if [ "$status" = "unhealthy" ]; then
+              docker inspect --format='{{json .State.Health}}' sc-smoke
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "container never reported healthy"
+          docker inspect --format='{{json .State.Health}}' sc-smoke
+          exit 1
+
+      - name: Container logs (always, for the record)
+        if: always()
+        run: docker logs sc-smoke || true
+
+      - name: Teardown
+        if: always()
+        run: docker rm -f sc-smoke || true
+
+  build-arm64-check:
+    name: build (arm64, build-only — no runner to execute it on)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+      - name: Build sc:core for linux/arm64
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          # gcr.io/distroless/static-debian12:nonroot, arm64 manifest digest,
+          # verified the same way and the same day as the amd64 one in the
+          # Dockerfile (registry pull, not registry-API-text guess — see its
+          # header comment, including the note that the previous value here
+          # 404'd against the real registry).
+          build-args: |
+            DISTROLESS_DIGEST=sha256:37d3baf4e657ce79c144b69b69f60b8542f366a64fb7a49bd99f5444ef008bb0
+          push: false
+          load: false # QEMU-emulated arm64 can't be `--load`ed and run on an amd64 runner; this validates the build compiles/links, not runtime behavior
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-smb-and-smoke:
+    name: build sc:smb (amd64) + run + smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Build sc:smb (amd64, loaded into local Docker)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile.smb
+          platforms: linux/amd64
+          load: true
+          tags: sc:smb-ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Prepare a fixture /config/smb (only smb.conf — smbpasswd/passwd are optional, entrypoint.sh guards both)
+        run: |
+          mkdir -p /tmp/sc-smbcfg /tmp/sc-shares/photos
+          cat > /tmp/sc-smbcfg/smb.conf <<'EOF'
+          [global]
+             workgroup = WORKGROUP
+             server min protocol = SMB3_11
+             security = user
+
+          [photos]
+             path = /shares/photos
+             read only = no
+             valid users = alice
+          EOF
+
+      - name: Run the container
+        run: |
+          docker run -d --name sc-smb-smoke \
+            --cap-drop ALL \
+            --cap-add NET_BIND_SERVICE --cap-add SETUID --cap-add SETGID \
+            --cap-add NET_ADMIN --cap-add NET_RAW \
+            --security-opt no-new-privileges:true \
+            -v /tmp/sc-smbcfg:/config/smb:ro \
+            -v /tmp/sc-shares/photos:/shares/photos \
+            -p 127.0.0.1:445:445 \
+            sc:smb-ci
+
+      - name: Wait for smbd to accept the fixture config and start listening
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec sc-smb-smoke pgrep -x smbd >/dev/null 2>&1; then
+              echo "smbd running after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "smbd never started"
+          docker logs sc-smb-smoke || true
+          exit 1
+
+      - name: Confirm the fixture config was actually promoted (proves testparm validation + injected logging directive)
+        run: |
+          docker exec sc-smb-smoke cat /etc/samba/smb.conf
+          docker exec sc-smb-smoke grep -q '\[photos\]' /etc/samba/smb.conf
+          docker exec sc-smb-smoke grep -q 'log file = /var/log/samba/log.smbd' /etc/samba/smb.conf
+
+      - name: Port 445 is reachable
+        run: |
+          for i in $(seq 1 15); do
+            if (exec 3<>/dev/tcp/127.0.0.1/445) 2>/dev/null; then
+              exec 3<&- 3>&-
+              echo "445 reachable after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "445 never became reachable"
+          docker logs sc-smb-smoke || true
+          exit 1
+
+      - name: A syntactically broken candidate config is rejected, not promoted
+        # Proves the "validate before promote" contract in entrypoint.sh: a
+        # bad write to the shared volume must not take the running config
+        # down with it. Writes straight to the host side of the bind mount
+        # (/tmp/sc-smbcfg), the same file the container sees at /config/smb
+        # — not `docker cp`, which some Docker versions refuse against a
+        # container path mounted `:ro`.
+        run: |
+          docker exec sc-smb-smoke cat /etc/samba/smb.conf > /tmp/known-good.conf
+          printf '[global\n  this is not valid smb.conf syntax at all\n' > /tmp/sc-smbcfg/smb.conf
+          sleep 3
+          docker exec sc-smb-smoke cat /etc/samba/smb.conf > /tmp/after-broken.conf
+          diff /tmp/known-good.conf /tmp/after-broken.conf
+          echo "active config unchanged after a broken candidate — rejection confirmed"
+
+      - name: Container logs (always, for the record)
+        if: always()
+        run: docker logs sc-smb-smoke || true
+
+      - name: Teardown
+        if: always()
+        run: docker rm -f sc-smb-smoke || true

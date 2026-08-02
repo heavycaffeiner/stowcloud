@@ -1,0 +1,180 @@
+# Reference deployment for `sc:core`, following docs/DEPLOYMENT.md §9/§10
+# with the fixes noted inline below. Read those comments before copying this
+# file verbatim into production — several of them explain a deviation from
+# the doc's literal example and why.
+#
+# The `image:` lines below (`ghcr.io/example/sc:core`/`:smb`) are placeholders
+# for an external self-hoster to replace with their own registry/tag — this
+# project has no registry convention of its own to substitute, and does not
+# push to one. This file is not how this project's own instances are
+# actually run: production is a single `docker run` under systemd and dev is
+# still a bare-metal binary, both in a QEMU guest (DEPLOYMENT.md §12/§12.1).
+#
+# One-time host setup before `docker compose up`:
+#
+#   mkdir -p ./data ./secrets ./shares/photos ./shares/video
+#   chown -R 1000:1000 ./data ./secrets
+#   # ./shares/* ownership is whatever the shared services (Jellyfin, etc.)
+#   # already use — DEPLOYMENT.md §6 forbids `chown -R` on those, on purpose.
+#
+# `./data` and `./secrets` need it because this image cannot chown them
+# itself: distroless has no `chown` binary, there is no root-entrypoint step
+# to run one with, and DEPLOYMENT.md §6.1 forbids `chown -R` on mounted
+# volumes as a matter of policy, not just capability. A Docker *named*
+# volume would be created root-owned by the volume driver and the container
+# — which never runs as root — would fail its first write with EACCES; bind
+# mounts you chown yourself, once, solve that without contradicting either
+# rule.
+
+services:
+  sc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # buildx: --platform linux/amd64,linux/arm64 for both; single-arch
+      # `docker build`/`docker compose build` picks up the host's own arch.
+    image: ghcr.io/example/sc:core # replace with your registry/tag
+    user: "1000:1000"
+    # Share this gid with whatever else already owns /shares/* on the host
+    # (Jellyfin, *arr, rsync, ...) — DEPLOYMENT.md §6.2. Adjust the gid to
+    # match; this is an example, not a fixed requirement.
+    group_add: ["1001"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+      # Only if your Docker is older than 20.10.10 / libseccomp < 2.5 and
+      # openat2/faccessat2 come back EPERM (DEPLOYMENT.md §2) — an updated
+      # seccomp profile has to be supplied and referenced here:
+      # - seccomp=./deploy/seccomp-openat2.json
+    volumes:
+      # DB, thumbnails, sessions — the only path sc-server itself writes to
+      # by default. Bind mount, not a named volume; see the header comment.
+      - ./data:/var/lib/sc
+      # Master key file lives OUTSIDE /var/lib/sc on purpose
+      # (DESIGN-AUTH.md §7.2 point 2 / DEPLOYMENT.md §10 checklist item
+      # "keep the master key in a secret file"): a backup of ./data alone
+      # must not also carry the key that decrypts it. This mount is
+      # read-write, not
+      # Compose's top-level `secrets:` block, even though DEPLOYMENT.md §9's
+      # example uses one — Compose (non-swarm) mounts `secrets:` **read
+      # only** at /run/secrets/<name>, which is fine for a pre-provisioned
+      # key but breaks `masterkey.rs`'s first-run auto-generate-and-write
+      # path (DESIGN-AUTH.md §7.2/§8: generate it when absent and write it
+      # mode 0600). A read-write bind mount to its own directory keeps that
+      # behavior working while still satisfying every rule that actually
+      # matters here: never an env var, never inside the data dir, mode
+      # 0600, not swept into a DB-only backup.
+      #
+      # If you'd rather inject a pre-generated key from a real secrets
+      # manager (Vault, SOPS, swarm/k8s secrets) and never let the container
+      # generate or rewrite it, mount that source read-only instead and
+      # drop the `:rw` — the code path only writes when the file is absent.
+      - ./secrets:/run/sc-secrets
+      # Lowercase `z` (shared SELinux label), never uppercase `Z`
+      # (DEPLOYMENT.md §4 SELinux note) — `Z` would cut off Jellyfin's
+      # access to the same directories. On non-SELinux hosts `:z` is a
+      # harmless no-op.
+      - ./shares/photos:/shares/photos:z
+      - ./shares/video:/shares/video:z
+      # `sc-server smb-sync` (crates/sc-server/src/smb_cmd.rs) writes
+      # smb.conf/smbpasswd/passwd here; the sc-smb sidecar below reads them.
+      # Read-write on this side, read-only on the sidecar's — only sc-core
+      # ever derives NT hashes or renders Samba config (DEPLOYMENT.md §7.1).
+      - sc-smbcfg:/config/smb
+    environment:
+      SC_DATA_DIR: /var/lib/sc
+      SC_MASTER_KEY_FILE: /run/sc-secrets/master.key
+      # Cloudflare's CIDRs as of this writing; keep current, or point this
+      # at your own reverse proxy's CIDR instead (DEPLOYMENT.md §8).
+      SC_TRUSTED_PROXIES: "173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,104.16.0.0/13,104.24.0.0/14,108.162.192.0/18,131.0.72.0/22,141.101.64.0/18,162.158.0.0/15,172.64.0.0/13,188.114.96.0/20,190.93.240.0/20,197.234.240.0/22,198.41.128.0/17"
+      # Config::default() binds 127.0.0.1:8080 — correct for bare metal,
+      # unreachable through Docker's published-port DNAT (which targets the
+      # container's bridge-network interface, not its loopback). This is
+      # also baked into the image's own ENV as a default; repeated here so
+      # it's visible without reading the Dockerfile.
+      SC_BIND: 0.0.0.0:8080
+    ports:
+      - "127.0.0.1:8080:8080" # put a reverse proxy / cloudflared in front
+    stop_grace_period: 30s # upload draining (DEPLOYMENT.md §9)
+    # The admin settings screen's restart button exits 75 after a graceful
+    # shutdown and relies on the supervisor to start the process again
+    # (production gets that from `Restart=on-failure`, DEPLOYMENT.md §12.1).
+    # Compose defaults to `no`, so without this the button stops the server
+    # for good. `unless-stopped` so a deliberate `docker compose stop` sticks.
+    restart: unless-stopped
+    # The image's own Dockerfile HEALTHCHECK already covers this (exec form,
+    # no shell needed: `/sc-server healthcheck` is the same binary,
+    # re-invoked with a different argv[1] — see `crates/sc-server/src/main.rs`
+    # and the Dockerfile's runtime-stage comment). Compose's `healthcheck:`
+    # key is optional here; it's spelled out anyway so `docker compose ps`
+    # shows the same interval/timeout without needing `docker inspect`, and
+    # so overriding it (e.g. a shorter interval in dev) doesn't require
+    # editing the image.
+    healthcheck:
+      test: ["CMD", "/sc-server", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # sc-smb: the Samba sidecar (DEPLOYMENT.md §7/§9, deploy/smb/). Only start
+  # this if `smb.enabled = true` in sc's own config — smbd listening with
+  # nothing in /config/smb yet just means entrypoint.sh's sync_once retry
+  # loop waits, which is harmless but pointless if SMB was never turned on.
+  sc-smb:
+    build:
+      context: .
+      dockerfile: Dockerfile.smb
+    image: ghcr.io/example/sc:smb # replace with your registry/tag
+    volumes:
+      - sc-smbcfg:/config/smb:ro
+      - ./shares/photos:/shares/photos:z
+      - ./shares/video:/shares/video:z
+    cap_drop: ["ALL"]
+    # `cap_drop: ALL` strips capabilities even from root, so smbd (which
+    # runs as root inside this container specifically to bind :445 and then
+    # setuid/setgid per connection to the `force user`/`force group = scsvc`
+    # in generated smb.conf — a different model from sc-core, which never
+    # runs as root at all; see DEPLOYMENT.md §11.3) needs them added back
+    # explicitly:
+    #   NET_BIND_SERVICE — bind a port < 1024
+    #   SETUID/SETGID     — drop from root to scsvc per connection
+    #   NET_ADMIN         — fail2ban's ban action runs `iptables -I ...`
+    #   DAC_READ_SEARCH   — pdbedit/smbd reading a 0600 smbpasswd owned by a
+    #                       different uid (needed once smbd stopped running
+    #                       fully as root for the whole request)
+    # This set was verified 2026-07-31 by an actual run on this exact image:
+    # build+start smbd, a real `smbclient` session doing an authenticated
+    # `put`/`get`/`cmp`/`md5sum` round-trip (bytes matched), and a real
+    # fail2ban ban insertion via `iptables -I`. That run also confirmed
+    # CAP_DAC_OVERRIDE/CAP_CHOWN and NET_RAW are still not needed — Samba's
+    # ACL/xattr/DOS-attribute features are all switched off in generated
+    # smb.conf (`sc-smb/src/conf.rs`). Note the access-denied failures this
+    # was diagnosed from turned out to be caused by the *share directory*
+    # being mode 0755: Samba's ACL synthesis for force-user/write-list shares
+    # checks group match (not owner match) against the connecting token, so
+    # share roots must be 0775 (group-writable) — a Samba behavior, not a
+    # capability, but the root cause of most of the access-denied dead ends
+    # hit while arriving at this cap list.
+    cap_add:
+      - NET_BIND_SERVICE
+      - SETUID
+      - SETGID
+      - NET_ADMIN
+      - DAC_READ_SEARCH
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "192.168.1.10:445:445" # LAN interface only — never 0.0.0.0 (§7.4); validate_bind refuses a public one anyway
+    healthcheck:
+      test: ["CMD-SHELL", "smbd -b >/dev/null 2>&1 && pgrep -x smbd >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  sc-smbcfg: {}

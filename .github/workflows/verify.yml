@@ -1,0 +1,178 @@
+name: verify
+
+# Runs the real gate — `bash scripts/verify.sh` — on both platforms this
+# workspace targets. Each job proves what it can actually prove, and nothing
+# else:
+#
+#   linux  — the deployment platform. This is the only place in the whole
+#            pipeline where the `openat2`/`RESOLVE_BENEATH` VFS backend, the
+#            Landlock and seccomp hardening, and the forked preview jail
+#            *execute* rather than merely type-check. It also cross-checks and
+#            lints the musl target and links the shipping binary.
+#   windows — the mandated development platform. Proves the `portable` VFS
+#            backend, the frontend build, and that a contributor's own machine
+#            can run the gate.
+#
+# The Windows job deliberately does NOT cross-compile to musl any more. It used
+# to, through a `zig cc` shim installed by downloading a zip from ziglang.org
+# and matching a hardcoded SHA-256 — the single most fragile step in the
+# pipeline, and its only coverage was a `cargo check` that the Linux job now
+# does natively, with a real musl-gcc, and then *runs* and *links*. Removing it
+# also halves that job's disk footprint: `cargo clippy --all-targets --target
+# musl` is a second full copy of every crate and every test binary, and
+# windows-latest ships ~14 GB free.
+#
+# What this workflow does not claim: a GitHub-hosted runner's kernel version and
+# available LSMs are whatever the runner image ships this month (Landlock needs
+# CONFIG_SECURITY_LANDLOCK plus the right `lsm=` stacking), and runners are VMs,
+# not containers, so Docker's default seccomp allow-list behaviour
+# (DEPLOYMENT.md §2's EPERM-vs-ENOSYS distinction) is exercised by the `docker`
+# workflow's smoke test, not here.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run's answer irrelevant.
+# Cancelling it frees the runner instead of queueing behind stale work.
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 1.88, matching rust-toolchain.toml, Cargo.toml's rust-version, and the
+  # Dockerfile's RUST_IMAGE. Move all four together, never one alone.
+  RUST_TOOLCHAIN: "1.88.0"
+  # 24, not 22, for the same reason Dockerfile's NODE_IMAGE moved: node 22
+  # bundles npm 10.9.8, which cannot `npm ci` a lockfile npm 11 wrote.
+  NODE_VERSION: "24"
+  # Incremental compilation buys nothing on a runner that starts from an empty
+  # target/ every time, and costs a second copy of every object file.
+  CARGO_INCREMENTAL: "0"
+  # Full debug info is the bulk of target/: measured on this workspace, the
+  # test binaries alone go from 3506 MB to 624 MB without it. `line-tables-only`
+  # keeps what a CI log actually needs — panic locations and symbolized
+  # backtrace frames — and drops the variable/type tables nothing here reads.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+  CARGO_TERM_COLOR: always
+
+jobs:
+  linux:
+    name: verify (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+        run: |
+          rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal -c clippy
+          rustup default "${RUST_TOOLCHAIN}"
+          rustup target add x86_64-unknown-linux-musl
+
+      - name: Install musl cross toolchain
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build frontend
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      # Enforces the byte budgets DESIGN-FRONTEND.md §8 records. Deliberately
+      # no Lighthouse pass (see check-bundle-size.mjs's header): a shared
+      # runner's CPU/IO variance would make a frame-timing gate flaky, and
+      # FEATURES.md #147 only claims what is actually enforced.
+      - name: Check frontend bundle-size budgets
+        run: |
+          cd web
+          npm run check:bundle-size
+
+      # No CC/AR overrides here any more: verify.sh sources
+      # scripts/musl-env.sh, which picks the toolchain by host. That used to be
+      # a committed .cargo/config.toml, which applied its one Windows box's
+      # absolute linker path to this runner too.
+      - name: bash scripts/verify.sh
+        env:
+          # This job installs both the musl toolchain and the frontend, so a
+          # SKIP here would mean the workflow broke, not that they are absent.
+          VERIFY_REQUIRE_MUSL: "1"
+          VERIFY_REQUIRE_UI: "1"
+        run: bash scripts/verify.sh
+
+      # The one thing verify.sh cannot prove. Its musl section stops at `cargo
+      # check`, which type-checks but never runs codegen, LTO, or the linker. So
+      # a real musl link — rustc's self-contained CRT under `lto = "fat"` and
+      # `codegen-units = 1` — happened nowhere in this pipeline except inside
+      # the Dockerfile's builder stage, where a failure surfaces only as
+      # buildx's "exit code: 101" with the rustc error buried in a collapsed
+      # log. This is that same build, standalone, so the error is readable and
+      # the gap closes before Docker sees it.
+      - name: Link the shipping binary (release-dist, musl — the build Dockerfile runs)
+        run: |
+          . scripts/musl-env.sh
+          cargo build --profile release-dist --locked \
+            --target x86_64-unknown-linux-musl \
+            -p sc-server --features embed-ui
+          file target/x86_64-unknown-linux-musl/release-dist/sc-server
+          ls -l target/x86_64-unknown-linux-musl/release-dist/sc-server
+
+      # Runs even when the gate failed: "no space left on device" is otherwise
+      # indistinguishable from a compile error in a collapsed log.
+      - name: Disk
+        if: always()
+        run: df -h / && du -sh target 2>/dev/null || true
+
+  windows:
+    name: verify (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+        shell: bash
+        run: |
+          rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal -c clippy
+          rustup default "${RUST_TOOLCHAIN}"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build frontend
+        shell: bash
+        run: |
+          cd web
+          npm ci
+          npm run build
+
+      - name: Check frontend bundle-size budgets
+        shell: bash
+        run: |
+          cd web
+          npm run check:bundle-size
+
+      # No VERIFY_REQUIRE_MUSL here: the musl steps SKIP on this job by design,
+      # and the Linux job above is what covers them.
+      - name: bash scripts/verify.sh
+        shell: bash
+        env:
+          VERIFY_REQUIRE_UI: "1"
+        run: bash scripts/verify.sh
+
+      - name: Disk
+        if: always()
+        shell: bash
+        run: df -h . && du -sh target 2>/dev/null || true

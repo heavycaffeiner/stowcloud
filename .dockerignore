@@ -1,0 +1,41 @@
+# Keep the build context small and, more importantly, make the image build
+# self-contained: nothing host-built (a stale web/build from a previous
+# `npm run build` on this machine, a host target/ directory, a leftover
+# node_modules with platform-specific native bindings) can leak into what
+# Docker builds. The frontend and the Rust binary are both built fresh
+# inside their own stages every time.
+
+# Rust
+/target
+**/target
+
+# Frontend — rebuilt from source in the `frontend` stage. Critically, this
+# means .env / .env.development are NOT sent to the Docker daemon at all,
+# which is a second, independent reason (beyond Vite's mode system and
+# client.ts's throw-at-load guard) VITE_API_MOCK=1 cannot end up embedded:
+# the file carrying it never leaves the host.
+web/node_modules
+web/.svelte-kit
+web/build
+web/.env
+web/.env.development
+web/.env.*.local
+
+# VCS / editor / OS noise
+.git
+.gitignore
+.gitattributes
+*.log
+
+# Repo-local scratch dirs unrelated to the image (see root .gitignore)
+.demo
+.smoke
+.vm
+.ref
+*.qcow2
+
+# Secrets that must never enter a build context or an image layer
+setup-token
+**/*.key
+**/master.key
+.env

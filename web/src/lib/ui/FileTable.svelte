@@ -1,0 +1,370 @@
+<script lang="ts">
+  // FileTable.svelte — virtual-scrolled directory table. DESIGN-FRONTEND.md §5, §9.
+  //
+  // Accessibility note: a11y spec asks for a "roving tabindex" so the whole
+  // 100k-row grid is a single tab stop. With virtualization, rows that are
+  // scrolled out of view are not in the DOM, so real per-row DOM focus can't
+  // be moved to them ahead of time. The correct adaptation for virtualized
+  // widgets (per WAI-ARIA APG) is: the grid container itself is the one tab
+  // stop (tabindex=0), a `focusedName` cursor tracks the "virtually focused"
+  // row, and `aria-activedescendant` points at that row's id once it is
+  // scrolled into view and rendered. Net effect for the user is identical —
+  // one Tab stop, arrow keys move — with a virtualization-safe mechanism.
+  import { t } from '../i18n'
+  import type { Entry } from '../api/client'
+  import type { BrowseState } from '../state/browse.svelte'
+  import { uiState } from '../state/ui.svelte'
+  import {
+    computeScaleMapping,
+    computeWindow,
+    documentScrollTop,
+    effectiveViewportHeight,
+    rowIndexToScrollTop
+  } from '../virtual/windowing'
+  import FileRow from './FileRow.svelte'
+  import FileRowSkeleton from './FileRowSkeleton.svelte'
+
+  interface Props {
+    browse: BrowseState
+    onopen: (entry: Entry) => void
+    oncontextmenu: (entry: Entry, e: MouseEvent) => void
+    onrename?: () => void
+    ondelete?: () => void
+    onsearchfocus?: () => void
+  }
+
+  let { browse, onopen, oncontextmenu, onrename, ondelete, onsearchfocus }: Props = $props()
+
+  const ROW_HEIGHT = $derived(
+    { compact: 40, comfortable: 48, spacious: 56 }[browse.density]
+  )
+  const OVERSCAN = 8
+
+  // The address bar on a phone only collapses on scroll when *the document*
+  // scrolls -- this component used to be its own `overflow: auto` box (see
+  // the removed `.sc-file-table { overflow: auto }` below) sitting inside a
+  // shell that clipped everything else, so the document's own scrollHeight
+  // never exceeded the viewport and the browser had nothing to react to.
+  // The fix moves the scroll container from this element to the page: the
+  // spacer/window pair below now sit in normal document flow (their height
+  // really does push `document.scrollHeight` taller), and `scrollTop` /
+  // `viewportHeight` -- the only two numbers `computeWindow` ever needed --
+  // are read from `window.scrollY` / the visual viewport instead of from a
+  // `scroll` event on this element. `computeWindow` itself didn't change at
+  // all; only where these two numbers come from did (see windowing.ts's
+  // `documentScrollTop`/`effectiveViewportHeight` doc comments).
+  let viewportEl: HTMLDivElement | undefined = $state()
+  let viewportDocumentTop = $state(0)
+  let scrollTop = $state(0)
+  let viewportH = $state(0)
+
+  // Re-measured on every scroll/resize rather than cached once: content
+  // above the table (search results panel, wrapped breadcrumbs, the
+  // selection bar) can change height without the window itself scrolling or
+  // resizing, which would leave a stale offset behind otherwise. A
+  // `getBoundingClientRect()` read here is cheap next to everything else a
+  // scroll handler already does.
+  function measure(): void {
+    if (!viewportEl) return
+    viewportDocumentTop = viewportEl.getBoundingClientRect().top + window.scrollY
+    scrollTop = documentScrollTop(window.scrollY, viewportDocumentTop)
+    viewportH = effectiveViewportHeight(window.visualViewport?.height, window.innerHeight)
+  }
+
+  $effect(() => {
+    // `visualViewport`'s own `resize` fires while a mobile browser's chrome
+    // is animating open/closed, ahead of (or instead of, on some engines)
+    // `window`'s `resize` -- without listening to it directly the rendered
+    // window would lag a beat behind the true visible height during exactly
+    // the animation this whole change exists to allow.
+    window.addEventListener('scroll', measure, { passive: true })
+    window.addEventListener('resize', measure)
+    window.visualViewport?.addEventListener('resize', measure)
+    return () => {
+      window.removeEventListener('scroll', measure)
+      window.removeEventListener('resize', measure)
+      window.visualViewport?.removeEventListener('resize', measure)
+    }
+  })
+
+  $effect(() => {
+    // Re-measure on mount and whenever the directory changes: content above
+    // this element (breadcrumbs wrapping, the search-results panel, the
+    // selection bar) can change height between folders without the window
+    // itself scrolling or resizing, which would otherwise leave a stale
+    // document-top offset behind until the next real scroll/resize event.
+    browse.path
+    measure()
+  })
+
+  // DESIGN-FRONTEND.md §5: the spacer (and therefore the scrollbar) is sized
+  // from the directory's *total* row count, not from how many rows happen
+  // to be loaded — that is what lets the scrollbar tell the truth (and a
+  // drag-to-50% jump land near row 50,000) from the very first render.
+  const win = $derived(
+    computeWindow({
+      scrollTop,
+      viewportHeight: viewportH,
+      rowHeight: ROW_HEIGHT,
+      itemCount: browse.total,
+      overscan: OVERSCAN
+    })
+  )
+
+  interface Row {
+    index: number
+    entry: Entry | undefined
+  }
+  /** Loaded rows render normally; not-yet-loaded indices render as a FileRowSkeleton placeholder. */
+  const slice = $derived.by((): Row[] => {
+    const out: Row[] = []
+    for (let i = win.start; i < win.end; i++) out.push({ index: i, entry: browse.rowAt(i) })
+    return out
+  })
+
+  function domId(name: string): string {
+    return `sc-row-${encodeURIComponent(name).replace(/%/g, '_')}`
+  }
+
+  $effect(() => {
+    // Fetch the window the user is actually looking at (debounced inside
+    // scheduleWindow), not the next sequential page — task requirement #2.
+    browse.scheduleWindow(win.start, win.end)
+  })
+
+  function scrollRowIntoView(index: number): void {
+    if (!viewportEl) return
+    // Uses the same scale mapping as computeWindow so this stays correct
+    // even past the ~15M px threshold where scrollTop no longer addresses
+    // rows 1:1 (DESIGN-FRONTEND.md §5). `rowTop`/`rowBottom` are in this
+    // element's own local scroll coordinates (same as `scrollTop` above);
+    // the document scrolls now, so reaching them means scrolling the
+    // *window* to `viewportDocumentTop + <local offset>`, not setting
+    // `viewportEl.scrollTop` (which no longer does anything — the element
+    // isn't a scroll container anymore).
+    const mapping = computeScaleMapping(browse.total, ROW_HEIGHT)
+    const rowTop = rowIndexToScrollTop(index, mapping, ROW_HEIGHT)
+    const rowBottom = rowIndexToScrollTop(index + 1, mapping, ROW_HEIGHT)
+    if (rowTop < scrollTop) {
+      window.scrollTo({ top: viewportDocumentTop + rowTop })
+    } else if (rowBottom > scrollTop + viewportH) {
+      window.scrollTo({ top: viewportDocumentTop + rowBottom - viewportH })
+    }
+  }
+
+  function onRowClick(e: MouseEvent, entry: Entry): void {
+    if (e.shiftKey) {
+      browse.selectRangeTo(entry)
+      return
+    }
+    if (e.ctrlKey || e.metaKey) {
+      browse.toggle(entry)
+      return
+    }
+    // Compact (<905px, i.e. touch in practice — DESIGN-FRONTEND.md §3): a
+    // click/tap has no modifier key available at all, so a plain tap on the
+    // row body can't mean "select only this" the way it does with a mouse —
+    // that leaves no way to ever open anything by tapping (every mobile file
+    // browser opens on a plain tap) and no way to grow a selection beyond one
+    // item without the checkbox specifically. Once the checkbox (or a prior
+    // tap) has put the browser into "selection mode" (`selection.size > 0`),
+    // a row tap keeps adding/removing like the checkbox does; with nothing
+    // selected, a tap opens instead — same job `ondblclick` does for a mouse.
+    if (uiState.compact) {
+      if (browse.selection.size > 0) browse.toggle(entry)
+      else onopen(entry)
+      return
+    }
+    browse.selectOnly(entry)
+  }
+
+  function onKeydown(e: KeyboardEvent): void {
+    if (browse.total === 0) return
+
+    switch (e.key) {
+      case 'ArrowDown':
+      case 'ArrowUp': {
+        e.preventDefault()
+        browse.moveFocus(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey)
+        scrollRowIntoView(browse.focusedIndex ?? 0)
+        break
+      }
+      case ' ': {
+        e.preventDefault()
+        if (browse.focusedIndex !== null) {
+          const entry = browse.rowAt(browse.focusedIndex)
+          if (entry) browse.toggle(entry)
+        }
+        break
+      }
+      case 'a':
+      case 'A':
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault()
+          browse.selectAll()
+        }
+        break
+      case 'Enter': {
+        const entry = browse.focusedIndex !== null ? browse.rowAt(browse.focusedIndex) : undefined
+        if (entry) onopen(entry)
+        break
+      }
+      case 'F2':
+        e.preventDefault()
+        onrename?.()
+        break
+      case 'Delete':
+        e.preventDefault()
+        ondelete?.()
+        break
+      case '/':
+        e.preventDefault()
+        onsearchfocus?.()
+        break
+    }
+  }
+
+  const activeDescendant = $derived(
+    browse.focusedName && slice.some((r) => r.entry?.name === browse.focusedName)
+      ? domId(browse.focusedName)
+      : undefined
+  )
+</script>
+
+<div
+  bind:this={viewportEl}
+  class="sc-file-table"
+  class:sc-file-table--reserve-bar={uiState.compact}
+  data-density={browse.density}
+  role="grid"
+  aria-multiselectable="true"
+  aria-rowcount={browse.total}
+  aria-label={t('table.file_list')}
+  aria-activedescendant={activeDescendant}
+  aria-busy={browse.loadingWindow}
+  tabindex="0"
+  onkeydown={onKeydown}
+>
+  {#if browse.total === 0 && !browse.loading}
+    <p class="sc-file-table__empty">{t('common.folder_empty')}</p>
+  {:else}
+    <div class="sc-file-table__spacer" style:height="{win.totalHeight}px">
+      <div class="sc-file-table__window" style:transform="translate3d(0,{win.padTop}px,0)">
+        {#each slice as row (row.entry ? row.entry.name : `sc-ph-${row.index}`)}
+          {#if row.entry}
+            <FileRow
+              entry={row.entry}
+              rowIndex={row.index + 1}
+              selected={browse.selection.has(row.entry.name)}
+              focused={browse.focusedName === row.entry.name}
+              domId={domId(row.entry.name)}
+              onclick={(e) => onRowClick(e, row.entry as Entry)}
+              ondblclick={() => onopen(row.entry as Entry)}
+              oncontextmenu={(e) => {
+                e.preventDefault()
+                oncontextmenu(row.entry as Entry, e)
+              }}
+              ontogglecheck={() => browse.toggle(row.entry as Entry)}
+            />
+          {:else}
+            <FileRowSkeleton rowIndex={row.index + 1} />
+          {/if}
+        {/each}
+      </div>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .sc-file-table {
+    position: relative;
+    flex: 1;
+    /* Flex items default to min-width: auto (shrink-to-fit their content's
+       min-content size). FileRow's fixed-width cells (select/size/mtime)
+       don't shrink, so without this the whole shell is forced wider than
+       the viewport at phone widths instead of scrolling in place. */
+    min-width: 0;
+    /* Was `align-items: stretch` (the flex default) via the ancestor row
+       (`.sc-browse__view`) it sits in, which used to be exactly what we
+       wanted: fill the clipped, viewport-bounded box the old shell handed
+       down. Now that box is content-height, not viewport-height (§ shell
+       comment in +layout.svelte), and stretching to fill it would just mean
+       stretching to fill *itself* -- a job stretch can't do and doesn't
+       need to; the element already sizes to its own content (the spacer
+       below) once it stops being told to match someone else's size. */
+    align-self: flex-start;
+    /* No more `overflow: auto` -- this element was its own scroll
+       container, which is exactly why the document never scrolled and a
+       phone's browser chrome never collapsed (see the doc comment above
+       `viewportEl`/`measure()`). The spacer below now sits in normal
+       document flow instead, so *its* height is what grows
+       `document.scrollHeight`.
+       `contain: strict` (= size + layout + style + paint) required a
+       definite size, which is exactly what this element no longer has --
+       it used to come from the shell's flex-bounded, clipping ancestor,
+       and that ancestor is gone (this is the "move as one change" the
+       handoff note called out: dropping the scroller while keeping the
+       old `contain: strict` would have been an invalid halfway state,
+       since `strict` needs a size nothing here provides anymore).
+       `contain: content` (= layout + style + paint, no `size`) keeps the
+       same layout/paint isolation without claiming a definite size this
+       element doesn't have. */
+    contain: content;
+    background: var(--m3c-surface);
+    /* MD3 window classes (DESIGN-FRONTEND.md §3), queried against this
+       element's own inline size rather than the viewport. `container-type:
+       inline-size` only contains the *inline* axis (width) -- unlike
+       `contain: strict`/`size`, it has no opinion on block-size (height),
+       so it stays correct now that this element's height is auto/content-
+       driven instead of definite. */
+    container-type: inline-size;
+    container-name: sc-file-table;
+  }
+  .sc-file-table:focus-visible {
+    outline: 3px solid var(--m3c-secondary);
+    outline-offset: -3px;
+  }
+  /* `focusedName` is the roving cursor `aria-activedescendant` points at, and
+     it is seeded on the first row -- so FileRow's `--focused` outline drew a
+     3px box around row 1 of every folder before anyone had touched anything.
+     An activedescendant only means something while the grid owns focus, so
+     the indicator only shows then. `:focus`, not `:focus-visible`: clicking a
+     row focuses this container without the heuristic, and the cursor the
+     arrow keys will move from has to be visible from that click on. */
+  .sc-file-table:not(:focus) :global(.sc-row--focused) {
+    outline: none;
+  }
+  .sc-file-table--reserve-bar {
+    /* `NavigationBar` is `position: fixed` (+layout.svelte's own comment
+       explains why `sticky` can't work here), so nothing reserves its
+       ~64px in flow anymore. `.sc-app-shell__main`'s own `padding-bottom`
+       (+layout.svelte) handles that for ordinary bounded-height panes
+       (`/settings`, `/admin`), but this element's real height escapes
+       *past* that ancestor's box entirely (that's the whole point of
+       `align-self: flex-start` + no `overflow: auto` above -- the spacer
+       is real document flow, not clipped inside a viewport-bounded parent),
+       so padding added anywhere upstream of here never reaches the actual
+       tail end of a long list. The reservation has to live on the one
+       element whose own box height genuinely equals "however tall the real
+       content is" -- this one. Same formula as everywhere else the bar's
+       height is reserved, compact (phone) width only -- the standard/rail
+       layout has no bottom bar to clear. */
+    padding-bottom: calc(var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px));
+  }
+  .sc-file-table__window {
+    will-change: transform;
+  }
+  .sc-file-table__empty {
+    /* Was `position: absolute; inset: 0` sized off this element's own box --
+       that box was always exactly the viewport-bounded area before. Now its
+       height is auto/content-driven (see `.sc-file-table` above), so an
+       empty directory would size this element to 0 height and collapse the
+       message with it. A plain in-flow block with its own padding doesn't
+       depend on the parent having a height at all. */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-block: 64px;
+    color: var(--m3c-on-surface-variant);
+  }
+</style>

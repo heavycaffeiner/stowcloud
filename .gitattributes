@@ -1,0 +1,17 @@
+# Line endings are normalised to LF *in the repository*, whatever the working
+# tree holds.
+#
+# This exists because a diff stopped being readable. `crates/sc-http/src/
+# middleware.rs` reported 1540 insertions and 1540 deletions — every line in
+# the file — for a one-line change, because the blob in HEAD is LF and an
+# editor had rewritten the working copy as CRLF. With `core.autocrlf=false`
+# and no attributes, git had no basis to call those the same file. Reviewing
+# such a diff is impossible, and the churn hides real edits inside it: the
+# actual change in that 3080-line diff was a single identifier.
+#
+# 170 of 181 committed `.rs` files were already LF, so LF is the repository's
+# de facto convention and this only writes it down. `text=auto` still lets git
+# detect binaries by content, so no explicit `-text` list is needed; `eol=lf`
+# applies to checkin only in effect here, so a Windows working tree keeps
+# whatever its editors write and nobody has to change their tooling.
+* text=auto eol=lf

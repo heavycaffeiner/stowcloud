@@ -1,0 +1,21 @@
+# DEPLOYMENT.md §7.2 "Brute force": Samba has no rate limiter of its own —
+# auth is handled by smbd, not sc-auth, so this is the only mitigation for
+# repeated bad-password attempts against SMB.
+#
+# Uses `fail2ban-samba-filter.conf` (installed as
+# /etc/fail2ban/filter.d/samba.conf) — checked directly, neither Debian's
+# nor Alpine's fail2ban package ships a `samba` filter of its own, so this
+# jail referenced a nonexistent filter until that file was added: confirmed
+# by running `fail2ban-server` with only this jail file present, which
+# logged "Unable to read the filter 'samba'" and skipped the jail entirely
+# (silently — `entrypoint.sh` already tolerates fail2ban failing outright,
+# so this had never surfaced). Matched against the single-file smbd log
+# `entrypoint.sh` configures (log file = /var/log/samba/log.smbd).
+[samba]
+enabled  = true
+port     = 445
+logpath  = /var/log/samba/log.smbd
+maxretry = 5
+findtime = 10m
+bantime  = 1h
+backend  = auto

@@ -1,0 +1,16 @@
+#!/sbin/openrc-run
+# Alpine/OpenRC counterpart of sc-smb-agent.service.
+name="sc-smb-agent"
+description="Stowcloud native SMB agent (applies sc-server's rendered smb.conf)"
+command="/usr/local/lib/sc/sc-smb-agent.sh"
+command_background="yes"
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/sc-smb-agent.log"
+error_log="/var/log/sc-smb-agent.log"
+
+depend() {
+	need net
+	# Not `need samba`: this agent is what starts samba, once sc-server has
+	# written a config testparm accepts.
+	before samba
+}

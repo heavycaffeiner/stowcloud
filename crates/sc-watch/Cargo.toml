@@ -1,0 +1,29 @@
+[package]
+name = "sc-watch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+description = "Change detection: hot-set watching, debounced invalidation events."
+
+[dependencies]
+sc-core = { path = "../sc-core" }
+sc-vfs  = { path = "../sc-vfs" }
+
+anyhow            = { workspace = true }
+thiserror         = { workspace = true }
+crossbeam-channel = { workspace = true }
+dashmap           = { workspace = true }
+lru               = { workspace = true }
+parking_lot       = { workspace = true }
+notify            = { workspace = true }
+tracing           = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+inotify = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+sc-acl   = { path = "../sc-acl" }
+sc-meta  = { path = "../sc-meta" }

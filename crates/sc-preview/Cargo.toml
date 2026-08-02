@@ -1,0 +1,55 @@
+[package]
+name = "sc-preview"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+sc-vfs = { path = "../sc-vfs" }
+
+# --- images ---
+image        = { workspace = true }
+infer        = { workspace = true }
+
+# --- archives ---
+zip          = { workspace = true }
+
+# --- async / concurrency ---
+tokio        = { workspace = true }
+dashmap      = { workspace = true }
+lru          = { workspace = true }
+parking_lot  = { workspace = true }
+
+# --- serde / encoding ---
+serde        = { workspace = true }
+postcard     = { workspace = true }
+
+# --- misc ---
+bytes        = { workspace = true }
+thiserror    = { workspace = true }
+tracing      = { workspace = true }
+rustix       = { workspace = true }
+uuid         = { workspace = true }
+
+# EXIF orientation reading only (not in workspace.dependencies yet). Pure
+# Rust, no unsafe. We read the `Orientation` tag and nothing else — the rest
+# of the EXIF blob (including any GPS IFD) is discarded by construction: we
+# never forward the source bytes' EXIF chunk to the encoder.
+kamadak-exif = "0.6"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Real Landlock ruleset for the worker jail (see src/worker/jailed/). Only
+# compiled on Linux: the crate itself calls into libc::prctl, which does not
+# exist on non-Linux targets, so it must not be pulled into the Windows dev
+# build at all.
+landlock     = { workspace = true }
+# fork + socketpair + SCM_RIGHTS + the hand-built seccomp-BPF filter. Already
+# a workspace dependency, so the jail adds no new crate to the supply chain
+# of the one code path that feeds attacker-controlled bytes to a decoder —
+# see src/worker/jailed/seccomp.rs for why the filter is not `seccompiler`.
+libc         = { workspace = true }
+
+[dev-dependencies]
+tempfile     = { workspace = true }

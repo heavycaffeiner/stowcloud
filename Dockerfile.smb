@@ -1,0 +1,118 @@
+# syntax=docker/dockerfile:1.7
+#
+# Builds `sc:smb` — the Samba sidecar (`docs/FEATURES.md` item 150,
+# `docs/DEPLOYMENT.md` §7). Consumes the files `sc-server smb-sync`
+# (`crates/sc-server/src/smb_cmd.rs`) writes to a shared `/config/smb`
+# volume; never touches the sc-core image or its binary. This container is
+# the only place in the whole deployment that runs Samba, or needs it.
+#
+# alpine, not distroless: same rationale as the previous debian:12-slim
+# base (`smbd`/`testparm`/`pdbedit` are real OS packages, and Samba's own
+# attack surface — a full SMB3 protocol implementation parsing untrusted
+# network input — is exactly the boundary DEPLOYMENT.md §11.3 draws around
+# `sc-core`'s jail model). Rebased to Alpine 2026-07-30 for image size; every
+# binary this file names (`smbd`, `testparm`, `pdbedit`, `smbcontrol`,
+# `inotifywait`, `fail2ban-server`, `tini`) was confirmed present and working
+# under musl by an actual container run (`docs/DEPLOYMENT.md` §7 verification
+# note), not assumed.
+#
+# 3.24, not 3.20: **v3.20 went end-of-support on 2026-04-01** and dropped to
+# Alpine's "on request" tier, where security fixes happen case-by-case if a
+# patch already exists — no routine updates. That is not a base to run an
+# internet-facing SMB3 parser on. v3.24 (branched 2026-06-09, supported to
+# 2028-06-01) is also the only stable branch still carrying *community*
+# alongside main, which every later branch loses to "main"-only. All nine
+# packages the `apk add` below names were confirmed present in v3.24/x86_64
+# by reading the actual main+community APKINDEX, not assumed: Samba moves
+# 4.19 -> 4.23.8 and is now in `main` rather than community, which lengthens
+# its support window as well.
+#
+# Digests verified 2026-07-31 the same way as the previous base's own digest
+# (anonymous registry-token pull against registry-1.docker.io), image
+# version label 3.24.1:
+ARG ALPINE_DIGEST=sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+FROM alpine:3.24@${ALPINE_DIGEST}
+# Per-arch manifest digests, for building a single platform explicitly
+# rather than letting buildx resolve the index. `ALPINE_DIGEST` above is the
+# amd64 one on purpose — docker.yml builds this file `linux/amd64` only:
+#   index: sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+#   amd64: sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+#   arm64: sha256:e7a1a92a5bfeee40966aea60f0796b0e7917cc35591542701834f03a68fa3d18
+
+# `samba-server` (smbd/nmbd) + `samba-common-tools` (testparm/pdbedit/
+# smbcontrol) + `samba-client` (smbclient, used only by operators debugging
+# inside the container, not by entrypoint.sh) replace Debian's single
+# `samba`/`samba-common-bin` split — Alpine packages the same upstream Samba
+# (4.23.8 on v3.24) more finely, nothing is missing.
+#
+# `bash`: entrypoint.sh is unmodified bash (`local`, `set -o pipefail`) —
+# Alpine's default shell is busybox `ash`, which has no `pipefail` at all
+# (`set -o pipefail` errors out immediately under ash, before `set -e` even
+# takes effect, confirmed by an actual run). Porting a script whose job is
+# gating a root-owned samba config swap onto a shell with weaker error
+# semantics, to save one package, was judged not worth the risk. `bash` is
+# ~5 MB.
+#
+# `shadow`: gives `groupadd`/`useradd` the same flags this file already used
+# under Debian; busybox's own `addgroup`/`adduser` take different flags.
+#
+# `iptables`: fail2ban's ban action needs it (see docker-compose.yml's
+# `cap_add` comment for which capability that costs).
+RUN apk add --no-cache \
+       samba-server samba-common-tools samba-client \
+       inotify-tools fail2ban tini iptables shadow bash \
+    && rm -rf /var/cache/apk/*
+
+# `force user`/`force group = scsvc` in the generated smb.conf
+# (`crates/sc-smb/src/conf.rs`) requires this exact name at this exact
+# uid/gid to exist — `Config::smb_service_uid`/`smb_service_gid` in
+# `crates/sc-server/src/config.rs` both default to 1000. All SMB
+# connections run as this one Unix identity; real per-user access control
+# is `valid users`/`read list`/`write list` in smb.conf, never Unix
+# permissions (module doc, `sc-smb/src/lib.rs`).
+#
+# `/sbin/nologin`, not `/usr/sbin/nologin`: Alpine ships the login-refusal
+# shell at a different path than Debian (confirmed by an actual run —
+# useradd only *warns* if given a shell that doesn't exist, it doesn't fail,
+# so this was a silent miss until checked, not a build error).
+RUN groupadd -g 1000 scsvc \
+    && useradd -u 1000 -g 1000 -M -s /sbin/nologin -d /nonexistent scsvc
+
+# Snapshot of a base /etc/passwd (root + scsvc + system accounts, no SMB
+# users yet) that entrypoint.sh restores from on every sync, so a user
+# removed from sc-core's registry actually disappears from getpwnam instead
+# of accumulating as a stale entry forever.
+RUN cp /etc/passwd /etc/passwd.base
+
+COPY deploy/smb/entrypoint.sh /entrypoint.sh
+COPY deploy/smb/fail2ban-samba.local /etc/fail2ban/jail.d/samba.local
+COPY deploy/smb/fail2ban-samba-filter.conf /etc/fail2ban/filter.d/samba.conf
+RUN chmod 755 /entrypoint.sh
+
+# Alpine's fail2ban package ships `jail.d/alpine-ssh.conf` with the `[sshd]`
+# jail pre-enabled — a Debian install never shipped this, so it was never hit
+# before the rebase. This container never runs sshd, so that jail's `logpath`
+# points nowhere; `fail2ban-server -b` treats that as a hard config error for
+# the whole daemon (not just that one jail) and refuses to start at all,
+# confirmed by an actual run: `fail2ban.boot.log` showed "Have not found any
+# log file for sshd jail" / "Async configuration of server failed", silently
+# taking the *samba* jail down with it (entrypoint.sh already tolerates
+# fail2ban failing outright, so this had no visible symptom besides the boot
+# log until checked). Removing the file this container has no use for is
+# simpler and more certain than trying to override `enabled` for a jail that
+# was never wanted here.
+RUN rm -f /etc/fail2ban/jail.d/alpine-ssh.conf
+
+EXPOSE 445
+
+# `smbd -b` prints the compiled-in paths/options and exits 0 iff the binary
+# itself is sane; it does not need a config file to be valid, which matters
+# because a fresh sidecar can legitimately have no accepted config yet
+# (entrypoint.sh's `sync_once` retry loop) — a probe that required a
+# listening socket would report unhealthy for that entire legitimate
+# startup window. `pgrep` is busybox's own applet here (no separate
+# `procps` package needed — confirmed present in the base image).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD smbd -b >/dev/null 2>&1 && pgrep -x smbd >/dev/null
+
+ENTRYPOINT ["/sbin/tini", "--", "/entrypoint.sh"]
