@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install sc-smb-agent on a bare-metal host (DEPLOYMENT.md §7.5).
+# Install sc-smb-agent on a bare-metal host.
 #
 # Installs the agent and its init file, and nothing else: it does not install
 # samba, create the service account, or turn SMB on. Those are the operator's

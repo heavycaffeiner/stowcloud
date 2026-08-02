@@ -1,5 +1,5 @@
 #!/bin/bash
-# `sc:smb` sidecar entrypoint (DEPLOYMENT.md §7.1/§7.2).
+# `sc:smb` sidecar entrypoint.
 #
 # Runs as PID 1's child under tini. Responsibilities, in order:
 #   1. Wait for sc-core to have written a config (`sc-server smb-sync` is an
@@ -7,10 +7,9 @@
 #      its own — crates/sc-server/src/lib.rs — so on a fresh deployment this
 #      directory can be empty for a while).
 #   2. Validate every candidate with `testparm -s` before it ever reaches
-#      smbd; a rejected candidate leaves the previous good config running
-#      (DEPLOYMENT.md §7.3, last line).
+#      smbd; a rejected candidate leaves the previous good config running.
 #   3. Import the passdb and rebuild /etc/passwd so `getpwnam` succeeds for
-#      every SMB user (§7.2 passdb sync).
+#      every SMB user.
 #   4. Watch the shared config volume and re-run 1-3 on every change,
 #      reloading smbd without restarting it.
 set -euo pipefail
@@ -123,8 +122,7 @@ done
 # just this jail), even though the exact same path exists moments later once
 # smbd has opened it. Not fatal if fail2ban still fails to start for some
 # other reason (e.g. NET_ADMIN not granted to the container) — SMB itself
-# still has to work, brute-force mitigation is defense in depth on top of it
-# (DEPLOYMENT.md §7.2 "Brute force").
+# still has to work; brute-force mitigation is defense in depth on top of it.
 touch /var/log/samba/log.smbd
 # `--logtarget=syslog` was wrong for this container: there is no syslog
 # daemon here (no `/dev/log`), confirmed by an actual run — fail2ban-server

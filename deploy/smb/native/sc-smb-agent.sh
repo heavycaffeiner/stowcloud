@@ -1,6 +1,5 @@
 #!/bin/sh
-# sc-smb-agent -- the bare-metal twin of deploy/smb/entrypoint.sh
-# (DEPLOYMENT.md §7.5).
+# sc-smb-agent -- the bare-metal twin of deploy/smb/entrypoint.sh.
 #
 # Same contract as the sidecar: sc-server writes smb.conf/smbpasswd/passwd
 # into a shared directory, something privileged picks them up, validates them
@@ -14,7 +13,7 @@
 #     Alpine and a minimal Rocky both work without an extra package.
 #   - no shadow-utils: /etc/passwd is reconciled directly rather than through
 #     useradd, because busybox adduser cannot create the several accounts
-#     that must share one uid (§7.2 passdb sync point 3), having no -o.
+#     that must share one uid, having no -o.
 set -eu
 
 CONFIG_DIR="${SC_SMB_CONFIG_DIR:-/var/lib/sc/smbcfg}"
@@ -203,7 +202,7 @@ sync_once() {
     inject_logging "$src" > "$candidate"
 
     # Validate before it can reach smbd; a rejected candidate leaves the
-    # running config alone (DEPLOYMENT.md §7.3, last line).
+    # running config alone.
     if ! testparm -s "$candidate" > "$STATE_DIR/testparm.out" 2>&1; then
         log "rejected candidate smb.conf, keeping the previous config:"
         cat "$STATE_DIR/testparm.out" >&2

@@ -1,4 +1,4 @@
-# DEPLOYMENT.md §7.2 "Brute force": Samba has no rate limiter of its own —
+# "Brute force": Samba has no rate limiter of its own —
 # auth is handled by smbd, not sc-auth, so this is the only mitigation for
 # repeated bad-password attempts against SMB.
 #

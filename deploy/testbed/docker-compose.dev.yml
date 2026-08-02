@@ -12,8 +12,8 @@
 #   chmod 0775 shares/photos shares/video
 #
 # `SC_SMB_BIND_IP` must be set (an `.env` beside this file is enough): it is
-# the host's own LAN address. 0.0.0.0 is refused for :445 (DEPLOYMENT.md §7.4)
-# and 127.0.0.1 would put SMB out of reach of every client but this host.
+# the host's own LAN address. 0.0.0.0 is refused for :445, and 127.0.0.1
+# would put SMB out of reach of every client but this host.
 
 name: sc-lab
 
