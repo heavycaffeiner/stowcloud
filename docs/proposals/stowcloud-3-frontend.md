@@ -259,5 +259,5 @@ Not a section the template asks for, and here because §3.1 makes it a goal.
 - `web/src/lib/virtual/windowing.ts`, `web/src/lib/state/browse.svelte.ts`
 - `web/src/lib/upload/worker.ts`, `web/src/lib/i18n/`
 - `web/tools/{stylelint-four-px.cjs, check-bundle-size.mjs, i18n-check.mjs}`
-- `stowcloud-4-api.md` (the routes this consumes),
-  `stowcloud-5-upload.md` (the protocol the worker speaks)
+- `stowcloud-9-api.md` (the routes this consumes),
+  `stowcloud-7-upload.md` (the protocol the worker speaks)

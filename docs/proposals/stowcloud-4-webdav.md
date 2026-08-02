@@ -50,8 +50,9 @@ the product. `/dav-uploads` is the same capability, compiled unconditionally.
 
 ### 3.2 Non-Goals
 
-- [ ] `REPORT`. Out of scope for the core; the vendor search REPORT lives in
-      the compat layer.
+- [ ] `REPORT`. Out of scope for the core — and not present in the compat
+      layer either, so no client has WebDAV search
+      (`stowcloud-8-compat.md` §7). Only the native `GET /api/search` works.
 - [ ] Multi-range `GET`. Unused by media clients; a multi-range request gets
       the whole body as `200`, which the RFC permits.
 - [ ] Depth-infinity PROPFIND by default. Unbounded on a million-file tree it
@@ -266,5 +267,5 @@ Interoperability is what this table decides, and every row is pinned by a test.
 - `crates/sc-dav/`, `crates/sc-server/src/dav_uploads.rs`
 - RFC 4918 (Class 2), RFC 4331 (quota)
 - `stowcloud-2-core-vfs.md` (the atomic write path and `SafePath` Unicode
-  handling), `stowcloud-5-upload.md` (the spool this shares),
-  `stowcloud-7-compat-nc.md` (the decorator on top)
+  handling), `stowcloud-7-upload.md` (the spool this shares),
+  `stowcloud-8-compat.md` (the decorator on top)

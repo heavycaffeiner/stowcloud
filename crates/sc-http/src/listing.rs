@@ -93,7 +93,8 @@ struct PerUser {
     order: std::collections::VecDeque<String>,
 }
 
-/// `LISTINGS` from, plus the per-user cap it specifies.
+/// The `LISTINGS` cache: sorted name vectors keyed by listing id, under a
+/// per-user cap so paging cannot be used to exhaust memory.
 pub struct ListingCache {
     sessions: Mutex<LruCache<String, ListingSession>>,
     per_user: Mutex<std::collections::HashMap<u32, PerUser>>,

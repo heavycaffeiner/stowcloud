@@ -328,7 +328,8 @@ stale row; one bad passdb entry must not take SMB down for everyone else.
 ## 7. References
 
 - `proposals/stowcloud-13-deployment.md` — the operational contract this specifies
-- `proposals/stowcloud-10-auth.md`, §13.6, §13.7 — NT-hash derivation and revocation
+- `stowcloud-10-auth.md` — NT-hash derivation, and what a linked identity
+  does to it
 - `stowcloud-12-architecture.md` — where the LAN-only premise sits among
   the five principles
 - `crates/sc-smb/`, `crates/sc-server/src/smb_cmd.rs`, `deploy/smb/`

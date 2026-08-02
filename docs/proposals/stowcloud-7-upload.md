@@ -23,15 +23,16 @@ server under-report what it holds; the reverse order is silent data corruption.
 
 ### 2.1 What the reference implementation does, measured
 
-The legacy desktop client starts at a 100 MiB chunk and adjusts dynamically
+The legacy desktop client starts at a 100 MB chunk and adjusts dynamically
 between 5 MB and 5 GB, aiming at a one-minute transfer per chunk, six requests
-in parallel. Its protocol says chunks are named 1–10000, assembled in name
+in parallel — its numbers, in its own units (§2.2). Its protocol says chunks
+are named 1–10000, assembled in name
 order, and sessions expire after 24 h of inactivity.
 
 Two problems follow directly:
 
 - **The first chunk 413s at the CDN.** A server can advertise a smaller
-  maximum and the client still will not always honour it, and a 100 MiB
+  maximum and the client still will not always honour it, and a 100 MB
   request never reaches us anyway — the CDN answers its own 413 first. So
   advertisement plus documentation is the first line of defence, and
   *returning a spec-correct 413 to drive the client's own auto-adjust is
@@ -40,7 +41,14 @@ Two problems follow directly:
   size means a chunk's name does not give its offset, so something has to
   assemble in name order — §4.6.
 
-### 2.2 Why a fixed chunk size
+### 2.2 A note on units
+
+Sizes in this proposal follow the product's own vocabulary — KB/MB/GB, each
+1024 of the one below (`stowcloud-3-frontend.md` §4.7). That is what the
+admin's chunk-size field takes and what the UI prints back, so the two agree.
+The reference client's figures above are its own, and decimal.
+
+### 2.3 Why a fixed chunk size
 
 The server streams a chunk straight to disk: the body flows through a reused
 256 KiB buffer into `pwrite`, and nothing buffers a whole chunk anywhere.
@@ -201,7 +209,7 @@ session that can never verify.
 | 422 | malformed metadata, an under-floor chunk that is not the last, or an offset past the declared length |
 | 507 | session count, reserved bytes, or free-space margin |
 
-A 5 MiB floor is enforced, exempting the last chunk and any file smaller than
+A 5 MB floor is enforced, exempting the last chunk and any file smaller than
 it. Below that, per-chunk overhead swamps transfer: a 100 KiB chunk against a
 10 GB file is 100,000 round trips, each costing a session load, a DB commit
 and an fd lookup.

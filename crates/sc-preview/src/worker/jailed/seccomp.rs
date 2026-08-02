@@ -112,10 +112,9 @@ mod filter {
         libc::sock_filter { code, jt, jf, k }
     }
 
-    /// The allow-list from, plus `recvmsg`/`sendmsg`
-    /// (the design doc's pseudo-code omits them, but they are how the worker
-    /// receives its job and its fds in the first place — without them the
-    /// worker cannot take a single job).
+    /// The allow-list. `recvmsg`/`sendmsg` are on it because they are how the
+    /// worker receives its job and its fds in the first place — without them
+    /// the worker cannot take a single job.
     ///
     /// Deliberately absent, and worth naming because each is a proof
     /// obligation the jail discharges: `openat` (no files by name, ever),
@@ -126,8 +125,8 @@ mod filter {
     /// `read(2)` loop instead of `Read::read_to_end`: std's `File`
     /// specialization of `read_to_end` sizes the buffer via `File::metadata`,
     /// which on a modern kernel issues `statx`, which this filter kills.
-    /// Keeping the list identical to the design doc was worth the four extra
-    /// lines in the worker loop.
+    /// Keeping the list this short was worth the four extra lines in the
+    /// worker loop.
     fn allowed_syscalls() -> Vec<libc::c_long> {
         vec![
             libc::SYS_read,

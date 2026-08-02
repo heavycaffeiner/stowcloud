@@ -289,4 +289,4 @@ stripped to block header injection.
 
 - `crates/sc-preview/`, `crates/sc-http/src/content.rs`, `archive_zip.rs`
 - `stowcloud-2-core-vfs.md` (`SafePath`, used for archive entry names)
-- `stowcloud-7-api.md` (HostGuard and the middleware order)
+- `stowcloud-9-api.md` (HostGuard and the middleware order)

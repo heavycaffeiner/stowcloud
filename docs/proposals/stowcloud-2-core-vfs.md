@@ -372,6 +372,6 @@ displays an entry must not assume `id` is populated.
 - [`openat2(2)`](https://man7.org/linux/man-pages/man2/openat2.2.html) —
   `RESOLVE_BENEATH`, `RESOLVE_IN_ROOT`, `RESOLVE_NO_MAGICLINKS`
 - [`statx(2)`](https://man7.org/linux/man-pages/man2/statx.2.html) — `STATX_BTIME`
-- `stowcloud-3-auth.md` (accounts and groups), `stowcloud-4-api.md` (the
-  routes this backs), `stowcloud-11-deployment.md` (filesystem matrix, EXDEV,
+- `stowcloud-10-auth.md` (accounts and groups), `stowcloud-9-api.md` (the
+  routes this backs), `stowcloud-13-deployment.md` (filesystem matrix, EXDEV,
   watch backends)
