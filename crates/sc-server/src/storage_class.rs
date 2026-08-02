@@ -76,7 +76,8 @@ fn rotational_from_sysfs(major: u32, minor: u32) -> Option<(bool, std::path::Pat
 }
 
 /// Non-Linux (the dev host, Windows): there is no `/sys/block` to consult,
-/// and the dev host is never the deployment target —'s detection is Linux-specific. Default to the permissive class rather
+/// and the dev host is never the deployment target: this detection is
+/// Linux-specific. Default to the permissive class rather
 /// than pretending to detect something that isn't there, so local
 /// iteration on the dev host stays fast.
 #[cfg(not(target_os = "linux"))]

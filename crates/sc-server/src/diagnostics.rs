@@ -230,7 +230,7 @@ pub struct Diagnostics {
     pub max_bytes: u64,
     pub volume_total: Option<u64>,
     pub volume_free: Option<u64>,
-    /// `cfg.db.min_free_bytes` at startup —'s
+    /// `cfg.db.min_free_bytes` at startup.
     /// always-on floor, which is independent of `db_size_guard` and has no
     /// off switch. Paired with [`FREE_BYTES`] in
     /// [`Diagnostics::degraded_reasons`].

@@ -27,7 +27,7 @@ unicode-normalization = { workspace = true }
 rusqlite = { workspace = true }
 
 # Block compression for base.idx (§4.1). The C binding is fine here: this is
-# our own index format, not untrusted user content —'s
+# our own index format, not untrusted user content.
 # "pure Rust decoders only" rule is about image/document parsers.
 zstd = { workspace = true }
 

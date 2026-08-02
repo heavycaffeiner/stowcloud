@@ -2093,13 +2093,13 @@ impl SearchBridge {
     ///
     /// A query with a `kind`/size/mtime filter bypasses the index for *every*
     /// root, not just the ones lacking one: the index stores bare paths only
-    /// ( — no kind, no size, no mtime), so it has no
+    /// (the index stores bare paths — no kind, no size, no mtime), so it has no
     /// way to evaluate such a filter, and silently answering a filtered query
     /// from a source that cannot apply the filter would be a wrong answer,
     /// not a fast one.
     ///
     /// For every hit that survives the index's own query, this re-checks ACL
-    /// per hit exactly like the walk does ( — the
+    /// per hit exactly like the walk does (the
     /// index does not know permissions) and then stats the file, which does
     /// two jobs at once: it supplies `is_dir`/`size`/`mtime_ns` (the index
     /// doesn't carry them) and it revalidates the hit is not stale — a file

@@ -65,7 +65,7 @@ pub enum ErrorCode {
     /// `POST /api/auth/app-passwords`, `scope.shares`: a label that is not
     /// one of the caller's own share roots right now. Rejected at creation
     /// rather than silently accepted and then either unsatisfiable or (worse)
-    /// silently treated as "all shares" —'s scope
+    /// silently treated as "all shares" — the app password's scope
     /// contract fails closed here too.
     AuthUnknownShare,
     /// `PATCH /api/admin/users/{id}`, `quota_bytes: 0` (`FEATURES.md` #49).

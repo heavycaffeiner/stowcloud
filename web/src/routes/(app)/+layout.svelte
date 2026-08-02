@@ -1,7 +1,7 @@
 <script lang="ts">
   // (app) route group: the authenticated shell (nav rail/bar + upload tray).
   // Kept OUT of the true root layout so /s/[token] (outside this group)
-  // never pulls this chunk in —'s "separate lightweight
+  // never pulls this chunk in — the "separate lightweight
   // bundle" for the public share page.
   import { t } from '../../lib/i18n'
   import type { Snippet } from 'svelte'

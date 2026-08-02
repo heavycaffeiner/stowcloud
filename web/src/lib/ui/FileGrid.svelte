@@ -11,7 +11,7 @@
   // Same accessibility contract as FileTable: one tab stop (`tabindex=0` on
   // the grid container), `aria-activedescendant` tracks the "virtually
   // focused" cell, and per-cell tabindex is intentionally never given
-  // ( — a 100k-entry directory cannot have 100k tab stops).
+  // (a 100k-entry directory cannot have 100k tab stops).
   import { t } from '../i18n'
   import type { Entry } from '../api/client'
   import type { BrowseState } from '../state/browse.svelte'

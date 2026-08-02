@@ -214,7 +214,7 @@ pub trait SettingsApi: Send + Sync {
     }
 
     /// Fully live (`SearchConcurrency::reconfigure` + `KeyedTokenBucket::
-    /// reconfigure`) —'s own limits, the task's worked
+    /// reconfigure`) — the search limits, the task's worked
     /// example of a setting that need not restart.
     fn set_search(&self, _patch: SearchPatch) -> Result<ApplyOutcome, CoreError> {
         Err(not_wired())

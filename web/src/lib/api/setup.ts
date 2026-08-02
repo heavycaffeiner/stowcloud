@@ -1,4 +1,4 @@
-// web/src/lib/api/setup.ts —'s one-time admin bootstrap.
+// The one-time admin bootstrap.
 // Standalone module, same reasoning as share.ts: it does NOT import
 // ./client, ./mock, or ./http, so the not-yet-authenticated bundle (login +
 // first-run screens) never pulls in the full fs mock or the rest of the
