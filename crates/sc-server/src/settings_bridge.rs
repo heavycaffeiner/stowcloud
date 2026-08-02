@@ -822,7 +822,7 @@ impl SettingsApi for SettingsBridge {
         // Rendered even when disabling: `render_live` removes the rendered
         // files in that case, which is what keeps NT hashes off disk for a
         // disabled feature and tells the sidecar/bare-metal agent to tear
-        // down (`DEPLOYMENT.md` §7.5). Guarding this on `enabled` left SMB
+        // down. Guarding this on `enabled` left SMB
         // serving from stale files until someone restarted the server.
         // A refusal is a validation rejection with a reason rather than a
         // server fault, so it maps to 422 via `InvalidName` and not 500.
@@ -1268,7 +1268,7 @@ mod tests {
             live,
             vec![
                 // `smb_cmd::render_live` rewrites `smb.conf`/`passwd` and the
-                // privileged agent reloads smbd (`DEPLOYMENT.md` §7.1/§7.5).
+                // privileged agent reloads smbd.
                 "smb.workgroup",
                 "smb.service_user",
                 "smb.allow_public_bind",

@@ -133,7 +133,7 @@ shipped.
 ## 7. SMB operations (6)
 
 86. Account-password integration — NT hash derived in parallel, from account creation onward
-87. Derivation and publishing are separate steps, so turning SMB on makes it immediately usable, and from then on a running server republishes `smbpasswd` itself whenever an NT hash changes, so a password change, a TOTP toggle or an SSO link reaches SMB without `sc-server smb-sync` (`proposals/stowcloud-10-auth.md`; `DEPLOYMENT.md` §13.7 for the three cases where it still does not)
+87. Derivation and publishing are separate steps, so turning SMB on makes it immediately usable, and from then on a running server republishes `smbpasswd` itself whenever an NT hash changes, so a password change, a TOTP toggle or an SSO link reaches SMB without `sc-server smb-sync` (`proposals/stowcloud-10-auth.md`; `proposals/stowcloud-13-deployment.md` for the three cases where it still does not)
 88. Opportunistic backfill — automatic on any auth that carries a plaintext password, no re-login needed
 89. Internal-network-only enforcement — refuses to generate `smb.conf` if a public address is detected, plus `hosts allow/deny` and a startup self-check
 90. Per-subpath-grant SMB share auto-generation
@@ -368,7 +368,7 @@ user or an operator can actually reach.
      session the provider issued. The NT-hash deletion reaches the published
      `smbpasswd` too: a running server with SMB enabled rewrites the file
      within a second of the link, with no `sc-server smb-sync` and no
-     restart, and `DEPLOYMENT.md` §13.7 lists the three cases where that does
+     restart, and `proposals/stowcloud-13-deployment.md` lists the three cases where that does
      not happen (SMB switched on since the last restart, a render that
      failed, a process killed hard mid-publish). Configuration lives in
      `[oidc]` and on the

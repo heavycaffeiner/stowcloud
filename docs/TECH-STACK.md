@@ -63,10 +63,10 @@ This is not "off by default"; `sc-search`'s own module doc states it plainly:
 | Offset write | `pwrite` | Parallel chunks | UPLOAD §5.2 |
 | Timestamp restore | `utimensat` | Preserve source mtime | CORE §5.3 |
 | Transfer | `sendfile` / `splice` | Plaintext HTTP path | WEBDAV §9 |
-| Watching | `inotify` / `fanotify` | `FAN_MARK_FILESYSTEM` needs `CAP_SYS_ADMIN` → off by default | DEPLOYMENT §5 |
+| Watching | `inotify` / `fanotify` | `FAN_MARK_FILESYSTEM` needs `CAP_SYS_ADMIN` → off by default | `proposals/stowcloud-13-deployment.md` |
 | Sandbox | `landlock_*`, seccomp | Empty ruleset + KillProcess allowlist | PREVIEW §4.2 |
 | FD passing | `SCM_RIGHTS` | Worker gets an FD, never a path | PREVIEW §4.2 |
-| FS detection | `statfs.f_type` | Reject overlayfs | DEPLOYMENT §3 |
+| FS detection | `statfs.f_type` | Reject overlayfs | `proposals/stowcloud-13-deployment.md` |
 
 ---
 
@@ -113,7 +113,7 @@ This is not "off by default"; `sc-search`'s own module doc states it plainly:
 | Chunk checksum | **CRC32C** | SSE4.2 / ARMv8 hardware acceleration, effectively free |
 | TOTP seed, SMB NT hash storage | **XChaCha20-Poly1305** | AAD = user id. Master key lives in a secret file |
 | TOTP | **HMAC-SHA1** (RFC 6238) | 6 digits / 30 s / ±1. SHA-1 is required for authenticator-app compatibility |
-| SMB NT hash | **MD4(UTF-16LE)** | Protocol-mandated. Derived alongside the Argon2id hash at account-creation time, stored AEAD-encrypted. Trade-off discussed in DEPLOYMENT.md §7.2 |
+| SMB NT hash | **MD4(UTF-16LE)** | Protocol-mandated. Derived alongside the Argon2id hash at account-creation time, stored AEAD-encrypted. Trade-off discussed in `proposals/stowcloud-13-deployment.md` |
 | Randomness | `getrandom` | Sessions, tokens, signing keys, ephemeral keys — all of it |
 
 ---

@@ -16,7 +16,7 @@
 //! The one exception is `dav.bulkupload`: there, *presence* is the signal. If
 //! the key exists at all the desktop client switches small files onto a
 //! separate bundled-upload path we do not implement, so the key is omitted
-//! rather than set false ( note 3).
+//! rather than set false (note 3).
 
 use crate::config::NcConfig;
 use crate::ocs::Val;

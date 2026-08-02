@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
-description = "Main binary: assembles every sc-* crate into `sc-server`. See docs/ARCHITECTURE.md §1, DEPLOYMENT.md,"
+description = "Main binary: assembles every sc-* crate into `sc-server`. See docs/ARCHITECTURE.md §1,,"
 
 [[bin]]
 name = "sc-server"
@@ -117,7 +117,7 @@ libc = { workspace = true }
 rustix   = { workspace = true }
 landlock = { workspace = true }
 
-# DEPLOYMENT.md §1's mandated global allocator, scoped to the target the doc
+#'s mandated global allocator, scoped to the target the doc
 # is actually about: musl's default allocator, not glibc's (`src/main.rs`
 # has the `#[global_allocator]` wiring, the reasoning for the cfg gate, and
 # the measurements behind both). Being a

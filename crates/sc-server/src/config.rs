@@ -1,5 +1,5 @@
 //! Configuration: TOML file + environment overrides, every default pinned to
-//! the design docs (`DEPLOYMENT.md`, `ARCHITECTURE.md` §0/§6, `DESIGN-
+//! the design docs (`ARCHITECTURE.md` §0/§6, `DESIGN-
 //! FOOTPRINT.md` §4). Nothing here silently diverges from a documented
 //! default — if a default changes, the doc it cites should change too.
 
@@ -351,7 +351,7 @@ impl OidcConfig {
 
 /// A share to bootstrap at first run from static config. Real deployments
 /// manage shares dynamically through the admin API once `sc-core` exists;
-/// this is only here so startup diagnostics (`DEPLOYMENT.md` §2/§3) has
+/// this is only here so startup diagnostics has
 /// something concrete to probe.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ShareBootstrap {
@@ -365,12 +365,12 @@ pub struct ShareBootstrap {
     pub shared_externally: bool,
 }
 
-/// A statically-configured Samba share. `DEPLOYMENT.md` §7.3 models real
+/// A statically-configured Samba share. models real
 /// per-user access control as a dynamic Share/Grant registry — that lives in
 /// `sc-core`/`sc-acl` and isn't wired yet (see `smb_cmd.rs`), so this is the
 /// interim: an admin lists exactly what `sc-smb` should render, one entry
 /// per Samba `[share]` (one per distinct subpath grant,
-/// `DEPLOYMENT.md` §7.3 "subpath grant").
+/// "subpath grant").
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SmbShareBootstrap {
     pub name: String,
@@ -466,8 +466,7 @@ pub struct Config {
     pub symlink_policy: SymlinkPolicyCfg,
     pub homes: HomesConfig,
     pub smb: sc_smb::SmbConfig,
-    /// Force-user uid/gid Samba runs every connection as (`DEPLOYMENT.md`
-    /// §7.3 `force user`/`force group`; §6.1 default compose `user: "1000:1000"`).
+    /// Force-user uid/gid Samba runs every connection as ( `force user`/`force group`; §6.1 default compose `user: "1000:1000"`).
     pub smb_service_uid: u32,
     pub smb_service_gid: u32,
     pub smb_shares: Vec<SmbShareBootstrap>,
@@ -537,7 +536,7 @@ impl Config {
     }
 
     /// Environment overrides. Deliberately narrow: only the handful of
-    /// values `DEPLOYMENT.md` §9's compose example actually sets via env.
+    /// values's compose example actually sets via env.
     /// `SC_MASTER_KEY` (the key material) is intentionally *not* among
     /// these — see `masterkey.rs`.
     fn apply_env(&mut self) {

@@ -1,4 +1,4 @@
-//! `/etc/passwd`-style entries for the sidecar (`DEPLOYMENT.md` §7.2 passdb
+//! `/etc/passwd`-style entries for the sidecar (passdb
 //! sync, point 3): Samba requires `getpwnam` to succeed for every SMB user,
 //! so the sidecar synthesizes one entry per user.
 //!

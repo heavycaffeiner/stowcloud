@@ -11,7 +11,7 @@
   import Button from '../../lib/ui/Button.svelte'
   import TextField from '../../lib/ui/TextField.svelte'
 
-  // AGPL §13 (docs/DEPLOYMENT.md §14.1): a network service built from modified
+  // AGPL §13: a network service built from modified
   // source must offer that source to everyone who reaches it, not just to
   // whoever received the binary. This URL has to serve the tree the running
   // build came from — **if you modify Stowcloud and run it for anyone but

@@ -1,4 +1,4 @@
-//! Archive listing ( section 5).
+//! Archive listing (section 5).
 //!
 //! Listing only -- extraction is a separate, explicit operation that lives
 //! elsewhere. This module streams through the ZIP central directory,

@@ -26,7 +26,7 @@ impl MetaStore {
     }
 
     /// Fold the write-ahead log back into the main database file
-    /// (`DEPLOYMENT.md` §9's clean-shutdown step).
+    /// ('s clean-shutdown step).
     ///
     /// `TRUNCATE`, not `PASSIVE`: passive gives up the moment any other
     /// connection is mid-read, which at shutdown is exactly when we want to

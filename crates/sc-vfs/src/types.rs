@@ -106,7 +106,7 @@ impl Default for SharePolicy {
     }
 }
 
-/// Filesystem-type gate. See `DEPLOYMENT.md` for the full matrix.
+/// Filesystem-type gate. See for the full matrix.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FsType {
     Ext4,

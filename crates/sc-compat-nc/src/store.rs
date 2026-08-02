@@ -256,7 +256,7 @@ impl MemStore {
 /// discard its local state and perform a full resync** — for a large
 /// deployment that is potentially terabytes of re-download and hours of
 /// unavailability. It must be included in backups and restored verbatim. See
-/// the loud warning on `NcConfig` and `DEPLOYMENT.md`.
+/// the loud warning on `NcConfig` and.
 pub fn generate_instance_id() -> String {
     let mut buf = [0u8; 8];
     getrandom::getrandom(&mut buf).expect("OS entropy unavailable");

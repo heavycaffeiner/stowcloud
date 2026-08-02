@@ -74,7 +74,7 @@ pub fn nc_id(file: FileId, instance_id: &str) -> String {
 /// ## Where we deliberately differ from the reference
 ///
 /// * `M` (mounted / external storage) is **never emitted**. We have no external
-///   storage concept ( non-goals), and claiming a
+///   storage concept (an explicit non-goal), and claiming a
 ///   mount makes clients apply mount-specific move restrictions.
 /// * The reference server derives `N` from `canRename()` (updateable, or deletable with a
 ///   creatable parent) and `V` from `PERMISSION_UPDATE`. We have distinct

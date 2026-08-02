@@ -25,8 +25,7 @@ pub(crate) type OverflowFlag = Arc<AtomicBool>;
 
 /// A watch registration failed. `NoSpace` is the expected, normal-path
 /// failure (`ENOSPC`/`inotify` limit/OS watch-count cap) that callers
-/// degrade on rather than propagate as a hard error
-/// (`DEPLOYMENT.md` §5.3/§5.4).
+/// degrade on rather than propagate as a hard error.
 #[derive(Debug)]
 pub(crate) enum WatchAddError {
     NoSpace,

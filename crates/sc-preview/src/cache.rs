@@ -1,4 +1,4 @@
-//! In-memory LRU + negative cache + single-flight ( section 6).
+//! In-memory LRU + negative cache + single-flight (section 6).
 //!
 //! This module implements the *policy* described in the design doc's
 //! `preview_cache` / `preview_negative` tables using an in-memory index

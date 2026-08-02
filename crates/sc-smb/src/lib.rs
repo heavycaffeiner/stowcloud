@@ -3,8 +3,8 @@
 //! This crate never talks to Samba binaries and never sees plaintext
 //! passwords. It only:
 //!
-//!   1. Enforces the LAN-only bind gate (`validate_bind`, `DEPLOYMENT.md`
-//!      §7.4) — the control that justifies sharing the account password with
+//!   1. Enforces the LAN-only bind gate (`validate_bind`) — the control
+//!      that justifies sharing the account password with
 //!      SMB (`ARCHITECTURE.md` §9.2) is a hard refusal, not a warning.
 //!   2. Renders `smb.conf` (`generate_conf`) from `Share`/`Grant`-shaped
 //!      input the caller already resolved — one Samba `[share]` per distinct
@@ -36,7 +36,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-/// `smb.totp_policy` (`DEPLOYMENT.md` §7.2 "2FA", `ARCHITECTURE.md` §9.2).
+/// `smb.totp_policy` ( "2FA", `ARCHITECTURE.md` §9.2).
 /// TOTP users cannot authenticate SMB with their account password — NTLM has
 /// no slot for a second factor, so allowing it would be a silent 2FA bypass.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,15 +55,14 @@ pub struct SmbConfig {
     /// SMB is off by default (`ARCHITECTURE.md` §0 "default is least privilege").
     pub enabled: bool,
     pub workgroup: String,
-    /// Shared config volume the sidecar reads (`DEPLOYMENT.md` §7.1).
+    /// Shared config volume the sidecar reads.
     pub config_dir: PathBuf,
     /// Samba `force user`/`force group` — the single uid every SMB
     /// connection runs as; real access control is `valid users`/read/write
     /// lists, never Unix permissions.
     pub service_user: String,
     /// Escape hatch for `validate_bind`. Off by default; turning it on
-    /// raises a permanent admin-UI warning and an audit event
-    /// (`DEPLOYMENT.md` §7.4).
+    /// raises a permanent admin-UI warning and an audit event.
     pub allow_public_bind: bool,
     pub totp_policy: TotpPolicy,
 }
@@ -82,7 +81,7 @@ impl Default for SmbConfig {
 }
 
 /// One Samba `[share]` block. Callers build one of these per distinct
-/// subpath grant (`DEPLOYMENT.md` §7.3 "subpath grant") — this crate does
+/// subpath grant ("subpath grant") — this crate does
 /// not fan a single grant tree out into multiple shares itself, it just
 /// renders whatever list it's given.
 #[derive(Clone, Debug)]
@@ -96,7 +95,7 @@ pub struct SmbShareDef {
     pub write_list: Vec<String>,
     /// When `true`, another service (Jellyfin, *arr, rsync, ...) can write
     /// the same directory tree, so oplocks are disabled to avoid an SMB
-    /// client caching a stale view (`DEPLOYMENT.md` §7.3).
+    /// client caching a stale view.
     pub shared_externally: bool,
 }
 
@@ -108,7 +107,7 @@ pub struct SmbUser {
     pub name: String,
     /// The uid this account's `passwd` entry carries, and the same value
     /// `sc_auth::export_smbpasswd` writes into its `smbpasswd` line —
-    /// `smb.service_uid + <account row id>` (`DEPLOYMENT.md` §7.2 point 3).
+    /// `smb.service_uid + <account row id>`.
     ///
     /// **Distinct per account, deliberately.** `pdbedit -i` resolves an
     /// smbpasswd line to a Unix account by uid, not by name, so several names
@@ -123,7 +122,7 @@ pub struct SmbOrchestrator {
     cfg: SmbConfig,
     /// Set once `validate_bind` accepts a public bind under
     /// `allow_public_bind = true`. Sticky for the process lifetime — this
-    /// backs the "permanent warning banner" in `DEPLOYMENT.md` §7.4.
+    /// backs the "permanent warning banner" in
     public_bind_warning: AtomicBool,
 }
 
@@ -146,7 +145,7 @@ impl SmbOrchestrator {
         self.public_bind_warning.load(Ordering::SeqCst)
     }
 
-    /// The hard gate (`DEPLOYMENT.md` §7.4 ①): refuse to proceed if any
+    /// The hard gate ( ①): refuse to proceed if any
     /// interface `smbd` would bind is a public address, unless
     /// `cfg.allow_public_bind` is explicitly `true`. When the override is
     /// used, emits an audit event and latches `public_bind_warning_active`.
@@ -168,7 +167,7 @@ impl SmbOrchestrator {
             event = "smb.public_bind_enabled",
             offending = ?offending,
             "smb.allow_public_bind is true: SMB will bind a public address. \
-             This is not internet-safe (DEPLOYMENT.md §7.4)."
+             This is not internet-safe."
         );
         Ok(())
     }
@@ -186,7 +185,7 @@ impl SmbOrchestrator {
 
     /// Convenience: render `/etc/passwd`-style entries for `users`, each on
     /// its own [`SmbUser::uid`] and all on the shared `gid`
-    /// (`DEPLOYMENT.md` §7.2 passdb sync point 3).
+    /// (passdb sync point 3).
     pub fn render_passwd_entries(&self, users: &[SmbUser], gid: u32) -> String {
         passwd::render_passwd_entries(users, gid)
     }
@@ -208,7 +207,7 @@ impl SmbOrchestrator {
     /// Remove the three rendered files, if present. Called when `smb.enabled`
     /// goes false: keeping them would leave NT hashes on disk for a disabled
     /// feature, and the bare-metal agent reads their absence as the off
-    /// switch rather than as "not synced yet" (`DEPLOYMENT.md` §7.5).
+    /// switch rather than as "not synced yet".
     pub fn remove_rendered(&self) -> Result<(), SmbError> {
         for name in ["smb.conf", "smbpasswd", "passwd"] {
             let path = self.cfg.config_dir.join(name);

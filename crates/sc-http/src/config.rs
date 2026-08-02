@@ -10,7 +10,7 @@ pub struct HttpConfig {
     /// Host header allowlist for the *content* origin (serves signed URLs
     /// only, no cookies ever parsed —).
     pub content_hosts: Vec<String>,
-    /// CIDRs trusted to supply `CF-Connecting-IP` ( step 2).
+    /// CIDRs trusted to supply `CF-Connecting-IP` (step 2).
     pub trusted_proxy_cidrs: Vec<Cidr>,
     /// Origins accepted by CSRF's `Origin` header check.
     pub allowed_origins: Vec<String>,

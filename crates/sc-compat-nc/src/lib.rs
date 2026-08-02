@@ -37,7 +37,7 @@
 //! those ids. **If it changes, every connected client discards its journal and
 //! performs a full resync** — potentially terabytes of re-download, silently.
 //! It must be in your backups and restored verbatim. See [`config::NcConfig`]
-//! and `DEPLOYMENT.md`.
+//! and.
 //!
 //! ## Module map
 //!

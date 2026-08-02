@@ -1,13 +1,12 @@
 //! `sc-watch` — change detection: hot-set watching + debounced invalidation
-//! events. `DEPLOYMENT.md` §5, `ARCHITECTURE.md` §5.1.
+//! events., `ARCHITECTURE.md` §5.1.
 //!
 //! Only the directories that can actually be *observed* right now are
 //! watched: WebSocket-subscribed dirs + their ancestor chain, plus an LRU of
 //! recently-accessed dirs, capped at `hot_set_max`. Nothing here is the sole
 //! source of truth — every read path in `sc-core` re-stats before trusting
 //! anything, so a watcher that's degraded, capped, or entirely dead only
-//! costs freshness of the *pushed* UI update, never correctness
-//! (`DEPLOYMENT.md` §5.4).
+//! costs freshness of the *pushed* UI update, never correctness.
 
 mod backend;
 mod hotset;
@@ -45,7 +44,7 @@ pub enum WatchBackend {
     Fanotify,
     /// Explicit portable `notify` transport (same as `HotSet` today; kept
     /// as a distinct name because the two ideas — "which dirs" vs. "which
-    /// transport" — are conflated in `DEPLOYMENT.md`'s config schema).
+    /// transport" — are conflated in's config schema).
     Portable,
 }
 
@@ -153,7 +152,7 @@ impl Watcher {
 
     /// Register a watch on `path` *before* returning, so the caller can
     /// safely read the directory afterward without missing a change that
-    /// lands in between (`DEPLOYMENT.md` §5.2). Registration failure
+    /// lands in between. Registration failure
     /// (`ENOSPC`-equivalent) degrades that subtree to lazy rather than
     /// erroring — the caller's read still proceeds correctly, just without
     /// a live push (`lazy revalidation` in every read path is the backstop).

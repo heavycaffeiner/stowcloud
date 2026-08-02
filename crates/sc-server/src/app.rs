@@ -156,7 +156,7 @@ impl App {
         // watches via `AclReadCheck`), and a watcher that fails to start is
         // not fatal — every read path re-stats before trusting anything, so
         // the only cost is that an external change is noticed on next access
-        // rather than pushed (`DEPLOYMENT.md` §5.4).
+        // rather than pushed.
         let (watcher, ws_hub) = start_watcher_and_ws_hub(&cfg, core.clone());
 
         // Admin override for `[index] name_enabled` (`FEATURES.md` #116/#117)
@@ -1081,8 +1081,8 @@ fn build_http_state(
     // Derived from `app_hosts` rather than configured separately, so the two
     // cannot disagree: an origin is exactly a scheme plus one of the hosts we
     // already agreed to answer for. Both schemes are listed because the server
-    // speaks plain HTTP and is expected to sit behind a TLS-terminating proxy
-    // (`DEPLOYMENT.md`), so the browser's origin may be `https:` while ours is
+    // speaks plain HTTP and is expected to sit behind a TLS-terminating proxy,
+    // so the browser's origin may be `https:` while ours is
     // not. An explicit `allowed_origins` in the config still wins.
     if cfg.allowed_origins.is_empty() {
         let port = cfg.bind.port();
@@ -1359,8 +1359,8 @@ fn start_watcher_and_ws_hub(
     let (tx, rx) = crossbeam_channel::unbounded::<sc_watch::InvalEvent>();
     // A watcher that fails to start is not fatal: every read path re-stats
     // before trusting anything, so the only cost is that a change made
-    // outside this process is noticed on next access rather than pushed
-    // (`DEPLOYMENT.md` §5.4). `tx` is consumed either way — dropped inside
+    // outside this process is noticed on next access rather than pushed.
+    // `tx` is consumed either way — dropped inside
     // `Watcher::start` on failure, which ends the forwarder thread's `recv`
     // loop below cleanly instead of leaving it blocked forever.
     let watcher = match sc_watch::Watcher::start(wcfg, core.clone(), tx) {

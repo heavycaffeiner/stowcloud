@@ -1,4 +1,4 @@
-//! Startup self-diagnostics, in the spirit of `DEPLOYMENT.md` §2 and
+//! Startup self-diagnostics, in the spirit of and
 //! print exactly what security/perf-relevant
 //! kernel features are available, distinguish "not present" from "blocked
 //! by policy" wherever the kernel lets us, and gate share registration on
@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 
-/// `openat2`'s specific failure mode matters for the log message
-/// (`DEPLOYMENT.md` §2): `ENOSYS` is an old kernel (fine, fall back
+/// `openat2`'s specific failure mode matters for the log message:
+/// `ENOSYS` is an old kernel (fine, fall back
 /// silently-ish), `EPERM` is very likely Docker's default seccomp profile
 /// denying an allow-listed syscall (a security *downgrade* that deserves a
 /// loud message and an upgrade hint). `sc_vfs::detect_kernel_caps` folds
@@ -51,7 +51,7 @@ fn probe_openat2_detail() -> OpenAt2Status {
 }
 
 /// `fs.inotify.max_user_watches` (Linux only; host-global, per-UID, cannot
-/// be raised from inside a container — `DEPLOYMENT.md` §5.4).
+/// be raised from inside a container —).
 #[cfg(target_os = "linux")]
 fn inotify_max_watches() -> Option<u64> {
     std::fs::read_to_string("/proc/sys/fs/inotify/max_user_watches")
@@ -66,7 +66,7 @@ fn inotify_max_watches() -> Option<u64> {
     None
 }
 
-/// SELinux enforcement state (`DEPLOYMENT.md` §4's `:z`/`:Z` labeling
+/// SELinux enforcement state ('s `:z`/`:Z` labeling
 /// caveat). Read directly from selinuxfs rather than shelling out to
 /// `getenforce` — one less subprocess dependency, and the same information
 /// the binary would parse from its stdout anyway.
@@ -98,8 +98,7 @@ fn probe_selinux() -> SelinuxStatus {
     SelinuxStatus::NotApplicable
 }
 
-/// Filesystem type detection for the share-registration gate
-/// (`DEPLOYMENT.md` §3). Runs before any `ShareRoot` exists for the path —
+/// Filesystem type detection for the share-registration gate. Runs before any `ShareRoot` exists for the path —
 /// refusing registration is the whole point — so it calls
 /// `sc_vfs::FsType::from_statfs_magic` directly rather than going through a
 /// share handle.
@@ -621,7 +620,7 @@ pub fn print(d: &Diagnostics) {
              (Jellyfin, Samba) reading the same host directory — reads/writes from \
              that other service will fail with EACCES. Use `:z` (lowercase, shared \
              label) or no label on any mount another service also touches \
-             (DEPLOYMENT.md §4)."
+."
         );
     }
 
@@ -675,7 +674,7 @@ pub fn print(d: &Diagnostics) {
         println!("[sc]     gate, the API rate limiter and the audit log all collapse");
         println!("[sc]     onto a single bucket, and one attacker locks out every user.");
         println!("[sc]     Set `trusted_proxies` / SC_TRUSTED_PROXIES to the proxy's");
-        println!("[sc]     CIDRs (DEPLOYMENT.md §8). Correct as-is");
+        println!("[sc]     CIDRs. Correct as-is");
         println!("[sc]     only if clients reach this socket directly.");
     } else {
         println!("[sc]   trusted proxies: {} CIDR(s)", tp.accepted.len());

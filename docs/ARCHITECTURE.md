@@ -41,7 +41,7 @@ Svelte frontend.
 The container premise adds real constraints — Docker's default seccomp
 profile can block `openat2`/`landlock_*`, overlayfs breaks inode stability,
 bind-mount boundaries produce `EXDEV`, and `fs.inotify.max_user_watches`
-cannot be raised from inside a container. Detail in **`DEPLOYMENT.md`**.
+cannot be raised from inside a container. Detail in **`proposals/stowcloud-13-deployment.md`**.
 
 Code-level detail (VFS API, ACL evaluation, directory ETag propagation,
 upload state machine) is authoritative in **`proposals/stowcloud-2-core-vfs.md`**.
@@ -189,7 +189,7 @@ Perms  : READ WRITE CREATE DELETE RENAME MOVE SHARE DOWNLOAD  (bitflags)
 
 File-creation permission is applied explicitly via **`mode_file`/`mode_dir`,
 not `umask`**. `umask` can only turn bits off, so it cannot express "0664 so
-Jellyfin can read it" (`DEPLOYMENT.md` §6.2).
+Jellyfin can read it" (`proposals/stowcloud-13-deployment.md`).
 
 - User homes are **opt-in**. `homes.enabled = false` by default. Enabling it
   creates a `{username}` directory under `homes.root` from a template and
@@ -346,7 +346,7 @@ servers that own their storage.
 
 | Method | Condition | Character |
 |---|---|---|
-| `fanotify` + `FAN_MARK_FILESYSTEM` | Kernel 5.1+, needs `CAP_SYS_ADMIN` | Watches the whole mount, independent of directory count. `CAP_SYS_ADMIN` is effectively root in a container, so **off by default** (`DEPLOYMENT.md` §5.1) |
+| `fanotify` + `FAN_MARK_FILESYSTEM` | Kernel 5.1+, needs `CAP_SYS_ADMIN` | Watches the whole mount, independent of directory count. `CAP_SYS_ADMIN` is effectively root in a container, so **off by default** (`proposals/stowcloud-13-deployment.md`) |
 | Recursive `inotify` | Unprivileged | Hits `max_user_watches` (default 8192–65536). Fails on a million-directory tree |
 | Periodic rescan | Always | Fallback / correctness backstop. Default every 6 hours, batched `statx` |
 
@@ -669,7 +669,7 @@ reimplement it.
   - A Kerberos/AD-joined environment (`security = ADS` + winbind) avoids
     storing an NT hash entirely — the only configuration where this
     trade-off disappears.
-- Detail in `DEPLOYMENT.md` §7.2, `proposals/stowcloud-10-auth.md`
+- Detail in `proposals/stowcloud-13-deployment.md`, `proposals/stowcloud-10-auth.md`
 - The interface is abstracted behind `trait ProtocolAdapter` → swappable for
   a native implementation later, though that is not on the current roadmap.
 

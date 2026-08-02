@@ -1,4 +1,4 @@
-//! Worker process protocol and pool trait ( section 4).
+//! Worker process protocol and pool trait (section 4).
 //!
 //! The real deployment target forks worker processes ahead of time and hands
 //! them jobs over a Unix socket using `SCM_RIGHTS` fd passing: the parent

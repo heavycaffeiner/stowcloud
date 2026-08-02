@@ -6,7 +6,7 @@
 //! things fall back to a plain read/write loop: the portable backend (no
 //! such syscall off Linux) and the Linux backend when the kernel primitive
 //! itself reports `EXDEV`/`EOPNOTSUPP`/`ENOSYS`
-//! (`DEPLOYMENT.md` §4 — a subdirectory can be a separate mount *inside* a
+//! ( — a subdirectory can be a separate mount *inside* a
 //! share, so `EXDEV` is a real, expected outcome here, not just a
 //! theoretical one). Both call sites share this function so the loop is
 //! written, and bounded-memory-audited, exactly once.

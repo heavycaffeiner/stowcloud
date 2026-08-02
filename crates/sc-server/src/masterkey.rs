@@ -1,4 +1,4 @@
-//! Master key load/generate (`DEPLOYMENT.md` §7.2 "always ready" /
+//! Master key load/generate ( "always ready" /
 //! §10 checklist, `ARCHITECTURE.md` §9.2).
 //!
 //! Rules, straight from the docs:

@@ -1,11 +1,11 @@
 //! Process-level self-restriction: Landlock path sandbox + a minimal seccomp
-//! filter (`ARCHITECTURE.md` §2.4, `DEPLOYMENT.md` §10 checklist item 8).
+//! filter (`ARCHITECTURE.md` §2.4, checklist item 8).
 //!
 //! Both are Linux-only, best-effort, and applied *after* shares/the data
 //! directory are opened (so the paths being restricted to are already valid
 //! file descriptors/paths) — never a hard failure, since older kernels or a
 //! restrictive seccomp profile (the Docker-default-profile irony: it can
-//! itself block `landlock_*`, `DEPLOYMENT.md` §2) legitimately can't do
+//! itself block `landlock_*`) legitimately can't do
 //! this, and the rest of the security model (path validation in `sc-vfs`,
 //! running as an unprivileged uid) still holds without it.
 

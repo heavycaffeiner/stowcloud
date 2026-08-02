@@ -54,7 +54,7 @@
   // item 133: a root marked `shared_externally` is read/written by another
   // service (Jellyfin, SMB) outside this app -- true for every path under
   // it, not just the root listing itself, since `RootEntry.shared_externally`
-  // is a share-wide flag (DEPLOYMENT.md §4's SELinux `:z` caveat is the same
+  // is a share-wide flag ('s SELinux `:z` caveat is the same
   // sharing relationship this warns about).
   const currentRootLabel = $derived(path.split('/').filter(Boolean)[0] ?? null)
   const rootShared = $derived(

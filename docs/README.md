@@ -10,7 +10,6 @@ Svelte frontend. Linux / Docker only.
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Design principles, crate structure, full overview | **First** |
 | [TECH-STACK.md](TECH-STACK.md) | Single reference table: technology, algorithms, crypto primitives, rejected alternatives | Quick lookup |
 | [FEATURES.md](FEATURES.md) | Full feature inventory, each marked shipped / implemented-but-unreachable / non-goal | Scope check |
-| [DEPLOYMENT.md](DEPLOYMENT.md) | Docker seccomp reality, filesystem matrix, EXDEV, uid/gid, watch backends, Samba sidecar, Cloudflare | Deployment and operations |
 
 ## Five principles, everything else follows from these
 

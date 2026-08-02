@@ -82,7 +82,7 @@ impl FileHandle {
     /// btrfs/XFS when block alignment allows it, an in-kernel copy
     /// otherwise. It falls back to a bounded-buffer read/write loop when the
     /// kernel primitive isn't usable (`EXDEV` — including *within* one
-    /// share, per `DEPLOYMENT.md` §4 — `EOPNOTSUPP`, or `ENOSYS` on an old
+    /// share, per — `EOPNOTSUPP`, or `ENOSYS` on an old
     /// kernel) and unconditionally on the portable backend, which has no
     /// such syscall at all. Either way the fallback is the single
     /// implementation in `crate::copy`, never duplicated per call site.

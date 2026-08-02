@@ -1,4 +1,4 @@
-//! Graceful shutdown sequence (`DEPLOYMENT.md` §9): stop accepting new
+//! Graceful shutdown sequence: stop accepting new
 //! connections, drain in-flight uploads, flush dirty aggregates, checkpoint
 //! the WAL, then exit. Uploads are resumable and the DB is a rebuildable
 //! cache, so a hard kill never loses data — a clean shutdown just makes the
@@ -41,7 +41,7 @@ pub struct ShutdownSteps {
     pub wal_checkpointed: bool,
 }
 
-/// The `DEPLOYMENT.md` §9 sequence, in order.
+/// The sequence, in order.
 ///
 /// None of these steps protect data: uploads are resumable, and the metadata
 /// DB is a rebuildable cache whose only source of truth is the filesystem

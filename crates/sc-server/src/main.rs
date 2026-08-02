@@ -1,6 +1,6 @@
 use clap::Parser;
 
-// `DEPLOYMENT.md` §1: "musl's default allocator is much slower than glibc's
+// "musl's default allocator is much slower than glibc's
 // for workloads with heavy multithreaded allocation, so `mimalloc` is set as
 // the global allocator." Gated to
 // `target_env = "musl"` rather than applied unconditionally: the doc's own
@@ -29,7 +29,7 @@ use clap::Parser;
 // this workload, almost certainly because mimalloc's segment/page
 // management leans on `mmap`/`madvise` more heavily than glibc's
 // arena-based malloc, and syscalls are relatively more expensive inside a
-// VM. That result does not contradict `DEPLOYMENT.md` §1: musl's allocator
+// VM. That result does not contradict: musl's allocator
 // (dlmalloc-derived, no per-thread arenas) is a different comparison than
 // glibc's, and no environment reachable from this box could actually
 // execute a linked musl binary to test *that* comparison directly — Windows
@@ -50,7 +50,7 @@ fn main() -> anyhow::Result<()> {
     // (`crates/sc-server/src/lib.rs`) — it short-circuits here, before
     // `Cli::parse()` ever runs, so it never touches that enum. See the
     // Dockerfile's `HEALTHCHECK` instruction and
-    // `docs/DEPLOYMENT.md` for why this exists: the runtime image
+    // for why this exists: the runtime image
     // (distroless/static, no shell, no curl/wget) has nothing else capable
     // of running an exec-form probe, so the probe has to be this same
     // binary, re-invoked with a different argv[1].

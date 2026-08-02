@@ -26,7 +26,7 @@ use crate::middleware::SessionToken;
 use crate::state::{AppState, ClientIp, HostOrigin, JobKind, JobState, JobStatus};
 
 /// Every route except `/api/uploads/**` — this is the sub-router the
-/// `RequestBodyLimitLayer` gets applied to ( step 6).
+/// `RequestBodyLimitLayer` gets applied to (step 6).
 pub fn protected_routes(state: AppState) -> Router {
     Router::new()
         .route("/api/capabilities", get(capabilities))
@@ -3738,7 +3738,7 @@ async fn admin_set_network_settings(
 }
 
 /// `PATCH /api/admin/server-settings/db` — the DB size-guard trio
-///. Restart-required: `Diagnostics` reads these at
+/// Restart-required: `Diagnostics` reads these at
 /// boot.
 async fn admin_set_db_settings(
     State(state): State<AppState>,

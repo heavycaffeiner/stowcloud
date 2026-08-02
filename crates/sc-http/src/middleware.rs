@@ -295,7 +295,7 @@ pub async fn security_headers(req: Request, next: Next) -> Response {
 // ---------------------------------------------------------------- 5. RateLimit --
 
 /// Runs *before* Auth so a flood of unauthenticated requests gets `429`
-/// without ever reaching Argon2/session lookups ( step 5).
+/// without ever reaching Argon2/session lookups (step 5).
 /// Is this a plain `GET`/`HEAD` for a static file out of the embedded SPA?
 ///
 /// Loading the app fetches several dozen hashed modules and stylesheets in one
@@ -726,7 +726,7 @@ fn route_scope(method: &Method, path: &str) -> RouteScope {
 /// rather than relied upon, so a future caller that *does* attach a
 /// restricted `Scope` to a session gets the same enforcement for free.
 ///
-/// Placed after `Csrf` ( step 9, "AclScope"): it needs
+/// Placed after `Csrf` (step 9, "AclScope"): it needs
 /// `Auth`'s `Principal` extension and must run before the handler, but has
 /// no opinion about CSRF.
 pub async fn scope_gate(State(state): State<AppState>, req: Request, next: Next) -> Response {
@@ -996,7 +996,7 @@ pub async fn audit_sink(req: Request, next: Next) -> Response {
 
 /// Used by `lib.rs` to build the `tower_http::limit::RequestBodyLimitLayer`
 /// applied to everything *except* `/api/uploads/**`
-/// ( step 6 /·§8).
+/// (middleware step 6).
 pub fn is_upload_path(path: &str) -> bool {
     path.starts_with("/api/uploads")
 }

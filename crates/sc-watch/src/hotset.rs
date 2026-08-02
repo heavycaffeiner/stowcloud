@@ -2,7 +2,7 @@
 //! watch, split into "sticky" (WebSocket-subscribed dirs + their ancestor
 //! chain, plus share roots — never auto-evicted) and "recent" (an LRU of
 //! everything else that's been touched, capped at `hot_set_max` and evicted
-//! oldest-first — `DEPLOYMENT.md` §5.2).
+//! oldest-first —).
 
 use std::collections::HashMap;
 use std::num::NonZeroUsize;

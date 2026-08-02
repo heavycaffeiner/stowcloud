@@ -537,10 +537,10 @@ pub(crate) fn sync_dir(
 /// falls back to the shared buffered loop (`crate::copy`) for the *rest* of
 /// the request — not the whole thing — the moment the kernel primitive
 /// reports one of the three documented "can't do this here" errors:
-/// - `EXDEV`: source and destination aren't on the same filesystem. Per
-///   `DEPLOYMENT.md` §4 this can happen *inside* a single share, when a
-///   subdirectory is a separate bind mount, so it is an expected outcome to
-///   handle, not a bug to propagate.
+/// - `EXDEV`: source and destination aren't on the same filesystem. This
+///   can happen *inside* a single share, when a subdirectory is a separate
+///   bind mount, so it is an expected outcome to handle, not a bug to
+///   propagate.
 /// - `EOPNOTSUPP`: the underlying filesystem doesn't implement it.
 /// - `ENOSYS`: kernel predates the syscall (< 4.5).
 ///

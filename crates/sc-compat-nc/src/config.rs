@@ -151,7 +151,7 @@ pub struct NcConfig {
     /// traffic and hours of unavailability, and it happens silently.
     ///
     /// It MUST be in your backups and MUST be restored verbatim. Restoring
-    /// file data without `nc_instance` is not a restore. See `DEPLOYMENT.md`.
+    /// file data without `nc_instance` is not a restore. See.
     pub instance_id: String,
 
     /// Advisory chunk size published as `files.chunked_upload.max_size`.
@@ -204,7 +204,7 @@ pub struct NcConfig {
     ///
     /// The one direction that *is* required: never advertise a name as legal
     /// that `validate_component` then rejects — that puts a client's sync
-    /// into a permanent retry loop ( note 4).
+    /// into a permanent retry loop (note 4).
     /// Over-advertising has a real but survivable cost instead: a file
     /// already on disk whose name contains one of these characters (created
     /// by SMB, NFS, or another service sharing the directory) is listed to an

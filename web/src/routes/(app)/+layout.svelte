@@ -36,9 +36,9 @@
   // contents of the *same* place ("Files"). So the fixed nav is now Files +
   // [Admin] + Settings (2-3 items, independent of grant count), and "Files"
   // doesn't navigate anywhere itself -- it opens `NavigationDrawer`
-  // ( names this component; §3 already pairs it
-  // with NavigationRail for ≥905px, which is a strong hint this is where
-  // root-switching belongs), which lists the actual roots. That component is
+  // (already paired with NavigationRail at ≥905px, which is a strong hint
+  // this is where root-switching belongs), which lists the actual roots.
+  // That component is
   // where the fix for "every root must stay reachable" lives now -- see its
   // own doc comment for the modal (phone) vs. standard (rail) split.
   const rootItems = $derived(

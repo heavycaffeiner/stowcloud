@@ -1,5 +1,4 @@
-//! Storage-class detection for the search resource limiter
-//!. `sc_vfs::ShareRoot`
+//! Storage-class detection for the search resource limiter. `sc_vfs::ShareRoot`
 //! already exposes what a share's filesystem is (`fstype()`) and which
 //! block device backs it (`root_dev()`); this module turns those into an
 //! `sc_http::search_limits::StorageClass` without needing anything new from

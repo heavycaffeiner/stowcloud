@@ -1,4 +1,4 @@
-//! LAN-only bind enforcement (`DEPLOYMENT.md` §7.4).
+//! LAN-only bind enforcement.
 //!
 //! "Private" = RFC1918 + `127.0.0.0/8` + `169.254.0.0/16` (IPv4) and
 //! `fc00::/7` + `fe80::/10` + `::1` (IPv6). Anything else is "public" and,
@@ -43,7 +43,7 @@ pub(crate) fn public_addrs(ifaces: &[IpAddr]) -> Vec<IpAddr> {
 }
 
 /// The private CIDR list embedded verbatim into the generated `smb.conf`
-/// (`interfaces` / `hosts allow`, `DEPLOYMENT.md` §7.4 ②).
+/// (`interfaces` / `hosts allow`, ②).
 pub(crate) const PRIVATE_CIDRS_V4: &[&str] =
     &["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8"];
 pub(crate) const PRIVATE_CIDRS_V6: &[&str] = &["fc00::/7", "fe80::/10", "::1/128"];

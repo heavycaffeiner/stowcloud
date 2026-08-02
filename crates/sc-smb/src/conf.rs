@@ -1,4 +1,4 @@
-//! `smb.conf` rendering (`DEPLOYMENT.md` §7.3/§7.4, `ARCHITECTURE.md` §9.2).
+//! `smb.conf` rendering (`ARCHITECTURE.md` §9.2).
 //!
 //! Every directive listed as "non-negotiable" by the spec this crate
 //! implements is emitted unconditionally in `[global]`; nothing here is
@@ -101,7 +101,7 @@ fn render_global(cfg: &SmbConfig) -> String {
          \u{20}\u{20}map readonly = no\n\
          \u{20}\u{20}ea support = no\n\
          \n\
-         \u{20}\u{20}# ── LAN-only enforcement (DEPLOYMENT.md §7.4) ──\n\
+         \u{20}\u{20}# ── LAN-only enforcement ──\n\
          \u{20}\u{20}bind interfaces only = yes\n\
          \u{20}\u{20}interfaces = {ifaces}\n\
          \u{20}\u{20}hosts allow = {hosts_allow}\n\
@@ -136,8 +136,7 @@ fn render_share(s: &SmbShareDef) -> String {
     );
     if s.shared_externally {
         // Other services can write the same files (Jellyfin, *arr, rsync);
-        // oplocks/leases would let an SMB client cache a stale view
-        // (DEPLOYMENT.md §7.3).
+        // oplocks/leases would let an SMB client cache a stale view.
         out.push_str("  oplocks = no\n");
     }
     out

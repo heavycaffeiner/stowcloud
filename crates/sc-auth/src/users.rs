@@ -258,7 +258,7 @@ impl AuthService {
     ///
     /// Needed by the parts of the server that have to enumerate principals
     /// rather than look one up: the Samba `passdb`/`smb.conf` sync
-    /// (`DEPLOYMENT.md` §7.2/§7.3 renders one entry per user) and the
+    /// (`sc_smb::render_passwd_entries` renders one entry per user) and the
     /// startup grant projection, which turns configured shares into
     /// per-principal `sc-acl` grants.
     pub fn list_users(&self) -> Result<Vec<UserRow>> {
@@ -422,7 +422,7 @@ impl AuthService {
     /// Field 2 of every line is `base_uid + <account row id>`, which must be
     /// the uid the account's passwd entry beside this file carries
     /// (`sc_smb::render_passwd_entries`, fed from `smb.service_uid`) —
-    /// `DEPLOYMENT.md` §7.2 passdb sync point 3.
+    /// passdb sync point 3.
     ///
     /// Two properties, both learned the hard way, and both load-bearing:
     ///

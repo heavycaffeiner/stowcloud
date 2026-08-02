@@ -1,7 +1,7 @@
 //! `sc-server smb-sync` — render and write `smb.conf`/`smbpasswd`/`passwd`
 //! from the live Share/Grant registry, gated by the LAN-only bind check.
 //!
-//! `DEPLOYMENT.md` §7.3 models Samba access as a projection of the same
+//! models Samba access as a projection of the same
 //! Share/Grant registry the HTTP layer uses: **one Samba share per distinct
 //! grant root**, with `valid users` / `read list` / `write list` derived from
 //! who holds which permission bits there. That projection is
@@ -27,7 +27,7 @@ pub fn run(cfg: &Config, master_key: &[u8; 32]) -> anyhow::Result<()> {
 
     // `smbpasswd` content comes from `sc-auth`, which is the only place that
     // ever holds the NT hash and the master key needed to decrypt it
-    // (`DEPLOYMENT.md` §7.2 passdb sync). `sc-smb` never sees plaintext or NT
+    // (passdb sync). `sc-smb` never sees plaintext or NT
     // hashes.
     let auth_db_path = cfg.data_dir.join("auth.db");
     let auth_cfg = sc_auth::AuthConfig {
@@ -119,7 +119,7 @@ fn log_overgrants(overgrants: &[SmbOvergrant]) {
 /// One `[section]` per distinct grant root — not one per *share* — because a
 /// grant on a subdirectory is precisely the case Samba cannot express any
 /// other way: `smb.conf` has no per-path ACL, so a subpath grant has to
-/// become its own share rooted at that path (`DEPLOYMENT.md` §7.3, "subpath
+/// become its own share rooted at that path ("subpath
 /// grant"). `AclEngine::roots` already computes exactly that projection —
 /// including the label de-duplication — for the web UI, so reusing it keeps
 /// the two views of "what can this user reach" from drifting.
