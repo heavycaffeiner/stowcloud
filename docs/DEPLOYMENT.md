@@ -412,9 +412,18 @@ SMB off entirely for that account.
    ```
    No Samba binary invocation needed, and **plaintext never crosses the
    volume.** File mode `0600`, dedicated volume, sidecar mounts it read-only.
+
+   Field 2 is `smb.service_uid` — the same uid point 3's passwd entries carry,
+   not the account's row id. Samba resolves each line through it, and
+   `pdbedit -i` **imports nothing at all** when it names no passwd entry: exit
+   0, no error, no log line, an empty passdb, and every login answered
+   `NT_STATUS_NO_SUCH_USER`. `export_smbpasswd` wrote the row id until
+   2026-08-03, so any deployment whose ids did not coincide with the service
+   uid could not authenticate a single SMB session — see §12.3.
 2. The sidecar detects the change, imports with `pdbedit -i
-   smbpasswd:/config/smb/smbpasswd -e tdbsam:…`, then `smbcontrol all
-   reload-config`.
+   smbpasswd:/config/smb/smbpasswd -e tdbsam:…`, checks that every name in
+   `passwd` actually landed in the passdb (the import's silence is the whole
+   problem above), then `smbcontrol all reload-config`.
 3. Samba requires `getpwnam` to succeed, so the sidecar creates `/etc/passwd`
    entries. **Every SMB user shares one uid** (our service uid) with
    distinct names; real access control is `valid users` / `read list` /
@@ -1263,6 +1272,60 @@ empty `smbpasswd`.
 
 Verified afterwards: `/api/health` 200, the warning gone from the journal, and
 `smb-sync` rendering 2 shares / 1 user.
+
+**That verification was not enough, and §12.3 is what it missed.** "`smb-sync`
+rendering 2 shares / 1 user" says the file was written; it does not say a
+client can log in with it. Nobody had opened an SMB session against this
+deployment at the time — and one would have failed.
+
+### 12.3 The testbed, and the three defects it found (2026-08-03)
+
+`deploy/testbed/docker-compose.dev.yml` builds both images from the working
+tree and runs them on a throwaway Rocky 10 Hyper-V guest, so the compose path
+gets exercised end to end against a real kernel before anything is published.
+The first run of it found three things, none of which any test had reached.
+
+**1. SMB authentication could never have worked.** `export_smbpasswd` wrote the
+account's row id into field 2 of `smbpasswd`, while the passwd entries beside
+it carried `smb.service_uid`. `pdbedit -i` matches the two and imports
+*nothing* when they disagree — silently, exit 0. Every login came back
+`NT_STATUS_LOGON_FAILURE`, and the smbd log said `NT_STATUS_NO_SUCH_USER`.
+Proven both ways on a pristine sidecar: the renderer's own output gives an
+empty passdb and no session; the same file with field 2 rewritten to 1000
+gives `admin:1000:` and a working one. That single field was the entire
+difference.
+
+Why nothing caught it: `sc-auth`'s tests all assert on the NT-hash substring,
+`the_bootstrapped_admin_is_smb_ready_without_a_password_reset` asserted
+`contains("admin:")` — which the broken `admin:1:` satisfies — and
+`scripts/smb-native-test.sh` rewrites field 2 to 1000 before importing, so the
+one place that ran a real `pdbedit -i` was repairing the bug on every run
+rather than failing on it. All three now pin the uid.
+
+The sidecar also had no equivalent of the bare-metal agent's `verify_passdb`,
+so the container path reported nothing whatsoever. It does now.
+
+**2. `/config/smb` as a named volume could not be written.** §9's compose file
+mounted it that way; an empty named volume is created root:root 0755 by the
+volume driver and `sc-core` never runs as root, so enabling SMB returned
+`422 io error at /config/smb/smb.conf: Permission denied`. The same file's own
+header already explained why `./data` and `./secrets` are bind mounts; this
+mount had simply never been brought under that rule. Both compose files now
+bind-mount `./smbcfg`.
+
+**3. A failed enable left the setting durably on.** `set_smb` wrote the
+override to `settings.db` before calling `render_live`, so defect 2's failure
+persisted `smb.enabled = true` with nothing rendered anywhere. After a restart
+the config agreed with the patch, so the next identical request reported
+`applied_live: true` — an instance claiming SMB was on and serving nothing.
+The render now runs against a candidate config and only a success commits.
+
+Verified after all three fixes, on the guest and from a Windows 11 client:
+SMB3_11 with AES-128-GCM encryption and AES-128-GMAC signing, `force user =
+scsvc`, a 256 KB `put`/`get` round trip byte-identical by SHA-256, nested
+`mkdir` and `del` over SMB, both shares reachable, a wrong password and an
+unknown user both refused, and the file a Windows `Copy-Item` wrote landing on
+the guest with a matching hash.
 
 ### Why a VM at all — and why the container runs inside it
 
