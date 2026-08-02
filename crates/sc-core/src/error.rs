@@ -26,7 +26,7 @@ pub enum CoreError {
     CrossDevice,
     /// The resource existed but is permanently unavailable — a share link
     /// whose target moved or was replaced, expired, or hit its download cap
-    /// (`DESIGN-PREVIEW.md` §7.1: "a mismatch invalidates the link with
+    /// ("a mismatch invalidates the link with
     /// `410 Gone`"). Distinct from `NotFound` because the caller must *not*
     /// retry or fall back.
     #[error("gone")]

@@ -4,7 +4,7 @@
 //! payload is a self-contained, known-length block: no streaming state, one
 //! call in each direction.
 //!
-//! The C binding is not a problem for this crate — `DESIGN-PREVIEW.md`'s
+//! The C binding is not a problem for this crate —'s
 //! "pure Rust decoders only" rule is about parsers that eat untrusted user
 //! content (images, documents). These bytes are ours: we wrote them, in a file
 //! we own, and every decompression is length-checked against the block

@@ -1,4 +1,4 @@
-//! Magic-byte MIME sniffing (`DESIGN-PREVIEW.md` §3).
+//! Magic-byte MIME sniffing.
 //!
 //! Never trust a file extension or a caller-supplied `Content-Type`. Only the
 //! first ~8192 bytes of the file are read, and classification is done purely
@@ -6,7 +6,7 @@
 
 use std::io::Read;
 
-/// Cap matches `DESIGN-PREVIEW.md` §3's `head` buffer size.
+/// Cap matches's `head` buffer size.
 pub const SNIFF_HEAD_BYTES: usize = 8192;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -28,7 +28,7 @@ impl Sniffed {
     }
 
     /// Same magic-byte discipline as [`Sniffed::is_image`], for the other
-    /// half of `DESIGN-PREVIEW.md` §4's job split
+    /// half of's job split
     /// (`crate::worker::JobKind::Image` vs `::Video`). This is what lets
     /// `PreviewService::get_or_generate` route a video file to the job kind
     /// that actually reports "not implemented" instead of falling into the

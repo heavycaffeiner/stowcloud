@@ -1,4 +1,4 @@
-//! Signed content URLs — `DESIGN-PREVIEW.md` §2.2.
+//! Signed content URLs —
 //!
 //! ```text
 //! https://content.example.com/c/<payload>.<sig>
@@ -68,8 +68,7 @@ pub fn body_from_reader(mut reader: Box<dyn std::io::Read + Send>) -> axum::body
     axum::body::Body::from_stream(ReceiverStream(rx))
 }
 
-/// Maximum number of simultaneously valid signing keys (`DESIGN-PREVIEW.md`
-/// §2.3: "up to 4 keys valid at once, keyed by kid").
+/// Maximum number of simultaneously valid signing keys ("up to 4 keys valid at once, keyed by kid").
 pub const MAX_KEYS: usize = 4;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -81,7 +80,7 @@ pub enum Disposition {
 }
 
 impl Disposition {
-    /// `DESIGN-PREVIEW.md` §2.3 default TTLs.
+    /// default TTLs.
     pub fn default_ttl(self) -> std::time::Duration {
         use std::time::Duration;
         match self {
@@ -155,7 +154,7 @@ impl SignedUrlKeys {
     }
 
     /// Immediately revoke a `kid` — every URL signed with it dies at once
-    /// (`DESIGN-PREVIEW.md` §2.3: "on a leak, revoke that kid immediately").
+    /// ("on a leak, revoke that kid immediately").
     pub fn revoke(&mut self, kid: u8) {
         self.keys[kid as usize % MAX_KEYS] = None;
     }
@@ -208,7 +207,7 @@ pub fn verify(keys: &SignedUrlKeys, token: &str, current_etag8: Option<[u8; 8]>)
     let mut mac = HmacSha256::new_from_slice(key).expect("HMAC accepts any key length");
     mac.update(payload_b64.as_bytes());
     let expected = mac.finalize().into_bytes();
-    // Constant-time comparison (`DESIGN-PREVIEW.md` §2.2/§9: "constant-time HMAC comparison").
+    // Constant-time comparison ("constant-time HMAC comparison").
     if expected[..16].ct_eq(&sig[..]).unwrap_u8() != 1 || sig.len() != 16 {
         return Err(VerifyError::BadSignature);
     }
@@ -224,8 +223,7 @@ pub fn verify(keys: &SignedUrlKeys, token: &str, current_etag8: Option<[u8; 8]>)
     Ok(claim)
 }
 
-/// First 8 raw bytes of a hex `ETag` string (`DESIGN-PREVIEW.md` §2.2:
-/// "first 8 bytes of the ETag"). Every signing call site in this binary derives
+/// First 8 raw bytes of a hex `ETag` string ("first 8 bytes of the ETag"). Every signing call site in this binary derives
 /// `Claim::etag` this way (`sc-server`'s `nc.rs`/`bridge.rs` included), so
 /// verification must recompute it identically or every link would 410 the
 /// moment it was minted.
@@ -248,7 +246,7 @@ pub enum RangeRequest {
     Single { start: u64, end: Option<u64> },
     /// `bytes=-n`: the last `n` bytes.
     Suffix(u64),
-    /// More than one range requested. `DESIGN-PREVIEW.md`/the task brief:
+    /// More than one range requested./the task brief:
     /// "a multi-range request gets the full 200" — we do not implement
     /// `multipart/byteranges`.
     Multi,
@@ -314,7 +312,7 @@ pub fn clamp_range(req: RangeRequest, size: u64) -> Result<Option<(u64, u64)>, (
 /// Build the browser-facing URL for a signed `/c/{token}` content link.
 ///
 /// `host` is `content_hosts.first()`. When it is `None` — the
-/// `DESIGN-PREVIEW.md` §2.5 single-origin fallback, which is exactly what
+/// single-origin fallback, which is exactly what
 /// `.dev/sc.toml` and production both run today — the naive
 /// `format!("https://{host}/c/{token}")` with `host = ""` produces
 /// `https:///c/<token>`. That string does **not** mean "no host": per WHATWG
@@ -329,7 +327,7 @@ pub fn clamp_range(req: RangeRequest, size: u64) -> Result<Option<(u64, u64)>, (
 /// The fix is a host-relative path, not an attempt to guess an absolute
 /// origin: `content_get`'s own `single_origin` gate (`routes.rs`) already
 /// accepts a `/c/{token}` request on whatever `Host` the browser is already
-/// pointed at when `content_hosts` is empty (`DESIGN-PREVIEW.md` §2.5's
+/// pointed at when `content_hosts` is empty ('s
 /// documented, warned-about trade-off), so a relative URL always resolves to
 /// the one origin that will actually answer it — no host to get wrong.
 ///
@@ -345,7 +343,7 @@ pub fn content_url(host: Option<&str>, token: &str) -> String {
 }
 
 /// RFC 5987 `filename*` percent-encoding, plus an ASCII-safe fallback for
-/// `filename=`. Both strip CR/LF/quotes first — `DESIGN-PREVIEW.md` §2.4:
+/// `filename=`. Both strip CR/LF/quotes first —:
 /// header injection through a crafted filename is exactly what this is for.
 pub fn content_disposition_value(disposition: &str, name: &str) -> String {
     let sanitized: String = name.chars().filter(|c| !matches!(c, '\r' | '\n' | '"')).collect();

@@ -196,7 +196,7 @@ async function mockDropUpload(file: File): Promise<string> {
 /** `POST /s/{token}/drop?name=…` — upload one file through a file-drop link.
  *  Resolves to the name the file was **stored** under, which is not always
  *  `file.name`: the core never overwrites, so a collision comes back renamed
- *  (`DESIGN-PREVIEW.md` §7.2) and the uploader has to be told which one is
+ * and the uploader has to be told which one is
  *  theirs.
  *
  *  No `Sc-Csrf` header, deliberately: `/s/**` is a public path, so

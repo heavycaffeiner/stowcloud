@@ -810,7 +810,7 @@ impl ResizableSemaphore {
 pub struct ClientIp(pub std::net::IpAddr);
 
 /// Request extension set by `HostGuard` — which of the two hosts this
-/// request arrived on (`DESIGN-API.md` §9 / `DESIGN-PREVIEW.md` §2.1).
+/// request arrived on (`DESIGN-API.md` §9 /).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HostOrigin {
     App,
@@ -828,7 +828,7 @@ pub struct AppState {
     pub core: Arc<dyn CoreApi>,
     pub uploads: Arc<dyn crate::upload_api::UploadApi>,
     /// Signed content-URL byte serving (`GET /c/{token}`,
-    /// `DESIGN-PREVIEW.md` §2) — `FileId`-keyed, deliberately separate from
+    /// ) — `FileId`-keyed, deliberately separate from
     /// `core` (see `content_api` module docs).
     pub content: Arc<dyn ContentApi>,
     /// `GET /api/search[/stream]` — backed by
@@ -859,7 +859,7 @@ pub struct AppState {
     pub jobs: Arc<JobStore>,
     pub rate_limiter: Arc<IpTokenBucket>,
     /// Share-link password attempts, keyed by the token in the URL
-    /// (`DESIGN-PREVIEW.md` §7.2: 10 per hour per token).
+    /// (10 per hour per token).
     pub link_rate: Arc<KeyedTokenBucket>,
     /// Per-user search rate limit (30/min), keyed by
     /// the caller's `UserId`.

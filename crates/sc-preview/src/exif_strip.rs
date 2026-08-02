@@ -1,4 +1,4 @@
-//! EXIF orientation handling (`DESIGN-PREVIEW.md` §4.3).
+//! EXIF orientation handling.
 //!
 //! The rule is: read *only* the orientation tag from the source, apply the
 //! equivalent rotation/flip to the decoded pixels, then encode the output
@@ -188,7 +188,6 @@ mod tests {
         // The output must decode back to WebP with the rotated dimensions...
         let redecoded = image::load_from_memory_with_format(&webp, image::ImageFormat::WebP).unwrap();
         assert_eq!((redecoded.width(), redecoded.height()), (h, w));
-
         // ...and must carry no EXIF at all: either kamadak-exif can't find
         // a container-level EXIF chunk in the WebP at all (the expected,
         // normal outcome), or if it somehow parses anything, it must find

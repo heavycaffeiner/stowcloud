@@ -113,8 +113,8 @@ docs and are omitted here; see `DESIGN-UPLOAD.md` and `DESIGN-COMPAT.md`.
 | `GET` | `/api/admin/shares` | The deployment's registered shares |
 | `GET`/`POST` | `/api/admin/grants` | (`DESIGN-AUTH.md` §12) |
 | `PATCH`/`DELETE` | `/api/admin/grants/{id}` | |
-| `GET` | `/c/{token}` | Signed content URL (`DESIGN-PREVIEW.md`) |
-| `GET` | `/s/{token}` | Public share link — unauthenticated, token is the whole story (`DESIGN-PREVIEW.md` §7.2) |
+| `GET` | `/c/{token}` | Signed content URL (`proposals/stowcloud-6-preview-sharing.md`) |
+| `GET` | `/s/{token}` | Public share link — unauthenticated, token is the whole story (`proposals/stowcloud-6-preview-sharing.md`) |
 | `POST` | `/s/{token}/auth` | Link password |
 | `POST` | `/s/{token}/download` | |
 | `POST` | `/s/{token}/drop` | |
@@ -252,7 +252,7 @@ pub struct Entry {
 
 MIME type is **never in the response**. Extension-based guessing belongs to
 the client; the moment the server states a MIME type, something will trust
-it for a serving decision (`DESIGN-PREVIEW.md` §3).
+it for a serving decision (`proposals/stowcloud-6-preview-sharing.md`).
 
 ---
 

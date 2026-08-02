@@ -148,7 +148,7 @@ shipped.
 96. Image thumbnails — pure-Rust decoders, preset sizes, AVIF/WebP
 97. EXIF stripped — orientation applied, GPS discarded
 98. Isolated worker process — empty Landlock ruleset, seccomp, RLIMIT, FD passing, automatic crash recovery
-99. Video thumbnails — ffmpeg jail + `-protocol_whitelist file` (blocks SSRF). **✗ Non-goal — decided against, not pending.** `worker::JobKind::Video` exists in the wire protocol and is refused with `NegativeReason::Unimplemented` before any bytes are touched (`crates/sc-preview/src/lib.rs`, `worker/jailed/mod.rs`). ffmpeg is a separate binary; the jail's workers are `fork`ed, never `execve`'d (Landlock + 22-syscall seccomp allow-list — `worker/jailed/seccomp.rs`), so running it would need either relaxing that allow-list (rejected outright) or standing up a second, structurally different `execve`-based jail with its own per-file Landlock rule — real, unverified new attack surface. `DESIGN-PREVIEW.md` §4.4 already reasons through exactly this and reaches the same conclusion: a second jail shipped without being proven against a live kernel is worse than shipping none
+99. Video thumbnails — ffmpeg jail + `-protocol_whitelist file` (blocks SSRF). **✗ Non-goal — decided against, not pending.** `worker::JobKind::Video` exists in the wire protocol and is refused with `NegativeReason::Unimplemented` before any bytes are touched (`crates/sc-preview/src/lib.rs`, `worker/jailed/mod.rs`). ffmpeg is a separate binary; the jail's workers are `fork`ed, never `execve`'d (Landlock + 22-syscall seccomp allow-list — `worker/jailed/seccomp.rs`), so running it would need either relaxing that allow-list (rejected outright) or standing up a second, structurally different `execve`-based jail with its own per-file Landlock rule — real, unverified new attack surface. `proposals/stowcloud-6-preview-sharing.md` already reasons through exactly this and reaches the same conclusion: a second jail shipped without being proven against a live kernel is worse than shipping none
 100. PDF client-side rendering — `pdf.js` inside a sandboxed iframe
 101. Text/code preview
 102. Archive listing preview + zip-slip / zip-bomb defenses
@@ -391,7 +391,7 @@ theme (item 135)**.
 The first two were previously described only inside the search section as if
 merely unscheduled; they are decisions, not a backlog — see items 119/120
 above for what was evaluated and rejected. Item 99 is the same kind of call,
-reached independently and for the same reason: `DESIGN-PREVIEW.md` §4.4 had
+reached independently and for the same reason: `proposals/stowcloud-6-preview-sharing.md` had
 already reasoned it through before this note was added — running ffmpeg
 needs a second, `execve`-based jail structurally unlike the fork-only one
 the rest of preview generation uses, and shipping one unproven against a

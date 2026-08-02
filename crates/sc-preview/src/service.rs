@@ -19,7 +19,7 @@ use crate::worker::{JobKind, JobRequest, JobResult, WorkerPool};
 pub struct PreviewConfig {
     pub cache: CacheConfig,
     pub decode_limits: DecodeLimits,
-    /// Global cap on concurrently *running* generations (DESIGN-PREVIEW.md
+    /// Global cap on concurrently *running* generations (
     /// section 6: "generation concurrency limit: a global semaphore, default =
     /// core count / 2"). Does not limit how many callers can be waiting --
     /// only how many are actually inside the worker pool at once.
@@ -86,7 +86,7 @@ impl PreviewService {
         let mut raw = Vec::new();
         input.read_to_end(&mut raw).map_err(PreviewError::Io)?;
 
-        // `DESIGN-PREVIEW.md` §3: decide by magic bytes, never by extension
+        // decide by magic bytes, never by extension
         // or a caller-supplied type — the same rule `sniff` already enforces
         // for the XSS-relevant MIME decision applies to picking the job kind.
         // This is also what makes a video file actually reach

@@ -165,7 +165,7 @@ pub enum CoreError {
     Denied { by: Option<u32> },
     /// The resource existed and is permanently unavailable — a share link
     /// whose target was replaced, whose expiry passed, or whose download cap
-    /// is spent (`DESIGN-PREVIEW.md` §7.1).
+    /// is spent.
     #[error("gone")]
     Gone,
     /// The deployment does not provide this operation. Rendered as `501`, not
@@ -221,7 +221,7 @@ impl From<CoreError> for crate::error::AppError {
 }
 
 /// One descendant discovered while walking an archive root
-/// (`CoreApi::archive_walk`, `DESIGN-PREVIEW.md` §8). Mirrors
+/// (`CoreApi::archive_walk`). Mirrors
 /// `sc_core::WalkEntry` — kept as a local type so this crate's trait
 /// boundary never names `sc-core`.
 #[derive(Clone, Debug)]
@@ -540,7 +540,7 @@ impl GrantPatchReq {
 }
 
 // ---------------------------------------------------------------- shares --
-// `DESIGN-PREVIEW.md` §7 / `DESIGN-API.md` §2 `/api/shares[/:id]`. The store
+// / `DESIGN-API.md` §2 `/api/shares[/:id]`. The store
 // itself lives in `sc-core` (`sc_core::LinkStore`) because both this crate and
 // the compatibility layer are translations of the same rows; what is defined
 // here is only the wire shape.
@@ -587,7 +587,7 @@ impl PermsReq {
 ///
 /// `token`/`url` are populated on the create response only: the plaintext
 /// token is generated once and never persisted, so no later read can produce
-/// it (`DESIGN-PREVIEW.md` §7.1, "plaintext is never stored").
+/// it ("plaintext is never stored").
 #[derive(Clone, Debug, Serialize)]
 pub struct ShareLinkInfo {
     pub id: i64,
@@ -646,8 +646,7 @@ where
 /// What an **anonymous visitor** is allowed to learn about a link.
 ///
 /// Deliberately does not carry the host path, the owner, the virtual path, or
-/// the existence of any other link on the same file (`DESIGN-PREVIEW.md`
-/// §7.2: "must not leak the real path, owner, or the existence of other shares").
+/// the existence of any other link on the same file ("must not leak the real path, owner, or the existence of other shares").
 #[derive(Clone, Debug)]
 pub struct PublicLink {
     pub id: i64,
@@ -869,7 +868,7 @@ pub trait CoreApi: Send + Sync {
     /// groups to evaluate.
     fn refresh_group_memberships(&self, _m: HashMap<UserId, Vec<sc_vfs::GroupId>>) {}
 
-    /// `POST /api/fs/archive` (`DESIGN-PREVIEW.md` §8): enumerate `vpath`
+    /// `POST /api/fs/archive`: enumerate `vpath`
     /// (file or directory) top to bottom, calling `visit` once per
     /// descendant. ACL is re-checked per entry and gates *descent* — an
     /// unreadable subtree is reported once (`readable: false`) and never

@@ -1,4 +1,4 @@
-//! Worker process protocol and pool trait (DESIGN-PREVIEW.md section 4).
+//! Worker process protocol and pool trait ( section 4).
 //!
 //! The real deployment target forks worker processes ahead of time and hands
 //! them jobs over a Unix socket using `SCM_RIGHTS` fd passing: the parent
@@ -14,12 +14,12 @@
 //!   are forked at startup, sealed behind Landlock + rlimits + a seccomp-BPF
 //!   allow-list, and fed jobs over `SOCK_SEQPACKET` with the input and output
 //!   descriptors passed as `SCM_RIGHTS`. This is what `sc-server` uses on
-//!   Linux, and what `DESIGN-PREVIEW.md` §4 is describing.
+//!   Linux, and what is describing.
 //! - [`InProcessWorkerPool`]: runs the decode/resize/encode pipeline
 //!   in-process, no fork, no sandboxing. The non-Linux backend, and what
 //!   this crate's Windows-hosted test suite exercises. It offers **no**
 //!   containment: a memory-corruption bug in a decoder is a compromise of
-//!   the whole server process. That is the trade `DESIGN-PREVIEW.md` §4.1
+//!   the whole server process. That is the trade
 //!   exists to refuse, and it is accepted here only because Landlock and
 //!   seccomp have no Windows equivalent.
 
@@ -38,7 +38,7 @@ pub mod jailed;
 /// Shared between [`InProcessWorkerPool::run_job`] and
 /// `jailed::run_job_in_worker` so the two backends refuse a video job with
 /// the exact same, honest message rather than two copies that could drift
-/// apart (`DESIGN-PREVIEW.md` §4.4).
+/// apart.
 pub(crate) const VIDEO_UNIMPLEMENTED_REASON: &str = "video preview generation is not implemented in this build";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

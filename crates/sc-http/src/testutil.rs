@@ -508,8 +508,8 @@ pub fn test_state_with_content(content: Arc<dyn crate::content_api::ContentApi>)
 }
 
 /// A state configured for the **single-origin fallback**: no dedicated
-/// content host, so user content is served from the app origin
-/// (`DESIGN-PREVIEW.md` §2.5). Supported, but it gives up the XSS isolation
+/// content host, so user content is served from the app origin.
+/// Supported, but it gives up the XSS isolation
 /// the split exists for, which is why startup warns about it.
 pub fn test_state_single_origin(content: Arc<dyn crate::content_api::ContentApi>) -> (AppState, tempfile::TempDir) {
     let (mut state, dir) = test_state_with_core(Arc::new(UnimplementedCore));

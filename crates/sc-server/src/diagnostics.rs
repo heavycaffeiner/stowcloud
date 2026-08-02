@@ -238,7 +238,7 @@ pub struct Diagnostics {
     pub size_guard_recommendation: Option<(bool, u64)>,
     pub smb_bind_result: Result<(), String>,
     /// No dedicated content origin configured, so user content is served from
-    /// the app origin. Permitted (`DESIGN-PREVIEW.md` §2.5) but must be said
+    /// the app origin. Permitted but must be said
     /// out loud — it gives up the XSS isolation separation exists to provide.
     pub single_origin: bool,
     pub trusted_proxies: TrustedProxies,
@@ -701,7 +701,7 @@ pub fn print(d: &Diagnostics) {
         println!("[sc]   content origin: NONE — serving user content from the app origin");
         println!("[sc]     A stored-XSS in an uploaded file can reach the session cookie.");
         println!("[sc]     Set `content_hosts` to a separate hostname to restore the");
-        println!("[sc]     isolation (DESIGN-PREVIEW.md §2). Acceptable for local use.");
+        println!("[sc]     isolation. Acceptable for local use.");
     }
 
     // `cfg!(...)`, not `#[cfg(...)]`: the field above is always populated (it
@@ -973,7 +973,6 @@ mod tests {
         // No real volume has `u64::MAX` free, so this always trips.
         sample_storage_once(dir.path(), u64::MAX, &meta);
         assert!(meta.writes_blocked());
-
         // ...and no volume has less than zero, so this always clears.
         sample_storage_once(dir.path(), 0, &meta);
         assert!(!meta.writes_blocked());

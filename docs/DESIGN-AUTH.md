@@ -11,7 +11,7 @@ top of this, documented in `DESIGN-COMPAT.md`.
 |---|---|
 | Credential stuffing | Per-IP + per-account rate limits with escalating delay. No account lockout (that's a DoS an attacker triggers on someone else) |
 | DB leak | Passwords: Argon2id. Session tokens and app passwords: hashed at rest. TOTP seeds and NT hashes: encrypted with the master key |
-| Session theft (XSS) | Uploaded content served only from a separate, cookie-less origin (`DESIGN-PREVIEW.md`). Session cookie is `HttpOnly` |
+| Session theft (XSS) | Uploaded content served only from a separate, cookie-less origin (`proposals/stowcloud-6-preview-sharing.md`). Session cookie is `HttpOnly` |
 | CSRF | `__Host-` cookie prefix + `SameSite=Lax` + a required custom header (§3.3) |
 | Account enumeration | Login, password reset, and Login Flow responses are timing- and shape-identical regardless of whether the account exists |
 | Login flood exhausting memory | Argon2 concurrency semaphore (§2.2) |
@@ -342,7 +342,7 @@ no header, both fail closed with `403`.
 | `/api/uploads/**` (TUS) | ✅ + CSRF | ❌ | ✅ | Custom header required, so no `<form>` attack surface |
 | `/dav/**` | ❌ | ✅ **account password + app password** | ✅ | Cookies rejected → no CSRF surface at all |
 | `/remote.php/**`, `/ocs/**` (NC) | ❌ | ✅ same | ✅ | |
-| `content.<host>/**` | ❌ | ❌ | ❌ | Signed URLs only (`DESIGN-PREVIEW.md`) |
+| `content.<host>/**` | ❌ | ❌ | ❌ | Signed URLs only (`proposals/stowcloud-6-preview-sharing.md`) |
 | SMB | — | — | — | **Account password** (NTLMv2). Dedicated password only for TOTP accounts (§2.4) |
 
 Basic auth is only accepted **over TLS**. If `X-Forwarded-Proto` isn't

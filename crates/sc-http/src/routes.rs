@@ -109,7 +109,7 @@ pub fn protected_routes(state: AppState) -> Router {
         .route("/api/admin/audit", get(admin_list_audit))
         .fallback(admin_catch_all)
         .route("/c/{token}", get(content_get))
-        // Public share links (`DESIGN-PREVIEW.md` §7.2). Unauthenticated by
+        // Public share links. Unauthenticated by
         // design — see `middleware::is_public_path`.
         .route("/s/{token}", get(public_link_get))
         .route("/s/{token}/auth", post(public_link_auth))
@@ -2128,7 +2128,7 @@ async fn fs_link(State(state): State<AppState>, principal: Option<Extension<Prin
     let fid = sc_vfs::ids::FileId::new(q.fid);
 
     // The capability *is* the access control once a URL is minted
-    // (`DESIGN-PREVIEW.md` §2.1) — so minting one must itself be ACL-checked.
+    // — so minting one must itself be ACL-checked.
     // Without this, any authenticated user could request a download link for
     // any `fid` on the server: `fid`s are small sequential integers, not
     // secrets.
@@ -2164,7 +2164,7 @@ struct ArchiveReq {
     paths: Vec<String>,
 }
 
-/// `DESIGN-PREVIEW.md` §8 / `DESIGN-API.md` §6: ZIP64/STORE archive of a
+/// / `DESIGN-API.md` §6: ZIP64/STORE archive of a
 /// batch selection, always run as a durable job (`spawn_archive_job`) — the
 /// per-selection nature of an archive request doesn't fit the single-`fid`
 /// `Claim` shape the rest of `/c/{token}` uses, so the finished bytes are
@@ -2650,7 +2650,7 @@ async fn trash_purge(State(state): State<AppState>, principal: Option<Extension<
 }
 
 // ----------------------------------------------------------------- shares --
-// `DESIGN-PREVIEW.md` §7 share-link CRUD over `sc_core::LinkStore`, reached
+// share-link CRUD over `sc_core::LinkStore`, reached
 // through `CoreApi`. A deployment with no link store attached answers `501`
 // from the trait's own defaults (`CoreError::NotSupported`) rather than
 // accepting a create and dropping it.
@@ -2752,7 +2752,7 @@ async fn shares_delete(State(state): State<AppState>, principal: Option<Extensio
 }
 
 // ---------------------------------------------------- public share links --
-// `DESIGN-PREVIEW.md` §7.2. Everything below is reachable **without a
+// Everything below is reachable **without a
 // session** (`middleware::is_public_path`); the token in the URL, plus the
 // link password when one is set, is the entire authorization story.
 //
@@ -2819,7 +2819,7 @@ fn link_authorized(state: &AppState, headers: &axum::http::HeaderMap, token: &st
         .unwrap_or(false)
 }
 
-/// `share.link_accessed` (`DESIGN-PREVIEW.md` §7.2: "every access is
+/// `share.link_accessed` ("every access is
 /// audit-logged as `share.link_accessed` (IP, UA, success)").
 ///
 /// The **token is never logged** — an audit trail that records live
@@ -3103,7 +3103,7 @@ fn is_length_limit(err: &axum::Error) -> bool {
 }
 
 /// Upload through a file-drop link. Never overwrites — a colliding name is
-/// renamed by the core (`DESIGN-PREVIEW.md` §7.2).
+/// renamed by the core.
 async fn public_link_drop(
     State(state): State<AppState>,
     Path(token): Path<String>,
@@ -4782,7 +4782,7 @@ pub(crate) fn is_reserved_path(cfg: &crate::config::HttpConfig, path: &str) -> b
 ///    happen to fail there.
 /// 3. The content origin never gets the SPA, full stop — that origin exists
 ///    so untrusted stored content can never run with the application's own
-///    authority (`DESIGN-PREVIEW.md` §2); serving the app's own HTML/JS
+///    authority; serving the app's own HTML/JS
 ///    there would hand that authority right back.
 /// 4. Everything else, on the app origin, `GET`/`HEAD` only, is a
 ///    client-routed SPA path — `#[cfg(feature = "embed-ui")]` serves the
@@ -4817,7 +4817,7 @@ async fn admin_catch_all(State(state): State<AppState>, req: axum::extract::Requ
 }
 
 // ---------------------------------------------------------------- content --
-// `DESIGN-PREVIEW.md` §2/§2.4 — signed content-origin serving.
+// — signed content-origin serving.
 //
 // `security_headers` (middleware.rs) already sets `X-Content-Type-Options`,
 // `Referrer-Policy`, `Cross-Origin-Resource-Policy` and the sandboxed CSP for
@@ -4869,10 +4869,10 @@ fn serve_original(state: &AppState, fid: sc_vfs::ids::FileId, stat: &crate::cont
 }
 
 async fn content_get(State(state): State<AppState>, Path(token): Path<String>, req: axum::extract::Request) -> Response {
-    // Content-origin requests never parse cookies (`DESIGN-PREVIEW.md` §2.1);
+    // Content-origin requests never parse cookies;
     // `HostGuard` already ensured we only reach this handler when the Host
     // header matched a content host, but double check defensively.
-    // Single-origin fallback (`DESIGN-PREVIEW.md` §2.5): with no dedicated
+    // Single-origin fallback: with no dedicated
     // content host configured there is nothing for the App origin to be
     // distinguished *from*, so refusing here would make downloads impossible
     // in that deployment. The isolation this normally buys is genuinely lost,
@@ -4903,7 +4903,7 @@ async fn content_get(State(state): State<AppState>, Path(token): Path<String>, r
         Ok(s) => s,
         Err(_) => return AppError::not_found().into_response(),
     };
-    // `DESIGN-PREVIEW.md` §2.2: the etag prefix in the claim auto-invalidates
+    // the etag prefix in the claim auto-invalidates
     // the URL the moment the file changes underneath it.
     if content::etag8_of(&stat.etag) != claim.etag {
         return StatusCode::GONE.into_response();
@@ -4917,8 +4917,8 @@ async fn content_get(State(state): State<AppState>, Path(token): Path<String>, r
                     let mut resp = bytes::Bytes::from(thumb_bytes).into_response();
                     let hh = resp.headers_mut();
                     // Our own re-encode only — never the original bytes, and
-                    // that is exactly what makes `inline` safe here
-                    // (`DESIGN-PREVIEW.md` §2.4).
+                    // that is exactly what makes `inline` safe here.
+                    // 
                     hh.insert(axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_static("image/webp"));
                     if let Ok(v) = axum::http::HeaderValue::from_str(&content::content_disposition_value("inline", "thumbnail.webp")) {
                         hh.insert(axum::http::header::CONTENT_DISPOSITION, v);
@@ -5530,8 +5530,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_dead_link_is_410_not_404() {
-        // 404 would invite a retry; `410` says the target is gone for good
-        // (`DESIGN-PREVIEW.md` §7.1).
+        // 404 would invite a retry; `410` says the target is gone for good.
+        // 
         let (state, _dir) = test_state_with_core(Arc::new(LinkMockCore::with_link("tok", 1).kill(1)));
         let app = public_router(state);
         let resp = get_uri(&app, "/s/tok", None).await;
@@ -5858,8 +5858,7 @@ mod tests {
     }
 
     /// Regression: `.dev/sc.toml` and production both run with
-    /// `content_hosts` empty (single-origin fallback, `DESIGN-PREVIEW.md`
-    /// §2.5), and `fs_link` used to build its URL with
+    /// `content_hosts` empty (single-origin fallback), and `fs_link` used to build its URL with
     /// `format!("https://{host}/c/{token}")` where `host` was `""`. That
     /// produces the literal string `https:///c/<token>`, which WHATWG URL
     /// parsing resolves to host `c` (a real, unrelated, unreachable domain)

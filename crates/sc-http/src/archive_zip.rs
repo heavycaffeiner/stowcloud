@@ -1,6 +1,6 @@
 //! A minimal, from-scratch **streaming** ZIP writer — `STORE` only, always
-//! ZIP64, always the data-descriptor form — used by `POST /api/fs/archive`
-//! (`DESIGN-PREVIEW.md` §8).
+//! ZIP64, always the data-descriptor form — used by `POST /api/fs/archive`.
+//! 
 //!
 //! The `zip` crate (already a workspace dependency, used read-only by
 //! `sc-preview`'s archive *listing*) cannot be reused here: its `ZipWriter`
@@ -462,8 +462,7 @@ mod tests {
 
     #[test]
     fn a_short_read_still_produces_a_valid_entry() {
-        // Simulates the "file vanished mid-stream" case (`DESIGN-PREVIEW.md`
-        // §8): the reader yields fewer bytes than some hypothetical declared
+        // Simulates the "file vanished mid-stream" case: the reader yields fewer bytes than some hypothetical declared
         // size ever promised, because none was ever promised.
         struct Flaky(usize);
         impl Read for Flaky {

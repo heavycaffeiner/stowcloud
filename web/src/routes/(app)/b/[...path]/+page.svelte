@@ -174,7 +174,7 @@
     deleteOpen = true
   }
 
-  // ── download (DESIGN-PREVIEW.md §2/§8) ──
+  // ── download ──
   // Single file: `POST /api/fs/link` mints a signed content-origin URL, then
   // a plain navigation (not `fetch`) hands the browser the actual
   // `Content-Disposition: attachment` bytes -- no CORS/blob juggling needed,
@@ -197,7 +197,7 @@
       })
     } catch (err) {
       if (err instanceof ApiError && err.code === 'rate.limited') {
-        // DESIGN-PREVIEW.md §8: the server caps concurrent archive streams
+        // the server caps concurrent archive streams
         // and 429s over that -- a real state to show, not a silent hang.
         snackbarMsg = t('browse.too_many_zip_downloads_at')
       } else {

@@ -520,7 +520,7 @@ export interface TrashEntry {
   deleted_mtime_ns: string
 }
 
-// ── content links (DESIGN-PREVIEW.md §2/§8) ──
+// ── content links ──
 
 export type LinkDisposition = 'attachment' | 'inline_thumb' | 'stream'
 
@@ -529,7 +529,7 @@ export interface LinkResponse {
   url: string
 }
 
-// ── share links, owner side (DESIGN-PREVIEW.md §7, DESIGN-API.md) ──
+// ── share links, owner side (DESIGN-API.md) ──
 
 /** `POST/PATCH /api/shares[/:id]` request body's `perms` field
  *  (`crates/sc-http/src/core_api.rs::PermsReq`) — every key optional/defaults
@@ -673,7 +673,7 @@ export type ServerMsg =
 
 export type ClientMsg = { t: 'sub'; paths: string[] } | { t: 'unsub'; paths: string[] } | { t: 'ping' }
 
-// ── text editor (`/edit/[...path]`,) ──
+// ── text editor (`/edit/[...path]`) ──
 
 /** `GET /api/fs/read` response shape. No etag on purpose — the server
  *  derives it fresh from `stat` at write time (`AppError::precondition`), so

@@ -66,7 +66,7 @@ pub enum Command {
     },
     /// Render and write smb.conf/smbpasswd/passwd from config.
     SmbSync,
-    /// Name-index (T3,) maintenance: build, merge, or
+    /// Name-index (T3) maintenance: build, merge, or
     /// inspect the on-disk `.scindex/names` a share may have. Every
     /// subcommand refuses to run unless `[index] name_enabled = true` is set
     /// in the config — the same "off by default, never automatic" rule

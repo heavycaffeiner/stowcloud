@@ -1,5 +1,5 @@
 //! The seccomp-BPF syscall allow-list for the preview worker
-//! (`DESIGN-PREVIEW.md` §4.2, step ③).
+//! (step ③).
 //!
 //! # Why the filter is hand-built instead of using a crate
 //!
@@ -112,7 +112,7 @@ mod filter {
         libc::sock_filter { code, jt, jf, k }
     }
 
-    /// The allow-list from `DESIGN-PREVIEW.md` §4.2, plus `recvmsg`/`sendmsg`
+    /// The allow-list from, plus `recvmsg`/`sendmsg`
     /// (the design doc's pseudo-code omits them, but they are how the worker
     /// receives its job and its fds in the first place — without them the
     /// worker cannot take a single job).

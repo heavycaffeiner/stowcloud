@@ -175,7 +175,7 @@ async function del(paths: string[], permanent = false): Promise<{ job: string }>
   return request('/fs/delete', { method: 'POST', body: JSON.stringify({ paths, permanent }) })
 }
 
-// ── content links & archive download (DESIGN-PREVIEW.md §2, §8) ──
+// ── content links & archive download (§8) ──
 
 /**
  * `POST /api/fs/link` — mints a signed, cookie-free content-origin URL for a
@@ -251,7 +251,7 @@ async function trashPurge(ids: string[]): Promise<BatchResult> {
   return request('/trash/purge', { method: 'POST', body: JSON.stringify({ ids }) })
 }
 
-// ── share links, owner side (DESIGN-PREVIEW.md §7) ──
+// ── share links, owner side ──
 
 async function sharesList(path?: string): Promise<ShareLinkInfo[]> {
   return request(`/shares${qs({ path })}`)
@@ -269,7 +269,7 @@ async function shareDelete(id: number): Promise<void> {
   await request(`/shares/${id}`, { method: 'DELETE' })
 }
 
-// ── text editor (`/edit/[...path]`,) ──
+// ── text editor (`/edit/[...path]`) ──
 
 async function readFile(path: string): Promise<ReadFileResponse> {
   return request(`/fs/read${qs({ path })}`)

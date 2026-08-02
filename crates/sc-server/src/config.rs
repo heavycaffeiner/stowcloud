@@ -181,7 +181,7 @@ impl From<&SearchConfig> for sc_http::search_limits::SearchLimitsConfig {
     }
 }
 
-/// `POST /api/fs/archive` (`DESIGN-PREVIEW.md` §8): each stream holds an
+/// `POST /api/fs/archive`: each stream holds an
 /// open fd and walks a tree for its whole duration, so the global cap is a
 /// config-reachable resource bound just like search's.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -409,7 +409,7 @@ pub struct Config {
     /// server 421s every request from its own address.
     pub app_hosts: Vec<String>,
     /// Hostname(s) serving user content. **Empty means single-origin**: user
-    /// content is served from the app origin, which `DESIGN-PREVIEW.md` §2.5
+    /// content is served from the app origin, which
     /// permits but which gives up the XSS isolation the split exists for.
     /// Startup says so out loud.
     pub content_hosts: Vec<String>,

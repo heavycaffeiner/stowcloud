@@ -494,7 +494,7 @@ impl ports::UploadEngine for NcUpload {
 
 // --------------------------------------------------------------- SharePort --
 
-/// Public links are backed by `sc_core::LinkStore` (`DESIGN-PREVIEW.md` §7).
+/// Public links are backed by `sc_core::LinkStore`.
 ///
 /// **User and group grants are not.** `sc-acl` grants are administrator-owned
 /// and have no per-user CRUD anywhere in the workspace, so `shareType` 0 and 1
@@ -771,7 +771,7 @@ impl ports::PreviewPort for NcPreview {
             // No content origin configured. Returning `None` yields a 404,
             // which is right: serving a preview from the *app* origin would
             // put attacker-influenced bytes on the origin that holds the
-            // session cookie (`DESIGN-PREVIEW.md` §2.1).
+            // session cookie.
             return Ok(None);
         }
         // The signed claim is over `(fileid, etag prefix)`, so a stale link

@@ -1,4 +1,4 @@
-//! In-memory LRU + negative cache + single-flight (DESIGN-PREVIEW.md section 6).
+//! In-memory LRU + negative cache + single-flight ( section 6).
 //!
 //! This module implements the *policy* described in the design doc's
 //! `preview_cache` / `preview_negative` tables using an in-memory index
@@ -93,7 +93,7 @@ impl BoundedByteCache {
 }
 
 /// Best-effort on-disk mirror of generated previews, laid out per
-/// `DESIGN-PREVIEW.md` section 6: `<dir>/<fid % 256>/<fid>-<w>x<h>-<etag8>.webp`.
+/// section 6: `<dir>/<fid % 256>/<fid>-<w>x<h>-<etag8>.webp`.
 /// Failures here (disk full, permission denied, ...) are logged and
 /// swallowed -- the in-memory cache is authoritative, disk is purely an
 /// optimization for surviving process restarts.
@@ -153,7 +153,7 @@ pub struct CacheConfig {
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
-            mem_cap_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB, DESIGN-PREVIEW.md section 6 default
+            mem_cap_bytes: 2 * 1024 * 1024 * 1024, // 2 GiB, section 6 default
             negative_ttl: Duration::from_secs(7 * 24 * 3600), // 7 days
             disk_dir: None,
         }

@@ -6,8 +6,7 @@
 //!   actually attempted generation. It can carry a formatted message (from an
 //!   underlying decoder/encoder error, which isn't `Clone`).
 //! - [`NegativeReason`] — a small `Copy` classification of *why* generation
-//!   failed, cheap enough to stash in the negative cache (`DESIGN-PREVIEW.md`
-//!   §6, `preview_negative` table) and to hand back to every caller that hits
+//!   failed, cheap enough to stash in the negative cache (`preview_negative` table) and to hand back to every caller that hits
 //!   the negative cache within the TTL without re-running the generator.
 
 use serde::{Deserialize, Serialize};
@@ -69,8 +68,8 @@ pub enum PreviewError {
 impl PreviewError {
     /// Best-effort classification into the small set of reasons we're
     /// willing to persist in the negative cache. Not a lossless mapping —
-    /// the point is a compact `INTEGER reason` column
-    /// (`DESIGN-PREVIEW.md` §6), not preserving the original message.
+    /// the point is a compact `INTEGER reason` column,
+    /// not preserving the original message.
     pub fn classify(&self) -> NegativeReason {
         match self {
             PreviewError::Io(_) => NegativeReason::Io,

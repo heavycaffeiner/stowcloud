@@ -73,7 +73,7 @@ pub(crate) fn make_dummy_hash(cfg: &AuthConfig) -> Result<String> {
 // Reusable primitives for *other* low-frequency secrets
 // ---------------------------------------------------------------------------
 //
-// Share-link passwords (`DESIGN-PREVIEW.md` §7.1: "Argon2 — low frequency, so
+// Share-link passwords ("Argon2 — low frequency, so
 // a slow hash is fine") are hashed with the same Argon2id parameters as
 // account passwords.
 // They are exported here rather than reimplemented in `sc-core` so there is

@@ -1,6 +1,6 @@
 <script lang="ts">
   // ShareManageDialog.svelte — owner-side share-link CRUD for one file/folder
-  // path (DESIGN-PREVIEW.md §7, DESIGN-API.md `/api/shares[/:id]`). Creation
+  // path (DESIGN-API.md `/api/shares[/:id]`). Creation
   // is the only piece of this surface any part of the app touched before —
   // in fact none did (`grep -rn "shares" web/src` before this change turned
   // up zero create/view/edit/revoke UI, only the unrelated public `/s/{token}`
@@ -112,8 +112,7 @@
   let creating = $state(false)
   let createError = $state<string | null>(null)
   /** The one moment the plaintext token/url are ever available — the server
-   *  never returns them again after this response (DESIGN-PREVIEW.md §7.1:
-   *  "plaintext is not stored"), so this has to be shown now or lost, same
+   *  never returns them again after this response ("plaintext is not stored"), so this has to be shown now or lost, same
    *  rule the app-password/recovery-code create flows already follow. */
   let justCreated = $state<ShareLinkInfo | null>(null)
 

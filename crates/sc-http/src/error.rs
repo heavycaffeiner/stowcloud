@@ -35,7 +35,7 @@ pub enum ErrorCode {
     /// Not in the §1.1 table, but the share-link contract needs a code the
     /// frontend can branch on: the target moved, expired, or hit its cap, and
     /// **retrying will not help** — which is exactly what `fs.not_found` does
-    /// not say (`DESIGN-PREVIEW.md` §7.1).
+    /// not say.
     FsGone,
     QuotaExceeded,
     RateLimited,

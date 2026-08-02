@@ -1,4 +1,4 @@
-//! Public share links — `DESIGN-PREVIEW.md` §7.
+//! Public share links —
 //!
 //! This lives in `sc-core` rather than in a protocol crate because a share
 //! link is domain state, not a wire concern: `sc-http`'s `/api/shares` and the
@@ -46,7 +46,7 @@ use crate::entry::Entry;
 use crate::error::CoreError;
 
 /// Bytes of CSPRNG behind a token. 16 bytes → 22 base64url characters, which
-/// is the length `DESIGN-PREVIEW.md` §7.1 specifies.
+/// is the length specifies.
 const TOKEN_BYTES: usize = 16;
 
 const SCHEMA_SQL: &str = "
@@ -92,7 +92,7 @@ pub struct ShareLink {
 
 impl ShareLink {
     /// A file-drop link: upload-only. `Perms::CREATE` and nothing that would
-    /// let the holder see what is already there (`DESIGN-PREVIEW.md` §7.2).
+    /// let the holder see what is already there.
     pub fn is_drop(&self) -> bool {
         self.perms.contains(Perms::CREATE) && !self.perms.intersects(Perms::READ | Perms::DOWNLOAD)
     }
@@ -160,7 +160,7 @@ pub struct LinkStore {
     cfg: AuthConfig,
     /// Argon2 hash of a secret nobody holds. Verified against when a token
     /// lookup found nothing, so "no such link" costs the same as "wrong
-    /// password" (`DESIGN-PREVIEW.md` §7.2).
+    /// password".
     dummy_hash: String,
     /// Bounds concurrent Argon2 invocations this store makes (hashing on
     /// create/update, verifying on `check_link_password`) — see
@@ -665,8 +665,8 @@ impl crate::Core {
     }
 
     /// Resolve a link to its target entry, enforcing every liveness rule:
-    /// expiry, download cap, and the path+fileid cross-check
-    /// (`DESIGN-PREVIEW.md` §7.1). Any failure is [`CoreError::Gone`] — the
+    /// expiry, download cap, and the path+fileid cross-check.
+    /// Any failure is [`CoreError::Gone`] — the
     /// link is dead, and the caller must not distinguish *why* to an anonymous
     /// visitor.
     pub fn link_target(&self, link: &ShareLink) -> Result<Entry, CoreError> {

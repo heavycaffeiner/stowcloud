@@ -98,7 +98,7 @@ function randomId(prefix: string): string {
  *  no longer type-checks. Starts well above `mock-seed.ts`'s own ranges
  *  (static seed: low fixed numbers; `/bench`: index-based) so nothing
  *  collides. Unlike the real backend, every mock entry gets one — the mock
- *  represents the intended contract (DESIGN-PREVIEW.md's whole
+ *  represents the intended contract ('s whole
  *  content-origin design assumes a visible entry has a usable fid), not the
  *  real server's current allocation gap, so download is fully exercisable
  *  against `VITE_API_MOCK=1` even though it frequently isn't against the
@@ -617,7 +617,7 @@ async function trashPurge(ids: string[]): Promise<BatchResult> {
   return { results }
 }
 
-// ── content links & archive download (DESIGN-PREVIEW.md §2, §8) ──
+// ── content links & archive download (§8) ──
 // Every mock entry carries a numeric `id` (see `newMockFileId`'s comment),
 // so unlike the real backend today, `link()` never has to refuse for lack
 // of a fid — it always resolves to *some* entry (falling back to a generic
@@ -666,7 +666,7 @@ async function archive(paths: string[]): Promise<{ job: string }> {
   return { job: id }
 }
 
-// ── text editor (`/edit/[...path]`,) ──
+// ── text editor (`/edit/[...path]`) ──
 
 async function readFile(path: string): Promise<{ content: string }> {
   await delay(20)
@@ -1861,7 +1861,7 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
   return { rows, next }
 }
 
-// ── share links, owner side (DESIGN-PREVIEW.md §7) — mirrors
+// ── share links, owner side — mirrors
 // `crates/sc-http/src/core_api.rs::ShareLinkInfo`/`ShareLinkCreate`/
 // `ShareLinkPatch` closely enough to drive the manage-links UI in dev mode:
 // a link's `perms` defaults to read+download when the caller doesn't specify

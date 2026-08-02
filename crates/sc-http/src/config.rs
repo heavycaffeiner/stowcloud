@@ -8,7 +8,7 @@ pub struct HttpConfig {
     /// parsed here).
     pub app_hosts: Vec<String>,
     /// Host header allowlist for the *content* origin (serves signed URLs
-    /// only, no cookies ever parsed — `DESIGN-PREVIEW.md` §2.1).
+    /// only, no cookies ever parsed —).
     pub content_hosts: Vec<String>,
     /// CIDRs trusted to supply `CF-Connecting-IP` (`DESIGN-API.md` §9 step 2).
     pub trusted_proxy_cidrs: Vec<Cidr>,
@@ -81,7 +81,7 @@ impl Default for HttpConfig {
             // client dialled, not a resolved name. `sc-server` additionally
             // injects its configured bind address (see its config loader).
             app_hosts: vec!["localhost".into(), "127.0.0.1".into(), "::1".into()],
-            // Empty means single-origin deployment: `DESIGN-PREVIEW.md` §2.5
+            // Empty means single-origin deployment:
             // permits it as a fallback but requires a startup warning, since
             // serving user content from the app origin gives up the XSS
             // isolation that separation buys.

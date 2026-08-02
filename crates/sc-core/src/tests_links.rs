@@ -1,5 +1,5 @@
 //! Share-link tests — one per non-negotiable property in
-//! `DESIGN-PREVIEW.md` §7 / `links.rs`'s module doc.
+//! / `links.rs`'s module doc.
 
 use std::sync::Arc;
 
@@ -106,7 +106,6 @@ fn token_is_128_bits_of_base64url_and_only_its_hash_is_persisted() {
     // The token round-trips through the hash lookup...
     let found = core.resolve_link(&token).unwrap().expect("token resolves");
     assert_eq!(found.id, link.id);
-
     // ...but the plaintext is nowhere in the database. This is the whole
     // point of storing `sha256(token)`: a dump of this file yields no usable
     // link. The digest, by contrast, must be present.
@@ -181,7 +180,7 @@ fn a_link_with_no_password_accepts_and_a_missing_link_refuses() {
     assert!(core.check_link_password(link.id, "anything").unwrap());
     // A link id that does not exist answers `false` — and, inside, still runs
     // a real Argon2 verify against the dummy hash so the timing matches the
-    // wrong-password path (`DESIGN-PREVIEW.md` §7.2).
+    // wrong-password path.
     assert!(!core.check_link_password(999_999, "anything").unwrap());
 }
 

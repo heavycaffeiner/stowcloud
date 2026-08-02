@@ -60,7 +60,7 @@ impl IpTokenBucket {
 /// The same bucket keyed by an opaque string instead of an IP.
 ///
 /// Share-link password attempts are limited **per token**, not per IP
-/// (`DESIGN-PREVIEW.md` §7.2: "10 per hour per token"). Per-IP would be the wrong
+/// ("10 per hour per token"). Per-IP would be the wrong
 /// axis twice over: one NAT'd office shares a bucket, and an attacker with a
 /// botnet gets one bucket per host against a single link.
 pub struct KeyedTokenBucket {

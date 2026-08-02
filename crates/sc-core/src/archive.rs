@@ -1,5 +1,5 @@
-//! Recursive descendant enumeration for the streaming zip archive
-//! (`DESIGN-PREVIEW.md` §8).
+//! Recursive descendant enumeration for the streaming zip archive.
+//! 
 //!
 //! ACL gates *descent*, the same rule `sc-search`'s walker follows: a
 //! subtree the caller cannot read is never
@@ -32,7 +32,7 @@ pub struct WalkEntry {
     /// `false` means: this name exists, but the caller may not read it (or
     /// it raced out from under us between the ACL check and the open). The
     /// caller records it as skipped; it must not be treated as an error for
-    /// the archive as a whole (`DESIGN-PREVIEW.md` §8).
+    /// the archive as a whole.
     pub readable: bool,
     pub size: Option<u64>,
     pub mtime_ns: Option<i128>,

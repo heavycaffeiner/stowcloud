@@ -591,7 +591,7 @@ fn native_routes() -> Vec<RouteInfo> {
             group: "native",
             owner: "sc-http",
         },
-        // Public share links (`DESIGN-PREVIEW.md` §7.2). Unauthenticated: the
+        // Public share links. Unauthenticated: the
         // token in the path, plus the link password when one is set, is the
         // whole authorization story.
         RouteInfo {

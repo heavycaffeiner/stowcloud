@@ -1,4 +1,4 @@
-//! The real worker jail (`DESIGN-PREVIEW.md` §4.1–§4.2), Linux-only.
+//! The real worker jail (–§4.2), Linux-only.
 //!
 //! `#[cfg(target_os = "linux")]`. On Windows this module does not exist and
 //! [`super::InProcessWorkerPool`] is the backend; the Windows build is
@@ -105,8 +105,7 @@ const FD_SWEEP_MAX: RawFd = 65536;
 // Configuration
 // ---------------------------------------------------------------------------
 
-/// Resource limits applied to the worker process (`DESIGN-PREVIEW.md` §4.2,
-/// step ②).
+/// Resource limits applied to the worker process (step ②).
 #[derive(Debug, Clone)]
 pub struct JailLimits {
     pub max_address_space_bytes: u64,
@@ -262,8 +261,7 @@ fn seal_fd_table(keep: RawFd) -> Result<RawFd, PreviewError> {
 }
 
 /// Landlock with an empty ruleset: handle every filesystem access right the
-/// running kernel supports, grant none of them (`DESIGN-PREVIEW.md` §4.2,
-/// step ①). No `add_rule` call is missing here — the absence *is* the
+/// running kernel supports, grant none of them (step ①). No `add_rule` call is missing here — the absence *is* the
 /// policy. The worker's input and output arrive as open descriptors, so it
 /// needs no path at all.
 ///
@@ -295,7 +293,7 @@ pub fn apply_landlock_deny_all() -> Result<(), PreviewError> {
     Ok(())
 }
 
-/// `RLIMIT_*` (`DESIGN-PREVIEW.md` §4.2, step ②).
+/// `RLIMIT_*` (step ②).
 pub fn apply_rlimits(limits: &JailLimits) -> Result<(), PreviewError> {
     set_rlimit(Resource::As, limits.max_address_space_bytes)?;
     set_rlimit(Resource::Cpu, limits.max_cpu_seconds)?;
@@ -406,7 +404,7 @@ fn send_msg(sock: BorrowedFd<'_>, payload: &[u8], fds: &[RawFd]) -> io::Result<(
 /// debug assertions, std's `OwnedFd::drop` first issues `fcntl(fd, F_GETFD)`
 /// as a use-after-close check, and `fcntl` is not on the allow-list. That
 /// cost a jailed worker its life on the very first job until it was tracked
-/// down; keeping the allow-list identical to `DESIGN-PREVIEW.md` §4.2 and
+/// down; keeping the allow-list identical to and
 /// managing these two descriptors by hand is the better trade.
 fn recv_msg(sock: BorrowedFd<'_>, buf: &mut [u8], fds_out: &mut Vec<RawFd>) -> io::Result<usize> {
     let mut iov = libc::iovec {

@@ -2,7 +2,7 @@
 //!
 //! # We never serve image bytes from the app origin
 //!
-//! `DESIGN-PREVIEW.md` §2: user-supplied content is rendered only on the
+//! user-supplied content is rendered only on the
 //! separate content origin, behind a signed URL, so that a malicious upload
 //! cannot execute in the origin that holds session cookies. That invariant does
 //! not get an exception for compat clients.

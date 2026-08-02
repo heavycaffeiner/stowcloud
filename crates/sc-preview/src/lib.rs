@@ -1,5 +1,5 @@
 //! `sc-preview` -- content preview generation engine and archive-listing
-//! logic (`DESIGN-PREVIEW.md`).
+//! logic.
 //!
 //! This crate is deliberately self-contained: decode/encode, caching,
 //! worker-pool abstraction, and archive listing only. It knows nothing
@@ -10,7 +10,7 @@
 //! `sc-http`'s job, not this crate's).
 //!
 //! OCR is out of scope. Video thumbnailing (ffmpeg subprocess,
-//! `DESIGN-PREVIEW.md` section 4.4) is represented in the worker protocol
+//! section 4.4) is represented in the worker protocol
 //! (`worker::JobKind::Video`) but not implemented. Running ffmpeg would need
 //! either relaxing the worker's seccomp/Landlock jail (refused -- that jail
 //! is proven on real hardware, see `worker::jailed`'s module docs and

@@ -1,5 +1,5 @@
 //! Linux-only proof that the preview worker's jail is enforced by the
-//! kernel, not by our own good intentions (`DESIGN-PREVIEW.md` §4.1–§4.2).
+//! kernel, not by our own good intentions (–§4.2).
 //!
 //! Run inside the Rocky VM:
 //!

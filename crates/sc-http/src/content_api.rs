@@ -1,9 +1,8 @@
-//! Trait boundary for signed content-URL byte serving (`DESIGN-PREVIEW.md`
-//! §2). Kept separate from [`crate::core_api::CoreApi`] for two reasons:
+//! Trait boundary for signed content-URL byte serving. Kept separate from [`crate::core_api::CoreApi`] for two reasons:
 //!
 //! * a signed URL's [`crate::content::Claim`] addresses its target by
 //!   `FileId`, not virtual path — there is no `user`/`vpath` to resolve, by
-//!   design (`DESIGN-PREVIEW.md` §2.1: verification is stateless capability,
+//!   design (verification is stateless capability,
 //!   not an ACL re-check);
 //! * `InlineThumb` needs `sc-preview`, which this crate does not (and should
 //!   not) depend on — `sc-server` is the only place that binds this trait to
@@ -20,7 +19,7 @@ use crate::core_api::CoreError;
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Enough about the file to build response headers and to check the
-/// etag-mismatch `410 Gone` condition (`DESIGN-PREVIEW.md` §2.4).
+/// etag-mismatch `410 Gone` condition.
 #[derive(Clone, Debug)]
 pub struct ContentStat {
     pub name: String,
@@ -50,8 +49,7 @@ pub trait ContentApi: Send + Sync {
 
     /// Generate (or fetch from cache) the inline re-encoded thumbnail for
     /// `fid` at preset size `(w, h)`. **Never** returns original bytes —
-    /// `InlineThumb` is only ever our own re-encode (`DESIGN-PREVIEW.md`
-    /// §2.4), which is what makes it safe to serve `inline`.
+    /// `InlineThumb` is only ever our own re-encode, which is what makes it safe to serve `inline`.
     fn thumbnail(&self, fid: FileId, w: u16, h: u16, etag8: [u8; 8]) -> BoxFuture<'static, Result<Vec<u8>, CoreError>>;
 }
 

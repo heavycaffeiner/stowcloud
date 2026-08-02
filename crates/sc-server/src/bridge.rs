@@ -1896,7 +1896,7 @@ impl sc_http::upload_api::UploadApi for UploadBridge {
 
 // ------------------------------------------------------------- content --
 // Binds `sc_http::content_api::ContentApi` (signed content-URL byte serving,
-// `DESIGN-PREVIEW.md` §2) to `sc_core::Core`'s `FileId`-keyed streaming
+// ) to `sc_core::Core`'s `FileId`-keyed streaming
 // primitives plus `sc_preview::PreviewService` for `InlineThumb`. Kept as its
 // own bridge type (not folded into `CoreBridge`) because it needs the
 // preview service and `CoreBridge` deliberately doesn't.

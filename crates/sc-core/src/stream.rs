@@ -1,5 +1,5 @@
 //! Bounded-memory streaming reads — the primitive `GET /c/{token}`
-//! (`DESIGN-PREVIEW.md` §2) and the streaming zip archive (§8) are both built
+//! and the streaming zip archive (§8) are both built
 //! on. Whole-file buffered reads (`Core::read_bytes`) are fine for the text
 //! editor's size-capped path; they are wrong for a multi-gigabyte download,
 //! which is why nothing above this crate could actually serve one before
@@ -24,7 +24,7 @@ use sc_vfs::{FileHandle, Kind, SafePath, ShareRoot, Stat, UserId};
 use crate::error::CoreError;
 
 /// Bytes read per `read_at` call, regardless of the caller's buffer size
-/// (`DESIGN-API.md`/`DESIGN-PREVIEW.md` §8: "memory must not scale with file
+/// (`DESIGN-API.md`/: "memory must not scale with file
 /// size").
 pub const CHUNK: usize = 256 * 1024;
 
@@ -97,8 +97,8 @@ impl crate::Core {
     }
 
     /// Streaming read addressed by stable `FileId`, with **no ACL
-    /// re-check** — used by signed content-URL serving
-    /// (`DESIGN-PREVIEW.md` §2), where the capability *is* the access
+    /// re-check** — used by signed content-URL serving,
+    /// where the capability *is* the access
     /// control: a URL is only ever issued after the issuing request already
     /// passed an ACL check, and verifying a signed URL is deliberately
     /// stateless (no DB lookup beyond the one needed to find the bytes).

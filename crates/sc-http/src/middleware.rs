@@ -222,7 +222,7 @@ fn html_script_src_extra() -> &'static str {
     ""
 }
 
-/// `DESIGN-API.md` §9.1 for the app origin; `DESIGN-PREVIEW.md` §2.4 for the
+/// `DESIGN-API.md` §9.1 for the app origin; for the
 /// content origin (stricter — `default-src 'none'; sandbox`).
 pub async fn security_headers(req: Request, next: Next) -> Response {
     let origin = req.extensions().get::<HostOrigin>().copied();
@@ -384,7 +384,7 @@ fn is_public_path(cfg: &HttpConfig, path: &str, method: &Method) -> bool {
         // existing the moment an account does; see `routes::setup_complete`.
         || path == "/api/setup"
         || path.starts_with("/c/")
-        // Public share links (`DESIGN-PREVIEW.md` §7.2). Authorization for
+        // Public share links. Authorization for
         // these is the token in the URL plus, when one is set, the link
         // password — never a user session.
         || path.starts_with("/s/")
@@ -412,7 +412,7 @@ fn is_optional_session_path(path: &str) -> bool {
 
 /// `DESIGN-AUTH.md` §4 matrix: `/api/**` (incl. `/api/uploads/**`) accepts
 /// cookie+CSRF or Bearer, never Basic. Content-origin requests never parse
-/// cookies at all (`DESIGN-PREVIEW.md` §2.1) and are left to their own
+/// cookies at all and are left to their own
 /// signed-URL verification inside the handler — Auth is a no-op for them.
 pub async fn auth(State(state): State<AppState>, mut req: Request, next: Next) -> Response {
     let origin = req.extensions().get::<HostOrigin>().copied().unwrap_or(HostOrigin::App);
@@ -1617,7 +1617,6 @@ mod tests {
         let resp = app.oneshot(bearer_req("GET", "/api/auth/session", &token)).await.unwrap();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
-
     /// ...and rotating the account password is denied the same way.
     #[tokio::test]
     async fn app_password_cannot_change_the_account_password() {

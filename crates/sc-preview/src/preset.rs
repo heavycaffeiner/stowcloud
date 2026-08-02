@@ -1,4 +1,4 @@
-//! Size-preset rounding (`DESIGN-PREVIEW.md` §4.3).
+//! Size-preset rounding.
 //!
 //! Allowing arbitrary requested preview sizes would blow up the cache (one
 //! entry per distinct size ever requested) and turn resizing into a

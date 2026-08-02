@@ -1,4 +1,4 @@
-//! Bomb-protected image decode (`DESIGN-PREVIEW.md` §4.3).
+//! Bomb-protected image decode.
 //!
 //! The order of operations is the whole point: read *only* the header
 //! (`ImageReader::into_decoder` parses just enough to know the format's
@@ -16,7 +16,7 @@ use crate::error::PreviewError;
 pub struct DecodeLimits {
     /// Maximum `width * height` (as `u64`, to avoid the overflow that a
     /// `u32 * u32` multiplication would hit well before reaching values an
-    /// attacker would actually use). `DESIGN-PREVIEW.md` §4.3 default:
+    /// attacker would actually use). default:
     /// 100_000_000.
     pub max_pixels: u64,
     /// Forwarded to `image::Limits::max_alloc` as defense in depth — some

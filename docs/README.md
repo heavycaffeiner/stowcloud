@@ -16,7 +16,6 @@ Svelte frontend. Linux / Docker only.
 | [DESIGN-API.md](DESIGN-API.md) | Native REST routes, error envelope, listing sessions, WebSocket, middleware stack | API / frontend contract |
 | [DESIGN-UPLOAD.md](DESIGN-UPLOAD.md) | TUS spec, `IntervalSet`, crash-safe ordering, 413 negotiation, NC chunking mapping | Before upload work |
 | [DESIGN-COMPAT.md](DESIGN-COMPAT.md) | Isolation contract and CI gate, capabilities, Login Flow v2, `oc:permissions` mapping | Before compat-layer work |
-| [DESIGN-PREVIEW.md](DESIGN-PREVIEW.md) | Content origin, signed URLs, worker-process jail, archive defenses, share links | Before preview/share work |
 
 ## Five principles, everything else follows from these
 

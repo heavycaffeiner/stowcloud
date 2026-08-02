@@ -186,8 +186,7 @@ impl App {
         let idle_merge = spawn_idle_merge(core_bridge.clone());
 
         // Decoders are the highest-risk code in the server: they are the one
-        // place attacker-controlled bytes meet a parser (`DESIGN-PREVIEW.md`
-        // §4.1). On Linux they therefore do not run here at all — they run in
+        // place attacker-controlled bytes meet a parser. On Linux they therefore do not run here at all — they run in
         // forked worker processes with no filesystem (Landlock), no network,
         // no ability to spawn anything, and a twenty-two-syscall seccomp
         // allow-list, reached only through `SCM_RIGHTS` fd passing.
@@ -974,7 +973,7 @@ async fn dav_authenticate(
     next.run(req).await
 }
 
-/// The jailed, forked worker pool (`DESIGN-PREVIEW.md` §4.2).
+/// The jailed, forked worker pool.
 ///
 /// `JailedWorkerPool::new` forks the children and each child jails itself
 /// before it will accept a single job; a child that cannot install its
@@ -998,7 +997,7 @@ fn preview_worker_pool() -> anyhow::Result<Arc<dyn sc_preview::WorkerPool>> {
     tracing::warn!(
         "preview decoders are running IN-PROCESS: this platform has no Landlock/seccomp \
          equivalent, so a decoder memory-corruption bug compromises the whole server \
-         (DESIGN-PREVIEW.md §4.1). Deploy on Linux."
+. Deploy on Linux."
     );
     Ok(Arc::new(sc_preview::InProcessWorkerPool::default()))
 }
@@ -1167,7 +1166,7 @@ fn build_http_state(
             60,
             std::time::Duration::from_secs(1),
         )),
-        // 10 attempts/hour per token (`DESIGN-PREVIEW.md` §7.2).
+        // 10 attempts/hour per token.
         link_rate: Arc::new(sc_http::rate_limit::KeyedTokenBucket::new(
             10,
             std::time::Duration::from_secs(3600),

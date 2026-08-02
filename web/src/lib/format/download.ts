@@ -6,7 +6,7 @@
 /**
  * `newTab` matters more than it looks: verified live against the real dev
  * server that a signed URL minted with no `content_hosts` configured
- * (`.dev/sc.toml`'s single-origin fallback, DESIGN-PREVIEW.md §2.5) comes
+ * (`.dev/sc.toml`'s single-origin fallback,) comes
  * back as `https:///c/<token>` -- `fs_link`'s `format!("https://{host}/c/{token}")`
  * with an empty host. A browser's URL parser does not read that as "no host"
  * (which would at least fail loudly); the special-scheme "collapse the

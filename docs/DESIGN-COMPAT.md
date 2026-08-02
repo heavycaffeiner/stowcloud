@@ -654,7 +654,7 @@ GET /index.php/core/preview?fileId=123&x=256&y=256&a=1&forceIcon=0&mode=cover
 GET /index.php/core/preview.png?file=/path&x=256&y=256
 ```
 
-Internally calls the thumbnail pipeline in `DESIGN-PREVIEW.md`, and **answers with a 302 redirect to a signed URL on the content origin.** Mobile clients follow redirects transparently, and image bytes never leave the app origin — the property that matters here.
+Internally calls the thumbnail pipeline in `proposals/stowcloud-6-preview-sharing.md`, and **answers with a 302 redirect to a signed URL on the content origin.** Mobile clients follow redirects transparently, and image bytes never leave the app origin — the property that matters here.
 
 `a=1` preserves aspect ratio, `mode=cover` crops. `forceIcon=1` asks for an icon fallback when no preview exists — we answer `404` and let the client draw its own icon.
 

@@ -3,7 +3,7 @@
 //! call after receiving a job over the `SCM_RIGHTS` protocol (`worker`
 //! module).
 //!
-//! Steps, per `DESIGN-PREVIEW.md` §4.3: decode with bomb protection ->
+//! Steps, per: decode with bomb protection ->
 //! apply (and discard) EXIF orientation -> resize to the requested box ->
 //! encode as EXIF-free lossless WebP.
 
