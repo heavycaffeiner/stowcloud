@@ -466,7 +466,7 @@ here."** No user count, no share list, no version detail.
               "parallel": 4, "max_file_size": null },
   "features": { "webdav": true, "smb": false,
                 "preview": true, "trash": true, "shares": true,
-                "search": "walk",        // "walk" | "name" | "name+content" — DESIGN-SEARCH tiers
+                "search": "walk",        // "walk" | "name" | "name+content" — search tiers
                 "extensions": ["compat-nc"] },   // compatibility layers actually mounted
   "auth":     { "totp": true, "app_passwords": true },
   "content_origin": "https://content.example.com"
