@@ -669,7 +669,7 @@ async fn a_failed_put_does_not_apply_x_oc_mtime() {
 ///
 /// `HttpConfig::allowed_origins` defaults to the placeholder
 /// `https://app.example.com` and nothing populated it from `Config`, so the
-/// origin half of the CSRF check (`DESIGN-AUTH.md` §3.3) rejected every
+/// origin half of the CSRF check rejected every
 /// cookie-authenticated state-changing request with `403`. New folder, rename,
 /// delete, move, copy, upload, share — all of it, in any deployment. Reads
 /// were unaffected, which is what made it look like a permissions problem.

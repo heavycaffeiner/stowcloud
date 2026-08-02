@@ -1,5 +1,5 @@
-//! Group CRUD + membership (`FEATURES.md` #48, `DESIGN-AUTH.md`'s `group_`/
-//! `membership` tables). Mirrors `users.rs`'s shape: thin SQL wrappers on
+//! Group CRUD + membership (`FEATURES.md` #48). Owns the `group_` and
+//! `membership` tables. Mirrors `users.rs`'s shape: thin SQL wrappers on
 //! `AuthService`, no ACL knowledge here — `sc_core::Core::set_group_memberships`
 //! is the one place membership data crosses into `sc-acl`'s live engine.
 

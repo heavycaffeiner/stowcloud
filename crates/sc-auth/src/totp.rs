@@ -24,7 +24,7 @@ fn recovery_hash(code: &str) -> Vec<u8> {
     Sha256::digest(code.as_bytes()).to_vec()
 }
 
-/// Mints 10 fresh recovery codes (`DESIGN-AUTH.md` §6.2: 10 × 10-char
+/// Mints 10 fresh recovery codes (10 × 10-char
 /// Crockford-Base32, `sha256` stored, one-time use). Shared by `totp_enroll`
 /// and `reissue_recovery_codes` so there is exactly one place deciding the
 /// alphabet, length, and hash function a code is minted with — two
@@ -45,8 +45,8 @@ fn generate_recovery_codes() -> Result<(Vec<String>, Vec<Vec<u8>>)> {
 
 impl AuthService {
     /// Generates a random secret and its `otpauth://` URL for `account_name`
-    /// but **persists nothing** — this is step one of a two-step enrollment
-    /// (`DESIGN-AUTH.md` §6.4): the caller shows the QR/manual-entry secret,
+    /// but **persists nothing** — this is step one of a two-step enrollment:
+    /// the caller shows the QR/manual-entry secret,
     /// the user scans it and types back a current code, and only
     /// [`Self::totp_enroll`] (which re-verifies that code and the account
     /// password) actually writes the seal secret to the database. Calling
@@ -118,7 +118,7 @@ impl AuthService {
         tx.commit()?;
 
         if dropped_nt {
-            // Exactly the OIDC link's problem (`DESIGN-AUTH.md` §13.6): the
+            // Exactly the OIDC link's problem: the
             // row is gone and the published `smbpasswd` still lists the
             // account, so without this the account password keeps working
             // over SMB despite the second factor.
@@ -195,8 +195,7 @@ impl AuthService {
         Ok(())
     }
 
-    /// How many of `u`'s recovery codes are still unused (`DESIGN-AUTH.md`
-    /// §6.2: the "≤3 remain" nudge). Zero for an account with TOTP disabled
+    /// How many of `u`'s recovery codes are still unused (the "≤3 remain" nudge). Zero for an account with TOTP disabled
     /// — `totp_disable` deletes every row, and `create_user` never inserts
     /// any. Not a secret from the account's own owner (unlike the codes
     /// themselves, never returned again once shown at mint time), which is
@@ -231,7 +230,7 @@ impl AuthService {
     /// ten credentials that can never be used for anything.
     ///
     /// No forced re-login, by the same reasoning `totp_enroll`/`totp_disable`
-    /// document (`DESIGN-AUTH.md` §6.4): a recovery code is an alternate route
+    /// document: a recovery code is an alternate route
     /// into an account a live session already has full access to, so the
     /// "someone briefly at an unlocked device" threat this re-confirmation
     /// defends against is identical whether they disable 2FA outright or

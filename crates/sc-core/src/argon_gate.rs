@@ -7,8 +7,7 @@
 //! token: no session, no login rate limit, nothing upstream of it. Before
 //! this module existed it called `sc_auth::password::verify_phc` (and, on
 //! creation, `hash_phc`) with no bound at all — any number of concurrent
-//! requests each stood up their own Argon2id buffer (`DESIGN-AUTH.md` §2.2:
-//! `m_cost` 48 MiB by default), so an attacker who fired enough parallel
+//! requests each stood up their own Argon2id buffer (`m_cost` 48 MiB by default), so an attacker who fired enough parallel
 //! requests at a public link controlled server memory directly. That is
 //! precisely the class of DoS `sc-auth`'s own `ArgonGate` exists to close
 //! for login traffic; a public share link is just as unauthenticated as a

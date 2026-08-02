@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 use std::net::IpAddr;
 
 impl AuthService {
-    /// Web/WebDAV login (DESIGN-AUTH §6.3, §7.2). Account-enumeration
+    /// Web/WebDAV login (§7.2). Account-enumeration
     /// resistant: an unknown username still runs a real Argon2 verify
     /// against `DUMMY_HASH` so timing doesn't reveal existence, and the
     /// per-account soft delay is applied regardless of outcome.
@@ -47,7 +47,7 @@ impl AuthService {
         // carve-out is (`basic.rs`): refusing earlier would let a wrong
         // password against a linked account return sooner than a wrong
         // password against any other, which is an enumeration oracle
-        // (`DESIGN-AUTH.md` §7.2). The refusal is `Invalid`, the same answer
+        // The refusal is `Invalid`, the same answer
         // and the same code a wrong password gets, so the wire tells nobody
         // which accounts are linked; the audit `detail` is where an operator
         // reads what actually happened.

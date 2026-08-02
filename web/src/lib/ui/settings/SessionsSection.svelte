@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Active sessions — DESIGN-AUTH.md §3.2/§10: IP/UA are display-only
+  // Active sessions —: IP/UA are display-only
   // records, not an authentication condition. Individual sessions can be
   // revoked, and the current session gets a badge.
   import { onMount } from 'svelte'

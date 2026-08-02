@@ -1,5 +1,4 @@
-//! Trait boundary for the first-run administrator bootstrap
-//! (`DESIGN-AUTH.md` §8).
+//! Trait boundary for the first-run administrator bootstrap.
 //!
 //! The *route* lives in this crate because `/api/setup` is part of the native
 //! API surface and has to inherit the whole middleware stack — `HostGuard`,
@@ -42,7 +41,7 @@ pub enum SetupError {
     /// The requested login name is unusable; the `&'static str` is a fixed
     /// reason string, never an echo of the input. `422`.
     InvalidUsername(&'static str),
-    /// Below `DESIGN-AUTH.md` §2.3's minimum. `422`.
+    /// Below's minimum. `422`.
     WeakPassword { min_len: usize },
     /// Rejected before the token was spent — the caller may retry.
     Internal,

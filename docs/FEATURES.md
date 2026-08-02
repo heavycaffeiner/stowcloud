@@ -133,7 +133,7 @@ shipped.
 ## 7. SMB operations (6)
 
 86. Account-password integration — NT hash derived in parallel, from account creation onward
-87. Derivation and publishing are separate steps, so turning SMB on makes it immediately usable, and from then on a running server republishes `smbpasswd` itself whenever an NT hash changes, so a password change, a TOTP toggle or an SSO link reaches SMB without `sc-server smb-sync` (`DESIGN-AUTH.md` §13.6; `DEPLOYMENT.md` §13.7 for the three cases where it still does not)
+87. Derivation and publishing are separate steps, so turning SMB on makes it immediately usable, and from then on a running server republishes `smbpasswd` itself whenever an NT hash changes, so a password change, a TOTP toggle or an SSO link reaches SMB without `sc-server smb-sync` (`proposals/stowcloud-10-auth.md`; `DEPLOYMENT.md` §13.7 for the three cases where it still does not)
 88. Opportunistic backfill — automatic on any auth that carries a plaintext password, no re-login needed
 89. Internal-network-only enforcement — refuses to generate `smb.conf` if a public address is detected, plus `hosts allow/deny` and a startup self-check
 90. Per-subpath-grant SMB share auto-generation
@@ -343,7 +343,7 @@ cannot find is the same as a setting that does not exist.
 
 ## 16. Single sign-on (1)
 
-Appended, not renumbered. `DESIGN-AUTH.md` §13 is the design; this is what a
+Appended, not renumbered. `proposals/stowcloud-10-auth.md` is the design; this is what a
 user or an operator can actually reach.
 
 174. **OpenID Connect login** (`sc-oidc`, `oidc` cargo feature, on by
@@ -351,7 +351,7 @@ user or an operator can actually reach.
      performed server-side as a confidential client, with the ID token's
      signature checked against the provider's JWKS. **Link-only: a session is
      issued only for an identity already attached to a local account**, and no
-     account is ever created by a login (`DESIGN-AUTH.md` §13.1 for why JIT
+     account is ever created by a login (`proposals/stowcloud-10-auth.md` for why JIT
      provisioning is the wrong shape for item 41's grant model). A user
      attaches or detaches their own identity from `/settings#security`, both
      directions costing a password re-confirmation the same way item 58's TOTP

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // SMB — DESIGN-AUTH.md §2.4/§10. The SMB password is the same as the
+  // SMB — The SMB password is the same as the
   // account password and is forced internal-network-only. Two independent
   // user toggles:
   //   smb_enabled  — the "publish" half. The other half (deployment-wide

@@ -253,7 +253,7 @@ pub struct Diagnostics {
 
 /// What `trusted_proxies` actually parsed to.
 ///
-/// `DESIGN-AUTH.md` §7.1 requires this to be reported loudly: behind a proxy
+/// requires this to be reported loudly: behind a proxy
 /// with no CIDR list, `CF-Connecting-IP`/`X-Forwarded-For` are (correctly)
 /// discarded, every request is attributed to the proxy, and the per-IP login
 /// gate then throttles the whole user base as one — "legitimate users could
@@ -675,7 +675,7 @@ pub fn print(d: &Diagnostics) {
         println!("[sc]     gate, the API rate limiter and the audit log all collapse");
         println!("[sc]     onto a single bucket, and one attacker locks out every user.");
         println!("[sc]     Set `trusted_proxies` / SC_TRUSTED_PROXIES to the proxy's");
-        println!("[sc]     CIDRs (DEPLOYMENT.md §8, DESIGN-AUTH.md §7.1). Correct as-is");
+        println!("[sc]     CIDRs (DEPLOYMENT.md §8). Correct as-is");
         println!("[sc]     only if clients reach this socket directly.");
     } else {
         println!("[sc]   trusted proxies: {} CIDR(s)", tp.accepted.len());

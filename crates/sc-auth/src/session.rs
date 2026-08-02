@@ -42,7 +42,7 @@ fn decode_hash_hex(s: &str) -> Option<Vec<u8>> {
 }
 
 /// `session.amr` bits: which authentication method issued this session.
-/// `DESIGN-AUTH.md` §3.2 describes the column as a `pw | totp | recovery`
+/// describes the column as a `pw | totp | recovery`
 /// bitmask, and until these constants existed the code wrote the literal `1`
 /// for every session regardless of method.
 ///
@@ -64,7 +64,7 @@ impl AuthService {
     /// Creates a session row and returns the plaintext token (shown once).
     ///
     /// `amr` records **how** the caller authenticated, as the bitmask
-    /// `DESIGN-AUTH.md` §3.2 describes. It used to be the literal `1` for
+    /// describes. It used to be the literal `1` for
     /// every session regardless of method; making it a parameter is what lets
     /// an OIDC-issued session be told apart from a password one, which
     /// unlinking depends on (proposal §4.3.6).

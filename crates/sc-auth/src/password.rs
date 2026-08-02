@@ -103,7 +103,7 @@ pub fn dummy_phc(cfg: &AuthConfig) -> Result<String> {
 
 impl AuthService {
     /// Argon2 verification on the async path: bounded by the concurrency
-    /// gate (DESIGN-AUTH §2.2) and run in `spawn_blocking` since Argon2 is
+    /// gate and run in `spawn_blocking` since Argon2 is
     /// CPU-bound — the gate's blocking acquire happens *inside* that
     /// blocking task, not on the runtime worker thread. Increments the
     /// (test-only-observed) invocation counter unconditionally, including
@@ -146,8 +146,8 @@ impl AuthService {
         verify_password_sync(hash_phc, pw)
     }
 
-    /// Password re-confirmation for an *already authenticated* account
-    /// (`DESIGN-AUTH.md` §6.4): the caller holds a valid session and is about
+    /// Password re-confirmation for an *already authenticated* account:
+    /// the caller holds a valid session and is about
     /// to change a security control, so it has to prove the password again.
     ///
     /// Deliberately not `login()`. That function answers a different question

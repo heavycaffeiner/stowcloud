@@ -18,7 +18,7 @@ The provider never creates accounts (no JIT provisioning). OIDC is **one more wa
 
 ### 2.1 Where we are today
 
-`docs/DESIGN-AUTH.md` defines exactly three ways to authenticate today.
+`proposals/stowcloud-10-auth.md` defines exactly three ways to authenticate today.
 
 | Method | Implemented in | Used by |
 |---|---|---|
@@ -32,11 +32,11 @@ In all three, **the credential begins and ends inside this server.** An organisa
 
 1. **Account lifecycle is duplicated.** Disabling a departing employee at the identity provider leaves this server's account password working. An administrator has to remember to turn it off separately with `PATCH /api/admin/users/{id}`.
 2. **MFA policy cannot be enforced organisation-wide.** TOTP in `sc-auth` is opt-in per account. Even when the provider already requires a hardware key or conditional access, this server has no way to know that.
-3. **It is one more password.** `DESIGN-AUTH.md` §2.3 sets a 10-character minimum with no composition rules and shows a strength meter, but none of that changes the fact that the user has one more secret to remember.
+3. **It is one more password.** `proposals/stowcloud-10-auth.md` sets a 10-character minimum with no composition rules and shows a strength meter, but none of that changes the fact that the user has one more secret to remember.
 
 ### 2.3 Why this shape, now
 
-`DESIGN-AUTH.md` §12 states this product's access model: **a new account can see nothing**, and shares only become visible once an administrator creates a grant — deny by default. "Anyone with an account at the provider is logged in" (JIT) points the opposite way: logins would succeed and produce accounts that can see nothing, one per identity in the provider's tenant.
+`proposals/stowcloud-10-auth.md` states this product's access model: **a new account can see nothing**, and shares only become visible once an administrator creates a grant — deny by default. "Anyone with an account at the provider is logged in" (JIT) points the opposite way: logins would succeed and produce accounts that can see nothing, one per identity in the provider's tenant.
 
 So this proposal is **link-only**. SSO starts working for an account the moment its owner attaches their own provider identity to it.
 
@@ -74,7 +74,7 @@ So this proposal is **link-only**. SSO starts working for an account the moment 
 
 #### 4.1.1 Crate placement
 
-The first line of `DESIGN-AUTH.md` defines `sc-auth` as **protocol-agnostic** and puts Login Flow v2 in an adapter above it (`sc-compat-nc`). OIDC follows the same rule.
+The first line of `proposals/stowcloud-10-auth.md` defines `sc-auth` as **protocol-agnostic** and puts Login Flow v2 in an adapter above it (`sc-compat-nc`). OIDC follows the same rule.
 
 ```mermaid
 graph TD
@@ -200,7 +200,7 @@ CREATE UNIQUE INDEX oidc_identity_user ON oidc_identity(user);
 
 ```sql
 -- An authorization-code flow in progress. Same nature as login_challenge: a server-side,
--- single-use record (DESIGN-AUTH §6.3).
+-- single-use record (`proposals/stowcloud-10-auth.md`).
 CREATE TABLE oidc_flow (
   state_hash    BLOB PRIMARY KEY,    -- sha256(state); the plaintext state is never stored
   binding_hash  BLOB NOT NULL,       -- sha256(flow cookie value). §4.3.1. Without this column
@@ -304,7 +304,7 @@ grant_type=authorization_code
 - `/api/auth/oidc/callback` is treated as **optionally authenticated**: no cookie means pass through (login mode); a cookie means validate it and inject a `Principal` (link mode). A cookie that is present but invalid is treated as "no session" rather than `401` — link mode is refused anyway at step 2 of §4.3.2.
 - `POST /api/auth/oidc/link/start`, `DELETE /api/auth/oidc/link` and the three admin routes are not public. They require authentication as usual.
 
-**Why a `__Host-` cookie survives this cross-site redirect.** `SameSite=Lax` permits top-level GET navigations. Both setting the cookie on the callback response and sending it on subsequent same-origin requests are within what Lax allows. As `DESIGN-AUTH.md` §3.1 records, **without HTTPS the cookie is silently dropped.**
+**Why a `__Host-` cookie survives this cross-site redirect.** `SameSite=Lax` permits top-level GET navigations. Both setting the cookie on the callback response and sending it on subsequent same-origin requests are within what Lax allows. As `proposals/stowcloud-10-auth.md` records, **without HTTPS the cookie is silently dropped.**
 
 #### 4.3.2 The link flow
 
@@ -321,7 +321,7 @@ POST /api/auth/oidc/link/start      (session required, Sc-Csrf and Origin requir
 > and asked for a password **only on unlink.** **That is backwards.** Linking **adds a permanent
 > login credential** to an account. Someone with brief access to an unlocked device could
 > attach their own provider identity, and the victim would keep being reachable even after
-> changing their password and revoking every session. `DESIGN-AUTH.md:609-619` re-asks for the
+> changing their password and revoking every session. `proposals/stowcloud-10-auth.md`:609-619` re-asks for the
 > password when TOTP is turned **on as well as off** for exactly this reason: in that
 > document's words, a live session alone must not be enough to change a security control.
 >
@@ -352,7 +352,7 @@ In the callback, `mode = 1` does the following.
 
 **Both success and failure return to `return_to`** (the settings screen by default). The draft had these inverted, sending success to `/b/` and failure to the settings screen.
 
-**Unlink.** `DELETE /api/auth/oidc/link` requires the password again. Same logic as `DESIGN-AUTH.md` §6.4 re-asking on TOTP disable, and the plaintext is also needed to re-derive the NT hash in §4.3.6.
+**Unlink.** `DELETE /api/auth/oidc/link` requires the password again. Same logic as `proposals/stowcloud-10-auth.md` re-asking on TOTP disable, and the plaintext is also needed to re-derive the NT hash in §4.3.6.
 
 > **On "an SSO-only account cannot unlink because nobody knows its password".** Checking the
 > facts: `sc_auth::create_user` **always** requires a password (`users.rs:19-22`, with a minimum
@@ -456,7 +456,7 @@ Order matters. Cheap checks first, signature verification after them.
 
 **Where to put the check so it is not a timing oracle.**
 
-The existing `totp_enabled` check in `crates/sc-auth/src/basic.rs:34-40` returns right after the user lookup, **before the rate gate and before Argon2**. Adding `oidc_linked` next to it would make "wrong password + linked account" finish measurably faster than "wrong password + ordinary account", which is an oracle for which accounts use SSO. That runs directly counter to `DESIGN-AUTH.md:655-677`, which runs a real Argon2 even for accounts that do not exist in order to flatten timing.
+The existing `totp_enabled` check in `crates/sc-auth/src/basic.rs:34-40` returns right after the user lookup, **before the rate gate and before Argon2**. Adding `oidc_linked` next to it would make "wrong password + linked account" finish measurably faster than "wrong password + ordinary account", which is an oracle for which accounts use SSO. That runs directly counter to `proposals/stowcloud-10-auth.md`:655-677`, which runs a real Argon2 even for accounts that do not exist in order to flatten timing.
 
 So **the OIDC refusal happens after the credential verifies.** The order is: rate gate, password verification, then `AppPasswordRequired` if `oidc_linked`. Wrong credentials answer with the same code in similar time whether or not the account is linked.
 
@@ -464,7 +464,7 @@ The existing `totp_enabled` check **is not moved.** It is the same class of pre-
 
 **Why `oidc.local_password_login` defaults to `allow`, and what that costs.**
 
-`deny` is the stricter setting. Under `allow`, someone who knows the local password can bypass the provider's MFA and reach the web UI. The default is still `allow` because of recovery: if the provider is down or the client is misconfigured, `deny` locks out everyone including the administrator. `DESIGN-AUTH.md` has consistently refused states of that kind (§7.1 "no account lockout", §11 "cannot reach zero active administrators").
+`deny` is the stricter setting. Under `allow`, someone who knows the local password can bypass the provider's MFA and reach the web UI. The default is still `allow` because of recovery: if the provider is down or the client is misconfigured, `deny` locks out everyone including the administrator. `proposals/stowcloud-10-auth.md` has consistently refused states of that kind (§7.1 "no account lockout", §11 "cannot reach zero active administrators").
 
 > **Important interaction with the settings screen.** At boot, `sc-server` applies administrator
 > overrides from `settings.db` on top of `config.toml`
@@ -512,7 +512,7 @@ The existing `totp_enabled` check **is not moved.** It is the same class of pre-
 
 **A separate policy key, with exactly one variant: `block`.**
 
-The draft wanted to reuse `smb.totp_policy`. That field's name and its documentation (`sc-smb/src/lib.rs:39-41`, `DESIGN-AUTH.md` §2.4) are TOTP-specific, so an administrator who set `block` because of TOTP would end up blocking SSO users too without knowing why. Hence a separate `oidc.smb_policy`.
+The draft wanted to reuse `smb.totp_policy`. That field's name and its documentation (`sc-smb/src/lib.rs:39-41`, `proposals/stowcloud-10-auth.md`) are TOTP-specific, so an administrator who set `block` because of TOTP would end up blocking SSO users too without knowing why. Hence a separate `oidc.smb_policy`.
 
 > **Why there is no `require_separate`.** The draft offered it, as TOTP does. **There is no way
 > to use that value today.** The only route that changes an account's own SMB settings,
@@ -530,7 +530,7 @@ The draft wanted to reuse `smb.totp_policy`. That field's name and its documenta
 
 #### 4.3.7 An honest record about `session.amr`
 
-`DESIGN-AUTH.md` §3.2 describes `amr` as a `pw | totp | recovery` bitmask. **The code does not do that.** `create_session` always writes the literal `1` (`session.rs:61`), and a TOTP-gated login calls the same function (`routes.rs:431`), so it ends up as `1` too. The TOTP bit is never set anywhere.
+`proposals/stowcloud-10-auth.md` describes `amr` as a `pw | totp | recovery` bitmask. **The code does not do that.** `create_session` always writes the literal `1` (`session.rs:61`), and a TOTP-gated login calls the same function (`routes.rs:431`), so it ends up as `1` too. The TOTP bit is never set anywhere.
 
 This proposal does the following.
 
@@ -554,7 +554,7 @@ GET /api/auth/oidc/config
   -> 200 { "enabled": true, "display_name": "Company account" }
 ```
 
-The login screen has to read this before it holds any credential in order to decide whether to draw the button. All it exposes is whether SSO is on and what to write on the button. The issuer URL and `client_id` are not exported. It is not folded into `GET /api/setup` because `DESIGN-AUTH.md` §8.1 pins that response to a bare boolean and nothing more.
+The login screen has to read this before it holds any credential in order to decide whether to draw the button. All it exposes is whether SSO is on and what to write on the button. The issuer URL and `client_id` are not exported. It is not folded into `GET /api/setup` because `proposals/stowcloud-10-auth.md` pins that response to a bare boolean and nothing more.
 
 ```
 GET /api/auth/oidc/start[?returnTo=/b/docs]
@@ -618,7 +618,7 @@ DELETE /api/admin/users/{id}/oidc   -> 204 { "smb_nt_restored": false, "note": "
 
 **Operational note.** Even when an administrator creates an account meant purely for SSO, `create_user` demands a password. That initial password must be handed to the owner. Otherwise the owner cannot call `DELETE /api/auth/oidc/link` themselves and unlinking is only possible through the admin route (§4.3.2).
 
-Under `DESIGN-AUTH.md` §5.2, the three admin routes are below `/api/admin` and are therefore **unreachable with an app password.** `DELETE /api/auth/oidc/link` and `POST /api/auth/oidc/link/start` manage one's own credentials, so they are added to §5.2's app-password refusal list too.
+Under `proposals/stowcloud-10-auth.md`, the three admin routes are below `/api/admin` and are therefore **unreachable with an app password.** `DELETE /api/auth/oidc/link` and `POST /api/auth/oidc/link/start` manage one's own credentials, so they are added to §5.2's app-password refusal list too.
 
 #### Modified, `sc-auth` function signatures
 
@@ -626,7 +626,7 @@ Under `DESIGN-AUTH.md` §5.2, the three admin routes are below `/api/admin` and 
 /// Creates a session row and returns the plaintext token (shown once).
 ///
 /// `amr` records **how** the caller authenticated, as the bitmask
-/// `DESIGN-AUTH.md` section 3.2 describes. It used to be the literal `1` for
+/// `proposals/stowcloud-10-auth.md` section 3.2 describes. It used to be the literal `1` for
 /// every session regardless of method; making it a parameter is what lets an
 /// OIDC-issued session be told apart from a password one in the
 /// connected-sessions list.
@@ -759,7 +759,7 @@ fn oidc_callback(query, headers, ip):
 
 `429` is the only status code the callback answers with. The rate gate trips before a flow even starts, so there is no safe landing place to send the browser back to.
 
-**Why "not linked" and "disabled account" share a code.** Same principle as the account-enumeration defence in `DESIGN-AUTH.md` §7.2. The two cases are distinguished in the audit log by a different `detail`.
+**Why "not linked" and "disabled account" share a code.** Same principle as the account-enumeration defence in `proposals/stowcloud-10-auth.md` The two cases are distinguished in the audit log by a different `detail`.
 
 **Errors `sc-oidc` raises (not HTTP).**
 
@@ -782,7 +782,7 @@ fn oidc_callback(query, headers, ip):
 | Phase 3 | **`sc-auth` storage and policy.** The `oidc_identity`/`oidc_flow` migration, link/unlink/find/take-flow, parameterising `amr` on `create_session` (including the seven test call sites), the DAV carve-out in `basic.rs` (**placed after verification**), **the NT-hash deletion + `mark_dirty` + re-derivation + AMR_OIDC session revocation of §4.3.6**, and the `local_password_login = "deny"` web-login refusal (applied after the password verifies) | 2.5 days |
 | Phase 4 | **`sc-http` and `sc-server` wiring.** **All eight routes** (`/config`, `/start`, `/callback`, `POST /link/start`, `DELETE /link`, admin `GET`/`PUT`/`DELETE`), the `is_public_path` additions and the callback's optional session authentication, the binding cookie, server-side `returnTo` validation (control characters included), the app-password refusal list, the `[oidc]` section of `Config`, the settings-screen rows (per the classification in §6-4), and `SessionInfoWire.oidc`. **The CSRF middleware is not touched** | 2.5 days |
 | Phase 5 | **Web UI.** The SSO button on the login screen, link/unlink in settings, the admin screen, and `oidc_error` message mapping. i18n keys in both en and ko | 1.5 days |
-| Phase 6 | **Documentation.** A new `DESIGN-AUTH.md` §13 (with a login-CSRF row added to the threat-model table), `FEATURES.md`, and in `DEPLOYMENT.md` the provider-registration/redirect-URI/`client_secret_file` procedure plus the `oidc.local_password_login` trade-off and the SMB recovery procedure | 0.5 days |
+| Phase 6 | **Documentation.** A new `proposals/stowcloud-10-auth.md` (with a login-CSRF row added to the threat-model table), `FEATURES.md`, and in `DEPLOYMENT.md` the provider-registration/redirect-URI/`client_secret_file` procedure plus the `oidc.local_password_login` trade-off and the SMB recovery procedure | 0.5 days |
 
 ### 6-2. Dependencies
 
@@ -847,7 +847,7 @@ Note: modelling `[oidc]` as `Option<OidcConfig>` makes it `None` in `Config::def
 
 ### Inside this repository
 
-- `docs/DESIGN-AUTH.md`: §2.4 (SMB NT hash), §3.1–3.3 (cookies and CSRF), §4.2–4.4 (DAV verification, the TOTP carve-out), §5.2 (app-password refusal list), §6.3–6.4 (challenges, password re-check), §7.1–7.2 (rate gate, enumeration defence), §8.1 (what unauthenticated endpoints may expose), §9 (audit), §10 (schema), §11 (roles), §12 (the grant model)
+- `proposals/stowcloud-10-auth.md`: §2.4 (SMB NT hash), §3.1–3.3 (cookies and CSRF), §4.2–4.4 (DAV verification, the TOTP carve-out), §5.2 (app-password refusal list), §6.3–6.4 (challenges, password re-check), §7.1–7.2 (rate gate, enumeration defence), §8.1 (what unauthenticated endpoints may expose), §9 (audit), §10 (schema), §11 (roles), §12 (the grant model)
 - `crates/sc-auth/src/session.rs:45-65`: `create_session`, the literal `1` for `amr`
 - `crates/sc-auth/src/basic.rs:36-40`: the DAV Basic TOTP carve-out, where `oidc_linked` goes
 - `crates/sc-auth/src/users.rs:19-46`: why `create_user` always demands a password and always derives an NT hash

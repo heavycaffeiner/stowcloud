@@ -1,4 +1,4 @@
-//! First-run bootstrap (`DESIGN-AUTH.md` §8): a one-time setup token, printed
+//! First-run bootstrap: a one-time setup token, printed
 //! to stdout and written to `<data>/setup-token` (mode `0600`, best-effort
 //! outside Unix), expiring after 15 minutes — and [`SetupGate`], the thing
 //! that actually spends it and creates the administrator account.
@@ -46,7 +46,7 @@ use parking_lot::Mutex;
 use secrecy::{ExposeSecret, SecretString};
 use subtle::ConstantTimeEq;
 
-/// 32 bytes — the 256 bits `DESIGN-AUTH.md` §8 asks for.
+/// 32 bytes — the 256 bits asks for.
 const TOKEN_BYTES: usize = 32;
 const EXPIRY_SECS: i64 = 15 * 60;
 
@@ -293,7 +293,7 @@ impl SetupApi for SetupGate {
 
         // (5) Create. `sc_auth::create_user` re-checks the length, writes the
         //     Argon2 hash, and derives the NT hash unconditionally
-        //     (`DESIGN-AUTH.md` §2.4) so SMB can be switched on later without
+        // so SMB can be switched on later without
         //     a password reset.
         let user_id = match self.auth.create_user(username, password) {
             Ok(id) => id,
@@ -382,7 +382,7 @@ impl SetupGate {
     /// One audit row per refused attempt. The presented token and the
     /// requested username are **not** recorded: a rejected attempt's inputs
     /// are attacker-controlled and, in the token's case, a live secret —
-    /// `DESIGN-AUTH.md` §9's log is readable by administrators and is assumed
+    /// 's log is readable by administrators and is assumed
     /// to leak.
     fn audit_failure(&self, ip: std::net::IpAddr, reason: &str) {
         self.auth.audit(
@@ -414,7 +414,7 @@ mod tests {
         assert_eq!(read_back.expires_at_unix, t.expires_at_unix);
     }
 
-    /// `DESIGN-AUTH.md` §8 specifies 256 bits. Base32 of 32 bytes is 52
+    /// specifies 256 bits. Base32 of 32 bytes is 52
     /// characters with no padding.
     #[test]
     fn token_carries_256_bits_of_entropy() {
@@ -626,7 +626,7 @@ mod tests {
     #[test]
     fn a_short_password_is_refused_and_the_token_survives() {
         let (f, token) = armed();
-        // Nine characters; `DESIGN-AUTH.md` §2.3 demands ten.
+        // Nine characters; demands ten.
         assert_eq!(
             f.gate.complete(&token, "admin", &pw("123456789"), ip()),
             Err(SetupError::WeakPassword { min_len: 10 })
@@ -702,7 +702,7 @@ mod tests {
         assert!(read_existing(f.dir.path()).is_none());
     }
 
-    /// `DESIGN-AUTH.md` §2.4: derivation happens at account creation,
+    /// derivation happens at account creation,
     /// unconditionally, so SMB can be switched on later without a password
     /// reset. Asserted here because the first-run path is the one that
     /// creates the administrator, and this is exactly the property nobody

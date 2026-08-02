@@ -7,7 +7,7 @@
   // "confirm you meant it". Connecting *adds a permanent credential*: somebody
   // with a few seconds at an unlocked screen could otherwise attach their own
   // identity and still be getting in after the owner changes their password
-  // and revokes every session. `DESIGN-AUTH.md` §6.4 charges a password for
+  // and revokes every session. charges a password for
   // turning TOTP on *and* off for exactly that reason, and TotpSection beside
   // this one is the pattern being followed.
   //

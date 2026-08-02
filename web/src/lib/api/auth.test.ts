@@ -1,5 +1,5 @@
-// web/src/lib/api/auth.test.ts — mockApi's login/session/logout surface
-// (DESIGN-AUTH.md §6.3), same pattern as mock.test.ts. Kept in its own file
+// web/src/lib/api/auth.test.ts — mockApi's login/session/logout surface,
+// same pattern as mock.test.ts. Kept in its own file
 // (rather than appended to mock.test.ts) so a logged-out state produced
 // partway through never leaks into the unrelated fs tests there — vitest
 // gives each test *file* its own module instance by default, so mock.ts's

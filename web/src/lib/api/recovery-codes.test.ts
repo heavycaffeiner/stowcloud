@@ -1,5 +1,5 @@
-// web/src/lib/api/recovery-codes.test.ts — mockApi's recovery-code surface
-// (DESIGN-AUTH.md §6.2): the remaining-count read, and the reissue that must
+// web/src/lib/api/recovery-codes.test.ts — mockApi's recovery-code surface:
+// the remaining-count read, and the reissue that must
 // invalidate every old code. Kept in its own file for the same reason
 // auth.test.ts is: vitest gives each test file its own module instance, so
 // mock.ts's module-scoped `mockAuthState` starts fresh here rather than
@@ -12,7 +12,7 @@ async function enrollTotp(): Promise<{ recovery_codes: string[] }> {
   return mockApi.totpEnroll('password12', setup.secret, '123456')
 }
 
-describe('mockApi recovery codes (DESIGN-AUTH.md §6.2)', () => {
+describe('mockApi recovery codes', () => {
   it('is zero while TOTP is off', async () => {
     // `totpDisable` is idempotent regardless of the file's execution order
     // relative to the other tests below.

@@ -12,8 +12,7 @@ pub struct HttpConfig {
     pub content_hosts: Vec<String>,
     /// CIDRs trusted to supply `CF-Connecting-IP` ( step 2).
     pub trusted_proxy_cidrs: Vec<Cidr>,
-    /// Origins accepted by CSRF's `Origin` header check
-    /// (`DESIGN-AUTH.md` §3.3).
+    /// Origins accepted by CSRF's `Origin` header check.
     pub allowed_origins: Vec<String>,
     /// Per-IP token bucket for the general `RateLimit` middleware (distinct
     /// from `sc-auth`'s login-specific gate).

@@ -287,7 +287,7 @@ async function writeFile(path: string, content: string, ifMatch?: string): Promi
   })
 }
 
-// ── settings (DESIGN-AUTH.md §2/§5/§6, DESIGN-FOOTPRINT.md §4) ──
+// ── settings (DESIGN-FOOTPRINT.md §4) ──
 
 async function changePassword(currentPassword: string, newPassword: string, revokeOtherSessions: boolean): Promise<void> {
   await request('/auth/password', {
@@ -313,7 +313,7 @@ async function totpDisable(password: string): Promise<void> {
 }
 
 /**
- * `DESIGN-AUTH.md` §6.2: how many of the 10 recovery codes minted at
+ * how many of the 10 recovery codes minted at
  * enrollment (or at the last reissue) are still unused. Not a secret from
  * the account's own owner — unlike the codes themselves, which are never
  * returned again after the moment they're minted — so this is a plain `GET`
@@ -343,7 +343,7 @@ async function createAppPassword(name: string): Promise<{ id: number; token: str
 }
 
 /**
- * Scoped app passwords — `DESIGN-AUTH.md` §5.2. This is the only place in the
+ * Scoped app passwords — This is the only place in the
  * frontend that knows the request shape.
  *
  * The server takes a `scope` object: `perms` is the same permission-flag shape
@@ -406,7 +406,7 @@ async function updateSmbSettings(optOut: boolean, enabled: boolean): Promise<voi
  * `GET` the login path uses. Linking **adds a permanent credential** to the
  * account, so somebody with a few seconds at an unlocked screen must not be
  * able to attach their own identity and keep coming back after the victim
- * changes their password and revokes every session. `DESIGN-AUTH.md` §6.4
+ * changes their password and revokes every session.
  * charges a password for enabling *and* disabling TOTP for the same reason.
  *
  * The caller does the navigation itself (`window.location.href = authorize_url`)

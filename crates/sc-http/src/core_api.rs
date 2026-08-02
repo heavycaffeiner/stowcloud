@@ -674,7 +674,7 @@ pub trait CoreApi: Send + Sync {
     }
     /// Which `ShareId` a virtual path's label maps to for `user` —
     /// `sc_http::middleware::scope_gate` needs this to enforce
-    /// `sc_auth::Scope::shares` (`DESIGN-AUTH.md` §5.2's other half; see
+    /// `sc_auth::Scope::shares` ('s other half; see
     /// that module's doc comment for why the check has to live at that one
     /// choke point rather than in every handler).
     ///
@@ -891,7 +891,7 @@ pub trait CoreApi: Send + Sync {
     // --------------------------------------------------------------- smb --
 
     /// Whether this deployment has SMB switched on at all
-    /// (`sc_smb::SmbConfig.enabled`, `DESIGN-AUTH.md` §2.4/§10). Drives the
+    /// (`sc_smb::SmbConfig.enabled`). Drives the
     /// `features.smb` capability the same way `shares_enabled` below drives
     /// `features.shares` — so the settings screen's SMB section only renders
     /// when there is something behind it to enable, and does not draw a

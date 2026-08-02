@@ -566,7 +566,7 @@ XSS against the whole session.** So:
   auth** and accept only Bearer/Basic, removing the CSRF surface for those
   entirely. Native TUS (`/api/uploads`) accepts cookies but requires a
   custom header, which a plain `<form>` cannot send. Exact matrix in
-  `DESIGN-AUTH.md` §4.
+  `proposals/stowcloud-10-auth.md`
 - Password: Argon2id (m=48 MiB, t=3, p=1) + a concurrency semaphore of 4
   (192 MiB peak memory cap). No peppering (key-rotation cost outweighs the
   benefit). 10-character minimum.
@@ -577,7 +577,7 @@ XSS against the whole session.** So:
   an NT hash from the account password in parallel. **A TOTP user must use
   an app/dedicated password on both paths** — Basic and NTLM have no slot
   for a second factor, so allowing the account password through would be a
-  silent 2FA bypass. Detail in `DESIGN-AUTH.md` §2.4/§4.
+  silent 2FA bypass. Detail in `proposals/stowcloud-10-auth.md`/§4.
 - **App-only passwords**: still the recommended path. Scoped (read-only /
   specific share), last-used time and IP recorded, revocable per device —
   none of which is possible for a connection made with the account
@@ -669,7 +669,7 @@ reimplement it.
   - A Kerberos/AD-joined environment (`security = ADS` + winbind) avoids
     storing an NT hash entirely — the only configuration where this
     trade-off disappears.
-- Detail in `DEPLOYMENT.md` §7.2, `DESIGN-AUTH.md` §2.4.
+- Detail in `DEPLOYMENT.md` §7.2, `proposals/stowcloud-10-auth.md`
 - The interface is abstracted behind `trait ProtocolAdapter` → swappable for
   a native implementation later, though that is not on the current roadmap.
 
@@ -921,7 +921,7 @@ no protocol involved.
 `sc-auth` has carried **parallel NT-hash derivation since M1** — SMB itself
 is M6, but derivation happens at account-creation time, so deferring it
 would leave every account created in between needing a backfill (§9.2,
-`DESIGN-AUTH.md` §2.4). Master-key management was also settled here.
+`proposals/stowcloud-10-auth.md`). Master-key management was also settled here.
 Landlock/seccomp process hardening (§2.4), originally scoped to M6, is
 already implemented and active at `serve` startup — ahead of the milestone
 that was supposed to introduce it.

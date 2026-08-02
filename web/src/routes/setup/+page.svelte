@@ -1,5 +1,5 @@
 <script lang="ts">
-  // First-run admin bootstrap screen — DESIGN-AUTH.md §8. Top-level route
+  // First-run admin bootstrap screen — Top-level route
   // (not under `(app)`), reachable automatically when session bootstrapping
   // decides `first-run` (see (app)/+layout.svelte) and always reachable
   // manually via the link on /login, since the auto-detection depends on a

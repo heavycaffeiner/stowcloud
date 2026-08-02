@@ -1,6 +1,6 @@
 // web/src/lib/state/auth.svelte.ts — "which screen is the app showing right
 // now": the file browser, the login screen, or the first-run admin-bootstrap
-// screen (DESIGN-AUTH.md §8). Svelte 5 runes, no store library, same
+// screen. Svelte 5 runes, no store library, same
 // convention as ui.svelte.ts.
 //
 // Deliberately imports nothing from api/client.ts (mock.ts/http.ts

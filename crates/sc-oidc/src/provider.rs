@@ -4,7 +4,7 @@
 //! Nothing here touches a database, a cookie, or a session. The flow record
 //! (`oidc_flow`), the identity link (`oidc_identity`), and every decision
 //! about which local account a verified `sub` may become are `sc-auth`'s,
-//! by the same protocol-agnostic split `DESIGN-AUTH.md` opens with.
+//! by the same protocol-agnostic split opens with.
 
 use crate::discovery::{fetch_discovery, Discovery, DiscoveryCache, DiscoveryError};
 use crate::endpoint::{check_endpoint_url, EndpointError};

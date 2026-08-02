@@ -97,14 +97,14 @@ export interface UserInfo {
   name: string
   display_name: string
   is_admin: boolean
-  /** `DESIGN-AUTH.md` §6: whether TOTP 2FA is currently active on this account. */
+  /**: whether TOTP 2FA is currently active on this account. */
   totp_enabled: boolean
-  /** `DESIGN-AUTH.md` §2.4 — the two self-service SMB toggles. */
+  /** — the two self-service SMB toggles. */
   smb_opt_out: boolean
   smb_enabled: boolean
 }
 
-// ── settings (DESIGN-AUTH.md §2/§5/§6, DESIGN-FOOTPRINT.md §4) ──
+// ── settings (DESIGN-FOOTPRINT.md §4) ──
 
 export interface AppPasswordInfo {
   id: number
@@ -112,7 +112,7 @@ export interface AppPasswordInfo {
   created_ns: string
   last_used_ns: string | null
   expires_ns: string | null
-  /** `DESIGN-AUTH.md` §5.2 (`scope_perms`). Optional because today's server
+  /** (`scope_perms`). Optional because today's server
    *  doesn't emit it yet — see `createScopedAppPassword`'s header comment in
    *  `client.ts` for the seam that will fill this in. Absent/`undefined` and
    *  `false` both render as an unscoped (full-access) password. */
@@ -122,7 +122,7 @@ export interface AppPasswordInfo {
 /** One row of `GET /api/auth/sessions`. Named `ActiveSession`, not
  *  `SessionInfo` — that name is already `SessionInfo` above (the whole
  *  `GET /api/auth/session` envelope), and this is one *row* of the separate
- *  "your other devices" list (`DESIGN-AUTH.md` §3.2/§10, FEATURES #54). */
+ *  "your other devices" list (FEATURES #54). */
 export interface ActiveSession {
   id_hash: string
   created_ns: string
@@ -460,7 +460,7 @@ export interface AdminOidcUnlinkResult {
   oidc_sessions_revoked: number
 }
 
-// ── auth (DESIGN-AUTH.md §6.3) ──
+// ── auth ──
 
 /** The minimal user object `POST /api/auth/login[/totp]` returns — NOT the
  *  same shape as `SessionInfo.user` above (which carries `display_name`/

@@ -287,7 +287,7 @@ fn basic(user: &str, pw: &str) -> String {
     )
 }
 
-/// `DESIGN-AUTH.md` §9: the audit trail and the session record are only worth
+/// the audit trail and the session record are only worth
 /// keeping if the address in them is the client's.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_session_records_the_real_client_address() {
@@ -397,7 +397,7 @@ async fn a_real_bound_socket_supplies_the_peer_address() {
 /// refill won: the whole suite passed on the Windows host and this test failed
 /// in the Rocky VM. So callers use [`shut_the_login_gate`], which re-burns
 /// until the gate is *observably* closed rather than assuming one burst did it.
-/// Re-burning is cheap by design: `DESIGN-AUTH.md` §7.1 makes the IP bucket a
+/// Re-burning is cheap by design: makes the IP bucket a
 /// hard limit checked *before* Argon2, so every guess after the first
 /// exhaustion is rejected without hashing.
 const GATE_BURN: usize = 28;

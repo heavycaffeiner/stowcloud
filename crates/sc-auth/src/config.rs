@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-/// Tunable auth parameters. See `docs/DESIGN-AUTH.md`.
+/// Tunable auth parameters. See.
 #[derive(Clone, Debug)]
 pub struct AuthConfig {
     /// Max concurrent Argon2 hash operations (memory-peak bound). Default 4.
@@ -20,7 +20,7 @@ pub struct AuthConfig {
     /// Session absolute expiry. Default 30 days.
     pub session_absolute: Duration,
 
-    /// Credential verification cache (DESIGN-AUTH §4.2) capacity. Default 4096.
+    /// Credential verification cache capacity. Default 4096.
     pub cred_cache_cap: usize,
     /// Positive entry absolute TTL. Default 15 minutes.
     pub cred_cache_pos_ttl: Duration,
@@ -29,14 +29,14 @@ pub struct AuthConfig {
     /// Negative entry TTL. Default 30 seconds.
     pub cred_cache_neg_ttl: Duration,
 
-    /// App-password token cache (DESIGN-AUTH §5.3) capacity. Default 4096.
+    /// App-password token cache capacity. Default 4096.
     pub token_cache_cap: usize,
     /// App-password token cache TTL. Default 60 seconds.
     pub token_cache_ttl: Duration,
     /// Coalescing interval for `last_used_ns` writes. Default 60 seconds.
     pub last_used_coalesce: Duration,
 
-    /// Connection-memo (DESIGN-AUTH §4.2 ①) capacity.
+    /// Connection-memo ( ①) capacity.
     pub conn_memo_cap: usize,
 
     /// Per-IP hard token bucket: capacity. Default 20.
@@ -125,7 +125,7 @@ pub enum OidcLocalPasswordLogin {
     /// IdP is down, or the client registration is wrong, or the redirect URI
     /// stopped matching, a `Deny` deployment has locked out every linked
     /// account including the administrator who would have to fix it. That is
-    /// the same class of unrecoverable state `DESIGN-AUTH.md` refuses
+    /// the same class of unrecoverable state refuses
     /// elsewhere: §7.1 declines account lockout, and §11 declines any
     /// operation that would leave zero active administrators.
     Allow,

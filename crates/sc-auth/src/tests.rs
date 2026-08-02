@@ -1,5 +1,5 @@
 //! White-box tests for the 10 non-negotiable behaviours in
-//! `docs/DESIGN-AUTH.md`. Argon2 cost is overridden to m=8MiB,t=1 so the
+//! Argon2 cost is overridden to m=8MiB,t=1 so the
 //! suite runs fast; the *default* in `AuthConfig::default()` (asserted by
 //! `default_argon2_params_match_spec`) stays at the spec's 48MiB/t=3/p=1.
 
@@ -126,7 +126,7 @@ fn argon2_gate_bounds_concurrency() {
 /// are synchronous and previously hashed/verified straight through Argon2,
 /// bypassing the concurrency gate entirely — N concurrent password changes
 /// cost N × m_cost instead of being capped at `argon2_parallelism × m_cost`
-/// (DESIGN-AUTH §2.2). This drives well over `argon2_parallelism` concurrent
+/// This drives well over `argon2_parallelism` concurrent
 /// `set_password` calls from real OS threads and asserts the gate's
 /// concurrent-invocation high-water mark never exceeds the configured limit.
 #[test]
@@ -1214,7 +1214,7 @@ fn oidc_flow_stores_no_plaintext_state_or_binding() {
 /// `list_sessions`, the only reader of the column, so this covers the round
 /// trip rather than the `INSERT` alone.
 ///
-/// The `AMR_TOTP` half of `DESIGN-AUTH.md` §3.2 is still unset by every
+/// The `AMR_TOTP` half of is still unset by every
 /// production path -- see `create_session`'s doc comment for why that
 /// pre-existing bug is left alone here.
 #[test]
@@ -1811,7 +1811,7 @@ async fn local_password_deny_does_not_answer_faster_for_a_linked_account() {
     assert_eq!(linked_cost, plain_cost);
 }
 
-/// Password re-confirmation (`DESIGN-AUTH.md` §6.4) is what
+/// Password re-confirmation is what
 /// `POST /api/auth/oidc/link/start` charges before it will start a flow that
 /// ends in a new permanent credential on the account.
 ///

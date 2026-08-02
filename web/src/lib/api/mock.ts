@@ -722,7 +722,7 @@ async function writeFile(path: string, content: string, ifMatch?: string): Promi
   return updated
 }
 
-// ── auth (login/session/logout) — DESIGN-AUTH.md §6.3 ──
+// ── auth (login/session/logout) — ──
 // Defaults to "already logged in" so every existing dev workflow (and every
 // other test in this file) is unaffected; only an explicit logout() flips
 // it, which is how the login screen becomes reachable in mock mode without
@@ -744,7 +744,7 @@ const mockAuthState: {
   smbOptOut: boolean
   smbEnabled: boolean
   pendingTotpSecret: string | null
-  /** `DESIGN-AUTH.md` §6.2 — unused recovery codes left. Zero while TOTP is
+  /** — unused recovery codes left. Zero while TOTP is
    *  off (mirrors the server: `totp_disable` deletes every row), reset to 10
    *  by `totpEnroll`/`reissueRecoveryCodes`. */
   recoveryCodesRemaining: number
@@ -947,7 +947,7 @@ async function adminUnlinkUserOidc(id: number): Promise<AdminOidcUnlinkResult> {
   }
 }
 
-// ── settings (DESIGN-AUTH.md §2/§5/§6, DESIGN-FOOTPRINT.md §4) ──
+// ── settings (DESIGN-FOOTPRINT.md §4) ──
 // Mirrors http.ts's real-server surface so the settings screens behave
 // identically under `VITE_API_MOCK=1` and against the real backend — the
 // same convention as every other function in this file.

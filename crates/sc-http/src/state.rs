@@ -835,7 +835,7 @@ pub struct AppState {
     /// `sc-search`'s walker in `sc-server`; see `search_api` module docs for
     /// why this isn't just another `CoreApi` method.
     pub search: Arc<dyn SearchApi>,
-    /// `GET`/`POST /api/setup` (`DESIGN-AUTH.md` §8) — bound to a real gate
+    /// `GET`/`POST /api/setup` — bound to a real gate
     /// by `sc-server`, which is the only crate that knows about the one-time
     /// token file. Defaults to [`crate::setup_api::SetupClosed`], so an
     /// `AppState` built without one cannot create an administrator.
@@ -882,7 +882,7 @@ pub struct AppState {
     /// entire duration, so unbounded concurrency here is a resource-
     /// exhaustion vector). Default 4 — see `crate::routes::fs_archive`.
     pub archive_concurrency: Arc<ResizableSemaphore>,
-    /// Server-local CSRF derivation key (`DESIGN-AUTH.md` §3.3). The token
+    /// Server-local CSRF derivation key. The token
     /// handed to the client is `HMAC(csrf_key, sha256(session_token))`,
     /// which lets `Csrf` verify without any additional storage beyond the
     /// session token the cookie already carries.

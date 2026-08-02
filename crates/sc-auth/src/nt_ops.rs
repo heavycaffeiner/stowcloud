@@ -1,6 +1,5 @@
 //! Shared NT-hash derive/store/backfill helpers used by user creation,
 //! password change, TOTP enable/disable, and opportunistic backfill.
-//! See DESIGN-AUTH.md §2.4.
 
 use crate::db::now_ns;
 use crate::nt_hash::{nt_hash, seal_nt};
@@ -46,8 +45,8 @@ pub(crate) const NT_SOURCE_DEDICATED: i64 = 1;
 ///
 /// Implementations must not call back into [`AuthService`]: this fires from
 /// inside its write paths, sometimes with a connection still open. The sink
-/// is expected to mark work and return, which is what `smb_sync.mark_dirty`
-/// means in `DESIGN-AUTH.md` §2.4.
+/// is expected to mark work and return: it marks the passdb dirty and lets
+/// the publisher thread do the render.
 pub trait PassdbSink: Send + Sync {
     fn republish(&self);
 }
@@ -142,7 +141,7 @@ impl AuthService {
         Ok(v)
     }
 
-    /// Opportunistic NT-hash backfill (DESIGN-AUTH §2.4 "opportunistic backfill"):
+    /// Opportunistic NT-hash backfill ("opportunistic backfill"):
     /// called from every path where a plaintext account password was just
     /// verified successfully (login, DAV Basic). No-op if TOTP is enabled,
     /// the user opted out, an OIDC identity is linked, an NT hash already

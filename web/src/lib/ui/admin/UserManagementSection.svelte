@@ -1,5 +1,5 @@
 <script lang="ts">
-  // User management — admin-only screen built on top of DESIGN-AUTH.md's
+  // User management — admin-only screen built on top of's
   // role model (§8, `user.role`). GET/POST /api/admin/users, PATCH/DELETE
   // /api/admin/users/{id}.
   //

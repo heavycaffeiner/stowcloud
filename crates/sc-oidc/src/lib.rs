@@ -5,7 +5,7 @@
 //! routes, cookies, sessions, or the account database; `sc-http` and
 //! `sc-auth` own all of that. See
 //! `docs/proposals/stowcloud-0-oidc-login.md` for the design this
-//! implements, and `docs/DESIGN-AUTH.md` for the account model it plugs
+//! implements, and for the account model it plugs
 //! into.
 //!
 //! Why a separate crate at all (proposal §4.1.1): this is where the TLS

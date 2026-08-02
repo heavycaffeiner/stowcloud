@@ -500,7 +500,7 @@ fn links_for_node_finds_links_by_fileid() {
 /// could stand up an unbounded number of 48 MiB (default) Argon2id buffers
 /// at once. This proves the gate actually serializes concurrent verifies
 /// down to `argon2_parallelism`, the same way `sc-auth`'s own login gate
-/// bounds concurrent logins (`DESIGN-AUTH.md` §2.2).
+/// bounds concurrent logins.
 #[test]
 fn concurrent_share_link_password_checks_are_gated_not_unbounded() {
     let (core, _dir) = setup_without_links();

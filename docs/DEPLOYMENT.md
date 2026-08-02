@@ -311,7 +311,7 @@ too, but the sidecar is the default recommendation.
 **The SMB password is the account password.** NTLM requires
 `MD4(UTF-16LE(password))`, so both an Argon2 hash and an NT hash are derived
 together at every moment the plaintext is held (account creation, password
-change, successful login) — `DESIGN-AUTH.md` §2.4.
+change, successful login) — `proposals/stowcloud-10-auth.md`
 
 #### What that costs
 
@@ -360,7 +360,7 @@ elsewhere."
 #### Always ready
 
 The NT hash is **always derived at account creation**, independent of
-whether SMB is enabled (`DESIGN-AUTH.md` §2.4).
+whether SMB is enabled (`proposals/stowcloud-10-auth.md`).
 
 ```
 derive : always, on account creation / password change  -> AEAD ciphertext in the DB
@@ -383,7 +383,7 @@ Exceptions (the list has outgrown the "three" it was written with):
 | situation | behavior |
 |---|---|
 | TOTP-enabled user | the account-derived hash is **deleted**. A dedicated SMB password is required (§7.2 2FA). Turning TOTP back off re-derives it immediately on that request's password reconfirmation — no gap |
-| user linked to an identity provider | the account-derived hash is **deleted** at link time, so the account password stops working for SMB (`DESIGN-AUTH.md` §13.6), and a running server with SMB enabled rewrites the published `smbpasswd` to match within a second. Unlinking re-derives the hash only when the *user* unlinks, since that path re-confirms the password; an admin unlink has no plaintext and cannot. §13.7 has the recovery procedure |
+| user linked to an identity provider | the account-derived hash is **deleted** at link time, so the account password stops working for SMB (`proposals/stowcloud-10-auth.md`), and a running server with SMB enabled rewrites the published `smbpasswd` to match within a second. Unlinking re-derives the hash only when the *user* unlinks, since that path re-confirms the password; an admin unlink has no plaintext and cannot. §13.7 has the recovery procedure |
 | `user.smb_opt_out = true` | derivation is skipped entirely, for accounts that will never use SMB |
 | admin force-disables TOTP | the admin doesn't know the plaintext -> auto-generated on the user's **next** authentication |
 | an account predating this feature | same: auto-generated on next authentication. An upgrade path, not normal operation |
@@ -391,7 +391,7 @@ Exceptions (the list has outgrown the "three" it was written with):
 The last two also **never require re-login.** Backfill happens on any
 successful verification that carries a plaintext, including **WebDAV/NC
 Basic auth** — a single connected sync client fills it in within seconds
-without the user doing anything (`DESIGN-AUTH.md` §2.4).
+without the user doing anything (`proposals/stowcloud-10-auth.md`).
 
 The admin UI marks any account with `smb_enabled` but no NT hash yet as
 "pending authentication." Empty in normal operation.
@@ -447,7 +447,7 @@ SMB off entirely for that account.
    rather than let a credential import under someone else's name.
 4. **Password-change propagation**: Argon2 re-hash -> NT hash recompute ->
    `smbpasswd` regenerate -> sidecar import. The regenerate step is the
-   running server's own, not an operator's (`DESIGN-AUTH.md` §13.6); §13.7
+   running server's own, not an operator's (`proposals/stowcloud-10-auth.md`); §13.7
    lists the three cases where it does not happen and `sc-server smb-sync` is
    still the answer. Existing SMB sessions are kept
    alive by Samba, not dropped immediately; forcing termination is the admin
@@ -476,7 +476,7 @@ SMB off entirely for that account.
 
 #### Brute force
 
-**Samba handles auth itself, so our rate limiter (`DESIGN-AUTH.md` §7)
+**Samba handles auth itself, so our rate limiter (`proposals/stowcloud-10-auth.md`)
 doesn't apply.** A structural limitation. Mitigations:
 
 - SMB is LAN-only, so the attack surface isn't internet-exposed.
@@ -746,7 +746,7 @@ by installing them on a real host.
 |---|---|
 | real client IP | `CF-Connecting-IP`, **only after matching against the trusted-proxy CIDR list.** The list ships pinned in the image and is admin-updatable; unverified requests fall back to the socket peer IP |
 | real client IP (generic reverse proxy) | `X-Forwarded-For` if `CF-Connecting-IP` is absent. Used **only if the same CIDR gate passes**, scanning the list **right to left** and taking the first entry that isn't a trusted proxy (the leftmost entry is always client-supplied and can be forged). An unparseable entry stops the scan immediately and falls back to the peer IP. §9's compose supports "behind cloudflared or a reverse proxy," so nginx/Traefik deployments get the same protection |
-| trusted proxies unset | startup diagnostics warn loudly (`DESIGN-AUTH.md` §7.1). Behind a proxy with an empty list, every request collapses onto the proxy's single address — the login brute-force gate, rate limiter, and audit log all fall into one bucket. Malformed CIDR entries are silently dropped, and diagnostics list them separately |
+| trusted proxies unset | startup diagnostics warn loudly (`proposals/stowcloud-10-auth.md`). Behind a proxy with an empty list, every request collapses onto the proxy's single address — the login brute-force gate, rate limiter, and audit log all fall into one bucket. Malformed CIDR entries are silently dropped, and diagnostics list them separately |
 | protocol | `X-Forwarded-Proto` decides the secure-cookie flag. `Host` is validated against the allow-list |
 | body size | Free/Pro/Biz cap at 100MB -> `chunk_size_advisory` is advertised as a **recommendation** (10 MiB when Cloudflare is detected). No server-enforced ceiling — see `proposals/stowcloud-7-upload.md` for the full chunk-size policy this feeds |
 | origin timeout | 100s (524) -> chunk target transfer time is 20s |
@@ -830,7 +830,7 @@ aligned, and only one of them is commonly known:
    request bounces with 421 — the hardest failure mode for a first-time
    operator to diagnose.
 3. **`allowed_origins`** — the CSRF origin check for cookie-authenticated
-   write requests (`DESIGN-AUTH.md` §3.3, not the SMB material in §7.2).
+   write requests (`proposals/stowcloud-10-auth.md`, not the SMB material in §7.2).
    **Left empty, it's derived automatically from `app_hosts`**
    (`config.rs`: "Empty means derive from `app_hosts`"), so in practice only
    two things need to be known. Setting it explicitly only matters for the
@@ -1318,7 +1318,7 @@ one SMB credential was ever at stake. Fix: install the working key at
 `keys/master`, keeping `keys/master.unusable-backup` and
 `keys/master.copy-from-data-dir` (all mode 600) so it is reversible in both
 directions. That also moved the live key *out of* the data directory, which is
-what DESIGN-AUTH §7.2 wants — a data backup must not carry the key that
+what `proposals/stowcloud-10-auth.md` wants — a data backup must not carry the key that
 decrypts it.
 
 **Why this stayed silent for a day**: `verify_master_key`
@@ -1786,7 +1786,7 @@ calls it, so reverting that one call site would leave the test suite green.
 
 ## 13. Single sign-on (OIDC)
 
-`DESIGN-AUTH.md` §13 is the design. This is the operator's side: what to
+`proposals/stowcloud-10-auth.md` is the design. This is the operator's side: what to
 register at the identity provider, where the secret goes, and what changes for
 your users the moment an account is linked.
 
@@ -1919,7 +1919,7 @@ password. Unlinked accounts are unaffected either way.
 The default is `allow`, and the reason is recovery. Under `deny`, an outage at
 the provider or a broken client registration locks out everybody, including
 the administrator who would have to fix it. There is no account lockout in
-this product (`DESIGN-AUTH.md` §7.1) and no way to reach zero active
+this product (`proposals/stowcloud-10-auth.md`) and no way to reach zero active
 administrators (§11) for the same reason: a state nobody can get out of is
 worse than the risk it removes.
 
@@ -1948,7 +1948,7 @@ as this server. HTTPS is still required.
 
 An identity provider using a **private CA** is not supported today. The TLS
 client compiles in the Mozilla root set and has no hook for extra roots
-(`DESIGN-AUTH.md` §13.8).
+(`proposals/stowcloud-10-auth.md`).
 
 ### 13.7 What linking does to SMB, and how to undo it
 
@@ -1972,7 +1972,7 @@ passdb publisher armed: an NT hash change now rewrites smbpasswd without `smb-sy
 ```
 
 Three things can leave the file behind anyway, and only the first one is
-visible in the startup log (`DESIGN-AUTH.md` §13.6):
+visible in the startup log (`proposals/stowcloud-10-auth.md`):
 
 1. **`smb.enabled` was false when the server started**, which is what the
    missing log line means. Then there is no published file to be stale. If
@@ -2010,7 +2010,7 @@ these happens:
 Option 1 needs no follow-up command. Only the three exceptions listed above
 put you back on `sc-server smb-sync`.
 
-Option 2 has no user-facing API in this build (`DESIGN-AUTH.md` §13.6), so in
+Option 2 has no user-facing API in this build (`proposals/stowcloud-10-auth.md`), so in
 practice the answer is option 1: tell the user to change their password. It
 does not have to be a *different* password, only a password change.
 
@@ -2037,7 +2037,7 @@ Two ways, and both exist on purpose:
   cannot self-serve the unlink later.
 
 There is no automatic matching on email or username, and no account is created
-by a login (`DESIGN-AUTH.md` §13.1).
+by a login (`proposals/stowcloud-10-auth.md`).
 
 ### 13.9 Sign-in failures, by what the user sees
 

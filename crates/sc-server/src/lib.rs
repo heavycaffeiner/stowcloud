@@ -98,7 +98,7 @@ pub enum MasterkeyAction {
     /// secret under it, and swap the key file on disk.
     ///
     /// A CLI subcommand, not an HTTP route: a master key is exactly the kind
-    /// of secret `docs/DESIGN-AUTH.md`'s "never over HTTP" rule for the key
+    /// of secret's "never over HTTP" rule for the key
     /// itself (not just its material) is written for — a browser tab has no
     /// business ever holding it, so rotation belongs at the same trust level
     /// as `smb-sync`/`gc`, run by whoever already has shell access to the
@@ -302,7 +302,7 @@ pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
     let _storage_sampler =
         diagnostics::spawn_storage_sampler(data_dir, min_free_bytes, app.meta.clone());
 
-    // `DESIGN-AUTH.md` §8. Issuing the one-time token belongs to *starting to
+    // Issuing the one-time token belongs to *starting to
     // serve*, not to building an `App`: it is what makes an otherwise
     // unreachable deployment reachable, and it is re-issued on every restart
     // for as long as — and only as long as — there is still no account.
@@ -316,7 +316,7 @@ pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
         Err(e) => tracing::error!(error = %e, "could not issue a first-run setup token"),
     }
 
-    // `DESIGN-AUTH.md` §13.6. Same reasoning as the setup gate above: the
+    // Same reasoning as the setup gate above: the
     // sink belongs to *serving*, not to building an `App`. `gc` and
     // `smb-sync` build the same `App`, and `smb-sync` renders the very files
     // this publisher writes.

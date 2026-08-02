@@ -7,7 +7,7 @@ const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api'
 
 // The session cookie is `__Host-sc_sid` (auth) and state-changing requests
-// additionally need the `Sc-Csrf` header (DESIGN-AUTH.md §3.3/§4) — the same
+// additionally need the `Sc-Csrf` header — the same
 // requirement `api/http.ts` satisfies for every other endpoint. This module
 // runs inside the dedicated upload Worker though, a separate module realm
 // from `http.ts`'s module-scoped `csrfToken`, so the token can't just be

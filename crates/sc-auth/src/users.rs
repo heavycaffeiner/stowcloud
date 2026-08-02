@@ -484,7 +484,7 @@ impl AuthService {
         Ok(out)
     }
 
-    /// Self-service password change (`DESIGN-AUTH.md` §2.3): re-confirms
+    /// Self-service password change: re-confirms
     /// `current` before touching anything, so the HTTP layer can hand back a
     /// precise `401` for a wrong current password versus a `422` for a new
     /// one under the minimum length — distinct outcomes `set_password` alone
@@ -514,7 +514,7 @@ impl AuthService {
         Ok(())
     }
 
-    /// Updates the two self-service SMB toggles (`DESIGN-AUTH.md` §2.4):
+    /// Updates the two self-service SMB toggles:
     /// `smb_opt_out` (refuse to hold *any* NT hash for this account, derived
     /// or dedicated) and `smb_enabled` (this account's half of "published" —
     /// the other half being the deployment-wide `smb.enabled`). Turning

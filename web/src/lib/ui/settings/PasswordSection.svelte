@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Password change — DESIGN-AUTH.md §2.3/§2.4: minimum 10 characters; on
+  // Password change —: minimum 10 characters; on
   // change, the Argon2 hash and the NT hash (SMB) are re-derived together
   // (server side, sc-auth::change_password). Whether other devices get
   // logged out is the user's own choice — app passwords are never revoked

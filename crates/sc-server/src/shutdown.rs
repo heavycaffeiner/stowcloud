@@ -77,7 +77,7 @@ pub fn run_shutdown_sequence(app: &crate::app::App) -> ShutdownSteps {
     // Not just stopped: `PassdbPublisher::stop` publishes anything still
     // marked before it joins. A credential revoked seconds before `SIGTERM`
     // would otherwise stay live in the published `smbpasswd`, because nothing
-    // republishes at the next start either (`DESIGN-AUTH.md` §13.6).
+    // republishes at the next start either.
     if let Some(passdb) = app.passdb.get() {
         passdb.stop();
         tracing::info!("shutdown: passdb publisher flushed and stopped");

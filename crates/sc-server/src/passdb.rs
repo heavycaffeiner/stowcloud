@@ -1,7 +1,7 @@
 //! The live end of `sc_auth::PassdbSink`: an NT-hash change in the database
 //! turns into a rewritten `smbpasswd` without an operator running anything.
 //!
-//! `DESIGN-AUTH.md` §13.6 is the reason this exists. Deleting a
+//! is the reason this exists. Deleting a
 //! `user_smb_secret` row closes SMB in the database and nowhere else, because
 //! `smbd` authenticates against the file this server last published. Linking
 //! an OIDC identity deletes that row precisely to close SMB, so without a
@@ -17,7 +17,7 @@
 //!    is a re-entrancy hazard at best and a connection-pool stall at worst.
 //!    So [`PassdbSink::republish`] only sets a flag. This is the
 //!    `smb_sync.mark_dirty(u)` the proposal's §4.3.6 step 2 describes, and
-//!    `DESIGN-AUTH.md` §2.4 names.
+//! names.
 //! 2. **Bursts collapse into one render.** Rewriting `smb.conf`/`smbpasswd`/
 //!    `passwd` costs a full user and share projection; an admin walking
 //!    through five accounts should pay for it once, not five times.
@@ -373,7 +373,7 @@ mod tests {
     }
 
     /// The seam end to end, minus the render itself: a real `AuthService`, a
-    /// real sink, and the two changes `DESIGN-AUTH.md` §13.6 is about. Before
+    /// real sink, and the two changes is about. Before
     /// this module existed both of these logged "no passdb sink installed"
     /// and stopped there.
     #[test]

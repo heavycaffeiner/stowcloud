@@ -4,7 +4,7 @@ use sc_vfs::UserId;
 use std::net::IpAddr;
 use std::sync::Arc;
 
-/// One `audit` row (`DESIGN-AUTH.md` §9), as read back by
+/// One `audit` row, as read back by
 /// [`AuthService::list_audit`]. `rowid` is SQLite's implicit one — the table
 /// declares no explicit primary key — used only as an opaque pagination
 /// cursor, never shown as a stable public id.
@@ -42,7 +42,7 @@ pub struct AuditFilter {
 /// actor, no event, no time bound) could scan.
 pub const AUDIT_PAGE_MAX: u32 = 200;
 
-/// `audit`'s stated retention (`DESIGN-AUTH.md` §9: "Retention defaults to
+/// `audit`'s stated retention ("Retention defaults to
 /// 180 days"). Not yet an admin-configurable setting — YAGNI until a second
 /// value is actually needed — but the docs promise pruning happens, so
 /// [`AuthService::audit_prune`] must actually be called (see
@@ -52,7 +52,7 @@ pub const AUDIT_PAGE_MAX: u32 = 200;
 pub const AUDIT_RETENTION_NS: i64 = 180 * 24 * 60 * 60 * 1_000_000_000;
 
 impl AuthService {
-    /// Best-effort audit log insert (DESIGN-AUTH §9). Never propagates
+    /// Best-effort audit log insert. Never propagates
     /// errors — an audit-log write failure must not break the request it is
     /// describing.
     pub fn audit(
@@ -89,7 +89,7 @@ impl AuthService {
     /// How many audit rows carry `event`, optionally narrowed to successes
     /// (`Some(true)`) or failures (`Some(false)`).
     ///
-    /// `DESIGN-AUTH.md` §9 specifies the table but no reader, so this is the
+    /// specifies the table but no reader, so this is the
     /// smallest read API that lets a caller assert a path actually recorded
     /// itself — used today by the tests that guard the first-run bootstrap,
     /// and the obvious foundation for the admin-facing view later.

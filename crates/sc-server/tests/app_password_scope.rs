@@ -100,7 +100,7 @@ fn user_with_scoped_app_password(
 }
 
 /// App passwords authenticate over DAV Basic the same way the account
-/// password does (`DESIGN-AUTH.md` §5.1/§5.3) — the username is ignored for
+/// password does — the username is ignored for
 /// this path (`sc_auth::AuthService::verify_basic`: an `stow_`-prefixed
 /// password is routed straight to `verify_app_password` regardless of what
 /// username accompanies it), so any placeholder username works.

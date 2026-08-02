@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Two-factor auth (TOTP) — DESIGN-AUTH.md §6.4: both enabling and
+  // Two-factor auth (TOTP) —: both enabling and
   // disabling require password re-confirmation. Disabling does not require
   // re-login or a password reset — the session stays alive and the modal
   // only asks for one password field (§2.4's "re-authentication is distinct
@@ -35,7 +35,7 @@
   let disableError = $state<string | null>(null)
   let disabling = $state(false)
 
-  // ── recovery codes: remaining count + reissue (DESIGN-AUTH.md §6.2) ──
+  // ── recovery codes: remaining count + reissue ──
   let recoveryRemaining = $state<number | null>(null)
   let reissueOpen = $state(false)
   let reissuePassword = $state('')

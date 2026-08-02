@@ -1,5 +1,5 @@
 <script lang="ts">
-  // App passwords — DESIGN-AUTH.md §5. List/issue/revoke.
+  // App passwords — List/issue/revoke.
   // `GET/POST/DELETE /api/auth/app-passwords[/:id]`.
   import { onMount } from 'svelte'
   import { api, ApiError, type AppPasswordInfo } from '../../api/client'

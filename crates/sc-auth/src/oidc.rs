@@ -5,7 +5,7 @@
 //! stores what an authorization-code round trip has to survive on, and it
 //! hands that record back exactly once. Everything about *talking* to a
 //! provider lives in `sc-oidc`, for the dependency-isolation reason
-//! `DESIGN-AUTH.md`'s first line gives for keeping this crate
+//! 's first line gives for keeping this crate
 //! protocol-agnostic.
 
 use crate::db::now_ns;

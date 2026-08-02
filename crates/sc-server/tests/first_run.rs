@@ -193,7 +193,7 @@ async fn an_expired_token_is_refused_over_http() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_short_password_is_refused_over_http() {
     let (f, token) = armed_fixture();
-    // Nine characters. `DESIGN-AUTH.md` §2.3 demands ten.
+    // Nine characters; the minimum is ten.
     let (status, body) = post_setup(&f, &token, "admin", "123456789").await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
     assert_eq!(
@@ -263,7 +263,7 @@ async fn the_token_file_is_removed_when_spent() {
     assert!(!f.data.path().join("setup-token").exists());
 }
 
-/// `DESIGN-AUTH.md` §2.4: the NT hash is derived at account creation,
+/// the NT hash is derived at account creation,
 /// unconditionally, so SMB can be switched on later without a password reset.
 /// The bootstrapped administrator is the account most likely to predate any
 /// decision about SMB, so it is the one this matters most for.
@@ -288,7 +288,7 @@ async fn the_bootstrapped_admin_is_smb_ready_without_a_password_reset() {
     );
 }
 
-/// The bootstrap writes an audit row (`DESIGN-AUTH.md` §9), and a refused
+/// The bootstrap writes an audit row, and a refused
 /// attempt writes one too.
 #[tokio::test(flavor = "multi_thread")]
 async fn the_bootstrap_is_audited() {

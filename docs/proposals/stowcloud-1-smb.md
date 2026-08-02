@@ -328,7 +328,7 @@ stale row; one bad passdb entry must not take SMB down for everyone else.
 ## 7. References
 
 - `docs/DEPLOYMENT.md` §7 — the operational contract this specifies
-- `docs/DESIGN-AUTH.md` §2.4, §13.6, §13.7 — NT-hash derivation and revocation
+- `proposals/stowcloud-10-auth.md`, §13.6, §13.7 — NT-hash derivation and revocation
 - `docs/ARCHITECTURE.md` §9.2 — where the LAN-only premise is stated
 - `crates/sc-smb/`, `crates/sc-server/src/smb_cmd.rs`, `deploy/smb/`
 - `scripts/smb-native-test.sh` — the bare-metal agent's 3-distro suite

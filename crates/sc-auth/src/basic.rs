@@ -5,7 +5,7 @@ use secrecy::{ExposeSecret, SecretString};
 use std::net::IpAddr;
 
 impl AuthService {
-    /// The DAV Basic-auth 3-tier verification path (DESIGN-AUTH §4.2),
+    /// The DAV Basic-auth 3-tier verification path,
     /// minus tier ① (connection memo), which the HTTP layer drives directly
     /// via [`AuthService::conn_memo_check`]/[`AuthService::conn_memo_store`]
     /// since it needs the raw `Authorization` header bytes this method
@@ -103,7 +103,7 @@ impl AuthService {
         // and Argon2 would make a wrong password against a linked account
         // finish visibly sooner than a wrong password against any other,
         // which tells an unauthenticated caller which accounts use SSO. That
-        // is exactly the enumeration oracle `DESIGN-AUTH.md` §7.2 flattens
+        // is exactly the enumeration oracle flattens
         // timing to prevent, and it would be a new one, introduced by this
         // change, rather than an inherited one.
         //
@@ -143,7 +143,7 @@ impl AuthService {
         BasicResult::Ok(principal)
     }
 
-    /// Connection-memo tier ① lookup (DESIGN-AUTH §4.2 ①). `auth_header_hash`
+    /// Connection-memo tier ① lookup ( ①). `auth_header_hash`
     /// is `sha256` of the raw `Authorization` header bytes, computed by the
     /// HTTP layer.
     pub fn conn_memo_check(&self, auth_header_hash: &[u8; 32]) -> Option<Principal> {

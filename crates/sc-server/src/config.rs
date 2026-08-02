@@ -221,7 +221,7 @@ pub enum OidcSmbPolicy {
 pub enum OidcLocalPasswordLoginCfg {
     /// The default, and deliberately the less strict of the two. See
     /// `sc_auth::OidcLocalPasswordLogin::Allow` for why: `deny` has no
-    /// recovery path if the IdP goes away, and `DESIGN-AUTH.md` refuses that
+    /// recovery path if the IdP goes away, and refuses that
     /// class of unrecoverable state everywhere else.
     #[default]
     Allow,
@@ -413,7 +413,7 @@ pub struct Config {
     /// permits but which gives up the XSS isolation the split exists for.
     /// Startup says so out loud.
     pub content_hosts: Vec<String>,
-    /// Origins the CSRF check accepts (`DESIGN-AUTH.md` §3.3). **Empty means
+    /// Origins the CSRF check accepts. **Empty means
     /// derive from `app_hosts`**, which is right for every ordinary
     /// deployment — an origin is a scheme plus a host we already answer for.
     /// Set it explicitly only when the browser's origin is something the

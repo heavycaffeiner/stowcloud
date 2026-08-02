@@ -22,7 +22,7 @@ pub struct App {
     pub acl: Arc<sc_acl::AclEngine>,
     pub core: Arc<sc_core::Core>,
     pub auth: Arc<sc_auth::AuthService>,
-    /// First-run administrator bootstrap (`DESIGN-AUTH.md` §8). Held as the
+    /// First-run administrator bootstrap. Held as the
     /// concrete type so `cmd_serve` can arm it — building an `App` never
     /// issues a token, only starting to serve does. `http.setup` is the same
     /// object behind `sc_http`'s trait.
@@ -31,7 +31,7 @@ pub struct App {
     /// publisher renders through it (`passdb.rs`), and `http.settings` is the
     /// same object behind `sc_http`'s trait.
     pub settings: Arc<crate::settings_bridge::SettingsBridge>,
-    /// The live `smbpasswd` publisher (`DESIGN-AUTH.md` §13.6). Empty until
+    /// The live `smbpasswd` publisher. Empty until
     /// [`App::arm_passdb_publisher`] fills it, and left empty for a
     /// deployment with `smb.enabled = false`: see that method for why the
     /// CLI paths never arm it.
@@ -376,7 +376,7 @@ impl App {
 
     /// Installs the `sc-auth` passdb sink and starts the thread behind it, so
     /// that an NT-hash change rewrites the published `smbpasswd` by itself
-    /// (`DESIGN-AUTH.md` §13.6, proposal §4.3.6 step 2).
+    /// (proposal §4.3.6 step 2).
     ///
     /// Armed by `cmd_serve` rather than by [`App::build`], for the same
     /// reason `setup` is: `gc` and `smb-sync` build the same `App`, and
@@ -789,7 +789,7 @@ pub(crate) fn decode_dav_path(uri_path: &str) -> Option<String> {
 }
 
 /// The `sc_acl::Perms` bit(s) a WebDAV method needs from an app password's
-/// scope (`DESIGN-AUTH.md` §5.2), mirroring how `sc-core` itself gates each
+/// scope, mirroring how `sc-core` itself gates each
 /// operation (`ops.rs`: `move_to` checks `MOVE` on the source and `CREATE`
 /// on the destination; `copy_to` checks `READ` then `CREATE`). `None` means
 /// "no mapping" — the caller treats that as fail-closed for a
@@ -808,7 +808,7 @@ fn dav_required_perms(method: &http::Method) -> Option<sc_acl::Perms> {
     }
 }
 
-/// Basic auth (app password or account password, per `DESIGN-AUTH.md`) or a
+/// Basic auth (app password or account password, per) or a
 /// session cookie. Failure is *not* an error here: the request continues
 /// unauthenticated so `sc-dav` can answer `401` with its own
 /// `WWW-Authenticate` realm, which is what makes Windows Explorer offer
@@ -1071,7 +1071,7 @@ fn build_http_state(
         }
     }
 
-    // CSRF's `Origin` allowlist (`DESIGN-AUTH.md` §3.3). `HttpConfig`'s
+    // CSRF's `Origin` allowlist. `HttpConfig`'s
     // default is the placeholder `https://app.example.com`, and nothing
     // populated it — so every cookie-authenticated state-changing request
     // failed the origin half of the check with 403. That is the entire write
@@ -1846,7 +1846,7 @@ mod upload_gc_tests {
 #[cfg(test)]
 mod passdb_arming_tests {
     //! Which deployments get a passdb publisher, and which deliberately get
-    //! nothing at all (`DESIGN-AUTH.md` §13.6). The publisher's own
+    //! nothing at all. The publisher's own
     //! behaviour is covered in `passdb.rs`; this is about the wiring.
     use super::*;
 

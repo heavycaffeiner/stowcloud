@@ -75,7 +75,7 @@ fn native_routes() -> Vec<RouteInfo> {
             group: "native",
             owner: "sc-http",
         },
-        // First-run administrator bootstrap (`DESIGN-AUTH.md` §8).
+        // First-run administrator bootstrap.
         // Unauthenticated by necessity — there is no account to authenticate
         // as yet — and permanently closed the moment one exists. `sc-http`
         // owns the route and the wire shapes; `sc-server` owns the gate,
@@ -158,7 +158,7 @@ fn native_routes() -> Vec<RouteInfo> {
             group: "native",
             owner: "sc-http",
         },
-        // Recovery-code self-service (`DESIGN-AUTH.md` §6.2: how many unused
+        // Recovery-code self-service (how many unused
         // codes remain, and reissuing) was listed here as `GET`/`POST
         // /api/auth/totp/recovery-codes` for a route that was never actually
         // registered anywhere in `sc_http::routes::protected_routes` — the
@@ -876,7 +876,7 @@ mod tests {
         assert!(routes.iter().any(|r| r.path == "/api/uploads"));
     }
 
-    /// Recovery-code self-service (`DESIGN-AUTH.md` §6.2) has no route yet —
+    /// Recovery-code self-service has no route yet —
     /// see the removal note above `/api/auth/sessions` in `native_routes`.
     /// This is the negative of the old `recovery_code_routes_present`: it
     /// exists so a future re-add of the table entries without the matching

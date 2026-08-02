@@ -41,7 +41,7 @@ const MAX_INLINE_READ: usize = 256 * 1024 * 1024;
 pub struct CoreBridge {
     pub core: Arc<sc_core::Core>,
     /// Deployment-wide `[smb] enabled` (`sc_smb::SmbConfig.enabled`) — the
-    /// half of `DESIGN-AUTH.md` §2.4's "publishing" gate this crate can see.
+    /// half of's "publishing" gate this crate can see.
     /// `sc-http`'s `features.smb` capability is this value verbatim
     /// (`hapi::CoreApi::smb_enabled`); the per-account half
     /// (`user.smb_enabled`) lives in `sc_auth::UserRow` and is unrelated.
@@ -3119,7 +3119,7 @@ mod upload_bridge_tests {
         );
 
         // A vpath under no root the user has at all answers NotFound, not
-        // Denied (`DESIGN-AUTH.md` §12: "a share the caller has no grant on
+        // Denied ("a share the caller has no grant on
         // answers 404, not 403") — proving the Denied above comes from an
         // actual WRITE check, not a blanket catch-all that would also hide
         // this distinction.

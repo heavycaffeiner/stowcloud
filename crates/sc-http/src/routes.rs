@@ -174,7 +174,7 @@ fn feature_caps(state: &AppState) -> FeatureCaps {
     FeatureCaps {
         webdav: true,
         // Deployment-wide `[smb] enabled`, not the per-account toggle
-        // (`DESIGN-AUTH.md` §2.4/§10) — this was hardcoded `false`
+        // — this was hardcoded `false`
         // unconditionally, which meant the SMB settings section (fully
         // implemented front to back) could never render no matter what the
         // server was configured with.
@@ -253,8 +253,7 @@ struct SetupReq {
     password: String,
 }
 
-/// `POST /api/setup` — spend the one-time token and create the administrator
-/// (`DESIGN-AUTH.md` §8).
+/// `POST /api/setup` — spend the one-time token and create the administrator.
 ///
 /// **The token is read from the JSON body only, never from a header.** A
 /// header form (`Sc-Setup-Token:`) would be marginally nicer to `curl`, but
@@ -364,8 +363,7 @@ fn client_ip_of(headers_ext: Option<&ClientIp>) -> std::net::IpAddr {
     headers_ext.map(|c| c.0).unwrap_or(crate::middleware::UNKNOWN_CLIENT)
 }
 
-/// `User-Agent`, for the "active sessions" list (`DESIGN-AUTH.md` §3.2:
-/// `ua_first` is display-only, never an auth condition). Empty string — not
+/// `User-Agent`, for the "active sessions" list (`ua_first` is display-only, never an auth condition). Empty string — not
 /// the header's absence — is what `create_session` stores for "none sent",
 /// same as a missing header; a non-UTF-8 value (never sent by a real
 /// browser) degrades the same way rather than failing the login.
@@ -414,7 +412,7 @@ async fn auth_login(State(state): State<AppState>, req: axum::extract::Request) 
 }
 
 fn set_session_cookie(resp: &mut Response, token: &str) {
-    // `__Host-` prefix: Secure + Path=/ + no Domain (DESIGN-AUTH.md §3.1).
+    // `__Host-` prefix: Secure + Path=/ + no Domain.
     let cookie = format!("{}={token}; Path=/; Secure; HttpOnly; SameSite=Lax", crate::SESSION_COOKIE);
     if let Ok(v) = axum::http::HeaderValue::from_str(&cookie) {
         resp.headers_mut().append(axum::http::header::SET_COOKIE, v);
@@ -499,7 +497,7 @@ struct RootEntryWire {
 
 /// The richer per-account view `GET /api/auth/session` returns — deliberately
 /// a different (wider) shape than the bare `UserInfo` in `LoginResp::Ok`
-/// (`DESIGN-AUTH.md` §6.3: the login response is thin on purpose, the app
+/// (the login response is thin on purpose, the app
 /// re-fetches this immediately after). Settings screens key their gating and
 /// initial toggle state directly off these fields: `is_admin` decides whether
 /// `/admin/*` even fetches anything, the rest seed
@@ -772,7 +770,7 @@ struct ChangePasswordReq {
     revoke_other_sessions: bool,
 }
 
-/// `POST /api/auth/password` — `DESIGN-AUTH.md` §2.3/§2.4. Requires the
+/// `POST /api/auth/password` — Requires the
 /// current password (never just an active session — this is a security-
 /// relevant action) and, on success, unconditionally re-derives the SMB NT
 /// hash via `AuthService::set_password`. `revoke_other_sessions` is the
@@ -826,8 +824,7 @@ async fn auth_change_password(
 
 // ---------------------------------------------------------------------- totp --
 
-/// `POST /api/auth/totp/setup` — step one of enrollment (`DESIGN-AUTH.md`
-/// §6.4). Persists nothing; the client shows the returned secret/QR and
+/// `POST /api/auth/totp/setup` — step one of enrollment. Persists nothing; the client shows the returned secret/QR and
 /// confirms with a live code via `POST /api/auth/totp/enroll`.
 async fn auth_totp_setup(State(state): State<AppState>, principal: Option<Extension<Principal>>) -> Response {
     let principal = match principal_or_401(principal) {
@@ -888,8 +885,8 @@ async fn auth_totp_disable(
         Err(e) => return e.into_response(),
     };
     let pw = SecretString::from(req.password);
-    // Deliberately no session revocation and no forced re-login here
-    // (`DESIGN-AUTH.md` §2.4/§6.4): disabling 2FA re-confirms the password
+    // Deliberately no session revocation and no forced re-login here:
+    // disabling 2FA re-confirms the password
     // in-session, it does not log the user out. `totp_disable` itself
     // re-derives the SMB NT hash in the same transaction.
     match state.auth.totp_disable(principal.user, &pw).await {
@@ -963,7 +960,7 @@ struct SmbSettingsReq {
 }
 
 /// `POST /api/auth/smb` — the two self-service toggles from `user.smb_opt_out`
-/// / `user.smb_enabled` (`DESIGN-AUTH.md` §2.4/§10). Publishing still also
+/// / `user.smb_enabled`. Publishing still also
 /// requires the deployment-wide `smb.enabled`, which this account can't see
 /// or change — that half stays admin-only config, not exposed here.
 async fn auth_smb_settings(
@@ -1163,7 +1160,7 @@ fn map_idp_error(raw: &str) -> &'static str {
 /// write on it. Unauthenticated by necessity: the login screen has to decide
 /// this before anyone has a credential.
 ///
-/// Not merged into `GET /api/setup`, whose response `DESIGN-AUTH.md` §8.1
+/// Not merged into `GET /api/setup`, whose response
 /// pins to a bare boolean and nothing more. Not merged into
 /// `GET /api/capabilities` either: that one answers "what can this server
 /// do", and this answers "how do you get in", which is the question the
@@ -1471,7 +1468,7 @@ struct OidcLinkStartReq {
 /// to the account, so somebody with a few seconds at an unlocked screen must
 /// not be able to attach their own IdP identity and keep coming back after
 /// the victim changes their password and revokes every session.
-/// `DESIGN-AUTH.md` §6.4 charges a password for enabling *and* disabling
+/// charges a password for enabling *and* disabling
 /// TOTP for precisely this reason.
 ///
 /// It deliberately does **not** check whether the account is already linked.
@@ -3999,7 +3996,7 @@ fn create_user_error_response(e: sc_auth::CreateUserError) -> AppError {
 
 /// `POST /api/admin/users` — admin-only account creation. Reuses
 /// `sc_auth::AuthService::create_user` verbatim: minimum-length enforcement
-/// and the unconditional NT-hash derivation (`DESIGN-AUTH.md` §2.4, so SMB
+/// and the unconditional NT-hash derivation (so SMB
 /// can be switched on for this account later without a password reset) both
 /// happen there, not here. The created account is never an administrator —
 /// only `sc-server::setup`'s first-run bootstrap grants that role.

@@ -1,5 +1,5 @@
 //! Blocking counting semaphore bounding concurrent Argon2 invocations
-//! (`DESIGN-AUTH.md` §2.2: peak memory = `m_cost × parallelism`, default
+//! (peak memory = `m_cost × parallelism`, default
 //! 48 MiB × 4 = 192 MiB).
 //!
 //! `tokio::sync::Semaphore` only exposes an `.await`-based `acquire`, which

@@ -378,7 +378,7 @@ fn is_public_path(cfg: &HttpConfig, path: &str, method: &Method) -> bool {
         // `is_optional_session_path` and `auth` below.
         || path == "/api/auth/oidc/config"
         || path == "/api/auth/oidc/start"
-        // First-run bootstrap (`DESIGN-AUTH.md` §8). Necessarily
+        // First-run bootstrap. Necessarily
         // unauthenticated — there is no account to authenticate as yet.
         // Authorization is the one-time setup token, and the route stops
         // existing the moment an account does; see `routes::setup_complete`.
@@ -410,7 +410,7 @@ fn is_optional_session_path(path: &str) -> bool {
     path == "/api/auth/oidc/callback"
 }
 
-/// `DESIGN-AUTH.md` §4 matrix: `/api/**` (incl. `/api/uploads/**`) accepts
+/// matrix: `/api/**` (incl. `/api/uploads/**`) accepts
 /// cookie+CSRF or Bearer, never Basic. Content-origin requests never parse
 /// cookies at all and are left to their own
 /// signed-URL verification inside the handler — Auth is a no-op for them.
@@ -508,7 +508,7 @@ pub fn derive_csrf_token(csrf_key: &[u8; 32], session_token: &str) -> String {
 
 /// Only cookie-authenticated state-changing requests need CSRF — Bearer
 /// requires a custom `Authorization` header a `<form>` can't forge, so it's
-/// exempt (`DESIGN-AUTH.md` §3.3 / §4).
+/// exempt.
 pub async fn csrf(State(state): State<AppState>, req: Request, next: Next) -> Response {
     let is_state_changing = STATE_CHANGING.contains(req.method());
     let session_token = req.extensions().get::<SessionToken>().cloned();
@@ -543,7 +543,7 @@ pub async fn csrf(State(state): State<AppState>, req: Request, next: Next) -> Re
 ///
 /// `sc_auth::Scope::perms_mask` is a bitmask over `sc_acl::Perms` — the same
 /// vocabulary the ACL layer already uses for "what can this account do to
-/// this file" (`docs/DESIGN-AUTH.md` §5.2: effective perms are `ACL ∩
+/// this file" (effective perms are `ACL ∩
 /// scope_perms ∩ scope_shares`). Nothing downstream of `Auth` ever read that
 /// mask before this layer existed — every `sc-http` handler called
 /// `state.core.<op>(principal.user, ...)`, discarding `principal.scope`
@@ -582,7 +582,7 @@ enum RouteScope {
     /// through (identical to today's behavior — its scope is "the whole
     /// account", so an endpoint this table hasn't been taught about yet is
     /// no different from one it has), but a *restricted* one is refused.
-    /// `DESIGN-AUTH.md`'s "an unrecognised scope, or a route the mapping
+    /// 's "an unrecognised scope, or a route the mapping
     /// does not mention, must deny" — a route added later without updating
     /// this table fails closed for exactly the credentials this gate exists
     /// to narrow, rather than silently granting it full access.
@@ -705,7 +705,7 @@ fn route_scope(method: &Method, path: &str) -> RouteScope {
 }
 
 /// The enforcement point for `sc_auth::Scope`, and the reason it exists:
-/// `docs/DESIGN-AUTH.md` §5.2 documents "effective perms = ACL ∩ scope_perms
+/// documents "effective perms = ACL ∩ scope_perms
 /// ∩ scope_shares" for app passwords, but before this layer nothing in
 /// `sc-http`, `sc-dav`, or the compatibility layer ever read `scope_perms` —
 /// every handler resolved a virtual path with only `principal.user`. A "read
@@ -1479,9 +1479,10 @@ mod tests {
             assert_eq!(got.status(), StatusCode::OK, "a GET callback never reaches the CSRF check at all");
         }
 
-        /// `DESIGN-AUTH.md` §5.2, extended to the two self-service OIDC
-        /// routes: an app password may not attach a permanent new login
-        /// method to the account it was minted from, nor remove one.
+        /// The "no auth-changing routes" rule of an app password's permission
+        /// mask, extended to the two self-service OIDC routes: an app
+        /// password may not attach a permanent new login method to the
+        /// account it was minted from, nor remove one.
         #[tokio::test]
         async fn an_app_password_cannot_reach_the_self_service_link_routes() {
             let (state, _dir) = crate::testutil::test_state();
@@ -1587,7 +1588,7 @@ mod tests {
         assert_ne!(resp.status(), StatusCode::FORBIDDEN);
     }
 
-    /// `DESIGN-AUTH.md` §5.2's design question, answered: a credential that
+    /// 's design question, answered: a credential that
     /// can mint an unscoped sibling has no scope at all, so *no* app
     /// password — restricted or not — may create another one.
     #[tokio::test]

@@ -1,4 +1,4 @@
-//! DAV Basic-auth verification cache (DESIGN-AUTH §4.2 ①②).
+//! DAV Basic-auth verification cache ( ①②).
 //!
 //! Two caches live here:
 //! - `CredCache`: HMAC(ephemeral_key, "dav\0"‖user‖"\0"‖pw) -> Argon2 outcome,
@@ -9,8 +9,8 @@
 //!   `auth_generation` counter (no separate TTL — a real per-connection memo
 //!   dies with the connection; here it is a bounded LRU keyed by header hash
 //!   instead, since this crate has no connection object to hang state off).
-//! - `TokenCache`: sha256(app-password token) -> Principal, TTL 60s
-//!   (DESIGN-AUTH §5.3), also invalidated by `auth_generation`.
+//! - `TokenCache`: sha256(app-password token) -> Principal, TTL 60s,
+//! also invalidated by `auth_generation`.
 
 use crate::Principal;
 use hmac::{Hmac, Mac};
@@ -117,7 +117,7 @@ struct ConnEntry {
 }
 
 /// See module docs — this is a process-wide stand-in for the per-connection
-/// memo described in DESIGN-AUTH §4.2 ①. The HTTP layer is expected to key
+/// memo described in ①. The HTTP layer is expected to key
 /// it with `sha256(Authorization header bytes)`, exactly per the design.
 pub(crate) struct ConnMemo {
     map: parking_lot::Mutex<LruCache<[u8; 32], ConnEntry>>,
@@ -151,7 +151,7 @@ struct TokenEntry {
     inserted: Instant,
 }
 
-/// App-password verification cache (DESIGN-AUTH §5.3): key = sha256(token),
+/// App-password verification cache: key = sha256(token),
 /// TTL 60s, invalidated by `auth_generation` on revoke.
 pub(crate) struct TokenCache {
     map: parking_lot::Mutex<LruCache<[u8; 32], TokenEntry>>,

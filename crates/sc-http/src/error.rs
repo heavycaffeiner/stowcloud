@@ -39,7 +39,7 @@ pub enum ErrorCode {
     FsGone,
     QuotaExceeded,
     RateLimited,
-    /// First-run bootstrap (`DESIGN-AUTH.md` §8). Not in the §1.1 table
+    /// First-run bootstrap. Not in the §1.1 table
     /// because §1.1 predates the endpoint, but they follow its rules: stable
     /// dotted keys the frontend branches on, one per distinct operator
     /// action. `setup.completed` is `410`, not `404`, precisely because the
@@ -65,7 +65,7 @@ pub enum ErrorCode {
     /// `POST /api/auth/app-passwords`, `scope.shares`: a label that is not
     /// one of the caller's own share roots right now. Rejected at creation
     /// rather than silently accepted and then either unsatisfiable or (worse)
-    /// silently treated as "all shares" — `DESIGN-AUTH.md` §5.2's scope
+    /// silently treated as "all shares" —'s scope
     /// contract fails closed here too.
     AuthUnknownShare,
     /// `PATCH /api/admin/users/{id}`, `quota_bytes: 0` (`FEATURES.md` #49).
@@ -216,7 +216,7 @@ impl AppError {
 
     pub fn invalid_credentials() -> Self {
         // Deliberately identical message/code whether the account exists or
-        // not — DESIGN-AUTH.md §7.2 account-enumeration defense.
+        // not — account-enumeration defense.
         Self::new(ErrorCode::AuthInvalidCredentials, "invalid credentials")
     }
 

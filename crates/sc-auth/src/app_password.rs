@@ -106,7 +106,7 @@ impl AuthService {
     }
 
     /// App-password Basic-auth verification: fast (sha256, no Argon2),
-    /// cached per DESIGN-AUTH §5.3. Returns `None` if `pw` doesn't match any
+    /// cached per Returns `None` if `pw` doesn't match any
     /// live app password for any user (caller decides what that means).
     pub(crate) fn verify_app_password(&self, pw: &str, ip: IpAddr) -> Result<Option<Principal>> {
         let hash = hash_token(pw);

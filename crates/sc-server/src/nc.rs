@@ -331,7 +331,7 @@ impl ports::AuthPort for NcAuth {
         scope: ports::Scope,
     ) -> PortResult<(u32, String)> {
         // `sc_auth::Scope::perms_mask: None` is what "unrestricted" means
-        // everywhere it is enforced (`DESIGN-AUTH.md` §5.2;
+        // everywhere it is enforced (;
         // `sc_http::middleware::scope_gate`'s `RouteScope::Requires` arm;
         // this crate's own `dav_authenticate`) — a route not explicitly
         // mapped for a *restricted* credential fails closed, an unrestricted

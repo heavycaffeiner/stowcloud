@@ -53,7 +53,7 @@ impl TokenBucket {
     }
 }
 
-/// Per-IP hard rate gate (DESIGN-AUTH §7.1): capacity 20, refill 1/10s.
+/// Per-IP hard rate gate: capacity 20, refill 1/10s.
 /// Exceeding it returns 429 *before* Argon2 ever runs.
 pub(crate) struct IpGate {
     capacity: u32,
@@ -85,7 +85,7 @@ struct FailState {
     last: Instant,
 }
 
-/// Per-account soft delay (DESIGN-AUTH §7.1): `delay(n) = min(250ms *
+/// Per-account soft delay: `delay(n) = min(250ms *
 /// 2^(n-3), 30s)` for `n > 3` failed attempts. Never rejects — no account
 /// lockout, by design (an attacker must not be able to DoS a victim account).
 pub(crate) struct AccountGate {

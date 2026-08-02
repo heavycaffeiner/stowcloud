@@ -1,5 +1,5 @@
 //! `sc-auth` — protocol-agnostic authentication/authorization core.
-//! See `docs/DESIGN-AUTH.md` for the full design this implements.
+//! See for the full design this implements.
 
 mod app_password;
 mod argon_gate;
@@ -52,7 +52,7 @@ pub struct AuthService {
 
     /// Gates *every* Argon2 invocation in the crate — hashing and
     /// verifying, sync and async callers alike — to the configured
-    /// concurrency (DESIGN-AUTH §2.2). See `argon_gate` module docs for why
+    /// concurrency. See `argon_gate` module docs for why
     /// this can't just be a `tokio::sync::Semaphore`.
     argon2_gate: Arc<ArgonGate>,
     /// Count of Argon2 invocations. Not part of the documented contract;
@@ -139,15 +139,14 @@ impl AuthService {
     }
 
     /// Number of Argon2 invocations since construction. Not part of the
-    /// public contract in `docs/DESIGN-AUTH.md`; used by tests (and
+    /// public contract in; used by tests (and
     /// available for metrics) to prove the DAV credential cache is actually
     /// skipping Argon2 on repeat requests.
     pub fn argon2_calls(&self) -> u64 {
         self.argon2_calls.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// The configured minimum account-password length (`DESIGN-AUTH.md`
-    /// §2.3: 10). Exposed so callers that validate a password *before*
+    /// The configured minimum account-password length (10). Exposed so callers that validate a password *before*
     /// handing it to `create_user`/`set_password` — the first-run bootstrap
     /// does, so it can answer `422` with the requirement rather than a bare
     /// failure — quote this number instead of hardcoding their own.
@@ -312,7 +311,7 @@ pub enum AdminGuardError {
     /// This account is the deployment's last *active* administrator
     /// (`role = admin`, `disabled = 0`) — refused unconditionally. Locking
     /// every administrator out is strictly worse than the "no lockout"
-    /// principle `DESIGN-AUTH.md` §7.1 already applies to failed logins: a
+    /// principle already applies to failed logins: a
     /// mistaken click here would leave nobody able to administer the
     /// deployment at all, and there is no self-service recovery path.
     LastAdmin,
