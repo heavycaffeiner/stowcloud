@@ -453,6 +453,25 @@ SMB off entirely for that account.
    alive by Samba, not dropped immediately; forcing termination is the admin
    UI's "kill SMB session," which calls `smbcontrol smbd close-share` /
    kills the process.
+
+   **Revocation propagates the same way, and has to.** `smbd` authorises
+   against the last file this server wrote, and *nothing* rewrites it on a
+   timer, on a restart, or on any schedule — so anything that narrows access
+   has to raise the signal itself or it narrows nothing. Everything that
+   changes who appears in `smb.conf` or `smbpasswd` now does:
+
+   | change | raised by |
+   |---|---|
+   | NT hash: password, OIDC link/unlink, TOTP on/off, SMB toggles | `sc-auth`, `PassdbSink` |
+   | account disabled, re-enabled, deleted | `sc-auth` |
+   | group created, deleted, member added/removed | `sc-auth` |
+   | grant created, updated, deleted | admin routes, `republish_smb_registry` |
+   | share created, updated, deleted | admin routes, `republish_smb_registry` |
+
+   This only works while the publisher is armed, and `App::arm_passdb_publisher`
+   arms it only when `smb.enabled` was true **at startup** — which is why
+   turning SMB on reports `restart_required`. Between enabling it and that
+   restart, `sc-server smb-sync` is the only thing that publishes.
 5. Audit events: `smb.credential_synced`, `smb.enabled`, `smb.session_killed`.
 
 #### Brute force
@@ -533,6 +552,30 @@ Per share:
   and is **opt-in per share**, off by default.
 - Generated config is validated with `testparm -s` before reload. A failed
   validation keeps the previous config and surfaces the error in the admin UI.
+
+#### What `smb.conf` cannot say, and what happens instead
+
+The grant model is finer than Samba's vocabulary in two places. Neither is
+fixable in `smb.conf`, so both are **reported rather than silently applied** —
+an audit event per grant (`smb.write_list_grants_more`,
+`smb.deny_below_root_ignored`) and a list on the admin settings screen. An
+admin who wrote a restriction is entitled to know SMB is not honouring it.
+
+- **`write list` is all-or-nothing.** WRITE, CREATE, DELETE, RENAME and MOVE
+  are five separate grants here and one flag there, so an account holding any
+  of them gets all of them over SMB. "May add files but not delete them" is
+  exactly expressible in the web UI and not expressible at all in Samba.
+- **A deny below the share root does not apply.** `smb.conf` has no per-path
+  ACL, so a share exports its whole tree. A grant root becomes a share and a
+  *deny* underneath it has nowhere to go — the account reaches that folder
+  over SMB. (A sub-path grant that still allows READ is fine: it becomes its
+  own share, which is what the bullet above describes. Only a pure denial is
+  unrepresentable.)
+
+Two more differences are inherent rather than reported: SHARE and DOWNLOAD
+have no SMB counterpart at all, and an SMB delete is a real unlink — Samba's
+`recycle` module is not enabled, so a share with trash on in the web UI still
+deletes permanently over SMB.
 
 **Share directories must be group-writable (0775), not 0755.** `force user =
 scsvc` makes the *process* uid the owner, so a plain POSIX check would allow
@@ -1326,6 +1369,43 @@ and still lands a second account's uploads as `scsvc:scsvc`, because
 The lesson worth keeping: every test here matched a rendered *string*, and one
 account's render is indistinguishable from a correct one. Only a real
 `pdbedit -i` against two accounts showed it.
+
+### 12.4 Revocation did not reach SMB, and the Landlock rule that hid it (2026-08-03)
+
+Asking "does a web-UI permission apply identically over SMB?" turned up three
+more things, all measured on the testbed.
+
+**Nothing narrowed access over SMB.** The passdb sink fired only on NT-hash
+changes, so a grant deleted, an account disabled or a group emptied changed
+nothing in the published files — and nothing else rewrites them. Disabling an
+account was the clearest shape: the web login went 401 and the same account
+kept mounting the share indefinitely. §7.2's table is now the full list of
+what raises the signal, and `disabling_and_deleting_an_account_republishes`
+and `group_membership_changes_republish` pin the account and group halves.
+
+**Two grant shapes are wider over SMB than in the registry**, because
+`smb.conf` cannot express them: `write list` is all-or-nothing, and a deny
+below a share root has nowhere to go. Both are now surfaced per grant rather
+than applied quietly — §7.3 has the detail.
+
+**And the fix did not work at first, for an unrelated reason.** Every
+republish failed `io error at /config/smb/smb.conf: Permission denied`: the
+Landlock allow-list (`cmd_serve`) is `data_dir` plus the share roots, and
+Samba's config directory was never in it. It went unnoticed because of *which
+thread* hits it — `hardening::apply` runs inside `cmd_serve`, which is already
+on the Tokio runtime, and `restrict_self` binds the calling thread and its
+future children only. Request handlers run on worker threads that already
+existed, so they are outside the domain; the passdb publisher is spawned
+afterwards and is inside it. The same write therefore succeeded from an HTTP
+handler and failed from the publisher, in one process, as the same uid.
+
+Adding `smb.config_dir` fixes the render. **The thread-scope observation is a
+separate, larger issue and is not fixed here**: as written, Landlock covers
+almost nothing that serves a request. Moving `hardening::apply` ahead of the
+runtime would close it, and would also start enforcing the allow-list on paths
+request handling touches today without anyone having checked which those are
+(`/tmp` is not on the list, for one). That is a change to make deliberately,
+with its own verification.
 
 Why nothing caught it: `sc-auth`'s tests all assert on the NT-hash substring,
 `the_bootstrapped_admin_is_smb_ready_without_a_password_reset` asserted
