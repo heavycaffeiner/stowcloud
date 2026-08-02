@@ -634,6 +634,24 @@
       </p>
     {/if}
 
+    <!-- Permissions SMB cannot express, so it grants more than this screen
+         says. Listed per grant rather than as one sentence: an admin has to
+         know which share and which account to go and look at.
+         The key comes from the server (`SmbOvergrant::kind_key`), so the
+         extractor cannot see it at the call site below — these are the two
+         it can send: /* i18n */ 'smb.write_list_grants_more'
+                      /* i18n */ 'smb.deny_below_root_ignored' -->
+    {#if snapshot.smb_overgrants?.length}
+      <div class="sc-admin-section__warning" role="alert">
+        <p>{t('server.smb_grants_more_than_configured')}</p>
+        <ul>
+          {#each snapshot.smb_overgrants as o (o.share + ' ' + o.user + ' ' + o.key)}
+            <li>{t(o.key, { share: o.share, user: o.user, detail: o.detail.join(', ') })}</li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
     <h4 class="sc-admin-section__subhead">SMB</h4>
     <div class="sc-server-settings__form">
       <Switch checked={smbEnabled} onchange={(v) => (smbEnabled = v)} label={t('server.enable_smb')} />

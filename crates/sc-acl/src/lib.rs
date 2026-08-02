@@ -240,6 +240,47 @@ impl AclEngine {
         })
     }
 
+    /// Subpaths strictly below `root` where a grant denies `user` something
+    /// the root itself allows.
+    ///
+    /// A depth-varying decision inside one tree, which is exactly what a flat
+    /// share ACL cannot express: an exporter that publishes `root` as a
+    /// single unit (SMB — `smb.conf` has no per-path ACL) hands out access
+    /// this engine would refuse. That exporter needs to say so rather than
+    /// quietly widen the grant, so this reports the paths to name.
+    ///
+    /// Only denies count. A *narrower allow* deeper in the tree takes nothing
+    /// away — allows compose upward — so it cannot make the flattened view
+    /// too permissive.
+    pub fn denies_below(&self, user: UserId, share: ShareId, root: &SafePath) -> Vec<String> {
+        let inner = self.inner.read();
+        let principals = engine::principals_of(&inner, user);
+        let mut out: Vec<String> = inner
+            .grants
+            .iter()
+            .filter(|g| {
+                g.share == share
+                    && principals.contains(&g.principal)
+                    && !g.deny.is_empty()
+                    && root.is_prefix_of(&g.subpath)
+                    && g.subpath.len() > root.len()
+            })
+            // `SafePath` has no `Display`; its components are already
+            // validated, so joining them is the whole rendering.
+            .map(|g| {
+                g.subpath
+                    .components()
+                    .iter()
+                    .map(|c| c.as_str())
+                    .collect::<Vec<_>>()
+                    .join("/")
+            })
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
     /// The virtual root projection for `user` (`DESIGN-CORE.md` §3.5): one
     /// entry per READ-granted rule the user (directly or via group
     /// membership) holds, labeled by `Grant::label`, falling back to the

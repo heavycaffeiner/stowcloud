@@ -118,6 +118,18 @@ impl crate::Core {
         roots
     }
 
+    /// Straight through to [`sc_acl::AclEngine::denies_below`] — the share
+    /// registry has nothing to add, but an exporter that flattens a root into
+    /// one unit (SMB) reaches the ACL through `Core`, not around it.
+    pub fn denies_below(
+        &self,
+        user: UserId,
+        share: sc_vfs::ShareId,
+        root: &sc_vfs::SafePath,
+    ) -> Vec<String> {
+        self.acl.denies_below(user, share, root)
+    }
+
     /// Which `ShareId` a virtual path's label maps to for `user`, without
     /// asking the ACL whether any particular permission is granted on the
     /// rest of the path.

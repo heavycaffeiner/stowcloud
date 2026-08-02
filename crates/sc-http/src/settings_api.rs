@@ -52,6 +52,23 @@ pub struct SettingsSnapshot {
     /// here so the settings screen can show the same permanent banner
     /// `smb-sync`'s own log line describes.
     pub smb_public_bind_warning: bool,
+    /// Grants the last render handed Samba more permissively than the
+    /// registry defines them, because `smb.conf` cannot express the
+    /// difference. Empty in the ordinary case.
+    #[serde(default)]
+    pub smb_overgrants: Vec<SmbOvergrantWire>,
+}
+
+/// One entry of [`SettingsSnapshot::smb_overgrants`]. `key` is a catalogue
+/// key and `detail` its placeholders — the server never sends the sentence
+/// (`scripts/verify.sh`'s "no Korean in crates/*/src" gate is the same rule
+/// stated from the other side).
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct SmbOvergrantWire {
+    pub share: String,
+    pub user: String,
+    pub key: String,
+    pub detail: Vec<String>,
 }
 
 /// What applying a patch tells the caller, so the UI knows whether to run
@@ -184,6 +201,7 @@ pub trait SettingsApi: Send + Sync {
         SettingsSnapshot {
             fields: Vec::new(),
             smb_public_bind_warning: false,
+            smb_overgrants: Vec::new(),
         }
     }
 

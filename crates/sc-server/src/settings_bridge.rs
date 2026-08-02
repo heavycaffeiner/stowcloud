@@ -279,6 +279,10 @@ pub struct SettingsBridge {
     auth: Arc<sc_auth::AuthService>,
     restart_signal: Arc<tokio::sync::Notify>,
     smb_public_bind_warning: AtomicBool,
+    /// Latest render's overgrant list, for the settings screen. A
+    /// `Mutex<Vec<_>>` rather than an atomic because it is a list, and it
+    /// is only ever written by a render.
+    smb_overgrants: Mutex<Vec<crate::smb_cmd::SmbOvergrant>>,
 }
 
 impl SettingsBridge {
@@ -303,6 +307,7 @@ impl SettingsBridge {
             auth,
             restart_signal,
             smb_public_bind_warning: AtomicBool::new(false),
+            smb_overgrants: Mutex::new(Vec::new()),
         }
     }
 
@@ -730,14 +735,20 @@ impl SettingsBridge {
         fields
     }
 
-    /// Rewrite Samba's files from the live registry and record whether the
-    /// LAN-only bind gate was crossed. The caller holds the `cfg` lock, since
-    /// what gets rendered has to be the config as of this moment and not a
-    /// copy taken before some other patch landed.
+    /// Rewrite Samba's files from the live registry and record what the
+    /// settings screen has to show about the result. The caller holds the
+    /// `cfg` lock, since what gets rendered has to be the config as of this
+    /// moment and not a copy taken before some other patch landed.
     fn render_live_and_record_warning(&self, cfg: &Config) -> anyhow::Result<()> {
-        let warn = crate::smb_cmd::render_live(cfg, &self.core, &self.auth)?;
-        self.smb_public_bind_warning.store(warn, Ordering::Relaxed);
+        let out = crate::smb_cmd::render_live(cfg, &self.core, &self.auth)?;
+        self.record_render_outcome(out);
         Ok(())
+    }
+
+    fn record_render_outcome(&self, out: crate::smb_cmd::RenderOutcome) {
+        self.smb_public_bind_warning
+            .store(out.public_bind_warning, Ordering::Relaxed);
+        *self.smb_overgrants.lock() = out.overgrants;
     }
 }
 
@@ -762,6 +773,17 @@ impl SettingsApi for SettingsBridge {
         SettingsSnapshot {
             fields: Self::snapshot_fields(&self.cfg.lock(), &self.store.load()),
             smb_public_bind_warning: self.smb_public_bind_warning.load(Ordering::Relaxed),
+            smb_overgrants: self
+                .smb_overgrants
+                .lock()
+                .iter()
+                .map(|o| sc_http::settings_api::SmbOvergrantWire {
+                    share: o.share.clone(),
+                    user: o.user.clone(),
+                    key: o.kind_key().to_string(),
+                    detail: o.detail(),
+                })
+                .collect(),
         }
     }
 
@@ -804,13 +826,13 @@ impl SettingsApi for SettingsBridge {
         // serving from stale files until someone restarted the server.
         // A refusal is a validation rejection with a reason rather than a
         // server fault, so it maps to 422 via `InvalidName` and not 500.
-        let warn = crate::smb_cmd::render_live(&candidate, &self.core, &self.auth)
+        let out = crate::smb_cmd::render_live(&candidate, &self.core, &self.auth)
             .map_err(|e| CoreError::InvalidName(e.to_string()))?;
 
         self.store
             .mutate(|o| o.smb = Some(ov.clone()))
             .map_err(store_err)?;
-        self.smb_public_bind_warning.store(warn, Ordering::Relaxed);
+        self.record_render_outcome(out);
         *cfg = candidate;
 
         Ok(ApplyOutcome {

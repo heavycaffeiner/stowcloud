@@ -42,13 +42,17 @@ pub fn run(cfg: &Config, master_key: &[u8; 32]) -> anyhow::Result<()> {
     // Explicit `[[smb_shares]]` wins when present: an admin who wrote the
     // mapping by hand meant it, and silently unioning it with a derived list
     // would produce shares nobody asked for.
-    let (shares, source) = if !cfg.smb_shares.is_empty() {
+    let (shares, overgrants, source) = if !cfg.smb_shares.is_empty() {
+        // A hand-written mapping is the admin's own literal `smb.conf`
+        // content; there is no registry intent behind it to be wider than.
         (
             cfg.smb_shares.iter().map(Into::into).collect::<Vec<_>>(),
+            Vec::new(),
             "static [[smb_shares]]",
         )
     } else {
-        (shares_from_registry(cfg, &auth)?, "Share/Grant registry")
+        let (s, o) = shares_from_registry(cfg, &auth)?;
+        (s, o, "Share/Grant registry")
     };
 
     // Users referenced by any share's valid/read/write list, deduplicated,
@@ -80,6 +84,7 @@ pub fn run(cfg: &Config, master_key: &[u8; 32]) -> anyhow::Result<()> {
     if orch.public_bind_warning_active() {
         tracing::warn!("smb: bound to a public address under allow_public_bind=true — see the admin UI warning banner");
     }
+    log_overgrants(&overgrants);
 
     println!(
         "smb: wrote {} ({} share(s) from {}, {} user(s))",
@@ -89,6 +94,24 @@ pub fn run(cfg: &Config, master_key: &[u8; 32]) -> anyhow::Result<()> {
         users.len()
     );
     Ok(())
+}
+
+/// One audit line per grant Samba is about to render wider than the registry
+/// means it. `target: "audit"` for the same reason `smb.public_bind_enabled`
+/// uses it (`sc_smb::validate_bind`): this is a standing property of the
+/// deployment's access control, not a transient event, and an operator has to
+/// be able to find it after the fact.
+fn log_overgrants(overgrants: &[SmbOvergrant]) {
+    for o in overgrants {
+        tracing::warn!(
+            target: "audit",
+            event = o.kind_key(),
+            share = %o.share,
+            user = %o.user,
+            detail = ?o.detail(),
+            "smb: this grant is rendered more permissively than the registry defines it; smb.conf cannot express the difference"
+        );
+    }
 }
 
 /// Project the Share/Grant registry onto Samba shares.
@@ -112,7 +135,7 @@ pub fn run(cfg: &Config, master_key: &[u8; 32]) -> anyhow::Result<()> {
 fn shares_from_registry(
     cfg: &Config,
     auth: &sc_auth::AuthService,
-) -> anyhow::Result<Vec<sc_smb::SmbShareDef>> {
+) -> anyhow::Result<(Vec<sc_smb::SmbShareDef>, Vec<SmbOvergrant>)> {
     // Rebuild the same domain state `serve` builds, from the same functions,
     // so the exported view and the served view cannot disagree.
     let meta = std::sync::Arc::new(sc_meta::MetaStore::open(&cfg.data_dir.join("meta.db"))?);
@@ -137,6 +160,67 @@ const WRITE_BITS: sc_acl::Perms = sc_acl::Perms::WRITE
     .union(sc_acl::Perms::RENAME)
     .union(sc_acl::Perms::MOVE);
 
+/// A grant this deployment holds that Samba is about to render **more
+/// permissively than the registry means it**, because `smb.conf` cannot say
+/// what the registry says.
+///
+/// Not a refusal. Both shapes are legitimate web-side configurations, and
+/// turning SMB off for the whole deployment because one grant is finer than
+/// SMB's vocabulary would be a worse answer than saying so. But neither may
+/// be silent: an admin who wrote "read and write, no deleting" in the UI has
+/// not been told SMB ignores the second half, and would have no way to find
+/// out short of trying it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SmbOvergrant {
+    /// The rendered `smb.conf` section this concerns.
+    pub share: String,
+    pub user: String,
+    pub kind: SmbOvergrantKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SmbOvergrantKind {
+    /// Samba's `write list` is all-or-nothing: any one mutating bit grants
+    /// every one of them. Carries the bit names the registry withholds and
+    /// SMB will hand over anyway.
+    WriteListGrantsMore { also_granted: Vec<&'static str> },
+    /// A deny below the share root. `smb.conf` has no per-path ACL, so the
+    /// share exposes the whole tree and the deny does not apply over SMB.
+    DenyBelowRootIgnored { subpaths: Vec<String> },
+}
+
+impl SmbOvergrant {
+    /// Stable identifier for the wire and for logs — the UI turns it into a
+    /// sentence, this crate never does (`scripts/verify.sh` "no Korean in
+    /// crates/*/src": a refusal travels as a catalogue key, not as prose).
+    pub fn kind_key(&self) -> &'static str {
+        match self.kind {
+            SmbOvergrantKind::WriteListGrantsMore { .. } => "smb.write_list_grants_more",
+            SmbOvergrantKind::DenyBelowRootIgnored { .. } => "smb.deny_below_root_ignored",
+        }
+    }
+
+    /// The offending detail, already rendered: permission names for the
+    /// first kind, subpaths for the second.
+    pub fn detail(&self) -> Vec<String> {
+        match &self.kind {
+            SmbOvergrantKind::WriteListGrantsMore { also_granted } => {
+                also_granted.iter().map(|s| (*s).to_string()).collect()
+            }
+            SmbOvergrantKind::DenyBelowRootIgnored { subpaths } => subpaths.clone(),
+        }
+    }
+}
+
+/// `WRITE_BITS`, by name, for [`SmbOvergrantKind::WriteListGrantsMore`].
+const WRITE_BIT_NAMES: [(sc_acl::Perms, &str); 5] = [
+    (sc_acl::Perms::WRITE, "write"),
+    (sc_acl::Perms::CREATE, "create"),
+    (sc_acl::Perms::DELETE, "delete"),
+    (sc_acl::Perms::RENAME, "rename"),
+    (sc_acl::Perms::MOVE, "move"),
+];
+
 /// The projection-only half of [`shares_from_registry`]: given an already-
 /// populated `core` (grants attached, shares registered), fold its Share/
 /// Grant registry into Samba share defs. Split out so [`render_live`] can
@@ -146,9 +230,10 @@ const WRITE_BITS: sc_acl::Perms = sc_acl::Perms::WRITE
 fn project_registry_shares(
     core: &sc_core::Core,
     auth: &sc_auth::AuthService,
-) -> anyhow::Result<Vec<sc_smb::SmbShareDef>> {
+) -> anyhow::Result<(Vec<sc_smb::SmbShareDef>, Vec<SmbOvergrant>)> {
     // label -> (host path, write list, read list)
     let mut sections: BTreeMap<String, (String, Vec<String>, Vec<String>)> = BTreeMap::new();
+    let mut overgrants: Vec<SmbOvergrant> = Vec::new();
 
     for u in auth
         .list_users()?
@@ -167,13 +252,39 @@ fn project_registry_shares(
                 .or_insert_with(|| (path.display().to_string(), Vec::new(), Vec::new()));
             if root.perms.intersects(WRITE_BITS) {
                 entry.1.push(u.name.clone());
+
+                // In `write list`, so Samba grants every mutating operation.
+                // Report the ones the registry withholds.
+                let also: Vec<&'static str> = WRITE_BIT_NAMES
+                    .iter()
+                    .filter(|(bit, _)| !root.perms.contains(*bit))
+                    .map(|(_, name)| *name)
+                    .collect();
+                if !also.is_empty() {
+                    overgrants.push(SmbOvergrant {
+                        share: root.label.clone(),
+                        user: u.name.clone(),
+                        kind: SmbOvergrantKind::WriteListGrantsMore { also_granted: also },
+                    });
+                }
             } else {
                 entry.2.push(u.name.clone());
+            }
+
+            // The share is the whole tree under `root`; a deny inside it has
+            // nowhere to go in `smb.conf`.
+            let denied = core.denies_below(u.id, root.share, &root.subpath);
+            if !denied.is_empty() {
+                overgrants.push(SmbOvergrant {
+                    share: root.label.clone(),
+                    user: u.name.clone(),
+                    kind: SmbOvergrantKind::DenyBelowRootIgnored { subpaths: denied },
+                });
             }
         }
     }
 
-    Ok(sections
+    let shares = sections
         .into_iter()
         .map(|(name, (path, write_list, read_list))| {
             let mut valid_users = write_list.clone();
@@ -192,7 +303,9 @@ fn project_registry_shares(
                 shared_externally: false,
             }
         })
-        .collect())
+        .collect::<Vec<_>>();
+
+    Ok((shares, overgrants))
 }
 
 /// Regenerate and write `smb.conf`/`smbpasswd`/`passwd` from the server's own
@@ -206,28 +319,31 @@ fn project_registry_shares(
 /// `core`/`auth` already have `register_shares`/`project_grants` applied —
 /// that happens once at `App::build` time — so this does not re-run them.
 ///
-/// Returns whether the LAN-only bind gate was crossed under
-/// `smb.allow_public_bind = true` — the settings screen's permanent warning
-/// banner condition (`sc_smb::SmbOrchestrator::public_bind_warning_active`,
-/// which cannot be read back here since this function's `orch` is dropped
-/// at the end of the call).
+/// Returns what the settings screen has to show about this render: whether
+/// the LAN-only bind gate was crossed under `smb.allow_public_bind = true`
+/// (`sc_smb::SmbOrchestrator::public_bind_warning_active`, which cannot be
+/// read back here since this function's `orch` is dropped at the end of the
+/// call), and every grant Samba is about to widen.
 pub fn render_live(
     cfg: &Config,
     core: &sc_core::Core,
     auth: &sc_auth::AuthService,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<RenderOutcome> {
     let orch = sc_smb::SmbOrchestrator::new(cfg.smb.clone());
     if !cfg.smb.enabled {
         orch.remove_rendered()?;
-        return Ok(false);
+        return Ok(RenderOutcome::default());
     }
     let ifaces = crate::diagnostics::local_interface_addrs();
     orch.validate_bind(&ifaces)?;
 
-    let (shares, _source) = if !cfg.smb_shares.is_empty() {
-        (cfg.smb_shares.iter().map(Into::into).collect::<Vec<_>>(), "static")
+    let (shares, overgrants) = if !cfg.smb_shares.is_empty() {
+        (
+            cfg.smb_shares.iter().map(Into::into).collect::<Vec<_>>(),
+            Vec::new(),
+        )
     } else {
-        (project_registry_shares(core, auth)?, "registry")
+        project_registry_shares(core, auth)?
     };
 
     let mut user_names: Vec<String> = Vec::new();
@@ -246,7 +362,18 @@ pub fn render_live(
     let smbpasswd = auth.export_smbpasswd(cfg.smb_service_uid)?;
     let passwd_entries = orch.render_passwd_entries(&users, cfg.smb_service_gid);
     orch.write_all(&conf, &smbpasswd, &passwd_entries)?;
-    Ok(orch.public_bind_warning_active())
+    log_overgrants(&overgrants);
+    Ok(RenderOutcome {
+        public_bind_warning: orch.public_bind_warning_active(),
+        overgrants,
+    })
+}
+
+/// What one `render_live` call has to tell the settings screen.
+#[derive(Clone, Debug, Default)]
+pub struct RenderOutcome {
+    pub public_bind_warning: bool,
+    pub overgrants: Vec<SmbOvergrant>,
 }
 
 /// Pair each name with the uid its `passwd` entry gets: `base_uid` plus the

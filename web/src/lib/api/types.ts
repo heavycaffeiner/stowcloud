@@ -709,6 +709,19 @@ export interface SettingsSnapshot {
   /** `sc_smb::SmbOrchestrator::public_bind_warning_active()` — the same
    *  permanent banner `smb-sync`'s own log line describes. */
   smb_public_bind_warning: boolean
+  /** Grants Samba was handed more permissively than they were written here,
+   *  because `smb.conf` cannot express the difference. Empty in the ordinary
+   *  case; older servers omit the field entirely. */
+  smb_overgrants?: SmbOvergrant[]
+}
+
+/** `key` is a catalogue key, `detail` its placeholders — the server never
+ *  sends the sentence. */
+export interface SmbOvergrant {
+  share: string
+  user: string
+  key: string
+  detail: string[]
 }
 
 /** What applying a patch tells the caller — whether it already took effect

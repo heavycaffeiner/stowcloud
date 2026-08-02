@@ -380,3 +380,48 @@ fn exhaustive_depth_and_bit_table() {
         }
     }
 }
+
+/// `denies_below` reports the depth-varying decisions a flat share ACL cannot
+/// carry — what SMB has to warn about instead of silently widening.
+#[test]
+fn denies_below_finds_denials_inside_a_granted_tree() {
+    let e = AclEngine::new();
+    let u = UserId::new(7);
+    let share = ShareId::new(1);
+    e.replace_grants(vec![
+        grant(1, Principal::User(u), share, "", Perms::READ | Perms::WRITE, Perms::empty(), true),
+        // Inside the granted tree: SMB exports the whole thing as one share.
+        grant(2, Principal::User(u), share, "private", Perms::empty(), Perms::READ, true),
+        // A narrower *allow* deeper down takes nothing away, so it is not one.
+        grant(3, Principal::User(u), share, "photos", Perms::READ, Perms::empty(), true),
+        // Another user's deny is not this user's problem.
+        grant(4, Principal::User(UserId::new(8)), share, "other", Perms::empty(), Perms::READ, true),
+        // A different share is a different export.
+        grant(5, Principal::User(u), ShareId::new(2), "elsewhere", Perms::empty(), Perms::READ, true),
+    ]);
+
+    assert_eq!(e.denies_below(u, share, &sp("")), vec!["private".to_string()]);
+    // The root of a deny is not "below" itself — that one Samba *can* express,
+    // as its own share section.
+    assert!(e.denies_below(u, share, &sp("private")).is_empty());
+    assert!(e.denies_below(UserId::new(9), share, &sp("")).is_empty());
+}
+
+/// Group grants reach a member, so a deny carried by a group has to surface
+/// for that member too.
+#[test]
+fn denies_below_follows_group_membership() {
+    let e = AclEngine::new();
+    let u = UserId::new(7);
+    let g = GroupId::new(3);
+    let share = ShareId::new(1);
+    e.replace_grants(vec![
+        grant(1, Principal::User(u), share, "", Perms::READ, Perms::empty(), true),
+        grant(2, Principal::Group(g), share, "vault", Perms::empty(), Perms::READ, true),
+    ]);
+
+    assert!(e.denies_below(u, share, &sp("")).is_empty(), "not a member yet");
+
+    e.set_memberships(HashMap::from([(u, vec![g])]));
+    assert_eq!(e.denies_below(u, share, &sp("")), vec!["vault".to_string()]);
+}

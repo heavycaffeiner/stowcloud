@@ -1255,7 +1255,8 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
         readonly_reason_key: 'settings.readonly_local_password_login'
       }
     ],
-    smb_public_bind_warning: false
+    smb_public_bind_warning: false,
+    smb_overgrants: []
   }
 }
 
