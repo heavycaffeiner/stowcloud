@@ -366,7 +366,7 @@ impl crate::Core {
 
         let result = (|| -> Result<(), CoreError> {
             let tmp_fh = dest_root.create_excl(&tmp_path, mode)?;
-            // Kernel-side copy (`DESIGN-UPLOAD.md` §7.2 / `TECH-STACK.md`
+            // Kernel-side copy ( / `TECH-STACK.md`
             // §3): reflink on btrfs/XFS when block alignment allows it, an
             // in-kernel copy otherwise, no userspace round trip either way.
             // `copy_range_from` falls back to a bounded buffered loop by

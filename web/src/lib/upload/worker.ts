@@ -110,7 +110,7 @@ async function addFile(item: AddItem): Promise<void> {
       sessionId = existing.sessionId
       resumeOffset = head.offset
       // The session's chunk size is fixed server-side at creation
-      // (DESIGN-UPLOAD.md §3) and can't change — trust `Sc-Chunk-Size` over
+      // and can't change — trust `Sc-Chunk-Size` over
       // the IDB record, which can be stale (e.g. if a 413 shrink was
       // recorded locally after this session was already created, or the
       // server's config changed since). Falls back to the IDB value only

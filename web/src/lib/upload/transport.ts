@@ -1,5 +1,5 @@
 // web/src/lib/upload/transport.ts — TUS 1.0.0 + Sc-Random-Access transport.
-// DESIGN-UPLOAD.md §2. Runs inside the dedicated upload Worker. Picks mock
+// Runs inside the dedicated upload Worker. Picks mock
 // vs real the same way api/client.ts does, via VITE_API_MOCK, so the worker
 // never needs a live backend during frontend development either.
 
@@ -40,7 +40,7 @@ export interface Transport {
   createSession(p: CreateSessionParams): Promise<{ id: string; offset: number }>
   patchChunk(id: string, offset: number, body: Blob): Promise<{ offset: number }>
   /** `chunkSize` is the session's server-fixed chunk size (`Sc-Chunk-Size`,
-   *  DESIGN-UPLOAD.md §3) — undefined only if the backend predates the
+   * ) — undefined only if the backend predates the
    *  header, in which case the caller falls back to its own remembered
    *  value. */
   headSession(id: string): Promise<{ offset: number; totalSize: number; chunkSize?: number }>

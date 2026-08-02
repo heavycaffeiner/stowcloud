@@ -748,8 +748,7 @@ const mockAuthState: {
    *  off (mirrors the server: `totp_disable` deletes every row), reset to 10
    *  by `totpEnroll`/`reissueRecoveryCodes`. */
   recoveryCodesRemaining: number
-  /** Server-global chunk floor/default (`DESIGN-UPLOAD.md` §1.3,
-   *  `PATCH /api/admin/upload-settings`) — mirrors the real server's
+  /** Server-global chunk floor/default (`PATCH /api/admin/upload-settings`) — mirrors the real server's
    *  `upload.db`-persisted value read by every `session()` call. */
   chunkMin: number
   chunkDefault: number
@@ -1106,7 +1105,7 @@ async function adminStorage(): Promise<StorageReport> {
   }
 }
 
-/** `PATCH /api/admin/upload-settings` (`DESIGN-UPLOAD.md` §1.3) — mirrors
+/** `PATCH /api/admin/upload-settings` — mirrors
  *  `UploadEngine::set_chunk_settings`'s validation: floor at `CHUNK_SIZE_MIN`,
  *  default must not be below min. Mutates `mockAuthState` so every
  *  subsequent `session()` call (any tab, since this is one shared module

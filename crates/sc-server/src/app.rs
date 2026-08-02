@@ -44,7 +44,7 @@ pub struct App {
     /// also hold a handle — `fs_list`/`fs_stat` LRU-touch it, and WebSocket
     /// subscribe/unsubscribe register/release its OS-level watches.
     pub watcher: Option<Arc<sc_watch::Watcher>>,
-    /// Periodic upload-GC sweep thread (`DESIGN-UPLOAD.md` §9). `shutdown.rs`
+    /// Periodic upload-GC sweep thread. `shutdown.rs`
     /// stops it before calling `UploadApi::drain()` so the two never race on
     /// the same `UploadEngine::gc()` call.
     pub upload_gc: UploadGcHandle,
@@ -343,7 +343,7 @@ impl App {
             Arc::new(svc)
         };
 
-        // `UploadEngine::gc` (`DESIGN-UPLOAD.md` §9) existed, was fully
+        // `UploadEngine::gc` existed, was fully
         // tested, and had exactly one caller in the whole workspace:
         // `UploadBridge::drain()`, itself only ever invoked once, at clean
         // shutdown (`shutdown.rs::run_shutdown_sequence`). Nothing called it
@@ -1002,7 +1002,7 @@ fn preview_worker_pool() -> anyhow::Result<Arc<dyn sc_preview::WorkerPool>> {
     Ok(Arc::new(sc_preview::InProcessWorkerPool::default()))
 }
 
-/// There is deliberately no chunk-size ceiling here. `DESIGN-UPLOAD.md` §1.3
+/// There is deliberately no chunk-size ceiling here.
 /// is explicit that the engine streams each chunk straight to disk through a
 /// fixed-size reused buffer, so RSS never depends on chunk size — there is
 /// no ceiling to enforce, and `sc_upload::UploadConfig` (below) has no field
@@ -1463,7 +1463,7 @@ fn start_watcher_and_ws_hub(
     (watcher, ws_hub)
 }
 
-/// Interval between background upload-GC sweeps (`DESIGN-UPLOAD.md` §9).
+/// Interval between background upload-GC sweeps.
 ///
 /// 15 minutes: the tighter of the doc's two documented targets (expired
 /// sessions 15 min, orphaned part files 6h). One `UploadEngine::gc()` call
@@ -1484,7 +1484,7 @@ const UPLOAD_GC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1
 /// `JoinHandle` outright, so the loop just ran until the process was torn
 /// down out from under it — abandoned mid-sweep on a bad day, and racing
 /// `UploadApi::drain()`'s own `UploadEngine::gc()` call at shutdown on every
-/// day (`DESIGN-UPLOAD.md` §9's "must stop cleanly ... must not double-run
+/// day ('s "must stop cleanly ... must not double-run
 /// against the existing shutdown drain"). `stop_tx` doubles as the sleep
 /// timer's wakeup: the loop blocks on `recv_timeout(interval)` rather than
 /// `thread::sleep`, so a stop request interrupts a sleep immediately instead
@@ -1511,7 +1511,7 @@ impl UploadGcHandle {
 }
 
 /// Start the periodic upload-session/part-file GC sweep for the life of the
-/// process (`DESIGN-UPLOAD.md` §9). Runs on a plain OS thread, not a Tokio
+/// process. Runs on a plain OS thread, not a Tokio
 /// task: `App::build` is also reached from `sc-server gc` and `smb-sync`
 /// (`lib.rs::cmd_gc`/`cmd_smb_sync`), neither of which runs inside a Tokio
 /// runtime — `tokio::spawn` outside one panics ("there is no reactor

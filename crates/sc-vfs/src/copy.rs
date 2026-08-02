@@ -2,7 +2,7 @@
 //!
 //! `FileHandle::copy_range_from` prefers the kernel-side primitive
 //! (`copy_file_range` on Linux — reflink on btrfs/XFS, in-kernel copy
-//! otherwise, see `DESIGN-UPLOAD.md` §7.2 / `TECH-STACK.md` §3), but two
+//! otherwise, see / `TECH-STACK.md` §3), but two
 //! things fall back to a plain read/write loop: the portable backend (no
 //! such syscall off Linux) and the Linux backend when the kernel primitive
 //! itself reports `EXDEV`/`EOPNOTSUPP`/`ENOSYS`
@@ -15,8 +15,7 @@ use crate::error::VfsError;
 
 /// Never buffers more than this much at once, regardless of `len` — the
 /// same bound `sc-upload`'s old placeholder loop used, kept here so nothing
-/// downstream regresses on the "no chunk fully in memory" guarantee
-/// (`DESIGN-UPLOAD.md` §1.3).
+/// downstream regresses on the "no chunk fully in memory" guarantee.
 pub(crate) const BUF_LEN: usize = 256 * 1024;
 
 /// Copy `len` bytes by reading from `read_at` at `src_off` and writing

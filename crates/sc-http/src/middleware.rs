@@ -996,7 +996,7 @@ pub async fn audit_sink(req: Request, next: Next) -> Response {
 
 /// Used by `lib.rs` to build the `tower_http::limit::RequestBodyLimitLayer`
 /// applied to everything *except* `/api/uploads/**`
-/// (`DESIGN-API.md` §9 step 6 / `DESIGN-UPLOAD.md` §1.3·§8).
+/// (`DESIGN-API.md` §9 step 6 /·§8).
 pub fn is_upload_path(path: &str) -> bool {
     path.starts_with("/api/uploads")
 }

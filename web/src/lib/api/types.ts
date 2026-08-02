@@ -169,7 +169,7 @@ export interface IndexSettings {
   name_enabled: boolean
 }
 
-/** `PATCH /api/admin/upload-settings` (`DESIGN-UPLOAD.md` §1.3) — the
+/** `PATCH /api/admin/upload-settings` — the
  *  admin-write half of `SessionInfo.limits.chunk_min`/`chunk_size`: this
  *  changes the server-global, persisted value every account's
  *  `GET /api/auth/session` reads, not just this browser's own upload

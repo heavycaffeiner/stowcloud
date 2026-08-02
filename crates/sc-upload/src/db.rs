@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS upload_touched_dirs (
     PRIMARY KEY (share, dir)
 );
 
--- Admin-persisted chunk floor/default override (`DESIGN-UPLOAD.md` §1.3).
+-- Admin-persisted chunk floor/default override.
 -- Single row by convention, enforced by the CHECK rather than only by
 -- caller discipline. Absence (no row) means "no admin override yet" --
 -- `UploadEngine::new` falls back to the `sc.toml`-derived `UploadConfig`.

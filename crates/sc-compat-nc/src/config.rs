@@ -157,7 +157,7 @@ pub struct NcConfig {
     /// Advisory chunk size published as `files.chunked_upload.max_size`.
     ///
     /// The NC field name says "max". **We do not enforce it.** There is no
-    /// server-side chunk size ceiling (`DESIGN-UPLOAD.md` §1.3); a larger chunk
+    /// server-side chunk size ceiling; a larger chunk
     /// is accepted normally. This value exists purely to tell clients what size
     /// is unlikely to trip an intermediary proxy. If one does return 413 the
     /// client's own auto-adjust handles it, and the 413 never reaches us.

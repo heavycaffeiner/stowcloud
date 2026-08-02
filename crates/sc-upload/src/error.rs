@@ -1,4 +1,4 @@
-//! Engine-level errors. HTTP status mapping (docs/DESIGN-UPLOAD.md §2.2)
+//! Engine-level errors. HTTP status mapping (docs/)
 //! lives in the HTTP layer (sc-http / sc-compat-nc); this enum only carries
 //! enough structure for that layer to pick the right status code.
 

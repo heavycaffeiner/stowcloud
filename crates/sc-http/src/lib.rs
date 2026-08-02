@@ -81,8 +81,7 @@ pub use state::AppState;
 /// derivation. `BodyLimit` (§9 step 6) is the one exception implemented as a
 /// router split rather than a `from_fn` layer: `/api/uploads/**` lives in a
 /// sibling router that never receives `RequestBodyLimitLayer`, so TUS
-/// chunks of arbitrary size are never rejected by it
-/// (`DESIGN-UPLOAD.md` §1.3/§8).
+/// chunks of arbitrary size are never rejected by it.
 pub fn build_router(state: AppState) -> Router {
     let protected = routes::protected_routes(state.clone()).layer(RequestBodyLimitLayer::new(state.cfg.body_limit_bytes));
     let uploads = routes::upload_routes(state.clone());

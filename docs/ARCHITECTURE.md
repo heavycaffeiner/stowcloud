@@ -513,7 +513,7 @@ Fixed size + parallel transfer (default 4) gets the same throughput far more
 simply.
 
 Detail — TUS spec, interval sets, state machine, 413 negotiation, NC
-chunking v2 mapping — in **`DESIGN-UPLOAD.md`**.
+chunking v2 mapping — in **`proposals/stowcloud-7-upload.md`**.
 
 ### 6.5 Integrity
 

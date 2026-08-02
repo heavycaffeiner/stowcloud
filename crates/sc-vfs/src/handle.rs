@@ -77,7 +77,7 @@ impl FileHandle {
 
     /// Copy `len` bytes from `src` at `src_off` to `self` at `dst_off`
     /// without a userspace round trip when the platform allows it —
-    /// `DESIGN-UPLOAD.md` §7.2 / `TECH-STACK.md` §3. On Linux this is
+    /// / `TECH-STACK.md` §3. On Linux this is
     /// `copy_file_range`: a reflink (near-instant, no bandwidth) on
     /// btrfs/XFS when block alignment allows it, an in-kernel copy
     /// otherwise. It falls back to a bounded-buffer read/write loop when the

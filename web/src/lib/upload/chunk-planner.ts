@@ -1,9 +1,8 @@
 // web/src/lib/upload/chunk-planner.ts — pure upload-chunk planning.
-// / DESIGN-UPLOAD.md §1.3, §8.
+// /, §8.
 //
 // Deliberately does not use an IntervalSet: a client only ever resumes from
-// a single contiguous prefix (the value HEAD returns, per DESIGN-UPLOAD.md
-// §2.1 — "HEAD always returns the 0-based contiguous run end"), so planning
+// a single contiguous prefix (the value HEAD returns, per — "HEAD always returns the 0-based contiguous run end"), so planning
 // is just "list fixed-size chunks from resumeOffset to totalSize". No
 // merge/overlap bookkeeping is needed on the client.
 

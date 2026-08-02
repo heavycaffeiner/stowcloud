@@ -14,7 +14,7 @@
   interface Props {
     currentPath: string
     onnavigate: (path: string) => void
-    /** MD3 compact window class (<905px,): a
+    /** MD3 compact window class (<905px): a
      *  docked 200px side panel next to the file table leaves too little room
      *  for the name column to stay readable (it was measured collapsing to a
      *  handful of pixels — icon and all — at 360px). Below that breakpoint the
@@ -96,7 +96,7 @@
     padding: 0;
   }
 
-  /* MD3 window class "medium" (<840px,): a fixed
+  /* MD3 window class "medium" (<840px): a fixed
      240px side panel is too large a bite out of a small tablet width
      alongside the file list itself. Below 905px (compact) the tree is a
      modal overlay instead (see `.sc-file-tree--overlay` below) and this

@@ -134,8 +134,7 @@ fn files_caps(cfg: &NcConfig) -> Val {
             "chunked_upload",
             Val::map([
                 // ADVISORY ONLY. Despite the name, we do not enforce a chunk
-                // size ceiling — there is none server-side (DESIGN-UPLOAD.md
-                // §1.3), and an oversized chunk is accepted normally. This
+                // size ceiling — there is none server-side, and an oversized chunk is accepted normally. This
                 // number just tells the client what is unlikely to be rejected
                 // by an intermediary. If a proxy does return 413 it never
                 // reaches us and the client's own auto-adjust handles it.

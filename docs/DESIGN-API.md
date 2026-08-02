@@ -63,7 +63,7 @@ compatibility never gets to bend the native API's design.
 Matches `crates/sc-server/src/routes.rs::native_routes()`, the actual
 registry — this table is descriptive of that source, not the other way
 around. TUS (`/api/uploads/**`) and WebDAV (`/dav/**`) have their own design
-docs and are omitted here; see `DESIGN-UPLOAD.md` and `DESIGN-COMPAT.md`.
+docs and are omitted here; see `proposals/stowcloud-7-upload.md` and `DESIGN-COMPAT.md`.
 
 | Method | Path | Notes |
 |---|---|---|
@@ -485,7 +485,7 @@ startup. Adding another compatibility layer never touches the core.
 `chunk_size_advisory` is an environment-aware **recommendation** (detects
 things like Cloudflare) so the client doesn't need its own detection logic —
 a client may use a larger value and handle an upstream `413` itself
-(`DESIGN-UPLOAD.md` §8).
+(`proposals/stowcloud-7-upload.md`).
 
 ---
 

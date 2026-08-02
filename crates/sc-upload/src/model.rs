@@ -1,4 +1,4 @@
-//! Public types for the upload engine. See docs/DESIGN-UPLOAD.md §3.
+//! Public types for the upload engine. See docs/
 
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -62,7 +62,7 @@ pub enum SessionState {
     Expired,
 }
 
-/// How chunks map onto the part file. See docs/DESIGN-UPLOAD.md §7.
+/// How chunks map onto the part file. See docs/
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SpoolMode {
     /// Native TUS: client tells us the offset, so no assembly is needed.
@@ -131,7 +131,7 @@ pub struct UploadMeta {
     /// before this fix, `Option<VerifyAlgo>`, carried an algorithm and
     /// nothing to compare it to — `UploadEngine::verify_whole_file` computed
     /// a digest and only logged it, so `verify` could never fail no matter
-    /// what arrived on disk. `docs/DESIGN-UPLOAD.md` §3 records that gap and
+    /// what arrived on disk. `docs/ records that gap and
     /// specifies this exact `(algo, expected digest)` shape as the fix.
     pub verify: Option<(VerifyAlgo, Vec<u8>)>,
 }
@@ -184,7 +184,7 @@ impl Default for UploadConfig {
     }
 }
 
-/// Live, admin-settable chunk floor/default (`DESIGN-UPLOAD.md` §1.3): the
+/// Live, admin-settable chunk floor/default: the
 /// only two `UploadConfig` fields that can change after `UploadEngine::new()`
 /// without a restart. Plain atomics rather than a `Mutex` — every reader
 /// (capabilities, `Sc-Chunk-Size`, `create()`) just needs the current numbers,

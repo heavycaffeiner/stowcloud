@@ -1,7 +1,7 @@
 //! The seam between the TUS *protocol* (which is this crate's job) and the
 //! resumable-upload *engine* (which is not).
 //!
-//! `DESIGN-UPLOAD.md` §1.3 puts the engine in its own crate precisely so the
+//! puts the engine in its own crate precisely so the
 //! spool format, interval bookkeeping and finalisation are not entangled with
 //! header parsing. This trait is the narrow waist between the two: everything
 //! here is expressed in the vocabulary the wire already forces on us
@@ -23,7 +23,7 @@ pub struct UploadStatus {
     /// TUS `Upload-Length`, when the client declared one.
     pub length: Option<u64>,
     pub complete: bool,
-    /// The session's chunk size, fixed at creation (`DESIGN-UPLOAD.md` §3):
+    /// The session's chunk size, fixed at creation:
     /// an admin changing the server default mid-upload must not change what
     /// an in-flight session already committed to. Surfaced as `Sc-Chunk-Size`
     /// on `HEAD` so a resuming client follows the session's actual value
@@ -67,8 +67,8 @@ pub trait UploadApi: Send + Sync {
     /// `POST /api/uploads`. Returns the opaque session id that goes in
     /// `Location`.
     ///
-    /// `random_access` mirrors the wire's opt-in `Sc-Random-Access: 1`
-    /// (`DESIGN-UPLOAD.md` §2.3): when set, `patch` accepts any offset in
+    /// `random_access` mirrors the wire's opt-in `Sc-Random-Access: 1`:
+    /// when set, `patch` accepts any offset in
     /// `[0, total_len)` instead of requiring strict sequential delivery. The
     /// web client's own Worker sends chunks for one file with up to
     /// `MAX_INFLIGHT` requests in flight at once, so without this a chunked
@@ -169,8 +169,8 @@ pub trait UploadApi: Send + Sync {
     }
 
     /// How long a `PATCH` body read may sit idle (no bytes arriving) before
-    /// it is aborted — `sc_upload::UploadConfig::body_idle_timeout`
-    /// (`DESIGN-UPLOAD.md` §6). Without this, a client that opens a `PATCH`
+    /// it is aborted — `sc_upload::UploadConfig::body_idle_timeout`.
+    /// Without this, a client that opens a `PATCH`
     /// and then stops sending holds the request, and the engine's open part-
     /// file handle, forever: trivial resource exhaustion, one connection at
     /// a time.
@@ -186,8 +186,7 @@ pub trait UploadApi: Send + Sync {
     }
 
     /// Current live `(chunk_min, chunk_default)` — the admin-settable pair
-    /// `GET /api/capabilities`/`GET /api/auth/session` advertise
-    /// (`DESIGN-UPLOAD.md` §1.3). This crate does not depend on `sc-upload`
+    /// `GET /api/capabilities`/`GET /api/auth/session` advertise. This crate does not depend on `sc-upload`
     /// (module doc, above), so the default here restates
     /// `sc_upload::UploadConfig::default()`'s 5 MiB / 10 MiB rather than
     /// importing it. `UploadBridge` overrides this to read the engine's live
@@ -228,7 +227,7 @@ pub enum BodyReadError {
 
 /// Drain `body` into memory, aborting with [`BodyReadError::Idle`] if no
 /// chunk arrives within `idle_timeout` of the previous one (or of the
-/// start). `DESIGN-UPLOAD.md` §6: `body_idle_timeout` has existed as a
+/// start).: `body_idle_timeout` has existed as a
 /// config field since the upload engine shipped, but nothing in the HTTP
 /// layer ever read it — the single `axum::body::to_bytes(req.into_body(),
 /// usize::MAX).await` call this replaces waits forever no matter how long a
@@ -239,7 +238,7 @@ pub enum BodyReadError {
 /// The timer resets on every chunk that actually arrives, so a slow-but-
 /// steady transfer is never punished — only silence trips it, matching
 /// `upload.request_timeout`'s documented absence of a *total* transfer-time
-/// bound (`DESIGN-UPLOAD.md` §1.3's defense-in-depth table: idle timeout and
+/// bound ('s defense-in-depth table: idle timeout and
 /// whole-request timeout are two different knobs on purpose).
 pub async fn read_body_with_idle_timeout(
     body: axum::body::Body,
@@ -262,7 +261,7 @@ pub async fn read_body_with_idle_timeout(
 mod idle_timeout_tests {
     //! Proves `read_body_with_idle_timeout` actually enforces silence,
     //! before any wiring into a real route: the defect this guards against
-    //! (`DESIGN-UPLOAD.md` §6) is that `body_idle_timeout` was configured
+    //! is that `body_idle_timeout` was configured
     //! and read nowhere, so a body that just stops sending was never
     //! noticed by anything. These tests fail against the old
     //! `axum::body::to_bytes(.., usize::MAX)` call this function replaces --

@@ -5,7 +5,7 @@
   // Two independent knobs, kept visually separate so their scope is never
   // ambiguous:
   //  1. Server-global chunk floor/default (`PATCH /api/admin/upload-settings`,
-  //     DESIGN-UPLOAD.md §1.3) — persisted in upload.db, changes what every
+  // ) — persisted in upload.db, changes what every
   //     account's GET /api/auth/session reports and what a NEW upload session
   //     uses, on the whole server, immediately, without a restart.
   //  2. This browser's own 413 shrink-adaptation seed

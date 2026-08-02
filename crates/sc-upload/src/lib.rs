@@ -1,5 +1,5 @@
 //! sc-upload — resumable upload engine: TUS 1.0.0 core plus the engine side
-//! of the compat chunking v2 mapping. See `docs/DESIGN-UPLOAD.md`.
+//! of the compat chunking v2 mapping. See `docs/.
 //!
 //! The HTTP surface (routing, header parsing, status codes) lives in
 //! sc-http / sc-compat-nc; this crate only knows about `SessionSpec` in and

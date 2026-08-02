@@ -153,7 +153,7 @@
     color: var(--m3c-error);
   }
 
-  /* MD3 window class "compact" (<600px,): the
+  /* MD3 window class "compact" (<600px): the
      select + size + mtime columns alone already add up to more than a phone
      screen, which otherwise squeezes the name column -- the one thing a
      file browser can't afford to truncate -- down to a handful of pixels.

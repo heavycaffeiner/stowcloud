@@ -1,5 +1,5 @@
 //! `IntervalSet` — the set of byte ranges received so far for one upload
-//! session. See docs/DESIGN-UPLOAD.md §4.
+//! session. See docs/
 //!
 //! Invariant maintained at all times: `runs` is sorted by start, and no two
 //! runs overlap or touch (adjacent runs are always merged). `decode` must

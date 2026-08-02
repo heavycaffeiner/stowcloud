@@ -366,8 +366,7 @@ fn native_routes() -> Vec<RouteInfo> {
             group: "native",
             owner: "sc-http",
         },
-        // Admin-settable, server-global chunk floor/default (`DESIGN-UPLOAD.md`
-        // §1.3) — persisted in `upload.db`, read live by `capabilities`/
+        // Admin-settable, server-global chunk floor/default — persisted in `upload.db`, read live by `capabilities`/
         // `GET /api/auth/session`.
         RouteInfo {
             method: "PATCH",

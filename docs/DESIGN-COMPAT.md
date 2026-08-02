@@ -206,7 +206,7 @@ GET /ocs/v2.php/cloud/capabilities?format=json
 Rules:
 
 1. **A feature we lack is `false`/empty, never omitted.** An absent key makes clients assume a default (usually `true`) and call an endpoint that does not exist. **§5.1's "presence = on" keys are the opposite — read both.**
-2. `chunked_upload.max_size` carries `upload.chunk_size_advisory` — **advisory only**. There is no server-side chunk size ceiling (`DESIGN-UPLOAD.md` §1.3); a larger chunk is accepted normally. A client that sends more and hits a 413 from an intermediary proxy handles it with its own auto-adjust. **Mobile never reads this field at all** — Android's `GetCapabilitiesRemoteOperation` has no `chunked_upload` parsing, and iOS's chunk size is injected by the app. This is a desktop-only hint.
+2. `chunked_upload.max_size` carries `upload.chunk_size_advisory` — **advisory only**. There is no server-side chunk size ceiling (`proposals/stowcloud-7-upload.md`); a larger chunk is accepted normally. A client that sends more and hits a 413 from an intermediary proxy handles it with its own auto-adjust. **Mobile never reads this field at all** — Android's `GetCapabilitiesRemoteOperation` has no `chunked_upload` parsing, and iOS's chunk size is injected by the app. This is a desktop-only hint.
 3. `bulkupload` is omitted entirely when unsupported — present, it routes clients onto a small-file batching path we do not implement.
 4. `forbidden_filename_characters` **must be a superset of `SafePath`'s actual rejection rules, not equal to them.** It is a client-side creation hint — stopping a Windows client from creating a name its own filesystem can't store — not a mirror of server enforcement, and it must not be made equal by rejecting all nine server-side either: shared folders are co-accessed by Jellyfin, rsync and Samba on a Linux filesystem that permits `* ? " < > |` in names, so rejecting them here would make files that already exist on disk inaccessible through us. A mismatch in the dangerous direction (advertised legal, actually rejected) puts a client's sync into a permanent retry loop — that direction must never happen. Verified against `sc-vfs::safe_path::validate_component`: it rejects `:` (matching the list), NUL and control bytes 0x01–0x1F/0x7F, a trailing `.`/space, and Windows device names (`CON`, `PRN`, `COM1`–`9`, `LPT1`–`9`) — none of which overlap with the other eight listed characters (`\ / * ? " < > |`), which `SafePath` does not actually reject at the character level. The list is therefore a strict superset of what is enforced: over-conservative for those eight (a client that follows it will simply never try names we would in fact accept), never under-conservative. The one true gap — control characters and the trailing-dot/space and reserved-name rules have no character-list representation at all — is the same gap the reference server's own list has, not a divergence we introduced. The real, survivable cost of the superset direction: a file already on disk whose name contains one of those eight characters (written by Samba, NFS, or another service sharing the directory) is listed to an NC client, which considers the name invalid per this list and declines to sync just that one file — a known gap, not a retry loop, because the client never tries to *create* that name itself.
 
@@ -519,7 +519,7 @@ When unlimited, the reference sets `free` and `total`, not just `quota`, to `-3`
 
 ## 9. Chunked upload
 
-Full mapping in `DESIGN-UPLOAD.md` §7. Summary:
+Full mapping in `proposals/stowcloud-7-upload.md` Summary:
 
 | NC request | core engine |
 |---|---|
@@ -564,7 +564,7 @@ Android does not check the MKCOL status at all (`ChunkedFileUploadRemoteOperatio
 Sources: `ChunkedFileUploadRemoteOperation.java:42-43, 120-128, 197-211, 280` · `UploadFileOperation.java:1129-1137` · `NKCommon.swift:123, 180, 204-205` · `+Upload.swift:322-393`.
 
 - Decimal, not binary — 10,240,000 ≠ 10 MiB.
-- **40,960,000-byte (~39 MiB) chunks arrive on WiFi.** No server-side chunk ceiling (`DESIGN-UPLOAD.md` §1.3) makes this fine on our end, but any intermediary proxy's `client_max_body_size` must be at least this large — Android has no desktop-style 413 auto-adjust and simply fails on 413.
+- **40,960,000-byte (~39 MiB) chunks arrive on WiFi.** No server-side chunk ceiling (`proposals/stowcloud-7-upload.md`) makes this fine on our end, but any intermediary proxy's `client_max_body_size` must be at least this large — Android has no desktop-style 413 auto-adjust and simply fails on 413.
 - **iOS chunk names are not zero-padded.** Lexicographic order would give `1, 10, 11, 2, …`, breaking assembly. We parse names as `u32` and assemble in numeric order, tested.
 - Android's `md5(file)` transfer id is stable across retries and app restarts. An alias must be released on assembly or abort, or a retried upload of the same file collides with a dead session.
 

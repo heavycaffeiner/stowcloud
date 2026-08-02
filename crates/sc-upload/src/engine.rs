@@ -1,5 +1,5 @@
 //! `UploadEngine` — the TUS core + NC chunking-v2 engine side. See
-//! docs/DESIGN-UPLOAD.md §5 (state machine + ordering rule) and §7 (NC
+//! docs/ (state machine + ordering rule) and §7 (NC
 //! mapping).
 //!
 //! ## Naming note (cross-crate)
@@ -123,7 +123,7 @@ impl UploadEngine {
     pub fn new(root: &std::path::Path, cfg: UploadConfig) -> anyhow::Result<Self> {
         let conn = Connection::open(root)?;
         db::init_schema(&conn)?;
-        // Precedence (`DESIGN-UPLOAD.md` §1.3): a persisted admin override
+        // Precedence: a persisted admin override
         // beats the `sc.toml`-derived `cfg`, which beats `UploadConfig::default()`
         // (`cfg` itself already carries that fallback by construction).
         let (min, default) = db::load_chunk_settings(&conn)?.unwrap_or((cfg.chunk_size_min, cfg.chunk_size_default));
@@ -155,7 +155,7 @@ impl UploadEngine {
         db::count_all_active_sessions(&self.db.lock()).unwrap_or(0)
     }
 
-    /// Admin write path (`DESIGN-UPLOAD.md` §1.3). Validates, persists, then
+    /// Admin write path. Validates, persists, then
     /// flips the live atomics — in that order, so a validation failure or a
     /// disk-write failure never lets the in-memory value drift from what's on
     /// disk. Does *not* touch any session already in flight: `chunk_size` and
@@ -371,7 +371,7 @@ impl UploadEngine {
         }
 
         // -----------------------------------------------------------
-        // ORDERING RULE (docs/DESIGN-UPLOAD.md §5.1, non-negotiable):
+        // ORDERING RULE (docs/, non-negotiable):
         // the disk write MUST complete before the `received` set is
         // committed to the DB. If the process crashes between the two,
         // the DB still shows the old (smaller) contiguous prefix; the
@@ -666,7 +666,7 @@ impl UploadEngine {
             if let Err(e) = self.verify_whole_file(&fh, *algo, expected, total) {
                 // A verify failure must not leave the mismatching bytes
                 // sitting under the part name until GC's TTL catches up
-                // (`DESIGN-UPLOAD.md` §9: up to `session_ttl`, 24h by
+                // (up to `session_ttl`, 24h by
                 // default) -- that only moves the problem from "a corrupt
                 // file at the destination" to "a full-size orphan slowly
                 // filling the 32 GB budget" (`DESIGN-FOOTPRINT.md` §1).
@@ -741,7 +741,7 @@ impl UploadEngine {
     /// algorithm selector and this function computed a digest and handed it
     /// to `tracing::debug!` with nothing to compare against, so the check
     /// could never fail no matter what was actually on disk
-    /// (`docs/DESIGN-UPLOAD.md` §3). Reusing `UploadError::ChecksumMismatch`
+    /// (`docs/). Reusing `UploadError::ChecksumMismatch`
     /// rather than a new variant: `UploadBridge::upload_err`
     /// (`sc-server/src/bridge.rs`) is an exhaustive match with no catch-all
     /// arm, and the per-chunk checksum path already maps this exact variant
@@ -990,7 +990,7 @@ impl UploadEngine {
         // live `chunk_settings` — an admin raising or lowering the floor
         // mid-upload must not retroactively make an already-legal chunk size
         // illegal for a session that started under the old floor
-        // (`DESIGN-UPLOAD.md` §1.3, the in-flight-upload hazard).
+        // (the in-flight-upload hazard).
         let whole_file_small = row.total_len.map(|total| total < row.chunk_min_at_creation).unwrap_or(false);
         if !is_last && !whole_file_small && len < row.chunk_min_at_creation {
             return Err(UploadError::ChunkTooSmall { min: row.chunk_min_at_creation });
@@ -1168,7 +1168,7 @@ mod tests {
         assert_eq!(e.chunk_settings(), (8 * 1024 * 1024, 16 * 1024 * 1024));
     }
 
-    /// The in-flight-upload hazard (`DESIGN-UPLOAD.md` §1.3): an admin
+    /// The in-flight-upload hazard: an admin
     /// raising the floor after a session has already started must not make a
     /// chunk size that was legal at creation suddenly get rejected.
     #[test]
@@ -1491,7 +1491,7 @@ mod tests {
     }
 
     /// `verify` used to carry only an algorithm selector and never compared
-    /// anything against it (`docs/DESIGN-UPLOAD.md` §3) — this is the
+    /// anything against it (`docs/) — this is the
     /// positive case: a correct digest must still let the upload finalize.
     #[test]
     fn verify_accepts_a_correct_digest() {

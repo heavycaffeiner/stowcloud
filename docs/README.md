@@ -14,7 +14,6 @@ Svelte frontend. Linux / Docker only.
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Docker seccomp reality, filesystem matrix, EXDEV, uid/gid, watch backends, Samba sidecar, Cloudflare | Deployment and operations |
 | [DESIGN-AUTH.md](DESIGN-AUTH.md) | Argon2 parameters, sessions, app passwords, TOTP, brute-force defense, audit | Before implementing auth |
 | [DESIGN-API.md](DESIGN-API.md) | Native REST routes, error envelope, listing sessions, WebSocket, middleware stack | API / frontend contract |
-| [DESIGN-UPLOAD.md](DESIGN-UPLOAD.md) | TUS spec, `IntervalSet`, crash-safe ordering, 413 negotiation, NC chunking mapping | Before upload work |
 | [DESIGN-COMPAT.md](DESIGN-COMPAT.md) | Isolation contract and CI gate, capabilities, Login Flow v2, `oc:permissions` mapping | Before compat-layer work |
 
 ## Five principles, everything else follows from these

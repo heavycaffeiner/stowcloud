@@ -491,7 +491,7 @@ async function adminBuildIndex(): Promise<{ job: string }> {
   return request('/admin/index/build', { method: 'POST' })
 }
 
-/** `PATCH /api/admin/upload-settings` (`DESIGN-UPLOAD.md` §1.3) — sets the
+/** `PATCH /api/admin/upload-settings` — sets the
  *  server-global chunk floor/default every account's `GET /api/auth/session`
  *  reads, persisted across restarts. */
 async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSettingsResp> {

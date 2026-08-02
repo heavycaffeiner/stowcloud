@@ -127,8 +127,7 @@ pub fn protected_routes(state: AppState) -> Router {
 }
 
 /// `/api/uploads[/:id]` (TUS) — deliberately kept out of `protected_routes`
-/// so the body-size limit layer never wraps it (`DESIGN-UPLOAD.md` §1.3/§8:
-/// no chunk-size cap, streamed). Also disables axum's own built-in 2MB
+/// so the body-size limit layer never wraps it (no chunk-size cap, streamed). Also disables axum's own built-in 2MB
 /// `Bytes`/`Json` extractor default for the same reason.
 pub fn upload_routes(state: AppState) -> Router {
     Router::new()
@@ -481,7 +480,7 @@ async fn auth_logout(State(state): State<AppState>, req: axum::extract::Request)
 #[derive(Serialize)]
 struct ClientLimits {
     chunk_size: u64,
-    /// `sc_upload::UploadConfig::chunk_size_min` (`DESIGN-UPLOAD.md` §1.3):
+    /// `sc_upload::UploadConfig::chunk_size_min`:
     /// the hard floor a client's 413 shrink-adaptation must not go below
     /// (`shrinkChunkSize` in `chunk-planner.ts`).
     chunk_min: u64,
@@ -2350,8 +2349,8 @@ fn tus_headers(resp: &mut Response) {
 
 /// The destination vpath a TUS upload-creation request names, computed from
 /// `Upload-Metadata` exactly the way `uploads_create` derives `dest` below
-/// (`dest` directory + `relativePath`/`filename` leaf, `DESIGN-UPLOAD.md`
-/// §2.1) — pulled out so `middleware::scope_gate` can ask the identical
+/// (`dest` directory + `relativePath`/`filename` leaf) — pulled out so
+/// `middleware::scope_gate` can ask the identical
 /// question when checking `Scope::shares` on `POST /api/uploads`, rather
 /// than risk a second, subtly different parse of the same header.
 pub(crate) fn upload_dest_vpath(headers: &axum::http::HeaderMap) -> Option<String> {
@@ -2385,7 +2384,7 @@ async fn uploads_create(
         .and_then(|v| v.parse::<u64>().ok());
     // The destination is carried in `Upload-Metadata`; TUS has no other place
     // to put it, and a query parameter would end up in access logs.
-    // `DESIGN-UPLOAD.md` §2.1 splits it in two: `dest` is the destination
+    // splits it in two: `dest` is the destination
     // *directory*'s vpath, and the leaf appended to it is `relativePath`
     // (directory uploads: sub-path + filename) or, failing that, `filename`
     // (single-file uploads: bare basename). Neither key alone names a
@@ -2396,7 +2395,7 @@ async fn uploads_create(
         Some(d) => d,
         None => return AppError::invalid_name("Upload-Metadata must carry a `filename` or `relativePath`").into_response(),
     };
-    // Opt-in parallel-PATCH extension (`DESIGN-UPLOAD.md` §2.3). Only our own
+    // Opt-in parallel-PATCH extension. Only our own
     // web client sends this; third-party TUS clients get strict sequential
     // delivery, unaffected.
     let random_access = headers.get("sc-random-access").and_then(|v| v.to_str().ok()).map(|v| v == "1").unwrap_or(false);
@@ -2488,7 +2487,7 @@ async fn uploads_head(
                     h.insert("Upload-Length", v);
                 }
             }
-            // `DESIGN-UPLOAD.md` §3: the session's chunk size is fixed at
+            // the session's chunk size is fixed at
             // creation from the server config then, so a config change made
             // after the fact can't break a session already in flight. A
             // resuming client follows this header rather than trusting a
@@ -2523,8 +2522,8 @@ async fn uploads_patch(
         Some(o) => o,
         None => return AppError::invalid_name("Upload-Offset is required").into_response(),
     };
-    // No cap: `/api/uploads/**` is deliberately outside the body-limit layer
-    // (`DESIGN-UPLOAD.md` §1.3/§8), so the only bound is the engine's. The
+    // No cap: `/api/uploads/**` is deliberately outside the body-limit layer,
+    // so the only bound is the engine's. The
     // idle timeout (not a size cap) is the actual defense — a client that
     // opens this `PATCH` and stops sending must not hold the request, and the
     // engine's open part-file handle, forever (`upload_api.rs`).
@@ -3611,7 +3610,7 @@ struct UploadSettingsResp {
 
 /// `PATCH /api/admin/upload-settings` — the write half of the chunk floor/
 /// default pair `capabilities`/`auth_session` read. Server-global and
-/// persisted (`DESIGN-UPLOAD.md` §1.3): every client sees the new value on
+/// persisted: every client sees the new value on
 /// its next `GET /api/auth/session`, and it survives a restart. Does not
 /// affect any upload already in progress — see
 /// `sc_upload::UploadEngine::validate_patch`'s doc for why an in-flight

@@ -404,7 +404,7 @@
     gap: 24px;
     margin-bottom: 16px;
   }
-  /* Compact (<600px,): a row that fits the button
+  /* Compact (<600px): a row that fits the button
    * beside 3-4 lines of body text at 1280px does not have to survive at
    * 390px — stack instead of squeezing the hint into a 6-line, half-width
    * column next to the button. */

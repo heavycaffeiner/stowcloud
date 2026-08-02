@@ -525,8 +525,7 @@ pub(crate) fn sync_dir(
     fs::fsync(&dir.0).map_err(map_errno)
 }
 
-/// `copy_file_range` ( syscall table, `DESIGN-UPLOAD.md`
-/// §7.2): reflink on btrfs/XFS when block-aligned, an in-kernel copy
+/// `copy_file_range`: reflink on btrfs/XFS when block-aligned, an in-kernel copy
 /// otherwise — either way no userspace round trip. Always passes explicit
 /// offsets rather than `None`: `FileInner`'s fd is shared/positional
 /// (`pread`/`pwrite` throughout this backend), so letting the syscall

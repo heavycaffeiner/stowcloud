@@ -1515,7 +1515,7 @@ impl UploadBridge {
     }
 
     /// Maps every `sc_upload::UploadError` variant to the distinct HTTP
-    /// status `docs/DESIGN-UPLOAD.md` §2.2 specifies, rather than collapsing
+    /// status `docs/ specifies, rather than collapsing
     /// all of them to `500`. A TUS client acts on this distinction — `409`
     /// (offset conflict) means "re-sync via `HEAD` and resend from the real
     /// offset", `410` (session gone) means "start a new upload", `412`
@@ -2809,7 +2809,7 @@ mod upload_err_tests {
     //! wrong. A TUS client cannot tell "resend the same bytes" (`409`) apart
     //! from "give up and start over" (`410`) apart from "you are done,
     //! nothing to retry" if every one of them looks like a server fault. This
-    //! proves the distinctions `docs/DESIGN-UPLOAD.md` §2.2 calls for
+    //! proves the distinctions `docs/ calls for
     //! actually reach the wire.
     use super::*;
     use axum::http::StatusCode;
