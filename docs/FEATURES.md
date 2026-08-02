@@ -323,7 +323,7 @@ cannot find is the same as a setting that does not exist.
      "Duplicate" now runs through the same code path, so conflict retry, quota
      handling and job tracking cannot drift between the three actions
 173. **Vendor-neutral chunked upload over WebDAV** (`/dav-uploads/{tid}`,
-     `DESIGN-WEBDAV.md` §11) — RFC 4918 has no partial-write verb, so until
+     `proposals/stowcloud-4-webdav.md`) — RFC 4918 has no partial-write verb, so until
      now the only resumable WebDAV path in this server was item 79's
      compat chunking v2, which `--no-default-features` compiles out
      entirely: stripping the compatibility layer stripped resumable WebDAV
@@ -335,7 +335,7 @@ cannot find is the same as a setting that does not exist.
      (`SpoolMode::NameOrdered`) unchanged, so assembly, the atomic publish and
      GC are literally the same code both surfaces already ran. The
      client-chosen `{tid}` resolves through a new `(user, tid)`-keyed alias
-     table and answers `404` across accounts, per `DESIGN-WEBDAV.md` §8's
+     table and answers `404` across accounts, per `proposals/stowcloud-4-webdav.md`'s
      no-existence-oracle rule. A top-level prefix rather than `/dav/uploads`
      because axum matches literal segments first and that would have
      permanently shadowed a share named `uploads`. Known limit: a `shares`-

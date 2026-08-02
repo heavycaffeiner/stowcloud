@@ -398,7 +398,7 @@ Numbers that appear in earlier drafts as if they were config keys but are not �
 
 ## 9. Protocol exposure
 
-**`sc-dav` does not implement WebDAV `SEARCH`/`REPORT`** (`DESIGN-WEBDAV.md` §2) — this is a deliberate non-goal for the core DAV layer, and it is accurate. An earlier draft additionally described a compat translation layer that would accept `nc:filter-files`/`d:basicsearch` REPORT bodies, translate what it could into a `SearchQuery`, and reject the rest with `422` rather than silently returning "no results." **That translation layer does not exist** — there is no REPORT handling anywhere in the compat crate. A compat or DAV client has no search today; only the web UI's `GET /api/search[/stream]` works. If this gets built, the `422`-over-silent-empty-results argument still holds: a client that can't tell "no results" from "we didn't understand the query" will draw the wrong conclusion.
+**`sc-dav` does not implement WebDAV `SEARCH`/`REPORT`** (`proposals/stowcloud-4-webdav.md`) — this is a deliberate non-goal for the core DAV layer, and it is accurate. An earlier draft additionally described a compat translation layer that would accept `nc:filter-files`/`d:basicsearch` REPORT bodies, translate what it could into a `SearchQuery`, and reject the rest with `422` rather than silently returning "no results." **That translation layer does not exist** — there is no REPORT handling anywhere in the compat crate. A compat or DAV client has no search today; only the web UI's `GET /api/search[/stream]` works. If this gets built, the `422`-over-silent-empty-results argument still holds: a client that can't tell "no results" from "we didn't understand the query" will draw the wrong conclusion.
 
 ---
 
