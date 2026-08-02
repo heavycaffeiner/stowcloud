@@ -776,30 +776,42 @@ impl SettingsApi for SettingsBridge {
             service_uid: patch.service_uid,
             service_gid: patch.service_gid,
         };
-        self.store
-            .mutate(|o| o.smb = Some(ov.clone()))
-            .map_err(store_err)?;
-
         let mut cfg = self.cfg.lock();
         let enabled_changed = cfg.smb.enabled != patch.enabled;
-        cfg.smb.enabled = patch.enabled;
-        cfg.smb.workgroup = patch.workgroup;
-        cfg.smb.service_user = patch.service_user;
-        cfg.smb.allow_public_bind = patch.allow_public_bind;
-        cfg.smb.totp_policy = totp_policy;
-        cfg.smb_service_uid = patch.service_uid;
-        cfg.smb_service_gid = patch.service_gid;
 
-        // Called even when disabling: `render_live` removes the rendered
+        // Applied to a candidate and rendered from that, before anything is
+        // persisted. Rendering is the step that can fail — `validate_bind`'s
+        // LAN-only refusal, or an unwritable `config_dir` — and the store used
+        // to be written first, so a failed enable left `smb.enabled = true`
+        // durably recorded with nothing rendered anywhere. That survives a
+        // restart as a deployment that reports SMB on, serves nothing, and
+        // answers the next identical patch `applied_live` because by then the
+        // config already agrees with it. Seen on the testbed 2026-08-03,
+        // behind the EACCES the compose file's `./smbcfg` note describes.
+        let mut candidate = cfg.clone();
+        candidate.smb.enabled = patch.enabled;
+        candidate.smb.workgroup = patch.workgroup;
+        candidate.smb.service_user = patch.service_user;
+        candidate.smb.allow_public_bind = patch.allow_public_bind;
+        candidate.smb.totp_policy = totp_policy;
+        candidate.smb_service_uid = patch.service_uid;
+        candidate.smb_service_gid = patch.service_gid;
+
+        // Rendered even when disabling: `render_live` removes the rendered
         // files in that case, which is what keeps NT hashes off disk for a
         // disabled feature and tells the sidecar/bare-metal agent to tear
         // down (`DEPLOYMENT.md` §7.5). Guarding this on `enabled` left SMB
         // serving from stale files until someone restarted the server.
-        // Most realistic failure here is `validate_bind`'s LAN-only
-        // refusal, which is a validation rejection with a reason rather than
-        // a server fault, so it maps to 422 via `InvalidName` and not 500.
-        self.render_live_and_record_warning(&cfg)
+        // A refusal is a validation rejection with a reason rather than a
+        // server fault, so it maps to 422 via `InvalidName` and not 500.
+        let warn = crate::smb_cmd::render_live(&candidate, &self.core, &self.auth)
             .map_err(|e| CoreError::InvalidName(e.to_string()))?;
+
+        self.store
+            .mutate(|o| o.smb = Some(ov.clone()))
+            .map_err(store_err)?;
+        self.smb_public_bind_warning.store(warn, Ordering::Relaxed);
+        *cfg = candidate;
 
         Ok(ApplyOutcome {
             applied_live: !enabled_changed,
