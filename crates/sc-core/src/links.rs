@@ -152,7 +152,7 @@ pub struct LinkPatch {
 ///
 /// Its own database rather than a table inside `sc-meta`: `sc-meta` is
 /// explicitly a *cache* that "can be deleted at any time and the service keeps
-/// working" (`ARCHITECTURE.md` §0.1). Share links are not reconstructible from
+/// working". Share links are not reconstructible from
 /// the filesystem, so putting them in that file would quietly turn a
 /// documented-as-disposable database into one that must be backed up.
 pub struct LinkStore {

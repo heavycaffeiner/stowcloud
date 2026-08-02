@@ -750,7 +750,7 @@ pub fn print(d: &Diagnostics) {
 /// Enumerate this host's non-loopback interface addresses, for feeding
 /// `sc_smb::SmbOrchestrator::validate_bind`. Linux-only real implementation
 /// (`getifaddrs`); everywhere else (dev platforms) returns an empty list —
-/// SMB is a Linux-deployment-only feature (`ARCHITECTURE.md` §0), so this
+/// SMB is a Linux-deployment-only feature, so this
 /// only needs to be real where SMB actually runs.
 #[cfg(target_os = "linux")]
 pub fn local_interface_addrs() -> Vec<IpAddr> {

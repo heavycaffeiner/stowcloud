@@ -3,7 +3,7 @@
 //! through a `ShareRoot` + `SafePath` (or a handle obtained from one).
 //!
 //! Authoritative specs:-2 (types, syscall mapping,
-//! `SafePath` rejection table) and `ARCHITECTURE.md` §2 (why: path-as-kernel-
+//! `SafePath` rejection table) and (why: path-as-kernel-
 //! handle, not path-as-string).
 //!
 //! Two backends live behind `backend::imp`: `linux` (the real, hardened

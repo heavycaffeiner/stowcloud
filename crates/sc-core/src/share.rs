@@ -358,7 +358,7 @@ fn validate_host_path(path: &Path) -> Result<(), CoreError> {
 impl crate::Core {
     /// Open `def.host_path` as a share root. `ShareRoot::open` itself
     /// rejects filesystems that can't provide stable inode identity
-    /// end-to-end (overlayfs — `FsType::is_rejected`, `ARCHITECTURE.md`
+    /// end-to-end (overlayfs — `FsType::is_rejected`,
     /// "filesystem gate").
     pub fn register_share(&self, def: ShareDef) -> anyhow::Result<()> {
         let root = Arc::new(ShareRoot::open(def.id, &def.host_path, def.policy.clone())?);
@@ -388,7 +388,7 @@ impl crate::Core {
 
     /// The share's host path. `sc-vfs` deliberately never exposes this from
     /// `ShareRoot` itself (nothing above `sc-vfs` sees
-    /// a host path in the *request-handling* path — `ARCHITECTURE.md` §13's
+    /// a host path in the *request-handling* path.
     /// checklist item is about API responses/errors/logs, not trusted
     /// server-side infrastructure). `sc-watch` needs a real path to hand to
     /// the OS watch API (`inotify`/`ReadDirectoryChangesW`), so this is the

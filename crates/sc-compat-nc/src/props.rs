@@ -241,7 +241,7 @@ impl PropSource for NcPropSource {
     fn emit(&self, e: &Entry, ctx: &PropCtx, req: &PropReq, out: &mut PropWriter) {
         let is_dir = e.kind.is_dir();
 
-        // The core allocates file ids lazily (`ARCHITECTURE.md` §4.1): a plain
+        // The core allocates file ids lazily: a plain
         // listing never forces one into existence, so `Entry::id` is an
         // `Option`. Clients here cannot cope with that — `oc:id` is the key
         // of their entire local sync journal, and an entry without one is

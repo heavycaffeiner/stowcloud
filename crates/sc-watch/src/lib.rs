@@ -1,5 +1,5 @@
 //! `sc-watch` — change detection: hot-set watching + debounced invalidation
-//! events., `ARCHITECTURE.md` §5.1.
+//! events.,
 //!
 //! Only the directories that can actually be *observed* right now are
 //! watched: WebSocket-subscribed dirs + their ancestor chain, plus an LRU of
@@ -89,8 +89,8 @@ struct Inner {
     pending: PendingMap,
     degraded: AtomicUsize,
     stop: std::sync::atomic::AtomicBool,
-    /// Set when the OS reports its own event queue overflowed
-    /// (`FEATURES.md` #130); consumed and cleared by `debounce_loop`.
+    /// Set when the OS reports its own event queue overflowed;
+    /// consumed and cleared by `debounce_loop`.
     overflow: OverflowFlag,
 }
 
@@ -276,7 +276,7 @@ fn new_backend(
 ///
 /// Before that: two independent signals that individual dirty paths can no
 /// longer be trusted, or are too many to keep enumerating one at a time
-/// (`FEATURES.md` #130). Either fires the same O(1) fallback — bump every
+/// Either fires the same O(1) fallback — bump every
 /// share's generation instead of flushing per-directory:
 /// - the OS reported its own event queue overflowed (`overflow`, set by a
 ///   backend on `IN_Q_OVERFLOW`/`notify::Flag::Rescan` — events were lost,
@@ -326,7 +326,7 @@ fn debounce_loop(inner: Arc<Inner>) {
     }
 }
 
-/// `FEATURES.md` #130's O(1) fallback: bump every registered share's
+/// 's O(1) fallback: bump every registered share's
 /// generation counter (`sc-meta`'s `bump_share_gen`, exposed as
 /// `Core::invalidate_share`) instead of flushing the pending set one
 /// directory at a time. A single `UPSERT` per share, regardless of how many
@@ -354,7 +354,7 @@ fn full_invalidate(inner: &Arc<Inner>, kernel_overflow: bool, pending_len: u64) 
 }
 
 /// How often the periodic NFS/FUSE rescan sweeps hot-set directories
-/// (`FEATURES.md` #129). `inotify` cannot see a change another host makes
+/// `inotify` cannot see a change another host makes
 /// directly on a network mount, so this is the only thing that ever
 /// notices one. 60s matches the staleness a real NFS client already
 /// tolerates on its own attribute cache (Linux's default `acdirmax=60`), so
@@ -401,7 +401,7 @@ fn sleep_interruptible(inner: &Inner, total: std::time::Duration) -> bool {
 
 /// One sweep: for every share whose filesystem is known to lose inotify
 /// events made by another host (`FsType::watch_unreliable` — the same
-/// detector the startup share-registration gate uses, `FEATURES.md` #5),
+/// detector the startup share-registration gate uses),
 /// re-mark every directory already in the hot set dirty. Never a fresh
 /// recursive walk.
 fn rescan_unreliable_shares(inner: &Arc<Inner>) {

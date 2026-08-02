@@ -1,6 +1,5 @@
 //! Escape attempts: `..`, absolute paths, and a symlink planted so it points
-//! outside the share root. All three must be refused — see `ARCHITECTURE.md`
-//! §0.2 ("a path is a kernel handle, not a string") and the VFS-escape row in
+//! outside the share root. All three must be refused — see ("a path is a kernel handle, not a string") and the VFS-escape row in
 //! 's test-strategy table.
 
 use sc_vfs::{SafePath, ShareId, SharePolicy, ShareRoot, VfsError};

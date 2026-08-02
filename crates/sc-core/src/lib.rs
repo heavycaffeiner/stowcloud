@@ -2,7 +2,7 @@
 //! (safe filesystem access), `sc-meta` (fileid/ETag cache), and `sc-acl`
 //! (permission evaluation). `sc-http`/`sc-dav`/`sc-compat-nc` are thin
 //! translations on top of this; none of them touch `sc-vfs` or `sc-acl`
-//! directly (`ARCHITECTURE.md` §1).
+//! directly.
 
 mod acl_store;
 mod aggregate;

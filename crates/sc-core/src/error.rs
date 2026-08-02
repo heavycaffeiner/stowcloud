@@ -41,7 +41,7 @@ pub enum CoreError {
     #[error("internal error: {0}")]
     Internal(String),
     /// The write would push the acting user's usage ledger past their
-    /// configured cap (`FEATURES.md` #49, `quota.rs`). Distinct from
+    /// configured cap (`quota.rs`). Distinct from
     /// `Denied` — this is a resource limit, not an ACL decision.
     #[error("quota exceeded")]
     QuotaExceeded,

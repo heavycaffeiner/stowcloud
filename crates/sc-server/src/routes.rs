@@ -3,8 +3,7 @@
 //! Two things live here, and only these two:
 //!
 //! * [`route_table`] — the declarative list of paths this binary serves,
-//!   split along the `feature = "compat-nc"` boundary (`ARCHITECTURE.md`
-//!   §1/§10.1). It is what `sc-server routes --json` dumps and what the
+//!   split along the `feature = "compat-nc"` boundary. It is what `sc-server routes --json` dumps and what the
 //!   isolation CI gate greps ("the `--no-default-features` build passes and
 //!   that binary has zero NC routes").
 //! * [`server_routes`] — the handful of endpoints `sc-server` itself owns,
@@ -435,7 +434,7 @@ fn native_routes() -> Vec<RouteInfo> {
             owner: "sc-http+sc-server",
         },
         // Whether the T3 name index is on, and the runtime toggle for it
-        // (`FEATURES.md` #116) — persisted in `index.db`, mirroring the
+        // — persisted in `index.db`, mirroring the
         // upload-settings pair above.
         RouteInfo {
             method: "GET",
@@ -457,7 +456,7 @@ fn native_routes() -> Vec<RouteInfo> {
             group: "native",
             owner: "sc-http",
         },
-        // User management (`FEATURES.md` #157). Admin-only — `sc-http`'s
+        // User management. Admin-only — `sc-http`'s
         // `require_admin` re-checks the account fresh on every one of these,
         // same as the two routes above.
         RouteInfo {
@@ -488,7 +487,7 @@ fn native_routes() -> Vec<RouteInfo> {
         // granted —). `sc_core::acl_store`
         // owns persistence; `sc-http` owns the HTTP skin, admin-gated the
         // same way the routes above are.
-        // Folder shares (`FEATURES.md` #40/#157: "there is no setting to add
+        // Folder shares ("there is no setting to add
         // folders"). `sc_core::Core::create_share`/`update_share`/
         // `delete_share` own persistence and validation; config-file shares
         // (below `sc_core::DYNAMIC_SHARE_ID_BASE`) refuse the latter two.
@@ -540,7 +539,7 @@ fn native_routes() -> Vec<RouteInfo> {
             group: "native",
             owner: "sc-http",
         },
-        // Group CRUD + membership (`FEATURES.md` #48).
+        // Group CRUD + membership.
         RouteInfo {
             method: "GET",
             path: "/api/admin/groups",
@@ -577,7 +576,7 @@ fn native_routes() -> Vec<RouteInfo> {
             group: "native",
             owner: "sc-http",
         },
-        // Audit log browsing (`FEATURES.md` #158).
+        // Audit log browsing.
         RouteInfo {
             method: "GET",
             path: "/api/admin/audit",
@@ -764,7 +763,7 @@ fn native_routes() -> Vec<RouteInfo> {
     ]
 }
 
-/// Compat-layer routes (`ARCHITECTURE.md` §10.2). Entirely absent — not merely unregistered, the
+/// Compat-layer routes. Entirely absent — not merely unregistered, the
 /// *code that would produce this list* doesn't exist in the binary — when
 /// built with `--no-default-features`.
 #[cfg(feature = "compat-nc")]

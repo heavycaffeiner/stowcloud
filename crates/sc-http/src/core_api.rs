@@ -293,7 +293,7 @@ pub struct IndexEstimate {
 }
 
 /// Whether the T3 name index is switched on for this deployment
-/// (`FEATURES.md` #116) — the admin-persisted override
+/// — the admin-persisted override
 /// `sc_search::IndexSettingsStore` backs, so it survives a restart without a
 /// `config.toml` rewrite.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -301,8 +301,7 @@ pub struct IndexSettings {
     pub name_enabled: bool,
 }
 
-/// One share's outcome from `POST /api/admin/index/build` (`FEATURES.md`
-/// #116) — mirrors `OpResult`'s per-item shape (`path`/`ok`/`error`) since
+/// One share's outcome from `POST /api/admin/index/build` — mirrors `OpResult`'s per-item shape (`path`/`ok`/`error`) since
 /// this is the same "one request, several independent outcomes" pattern.
 #[derive(Clone, Debug, Serialize)]
 pub struct IndexBuildResult {
@@ -346,10 +345,10 @@ pub enum GrantPrincipal {
 
 /// A share this deployment has registered (`GET /api/admin/shares`). Serves
 /// two consumers: the grant-creation screen's picker (which only reads
-/// `id`/`name`), and the share management screen (`FEATURES.md` #40/#157),
+/// `id`/`name`), and the share management screen,
 /// which is the reason `host_path` is here — an admin adding/editing a
 /// folder share has to see and set where it points on the host, unlike every
-/// other surface below `sc-vfs` (`ARCHITECTURE.md` §13's "never leak a host
+/// other surface below `sc-vfs` ('s "never leak a host
 /// path" rule is about *request-handling* responses/errors/logs to
 /// non-admins, not this trusted admin-configuration screen).
 #[derive(Clone, Debug, Serialize)]
@@ -773,7 +772,7 @@ pub trait CoreApi: Send + Sync {
         Err(not_wired())
     }
 
-    /// `GET /api/admin/index/settings` (`FEATURES.md` #116).
+    /// `GET /api/admin/index/settings`.
     fn index_settings(&self) -> Result<IndexSettings, CoreError> {
         Err(not_wired())
     }
@@ -812,7 +811,7 @@ pub trait CoreApi: Send + Sync {
     }
 
     /// `POST /api/admin/shares` — register a new folder share
-    /// (`FEATURES.md` #40/#157). A real backend validates `host_path`
+    /// A real backend validates `host_path`
     /// explicitly (nonexistent / not a directory / unreadable / overlapping
     /// an existing share) and reports which one via
     /// `CoreError::InvalidName`, rather than a generic failure.
@@ -861,7 +860,7 @@ pub trait CoreApi: Send + Sync {
 
     /// Push a freshly recomputed group-membership map into the live ACL
     /// engine (`sc_core::Core::set_group_memberships`) — called after every
-    /// group/membership mutation the admin API makes (`FEATURES.md` #48),
+    /// group/membership mutation the admin API makes,
     /// so the change is visible immediately rather than only after the next
     /// restart's `sc-server::app::project_grants`. Default no-op: only a
     /// real backend has an `AclEngine` to push into; test doubles have no

@@ -67,7 +67,7 @@ pub enum TrashMode {
     Off,
     // A third `Central` (shared, cross-share trash location) variant was
     // deleted rather than kept as a documented no-op: it was never
-    // implemented (`ARCHITECTURE.md` §5.3), and nothing ever accepted it as
+    // implemented, and nothing ever accepted it as
     // an input, so there was no boundary to reject it at either.
 }
 
@@ -94,7 +94,7 @@ impl Default for SharePolicy {
             cross_mount: true,
             id_strategy: IdStrategy::Inode,
             // Off by default: trash is a data-loss trap for a share nobody
-            // is watching for GC (`ARCHITECTURE.md` §5.3). An admin turns it
+            // is watching for GC. An admin turns it
             // on explicitly, per share, from `ShareManagementSection.svelte`
             // (`sc_core::Core::update_share`'s `trash_enabled`).
             trash: TrashMode::Off,
@@ -128,7 +128,7 @@ pub enum FsType {
 
 impl FsType {
     /// Filesystems that are refused outright at `ShareRoot::open` time
-    /// (inode instability, etc. — see ARCHITECTURE.md "filesystem gate").
+    /// (inode instability, etc. — see "filesystem gate").
     pub fn is_rejected(&self) -> bool {
         matches!(self, FsType::Overlay)
     }

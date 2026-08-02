@@ -1,5 +1,5 @@
 <script lang="ts">
-  // /trash — FEATURES.md #17/#18: list, restore, and permanently purge
+  // /trash —: list, restore, and permanently purge
   // trashed items. `GET/POST /api/trash[/restore|/purge]`
   // (`crates/sc-http/src/routes.rs::trash_list/trash_restore/trash_purge`,
   // `crates/sc-core/src/trash.rs`) existed and worked before this page did —

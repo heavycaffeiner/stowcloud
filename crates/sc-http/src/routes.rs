@@ -3108,7 +3108,7 @@ async fn public_link_drop(
     // Taken before `req.into_body()` consumes the request. This is the one
     // public link action that *writes*, and it was the only one not audited
     // (`view`/`auth`/`download` all were), so an anonymous upload left no
-    // trace at all — FEATURES.md #109 asks for the opposite.
+    // trace at all — asks for the opposite.
     let ip = client_ip_ext(&req);
     let headers = req.headers().clone();
 
@@ -3466,7 +3466,7 @@ async fn admin_index_estimate(State(state): State<AppState>, principal: Option<E
     }
 }
 
-/// `GET /api/admin/index/settings` (`FEATURES.md` #116) — whether the T3
+/// `GET /api/admin/index/settings` — whether the T3
 /// name index is currently switched on. The other half of `admin_index_
 /// estimate`'s "here's what it would cost": this is "here's whether it's
 /// running", so `StorageIndexSection.svelte` can render a toggle instead of
@@ -3515,7 +3515,7 @@ async fn admin_set_index_settings(
     }
 }
 
-/// `POST /api/admin/index/build` (`FEATURES.md` #116) — crawls every share
+/// `POST /api/admin/index/build` — crawls every share
 /// and (re)builds its name index, through the same `JobKind::IndexBuild`
 /// queue `/api/jobs/{id}` already polls/cancels, rather than a second
 /// progress mechanism. `501`s if the index is off — starting a build for a
@@ -3912,7 +3912,7 @@ async fn admin_restart_server(
 }
 
 // -------------------------------------------------------- admin: users --
-// User management (`FEATURES.md` #157's "admin API — users"). Every handler
+// User management ('s "admin API — users"). Every handler
 // here is admin-gated the same way `admin_storage`/`admin_index_estimate`
 // are: `require_admin` re-checks the account fresh, because a hidden button
 // in the SPA is not access control.
@@ -3938,7 +3938,7 @@ struct AdminUserWire {
     created_ns: String,
     // As a string for the same 2^53 reason. `None` = unlimited.
     quota_bytes: Option<String>,
-    /// Running usage ledger (`FEATURES.md` #49, `user.usage_bytes`) — as a
+    /// Running usage ledger (`user.usage_bytes`) — as a
     /// string for the same 2^53 reason as every other byte count here.
     usage_bytes: String,
 }
@@ -4041,13 +4041,13 @@ fn parse_user_id(raw: &str) -> Result<sc_vfs::UserId, AppError> {
 /// A bare byte count sets a real cap.
 #[derive(Deserialize)]
 struct AdminUserPatchReq {
-    /// "disable/enable" (`FEATURES.md` #157). Role changes aren't exposed
+    /// "disable/enable". Role changes aren't exposed
     /// over HTTP yet (see `sc_auth::AuthService::set_admin`'s doc comment);
     /// this stays an `Option` rather than a bare `bool` so a future field
     /// can be added beside it without every existing caller having to start
     /// sending it.
     disabled: Option<bool>,
-    /// Per-user quota cap in bytes (`FEATURES.md` #49). `Some(None)` clears
+    /// Per-user quota cap in bytes. `Some(None)` clears
     /// it to unlimited; `Some(Some(0))` is rejected the same way (0 reads as
     /// unlimited downstream per `quota_val`'s `$quota > 0` guard, so refusing
     /// it here rather than silently accepting a no-op is the honest answer).
@@ -4160,8 +4160,7 @@ async fn admin_list_shares(State(state): State<AppState>, principal: Option<Exte
     Json(state.core.admin_shares()).into_response()
 }
 
-/// `POST /api/admin/shares` — register a new folder share (`FEATURES.md`
-/// #40/#157: the complaint this route exists to fix is "there is no setting
+/// `POST /api/admin/shares` — register a new folder share (the complaint this route exists to fix is "there is no setting
 /// to add folders"). `sc_core::Core::create_share` validates `host_path`
 /// explicitly and reports which of nonexistent/not-a-directory/unreadable/
 /// overlapping-share failed, surfaced here as `422 fs.invalid_name` with
@@ -4383,7 +4382,7 @@ async fn admin_delete_grant(
 }
 
 // -------------------------------------------------------- admin: groups --
-// Group CRUD + membership (`FEATURES.md` #48). `sc-auth` owns `group_`/
+// Group CRUD + membership. `sc-auth` owns `group_`/
 // `membership`; `Principal::Group`/`GrantPrincipal::Group` on the ACL side
 // already existed before this, so the only wiring left is: push a freshly
 // read membership map into the live `AclEngine`
@@ -4624,7 +4623,7 @@ async fn admin_remove_group_member(
     }
 }
 
-// ── admin: audit log (`FEATURES.md` #158) ──────────────────────────────
+// ── admin: audit log ──────────────────────────────
 // Read-only over `sc_auth::AuthService::list_audit` — no wiring through
 // `CoreApi` needed, unlike shares/grants/groups, since the audit table lives
 // entirely in `sc-auth`'s own database.
@@ -4676,7 +4675,7 @@ struct AdminAuditPage {
 }
 
 /// `GET /api/admin/audit[?actor=&event=&since_ns=&until_ns=&before=&limit=]`
-/// (`FEATURES.md` #158). Newest first; cursor-paginated on `rowid` rather
+/// Newest first; cursor-paginated on `rowid` rather
 /// than offset so a page boundary stays correct even while new rows keep
 /// landing ahead of it.
 async fn admin_list_audit(State(state): State<AppState>, principal: Option<Extension<Principal>>, Query(q): Query<AdminAuditQuery>) -> Response {
@@ -6717,7 +6716,7 @@ mod tests {
         }
     }
 
-    /// Group CRUD + membership (`FEATURES.md` #48) at the HTTP layer —
+    /// Group CRUD + membership at the HTTP layer —
     /// admin gating, wire shapes, and the duplicate-name/not-found refusals.
     /// `AclEngine` refresh itself (`refresh_group_memberships`) is a
     /// one-line passthrough exercised in `sc-server`'s wiring, not here; the

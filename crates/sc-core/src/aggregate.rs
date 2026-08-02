@@ -1,7 +1,7 @@
 //! Directory aggregate ETag —, and dirty marking on
 //! the write path — §4.4. This is the one place `sc-core` allocates `sc-meta`
 //! fileids for directories (files never need one just to be listed —
-//! `ARCHITECTURE.md` §4.1's "lazy allocation"), because the aggregate cache is
+//! 's "lazy allocation"), because the aggregate cache is
 //! keyed by fileid and computing it is the thing that actually needs that
 //! identity to exist.
 //!
@@ -46,7 +46,7 @@ impl crate::Core {
     ///
     /// `sc_core::Entry::id` is populated by a pure lookup (`ops.rs`'s
     /// `build_entry`, via `MetaStore::lookup_fileid`) that never allocates —
-    /// "lazy allocation" (`ARCHITECTURE.md` §4.1): a plain listing of a share with
+    /// "lazy allocation": a plain listing of a share with
     /// a million files must not write a million rows just because someone
     /// browsed it. That is the right default for the native API and the web
     /// UI, which have no protocol reason to *need* an id for an entry they
@@ -128,7 +128,7 @@ impl crate::Core {
     /// single path. `sc-watch` calls this when its own dirty queue
     /// overflows `full_threshold`, or the OS reports a lost/overflowed
     /// batch of events — in both cases enumerating which paths changed is
-    /// no longer possible or worth it (`FEATURES.md` #130).
+    /// no longer possible or worth it.
     pub fn invalidate_share(&self, share: ShareId) -> anyhow::Result<u64> {
         self.meta.bump_share_gen(share)
     }

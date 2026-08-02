@@ -1,5 +1,5 @@
 //! Per-share trash: `<share>/.sctrash/{id}-{encoded_orig_path}`
-//! (`TrashMode::ShareLocal`, `ARCHITECTURE.md` §5.3). `TrashMode::Off` —
+//! `TrashMode::ShareLocal`. `TrashMode::Off` —
 //! the default for every share — is handled directly in `ops::delete` as a
 //! plain unlink; this module only runs when a share has trash turned on.
 //! An admin toggles it per share (`Core::update_share`'s `trash_enabled`,
@@ -218,7 +218,7 @@ impl crate::Core {
                 continue;
             }
             let p = trash_dir.join(&e.name, max_depth)?;
-            // Quota charge-back (`FEATURES.md` #49): purge is where trashed
+            // Quota charge-back: purge is where trashed
             // bytes are actually freed (`trash_move` only relocated them, no
             // charge there). Size must be read before the delete.
             let freed = if e.kind == sc_vfs::Kind::Dir { self.aggregate(share, &p)?.rsize } else { root.stat(&p).map(|st| st.size).unwrap_or(0) };

@@ -122,7 +122,7 @@ export interface AppPasswordInfo {
 /** One row of `GET /api/auth/sessions`. Named `ActiveSession`, not
  *  `SessionInfo` — that name is already `SessionInfo` above (the whole
  *  `GET /api/auth/session` envelope), and this is one *row* of the separate
- *  "your other devices" list (FEATURES #54). */
+ *  "your other devices" list. */
 export interface ActiveSession {
   id_hash: string
   created_ns: string
@@ -161,7 +161,7 @@ export interface IndexEstimate {
   confidence: string
 }
 
-/** `GET`/`PATCH /api/admin/index/settings` (`FEATURES.md` #116) — the
+/** `GET`/`PATCH /api/admin/index/settings` — the
  *  persisted (survives-restart, `index.db`-backed) runtime override for the
  *  off-by-default name index, independent of `config.toml`'s `[index]
  *  name_enabled`. */
@@ -181,7 +181,7 @@ export interface UploadSettingsReq {
 
 export type UploadSettingsResp = UploadSettingsReq
 
-/** One row of `GET /api/admin/users` (`FEATURES.md` #157) — every account on
+/** One row of `GET /api/admin/users` — every account on
  *  the deployment, from the admin's point of view. Never carries a password
  *  hash, a TOTP secret, or anything from the SMB secret table; the server
  *  structurally cannot serialize those into this shape
@@ -197,7 +197,7 @@ export interface AdminUser {
   created_ns: string
   /** Per-user quota cap in bytes, as a string (2^53 precision — same
    *  reason `created_ns` is a string). `null` means unlimited
-   *  (`FEATURES.md` #49). */
+   *. */
   quota_bytes: string | null
   /** Running usage ledger, as a string (same 2^53 reason). Not a live
    *  filesystem recomputation — see `sc_core::quota`'s module doc for how
@@ -225,8 +225,7 @@ export const ALL_GRANT_PERMS: GrantPermName[] = [
 
 /** A share this deployment has registered (`sc_core::Core::share_defs`) —
  *  used both by the grant-creation screen's picker (which only reads
- *  `id`/`name`) and by the share management screen (`FEATURES.md`
- *  #40/#157), which is why `host_path` is here — an admin adding/editing a
+ *  `id`/`name`) and by the share management screen, which is why `host_path` is here — an admin adding/editing a
  *  folder share has to see and set where it points on the host. This is a
  *  deliberate, narrow exception to `sc-vfs`'s "never leak a host path" rule:
  *  that rule is about request-handling responses/errors/logs to non-admins,
@@ -269,8 +268,7 @@ export interface GrantPrincipal {
   id: number
 }
 
-/** One row of `GET /api/admin/groups` (`FEATURES.md` #48,
- *  `crates/sc-http/src/routes.rs::AdminGroupWire`). `members` is a plain id
+/** One row of `GET /api/admin/groups` (`crates/sc-http/src/routes.rs::AdminGroupWire`). `members` is a plain id
  *  list, not full `AdminUser` rows — the group screen resolves names against
  *  the user list it already loaded, same as `AdminGrant.share` is an id
  *  resolved against `AdminShare[]` rather than embedded. */
@@ -292,8 +290,7 @@ export interface UpdateGroupReq {
   name: string
 }
 
-/** One row of `GET /api/admin/audit` (`FEATURES.md` #158,
- *  `crates/sc-http/src/routes.rs::AdminAuditRowWire`). Newest first. `actor`
+/** One row of `GET /api/admin/audit` (`crates/sc-http/src/routes.rs::AdminAuditRowWire`). Newest first. `actor`
  *  is `null` for a system-attributed row (e.g. an anonymous share-link
  *  action); `actor_name` is a best-effort resolved display name, `null` for
  *  a since-deleted account too. */
@@ -505,7 +502,7 @@ export interface BatchResult {
   results: BatchItemResult[]
 }
 
-// ── trash (FEATURES.md #18) ──
+// ── trash ──
 
 /** One row of `GET /api/trash` (`crates/sc-http/src/core_api.rs::TrashEntry`).
  *  `id` is an opaque string (`"{share}:{uuid}"` — `sc-server/src/bridge.rs`'s

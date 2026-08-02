@@ -1,17 +1,16 @@
 //! `sc-meta` — the SQLite cache that sits on top of the filesystem.
 //!
-//! The filesystem is the only source of truth (`ARCHITECTURE.md` §0.1): this
+//! The filesystem is the only source of truth: this
 //! database can be deleted at any time and the service keeps working, just
 //! slower until it warms back up. Everything in here exists to answer three
 //! questions cheaply that the kernel answers expensively or not at all:
 //!
 //!   1. "what stable integer id does this (dev, ino, btime) have?" (`node`,
-//!      §4.1 of `ARCHITECTURE.md`)
+//!      §4.1 of)
 //!   2. "has anything under this directory changed?" (`diretag`)
 //!   3. "what dead WebDAV properties are attached to this file?" (`dav_prop`)
 //!
-//! Schema is exactly `node`/`diretag` as specified in `ARCHITECTURE.md`
-//! §4.1/§4.2: **no path column**, **no index besides `node_ident`**. Path
+//! Schema is exactly `node`/`diretag` as specified in: **no path column**, **no index besides `node_ident`**. Path
 //! resolution is always `parent`-chain walking, never a stored string —
 //! that's what makes directory rename an `O(1)` single-row `UPDATE` instead
 //! of an `O(subtree)` fan-out.
@@ -38,7 +37,7 @@ use rusqlite::{Connection, OpenFlags};
 /// `node.flags` bit: this row represents a directory.
 pub(crate) const NODE_FLAG_IS_DIR: i64 = 1 << 0;
 /// `node.flags` bit: something else (dead property, lock, favorite, share
-/// link — `ARCHITECTURE.md` §4.1) references this row by fileid, so GC must
+/// link —) references this row by fileid, so GC must
 /// not reap it even if the underlying `(dev, ino)` looks gone. Set by
 /// `set_prop`; nothing currently clears it automatically (a stale pin just
 /// means "GC skips this row a little longer than strictly necessary", never

@@ -1,7 +1,7 @@
 //! Wire-agnostic result types: `Entry`/`Listing` (read side), `OnConflict`/
 //! `OpResult` (write side). These are what `sc-http`/`sc-dav` translate into
 //! their own JSON/XML shapes — `sc-core` itself is protocol-agnostic
-//! (`ARCHITECTURE.md` §1).
+//! Directory-entry projection for the domain API.
 
 use sc_acl::Perms;
 use sc_vfs::{FileId, Kind, ShareId, Stat};
@@ -17,7 +17,7 @@ pub struct Entry {
     pub etag: String,
     pub perms: Perms,
     /// Populated only if a stable id has already been allocated for this
-    /// physical file (`ARCHITECTURE.md` §4.1 lazy allocation) — plain
+    /// physical file (allocated lazily) — plain
     /// listing never forces one into existence.
     pub id: Option<FileId>,
     pub is_symlink_denied: bool,

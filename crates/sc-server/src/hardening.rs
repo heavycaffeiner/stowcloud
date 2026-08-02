@@ -1,5 +1,5 @@
 //! Process-level self-restriction: Landlock path sandbox + a minimal seccomp
-//! filter (`ARCHITECTURE.md` §2.4, checklist item 8).
+//! filter (checklist item 8).
 //!
 //! Both are Linux-only, best-effort, and applied *after* shares/the data
 //! directory are opened (so the paths being restricted to are already valid
@@ -102,7 +102,7 @@ fn apply_landlock(restrict_paths: &[std::path::PathBuf]) -> HardeningStatus {
 }
 
 /// A small deny-list seccomp filter: `ptrace`, `process_vm_readv`/`_writev`,
-/// `mount`, `kexec_load`, `bpf`, `userfaultfd` — see `ARCHITECTURE.md` §2.4.
+/// `mount`, `kexec_load`, `bpf`, `userfaultfd` — see
 /// Everything else is allowed; this is not a sandbox on its own, it's a
 /// second line of defense alongside Landlock and the unprivileged uid.
 ///

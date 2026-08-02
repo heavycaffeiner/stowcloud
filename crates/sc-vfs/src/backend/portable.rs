@@ -6,7 +6,7 @@
 //! component by component from the anchor, checking `symlink_metadata` at
 //! every step and rejecting escapes ourselves. It exists so the crate
 //! builds, and its security-invariant tests pass, on the primary dev
-//! machine (Windows). See `ARCHITECTURE.md` "settled assumptions": Windows/macOS are
+//! machine (Windows). See "settled assumptions": Windows/macOS are
 //! dev-convenience fallbacks, not a supported deployment target.
 
 use std::path::{Path, PathBuf};
@@ -47,7 +47,7 @@ fn find_entry(dir: &Path, want: &str) -> Result<String, VfsError> {
 /// Walk `comps` from `root`, requiring every component (including the last)
 /// to already exist, and applying `policy.symlink` at every step —
 /// component-by-component, never a naive joined-string-then-check (that's
-/// the TOCTOU-prone pattern `ARCHITECTURE.md` §0.2 forbids).
+/// the TOCTOU-prone pattern forbids).
 fn resolve_existing(
     root: &Path,
     comps: &[CompactString],
@@ -469,7 +469,7 @@ pub(crate) fn file_copy_range(src: &FileInner, src_off: u64, dst: &FileInner, ds
 /// Used when *replacing* an existing file: the replacement has to inherit the
 /// original's permissions before the rename, or the other services sharing the
 /// directory (Jellyfin, *arr, rsync) suddenly lose access to a file they could
-/// read a moment ago. See `ARCHITECTURE.md` §5.2.
+/// read a moment ago. See
 #[cfg(unix)]
 pub(crate) fn file_set_mode(f: &FileInner, mode: u32) -> Result<(), VfsError> {
     use std::os::unix::fs::PermissionsExt;
@@ -508,7 +508,7 @@ pub(crate) fn statfs_free(anchor: &AnchorHandle) -> Result<(u64, u64), VfsError>
 pub(crate) fn statfs_free(_anchor: &AnchorHandle) -> Result<(u64, u64), VfsError> {
     // Best-effort dev fallback only: real free-space accounting for
     // non-Linux Unix hosts is out of scope (the deployment target is Linux
-    // — see `ARCHITECTURE.md` "settled assumptions").
+    // — see "settled assumptions").
     Ok((0, 0))
 }
 

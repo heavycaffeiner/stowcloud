@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS user (
   disabled INTEGER NOT NULL DEFAULT 0,
   quota_bytes INTEGER,
   -- Running total of bytes this user's writes have added minus what their
-  -- deletes have freed (`FEATURES.md` #49, `sc_core::quota`'s module doc) —
+  -- deletes have freed (`sc_core::quota`'s module doc) —
   -- not a live filesystem recomputation.
   usage_bytes INTEGER NOT NULL DEFAULT 0,
   created_ns INTEGER NOT NULL,
@@ -258,7 +258,7 @@ fn migrate_user_role(conn: &rusqlite::Connection) -> Result<()> {
 }
 
 /// Same rationale and pattern as `migrate_user_role` above: a database that
-/// predates the quota-usage ledger (`FEATURES.md` #49) needs the column
+/// predates the quota-usage ledger needs the column
 /// added explicitly, since `CREATE TABLE IF NOT EXISTS` won't touch it.
 fn migrate_user_usage_bytes(conn: &rusqlite::Connection) -> Result<()> {
     let has_col: i64 = conn.query_row(

@@ -1,4 +1,4 @@
-//! `smb.conf` rendering (`ARCHITECTURE.md` §9.2).
+//! `smb.conf` rendering.
 //!
 //! Every directive listed as "non-negotiable" by the spec this crate
 //! implements is emitted unconditionally in `[global]`; nothing here is
@@ -9,7 +9,7 @@ use crate::bind::{PRIVATE_CIDRS_V4, PRIVATE_CIDRS_V6};
 use crate::error::SmbError;
 use crate::{SmbConfig, SmbShareDef, SmbUser};
 
-/// Veto list shared by every share (`ARCHITECTURE.md` §2.1 reserved names):
+/// Veto list shared by every share — our own reserved names:
 /// our own control files must never be visible/writable over SMB.
 pub const VETO_FILES: &str = "/.sctrash/.scpart-*/.scmeta/.scindex/";
 

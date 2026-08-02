@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 /// 5 MiB — hard floor on chunk size for `sc.toml` at startup
-/// (`ARCHITECTURE.md` §6.4: if a config file asks for less, `Config::load`
+/// (if a config file asks for less, `Config::load`
 /// clamps up rather than honoring it). Defined in terms of
 /// `sc_upload::CHUNK_MIN_BYTES_FLOOR`, the same floor `UploadEngine::
 /// set_chunk_settings` enforces for an admin's runtime write, so the two
@@ -34,7 +34,7 @@ pub enum WatchBackend {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SymlinkPolicyCfg {
-    /// ARCHITECTURE.md §0: "default is least privilege" — symlinks denied by default.
+    /// "default is least privilege" — symlinks denied by default.
     #[default]
     Deny,
     WithinShare,
@@ -125,7 +125,7 @@ impl Default for WatchConfig {
     }
 }
 
-/// / ARCHITECTURE.md §4.1: both off by default.
+/// /: both off by default.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct IndexConfig {
@@ -133,7 +133,7 @@ pub struct IndexConfig {
     pub content_enabled: bool,
 }
 
-/// ARCHITECTURE.md §3.1: "user homes are opt-in; homes.enabled = false by default".
+/// "user homes are opt-in; homes.enabled = false by default".
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HomesConfig {
@@ -357,8 +357,7 @@ pub struct ShareBootstrap {
     pub name: String,
     pub host_path: PathBuf,
     /// Another service (Jellyfin, a Samba consumer) also reads and writes this
-    /// directory, so the UI warns before a destructive action (`FEATURES.md`
-    /// #133). Only the operator knows this — nothing on the filesystem says a
+    /// directory, so the UI warns before a destructive action. Only the operator knows this — nothing on the filesystem says a
     /// directory is co-owned.
     #[serde(default)]
     pub shared_externally: bool,
@@ -567,7 +566,7 @@ impl Config {
             .unwrap_or_else(|| self.data_dir.join("master.key"))
     }
 
-    /// Where per-user home directories live (`FEATURES.md` #47) when
+    /// Where per-user home directories live when
     /// `homes.enabled`. `homes.root` unset defaults under `data_dir`, same
     /// convention as `master_key_path` above.
     pub fn homes_root(&self) -> PathBuf {

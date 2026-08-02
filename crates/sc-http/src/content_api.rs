@@ -44,7 +44,7 @@ pub trait ContentApi: Send + Sync {
     /// `(start, end)` byte range already clamped by the caller against
     /// [`ContentStat::size`] (or the whole file when `None`). The
     /// implementation keeps the underlying fd open for the reader's entire
-    /// lifetime (`ARCHITECTURE.md` §5.2).
+    /// lifetime.
     fn open_stream(&self, fid: FileId, range: Option<(u64, u64)>) -> Result<Box<dyn Read + Send>, CoreError>;
 
     /// Generate (or fetch from cache) the inline re-encoded thumbnail for

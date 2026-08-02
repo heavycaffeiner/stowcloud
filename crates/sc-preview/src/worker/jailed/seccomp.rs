@@ -7,7 +7,7 @@
 //!
 //! 1. **There is already a hand-built seccomp filter in this workspace.**
 //!    `sc-server::hardening` installs a small deny-list for the server
-//!    process itself (`ARCHITECTURE.md` §2.4) with the same `libc::sock_filter`
+//!    process itself with the same `libc::sock_filter`
 //!    primitives used here. Pulling in `seccompiler` for the second filter
 //!    would leave the tree with two different mechanisms for the same job.
 //! 2. **The policy is flat.** Twenty-two syscall numbers, no argument

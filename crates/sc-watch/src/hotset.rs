@@ -49,7 +49,7 @@ impl HotSet {
     }
 
     /// Snapshot of every key with a live backend registration. Used by the
-    /// periodic NFS/FUSE rescan (`FEATURES.md` #129), which only ever
+    /// periodic NFS/FUSE rescan, which only ever
     /// revisits directories already being tracked — never a fresh
     /// recursive walk.
     pub(crate) fn registered_keys(&self) -> Vec<Key> {

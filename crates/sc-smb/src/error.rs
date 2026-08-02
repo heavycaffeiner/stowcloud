@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SmbError {
-    /// The hard gate from / `ARCHITECTURE.md` §9.2:
+    /// The hard gate from /:
     /// SMB shares the account password (NTLM needs the NT hash), and the
     /// trade-off documented there is only accepted under the premise that
     /// SMB never leaves the LAN. This is refused, not warned, unless the

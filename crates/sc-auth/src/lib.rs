@@ -82,7 +82,7 @@ impl AuthService {
         let pool = db::open_pool(db_path)?;
 
         // Refuse to start on a key that cannot decrypt what is already on
-        // disk (`FEATURES.md` #156) — before anything else touches
+        // disk — before anything else touches
         // `master_key`, so a bad key never gets the chance to look like a
         // working one until some later, unrelated request fails.
         rotate::verify_master_key(&pool, &master_key)?;
@@ -228,7 +228,7 @@ pub struct UserRow {
     /// in this crate enforces it against writes.
     pub quota_bytes: Option<u64>,
     /// `user.usage_bytes` — the running ledger `sc_core::QuotaSink` charges
-    /// against (`FEATURES.md` #49). Not a live filesystem recomputation; see
+    /// against. Not a live filesystem recomputation; see
     /// `sc_core::quota`'s module doc for what can make it drift.
     pub usage_bytes: u64,
 }
@@ -243,7 +243,7 @@ pub struct QuotaStatus {
     pub limit: Option<u64>,
 }
 
-/// One `group_` row (`FEATURES.md` #48). Membership itself is a separate
+/// One `group_` row. Membership itself is a separate
 /// `(user, group_)` table — see `AuthService::list_group_members`/
 /// `list_memberships_all` — not a field here, the same reason `UserRow`
 /// doesn't carry a user's grants inline.

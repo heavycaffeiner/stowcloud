@@ -1,6 +1,6 @@
 // web/src/lib/format/user-agent.ts — turns a raw `User-Agent` header into a
 // short "OS · Browser" label for the active-sessions list (settings' §3.2,
-// FEATURES #54). The raw string just started arriving for real (the backend
+// ). The raw string just started arriving for real (the backend
 // previously never recorded it, so this column always read "unknown device")
 // — but a 100+ character UA string wrapped across several lines is not
 // actually more useful to a user than the placeholder was.

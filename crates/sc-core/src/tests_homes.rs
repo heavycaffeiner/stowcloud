@@ -1,4 +1,4 @@
-//! Per-user homes (`FEATURES.md` #47, `homes.rs`): off by default, one
+//! Per-user homes (`homes.rs`): off by default, one
 //! idempotent directory+grant per user, template-seeded when a `.template`
 //! directory exists, and never blanket-granted by `seed_full_access`.
 

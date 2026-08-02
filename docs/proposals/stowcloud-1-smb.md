@@ -329,7 +329,8 @@ stale row; one bad passdb entry must not take SMB down for everyone else.
 
 - `proposals/stowcloud-13-deployment.md` — the operational contract this specifies
 - `proposals/stowcloud-10-auth.md`, §13.6, §13.7 — NT-hash derivation and revocation
-- `docs/ARCHITECTURE.md` §9.2 — where the LAN-only premise is stated
+- `stowcloud-12-architecture.md` — where the LAN-only premise sits among
+  the five principles
 - `crates/sc-smb/`, `crates/sc-server/src/smb_cmd.rs`, `deploy/smb/`
 - `scripts/smb-native-test.sh` — the bare-metal agent's 3-distro suite
 - [smbpasswd(5)](https://www.samba.org/samba/docs/current/man-html/smbpasswd.5.html),

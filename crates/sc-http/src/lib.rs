@@ -106,7 +106,7 @@ pub mod embed {
     //! `sc-server` — so the crate (and the real binary) builds before the
     //! frontend exists: `web/build` is `.gitignore`d, so a fresh checkout has
     //! none, and `#[derive(RustEmbed)]` reads this folder at *compile* time.
-    //! `ARCHITECTURE.md` §7 /
+    //! /
     //!
     //! The actual mount point is `routes::admin_catch_all` — the router's
     //! single global fallback — not a route of its own; see that function's

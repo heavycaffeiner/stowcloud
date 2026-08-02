@@ -57,7 +57,7 @@ impl FileHandle {
 
     /// Copy ownership and permissions from the file this one is about to
     /// replace, so that a rename-based atomic replace is invisible to the
-    /// other services sharing the directory (`ARCHITECTURE.md` §5.2).
+    /// other services sharing the directory.
     ///
     /// Ownership is best-effort: an unprivileged process cannot give a file
     /// away, and failing the whole upload for that would be worse than
@@ -77,7 +77,7 @@ impl FileHandle {
 
     /// Copy `len` bytes from `src` at `src_off` to `self` at `dst_off`
     /// without a userspace round trip when the platform allows it —
-    /// / `TECH-STACK.md` §3. On Linux this is
+    /// / On Linux this is
     /// `copy_file_range`: a reflink (near-instant, no bandwidth) on
     /// btrfs/XFS when block alignment allows it, an in-kernel copy
     /// otherwise. It falls back to a bounded-buffer read/write loop when the

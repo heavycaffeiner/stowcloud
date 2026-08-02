@@ -752,7 +752,7 @@ const mockAuthState: {
    *  `upload.db`-persisted value read by every `session()` call. */
   chunkMin: number
   chunkDefault: number
-  /** `FEATURES.md` #116 — the name index's persisted runtime override,
+  /** — the name index's persisted runtime override,
    *  off by default same as the real server. */
   indexNameEnabled: boolean
   /** The demo account starts *linked* (`docs/proposals/stowcloud-0-oidc-login.md`
@@ -1415,7 +1415,7 @@ async function adminBuildIndex(): Promise<{ job: string }> {
   return { job: MOCK_INDEX_BUILD_JOB }
 }
 
-// ── admin: user management (FEATURES.md #157) ──
+// ── admin: user management ──
 // Mirrors the real server's rules closely enough to drive the admin UI in
 // dev mode: the bootstrapped account is the sole administrator, a name must
 // be unique, a password needs 10 characters, and the last active admin can
@@ -1485,7 +1485,7 @@ async function adminSetUserDisabled(id: number, disabled: boolean): Promise<Admi
 }
 
 /** Mirrors the real `422 admin.invalid_quota` refusal for `0`
- *  (`FEATURES.md` #49) — `0` reads as unlimited downstream, so it is
+ * — `0` reads as unlimited downstream, so it is
  *  rejected rather than silently accepted. */
 async function adminSetUserQuota(id: number, quotaBytes: number | null): Promise<AdminUser> {
   await delay(40)
@@ -1693,7 +1693,7 @@ async function adminDeleteGrant(id: number): Promise<void> {
   mockGrants = mockGrants.filter((g) => g.id !== id)
 }
 
-// ── admin: group management (`FEATURES.md` #48) ── Mirrors
+// ── admin: group management ── Mirrors
 // `sc_auth::AuthService`'s group CRUD closely enough to drive the admin UI in
 // dev mode: `group_.name` is unique, deleting a group cascades to its
 // memberships (and to the live grants table's own filter, same as deleting a
@@ -1771,7 +1771,7 @@ async function adminRemoveGroupMember(id: number, userId: number): Promise<void>
   mockGroups = mockGroups.map((g) => (g.id === id ? updated : g))
 }
 
-// ── admin: audit log (`FEATURES.md` #158) ──
+// ── admin: audit log ──
 // GET /api/admin/audit. A small fixed seed, newest first — enough for
 // `AuditLogSection.svelte` to have something realistic to filter/paginate
 // in dev mode. `actor_name` is resolved against `mockUsers` at read time

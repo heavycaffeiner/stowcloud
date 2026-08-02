@@ -344,7 +344,7 @@ impl AuthService {
     }
 
     /// Reads the ledger + cap for one account — the seam
-    /// `sc_core::QuotaSink::check` calls into (`FEATURES.md` #49). `Ok(None)`
+    /// `sc_core::QuotaSink::check` calls into. `Ok(None)`
     /// for an unknown user; enforcement treats that the same as "allow",
     /// same as every other quota-less path (`quota.rs`'s optional-attach).
     pub fn quota_status(&self, u: UserId) -> Result<Option<crate::QuotaStatus>> {

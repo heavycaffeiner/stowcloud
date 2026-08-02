@@ -1,5 +1,5 @@
 //! Persisted admin override for whether the T3 name index is turned on
-//! (`FEATURES.md` #116/#117, "both indexes are off
+//! ("both indexes are off
 //! by default").
 //!
 //! This does *not* rewrite `config.toml`: an admin toggle from the web UI has
@@ -10,7 +10,7 @@
 //! than `sc-core::ShareStore`'s own multi-table DB file: a lone boolean has
 //! no relational shape that would justify a dedicated store with several
 //! tables, but it is still not reconstructible from the filesystem
-//! (`ARCHITECTURE.md` §0.1's "meta.db is a disposable cache" rule), so it
+//! ('s "meta.db is a disposable cache" rule), so it
 //! cannot live there either. It gets its own tiny file (`index.db`) rather
 //! than a table bolted onto someone else's, because this crate has no other
 //! reason to depend on any other crate's database.

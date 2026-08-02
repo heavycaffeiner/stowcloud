@@ -242,7 +242,7 @@ fn header_str<'a>(h: &'a HeaderMap, name: &str) -> Option<&'a str> {
 /// `Upload-Length`: the total byte length the client asserts. Optional on both
 /// MKCOL and MOVE — when absent on the MOVE, the engine's own received length
 /// is used, which by construction cannot be a truncation of itself. Named
-/// after TUS 1.0.0's header of the same meaning (`FEATURES.md` #28), not after
+/// after TUS 1.0.0's header of the same meaning, not after
 /// `OC-Total-Length`.
 fn upload_length(h: &HeaderMap) -> Result<Option<u64>, UpErr> {
     match header_str(h, "upload-length") {

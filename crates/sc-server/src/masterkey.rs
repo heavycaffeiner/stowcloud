@@ -1,5 +1,5 @@
-//! Master key load/generate ( "always ready" /
-//! §10 checklist, `ARCHITECTURE.md` §9.2).
+//! Master key load and generate — the "always ready" property SMB depends
+//! on, and the checklist item that keeps the key out of the data directory.
 //!
 //! Rules, straight from the docs:
 //!

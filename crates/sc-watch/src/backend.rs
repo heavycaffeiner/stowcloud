@@ -20,7 +20,7 @@ use crate::hotset::Key;
 /// `Flag::Rescan`) — individually changed paths were lost, not just
 /// coalesced. The debounce loop reacts by invalidating every share in O(1)
 /// instead of trusting the (now incomplete) per-directory dirty set
-/// (`FEATURES.md` #130).
+/// Why a watch add can fail without being fatal.
 pub(crate) type OverflowFlag = Arc<AtomicBool>;
 
 /// A watch registration failed. `NoSpace` is the expected, normal-path
@@ -156,7 +156,7 @@ pub(crate) mod linux {
                             // read them; `ev.wd` is unspecified (`-1`) for
                             // this one, so there is no single path to mark
                             // dirty — the debounce loop's full-invalidation
-                            // fallback handles it instead (`FEATURES.md` #130).
+                            // fallback handles it instead.
                             overflow.store(true, std::sync::atomic::Ordering::Relaxed);
                             continue;
                         }

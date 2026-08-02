@@ -1,4 +1,4 @@
-//! Master-key rotation (`FEATURES.md` #156) and the startup check that
+//! Master-key rotation and the startup check that
 //! guards against a key that cannot decrypt what's already on disk.
 //!
 //! Rotation re-encrypts every `user_smb_secret.nt_hash_ct` and

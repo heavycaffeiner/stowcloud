@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
-description = "Main binary: assembles every sc-* crate into `sc-server`. See docs/ARCHITECTURE.md §1,,"
+description = "Main binary: assembles every sc-* crate into `sc-server`. See,,"
 
 [[bin]]
 name = "sc-server"
@@ -17,7 +17,7 @@ path = "src/bin/sc-caps.rs"
 
 [features]
 # Gates the legacy-client compatibility layer entirely out of the binary
-# (`ARCHITECTURE.md` §1/§10.1). `--no-default-features` drops the dependency
+#. `--no-default-features` drops the dependency
 # itself, not merely the route registrations, which is what makes the
 # isolation gate ("that binary must contain zero NC routes") provable rather
 # than asserted.
@@ -36,7 +36,7 @@ compat-nc = ["dep:sc-compat-nc"]
 # `oidc.disabled` -- which is exactly what a deployment with no IdP sees.
 oidc = ["dep:sc-oidc", "dep:async-trait"]
 # Embeds the built frontend (`web/build`) into the binary and serves it —
-# `ARCHITECTURE.md` §7 /'s "single static binary".
+# /'s "single static binary".
 # Not in `default`: `web/build` is `.gitignore`d, so a fresh checkout has
 # none, and `sc-http`'s `embed-ui` (which this forwards to) embeds that
 # folder's contents at *compile* time via `#[derive(RustEmbed)]` — turning

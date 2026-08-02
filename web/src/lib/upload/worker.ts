@@ -256,7 +256,7 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
     }
 
     if (status === 507) {
-      // Quota exceeded (`FEATURES.md` #49) — terminal like 413's floor case,
+      // Quota exceeded — terminal like 413's floor case,
       // not retryable like a transient network failure.
       f.status = 'error'
       post({ t: 'error', id: f.id, code: 'upload.quota_exceeded', message: /* i18n */ 'upload.not_enough_storage_space_finish' })

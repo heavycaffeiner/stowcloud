@@ -50,7 +50,7 @@ pub struct CoreBridge {
     /// — every call site below treats that the same as "not hot right now",
     /// never as an error, since every read still re-stats.
     watcher: Option<Arc<sc_watch::Watcher>>,
-    /// Admin override for `[index] name_enabled` (`FEATURES.md` #116/#117) —
+    /// Admin override for `[index] name_enabled` —
     /// see `sc_search::settings` module doc for why this lives in its own DB
     /// rather than a `config.toml` rewrite.
     index_settings: Arc<sc_search::IndexSettingsStore>,
@@ -1310,7 +1310,7 @@ impl hapi::CoreApi for CoreBridge {
         Ok(hapi::IndexSettings { name_enabled: enabled })
     }
 
-    /// `POST /api/admin/index/build` (`FEATURES.md` #116). Crawls every
+    /// `POST /api/admin/index/build`. Crawls every
     /// registered share through the same `CrawlThrottle`-paced walk
     /// `build_name_index` always used (`build_name_index_with_progress` is
     /// the same crawl, just also reporting progress and polling
@@ -1472,7 +1472,7 @@ pub static DB_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64
 // --------------------------------------------------------------- quota --
 
 /// Backs `sc_core::QuotaSink` with `sc-auth`'s `user.usage_bytes`/
-/// `user.quota_bytes` columns (`FEATURES.md` #49) — the one seam `Core`
+/// `user.quota_bytes` columns — the one seam `Core`
 /// needs to enforce a cap without either crate depending on the other.
 pub struct AuthQuotaSink {
     pub auth: Arc<sc_auth::AuthService>,
@@ -1614,7 +1614,7 @@ impl UploadBridge {
             .core
             .resolve_for_upload(user, dest_vpath)
             .map_err(http_err)?;
-        // Quota pre-check (`FEATURES.md` #49): the declared length is the
+        // Quota pre-check: the declared length is the
         // only size known this early — an overwrite's replaced bytes aren't
         // credited back, same simplification `ops::copy_to` accepts (errs
         // toward the cap sooner, never under-counts). Skipped entirely when
@@ -1706,7 +1706,7 @@ impl UploadBridge {
                 .map_err(Self::upload_err)?;
             // Charge on the actual finalized size, not the declared one —
             // `create_session`'s check above only pre-checked, it never
-            // charged (`FEATURES.md` #49, `quota.rs`: check and charge are
+            // charged (`quota.rs`: check and charge are
             // separate calls).
             self.core.charge_quota(user, new_offset as i64);
         }
@@ -2218,7 +2218,7 @@ impl Drop for BuildRunningGuard<'_> {
 }
 
 impl CoreBridge {
-    /// Periodic idle-triggered segment merge (`FEATURES.md` #117). Called
+    /// Periodic idle-triggered segment merge. Called
     /// from `app.rs`'s `spawn_idle_merge` thread on `IDLE_MERGE_INTERVAL`. A
     /// no-op whenever a `/api/admin/index/build` job holds
     /// `index_build_running`, and for every share whose index (if it has
@@ -2297,7 +2297,7 @@ pub(crate) fn open_existing_name_index(
 /// to `sc_search::IndexBuilder`. See `SearchBridge::build_name_index`'s doc
 /// comment for why this is a free function rather than a method.
 ///
-/// `FEATURES.md` #124 "self-throttling index crawler": the walk paces itself
+/// "self-throttling index crawler": the walk paces itself
 /// against `share`'s detected storage class (`crate::storage_class`) so it
 /// doesn't monopolize a disk Jellyfin/Samba are also reading from
 /// (`ShareBootstrap::shared_externally`). See [`CrawlThrottle`]'s doc for
@@ -2331,7 +2331,7 @@ pub(crate) enum CrawlOutcome {
 /// Same crawl as [`build_name_index`], additionally reporting progress
 /// (called at the same batch boundary [`CrawlThrottle`] paces on) and
 /// polling `should_cancel` at that same boundary — the admin-triggered
-/// `/api/admin/index/build` path (`FEATURES.md` #116) needs both, and must
+/// `/api/admin/index/build` path needs both, and must
 /// go through the identical `CrawlThrottle` pacing `build_name_index` always
 /// used rather than a separate, unthrottled walk.
 pub(crate) fn build_name_index_with_progress(
@@ -2375,7 +2375,7 @@ pub(crate) fn build_name_index_with_progress(
         .map(|idx| CrawlOutcome::Built(Box::new(idx)))
 }
 
-/// Crawl pacing for [`build_name_index`]'s walk (`FEATURES.md` #124).
+/// Crawl pacing for [`build_name_index`]'s walk.
 ///
 /// Chosen over `ioprio_set` ("ionice"): idle/best-effort I/O priority
 /// classes only change scheduling under the CFQ/BFQ I/O elevators. The
@@ -2570,8 +2570,8 @@ fn merge_completeness(
 /// silently building a partial index and calling it done.
 /// Walks `path` down, appending every entry to `out`. Returns `Ok(true)` if
 /// the walk ran to completion, `Ok(false)` if `should_cancel` fired partway
-/// (an admin-triggered build's cooperative cancellation, `FEATURES.md`
-/// #116) — an in-progress `Vec` from a cancelled walk is discarded by the
+/// (an admin-triggered build's cooperative cancellation) — an in-progress
+/// `Vec` from a cancelled walk is discarded by the
 /// caller rather than fed to `IndexBuilder`, so a cancelled build never
 /// produces a half-crawled index.
 ///
@@ -3741,7 +3741,7 @@ mod search_bridge_tests {
 
     #[test]
     fn the_toggle_gates_the_build_and_takes_effect_without_a_restart() {
-        // `FEATURES.md` #116/#117 and Two claims in
+        // and Two claims in
         // one test because they are the same claim from both sides:
         //
         //   1. A fresh install (no `config.toml`, so `IndexConfig::default()`
@@ -3918,7 +3918,7 @@ mod search_bridge_tests {
 
     #[test]
     fn crawl_throttle_is_more_conservative_on_slower_storage() {
-        // Locks in `FEATURES.md` #124's actual design intent: rotational and
+        // Locks in's actual design intent: rotational and
         // network storage — the classes where continuous crawl traffic can
         // starve a co-accessed Jellyfin/Samba reader — get a smaller batch
         // and a longer pause than flash does.
@@ -3931,7 +3931,7 @@ mod search_bridge_tests {
 
     #[test]
     fn crawl_throttle_actually_paces() {
-        // Direct proof for FEATURES.md #124: with a small batch/sleep pair, a
+        // Direct proof for: with a small batch/sleep pair, a
         // crawl that crosses several batch boundaries must take at least as
         // long as the sleeps `CrawlThrottle` should have inserted. Log lines
         // can be missed or filtered; wall-clock time cannot lie about

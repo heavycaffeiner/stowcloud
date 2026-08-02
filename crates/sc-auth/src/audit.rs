@@ -110,7 +110,7 @@ impl AuthService {
         Ok(n as u64)
     }
 
-    /// Admin-facing audit read (`FEATURES.md` #158). Newest first, keyed on
+    /// Admin-facing audit read. Newest first, keyed on
     /// `rowid` rather than an offset — a page boundary then stays correct
     /// even while new rows keep landing ahead of it. `before_rowid` is the
     /// last row's `rowid` from the previous page (exclusive); omit it for the

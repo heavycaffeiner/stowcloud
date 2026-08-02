@@ -3,7 +3,7 @@
 //! Everything in this module is behind `feature = "compat-nc"`, including the
 //! `sc-compat-nc` dependency itself, so `--no-default-features` produces a
 //! binary in which none of this — and none of that crate's route strings —
-//! exists at all (`ARCHITECTURE.md` §10.1).
+//! exists at all.
 //!
 //! The dependency arrow points one way by contract: `sc-compat-nc` consumes
 //! the core crates through the port traits it declares, and no core crate
@@ -184,7 +184,7 @@ fn share_root_pseudo_id(share: sc_vfs::ShareId) -> sc_vfs::FileId {
 impl ports::CorePort for NcCore {
     fn home_root(&self, user: UserId) -> PortResult<ShareId> {
         // Clients see one files root. With `homes.enabled = false` (the
-        // default, `ARCHITECTURE.md` §3.1) there is no per-user home share, so
+        // default) there is no per-user home share, so
         // the first grant-projected root is the honest answer — the same one
         // the web UI shows first.
         self.core
@@ -251,7 +251,7 @@ impl ports::CorePort for NcCore {
         let root = self.core.share(share).ok_or(PortError::NotFound)?;
         let (free, total) = root.statfs_free().map_err(port_io)?;
         let used = total.saturating_sub(free);
-        // `quota_bytes` (`user.quota_bytes`, `FEATURES.md` #49) is a
+        // `quota_bytes` (`user.quota_bytes`) is a
         // reporting gate, not a usage-tracking cap:
         // follows the reference server exactly — real numbers only when a
         // quota is actually configured (`Some(n)` with `n > 0`), otherwise

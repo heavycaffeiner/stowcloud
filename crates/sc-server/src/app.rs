@@ -4,7 +4,7 @@
 //! This is the only place in the workspace where the concrete crates meet.
 //! Everything below it is a library that knows nothing about the others; the
 //! wiring order here — storage, then ACL, then domain, then protocols — is
-//! `ARCHITECTURE.md` §1's dependency direction made executable.
+//! 's dependency direction made executable.
 
 use std::sync::Arc;
 
@@ -48,7 +48,7 @@ pub struct App {
     /// stops it before calling `UploadApi::drain()` so the two never race on
     /// the same `UploadEngine::gc()` call.
     pub upload_gc: UploadGcHandle,
-    /// Periodic idle-triggered name-index segment merge (`FEATURES.md` #117).
+    /// Periodic idle-triggered name-index segment merge.
     /// `shutdown.rs` stops it at shutdown, same reasoning as `upload_gc`.
     pub idle_merge: IndexMergeHandle,
     #[cfg(feature = "compat-nc")]
@@ -85,7 +85,7 @@ impl App {
         let acl = Arc::new(sc_acl::AclEngine::new());
         let core = Arc::new(sc_core::Core::new(meta.clone(), acl.clone()));
         // Share links live in their own database, not in `meta.db`: that one
-        // is documented as a disposable cache (`ARCHITECTURE.md` §0.1) and
+        // is documented as a disposable cache and
         // links are not reconstructible from the filesystem. Same Argon2
         // parameters as account passwords — `sc-auth` owns those numbers.
         core.attach_links(sc_core::LinkStore::open_with_config(
@@ -94,11 +94,11 @@ impl App {
         )?)?;
         // Grants live in their own database too, for exactly the reason
         // links do (`sc_core::acl_store`'s module doc): `meta.db` is a
-        // disposable cache (`ARCHITECTURE.md` §0.1), and a grant — "user 7
+        // disposable cache, and a grant — "user 7
         // may read `/vacation` but not `/vacation/private`" — cannot be
         // reconstructed from anything on the filesystem.
         core.attach_acl_store(sc_core::AclStore::open(&data_dir.join("acl.db"))?)?;
-        // Admin-created shares (`FEATURES.md` #40/#157) live in their own
+        // Admin-created shares live in their own
         // database, same reasoning as grants/links above — see
         // `sc_core::share`'s module doc for the id-range split from
         // `config.toml`-derived shares. Attached before `register_shares`
@@ -106,14 +106,14 @@ impl App {
         // override (`share_trash_override`, keyed by its real `ShareId`) is
         // already readable when that share is first registered below.
         core.attach_share_store(sc_core::ShareStore::open(&data_dir.join("shares.db"))?)?;
-        // Quota enforcement (`FEATURES.md` #49) — backed by `sc-auth`'s
+        // Quota enforcement — backed by `sc-auth`'s
         // ledger, not a new store of its own; see `bridge::AuthQuotaSink`.
         core.attach_quota_sink(Arc::new(crate::bridge::AuthQuotaSink {
             auth: auth.clone(),
         }))?;
         register_shares(&core, &cfg)?;
         core.load_persisted_shares()?;
-        // Per-user homes (`FEATURES.md` #47) -- off by default. Not fatal on
+        // Per-user homes -- off by default. Not fatal on
         // failure, same tolerance `register_shares` already has for a single
         // rejected config-file share: a misconfigured `homes.root` should not
         // take down a server that otherwise has nothing to do with homes.
@@ -159,7 +159,7 @@ impl App {
         // rather than pushed.
         let (watcher, ws_hub) = start_watcher_and_ws_hub(&cfg, core.clone());
 
-        // Admin override for `[index] name_enabled` (`FEATURES.md` #116/#117)
+        // Admin override for `[index] name_enabled`
         // — its own tiny DB file, not a `config.toml` rewrite; see
         // `sc_search::settings` module doc for the reasoning.
         let index_settings = Arc::new(sc_search::IndexSettingsStore::open(
@@ -1254,7 +1254,7 @@ impl sc_http::ws::ReadPermCheck for AclReadCheck {
 }
 
 /// Open every configured share. A share that will not open (missing path,
-/// rejected filesystem — `ARCHITECTURE.md`'s filesystem gate) is logged and
+/// rejected filesystem) is logged and
 /// skipped, never silently substituted: startup diagnostics already reported
 /// it, and a half-open share is worse than an absent one.
 pub(crate) fn register_shares(core: &sc_core::Core, cfg: &Config) -> anyhow::Result<()> {
@@ -1320,7 +1320,7 @@ pub fn project_grants(
 
     // Group membership: `sc_auth::AuthService::list_memberships_all` reads
     // every `(user, group_)` row back in one shot — the accessor this used
-    // to wait on before `FEATURES.md` #48 added group CRUD.
+    // to wait on before added group CRUD.
     core.set_group_memberships(auth.list_memberships_all().unwrap_or_default());
 
     tracing::info!(
@@ -1579,7 +1579,7 @@ fn run_upload_gc_pass(uploads: &Arc<sc_upload::UploadEngine>, core: &Arc<sc_core
 }
 
 /// How often to check every share's name index for `needs_merge()`
-/// (`FEATURES.md` #117, "merges on idle").
+/// ("merges on idle").
 ///
 /// "Idle" here is deliberately narrow: it means "no admin-triggered
 /// `/api/admin/index/build` job is running right now" (`CoreBridge::

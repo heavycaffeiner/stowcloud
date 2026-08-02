@@ -1,6 +1,6 @@
 //! `node` table access: fileid allocation, path resolution, rename, GC.
 //!
-//! See `ARCHITECTURE.md` §4.1. The single unique index is `(share, dev, ino,
+//! See The single unique index is `(share, dev, ino,
 //! btime_ns)` — the forward direction (path -> fileid) is answered from a
 //! `statx` result we already have in hand; the reverse direction (fileid ->
 //! path) is answered by rowid lookup + walking `parent` up to the share root
@@ -22,7 +22,7 @@ impl MetaStore {
     /// only thing in `sc-meta` that ever inserts into `node`, and it is only
     /// called by consumers that actually need a stable id (DAV rename
     /// tracking, dead properties, locks, share links —
-    /// `ARCHITECTURE.md` §4.1). A web-UI-only deployment that never calls
+    /// ). A web-UI-only deployment that never calls
     /// this creates zero rows.
     ///
     /// If a row already exists for this physical file, `parent`/`name`/
@@ -126,7 +126,7 @@ impl MetaStore {
     /// joining component names with `/` along the way. `None` means the id
     /// doesn't exist (already GC'd, or never allocated).
     ///
-    /// Deliberately `O(depth)`, not `O(1)` — see `ARCHITECTURE.md` §4.1: the
+    /// Deliberately `O(depth)`, not `O(1)` — see: the
     /// only index is on physical identity, so path resolution is always a
     /// parent-chain walk, never a forward lookup. This is the other half of
     /// the trade that makes `rename_node` a single-row update.
@@ -171,8 +171,7 @@ impl MetaStore {
     /// Rename/move a node in place: a single `UPDATE` of the node's own
     /// `(parent, name)`. Descendants are untouched — they reference their
     /// parent by id, so `resolve_path` for every descendant is correct on
-    /// the very next call with no further writes (`ARCHITECTURE.md` §4.1,
-    /// "measured estimate after the write").
+    /// the very next call with no further writes ("measured estimate after the write").
     pub fn rename_node(&self, id: FileId, new_parent: FileId, new_name: &str) -> anyhow::Result<()> {
         let conn = self.conn()?;
         let n = conn.execute(
@@ -187,7 +186,7 @@ impl MetaStore {
     /// `alive(dev, ino)` supplied by the caller (which actually has a
     /// filesystem handle — `sc-meta` never touches the FS itself). Rows
     /// carrying the `pinned` bit (dead properties / locks / favorites /
-    /// share links reference them, `ARCHITECTURE.md` §4.1) are always kept:
+    /// share links reference them) are always kept:
     /// a live fileid must never be reissued to a different physical file
     /// out from under a client that still remembers it.
     ///

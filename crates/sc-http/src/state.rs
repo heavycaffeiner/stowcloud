@@ -28,7 +28,7 @@ pub enum JobKind {
     Move,
     Delete,
     Archive,
-    /// `POST /api/admin/index/build` (`FEATURES.md` #116) — reuses this same
+    /// `POST /api/admin/index/build` — reuses this same
     /// queue rather than inventing a second progress mechanism.
     IndexBuild,
 }

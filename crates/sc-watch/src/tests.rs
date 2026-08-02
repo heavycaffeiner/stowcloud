@@ -171,7 +171,7 @@ fn pending_queue_over_full_threshold_falls_back_to_full_invalidation() {
     // Two directories dirty at once already exceeds `full_threshold: 1` —
     // the debounce loop must see that before its normal 200 ms window would
     // otherwise flush "a" and "b" individually, and fall back to bumping
-    // the share generation instead (`FEATURES.md` #130).
+    // the share generation instead.
     std::fs::write(dir.path().join("a").join("x.txt"), b"x").unwrap();
     std::fs::write(dir.path().join("b").join("y.txt"), b"y").unwrap();
 
@@ -216,7 +216,7 @@ fn periodic_rescan_notices_a_change_made_without_any_os_event() {
     let watcher = Watcher::start(WatchConfig::default(), core.clone(), tx).unwrap();
     watcher.touch(SHARE, &SafePath::parse("nfsish", 64).unwrap());
 
-    // No filesystem write at all: a periodic rescan (`FEATURES.md` #129) is
+    // No filesystem write at all: a periodic rescan is
     // the only thing that can ever notice a change an NFS/FUSE peer made
     // behind this host's back, since no local inotify event ever fires for
     // it. `rescan_one_share` is the sweep itself (the part that actually

@@ -74,7 +74,7 @@
     oidcTarget = null
   }
 
-  // Per-user quota (`FEATURES.md` #49): `quota_bytes` is the cap, enforced
+  // Per-user quota: `quota_bytes` is the cap, enforced
   // on upload/copy/write against the running `usage_bytes` ledger
   // (`sc_core::quota`'s module doc) — a write that would exceed it is
   // refused with `507 quota.exceeded`, not just reported to NC clients.

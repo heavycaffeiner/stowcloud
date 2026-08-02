@@ -121,7 +121,7 @@ pub struct RootEntry {
     /// the share table (`Core::roots`) — the ACL engine has no share registry
     /// of its own. Carried here because `GET /api/auth/session` used to
     /// hardcode `false`, which left the "shared with another service" badge
-    /// (`FEATURES.md` #133) permanently invisible.
+    /// permanently invisible.
     pub shared_externally: bool,
     /// Whether this share keeps deleted items. Filled in by `Core::roots` for
     /// the same reason as `shared_externally`, and carried to the client so a

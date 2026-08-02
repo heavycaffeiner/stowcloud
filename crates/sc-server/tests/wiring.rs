@@ -182,8 +182,7 @@ async fn status_php_is_served_when_the_compat_layer_is_compiled_in() {
 }
 
 /// `--no-default-features` must not merely stop registering these paths: the
-/// code that produces them is not in the binary at all (`ARCHITECTURE.md`
-/// §10.1). Here we can only check the routing half.
+/// code that produces them is not in the binary at all. Here we can only check the routing half.
 #[cfg(not(feature = "compat-nc"))]
 #[tokio::test(flavor = "multi_thread")]
 async fn compat_paths_are_absent_without_the_feature() {

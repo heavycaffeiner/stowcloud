@@ -2,7 +2,7 @@
 //!
 //! `FileHandle::copy_range_from` prefers the kernel-side primitive
 //! (`copy_file_range` on Linux — reflink on btrfs/XFS, in-kernel copy
-//! otherwise, see / `TECH-STACK.md` §3), but two
+//! otherwise, see /), but two
 //! things fall back to a plain read/write loop: the portable backend (no
 //! such syscall off Linux) and the Linux backend when the kernel primitive
 //! itself reports `EXDEV`/`EOPNOTSUPP`/`ENOSYS`

@@ -1,5 +1,5 @@
 //! `sc-server` — the main binary. It assembles every other crate in the
-//! workspace (`ARCHITECTURE.md` §1) and owns nothing but the assembly:
+//! workspace and owns nothing but the assembly:
 //! config loading, startup diagnostics, master-key management, first-run
 //! bootstrap, graceful shutdown, and a CLI.
 //!
@@ -85,7 +85,7 @@ pub enum Command {
         #[command(subcommand)]
         action: IndexAction,
     },
-    /// Master key management (`FEATURES.md` #156).
+    /// Master key management.
     Masterkey {
         #[command(subcommand)]
         action: MasterkeyAction,
@@ -332,7 +332,7 @@ pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
     let _nc_login_sweeper = app.compat.as_ref().map(|c| c.spawn_login_flow_sweeper());
     // `audit_prune` existed with no periodic caller — the exact "wrote it,
     // never called it" gap the Login Flow v2 sweeper above already had
-    // (`FEATURES.md` #158, `sc_auth::audit::AUDIT_RETENTION_NS`).
+    // (`sc_auth::audit::AUDIT_RETENTION_NS`).
     let _audit_sweeper = app.auth.spawn_audit_sweeper();
     let router = app.router();
 
@@ -392,7 +392,7 @@ pub fn cmd_gc(cli: &Cli) -> anyhow::Result<()> {
         // So walk the share once and answer from the set. A walk failure must
         // abort this share's GC rather than shrink the live set: a partial
         // walk would reap rows for files that do exist, and a reissued fileid
-        // is exactly the corruption `ARCHITECTURE.md` §4.1 forbids.
+        // is exactly the corruption forbids.
         let mut live = std::collections::HashSet::new();
         if let Err(e) = collect_live(&root, &sc_vfs::SafePath::root(), &mut live) {
             tracing::warn!(share = %def.name, error = %e, "share walk failed; skipping node GC for it");
@@ -542,7 +542,7 @@ pub fn cmd_index(cli: &Cli, action: IndexAction) -> anyhow::Result<()> {
 /// on is a per-deployment decision, never automatic. Split out from
 /// `cmd_index` so it is testable without a full `bootstrap`/`App::build`.
 ///
-/// Consults `index.db`'s admin override (`FEATURES.md` #116), not just
+/// Consults `index.db`'s admin override, not just
 /// `config.toml`'s `[index] name_enabled` — an admin who flipped the toggle
 /// on from the web UI expects `sc-server index build` to agree with it
 /// without also editing the config file, same as `App::build`'s own check.
@@ -592,8 +592,8 @@ fn run_index_action(app: &app::App, action: IndexAction) -> anyhow::Result<()> {
                     }
                     Some(idx) => {
                         // Unconditional gate: `app.rs::spawn_idle_merge`
-                        // already runs this same check on a 10-minute timer
-                        // (`FEATURES.md` #117), but an operator running this
+                        // already runs this same check on a 10-minute timer,
+                        // but an operator running this
                         // subcommand by hand has made the "now is a fine
                         // time" judgment themselves, so it isn't repeated
                         // here.
@@ -754,7 +754,7 @@ mod tests {
         result.unwrap();
     }
 
-    /// End-to-end proof for `FEATURES.md` #156 at the CLI layer itself (as
+    /// End-to-end proof for at the CLI layer itself (as
     /// opposed to `sc_auth::AuthService::rotate_master_key` directly, which
     /// `sc-auth`'s own tests already cover): a real account created through
     /// `bootstrap`'s config/key-file plumbing survives `cmd_masterkey_rotate`
@@ -852,7 +852,7 @@ mod tests {
         // `IndexConfig::name_enabled` at all (`config.rs`'s doc comment).
         //
         // `data_dir` is a temp dir, not `Config::default()`'s `/var/lib/sc`
-        // — the gate now also opens `index.db` (`FEATURES.md` #116's admin
+        // — the gate now also opens `index.db` ('s admin
         // override), which needs a real writable directory.
         let dir = tempfile::tempdir().unwrap();
         let cfg = config::Config { data_dir: dir.path().to_path_buf(), ..config::Config::default() };
@@ -873,7 +873,7 @@ mod tests {
     fn name_index_gate_consults_the_admin_override_not_just_config_toml() {
         // An admin who flipped the toggle on via `PATCH /api/admin/index/
         // settings` expects the CLI to agree without touching config.toml
-        // (`FEATURES.md` #116) — and the reverse, an explicit off-override,
+        // — and the reverse, an explicit off-override,
         // must not be masked by a `true` in the config file either.
         let dir = tempfile::tempdir().unwrap();
         let cfg = config::Config { data_dir: dir.path().to_path_buf(), ..config::Config::default() };

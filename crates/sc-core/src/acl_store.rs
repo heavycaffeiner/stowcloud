@@ -4,8 +4,7 @@
 //!
 //! ## Why its own database
 //!
-//! `sc-meta` is documented as a disposable cache (`ARCHITECTURE.md` §0.1:
-//! "can be deleted at any time and the service keeps working") — it is
+//! `sc-meta` is documented as a disposable cache ("can be deleted at any time and the service keeps working") — it is
 //! rebuilt from the filesystem on demand. A grant is not reconstructible
 //! from the filesystem: nothing about `/srv/photos` on disk says "user 7
 //! may read `/vacation` but not `/vacation/private`". Putting grants in
@@ -20,7 +19,7 @@
 //!
 //! Before this module existed, `sc-server::app::project_grants` gave *every
 //! enabled account full permissions on every configured share*, recomputed
-//! from nothing at every startup (`ARCHITECTURE.md`/`app.rs`'s own doc
+//! from nothing at every startup (/`app.rs`'s own doc
 //! comment called this "the honest interim"). That behavior must not
 //! silently vanish out from under a deployment that depends on it — a
 //! server with one admin account and no share access is a server nobody can
@@ -561,7 +560,7 @@ impl crate::Core {
         let store = self.acl_db()?;
         let existing = self.list_grants(&GrantFilter { principal: Some(Principal::User(user)), share: None })?;
         for def in self.share_defs() {
-            // The homes share (`FEATURES.md` #47) is never blanket-granted:
+            // The homes share is never blanket-granted:
             // a root grant here would hand whoever received it every other
             // user's home directory at once. `Core::ensure_home` is the
             // only thing that ever grants access to it, always scoped to

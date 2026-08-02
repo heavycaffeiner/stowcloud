@@ -236,7 +236,7 @@ async function jobDownload(id: string): Promise<Blob> {
   return res.blob()
 }
 
-// ── trash (FEATURES.md #18) ──
+// ── trash ──
 
 async function trashList(): Promise<TrashEntry[]> {
   return request('/trash')
@@ -482,7 +482,7 @@ async function adminSetIndexSettings(nameEnabled: boolean): Promise<IndexSetting
   return request('/admin/index/settings', { method: 'PATCH', body: JSON.stringify({ name_enabled: nameEnabled }) })
 }
 
-/** `POST /api/admin/index/build` (`FEATURES.md` #116) — always crosses the
+/** `POST /api/admin/index/build` — always crosses the
  *  job threshold (a build walks the whole share by design, `bridge.rs`'s
  *  `CrawlThrottle`), so unlike `copy`/`del`/`archive` there is no inline-result
  *  branch here: the server answers `202 { job }` every time. */
@@ -559,7 +559,7 @@ async function adminRestartServer(force: boolean): Promise<void> {
   await request('/admin/server-settings/restart', { method: 'POST', body: JSON.stringify({ force }) })
 }
 
-// ── admin: user management (FEATURES.md #157) ──
+// ── admin: user management ──
 
 async function adminListUsers(): Promise<AdminUser[]> {
   return request('/admin/users')
@@ -573,7 +573,7 @@ async function adminSetUserDisabled(id: number, disabled: boolean): Promise<Admi
   return request(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify({ disabled }) })
 }
 
-/** `null` clears the quota back to unlimited (`FEATURES.md` #49). */
+/** `null` clears the quota back to unlimited. */
 async function adminSetUserQuota(id: number, quotaBytes: number | null): Promise<AdminUser> {
   return request(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify({ quota_bytes: quotaBytes }) })
 }
@@ -593,8 +593,7 @@ async function adminListShares(): Promise<AdminShare[]> {
   return request('/admin/shares')
 }
 
-/** `POST /api/admin/shares` — register a new folder share (`FEATURES.md`
- *  #40/#157: "there is no setting to add folders"). */
+/** `POST /api/admin/shares` — register a new folder share ("there is no setting to add folders"). */
 async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
   return request('/admin/shares', { method: 'POST', body: JSON.stringify(req) })
 }
@@ -626,7 +625,7 @@ async function adminDeleteGrant(id: number): Promise<void> {
   await request(`/admin/grants/${id}`, { method: 'DELETE' })
 }
 
-// ── admin: group management (`FEATURES.md` #48) ──
+// ── admin: group management ──
 // GET/POST /api/admin/groups, PATCH/DELETE /api/admin/groups/{id},
 // POST /api/admin/groups/{id}/members, DELETE /api/admin/groups/{id}/members/{user}.
 
@@ -655,7 +654,7 @@ async function adminRemoveGroupMember(id: number, userId: number): Promise<void>
 }
 
 /** `GET /api/admin/audit[?actor=&event=&since_ns=&until_ns=&before=&limit=]`
- *  (`FEATURES.md` #158). Every filter field optional/unfiltered when
+ * Every filter field is optional and unfiltered when
  *  omitted; `query.before` is the previous page's `AuditPage.next` for
  *  cursor pagination. */
 async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {

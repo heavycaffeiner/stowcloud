@@ -5,7 +5,7 @@
 //!
 //!   1. Enforces the LAN-only bind gate (`validate_bind`) — the control
 //!      that justifies sharing the account password with
-//!      SMB (`ARCHITECTURE.md` §9.2) is a hard refusal, not a warning.
+//!      SMB is a hard refusal, not a warning.
 //!   2. Renders `smb.conf` (`generate_conf`) from `Share`/`Grant`-shaped
 //!      input the caller already resolved — one Samba `[share]` per distinct
 //!      subpath grant, since SMB shares are path-scoped and can't express a
@@ -36,7 +36,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde::{Deserialize, Serialize};
 
-/// `smb.totp_policy` ( "2FA", `ARCHITECTURE.md` §9.2).
+/// `smb.totp_policy`.
 /// TOTP users cannot authenticate SMB with their account password — NTLM has
 /// no slot for a second factor, so allowing it would be a silent 2FA bypass.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,7 +52,7 @@ pub enum TotpPolicy {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SmbConfig {
-    /// SMB is off by default (`ARCHITECTURE.md` §0 "default is least privilege").
+    /// SMB is off by default ("default is least privilege").
     pub enabled: bool,
     pub workgroup: String,
     /// Shared config volume the sidecar reads.
@@ -145,7 +145,7 @@ impl SmbOrchestrator {
         self.public_bind_warning.load(Ordering::SeqCst)
     }
 
-    /// The hard gate ( ①): refuse to proceed if any
+    /// The hard gate: refuse to proceed if any
     /// interface `smbd` would bind is a public address, unless
     /// `cfg.allow_public_bind` is explicitly `true`. When the override is
     /// used, emits an audit event and latches `public_bind_warning_active`.

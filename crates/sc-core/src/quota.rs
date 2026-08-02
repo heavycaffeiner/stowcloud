@@ -1,4 +1,4 @@
-//! Per-user quota enforcement seam (`FEATURES.md` #49).
+//! Per-user quota enforcement seam.
 //!
 //! `Core` never computes usage itself — walking the filesystem on every
 //! write is exactly what this exists to avoid. It only reports byte deltas
@@ -13,7 +13,7 @@
 //! quota-less) deployment state, not a bug.
 //!
 //! Not confused with [`Core::quota`] (`ops.rs`), which answers filesystem
-//! free/used space for RFC 4331 (`FEATURES.md` #72) — a different question
+//! free/used space for RFC 4331 — a different question
 //! about a different resource (the disk, not an account).
 //!
 //! The ledger is a running total of bytes the acting user's own writes have

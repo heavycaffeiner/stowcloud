@@ -68,7 +68,7 @@ pub enum ErrorCode {
     /// silently treated as "all shares" — the app password's scope
     /// contract fails closed here too.
     AuthUnknownShare,
-    /// `PATCH /api/admin/users/{id}`, `quota_bytes: 0` (`FEATURES.md` #49).
+    /// `PATCH /api/admin/users/{id}`, `quota_bytes: 0`.
     /// Rejected rather than silently accepted: a stored `0` reads as
     /// unlimited downstream (`quota_val`'s `$quota > 0` guard,
     /// `crates/sc-compat-nc/src/user.rs`), so accepting it would be a no-op

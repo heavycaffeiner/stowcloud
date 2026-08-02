@@ -365,8 +365,7 @@ impl crate::Core {
 
         let result = (|| -> Result<(), CoreError> {
             let tmp_fh = dest_root.create_excl(&tmp_path, mode)?;
-            // Kernel-side copy ( / `TECH-STACK.md`
-            // §3): reflink on btrfs/XFS when block alignment allows it, an
+            // Kernel-side copy ( /): reflink on btrfs/XFS when block alignment allows it, an
             // in-kernel copy otherwise, no userspace round trip either way.
             // `copy_range_from` falls back to a bounded buffered loop by
             // itself (EXDEV/EOPNOTSUPP/ENOSYS, or always on the portable
@@ -653,7 +652,7 @@ impl crate::Core {
                 if use_trash {
                     self.trash_move(&r, &st)?;
                 } else {
-                    // Quota charge-back (`FEATURES.md` #49): only a permanent
+                    // Quota charge-back: only a permanent
                     // delete actually frees bytes — trashing just relocates
                     // them (`trash.rs` charges on purge instead). Size must be
                     // read before the delete, not after.
@@ -748,7 +747,7 @@ impl crate::Core {
             return Err(CoreError::Conflict);
         }
 
-        // Quota check (`FEATURES.md` #49): a copy duplicates bytes, so it is
+        // Quota check: a copy duplicates bytes, so it is
         // one of the two write paths (with upload finalize) that can grow a
         // user's usage. Directory size comes from the already-cached
         // recursive aggregate (`aggregate.rs`), not a fresh walk. Charged
@@ -863,7 +862,7 @@ impl crate::Core {
         Ok(self.build_entry(d.share, &d.root, &name, &d.path, &st, user))
     }
 
-    /// Atomic replace (`ARCHITECTURE.md` §5.2 / "atomic
+    /// Atomic replace ( / "atomic
     /// replace"): a `.scpart-{rand}` temp file (`part_name`) in the *same*
     /// directory, written, `fsync`-ed, then renamed over the target.
     /// `If-Match` is mandatory for overwriting an existing file. On any
@@ -887,7 +886,7 @@ impl crate::Core {
             return Err(CoreError::Precondition { current_etag: String::new() });
         }
 
-        // Quota check (`FEATURES.md` #49): only the growth this write adds
+        // Quota check: only the growth this write adds
         // over what it replaces counts — a same-size or shrinking edit never
         // needs the cap re-checked.
         let delta = body.len() as i64 - old_size as i64;

@@ -700,7 +700,7 @@ impl UploadEngine {
                 // the rename. Without this an atomic replace silently strips
                 // whatever access the *other* services sharing this directory
                 // (Jellyfin, *arr, rsync) had a moment ago — the exact failure
-                // ARCHITECTURE.md §5.2 exists to prevent. Ownership is
+                // exists to prevent. Ownership is
                 // best-effort inside `transplant_metadata_from`; the mode is
                 // not.
                 fh.transplant_metadata_from(&prev)?;

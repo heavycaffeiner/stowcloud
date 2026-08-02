@@ -8,8 +8,7 @@
 //! [`CoreFileStream`] wraps a single [`sc_vfs::FileHandle`] and reads it in
 //! bounded chunks via `read_at` — never more than [`CHUNK`] bytes per
 //! syscall, so memory use does not scale with file size. The handle is
-//! opened once and kept for the stream's entire lifetime: `ARCHITECTURE.md`
-//! §5.2 wants a download to keep serving a single consistent version even if
+//! opened once and kept for the stream's entire lifetime: wants a download to keep serving a single consistent version even if
 //! another service replaces the file mid-transfer, and an already-open fd on
 //! a POSIX filesystem keeps referencing the inode it was opened against
 //! regardless of what a rename-based atomic replace does to the directory

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Audit log browsing (`FEATURES.md` #158) — read-only over
+  // Audit log browsing — read-only over
   // `GET /api/admin/audit`, cursor-paginated on `rowid` (newest first).
   // `crates/sc-auth/src/audit.rs::AuthService::list_audit` is the source;
   // this screen adds no write path, only filters (actor, event name) and a

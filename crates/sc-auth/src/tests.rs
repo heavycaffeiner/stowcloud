@@ -785,7 +785,7 @@ fn a_pre_role_database_migrates_in_place() {
 }
 
 // ------------------------------------------------------------- groups --
-// `FEATURES.md` #48 — group CRUD + membership. `groups.rs` mirrors
+// — group CRUD + membership. `groups.rs` mirrors
 // `users.rs`'s shape; these tests mirror its own (`create_user_reports_
 // duplicate_name_distinctly`, `delete_user_removes_dependent_rows`, etc.).
 
@@ -891,7 +891,7 @@ fn delete_group_unknown_is_reported() {
 }
 
 // ------------------------------------------------- master key rotation --
-// `FEATURES.md` #156. These are end-to-end proofs, not unit-level seal/open
+// These are end-to-end proofs, not unit-level seal/open
 // round trips: they drive the exact same code paths a real client would
 // (`login`+`verify_totp`, `verify_basic`, `export_smbpasswd`) against a
 // freshly constructed `AuthService` built with the *new* key only, to prove

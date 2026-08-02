@@ -26,7 +26,7 @@ use std::io::{self, Read, Write};
 /// Bytes read per `Read::read` call while streaming an entry's content —
 /// same bound as `sc_core::stream::CHUNK`, kept independent here so this
 /// module has no `sc-core` dependency (`sc-http` never depends on it; see
-/// `ARCHITECTURE.md` §1).
+/// ).
 const COPY_CHUNK: usize = 256 * 1024;
 
 const LOCAL_HEADER_SIG: u32 = 0x0403_4b50;

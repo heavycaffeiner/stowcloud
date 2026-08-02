@@ -1,4 +1,4 @@
-//! Per-user home directories (`FEATURES.md` #47): off by default
+//! Per-user home directories: off by default
 //! (`sc-server::config::HomesConfig::enabled`). Not a new resolution
 //! mechanism — the same grant-projected virtual root every other share
 //! already uses (`resolve.rs`'s doc comment: "the label -> (ShareRoot,
@@ -7,8 +7,7 @@
 //! `homes.root`; the first time any given user is resolved or lists their
 //! roots, [`Core::ensure_home`] creates `{homes.root}/{user id}` (idempotent
 //! — `VfsError::AlreadyExists` is not an error here), seeded from
-//! `{homes.root}/.template` when that directory exists (`FEATURES.md` #47,
-//! "creates from a template when enabled"; an empty directory otherwise —
+//! `{homes.root}/.template` when that directory exists ("creates from a template when enabled"; an empty directory otherwise —
 //! see [`TEMPLATE_DIR_NAME`]), and persists exactly one grant scoping that
 //! user to that one subpath, full permissions, label "Home".
 //!
@@ -16,7 +15,7 @@
 //! no notion of usernames anywhere else (`sc-acl`/`sc-vfs`/`sc-meta` all
 //! address a person by opaque `UserId` only), and the host directory name
 //! is never shown to a client anyway — the virtual root label is
-//! (`FEATURES.md` #46, "host paths fully hidden").
+//! ("host paths fully hidden").
 //!
 //! Containment: the per-user subdirectory is created via `ShareRoot::mkdir`
 //! (`openat2(RESOLVE_BENEATH)`, same as every other directory creation in
@@ -46,7 +45,7 @@ pub(crate) const HOME_SHARE_ID: ShareId = ShareId::new(999_999);
 
 pub(crate) const HOME_LABEL: &str = "Home";
 
-/// Optional template directory (`FEATURES.md` #47, "creates from a template
+/// Optional template directory ("creates from a template
 /// when enabled"), a sibling of the per-user directories directly under
 /// `homes.root`. Convention over config: an admin who wants new homes
 /// pre-populated drops files under `{homes.root}/.template`; one that

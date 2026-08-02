@@ -13,7 +13,7 @@ sc-meta     = { path = "../sc-meta" }
 sc-acl      = { path = "../sc-acl" }
 # Share-link passwords reuse `sc-auth`'s Argon2id parameters rather than
 # inventing a second set (see `links.rs`). The arrow is
-# the sanctioned direction: `ARCHITECTURE.md` §1 lists `sc-auth` above
+# the sanctioned direction: lists `sc-auth` above
 # `sc-core` ("domain API assembled from the above"), and `sc-auth` depends on
 # `sc-vfs` only, so there is no cycle.
 sc-auth     = { path = "../sc-auth" }

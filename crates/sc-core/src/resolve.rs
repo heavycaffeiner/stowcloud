@@ -1,5 +1,5 @@
 //! The single entry point that turns a virtual path (`/{label}/sub/path`)
-//! into `(ShareRoot, SafePath)` and checks the ACL — `ARCHITECTURE.md` §3.2:
+//! into `(ShareRoot, SafePath)` and checks the ACL —:
 //! "this mapping is the core of path concealment... the label → (ShareRoot,
 //! SafePath) conversion happens in exactly one place, the request entry
 //! point." Every other `Core` method goes through
@@ -47,7 +47,7 @@ impl crate::Core {
     }
 
     pub(crate) fn resolve_want(&self, user: UserId, vpath: &str, want: Perms) -> Result<Resolved, CoreError> {
-        // No-op when homes are disabled (`FEATURES.md` #47); otherwise a
+        // No-op when homes are disabled; otherwise a
         // one-time-per-user mkdir + grant so "/Home/..." resolves the same
         // way any other grant-projected label does, with no branch below
         // this point needing to know homes exist at all.
@@ -103,7 +103,7 @@ impl crate::Core {
     /// Resolves the per-share flags from the share table on the way out: the
     /// ACL engine has no share registry, so it leaves both `false`.
     pub fn roots(&self, user: UserId) -> Vec<sc_acl::RootEntry> {
-        // One-time home creation (`FEATURES.md` #47) so a brand new user's
+        // One-time home creation so a brand new user's
         // very first root listing already includes "Home" instead of only
         // showing it after some other call happens to trigger it first.
         if let Err(e) = self.ensure_home(user) {

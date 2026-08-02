@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Group management (`FEATURES.md` #48) — create/rename/delete groups and
+  // Group management — create/rename/delete groups and
   // manage membership, then hand a group principal to `GrantManagementSection`
   // the exact same way `UserManagementSection` hands it a user principal.
   // GET/POST /api/admin/groups, PATCH/DELETE /api/admin/groups/{id},

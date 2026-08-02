@@ -1,7 +1,7 @@
 //! WebDAV dead properties (`PROPPATCH`-set arbitrary properties). Stored
 //! keyed by fileid, never as filesystem xattrs — writing xattrs would
 //! collide with other services/backup tools touching the same tree
-//! (`ARCHITECTURE.md` §8).
+//! Dead WebDAV properties, stored by fileid so a rename carries them.
 
 use sc_vfs::FileId;
 use rusqlite::params;
@@ -32,7 +32,7 @@ impl MetaStore {
         Ok(rows)
     }
 
-    /// Setting a property pins the node (`ARCHITECTURE.md` §4.1's "there's a
+    /// Setting a property pins the node ('s "there's a
     /// reason it can't be deleted" bit) so `gc_dead_nodes` won't reap it out
     /// from under the property that references it.
     pub fn set_prop(&self, id: FileId, ns: &str, name: &str, value: &str) -> anyhow::Result<()> {

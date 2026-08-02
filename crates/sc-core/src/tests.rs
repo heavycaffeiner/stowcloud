@@ -17,7 +17,7 @@ fn setup() -> (Core, tempfile::TempDir) {
 
 /// Same as `setup()`, but with a caller-chosen policy — used by the trash
 /// tests below, which need `trash: ShareLocal` explicitly now that
-/// `SharePolicy::default()` is `Off` (`ARCHITECTURE.md` §5.3).
+/// `SharePolicy::default()` is `Off`.
 fn setup_with_policy(policy: SharePolicy) -> (Core, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let meta = Arc::new(MetaStore::open_in_memory().unwrap());

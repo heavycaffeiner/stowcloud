@@ -1,5 +1,5 @@
 //! `Core::create_share`/`update_share`/`delete_share` — the admin surface
-//! `FEATURES.md` #40/#157 was missing ("there is no setting to add
+//! was missing ("there is no setting to add
 //! folders"). Covers the failure modes the admin UI needs to tell apart
 //! (nonexistent path, not a directory, duplicate name, overlapping share),
 //! that a `config.toml` share's edits are kept as overrides the next start

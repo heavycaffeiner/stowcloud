@@ -152,7 +152,7 @@ describe('mockApi admin user management', () => {
 
 describe('mockApi admin share management', () => {
   // `ShareManagementSection.svelte` — the screen that fixes "there is no
-  // setting to add folders" (`FEATURES.md` #40/#157).
+  // setting to add folders".
 
   it('creates a share and it appears in the list', async () => {
     const created = await mockApi.adminCreateShare({ name: 'Recipes', host_path: '/srv/recipes' })
@@ -356,7 +356,7 @@ describe('mockApi admin grant management', () => {
 })
 
 describe('mockApi admin group management', () => {
-  // `GroupManagementSection.svelte` (`FEATURES.md` #48) — group CRUD plus
+  // `GroupManagementSection.svelte` — group CRUD plus
   // membership, then a group principal is handed to the same
   // `GrantManagementSection` the user screen already uses.
 

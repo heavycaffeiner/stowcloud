@@ -32,7 +32,7 @@ impl MetaStore {
     /// connection is mid-read, which at shutdown is exactly when we want to
     /// wait instead. This is not a durability measure — the WAL is already
     /// durable, and this whole database is a rebuildable cache
-    /// (`ARCHITECTURE.md` §0.1) — it just means the next start has nothing
+    /// — it just means the next start has nothing
     /// to replay.
     pub fn wal_checkpoint(&self) -> anyhow::Result<()> {
         let conn = self.conn()?;

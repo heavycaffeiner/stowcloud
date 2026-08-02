@@ -579,7 +579,7 @@ pub(crate) fn file_copy_range(src: &FileInner, src_off: u64, dst: &FileInner, ds
 /// Needed when *replacing* an existing file: the replacement must inherit the
 /// original's mode before the rename, otherwise the other services sharing the
 /// directory (Jellyfin, *arr, rsync) lose access to a file they could read a
-/// moment earlier. `ARCHITECTURE.md` §5.2 makes this a hard requirement, not a
+/// moment earlier. makes this a hard requirement, not a
 /// nicety — it is one of the things that separates this design from the ones
 /// that treat the share as private storage.
 pub(crate) fn file_set_mode(f: &FileInner, mode: u32) -> Result<(), VfsError> {

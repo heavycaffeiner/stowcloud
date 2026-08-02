@@ -35,7 +35,7 @@ pub struct ShutdownSteps {
     /// In-flight upload sessions swept to a clean resume point.
     pub uploads_drained: bool,
     /// Dirty directory aggregates recomputed and written back
-    /// (`ARCHITECTURE.md` §4.2).
+    /// Graceful-shutdown coordination.
     pub aggregates_flushed: bool,
     /// SQLite WAL folded back into the main database file.
     pub wal_checkpointed: bool,
@@ -45,7 +45,7 @@ pub struct ShutdownSteps {
 ///
 /// None of these steps protect data: uploads are resumable, and the metadata
 /// DB is a rebuildable cache whose only source of truth is the filesystem
-/// (`ARCHITECTURE.md` §0.1). A `kill -9` therefore loses nothing. What a
+/// A `kill -9` therefore loses nothing. What a
 /// clean shutdown buys is that the next start does not have to re-derive any
 /// of it — an exact resume offset, a warm aggregate cache, and a WAL that
 /// does not need replaying.
