@@ -263,6 +263,26 @@ pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
     {
         let mut restrict: Vec<PathBuf> = vec![cfg.data_dir.clone()];
         restrict.extend(cfg.shares.iter().map(|s| s.host_path.clone()));
+        // Samba's config directory is written *at runtime*, by the passdb
+        // publisher thread — and that thread is spawned after this call, so
+        // unlike the request handlers it really is inside the Landlock
+        // domain. Without this rule every republish fails
+        // `io error at /config/smb/smb.conf: Permission denied`, which means
+        // a revoked grant is never withdrawn from the file smbd reads.
+        //
+        // The directory has to exist before the ruleset is built: a rule can
+        // only name a path that opens, and `write_all`'s own `create_dir_all`
+        // would itself be denied once the domain is in force.
+        if cfg.smb.enabled {
+            if let Err(e) = std::fs::create_dir_all(&cfg.smb.config_dir) {
+                tracing::warn!(
+                    path = %cfg.smb.config_dir.display(),
+                    error = %e,
+                    "smb: could not create the config directory; SMB rendering will fail"
+                );
+            }
+            restrict.push(cfg.smb.config_dir.clone());
+        }
         let h = hardening::apply(&restrict);
         tracing::info!(landlock = ?h.landlock, seccomp = ?h.seccomp, "process self-restriction applied (best-effort)");
     }
