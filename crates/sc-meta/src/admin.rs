@@ -1,5 +1,5 @@
 //! DB-size introspection and the incremental-vacuum knob used by the
-//! `degrade` ladder in `DESIGN-FOOTPRINT.md` §4.5.
+//! `degrade` ladder in
 
 use crate::MetaStore;
 

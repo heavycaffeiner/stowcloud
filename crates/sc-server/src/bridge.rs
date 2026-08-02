@@ -1970,7 +1970,7 @@ impl sc_http::content_api::ContentApi for ContentBridge {
 // falls back to a T2 walk — which remains every share until an operator
 // turns `[index] name_enabled` on and runs `sc-server index build` (`lib.rs`
 // `cmd_index`), since **both indexes are off by default**
-// (`DESIGN-FOOTPRINT.md` §2) and nothing here plants one speculatively.
+// and nothing here plants one speculatively.
 //
 // Three things keep an index current once one exists, in ascending order of
 // "how sure are we this path changed":
@@ -2257,7 +2257,7 @@ impl CoreBridge {
 /// (nothing above `sc-vfs` may see one) —
 /// `Core::share_host_path` is documented as the one sanctioned escape hatch
 /// for exactly this kind of trusted server-side infra. One index per share
-/// (not per mount,'s finer split) — every share here
+/// (not per mount) — every share here
 /// already has its own `ShareRoot`, so this is the simpler placement and
 /// still satisfies "delete it and T2 still works" (§4.2).
 fn name_index_dir(core: &sc_core::Core, share: sc_vfs::ShareId) -> Option<PathBuf> {
@@ -2272,7 +2272,7 @@ fn name_index_dir(core: &sc_core::Core, share: sc_vfs::ShareId) -> Option<PathBu
 /// plant a `.scindex/` under every share the moment anyone searched it (or
 /// wrote to it, or a watch event fired for it). That would violate the one
 /// invariant this whole feature has to respect: **both indexes are off by
-/// default** (`DESIGN-FOOTPRINT.md` §2), meaning a share with no index gets
+/// default**, meaning a share with no index gets
 /// zero filesystem footprint from any of this. Checking for `meta` first (the
 /// file `IndexBuilder::build` writes last, atomically) is what keeps that
 /// true.
@@ -3701,7 +3701,7 @@ mod search_bridge_tests {
 
     #[test]
     fn self_writes_create_zero_footprint_when_no_index_exists() {
-        // `DESIGN-FOOTPRINT.md` §2: off by default means *zero* filesystem
+        // off by default means *zero* filesystem
         // footprint until an operator opts in. `note_index_change` runs on
         // every write regardless of whether an index exists, so this proves
         // it never plants one speculatively, and that ordinary writes behave
@@ -3741,7 +3741,7 @@ mod search_bridge_tests {
 
     #[test]
     fn the_toggle_gates_the_build_and_takes_effect_without_a_restart() {
-        // `FEATURES.md` #116/#117 and `DESIGN-FOOTPRINT.md` §2. Two claims in
+        // `FEATURES.md` #116/#117 and Two claims in
         // one test because they are the same claim from both sides:
         //
         //   1. A fresh install (no `config.toml`, so `IndexConfig::default()`

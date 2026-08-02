@@ -258,7 +258,7 @@ pub struct TrashEntry {
     pub deleted_mtime_ns: String,
 }
 
-/// One share's contribution to `/api/admin/storage` (`DESIGN-FOOTPRINT.md` §4).
+/// One share's contribution to `/api/admin/storage`.
 #[derive(Clone, Debug, Serialize)]
 pub struct ShareStorage {
     pub label: String,
@@ -793,7 +793,7 @@ pub trait CoreApi: Send + Sync {
     /// (`index_settings().name_enabled == false`) — starting a build for a
     /// feature the admin has not turned on would silently plant
     /// `.scindex/` directories the "off by default" invariant promises
-    /// won't exist (`DESIGN-FOOTPRINT.md` §2).
+    /// won't exist.
     fn build_name_indexes(
         &self,
         _on_progress: &dyn Fn(u64, Option<String>),

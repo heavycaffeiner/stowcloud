@@ -9,8 +9,8 @@
 //! (four values, matching `sc-search`'s own `decide_threads`) because a
 //! share's filesystem can tell us that much, but the search limiter only
 //! ever needs to know which of the two *tiers* a class falls into — see
-//! [`StorageClass::tier`]. `DESIGN-FOOTPRINT.md` §5 lists a per-storage-class
-//! Tokio blocking-pool resize as **not implemented** — this four-way
+//! [`StorageClass::tier`]. A per-storage-class Tokio blocking-pool resize
+//! was considered and is **not implemented** — this four-way
 //! classification is the only thing today that consumes `StorageClass`, and
 //! it feeds only the search concurrency limiter below; the blocking pool
 //! itself still runs with Tokio's own default size regardless of what's
@@ -24,8 +24,7 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 /// Coarse storage classification for a share, detected from its filesystem
 /// (`sc_vfs::ShareRoot::fstype()`) and, for local block devices, the
-/// kernel's own rotational flag (`DESIGN-FOOTPRINT.md` §5:
-/// `/sys/block/*/queue/rotational`). `sc-server` owns the actual detection
+/// kernel's own rotational flag (`/sys/block/*/queue/rotational`). `sc-server` owns the actual detection
 /// (it has the `ShareRoot`); this crate only needs the resulting class to
 /// pick limits.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -38,7 +37,7 @@ pub enum StorageClass {
     Network,
 }
 
-/// The two-way split actually tabulates values for.
+/// The two-way split the limits below are actually tabulated for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SearchTier {
     Fast,
@@ -59,9 +58,8 @@ impl StorageClass {
 }
 
 /// Folds every storage class touched by one search into the single tier
-/// that governs it.: "a search spanning shares of
-/// different classes takes the most conservative (slowest) one — a single
-/// HDD in the set is what bounds the walk." `Slow` wins over `Fast`
+/// that governs it: a search spanning shares of different classes takes the
+/// most conservative one — a single HDD in the set is what bounds the walk. `Slow` wins over `Fast`
 /// whenever both are present; an empty iterator (no readable roots at all)
 /// defaults to `Fast` since there is nothing to be conservative *about*.
 pub fn fold_tier(classes: impl IntoIterator<Item = StorageClass>) -> SearchTier {
@@ -74,8 +72,7 @@ pub fn fold_tier(classes: impl IntoIterator<Item = StorageClass>) -> SearchTier 
     tier
 }
 
-/// Config-reachable defaults for the two tiers,'s
-/// own numbers.
+/// Config-reachable defaults for the two tiers.
 #[derive(Clone, Copy, Debug)]
 pub struct SearchLimitsConfig {
     pub max_concurrent_fast: u32,
@@ -98,7 +95,7 @@ impl Default for SearchLimitsConfig {
 /// Global concurrent-search cap, split into one semaphore per tier so an
 /// HDD-bound search and an NVMe-bound search don't compete for the same
 /// budget — they aren't contending for the same disk's I/O. Each tier's
-/// *own* cap still bounds it exactly as specifies.
+/// *own* cap still bounds it.
 pub struct SearchConcurrency {
     fast: RwLock<Arc<Semaphore>>,
     slow: RwLock<Arc<Semaphore>>,

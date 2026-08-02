@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS upload_alias (
 CREATE INDEX IF NOT EXISTS idx_upload_alias_session ON upload_alias(session);
 "#;
 
-/// The pragma set from `DESIGN-FOOTPRINT.md` §4.
+/// The pragma set from
 ///
 /// **WAL is not optional here.** Without it SQLite uses a rollback journal,
 /// where a single writer locks out every reader — and this database is

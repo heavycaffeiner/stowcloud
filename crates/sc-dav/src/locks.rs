@@ -154,7 +154,7 @@ mod sqlite_store {
     impl SqliteLockStore {
         pub fn open(path: &Path) -> anyhow::Result<Self> {
             let conn = Connection::open(path)?;
-            // WAL, per `DESIGN-FOOTPRINT.md` §4. Locks are written on every
+            // WAL, per Locks are written on every
             // LOCK/UNLOCK and read on every write method; with the default
             // rollback journal a single writer locks out all readers, which
             // surfaces as `database is locked` under real concurrency.

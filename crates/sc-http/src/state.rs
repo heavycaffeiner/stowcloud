@@ -274,7 +274,7 @@ impl JobStore {
     fn from_conn(conn: Connection) -> anyhow::Result<Self> {
         // WAL so a poll (reader) never blocks behind the runner's next
         // progress write, same as `sc_upload::db` / `sc_search::settings`
-        // (`DESIGN-FOOTPRINT.md` §4) — but sync is FULL here, not NORMAL like
+        // — but sync is FULL here, not NORMAL like
         // those two, and deliberately not copied from them: their data is
         // regenerable (an upload resumes, an index rebuilds), while a
         // `job_results` row is the only record that a destructive act

@@ -14,7 +14,7 @@
 //! §4.1/§4.2: **no path column**, **no index besides `node_ident`**. Path
 //! resolution is always `parent`-chain walking, never a stored string —
 //! that's what makes directory rename an `O(1)` single-row `UPDATE` instead
-//! of an `O(subtree)` fan-out (`DESIGN-FOOTPRINT.md` §2).
+//! of an `O(subtree)` fan-out.
 
 mod admin;
 mod etag;
@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS share_gen (
 /// Deliberately excludes `page_size` and `auto_vacuum` — those two are
 /// database-level, must be set before the first table is created, and are
 /// applied exactly once via the bootstrap connection in `open_inner`
-/// (`DESIGN-FOOTPRINT.md` §4, "SQLite configuration").
+/// ("SQLite configuration").
 fn apply_common_pragmas(conn: &Connection) -> rusqlite::Result<()> {
     // `busy_timeout` leads deliberately. It governs how every statement after
     // it behaves under contention, and `journal_mode` is the one that needs an
@@ -129,7 +129,7 @@ pub struct MetaStore {
     /// connection closes; without this, an idle pool could drop the data
     /// out from under later calls.
     _keepalive: Mutex<Option<Connection>>,
-    /// `DESIGN-FOOTPRINT.md` §4.4's always-on free-space floor. Driven from
+    /// 's always-on free-space floor. Driven from
     /// outside (`sc-server`'s sampler, which is the only thing that knows
     /// what volume this database sits on and what `db.min_free_bytes` is);
     /// `sc-meta` never touches the filesystem itself.
@@ -167,7 +167,7 @@ impl MetaStore {
             )?,
         };
 
-        // MUST happen before any table is created (DESIGN-FOOTPRINT.md §4).
+        // MUST happen before any table is created.
         // Silently ignored by SQLite on a database that already has tables,
         // which makes re-opening an existing store harmless.
         bootstrap.execute_batch("PRAGMA page_size = 4096; PRAGMA auto_vacuum = INCREMENTAL;")?;
@@ -211,7 +211,7 @@ impl MetaStore {
 
     /// Stop (or resume) the writes that make this database *bigger*.
     ///
-    /// `DESIGN-FOOTPRINT.md` §4.4: independent of `db.size_guard`, and not
+    /// independent of `db.size_guard`, and not
     /// turn-off-able by policy, because it is what stands between a full
     /// volume and a corrupt SQLite file. The caller is `sc-server`'s
     /// free-space sampler.
@@ -246,7 +246,7 @@ impl MetaStore {
         anyhow::ensure!(
             !self.writes_blocked(),
             "metadata store is read-only: free space on its volume is below \
-             db.min_free_bytes (DESIGN-FOOTPRINT.md §4.4)"
+             db.min_free_bytes"
         );
         Ok(())
     }

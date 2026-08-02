@@ -753,7 +753,7 @@ const mockAuthState: {
   chunkMin: number
   chunkDefault: number
   /** `FEATURES.md` #116 — the name index's persisted runtime override,
-   *  off by default same as the real server (`DESIGN-FOOTPRINT.md` §2). */
+   *  off by default same as the real server. */
   indexNameEnabled: boolean
   /** The demo account starts *linked* (`docs/proposals/stowcloud-0-oidc-login.md`
    *  §4.3.2). That is the state worth having available without a server: it
@@ -947,7 +947,7 @@ async function adminUnlinkUserOidc(id: number): Promise<AdminOidcUnlinkResult> {
   }
 }
 
-// ── settings (DESIGN-FOOTPRINT.md §4) ──
+// ── settings ──
 // Mirrors http.ts's real-server surface so the settings screens behave
 // identically under `VITE_API_MOCK=1` and against the real backend — the
 // same convention as every other function in this file.

@@ -55,11 +55,11 @@ impl From<SymlinkPolicyCfg> for sc_vfs::SymlinkPolicy {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DbConfig {
-    /// `DESIGN-FOOTPRINT.md` §4: off by default. Enabling it does not turn on
+    /// off by default. Enabling it does not turn on
     /// any automatic remediation — crossing `max_bytes` only flips
     /// `Diagnostics::degraded_reasons()` to include `"db_size_guard_tripped"`,
     /// which `GET /api/health` can then report as a bare degraded/not-degraded
-    /// signal (`DESIGN-FOOTPRINT.md` §4.5: an earlier draft specified a
+    /// signal (an earlier draft specified a
     /// five-step automatic degrade ladder — reap, halve audit retention,
     /// incremental vacuum, tighten allocation, block writes — none of which
     /// runs). Reclaiming space is the always-manual `sc-server gc`. Size/growth
@@ -126,7 +126,7 @@ impl Default for WatchConfig {
     }
 }
 
-/// DESIGN-FOOTPRINT.md §2 / ARCHITECTURE.md §4.1: both off by default.
+/// / ARCHITECTURE.md §4.1: both off by default.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct IndexConfig {

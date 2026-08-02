@@ -350,7 +350,7 @@ impl App {
         // while the server kept running, so an aborted session's `.scpart`
         // or a crash's orphaned part file sat on disk until an operator
         // noticed and cleaned it by hand — on the 32 GB system-SSD budget
-        // this deployment is sized to (`DESIGN-FOOTPRINT.md` §1), that is a
+        // this deployment is sized to, that is a
         // disk-fill bug, not just clutter. This is that missing caller.
         let upload_gc = spawn_upload_gc(uploads.clone(), core.clone());
 
@@ -1474,7 +1474,7 @@ fn start_watcher_and_ws_hub(
 /// real expirations, not a share walk. Not config-exposed: there is no
 /// legitimate reason to tune it away from the documented number — shorter
 /// wastes a listing, longer widens the exact disk-fill window
-/// (`DESIGN-FOOTPRINT.md` §1, 32 GB system-SSD budget) this loop exists to
+/// (32 GB system-SSD budget) this loop exists to
 /// close.
 const UPLOAD_GC_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 

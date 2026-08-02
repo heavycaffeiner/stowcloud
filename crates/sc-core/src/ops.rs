@@ -241,7 +241,7 @@ impl crate::Core {
         let name = r.path.name().unwrap_or("").to_string();
         let mut entry = self.build_entry(r.share, &r.root, &name, &r.path, &st, user);
         if entry.id.is_none() {
-            // `DESIGN-FOOTPRINT.md` §2's "lazy allocation" table lists exactly two
+            // 's "lazy allocation" table lists exactly two
             // kinds of caller that need a stable id at all: WebDAV/NC sync,
             // and "dead properties · locks · favorites · share links" — and
             // a share link is created from a *specific, already-named*

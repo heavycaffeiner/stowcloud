@@ -1,5 +1,5 @@
 //! Storage-class detection for the search resource limiter
-//! (`DESIGN-FOOTPRINT.md` §5). `sc_vfs::ShareRoot`
+//!. `sc_vfs::ShareRoot`
 //! already exposes what a share's filesystem is (`fstype()`) and which
 //! block device backs it (`root_dev()`); this module turns those into an
 //! `sc_http::search_limits::StorageClass` without needing anything new from
@@ -19,8 +19,7 @@ use sc_vfs::{FsType, ShareId, ShareRoot};
 /// makes for NFS/CIFS's thread count).
 ///
 /// Everything else is a local filesystem, classified by the kernel's own
-/// rotational flag (`DESIGN-FOOTPRINT.md` §5:
-/// `/sys/block/*/queue/rotational`) — see `detect_local`.
+/// rotational flag (`/sys/block/*/queue/rotational`) — see `detect_local`.
 pub fn detect(root: &ShareRoot) -> StorageClass {
     match root.fstype() {
         FsType::Nfs | FsType::Cifs | FsType::Fuse => StorageClass::Network,
@@ -39,7 +38,7 @@ fn detect_local(root_dev: u64) -> StorageClass {
             // NVMe devices live under an `nvme` subsystem directory
             // (`/sys/devices/.../nvme/nvme0/nvme0n1/...`); everything else
             // non-rotational is a SATA/SAS SSD. `/sys/block/*/queue/
-            // rotational` alone (DESIGN-FOOTPRINT.md §5) only distinguishes
+            // rotational` alone only distinguishes
             // spinning vs. flash, not which kind of flash — this is an
             // additional, cheap classification on top of it.
             if path.to_string_lossy().contains("nvme") {
@@ -77,8 +76,7 @@ fn rotational_from_sysfs(major: u32, minor: u32) -> Option<(bool, std::path::Pat
 }
 
 /// Non-Linux (the dev host, Windows): there is no `/sys/block` to consult,
-/// and the dev host is never the deployment target — `DESIGN-FOOTPRINT.md`
-/// §5's detection is Linux-specific. Default to the permissive class rather
+/// and the dev host is never the deployment target —'s detection is Linux-specific. Default to the permissive class rather
 /// than pretending to detect something that isn't there, so local
 /// iteration on the dev host stays fast.
 #[cfg(not(target_os = "linux"))]

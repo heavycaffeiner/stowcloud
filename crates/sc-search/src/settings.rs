@@ -1,5 +1,5 @@
 //! Persisted admin override for whether the T3 name index is turned on
-//! (`FEATURES.md` #116/#117, `DESIGN-FOOTPRINT.md` §2 "both indexes are off
+//! (`FEATURES.md` #116/#117, "both indexes are off
 //! by default").
 //!
 //! This does *not* rewrite `config.toml`: an admin toggle from the web UI has

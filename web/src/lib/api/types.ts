@@ -104,7 +104,7 @@ export interface UserInfo {
   smb_enabled: boolean
 }
 
-// ── settings (DESIGN-FOOTPRINT.md §4) ──
+// ── settings ──
 
 export interface AppPasswordInfo {
   id: number
@@ -139,7 +139,7 @@ export interface StorageShareUsage {
   total_bytes: number
 }
 
-/** `GET /api/admin/storage` (`DESIGN-FOOTPRINT.md` §4.2). The server today
+/** `GET /api/admin/storage`. The server today
  *  answers only `db_bytes`/`shares` — the richer shape in the design doc
  *  (breakdown, growth, guard state, preview cache) isn't wired yet; see the
  *  admin settings section's own comment for how it degrades. */

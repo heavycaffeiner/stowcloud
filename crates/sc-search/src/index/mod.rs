@@ -668,7 +668,7 @@ impl NameIndex {
     /// to `share`.
     ///
     /// Built on top of [`Self::query`] rather than a dedicated structure:
-    /// `DESIGN-FOOTPRINT.md` §2 deliberately has no `parent -> children`
+    /// deliberately has no `parent -> children`
     /// index anywhere in this design (forward lookups are not needed for
     /// search — see that doc's §2 table), so this does not add one either.
     /// It queries for `parent` as a substring, then keeps only hits whose own

@@ -120,8 +120,7 @@ fn stat_entry_ids_are_distinct_and_stable_across_repeated_calls() {
     assert_eq!(a1, a2, "the same file must report the same id on a later stat");
 }
 
-/// `list()` must keep behaving exactly as documented (`DESIGN-FOOTPRINT.md`
-/// §2, "lazy allocation"): a plain directory listing is the one thing that must
+/// `list()` must keep behaving exactly as documented ("lazy allocation"): a plain directory listing is the one thing that must
 /// never allocate, because it can address an unbounded number of entries
 /// merely by being browsed. The fix for `stat_entry` above must not have
 /// leaked into `build_entry`, which both functions share.

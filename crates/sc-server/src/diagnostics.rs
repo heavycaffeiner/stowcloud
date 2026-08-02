@@ -1,5 +1,5 @@
 //! Startup self-diagnostics, in the spirit of `DEPLOYMENT.md` §2 and
-//! `DESIGN-FOOTPRINT.md` §4.3: print exactly what security/perf-relevant
+//! print exactly what security/perf-relevant
 //! kernel features are available, distinguish "not present" from "blocked
 //! by policy" wherever the kernel lets us, and gate share registration on
 //! filesystem type.
@@ -190,7 +190,7 @@ fn volume_stats(_path: &Path) -> Option<(u64, u64)> {
     None
 }
 
-/// Spec-based DB-size-guard recommendation from `DESIGN-FOOTPRINT.md` §4.3.
+/// Spec-based DB-size-guard recommendation from
 fn guard_recommendation(volume_total: Option<u64>) -> Option<(bool, u64)> {
     const GIB: u64 = 1024 * 1024 * 1024;
     let total = volume_total?;
@@ -230,7 +230,7 @@ pub struct Diagnostics {
     pub max_bytes: u64,
     pub volume_total: Option<u64>,
     pub volume_free: Option<u64>,
-    /// `cfg.db.min_free_bytes` at startup — `DESIGN-FOOTPRINT.md` §4.4's
+    /// `cfg.db.min_free_bytes` at startup —'s
     /// always-on floor, which is independent of `db_size_guard` and has no
     /// off switch. Paired with [`FREE_BYTES`] in
     /// [`Diagnostics::degraded_reasons`].
@@ -423,7 +423,7 @@ pub fn sample_storage_once(
                 min_free_bytes,
                 "free space on the metadata volume fell below db.min_free_bytes: \
                  refusing new fileid/property allocations until it recovers \
-                 (DESIGN-FOOTPRINT.md §4.4). Browsing, downloads and uploads are \
+. Browsing, downloads and uploads are \
                  unaffected."
             );
         } else {
@@ -438,7 +438,7 @@ pub fn sample_storage_once(
     free
 }
 
-/// Spawn the periodic sampler. `DESIGN-FOOTPRINT.md` §4.4's floor and cap are
+/// Spawn the periodic sampler.'s floor and cap are
 /// only a floor and a cap if something keeps looking — `volume_free` and
 /// `db_bytes` on the startup snapshot are single readings taken before the
 /// server ever accepted a request.
@@ -917,7 +917,7 @@ mod tests {
         assert!(!d.is_degraded(5000, PLENTY));
     }
 
-    /// `DESIGN-FOOTPRINT.md` §4.4: "**Independent of the guard** ... it
+    /// "**Independent of the guard** ... it
     /// cannot be turned off." Both halves of that sentence are the test.
     #[test]
     fn the_free_space_floor_is_independent_of_the_size_guard_and_has_no_off_switch() {

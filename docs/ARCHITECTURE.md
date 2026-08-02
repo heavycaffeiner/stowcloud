@@ -271,7 +271,7 @@ does not disturb lazy allocation.
   fileid is never reissued — that would cause an NC client to delete and
   re-download it.
 
-Size math and hard guards are in **`DESIGN-FOOTPRINT.md`**.
+Size math and hard guards are in **`proposals/stowcloud-11-footprint.md`**.
 
 ### 4.2 ETag
 
@@ -864,7 +864,7 @@ convention around named variables. Icons 24px, touch targets minimum 48px,
 | Upload overhead | < 5% over raw disk write |
 
 Full budget analysis and mitigations on a 12 TB HDD RAID are in
-**`DESIGN-FOOTPRINT.md`**.
+**`proposals/stowcloud-11-footprint.md`**.
 
 ---
 

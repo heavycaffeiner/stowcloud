@@ -669,7 +669,7 @@ impl UploadEngine {
                 // (up to `session_ttl`, 24h by
                 // default) -- that only moves the problem from "a corrupt
                 // file at the destination" to "a full-size orphan slowly
-                // filling the 32 GB budget" (`DESIGN-FOOTPRINT.md` §1).
+                // filling the 32 GB budget".
                 // Unlink now. The client's declared digest no longer matches
                 // what actually landed on disk, so the session cannot be
                 // usefully resumed either -- dropping it forces a fresh

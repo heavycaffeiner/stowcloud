@@ -3520,7 +3520,7 @@ async fn admin_set_index_settings(
 /// queue `/api/jobs/{id}` already polls/cancels, rather than a second
 /// progress mechanism. `501`s if the index is off — starting a build for a
 /// feature the admin has not enabled would plant `.scindex/` directories the
-/// "off by default" invariant (`DESIGN-FOOTPRINT.md` §2) promises won't
+/// "off by default" invariant promises won't
 /// exist.
 async fn admin_build_index(State(state): State<AppState>, principal: Option<Extension<Principal>>) -> Response {
     let principal = match principal_or_401(principal) {
@@ -3738,7 +3738,7 @@ async fn admin_set_network_settings(
 }
 
 /// `PATCH /api/admin/server-settings/db` — the DB size-guard trio
-/// (`DESIGN-FOOTPRINT.md` §4). Restart-required: `Diagnostics` reads these at
+///. Restart-required: `Diagnostics` reads these at
 /// boot.
 async fn admin_set_db_settings(
     State(state): State<AppState>,

@@ -71,7 +71,7 @@ impl MetaStore {
                 )?;
             } else {
                 // Still refresh the cheap sort/display cache even when
-                // identity didn't change (§5 of DESIGN-FOOTPRINT.md: size/
+                // identity didn't change (§5 of: size/
                 // mtime here exist purely to avoid RAID seeks).
                 conn.execute(
                     "UPDATE node SET size = ?1, mtime_ns = ?2 WHERE id = ?3",
@@ -172,7 +172,7 @@ impl MetaStore {
     /// `(parent, name)`. Descendants are untouched — they reference their
     /// parent by id, so `resolve_path` for every descendant is correct on
     /// the very next call with no further writes (`ARCHITECTURE.md` §4.1,
-    /// `DESIGN-FOOTPRINT.md` §2 "measured estimate after the write").
+    /// "measured estimate after the write").
     pub fn rename_node(&self, id: FileId, new_parent: FileId, new_name: &str) -> anyhow::Result<()> {
         let conn = self.conn()?;
         let n = conn.execute(

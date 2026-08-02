@@ -171,8 +171,7 @@ mark per mount, versus the ~500 MB a 300k-directory tree needs from
 config file written against the full design doesn't fail to parse, but
 `crates/sc-watch/src/lib.rs` treats `WatchBackend::Fanotify` as an **alias
 for `InotifyFull`** and logs a warning at `start()`. Building the real
-fanotify path is unstarted work, not a rounding error — `DESIGN-FOOTPRINT.md`
-§3 has the kernel-memory math it would recover.
+fanotify path is unstarted work, not a rounding error — `proposals/stowcloud-11-footprint.md` has the kernel-memory math it would recover.
 
 **None of this is switched on today.** `Watcher::start` is called from
 `sc-server`'s `AppState::build`, but nothing in the workspace ever calls

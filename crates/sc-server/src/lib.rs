@@ -56,7 +56,7 @@ pub enum Command {
     Caps,
     /// First-run bootstrap: print + persist a one-time setup token.
     Setup,
-    /// Run housekeeping (DB incremental vacuum; see `DESIGN-FOOTPRINT.md` §4.5).
+    /// Run housekeeping (DB incremental vacuum; see).
     Gc,
     /// Dump the route table. `--json` for machine-readable output (the
     /// Compat-isolation CI gate greps this).
@@ -70,7 +70,7 @@ pub enum Command {
     /// inspect the on-disk `.scindex/names` a share may have. Every
     /// subcommand refuses to run unless `[index] name_enabled = true` is set
     /// in the config — the same "off by default, never automatic" rule
-    /// `DESIGN-FOOTPRINT.md` §2 states for the feature as a whole; the flag
+    /// states for the feature as a whole; the flag
     /// existed in `Config` before this and nothing read it (`config.rs`'s
     /// `IndexConfig` doc comment), so this is what makes it live.
     ///
@@ -292,7 +292,7 @@ pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
     let min_free_bytes = cfg.db.min_free_bytes;
     let app = app::App::build(cfg, &key)?;
 
-    // `DESIGN-FOOTPRINT.md` §4.4's always-on floor and its size cap. Both have
+    // 's always-on floor and its size cap. Both have
     // to be sampled by something to be a floor and a cap at all:
     // `Diagnostics::volume_free` and `db_bytes` are single readings taken
     // before the server accepted its first request. Sampled once here so a
@@ -378,7 +378,7 @@ pub fn cmd_gc(cli: &Cli) -> anyhow::Result<()> {
     let meta = sc_meta::MetaStore::open(&db_path)?;
     let before = meta.size_bytes()?;
 
-    // Step 1 (`DESIGN-FOOTPRINT.md` §4.5): reap `node` rows whose `(dev, ino)`
+    // Step 1: reap `node` rows whose `(dev, ino)`
     // is gone. That needs a live share tree to check against, which means
     // opening the shares — so build the domain layer, not just the DB.
     let app = app::App::build(cfg, &key)?;
@@ -538,7 +538,7 @@ pub fn cmd_index(cli: &Cli, action: IndexAction) -> anyhow::Result<()> {
     run_index_action(&app, action)
 }
 
-/// `DESIGN-FOOTPRINT.md` §2: both indexes are off by default, and turning one
+/// both indexes are off by default, and turning one
 /// on is a per-deployment decision, never automatic. Split out from
 /// `cmd_index` so it is testable without a full `bootstrap`/`App::build`.
 ///
@@ -553,7 +553,7 @@ fn ensure_name_index_enabled(cfg: &config::Config) -> anyhow::Result<()> {
     if !enabled {
         anyhow::bail!(
             "the name index is disabled (`[index] name_enabled = false` in config.toml, and no \
-             admin override in index.db — DESIGN-FOOTPRINT.md §2: both indexes are off by \
+             admin override in index.db —: both indexes are off by \
              default). Enable it from the admin settings UI, or set `name_enabled = true` under \
              `[index]` in the config file, then re-run; nothing here plants an index a \
              deployment did not explicitly ask for."
@@ -846,7 +846,7 @@ mod tests {
 
     #[test]
     fn name_index_is_disabled_by_default_and_the_gate_says_so() {
-        // `DESIGN-FOOTPRINT.md` §2: off by default. This is the test that
+        // off by default. This is the test that
         // fails without `ensure_name_index_enabled` being wired into
         // `cmd_index` — before that, nothing in this binary ever consulted
         // `IndexConfig::name_enabled` at all (`config.rs`'s doc comment).

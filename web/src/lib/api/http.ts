@@ -287,7 +287,7 @@ async function writeFile(path: string, content: string, ifMatch?: string): Promi
   })
 }
 
-// ── settings (DESIGN-FOOTPRINT.md §4) ──
+// ── settings ──
 
 async function changePassword(currentPassword: string, newPassword: string, revokeOtherSessions: boolean): Promise<void> {
   await request('/auth/password', {
