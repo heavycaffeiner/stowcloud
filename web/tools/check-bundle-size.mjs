@@ -1,7 +1,6 @@
-// web/tools/check-bundle-size.mjs — enforces the two byte budgets recorded
-// in DESIGN-FRONTEND.md §8 (Initial JS gzip < 150 KB, share-link page JS
-// gzip < 60 KB). Run after `npm run build`; reads Vite's own build output
-// rather than re-implementing bundling, so this can never drift from what a
+// Enforces the two byte budgets: initial JS gzip < 150 KB, share-link page
+// JS gzip < 60 KB marginal. Run after `npm run build`; reads Vite's own
+// build output rather than re-implementing bundling, so this can never drift from what a
 // browser actually downloads.
 //
 // "Scroll frame drops (100k rows): 0" (the §8 table's third row) is not
@@ -10,7 +9,7 @@
 // produce at all. Deliberately not wired into CI: a GitHub-hosted runner's
 // CPU/IO throughput varies run to run enough that a frame-timing gate would
 // be flaky, and a gate everyone learns to ignore is worse than no gate
-// (hence "flaky gate" is not shipped here — see DESIGN-FRONTEND.md §8).
+// (hence "flaky gate" is not shipped here).
 import { gzipSync } from 'node:zlib'
 import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -97,7 +96,7 @@ const okInitial = report('Initial JS (gzip)', initialBytes, INITIAL_JS_BUDGET)
 const okShare = report('Share-link page JS (gzip, marginal)', shareBytes, SHARE_PAGE_JS_BUDGET)
 
 if (!okInitial || !okShare) {
-  console.error('\ncheck-bundle-size: a budget in DESIGN-FRONTEND.md §8 was exceeded.')
+  console.error('\ncheck-bundle-size: a budget was exceeded.')
   process.exit(1)
 }
 

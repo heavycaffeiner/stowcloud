@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Exercise deploy/smb/native/sc-smb-agent.sh on each distro the bare-metal
-# path claims to support (DEPLOYMENT.md §7.5).
+# path claims to support.
 #
 # Run on a Docker host. Each distro gets a throwaway container with nothing
 # but its own samba package, which is the premise of that path -- no
@@ -114,7 +114,7 @@ echo "  distro: $ID $VERSION_ID"
 
 # 0775, not 0755 -- under `force user` Samba checks the NT ACL with the
 # authenticated user's SID, which is not the owner, so 0755 makes the share
-# silently read-only (DEPLOYMENT.md §7.3).
+# silently read-only.
 mkdir -p /shares/test
 chown scsvc:scsvc /shares/test
 chmod 0775 /shares/test

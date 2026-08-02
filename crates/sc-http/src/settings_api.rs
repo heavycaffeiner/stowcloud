@@ -21,8 +21,8 @@ pub enum SettingsSource {
     /// Set by the operator's `config.toml` (or `SC_*` env).
     ConfigFile,
     /// Changed from this admin screen since the config file was last
-    /// deployed; persisted outside `config.toml` (`DESIGN-*.md`'s
-    /// `upload_chunk_settings`/`ShareStore` precedent — never rewrites the
+    /// deployed; persisted outside `config.toml` (the same precedent as
+    /// `upload_chunk_settings` and `ShareStore` — never rewrites the
     /// operator's file, which `scripts/deploy.sh` overwrites on every push).
     AdminOverride,
 }

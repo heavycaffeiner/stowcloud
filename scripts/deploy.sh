@@ -2,7 +2,7 @@
 # Build and roll out both instances in the Rocky 9 guest.
 # Run from the repo root: `bash scripts/deploy.sh`
 #
-# The two instances no longer deploy the same way (DEPLOYMENT.md §12.1):
+# The two instances no longer deploy the same way:
 #
 #   production   sc-prod-docker.service -> `docker run sc:core` on :8080.
 #                Deployed by rebuilding the image *in the guest* from a

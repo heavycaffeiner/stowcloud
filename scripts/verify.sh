@@ -129,7 +129,7 @@ else
   skipped "cargo clippy ($MUSL)" "$why" "${VERIFY_REQUIRE_MUSL:-0}"
 fi
 
-# --- compat-layer isolation (DESIGN-COMPAT.md §1.3) --------------------
+# --- compat-layer isolation ------------------------------------------
 # Scans *code*, not comments. A core crate may explain in a comment why a
 # protocol-neutral abstraction exists (e.g. why sc-upload has a name-ordered
 # spool mode); what it may not do is embed compat wire vocabulary in

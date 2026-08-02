@@ -1,6 +1,6 @@
 // tools/stylelint-four-px.cjs — custom stylelint plugin.
 // Rejects px values that are not multiples of 4 in spacing/sizing
-// properties. DESIGN-FRONTEND.md §2.4.
+// properties. The 4 px grid is enforced, not a convention.
 //
 // Allowlist: 0, 1px, 2px, 3px (borders/hairlines), 9999px (pill shape),
 // 100% (not px, trivially exempt), and anything inside calc() (mixed
@@ -20,9 +20,8 @@ const meta = {
 }
 
 // Properties where px values represent spacing/sizing on the 4px grid.
-// Typography (font-size) is intentionally excluded — DESIGN-FRONTEND.md §2.3
-// notes that line-height (already 4px-aligned) is what affects layout, not
-// glyph size.
+// Typography (font-size) is intentionally excluded: line-height, which is
+// already 4px-aligned, is what affects layout — not glyph size.
 const TARGET_PROP_RE =
   /^(margin|padding|gap|row-gap|column-gap)(-(top|right|bottom|left|inline|block|inline-start|inline-end|block-start|block-end))?$|^(width|height|min-width|max-width|min-height|max-height|inline-size|block-size|min-inline-size|max-inline-size|min-block-size|max-block-size)$|^(top|right|bottom|left|inset)(-(inline|block|inline-start|inline-end|block-start|block-end))?$|^(border-radius|border-top-left-radius|border-top-right-radius|border-bottom-left-radius|border-bottom-right-radius)$|^(border|border-top|border-bottom|border-left|border-right)(-width)?$|^(outline-offset)$|^(scroll-margin|scroll-padding)(-(top|right|bottom|left))?$/i
 

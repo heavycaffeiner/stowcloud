@@ -1,7 +1,6 @@
-//! Configuration: TOML file + environment overrides, every default pinned to
-//! the design docs (`ARCHITECTURE.md` §0/§6, `DESIGN-
-//! FOOTPRINT.md` §4). Nothing here silently diverges from a documented
-//! default — if a default changes, the doc it cites should change too.
+//! Configuration: TOML file + environment overrides. Every default here is
+//! also stated in the proposal for the subsystem that owns it; if one
+//! changes, the other has to change with it.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::{Path, PathBuf};
