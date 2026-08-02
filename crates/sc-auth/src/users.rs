@@ -410,21 +410,30 @@ impl AuthService {
     /// and a stored (decryptable) NT hash. LANMAN hash is always disabled
     /// (32 'X's) — only NTLMv2 via the NT hash is supported.
     ///
-    /// `service_uid` goes in field 2 of every line, and must be the same
-    /// `smb.service_uid` the passwd entries beside this file are rendered with
-    /// (`sc_smb::render_passwd_entries`) — `DEPLOYMENT.md` §7.2 passdb sync
-    /// point 3, "every SMB user shares one uid". Samba resolves each
-    /// smbpasswd line against that uid, and `pdbedit -i` **silently imports
-    /// nothing** when it names no passwd entry: no error, no log line, exit 0,
-    /// and an empty passdb that answers every login `NT_STATUS_NO_SUCH_USER`.
+    /// Field 2 of every line is `base_uid + <account row id>`, which must be
+    /// the uid the account's passwd entry beside this file carries
+    /// (`sc_smb::render_passwd_entries`, fed from `smb.service_uid`) —
+    /// `DEPLOYMENT.md` §7.2 passdb sync point 3.
     ///
-    /// This used to write the account's row id, which is only ever equal to
-    /// the service uid by coincidence — so a fresh deployment could not
-    /// authenticate a single SMB session. Caught 2026-08-03 on the Docker
-    /// testbed by an actual `smbclient` login against the file this renders;
-    /// `scripts/smb-native-test.sh` had been rewriting field 2 to 1000 before
-    /// importing, which is exactly what kept it invisible.
-    pub fn export_smbpasswd(&self, service_uid: u32) -> Result<String> {
+    /// Two properties, both learned the hard way, and both load-bearing:
+    ///
+    /// * **It must match the passwd entry.** `pdbedit -i` resolves a line to a
+    ///   Unix account through this uid, and imports **nothing at all** when it
+    ///   names none: no error, no log line, exit 0, an empty passdb, and every
+    ///   login answered `NT_STATUS_NO_SUCH_USER`. This wrote a bare row id
+    ///   against passwd entries on the service uid, so nobody could
+    ///   authenticate.
+    /// * **It must be unique per account.** `pdbedit -i` matches by uid, not
+    ///   by name, so several names on one uid all import as whichever name
+    ///   `getpwuid` answers with — observed as `Importing account for
+    ///   admin...ok` twice for a two-line file, leaving one account in the
+    ///   passdb. Aligning both files on a single service uid fixed the first
+    ///   property and not this one.
+    ///
+    /// Uniqueness costs nothing elsewhere: `force user = scsvc` decides what a
+    /// connection writes as, so a distinct uid here never reaches a file on
+    /// disk (verified — a second account's uploads still land `scsvc:scsvc`).
+    pub fn export_smbpasswd(&self, base_uid: u32) -> Result<String> {
         let conn = self.pool.get()?;
         let mut stmt = conn.prepare(
             "SELECT u.id, u.name, s.nt_hash_ct, s.key_ver \
@@ -441,9 +450,9 @@ impl AuthService {
         })?;
         let mut out = String::new();
         for row in rows {
-            // `row_id` is this account's primary key. It stays the AAD for
-            // `open_nt` — that is what the hash was sealed against — and never
-            // reaches the rendered line, where Samba wants the service uid.
+            // `row_id` is this account's primary key: the AAD `open_nt` needs
+            // (that is what the hash was sealed against) and, offset by
+            // `base_uid`, what makes the rendered uid unique.
             let (row_id, name, ct, key_ver) = row?;
             let nt = match open_nt(&self.master_key, &ct, UserId::new(row_id), key_ver) {
                 Ok(nt) => nt,
@@ -457,7 +466,7 @@ impl AuthService {
             out.push_str(&format!(
                 "{name}:{uid}:{lm}:{nt}:[U          ]:LCT-{lct}:\n",
                 name = name,
-                uid = service_uid,
+                uid = base_uid.saturating_add(row_id),
                 lm = "X".repeat(32),
                 nt = nt_hex,
                 lct = lct,

@@ -274,17 +274,17 @@ async fn the_bootstrapped_admin_is_smb_ready_without_a_password_reset() {
     let uid = sc_vfs::UserId::new(body["user"]["id"].as_u64().unwrap() as u32);
     assert!(f.app.auth.nt_hash_present(uid).unwrap());
 
-    // Field 2 is the *service* uid, not this account's row id — Samba resolves
-    // the line against it and `pdbedit -i` imports nothing, silently, when it
-    // names no passwd entry (`export_smbpasswd`). The bootstrapped admin is
-    // row id 1, so asserting only `contains("admin:")` passed happily on
-    // `admin:1:` and let a deployment ship that could not authenticate one SMB
-    // session. 1000 here is `Config::default`'s `smb_service_uid`.
+    // Field 2 is `smb.service_uid + row id`, and has to match the uid this
+    // account's passwd entry carries: `pdbedit -i` resolves the line through
+    // it and imports nothing, silently, when it names no passwd entry
+    // (`export_smbpasswd`). Asserting only `contains("admin:")` passed happily
+    // on a bare row id and let a deployment ship that could not authenticate
+    // one SMB session. 1000 is `Config::default`'s `smb_service_uid`.
     let line = f.app.auth.export_smbpasswd(1000).unwrap();
     assert_eq!(uid.get(), 1, "the fixture's admin should be row id 1");
     assert!(
-        line.starts_with("admin:1000:"),
-        "smbpasswd must carry the service uid in field 2, got {line:?}"
+        line.starts_with("admin:1001:"),
+        "smbpasswd field 2 must be service_uid + row id, got {line:?}"
     );
 }
 

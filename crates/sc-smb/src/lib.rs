@@ -106,6 +106,17 @@ pub struct SmbShareDef {
 #[derive(Clone, Debug)]
 pub struct SmbUser {
     pub name: String,
+    /// The uid this account's `passwd` entry carries, and the same value
+    /// `sc_auth::export_smbpasswd` writes into its `smbpasswd` line —
+    /// `smb.service_uid + <account row id>` (`DEPLOYMENT.md` §7.2 point 3).
+    ///
+    /// **Distinct per account, deliberately.** `pdbedit -i` resolves an
+    /// smbpasswd line to a Unix account by uid, not by name, so several names
+    /// sharing one uid import as whichever name `getpwuid` answers with —
+    /// once, for all of them. Ownership is unaffected: `force user = scsvc`
+    /// decides what a connection writes as, so this uid only has to make
+    /// `getpwnam` succeed and be unique.
+    pub uid: u32,
 }
 
 pub struct SmbOrchestrator {
@@ -173,10 +184,11 @@ impl SmbOrchestrator {
         conf::render(&self.cfg, shares, users)
     }
 
-    /// Convenience: render `/etc/passwd`-style entries for `users`, all
-    /// mapping to `uid`/`gid` (`DEPLOYMENT.md` §7.2 passdb sync point 3).
-    pub fn render_passwd_entries(&self, users: &[SmbUser], uid: u32, gid: u32) -> String {
-        passwd::render_passwd_entries(users, uid, gid)
+    /// Convenience: render `/etc/passwd`-style entries for `users`, each on
+    /// its own [`SmbUser::uid`] and all on the shared `gid`
+    /// (`DEPLOYMENT.md` §7.2 passdb sync point 3).
+    pub fn render_passwd_entries(&self, users: &[SmbUser], gid: u32) -> String {
+        passwd::render_passwd_entries(users, gid)
     }
 
     /// Write `smb.conf`, the `smbpasswd`(5) file, and passwd entries into
@@ -298,7 +310,7 @@ mod tests {
     fn generate_conf_contains_every_hardening_directive() {
         let o = orch(false);
         let conf = o
-            .generate_conf(&[sample_share(false)], &[SmbUser { name: "alice".into() }])
+            .generate_conf(&[sample_share(false)], &[SmbUser { name: "alice".into(), uid: 1001 }])
             .unwrap();
 
         for directive in [

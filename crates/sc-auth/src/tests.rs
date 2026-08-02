@@ -1516,23 +1516,36 @@ fn a_linked_accounts_password_change_has_nothing_to_republish() {
 /// 2 and 3 all have to render as 1000. Every other test here matches on the
 /// NT hash substring, which is exactly why none of them saw this.
 #[test]
-fn smbpasswd_carries_the_service_uid_not_the_row_id() {
+fn smbpasswd_uids_are_the_base_plus_the_row_id_and_all_distinct() {
     let (svc, _dir) = new_service(test_cfg());
-    for name in ["alice", "bob", "carol"] {
-        svc.create_user(name, &pw("correct horse battery")).unwrap();
-    }
+    let ids: Vec<u32> = ["alice", "bob", "carol"]
+        .iter()
+        .map(|n| svc.create_user(n, &pw("correct horse battery")).unwrap().get())
+        .collect();
 
     let out = svc.export_smbpasswd(1000).unwrap();
-    let lines: Vec<&str> = out.lines().collect();
-    assert_eq!(lines.len(), 3, "every enabled account exports: {out:?}");
-    for line in lines {
-        let uid = line.split(':').nth(1).unwrap();
-        assert_eq!(uid, "1000", "field 2 must be the service uid: {line:?}");
-    }
+    let uids: Vec<&str> = out
+        .lines()
+        .map(|l| l.split(':').nth(1).unwrap())
+        .collect();
+    assert_eq!(uids.len(), 3, "every enabled account exports: {out:?}");
 
-    // Not hardcoded to 1000 either — whatever `smb.service_uid` is set to has
-    // to be what lands in the file.
-    assert!(svc.export_smbpasswd(65534).unwrap().starts_with("alice:65534:"));
+    let want: Vec<String> = ids.iter().map(|id| (1000 + id).to_string()).collect();
+    assert_eq!(uids, want, "field 2 is base + row id: {out:?}");
+
+    // The property that actually matters to `pdbedit -i`, stated directly:
+    // duplicates here mean it resolves several names to one account and
+    // imports only that one.
+    let mut sorted = uids.clone();
+    sorted.sort_unstable();
+    sorted.dedup();
+    assert_eq!(sorted.len(), 3, "uids must be distinct per account");
+
+    // The base is `smb.service_uid`, not a constant.
+    assert!(svc
+        .export_smbpasswd(200_000)
+        .unwrap()
+        .starts_with(&format!("alice:{}:", 200_000 + ids[0])));
 }
 
 /// Opting out is a withdrawal of consent, and it has to reach the published

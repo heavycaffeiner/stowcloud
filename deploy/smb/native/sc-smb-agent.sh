@@ -77,6 +77,7 @@ valid_name() {
 # --- /etc/passwd reconciliation -------------------------------------------
 
 desired_names() { [ -f "$CONFIG_DIR/passwd" ] && cut -d: -f1 "$CONFIG_DIR/passwd" || true; }
+desired_uids()  { [ -f "$CONFIG_DIR/passwd" ] && cut -d: -f3 "$CONFIG_DIR/passwd" | sort -u || true; }
 managed_names() { awk -F: -v m="$MARKER" '$5 == m { print $1 }' /etc/passwd; }
 
 # Refuse to sync at all if an SMB account name collides with a pre-existing
@@ -94,6 +95,20 @@ check_collisions() {
         existing=$(awk -F: -v n="$n" -v m="$MARKER" '$1 == n && $5 != m { print $1 }' /etc/passwd)
         if [ -n "$existing" ]; then
             log "refusing to sync: '$n' already exists as a non-managed system account"
+            rc=1
+        fi
+    done
+    # And the same question for the uid. Rendered uids are smb.service_uid
+    # plus an account row id, which lands in exactly the range a host's real
+    # login accounts occupy. A uid shared with a non-managed account is not a
+    # cosmetic clash: `pdbedit -i` resolves an smbpasswd line by uid and takes
+    # the name `getpwuid` answers with, so the import would attach an SMB
+    # credential to that account's name instead. No share lists it, so it
+    # reaches nothing -- but nothing about that is intended, so refuse.
+    for u in $(desired_uids); do
+        owner=$(awk -F: -v u="$u" -v m="$MARKER" '$3 == u && $5 != m { print $1 }' /etc/passwd | head -n1)
+        if [ -n "$owner" ]; then
+            log "refusing to sync: uid $u is already '$owner', a non-managed account -- move smb.service_uid clear of the host's real users"
             rc=1
         fi
     done

@@ -64,8 +64,11 @@ mkdir -p "$WORK/cfg"
 SHARE
 } > "$WORK/cfg/smb.conf"
 
-# Exactly what sc_smb::render_passwd_entries produces.
-echo 'alice:x:1000:1000::/nonexistent:/usr/sbin/nologin' > "$WORK/cfg/passwd"
+# Exactly what sc_smb::render_passwd_entries produces: the account's own uid
+# (smb.service_uid + its row id, so 1000 + 1 here) on the shared service gid.
+# Not the service uid itself -- that is scsvc's, and the agent now refuses a
+# rendered uid that belongs to an account it does not manage.
+echo 'alice:x:1001:1000::/nonexistent:/usr/sbin/nologin' > "$WORK/cfg/passwd"
 
 cat > "$WORK/run.sh" <<'INNER'
 #!/bin/sh
@@ -163,17 +166,17 @@ pdbedit -e "smbpasswd:$SC_SMB_CONFIG_DIR/smbpasswd" >/dev/null
 #
 # Note what this rewrite can and cannot prove. It fixes up *pdbedit's* export,
 # not sc-auth's, so it says nothing about which uid sc-auth actually writes --
-# and until 2026-08-03 sc-auth wrote the account's row id, which meant this
-# line was quietly repairing a real bug on every run instead of failing on it.
-# The renderer's own output is pinned by
-# `smbpasswd_carries_the_service_uid_not_the_row_id` (crates/sc-auth) and by
-# the first-run integration test; keep this script's scope to the agent.
+# and until 2026-08-03 sc-auth wrote a bare row id, which meant this line was
+# quietly repairing a real bug on every run instead of failing on it. The
+# renderer's own output is pinned by
+# `smbpasswd_uids_are_the_base_plus_the_row_id_and_all_distinct` (crates/sc-auth)
+# and by the first-run integration test; keep this script's scope to the agent.
 rm -f /var/lib/samba/private/passdb.tdb
 $AGENT --once 2>&1 | grep -q 'WARNING: no passdb entry for: alice' \
     || fail "a silently-empty passdb import went unreported"
 ok "silently-empty passdb import reported"
 
-awk -F: 'BEGIN { OFS=":" } { $2 = 1000; print }' \
+awk -F: 'BEGIN { OFS=":" } { $2 = 1001; print }' \
     "$SC_SMB_CONFIG_DIR/smbpasswd" > "$SC_SMB_CONFIG_DIR/.smbpasswd.tmp"
 mv "$SC_SMB_CONFIG_DIR/.smbpasswd.tmp" "$SC_SMB_CONFIG_DIR/smbpasswd"
 chmod 600 "$SC_SMB_CONFIG_DIR/smbpasswd"
@@ -198,17 +201,29 @@ smbclient //127.0.0.1/test -U 'alice%wrong-password' -c 'ls' >/dev/null 2>&1 \
     && fail "a wrong password was accepted" || ok "wrong password refused"
 
 # --- 4. refusals ----------------------------------------------------------
+# Each entry below uses a uid inside the managed range (1000 + row id), so
+# every refusal here fires for the reason it claims. Reusing the service uid
+# would trip the uid-collision check first -- the same "refused", but proving
+# nothing about the name or the group.
 echo 'bob:x:4242:4242::/home/bob:/bin/sh' >> /etc/passwd
-echo 'bob:x:1000:1000::/nonexistent:/usr/sbin/nologin' >> "$SC_SMB_CONFIG_DIR/passwd"
+echo 'bob:x:1002:1000::/nonexistent:/usr/sbin/nologin' >> "$SC_SMB_CONFIG_DIR/passwd"
 $AGENT --once >/dev/null 2>&1 && fail "synced despite a collision with a system account"
 grep -q '^bob:x:4242:' /etc/passwd || fail "the pre-existing bob was modified"
 ok "name collision with a system account refused, bob untouched"
 
 sed -i '/^bob:/d' "$SC_SMB_CONFIG_DIR/passwd"
-echo 'carol:x:1000:9999::/nonexistent:/usr/sbin/nologin' >> "$SC_SMB_CONFIG_DIR/passwd"
+echo 'carol:x:1003:9999::/nonexistent:/usr/sbin/nologin' >> "$SC_SMB_CONFIG_DIR/passwd"
 $AGENT --once >/dev/null 2>&1 && fail "synced despite gid 9999 having no group"
 ok "missing group refused"
 sed -i '/^carol:/d' "$SC_SMB_CONFIG_DIR/passwd"
+
+# The uid guard itself: scsvc owns 1000 and the agent did not create it, so a
+# rendered entry claiming that uid must be refused. Without this, `pdbedit -i`
+# would resolve the line by uid and import the credential under scsvc's name.
+echo 'dave:x:1000:1000::/nonexistent:/usr/sbin/nologin' >> "$SC_SMB_CONFIG_DIR/passwd"
+$AGENT --once >/dev/null 2>&1 && fail "synced despite claiming a non-managed account's uid"
+ok "uid collision with a system account refused"
+sed -i '/^dave:/d' "$SC_SMB_CONFIG_DIR/passwd"
 
 # --- 5. teardown: the settings-screen off switch --------------------------
 rm -f "$SC_SMB_CONFIG_DIR/smb.conf" "$SC_SMB_CONFIG_DIR/smbpasswd" "$SC_SMB_CONFIG_DIR/passwd"

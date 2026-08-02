@@ -66,16 +66,14 @@ pub fn run(cfg: &Config, master_key: &[u8; 32]) -> anyhow::Result<()> {
             }
         }
     }
-    let users: Vec<sc_smb::SmbUser> = user_names
-        .iter()
-        .map(|n| sc_smb::SmbUser { name: n.clone() })
-        .collect();
+    let users = smb_users(&auth, &user_names, cfg.smb_service_uid)?;
 
     let conf = orch.generate_conf(&shares, &users)?;
-    // Same uid into both files, or Samba imports neither — `export_smbpasswd`.
+    // Both files derive their uid the same way, from the same row ids: they
+    // have to agree per account, or `pdbedit -i` imports that account as
+    // nothing — see `export_smbpasswd`.
     let smbpasswd = auth.export_smbpasswd(cfg.smb_service_uid)?;
-    let passwd_entries =
-        orch.render_passwd_entries(&users, cfg.smb_service_uid, cfg.smb_service_gid);
+    let passwd_entries = orch.render_passwd_entries(&users, cfg.smb_service_gid);
 
     orch.write_all(&conf, &smbpasswd, &passwd_entries)?;
 
@@ -240,12 +238,46 @@ pub fn render_live(
             }
         }
     }
-    let users: Vec<sc_smb::SmbUser> = user_names.iter().map(|n| sc_smb::SmbUser { name: n.clone() }).collect();
+    let users = smb_users(auth, &user_names, cfg.smb_service_uid)?;
 
     let conf = orch.generate_conf(&shares, &users)?;
-    // Same uid into both files, or Samba imports neither — `export_smbpasswd`.
+    // Both files derive their uid the same way, from the same row ids — see
+    // `render` above and `export_smbpasswd`.
     let smbpasswd = auth.export_smbpasswd(cfg.smb_service_uid)?;
-    let passwd_entries = orch.render_passwd_entries(&users, cfg.smb_service_uid, cfg.smb_service_gid);
+    let passwd_entries = orch.render_passwd_entries(&users, cfg.smb_service_gid);
     orch.write_all(&conf, &smbpasswd, &passwd_entries)?;
     Ok(orch.public_bind_warning_active())
+}
+
+/// Pair each name with the uid its `passwd` entry gets: `base_uid` plus the
+/// account's row id, which is exactly what `export_smbpasswd` writes into the
+/// matching `smbpasswd` line. The two renderers must not compute this
+/// independently — one deriving it differently from the other is the whole
+/// class of bug this shape exists to close — so this is the only place that
+/// knows the formula on the passwd side.
+///
+/// A name with no account behind it can only come from a hand-written
+/// `[[smb_shares]]` entry naming somebody who does not exist. It gets no
+/// passwd entry and no smbpasswd line, so Samba refuses it at connect time
+/// rather than resolving it to whatever `getpwuid` happened to answer.
+fn smb_users(
+    auth: &sc_auth::AuthService,
+    names: &[String],
+    base_uid: u32,
+) -> anyhow::Result<Vec<sc_smb::SmbUser>> {
+    let rows = auth.list_users()?;
+    let mut out = Vec::with_capacity(names.len());
+    for name in names {
+        match rows.iter().find(|r| &r.name == name) {
+            Some(row) => out.push(sc_smb::SmbUser {
+                name: name.clone(),
+                uid: base_uid.saturating_add(row.id.get()),
+            }),
+            None => tracing::warn!(
+                user = %name,
+                "smb: a configured share names an account that does not exist; it gets no passwd entry and cannot connect"
+            ),
+        }
+    }
+    Ok(out)
 }
