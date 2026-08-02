@@ -1548,6 +1548,50 @@ fn smbpasswd_uids_are_the_base_plus_the_row_id_and_all_distinct() {
         .starts_with(&format!("alice:{}:", 200_000 + ids[0])));
 }
 
+/// Revoking access has to reach the published file, or it revokes nothing.
+///
+/// `smbd` authenticates against the last file this server wrote, and nothing
+/// rewrites it on a timer or at startup. Disabling an account therefore used
+/// to change exactly nothing over SMB — measured on the testbed, where the
+/// web login went 401 and the same account kept mounting the share
+/// indefinitely. Deleting one had the same hole.
+#[test]
+fn disabling_and_deleting_an_account_republishes() {
+    let (svc, _dir) = new_service(test_cfg());
+    let uid = svc.create_user("erik", &pw("correct horse battery")).unwrap();
+    let sink = with_passdb_sink(&svc);
+
+    svc.disable_user(uid, true).unwrap();
+    assert_eq!(sink.count(), 1, "a disabled account is still in the published file until this fires");
+    assert!(
+        !svc.export_smbpasswd(1000).unwrap().contains("erik"),
+        "and what it would render now excludes them"
+    );
+
+    svc.disable_user(uid, false).unwrap();
+    assert_eq!(sink.count(), 2, "re-enabling has to restore the entry too");
+
+    svc.delete_user(uid).unwrap();
+    assert_eq!(sink.count(), 3, "a deleted account's hash outlives it in the file otherwise");
+}
+
+/// Group membership decides which grants reach an account, so it decides who
+/// `smb.conf` names. Removal is the direction that matters.
+#[test]
+fn group_membership_changes_republish() {
+    let (svc, _dir) = new_service(test_cfg());
+    let uid = svc.create_user("frida", &pw("correct horse battery")).unwrap();
+    let gid = svc.create_group("editors").unwrap();
+    let sink = with_passdb_sink(&svc);
+
+    svc.add_membership(uid, gid).unwrap();
+    assert_eq!(sink.count(), 1);
+    svc.remove_membership(uid, gid).unwrap();
+    assert_eq!(sink.count(), 2, "the account keeps the group's SMB access otherwise");
+    svc.delete_group(gid).unwrap();
+    assert_eq!(sink.count(), 3, "every grant naming the group just went inert");
+}
+
 /// Opting out is a withdrawal of consent, and it has to reach the published
 /// file for the same reason linking does. Saving the toggles unchanged is
 /// not a change, and re-rendering three files for it would be work nobody

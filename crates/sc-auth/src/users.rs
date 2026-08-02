@@ -121,6 +121,12 @@ impl AuthService {
             return Err(AdminGuardError::NoSuchUser);
         }
         drop(conn);
+        // `export_smbpasswd` filters on `disabled = 0`, so this changes what
+        // the file should contain — and until it is rewritten, a disabled
+        // account keeps authenticating over SMB with the credential the
+        // published file still carries. Verified on the testbed: the web
+        // login went 401 and SMB kept working.
+        self.republish_passdb();
         self.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.audit(
             Some(u),
@@ -212,6 +218,9 @@ impl AuthService {
         .map_err(|e| AdminGuardError::Internal(e.to_string()))?;
         tx.commit().map_err(|e| AdminGuardError::Internal(e.to_string()))?;
         drop(conn);
+        // The row and its NT hash are gone; the published file still has
+        // both until this lands. Same reasoning as `disable_user`.
+        self.republish_passdb();
         self.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         self.audit(Some(u), "admin.user_deleted", None, None, true, None);
         Ok(())

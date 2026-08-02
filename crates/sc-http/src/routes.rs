@@ -4187,7 +4187,10 @@ async fn admin_create_share(
         return e.into_response();
     }
     match state.core.create_share(req) {
-        Ok(s) => (StatusCode::CREATED, Json(s)).into_response(),
+        Ok(s) => {
+            republish_smb_registry(&state);
+            (StatusCode::CREATED, Json(s)).into_response()
+        }
         Err(e) => AppError::from(e).into_response(),
     }
 }
@@ -4222,7 +4225,10 @@ async fn admin_update_share(
         Err(e) => return e.into_response(),
     };
     match state.core.update_share(sid, req) {
-        Ok(s) => Json(s).into_response(),
+        Ok(s) => {
+            republish_smb_registry(&state);
+            Json(s).into_response()
+        }
         Err(e) => AppError::from(e).into_response(),
     }
 }
@@ -4247,7 +4253,10 @@ async fn admin_delete_share(
         Err(e) => return e.into_response(),
     };
     match state.core.delete_share(sid) {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Ok(()) => {
+            republish_smb_registry(&state);
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(e) => AppError::from(e).into_response(),
     }
 }
@@ -4308,7 +4317,10 @@ async fn admin_create_grant(
         return e.into_response();
     }
     match state.core.create_grant(req.into_spec()) {
-        Ok(g) => (StatusCode::CREATED, Json(g)).into_response(),
+        Ok(g) => {
+            republish_smb_registry(&state);
+            (StatusCode::CREATED, Json(g)).into_response()
+        }
         Err(e) => AppError::from(e).into_response(),
     }
 }
@@ -4340,7 +4352,10 @@ async fn admin_update_grant(
         Err(e) => return e.into_response(),
     };
     match state.core.update_grant(gid, req.into_patch()) {
-        Ok(g) => Json(g).into_response(),
+        Ok(g) => {
+            republish_smb_registry(&state);
+            Json(g).into_response()
+        }
         Err(e) => AppError::from(e).into_response(),
     }
 }
@@ -4367,7 +4382,10 @@ async fn admin_delete_grant(
         Err(e) => return e.into_response(),
     };
     match state.core.delete_grant(gid) {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Ok(()) => {
+            republish_smb_registry(&state);
+            StatusCode::NO_CONTENT.into_response()
+        }
         Err(e) => AppError::from(e).into_response(),
     }
 }
@@ -4419,6 +4437,22 @@ fn parse_group_id(raw: &str) -> Result<sc_vfs::GroupId, AppError> {
 fn refresh_group_memberships(state: &AppState) {
     let m = state.auth.list_memberships_all().unwrap_or_default();
     state.core.refresh_group_memberships(m);
+}
+
+/// Tell the passdb publisher that the Share/Grant registry moved, so
+/// `smb.conf`/`smbpasswd` get rewritten from it.
+///
+/// Call after **every** successful admin mutation of a share or a grant.
+/// `smbd` authenticates and authorises against the last file this server
+/// published, and nothing republishes on a timer or at startup — so without
+/// this a deleted grant stays live over SMB indefinitely, while the web UI
+/// shows it gone. Group and account mutations do not need it: `sc-auth`
+/// raises the same signal from inside those calls.
+///
+/// Cheap and idempotent — the publisher coalesces a burst into one render, so
+/// calling it on a no-op mutation costs nothing worth avoiding.
+fn republish_smb_registry(state: &AppState) {
+    state.auth.republish_passdb();
 }
 
 /// `GET /api/admin/groups` — every group with its current members.

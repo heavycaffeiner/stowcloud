@@ -62,7 +62,19 @@ impl AuthService {
         self.passdb_sink.set(sink).is_ok()
     }
 
-    pub(crate) fn republish_passdb(&self) {
+    /// Mark Samba's published files stale. Public because the *registry*
+    /// half of what they contain — which accounts appear in `smb.conf`'s
+    /// `valid users`, and with what — lives outside this crate, in
+    /// `sc-core`'s grants and shares. Those mutations have to say so too,
+    /// and the sink they have to reach is here (`sc-server`'s admin routes
+    /// call this after every one of them).
+    ///
+    /// Revocation is the reason this is not optional. `smbd` authenticates
+    /// against the last file this server published, so a grant deleted, an
+    /// account disabled or a group emptied in the web UI changes nothing at
+    /// all over SMB until something rewrites it — and nothing does on its
+    /// own, not even a restart.
+    pub fn republish_passdb(&self) {
         match self.passdb_sink.get() {
             Some(sink) => sink.republish(),
             // `debug`, and it used to be `warn`. Both remaining producers of

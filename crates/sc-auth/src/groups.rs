@@ -73,6 +73,10 @@ impl AuthService {
             .map_err(|e| GroupOpError::Internal(e.to_string()))?;
         tx.commit().map_err(|e| GroupOpError::Internal(e.to_string()))?;
         drop(conn);
+        // Every grant naming this group just became inert, which changes who
+        // `smb.conf` lists in `valid users`. Nothing rewrites that file on
+        // its own.
+        self.republish_passdb();
         self.audit(None, "admin.group_deleted", None, None, true, None);
         Ok(())
     }
@@ -90,6 +94,9 @@ impl AuthService {
         )
         .map_err(|e| GroupOpError::Internal(e.to_string()))?;
         drop(conn);
+        // Membership decides which grants reach this account, so it decides
+        // which shares name them in `valid users`.
+        self.republish_passdb();
         self.audit(Some(user), "admin.group_member_added", None, None, true, None);
         Ok(())
     }
@@ -103,6 +110,9 @@ impl AuthService {
         )
         .map_err(|e| GroupOpError::Internal(e.to_string()))?;
         drop(conn);
+        // Removal is the direction that matters: without this the account
+        // keeps the group's SMB access until something else republishes.
+        self.republish_passdb();
         self.audit(Some(user), "admin.group_member_removed", None, None, true, None);
         Ok(())
     }
