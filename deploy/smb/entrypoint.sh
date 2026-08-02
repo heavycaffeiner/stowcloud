@@ -80,8 +80,33 @@ sync_once() {
     # idempotent to re-run on every sync.
     if [ -f "$CONFIG_DIR/smbpasswd" ]; then
         pdbedit -i "smbpasswd:$CONFIG_DIR/smbpasswd" -e "tdbsam:$PASSDB_PATH" >/dev/null
+        verify_passdb
     fi
     return 0
+}
+
+# `pdbedit -i` reports success and imports nothing when the smbpasswd file's
+# uid field names no passwd entry: no error, no output, exit 0, an empty
+# passdb. Every downstream symptom (NT_STATUS_LOGON_FAILURE at the client,
+# NT_STATUS_NO_SUCH_USER in the smbd log) points at credentials or config
+# rather than at the import, so say it here where the cause is still visible.
+#
+# `deploy/smb/native/sc-smb-agent.sh` has had this check since it was written;
+# this sidecar did not, and that asymmetry is what made a real occurrence
+# expensive to diagnose on 2026-08-03 — the container path failed exactly this
+# way and said nothing at all. A warning, not a failure: one bad entry must
+# not take SMB down for everyone else.
+verify_passdb() {
+    local known missing=''
+    # `set -e` plus a redirect from a missing file would abort the whole
+    # entrypoint; nothing to check without it anyway.
+    [ -f "$CONFIG_DIR/passwd" ] || return 0
+    known=$(pdbedit -L 2>/dev/null | cut -d: -f1)
+    while IFS=: read -r name _; do
+        [ -n "$name" ] || continue
+        echo "$known" | grep -qx "$name" || missing="$missing $name"
+    done < "$CONFIG_DIR/passwd"
+    [ -z "$missing" ] || echo "sc-smb: WARNING: no passdb entry for:$missing — they cannot authenticate over SMB (check the uid field in smbpasswd against $CONFIG_DIR/passwd)" >&2
 }
 
 # smbd cannot start without at least one accepted config.
