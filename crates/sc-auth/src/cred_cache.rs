@@ -1,4 +1,5 @@
-//! DAV Basic-auth verification cache ( ①②).
+//! DAV Basic-auth verification cache — tiers ① and ② of the verification
+//! path.
 //!
 //! Two caches live here:
 //! - `CredCache`: HMAC(ephemeral_key, "dav\0"‖user‖"\0"‖pw) -> Argon2 outcome,
@@ -10,7 +11,7 @@
 //!   dies with the connection; here it is a bounded LRU keyed by header hash
 //!   instead, since this crate has no connection object to hang state off).
 //! - `TokenCache`: sha256(app-password token) -> Principal, TTL 60s,
-//! also invalidated by `auth_generation`.
+//!   also invalidated by `auth_generation`.
 
 use crate::Principal;
 use hmac::{Hmac, Mac};

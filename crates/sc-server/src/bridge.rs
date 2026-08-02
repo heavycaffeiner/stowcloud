@@ -21,7 +21,7 @@
 //!   its `Denied` covers both. [`CoreBridge::dav_err`] recovers it by asking
 //!   whether the caller can read the path at all.
 //! * `sc-http` needs JSON-shaped DTOs with nanosecond times as strings,
-//! which `sc-core` deliberately doesn't know about.
+//!   which `sc-core` deliberately doesn't know about.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;

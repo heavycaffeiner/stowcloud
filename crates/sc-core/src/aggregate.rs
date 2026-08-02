@@ -136,7 +136,6 @@ impl crate::Core {
     /// Recursive directory aggregate ETag, cached in `sc-meta`'s `diretag`
     /// table and single-flighted per directory fileid so concurrent readers
     /// of the same stale directory don't all recompute it at once.
-    /// 
     pub fn aggregate(&self, share: ShareId, vpath: &SafePath) -> anyhow::Result<Aggregate> {
         let root = {
             let entry = self

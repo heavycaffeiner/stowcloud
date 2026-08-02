@@ -143,7 +143,7 @@ impl AuthService {
         BasicResult::Ok(principal)
     }
 
-    /// Connection-memo tier ① lookup ( ①). `auth_header_hash`
+    /// Connection-memo tier ① lookup (tier ①). `auth_header_hash`
     /// is `sha256` of the raw `Authorization` header bytes, computed by the
     /// HTTP layer.
     pub fn conn_memo_check(&self, auth_header_hash: &[u8; 32]) -> Option<Principal> {

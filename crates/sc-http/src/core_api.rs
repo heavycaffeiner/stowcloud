@@ -71,7 +71,7 @@ pub struct SymlinkInfo {
     pub blocked: bool,
 }
 
-/// 
+/// One entry in a directory listing, as it goes on the wire.
 #[derive(Clone, Debug, Serialize)]
 pub struct Entry {
     pub name: String,

@@ -23,8 +23,7 @@ pub struct ShareRoot {
 impl ShareRoot {
     /// Open a share root. `host_path` must be a directory; it is resolved
     /// once here and kept alive as an anchor for the lifetime of the
-    /// process (or until this `ShareRoot` is dropped) — see
-    /// 
+    /// process, or until this `ShareRoot` is dropped.
     pub fn open(id: ShareId, host_path: &Path, policy: SharePolicy) -> Result<Self, VfsError> {
         let (anchor, root_dev, fstype) = backend::imp::open_anchor(host_path, &policy)?;
         if fstype.is_rejected() {

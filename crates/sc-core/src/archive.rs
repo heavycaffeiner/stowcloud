@@ -1,5 +1,4 @@
 //! Recursive descendant enumeration for the streaming zip archive.
-//! 
 //!
 //! ACL gates *descent*, the same rule `sc-search`'s walker follows: a
 //! subtree the caller cannot read is never

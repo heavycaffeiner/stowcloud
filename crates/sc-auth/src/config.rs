@@ -36,7 +36,7 @@ pub struct AuthConfig {
     /// Coalescing interval for `last_used_ns` writes. Default 60 seconds.
     pub last_used_coalesce: Duration,
 
-    /// Connection-memo ( ①) capacity.
+    /// Connection-memo (tier ①) capacity.
     pub conn_memo_cap: usize,
 
     /// Per-IP hard token bucket: capacity. Default 20.

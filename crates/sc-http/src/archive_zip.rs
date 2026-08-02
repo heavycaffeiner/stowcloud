@@ -1,6 +1,5 @@
 //! A minimal, from-scratch **streaming** ZIP writer — `STORE` only, always
 //! ZIP64, always the data-descriptor form — used by `POST /api/fs/archive`.
-//! 
 //!
 //! The `zip` crate (already a workspace dependency, used read-only by
 //! `sc-preview`'s archive *listing*) cannot be reused here: its `ZipWriter`

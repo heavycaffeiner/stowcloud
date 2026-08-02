@@ -16,8 +16,8 @@
 //!    calling into the service from inside one of its own write paths, which
 //!    is a re-entrancy hazard at best and a connection-pool stall at worst.
 //!    So [`PassdbSink::republish`] only sets a flag. This is the
-//!    `smb_sync.mark_dirty(u)` the proposal's §4.3.6 step 2 describes, and
-//! names.
+//!    `smb_sync.mark_dirty(u)` the OIDC proposal's §4.3.6 step 2
+//!    describes.
 //! 2. **Bursts collapse into one render.** Rewriting `smb.conf`/`smbpasswd`/
 //!    `passwd` costs a full user and share projection; an admin walking
 //!    through five accounts should pay for it once, not five times.

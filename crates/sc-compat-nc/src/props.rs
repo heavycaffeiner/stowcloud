@@ -78,10 +78,9 @@ pub fn nc_id(file: FileId, instance_id: &str) -> String {
 ///   mount makes clients apply mount-specific move restrictions.
 /// * The reference server derives `N` from `canRename()` (updateable, or deletable with a
 ///   creatable parent) and `V` from `PERMISSION_UPDATE`. We have distinct
-///   `Perms::RENAME` and `Perms::MOVE` bits, so we map them directly per
-/// This is strictly more expressive than the
-///   reference; the letter *positions* are unchanged, which is what matters on
-///   the wire.
+///   `Perms::RENAME` and `Perms::MOVE` bits, so we map them directly. This
+///   is strictly more expressive than the reference; the letter *positions*
+///   are unchanged, which is what matters on the wire.
 /// * The reference server folds `WRITE` into `PERMISSION_UPDATE`, so a file with update
 ///   rights gets both `V` and `W`. We separate them: `Perms::MOVE` gives `V`,
 ///   `Perms::WRITE` gives `W`.
