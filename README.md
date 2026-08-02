@@ -123,6 +123,13 @@ Running a modified version as a network service obliges you to offer its
 source to the people using it; `docs/DEPLOYMENT.md` §14 is what that means in
 practice, and what this repository does not do for you.
 
+Contributions are accepted under that same licence and no other — inbound
+equals outbound. There is no CLA and no copyright assignment: contributors
+keep their copyright, and nobody, this repository's author included, ends up
+holding a private right to relicense the result. The cost is that the licence
+is now effectively permanent, because changing it would need every
+contributor's agreement. That is the intended trade.
+
 The binary statically links its Rust dependencies and embeds the built
 frontend, so both are redistributed with it.
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) carries their licences and
