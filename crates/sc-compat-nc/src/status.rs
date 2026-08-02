@@ -14,7 +14,7 @@
 //! * `maintenance` must be falsy or the client parks in maintenance mode.
 //! * `Content-Type: application/json` and `Access-Control-Allow-Origin: *`.
 //!
-//! Per `DESIGN-COMPAT.md` §3 this endpoint carries **no information about
+//! Per this endpoint carries **no information about
 //! our actual implementation**. It is unauthenticated, so it is a
 //! reconnaissance surface, and the client parser expects exactly these keys.
 //! Our real identity is published through `/api/capabilities` and the `Server:`

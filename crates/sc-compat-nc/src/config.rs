@@ -175,7 +175,7 @@ pub struct NcConfig {
     /// Max `sharees` queries per user per minute.
     pub sharee_rate_per_min: u32,
 
-    /// Login flow lifetime. `DESIGN-COMPAT.md` §6.2.
+    /// Login flow lifetime.
     pub login_flow_ttl_ns: i64,
 
     /// Minimum spacing between two polls of the same token, in nanoseconds.
@@ -204,7 +204,7 @@ pub struct NcConfig {
     ///
     /// The one direction that *is* required: never advertise a name as legal
     /// that `validate_component` then rejects — that puts a client's sync
-    /// into a permanent retry loop (`DESIGN-COMPAT.md` §5 note 4).
+    /// into a permanent retry loop ( note 4).
     /// Over-advertising has a real but survivable cost instead: a file
     /// already on disk whose name contains one of these characters (created
     /// by SMB, NFS, or another service sharing the directory) is listed to an

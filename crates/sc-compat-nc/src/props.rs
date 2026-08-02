@@ -74,12 +74,12 @@ pub fn nc_id(file: FileId, instance_id: &str) -> String {
 /// ## Where we deliberately differ from the reference
 ///
 /// * `M` (mounted / external storage) is **never emitted**. We have no external
-///   storage concept (`DESIGN-COMPAT.md` §13 non-goals), and claiming a
+///   storage concept ( non-goals), and claiming a
 ///   mount makes clients apply mount-specific move restrictions.
 /// * The reference server derives `N` from `canRename()` (updateable, or deletable with a
 ///   creatable parent) and `V` from `PERMISSION_UPDATE`. We have distinct
 ///   `Perms::RENAME` and `Perms::MOVE` bits, so we map them directly per
-///   `DESIGN-COMPAT.md` §7.2. This is strictly more expressive than the
+/// This is strictly more expressive than the
 ///   reference; the letter *positions* are unchanged, which is what matters on
 ///   the wire.
 /// * The reference server folds `WRITE` into `PERMISSION_UPDATE`, so a file with update
@@ -163,8 +163,7 @@ pub fn perms_to_nc_bits(p: Perms) -> u32 {
 
 /// Compat share bitmask -> `Perms`.
 ///
-/// Returns `Err(bit)` for any bit outside `PERMISSION_ALL`. `DESIGN-COMPAT.md`
-/// §10 is explicit that unknown bits are rejected with 400 rather than silently
+/// Returns `Err(bit)` for any bit outside `PERMISSION_ALL`. is explicit that unknown bits are rejected with 400 rather than silently
 /// dropped: silently dropping them would grant less than the user asked for
 /// while reporting success.
 pub fn nc_bits_to_perms(n: u32) -> Result<Perms, u32> {
@@ -320,7 +319,7 @@ impl PropSource for NcPropSource {
         if req.wants(NS_OC, "checksums") {
             // Empty element by default: computing a content hash would mean
             // reading every byte of every file. Clients skip verification when
-            // it is absent (DESIGN-COMPAT.md §7.3).
+            // it is absent.
             out.empty(NS_OC, "checksums");
         }
         if req.wants(NS_NC, "has-preview") {

@@ -39,7 +39,7 @@ fn port_err(e: PortError) -> OcsError {
 
 /// Map an incoming `shareType` integer onto a grantee kind.
 ///
-/// `DESIGN-COMPAT.md` §10: unsupported types get a **400**, never a silent
+/// unsupported types get a **400**, never a silent
 /// drop. Silently ignoring `shareType=4` would report success for an email
 /// share that was never created — the user believes they shared a file and
 /// nobody receives it.

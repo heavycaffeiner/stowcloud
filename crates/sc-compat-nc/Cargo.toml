@@ -23,7 +23,7 @@ default = []
 sqlite = ["dep:rusqlite"]
 
 [dependencies]
-# One-directional by contract (`DESIGN-COMPAT.md` §1): this crate consumes
+# One-directional by contract: this crate consumes
 # the core crates' public APIs, and no core crate may depend on it.
 # `scripts/verify.sh` enforces both halves.
 sc-vfs    = { path = "../sc-vfs" }

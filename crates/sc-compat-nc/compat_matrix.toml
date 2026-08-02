@@ -20,7 +20,7 @@
 #   2. Version is the primary feature gate. Every major we claim above what we
 #      implement is a set of endpoints clients will call and we will 404.
 #      Claiming 35 promises four majors of features we have explicitly ruled
-#      out (DESIGN-COMPAT.md §13).
+#      out.
 #   3. Claiming too LOW is equally bad: clients refuse to connect below their
 #      minimum, and older claims disable chunking v2 and bulk-upload probing.
 #
@@ -40,7 +40,7 @@
 # `productname` MUST stay "Nextcloud": clients branch on it (theming, capability
 # assumptions, and in some clients the decision to speak the NC dialect at all).
 # It is not a place to advertise our identity — /api/capabilities and the
-# `Server:` header do that (DESIGN-COMPAT.md §3).
+# `Server:` header do that.
 #
 # When bumping `claim`, re-run the client integration matrix and update
 # `[verified]`. Do not bump it because upstream released; bump it because a
@@ -78,7 +78,7 @@ android = "android-library @ master"   # the network layer, not the app repo
 ios = "iOS SDK @ master"
 
 [device_verified]
-# Nothing yet. See DESIGN-COMPAT.md §15 for the checks that need real
+# Nothing yet. See for the checks that need real
 # hardware: 40 MB chunks through a production proxy, the 302 hop to the
 # content origin returning image bytes, and iOS conditional-request handling.
 desktop = []

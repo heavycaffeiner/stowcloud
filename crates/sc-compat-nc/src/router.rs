@@ -2,7 +2,7 @@
 //!
 //! Everything compat-shaped hangs off here, so that `sc-server` mounts (or,
 //! with `feature = "compat-nc"` off, does not mount) exactly one thing. The
-//! isolation gate in `DESIGN-COMPAT.md` §1.3 checks that a build without the
+//! isolation gate in checks that a build without the
 //! feature exposes no `remote.php`, `/ocs/`, `status.php` or `/index.php/login`
 //! route — that property holds because every one of those strings occurs only
 //! in this crate.
@@ -57,7 +57,7 @@ impl OcsCtx {
     /// Divergence from the reference, deliberately: upstream's
     /// `SecurityMiddleware` throws `CrossSiteRequestForgeryException`, which
     /// renders as a bare `412` with `{"message":"CSRF check failed"}` and no
-    /// OCS envelope. `DESIGN-COMPAT.md` §4 specifies 401/403 inside a proper
+    /// OCS envelope. specifies 401/403 inside a proper
     /// envelope, which is what we do — it is a strictly better-formed answer
     /// and no client depends on the 412.
     // `Response` (axum::http::Response<Body>) is >=128 bytes, so clippy wants

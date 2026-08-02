@@ -3940,8 +3940,7 @@ struct AdminUserWire {
     // reason (`created_ns`/`last_used_ns` elsewhere in this file all call
     // `.to_string()`) — matched here rather than left as a native `i64`.
     created_ns: String,
-    // As a string for the same 2^53 reason. `None` = unlimited
-    // (`DESIGN-COMPAT.md` §8).
+    // As a string for the same 2^53 reason. `None` = unlimited.
     quota_bytes: Option<String>,
     /// Running usage ledger (`FEATURES.md` #49, `user.usage_bytes`) — as a
     /// string for the same 2^53 reason as every other byte count here.

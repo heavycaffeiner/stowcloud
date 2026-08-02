@@ -197,7 +197,7 @@ export interface AdminUser {
   created_ns: string
   /** Per-user quota cap in bytes, as a string (2^53 precision — same
    *  reason `created_ns` is a string). `null` means unlimited
-   *  (`FEATURES.md` #49, `DESIGN-COMPAT.md` §8). */
+   *  (`FEATURES.md` #49,). */
   quota_bytes: string | null
   /** Running usage ledger, as a string (same 2^53 reason). Not a live
    *  filesystem recomputation — see `sc_core::quota`'s module doc for how

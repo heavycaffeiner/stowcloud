@@ -321,7 +321,7 @@ impl AuthService {
     }
 
     /// Sets or clears (`None` = unlimited) the per-user quota cap reported
-    /// through `/cloud/user` (`DESIGN-COMPAT.md` §8). Purely a stored
+    /// through `/cloud/user`. Purely a stored
     /// value — no enforcement lives in this crate. Returns
     /// [`AdminGuardError`] (never its `LastAdmin` variant) rather than a bare
     /// `anyhow::Error` so the HTTP layer can tell "no such user" apart from a

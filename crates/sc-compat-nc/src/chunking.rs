@@ -452,7 +452,7 @@ impl ChunkedUploads {
     /// an exact total with a plausible split is behaviourally identical to a
     /// per-chunk table while remaining honest about the one number anybody
     /// reads. Reporting exact per-chunk sizes would need a small addition to
-    /// `sc_upload::UploadEngine`; see `DESIGN-COMPAT.md` §9.2.
+    /// `sc_upload::UploadEngine`; see
     pub fn list_chunks_sized(
         &self,
         user: UserId,

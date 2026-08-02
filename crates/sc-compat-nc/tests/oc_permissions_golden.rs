@@ -5,7 +5,7 @@
 //! A wrong `oc:permissions` string does not produce an error. The desktop
 //! client reads it, decides the item is read-only / unrenameable / not a valid
 //! upload target, and **silently declines to sync it**. There is no log line on
-//! either side. `DESIGN-COMPAT.md` §7.2 calls this the hardest failure mode
+//! either side. calls this the hardest failure mode
 //! in the compatibility surface to debug, which is why the mapping is pinned
 //! here rather than left to the implementation.
 //!
@@ -105,7 +105,7 @@ fn php_dav_permissions(i: &RefInput) -> String {
 ///   a mount makes clients apply mount-specific move restrictions.
 /// * The reference derives `N` from `canRename()` and `V` from
 ///   `PERMISSION_UPDATE`; we have distinct `RENAME` and `MOVE` bits and map
-///   them directly (`DESIGN-COMPAT.md` §7.2). Letter *positions* are
+///   them directly. Letter *positions* are
 ///   unchanged, which is what is on the wire.
 /// * The reference folds file writability into `PERMISSION_UPDATE`; we have a
 ///   separate `WRITE` bit.

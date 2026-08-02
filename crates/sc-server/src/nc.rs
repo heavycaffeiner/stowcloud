@@ -252,7 +252,7 @@ impl ports::CorePort for NcCore {
         let (free, total) = root.statfs_free().map_err(port_io)?;
         let used = total.saturating_sub(free);
         // `quota_bytes` (`user.quota_bytes`, `FEATURES.md` #49) is a
-        // reporting gate, not a usage-tracking cap: `DESIGN-COMPAT.md` §8
+        // reporting gate, not a usage-tracking cap:
         // follows the reference server exactly — real numbers only when a
         // quota is actually configured (`Some(n)` with `n > 0`), otherwise
         // `None` renders the unlimited sentinel. `used` stays the real
@@ -1249,8 +1249,8 @@ impl Compat {
 /// Restate the resolved client address in the compatibility layer's own
 /// vocabulary.
 ///
-/// `sc-compat-nc` declares its port types itself and depends on no HTTP crate
-/// (`DESIGN-COMPAT.md` §1), so it cannot read `sc_http`'s `ClientIp`
+/// `sc-compat-nc` declares its port types itself and depends on no HTTP crate,
+/// so it cannot read `sc_http`'s `ClientIp`
 /// directly. This copies the value across — and only the value. The rule that
 /// *produced* it (peer vs. `CF-Connecting-IP` vs. `X-Forwarded-For`, gated on
 /// the trusted-proxy CIDRs) stays in its single home,
@@ -1831,7 +1831,7 @@ async fn h_put_files(s: RemoteDav, prefix: String, rel_path: String, req: Reques
     resp
 }
 
-/// Chunked upload v2 (`DESIGN-COMPAT.md` §9): `MKCOL` opens a session,
+/// Chunked upload v2: `MKCOL` opens a session,
 /// `PUT {n}` spools a numbered chunk, `MOVE …/.file` assembles.
 async fn h_chunked(
     s: RemoteDav,

@@ -6,7 +6,7 @@
 //! length, a permanent delete's known freed size) to whatever [`QuotaSink`]
 //! `sc-server` attaches. The sink owns the actual ledger (`sc-auth`'s
 //! `user.usage_bytes` column) and the configured cap (`user.quota_bytes`,
-//! `DESIGN-COMPAT.md` §8).
+//! ).
 //!
 //! Same optional-attach shape as `links`/`acl_store`/`share_store`: a `Core`
 //! with no sink attached enforces nothing, which is a legitimate (if

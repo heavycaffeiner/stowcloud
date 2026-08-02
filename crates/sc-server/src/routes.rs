@@ -764,8 +764,7 @@ fn native_routes() -> Vec<RouteInfo> {
     ]
 }
 
-/// Compat-layer routes (`DESIGN-COMPAT.md`,
-/// `ARCHITECTURE.md` §10.2). Entirely absent — not merely unregistered, the
+/// Compat-layer routes (`ARCHITECTURE.md` §10.2). Entirely absent — not merely unregistered, the
 /// *code that would produce this list* doesn't exist in the binary — when
 /// built with `--no-default-features`.
 #[cfg(feature = "compat-nc")]

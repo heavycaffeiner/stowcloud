@@ -299,7 +299,7 @@ impl LoginFlowService {
             return Err(FlowError::NotFound);
         }
 
-        // Audit trail. `DESIGN-COMPAT.md` §6.2.
+        // Audit trail.
         tracing::info!(
             event = "apppw.created",
             user = %principal.login_name,

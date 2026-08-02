@@ -2,7 +2,7 @@
 //!
 //! `sc-compat-nc` is only allowed to consume the *public* APIs of `sc-core`,
 //! `sc-dav`, `sc-auth`, `sc-meta`, `sc-acl` and `sc-upload` (see
-//! `docs/DESIGN-COMPAT.md` §1), and no core crate may depend on this one.
+//! `docs/), and no core crate may depend on this one.
 //!
 //! Every **data type** in this module is now the real upstream type,
 //! re-exported. What remains defined here is exactly two things:
@@ -417,7 +417,7 @@ pub trait CorePort: Send + Sync {
 
     fn user_info(&self, user: UserId) -> PortResult<UserInfo>;
 
-    /// Which share's `statvfs` to report. See `DESIGN-COMPAT.md` §8: the
+    /// Which share's `statvfs` to report. See: the
     /// choice is genuinely ambiguous with multiple shares, so it is a
     /// configuration decision made on the core side, not here.
     fn quota(&self, user: UserId) -> PortResult<Quota>;

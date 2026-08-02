@@ -63,7 +63,7 @@ compatibility never gets to bend the native API's design.
 Matches `crates/sc-server/src/routes.rs::native_routes()`, the actual
 registry — this table is descriptive of that source, not the other way
 around. TUS (`/api/uploads/**`) and WebDAV (`/dav/**`) have their own design
-docs and are omitted here; see `proposals/stowcloud-7-upload.md` and `DESIGN-COMPAT.md`.
+docs and are omitted here; see `proposals/stowcloud-7-upload.md` and `proposals/stowcloud-8-compat.md`.
 
 | Method | Path | Notes |
 |---|---|---|

@@ -7,7 +7,7 @@
 //! see — clients treat a wrong `statuscode` as "call failed" and give up
 //! silently, which is why v1/v2 divergence is spelled out so explicitly below.
 //!
-//! XML is written by hand rather than via serde. `DESIGN-COMPAT.md` §4 calls
+//! XML is written by hand rather than via serde. calls
 //! for this and the reference explains why: `BaseResponse::toXML` renames every
 //! numerically-keyed entry to `<element>`, writes booleans as `1`/empty, and
 //! flattens `@`-prefixed keys into attributes. None of that is serde's default

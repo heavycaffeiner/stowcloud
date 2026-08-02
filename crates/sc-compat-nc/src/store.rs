@@ -15,7 +15,7 @@ use crate::ports::{FileId, PortError, PortResult, ShareId, SessionId, UserId};
 
 /// DDL for the compat tables. Applied by whoever owns the connection.
 ///
-/// Deviation from `DESIGN-COMPAT.md` §1.2: `nc_login_flow` carries two extra
+/// Deviation from: `nc_login_flow` carries two extra
 /// columns the design sketch omits — `last_poll_ns` (required to rate-limit the
 /// poll endpoint per §6.2, which is otherwise unimplementable) and
 /// `login_name`/`client_ip` (shown on the consent screen per §6.2). Both are in

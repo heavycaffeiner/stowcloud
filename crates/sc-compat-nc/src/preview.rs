@@ -117,8 +117,7 @@ impl PreviewApi {
             // `forceIcon=1` asks us to substitute a generic icon. We answer 404
             // instead and let the client draw its own: serving a placeholder
             // would mean serving bytes from the app origin for a file that has
-            // no preview, and clients all ship icons anyway
-            // (DESIGN-COMPAT.md §11).
+            // no preview, and clients all ship icons anyway.
             _ => not_found(),
         }
     }

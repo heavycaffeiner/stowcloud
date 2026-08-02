@@ -1,6 +1,6 @@
 //! Endpoints that exist only so clients stop asking.
 //!
-//! `DESIGN-COMPAT.md` §12. Every one of these belongs to an app we have
+//! Every one of these belongs to an app we have
 //! declared a non-goal. Without them the client either retries in a loop or
 //! surfaces an error banner to the user — a 404 on `notifications` in
 //! particular makes the desktop client log an error every poll interval.

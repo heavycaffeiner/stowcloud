@@ -5,7 +5,7 @@
 //! gated behind `feature = "compat-nc"` in `sc-server` and is designed to be
 //! deleted wholesale without leaving a trace anywhere else.
 //!
-//! ## The isolation contract (`docs/DESIGN-COMPAT.md` §1)
+//! ## The isolation contract (`docs/)
 //!
 //! The test applied to every line here is:
 //!
@@ -59,7 +59,7 @@
 //! | [`stubs`] | empty-success endpoints for apps we do not implement |
 //! | [`router`] | assembles all of the above into one `axum::Router` |
 //!
-//! ## Non-goals (`DESIGN-COMPAT.md` §13)
+//! ## Non-goals
 //!
 //! App store, server-side/E2E encryption, versioning, comments, tags, Talk,
 //! groupware (CalDAV/CardDAV), federation, office integrations, notify_push,

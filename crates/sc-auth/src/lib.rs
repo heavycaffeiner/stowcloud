@@ -224,7 +224,7 @@ pub struct UserRow {
     /// admin user-management API for any account after that) flips it.
     pub is_admin: bool,
     /// `user.quota_bytes` — `None` (column `NULL`) means unlimited.
-    /// `DESIGN-COMPAT.md` §8: this is a reporting gate on top of the
+    /// this is a reporting gate on top of the
     /// existing physical-quota machinery, not a usage-tracking cap; nothing
     /// in this crate enforces it against writes.
     pub quota_bytes: Option<u64>,

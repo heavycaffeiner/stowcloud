@@ -1,7 +1,7 @@
 # Auth design
 
 `sc-auth` crate. Protocol-agnostic. Login Flow v2 is an adapter on
-top of this, documented in `DESIGN-COMPAT.md`.
+top of this, documented in `proposals/stowcloud-8-compat.md`.
 
 ---
 
