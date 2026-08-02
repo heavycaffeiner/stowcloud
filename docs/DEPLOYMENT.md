@@ -692,7 +692,7 @@ by installing them on a real host.
 ```yaml
 services:
   sc:
-    image: ghcr.io/…/sc:core
+    image: ghcr.io/heavycaffeiner/stowcloud:core
     user: "1000:1000"
     group_add: ["1001"]              # media group shared with Jellyfin
     read_only: true
@@ -719,7 +719,7 @@ services:
       interval: 30s
 
   sc-smb:                                       # optional
-    image: ghcr.io/…/sc:smb
+    image: ghcr.io/heavycaffeiner/stowcloud:smb
     volumes:
       - sc-smbcfg:/config/smb:ro
       - /srv/photos:/shares/photos:z
@@ -1041,10 +1041,8 @@ resolved the commit SHA for every tag in use, across all eight actions
 `docker/setup-buildx-action`, `docker/build-push-action`,
 `docker/setup-qemu-action`, `EmbarkStudios/cargo-deny-action`,
 `actions/upload-artifact`), rewritten as `uses: <owner>/<repo>@<sha> #
-<tag>`. **Why not defer again**: these workflows will almost certainly gain
-registry credentials soon (`docker.yml` is `push: false`/`load: true` only
-today, but shipping `sc:core` for real means `docker/login-action` + a GHCR
-push eventually), and a mutable tag becomes a supply-chain attack surface the
+<tag>`. **Why not defer again**: these workflows were going to gain registry
+credentials, and a mutable tag becomes a supply-chain attack surface the
 moment credentials exist — whoever can retarget a tag can run code holding
 our registry credentials on the next run. SHA pins remove that surface. The
 cost was genuinely small (one API call per action), so there was no reason
@@ -1054,7 +1052,9 @@ mechanical.
 
 **Since then**: `goto-bus-stop/setup-zig` is gone. The Windows job no longer
 cross-compiles to musl at all (§11.7), so the action, the zip download that
-replaced it, and its pinned SHA-256 all left with it — seven actions remain.
+replaced it, and its pinned SHA-256 all left with it. `docker/login-action`
+arrived with GHCR publishing, pinned the same way — eight actions now, and
+the credentials the paragraph above was written in anticipation of are real.
 
 ### 11.11 Base image digests — one didn't exist
 

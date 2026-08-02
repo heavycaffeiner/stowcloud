@@ -60,9 +60,11 @@ docker compose up -d
 ```
 
 `docker-compose.yml` is a commented reference deployment — read it before
-copying it, and replace the placeholder `image:` lines with your own
-registry. It runs read-only, as a non-root user, with all capabilities
-dropped.
+copying it. It pulls `ghcr.io/heavycaffeiner/stowcloud:core` (amd64 + arm64)
+and, optionally, `:smb` (amd64 only), both published only after the same CI
+run built and smoke-tested them. Pin to the `:core-<commit-sha>` tag once a
+deployment matters. It runs read-only, as a non-root user, with all
+capabilities dropped.
 
 On first boot the server prints a one-time setup token to its log and writes
 it to `<data>/setup-token`. Open <http://127.0.0.1:8080/setup>, paste the

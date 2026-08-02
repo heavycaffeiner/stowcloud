@@ -3,12 +3,28 @@
 # file verbatim into production — several of them explain a deviation from
 # the doc's literal example and why.
 #
-# The `image:` lines below (`ghcr.io/example/sc:core`/`:smb`) are placeholders
-# for an external self-hoster to replace with their own registry/tag — this
-# project has no registry convention of its own to substitute, and does not
-# push to one. This file is not how this project's own instances are
-# actually run: production is a single `docker run` under systemd and dev is
-# still a bare-metal binary, both in a QEMU guest (DEPLOYMENT.md §12/§12.1).
+# The images are published to GHCR by `.github/workflows/docker.yml`, and only
+# after that same run has built and smoke-tested them:
+#
+#   ghcr.io/heavycaffeiner/stowcloud:core   amd64 + arm64 manifest list
+#   ghcr.io/heavycaffeiner/stowcloud:smb    amd64 only — the sidecar has never
+#                                           been built or run for arm64
+#
+# Both tags move with every master build. There is also a `:core-<commit-sha>`
+# and `:smb-<commit-sha>` for each build; **pin to those once a deployment
+# matters to you**, so a `docker compose pull` cannot change the running
+# version underneath you. `docker buildx imagetools inspect <tag>` tells you
+# which commit any tag currently resolves to.
+#
+# There is deliberately no `build:` key here. This file's job is to deploy a
+# published image, and a `build:` block would make `docker compose up` compile
+# from the working tree whenever the image happened to be absent locally —
+# quietly running something other than what was tested. To build instead, use
+# `docker build -f Dockerfile .` directly; DEPLOYMENT.md §1 covers it.
+#
+# This file is not how this project's own instances are actually run:
+# production is a single `docker run` under systemd and dev is still a
+# bare-metal binary, both in a QEMU guest (DEPLOYMENT.md §12/§12.1).
 #
 # One-time host setup before `docker compose up`:
 #
@@ -28,12 +44,9 @@
 
 services:
   sc:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      # buildx: --platform linux/amd64,linux/arm64 for both; single-arch
-      # `docker build`/`docker compose build` picks up the host's own arch.
-    image: ghcr.io/example/sc:core # replace with your registry/tag
+    # Multi-arch: `docker compose pull` resolves the host's own architecture
+    # out of the manifest list, so amd64 and arm64 hosts use the same line.
+    image: ghcr.io/heavycaffeiner/stowcloud:core
     user: "1000:1000"
     # Share this gid with whatever else already owns /shares/* on the host
     # (Jellyfin, *arr, rsync, ...) — DEPLOYMENT.md §6.2. Adjust the gid to
@@ -125,10 +138,10 @@ services:
   # nothing in /config/smb yet just means entrypoint.sh's sync_once retry
   # loop waits, which is harmless but pointless if SMB was never turned on.
   sc-smb:
-    build:
-      context: .
-      dockerfile: Dockerfile.smb
-    image: ghcr.io/example/sc:smb # replace with your registry/tag
+    # amd64 only — see the header. On an arm64 host this service will fail to
+    # pull; build it yourself from Dockerfile.smb if you need it there, and
+    # note that the cap list below was verified on amd64 and nowhere else.
+    image: ghcr.io/heavycaffeiner/stowcloud:smb
     volumes:
       - sc-smbcfg:/config/smb:ro
       - ./shares/photos:/shares/photos:z
