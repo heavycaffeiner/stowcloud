@@ -1,0 +1,34 @@
+# Server config for the testbed compose stack. Paths are the container's.
+
+bind = "0.0.0.0:8080"
+data_dir = "/var/lib/sc"
+
+# Hostnames only: `middleware::host_guard` splits the port off the Host
+# header before comparing, so an entry carrying one can never match. The stack
+# publishes 8080 on the guest's loopback only, so these are the only two
+# literals that ever arrive.
+app_hosts = ["127.0.0.1", "localhost"]
+# Derived from `app_hosts` when empty, which would give https:// — this
+# deployment is plain HTTP behind nothing, so the CSRF check needs it spelled
+# out.
+allowed_origins = ["http://127.0.0.1:8080"]
+
+master_key_file = "/run/sc-secrets/master.key"
+
+[[shares]]
+name = "photos"
+host_path = "/shares/photos"
+
+[[shares]]
+name = "video"
+host_path = "/shares/video"
+
+[smb]
+# Left off here on purpose: turning SMB on through
+# `PATCH /api/admin/server-settings/smb` is the path a real deployment takes,
+# and it exercises the in-process render + the sidecar's inotify reload that
+# a pre-enabled config file would skip.
+enabled = false
+workgroup = "WORKGROUP"
+config_dir = "/config/smb"
+service_user = "scsvc"

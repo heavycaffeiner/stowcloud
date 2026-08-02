@@ -10,6 +10,11 @@ web/build
 /.smoke
 /.demo
 /.dev
+# Runtime state the testbed compose stack creates beside its own file.
+/deploy/testbed/data
+/deploy/testbed/secrets
+/deploy/testbed/smbcfg
+/deploy/testbed/shares
 # Unanchored: the token lands in `<data_dir>/setup-token`, and a data dir is
 # wherever sc.toml points. The root-anchored form missed every dir but one.
 setup-token

@@ -1,0 +1,88 @@
+# Testbed stack: the same two services as the root docker-compose.yml, built
+# from this working tree instead of pulled from GHCR.
+#
+#   docker compose -f deploy/testbed/docker-compose.dev.yml up -d --build
+#
+# Hardening flags and volume layout are the root file's — read its comments.
+#
+# One-time setup, from this directory:
+#
+#   mkdir -p data secrets smbcfg shares/photos shares/video
+#   chown -R 1000:1000 data secrets smbcfg shares
+#   chmod 0775 shares/photos shares/video
+#
+# `SC_SMB_BIND_IP` must be set (an `.env` beside this file is enough): it is
+# the host's own LAN address. 0.0.0.0 is refused for :445 (DEPLOYMENT.md §7.4)
+# and 127.0.0.1 would put SMB out of reach of every client but this host.
+
+name: sc-lab
+
+services:
+  sc:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: sc:core-dev
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      # `:z` on every bind mount, including these: the testbed guest runs
+      # SELinux enforcing, where an unlabelled host directory is unreachable
+      # from `container_t`.
+      - ./data:/var/lib/sc:z
+      - ./secrets:/run/sc-secrets:z
+      - ./sc.dev.toml:/sc.toml:ro,z
+      - ./shares/photos:/shares/photos:z
+      - ./shares/video:/shares/video:z
+      - ./smbcfg:/config/smb:z
+    environment:
+      SC_MASTER_KEY_FILE: /run/sc-secrets/master.key
+      RUST_LOG: info
+    # `--config` is a global argument, and the image's ENTRYPOINT is the bare
+    # binary, so it goes before the subcommand.
+    command: ["--config", "/sc.toml", "serve"]
+    # Loopback only, as production publishes it. The testbed drives the API
+    # from inside the guest, so `app_hosts` can stay a fixed 127.0.0.1.
+    ports:
+      - "127.0.0.1:8080:8080"
+    stop_grace_period: 30s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/sc-server", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  sc-smb:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.smb
+    image: sc:smb-dev
+    volumes:
+      - ./smbcfg:/config/smb:ro,z
+      - ./shares/photos:/shares/photos:z
+      - ./shares/video:/shares/video:z
+    cap_drop: ["ALL"]
+    cap_add:
+      - NET_BIND_SERVICE
+      - SETUID
+      - SETGID
+      - NET_ADMIN
+      - DAC_READ_SEARCH
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "${SC_SMB_BIND_IP}:445:445"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "smbd -b >/dev/null 2>&1 && pgrep -x smbd >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
