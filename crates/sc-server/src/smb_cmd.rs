@@ -72,7 +72,8 @@ pub fn run(cfg: &Config, master_key: &[u8; 32]) -> anyhow::Result<()> {
         .collect();
 
     let conf = orch.generate_conf(&shares, &users)?;
-    let smbpasswd = auth.export_smbpasswd()?;
+    // Same uid into both files, or Samba imports neither — `export_smbpasswd`.
+    let smbpasswd = auth.export_smbpasswd(cfg.smb_service_uid)?;
     let passwd_entries =
         orch.render_passwd_entries(&users, cfg.smb_service_uid, cfg.smb_service_gid);
 
@@ -242,7 +243,8 @@ pub fn render_live(
     let users: Vec<sc_smb::SmbUser> = user_names.iter().map(|n| sc_smb::SmbUser { name: n.clone() }).collect();
 
     let conf = orch.generate_conf(&shares, &users)?;
-    let smbpasswd = auth.export_smbpasswd()?;
+    // Same uid into both files, or Samba imports neither — `export_smbpasswd`.
+    let smbpasswd = auth.export_smbpasswd(cfg.smb_service_uid)?;
     let passwd_entries = orch.render_passwd_entries(&users, cfg.smb_service_uid, cfg.smb_service_gid);
     orch.write_all(&conf, &smbpasswd, &passwd_entries)?;
     Ok(orch.public_bind_warning_active())

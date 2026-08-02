@@ -409,7 +409,22 @@ impl AuthService {
     /// Renders an smbpasswd(5)-format file for every user with `smb_enabled`
     /// and a stored (decryptable) NT hash. LANMAN hash is always disabled
     /// (32 'X's) — only NTLMv2 via the NT hash is supported.
-    pub fn export_smbpasswd(&self) -> Result<String> {
+    ///
+    /// `service_uid` goes in field 2 of every line, and must be the same
+    /// `smb.service_uid` the passwd entries beside this file are rendered with
+    /// (`sc_smb::render_passwd_entries`) — `DEPLOYMENT.md` §7.2 passdb sync
+    /// point 3, "every SMB user shares one uid". Samba resolves each
+    /// smbpasswd line against that uid, and `pdbedit -i` **silently imports
+    /// nothing** when it names no passwd entry: no error, no log line, exit 0,
+    /// and an empty passdb that answers every login `NT_STATUS_NO_SUCH_USER`.
+    ///
+    /// This used to write the account's row id, which is only ever equal to
+    /// the service uid by coincidence — so a fresh deployment could not
+    /// authenticate a single SMB session. Caught 2026-08-03 on the Docker
+    /// testbed by an actual `smbclient` login against the file this renders;
+    /// `scripts/smb-native-test.sh` had been rewriting field 2 to 1000 before
+    /// importing, which is exactly what kept it invisible.
+    pub fn export_smbpasswd(&self, service_uid: u32) -> Result<String> {
         let conn = self.pool.get()?;
         let mut stmt = conn.prepare(
             "SELECT u.id, u.name, s.nt_hash_ct, s.key_ver \
@@ -426,11 +441,14 @@ impl AuthService {
         })?;
         let mut out = String::new();
         for row in rows {
-            let (uid, name, ct, key_ver) = row?;
-            let nt = match open_nt(&self.master_key, &ct, UserId::new(uid), key_ver) {
+            // `row_id` is this account's primary key. It stays the AAD for
+            // `open_nt` — that is what the hash was sealed against — and never
+            // reaches the rendered line, where Samba wants the service uid.
+            let (row_id, name, ct, key_ver) = row?;
+            let nt = match open_nt(&self.master_key, &ct, UserId::new(row_id), key_ver) {
                 Ok(nt) => nt,
                 Err(e) => {
-                    tracing::warn!(user = uid, error = %e, "skipping undecryptable NT hash in smbpasswd export");
+                    tracing::warn!(user = row_id, error = %e, "skipping undecryptable NT hash in smbpasswd export");
                     continue;
                 }
             };
@@ -439,7 +457,7 @@ impl AuthService {
             out.push_str(&format!(
                 "{name}:{uid}:{lm}:{nt}:[U          ]:LCT-{lct}:\n",
                 name = name,
-                uid = uid,
+                uid = service_uid,
                 lm = "X".repeat(32),
                 nt = nt_hex,
                 lct = lct,

@@ -776,7 +776,7 @@ mod tests {
         assert_ne!(new_key, old_key, "the key file must actually change on disk");
 
         let auth2 = sc_auth::AuthService::new(&cfg.data_dir.join("auth.db"), sc_auth::AuthConfig::default(), new_key).unwrap();
-        let smbpasswd = auth2.export_smbpasswd().unwrap();
+        let smbpasswd = auth2.export_smbpasswd(1000).unwrap();
         assert!(
             smbpasswd.contains("alice"),
             "alice's SMB secret must still decrypt (and thus export) under the rotated key: {smbpasswd:?}"
@@ -792,7 +792,7 @@ mod tests {
         let stale = sc_auth::AuthService::new(&cfg.data_dir.join("auth.db"), sc_auth::AuthConfig::default(), old_key)
             .expect("an unreadable SMB secret alone must not stop startup");
         assert!(
-            !stale.export_smbpasswd().unwrap().contains("alice"),
+            !stale.export_smbpasswd(1000).unwrap().contains("alice"),
             "the pre-rotation key must not still decrypt alice's re-sealed SMB secret"
         );
 

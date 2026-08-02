@@ -940,7 +940,7 @@ async fn rotation_survives_and_every_credential_kind_still_authenticates() {
 
     // SMB: the real production decrypt path (`export_smbpasswd`), not a
     // direct `open_nt` call.
-    let smbpasswd = svc2.export_smbpasswd().unwrap();
+    let smbpasswd = svc2.export_smbpasswd(1000).unwrap();
     let expected_nt: String = nt_hash::nt_hash("alicepassword1").iter().map(|b| format!("{b:02X}")).collect();
     assert!(
         smbpasswd.contains(&format!(":{expected_nt}:")),
@@ -1357,7 +1357,7 @@ fn linking_deletes_the_account_derived_nt_hash_and_republishes() {
 
     assert!(!svc.nt_hash_present(uid).unwrap());
     assert!(
-        !svc.export_smbpasswd().unwrap().contains("tomas"),
+        !svc.export_smbpasswd(1000).unwrap().contains("tomas"),
         "the rendered passdb must no longer carry a linked account"
     );
     assert_eq!(sink.count(), 1, "deleting the row without republishing leaves SMB open");
@@ -1380,7 +1380,7 @@ fn linking_leaves_a_dedicated_smb_password_alone() {
 
     assert!(svc.nt_hash_present(uid).unwrap());
     let expected: String = nt_hash::nt_hash("a separate smb password").iter().map(|b| format!("{b:02X}")).collect();
-    assert!(svc.export_smbpasswd().unwrap().contains(&format!(":{expected}:")));
+    assert!(svc.export_smbpasswd(1000).unwrap().contains(&format!(":{expected}:")));
     assert_eq!(sink.count(), 0, "nothing changed, so nothing to republish");
 }
 
@@ -1439,7 +1439,7 @@ fn unlink_restores_smb_only_when_it_is_given_the_password() {
     let out = svc.unlink_oidc_identity(self_path, Some(&pw("correct horse battery"))).unwrap();
     assert!(out.smb_nt_restored);
     let expected: String = nt_hash::nt_hash("correct horse battery").iter().map(|b| format!("{b:02X}")).collect();
-    assert!(svc.export_smbpasswd().unwrap().contains(&format!(":{expected}:")));
+    assert!(svc.export_smbpasswd(1000).unwrap().contains(&format!(":{expected}:")));
     assert_eq!(sink.count(), republished_after_links + 1, "a restored hash needs publishing too");
 
     // A wrong password re-confirmation neither unlinks nor re-derives.
@@ -1482,7 +1482,7 @@ fn a_password_change_republishes_the_passdb() {
     svc.set_password(uid, &pw("a different long password")).unwrap();
 
     let expected: String = nt_hash::nt_hash("a different long password").iter().map(|b| format!("{b:02X}")).collect();
-    assert!(svc.export_smbpasswd().unwrap().contains(&format!(":{expected}:")));
+    assert!(svc.export_smbpasswd(1000).unwrap().contains(&format!(":{expected}:")));
     assert_eq!(sink.count(), 1, "the file smbd reads still holds the previous password's hash until this fires");
 }
 
@@ -1502,6 +1502,37 @@ fn a_linked_accounts_password_change_has_nothing_to_republish() {
 
     assert!(!svc.nt_hash_present(uid).unwrap());
     assert_eq!(sink.count(), after_link, "no derivation happened, so there is no new file to write");
+}
+
+/// Field 2 of every smbpasswd line is the service uid the caller asks for,
+/// the same one the passwd entries beside it carry — never the account's row
+/// id. Samba resolves the line through that uid, and `pdbedit -i` imports
+/// nothing at all, without an error or a log line, when it names no passwd
+/// entry. That is what shipped: the row id went into field 2, so an SMB login
+/// failed `NT_STATUS_NO_SUCH_USER` on every deployment whose ids did not
+/// happen to equal the service uid.
+///
+/// Three accounts, so the assertion cannot pass on a coincidence: row ids 1,
+/// 2 and 3 all have to render as 1000. Every other test here matches on the
+/// NT hash substring, which is exactly why none of them saw this.
+#[test]
+fn smbpasswd_carries_the_service_uid_not_the_row_id() {
+    let (svc, _dir) = new_service(test_cfg());
+    for name in ["alice", "bob", "carol"] {
+        svc.create_user(name, &pw("correct horse battery")).unwrap();
+    }
+
+    let out = svc.export_smbpasswd(1000).unwrap();
+    let lines: Vec<&str> = out.lines().collect();
+    assert_eq!(lines.len(), 3, "every enabled account exports: {out:?}");
+    for line in lines {
+        let uid = line.split(':').nth(1).unwrap();
+        assert_eq!(uid, "1000", "field 2 must be the service uid: {line:?}");
+    }
+
+    // Not hardcoded to 1000 either — whatever `smb.service_uid` is set to has
+    // to be what lands in the file.
+    assert!(svc.export_smbpasswd(65534).unwrap().starts_with("alice:65534:"));
 }
 
 /// Opting out is a withdrawal of consent, and it has to reach the published

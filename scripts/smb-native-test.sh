@@ -157,9 +157,17 @@ chmod 600 "$SC_SMB_CONFIG_DIR/smbpasswd"
 pdbedit -e "smbpasswd:$SC_SMB_CONFIG_DIR/smbpasswd" >/dev/null
 
 # pdbedit -e writes uid 0 into field 2, where sc_auth::export_smbpasswd writes
-# the account's real uid (§7.2 shows alice:1000:...). Importing the uid-0 form
-# is a silent no-op -- so check the agent notices, then rewrite the field to
-# the shape production actually renders.
+# the smb.service_uid (§7.2 shows alice:1000:...). Importing the uid-0 form is
+# a silent no-op -- so check the agent notices, then rewrite the field to the
+# shape production actually renders.
+#
+# Note what this rewrite can and cannot prove. It fixes up *pdbedit's* export,
+# not sc-auth's, so it says nothing about which uid sc-auth actually writes --
+# and until 2026-08-03 sc-auth wrote the account's row id, which meant this
+# line was quietly repairing a real bug on every run instead of failing on it.
+# The renderer's own output is pinned by
+# `smbpasswd_carries_the_service_uid_not_the_row_id` (crates/sc-auth) and by
+# the first-run integration test; keep this script's scope to the agent.
 rm -f /var/lib/samba/private/passdb.tdb
 $AGENT --once 2>&1 | grep -q 'WARNING: no passdb entry for: alice' \
     || fail "a silently-empty passdb import went unreported"
