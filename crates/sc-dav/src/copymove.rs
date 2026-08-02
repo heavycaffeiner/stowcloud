@@ -1,4 +1,4 @@
-//! COPY / MOVE (`DESIGN-WEBDAV.md` §6).
+//! COPY / MOVE.
 //!
 //! Cross-mount bulk moves have a hard limit rather than a progress bar: WebDAV
 //! has no progress concept, `202 Accepted` is badly supported by real clients,

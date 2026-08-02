@@ -18,7 +18,6 @@ Svelte frontend. Linux / Docker only.
 | [DESIGN-UPLOAD.md](DESIGN-UPLOAD.md) | TUS spec, `IntervalSet`, crash-safe ordering, 413 negotiation, NC chunking mapping | Before upload work |
 | [DESIGN-COMPAT.md](DESIGN-COMPAT.md) | Isolation contract and CI gate, capabilities, Login Flow v2, `oc:permissions` mapping | Before compat-layer work |
 | [DESIGN-PREVIEW.md](DESIGN-PREVIEW.md) | Content origin, signed URLs, worker-process jail, archive defenses, share links | Before preview/share work |
-| [DESIGN-SEARCH.md](DESIGN-SEARCH.md) | Tiered model, trigram index, ACL post-filtering, existence-leak prevention | Before search work |
 | [DESIGN-FRONTEND.md](DESIGN-FRONTEND.md) | MD3 token generation, 4px grid enforcement, virtual scroll, upload worker, performance budget | Before frontend work |
 
 ## Five principles, everything else follows from these

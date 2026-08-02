@@ -1,4 +1,4 @@
-//! PROPPATCH — dead properties (`DESIGN-WEBDAV.md` §4.2).
+//! PROPPATCH — dead properties.
 //!
 //! Values are stored as text and **re-serialised** on the way out. The client's
 //! original markup is never echoed: doing so is a straight XML-injection hole.

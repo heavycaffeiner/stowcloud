@@ -148,7 +148,7 @@ export interface StorageReport {
   shares: StorageShareUsage[]
 }
 
-/** `GET/POST /api/admin/index/estimate` (`DESIGN-SEARCH.md` §6) — the
+/** `GET/POST /api/admin/index/estimate` — the
  *  projected cost of turning the (off-by-default) name index on. */
 export interface IndexEstimate {
   files: number

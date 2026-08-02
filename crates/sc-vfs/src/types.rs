@@ -190,7 +190,7 @@ pub struct DirEntry {
     /// so requesting them that way makes the disk seek forward only and
     /// raises the chance several inodes of interest share a block — worth
     /// close to an order of magnitude on the spinning 12 TB RAID this is
-    /// aimed at (`DESIGN-SEARCH.md` §3.4). Without it, a search that has to
+    /// aimed at. Without it, a search that has to
     /// filter on size or mtime degrades to readdir order.
     ///
     /// `None` means "unknown", never "zero" — do not use it for identity.

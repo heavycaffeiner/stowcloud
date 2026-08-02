@@ -100,13 +100,13 @@ docs and are omitted here; see `DESIGN-UPLOAD.md` and `DESIGN-COMPAT.md`.
 | `POST` | `/api/trash/purge` | |
 | `GET`/`POST` | `/api/shares` | Share links |
 | `GET`/`PATCH`/`DELETE` | `/api/shares/{id}` | |
-| `GET` | `/api/search` | (`DESIGN-SEARCH.md`) |
+| `GET` | `/api/search` | (`proposals/stowcloud-5-search.md`) |
 | `GET` | `/api/search/stream` | |
 | `GET`/`DELETE` | `/api/jobs/{id}` | Status / cancel (§6 — no producer exists yet) |
 | `GET` | `/api/events` | WebSocket (§7) |
 | `GET` | `/api/admin/storage` | DB/index/thumbnail-cache usage (`DESIGN-FOOTPRINT.md` §4.2) |
-| `GET`/`POST` | `/api/admin/index/estimate` | Index-size estimate (`DESIGN-SEARCH.md` §6). No `/{job}` sub-route exists despite what an earlier draft of this table implied — both methods hit the same handler |
-| `GET`/`PATCH` | `/api/admin/index/settings` | The T3 name-index on/off override (`DESIGN-SEARCH.md` §4.3). `PATCH { name_enabled }` persists to `index.db` and takes effect on the next request — no restart |
+| `GET`/`POST` | `/api/admin/index/estimate` | Index-size estimate (`proposals/stowcloud-5-search.md`). No `/{job}` sub-route exists despite what an earlier draft of this table implied — both methods hit the same handler |
+| `GET`/`PATCH` | `/api/admin/index/settings` | The T3 name-index on/off override (`proposals/stowcloud-5-search.md`). `PATCH { name_enabled }` persists to `index.db` and takes effect on the next request — no restart |
 | `POST` | `/api/admin/index/build` | Starts the name-index crawl as a job → `202 { job }`. `501` while the toggle is off |
 | `GET`/`POST` | `/api/admin/users` | |
 | `PATCH`/`DELETE` | `/api/admin/users/{id}` | `PATCH` today accepts only `disabled` (`DESIGN-AUTH.md` §11) |

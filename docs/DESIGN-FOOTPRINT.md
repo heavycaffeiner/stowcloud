@@ -67,7 +67,7 @@ This is the real schema (`crates/sc-meta/src/lib.rs`) — not illustrative.
 |---|---|
 | path → fileid | We already hold the `statx` result (`dev`/`ino`) → `node_ident` |
 | fileid → path | `id` is a free rowid lookup, then walk `parent` up — **O(depth), no index needed** |
-| name search | **Never touches `node`.** T2 walk, or the self-contained `names.idx` (`DESIGN-SEARCH.md` §4.1) |
+| name search | **Never touches `node`.** T2 walk, or the self-contained `names.idx` (`proposals/stowcloud-5-search.md`) |
 
 There is deliberately no `(share, parent, name)` index — path resolution is always the filesystem's job, never the DB's, so there's no forward lookup to serve. A directory rename is now a **single-row `name` update.**
 
@@ -82,7 +82,7 @@ There is deliberately no `(share, parent, name)` index — path resolution is al
 
 These are engineering estimates from the schema above, not a measured production corpus — the dev instance's own DB currently sits in the tens of kilobytes, which is consistent with an empty/near-empty tree, not evidence for or against the per-file estimate at scale. Treat the table as a projection.
 
-The name index (T3) is a **separate flat file outside the main DB** and needs no `node` row at all (`DESIGN-SEARCH.md` §4.1 — the plocate model):
+The name index (T3) is a **separate flat file outside the main DB** and needs no `node` row at all (`proposals/stowcloud-5-search.md` — the plocate model):
 
 | Name index | Per file | 10 M | 60 M |
 |---|---|---|---|
@@ -92,7 +92,7 @@ The name index (T3) is a **separate flat file outside the main DB** and needs no
 
 About a 7× reduction versus the discarded draft, and the name index can live on the data volume rather than the system SSD.
 
-**Both indexes default off** (`DESIGN-SEARCH.md`, top of document) is what keeps this whole budget theoretical for most deployments: the parallel walk covers 4 M files in under a second warm (`DESIGN-SEARCH.md` §1), so most installs never allocate any of this. When an admin does turn the name index on, it's a deliberate act — a toggle they flip and a build they start (`DESIGN-SEARCH.md` §4.3), not something that happens by crossing a file count. The toggle moved out of the config file so it no longer needs a restart, but nothing about *who decides* changed: no measurement flips it, and a share that was never opted in has no `.scindex/` at all, because nothing on the query or write path will create one.
+**Both indexes default off** (`proposals/stowcloud-5-search.md`, top of document) is what keeps this whole budget theoretical for most deployments: the parallel walk covers 4 M files in under a second warm (`proposals/stowcloud-5-search.md`), so most installs never allocate any of this. When an admin does turn the name index on, it's a deliberate act — a toggle they flip and a build they start (`proposals/stowcloud-5-search.md`), not something that happens by crossing a file count. The toggle moved out of the config file so it no longer needs a restart, but nothing about *who decides* changed: no measurement flips it, and a share that was never opted in has no `.scindex/` at all, because nothing on the query or write path will create one.
 
 So the realistic ceiling is one of these tiers:
 
@@ -102,7 +102,7 @@ So the realistic ceiling is one of these tiers:
 | Web UI + name index | ~200–300 MB (all in the index file; main DB still ~0) |
 | DAV/compat sync in use | ~1.1 GB (main DB) |
 | DAV/NC + name index | ~1.3–1.4 GB |
-| + content index | Not applicable — content indexing is not implemented (`DESIGN-SEARCH.md` §5) |
+| + content index | Not applicable — content indexing is not implemented (`proposals/stowcloud-5-search.md`) |
 
 ### Lazy allocation — the other half of the fix
 
@@ -223,8 +223,8 @@ min_free_bytes = "1 GiB"    # always-on safety net (§4.4), independent of size_
 ### 4.1 Why off is the default
 
 - On a 256 GB+ system disk, a 4 GB guard cuts capability for no reason. 32 GB is the **floor** this design supports, not the only shape.
-- Content indexing, if it's ever built, is required to live in its own file outside the main DB (`DESIGN-SEARCH.md` §5.2) — so the main DB stays predictable at ~105 B/file even then. Today content indexing doesn't exist at all, so the main DB's only variable growth is `node` rows, and those only appear once DAV/NC is in use (§2).
-- The name index is already off by default and, even on, never touches the main DB (`DESIGN-SEARCH.md` §2).
+- Content indexing, if it's ever built, is required to live in its own file outside the main DB (`proposals/stowcloud-5-search.md`) — so the main DB stays predictable at ~105 B/file even then. Today content indexing doesn't exist at all, so the main DB's only variable growth is `node` rows, and those only appear once DAV/NC is in use (§2).
+- The name index is already off by default and, even on, never touches the main DB (`proposals/stowcloud-5-search.md`).
 
 ### 4.2 Off does not mean unobserved
 
@@ -260,7 +260,7 @@ This is `sc-server/src/diagnostics.rs::guard_recommendation`, pinned by a unit t
 
 **Independent of the guard**, if the volume's free space drops below a threshold, writes to that store stop and the server reports `degraded`. This isn't a policy ceiling — it's the baseline defense against SQLite corruption and outright service death, and it cannot be turned off.
 
-Only one such key exists today: `db.min_free_bytes` (default 1 GiB), guarding the metadata DB's own volume. An earlier draft specified a second, `index.min_free`, for a separately configured index storage volume — that doesn't apply currently: the name index lives inside the share's own host path (`DESIGN-SEARCH.md` §4.3), on whatever volume the share itself is on, not a separately configured location, so there's nothing distinct for a second key to guard yet.
+Only one such key exists today: `db.min_free_bytes` (default 1 GiB), guarding the metadata DB's own volume. An earlier draft specified a second, `index.min_free`, for a separately configured index storage volume — that doesn't apply currently: the name index lives inside the share's own host path (`proposals/stowcloud-5-search.md`), on whatever volume the share itself is on, not a separately configured location, so there's nothing distinct for a second key to guard yet.
 
 Guard (policy) and floor (unconditional) are different things — turning the guard off does not mean "keep writing as the disk fills."
 
@@ -288,7 +288,7 @@ Both indexes stay out of this discussion entirely — each is outside the main D
 
 | Index | Storage | Own cap | On exceeding it |
 |---|---|---|---|
-| Name (T3) | `<share>/.scindex/names/` flat files | none configurable yet — see `DESIGN-SEARCH.md` §4.3 | n/a today |
+| Name (T3) | `<share>/.scindex/names/` flat files | none configurable yet — see `proposals/stowcloud-5-search.md` | n/a today |
 | Content (T4) | not implemented | — | — |
 
 Reads, writes, and sync are never blocked at any point in this section — the DB is a cache; it can shrink or degrade without the service going down.
@@ -326,20 +326,20 @@ Cached values are always reconciled against reality on the read path (lazy reval
 
 ### Storage-class detection
 
-A share's storage is classified by the kernel's own rotational flag, `/sys/block/*/queue/rotational` (Linux only — a non-Linux host, which is never the deployment target, defaults to the permissive flash class rather than pretending to detect something that isn't there). That flag alone only distinguishes spinning disks from flash; an additional, cheap check for an `nvme` subsystem directory further splits flash into `SataSsd` vs. `Nvme`. This detection runs once per share and is cached (`sc-server/src/storage_class.rs`) — it is the mechanism `DESIGN-SEARCH.md` §8's per-tier search limits and §3.3's per-share thread counts both consume.
+A share's storage is classified by the kernel's own rotational flag, `/sys/block/*/queue/rotational` (Linux only — a non-Linux host, which is never the deployment target, defaults to the permissive flash class rather than pretending to detect something that isn't there). That flag alone only distinguishes spinning disks from flash; an additional, cheap check for an `nvme` subsystem directory further splits flash into `SataSsd` vs. `Nvme`. This detection runs once per share and is cached (`sc-server/src/storage_class.rs`) — it is the mechanism `proposals/stowcloud-5-search.md`'s per-tier search limits and §3.3's per-share thread counts both consume.
 
 ### Everything else
 
 | Item | Treatment |
 |---|---|
-| Blocking-pool sizing per storage class | **Not implemented.** The four-way classification above exists and is real, but nothing today resizes Tokio's blocking thread pool by storage class — it runs with Tokio's own default regardless of what's mounted. Only the *search* concurrency budget (§8 of `DESIGN-SEARCH.md`) currently acts on this classification. |
+| Blocking-pool sizing per storage class | **Not implemented.** The four-way classification above exists and is real, but nothing today resizes Tokio's blocking thread pool by storage class — it runs with Tokio's own default regardless of what's mounted. Only the *search* concurrency budget (§8 of `proposals/stowcloud-5-search.md`) currently acts on this classification. |
 | Sequential reads | `posix_fadvise(POSIX_FADV_SEQUENTIAL)` for ZIP streaming and downloads |
 | Listing | `getdents64` via the OS directory iterator, `d_type` only — no `statx` for a name-sorted listing |
 | Listing-session memory | Per-user cap of 4 sessions plus a **global cap** `list.total_memory` (default 64 MB) — a 100k-entry session runs ~3 MB, so ~20 sessions fit |
 | Thumbnail cache location | `preview.cache_dir`, separate from the data directory by default; a 100k+ item library is better placed on the RAID (capacity vs. latency, left to the admin) |
 | Thumbnail concurrency | Core count / 2; halved again on rotational media |
-| Search T2 deadline | Storage-aware: 3 s fast tier, 8 s slow tier (`DESIGN-SEARCH.md` §8); a short deadline on cold HDD only reaches a few hundred entries, but results always stream regardless |
-| Name-index crawl rate, content-index parallelism | `DESIGN-SEARCH.md` §8: fixed internal constants for the former (not config-exposed), not applicable for the latter (no content index exists) |
+| Search T2 deadline | Storage-aware: 3 s fast tier, 8 s slow tier (`proposals/stowcloud-5-search.md`); a short deadline on cold HDD only reaches a few hundred entries, but results always stream regardless |
+| Name-index crawl rate, content-index parallelism | `proposals/stowcloud-5-search.md`: fixed internal constants for the former (not config-exposed), not applicable for the latter (no content index exists) |
 | `io_uring` | Future work. `sc-vfs` sits behind an async trait, so this is a swappable backend later — most valuable for stat-storm-heavy workloads |
 
 ---

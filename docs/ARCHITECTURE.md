@@ -253,7 +253,7 @@ plus recursion through `parent`. Path resolution is **always done by the
 filesystem**, never the DB, so no forward index is needed.
 
 **The search index does not use this table.** The name index is a
-self-contained block-compressed trigram file (`DESIGN-SEARCH.md` §4.1), and
+self-contained block-compressed trigram file (`proposals/stowcloud-5-search.md`), and
 content indexing would live in a separate `content.db`. So enabling search
 does not disturb lazy allocation.
 

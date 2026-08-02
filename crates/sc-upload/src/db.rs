@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS upload_chunk_settings (
 );
 
 -- Client-chosen transfer id -> engine session, for the session-folder chunked
--- upload surface (`/dav-uploads/{tid}`, DESIGN-WEBDAV.md).
+-- upload surface (`/dav-uploads/{tid}`).
 --
 -- `tid` is picked by the client, so it is guessable and collidable and can
 -- never be a session key on its own. The primary key is scoped by `user`, and

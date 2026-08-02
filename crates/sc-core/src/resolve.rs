@@ -175,8 +175,7 @@ impl crate::Core {
     }
 
     /// Whether `user` can read `path` within `share` — the ACL check
-    /// `sc-search`'s walker needs to gate *descent*
-    /// (`DESIGN-SEARCH.md` §3.2), exposed here so callers outside this crate
+    /// `sc-search`'s walker needs to gate *descent*, exposed here so callers outside this crate
     /// never need `sc-acl`'s `AclEngine` directly.
     pub fn can_read(&self, user: UserId, share: ShareId, path: &SafePath) -> bool {
         self.acl.effective(user, share, path).contains(Perms::READ)

@@ -273,8 +273,7 @@ pub struct StorageReport {
     pub shares: Vec<ShareStorage>,
 }
 
-/// Projected cost of turning the optional name index on
-/// (`DESIGN-SEARCH.md` §6).
+/// Projected cost of turning the optional name index on.
 #[derive(Clone, Debug, Serialize)]
 pub struct IndexEstimate {
     pub files: u64,

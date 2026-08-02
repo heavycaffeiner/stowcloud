@@ -1,4 +1,4 @@
-//! Hardened XML request-body parsing (`DESIGN-WEBDAV.md` §3).
+//! Hardened XML request-body parsing.
 //!
 //! Rules, all enforced here and nowhere else:
 //!

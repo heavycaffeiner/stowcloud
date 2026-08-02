@@ -66,7 +66,7 @@ pub enum Command {
     },
     /// Render and write smb.conf/smbpasswd/passwd from config.
     SmbSync,
-    /// Name-index (T3, `DESIGN-SEARCH.md` §4) maintenance: build, merge, or
+    /// Name-index (T3,) maintenance: build, merge, or
     /// inspect the on-disk `.scindex/names` a share may have. Every
     /// subcommand refuses to run unless `[index] name_enabled = true` is set
     /// in the config — the same "off by default, never automatic" rule
@@ -111,15 +111,15 @@ pub enum IndexAction {
     /// Build (or fully rebuild) the name index for one share, or every
     /// registered share when `--share` is omitted. A rebuild discards
     /// whatever segments already exist and recrawls from scratch
-    /// (`DESIGN-SEARCH.md` §4.2 "initial activation") — the same primitive
+    /// ("initial activation") — the same primitive
     /// `SearchBridge::build_name_index` exposes to tests, now reachable in a
     /// running deployment.
     Build {
         #[arg(long)]
         share: Option<String>,
     },
-    /// Fold accumulated delta+tombstone segments into a fresh base segment
-    /// (`DESIGN-SEARCH.md` §4.2). Skipped for a share whose index is already
+    /// Fold accumulated delta+tombstone segments into a fresh base segment.
+    /// Skipped for a share whose index is already
     /// within `merge_ratio` of its base, or has no index at all.
     Merge {
         #[arg(long)]

@@ -210,7 +210,7 @@ impl App {
                 core: core.clone(),
                 preview,
             });
-        // `DESIGN-SEARCH.md` §8: shared between `SearchBridge` (picks the
+        //: shared between `SearchBridge` (picks the
         // walk deadline) and `AppState` (acquires the concurrency permit) so
         // the two can never disagree about which tier's numbers apply to a
         // given search — see `SearchBridge::limits`.
@@ -1172,7 +1172,7 @@ fn build_http_state(
             10,
             std::time::Duration::from_secs(3600),
         )),
-        // `DESIGN-SEARCH.md` §8, config-reachable via `[search]` — shared
+        //, config-reachable via `[search]` — shared
         // with `SettingsBridge` (`App::build`) so a live rate-limit change
         // reconfigures the same bucket this state serves requests through.
         search_rate,
@@ -1580,7 +1580,7 @@ fn run_upload_gc_pass(uploads: &Arc<sc_upload::UploadEngine>, core: &Arc<sc_core
 }
 
 /// How often to check every share's name index for `needs_merge()`
-/// (`FEATURES.md` #117, `DESIGN-SEARCH.md` §5.5 "merges on idle").
+/// (`FEATURES.md` #117, "merges on idle").
 ///
 /// "Idle" here is deliberately narrow: it means "no admin-triggered
 /// `/api/admin/index/build` job is running right now" (`CoreBridge::

@@ -1,5 +1,4 @@
-//! Session-folder chunked upload for the **native** mount
-//! (`DESIGN-WEBDAV.md` §11).
+//! Session-folder chunked upload for the **native** mount.
 //!
 //! ```text
 //!   MKCOL    /dav-uploads/{tid}         Destination (required),
@@ -476,7 +475,8 @@ impl DavUploads {
 /// bytes that adds up to. The engine tracks the received total, not a
 /// per-chunk table, so the total is distributed across the names — the sum is
 /// exact, which is the number a client resumes from; the per-name split is
-/// indicative. `DESIGN-WEBDAV.md` §11 says so on the wire's behalf.
+/// indicative, and the response says so rather than implying a per-chunk
+/// ledger this does not keep.
 fn chunk_listing_xml(href_prefix: &str, names: &[u32], received: u64) -> String {
     let mut body = String::from(
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<d:multistatus xmlns:d=\"DAV:\">",

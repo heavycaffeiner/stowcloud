@@ -15,9 +15,9 @@
 //! The two traits are *not* the same API with different names, and collapsing
 //! them would be wrong:
 //!
-//! * `sc-dav` needs the `403`-vs-`404` distinction spelled out
-//!   (`DESIGN-WEBDAV.md` §8: a path the caller may not list must be
-//!   indistinguishable from a missing one), which `sc-core` does not model —
+//! * `sc-dav` needs the `403`-vs-`404` distinction spelled out — a path the
+//!   caller may not list must be indistinguishable from a missing one, or the
+//!   status itself confirms the path exists — which `sc-core` does not model:
 //!   its `Denied` covers both. [`CoreBridge::dav_err`] recovers it by asking
 //!   whether the caller can read the path at all.
 //! * `sc-http` needs JSON-shaped DTOs with nanosecond times as strings
@@ -89,10 +89,11 @@ impl CoreBridge {
         }
     }
 
-    /// `DESIGN-WEBDAV.md` §8. `sc-core` answers "denied" for both "you may
-    /// not do *this*" and "you may not see this at all"; DAV must answer 403
-    /// only for the first and 404 for the second, so re-ask the cheap
-    /// (ACL-cached) question of whether a plain read resolves.
+    /// `sc-core` answers "denied" for both "you may not do *this*" and "you
+    /// may not see this at all"; DAV must answer 403 only for the first and
+    /// 404 for the second, since a 403 on the second would confirm the path
+    /// exists. So re-ask the cheap (ACL-cached) question of whether a plain
+    /// read resolves.
     fn dav_err(&self, user: UserId, vpath: &str, e: sc_core::CoreError) -> sc_dav::CoreError {
         use sc_core::CoreError as C;
         use sc_dav::CoreError as D;
@@ -260,7 +261,7 @@ impl sc_dav::CoreApi for CoreBridge {
             .move_to(user, from, to, true)
             .map(|_| ())
             .map_err(|e| self.dav_err(user, from, e))?;
-        // `DESIGN-SEARCH.md` §4.2 "our own writes": record the move against
+        // "our own writes": record the move against
         // whichever share(s) have an index, the moment we know it succeeded.
         let removed = self.index_path(user, from).into_iter().collect::<Vec<_>>();
         let added = self.index_path(user, to).into_iter().collect::<Vec<_>>();
@@ -945,7 +946,7 @@ impl hapi::CoreApi for CoreBridge {
     }
 
     fn index_estimate(&self) -> Result<hapi::IndexEstimate, hapi::CoreError> {
-        // `DESIGN-SEARCH.md` §6: every coefficient is *measured* from a
+        //: every coefficient is *measured* from a
         // sample of the real corpus rather than assumed, because a CJK
         // corpus and a Latin one of the same file count cost very different
         // amounts — the distinct-trigram term is what makes the difference,
@@ -1960,9 +1961,9 @@ impl sc_http::content_api::ContentApi for ContentBridge {
 
 // -------------------------------------------------------------- search --
 // Binds `sc_http::search_api::SearchApi` (`GET /api/search[/stream]`,
-// `DESIGN-SEARCH.md` §7) to `sc-search`'s `Walker` (T2) over the caller's
+//) to `sc-search`'s `Walker` (T2) over the caller's
 // readable `ShareRoot`s, consulting a per-share `sc_search::NameIndex` (T3)
-// first when one already exists on disk (`DESIGN-SEARCH.md` §4).
+// first when one already exists on disk.
 //
 // An index is opened if (and only if) `<share host path>/.scindex/names/meta`
 // is already present (`open_name_index` below), and every share without one
@@ -2014,7 +2015,7 @@ type SearchRoot = (Arc<sc_vfs::ShareRoot>, sc_vfs::SafePath);
 
 pub struct SearchBridge {
     pub core: Arc<sc_core::Core>,
-    /// `DESIGN-SEARCH.md` §8's storage-class-aware cap/deadline needs to
+    /// 's storage-class-aware cap/deadline needs to
     /// know each share's storage class; detection touches sysfs on Linux
     /// (`crate::storage_class`), so results are cached rather than re-read
     /// on every search.
@@ -2031,7 +2032,7 @@ pub struct SearchBridge {
 
 impl SearchBridge {
     /// Every `(ShareRoot, SafePath)` the caller can read, restricted to
-    /// `scope` when given. `DESIGN-SEARCH.md` §3.2/§7.2: the ACL check that
+    /// `scope` when given.: the ACL check that
     /// matters happens *inside* the walk (gating descent); this only decides
     /// which roots the walk starts from, and a root the caller cannot read
     /// at all is silently absent rather than an error — asking about paths
@@ -2071,7 +2072,7 @@ impl SearchBridge {
 
     /// Folds every root's real storage class (`crate::storage_class::detect`,
     /// cached per share) to the single tier that governs this search —
-    /// `DESIGN-SEARCH.md` §8: "a search spanning shares of different
+    /// "a search spanning shares of different
     /// classes takes the most conservative (slowest) one." Feeds both the
     /// concurrency budget (via `SearchApi::search_tier`) and, as a plain
     /// `bool`, `sc-search`'s own storage-aware knobs (`decide_threads`,
@@ -2092,13 +2093,13 @@ impl SearchBridge {
     ///
     /// A query with a `kind`/size/mtime filter bypasses the index for *every*
     /// root, not just the ones lacking one: the index stores bare paths only
-    /// (`DESIGN-SEARCH.md` §4.1 — no kind, no size, no mtime), so it has no
+    /// ( — no kind, no size, no mtime), so it has no
     /// way to evaluate such a filter, and silently answering a filtered query
     /// from a source that cannot apply the filter would be a wrong answer,
     /// not a fast one.
     ///
     /// For every hit that survives the index's own query, this re-checks ACL
-    /// per hit exactly like the walk does (`DESIGN-SEARCH.md` §7.2 — the
+    /// per hit exactly like the walk does ( — the
     /// index does not know permissions) and then stats the file, which does
     /// two jobs at once: it supplies `is_dir`/`size`/`mtime_ns` (the index
     /// doesn't carry them) and it revalidates the hit is not stale — a file
@@ -2191,7 +2192,7 @@ impl SearchBridge {
     }
 
     /// Builds (or fully rebuilds) `share`'s on-disk T3 name index by
-    /// crawling it end to end (`DESIGN-SEARCH.md` §4.2 "initial activation") and
+    /// crawling it end to end ("initial activation") and
     /// handing the result to `sc_search::IndexBuilder`.
     ///
     /// Thin wrapper over the free function below so existing tests
@@ -2256,7 +2257,7 @@ impl CoreBridge {
 /// (`DESIGN-CORE.md` §1: nothing above `sc-vfs` may see one) —
 /// `Core::share_host_path` is documented as the one sanctioned escape hatch
 /// for exactly this kind of trusted server-side infra. One index per share
-/// (not per mount, `DESIGN-SEARCH.md` §6.10's finer split) — every share here
+/// (not per mount,'s finer split) — every share here
 /// already has its own `ShareRoot`, so this is the simpler placement and
 /// still satisfies "delete it and T2 still works" (§4.2).
 fn name_index_dir(core: &sc_core::Core, share: sc_vfs::ShareId) -> Option<PathBuf> {
@@ -2292,7 +2293,7 @@ pub(crate) fn open_existing_name_index(
 }
 
 /// Builds (or fully rebuilds) `share`'s on-disk T3 name index by crawling it
-/// end to end (`DESIGN-SEARCH.md` §4.2 "initial activation") and handing the result
+/// end to end ("initial activation") and handing the result
 /// to `sc_search::IndexBuilder`. See `SearchBridge::build_name_index`'s doc
 /// comment for why this is a free function rather than a method.
 ///
@@ -2427,7 +2428,7 @@ impl CrawlThrottle {
     }
 }
 
-/// `DESIGN-SEARCH.md` §4.2 "our own writes": append/tombstone the paths this
+/// "our own writes": append/tombstone the paths this
 /// process itself just created/removed, so a share's name index (if it has
 /// one) never has to wait for a rescan to see a write this same server made.
 /// A no-op for any share with no index — `open_existing_name_index` checks
@@ -2478,7 +2479,7 @@ fn note_index_change(
     }
 }
 
-/// `DESIGN-SEARCH.md` §4.2 "watcher event": reconcile one directory's entries
+/// "watcher event": reconcile one directory's entries
 /// in `share`'s name index against what is really there, for a directory an
 /// `sc_watch::InvalEvent` reported dirty for a reason this process did not
 /// itself cause (`note_index_change` already covers our own writes).
@@ -2686,7 +2687,7 @@ impl sc_http::search_api::SearchApi for SearchBridge {
         let tier = self.effective_tier(&roots);
         let rotational = tier == sc_http::search_limits::SearchTier::Slow;
         let matcher = Self::matcher_for(q);
-        // `DESIGN-SEARCH.md` §8, config-reachable via `[search]` — see
+        //, config-reachable via `[search]` — see
         // `SearchBridge::limits` doc comment for why this is the same
         // object the HTTP layer's concurrency cap reads.
         let budget = sc_search::WalkBudget::new(self.limits.walk_deadline(tier));
@@ -2710,7 +2711,7 @@ impl sc_http::search_api::SearchApi for SearchBridge {
             .map(to_search_hit)
             .chain(rx.try_iter().map(to_search_hit))
             .collect();
-        // `DESIGN-SEARCH.md` §7.1: ranking is meaningful once the full (or
+        //: ranking is meaningful once the full (or
         // budget-exhausted) result set is in hand, which is exactly the case
         // for the non-streaming endpoint — the streaming one leaves this to
         // the client on purpose (§3.5).
@@ -3442,7 +3443,7 @@ mod search_bridge_tests {
         assert_eq!(out.hits.len(), 1, "{:?}", out.hits);
         assert_eq!(out.hits[0].path, "hello.txt");
         assert!(!out.hits[0].is_dir);
-        // A plain name query never forces a stat (`DESIGN-SEARCH.md` §3.2:
+        // A plain name query never forces a stat (
         // "zero statx calls for name matching") — `size`/`mtime_ns` are `None` here by
         // design, not a bug; this is what "exactly as before" means.
         assert_eq!(out.hits[0].size, None);
@@ -3870,7 +3871,7 @@ mod search_bridge_tests {
         // real bug, which is exactly why this compares them directly instead
         // of trusting each in isolation.
         let (search, dir) = setup(vec![root_grant()]);
-        // Photo-library shape: `DESIGN-SEARCH.md` §4.1 calls this the shape
+        // Photo-library shape: calls this the shape
         // block compression is strongest on, and it's what the estimator's
         // own accuracy tests (`sc-search/tests/estimate.rs`) use too.
         let mut n = 0u32;

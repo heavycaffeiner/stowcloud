@@ -1,4 +1,4 @@
-//! Storage-class-aware resource bounds for search (`DESIGN-SEARCH.md` §8):
+//! Storage-class-aware resource bounds for search:
 //!
 //! | | NVMe / SATA SSD | Rotational / Network |
 //! |---|---|---|
@@ -38,7 +38,7 @@ pub enum StorageClass {
     Network,
 }
 
-/// The two-way split `DESIGN-SEARCH.md` §8 actually tabulates values for.
+/// The two-way split actually tabulates values for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SearchTier {
     Fast,
@@ -59,7 +59,7 @@ impl StorageClass {
 }
 
 /// Folds every storage class touched by one search into the single tier
-/// that governs it. `DESIGN-SEARCH.md` §8: "a search spanning shares of
+/// that governs it.: "a search spanning shares of
 /// different classes takes the most conservative (slowest) one — a single
 /// HDD in the set is what bounds the walk." `Slow` wins over `Fast`
 /// whenever both are present; an empty iterator (no readable roots at all)
@@ -74,7 +74,7 @@ pub fn fold_tier(classes: impl IntoIterator<Item = StorageClass>) -> SearchTier 
     tier
 }
 
-/// Config-reachable defaults for the two tiers, `DESIGN-SEARCH.md` §8's
+/// Config-reachable defaults for the two tiers,'s
 /// own numbers.
 #[derive(Clone, Copy, Debug)]
 pub struct SearchLimitsConfig {
@@ -98,7 +98,7 @@ impl Default for SearchLimitsConfig {
 /// Global concurrent-search cap, split into one semaphore per tier so an
 /// HDD-bound search and an NVMe-bound search don't compete for the same
 /// budget — they aren't contending for the same disk's I/O. Each tier's
-/// *own* cap still bounds it exactly as `DESIGN-SEARCH.md` §8 specifies.
+/// *own* cap still bounds it exactly as specifies.
 pub struct SearchConcurrency {
     fast: RwLock<Arc<Semaphore>>,
     slow: RwLock<Arc<Semaphore>>,
@@ -120,9 +120,9 @@ impl SearchConcurrency {
 
     /// `try_acquire` (not the blocking/`.await` form) is the right shape
     /// here: an exhausted budget should reject with `429 Retry-After`
-    /// immediately (`DESIGN-SEARCH.md` §8: "excess requests are queued with
-    /// a Retry-After" — the queuing is the client's retry, not ours),
-    /// never make the caller wait on the server side.
+    /// immediately, never make the caller wait on the server side. Excess
+    /// requests do get queued — by the client, on its own `Retry-After`,
+    /// not by us holding a connection open.
     pub fn try_acquire(&self, tier: SearchTier) -> Option<OwnedSemaphorePermit> {
         let sem = match tier {
             SearchTier::Fast => self.fast.read().clone(),

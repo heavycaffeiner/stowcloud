@@ -148,7 +148,7 @@ pub struct IndexConfig {
 
 impl Default for IndexConfig {
     fn default() -> Self {
-        // `DESIGN-SEARCH.md` §6 defaults. These are constants, not TOML keys —
+        // defaults. These are constants, not TOML keys —
         // the config surface is only `[index] name_enabled`.
         Self {
             block_size: 32,

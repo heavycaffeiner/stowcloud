@@ -1,4 +1,4 @@
-//! RFC 4918 Class 2 write locks (`DESIGN-WEBDAV.md` §5).
+//! RFC 4918 Class 2 write locks.
 //!
 //! Two identities per lock, on purpose:
 //!

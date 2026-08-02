@@ -831,7 +831,7 @@ pub struct AppState {
     /// `DESIGN-PREVIEW.md` §2) — `FileId`-keyed, deliberately separate from
     /// `core` (see `content_api` module docs).
     pub content: Arc<dyn ContentApi>,
-    /// `GET /api/search[/stream]` (`DESIGN-SEARCH.md` §7) — backed by
+    /// `GET /api/search[/stream]` — backed by
     /// `sc-search`'s walker in `sc-server`; see `search_api` module docs for
     /// why this isn't just another `CoreApi` method.
     pub search: Arc<dyn SearchApi>,
@@ -861,7 +861,7 @@ pub struct AppState {
     /// Share-link password attempts, keyed by the token in the URL
     /// (`DESIGN-PREVIEW.md` §7.2: 10 per hour per token).
     pub link_rate: Arc<KeyedTokenBucket>,
-    /// Per-user search rate limit (`DESIGN-SEARCH.md` §8: 30/min), keyed by
+    /// Per-user search rate limit (30/min), keyed by
     /// the caller's `UserId`.
     pub search_rate: Arc<KeyedTokenBucket>,
     /// `POST /api/setup` attempts, per IP, *in addition to* the general
@@ -871,7 +871,7 @@ pub struct AppState {
     /// day. This bucket is the one that actually bounds it.
     pub setup_rate: Arc<IpTokenBucket>,
     /// Global concurrent-search cap, split per storage-class tier
-    /// (`DESIGN-SEARCH.md` §8: T2 is I/O-bound enough that unlimited
+    /// (T2 is I/O-bound enough that unlimited
     /// concurrent walks would starve other services, and an HDD-bound walk
     /// needs a tighter cap than an NVMe-bound one). `try_acquire` (not
     /// `.await`) because an exhausted budget should reject immediately with

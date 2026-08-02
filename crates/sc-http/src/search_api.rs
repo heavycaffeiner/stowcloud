@@ -1,5 +1,5 @@
-//! Trait boundary for `GET /api/search` / `GET /api/search/stream`
-//! (`DESIGN-SEARCH.md` §7). Kept out of [`crate::core_api::CoreApi`] because
+//! Trait boundary for `GET /api/search` / `GET /api/search/stream`.
+//! Kept out of [`crate::core_api::CoreApi`] because
 //! it is backed by `sc-search`'s `Walker`, which this crate does not (and
 //! should not) depend on — `sc-server` binds it to the real walker over live
 //! `ShareRoot`s.
@@ -34,7 +34,7 @@ pub struct SearchHit {
 }
 
 /// Mirrors `sc_search::Completeness`, minus the `sc-search` dependency
-/// (`DESIGN-SEARCH.md` §3.5: "report truncation honestly").
+/// ("report truncation honestly").
 #[derive(Clone, Debug, PartialEq)]
 pub enum SearchCompleteness {
     Full,
@@ -48,7 +48,7 @@ pub struct SearchOutcome {
 }
 
 pub trait SearchApi: Send + Sync {
-    /// Which concurrency budget (`DESIGN-SEARCH.md` §8) this query would
+    /// Which concurrency budget this query would
     /// run under: folds the storage class of every share the query's
     /// `scope` resolves to (or every readable share, if unscoped) to the
     /// more conservative tier. Deliberately **cheap** — it resolves which
@@ -59,12 +59,12 @@ pub trait SearchApi: Send + Sync {
     fn search_tier(&self, user: UserId, q: &SearchQuery) -> SearchTier;
 
     /// Batch search: runs to completion (or budget exhaustion) and returns
-    /// every hit at once, already ranked (`DESIGN-SEARCH.md` §7.1).
+    /// every hit at once, already ranked.
     /// **Blocking** — callers on the async path must `spawn_blocking`.
     fn search(&self, user: UserId, q: &SearchQuery) -> Result<SearchOutcome, CoreError>;
 
     /// Streaming search: calls `on_hit` once per result *as it is found*
-    /// (unranked — `DESIGN-SEARCH.md` §3.5 says ranking happens client-side
+    /// (unranked — says ranking happens client-side
     /// on completion), in the order the walker's `emit` produces them.
     /// `on_hit` returning `false` requests an early stop (the SSE client
     /// disconnected); the real stop reason reported back is still whatever

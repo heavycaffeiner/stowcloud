@@ -142,7 +142,7 @@ pub struct HomesConfig {
     pub root: Option<PathBuf>,
 }
 
-/// `DESIGN-SEARCH.md` §8: the global concurrent-search cap and T2 walk
+/// the global concurrent-search cap and T2 walk
 /// deadline, split per storage-class tier (fast: NVMe/SATA SSD; slow:
 /// rotational/network — `sc_http::search_limits::StorageClass::tier`).
 /// `search_rate` is the existing per-user rate limit (§8: 30/min), not new,
@@ -858,7 +858,7 @@ mod tests {
         assert!(!cfg.homes.enabled);
         assert!(!cfg.smb.enabled);
         assert!(!cfg.smb.allow_public_bind);
-        // DESIGN-SEARCH.md §8.
+        //
         assert_eq!(cfg.search.max_concurrent_fast, 4);
         assert_eq!(cfg.search.max_concurrent_slow, 2);
         assert_eq!(cfg.search.walk_deadline_fast_ms, 3_000);

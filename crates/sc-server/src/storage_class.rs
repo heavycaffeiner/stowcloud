@@ -1,5 +1,5 @@
 //! Storage-class detection for the search resource limiter
-//! (`DESIGN-SEARCH.md` §8, `DESIGN-FOOTPRINT.md` §5). `sc_vfs::ShareRoot`
+//! (`DESIGN-FOOTPRINT.md` §5). `sc_vfs::ShareRoot`
 //! already exposes what a share's filesystem is (`fstype()`) and which
 //! block device backs it (`root_dev()`); this module turns those into an
 //! `sc_http::search_limits::StorageClass` without needing anything new from
@@ -51,7 +51,7 @@ fn detect_local(root_dev: u64) -> StorageClass {
         // Sysfs unreadable (container without /sys mounted, unusual device-
         // mapper setup, ...): assume the worst rather than the best. An
         // over-conservative cap costs latency; an over-permissive one costs
-        // a thrashing disk and starved neighbours (`DESIGN-SEARCH.md` §8).
+        // a thrashing disk and starved neighbours.
         None => StorageClass::Rotational,
     }
 }

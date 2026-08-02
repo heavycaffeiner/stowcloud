@@ -150,7 +150,7 @@ impl DavService {
         &self.cfg
     }
 
-    /// 60 s expiry sweep (`DESIGN-WEBDAV.md` §5.1).
+    /// 60 s expiry sweep, bounding how long a stale lock can block writers.
     pub fn spawn_lock_sweeper(self: &Arc<Self>) -> tokio::task::JoinHandle<()> {
         let locks = self.locks.clone();
         tokio::spawn(async move {

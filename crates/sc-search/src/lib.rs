@@ -1,4 +1,4 @@
-//! `sc-search` — search for stowcloud. See `docs/DESIGN-SEARCH.md`.
+//! `sc-search` — search for stowcloud. See `docs/.
 //!
 //! Three things live here, in the order the design ranks them:
 //!

@@ -1,4 +1,4 @@
-//! PROPFIND — streaming 207 multistatus (`DESIGN-WEBDAV.md` §4).
+//! PROPFIND — streaming 207 multistatus.
 //!
 //! A hundred thousand entries must not become a hundred thousand-node DOM, so
 //! the response is generated straight into a bounded channel with a 64 KiB

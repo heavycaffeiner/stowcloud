@@ -1,8 +1,8 @@
 //! Recursive descendant enumeration for the streaming zip archive
 //! (`DESIGN-PREVIEW.md` §8).
 //!
-//! ACL gates *descent*, the same rule `sc-search`'s walker follows
-//! (`DESIGN-SEARCH.md` §3.2): a subtree the caller cannot read is never
+//! ACL gates *descent*, the same rule `sc-search`'s walker follows: a
+//! subtree the caller cannot read is never
 //! entered, so an unreadable directory costs nothing and leaks nothing
 //! beyond "this name exists and you can't have it" (which its parent
 //! listing already disclosed, or it wouldn't be reachable at all).

@@ -7,7 +7,7 @@ use crate::backend::CoreError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DavError {
-    // ---- XML hardening (DESIGN-WEBDAV.md §3) ----
+    // ---- XML hardening: no DTD, no PI, bounded depth/size ----
     #[error("request body too large")]
     TooLarge,
     #[error("DTD is forbidden in DAV request bodies")]
@@ -87,8 +87,9 @@ impl DavError {
     }
 }
 
-/// `DESIGN-WEBDAV.md` §8. The `Denied` / `NotListable` split is what keeps
-/// existence from leaking.
+/// The `Denied` / `NotListable` split is what keeps existence from leaking:
+/// only a path the caller *can* list may answer 403, because 403 confirms the
+/// path is there. Everything else is 404.
 impl From<CoreError> for DavError {
     fn from(e: CoreError) -> Self {
         match e {

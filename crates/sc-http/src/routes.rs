@@ -3176,7 +3176,7 @@ async fn public_link_drop(
 }
 
 // ----------------------------------------------------------------- search --
-// `DESIGN-SEARCH.md` §7. T2 (the parallel walker) is the first-class path;
+// T2 (the parallel walker) is the first-class path;
 // `state.search` is `sc-server`'s binding of it to live `ShareRoot`s.
 
 #[derive(Deserialize)]
@@ -3214,7 +3214,7 @@ fn completeness_json(c: &crate::search_api::SearchCompleteness) -> serde_json::V
 }
 
 /// `None` if the caller may proceed, `Some(response)` if it was rejected by
-/// the per-user rate limit (`DESIGN-SEARCH.md` §8: 30/min).
+/// the per-user rate limit (30/min).
 fn check_search_rate(state: &AppState, user_key: &str) -> Option<Response> {
     let retry = state.search_rate.check(user_key)?;
     let mut resp = AppError::rate_limited(retry).into_response();
@@ -3224,8 +3224,7 @@ fn check_search_rate(state: &AppState, user_key: &str) -> Option<Response> {
     Some(resp)
 }
 
-/// `429` for an exhausted concurrent-search budget (`DESIGN-SEARCH.md` §8:
-/// "excess requests are queued with a Retry-After"). The hint is the tier's own
+/// `429` for an exhausted concurrent-search budget. The hint is the tier's own
 /// walk deadline — a slot in the slow (HDD) budget takes longer to free up
 /// than one in the fast budget, so the retry hint should say so.
 fn search_rate_limited_response(state: &AppState, tier: crate::search_limits::SearchTier) -> Response {
@@ -3251,7 +3250,7 @@ async fn search(State(state): State<AppState>, principal: Option<Extension<Princ
     }
     let query = q.into_api();
     let user = principal.user;
-    // `DESIGN-SEARCH.md` §8: global concurrency cap, split per storage-class
+    //: global concurrency cap, split per storage-class
     // tier — T2 is I/O-heavy enough that unbounded concurrent walks would
     // starve other services sharing the disk, and an HDD-bound walk needs a
     // tighter cap than an NVMe-bound one. `search_tier` is cheap (no tree
@@ -3682,8 +3681,7 @@ async fn admin_set_smb_settings(
     }
 }
 
-/// `PATCH /api/admin/server-settings/search` — fully live (`DESIGN-SEARCH.md`
-/// §8's concurrency caps, walk deadlines, per-user rate limit).
+/// `PATCH /api/admin/server-settings/search` — fully live ('s concurrency caps, walk deadlines, per-user rate limit).
 async fn admin_set_search_settings(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,

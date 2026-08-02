@@ -1,4 +1,4 @@
-//! LOCK / UNLOCK (`DESIGN-WEBDAV.md` §5).
+//! LOCK / UNLOCK.
 
 use std::sync::Arc;
 

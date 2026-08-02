@@ -97,9 +97,10 @@ pub enum Order {
 }
 
 /// Errors the core can hand back. The split between `Denied` and `NotListable`
-/// is load bearing: see `DESIGN-WEBDAV.md` §8 — a path the caller may not list
-/// must answer 404 whether or not it exists, and 403 is only ever legal when
-/// listing *is* permitted but this particular operation is not.
+/// is load bearing: a path the caller may not list must answer 404 whether or
+/// not it exists, and 403 is only ever legal when listing *is* permitted but
+/// this particular operation is not. Answering 403 for an unlistable path
+/// would confirm it exists, which is the leak this split prevents.
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {
     #[error("not found")]
@@ -133,7 +134,9 @@ pub enum CoreError {
 }
 
 impl CoreError {
-    /// `DESIGN-WEBDAV.md` §8 errno table.
+    /// The errno → DAV status mapping. `EEXIST` is the one that depends on
+    /// context: with `Overwrite: T` the caller asked to replace, so a
+    /// collision is a precondition failure; without it, a conflict.
     pub fn from_errno(errno: i32, overwrite: bool) -> Self {
         match errno {
             13 | 1 => CoreError::Denied,          // EACCES / EPERM

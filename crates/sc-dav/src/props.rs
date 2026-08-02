@@ -158,7 +158,7 @@ pub trait PropSource: Send + Sync {
 
 pub type PropSourceRef = Arc<dyn PropSource>;
 
-/// The live properties from `DESIGN-WEBDAV.md` §4.1.
+/// The live properties every PROPFIND answers.
 pub(crate) const LIVE_PROPS: &[&str] = &[
     "resourcetype",
     "getetag",
