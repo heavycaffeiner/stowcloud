@@ -19,7 +19,7 @@ function mix(i: number): number {
   return (x ^ (x >>> 15)) >>> 0
 }
 
-// Every API path is `/{root-label}/...` (DESIGN-CORE.md §3.5) and the mock
+// Every API path is `/{root-label}/...` and the mock
 // session hands out exactly one root, `home`. The seed used to hang off `/`,
 // which no screen ever asks for — `/b/home` lists `/home`, so the browser was
 // empty in mock mode and the file list couldn't be looked at during dev.

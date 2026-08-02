@@ -10,14 +10,14 @@
   // GET /api/admin/shares, GET/POST /api/admin/grants,
   // PATCH/DELETE /api/admin/grants/{id}.
   //
-  // Virtual root (`DESIGN-CORE.md` §3.5): what this creates is an independent
+  // Virtual root: what this creates is an independent
   // rule, not a checkbox in a folder tree. Grant permissions on `Photos/a`
   // and `Photos/b` separately and the user sees two top-level items, `a` and
   // `b` — they never learn `Photos` exists; the hint text beside the subpath
   // input below says so. Showing a folder tree with checkboxes would give
   // the opposite impression: that a real tree exists underneath.
   //
-  // Deny beats allow (`DESIGN-CORE.md` §3.2, DENY wins at equal depth):
+  // Deny beats allow (DENY wins at equal depth):
   // checking the same permission in both allow and deny within one rule
   // still saves as-is — the server doesn't normalize it (see the
   // `admin_grants` test `a_bit_present_in_both_allow_and_deny_round_trips_unmodified`

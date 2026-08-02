@@ -1,5 +1,5 @@
 //! Linux backend: `openat2(RESOLVE_BENEATH | ...)` for everything that
-//! touches the filesystem. See `DESIGN-CORE.md` §1-2 — this module is a
+//! touches the filesystem. See-2 — this module is a
 //! direct translation of that spec.
 //!
 //! Pattern used throughout: resolve the *parent* directory of the target
@@ -43,7 +43,8 @@ fn map_errno(e: Errno) -> VfsError {
     }
 }
 
-/// `resolve_flags()` from `DESIGN-CORE.md` §1.2, verbatim.
+/// Resolve flags for one share's symlink policy. NO_MAGICLINKS is
+/// unconditional: it blocks escape through /proc/self/fd/*.
 fn resolve_flags(policy: &SharePolicy) -> ResolveFlags {
     let mut f = ResolveFlags::NO_MAGICLINKS;
     f |= match policy.symlink {
@@ -303,7 +304,7 @@ pub(crate) fn create_excl(
         resolve,
     )
     .map_err(map_errno)?;
-    // Apply the exact mode regardless of umask (DESIGN-CORE.md §3.1: mode_*
+    // Apply the exact mode regardless of umask (mode_*
     // is applied verbatim, not filtered through umask).
     let _ = fs::fchmod(&fd, m);
     Ok(FileInner(fd))
@@ -524,7 +525,7 @@ pub(crate) fn sync_dir(
     fs::fsync(&dir.0).map_err(map_errno)
 }
 
-/// `copy_file_range` (`DESIGN-CORE.md` §1.2 syscall table, `DESIGN-UPLOAD.md`
+/// `copy_file_range` ( syscall table, `DESIGN-UPLOAD.md`
 /// §7.2): reflink on btrfs/XFS when block-aligned, an in-kernel copy
 /// otherwise — either way no userspace round trip. Always passes explicit
 /// offsets rather than `None`: `FileInner`'s fd is shared/positional

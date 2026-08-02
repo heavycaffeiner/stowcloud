@@ -337,7 +337,7 @@ export interface AuditPage {
  *  `GrantManagementSection.svelte`'s top comment for the exact contract this
  *  type mirrors, `sc_core::acl_store::GrantRecord` for the Rust shape it
  *  comes from). `sc-acl`'s depth-first evaluation
- *  (`DESIGN-CORE.md` §3.2) is keyed on exactly these fields: which
+ * is keyed on exactly these fields: which
  *  `share`/`subpath` this rule covers, whether it `inherit`s to
  *  descendants, and which bits it `allow`s/`deny`s — same-depth `deny`
  *  always wins over `allow`. */

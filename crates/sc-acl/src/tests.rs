@@ -302,8 +302,7 @@ fn roots_falls_back_to_subpath_basename_when_unlabeled() {
 }
 
 /// A small decision table exercising grant combinations x path depths x
-/// permission bits in one place, covering the properties `DESIGN-CORE.md`
-/// §3.2 calls out explicitly.
+/// permission bits in one place, covering the properties calls out explicitly.
 #[test]
 fn exhaustive_depth_and_bit_table() {
     let share = ShareId::new(1);

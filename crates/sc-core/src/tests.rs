@@ -475,7 +475,7 @@ fn listing_pagination_and_name_sort_avoids_full_stat() {
 
     // One stat for the directory itself + one per returned page entry — the
     // 50 entries beyond the page must never be stat-ed for a name sort
-    // (`DESIGN-CORE.md` §1.3).
+    //.
     assert_eq!(stats_used, 1 + 200, "name sort must only stat the returned page, not the whole directory");
 }
 

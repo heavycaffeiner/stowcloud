@@ -4149,7 +4149,7 @@ async fn admin_delete_user(
 }
 
 // -------------------------------------------------------- admin: grants --
-// No access until explicitly granted (`DESIGN-CORE.md` §3.5).
+// No access until explicitly granted.
 // `sc_core::acl_store` already persists `sc_acl::Grant`s and pushes every
 // change straight into the live `AclEngine`; every handler here is a thin
 // HTTP skin over `CoreApi`'s grant methods, gated by `require_admin` exactly

@@ -2,7 +2,7 @@
 //! core of stowcloud: every filesystem access anywhere in the codebase goes
 //! through a `ShareRoot` + `SafePath` (or a handle obtained from one).
 //!
-//! Authoritative specs: `DESIGN-CORE.md` §1-2 (types, syscall mapping,
+//! Authoritative specs:-2 (types, syscall mapping,
 //! `SafePath` rejection table) and `ARCHITECTURE.md` §2 (why: path-as-kernel-
 //! handle, not path-as-string).
 //!

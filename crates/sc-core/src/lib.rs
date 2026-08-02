@@ -63,8 +63,8 @@ pub struct Core {
     pub(crate) acl: Arc<AclEngine>,
     pub(crate) shares: DashMap<ShareId, Arc<ShareEntry>>,
     pub(crate) listings: Mutex<lru::LruCache<String, Arc<ListingSession>>>,
-    /// Single-flight guards for directory aggregate computation
-    /// (`DESIGN-CORE.md` §6), keyed by the directory's fileid.
+    /// Single-flight guards for directory aggregate computation,
+    /// keyed by the directory's fileid.
     pub(crate) inflight: DashMap<FileId, Arc<Mutex<()>>>,
     pub(crate) stat_calls: AtomicU64,
     /// Share-link store (`links.rs`). Attached after construction rather than

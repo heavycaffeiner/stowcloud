@@ -24,7 +24,7 @@ impl ShareRoot {
     /// Open a share root. `host_path` must be a directory; it is resolved
     /// once here and kept alive as an anchor for the lifetime of the
     /// process (or until this `ShareRoot` is dropped) — see
-    /// `DESIGN-CORE.md` §1.1.
+    /// 
     pub fn open(id: ShareId, host_path: &Path, policy: SharePolicy) -> Result<Self, VfsError> {
         let (anchor, root_dev, fstype) = backend::imp::open_anchor(host_path, &policy)?;
         if fstype.is_rejected() {
@@ -59,7 +59,7 @@ impl ShareRoot {
         backend::imp::stat_path(&self.anchor, p, &self.policy)
     }
 
-    /// `O_RDONLY|O_DIRECTORY` — can list. See `DESIGN-CORE.md` §1.1a.
+    /// `O_RDONLY|O_DIRECTORY` — can list. Seea.
     pub fn open_dir(&self, p: &SafePath) -> Result<DirHandle, VfsError> {
         let inner = backend::imp::open_dir(&self.anchor, p, &self.policy)?;
         Ok(DirHandle { inner })
@@ -91,7 +91,7 @@ impl ShareRoot {
 
     /// `no_replace` maps to `RENAME_NOREPLACE` on Linux (atomic). The
     /// portable backend approximates it with a check-then-rename — see
-    /// `DESIGN-CORE.md` §5.5 for why that window can't always be closed.
+    /// for why that window can't always be closed.
     pub fn rename(&self, from: &SafePath, to: &SafePath, no_replace: bool) -> Result<(), VfsError> {
         backend::imp::rename(&self.anchor, from, to, &self.policy, no_replace)
     }

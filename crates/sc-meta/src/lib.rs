@@ -7,8 +7,7 @@
 //!
 //!   1. "what stable integer id does this (dev, ino, btime) have?" (`node`,
 //!      §4.1 of `ARCHITECTURE.md`)
-//!   2. "has anything under this directory changed?" (`diretag`, §4.2 /
-//!      `DESIGN-CORE.md` §4)
+//!   2. "has anything under this directory changed?" (`diretag`)
 //!   3. "what dead WebDAV properties are attached to this file?" (`dav_prop`)
 //!
 //! Schema is exactly `node`/`diretag` as specified in `ARCHITECTURE.md`

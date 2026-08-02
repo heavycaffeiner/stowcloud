@@ -1,4 +1,4 @@
-//! Every rejection rule from `DESIGN-CORE.md` §2, exercised individually.
+//! Every rejection rule from, exercised individually.
 //! Parsing is reject-first: anything on this list must come back `Err`,
 //! never be silently normalized.
 
@@ -148,7 +148,7 @@ fn rejects_reserved_control_prefixes() {
 #[test]
 fn parse_never_panics_on_arbitrary_bytes() {
     // A cheap stand-in for the cargo-fuzz target described in
-    // `DESIGN-CORE.md` §2: throw a grab-bag of nasty inputs at `parse` and
+    //: throw a grab-bag of nasty inputs at `parse` and
     // make sure none of them panic, and that anything which *is* accepted
     // contains no '..' or absolute-path component.
     let long = "a".repeat(10_000);

@@ -7,7 +7,7 @@
   //
   // The folder list is `FileTreeItem`, the same lazily-expanding node the
   // browse sidebar uses — a picker with its own tree implementation would be a
-  // second thing to keep agreeing with `DESIGN-CORE.md` §3.5's "/ is not a
+  // second thing to keep agreeing with's "/ is not a
   // directory" projection.
   import { api, type MovePreflight } from '../api/client'
   import { destinationProblem, type DestinationProblem } from '../api/path-utils'

@@ -77,7 +77,7 @@ fn resolve_existing(
 }
 
 /// Resolve the parent of `p` (must exist) and NFC-normalize the new leaf
-/// name (creation always forces NFC — see `DESIGN-CORE.md` §2).
+/// name (creation always forces NFC — see).
 fn resolve_parent_for_create(
     root: &Path,
     p: &SafePath,
@@ -315,7 +315,7 @@ pub(crate) fn rename(
         // Best-effort only: unlike Linux's `RENAME_NOREPLACE`, there is no
         // atomic compare-and-rename in std, so a window remains between
         // this check and the rename below (documented limitation, mirrors
-        // `DESIGN-CORE.md` §5.5's optimistic-concurrency caveat).
+        //'s optimistic-concurrency caveat).
         if std::fs::symlink_metadata(&to_path).is_ok() {
             return Err(VfsError::AlreadyExists);
         }

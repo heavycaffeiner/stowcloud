@@ -1,6 +1,6 @@
 //! File ETag (pure function, no cache needed) and directory aggregate ETag
 //! (cached in `diretag`, invalidated by dirty-marking or by a share-wide
-//! generation bump). See `DESIGN-CORE.md` §4 — the algorithm that *computes*
+//! generation bump). See — the algorithm that *computes*
 //! an aggregate (walking children, hashing names+etags) lives above this
 //! crate; `sc-meta` only stores/retrieves/invalidates the result.
 
@@ -19,7 +19,7 @@ pub struct Aggregate {
 impl MetaStore {
     /// `blake3(dev, ino, size, mtime_ns)[..16]`, hex-encoded. No content
     /// hashing — reading a 10 GiB file to compute its ETag is not on the
-    /// table (`DESIGN-CORE.md` §4.2). `mtime_ns` is truncated to 64 bits
+    /// table. `mtime_ns` is truncated to 64 bits
     /// (nanosecond timestamps fit comfortably; the truncation only matters
     /// for dates outside any plausible filesystem's range).
     pub fn file_etag(st: &Stat) -> String {
@@ -34,7 +34,7 @@ impl MetaStore {
 
     /// Cached aggregate for `id`, or `None` if there is no cached row, it's
     /// marked dirty, or it was computed against a share generation that has
-    /// since been bumped (`share.gen` mismatch — `DESIGN-CORE.md` §4.3/4.6).
+    /// since been bumped (`share.gen` mismatch —/4.6).
     /// A `None` here means "the caller must recompute and call
     /// `put_dir_etag`"; `sc-meta` itself never walks the tree.
     pub fn dir_etag(&self, share: ShareId, id: FileId) -> anyhow::Result<Option<Aggregate>> {
@@ -84,8 +84,8 @@ impl MetaStore {
         Ok(())
     }
 
-    /// Mark every id in `chain` (normally a node's ancestors, root-ward —
-    /// `DESIGN-CORE.md` §4.4) as dirty in one transaction. Safe to call for
+    /// Mark every id in `chain` (normally a node's ancestors, root-ward)
+    /// as dirty in one transaction. Safe to call for
     /// an id with no existing row yet: a placeholder row is inserted,
     /// already `valid = 0`, so the next `dir_etag` correctly reports "must
     /// recompute" instead of erroring.
@@ -110,7 +110,7 @@ impl MetaStore {
     /// Bump and return a share's generation counter. This is the `O(1)`
     /// whole-share invalidation device: every `diretag` row computed against
     /// an older generation instantly reads as invalid via `dir_etag`,
-    /// without touching a single row (`DESIGN-CORE.md` §4.3).
+    /// without touching a single row.
     pub fn bump_share_gen(&self, share: ShareId) -> anyhow::Result<u64> {
         let conn = self.conn()?;
         conn.execute(

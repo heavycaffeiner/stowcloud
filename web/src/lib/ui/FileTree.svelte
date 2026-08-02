@@ -2,7 +2,7 @@
   // FileTree.svelte — collapsible folder-tree side panel (DESIGN-FRONTEND.md
   // §3 component inventory lists `FileTree` alongside `FileTable`/`FileGrid`
   // under "app-specific"). One root node per share the session grants
-  // (`DESIGN-CORE.md` §3.5 — `/` is not a real directory), each lazily
+  // ( — `/` is not a real directory), each lazily
   // expandable via FileTreeItem.
   import { t } from '../i18n'
   import { authState } from '../state/auth.svelte'

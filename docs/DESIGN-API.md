@@ -144,7 +144,7 @@ pub enum LoginResult {
 #[derive(Serialize)]
 pub struct SessionInfo {
     pub user: UserInfo,
-    pub roots: Vec<RootEntry>,               // virtual roots (DESIGN-CORE.md §3.5)
+    pub roots: Vec<RootEntry>,               // virtual roots (`proposals/stowcloud-2-core-vfs.md`)
     pub csrf: String,                        // the value the client echoes in Sc-Csrf (DESIGN-AUTH.md §3.3)
     pub limits: ClientLimits,                // chunk_size, max_file_size, parallel
     pub features: Features,                  // only what's actually turned on server-side

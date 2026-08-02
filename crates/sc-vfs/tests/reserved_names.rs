@@ -1,6 +1,6 @@
 //! Reserved-name rejection: `.sctrash`, `.scpart-*`, `.scmeta`, `.scindex`
 //! are our own control files. Nothing above `sc-vfs` should ever be able to
-//! address them through a user-supplied path — see `DESIGN-CORE.md` §2 and
+//! address them through a user-supplied path — see and
 //! the single shared `RESERVED_PREFIXES` list it calls out (tree walker,
 //! listing, and SMB `veto files` must all agree).
 

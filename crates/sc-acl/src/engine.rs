@@ -1,4 +1,4 @@
-//! The depth-first evaluation algorithm itself, `DESIGN-CORE.md` §3.2,
+//! The depth-first evaluation algorithm itself,,
 //! factored out so both the cached `AclEngine::evaluate` and the
 //! lock-already-held `AclEngine::roots` can call it without re-acquiring
 //! (and deadlocking on) the `RwLock`.
@@ -26,7 +26,7 @@ fn subpath_equals(subpath: &SafePath, path: &SafePath) -> bool {
 }
 
 /// Depth-first evaluation of a (possibly multi-bit) `want` set against
-/// `path`, per `DESIGN-CORE.md` §3.2:
+/// `path`, per:
 ///
 /// ```text
 /// for depth in (path.len() .. 0).rev():

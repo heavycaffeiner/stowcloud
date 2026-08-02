@@ -3,7 +3,7 @@
   // sibling of `DeleteDialog.svelte` (which is specifically "move to trash"
   // copy). Used where a client action is irreversible and needs to say so
   // plainly rather than reuse delete's softer wording: trash purge
-  // (DESIGN-CORE.md's `.sctrash` entries are `unlink`ed for real,
+  // ('s `.sctrash` entries are `unlink`ed for real,
   // `crates/sc-core/src/trash.rs::trash_purge`) and revoking a share link
   // (the token is gone the instant this resolves — nothing recreates the
   // exact same link).

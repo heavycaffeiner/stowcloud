@@ -1413,7 +1413,7 @@ fn start_watcher_and_ws_hub(
             // (`SafePath::to_display_string()`: `""` at the share root, else
             // no leading slash) — sc-watch, like sc-vfs beneath it, never
             // learns the HTTP layer's `/{label}/...` vpath vocabulary
-            // (`DESIGN-CORE.md` §1's isolation rule). `WsHub::publish_inval`
+            // ('s isolation rule). `WsHub::publish_inval`
             // and the `AclReadCheck::can_read` recheck above both key on
             // that full vpath (`Core::resolve` treats the first segment as a
             // share *label*), so publishing the bare share-relative path
@@ -1428,7 +1428,7 @@ fn start_watcher_and_ws_hub(
             // `UserId` to resolve grants for — a filesystem change is
             // nobody's request. Falling back to the share's own registered
             // name covers the deployment shape this product actually
-            // targets (`DESIGN-CORE.md`'s one-grant-per-share default, where
+            // targets ('s one-grant-per-share default, where
             // label == share name, true of every share in `.dev/sc.toml`).
             // The one case this can't help — a grant that renames or
             // subpath-scopes a root — degrades to the existing lazy

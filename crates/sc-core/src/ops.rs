@@ -116,7 +116,7 @@ impl crate::Core {
 
     /// Total number of `ShareRoot::stat` calls this `Core` has made through
     /// `stat_counted` — exposed purely so tests can assert "only the
-    /// returned page was stat-ed" (`DESIGN-CORE.md` §1.3).
+    /// returned page was stat-ed".
     pub fn stat_call_count(&self) -> u64 {
         self.stat_calls.load(Ordering::Relaxed)
     }
@@ -864,7 +864,7 @@ impl crate::Core {
         Ok(self.build_entry(d.share, &d.root, &name, &d.path, &st, user))
     }
 
-    /// Atomic replace (`ARCHITECTURE.md` §5.2 / `DESIGN-CORE.md` "atomic
+    /// Atomic replace (`ARCHITECTURE.md` §5.2 / "atomic
     /// replace"): a `.scpart-{rand}` temp file (`part_name`) in the *same*
     /// directory, written, `fsync`-ed, then renamed over the target.
     /// `If-Match` is mandatory for overwriting an existing file. On any

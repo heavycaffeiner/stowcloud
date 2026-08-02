@@ -44,7 +44,7 @@ bind-mount boundaries produce `EXDEV`, and `fs.inotify.max_user_watches`
 cannot be raised from inside a container. Detail in **`DEPLOYMENT.md`**.
 
 Code-level detail (VFS API, ACL evaluation, directory ETag propagation,
-upload state machine) is authoritative in **`DESIGN-CORE.md`**.
+upload state machine) is authoritative in **`proposals/stowcloud-2-core-vfs.md`**.
 
 ---
 
@@ -106,7 +106,7 @@ pub struct SafePath(SmallVec<[Component; 8]>);
 ```
 
 The full definition and syscall contract are authoritative in
-**`DESIGN-CORE.md` §1**.
+**`proposals/stowcloud-2-core-vfs.md`**.
 
 - What `SafePath::parse()` rejects: absolute paths, `..`, `.`, empty
   components, NUL/control characters, components containing a slash,
@@ -130,7 +130,7 @@ The full definition and syscall contract are authoritative in
 |---|---|---|
 | Open | `openat2(dirfd, rel, resolve_flags(policy))` — default policy (`Deny`) uses `RESOLVE_BENEATH \| RESOLVE_NO_MAGICLINKS \| RESOLVE_NO_SYMLINKS` | `cap-std`'s component-wise `O_NOFOLLOW` walk |
 | Metadata | `statx(AT_SYMLINK_NOFOLLOW, STATX_BTIME \| STATX_INO \| STATX_MNT_ID)` | `fstatat` |
-| Listing | `getdents64` + `d_type` (avoids a stat storm). **Needs an `O_RDONLY` handle** — an `O_PATH` anchor cannot read it (`DESIGN-CORE.md` §1.1a) | `readdir` |
+| Listing | `getdents64` + `d_type` (avoids a stat storm). **Needs an `O_RDONLY` handle** — an `O_PATH` anchor cannot read it (`proposals/stowcloud-2-core-vfs.md`a) | `readdir` |
 | Copy | `copy_file_range` (reflink / server-side) | 64 KiB buffer loop |
 | Move | `renameat2(RENAME_NOREPLACE)` — copy+unlink across devices | `renameat` |
 | Transfer | `sendfile`/`splice` (plaintext HTTP) | `ReaderStream` |
@@ -200,7 +200,7 @@ Jellyfin can read it" (`DEPLOYMENT.md` §6.2).
   scans from the deepest match outward; **at equal depth, DENY wins.** A
   deeper ALLOW beats a shallower DENY (that is what "most specific" means).
   No match → deny by default. The exact algorithm is authoritative in
-  `DESIGN-CORE.md` §3.2.
+  `proposals/stowcloud-2-core-vfs.md`
 - **Effective permission = ACL permission ∩ actual FS permission.** A WRITE
   Grant means nothing if the service user can't write to that directory, so
   the admin UI probes with `faccessat` at share registration and warns.
@@ -299,7 +299,7 @@ CREATE TABLE diretag (
   the children's `(name, etag)` pairs with blake3 and caches the result. If
   the watcher dies or the event queue overflows, `share.gen` is bumped for
   an O(1) full invalidation followed by a background rescan. Full algorithm
-  in `DESIGN-CORE.md` §4.
+  in `proposals/stowcloud-2-core-vfs.md`
 
   **This aggregation cost is DAV/NC-only.** The native web UI uses per-file
   ETags plus WebSocket invalidation, so it works fine even with this table

@@ -51,7 +51,7 @@ pub struct NcCore {
 impl NcCore {
     /// Compat addresses files as `(share, share-relative path)`; `sc-core`
     /// addresses them as `/{label}/…`, where the label is the virtual-root
-    /// name the ACL projection gave that grant (`DESIGN-CORE.md` §3.5).
+    /// name the ACL projection gave that grant.
     /// Everything here funnels through this one translation.
     fn vpath(&self, user: UserId, share: ShareId, path: &str) -> PortResult<String> {
         let label = self

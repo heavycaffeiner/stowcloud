@@ -1,6 +1,6 @@
 //! `sc-acl` — Share/Grant definitions and permission evaluation.
 //!
-//! The evaluation algorithm is `DESIGN-CORE.md` §3.2, implemented exactly:
+//! The evaluation algorithm is, implemented exactly:
 //! depth-first from the deepest matching grant down to the share root,
 //! same-depth `DENY` beats `ALLOW`, a deeper `ALLOW` beats a shallower
 //! `DENY`, no principal-kind priority (user vs. group ties are broken by
@@ -72,7 +72,7 @@ pub struct Grant {
     /// `false` means this grant applies to exactly `subpath`, not anything
     /// beneath it.
     pub inherit: bool,
-    /// Virtual-root display label (`DESIGN-CORE.md` §3.5). Falls back to
+    /// Virtual-root display label. Falls back to
     /// `subpath`'s basename, then to a share-derived placeholder.
     pub label: Option<String>,
 }
@@ -88,7 +88,7 @@ impl Decision {
     ///
     /// The `by` grant id is deliberately still carried by the variant even
     /// when unused here: every denial has to stay *explainable* in the API
-    /// response and the audit log (`DESIGN-CORE.md` §3.2), so this must never
+    /// response and the audit log, so this must never
     /// become the only way the result is inspected.
     #[inline]
     pub fn is_allowed(&self) -> bool {
@@ -148,7 +148,7 @@ struct CacheEntry {
 }
 
 /// Grants + group memberships behind a generation counter, with an LRU
-/// decision cache invalidated by that counter (`DESIGN-CORE.md` §3.4).
+/// decision cache invalidated by that counter.
 pub struct AclEngine {
     inner: RwLock<Inner>,
     generation: AtomicU64,
@@ -281,7 +281,7 @@ impl AclEngine {
         out
     }
 
-    /// The virtual root projection for `user` (`DESIGN-CORE.md` §3.5): one
+    /// The virtual root projection for `user`: one
     /// entry per READ-granted rule the user (directly or via group
     /// membership) holds, labeled by `Grant::label`, falling back to the
     /// subpath's basename, falling back to a share-derived placeholder.

@@ -583,7 +583,7 @@ async function adminDeleteUser(id: number): Promise<void> {
   await request(`/admin/users/${id}`, { method: 'DELETE' })
 }
 
-// ── admin: grant management (`DESIGN-CORE.md` §3.5) ──
+// ── admin: grant management ──
 // GET /api/admin/shares, GET/POST /api/admin/grants,
 // PATCH/DELETE /api/admin/grants/{id}. The deny-by-default model this
 // product is built around: a user has no access to anything until an admin

@@ -273,7 +273,7 @@ fn new_backend(
 /// Every ~50ms, flush any pending key that has sat for `DEBOUNCE` (200ms)
 /// since its *first* event — so a burst that finishes inside the window
 /// coalesces into exactly one `InvalEvent`, and every flush marks the
-/// ancestor chain dirty in `sc-meta` (`DESIGN-CORE.md` §4.4).
+/// ancestor chain dirty in `sc-meta`.
 ///
 /// Before that: two independent signals that individual dirty paths can no
 /// longer be trusted, or are too many to keep enumerating one at a time

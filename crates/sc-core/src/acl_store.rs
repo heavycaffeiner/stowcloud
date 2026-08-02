@@ -1,4 +1,4 @@
-//! Durable [`sc_acl::Grant`]s — `DESIGN-CORE.md` §3.5 describes the virtual
+//! Durable [`sc_acl::Grant`]s — describes the virtual
 //! root as "the projection of the grant list"; this is where that list
 //! actually lives once it stops being a startup-time fiction.
 //!

@@ -1,5 +1,5 @@
 //! Persisted-grant tests — the properties that motivated this module in the
-//! first place (`DESIGN-CORE.md` §3, `acl_store.rs`'s module doc): a user
+//! first place (`acl_store.rs`'s module doc): a user
 //! with no grant sees no roots, a subpath grant exposes only that subtree,
 //! `deny` beats `allow`, and the legacy-projection migration runs exactly
 //! once. None of these can fail against `sc-acl`'s in-memory engine alone

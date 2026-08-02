@@ -1,4 +1,4 @@
-//! Directory aggregate ETag — `DESIGN-CORE.md` §4.5, and dirty marking on
+//! Directory aggregate ETag —, and dirty marking on
 //! the write path — §4.4. This is the one place `sc-core` allocates `sc-meta`
 //! fileids for directories (files never need one just to be listed —
 //! `ARCHITECTURE.md` §4.1's "lazy allocation"), because the aggregate cache is
@@ -85,7 +85,7 @@ impl crate::Core {
     /// Mark `path`'s ancestor chain (parent up to the share root) dirty.
     /// Ancestors that never got a fileid allocated are simply skipped —
     /// absence from `diretag` already means "must recompute", so there is
-    /// nothing to mark (`DESIGN-CORE.md` §4.4/§4.6, "our own writes").
+    /// nothing to mark ("our own writes").
     /// Best-effort: any I/O error along the way just stops early rather than
     /// failing the caller's operation, which has already committed on disk.
     pub fn mark_dirty(&self, share: ShareId, path: &SafePath) {
@@ -135,8 +135,8 @@ impl crate::Core {
 
     /// Recursive directory aggregate ETag, cached in `sc-meta`'s `diretag`
     /// table and single-flighted per directory fileid so concurrent readers
-    /// of the same stale directory don't all recompute it at once
-    /// (`DESIGN-CORE.md` §6).
+    /// of the same stale directory don't all recompute it at once.
+    /// 
     pub fn aggregate(&self, share: ShareId, vpath: &SafePath) -> anyhow::Result<Aggregate> {
         let root = {
             let entry = self
@@ -211,7 +211,7 @@ impl crate::Core {
         // recursed into, and the default `SymlinkPolicy::Deny` means a
         // symlink never reports as `Dir` in the first place), so a plain
         // top-down walk cannot revisit the same directory by a different
-        // path — the only theoretical cycle source (`DESIGN-CORE.md` §4.5's
+        // path — the only theoretical cycle source ('s
         // "hard-linked directory, abnormal FS") is additionally bounded by
         // `SafePath`'s `max_depth`, which `join` enforces on every step
         // below. `(dev, ino)` would be the ideal key, but the portable

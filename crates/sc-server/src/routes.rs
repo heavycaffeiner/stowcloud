@@ -486,7 +486,7 @@ fn native_routes() -> Vec<RouteInfo> {
             owner: "sc-http",
         },
         // Grant management (deny by default: no access until explicitly
-        // granted — `DESIGN-CORE.md` §3.5). `sc_core::acl_store`
+        // granted —). `sc_core::acl_store`
         // owns persistence; `sc-http` owns the HTTP skin, admin-gated the
         // same way the routes above are.
         // Folder shares (`FEATURES.md` #40/#157: "there is no setting to add

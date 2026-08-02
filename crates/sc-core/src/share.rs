@@ -1,6 +1,6 @@
 //! Share registration: opens the `ShareRoot` (which itself validates the
-//! filesystem gate and records `root_dev`/`fstype` — `ShareRoot::open`,
-//! `DESIGN-CORE.md` §1.1) and keeps it alongside the admin-facing `ShareDef`.
+//! filesystem gate and records `root_dev`/`fstype` in `ShareRoot::open`)
+//! and keeps it alongside the admin-facing `ShareDef`.
 //!
 //! ## Persisted, admin-created shares
 //!
@@ -387,7 +387,7 @@ impl crate::Core {
     }
 
     /// The share's host path. `sc-vfs` deliberately never exposes this from
-    /// `ShareRoot` itself (`DESIGN-CORE.md` §1: nothing above `sc-vfs` sees
+    /// `ShareRoot` itself (nothing above `sc-vfs` sees
     /// a host path in the *request-handling* path — `ARCHITECTURE.md` §13's
     /// checklist item is about API responses/errors/logs, not trusted
     /// server-side infrastructure). `sc-watch` needs a real path to hand to

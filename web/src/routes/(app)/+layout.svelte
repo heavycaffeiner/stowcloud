@@ -24,7 +24,7 @@
   }
   let { children }: Props = $props()
 
-  // Used to list one nav entry per root ("`DESIGN-CORE.md` §3.5: what a user
+  // Used to list one nav entry per root (": what a user
   // sees as their root is a projection of their grant list") -- fixed a real
   // bug (a hardcoded single "home" item made every root after the first
   // unreachable) by creating a worse one: a NavigationBar/Rail is a fixed

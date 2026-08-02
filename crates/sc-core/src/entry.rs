@@ -83,7 +83,7 @@ pub(crate) struct ListingSession {
     pub dir_path: String,
     pub names: Vec<String>,
     /// Populated only when the sort required a full stat pass (Size/Mtime/
-    /// Kind — `DESIGN-CORE.md` §1.3), so building the returned page can
+    /// Kind —), so building the returned page can
     /// reuse these instead of stat-ing the same entries twice.
     pub stats: Option<std::collections::HashMap<String, Stat>>,
     pub created: std::time::Instant,

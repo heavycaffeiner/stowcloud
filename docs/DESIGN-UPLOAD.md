@@ -1,6 +1,6 @@
 # Upload design
 
-Code-level extension of `ARCHITECTURE.md` §6 and `DESIGN-CORE.md` §5.
+Code-level extension of `ARCHITECTURE.md` §6 and `proposals/stowcloud-2-core-vfs.md`
 
 ---
 
@@ -505,7 +505,7 @@ Server-side notes (only relevant to the whole-file-size 413):
 
 The sweep only checks the parent-directory set recorded in the session table — it never walks a whole share root.
 
-**None of this currently runs.** `UploadEngine::gc` implements exactly the sweep above and is covered by tests, but its only caller in `sc-server`, `UploadBridge::drain()`, itself has no caller anywhere in the workspace — no timer, no admin route, no `sc gc --deep` command. Until something calls it, expired sessions and orphaned part files accumulate until an operator intervenes by hand. `DESIGN-CORE.md` §5.6 cross-references this same gap.
+**None of this currently runs.** `UploadEngine::gc` implements exactly the sweep above and is covered by tests, but its only caller in `sc-server`, `UploadBridge::drain()`, itself has no caller anywhere in the workspace — no timer, no admin route, no `sc gc --deep` command. Until something calls it, expired sessions and orphaned part files accumulate until an operator intervenes by hand. `proposals/stowcloud-2-core-vfs.md` cross-references this same gap.
 
 ---
 

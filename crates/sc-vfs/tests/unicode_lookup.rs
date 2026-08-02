@@ -1,4 +1,4 @@
-//! `DESIGN-CORE.md` §2, Unicode section: lookup tries the given spelling
+//! Unicode lookup: tries the given spelling
 //! first, then NFC, then NFD — but never rewrites an existing on-disk name.
 //! Creation always normalizes to NFC.
 

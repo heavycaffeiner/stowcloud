@@ -41,7 +41,7 @@
   const rawPath = $derived(page.params.path ?? '')
   const path = $derived(normalizePath(`/${rawPath}`))
 
-  // `/` is not a directory. `DESIGN-CORE.md` §3.5: the root a user sees is a
+  // `/` is not a directory.: the root a user sees is a
   // projection of their grant list, not a real path — every API path is
   // `/{label}/...`, and the labels arrive in the session. So `DESIGN-FRONTEND.md`
   // §7 says `/` redirects to the first root.

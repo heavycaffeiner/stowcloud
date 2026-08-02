@@ -256,8 +256,8 @@ async fn a_second_account_granted_one_folder_sees_exactly_that_folder() {
 
     // 6. Nothing else in the share is reachable — not the sibling `work`
     //    folder, not the share root, not a file at the share root. There is
-    //    no virtual path that reaches them: `DESIGN-CORE.md` §3.5, "the user
-    //    can't even know a directory named `a` exists".
+    //    no virtual path that reaches them: the user cannot even know a
+    //    directory named `a` exists.
     let (status, _) = get(&f.app, &bob_session, "/api/fs/list?path=/work").await;
     assert_eq!(
         status,
@@ -301,7 +301,7 @@ async fn a_user_with_no_grant_ever_sees_no_roots() {
     assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
-/// `deny` beats `allow` at the same depth (`DESIGN-CORE.md` §3.2), proven
+/// `deny` beats `allow` at the same depth, proven
 /// through the admin grant API and the real `/api/fs/list` route rather than
 /// against the evaluator directly.
 #[tokio::test(flavor = "multi_thread")]

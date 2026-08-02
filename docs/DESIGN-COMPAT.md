@@ -481,7 +481,7 @@ Consequences of getting one letter wrong:
 
 ### 7.3 ETag
 
-`d:getetag` **must include the double quotes.** A directory's ETag must change whenever any descendant changes (`DESIGN-CORE.md` §4) — without that property, desktop sync effectively does not work.
+`d:getetag` **must include the double quotes.** A directory's ETag must change whenever any descendant changes (`proposals/stowcloud-2-core-vfs.md`) — without that property, desktop sync effectively does not work.
 
 `oc:checksums` needs a content hash, so it is **empty by default**; clients skip verification when it's absent. Only when a share sets `compute_checksums = true` do we compute it at upload time, cache it in `sc-meta`, and expose it here.
 

@@ -2254,7 +2254,7 @@ impl CoreBridge {
 /// depending on `SearchBridge` just for this.
 ///
 /// `sc_vfs::ShareRoot` deliberately never exposes a real host path
-/// (`DESIGN-CORE.md` §1: nothing above `sc-vfs` may see one) —
+/// (nothing above `sc-vfs` may see one) —
 /// `Core::share_host_path` is documented as the one sanctioned escape hatch
 /// for exactly this kind of trusted server-side infra. One index per share
 /// (not per mount,'s finer split) — every share here

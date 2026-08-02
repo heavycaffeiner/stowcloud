@@ -1,5 +1,5 @@
 //! `SafePath` — a share-relative path that has already passed the rejection
-//! table in `DESIGN-CORE.md` §2. Once constructed it is trusted: backends
+//! table in Once constructed it is trusted: backends
 //! never re-validate it, they only walk its components.
 //!
 //! Parsing is reject-first: anything ambiguous is an error rather than being
@@ -93,7 +93,7 @@ impl SafePath {
     }
 
     /// `self` is a prefix of (or equal to) `other`, component-wise. Used by
-    /// grant inheritance (`DESIGN-CORE.md` §3.2).
+    /// grant inheritance.
     pub fn is_prefix_of(&self, other: &SafePath) -> bool {
         self.0.len() <= other.0.len() && self.0.iter().zip(other.0.iter()).all(|(a, b)| a == b)
     }
@@ -162,7 +162,7 @@ fn is_windows_reserved(name: &str) -> bool {
     WINDOWS_RESERVED.iter().any(|r| r.eq_ignore_ascii_case(base))
 }
 
-/// The full rejection table from `DESIGN-CORE.md` §2, applied to a single
+/// The full rejection table from, applied to a single
 /// path component (never a whole path — callers split on `/` first, or, in
 /// the case of `join`, are appending exactly one component).
 fn validate_component(name: &str) -> Result<(), VfsError> {
@@ -221,7 +221,7 @@ fn validate_component_inner(name: &str, reject_reserved: bool) -> Result<(), Vfs
 
 /// NFC-normalize a name. Used **only** when creating a brand new on-disk
 /// name — existing names are never rewritten (see module docs / §2 in
-/// DESIGN-CORE.md: rewriting on-disk names breaks external index DBs such as
+/// rewriting on-disk names breaks external index DBs such as
 /// Jellyfin's).
 pub(crate) fn normalize_new_name(name: &str) -> String {
     name.nfc().collect()

@@ -1,7 +1,7 @@
 //! Open handles. `DirHandle` is `O_RDONLY|O_DIRECTORY` (can list);
 //! `FileHandle` is a regular file open for positional read/write. Neither
 //! ever exposes the underlying platform fd/handle or a host path — see
-//! `DESIGN-CORE.md` §1.1: the invariant is that nothing outside `sc-vfs`
+//! the invariant is that nothing outside `sc-vfs`
 //! ever sees a `RawFd` or a host `&Path`.
 
 use crate::backend;
@@ -10,7 +10,7 @@ use crate::types::{DirEntry, Stat};
 
 /// A directory opened `O_RDONLY|O_DIRECTORY` (or the portable-backend
 /// equivalent), suitable for listing. Distinct from the `O_PATH` anchor kept
-/// inside `ShareRoot` — see `DESIGN-CORE.md` §1.1a for why the two must not
+/// inside `ShareRoot` — seea for why the two must not
 /// be conflated (`O_PATH` fds can't `getdents64`).
 pub struct DirHandle {
     pub(crate) inner: backend::imp::DirInner,
