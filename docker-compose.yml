@@ -82,6 +82,13 @@ services:
   # Only run this with `smb.enabled = true` in sc's config; otherwise smbd
   # just waits on an empty /config/smb forever.
   sc-smb:
+    # Behind a profile, so a plain `docker compose up -d` brings up the server
+    # alone and this starts only on `docker compose --profile smb up -d`.
+    # Without it the documented first command failed for everybody: the port
+    # binding below names one specific LAN address, and Docker refuses to
+    # start a container bound to an address the host does not have. A quick
+    # start whose first line errors out is not a quick start.
+    profiles: ["smb"]
     image: ghcr.io/heavycaffeiner/stowcloud:smb
     volumes:
       - ./smbcfg:/config/smb:ro,z
@@ -105,6 +112,8 @@ services:
       - no-new-privileges:true
     ports:
       # A LAN address, never 0.0.0.0 (§7.4) — validate_bind refuses a public one.
+      # Replace this with your own before enabling the profile: it is an
+      # example, and no host but the one it was written on has it.
       - "192.168.1.10:445:445"
     healthcheck:
       test: ["CMD-SHELL", "smbd -b >/dev/null 2>&1 && pgrep -x smbd >/dev/null"]
