@@ -2758,9 +2758,23 @@ async fn shares_delete(State(state): State<AppState>, principal: Option<Extensio
 /// Lifetime of the cookie handed out after a successful password check.
 const LINK_SESSION_TTL_SECS: u64 = 30 * 60;
 
+/// The link handed to whoever will open it, so it has to be the address they
+/// can actually reach, not the one this process happens to be bound to.
+///
+/// `public_base_url` carries the deployment's declared origin when it has
+/// one. Without it this falls back to `https://{app_hosts[0]}`, which is what
+/// this function used to do unconditionally: an origin with the port dropped
+/// and the scheme assumed. That is right for the reverse-proxied deployment
+/// this is designed for and wrong for every other one, and nothing in the
+/// dialog that shows the link says which it got.
 fn public_link_url(state: &AppState, token: &str) -> String {
-    let host = state.cfg.app_hosts.first().cloned().unwrap_or_default();
-    format!("https://{host}/s/{token}")
+    match &state.cfg.public_base_url {
+        Some(base) => format!("{base}/s/{token}"),
+        None => {
+            let host = state.cfg.app_hosts.first().cloned().unwrap_or_default();
+            format!("https://{host}/s/{token}")
+        }
+    }
 }
 
 /// Stateless link-session value: `{expiry}.{HMAC(csrf_key, token|expiry)}`.
@@ -5007,6 +5021,42 @@ mod tests {
 
     fn router_with_principal(state: AppState) -> Router {
         Router::new().route("/api/fs/list", get(fs_list)).with_state(state)
+    }
+
+    // ---------------------------------------------------- share link URLs --
+
+    /// The link is handed to someone who is not on this machine, so the
+    /// origin has to be the one the deployment says it is reachable at.
+    /// This used to be `https://{app_hosts[0]}` unconditionally: scheme
+    /// assumed, port dropped. Anything not terminated on 443 therefore
+    /// printed a URL that resolves to nothing, in a dialog that says the
+    /// link cannot be shown again.
+    #[test]
+    fn a_share_link_uses_the_declared_public_origin_verbatim() {
+        let (mut state, _dir) = test_state_with_core(Arc::new(MockCore::new(vec![])));
+        let mut cfg = (*state.cfg).clone();
+        cfg.app_hosts = vec!["127.0.0.1".into(), "localhost".into()];
+        cfg.public_base_url = Some("http://files.example.org:8080".into());
+        state.cfg = Arc::new(cfg);
+
+        assert_eq!(
+            public_link_url(&state, "tok"),
+            "http://files.example.org:8080/s/tok"
+        );
+    }
+
+    /// No declared origin is still the old guess, not an error and not an
+    /// empty link: a deployment that never set one keeps exactly the
+    /// behaviour it had.
+    #[test]
+    fn a_share_link_falls_back_to_the_first_app_host() {
+        let (mut state, _dir) = test_state_with_core(Arc::new(MockCore::new(vec![])));
+        let mut cfg = (*state.cfg).clone();
+        cfg.app_hosts = vec!["files.example.org".into(), "127.0.0.1".into()];
+        cfg.public_base_url = None;
+        state.cfg = Arc::new(cfg);
+
+        assert_eq!(public_link_url(&state, "tok"), "https://files.example.org/s/tok");
     }
 
     // ------------------------------------------------------------ smb cap --

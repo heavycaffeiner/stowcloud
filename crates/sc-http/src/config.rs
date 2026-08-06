@@ -55,6 +55,17 @@ pub struct HttpConfig {
     /// mounting keeps that gate meaningful instead of carving out an
     /// exception for it.
     pub reserved_path_prefixes: Vec<String>,
+    /// The externally reachable origin (`scheme://host[:port]`, no trailing
+    /// slash) a public share link is built from, when the deployment has
+    /// declared one. `None` falls back to `https://{app_hosts[0]}`.
+    ///
+    /// This exists because that fallback is a guess and was the only thing
+    /// `public_link_url` ever used: it drops the port and hardcodes `https`,
+    /// so any deployment not sitting on 443 handed its users a link that
+    /// resolves to nothing. The assembler already resolves this origin for
+    /// the compatibility layer, which has always been documented as
+    /// governing "every public share link" as well.
+    pub public_base_url: Option<String>,
     /// Startup-time seed only. `capabilities`/`GET /api/auth/session` read
     /// the *live* value via `AppState::uploads::chunk_limits()` instead (that
     /// value can change at runtime via `PATCH /api/admin/upload-settings`,
@@ -92,6 +103,7 @@ impl Default for HttpConfig {
             body_limit_bytes: 16 * 1024 * 1024,
             extensions: Vec::new(),
             reserved_path_prefixes: Vec::new(),
+            public_base_url: None,
             chunk_size_min: 5 * 1024 * 1024,
             chunk_size_default: 10 * 1024 * 1024,
         }

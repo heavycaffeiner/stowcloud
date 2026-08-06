@@ -1056,6 +1056,16 @@ fn build_http_state(
         body_limit_bytes: 16 * 1024 * 1024,
         chunk_size_min: cfg.upload.chunk_min_bytes,
         chunk_size_default: cfg.upload.chunk_default_bytes,
+        // Same resolution the compatibility layer mounts on, and for the same
+        // reason: a URL handed to somebody else has to be one they can reach.
+        // Ambiguous or invalid leaves this `None`, so share links keep the
+        // old `https://{app_hosts[0]}` guess rather than losing the feature
+        // over a config value only the compat layer previously needed.
+        public_base_url: match cfg.resolve_compat_canonical_url() {
+            crate::config::CompatCanonicalUrl::Configured(url)
+            | crate::config::CompatCanonicalUrl::Derived(url) => Some(url),
+            _ => None,
+        },
         ..Default::default()
     };
     // The Host header carries whatever literal the client dialled, so a
