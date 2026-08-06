@@ -393,17 +393,29 @@ fn trash_reports_when_it_was_deleted_not_when_the_file_was_last_edited() {
     f.set_times(std::fs::FileTimes::new().set_modified(a_year_ago)).unwrap();
     drop(f);
 
-    let before = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos() as i128;
     core.delete(USER, &["/root/old.txt".to_string()], false).unwrap();
 
     let trashed = core.trash_list(USER, SHARE).unwrap();
     assert_eq!(trashed.len(), 1);
+    let now_ns = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos() as i128;
     let a_year_ago_ns = a_year_ago.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos() as i128;
+
+    // A minute of slack, and none of it is about how long this test takes.
+    // The kernel stamps inode times from a coarse clock updated once a tick,
+    // so a timestamp written *during* an operation can read back as up to a
+    // tick earlier than a fine-grained `SystemTime::now()` taken before it.
+    // A first draft asserted `deleted_at_ns >= before` and failed in CI by
+    // 100 microseconds for exactly that reason. The property that matters is
+    // not sub-millisecond ordering: it is that this reads as now rather than
+    // as the year-old mtime, and a year is eight orders of magnitude clear of
+    // any tick.
+    let drift = (now_ns - trashed[0].deleted_at_ns).abs();
     assert!(
-        trashed[0].deleted_at_ns >= before,
-        "deleted_at_ns {} predates the delete call ({}); mtime was {}",
+        drift < 60_000_000_000,
+        "deleted_at_ns {} is {} ns away from now ({}); the file's mtime was {}",
         trashed[0].deleted_at_ns,
-        before,
+        drift,
+        now_ns,
         a_year_ago_ns
     );
 }
