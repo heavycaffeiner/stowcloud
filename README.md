@@ -1,20 +1,25 @@
 # Stowcloud
 
-A file-management service that serves directories you already have.
+[![verify](https://github.com/heavycaffeiner/stowcloud/actions/workflows/verify.yml/badge.svg)](https://github.com/heavycaffeiner/stowcloud/actions/workflows/verify.yml)
+[![docker](https://github.com/heavycaffeiner/stowcloud/actions/workflows/docker.yml/badge.svg)](https://github.com/heavycaffeiner/stowcloud/actions/workflows/docker.yml)
+
+**A file-management service that serves directories you already have.**
 
 Point it at a folder on your disk and it gives you a web UI, WebDAV, SMB, and
 sync-client compatibility over exactly those files. No import step, no managed
-storage layer, no separate copy. Rust backend, Svelte frontend, Linux/Docker
-only.
+storage layer, no separate copy. Rust backend, Svelte frontend, Linux and
+Docker only.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/browse-dark.png">
-  <img alt="The Stowcloud file browser listing a folder of images, with the folder rail on the left and the upload and new-folder actions in the toolbar" src="docs/screenshots/browse-light.png">
+  <img alt="The Stowcloud file browser listing a folder of images: a navigation rail, the folder list, a breadcrumb marking the folder as shared with other services, and the file table" src="docs/screenshots/browse-light.png">
 </picture>
 
-Every screenshot on this page was taken from a `docker compose up` of the
-published `ghcr.io/heavycaffeiner/stowcloud:core` image on a Rocky Linux 10
-host, browsing real files on that host's disk. Nothing here is a mockup.
+> Every screenshot here comes from `docker compose up` of
+> `ghcr.io/heavycaffeiner/stowcloud:core` at revision `d82d880`, the image
+> this repository's CI built and published, running on a Rocky Linux 10 host
+> and browsing real files on its disk. Nothing is mocked and nothing was
+> staged in a design tool.
 
 ## Why it exists
 
@@ -26,55 +31,56 @@ it.
 
 Stowcloud treats the filesystem as the only source of truth. Its database is a
 cache you can delete at any time and have rebuilt. Another program writing to
-a shared folder is a supported, expected event, not corruption. A folder that
-something else also writes to says so in the breadcrumb, so a destructive
+a shared folder is a supported, expected event, not corruption, and a folder
+that something else also writes to says so in the breadcrumb so a destructive
 action can warn before it runs.
 
 ## What it does
 
-- **Browse, upload, move, copy, rename, delete**, with optimistic concurrency
-  (`If-Match`, and a real conflict-resolution screen), a long-running job
-  queue that survives a browser refresh, and a per-folder trash an
-  administrator switches on.
-- **Resumable uploads** (TUS) that survive a dropped connection, a closed tab,
-  or a proxy that caps request bodies.
-- **Search** by name across every folder the asking account can see.
-- **Share links**: public, password-protected, expiring, download-capped, or
-  upload-only (file drop).
-- **Per-folder access grants**, down to a subpath, with permissions allowed or
-  denied one at a time. The default is no access.
-- **WebDAV** (RFC 4918 Class 2, including LOCK) and a **compatibility layer
-  for Nextcloud apps**, so the existing Nextcloud desktop and mobile clients
-  log in through Login Flow v2 and sync against this server unmodified.[^tm]
-- **SMB** through a Samba sidecar, off by default, LAN-only by construction.
-- **Single sign-on** via OIDC, alongside local accounts, TOTP, app passwords,
-  and recovery codes.
-- **Image previews** decoded in a `fork`ed, Landlock-confined worker that can
-  neither `execve` nor reach the network. Sync clients render them as
-  thumbnails; the web UI marks which files have one but does not yet show them
-  inline.
+| | |
+|---|---|
+| **Browse and organise** | Upload, move, copy, rename, delete, with optimistic concurrency (`If-Match`) and a real conflict screen instead of a silent overwrite. Long-running jobs survive a browser refresh. |
+| **Resumable uploads** | TUS, so a dropped connection, a closed tab, or a proxy that caps request bodies does not restart the transfer. |
+| **Search** | By name, across every folder the asking account can see. |
+| **Share links** | Public, password-protected, expiring, download-capped, or upload-only. |
+| **Per-folder grants** | Down to a subpath, with permissions allowed or denied one at a time. The default is no access. |
+| **WebDAV and sync clients** | RFC 4918 Class 2 including LOCK, plus a compatibility layer that existing Nextcloud desktop and mobile clients log into unmodified.[^tm] |
+| **SMB** | Through a Samba sidecar, off by default, LAN-only by construction. |
+| **Accounts** | Local passwords, OIDC single sign-on, TOTP, app passwords, recovery codes. |
+
+Image previews are decoded in a `fork`ed, Landlock-confined worker that can
+neither `execve` nor reach the network. Sync clients render them as
+thumbnails; the web UI marks which files have one but does not yet show them
+inline.
+
+### One tree, however deep it goes
+
+The folder pane walks the same directories the shares point at. No import
+ever happened, so what you see here is what `ls` sees.
+
+![The file browser with the folder tree open, showing nested folders under two different shares](docs/screenshots/tree.png)
 
 ### Search reaches across folders
 
 Results come from every share the account has a grant on, so one query covers
 what would otherwise be several places to look. Names only: content indexing
-is a separate, opt-in thing.
+is separate and opt-in.
 
-![Search results for "2026" listing matches from two different shares above the current folder's own contents](docs/screenshots/search.png)
+![Search results for "2026" listing matches from two shares above the current folder's own contents](docs/screenshots/search.png)
 
-### A link is created once and shown once
+### A link is created once, and shown once
 
 The plaintext link exists in exactly one response and is never recoverable
-afterwards, which is why the dialog says so out loud. Expiry, a password, and
-a download cap are set when it is created; revoking it is permanent, and the
-same link cannot be recreated.
+afterwards, which is why the dialog says so out loud. Expiry, a password and a
+download cap are chosen when it is created; revoking is permanent, and the
+same link cannot be made again.
 
-![The share-link dialog immediately after creating a link, showing the one-time URL, a copy button, and the link's expiry](docs/screenshots/share-link.png)
+![The share-link dialog just after creating a link: the one-time URL, a copy button, and the link's expiry](docs/screenshots/share-link.png)
 
-Whoever opens that link gets this, and nothing else. No account, no other
-folder, no way to tell that anything else exists on the server.
+Whoever opens it gets this, and nothing else. No account, no other folder, no
+way to tell that anything else exists on the server.
 
-![The public share page a recipient sees: a title, the list of files in the shared folder, and a download button](docs/screenshots/share-public.png)
+![The public share page a recipient sees: a title, the files in the shared folder, and a download button](docs/screenshots/share-public.png)
 
 ### An administrator decides who sees what
 
@@ -89,16 +95,23 @@ is the default rather than a misconfiguration.
 
 Small text files open in a browser editor with syntax highlighting and save
 back through the same optimistic-concurrency check as everything else, so two
-people editing one file get a conflict screen rather than a silent overwrite.
+people editing one file get a conflict screen rather than a lost edit.
 
 ![A Markdown file open in the built-in editor with line numbers and syntax highlighting](docs/screenshots/editor.png)
+
+### Nothing is deleted in a hurry
+
+An administrator turns the trash on per folder. Until then a delete is a
+delete, which is stated rather than assumed.
+
+![The trash listing three deleted items with their sizes and deletion times, and restore and purge actions](docs/screenshots/trash.png)
 
 ## Requirements
 
 - Linux, kernel 5.6+ (`openat2`); 5.13+ for the Landlock sandbox
 - Docker 20.10.10 or newer, because older seccomp profiles return `EPERM` for
   `openat2` and force a security downgrade
-- Roughly 30 MB of disk for the image and a data directory for the cache
+- Roughly 30 MB of disk for the image, and a data directory for the cache
 
 Only Linux is supported at runtime. The code cross-compiles on other hosts,
 but nothing else is a deployment target.
@@ -112,14 +125,14 @@ docker compose up -d
 ```
 
 `docker-compose.yml` is a commented reference deployment. Read it before
-copying it. It pulls `ghcr.io/heavycaffeiner/stowcloud:core` (amd64 + arm64)
+copying it. It pulls `ghcr.io/heavycaffeiner/stowcloud:core` (amd64 and arm64)
 and, optionally, `:smb` (amd64 only), both published only after the same CI
 run built and smoke-tested them. Pin to the `:core-<commit-sha>` tag once a
 deployment matters. It runs read-only, as a non-root user, with all
 capabilities dropped.
 
-Which folders the server offers, and under what names, comes from a config
-file (`--config <path>`, `[[shares]]` entries) or from the folder-share screen
+Which folders the server offers, and under what names, comes from
+`<data_dir>/sc.toml` (or `--config <path>`), or from the folder-share screen
 in the admin UI. A server with neither has nothing to show.
 
 On first boot the server prints a one-time setup token to its log and writes
@@ -135,19 +148,6 @@ and in the process list.
 
 Put a reverse proxy in front of it. The compose file publishes to loopback
 only for that reason.
-
-## Building from source
-
-```sh
-cd web && npm ci && npm run build && cd ..          # frontend first
-cargo build -p sc-server --release --features embed-ui
-bash scripts/verify.sh                              # the gate CI runs
-```
-
-The frontend is embedded into the binary at compile time, so it has to be
-built first. `embed-ui` is off by default precisely because a fresh checkout
-has no `web/build` yet. The release image is a static musl build, and
-`Dockerfile` does both stages.
 
 ## Documentation
 
@@ -172,22 +172,32 @@ planned.
 5. **The default is least privilege.** No user homes, no symlinks, SMB off, no
    inline content rendering.
 
-## Status
+<details>
+<summary><b>Building from source</b></summary>
 
-All six milestones in the architecture proposal are reachable by a real
-client. Still missing: Litmus conformance in CI, an automated sync-client
-regression suite, and an external security review. Treat it accordingly. It
-has not been audited by anyone outside this repository.
+```sh
+cd web && npm ci && npm run build && cd ..          # frontend first
+cargo build -p sc-server --release --features embed-ui
+bash scripts/verify.sh                              # the gate CI runs
+```
 
-## License
+The frontend is embedded into the binary at compile time, so it has to be
+built first. `embed-ui` is off by default precisely because a fresh checkout
+has no `web/build` yet. The release image is a static musl build, and
+`Dockerfile` does both stages.
+
+</details>
+
+<details>
+<summary><b>Licence, and what it obliges</b></summary>
 
 Copyright (C) 2026 heavycaffeiner.
 
 GNU Affero General Public License v3.0 or later, see [`LICENSE`](LICENSE).
 Running a modified version as a network service obliges you to offer its
-source to the people using it; this repository does not do that for you, and
-the published images carry only a `org.opencontainers.image.source` label
-pointing back here.
+source to the people using it. This repository does not do that for you; the
+published images carry an `org.opencontainers.image.source` label pointing
+back here and nothing more.
 
 Contributions are accepted under that same licence and no other: inbound
 equals outbound. There is no CLA and no copyright assignment, so contributors
@@ -201,6 +211,15 @@ frontend, so both are redistributed with it.
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) carries their licences and
 copyright notices, and the runtime image carries a copy at
 `/THIRD-PARTY-NOTICES.md`.
+
+</details>
+
+## Status
+
+All six milestones in the architecture proposal are reachable by a real
+client. Still missing: Litmus conformance in CI, an automated sync-client
+regression suite, and an external security review. Treat it accordingly. It
+has not been audited by anyone outside this repository.
 
 [^tm]: Nextcloud is a registered trademark of Nextcloud GmbH. Stowcloud is not
     affiliated with, endorsed by, or sponsored by Nextcloud GmbH; the name is
