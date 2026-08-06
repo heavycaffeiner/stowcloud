@@ -842,7 +842,7 @@ impl hapi::CoreApi for CoreBridge {
                     id: format!("{}:{}", root.share.get(), e.id),
                     name: e.name,
                     size: e.size,
-                    deleted_mtime_ns: e.deleted_mtime_ns.to_string(),
+                    deleted_at_ns: e.deleted_at_ns.to_string(),
                 });
             }
         }

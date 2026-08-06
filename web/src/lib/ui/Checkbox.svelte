@@ -10,10 +10,15 @@
     checked?: boolean
     indeterminate?: boolean
     label?: string
+    /** Keep `label` as the accessible name but draw no text beside the box.
+     *  For a checkbox in a row that already shows what it selects: the trash
+     *  list rendered "Select report.pdf" as visible text next to the file
+     *  name it was already showing, and squeezed the name column to fit it. */
+    hideLabel?: boolean
     onchange?: (checked: boolean) => void
   }
 
-  let { checked = $bindable(false), indeterminate = false, label, onchange }: Props = $props()
+  let { checked = $bindable(false), indeterminate = false, label, hideLabel = false, onchange }: Props = $props()
   let el: HTMLInputElement | undefined = $state()
 
   $effect(() => {
@@ -31,7 +36,7 @@
       onchange={(e) => onchange?.((e.currentTarget as HTMLInputElement).checked)}
     />
   </Checkbox>
-  {#if label}<span>{label}</span>{/if}
+  {#if label && !hideLabel}<span>{label}</span>{/if}
 </label>
 
 <style>

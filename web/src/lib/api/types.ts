@@ -513,8 +513,11 @@ export interface TrashEntry {
   id: string
   name: string
   size: number
-  /** Nanoseconds as a string, same rule as `Entry.mtime_ns`. */
-  deleted_mtime_ns: string
+  /** When it was moved into the trash. Nanoseconds as a string, same rule as
+   *  `Entry.mtime_ns`. Was `deleted_mtime_ns`, which carried the file's own
+   *  mtime: a move does not touch that, so a file edited a year ago and
+   *  deleted a minute ago listed as deleted a year ago. */
+  deleted_at_ns: string
 }
 
 // ── content links ──

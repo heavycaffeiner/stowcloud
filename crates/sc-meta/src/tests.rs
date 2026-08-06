@@ -8,6 +8,7 @@ fn stat(dev: u64, ino: u64, size: u64, mtime_ns: i64, btime_ns: Option<i64>, kin
         ino,
         btime_ns: btime_ns.map(|b| b as i128),
         mtime_ns: mtime_ns as i128,
+        ctime_ns: Some(mtime_ns as i128),
         size,
         mode: 0o644,
         uid: 0,

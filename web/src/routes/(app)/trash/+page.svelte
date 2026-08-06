@@ -142,13 +142,19 @@
           onchange={selectAll}
         />
         <div class="sc-trash__toolbar-actions">
+          <!-- `trash.restore`/`trash.purge`, not `trash.restored`/
+               `trash.deleted_permanently`: those two are the past-tense verb
+               `summarize` drops into "{verb} {count} items" after the fact,
+               and reusing them here labelled the buttons "Restored" and
+               "Deleted permanently" before anything had been. Korean reads
+               the same either way, which is why it survived this long. -->
           <Button variant="text" disabled={selected.size === 0 || busy} onclick={() => restore([...selected])}>
             {#snippet icon()}<Icon icon={icons.restore} size={18} />{/snippet}
-            {t('trash.restored')}
+            {t('trash.restore')}
           </Button>
           <Button variant="text" danger disabled={selected.size === 0 || busy} onclick={() => requestPurge(null)}>
             {#snippet icon()}<Icon icon={icons.trash} size={18} />{/snippet}
-            {t('trash.deleted_permanently')}
+            {t('trash.purge')}
           </Button>
         </div>
       </div>
@@ -164,13 +170,18 @@
       <ul class="sc-trash__list">
         {#each entries as entry (entry.id)}
           <li class="sc-trash__row">
-            <Checkbox checked={selected.has(entry.id)} label={t('common.select', { name: entry.name })} onchange={() => toggle(entry.id)} />
+            <Checkbox
+              checked={selected.has(entry.id)}
+              label={t('common.select', { name: entry.name })}
+              hideLabel
+              onchange={() => toggle(entry.id)}
+            />
             <span class="sc-trash__name" title={entry.name}>{entry.name}</span>
             <span class="sc-trash__meta">{formatBytes(entry.size)}</span>
-            <span class="sc-trash__meta">{t('trash.deleted', { date: formatDateNs(entry.deleted_mtime_ns) })}</span>
+            <span class="sc-trash__meta">{t('trash.deleted', { date: formatDateNs(entry.deleted_at_ns) })}</span>
             <div class="sc-trash__row-actions">
-              <IconButton label={t('trash.restored')} disabled={busy} onclick={() => restore([entry.id])}><Icon icon={icons.restore} /></IconButton>
-              <IconButton label={t('trash.deleted_permanently')} disabled={busy} onclick={() => requestPurge(entry.id)}><Icon icon={icons.trash} /></IconButton>
+              <IconButton label={t('trash.restore')} disabled={busy} onclick={() => restore([entry.id])}><Icon icon={icons.restore} /></IconButton>
+              <IconButton label={t('trash.purge')} disabled={busy} onclick={() => requestPurge(entry.id)}><Icon icon={icons.trash} /></IconButton>
             </div>
           </li>
         {/each}
@@ -185,7 +196,7 @@
   message={t('trash.permanently_deletes_items_cannot_undone', {
     count: purgeCount
   })}
-  confirmLabel={t('trash.deleted_permanently')}
+  confirmLabel={t('trash.purge')}
   onclose={() => {
     purgeOpen = false
     purgeSingle = null

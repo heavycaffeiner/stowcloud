@@ -110,5 +110,10 @@ pub struct TrashEntry {
     pub id: String,
     pub name: String,
     pub size: u64,
-    pub deleted_mtime_ns: i128,
+    /// When the entry was moved into the trash, from the inode change time
+    /// the move itself set. This used to carry the file's mtime, which a
+    /// move does not touch: a file last edited a year ago and deleted a
+    /// minute ago was listed as "Deleted" a year ago, and nothing anywhere
+    /// recorded the real answer.
+    pub deleted_at_ns: i128,
 }

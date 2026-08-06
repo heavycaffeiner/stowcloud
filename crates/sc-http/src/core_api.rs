@@ -254,8 +254,10 @@ pub struct TrashEntry {
     pub id: String,
     pub name: String,
     pub size: u64,
-    /// Nanoseconds, serialized as a string — §1, same rule as `Entry`.
-    pub deleted_mtime_ns: String,
+    /// When the entry was moved into the trash. Nanoseconds, serialized as a
+    /// string (§1, same rule as `Entry`). Was `deleted_mtime_ns` and carried
+    /// the file's mtime, which is not when it was deleted.
+    pub deleted_at_ns: String,
 }
 
 /// One share's contribution to `/api/admin/storage`.

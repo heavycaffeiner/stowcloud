@@ -370,6 +370,44 @@ fn trash_delete_then_restore() {
     assert!(core.trash_list(USER, SHARE).unwrap().is_empty());
 }
 
+/// The trash listed a file's own mtime under "Deleted", which a move does
+/// not touch: an old file deleted a moment ago was reported as deleted
+/// however long ago it was last edited, and the real answer was written down
+/// nowhere. `ctime` is what the rename into `.sctrash` does change.
+///
+/// Unix only: this asserts a property of the backends that can report an
+/// inode change time. The Windows dev fallback has none and says so
+/// (`Stat::ctime_ns == None`), which is why `trash_list` falls back to mtime
+/// there rather than inventing a number.
+#[cfg(unix)]
+#[test]
+fn trash_reports_when_it_was_deleted_not_when_the_file_was_last_edited() {
+    use std::time::{Duration, SystemTime};
+
+    let (core, dir) = setup_with_policy(SharePolicy { trash: TrashMode::ShareLocal, ..Default::default() });
+    core.write_text(USER, "/root/old.txt", b"content", None).unwrap();
+
+    // A file last written a year ago, deleted now.
+    let a_year_ago = SystemTime::now() - Duration::from_secs(365 * 24 * 60 * 60);
+    let f = std::fs::File::options().write(true).open(dir.path().join("old.txt")).unwrap();
+    f.set_times(std::fs::FileTimes::new().set_modified(a_year_ago)).unwrap();
+    drop(f);
+
+    let before = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos() as i128;
+    core.delete(USER, &["/root/old.txt".to_string()], false).unwrap();
+
+    let trashed = core.trash_list(USER, SHARE).unwrap();
+    assert_eq!(trashed.len(), 1);
+    let a_year_ago_ns = a_year_ago.duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos() as i128;
+    assert!(
+        trashed[0].deleted_at_ns >= before,
+        "deleted_at_ns {} predates the delete call ({}); mtime was {}",
+        trashed[0].deleted_at_ns,
+        before,
+        a_year_ago_ns
+    );
+}
+
 /// Regression for the bug found by checking actual on-disk state: trashing
 /// a file from a subdirectory and restoring it used to always land the file
 /// at the share root (`.sctrash` only ever remembered the basename), so a

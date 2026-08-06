@@ -30,6 +30,12 @@ pub struct Stat {
     /// (some ext4 mount options, NFS, ...).
     pub btime_ns: Option<i128>,
     pub mtime_ns: i128,
+    /// Inode change time. Unlike `mtime_ns` a rename updates it, which is
+    /// what lets the trash report when an entry was moved into it: the file's
+    /// own contents, and so its mtime, are untouched by being deleted.
+    /// `None` where the backend cannot supply one (Windows has no ctime, and
+    /// the dev fallback will not invent a plausible number for it).
+    pub ctime_ns: Option<i128>,
     pub size: u64,
     pub mode: u32,
     pub uid: u32,

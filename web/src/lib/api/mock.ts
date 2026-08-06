@@ -580,7 +580,7 @@ async function trashList(): Promise<TrashEntry[]> {
   await delay(20)
   return [...mockTrash.values()]
     .sort((a, b) => Number(BigInt(b.deletedNs) - BigInt(a.deletedNs)))
-    .map((row) => ({ id: row.id, name: row.entry.name, size: row.entry.size, deleted_mtime_ns: row.deletedNs }))
+    .map((row) => ({ id: row.id, name: row.entry.name, size: row.entry.size, deleted_at_ns: row.deletedNs }))
 }
 
 async function trashRestore(ids: string[]): Promise<BatchResult> {

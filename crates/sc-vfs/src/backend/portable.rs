@@ -148,6 +148,22 @@ fn platform_bits(md: &std::fs::Metadata) -> (u32, u32, u32, u32) {
     (mode, 0, 0, 1)
 }
 
+#[cfg(unix)]
+fn platform_ctime_ns(md: &std::fs::Metadata) -> Option<i128> {
+    use std::os::unix::fs::MetadataExt;
+    Some(md.ctime() as i128 * 1_000_000_000 + md.ctime_nsec() as i128)
+}
+
+/// Windows has no inode change time, and `Metadata::created()` is birth
+/// time, which is a different thing: a rename leaves it alone. Reporting one
+/// as the other is the shape of bug this backend has produced before (the
+/// hardcoded `dev_ino() -> (0, 0)` that collided every file identity), so
+/// this says "unknown" instead.
+#[cfg(windows)]
+fn platform_ctime_ns(_md: &std::fs::Metadata) -> Option<i128> {
+    None
+}
+
 fn system_time_to_ns(t: std::time::SystemTime) -> i128 {
     match t.duration_since(std::time::UNIX_EPOCH) {
         Ok(d) => d.as_nanos() as i128,
@@ -185,6 +201,7 @@ fn metadata_to_stat(md: &std::fs::Metadata, dev: u64, ino: u64) -> Stat {
         ino,
         btime_ns,
         mtime_ns,
+        ctime_ns: platform_ctime_ns(md),
         size: md.len(),
         mode,
         uid,

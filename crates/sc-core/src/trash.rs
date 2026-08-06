@@ -143,7 +143,14 @@ impl crate::Core {
                     id: id.to_string(),
                     name: Self::trash_display_name(rest, max_depth),
                     size: st.size,
-                    deleted_mtime_ns: st.mtime_ns,
+                    // ctime, not mtime: the rename into `.sctrash` is an
+                    // inode change and nothing else here records when it
+                    // happened. mtime is the file's own last edit and
+                    // survives the move untouched, so it answered a
+                    // different question than the one the UI asks. A
+                    // backend with no ctime falls back to it rather than
+                    // showing nothing.
+                    deleted_at_ns: st.ctime_ns.unwrap_or(st.mtime_ns),
                 });
             }
         }

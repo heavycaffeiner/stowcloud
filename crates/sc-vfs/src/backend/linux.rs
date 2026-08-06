@@ -64,6 +64,13 @@ fn statx_to_stat(st: &fs::Statx) -> Stat {
         st.stx_btime.tv_sec as i128 * 1_000_000_000 + st.stx_btime.tv_nsec as i128
     });
     let mtime_ns = st.stx_mtime.tv_sec as i128 * 1_000_000_000 + st.stx_mtime.tv_nsec as i128;
+    // Part of BASIC_STATS, so it is always in the mask STAT_MASK requests;
+    // the check still reads it off `stx_mask` rather than assuming, the same
+    // way btime does.
+    let has_ctime = (st.stx_mask & StatxFlags::CTIME.bits()) != 0;
+    let ctime_ns = has_ctime.then(|| {
+        st.stx_ctime.tv_sec as i128 * 1_000_000_000 + st.stx_ctime.tv_nsec as i128
+    });
     let dev = fs::makedev(st.stx_dev_major, st.stx_dev_minor);
     let kind = match fs::FileType::from_raw_mode(st.stx_mode as fs::RawMode) {
         fs::FileType::Directory => Kind::Dir,
@@ -76,6 +83,7 @@ fn statx_to_stat(st: &fs::Statx) -> Stat {
         ino: st.stx_ino,
         btime_ns,
         mtime_ns,
+        ctime_ns,
         size: st.stx_size,
         mode: st.stx_mode as u32,
         uid: st.stx_uid,
