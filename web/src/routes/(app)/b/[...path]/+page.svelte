@@ -120,6 +120,9 @@
   let searchOpen = $state(false)
   let searchQuery = $state('')
   let searchResults = $state<{ path: string; entry: Entry }[]>([])
+  /** A query has actually been submitted (Enter), so an empty
+   *  `searchResults` means "nothing matched" rather than "not asked yet". */
+  let searchRan = $state(false)
   let searchInputEl: HTMLInputElement | undefined = $state()
   let fileInputEl: HTMLInputElement | undefined = $state()
   let dirInputEl: HTMLInputElement | undefined = $state()
@@ -405,12 +408,15 @@
     searchOpen = false
     searchQuery = ''
     searchResults = []
+    searchRan = false
     searchCancel?.()
   }
   function onSearchInput(): void {
     searchCancel?.()
     searchResults = []
+    searchRan = false
     if (!searchQuery.trim()) return
+    searchRan = true
     searchCancel = api.searchStream(
       searchQuery,
       (hit) => {
@@ -445,8 +451,17 @@
   function toggleTree(): void {
     treeOpen = !treeOpen
   }
+  // One key per density, each named after the density it labels. The three
+  // used to be spelled `browse.compact` / `browse.comfortable` /
+  // `common.fair`, shifted by one: `spacious` rendered "Comfortable" and
+  // `comfortable` borrowed the password-strength word and rendered "Fair".
+  // Korean hid it (좁게 / 보통 / 넓게 happen to line up), English did not.
   function densityLabel(d: 'compact' | 'comfortable' | 'spacious'): string {
-    return d === 'compact' ? t('browse.compact') : d === 'spacious' ? t('browse.comfortable') : t('common.fair')
+    return d === 'compact'
+      ? t('browse.compact')
+      : d === 'spacious'
+        ? t('browse.spacious')
+        : t('browse.comfortable')
   }
 
   // ── overflow menu ──
@@ -676,6 +691,11 @@
     </div>
   </Menu>
 
+  <!-- `searchRan`, not just a non-empty box: the query runs on Enter, so
+       between the first keystroke and that Enter there is a typed word and
+       an empty result list, which rendered as "No results" for a search
+       nobody had asked for yet. It said the opposite of the truth about
+       files that were about to match. -->
   {#if searchOpen && searchQuery.trim()}
     <ul class="sc-browse__search-results">
       {#each searchResults as hit (hit.path)}
@@ -686,7 +706,9 @@
           </button>
         </li>
       {:else}
-        <li class="sc-browse__search-empty">{t('browse.no_results')}</li>
+        <li class="sc-browse__search-empty">
+          {searchRan ? t('browse.no_results') : t('browse.press_enter_to_search')}
+        </li>
       {/each}
     </ul>
   {/if}
