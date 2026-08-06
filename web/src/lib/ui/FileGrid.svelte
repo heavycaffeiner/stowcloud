@@ -303,7 +303,15 @@
                   </Checkbox>
                 </span>
                 <span class="sc-file-grid__icon"><Icon icon={icons[iconName(entry)]} size={32} /></span>
-                <span class="sc-file-grid__name">{entry.name}</span>
+                <!-- The inner `<bdi>` is load-bearing. The cell truncates
+                     from the front with `direction: rtl`, and that also
+                     hands the name to the bidi algorithm as RTL paragraph
+                     text: `2026-budget.csv` drew as `budget.csv-2026`,
+                     reordered rather than truncated. An LTR isolate inside
+                     the RTL box is one run in its own direction, so the box
+                     still ellipsizes on the left and the name still reads
+                     the way it is spelled on disk. -->
+                <span class="sc-file-grid__name"><bdi>{entry.name}</bdi></span>
                 <span class="sc-file-grid__meta">{entry.kind === 'dir' ? '—' : formatBytes(entry.size)}</span>
                 {#if entry.confusable}
                   <span class="sc-file-grid__badge" title={t('common.look_alike_characters')}><Icon icon={icons.warning} size={14} /></span>
@@ -403,6 +411,11 @@
     direction: rtl;
     text-align: center;
     overflow-wrap: anywhere;
+  }
+  /* See the markup: the isolate is what keeps `direction: rtl` truncating
+     the name instead of reordering it. */
+  .sc-file-grid__name > bdi {
+    direction: ltr;
   }
   .sc-file-grid__meta {
     @apply --m3-body-small;

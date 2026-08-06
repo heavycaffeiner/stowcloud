@@ -154,12 +154,17 @@
     text-align: left;
     cursor: pointer;
   }
+  /* `direction: rtl` used to live here to ellipsize from the left. It also
+     hands the string to the bidi algorithm as right-to-left paragraph text,
+     which reorders any run the string starts with that is not a strong LTR
+     character: a folder called `2026-iceland` rendered as `iceland-2026`,
+     with no truncation involved and nothing on screen to suggest the name
+     shown was not the name on disk. This column holds one folder name, not a
+     path, so there is no tail worth preserving at the cost of that. */
   .sc-tree-row__name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    direction: rtl;
-    text-align: left;
   }
   .sc-tree-row__status {
     margin: 0;

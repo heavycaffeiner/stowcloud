@@ -157,7 +157,10 @@
   <header class="sc-edit__toolbar">
     <IconButton label={t('editor.go_back')} onclick={goBack}><Icon icon={icons['chevron-left']} /></IconButton>
     <div class="sc-edit__title">
-      <span class="sc-edit__filename">{fileName}</span>
+      <!-- The inner `<bdi>`: this truncates from the front
+           (`direction: rtl`), which without an LTR isolate inside reorders
+           the name as well as clipping it. -->
+      <span class="sc-edit__filename"><bdi>{fileName}</bdi></span>
       {#if dirty}<span class="sc-edit__dirty" title={t('editor.unsaved_changes')}>•</span>{/if}
       {#if entry}<span class="sc-edit__meta">{formatBytes(entry.size)}</span>{/if}
       {#if readOnly && entry}<span class="sc-edit__badge">{t('common.read_only')}</span>{/if}
@@ -216,6 +219,11 @@
     white-space: nowrap;
     direction: rtl;
     text-align: left;
+  }
+  /* See the markup: the isolate is what keeps `direction: rtl` truncating
+     the name instead of reordering it. */
+  .sc-edit__filename > bdi {
+    direction: ltr;
   }
   .sc-edit__dirty {
     color: var(--m3c-primary);
