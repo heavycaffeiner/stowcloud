@@ -512,25 +512,61 @@ impl Config {
         Ok(cfg)
     }
 
-    /// Load from `path` if given and existing, else from the default
-    /// locations, else pure defaults; then apply environment overrides.
-    /// This is `TOML + env` per the deployment contract, in that order —
-    /// env always wins.
+    /// Where `load` looks when `--config` was not given: `sc.toml` in the
+    /// data directory, which is the one path a deployment already has to
+    /// mount for anything else to work.
+    ///
+    /// `SC_DATA_DIR` is read here rather than after parsing because this
+    /// decides *which file* to parse, and the file cannot name its own
+    /// location. That matches the env-wins rule everywhere else, and the
+    /// compose reference sets exactly that variable.
+    pub fn default_config_path() -> PathBuf {
+        let data_dir = match std::env::var("SC_DATA_DIR") {
+            Ok(v) if !v.is_empty() => PathBuf::from(v),
+            _ => Config::default().data_dir,
+        };
+        data_dir.join("sc.toml")
+    }
+
+    /// Load from `path` if given and existing, else from
+    /// [`Config::default_config_path`] if that exists, else pure defaults;
+    /// then apply environment overrides. This is `TOML + env` per the
+    /// deployment contract, in that order: env always wins.
+    ///
+    /// The default location is not decoration. `--config`'s help text
+    /// promised it from the start and nothing implemented it, so a
+    /// deployment that wrote `<data_dir>/sc.toml` and restarted got a server
+    /// with no shares, no `compat_canonical_url`, and no indication that the
+    /// file it had just written was never opened. Returns the path actually
+    /// used alongside the config so the caller can say so out loud.
     pub fn load(path: Option<&Path>) -> anyhow::Result<Config> {
-        let mut cfg = match path {
-            Some(p) if p.exists() => {
+        Ok(Self::load_from(path)?.0)
+    }
+
+    /// [`Config::load`], plus which file it came from (`None` for built-in
+    /// defaults).
+    pub fn load_from(path: Option<&Path>) -> anyhow::Result<(Config, Option<PathBuf>)> {
+        let chosen = match path {
+            Some(p) if p.exists() => Some(p.to_path_buf()),
+            // An explicit `--config` that does not exist is a typo, not an
+            // invitation to fall back to something else and start anyway.
+            Some(p) => anyhow::bail!("config file {} does not exist", p.display()),
+            None => {
+                let d = Self::default_config_path();
+                d.exists().then_some(d)
+            }
+        };
+        let mut cfg = match &chosen {
+            Some(p) => {
                 let text = std::fs::read_to_string(p)
                     .map_err(|e| anyhow::anyhow!("reading {}: {e}", p.display()))?;
                 Config::from_toml_str(&text)?
-            }
-            Some(p) => {
-                anyhow::bail!("config file {} does not exist", p.display());
             }
             None => Config::default(),
         };
         cfg.apply_env();
         cfg.upload.normalize();
-        Ok(cfg)
+        Ok((cfg, chosen))
     }
 
     /// Environment overrides. Deliberately narrow: only the handful of

@@ -40,7 +40,9 @@ use clap::{Parser, Subcommand};
 #[command(name = "sc-server", about = "stowcloud main server binary")]
 pub struct Cli {
     /// Path to the TOML config file. Defaults to `<data-dir>/sc.toml` if it
-    /// exists, else built-in defaults.
+    /// exists, else built-in defaults. The data directory here is
+    /// `SC_DATA_DIR`, or the built-in default when that is unset: the file
+    /// cannot name the directory it is looked up in.
     #[arg(long, global = true)]
     pub config: Option<PathBuf>,
 
@@ -177,7 +179,17 @@ fn diagnostics_openat2_status() -> diagnostics::OpenAt2Status {
 /// `serve`, `gc`, and `smb-sync` so every entry point sees the same
 /// derived state.
 pub fn bootstrap(cli: &Cli) -> anyhow::Result<(config::Config, masterkey::MasterKeyResult)> {
-    let mut cfg = config::Config::load(cli.config.as_deref())?;
+    let (mut cfg, from) = config::Config::load_from(cli.config.as_deref())?;
+    // Printed rather than logged: this runs before the startup diagnostics
+    // block and answers the question an operator asks when a setting appears
+    // to have been ignored, which is "did it read my file at all".
+    match &from {
+        Some(p) => println!("[sc] config: {}", p.display()),
+        None => println!(
+            "[sc] config: built-in defaults (no --config, and no {})",
+            config::Config::default_config_path().display()
+        ),
+    }
     std::fs::create_dir_all(&cfg.data_dir)?;
     // Fold in the server-settings admin screen's persisted overrides
     // (`settings_store.rs`) *after* the file+env config and *before*
