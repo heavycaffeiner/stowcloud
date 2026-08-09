@@ -70,10 +70,6 @@ webpki-roots = "1"
 # Server-side TLS, for the LAN listener `sc-server`'s `tls.rs` puts up. Same
 # rustls, same ring provider, so this adds an accept path and no second stack.
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
-# Reads back the self-signed certificate written on a previous start. `rcgen`
-# writes PEM but cannot parse it, and hand-rolling a PEM/DER reader to feed a
-# TLS stack is the kind of parser this workspace does not write itself.
-rustls-pemfile = "2"
 # Generates that certificate on first start. Pinned to ring for the reason the
 # rustls comment above gives: the default `aws-lc-rs` needs cmake and would
 # break the musl check.

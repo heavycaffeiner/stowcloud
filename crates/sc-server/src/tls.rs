@@ -31,6 +31,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::Context;
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_rustls::TlsAcceptor;
@@ -176,18 +178,17 @@ pub fn load_or_generate(
         generate(&dir, &all)?;
     }
 
-    let certs = {
-        let pem = std::fs::read(dir.join("self-signed.crt")).context("reading the certificate")?;
-        rustls_pemfile::certs(&mut pem.as_slice())
-            .collect::<Result<Vec<_>, _>>()
-            .context("parsing the certificate")?
-    };
-    let key = {
-        let pem = std::fs::read(dir.join("self-signed.key")).context("reading the private key")?;
-        rustls_pemfile::private_key(&mut pem.as_slice())
-            .context("parsing the private key")?
-            .context("the private key file contained no key")?
-    };
+    // `rustls`'s own PEM reader, reached through the `pki-types` re-export.
+    // `rustls-pemfile` is the better-known crate for this and is unmaintained
+    // (RUSTSEC-2025-0134); these APIs are where its functionality moved, and
+    // they cost no dependency at all because `rustls` already enables the
+    // feature that carries them.
+    let certs = CertificateDer::pem_file_iter(dir.join("self-signed.crt"))
+        .context("reading the certificate")?
+        .collect::<Result<Vec<_>, _>>()
+        .context("parsing the certificate")?;
+    let key = PrivateKeyDer::from_pem_file(dir.join("self-signed.key"))
+        .context("reading the private key")?;
 
     let mut cfg = rustls::ServerConfig::builder()
         .with_no_client_auth()

@@ -80,7 +80,6 @@ tower   = { workspace = true }
 # cookie is `__Host-`-prefixed and a browser will not keep one over plaintext.
 rustls  = { workspace = true }
 tokio-rustls = { workspace = true }
-rustls-pemfile = { workspace = true }
 rcgen   = { workspace = true }
 # `trace` (among the features the workspace already enables) is
 # `tower_http::trace::TraceLayer` — production request logging, added in
