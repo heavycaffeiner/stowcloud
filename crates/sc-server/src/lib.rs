@@ -387,10 +387,15 @@ pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
             // silently collapse every IP-keyed control onto one address, which
             // is the bug `connect_info_service`'s own doc comment describes.
             let tls_listener = tls::TlsListener::spawn(tcp, acceptor)?.tap_io(|_| {});
-            let svc = connect_info_service(router.clone());
+            let tls_router = router.clone();
             tracing::info!(bind = %addr, "sc-server listening (TLS, self-signed)");
+            // `connect_info_service` stays inline in the `axum::serve` call:
+            // `verify.sh`'s "bind site installs ConnectInfo" gate is a grep over
+            // this file, and binding the service to a local first hides the call
+            // from it. The gate is worth keeping literal, because the failure it
+            // guards against is invisible to the test suite.
             Some(tokio::spawn(async move {
-                if let Err(e) = axum::serve(tls_listener, svc).await {
+                if let Err(e) = axum::serve(tls_listener, connect_info_service(tls_router)).await {
                     tracing::error!(error = %e, "TLS listener exited with error");
                 }
             }))
