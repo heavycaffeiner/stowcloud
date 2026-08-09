@@ -260,9 +260,10 @@
         <p class="sc-settings__hint">
           {t('settings.choosing_system_follows_your_device')}
         </p>
+      </section>
+      <Divider />
 
-        <Divider />
-
+      <section>
         <h2>{t('settings.language')}</h2>
         <div class="sc-settings__row">
           <ConnectedButtons role="group" aria-label={t('settings.language')}>
