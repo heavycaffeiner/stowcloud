@@ -46,10 +46,12 @@ services:
     # `--config` is a global argument, and the image's ENTRYPOINT is the bare
     # binary, so it goes before the subcommand.
     command: ["--config", "/sc.toml", "serve"]
-    # Loopback only, as production publishes it. The testbed drives the API
-    # from inside the guest, so `app_hosts` can stay a fixed 127.0.0.1.
+    # Loopback only, which is this stack's own choice and no longer production's
+    # (production publishes 8443 to the LAN, since that is how anyone reaches
+    # it now). The testbed drives the API from inside the guest, so `app_hosts`
+    # can stay a fixed 127.0.0.1. HTTPS, like every listener.
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8443:8443"
     stop_grace_period: 30s
     restart: unless-stopped
     healthcheck:
