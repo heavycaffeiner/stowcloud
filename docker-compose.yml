@@ -2,7 +2,10 @@
 # See docs/DEPLOYMENT.md §9/§10.
 #
 #   ghcr.io/heavycaffeiner/stowcloud:core   amd64 + arm64
-#   ghcr.io/heavycaffeiner/stowcloud:smb    amd64 only
+#   ghcr.io/heavycaffeiner/stowcloud:smb    amd64 + arm64
+#
+# Both tags are manifest lists, and every architecture in them was built and
+# run on its own hardware in CI before being published.
 #
 # Both tags move with every master build. Pin to `:core-<sha>` / `:smb-<sha>`
 # for anything that matters, so `docker compose pull` cannot change the
@@ -131,8 +134,9 @@ services:
     #   SETUID/SETGID    — drop to scsvc per connection
     #   NET_ADMIN        — fail2ban's `iptables -I` ban action
     #   DAC_READ_SEARCH  — read the 0600 smbpasswd owned by another uid
-    # Verified on amd64; CAP_DAC_OVERRIDE, CAP_CHOWN and NET_RAW are not
-    # needed, since the generated smb.conf disables ACL/xattr/DOS attributes.
+    # Verified on amd64 and arm64, by a container CI actually starts under this
+    # cap set on each. CAP_DAC_OVERRIDE, CAP_CHOWN and NET_RAW are not needed,
+    # since the generated smb.conf disables ACL/xattr/DOS attributes.
     cap_add:
       - NET_BIND_SERVICE
       - SETUID
