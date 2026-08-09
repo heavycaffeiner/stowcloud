@@ -75,6 +75,13 @@ async-trait = { workspace = true, optional = true }
 tokio   = { workspace = true }
 axum    = { workspace = true }
 tower   = { workspace = true }
+# The LAN HTTPS listener (`tls.rs`). Unconditional, not feature-gated: it is
+# what makes the app usable from a LAN address at all, because the session
+# cookie is `__Host-`-prefixed and a browser will not keep one over plaintext.
+rustls  = { workspace = true }
+tokio-rustls = { workspace = true }
+rustls-pemfile = { workspace = true }
+rcgen   = { workspace = true }
 # `trace` (among the features the workspace already enables) is
 # `tower_http::trace::TraceLayer` — production request logging, added in
 # `app.rs::router()`. Nothing emitted a per-request line before this; see

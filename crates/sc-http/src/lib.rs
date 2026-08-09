@@ -352,6 +352,54 @@ mod integration_tests {
         assert_eq!(resp.status(), StatusCode::MISDIRECTED_REQUEST);
     }
 
+    /// The reason the compose reference could not be reached at the address the
+    /// NAS has on the LAN: `app_hosts` lists loopback only, and `sc-server`'s
+    /// bind-address injection is skipped for the `0.0.0.0` bind that same
+    /// reference mandates. Nobody should have to list their own LAN address.
+    #[tokio::test]
+    async fn a_private_lan_address_is_reachable_without_being_listed() {
+        for host in ["192.168.0.50:8080", "10.1.2.3", "[fd00::5]:8443"] {
+            let (app, _dir) = app();
+            let req = Request::builder()
+                .uri("/api/capabilities")
+                .header("Host", host)
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.oneshot(req).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::OK, "Host: {host}");
+        }
+    }
+
+    /// The rule above is about *private* literals specifically. A public
+    /// address is still someone else's, and answering for it is the
+    /// misdirection the guard exists to refuse.
+    #[tokio::test]
+    async fn a_public_address_literal_is_still_rejected() {
+        let (app, _dir) = app();
+        let req = Request::builder()
+            .uri("/api/capabilities")
+            .header("Host", "8.8.8.8")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::MISDIRECTED_REQUEST);
+    }
+
+    /// `::1` has been in the default `app_hosts` from the start, and a browser
+    /// on IPv6 loopback still got a 421 from it: the guard split the `Host` on
+    /// `:` and compared `[`.
+    #[tokio::test]
+    async fn ipv6_loopback_with_a_port_matches_its_app_hosts_entry() {
+        let (app, _dir) = app();
+        let req = Request::builder()
+            .uri("/api/capabilities")
+            .header("Host", "[::1]:8080")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
     #[tokio::test]
     async fn protected_route_without_session_is_401() {
         let (app, _dir) = app();

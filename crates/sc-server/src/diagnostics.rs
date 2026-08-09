@@ -236,6 +236,11 @@ pub struct Diagnostics {
     pub min_free_bytes: u64,
     pub size_guard_recommendation: Option<(bool, u64)>,
     pub smb_bind_result: Result<(), String>,
+    /// `cfg.tls_bind`: where the self-signed LAN HTTPS listener is, if anywhere.
+    /// Reported for the same reason `trusted_proxies` is: unset is a legitimate
+    /// configuration behind a proxy and a silent dead end on a LAN, and only
+    /// the operator can tell those apart.
+    pub tls_bind: Option<std::net::SocketAddr>,
     /// No dedicated content origin configured, so user content is served from
     /// the app origin. Permitted but must be said
     /// out loud — it gives up the XSS isolation separation exists to provide.
@@ -515,6 +520,7 @@ pub fn run(
         min_free_bytes: cfg.db.min_free_bytes,
         size_guard_recommendation,
         smb_bind_result,
+        tls_bind: cfg.tls_bind,
         single_origin,
         trusted_proxies: classify_trusted_proxies(&cfg.trusted_proxies),
         compat_canonical_url: cfg.resolve_compat_canonical_url(),
@@ -662,6 +668,20 @@ pub fn print(d: &Diagnostics) {
     match &d.smb_bind_result {
         Ok(()) => println!("[sc]   smb bind: OK"),
         Err(e) => println!("[sc]   smb bind: REFUSED — {e}"),
+    }
+
+    match d.tls_bind {
+        Some(addr) => println!("[sc]   LAN HTTPS: {addr} (self-signed, regenerated when the SANs change)"),
+        None => {
+            println!("[sc]   LAN HTTPS: OFF");
+            println!("[sc]     The session cookie is `__Host-`-prefixed, so a browser keeps it");
+            println!("[sc]     only over HTTPS (or plain http://localhost). Reaching this");
+            println!("[sc]     server directly at its LAN address therefore serves the page");
+            println!("[sc]     and then silently fails to stay logged in. Set `tls_bind` /");
+            println!("[sc]     SC_TLS_BIND to put up an HTTPS listener with a certificate the");
+            println!("[sc]     server writes for itself. Correct as-is if every client");
+            println!("[sc]     arrives through a reverse proxy that terminates TLS.");
+        }
     }
 
     let tp = &d.trusted_proxies;
@@ -857,6 +877,7 @@ mod tests {
             size_guard_recommendation: None,
             smb_bind_result: Ok(()),
             single_origin: false,
+            tls_bind: None,
             trusted_proxies: TrustedProxies::default(),
             compat_canonical_url: crate::config::CompatCanonicalUrl::Configured(
                 "https://cloud.example.com".into(),

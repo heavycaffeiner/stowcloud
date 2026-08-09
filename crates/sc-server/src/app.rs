@@ -1066,6 +1066,11 @@ fn build_http_state(
             | crate::config::CompatCanonicalUrl::Derived(url) => Some(url),
             _ => None,
         },
+        // What the CSRF check compares a private-LAN `Origin` against, so that
+        // a neighbouring service on the same address but another port is not
+        // mistaken for us (`sc_http::config::is_self_lan_origin`).
+        http_port: Some(cfg.bind.port()),
+        https_port: cfg.tls_bind.map(|a| a.port()),
         ..Default::default()
     };
     // The Host header carries whatever literal the client dialled, so a
