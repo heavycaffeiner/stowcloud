@@ -15,7 +15,7 @@ use compact_str::CompactString;
 
 use crate::error::VfsError;
 use crate::safe_path::{lookup_candidates, normalize_new_name};
-use crate::types::{DirEntry, FsType, Kind, SharePolicy, Stat, SymlinkPolicy};
+use crate::types::{DirEntry, FsSpace, FsType, Kind, SharePolicy, Stat, SymlinkPolicy};
 use crate::SafePath;
 
 pub(crate) struct AnchorHandle(PathBuf);
@@ -507,7 +507,7 @@ pub(crate) fn file_set_mode(_f: &FileInner, _mode: u32) -> Result<(), VfsError> 
 /// reported rather than swallowed so the caller can decide.
 #[cfg(all(unix, not(target_os = "linux")))]
 pub(crate) fn file_set_owner(_f: &FileInner, _uid: u32, _gid: u32) -> Result<(), VfsError> {
-    // Non-Linux Unix is a dev-convenience host only (see statfs_free above).
+    // Non-Linux Unix is a dev-convenience host only (see statfs_space below).
     Ok(())
 }
 
@@ -516,17 +516,53 @@ pub(crate) fn file_set_owner(_f: &FileInner, _uid: u32, _gid: u32) -> Result<(),
     Ok(())
 }
 
+/// The directory to ask about for `p`: `p` itself when it is one, otherwise
+/// its parent, since a file sits on the same volume as the directory holding
+/// it. `GetDiskFreeSpaceExW` wants a directory anyway.
 #[cfg(windows)]
-pub(crate) fn statfs_free(anchor: &AnchorHandle) -> Result<(u64, u64), VfsError> {
-    win::free_bytes(&anchor.0)
+fn volume_dir_for(
+    anchor: &AnchorHandle,
+    p: &SafePath,
+    policy: &SharePolicy,
+) -> Result<PathBuf, VfsError> {
+    let path = resolve_existing(&anchor.0, p.components(), policy)?;
+    if path.is_dir() {
+        return Ok(path);
+    }
+    path.parent().map(Path::to_path_buf).ok_or(VfsError::NotFound)
+}
+
+#[cfg(windows)]
+pub(crate) fn statfs_space(
+    anchor: &AnchorHandle,
+    p: &SafePath,
+    policy: &SharePolicy,
+) -> Result<FsSpace, VfsError> {
+    // A Windows mount point (a directory junction onto another volume) shifts
+    // these numbers exactly the way a Linux nested mount does, so this is
+    // path-relative here too, not anchor-relative.
+    let (available, total, free) = win::free_bytes(&volume_dir_for(anchor, p, policy)?)?;
+    Ok(FsSpace {
+        total,
+        free,
+        available,
+    })
 }
 
 #[cfg(all(unix, not(target_os = "linux")))]
-pub(crate) fn statfs_free(_anchor: &AnchorHandle) -> Result<(u64, u64), VfsError> {
+pub(crate) fn statfs_space(
+    _anchor: &AnchorHandle,
+    _p: &SafePath,
+    _policy: &SharePolicy,
+) -> Result<FsSpace, VfsError> {
     // Best-effort dev fallback only: real free-space accounting for
     // non-Linux Unix hosts is out of scope (the deployment target is Linux
     // — see "settled assumptions").
-    Ok((0, 0))
+    Ok(FsSpace {
+        total: 0,
+        free: 0,
+        available: 0,
+    })
 }
 
 #[cfg(windows)]
@@ -559,7 +595,11 @@ mod win {
         fn GetFileInformationByHandle(h_file: *mut c_void, lp_file_information: *mut ByHandleFileInformation) -> i32;
     }
 
-    pub(super) fn free_bytes(path: &Path) -> Result<(u64, u64), VfsError> {
+    /// `(available to the caller, total, free on the device)` for the volume
+    /// holding `path` — the three numbers `GetDiskFreeSpaceExW` reports, in
+    /// that order. The first two differ under a disk quota the same way
+    /// `f_bavail` and `f_bfree` differ under ext4's root reserve.
+    pub(super) fn free_bytes(path: &Path) -> Result<(u64, u64, u64), VfsError> {
         let wide: Vec<u16> = path
             .as_os_str()
             .encode_wide()
@@ -583,7 +623,7 @@ mod win {
         if ok == 0 {
             return Err(VfsError::Io(std::io::Error::last_os_error()));
         }
-        Ok((free_available, total_bytes))
+        Ok((free_available, total_bytes, total_free))
     }
 
     // Layout matches the documented `BY_HANDLE_FILE_INFORMATION` struct
@@ -642,7 +682,7 @@ mod win {
     /// `None` on any failure (path vanished between the caller's own stat
     /// and this call, permission denied, ...) — callers fall back to
     /// `(0, 0)`, the same honest-when-possible, explicit-placeholder-when-not
-    /// pattern `statfs_free` already uses for this backend.
+    /// pattern `statfs_space` already uses for this backend.
     pub(super) fn file_identity(path: &Path) -> Option<(u64, u64)> {
         let wide: Vec<u16> = path.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
         // SAFETY: `wide` is a NUL-terminated UTF-16 buffer kept alive for the

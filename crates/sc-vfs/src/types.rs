@@ -112,6 +112,32 @@ impl Default for SharePolicy {
     }
 }
 
+/// Byte accounting for the filesystem backing one path, in bytes.
+///
+/// A share is one directory tree, not one filesystem: a RAID array mounted at
+/// `media/` inside a share on the root disk is a different device with
+/// different numbers. Everything here therefore answers for the filesystem
+/// that holds the *path* asked about, not the one that holds the share root.
+///
+/// `free` and `available` differ by the blocks the filesystem reserves for
+/// root (5% by default on ext4): `free` is what the device has left,
+/// `available` is what an unprivileged writer can actually consume. `df`
+/// prints `available` under "Avail" and `total - free` under "Used", and so
+/// does everything above this crate.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FsSpace {
+    pub total: u64,
+    pub free: u64,
+    pub available: u64,
+}
+
+impl FsSpace {
+    /// Bytes in use, counting the root reserve as used the way `df` does.
+    pub fn used(&self) -> u64 {
+        self.total.saturating_sub(self.free)
+    }
+}
+
 /// Filesystem-type gate. See for the full matrix.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FsType {

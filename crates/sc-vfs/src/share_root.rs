@@ -10,7 +10,7 @@ use crate::error::VfsError;
 use crate::handle::{DirHandle, FileHandle};
 use crate::ids::ShareId;
 use crate::safe_path::SafePath;
-use crate::types::{DirEntry, FsType, SharePolicy, Stat};
+use crate::types::{DirEntry, FsSpace, FsType, SharePolicy, Stat};
 
 pub struct ShareRoot {
     id: ShareId,
@@ -132,8 +132,16 @@ impl ShareRoot {
         r
     }
 
-    /// `(free_bytes, total_bytes)`.
-    pub fn statfs_free(&self) -> Result<(u64, u64), VfsError> {
-        backend::imp::statfs_free(&self.anchor)
+    /// Space accounting for the filesystem that actually holds `p`.
+    ///
+    /// `p` is not decoration. Shares routinely have other filesystems mounted
+    /// inside them (a RAID array under `media/`, a second disk under
+    /// `archive/`), and `cross_mount` is on by default so users browse
+    /// straight into them. Answering from the anchor gave every such
+    /// directory the root disk's numbers, which is a different device
+    /// entirely. A path whose leaf is a file is answered from its parent
+    /// directory, which is on the same filesystem as the file.
+    pub fn space(&self, p: &SafePath) -> Result<FsSpace, VfsError> {
+        backend::imp::statfs_space(&self.anchor, p, &self.policy)
     }
 }
