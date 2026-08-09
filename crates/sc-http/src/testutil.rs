@@ -61,6 +61,7 @@ impl CoreApi for MockCore {
         Ok(crate::core_api::Listing {
             listing: String::new(),
             total: self.entries.len() as u64,
+            dirs: self.entries.iter().filter(|e| e.kind == crate::core_api::Kind::Dir).count() as u64,
             cursor: None,
             entries: self.entries.clone(),
             dir_etag: self.etag.lock().clone(),

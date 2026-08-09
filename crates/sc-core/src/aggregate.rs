@@ -234,7 +234,7 @@ impl crate::Core {
         let mut hasher = blake3::Hasher::new();
         let (mut rsize, mut rcount) = (0u64, 0u64);
         for name in &names {
-            let child_path = dir_path.join(name, max_depth)?;
+            let child_path = dir_path.join_existing(name, max_depth)?;
             let st = root.stat(&child_path)?;
             let (child_etag, size, count) = if st.kind == Kind::Dir {
                 let child_id = self.meta.fileid(share, dir_id, name, &st, true)?;

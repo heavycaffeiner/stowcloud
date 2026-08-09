@@ -66,6 +66,14 @@ impl Order {
 pub struct Listing {
     pub entries: Vec<Entry>,
     pub total: usize,
+    /// How many of `total` are directories. They sort first (`ops::list`), so
+    /// this is also the index where files begin.
+    ///
+    /// The grid view needs it: folders and files are drawn as different-sized
+    /// cards, so it has to know where one run ends without having loaded the
+    /// rows either side of the boundary. Counted while the listing is sorted,
+    /// which already knows every entry kind, so it costs nothing.
+    pub dirs: usize,
     pub dir_etag: String,
     pub listing_id: String,
     pub cursor: Option<String>,
@@ -82,6 +90,9 @@ pub(crate) struct ListingSession {
     #[allow(dead_code)]
     pub dir_path: String,
     pub names: Vec<String>,
+    /// Directory count for the whole listing, see `Listing::dirs`. Cached with
+    /// the sorted names so every page of the same listing agrees.
+    pub dirs: usize,
     /// Populated only when the sort required a full stat pass (Size/Mtime/
     /// Kind —), so building the returned page can
     /// reuse these instead of stat-ing the same entries twice.
