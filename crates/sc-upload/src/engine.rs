@@ -183,7 +183,11 @@ impl UploadEngine {
 
     pub fn create(&self, share: &ShareRoot, spec: SessionSpec) -> Result<SessionId, UploadError> {
         self.check_resource_limits(spec.user, spec.total_len)?;
-        self.check_free_space(share, spec.total_len)?;
+        // The directory the `.scpart-` staging file will be created in, which
+        // is the filesystem this upload actually consumes. Not the share root:
+        // those are two different devices the moment anything is mounted
+        // inside the share.
+        self.check_free_space(share, &spec.dest.parent(), spec.total_len)?;
 
         let id = SessionId::new_random();
         let policy = share.policy().clone();
@@ -1012,10 +1016,13 @@ impl UploadEngine {
         Ok(())
     }
 
-    fn check_free_space(&self, share: &ShareRoot, total_len: Option<u64>) -> Result<(), UploadError> {
+    fn check_free_space(&self, share: &ShareRoot, dir: &SafePath, total_len: Option<u64>) -> Result<(), UploadError> {
         let need = total_len.unwrap_or(0).saturating_add(self.cfg.free_space_margin);
-        match share.statfs_free() {
-            Ok((free, _total)) if free < need => Err(UploadError::ResourceExhausted("insufficient free disk space".into())),
+        match share.space(dir) {
+            // `available`, not `free`: the root-reserved blocks are not ours
+            // to write into, so counting them here would admit an upload that
+            // is going to hit ENOSPC partway.
+            Ok(s) if s.available < need => Err(UploadError::ResourceExhausted("insufficient free disk space".into())),
             _ => Ok(()), // probe failure/unsupported is not itself a rejection reason
         }
     }

@@ -104,11 +104,44 @@ fn rename_no_replace_refuses_to_clobber_destination() {
 }
 
 #[test]
-fn statfs_free_reports_plausible_numbers() {
+fn space_reports_plausible_numbers() {
     let dir = tempfile::tempdir().unwrap();
     let root = ShareRoot::open(ShareId::new(4), dir.path(), SharePolicy::default()).unwrap();
-    let (free, total) = root.statfs_free().unwrap();
-    assert!(total >= free);
+    let s = root.space(&SafePath::root()).unwrap();
+    assert!(s.total >= s.free, "{s:?}");
+    // The root reserve is the whole reason these are two numbers.
+    assert!(s.free >= s.available, "{s:?}");
+    assert_eq!(s.used(), s.total - s.free);
+}
+
+/// The path argument is what makes a nested mount (a RAID array under one of
+/// a share's subdirectories) report its own filesystem instead of the share
+/// root's. A test cannot mount anything, so it pins the other half of the
+/// contract: every path that *is* on the anchor's filesystem — a
+/// subdirectory, and a file, whose parent is what gets measured — still
+/// answers with the anchor's numbers rather than failing or returning zeros.
+#[test]
+fn space_answers_for_a_subpath_and_for_a_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = ShareRoot::open(ShareId::new(12), dir.path(), SharePolicy::default()).unwrap();
+    root.mkdir(&path("sub")).unwrap();
+    root.create_excl(&path("sub/f.txt"), 0o644).unwrap();
+
+    let at_root = root.space(&SafePath::root()).unwrap();
+    assert_eq!(root.space(&path("sub")).unwrap().total, at_root.total);
+    assert_eq!(root.space(&path("sub/f.txt")).unwrap().total, at_root.total);
+}
+
+#[test]
+fn space_rejects_a_path_that_does_not_exist() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = ShareRoot::open(ShareId::new(13), dir.path(), SharePolicy::default()).unwrap();
+    // Not `NotFound`-tolerant by accident: the file fallback retries at the
+    // parent, and here the parent is missing too.
+    assert!(matches!(
+        root.space(&path("nope/deeper")),
+        Err(VfsError::NotFound)
+    ));
 }
 
 #[test]

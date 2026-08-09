@@ -31,4 +31,6 @@ pub use ids::*;
 pub use reserved::{is_reserved_name, RESERVED_PREFIXES};
 pub use safe_path::SafePath;
 pub use share_root::ShareRoot;
-pub use types::{DirEntry, FsType, IdStrategy, Kind, SharePolicy, Stat, SymlinkPolicy, TrashMode};
+pub use types::{
+    DirEntry, FsSpace, FsType, IdStrategy, Kind, SharePolicy, Stat, SymlinkPolicy, TrashMode,
+};

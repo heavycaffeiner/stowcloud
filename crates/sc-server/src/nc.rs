@@ -249,8 +249,9 @@ impl ports::CorePort for NcCore {
     fn quota(&self, user: UserId) -> PortResult<ports::Quota> {
         let share = self.home_root(user)?;
         let root = self.core.share(share).ok_or(PortError::NotFound)?;
-        let (free, total) = root.statfs_free().map_err(port_io)?;
-        let used = total.saturating_sub(free);
+        let space = root.space(&sc_vfs::SafePath::root()).map_err(port_io)?;
+        let used = space.used();
+        let free = space.available;
         // `quota_bytes` (`user.quota_bytes`) is a
         // reporting gate, not a usage-tracking cap:
         // follows the reference server exactly — real numbers only when a
