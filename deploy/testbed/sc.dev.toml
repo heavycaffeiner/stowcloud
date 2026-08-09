@@ -1,17 +1,21 @@
 # Server config for the testbed compose stack. Paths are the container's.
 
-bind = "0.0.0.0:8080"
+# HTTPS, like every other deployment: this is the only listener and it always
+# terminates TLS with a self-signed certificate written into `data_dir/tls`
+# on first run (`Config::bind`).
+bind = "0.0.0.0:8443"
 data_dir = "/var/lib/sc"
 
 # Hostnames only: `middleware::host_guard` splits the port off the Host
 # header before comparing, so an entry carrying one can never match. The stack
-# publishes 8080 on the guest's loopback only, so these are the only two
+# publishes 8443 on the guest's loopback only, so these are the only two
 # literals that ever arrive.
 app_hosts = ["127.0.0.1", "localhost"]
-# Derived from `app_hosts` when empty, which would give https:// — this
-# deployment is plain HTTP behind nothing, so the CSRF check needs it spelled
-# out.
-allowed_origins = ["http://127.0.0.1:8080"]
+# `allowed_origins` is deliberately absent. Left empty it is derived from
+# `app_hosts` as `https://{host}` and `https://{host}:{bind port}`, which is
+# exactly right here; the explicit `http://` list this used to carry became
+# wrong the moment the plaintext listener went away, and spelling out a
+# correct one would only be a second copy of something already derived.
 
 master_key_file = "/run/sc-secrets/master.key"
 

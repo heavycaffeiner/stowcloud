@@ -92,7 +92,8 @@ docker compose up -d
 
 This pulls a roughly 30 MB image built and smoke-tested by this repository's
 CI. It runs read-only, as a non-root user, with all Linux capabilities
-dropped, and it listens on `127.0.0.1:8080` only.
+dropped, and it serves HTTPS on port 8443, published to your network so you
+can reach it from another machine.
 
 **4. Tell it which folders to serve.**
 
@@ -115,8 +116,13 @@ you can add folders from the admin screen later instead.
 docker compose logs sc | grep 'Setup token'
 ```
 
-Open <http://127.0.0.1:8080/setup>, paste that token, and pick a username and
-password.
+Open `https://<the machine's address>:8443/setup`, paste that token, and pick a
+username and password.
+
+Your browser will warn you about the certificate the first time. That is
+expected: the server issued it to itself, because a private address has no
+public name for a certificate authority to vouch for. Accept it once per
+browser. There is no `http://` port to use instead.
 
 ![The first-run screen asking for the setup token, an administrator username, and a password](docs/screenshots/setup.png)
 

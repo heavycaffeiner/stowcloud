@@ -4,12 +4,23 @@
 #
 # The two instances no longer deploy the same way:
 #
-#   production   sc-prod-docker.service -> `docker run sc:core` on :8080.
+#   production   sc-prod-docker.service -> `docker run sc:core` on :8443.
 #                Deployed by rebuilding the image *in the guest* from a
 #                pushed source tree, then restarting the unit. The binary
 #                cross-compiled below is not what production runs.
 #   development  sc-dev.service :8081, still a bare-metal systemd unit
 #                running the cross-compiled musl binary this script pushes.
+#
+# Both speak HTTPS and only HTTPS (`Config::bind`), with a certificate each
+# generates for itself in its own data directory. The checks below therefore
+# use `https://` and skip verification: those certificates live in the guest
+# and this script runs on Windows, so there is nothing here to verify against.
+#
+# Production moved 8080 -> 8443 with that change. `sc-prod-docker.service`
+# lives in the guest, not in this repo, so its `docker run` line has to be
+# edited there to match: `-p 8443:8443` and `-e SC_BIND=0.0.0.0:8443`. Until
+# it is, the restart below cannot come up and this script fails at
+# "restart production".
 #
 # Both are reached from Windows through .vm/tunnel.mjs. Windows only builds;
 # it runs neither instance and keeps no copy of either binary afterward.
@@ -17,7 +28,7 @@
 # `sc-prod.service` still exists in the guest, disabled — it is §12.1's
 # rollback. Nothing here restarts it: `systemctl restart sc-prod` would start
 # a *second* server against the same data directory while the container holds
-# :8080, and the health check below would then pass against the container and
+# :8443, and the health check below would then pass against the container and
 # report a deploy that never happened.
 #
 # The `cargo clean -p sc-http` is not optional. `#[derive(RustEmbed)]` reads
@@ -92,7 +103,13 @@ restart_and_wait() {
   local unit="$1" port="$2"
   $VM run "sudo systemctl restart $unit" || die "systemctl restart $unit failed"
   for _ in $(seq 1 30); do
-    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "http://127.0.0.1:$port/api/health" 2>/dev/null)
+    # `-k`, and only here. The server is HTTPS-only now with a certificate it
+    # generates for itself inside the guest, and this script runs on Windows
+    # reaching the guest through .vm/tunnel.mjs -- there is no path to that
+    # file from here to verify against. What this check is asking is "did the
+    # unit come back", not "is this the right server"; the tunnel already
+    # answers the second question.
+    code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 2 "https://127.0.0.1:$port/api/health" 2>/dev/null)
     [ "$code" = "200" ] && return 0
     sleep 1
   done
@@ -148,7 +165,7 @@ out=$($VM run "cd /opt/sc/build/src && sudo docker build -t sc:core . 2>&1 | tai
 ok
 
 step "restart production (container)"
-restart_and_wait sc-prod-docker 8080
+restart_and_wait sc-prod-docker 8443
 ok
 
 # The served-bundle assertion: filename match alone missed the incident where
@@ -174,7 +191,7 @@ check_bundle() {
   # header says so), so a request landing in that window would otherwise
   # fail this check even though the guest itself is fine.
   for _ in $(seq 1 5); do
-    curl -s --max-time 10 -D "$tmp_headers" -o "$tmp_html" "$url" && { fetched=1; break; }
+    curl -sk --max-time 10 -D "$tmp_headers" -o "$tmp_html" "$url" && { fetched=1; break; }
     sleep 1
   done
   [ -n "$fetched" ] || { rm -f "$tmp_html" "$tmp_headers"; die "$label: GET / failed after 5 retries"; }
@@ -195,13 +212,13 @@ check_bundle() {
 }
 
 step "dev bundle == fresh local build"
-check_bundle http://127.0.0.1:8081/ dev yes
+check_bundle https://127.0.0.1:8081/ dev yes
 ok
 
 step "prod bundle self-consistent (CSP == served doc)"
-check_bundle http://127.0.0.1:8080/ prod no
+check_bundle https://127.0.0.1:8443/ prod no
 ok
 
 echo
-echo "  production   http://127.0.0.1:8080  (sc-prod-docker.service, sc:core)"
-echo "  development  http://127.0.0.1:8081  (sc-dev.service in the guest)"
+echo "  production   https://127.0.0.1:8443  (sc-prod-docker.service, sc:core)"
+echo "  development  https://127.0.0.1:8081  (sc-dev.service in the guest)"

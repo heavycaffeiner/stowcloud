@@ -32,11 +32,11 @@ export default defineConfig({
     // from the browser's point of view — cookies are `__Host-` prefixed and
     // would not survive a cross-origin hop.
     //
-    // **8081, not 8080.** 8080 is the production instance someone is actually
+    // **8081, not 8443.** 8443 is the production instance someone is actually
     // using; 8081 is the development one (`.dev/sc.toml`, its own data dir and
     // its own shares). They were the same server until an upload test wrote a
     // file into a share someone was browsing at the time. Override with
-    // SC_DEV_API if you need to point somewhere else; do not point it at 8080.
+    // SC_DEV_API if you need to point somewhere else; do not point it at 8443.
     // Anchored regexes, not bare prefixes. Vite matches a string key as a
     // *prefix*, so `/s` (share links) also swallowed `/src/...`, which is how
     // dev serves every module in the app — the whole SPA went to the backend
@@ -54,7 +54,12 @@ export default defineConfig({
       ].map((p) => [
         p,
         {
-          target: process.env.SC_DEV_API ?? 'http://127.0.0.1:8081',
+          // `https`, because the dev server has no plaintext listener either
+          // (`Config::bind`): it is the same binary. `secure: false` because
+          // the certificate it presents is one it issued to itself, so there
+          // is no chain for the proxy to validate; the hop is loopback.
+          target: process.env.SC_DEV_API ?? 'https://127.0.0.1:8081',
+          secure: false,
           changeOrigin: false,
           ws: p.startsWith('^/api')
         }
