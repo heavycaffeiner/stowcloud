@@ -21,7 +21,7 @@ use rustix::io::Errno;
 use crate::error::VfsError;
 use crate::reserved::is_reserved_name;
 use crate::safe_path::{lookup_candidates, normalize_new_name, path_candidates};
-use crate::types::{DirEntry, FsType, Kind, SharePolicy, Stat, SymlinkPolicy};
+use crate::types::{DirEntry, FsSpace, FsType, Kind, SharePolicy, Stat, SymlinkPolicy};
 use crate::SafePath;
 
 pub(crate) struct AnchorHandle(OwnedFd);
@@ -478,12 +478,34 @@ pub(crate) fn read_dir(
     dir_read_entries(&dir)
 }
 
-pub(crate) fn statfs_free(anchor: &AnchorHandle) -> Result<(u64, u64), VfsError> {
-    let st = fs::fstatfs(&anchor.0).map_err(map_errno)?;
+pub(crate) fn statfs_space(
+    anchor: &AnchorHandle,
+    p: &SafePath,
+    policy: &SharePolicy,
+) -> Result<FsSpace, VfsError> {
+    // `fstatfs` answers for whatever filesystem the fd lives on, so the whole
+    // job is pointing the fd at the right directory. `resolve_dir` reports
+    // both ENOENT and ENOTDIR as `NotFound`, and the second of those is the
+    // ordinary case of `p` naming a file: retry at the parent, which holds the
+    // file and is therefore on the same filesystem.
+    let dir = match resolve_dir(anchor, p.components(), policy) {
+        Ok(fd) => fd,
+        Err(VfsError::NotFound) if !p.is_empty() => {
+            resolve_dir(anchor, p.parent().components(), policy)?
+        }
+        Err(e) => return Err(e),
+    };
+    let st = fs::fstatfs(&dir).map_err(map_errno)?;
+    // `f_bsize` is the unit `f_blocks`/`f_bfree`/`f_bavail` are counted in.
     let bsize = st.f_bsize as u64;
-    let free = (st.f_bfree as u64).saturating_mul(bsize);
-    let total = (st.f_blocks as u64).saturating_mul(bsize);
-    Ok((free, total))
+    Ok(FsSpace {
+        total: (st.f_blocks as u64).saturating_mul(bsize),
+        free: (st.f_bfree as u64).saturating_mul(bsize),
+        // `f_bavail`, not `f_bfree`: the reserved blocks in the difference are
+        // not ours to write into, and reporting them as free promises the
+        // uploader room that ENOSPC will then refuse.
+        available: (st.f_bavail as u64).saturating_mul(bsize),
+    })
 }
 
 pub(crate) fn file_stat(f: &FileInner) -> Result<Stat, VfsError> {

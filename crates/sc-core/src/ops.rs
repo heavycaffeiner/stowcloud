@@ -703,12 +703,18 @@ impl crate::Core {
     /// (and the RFC 4331 properties `sc-dav` derives from
     /// it). `available` is `None` — never `0` — when the backend cannot
     /// answer.
+    ///
+    /// "the filesystem backing `vpath`" is meant literally, and is why the
+    /// path reaches `ShareRoot::space` instead of being dropped: a share with
+    /// a RAID array mounted at one of its subdirectories has two filesystems
+    /// in it, and a client asking about the RAID folder must be told the
+    /// RAID's numbers, not the root disk's.
     pub fn quota(&self, user: UserId, vpath: &str) -> Result<crate::entry::Quota, CoreError> {
         let r = self.resolve_want(user, vpath, Perms::READ)?;
-        match r.root.statfs_free() {
-            Ok((free, total)) => Ok(crate::entry::Quota {
-                used: total.saturating_sub(free),
-                available: Some(free),
+        match r.root.space(&r.path) {
+            Ok(s) => Ok(crate::entry::Quota {
+                used: s.used(),
+                available: Some(s.available),
             }),
             Err(_) => Ok(crate::entry::Quota { used: 0, available: None }),
         }

@@ -928,15 +928,19 @@ impl hapi::CoreApi for CoreBridge {
     fn storage_report(&self) -> Result<hapi::StorageReport, hapi::CoreError> {
         let mut shares = Vec::new();
         for def in self.core.share_defs() {
-            let (free, total) = self
+            // The share root's own filesystem. A share with other filesystems
+            // mounted inside it has more than one, and this line reports the
+            // one the share is anchored on; per-mount reporting is a
+            // different feature. `available`, not `free`, so the number
+            // agrees with `df` and with what an upload can actually use.
+            let space = self
                 .core
                 .share(def.id)
-                .and_then(|r| r.statfs_free().ok())
-                .unwrap_or((0, 0));
+                .and_then(|r| r.space(&sc_vfs::SafePath::root()).ok());
             shares.push(hapi::ShareStorage {
                 label: def.name,
-                free_bytes: free,
-                total_bytes: total,
+                free_bytes: space.map(|s| s.available).unwrap_or(0),
+                total_bytes: space.map(|s| s.total).unwrap_or(0),
             });
         }
         Ok(hapi::StorageReport {
