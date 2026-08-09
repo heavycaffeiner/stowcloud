@@ -1772,7 +1772,7 @@ async fn fs_list(State(state): State<AppState>, principal: Option<Extension<Prin
         return match state.listings.page(principal.user.get(), listing_id, cursor, &current_etag, page_size) {
             Ok(page) => {
                 let mut resp = Json(serde_json::json!({
-                    "listing": page.listing_id, "total": page.total, "cursor": page.cursor,
+                    "listing": page.listing_id, "total": page.total, "dirs": page.dirs, "cursor": page.cursor,
                     "entries": page.entries, "dir_etag": page.dir_etag,
                 }))
                 .into_response();
@@ -3204,6 +3204,9 @@ impl SearchQuery {
 
 fn hit_json(h: &crate::search_api::SearchHit) -> serde_json::Value {
     serde_json::json!({
+        // The share this path is relative to. Without it a client cannot
+        // rebuild the `/{label}/sub/path` virtual path a result points at.
+        "share": h.share,
         "path": h.path,
         "name": h.name,
         "is_dir": h.is_dir,
@@ -5947,7 +5950,8 @@ mod tests {
         fn search(&self, _user: sc_vfs::ids::UserId, q: &crate::search_api::SearchQuery) -> Result<crate::search_api::SearchOutcome, crate::core_api::CoreError> {
             Ok(crate::search_api::SearchOutcome {
                 hits: vec![crate::search_api::SearchHit {
-                    path: format!("/found/{}", q.text),
+                    share: "files".into(),
+                    path: format!("found/{}", q.text),
                     name: q.text.clone(),
                     is_dir: false,
                     size: Some(3),
@@ -5963,7 +5967,7 @@ mod tests {
             _q: &crate::search_api::SearchQuery,
             on_hit: &mut dyn FnMut(crate::search_api::SearchHit) -> bool,
         ) -> crate::search_api::SearchCompleteness {
-            on_hit(crate::search_api::SearchHit { path: "/x".into(), name: "x".into(), is_dir: false, size: None, mtime_ns: None, score: 1.0 });
+            on_hit(crate::search_api::SearchHit { share: "files".into(), path: "x".into(), name: "x".into(), is_dir: false, size: None, mtime_ns: None, score: 1.0 });
             crate::search_api::SearchCompleteness::Full
         }
     }

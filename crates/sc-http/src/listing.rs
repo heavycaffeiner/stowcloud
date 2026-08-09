@@ -75,6 +75,9 @@ fn decode_cursor(s: &str) -> Option<usize> {
 pub struct ListingPage {
     pub listing_id: String,
     pub total: u64,
+    /// See `core_api::Listing::dirs`. Counted from the cached session rather
+    /// than carried through the cursor, since the session holds every entry.
+    pub dirs: u64,
     pub entries: Vec<Entry>,
     pub cursor: Option<String>,
     pub dir_etag: String,
@@ -122,6 +125,9 @@ impl ListingCache {
         self.counter.fetch_add(1, Ordering::Relaxed);
         let id = new_listing_id();
         let total = all_entries.len() as u64;
+        // Counted once here and carried on the session: every later page of the
+        // same listing has to report the same boundary.
+        let dirs = all_entries.iter().filter(|e| e.kind == crate::core_api::Kind::Dir).count() as u64;
         let first_page: Vec<Entry> = all_entries.iter().take(page_size).cloned().collect();
         let cursor = if all_entries.len() > page_size { Some(encode_cursor(page_size)) } else { None };
 
@@ -140,7 +146,7 @@ impl ListingCache {
             sessions.put(id.clone(), session);
         }
 
-        ListingPage { listing_id: id, total, entries: first_page, cursor, dir_etag, stale: false }
+        ListingPage { listing_id: id, total, dirs, entries: first_page, cursor, dir_etag, stale: false }
     }
 
     /// Fetch the next page for an existing session. `current_dir_etag` is
@@ -179,6 +185,7 @@ impl ListingCache {
             return Ok(ListingPage {
                 listing_id: listing_id.to_string(),
                 total: session.entries.len() as u64,
+                dirs: session.entries.iter().filter(|e| e.kind == crate::core_api::Kind::Dir).count() as u64,
                 entries: session.entries.iter().take(page_size).cloned().collect(),
                 cursor: if session.entries.len() > page_size { Some(encode_cursor(page_size)) } else { None },
                 dir_etag: session.dir_etag,
@@ -187,10 +194,11 @@ impl ListingCache {
         }
 
         let total = session.entries.len() as u64;
+        let dirs = session.entries.iter().filter(|e| e.kind == crate::core_api::Kind::Dir).count() as u64;
         let page: Vec<Entry> = session.entries.iter().skip(start).take(page_size).cloned().collect();
         let next = start + page.len();
         let cursor = if next < session.entries.len() { Some(encode_cursor(next)) } else { None };
-        Ok(ListingPage { listing_id: listing_id.to_string(), total, entries: page, cursor, dir_etag: session.dir_etag.clone(), stale: false })
+        Ok(ListingPage { listing_id: listing_id.to_string(), total, dirs, entries: page, cursor, dir_etag: session.dir_etag.clone(), stale: false })
     }
 
     pub fn session_count(&self) -> usize {

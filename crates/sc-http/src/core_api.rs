@@ -118,6 +118,10 @@ pub enum Order {
 pub struct Listing {
     pub listing: String,
     pub total: u64,
+    /// Directories in this listing, which sort first, so also the index where
+    /// files begin. The grid draws the two as different-sized cards and needs
+    /// the boundary without having loaded the rows around it.
+    pub dirs: u64,
     pub cursor: Option<String>,
     pub entries: Vec<Entry>,
     pub dir_etag: Etag,

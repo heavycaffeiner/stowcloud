@@ -659,6 +659,7 @@ impl hapi::CoreApi for CoreBridge {
         Ok(hapi::Listing {
             listing: l.listing_id,
             total: l.total as u64,
+            dirs: l.dirs as u64,
             cursor: l.cursor,
             entries: l.entries.into_iter().map(http_entry).collect(),
             dir_etag: l.dir_etag,

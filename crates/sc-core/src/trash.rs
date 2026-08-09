@@ -137,7 +137,7 @@ impl crate::Core {
         let mut out = Vec::new();
         for e in entries {
             let Some((id, rest)) = Self::split_trash_name(&e.name) else { continue };
-            let Ok(p) = trash_dir.join(&e.name, max_depth) else { continue };
+            let Ok(p) = trash_dir.join_existing(&e.name, max_depth) else { continue };
             if let Ok(st) = root.stat(&p) {
                 out.push(TrashEntry {
                     id: id.to_string(),
@@ -224,7 +224,7 @@ impl crate::Core {
             if !matches {
                 continue;
             }
-            let p = trash_dir.join(&e.name, max_depth)?;
+            let p = trash_dir.join_existing(&e.name, max_depth)?;
             // Quota charge-back: purge is where trashed
             // bytes are actually freed (`trash_move` only relocated them, no
             // charge there). Size must be read before the delete.

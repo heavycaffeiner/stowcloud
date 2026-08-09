@@ -164,31 +164,57 @@ impl crate::Core {
             if let Some(hit) = cache.get(&cache_key) {
                 hit.clone()
             } else {
-                let mut names: Vec<String> = r.root.read_dir(&r.path)?.into_iter().map(|e| e.name.to_string()).collect();
+                // Directories sort as their own group, ahead of files, under
+                // every key and both orders. Reversing for `Desc` therefore
+                // cannot be a reverse of the whole list: that would put files
+                // first. The group rank is applied outside the reversal, so
+                // descending flips the order *within* each group and leaves
+                // folders on top.
+                //
+                // `kind` rides along from `read_dir` (`getdents64`'s `d_type`),
+                // so grouping costs no extra syscall even on the `Sort::Name`
+                // path, which deliberately never stats.
+                let listed = r.root.read_dir(&r.path)?;
+                let is_file: HashMap<String, bool> = listed
+                    .iter()
+                    .map(|e| (e.name.to_string(), e.kind != sc_vfs::Kind::Dir))
+                    .collect();
+                let mut names: Vec<String> = listed.into_iter().map(|e| e.name.to_string()).collect();
                 let stats = match sort {
                     Sort::Name => {
                         names.sort();
+                        if order == Order::Desc {
+                            names.reverse();
+                        }
+                        names.sort_by_key(|n| is_file[n]);
                         None
                     }
                     _ => {
                         let mut with_stat: Vec<(String, Stat)> = Vec::with_capacity(names.len());
                         for n in &names {
-                            let p = r.path.join(n, max_depth)?;
+                            // `join_existing`: these names came out of
+                            // `read_dir`, so the creation table has no say over
+                            // whether they can be stat'ed.
+                            let p = r.path.join_existing(n, max_depth)?;
                             let st = self.stat_counted(&r.root, &p)?;
                             with_stat.push((n.clone(), st));
                         }
-                        with_stat.sort_by(|a, b| order.apply(cmp_by(sort, &a.1, &b.1)).then_with(|| a.0.cmp(&b.0)));
+                        with_stat.sort_by(|a, b| {
+                            is_file[&a.0]
+                                .cmp(&is_file[&b.0])
+                                .then_with(|| order.apply(cmp_by(sort, &a.1, &b.1)))
+                                .then_with(|| a.0.cmp(&b.0))
+                        });
                         names = with_stat.iter().map(|(n, _)| n.clone()).collect();
                         Some(with_stat.into_iter().collect::<HashMap<_, _>>())
                     }
                 };
-                if sort == Sort::Name && order == Order::Desc {
-                    names.reverse();
-                }
+                let dirs = is_file.values().filter(|f| !**f).count();
                 let session = std::sync::Arc::new(ListingSession {
                     share: r.share,
                     dir_path: dir_path_str,
                     names,
+                    dirs,
                     stats,
                     created: std::time::Instant::now(),
                 });
@@ -201,7 +227,7 @@ impl crate::Core {
         let page_end = total.min(DEFAULT_PAGE_SIZE);
         let mut entries = Vec::with_capacity(page_end);
         for name in &session.names[..page_end] {
-            let p = r.path.join(name, max_depth)?;
+            let p = r.path.join_existing(name, max_depth)?;
             let st = match session.stats.as_ref().and_then(|m| m.get(name)) {
                 Some(st) => *st,
                 None => self.stat_counted(&r.root, &p)?,
@@ -213,6 +239,7 @@ impl crate::Core {
         Ok(Listing {
             entries,
             total,
+            dirs: session.dirs,
             dir_etag,
             listing_id: cache_key,
             cursor,

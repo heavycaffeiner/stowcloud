@@ -505,6 +505,46 @@ fn aggregate_changes_on_deep_change_and_stable_otherwise() {
     assert_eq!(agg2.etag, agg3.etag, "aggregate ETag must be stable when nothing actually changed");
 }
 
+/// Folders are their own group, ahead of files, under every key and both
+/// orders. Descending reverses *within* the groups; reversing the whole list
+/// would put files on top, which is the obvious wrong implementation.
+#[test]
+fn folders_sort_as_a_group_ahead_of_files() {
+    let (core, _dir) = setup();
+    core.mkdir(USER, "/root/mixed").unwrap();
+    // Interleaved on purpose: by name alone the answer would be a, b, m, z.
+    core.write_text(USER, "/root/mixed/a.txt", b"x", None).unwrap();
+    core.mkdir(USER, "/root/mixed/b_dir").unwrap();
+    core.write_text(USER, "/root/mixed/m.txt", b"x", None).unwrap();
+    core.mkdir(USER, "/root/mixed/z_dir").unwrap();
+
+    let kinds = |o: Order, s: Sort| -> Vec<(String, bool)> {
+        core.list(USER, "/root/mixed", s, o)
+            .unwrap()
+            .entries
+            .iter()
+            .map(|e| (e.name.clone(), e.kind == sc_vfs::Kind::Dir))
+            .collect()
+    };
+
+    for sort in [Sort::Name, Sort::Size, Sort::Mtime] {
+        for order in [Order::Asc, Order::Desc] {
+            let got = kinds(order, sort);
+            let first_file = got.iter().position(|(_, is_dir)| !is_dir).unwrap();
+            assert!(
+                got[first_file..].iter().all(|(_, is_dir)| !is_dir),
+                "a folder appeared after a file for {sort:?}/{order:?}: {got:?}"
+            );
+            assert_eq!(got.len(), 4, "{sort:?}/{order:?}");
+        }
+    }
+
+    let asc: Vec<String> = kinds(Order::Asc, Sort::Name).into_iter().map(|(n, _)| n).collect();
+    assert_eq!(asc, ["b_dir", "z_dir", "a.txt", "m.txt"]);
+    let desc: Vec<String> = kinds(Order::Desc, Sort::Name).into_iter().map(|(n, _)| n).collect();
+    assert_eq!(desc, ["z_dir", "b_dir", "m.txt", "a.txt"]);
+}
+
 #[test]
 fn listing_pagination_and_name_sort_avoids_full_stat() {
     let (core, _dir) = setup();
