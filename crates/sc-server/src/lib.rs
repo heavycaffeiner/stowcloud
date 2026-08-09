@@ -30,10 +30,12 @@ pub mod setup;
 pub mod shutdown;
 pub mod smb_cmd;
 pub mod storage_class;
+pub mod tls;
 
 use std::path::PathBuf;
 
 use anyhow::Context;
+use axum::serve::ListenerExt;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser, Debug)]
@@ -271,6 +273,15 @@ pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
     let (cfg, key) = bootstrap(cli)?;
     run_diagnostics_and_print(&cfg, &key);
 
+    // Before the Landlock domain below and before anything else is armed: this
+    // writes into the data directory on first run, and a deployment whose
+    // certificate cannot be written should fail while the failure is still the
+    // only thing that has happened.
+    let tls_config = match cfg.tls_bind {
+        Some(_) => Some(tls::load_or_generate(&cfg.data_dir, &cfg.app_hosts)?),
+        None => None,
+    };
+
     #[cfg(target_os = "linux")]
     {
         let mut restrict: Vec<PathBuf> = vec![cfg.data_dir.clone()];
@@ -300,6 +311,7 @@ pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
     }
 
     let bind = cfg.bind;
+    let tls_bind = cfg.tls_bind;
     let data_dir = cfg.data_dir.clone();
     let min_free_bytes = cfg.db.min_free_bytes;
     let app = app::App::build(cfg, &key)?;
@@ -351,6 +363,46 @@ pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(bind).await?;
     tracing::info!(bind = %bind, routes = routes::route_table().len(), "sc-server listening");
 
+    // The LAN HTTPS listener, when configured. It serves the *same* router
+    // through the same `connect_info_service`, so the peer address reaches
+    // `trusted_proxy` identically on both and no IP-keyed control behaves
+    // differently depending on which socket a request arrived on.
+    // Its own task rather than a second `select!` arm, so the shape of the
+    // shutdown below is unchanged whether or not TLS is configured. The handle
+    // is aborted before the shutdown sequence runs, which is what stops this
+    // socket accepting new work at the same point dropping `serve` stops the
+    // plain one.
+    let tls_task = match (tls_bind, tls_config) {
+        (Some(addr), Some(server_config)) => {
+            let tcp = tokio::net::TcpListener::bind(addr)
+                .await
+                .with_context(|| format!("binding the TLS listener on {addr}"))?;
+            let acceptor = tokio_rustls::TlsAcceptor::from(server_config);
+            // `.tap_io(|_| {})` is not decoration. `ConnectInfo<SocketAddr>` is
+            // what carries the peer address into `sc_http`'s `trusted_proxy`,
+            // and axum only implements `Connected` for a bare `TcpListener` or
+            // for anything wrapped in `TapIo` (`axum::extract::connect_info`).
+            // Without the wrapper this does not compile; with a hand-rolled
+            // alternative that dropped the extension it would compile and
+            // silently collapse every IP-keyed control onto one address, which
+            // is the bug `connect_info_service`'s own doc comment describes.
+            let tls_listener = tls::TlsListener::spawn(tcp, acceptor)?.tap_io(|_| {});
+            let tls_router = router.clone();
+            tracing::info!(bind = %addr, "sc-server listening (TLS, self-signed)");
+            // `connect_info_service` stays inline in the `axum::serve` call:
+            // `verify.sh`'s "bind site installs ConnectInfo" gate is a grep over
+            // this file, and binding the service to a local first hides the call
+            // from it. The gate is worth keeping literal, because the failure it
+            // guards against is invisible to the test suite.
+            Some(tokio::spawn(async move {
+                if let Err(e) = axum::serve(tls_listener, connect_info_service(tls_router)).await {
+                    tracing::error!(error = %e, "TLS listener exited with error");
+                }
+            }))
+        }
+        _ => None,
+    };
+
     let restart_signal = app.http.restart_signal.clone();
     let serve = axum::serve(listener, connect_info_service(router));
     let mut restart_requested = false;
@@ -376,6 +428,9 @@ pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
         }
     }
 
+    if let Some(t) = tls_task {
+        t.abort();
+    }
     let steps = shutdown::run_shutdown_sequence(&app);
     tracing::info!(?steps, "shutdown complete");
     if restart_requested {

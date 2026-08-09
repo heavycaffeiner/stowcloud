@@ -467,6 +467,8 @@
   "server.takes_effect_after_restart_when": "Takes effect after a restart. When a burst of changes goes past the threshold, the server rescans everything instead of replaying the changes one by one. That is independent of how many folders are watched, so a threshold below that number is not a problem.",
   "server.tell_server_where_you_have": "tell the server where you have already moved the data —",
   "server.they_do_not_move_server": "they do not move it. The server refuses to save if the new data directory holds no existing database, or if the master key file's contents differ from the current key. If you change the SMB config directory you must also point Samba at the same directory (which the server cannot verify), and delete the smb.conf and account files left behind in the old one yourself.",
+  "server.tls_bind_address_host_port": "LAN HTTPS address (host:port)",
+  "server.tls_bind_hint": "Serves HTTPS here using a certificate the server generates for itself, which is what lets the app be reached at a LAN address at all: the session cookie requires a secure origin, so plain HTTP logs nobody in. Nothing issued that certificate, so browsers show a warning on the first visit. Leave empty to turn this listener off. A reverse proxy in front of your public name does not use it.",
   "server.trusted_proxies_comma_separated": "Trusted proxies (comma-separated)",
   "server.uid_gid_must_integer_0": "UID/GID must be an integer of 0 or more",
   "server.uploads_jobs_running_right_now": "{uploads} uploads and {jobs} jobs are running right now. Restarting stops them, and only the progress up to that point is recorded. Restart anyway?",

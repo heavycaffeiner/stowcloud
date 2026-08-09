@@ -175,7 +175,7 @@ pub async fn host_guard(State(state): State<AppState>, mut req: Request, next: N
         .headers()
         .get(axum::http::header::HOST)
         .and_then(|v| v.to_str().ok())
-        .map(|s| s.split(':').next().unwrap_or(s).to_ascii_lowercase());
+        .map(|s| crate::config::split_host_port(s).0.to_ascii_lowercase());
 
     let Some(host) = host else {
         return envelope_response(StatusCode::MISDIRECTED_REQUEST, ErrorCode::Internal, "missing Host header");
@@ -188,9 +188,23 @@ pub async fn host_guard(State(state): State<AppState>, mut req: Request, next: N
     // Case-insensitive on the configured side too: an operator who writes
     // `Office-NAS` in `app_hosts` has not made a mistake, and a `421` is a
     // singularly unhelpful way to tell them they had.
+    // A private-LAN IP literal is accepted without being listed. `sc-server`
+    // used to inject its bind address into `app_hosts` for this, but only when
+    // that address was a specific one, and the reference compose mandates
+    // `SC_BIND=0.0.0.0:8080`, which is unspecified, so the injection never fired
+    // on the one deployment shape everybody actually runs. Reaching a NAS at the
+    // address it has on the LAN is the ordinary case, not a configuration the
+    // operator should have to anticipate by hand.
+    //
+    // Safe to allow unlisted because this guard defends against DNS rebinding,
+    // which arrives as a *name* in `Host` (`is_private_host_literal`). The
+    // separate question of who may *write* is still decided by the CSRF origin
+    // check below, which does not take this shortcut.
     let origin = if state.cfg.content_hosts.iter().any(|h| h.eq_ignore_ascii_case(&host)) {
         HostOrigin::Content
-    } else if state.cfg.app_hosts.iter().any(|h| h.eq_ignore_ascii_case(&host)) {
+    } else if state.cfg.app_hosts.iter().any(|h| h.eq_ignore_ascii_case(&host))
+        || crate::config::is_private_host_literal(&host)
+    {
         HostOrigin::App
     } else {
         return envelope_response(StatusCode::MISDIRECTED_REQUEST, ErrorCode::Internal, "unrecognized Host");
@@ -521,7 +535,12 @@ pub async fn csrf(State(state): State<AppState>, req: Request, next: Next) -> Re
                 .headers()
                 .get(axum::http::header::ORIGIN)
                 .and_then(|v| v.to_str().ok())
-                .map(|o| state.cfg.allowed_origins.iter().any(|a| a == o))
+                .map(|o| {
+                    state.cfg.allowed_origins.iter().any(|a| a == o)
+                        // The LAN counterpart of `host_guard`'s literal rule,
+                        // but port-checked: see `is_self_lan_origin`.
+                        || crate::config::is_self_lan_origin(&state.cfg, o)
+                })
                 .unwrap_or(false);
 
             let header_ok = given.map(|g| {
@@ -1218,6 +1237,46 @@ mod tests {
         let req = HttpRequest::builder().method("POST").uri("/x").extension(SessionToken("tok123".into())).body(Body::empty()).unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    /// The LAN origin rule, and the reason it is port-checked rather than
+    /// mirroring `host_guard`'s blanket acceptance of private literals.
+    ///
+    /// `SameSite=Lax` is computed from the host alone, so a neighbouring
+    /// service on the same NAS (`:8096`) is same-site with us and the session
+    /// cookie really is attached to its cross-origin writes. Accepting any
+    /// private literal here would have handed that service the whole write
+    /// surface.
+    #[tokio::test]
+    async fn csrf_accepts_our_own_lan_origin_but_not_a_neighbour_on_the_same_address() {
+        for (origin, expected) in [
+            ("https://192.168.0.50:8443", StatusCode::OK),
+            ("http://192.168.0.50:8080", StatusCode::OK),
+            ("http://192.168.0.50:8096", StatusCode::FORBIDDEN),
+            ("https://192.168.0.50:8080", StatusCode::FORBIDDEN),
+        ] {
+            let (mut state, _dir) = crate::testutil::test_state();
+            let mut cfg = (*state.cfg).clone();
+            cfg.http_port = Some(8080);
+            cfg.https_port = Some(8443);
+            state.cfg = std::sync::Arc::new(cfg);
+
+            let token = derive_csrf_token(&state.csrf_key, "tok123");
+            async fn handler() -> &'static str {
+                "ok"
+            }
+            let app = Router::new().route("/x", post(handler)).layer(axum::middleware::from_fn_with_state(state, csrf));
+            let req = HttpRequest::builder()
+                .method("POST")
+                .uri("/x")
+                .extension(SessionToken("tok123".into()))
+                .header("Sc-Csrf", token)
+                .header("Origin", origin)
+                .body(Body::empty())
+                .unwrap();
+            let resp = app.oneshot(req).await.unwrap();
+            assert_eq!(resp.status(), expected, "Origin: {origin}");
+        }
     }
 
     #[tokio::test]

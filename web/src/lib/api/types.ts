@@ -763,6 +763,8 @@ export interface ArchiveSettingsReq {
  *  restart-required. */
 export interface NetworkSettingsReq {
   bind: string
+  /** The LAN HTTPS listener's address, or `null` for "do not listen". */
+  tls_bind: string | null
   app_hosts: string[]
   content_hosts: string[]
   allowed_origins: string[]

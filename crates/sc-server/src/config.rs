@@ -401,6 +401,17 @@ impl From<&SmbShareBootstrap> for sc_smb::SmbShareDef {
 pub struct Config {
     pub data_dir: PathBuf,
     pub bind: SocketAddr,
+    /// Where the LAN HTTPS listener binds, with a self-signed certificate the
+    /// server writes for itself (`tls.rs`). `None` disables it.
+    ///
+    /// Separate from `bind` rather than replacing it, because the two serve
+    /// different callers: a reverse proxy terminating the public name talks
+    /// plaintext to `bind` over loopback or the container bridge, while a
+    /// browser on the LAN needs `https://` or it cannot keep the `__Host-`
+    /// session cookie at all. Folding them into one listener would force the
+    /// proxy onto an upstream certificate it has no reason to verify.
+    #[serde(default)]
+    pub tls_bind: Option<SocketAddr>,
     /// Hostnames this server answers to for the application UI and API.
     /// The Host header carries whatever literal the client dialled, so the
     /// bind address is added automatically (`app.rs`) — otherwise a fresh
@@ -478,6 +489,7 @@ impl Default for Config {
         Self {
             data_dir: PathBuf::from("/var/lib/sc"),
             bind: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
+            tls_bind: None,
             app_hosts: sc_http::config::HttpConfig::default().app_hosts,
             content_hosts: Vec::new(),
             allowed_origins: Vec::new(),
@@ -594,6 +606,11 @@ impl Config {
                 self.bind = addr;
             }
         }
+        // Empty explicitly means "off", so a compose file can disable the LAN
+        // listener without having to drop the variable entirely.
+        if let Ok(v) = std::env::var("SC_TLS_BIND") {
+            self.tls_bind = if v.trim().is_empty() { None } else { v.parse::<SocketAddr>().ok() };
+        }
     }
 
     pub fn master_key_path(&self) -> PathBuf {
@@ -657,6 +674,11 @@ impl Config {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkOverride {
     pub bind: SocketAddr,
+    /// `#[serde(default)]` so a `settings.db` written before this field existed
+    /// still deserializes; without it every stored network override would be
+    /// unreadable and the whole screen's saved state would silently revert.
+    #[serde(default)]
+    pub tls_bind: Option<SocketAddr>,
     pub app_hosts: Vec<String>,
     pub content_hosts: Vec<String>,
     pub allowed_origins: Vec<String>,
@@ -771,6 +793,7 @@ impl Config {
     pub fn apply_settings_overrides(&mut self, o: &SettingsOverrides) {
         if let Some(n) = &o.network {
             self.bind = n.bind;
+            self.tls_bind = n.tls_bind;
             self.app_hosts = n.app_hosts.clone();
             self.content_hosts = n.content_hosts.clone();
             self.allowed_origins = n.allowed_origins.clone();

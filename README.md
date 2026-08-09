@@ -132,9 +132,16 @@ You are in. Everything below is what you can do from here.
 > with HTTPS in front, and set `trusted_proxies` in `data/sc.toml` to that
 > proxy's addresses. Without that last part every visitor looks like the
 > proxy, so the login rate limit and the audit log collapse onto one address
-> and a single attacker can lock out everyone. The compose file publishes to
-> loopback only so that this is a decision you make rather than a default you
-> inherit.
+> and a single attacker can lock out everyone. The compose file publishes the
+> proxy's port to loopback only so that this is a decision you make rather than
+> a default you inherit.
+
+**From inside your own network,** use `https://<the machine's address>:8443`.
+The compose file turns on a second listener for exactly this, with a
+certificate the server generates for itself, so your browser will ask you to
+accept it once. That warning is the cost of not having a public name here; the
+`http://` port is not an alternative, because the session cookie only survives
+on a secure origin and a plain-HTTP login silently fails to stick.
 
 ## What you can do with it
 
