@@ -400,18 +400,20 @@ impl From<&SmbShareBootstrap> for sc_smb::SmbShareDef {
 #[serde(default)]
 pub struct Config {
     pub data_dir: PathBuf,
-    pub bind: SocketAddr,
-    /// Where the LAN HTTPS listener binds, with a self-signed certificate the
-    /// server writes for itself (`tls.rs`). `None` disables it.
+    /// The one socket this server listens on, and it always speaks TLS
+    /// (`tls.rs` generates the certificate on first run).
     ///
-    /// Separate from `bind` rather than replacing it, because the two serve
-    /// different callers: a reverse proxy terminating the public name talks
-    /// plaintext to `bind` over loopback or the container bridge, while a
-    /// browser on the LAN needs `https://` or it cannot keep the `__Host-`
-    /// session cookie at all. Folding them into one listener would force the
-    /// proxy onto an upstream certificate it has no reason to verify.
-    #[serde(default)]
-    pub tls_bind: Option<SocketAddr>,
+    /// There is deliberately no plaintext listener, on any interface, for any
+    /// caller. A reverse proxy terminating the public name therefore talks
+    /// `https://` upstream and skips verification of this self-signed
+    /// certificate, which costs the proxy one line of config and removes the
+    /// class of accident where a port meant for loopback ends up published.
+    ///
+    /// This was two listeners briefly, plaintext for the proxy and TLS for the
+    /// LAN. The split is what made "which port is safe to expose" a question an
+    /// operator had to keep answering correctly, and the answer was already
+    /// wrong once in this repo's own compose file.
+    pub bind: SocketAddr,
     /// Hostnames this server answers to for the application UI and API.
     /// The Host header carries whatever literal the client dialled, so the
     /// bind address is added automatically (`app.rs`) — otherwise a fresh
@@ -488,8 +490,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             data_dir: PathBuf::from("/var/lib/sc"),
-            bind: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080),
-            tls_bind: None,
+            bind: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8443),
             app_hosts: sc_http::config::HttpConfig::default().app_hosts,
             content_hosts: Vec::new(),
             allowed_origins: Vec::new(),
@@ -606,11 +607,6 @@ impl Config {
                 self.bind = addr;
             }
         }
-        // Empty explicitly means "off", so a compose file can disable the LAN
-        // listener without having to drop the variable entirely.
-        if let Ok(v) = std::env::var("SC_TLS_BIND") {
-            self.tls_bind = if v.trim().is_empty() { None } else { v.parse::<SocketAddr>().ok() };
-        }
     }
 
     pub fn master_key_path(&self) -> PathBuf {
@@ -674,11 +670,6 @@ impl Config {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkOverride {
     pub bind: SocketAddr,
-    /// `#[serde(default)]` so a `settings.db` written before this field existed
-    /// still deserializes; without it every stored network override would be
-    /// unreadable and the whole screen's saved state would silently revert.
-    #[serde(default)]
-    pub tls_bind: Option<SocketAddr>,
     pub app_hosts: Vec<String>,
     pub content_hosts: Vec<String>,
     pub allowed_origins: Vec<String>,
@@ -793,7 +784,6 @@ impl Config {
     pub fn apply_settings_overrides(&mut self, o: &SettingsOverrides) {
         if let Some(n) = &o.network {
             self.bind = n.bind;
-            self.tls_bind = n.tls_bind;
             self.app_hosts = n.app_hosts.clone();
             self.content_hosts = n.content_hosts.clone();
             self.allowed_origins = n.allowed_origins.clone();
@@ -899,6 +889,32 @@ pub enum CompatCanonicalUrl {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A `settings.db` row written while `tls_bind` existed still loads, and
+    /// cannot bring a second listener back.
+    ///
+    /// There was a brief release with a plaintext listener beside the TLS one,
+    /// so rows naming `tls_bind` are out there. Serde ignores the unknown key,
+    /// which is the whole point: "no plaintext listener on any network" has to
+    /// be a property of the binary, not something a stored override can talk it
+    /// out of.
+    #[test]
+    fn a_stored_override_from_the_two_listener_release_still_loads() {
+        let stored: SettingsOverrides = serde_json::from_str(
+            r#"{"network":{"bind":"0.0.0.0:8080","tls_bind":"0.0.0.0:8443",
+                "app_hosts":["nas.local"],"content_hosts":[],"allowed_origins":[],
+                "trusted_proxies":[],"compat_canonical_url":null}}"#,
+        )
+        .expect("a row from the two-listener release must still deserialize");
+
+        let mut cfg = Config::default();
+        cfg.apply_settings_overrides(&stored);
+
+        // The bind it names is now the TLS listener, because that is the only
+        // kind there is.
+        assert_eq!(cfg.bind, "0.0.0.0:8080".parse().unwrap());
+        assert_eq!(cfg.app_hosts, vec!["nas.local".to_string()]);
+    }
 
     #[test]
     fn defaults_match_design_docs() {

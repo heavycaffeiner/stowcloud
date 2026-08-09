@@ -196,7 +196,6 @@
   // ── network (restart-required) ──
 
   let netBind = $state('')
-  let netTlsBind = $state('')
   let netAppHosts = $state('')
   let netContentHosts = $state('')
   let netAllowedOrigins = $state('')
@@ -215,7 +214,6 @@
     }
     const req: NetworkSettingsReq = {
       bind: netBind.trim(),
-      tls_bind: netTlsBind.trim() || null,
       app_hosts: strToArr(netAppHosts),
       content_hosts: strToArr(netContentHosts),
       allowed_origins: strToArr(netAllowedOrigins),
@@ -459,7 +457,6 @@
 
   const EDITABLE_KEYS = new Set([
     'bind',
-    'tls_bind',
     'app_hosts',
     'content_hosts',
     'allowed_origins',
@@ -580,9 +577,6 @@
       archiveMax = String(field('archive.max_concurrent')?.value ?? '')
 
       netBind = String(field('bind')?.value ?? '')
-      // `null` is the "no TLS listener" case and must render as an empty box,
-      // not as the string "null".
-      netTlsBind = String(field('tls_bind')?.value ?? '')
       netAppHosts = arrToStr(field('app_hosts')?.value)
       netContentHosts = arrToStr(field('content_hosts')?.value)
       netAllowedOrigins = arrToStr(field('allowed_origins')?.value)
@@ -700,12 +694,7 @@
     <h4 class="sc-admin-section__subhead">{t('server.network')}</h4>
     <div class="sc-server-settings__form">
       <TextField label={t('server.bind_address_host_port')} bind:value={netBind} />
-      <TextField
-        label={t('server.tls_bind_address_host_port')}
-        bind:value={netTlsBind}
-        placeholder="0.0.0.0:8443"
-      />
-      <p class="sc-admin-section__hint">{t('server.tls_bind_hint')}</p>
+      <p class="sc-admin-section__hint">{t('server.bind_https_hint')}</p>
       <TextField label={t('server.app_hosts_comma_separated')} bind:value={netAppHosts} />
       <TextField label={t('server.content_hosts_comma_separated')} bind:value={netContentHosts} />
       <TextField label={t('server.allowed_origins_cors_comma_separated')} bind:value={netAllowedOrigins} />

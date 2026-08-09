@@ -1251,13 +1251,16 @@ mod tests {
     async fn csrf_accepts_our_own_lan_origin_but_not_a_neighbour_on_the_same_address() {
         for (origin, expected) in [
             ("https://192.168.0.50:8443", StatusCode::OK),
-            ("http://192.168.0.50:8080", StatusCode::OK),
-            ("http://192.168.0.50:8096", StatusCode::FORBIDDEN),
-            ("https://192.168.0.50:8080", StatusCode::FORBIDDEN),
+            // Tailscale hands out CGNAT addresses, and reaching the app over the
+            // tailnet is meant to need no configuration.
+            ("https://100.101.102.103:8443", StatusCode::OK),
+            ("https://192.168.0.50:8096", StatusCode::FORBIDDEN),
+            // No plaintext listener exists, so this origin is not us whatever
+            // port it names.
+            ("http://192.168.0.50:8443", StatusCode::FORBIDDEN),
         ] {
             let (mut state, _dir) = crate::testutil::test_state();
             let mut cfg = (*state.cfg).clone();
-            cfg.http_port = Some(8080);
             cfg.https_port = Some(8443);
             state.cfg = std::sync::Arc::new(cfg);
 

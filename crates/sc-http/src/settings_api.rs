@@ -109,11 +109,6 @@ pub struct ArchivePatch {
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct NetworkPatch {
     pub bind: String,
-    /// The LAN HTTPS listener's address, or empty/absent for "no TLS listener".
-    /// `#[serde(default)]` so a client written against the previous shape still
-    /// parses rather than failing the whole network save.
-    #[serde(default)]
-    pub tls_bind: Option<String>,
     pub app_hosts: Vec<String>,
     pub content_hosts: Vec<String>,
     pub allowed_origins: Vec<String>,

@@ -178,15 +178,20 @@ async fn every_table_path_is_a_real_route() {
 
 /// A logged-in, self-promoted admin session: cookie, CSRF token, and the
 /// `Origin` header `Config::default()`'s `bind` port derives into
-/// `allowed_origins` (`app.rs`'s `allowed_origins.is_empty()` branch —
-/// `http://localhost:8080`, the same value `tests/wiring.rs`'s own CSRF test
+/// `allowed_origins` (`app.rs`'s `allowed_origins.is_empty()` branch:
+/// `https://localhost:8443`, the same value `tests/wiring.rs`'s own CSRF test
 /// uses against this same default config).
 struct AdminSession {
     cookie: String,
     csrf: String,
 }
 
-const ORIGIN: &str = "http://localhost:8080";
+/// Has to be one of the origins `app.rs` derives from `app_hosts`, which are
+/// `https` only now that the server has no plaintext listener. A stale value
+/// here fails CSRF, and the 403 that produces arrives *before* method routing,
+/// so this test would report "an undeclared method is mounted" for every path
+/// it probes.
+const ORIGIN: &str = "https://localhost:8443";
 
 async fn admin_session(f: &Fixture) -> AdminSession {
     let uid = f

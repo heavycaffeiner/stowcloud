@@ -153,13 +153,19 @@ jobs:
             -v /tmp/sc-secrets:/run/sc-secrets \
             -e SC_DATA_DIR=/var/lib/sc \
             -e SC_MASTER_KEY_FILE=/run/sc-secrets/master.key \
-            -p 127.0.0.1:8080:8080 \
+            -p 127.0.0.1:8443:8443 \
             sc:core-ci
 
+      # `--cacert`, not `-k`. The certificate the server generated for itself is
+      # on the host side of the data bind mount, so CI can verify against it for
+      # real, and that verification is itself worth having: it proves the
+      # generated certificate is actually valid for the address a client dials,
+      # which `-k` would paper over.
       - name: Wait for the server to come up
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8080/api/health >/dev/null 2>&1; then
+            if curl -fsS --cacert /tmp/sc-data/tls/self-signed.crt \
+                 https://127.0.0.1:8443/api/health >/dev/null 2>&1; then
               echo "up after ${i}s"
               exit 0
             fi
@@ -169,20 +175,31 @@ jobs:
           docker logs sc-smoke || true
           exit 1
 
+      - name: There is no plaintext listener
+        # The whole point of the single-socket design, so it gets asserted
+        # rather than assumed. Plain HTTP to the TLS port must not produce a
+        # usable response.
+        run: |
+          if curl -fsS --max-time 5 http://127.0.0.1:8443/api/health >/dev/null 2>&1; then
+            echo "plain HTTP answered on the TLS port"
+            exit 1
+          fi
+          echo "plain HTTP refused, as intended"
+
       - name: GET /api/health
         run: |
-          out=$(curl -fsS http://127.0.0.1:8080/api/health)
+          out=$(curl -fsS --cacert /tmp/sc-data/tls/self-signed.crt https://127.0.0.1:8443/api/health)
           echo "$out"
           echo "$out" | grep -q '"status"' || { echo "unexpected /api/health body"; exit 1; }
 
       - name: GET / serves the SPA document
         run: |
-          out=$(curl -fsS http://127.0.0.1:8080/)
+          out=$(curl -fsS --cacert /tmp/sc-data/tls/self-signed.crt https://127.0.0.1:8443/)
           echo "$out" | grep -qi '<html' || { echo "/ did not return an HTML document"; echo "$out"; exit 1; }
 
       - name: GET /api/setup proves a fresh deployment can bootstrap
         run: |
-          out=$(curl -fsS http://127.0.0.1:8080/api/setup)
+          out=$(curl -fsS --cacert /tmp/sc-data/tls/self-signed.crt https://127.0.0.1:8443/api/setup)
           echo "$out"
           echo "$out" | grep -q '"required":true' || { echo "unexpected /api/setup body — a fresh container should report setup required"; exit 1; }
 

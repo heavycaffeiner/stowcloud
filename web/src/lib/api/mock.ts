@@ -1157,7 +1157,6 @@ const mockServerSettings = {
   archive: { max_concurrent: 2 },
   network: {
     bind: '127.0.0.1:8080',
-    tls_bind: null as string | null,
     app_hosts: [] as string[],
     content_hosts: [] as string[],
     allowed_origins: [] as string[],
@@ -1199,7 +1198,6 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
   return {
     fields: [
       settingsField('bind', s.network.bind, true),
-      settingsField('tls_bind', s.network.tls_bind, true),
       settingsField('app_hosts', s.network.app_hosts, true),
       settingsField('content_hosts', s.network.content_hosts, true),
       settingsField('allowed_origins', s.network.allowed_origins, true),

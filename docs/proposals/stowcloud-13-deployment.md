@@ -158,36 +158,42 @@ The 100-second proxy window is why long operations stream a first byte
 promptly, and why a large cross-mount move is refused with a clear error
 rather than left to time out.
 
-### 4.8 Reaching the server on the LAN
+### 4.8 One socket, and it speaks TLS
 
-A proxy answers for the public name. The LAN address is the other half, and it
-used to fail twice over.
+There is no plaintext listener, on any interface, for any caller. `bind` is the
+only socket, it always terminates TLS, and the certificate is generated into
+`<data_dir>/tls` on first run.
+
+**Why not keep a loopback plaintext port for the proxy.** Because "which port is
+safe to expose" then becomes a question an operator has to keep answering
+correctly, and this repo's own compose file answered it wrong once already. A
+reverse proxy pays one line for the change (`tls_insecure_skip_verify` against a
+certificate it has no reason to verify on loopback) and the class of accident
+where the internal port ends up published disappears. Everything on the wire is
+encrypted regardless of which network a request came from, which is the property
+worth having on a box whose LAN also hosts other people's devices.
+
+**Why the LAN needs TLS at all.** The session cookie is `__Host-`-prefixed,
+which by definition requires `Secure`, so a browser keeps it only over HTTPS or
+plain `http://localhost`. Over plaintext at a LAN address the page loads, the
+login answers 200, the cookie is discarded, and the next request is anonymous
+with nothing reporting it. That is worse than a refused connection.
+
+Self-signed means one interstitial per browser, accepted deliberately: the
+alternative on a private address is not a trusted certificate, it is no session.
 
 **The host allowlist.** `app_hosts` ships as loopback only, and the `Host`
 header carries whatever literal the client dialled, so a request to
-`192.168.0.50` was answered `421`. The bind address was injected into the list
-to cover this, but only when it named a specific address, and §5-1's compose
-reference mandates `SC_BIND=0.0.0.0:8080`, which does not. The injection
-therefore never fired on the one shape everybody runs. A private IP literal
-(RFC 1918, loopback, link-local, ULA) is now accepted without being listed:
-DNS rebinding is carried out with a *name*, so an address literal is not the
-thing the guard is defending against.
+`192.168.0.50` was answered `421`. A private IP literal is now accepted without
+being listed: DNS rebinding is carried out with a *name*, so an address literal
+is not the thing the guard is defending against. The ranges are RFC 1918,
+loopback, IPv4 link-local, CGNAT `100.64/10`, ULA and IPv6 link-local. CGNAT is
+there for Tailscale, whose addresses come out of exactly that range; WireGuard
+needs no entry of its own, since its tunnels are conventionally numbered out of
+RFC 1918 or ULA. Being admitted by this guard is not authorisation, it only
+means the request is answered rather than `421`'d.
 
-**The cookie.** The session cookie is `__Host-`-prefixed, which by definition
-requires `Secure`, so a browser keeps it only over HTTPS or plain
-`http://localhost`. Fixing the allowlist alone produces a page that loads and
-then refuses to stay logged in, which is worse than a `421` because nothing
-reports it. `tls_bind` puts up an HTTPS listener with a certificate the server
-writes for itself into `<data_dir>/tls`, regenerating it whenever the names and
-addresses it covers stop matching (a DHCP lease change otherwise produces a name
-mismatch, which a browser refuses outright rather than offering the
-click-through it gives an untrusted issuer).
-
-Self-signed means one interstitial per browser, accepted deliberately: the
-alternative on a private address is not a trusted certificate, it is no HTTPS
-and therefore no login.
-
-The covered addresses are `localhost`, the loopback pair, every `app_hosts`
+**The certificate's names.** `localhost`, the loopback pair, every `app_hosts`
 entry, and the address the routing table picks for reaching the LAN. In a
 bridged container that last one is the 172.x bridge address, not the one an
 operator browses to, so a compose deployment names its host's LAN address in
@@ -196,18 +202,16 @@ something is missing, never because something went away, so a bridge address
 that changes on recreation does not invalidate the exception every browser
 stored.
 
-The two listeners stay separate. The proxy talks plaintext to `bind` over
-loopback or the bridge, and browsers on the LAN use `tls_bind`; folding them
-into one would force the proxy onto an upstream certificate it has no reason to
-verify. Both serve the same router through the same connect-info path, so the
-peer address reaches the trusted-proxy layer identically and no IP-keyed control
-behaves differently depending on which socket a request arrived on.
+**CSRF does not take the host guard's shortcut.** `SameSite=Lax` is computed
+from the host alone, so a neighbouring service on the same NAS at another port
+is same-site and its cross-origin writes do carry the session cookie. A
+private-LAN `Origin` is accepted only when it is `https` *and* names this
+server's own port.
 
-CSRF does *not* take the same shortcut the host guard does. `SameSite=Lax` is
-computed from the host alone, so a neighbouring service on the same NAS at
-another port is same-site and its cross-origin writes do carry the session
-cookie. A private-LAN `Origin` is therefore accepted only when its scheme and
-port name a listener this server actually answers on.
+**The health check speaks TLS too**, and verifies against the certificate on
+disk rather than skipping verification. The probe runs in the same container as
+the server, so it can read the very certificate that server presents, and
+`127.0.0.1` is always in the SAN list.
 
 ## 5. API Design
 
@@ -243,8 +247,9 @@ cannot also carry the key that decrypts it.
 | SMB renders but nobody can log in | see `stowcloud-1-smb.md` §4.4 |
 | a revoked grant still works over SMB | the publisher is not armed; SMB must be enabled at startup |
 | `421` from a LAN address | pre-§4.8 build: `app_hosts` is loopback-only and the bind is `0.0.0.0` |
-| login succeeds, next request is anonymous | plain HTTP on a non-loopback host; the `__Host-` cookie was dropped (§4.8) |
-| certificate warning on every LAN visit | expected: `tls_bind`'s certificate is self-signed and nothing issued it |
+| connection refused / "sent an invalid response" | a client speaking plain HTTP to the TLS port; there is no plaintext listener (§4.8) |
+| reverse proxy 502s after upgrading | it is still dialling `http://` upstream; it must use `https://` and skip verification (§4.8) |
+| certificate warning on every LAN visit | expected: the certificate is self-signed and nothing issued it |
 
 ## 6. Implementation Plan
 

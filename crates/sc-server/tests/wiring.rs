@@ -733,7 +733,7 @@ async fn a_cookie_authenticated_write_from_our_own_origin_passes_csrf() {
         .header("Cookie", &cookie)
         .header("Sc-Csrf", &csrf)
         // Exactly what a browser on the app origin sends.
-        .header("Origin", "http://localhost:8080")
+        .header("Origin", "https://localhost:8443")
         .header("Content-Type", "application/json")
         .body(Body::from(format!(r#"{{"path":"/{label}/csrf-probe"}}"#)))
         .unwrap();
