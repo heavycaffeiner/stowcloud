@@ -115,20 +115,51 @@ async fn send(f: &Fixture, req: Request<Body>) -> StatusCode {
 /// them is how a test observes *which* bucket a request landed in.
 const API_BURST: usize = 60;
 
-async fn spend_the_burst(f: &Fixture, ip: &str, headers: &[(&str, &str)]) {
-    for i in 0..API_BURST {
-        let status = send(f, from_peer("GET", "/api/capabilities", ip, headers)).await;
-        assert_eq!(
-            status,
-            StatusCode::OK,
-            "request {i} of the burst was already limited"
-        );
+/// Enough requests to outrun the refill on any machine that could plausibly
+/// run this.
+///
+/// The bucket holds 60 and refills one token per second, so "60 requests then
+/// a 429" is only true if all 60 land inside one second. That is a wall-clock
+/// assumption, and it is the one this test used to make: on a loaded CI runner
+/// 60 real round-trips through the router take longer than that, a token comes
+/// back, and the 61st request answers `200`. It failed exactly that way.
+///
+/// Exhausting the bucket needs `n > 60 + n*t` for a per-request cost of `t`
+/// seconds, so 150 covers anything up to ~0.6s per request. A fast machine
+/// still stops at 61: this is a ceiling, not a count.
+const BURST_CEILING: usize = 150;
+
+/// Send until the limiter says no, and answer how many it took. Panics rather
+/// than returning if the ceiling is reached, because a test that never
+/// exhausts a bucket is not observing anything.
+async fn spend_until_limited(
+    f: &Fixture,
+    ip: &str,
+    headers_for: impl Fn(usize) -> Vec<(String, String)>,
+) -> usize {
+    for i in 0..BURST_CEILING {
+        let owned = headers_for(i);
+        let headers: Vec<(&str, &str)> =
+            owned.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let status = send(f, from_peer("GET", "/api/capabilities", ip, &headers)).await;
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            assert!(
+                i >= API_BURST,
+                "the bucket was exhausted after only {i} requests; it holds {API_BURST}"
+            );
+            return i;
+        }
+        assert_eq!(status, StatusCode::OK, "request {i} answered neither 200 nor 429");
     }
-    assert_eq!(
-        send(f, from_peer("GET", "/api/capabilities", ip, headers)).await,
-        StatusCode::TOO_MANY_REQUESTS,
-        "the burst did not exhaust a bucket, so this test proves nothing"
-    );
+    panic!("{BURST_CEILING} requests never exhausted a bucket, so this test proves nothing");
+}
+
+async fn spend_the_burst(f: &Fixture, ip: &str, headers: &[(&str, &str)]) {
+    let owned: Vec<(String, String)> = headers
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+    spend_until_limited(f, ip, |_| owned.clone()).await;
 }
 
 // --------------------------------------------------------------------------
@@ -144,35 +175,16 @@ async fn an_untrusted_peer_is_rate_limited_by_its_socket_address_not_by_its_head
     let f = fixture(&["203.0.113.0/24"]);
     let attacker = "198.51.100.7";
 
-    // 61 requests from one untrusted peer, each claiming to be somebody else.
-    for i in 0..API_BURST {
-        let claim = format!("192.0.2.{}", i % 250 + 1);
-        let status = send(
-            &f,
-            from_peer(
-                "GET",
-                "/api/capabilities",
-                attacker,
-                &[("CF-Connecting-IP", &claim)],
-            ),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK, "burst request {i}");
-    }
-    assert_eq!(
-        send(
-            &f,
-            from_peer(
-                "GET",
-                "/api/capabilities",
-                attacker,
-                &[("CF-Connecting-IP", "192.0.2.251")]
-            )
-        )
-        .await,
-        StatusCode::TOO_MANY_REQUESTS,
-        "spoofing the header from an untrusted peer bought a fresh bucket"
-    );
+    // Requests from one untrusted peer, each claiming to be somebody else. If
+    // the header bought a fresh budget the limiter would never fire at all,
+    // and `spend_until_limited` panics on that rather than passing quietly.
+    spend_until_limited(&f, attacker, |i| {
+        vec![(
+            "CF-Connecting-IP".to_string(),
+            format!("192.0.2.{}", i % 250 + 1),
+        )]
+    })
+    .await;
 
     // ... and a real second client is unaffected. This is the assertion that
     // fails without the fix: with no `ConnectInfo` every request in this test,
