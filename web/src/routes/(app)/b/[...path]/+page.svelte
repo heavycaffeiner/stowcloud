@@ -6,13 +6,14 @@
   import { baseName, joinPath, normalizePath, parentOf } from '../../../../lib/api/path-utils'
   import { authState } from '../../../../lib/state/auth.svelte'
   import { browse } from '../../../../lib/state/browse.svelte'
-  import { uiState } from '../../../../lib/state/ui.svelte'
+  import { setDetails, uiState } from '../../../../lib/state/ui.svelte'
   import { t } from '../../../../lib/i18n'
   import { uploadTray } from '../../../../lib/state/upload-tray.svelte'
   import Breadcrumb from '../../../../lib/ui/Breadcrumb.svelte'
   import Button from '../../../../lib/ui/Button.svelte'
   import ConflictDialog from '../../../../lib/ui/ConflictDialog.svelte'
   import DeleteDialog from '../../../../lib/ui/DeleteDialog.svelte'
+  import DetailsPanel from '../../../../lib/ui/DetailsPanel.svelte'
   import DestinationPickerDialog from '../../../../lib/ui/DestinationPickerDialog.svelte'
   import FileGrid from '../../../../lib/ui/FileGrid.svelte'
   import FileTable from '../../../../lib/ui/FileTable.svelte'
@@ -22,8 +23,11 @@
   import IconButton from '../../../../lib/ui/IconButton.svelte'
   import Menu from '../../../../lib/ui/Menu.svelte'
   import NewFolderDialog from '../../../../lib/ui/NewFolderDialog.svelte'
+  import PreviewDialog from '../../../../lib/ui/PreviewDialog.svelte'
   import ProgressCircular from '../../../../lib/ui/ProgressCircular.svelte'
   import RenameDialog from '../../../../lib/ui/RenameDialog.svelte'
+  import { autoScrollStep, movedFar, rectBetween, type Rect } from '../../../../lib/ui/marquee'
+  import { rowActions } from '../../../../lib/ui/row-actions'
   import ShareManageDialog from '../../../../lib/ui/ShareManageDialog.svelte'
   import Snackbar from '../../../../lib/ui/Snackbar.svelte'
   import TextField from '../../../../lib/ui/TextField.svelte'
@@ -102,8 +106,180 @@
   function onOpen(entry: Entry): void {
     if (entry.kind === 'dir') {
       goto(`/b${joinPath(browse.path, entry.name)}`)
+      return
     }
-    // files: no preview pane wired up yet (out of scope for the initial pass)
+    // Looking, not committing. A click used to download, which writes to the
+    // user's disk to answer "what is this"; the viewer answers it without
+    // touching anything, and keeps Download a button away.
+    previewIndex = browse.indexOf(entry)
+    previewOpen = true
+  }
+
+  // ── preview ──
+  let previewOpen = $state(false)
+  /** Absolute index into the directory listing, not the entry itself, so the
+   *  arrows can walk the folder without the dialog holding a stale copy of a
+   *  row that has since been re-fetched. */
+  let previewIndex = $state(-1)
+  const previewEntry = $derived(previewIndex >= 0 ? (browse.rowAt(previewIndex) ?? null) : null)
+  const previewPath = $derived(previewEntry ? joinPath(browse.path, previewEntry.name) : '')
+
+  /** Step to the next/previous file, skipping directories: the viewer has
+   *  nothing to show for one, and stopping the arrows dead at every folder in
+   *  a mixed listing would make them useless. Folders sort ahead of files
+   *  (`sc-core`'s listing), so in practice this skips the run at the top once. */
+  function stepPreview(delta: number): void {
+    let i = previewIndex + delta
+    while (i >= 0 && i < browse.total) {
+      const candidate = browse.rowAt(i)
+      // An unloaded row is a window that has not arrived yet. Stop rather than
+      // skipping past it, or a fast arrow key would walk over files silently.
+      if (!candidate) return
+      if (candidate.kind !== 'dir') {
+        previewIndex = i
+        return
+      }
+      i += delta
+    }
+  }
+  const hasPreviewNeighbour = (delta: number): boolean => {
+    let i = previewIndex + delta
+    while (i >= 0 && i < browse.total) {
+      const candidate = browse.rowAt(i)
+      if (!candidate) return false
+      if (candidate.kind !== 'dir') return true
+      i += delta
+    }
+    return false
+  }
+
+  // ── rubber-band selection ──
+  //
+  // Drag across the listing to select what the rectangle covers. Mouse only:
+  // on a touch screen the same gesture is how the page scrolls, and taking it
+  // would leave no way to scroll at all.
+  //
+  // The rectangle is kept in document coordinates so that auto-scrolling near
+  // the edge of the window extends it instead of dragging it along. Which rows
+  // it covers is arithmetic, not hit-testing, because the listing is
+  // virtualized: see `lib/ui/marquee.ts`.
+  let gridView = $state<{ entriesInRect: (r: Rect) => Entry[] }>()
+  let tableView = $state<{ entriesInRect: (r: Rect) => Entry[] }>()
+  let marqueeRect = $state<Rect | null>(null)
+  let scrollXNow = $state(0)
+  let scrollYNow = $state(0)
+
+  /** Anchor corner, in document coordinates. */
+  let dragOrigin: { x: number; y: number } | null = null
+  /** Last pointer position, in viewport coordinates, for the auto-scroll loop. */
+  let dragPointer = { x: 0, y: 0 }
+  /** Whatever was selected when the drag began, kept only for an additive drag. */
+  let dragBase: string[] = []
+  let dragFrame = 0
+
+  const activeView = $derived(browse.view === 'grid' ? gridView : tableView)
+
+  /** Controls own their own gestures. Rows and cards are not on this list: a
+   *  drag may start on one, because it only becomes a marquee once it has
+   *  moved too far to have been a click. */
+  const CONTROL_SELECTOR = 'button, input, a, [role="menuitem"], [role="menu"]'
+  /** ...and for deciding whether a click landed on the blank area, rows and
+   *  cards are, because a click on one is a click on it. */
+  const CONTENT_SELECTOR = `.sc-row, .sc-file-grid__card, ${CONTROL_SELECTOR}`
+
+  function onMarqueePointerDown(e: PointerEvent): void {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return
+    if ((e.target as HTMLElement).closest(CONTROL_SELECTOR)) return
+
+    dragOrigin = { x: e.clientX + window.scrollX, y: e.clientY + window.scrollY }
+    dragPointer = { x: e.clientX, y: e.clientY }
+    dragBase = e.shiftKey || e.ctrlKey || e.metaKey ? [...browse.selection] : []
+    window.addEventListener('pointermove', onMarqueePointerMove)
+    window.addEventListener('pointerup', endMarquee)
+    window.addEventListener('keydown', onMarqueeKeydown)
+  }
+
+  function onMarqueePointerMove(e: PointerEvent): void {
+    if (!dragOrigin) return
+    dragPointer = { x: e.clientX, y: e.clientY }
+    if (!marqueeRect && !movedFar(dragOrigin.x - window.scrollX, dragOrigin.y - window.scrollY, e.clientX, e.clientY)) {
+      return
+    }
+    if (!marqueeRect) {
+      // Crossing the threshold is what turns a click into a drag. Text
+      // selection has to stop here rather than at pointerdown, or an ordinary
+      // click would stop selecting text everywhere in the listing.
+      window.getSelection()?.removeAllRanges()
+      dragFrame = requestAnimationFrame(autoScrollTick)
+    }
+    updateMarquee()
+  }
+
+  function updateMarquee(): void {
+    if (!dragOrigin) return
+    scrollXNow = window.scrollX
+    scrollYNow = window.scrollY
+    const rect = rectBetween(
+      dragOrigin.x,
+      dragOrigin.y,
+      dragPointer.x + window.scrollX,
+      dragPointer.y + window.scrollY
+    )
+    marqueeRect = rect
+    const hits = activeView?.entriesInRect(rect) ?? []
+    browse.replaceSelection([...dragBase, ...hits.map((entry) => entry.name)])
+  }
+
+  function autoScrollTick(): void {
+    if (!dragOrigin) return
+    const step = autoScrollStep(dragPointer.y, window.innerHeight)
+    if (step !== 0) {
+      window.scrollBy(0, step)
+      updateMarquee()
+    }
+    dragFrame = requestAnimationFrame(autoScrollTick)
+  }
+
+  function onMarqueeKeydown(e: KeyboardEvent): void {
+    if (e.key !== 'Escape') return
+    browse.replaceSelection(dragBase)
+    endMarquee()
+  }
+
+  function endMarquee(): void {
+    const wasDragging = marqueeRect !== null
+    dragOrigin = null
+    marqueeRect = null
+    cancelAnimationFrame(dragFrame)
+    window.removeEventListener('pointermove', onMarqueePointerMove)
+    window.removeEventListener('pointerup', endMarquee)
+    window.removeEventListener('keydown', onMarqueeKeydown)
+    if (!wasDragging) return
+    // The click that closes this gesture is still coming, and a row's own
+    // handler would answer it by replacing everything the drag just selected.
+    window.addEventListener('click', swallowClick, { capture: true, once: true })
+  }
+
+  function swallowClick(e: MouseEvent): void {
+    e.stopPropagation()
+    e.preventDefault()
+  }
+
+  /**
+   * Clicking past the end of the listing, or in the gaps between cards, drops
+   * the selection. Same rule as the blank-area right-click, and what every
+   * file manager does.
+   *
+   * A click that reached here through a row or a card is that row's, which is
+   * why this checks where it started rather than trusting that it arrived.
+   * Nothing stops propagation on the way up, so without the check this would
+   * undo every selection the moment it was made. A click that closes a
+   * marquee drag never gets here at all: `swallowClick` takes it during the
+   * capture phase.
+   */
+  function onEmptyAreaClick(e: MouseEvent): void {
+    if ((e.target as HTMLElement).closest(CONTENT_SELECTOR)) return
+    browse.clearSelection()
   }
 
   // ── toolbar state ──
@@ -114,6 +290,7 @@
   let conflictName = $state('')
   let contextEntry = $state<Entry | null>(null)
   let menuOpen = $state(false)
+  let emptyMenuOpen = $state(false)
   let menuX = $state(0)
   let menuY = $state(0)
   let snackbarMsg = $state<string | null>(null)
@@ -136,11 +313,63 @@
   let treeOpen = $state(false)
 
   function openContextMenu(entry: Entry, e: MouseEvent): void {
+    // Right-clicking a row that is not in the selection makes it the selection,
+    // which is what every file manager does and what keeps this menu and the
+    // selection bar aimed at the same rows. Without it the two could be open
+    // against different targets at once, showing different actions for the same
+    // gesture. A right-click *inside* the selection leaves it alone, so
+    // right-clicking one of five selected files still acts on all five.
+    if (!browse.selection.has(entry.name)) browse.selectOnly(entry)
     contextEntry = entry
+    emptyMenuOpen = false
     menuX = e.clientX
     menuY = e.clientY
     menuOpen = true
   }
+
+  /** Right-click on blank space. No target rows, so this is deliberately not
+   *  `rowActions`: it offers what you can do *to the folder* instead. Clearing
+   *  the selection matches every file manager, and keeps the selection bar from
+   *  sitting there describing rows this menu cannot act on. */
+  function openEmptyMenu(e: MouseEvent): void {
+    e.preventDefault()
+    browse.clearSelection()
+    contextEntry = null
+    menuOpen = false
+    menuX = e.clientX
+    menuY = e.clientY
+    emptyMenuOpen = true
+  }
+
+  /** The actions that apply to whatever rows are being acted on, in one place.
+   *
+   *  Right-clicking a row and ticking its checkbox are two ways of saying the
+   *  same thing, and they used to offer different menus: the selection bar had
+   *  no "open in editor", no share-link management and no duplicate, so which
+   *  gesture you happened to use decided what the app could do. Both surfaces
+   *  render this list now, so they cannot drift apart again.
+   *
+   *  `target` is what the per-item predicates read. The handlers themselves
+   *  already resolve `contextEntry ?? browse.selected[0]`, so they work from
+   *  either surface unchanged. "Select all" and "clear selection" are
+   *  deliberately not here: they manage the selection rather than act on it,
+   *  and there is nothing for them to do in a right-click menu. */
+  /** One list, one target set, rendered by both the right-click menu and the
+   *  selection bar. They cannot show different actions because there is only
+   *  one array; `openContextMenu` makes the right-clicked row the selection so
+   *  that "the target set" is unambiguous for both. See `row-actions.ts` for
+   *  the rules deciding what appears. */
+  const actions = $derived(
+    rowActions(browse.selected, {
+      openInEditor,
+      download: downloadSelection,
+      share: requestShare,
+      rename: requestRename,
+      transfer: requestTransfer,
+      duplicate: () => duplicate('Fail'),
+      remove: requestDelete
+    })
+  )
 
   async function createFolder(name: string): Promise<void> {
     newFolderOpen = false
@@ -427,7 +656,12 @@
   }
   function onSearchResultClick(hit: { path: string; entry: Entry }): void {
     closeSearch()
-    goto(`/b${parentOf(hit.path)}`)
+    // A folder opens; a file opens the folder holding it, since there is
+    // nowhere else to land. `hit.path` is a full `/{label}/sub/path` virtual
+    // path: the wire shape carries the share separately and `toSearchHit`
+    // rejoins the two, which is what a result for `Share/Movie/01` needs to
+    // stop navigating to `/Movie/01` and 404ing.
+    goto(`/b${hit.entry.kind === 'dir' ? normalizePath(hit.path) : parentOf(hit.path)}`)
   }
 
   function toggleView(): void {
@@ -569,10 +803,13 @@
     gets a dedicated control for is Upload -- see the FAB below.
   -->
   <div class="sc-browse__bar-stack">
+  <!-- No `inert` here any more. It was correct while the selection bar covered
+       this element (a covered control must not stay tabbable) and became the
+       opposite of correct once the bar moved to its own row: visible controls
+       that cannot be clicked or tabbed to are worse than hidden ones. -->
   <header
     class="sc-browse__toolbar"
     class:sc-browse__toolbar--compact={uiState.compact}
-    inert={browse.selection.size > 0}
   >
     <div class="sc-browse__title">
       <Breadcrumb {crumbs} onnavigate={onNavigate} />
@@ -600,6 +837,24 @@
             <Icon icon={icons['folder-tree']} />
           </IconButton>
         {/if}
+        <!-- Its own control, not an overflow-menu row: switching between grid
+             and list is a frequent, reversible view preference, and burying it
+             two clicks deep next to destructive one-way actions read as if it
+             were one of them. The icon shows what you would switch *to*, which
+             is what the label says too. -->
+        <IconButton
+          label={browse.view === 'list' ? t('browse.grid_view') : t('browse.list_view')}
+          onclick={toggleView}
+        >
+          <Icon icon={browse.view === 'list' ? icons.grid : icons.list} />
+        </IconButton>
+        <IconButton
+          label={uiState.details ? t('details.hide') : t('details.show')}
+          expanded={uiState.details}
+          onclick={() => setDetails(!uiState.details)}
+        >
+          <Icon icon={icons.info} />
+        </IconButton>
         <IconButton label={t('browse.more')} selected={overflowOpen} onclick={openOverflow}><Icon icon={icons['more-vert']} /></IconButton>
         {#if !uiState.compact}
           <Button variant="text" onclick={onUploadFolderClick}>
@@ -620,53 +875,55 @@
   </header>
 
   <!--
-    MD3 contextual top app bar: while rows are selected this *replaces* the
-    toolbar rather than stacking below it. It used to be a sibling with a
-    permanently reserved 48px height, which bought layout stability at the
-    price of an always-empty strip under the toolbar on every folder -- 48px
-    of an 844px phone screen, for nothing, all the time. Overlaying the
-    toolbar's own box costs no space and still can't reflow the table (it is
-    out of flow entirely), so the dblclick-lands-on-another-row hazard the
-    reservation existed to prevent is gone either way.
-    The toolbar underneath is `inert` while this is up: its controls are
-    covered, and a covered control must not stay tabbable.
+    Floating, over the bottom of the viewport, in no layout flow at all.
+
+    Two earlier placements each broke something. Absolutely positioned over the
+    toolbar, it took the breadcrumb and the New folder / Upload buttons with
+    it, so selecting one file hid where you were. As its own row under the
+    toolbar, it pushed the list down by its own height the moment the first
+    click landed. The second click of a double click then arrived one row
+    higher than the first, so `dblclick` fired on their common ancestor instead
+    of on a row and opening quietly did nothing. Compensating with `scrollBy`
+    could not fix that: at the top of the page, where a first click most often
+    lands, there is no scroll to give back.
+
+    Taking it out of flow removes the shift instead of correcting it. Nothing
+    above or below moves, at any scroll position. The list reserves room at its
+    own bottom so the last rows can still be scrolled clear of the bar.
   -->
-  <div
-    class="sc-browse__selection-bar"
-    class:sc-browse__selection-bar--visible={browse.selection.size > 0}
-  >
+  {#if browse.selection.size > 0}
+  <div class="sc-browse__selection-bar">
     <div class="sc-browse__selection-bar-inner">
       <!-- Ctrl/Cmd+A already covers Select all (FileTable.svelte's onKeydown),
            but that needs a physical keyboard — a phone has none, so it has to
            be reachable here too.
-           Compact width gets icons, not the five text buttons: measured, they
-           needed 642px of a 390px bar, so three of the five sat off-screen
-           behind a horizontal scroll nothing announced. Icons are MD3's own
-           answer for the contextual bar at this width, and every action stays
-           one tap. Clear selection leads as the close affordance, matching how
-           every other modal-ish surface in this app dismisses. -->
-      {#if uiState.compact}
-        <IconButton label={t('browse.clear_selection')} onclick={() => browse.clearSelection()}><Icon icon={icons.close} /></IconButton>
-        <span class="sc-browse__selection-count">{t('common.item_count', { count: browse.selection.size })}</span>
-        <span class="sc-browse__selection-gap"></span>
-        <IconButton label={t('browse.select_all')} onclick={() => browse.selectAll()}><Icon icon={icons.check} /></IconButton>
-        <IconButton label={t('common.download')} onclick={downloadSelection}><Icon icon={icons.download} /></IconButton>
-        <IconButton label={t('dest.move_or_copy')} onclick={requestTransfer}><Icon icon={icons.move} /></IconButton>
-        <IconButton label={t('common.rename')} onclick={requestRename}><Icon icon={icons.rename} /></IconButton>
-        <IconButton label={t('common.delete')} onclick={requestDelete}><Icon icon={icons.delete} /></IconButton>
-      {:else}
-        <span class="sc-browse__selection-count">
-          {t('browse.selected', { count: browse.selection.size, size: formatBytes(browse.totalSelectedSize) })}
-        </span>
-        <Button variant="text" onclick={() => browse.selectAll()}>{t('browse.select_all')}</Button>
-        <Button variant="text" onclick={downloadSelection}>{t('common.download')}</Button>
-        <Button variant="text" onclick={requestTransfer}>{t('dest.move_or_copy')}</Button>
-        <Button variant="text" onclick={requestRename}>{t('common.rename')}</Button>
-        <Button variant="text" onclick={requestDelete}>{t('common.delete')}</Button>
-        <Button variant="text" onclick={() => browse.clearSelection()}>{t('browse.clear_selection')}</Button>
-      {/if}
+           Icons at every width, one layout. The text version needed 642px of
+           a 390px bar, so at compact width three of the five buttons sat
+           off-screen behind a horizontal scroll nothing announced; that is
+           what first split this in two. Keeping the split meant two orders,
+           two sets of affordances and one of them exercised only at a width
+           nobody develops at. `IconButton` shows the same label on hover and
+           on keyboard focus, so nothing is lost by dropping the text.
+           Clear selection leads as the close affordance, matching how every
+           other modal-ish surface in this app dismisses. -->
+      <IconButton label={t('browse.clear_selection')} onclick={() => browse.clearSelection()}>
+        <Icon icon={icons.close} />
+      </IconButton>
+      <span class="sc-browse__selection-count">
+        {uiState.compact
+          ? t('common.item_count', { count: browse.selection.size })
+          : t('browse.selected', { count: browse.selection.size, size: formatBytes(browse.totalSelectedSize) })}
+      </span>
+      <span class="sc-browse__selection-gap"></span>
+      <IconButton label={t('browse.select_all')} onclick={() => browse.selectAll()}>
+        <Icon icon={icons.check} />
+      </IconButton>
+      {#each actions as action (action.key)}
+        <IconButton label={action.label} onclick={action.run}><Icon icon={action.icon} /></IconButton>
+      {/each}
     </div>
   </div>
+  {/if}
   </div>
 
   <Menu open={overflowOpen} onclose={closeOverflow} x={overflowLeft} y={overflowTop}>
@@ -677,9 +934,6 @@
             {treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')}
           </MenuItem>
         {/if}
-        <MenuItem onclick={() => { toggleView(); closeOverflow() }}>
-          {browse.view === 'list' ? t('browse.grid_view') : t('browse.list_view')}
-        </MenuItem>
         <MenuItem onclick={() => { cycleDensity(); closeOverflow() }}>
           {t('browse.density', { density: densityLabel(browse.density) })}
         </MenuItem>
@@ -722,7 +976,26 @@
         onclose={() => (treeOpen = false)}
       />
     {/if}
-    <div class="sc-browse__table-wrap" class:sc-browse__table-wrap--dragover={dragOver}>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- The click here only clears the selection, and the keyboard already has
+         that: Escape on the list or the grid, which is where a keyboard user's
+         focus is. A keydown handler on this div would never fire, since it is
+         not focusable and never will be. -->
+
+    <!-- The blank-space menu hangs here, not on the table/grid itself: this
+         element is `flex: 1`, so it covers both the gaps between rows and the
+         empty area left when a short listing does not fill the pane. Rows stop
+         the event before it reaches this (`FileTable`/`FileGrid`), so a
+         right-click is answered by exactly one of the two menus. -->
+    <div
+      class="sc-browse__table-wrap"
+      class:sc-browse__table-wrap--dragover={dragOver}
+      class:sc-browse__table-wrap--marquee={marqueeRect !== null}
+      oncontextmenu={openEmptyMenu}
+      onpointerdown={onMarqueePointerDown}
+      onclick={onEmptyAreaClick}
+    >
       {#if browse.loading}
         <div class="sc-browse__loading"><ProgressCircular /></div>
       {:else if browse.error}
@@ -734,6 +1007,7 @@
           out:fade={{ duration: viewSwitchDuration() }}
         >
           <FileGrid
+            bind:this={gridView}
             {browse}
             onopen={onOpen}
             oncontextmenu={openContextMenu}
@@ -749,6 +1023,7 @@
           out:fade={{ duration: viewSwitchDuration() }}
         >
           <FileTable
+            bind:this={tableView}
             {browse}
             onopen={onOpen}
             oncontextmenu={openContextMenu}
@@ -762,9 +1037,24 @@
         <div class="sc-browse__drop-overlay" aria-hidden="true">{t('browse.drop_here_upload')}</div>
       {/if}
     </div>
+    <!-- Outside the wrap and `position: fixed`, so it is drawn in viewport
+         coordinates and cannot be clipped by anything the drag passes over. -->
+    {#if marqueeRect}
+      <div
+        class="sc-browse__marquee"
+        aria-hidden="true"
+        style:left="{marqueeRect.left - scrollXNow}px"
+        style:top="{marqueeRect.top - scrollYNow}px"
+        style:width="{marqueeRect.right - marqueeRect.left}px"
+        style:height="{marqueeRect.bottom - marqueeRect.top}px"
+      ></div>
+    {/if}
+    {#if uiState.details}
+      <DetailsPanel {browse} onclose={() => setDetails(false)} />
+    {/if}
   </div>
 
-  {#if uiState.compact}
+  {#if uiState.compact && browse.selection.size === 0}
     <!--
       The one primary action a phone-width toolbar gets a dedicated control
       for. Upload over New folder: a folder is created rarely,
@@ -773,6 +1063,11 @@
       most often *for*. Upload folder was never a contender here -- directory
       picker support on a mobile browser is patchy at best, so it's exactly the
       kind of secondary action More exists for.
+
+      Gone while something is selected: the selection bar now floats over the
+      same corner, and what you do to the files you have picked is on it.
+      Uploading is not part of that, and half a button behind a bar is worse
+      than no button.
     -->
     <div class="sc-browse__fab">
       <FAB icon={icons.upload} aria-label={t('common.upload')} onclick={onUploadClick} />
@@ -802,17 +1097,19 @@
 />
 
 <Menu open={menuOpen} onclose={() => (menuOpen = false)} x={menuX} y={menuY}>
-    {#if contextEntry && contextEntry.kind !== 'dir'}
-      <MenuItem onclick={openInEditor}>{t('browse.open_text_editor')}</MenuItem>
-    {/if}
-    <MenuItem onclick={downloadSelection}>{t('common.download')}</MenuItem>
-    {#if contextEntry?.perms.share}
-      <MenuItem onclick={requestShare}>{t('browse.manage_share_links')}</MenuItem>
-    {/if}
-    <MenuItem onclick={requestRename}>{t('browse.rename_f2')}</MenuItem>
-    <MenuItem onclick={requestTransfer}>{t('dest.move_or_copy')}</MenuItem>
-    <MenuItem onclick={() => duplicate('Fail')}>{t('browse.duplicate')}</MenuItem>
-    <MenuItem onclick={requestDelete}>{t('browse.delete_del')}</MenuItem>
+    {#each actions as action (action.key)}
+      <MenuItem onclick={action.run}>{action.label}</MenuItem>
+    {/each}
+</Menu>
+
+<!-- Blank-space menu. Same component and the same `menuX`/`menuY` the row menu
+     positions with; only the contents differ, because there is no target row to
+     act on. The three handlers and the three labels are the toolbar's own, not
+     copies. -->
+<Menu open={emptyMenuOpen} onclose={() => (emptyMenuOpen = false)} x={menuX} y={menuY}>
+    <MenuItem onclick={() => { emptyMenuOpen = false; newFolderOpen = true }}>{t('common.new_folder')}</MenuItem>
+    <MenuItem onclick={() => { emptyMenuOpen = false; onUploadClick() }}>{t('common.upload')}</MenuItem>
+    <MenuItem onclick={() => { emptyMenuOpen = false; onUploadFolderClick() }}>{t('browse.upload_folder')}</MenuItem>
 </Menu>
 
 <NewFolderDialog open={newFolderOpen} onclose={() => (newFolderOpen = false)} oncreate={createFolder} />
@@ -844,6 +1141,19 @@
   onoverwrite={() => conflictRetry?.('Overwrite')}
   onskip={() => conflictRetry?.('Skip')}
 />
+<PreviewDialog
+  open={previewOpen && previewEntry !== null}
+  entry={previewEntry}
+  path={previewPath}
+  hasPrev={hasPreviewNeighbour(-1)}
+  hasNext={hasPreviewNeighbour(1)}
+  onclose={() => (previewOpen = false)}
+  onprev={() => stepPreview(-1)}
+  onnext={() => stepPreview(1)}
+  ondownload={(e) => void downloadEntry(e)}
+  onedit={(e) => goto(`/edit${joinPath(browse.path, e.name)}`)}
+/>
+
 {#if contextEntry}
   <ShareManageDialog
     open={shareOpen}
@@ -954,58 +1264,63 @@
   .sc-browse__search :global(.field) {
     flex: 1;
   }
-  .sc-browse__bar-stack {
-    /* Containing block for the selection bar, which covers the toolbar
-       exactly instead of guessing at its height (it varies with breakpoint,
-       and wraps to two rows on a deep breadcrumb chain). */
-    position: relative;
+  .sc-browse__table-wrap--marquee {
+    /* Only while a drag is running: dragging over text would otherwise
+       highlight it, and the browser's own drag-select fights the rectangle. */
+    user-select: none;
+    cursor: crosshair;
+  }
+  .sc-browse__marquee {
+    position: fixed;
+    z-index: 15;
+    pointer-events: none;
+    border: 1px solid var(--m3c-primary);
+    background: color-mix(in srgb, var(--m3c-primary) 18%, transparent);
+    border-radius: 2px;
   }
   .sc-browse__selection-bar {
-    position: absolute;
-    inset: 0;
+    /* Fixed, centred on the bottom edge, so it occupies no layout space and
+       nothing reflows when it appears. See the markup for why that matters
+       more than where it sits.
+
+       Clear of the `NavigationBar`, which is itself fixed to the bottom at
+       compact width, and of the home indicator below that. `--sc-selection-
+       bar-gap` is the same number the list reserves, kept here so the two
+       cannot drift apart. */
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(16px + var(--sc-selection-bar-offset, 0px) + env(safe-area-inset-bottom, 0px));
+    z-index: 20;
+    max-width: calc(100vw - 32px);
+    border-radius: var(--m3-shape-large);
     background: var(--m3c-secondary-container);
     color: var(--m3c-on-secondary-container);
-    /* Was a `.sc-fade-toggle` utility from the hand-rolled `tokens.css`.
-       That file is gone (m3-svelte owns the design system now) and the
-       utility went with it, which left the bar permanently visible -- an
-       always-on green strip announcing "0 selected" above every folder. It
-       was the only user of that utility, so the two rules live here now.
-       `visibility` is delayed rather than transitioned so the bar stays
-       hit-testable for the length of the fade out, then stops. */
-    opacity: 0;
-    visibility: hidden;
-    transition:
-      opacity var(--m3-easing),
-      visibility 0s var(--m3-duration);
+    box-shadow: var(--m3-util-elevation-3, 0 4px 12px rgb(0 0 0 / 0.3));
   }
-  .sc-browse__selection-bar--visible {
-    opacity: 1;
-    visibility: visible;
-    transition:
-      opacity var(--m3-easing),
-      visibility 0s;
+  :global(.sc-app-shell--compact) .sc-browse__selection-bar {
+    --sc-selection-bar-offset: var(--sc-nav-bar-height);
   }
   .sc-browse__selection-bar-inner {
     display: flex;
     align-items: center;
-    gap: 16px;
-    height: 100%;
-    padding-inline: 16px;
-    /* Nothing here shrinks or wraps (a half-rendered destructive button is
-       worse than a scroll), so the row scrolls if a long enough locale ever
-       outgrows it. At compact width the icon variant above fits without it. */
-    overflow-x: auto;
-  }
-  .sc-browse__selection-bar-inner:has(.sc-browse__selection-gap) {
-    /* Icon variant: the icons are already 48px touch targets, so 16px between
-       them reads as gaps rather than a group. */
+    /* The icons are already 48px touch targets, so anything wider than this
+       reads as gaps rather than as a group. */
     gap: 4px;
-    padding-inline: 4px;
+    min-height: 48px;
+    padding-inline: 8px;
+    /* Nothing here shrinks or wraps (a half-rendered destructive button is
+       worse than a scroll), so the row scrolls if a long enough count string
+       ever outgrows it. */
+    overflow-x: auto;
+    /* ...and the tooltips are `position: fixed`, so scrolling this box clips
+       them only if it is also the containing block. It is not. */
   }
   .sc-browse__selection-gap {
-    /* Pushes the actions to the trailing edge, leading close + count to the
-       start — MD3's contextual top app bar layout. */
-    flex: 1 1 auto;
+    /* Separates the count from the actions. It no longer stretches: the bar is
+       only as wide as its contents now, so a growing gap would just push the
+       two ends apart across an empty middle. */
+    flex: 0 0 8px;
   }
   .sc-browse__selection-count {
     flex-shrink: 0;

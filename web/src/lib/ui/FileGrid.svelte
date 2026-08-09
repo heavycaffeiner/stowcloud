@@ -1,17 +1,39 @@
 <script lang="ts">
-  // FileGrid.svelte — virtual-scrolled thumbnail/icon grid view.
-  // lists `FileGrid` alongside `FileTable` in the
-  // app-specific component inventory; §5 says the grid view "uses the same
-  // technique with a fixed cell size" as the virtualized table. This reuses
-  // `computeWindow` (built for 1D rows) by treating each *visual grid row* of
-  // `columns` cells as one "row" of the windowing maths — `rowHeight` becomes
-  // the cell's height, `itemCount` becomes the number of grid rows, and each
-  // rendered grid row is expanded back into up to `columns` file cells.
+  // FileGrid.svelte: virtual-scrolled card grid, folders above files.
+  //
+  // ## Why two windows instead of one
+  //
+  // A folder card is one line tall; a file card is a header line plus a
+  // thumbnail. `computeWindow` maps a scroll offset to a row index by
+  // dividing, which is only true while every row is the same height, so one
+  // window over a mixed run of both card types is arithmetic that does not
+  // hold. Averaging the two heights would still divide, and it would still be
+  // wrong: the error grows with the number of rows above, so it shows up as
+  // rows drifting out from under the pointer deep in a large directory, which
+  // is the hardest kind of scroll bug to trace back to its cause.
+  //
+  // The alternative was teaching `computeWindow` about two row heights. That
+  // means a second set of maths, a second set of edge cases at the seam, and a
+  // second thing that can disagree with FileTable, which shares the module.
+  // Two windows over two uniform sections keep the existing invariant exactly
+  // as it is: each section divides by its own single row height, and each one
+  // is right.
+  //
+  // The sections sit in one document scroll (the whole page scrolls, see
+  // `windowing.ts`), so each measures its own top and derives its own
+  // scroll offset from it. A section entirely off-screen renders nothing and
+  // asks for nothing.
+  //
+  // The split point comes from the server (`browse.dirs`). It cannot be found
+  // client-side: rows load in windows, so the entries either side of the seam
+  // are usually not in memory.
   //
   // Same accessibility contract as FileTable: one tab stop (`tabindex=0` on
   // the grid container), `aria-activedescendant` tracks the "virtually
-  // focused" cell, and per-cell tabindex is intentionally never given
-  // (a 100k-entry directory cannot have 100k tab stops).
+  // focused" cell, and per-cell tabindex is never given (a 100k-entry
+  // directory cannot have 100k tab stops). The kebab button on each card is
+  // `tabindex="-1"` for the same reason -- keyboard users reach the same menu
+  // with the Menu key or Shift+F10 on the focused card.
   import { t } from '../i18n'
   import type { Entry } from '../api/client'
   import type { BrowseState } from '../state/browse.svelte'
@@ -24,8 +46,11 @@
     effectiveViewportHeight,
     rowIndexToScrollTop
   } from '../virtual/windowing'
+  import { cellPos, sectionRows, verticalTarget } from '../virtual/grid-sections'
   import { Checkbox, Icon } from 'm3-svelte'
   import { icons, type IconName } from '../icons'
+  import Thumbnail from './Thumbnail.svelte'
+  import { indicesInRect, type Rect } from './marquee'
 
   interface Props {
     browse: BrowseState
@@ -38,120 +63,286 @@
 
   let { browse, onopen, oncontextmenu, onrename, ondelete, onsearchfocus }: Props = $props()
 
-  // 4px-grid cell sizes, keyed by the same density the toolbar's "density"
-  // control already drives for FileTable's row height.
-  const CELL = $derived(
-    { compact: { w: 96, h: 112 }, comfortable: { w: 116, h: 136 }, spacious: { w: 140, h: 160 } }[browse.density]
+  // 4px-grid card metrics, keyed by the same density control that drives
+  // FileTable's row height. Both card types share a width so the two sections
+  // line up on the same columns, which is what makes "the card below this one"
+  // mean anything across the seam.
+  const CARD = $derived(
+    {
+      compact: { w: 192, folderH: 44, fileH: 176, gap: 8 },
+      comfortable: { w: 224, folderH: 52, fileH: 208, gap: 12 },
+      spacious: { w: 256, folderH: 60, fileH: 244, gap: 16 }
+    }[browse.density]
   )
-  const CELL_GAP = 8 // 8px
-  const OVERSCAN = 3 // grid rows, not individual cells
+  const OVERSCAN = 3 // rows, not cells
 
   // Document-scroll migration: see the matching comment block in
-  // FileTable.svelte for the full "why" (the short version: a browser only
-  // collapses its chrome when the document scrolls, and this element used to
-  // be its own `overflow: auto` box, which is exactly what prevented that).
-  // `viewportW` stays a real `bind:clientWidth` -- this element still has a
-  // genuine, bounded *width* (that never changed); only its height became
-  // content-driven instead of viewport-bounded, which is why only the
-  // height-derived numbers (`scrollTop`/`viewportH`) move to window/
-  // visualViewport reads below.
+  // FileTable.svelte. `viewportW` stays a real `bind:clientWidth` -- this
+  // element still has a genuine bounded *width*; only its height became
+  // content-driven, which is why the height-derived numbers come from
+  // window/visualViewport reads instead.
   let viewportEl: HTMLDivElement | undefined = $state()
+  let foldersEl: HTMLDivElement | undefined = $state()
+  let filesEl: HTMLDivElement | undefined = $state()
   let viewportW = $state(0)
-  let viewportDocumentTop = $state(0)
-  let scrollTop = $state(0)
+  let scrollY = $state(0)
   let viewportH = $state(0)
+  let foldersTop = $state(0)
+  let filesTop = $state(0)
+
+  /** Entry the user last scrolled to the top of the viewport, kept so a
+   *  column-count change can put it back. Deliberately not `$state`: it is a
+   *  record of where we were, and making it reactive would feed the same
+   *  scroll it exists to restore. */
+  let anchorIndex = 0
+  let lastColumns = 0
 
   function measure(): void {
     if (!viewportEl) return
-    viewportDocumentTop = viewportEl.getBoundingClientRect().top + window.scrollY
-    scrollTop = documentScrollTop(window.scrollY, viewportDocumentTop)
+    scrollY = window.scrollY
     viewportH = effectiveViewportHeight(window.visualViewport?.height, window.innerHeight)
+    foldersTop = foldersEl ? foldersEl.getBoundingClientRect().top + scrollY : 0
+    filesTop = filesEl ? filesEl.getBoundingClientRect().top + scrollY : 0
+  }
+
+  /**
+   * Scrolling is the only thing that moves the anchor, which is why this is
+   * separate from `measure`. Changing the column count also re-measures, and
+   * it does so through an effect that runs *before* the one that restores the
+   * anchor; recording the anchor in `measure` therefore overwrote it with a
+   * reading taken against the new layout, and the restore put back a position
+   * derived from the change it was supposed to undo.
+   */
+  function onScroll(): void {
+    measure()
+    anchorIndex = topVisibleIndex()
+  }
+
+  function topVisibleIndex(): number {
+    if (browse.total === 0) return 0
+    const last = browse.total - 1
+    if (fileCount > 0 && filesTop > 0 && scrollY >= filesTop) {
+      const row = Math.floor((scrollY - filesTop) / fileRowH)
+      return Math.min(folderCount + row * columns, last)
+    }
+    const row = Math.floor(Math.max(0, scrollY - foldersTop) / folderRowH)
+    return Math.min(row * columns, last)
   }
 
   $effect(() => {
-    window.addEventListener('scroll', measure, { passive: true })
+    window.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('resize', measure)
     window.visualViewport?.addEventListener('resize', measure)
     return () => {
-      window.removeEventListener('scroll', measure)
+      window.removeEventListener('scroll', onScroll)
       window.removeEventListener('resize', measure)
       window.visualViewport?.removeEventListener('resize', measure)
     }
   })
 
+  const columns = $derived(Math.max(1, Math.floor((viewportW + CARD.gap) / (CARD.w + CARD.gap))))
+  const folderCount = $derived(Math.min(browse.dirs, browse.total))
+  const fileCount = $derived(Math.max(0, browse.total - folderCount))
+  const folderRowH = $derived(CARD.folderH + CARD.gap)
+  const fileRowH = $derived(CARD.fileH + CARD.gap)
+  const folderRowCount = $derived(sectionRows(folderCount, columns))
+  const fileRowCount = $derived(sectionRows(fileCount, columns))
+
   $effect(() => {
-    // Re-measure on mount and whenever the directory changes -- see
-    // FileTable.svelte's identical effect for why (content above this
-    // element can change height between folders without a scroll/resize
-    // event of its own).
+    // Anything that moves one section relative to the other invalidates the
+    // measured tops, and none of it arrives as a scroll or resize event:
+    // changing folder shifts the whole grid, changing density or column count
+    // changes the folder section's height and so where the file section
+    // starts. Reading `filesTop` here would loop; these are the inputs.
     browse.path
+    folderRowCount
+    fileRowCount
+    folderRowH
+    fileRowH
     measure()
   })
 
-  const columns = $derived(Math.max(1, Math.floor((viewportW + CELL_GAP) / (CELL.w + CELL_GAP))))
-  const cellRowHeight = $derived(CELL.h + CELL_GAP)
-  const gridRowCount = $derived(browse.total > 0 ? Math.ceil(browse.total / columns) : 0)
+  $effect(() => {
+    // Opening or closing the details panel narrows this element without the
+    // window resizing, so every row is repacked and whatever the user was
+    // looking at slides off. Re-anchoring on the entry that was at the top
+    // keeps the answer to "where am I" the same across the change. The first
+    // pass only records the column count: there is nothing to restore yet.
+    const cols = columns
+    if (lastColumns === 0 || lastColumns === cols) {
+      lastColumns = cols
+      return
+    }
+    lastColumns = cols
+    const target = anchorIndex
+    const wasScrolledIn = scrollY > foldersTop
+    measure()
+    if (wasScrolledIn) scrollIndexToTop(target)
+  })
 
-  const win = $derived(
+  const folderWin = $derived(
     computeWindow({
-      scrollTop,
+      scrollTop: documentScrollTop(scrollY, foldersTop),
       viewportHeight: viewportH,
-      rowHeight: cellRowHeight,
-      itemCount: gridRowCount,
+      rowHeight: folderRowH,
+      itemCount: folderRowCount,
       overscan: OVERSCAN
     })
   )
+  const fileWin = $derived(
+    computeWindow({
+      scrollTop: documentScrollTop(scrollY, filesTop),
+      viewportHeight: viewportH,
+      rowHeight: fileRowH,
+      itemCount: fileRowCount,
+      overscan: OVERSCAN
+    })
+  )
+
+  /** A section wholly above or below the viewport renders no cards and asks
+   *  for no rows. Without this, scrolling deep into the files still leaves the
+   *  folder window pinned to its own last row, fetching entries nobody can
+   *  see. */
+  function intersects(top: number, height: number): boolean {
+    return height > 0 && top < scrollY + viewportH && top + height > scrollY
+  }
+  const foldersActive = $derived(intersects(foldersTop, folderWin.totalHeight))
+  const filesActive = $derived(intersects(filesTop, fileWin.totalHeight))
 
   interface Cell {
     index: number
     entry: Entry | undefined
   }
-  interface GridRow {
+  interface Row {
     key: string
+    ariaRow: number
     cells: Cell[]
   }
-  const rows = $derived.by((): GridRow[] => {
-    const out: GridRow[] = []
+
+  function buildRows(
+    win: { start: number; end: number },
+    offset: number,
+    count: number,
+    ariaBase: number,
+    prefix: string
+  ): Row[] {
+    const out: Row[] = []
     for (let r = win.start; r < win.end; r++) {
       const cells: Cell[] = []
       const base = r * columns
       for (let c = 0; c < columns; c++) {
-        const index = base + c
-        if (index >= browse.total) break
+        if (base + c >= count) break
+        const index = offset + base + c
         cells.push({ index, entry: browse.rowAt(index) })
       }
-      out.push({ key: `sc-grid-row-${r}`, cells })
+      out.push({ key: `${prefix}${r}`, ariaRow: ariaBase + r + 1, cells })
     }
     return out
-  })
+  }
+
+  const folderRows = $derived(
+    foldersActive ? buildRows(folderWin, 0, folderCount, 0, 'sc-grid-d-') : []
+  )
+  const fileRows = $derived(
+    filesActive ? buildRows(fileWin, folderCount, fileCount, folderRowCount, 'sc-grid-f-') : []
+  )
 
   function domId(name: string): string {
     return `sc-grid-cell-${encodeURIComponent(name).replace(/%/g, '_')}`
   }
 
   $effect(() => {
-    // Same debounced-window contract as FileTable — only the visible grid
-    // rows' worth of entries are requested, translated back into a flat
-    // index range.
-    browse.scheduleWindow(win.start * columns, Math.min(browse.total, win.end * columns))
+    // One range per section rather than one range spanning both: once the
+    // folder section is behind us the two are nowhere near each other, and
+    // their union would be a request for every row in between.
+    const ranges: Array<{ start: number; end: number }> = []
+    if (foldersActive) {
+      ranges.push({
+        start: folderWin.start * columns,
+        end: Math.min(folderCount, folderWin.end * columns)
+      })
+    }
+    if (filesActive) {
+      ranges.push({
+        start: folderCount + fileWin.start * columns,
+        end: Math.min(browse.total, folderCount + fileWin.end * columns)
+      })
+    }
+    browse.scheduleWindows(ranges)
   })
 
-  function scrollRowIntoView(gridRow: number): void {
+  /** Document Y of the top of the row holding `index`. */
+  function rowTopOf(index: number): number {
+    const pos = cellPos(index, folderCount, columns)
+    const top = pos.section === 0 ? foldersTop : filesTop
+    const rowH = pos.section === 0 ? folderRowH : fileRowH
+    const rowCount = pos.section === 0 ? folderRowCount : fileRowCount
+    return top + rowIndexToScrollTop(pos.row, computeScaleMapping(rowCount, rowH), rowH)
+  }
+
+  function scrollIndexToTop(index: number): void {
+    window.scrollTo({ top: rowTopOf(index) })
+  }
+
+  function scrollIndexIntoView(index: number): void {
     if (!viewportEl) return
-    // See FileTable.svelte's `scrollRowIntoView` for why this scrolls the
-    // window (document coordinates) instead of `viewportEl.scrollTop` (this
-    // element isn't a scroll container anymore).
-    const mapping = computeScaleMapping(gridRowCount, cellRowHeight)
-    const rowTop = rowIndexToScrollTop(gridRow, mapping, cellRowHeight)
-    const rowBottom = rowIndexToScrollTop(gridRow + 1, mapping, cellRowHeight)
-    if (rowTop < scrollTop) {
-      window.scrollTo({ top: viewportDocumentTop + rowTop })
-    } else if (rowBottom > scrollTop + viewportH) {
-      window.scrollTo({ top: viewportDocumentTop + rowBottom - viewportH })
+    const pos = cellPos(index, folderCount, columns)
+    const top = pos.section === 0 ? foldersTop : filesTop
+    const rowH = pos.section === 0 ? folderRowH : fileRowH
+    const rowCount = pos.section === 0 ? folderRowCount : fileRowCount
+    // See FileTable's `scrollRowIntoView`: this scrolls the window (document
+    // coordinates), because neither section is a scroll container.
+    const mapping = computeScaleMapping(rowCount, rowH)
+    const rowTop = top + rowIndexToScrollTop(pos.row, mapping, rowH)
+    const rowBottom = top + rowIndexToScrollTop(pos.row + 1, mapping, rowH)
+    if (rowTop < scrollY) {
+      window.scrollTo({ top: rowTop })
+    } else if (rowBottom > scrollY + viewportH) {
+      window.scrollTo({ top: rowBottom - viewportH })
     }
   }
 
-  function onCellClick(e: MouseEvent, entry: Entry): void {
+  /**
+   * The cards a rubber-band drag has swept over, for the page that owns the
+   * drag (`b/[...path]/+page.svelte`).
+   *
+   * Two sections, so two rectangles' worth of arithmetic: the folder cards and
+   * the file cards have different heights and start at different places, which
+   * is the same reason they get a window each.
+   *
+   * Only loaded rows can be named, so a rectangle thrown across an unfetched
+   * gap picks up whatever is in memory. Same limit as `selectRangeTo`.
+   */
+  export function entriesInRect(rect: Rect): Entry[] {
+    // 16px of `padding-inline` on `.sc-file-grid__window`, and the cards are
+    // laid out from there on a `CARD.w + CARD.gap` pitch.
+    const left = (viewportEl?.getBoundingClientRect().left ?? 0) + window.scrollX + 16
+    const common = { left, columnPitch: CARD.w + CARD.gap, cellWidth: CARD.w, columns }
+    const hits = [
+      ...indicesInRect(rect, {
+        ...common,
+        top: foldersTop,
+        rowHeight: folderRowH,
+        startIndex: 0,
+        count: folderCount
+      }),
+      ...indicesInRect(rect, {
+        ...common,
+        top: filesTop,
+        rowHeight: fileRowH,
+        startIndex: folderCount,
+        count: fileCount
+      })
+    ]
+    const out: Entry[] = []
+    for (const i of hits) {
+      const entry = browse.rowAt(i)
+      if (entry) out.push(entry)
+    }
+    return out
+  }
+
+  function onCardClick(e: MouseEvent, entry: Entry): void {
     if (e.shiftKey) {
       browse.selectRangeTo(entry)
       return
@@ -160,27 +351,45 @@
       browse.toggle(entry)
       return
     }
-    // See FileTable.svelte's `onRowClick` for why compact width branches
-    // here: no modifier key exists on a tap, so a plain tap has to open
-    // (nothing selected) or extend the selection (already in selection
-    // mode) instead of always replacing it down to one item.
-    if (uiState.compact) {
-      if (browse.selection.size > 0) browse.toggle(entry)
-      else onopen(entry)
-      return
-    }
+    // A plain click selects, a double click opens. Same rule as
+    // `FileTable.svelte`'s `onRowClick`, so the two views answer the same
+    // gesture the same way.
     browse.selectOnly(entry)
   }
 
-  // Same reasoning as FileRow.svelte's checkbox: a plain click/tap on the
-  // cell (shift/ctrl aside) runs `selectOnly`, so without an independent
-  // toggle target a touch user has no way to build a multi-selection at
-  // all -- there is no modifier key to hold on a phone. FileGrid never had a
-  // checkbox before (unlike FileRow); this is the same fix applied to the
-  // view that was missing the affordance entirely, not just the wiring.
+  // Same reasoning as FileRow.svelte's checkbox: without an independent
+  // toggle target a touch user has no way to build a multi-selection at all,
+  // there being no modifier key to hold on a phone.
   function onCheckboxClick(e: MouseEvent, entry: Entry): void {
     e.stopPropagation()
     browse.toggle(entry)
+  }
+
+  /** The kebab opens the same menu a right-click does, aimed at the same
+   *  rows -- one menu definition, one target rule (see `row-actions.ts`). */
+  function onKebabClick(e: MouseEvent, entry: Entry): void {
+    e.stopPropagation()
+    oncontextmenu(entry, e)
+  }
+
+  /** Menu key / Shift+F10 on the focused card. The card's kebab is not a tab
+   *  stop, so this is how a keyboard reaches the menu; it is positioned from
+   *  the card's own box since there is no pointer to position it at. */
+  function openMenuForFocused(): void {
+    const index = browse.focusedIndex
+    if (index === null) return
+    const entry = browse.rowAt(index)
+    if (!entry) return
+    const el = document.getElementById(domId(entry.name))
+    if (!el) return
+    const box = el.getBoundingClientRect()
+    oncontextmenu(
+      entry,
+      new MouseEvent('contextmenu', {
+        clientX: Math.round(box.left + box.width / 2),
+        clientY: Math.round(box.top + box.height / 2)
+      })
+    )
   }
 
   function onKeydown(e: KeyboardEvent): void {
@@ -190,15 +399,17 @@
       case 'ArrowDown':
       case 'ArrowUp': {
         e.preventDefault()
-        browse.moveFocus(e.key === 'ArrowDown' ? columns : -columns, e.shiftKey)
-        scrollRowIntoView(Math.floor((browse.focusedIndex ?? 0) / columns))
+        const from = browse.focusedIndex ?? 0
+        const to = verticalTarget(from, e.key === 'ArrowDown' ? 1 : -1, folderCount, browse.total, columns)
+        browse.moveFocus(to - from, e.shiftKey)
+        scrollIndexIntoView(browse.focusedIndex ?? 0)
         break
       }
       case 'ArrowRight':
       case 'ArrowLeft': {
         e.preventDefault()
         browse.moveFocus(e.key === 'ArrowRight' ? 1 : -1, e.shiftKey)
-        scrollRowIntoView(Math.floor((browse.focusedIndex ?? 0) / columns))
+        scrollIndexIntoView(browse.focusedIndex ?? 0)
         break
       }
       case ' ': {
@@ -221,9 +432,26 @@
         if (entry) onopen(entry)
         break
       }
+      case 'ContextMenu':
+        e.preventDefault()
+        openMenuForFocused()
+        break
+      case 'F10':
+        if (e.shiftKey) {
+          e.preventDefault()
+          openMenuForFocused()
+        }
+        break
       case 'F2':
         e.preventDefault()
         onrename?.()
+        break
+      case 'Escape':
+        // Keyboard counterpart of clicking the blank area below the listing.
+        if (browse.selection.size > 0) {
+          e.preventDefault()
+          browse.clearSelection()
+        }
         break
       case 'Delete':
         e.preventDefault()
@@ -236,15 +464,25 @@
     }
   }
 
+  const renderedNames = $derived(
+    new Set(
+      [...folderRows, ...fileRows]
+        .flatMap((r) => r.cells.map((c) => c.entry?.name))
+        .filter((n): n is string => n !== undefined)
+    )
+  )
   const activeDescendant = $derived(
-    browse.focusedName && rows.some((r) => r.cells.some((c) => c.entry?.name === browse.focusedName))
-      ? domId(browse.focusedName)
-      : undefined
+    browse.focusedName && renderedNames.has(browse.focusedName) ? domId(browse.focusedName) : undefined
   )
 
   function iconName(entry: Entry): IconName {
     return entry.kind === 'dir' ? 'folder' : entry.preview?.available ? 'image' : 'file'
   }
+
+  /** Longest edge asked of the server's re-encoder. One value for every
+   *  density so a density change doesn't invalidate every cached thumbnail;
+   *  the card scales the picture down with `object-fit`. */
+  const THUMB_DIM = 512
 </script>
 
 <div
@@ -252,10 +490,11 @@
   bind:clientWidth={viewportW}
   class="sc-file-grid"
   class:sc-file-grid--reserve-bar={uiState.compact}
+  class:sc-file-grid--reserve-selection={browse.selection.size > 0}
   data-density={browse.density}
   role="grid"
   aria-multiselectable="true"
-  aria-rowcount={gridRowCount}
+  aria-rowcount={folderRowCount + fileRowCount}
   aria-colcount={columns}
   aria-label={t('grid.file_grid')}
   aria-activedescendant={activeDescendant}
@@ -266,68 +505,194 @@
   {#if browse.total === 0 && !browse.loading}
     <p class="sc-file-grid__empty">{t('common.folder_empty')}</p>
   {:else}
-  <div class="sc-file-grid__spacer" style:height="{win.totalHeight}px">
-    <div class="sc-file-grid__window" style:transform="translate3d(0,{win.padTop}px,0)">
-      {#each rows as row (row.key)}
-        <div class="sc-file-grid__row" role="row" style:height="{CELL.h}px" style:gap="{CELL_GAP}px">
-          {#each row.cells as cell (cell.entry ? cell.entry.name : `sc-ph-${cell.index}`)}
-            {#if cell.entry}
-              {@const entry = cell.entry}
-              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
-              <div
-                id={domId(entry.name)}
-                class="sc-file-grid__cell m3-layer"
-                class:sc-file-grid__cell--selected={browse.selection.has(entry.name)}
-                class:sc-file-grid__cell--focused={browse.focusedName === entry.name}
-                role="gridcell"
-                aria-selected={browse.selection.has(entry.name)}
-                style:width="{CELL.w}px"
-                onclick={(e) => onCellClick(e, entry)}
-                ondblclick={() => onopen(entry)}
-                oncontextmenu={(e) => {
-                  e.preventDefault()
-                  oncontextmenu(entry, e)
-                }}
-              >
-                <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-                <span class="sc-file-grid__check sc-touch-target" onclick={(e) => onCheckboxClick(e, entry)}>
-                  <!-- Inert input, click owned by the cell — see FileRow. -->
-                  <Checkbox>
-                    <input
-                      type="checkbox"
-                      checked={browse.selection.has(entry.name)}
+    {#if folderCount > 0}
+      <!-- The visible heading is hidden from assistive tech and the same text
+           put on the rowgroup instead: a heading is not a legal child of a
+           grid, a labelled rowgroup is, and it is what gets announced on the
+           way into the section. -->
+      <p class="sc-file-grid__group" aria-hidden="true">{t('grid.folders')}</p>
+      <div
+        bind:this={foldersEl}
+        class="sc-file-grid__section"
+        role="rowgroup"
+        aria-label={t('grid.folders')}
+        style:height="{folderWin.totalHeight}px"
+      >
+        <div class="sc-file-grid__window" style:transform="translate3d(0,{folderWin.padTop}px,0)">
+          {#each folderRows as row (row.key)}
+            <div
+              class="sc-file-grid__row"
+              role="row"
+              aria-rowindex={row.ariaRow}
+              style:height="{CARD.folderH}px"
+              style:gap="{CARD.gap}px"
+              style:padding-block-end="{CARD.gap}px"
+            >
+              {#each row.cells as cell, col (cell.entry ? cell.entry.name : `sc-ph-${cell.index}`)}
+                {#if cell.entry}
+                  {@const entry = cell.entry}
+                  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
+                  <div
+                    id={domId(entry.name)}
+                    class="sc-file-grid__card sc-file-grid__card--folder m3-layer"
+                    class:sc-file-grid__card--selected={browse.selection.has(entry.name)}
+                    class:sc-file-grid__card--focused={browse.focusedName === entry.name}
+                    role="gridcell"
+                    aria-colindex={col + 1}
+                    aria-selected={browse.selection.has(entry.name)}
+                    style:width="{CARD.w}px"
+                    onclick={(e) => onCardClick(e, entry)}
+                    ondblclick={() => onopen(entry)}
+                    oncontextmenu={(e) => {
+                      e.preventDefault()
+                      // See FileTable: the page handles blank space.
+                      e.stopPropagation()
+                      oncontextmenu(entry, e)
+                    }}
+                  >
+                    <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+                    <span class="sc-file-grid__check sc-touch-target" onclick={(e) => onCheckboxClick(e, entry)} ondblclick={(e) => e.stopPropagation()}>
+                      <!-- Inert input, click owned by the card (see FileRow). -->
+                      <Checkbox>
+                        <input
+                          type="checkbox"
+                          checked={browse.selection.has(entry.name)}
+                          tabindex="-1"
+                          aria-label={t('common.select', { name: entry.name })}
+                          onchange={() => {}}
+                        />
+                      </Checkbox>
+                    </span>
+                    <span class="sc-file-grid__type"><Icon icon={icons.folder} size={20} /></span>
+                    <!-- The inner `<bdi>` is load-bearing. The name truncates
+                         from the front with `direction: rtl`, and that also
+                         hands it to the bidi algorithm as RTL paragraph text:
+                         `2026-budget.csv` drew as `budget.csv-2026`, reordered
+                         rather than truncated. An LTR isolate inside the RTL
+                         box is one run in its own direction, so the box still
+                         ellipsizes on the left and the name still reads the
+                         way it is spelled on disk. -->
+                    <span class="sc-file-grid__name"><bdi>{entry.name}</bdi></span>
+                    {#if entry.confusable}
+                      <span class="sc-file-grid__badge" title={t('common.look_alike_characters')}>
+                        <Icon icon={icons.warning} size={14} />
+                      </span>
+                    {/if}
+                    <button
+                      type="button"
+                      class="sc-file-grid__kebab"
                       tabindex="-1"
-                      aria-label={t('common.select', { name: entry.name })}
-                      onchange={() => {}}
-                    />
-                  </Checkbox>
-                </span>
-                <span class="sc-file-grid__icon"><Icon icon={icons[iconName(entry)]} size={32} /></span>
-                <!-- The inner `<bdi>` is load-bearing. The cell truncates
-                     from the front with `direction: rtl`, and that also
-                     hands the name to the bidi algorithm as RTL paragraph
-                     text: `2026-budget.csv` drew as `budget.csv-2026`,
-                     reordered rather than truncated. An LTR isolate inside
-                     the RTL box is one run in its own direction, so the box
-                     still ellipsizes on the left and the name still reads
-                     the way it is spelled on disk. -->
-                <span class="sc-file-grid__name"><bdi>{entry.name}</bdi></span>
-                <span class="sc-file-grid__meta">{entry.kind === 'dir' ? '—' : formatBytes(entry.size)}</span>
-                {#if entry.confusable}
-                  <span class="sc-file-grid__badge" title={t('common.look_alike_characters')}><Icon icon={icons.warning} size={14} /></span>
+                      aria-label={t('grid.more_actions', { name: entry.name })}
+                      onclick={(e) => onKebabClick(e, entry)}
+                      ondblclick={(e) => e.stopPropagation()}
+                    >
+                      <Icon icon={icons['more-vert']} size={18} />
+                    </button>
+                  </div>
+                {:else}
+                  <div class="sc-file-grid__card sc-file-grid__card--folder sc-file-grid__skeleton" style:width="{CARD.w}px" aria-busy="true">
+                    <span class="sc-file-grid__skeleton-line"></span>
+                  </div>
                 {/if}
-              </div>
-            {:else}
-              <div class="sc-file-grid__cell sc-file-grid__cell--skeleton" style:width="{CELL.w}px" aria-busy="true">
-                <span class="sc-file-grid__skeleton-icon"></span>
-                <span class="sc-file-grid__skeleton-name"></span>
-              </div>
-            {/if}
+              {/each}
+            </div>
           {/each}
         </div>
-      {/each}
-    </div>
-  </div>
+      </div>
+    {/if}
+
+    {#if fileCount > 0}
+      <p class="sc-file-grid__group" aria-hidden="true">{t('grid.files')}</p>
+      <div
+        bind:this={filesEl}
+        class="sc-file-grid__section"
+        role="rowgroup"
+        aria-label={t('grid.files')}
+        style:height="{fileWin.totalHeight}px"
+      >
+        <div class="sc-file-grid__window" style:transform="translate3d(0,{fileWin.padTop}px,0)">
+          {#each fileRows as row (row.key)}
+            <div
+              class="sc-file-grid__row"
+              role="row"
+              aria-rowindex={row.ariaRow}
+              style:height="{CARD.fileH}px"
+              style:gap="{CARD.gap}px"
+              style:padding-block-end="{CARD.gap}px"
+            >
+              {#each row.cells as cell, col (cell.entry ? cell.entry.name : `sc-ph-${cell.index}`)}
+                {#if cell.entry}
+                  {@const entry = cell.entry}
+                  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_interactive_supports_focus -->
+                  <div
+                    id={domId(entry.name)}
+                    class="sc-file-grid__card sc-file-grid__card--file m3-layer"
+                    class:sc-file-grid__card--selected={browse.selection.has(entry.name)}
+                    class:sc-file-grid__card--focused={browse.focusedName === entry.name}
+                    role="gridcell"
+                    aria-colindex={col + 1}
+                    aria-selected={browse.selection.has(entry.name)}
+                    style:width="{CARD.w}px"
+                    onclick={(e) => onCardClick(e, entry)}
+                    ondblclick={() => onopen(entry)}
+                    oncontextmenu={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      oncontextmenu(entry, e)
+                    }}
+                  >
+                    <div class="sc-file-grid__head">
+                      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+                      <span class="sc-file-grid__check sc-touch-target" onclick={(e) => onCheckboxClick(e, entry)} ondblclick={(e) => e.stopPropagation()}>
+                        <Checkbox>
+                          <input
+                            type="checkbox"
+                            checked={browse.selection.has(entry.name)}
+                            tabindex="-1"
+                            aria-label={t('common.select', { name: entry.name })}
+                            onchange={() => {}}
+                          />
+                        </Checkbox>
+                      </span>
+                      <!-- No type icon here, unlike the folder card. The
+                           thumbnail below already shows one whenever there is
+                           no picture, and a second copy cost the name a
+                           quarter of a 224px header: `...-000023.mp4` was all
+                           that survived of a real filename. -->
+                      <span class="sc-file-grid__name"><bdi>{entry.name}</bdi></span>
+                      {#if entry.confusable}
+                        <span class="sc-file-grid__badge" title={t('common.look_alike_characters')}>
+                          <Icon icon={icons.warning} size={14} />
+                        </span>
+                      {/if}
+                      <button
+                        type="button"
+                        class="sc-file-grid__kebab"
+                        tabindex="-1"
+                        aria-label={t('grid.more_actions', { name: entry.name })}
+                        onclick={(e) => onKebabClick(e, entry)}
+                      ondblclick={(e) => e.stopPropagation()}
+                      >
+                        <Icon icon={icons['more-vert']} size={18} />
+                      </button>
+                    </div>
+                    <div class="sc-file-grid__thumb">
+                      <Thumbnail {entry} dim={THUMB_DIM} fallback={iconName(entry)} iconSize={40} />
+                    </div>
+                    <span class="sc-file-grid__meta">{formatBytes(entry.size)}</span>
+                  </div>
+                {:else}
+                  <div class="sc-file-grid__card sc-file-grid__card--file sc-file-grid__skeleton" style:width="{CARD.w}px" aria-busy="true">
+                    <span class="sc-file-grid__skeleton-line"></span>
+                    <span class="sc-file-grid__skeleton-block"></span>
+                  </div>
+                {/if}
+              {/each}
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -336,12 +701,12 @@
     position: relative;
     flex: 1;
     min-width: 0;
-    /* Document-scroll migration: see FileTable.svelte's `.sc-file-table`
-       rule for the full reasoning -- this element is no longer its own
-       scroll container (no `overflow: auto`), doesn't stretch to fill a
-       now content-height ancestor (`align-self: flex-start`), and can't
-       claim `contain: strict`'s `size` containment since it no longer has
-       a definite size independent of its (virtualized) content. */
+    /* Document-scroll migration: see FileTable.svelte's `.sc-file-table` rule
+       for the full reasoning -- this element is no longer its own scroll
+       container (no `overflow: auto`), doesn't stretch to fill a now
+       content-height ancestor (`align-self: flex-start`), and can't claim
+       `contain: strict`'s size containment since it no longer has a definite
+       size independent of its (virtualized) content. */
     align-self: flex-start;
     contain: content;
     background: var(--m3c-surface);
@@ -352,14 +717,32 @@
     outline: 3px solid var(--m3c-secondary);
     outline-offset: -3px;
   }
+  /* Two things are fixed over the bottom of the viewport and would otherwise
+     sit on top of the last rows: `NavigationBar` at compact width, and the
+     selection bar whenever something is selected. Both reservations live on
+     this element rather than on an ancestor because its real (virtualized)
+     height escapes past `.sc-app-shell__main`'s own box.
+
+     Padding, not a margin or a scroll, so appearing changes only how far the
+     page can scroll and never where a row is. That is the whole point of the
+     selection bar being fixed: see `b/[...path]/+page.svelte`. */
+  .sc-file-grid {
+    padding-bottom: calc(var(--sc-reserve-nav, 0px) + var(--sc-reserve-selection, 0px));
+  }
   .sc-file-grid--reserve-bar {
-    /* See FileTable.svelte's identical `.sc-file-table--reserve-bar` rule
-       for the full reasoning: `NavigationBar` is `position: fixed` and this
-       element's real height escapes past `.sc-app-shell__main`'s own box
-       (whose `padding-bottom` reservation therefore never reaches here), so
-       the bar-height reservation has to live directly on the element whose
-       box actually reflects the full (virtualized) content height. */
-    padding-bottom: calc(var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px));
+    --sc-reserve-nav: calc(var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px));
+  }
+  .sc-file-grid--reserve-selection {
+    --sc-reserve-selection: 80px;
+  }
+  .sc-file-grid__group {
+    @apply --m3-title-small;
+    margin: 0;
+    padding: 16px 16px 8px;
+    color: var(--m3c-on-surface-variant);
+  }
+  .sc-file-grid__section {
+    position: relative;
   }
   .sc-file-grid__window {
     will-change: transform;
@@ -368,96 +751,128 @@
   .sc-file-grid__row {
     display: flex;
     align-items: flex-start;
-    padding-block-end: 8px;
   }
-  .sc-file-grid__cell {
+  .sc-file-grid__card {
+    position: relative;
+    box-sizing: border-box;
+    height: 100%;
+    border: 1px solid var(--m3c-outline-variant);
+    border-radius: var(--m3-shape-medium);
+    background: var(--m3c-surface-container-low);
+    color: var(--m3c-on-surface);
+    cursor: pointer;
+    overflow: hidden;
+  }
+  .sc-file-grid__card--folder {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-inline: 8px;
+  }
+  .sc-file-grid__card--file {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    padding: 8px;
-    border-radius: var(--m3-shape-medium);
-    cursor: pointer;
-    color: var(--m3c-on-surface);
-    text-align: center;
-    position: relative;
   }
-  .sc-file-grid__cell--selected {
+  .sc-file-grid__card--selected {
     background: var(--m3c-secondary-container);
     color: var(--m3c-on-secondary-container);
+    border-color: var(--m3c-secondary);
   }
-  /* Only while this grid owns focus — see FileTable.svelte's matching rule
-     for why an activedescendant indicator must not draw on an unfocused grid. */
-  .sc-file-grid:focus .sc-file-grid__cell--focused {
+  /* Only while this grid owns focus. See FileTable.svelte's matching rule for
+     why an activedescendant indicator must not draw on an unfocused grid. */
+  .sc-file-grid:focus .sc-file-grid__card--focused {
     outline: 3px solid var(--m3c-secondary);
     outline-offset: -3px;
   }
-  .sc-file-grid__icon {
+  .sc-file-grid__head {
     display: flex;
     align-items: center;
-    justify-content: center;
-    width: 64px;
-    height: 64px;
+    gap: 8px;
+    padding: 4px 8px;
+    min-height: 40px;
+  }
+  .sc-file-grid__type {
+    display: inline-flex;
+    flex: none;
     color: var(--m3c-primary);
   }
   .sc-file-grid__name {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     @apply --m3-body-medium;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    /*: truncate filenames from the front so the
-       extension (the part that disambiguates) survives. */
+    /* Truncate filenames from the front so the extension, the part that
+       disambiguates, survives. */
     direction: rtl;
-    text-align: center;
-    overflow-wrap: anywhere;
+    text-align: left;
   }
-  /* See the markup: the isolate is what keeps `direction: rtl` truncating
-     the name instead of reordering it. */
+  /* See the markup: the isolate is what keeps `direction: rtl` truncating the
+     name instead of reordering it. */
   .sc-file-grid__name > bdi {
     direction: ltr;
   }
+  .sc-file-grid__thumb {
+    flex: 1;
+    min-height: 0;
+    margin: 0 8px;
+    border-radius: var(--m3-shape-small);
+    background: var(--m3c-surface-container-highest);
+    overflow: hidden;
+  }
   .sc-file-grid__meta {
     @apply --m3-body-small;
+    padding: 4px 8px 8px;
     color: var(--m3c-on-surface-variant);
   }
-  .sc-file-grid__cell--selected .sc-file-grid__meta {
+  .sc-file-grid__card--selected .sc-file-grid__meta {
     color: inherit;
   }
-  .sc-file-grid__badge {
-    position: absolute;
-    top: 4px;
-    right: 4px;
+  .sc-file-grid__check {
     display: inline-flex;
+    flex: none;
+    /* `.sc-touch-target` (app.css) expands the hit area to MD3's 48px minimum
+       via an invisible `::before`, without growing the visible glyph. */
+  }
+  .sc-file-grid__kebab {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+  }
+  .sc-file-grid__kebab:hover {
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+  .sc-file-grid__badge {
+    display: inline-flex;
+    flex: none;
     color: var(--m3c-error);
   }
-  .sc-file-grid__check {
-    position: absolute;
-    top: 4px;
-    left: 4px;
-    display: inline-flex;
-    /* `.sc-touch-target` (app.css) expands the *hit area* to MD3's 48px
-       minimum via an invisible `::before`, without growing the visible
-       checkbox glyph -- same utility IconButton/Switch/Checkbox already use. */
-  }
-  .sc-file-grid__cell--skeleton {
+  .sc-file-grid__skeleton {
     display: flex;
     flex-direction: column;
-    align-items: center;
     gap: 8px;
     padding: 8px;
+    cursor: default;
   }
-  .sc-file-grid__skeleton-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: var(--m3-shape-medium);
+  .sc-file-grid__skeleton-line {
+    height: 12px;
+    border-radius: var(--m3-shape-extra-small);
     background: var(--m3c-surface-container-highest);
     animation: sc-file-grid-pulse 1.2s ease-in-out infinite;
   }
-  .sc-file-grid__skeleton-name {
-    width: 80%;
-    height: 12px;
-    border-radius: var(--m3-shape-extra-small);
+  .sc-file-grid__skeleton-block {
+    flex: 1;
+    border-radius: var(--m3-shape-small);
     background: var(--m3c-surface-container-highest);
     animation: sc-file-grid-pulse 1.2s ease-in-out infinite;
   }
@@ -471,14 +886,14 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    .sc-file-grid__skeleton-icon,
-    .sc-file-grid__skeleton-name {
+    .sc-file-grid__skeleton-line,
+    .sc-file-grid__skeleton-block {
       animation: none;
     }
   }
   .sc-file-grid__empty {
-    /* See FileTable.svelte's `.sc-file-table__empty` for why this is a
-       plain in-flow block now instead of `position: absolute; inset: 0`. */
+    /* See FileTable.svelte's `.sc-file-table__empty` for why this is a plain
+       in-flow block now instead of `position: absolute; inset: 0`. */
     display: flex;
     align-items: center;
     justify-content: center;

@@ -58,6 +58,7 @@ import {
 } from './types'
 import type { ListOpts, SearchHit } from './mock'
 import { noteUnauthorized } from '../state/auth.svelte'
+import { normalizePath } from './path-utils'
 
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api'
 
@@ -684,6 +685,7 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
  *  which reads just `.path`) needs them, so they're synthesized placeholders
  *  rather than guesses at real values. */
 interface RawSearchHit {
+  share: string
   path: string
   name: string
   is_dir: boolean
@@ -694,7 +696,10 @@ interface RawSearchHit {
 
 function toSearchHit(raw: RawSearchHit): SearchHit {
   return {
-    path: raw.path,
+    // `/{label}/sub/path` is the virtual path the whole UI navigates in.
+    // The wire shape keeps the share separate from the share-relative path,
+    // so this is where the two are put back together.
+    path: raw.share ? normalizePath(`/${raw.share}/${raw.path}`) : normalizePath(raw.path),
     entry: {
       name: raw.name,
       kind: raw.is_dir ? 'dir' : 'file',

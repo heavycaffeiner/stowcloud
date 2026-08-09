@@ -61,6 +61,10 @@ export function benchEntryAt(index: number): Entry {
 const NAME_COLLATOR = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
 export function compareEntries(a: Entry, b: Entry, sort: 'name' | 'size' | 'mtime' | 'kind', order: 'asc' | 'desc'): number {
+  // Folders first, whichever way the direction toggle runs: same rule as
+  // `sc-core::ops::list`. Reversing the order reorders within a group; it
+  // does not interleave the two.
+  if ((a.kind === 'dir') !== (b.kind === 'dir')) return a.kind === 'dir' ? -1 : 1
   let cmp = 0
   switch (sort) {
     case 'name':

@@ -66,6 +66,18 @@ export type Order = 'asc' | 'desc'
 export interface ListResponse {
   listing: string
   total: number
+  /**
+   * How many of `total` are directories. The server sorts folders ahead of
+   * files whichever way the direction toggle runs, so this doubles as the
+   * absolute index where files start.
+   *
+   * The grid view needs that boundary and cannot work it out for itself:
+   * rows load in windows, so the entry either side of the split is usually
+   * not in memory. Guessing it (or capping folders at "there won't be many")
+   * puts a file card in the folder section the moment someone opens a
+   * directory holding a few thousand subfolders.
+   */
+  dirs: number
   cursor: string | null
   entries: Entry[]
   dir_etag: string
