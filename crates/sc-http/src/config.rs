@@ -75,18 +75,16 @@ pub struct HttpConfig {
     pub chunk_size_min: u64,
     /// See `chunk_size_min` above.
     pub chunk_size_default: u64,
-    /// The port the plain-HTTP listener accepted this deployment's traffic on,
-    /// and the port the TLS listener did. Both `None` on a bare `HttpConfig`.
+    /// The port this deployment's (only, and always TLS) listener is on.
+    /// `None` on a bare `HttpConfig`.
     ///
-    /// These exist only so [`is_self_lan_origin`] can tell "a page this server
+    /// It exists only so [`is_self_lan_origin`] can tell "a page this server
     /// served over the LAN" from "some other service sharing the same LAN
     /// address". Same-site is computed from the host alone, so a neighbouring
-    /// service on `http://192.168.0.50:8096` is same-site with us on
+    /// service on `https://192.168.0.50:8096` is same-site with us on
     /// `192.168.0.50` and a `SameSite=Lax` session cookie *is* sent on its
     /// cross-origin writes. The port is the only thing separating the two, so
     /// the CSRF origin check has to know ours.
-    pub http_port: Option<u16>,
-    /// See [`HttpConfig::http_port`].
     pub https_port: Option<u16>,
 }
 
@@ -119,7 +117,6 @@ impl Default for HttpConfig {
             public_base_url: None,
             chunk_size_min: 5 * 1024 * 1024,
             chunk_size_default: 10 * 1024 * 1024,
-            http_port: None,
             https_port: None,
         }
     }
@@ -152,21 +149,32 @@ pub fn split_host_port(authority: &str) -> (&str, Option<u16>) {
 
 /// Is `host` an IP literal that only means something inside a private network?
 ///
-/// Loopback, RFC 1918, IPv4 link-local, IPv6 loopback, ULA (`fc00::/7`) and
-/// IPv6 link-local (`fe80::/10`).
+/// Loopback, RFC 1918, IPv4 link-local, CGNAT (`100.64/10`), IPv6 loopback,
+/// ULA (`fc00::/7`) and IPv6 link-local (`fe80::/10`).
 ///
 /// The host guard exists to stop DNS rebinding, and rebinding is carried out
 /// with a *name*: the attacker points `evil.com` at an internal address, so the
 /// browser sends `Host: evil.com`. Nothing an attacker controls makes a browser
 /// send `Host: 192.168.0.50` to this server except a user actually typing that
-/// address, which is the case being allowed. Carrier-grade NAT (`100.64/10`) is
-/// deliberately absent: it is shared address space, not this machine's LAN.
+/// address, which is the case being allowed.
+///
+/// `100.64/10` is here for Tailscale, whose addresses come out of exactly that
+/// range, and it is the one entry that is not simply "a private network by
+/// definition": the range is shared CGNAT space an ISP may also use. That costs
+/// nothing here. Being admitted by this guard is not authorisation, it only
+/// means the request is answered rather than 421'd, and everything past it still
+/// needs a session. WireGuard needs no entry of its own; its tunnels are
+/// conventionally numbered out of RFC 1918 or ULA, both already covered.
 pub fn is_private_host_literal(host: &str) -> bool {
     let Ok(ip) = host.parse::<IpAddr>() else {
         return false;
     };
     match ip {
-        IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local(),
+        IpAddr::V4(v4) => {
+            let [a, b, ..] = v4.octets();
+            let cgnat = a == 100 && (64..128).contains(&b);
+            v4.is_loopback() || v4.is_private() || v4.is_link_local() || cgnat
+        }
         IpAddr::V6(v6) => {
             let seg = v6.segments()[0];
             v6.is_loopback() || (seg & 0xfe00) == 0xfc00 || (seg & 0xffc0) == 0xfe80
@@ -182,19 +190,16 @@ pub fn is_private_host_literal(host: &str) -> bool {
 /// forge a same-site write, because `SameSite=Lax` attaches the session cookie
 /// on host match alone and ports do not enter into it.
 pub fn is_self_lan_origin(cfg: &HttpConfig, origin: &str) -> bool {
-    let Some((scheme, authority)) = origin.split_once("://") else {
+    // `https` only. This server has no plaintext listener, so an `http://`
+    // origin naming our own port did not come from us.
+    let Some(authority) = origin.strip_prefix("https://") else {
         return false;
     };
-    let (expected, default_port) = match scheme {
-        "http" => (cfg.http_port, 80),
-        "https" => (cfg.https_port, 443),
-        _ => return false,
-    };
-    let Some(expected) = expected else {
+    let Some(expected) = cfg.https_port else {
         return false;
     };
     let (host, port) = split_host_port(authority);
-    port.unwrap_or(default_port) == expected && is_private_host_literal(host)
+    port.unwrap_or(443) == expected && is_private_host_literal(host)
 }
 
 /// Minimal IPv4/IPv6 CIDR matcher — no extra crate dependency for this.
@@ -258,31 +263,43 @@ mod tests {
 
     #[test]
     fn private_literals_are_recognised() {
-        for h in ["127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.0.50", "169.254.1.1", "::1", "fd00::5", "fe80::1"] {
+        for h in [
+            "127.0.0.1", "10.1.2.3", "172.16.0.1", "192.168.0.50", "169.254.1.1",
+            // CGNAT, which is where every Tailscale address lives.
+            "100.64.0.1", "100.101.102.103", "100.127.255.255",
+            "::1", "fd00::5", "fe80::1",
+        ] {
             assert!(is_private_host_literal(h), "{h}");
         }
-        // Public addresses, CGNAT and names are all not this.
-        for h in ["8.8.8.8", "100.64.0.1", "2606:4700::1", "nas.local", "localhost", ""] {
+        // Public addresses and names are not this. `100.63` and `100.128` sit
+        // either side of CGNAT and are ordinary public space.
+        for h in ["8.8.8.8", "100.63.255.255", "100.128.0.1", "2606:4700::1", "nas.local", "localhost", ""] {
             assert!(!is_private_host_literal(h), "{h}");
         }
     }
 
     #[test]
-    fn lan_origin_must_match_one_of_our_own_ports() {
-        let cfg = HttpConfig { http_port: Some(8080), https_port: Some(8443), ..Default::default() };
-        assert!(is_self_lan_origin(&cfg, "http://192.168.0.50:8080"));
+    fn lan_origin_must_match_our_own_port() {
+        let cfg = HttpConfig { https_port: Some(8443), ..Default::default() };
         assert!(is_self_lan_origin(&cfg, "https://192.168.0.50:8443"));
+        assert!(is_self_lan_origin(&cfg, "https://100.101.102.103:8443"), "tailscale");
         // A neighbouring service on the same address is a different origin.
-        assert!(!is_self_lan_origin(&cfg, "http://192.168.0.50:8096"));
-        // Scheme and port must agree with the listener that owns them.
-        assert!(!is_self_lan_origin(&cfg, "https://192.168.0.50:8080"));
+        assert!(!is_self_lan_origin(&cfg, "https://192.168.0.50:8096"));
         // Public addresses never qualify, whatever the port.
-        assert!(!is_self_lan_origin(&cfg, "http://8.8.8.8:8080"));
+        assert!(!is_self_lan_origin(&cfg, "https://8.8.8.8:8443"));
+    }
+
+    /// There is no plaintext listener, so an `http://` origin naming our port
+    /// is something else on the same address, not us.
+    #[test]
+    fn a_plaintext_lan_origin_is_never_ours() {
+        let cfg = HttpConfig { https_port: Some(8443), ..Default::default() };
+        assert!(!is_self_lan_origin(&cfg, "http://192.168.0.50:8443"));
     }
 
     #[test]
-    fn lan_origin_is_refused_when_that_listener_does_not_exist() {
-        let cfg = HttpConfig { http_port: Some(8080), https_port: None, ..Default::default() };
+    fn lan_origin_is_refused_when_no_port_is_known() {
+        let cfg = HttpConfig { https_port: None, ..Default::default() };
         assert!(!is_self_lan_origin(&cfg, "https://192.168.0.50:443"));
     }
 }

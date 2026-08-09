@@ -221,16 +221,20 @@ COPY --from=builder --chown=nonroot:nonroot /out/sc-server /sc-server
 COPY LICENSE /LICENSE
 COPY THIRD-PARTY-NOTICES.md /THIRD-PARTY-NOTICES.md
 
-# SC_BIND defaults to 127.0.0.1:8080 in sc-server's own Config::default()
+# SC_BIND defaults to 127.0.0.1:8443 in sc-server's own Config::default()
 # (crates/sc-server/src/config.rs) — correct for a bare-metal install, wrong
 # in a container: Docker's published-port DNAT targets the container's
 # bridge-network interface, not its loopback, so a server bound to
 # 127.0.0.1 is unreachable from outside the container network namespace no
 # matter what `ports:` says. This ENV is the fix; SC_BIND is one of the
-# four env vars `Config::apply_env` reads (`crates/sc-server/src/config.rs`),
+# env vars `Config::apply_env` reads (`crates/sc-server/src/config.rs`),
 # so compose/`docker run -e` can still override it, e.g. to bind a specific
 # interface inside a `network_mode: host` deployment.
-ENV SC_BIND=0.0.0.0:8080 \
+#
+# Whatever address it names, that socket serves HTTPS and only HTTPS. There is
+# no plaintext listener anywhere to publish by mistake (`Config::bind`), and
+# the certificate is generated into /var/lib/sc/tls on first run.
+ENV SC_BIND=0.0.0.0:8443 \
     SC_DATA_DIR=/var/lib/sc
 
 # /var/lib/sc must exist and be writable by whatever uid the container
@@ -241,7 +245,7 @@ ENV SC_BIND=0.0.0.0:8080 \
 # directory with the right owner, not doing it at container start).
 VOLUME ["/var/lib/sc"]
 
-EXPOSE 8080
+EXPOSE 8443
 
 # Exec form, no shell involved — reads SC_BIND itself to find the right
 # port (see `run_healthcheck` in `crates/sc-server/src/main.rs`), so this

@@ -394,12 +394,6 @@ impl SettingsBridge {
             true,
         ));
         fields.push(Self::field(
-            "tls_bind",
-            json!(cfg.tls_bind),
-            net_src,
-            true,
-        ));
-        fields.push(Self::field(
             "app_hosts",
             json!(cfg.app_hosts),
             net_src,
@@ -906,23 +900,8 @@ impl SettingsApi for SettingsBridge {
                     format!("invalid bind address: {}", patch.bind),
                 )
             })?;
-        // Empty string and absent both mean "no TLS listener"; anything else
-        // has to parse, because saving an unparseable address silently as
-        // `None` would turn the LAN listener off while the screen reported the
-        // save as successful.
-        let tls_bind = match patch.tls_bind.as_deref().map(str::trim) {
-            None | Some("") => None,
-            Some(s) => Some(s.parse().map_err(|_| {
-                reject(
-                    "settings.invalid_bind_address",
-                    json!({ "value": s }),
-                    format!("invalid TLS bind address: {s}"),
-                )
-            })?),
-        };
         let ov = NetworkOverride {
             bind,
-            tls_bind,
             app_hosts: patch.app_hosts.clone(),
             content_hosts: patch.content_hosts.clone(),
             allowed_origins: patch.allowed_origins.clone(),
@@ -935,7 +914,6 @@ impl SettingsApi for SettingsBridge {
 
         let mut cfg = self.cfg.lock();
         cfg.bind = bind;
-        cfg.tls_bind = tls_bind;
         cfg.app_hosts = patch.app_hosts;
         cfg.content_hosts = patch.content_hosts;
         cfg.allowed_origins = patch.allowed_origins;
@@ -1215,7 +1193,6 @@ mod tests {
     /// `config.toml` were the only way to change it.
     const UI_EDITABLE_KEYS: &[&str] = &[
         "bind",
-        "tls_bind",
         "app_hosts",
         "content_hosts",
         "allowed_origins",

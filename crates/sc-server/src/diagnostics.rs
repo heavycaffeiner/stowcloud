@@ -236,11 +236,10 @@ pub struct Diagnostics {
     pub min_free_bytes: u64,
     pub size_guard_recommendation: Option<(bool, u64)>,
     pub smb_bind_result: Result<(), String>,
-    /// `cfg.tls_bind`: where the self-signed LAN HTTPS listener is, if anywhere.
-    /// Reported for the same reason `trusted_proxies` is: unset is a legitimate
-    /// configuration behind a proxy and a silent dead end on a LAN, and only
-    /// the operator can tell those apart.
-    pub tls_bind: Option<std::net::SocketAddr>,
+    /// `cfg.bind`: the one socket the server listens on, always TLS. Reported
+    /// because "which address, and is it really https" is the first thing an
+    /// operator checks when a browser will not connect.
+    pub bind: std::net::SocketAddr,
     /// No dedicated content origin configured, so user content is served from
     /// the app origin. Permitted but must be said
     /// out loud — it gives up the XSS isolation separation exists to provide.
@@ -520,7 +519,7 @@ pub fn run(
         min_free_bytes: cfg.db.min_free_bytes,
         size_guard_recommendation,
         smb_bind_result,
-        tls_bind: cfg.tls_bind,
+        bind: cfg.bind,
         single_origin,
         trusted_proxies: classify_trusted_proxies(&cfg.trusted_proxies),
         compat_canonical_url: cfg.resolve_compat_canonical_url(),
@@ -670,19 +669,14 @@ pub fn print(d: &Diagnostics) {
         Err(e) => println!("[sc]   smb bind: REFUSED — {e}"),
     }
 
-    match d.tls_bind {
-        Some(addr) => println!("[sc]   LAN HTTPS: {addr} (self-signed, regenerated when the SANs change)"),
-        None => {
-            println!("[sc]   LAN HTTPS: OFF");
-            println!("[sc]     The session cookie is `__Host-`-prefixed, so a browser keeps it");
-            println!("[sc]     only over HTTPS (or plain http://localhost). Reaching this");
-            println!("[sc]     server directly at its LAN address therefore serves the page");
-            println!("[sc]     and then silently fails to stay logged in. Set `tls_bind` /");
-            println!("[sc]     SC_TLS_BIND to put up an HTTPS listener with a certificate the");
-            println!("[sc]     server writes for itself. Correct as-is if every client");
-            println!("[sc]     arrives through a reverse proxy that terminates TLS.");
-        }
-    }
+    println!("[sc]   listener: https://{} (self-signed, regenerated when the SANs change)", d.bind);
+    println!("[sc]     There is no plaintext listener, on any interface. A reverse proxy");
+    println!("[sc]     in front of a public name talks https upstream and skips verifying");
+    println!("[sc]     this certificate (Caddy: `transport http {{ tls_insecure_skip_verify }}`).");
+    println!("[sc]     Browsers on the LAN see one interstitial per browser, because nothing");
+    println!("[sc]     issued this certificate. That is the cost of a private address having");
+    println!("[sc]     no public name, and the alternative is not a trusted certificate, it");
+    println!("[sc]     is no session at all: the cookie is `__Host-` and needs a secure origin.");
 
     let tp = &d.trusted_proxies;
     if tp.accepted.is_empty() {
@@ -876,8 +870,8 @@ mod tests {
             min_free_bytes: 1024 * 1024 * 1024,
             size_guard_recommendation: None,
             smb_bind_result: Ok(()),
+            bind: "127.0.0.1:8443".parse().unwrap(),
             single_origin: false,
-            tls_bind: None,
             trusted_proxies: TrustedProxies::default(),
             compat_canonical_url: crate::config::CompatCanonicalUrl::Configured(
                 "https://cloud.example.com".into(),

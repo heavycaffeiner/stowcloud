@@ -128,20 +128,34 @@ in the process list.
 
 You are in. Everything below is what you can do from here.
 
-> **Before anyone outside your machine can reach it,** put a reverse proxy
-> with HTTPS in front, and set `trusted_proxies` in `data/sc.toml` to that
-> proxy's addresses. Without that last part every visitor looks like the
-> proxy, so the login rate limit and the audit log collapse onto one address
-> and a single attacker can lock out everyone. The compose file publishes the
-> proxy's port to loopback only so that this is a decision you make rather than
-> a default you inherit.
-
 **From inside your own network,** use `https://<the machine's address>:8443`.
-The compose file turns on a second listener for exactly this, with a
-certificate the server generates for itself, so your browser will ask you to
-accept it once. That warning is the cost of not having a public name here; the
-`http://` port is not an alternative, because the session cookie only survives
-on a secure origin and a plain-HTTP login silently fails to stick.
+That works from your router's LAN, and equally over Tailscale or WireGuard, with
+nothing to configure. Your browser asks you to accept the certificate once,
+because the server issued it to itself and no authority vouched for it. That
+warning is the cost of a private address having no public name.
+
+**There is no `http://` port.** Not on the LAN, not on loopback, not for
+anything. One socket, always TLS. The session cookie only survives on a secure
+origin, so a plaintext login would fail silently rather than fail loudly, and a
+port that is safe only as long as nobody publishes it is a footgun worth not
+shipping.
+
+> **Before anyone outside your network can reach it,** put a reverse proxy with
+> a real certificate in front, and set `trusted_proxies` in `data/sc.toml` to
+> that proxy's addresses. Without that last part every visitor looks like the
+> proxy, so the login rate limit and the audit log collapse onto one address and
+> a single attacker can lock out everyone.
+>
+> The proxy talks HTTPS to this server and skips verifying the self-signed
+> certificate, which is fine over loopback. In Caddy:
+>
+> ```
+> cloud.example.com {
+>   reverse_proxy https://127.0.0.1:8443 {
+>     transport http { tls_insecure_skip_verify }
+>   }
+> }
+> ```
 
 ## What you can do with it
 

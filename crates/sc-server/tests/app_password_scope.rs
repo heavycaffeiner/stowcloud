@@ -579,7 +579,7 @@ async fn a_restricted_token_from_the_real_endpoint_is_restricted_end_to_end() {
         .header("Host", "localhost")
         .header("Cookie", &cookie)
         .header("Sc-Csrf", &csrf)
-        .header("Origin", "http://localhost:8080")
+        .header("Origin", "https://localhost:8443")
         .header("Content-Type", "application/json")
         .body(Body::from(
             serde_json::json!({ "name": "phone", "scope": { "shares": ["sharea"] } }).to_string(),
@@ -724,7 +724,7 @@ async fn run_login_flow_v2(app: &App, username: &str, password: &str, scope: &st
         .method("POST")
         .uri("/index.php/login/v2/grant")
         .header("Host", "localhost")
-        .header("Origin", "http://localhost:8080")
+        .header("Origin", "https://localhost:8443")
         .header("Cookie", &cookie)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .body(Body::from(format!(

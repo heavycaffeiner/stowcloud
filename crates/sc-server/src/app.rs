@@ -1069,8 +1069,7 @@ fn build_http_state(
         // What the CSRF check compares a private-LAN `Origin` against, so that
         // a neighbouring service on the same address but another port is not
         // mistaken for us (`sc_http::config::is_self_lan_origin`).
-        http_port: Some(cfg.bind.port()),
-        https_port: cfg.tls_bind.map(|a| a.port()),
+        https_port: Some(cfg.bind.port()),
         ..Default::default()
     };
     // The Host header carries whatever literal the client dialled, so a
@@ -1095,18 +1094,16 @@ fn build_http_state(
     //
     // Derived from `app_hosts` rather than configured separately, so the two
     // cannot disagree: an origin is exactly a scheme plus one of the hosts we
-    // already agreed to answer for. Both schemes are listed because the server
-    // speaks plain HTTP and is expected to sit behind a TLS-terminating proxy,
-    // so the browser's origin may be `https:` while ours is
-    // not. An explicit `allowed_origins` in the config still wins.
+    // already agreed to answer for. `https` only, since that is the only way in
+    // (`Config::bind`) and a reverse proxy in front terminates `https` too. An
+    // explicit `allowed_origins` in the config still wins, which is the escape
+    // hatch for a proxy that publishes some other port.
     if cfg.allowed_origins.is_empty() {
         let port = cfg.bind.port();
-        let mut origins = Vec::with_capacity(http_cfg.app_hosts.len() * 4);
+        let mut origins = Vec::with_capacity(http_cfg.app_hosts.len() * 2);
         for h in &http_cfg.app_hosts {
-            for scheme in ["http", "https"] {
-                origins.push(format!("{scheme}://{h}"));
-                origins.push(format!("{scheme}://{h}:{port}"));
-            }
+            origins.push(format!("https://{h}"));
+            origins.push(format!("https://{h}:{port}"));
         }
         http_cfg.allowed_origins = origins;
     } else {

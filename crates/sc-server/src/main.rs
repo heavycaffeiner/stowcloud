@@ -71,10 +71,11 @@ fn main() -> anyhow::Result<()> {
 /// Reads `SC_BIND` the same way `Config::apply_env` does
 /// (`crates/sc-server/src/config.rs`: `v.parse::<SocketAddr>()`) to find the
 /// port the running server was told to bind, then always dials `127.0.0.1`
-/// on that port — the probe runs as a second process inside the *same*
-/// container, hence the same network namespace, so loopback reaches a
-/// socket bound to `0.0.0.0` or to any specific interface either way.
-/// Defaults to port 8080 (the image's own `ENV SC_BIND` default) if the
+/// on that port over TLS, because that is the only thing the server speaks.
+/// The probe runs as a second process inside the *same* container, hence the
+/// same network namespace, so loopback reaches a socket bound to `0.0.0.0` or
+/// to any specific interface either way.
+/// Defaults to port 8443 (the image's own `ENV SC_BIND` default) if the
 /// variable is absent or unparseable.
 ///
 /// Exit code is liveness, not health. `GET /api/health`
@@ -90,18 +91,54 @@ fn main() -> anyhow::Result<()> {
 /// help.
 fn run_healthcheck() -> i32 {
     use std::io::{Read, Write};
-    use std::net::{SocketAddr, TcpStream};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+    use std::path::PathBuf;
+    use std::sync::Arc;
     use std::time::Duration;
+
+    use rustls::pki_types::pem::PemObject;
+    use rustls::pki_types::{CertificateDer, ServerName};
 
     let port = std::env::var("SC_BIND")
         .ok()
         .and_then(|v| v.parse::<SocketAddr>().ok())
         .map(|a| a.port())
-        .unwrap_or(8080);
+        .unwrap_or(8443);
     let addr = format!("127.0.0.1:{port}");
 
+    // The server's own certificate, as the only trust anchor. Skipping
+    // verification would have been shorter and is the wrong habit to encode in
+    // a file that ships in the image: the probe runs in the same container as
+    // the server, so it can read the very certificate that server presents, and
+    // real verification costs nothing here. `127.0.0.1` is always in the SAN
+    // list (`tls::san_entries`), so the name check passes on its own terms.
+    let data_dir = match std::env::var("SC_DATA_DIR") {
+        Ok(v) if !v.is_empty() => PathBuf::from(v),
+        _ => PathBuf::from("/var/lib/sc"),
+    };
+    let mut roots = rustls::RootCertStore::empty();
+    let certs = match CertificateDer::pem_file_iter(data_dir.join("tls/self-signed.crt")) {
+        Ok(it) => it,
+        Err(_) => return 1,
+    };
+    for cert in certs.flatten() {
+        if roots.add(cert).is_err() {
+            return 1;
+        }
+    }
+    if roots.is_empty() {
+        return 1;
+    }
+    let tls_config = rustls::ClientConfig::builder()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    let name = ServerName::IpAddress(IpAddr::V4(Ipv4Addr::LOCALHOST).into());
+    let Ok(conn) = rustls::ClientConnection::new(Arc::new(tls_config), name) else {
+        return 1;
+    };
+
     let timeout = Duration::from_secs(3);
-    let Ok(mut stream) = TcpStream::connect(&addr) else {
+    let Ok(stream) = TcpStream::connect(&addr) else {
         return 1;
     };
     if stream.set_read_timeout(Some(timeout)).is_err()
@@ -109,16 +146,18 @@ fn run_healthcheck() -> i32 {
     {
         return 1;
     }
+    let mut tls = rustls::StreamOwned::new(conn, stream);
 
     let request = b"GET /api/health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
-    if stream.write_all(request).is_err() {
+    if tls.write_all(request).is_err() {
         return 1;
     }
 
+    // A server that closes without `close_notify` surfaces as an error here
+    // even though the response arrived intact, so what was read matters and the
+    // error on its own does not. An empty buffer still fails, below.
     let mut body = Vec::new();
-    if stream.read_to_end(&mut body).is_err() {
-        return 1;
-    }
+    let _ = tls.read_to_end(&mut body);
     let text = String::from_utf8_lossy(&body);
 
     let is_200 = text
