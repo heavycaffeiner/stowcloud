@@ -19,11 +19,13 @@ import iconClose from '@ktibow/iconset-material-symbols/close'
 import iconCopy from '@ktibow/iconset-material-symbols/content-copy-outline'
 import iconDelete from '@ktibow/iconset-material-symbols/delete-outline'
 import iconDownload from '@ktibow/iconset-material-symbols/download'
+import iconEditDocument from '@ktibow/iconset-material-symbols/edit-document-outline'
 import iconFile from '@ktibow/iconset-material-symbols/draft-outline'
 import iconFolder from '@ktibow/iconset-material-symbols/folder-outline'
 import iconGrid from '@ktibow/iconset-material-symbols/grid-view-outline'
 import iconHome from '@ktibow/iconset-material-symbols/home-outline'
 import iconImage from '@ktibow/iconset-material-symbols/image-outline'
+import iconInfo from '@ktibow/iconset-material-symbols/info-outline'
 import iconLink from '@ktibow/iconset-material-symbols/link'
 import iconList from '@ktibow/iconset-material-symbols/format-list-bulleted'
 import iconLock from '@ktibow/iconset-material-symbols/lock-outline'
@@ -84,12 +86,14 @@ export const icons = {
   copy: iconCopy,
   delete: iconDelete,
   download: iconDownload,
+  'edit-document': iconEditDocument,
   file: iconFile,
   folder: iconFolder,
   'folder-tree': iconAccountTree,
   grid: iconGrid,
   home: iconHome,
   image: iconImage,
+  info: iconInfo,
   link: iconLink,
   list: iconList,
   lock: iconLock,

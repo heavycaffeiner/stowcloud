@@ -28,9 +28,20 @@ function detectDrawer(): boolean | null {
   return null
 }
 
+/** Unlike the drawer there is no width-based default to fall back to: the
+ *  details panel is off until asked for, at any width. */
+function detectDetails(): boolean {
+  try {
+    return localStorage.getItem('sc.details') === 'open'
+  } catch {
+    return false
+  }
+}
+
 export const uiState = $state({
   theme: detectTheme() as ThemePref,
   drawer: detectDrawer() as boolean | null,
+  details: detectDetails(),
   /** MD3 window class breakpoint: rail vs bar+drawer. */
   compact: typeof window !== 'undefined' ? window.innerWidth < 905 : false
 })
@@ -49,6 +60,15 @@ export function setDrawer(open: boolean): void {
   uiState.drawer = open
   try {
     localStorage.setItem('sc.drawer', open ? 'open' : 'closed')
+  } catch {
+    /* ignore */
+  }
+}
+
+export function setDetails(open: boolean): void {
+  uiState.details = open
+  try {
+    localStorage.setItem('sc.details', open ? 'open' : 'closed')
   } catch {
     /* ignore */
   }

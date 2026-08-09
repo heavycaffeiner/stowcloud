@@ -43,12 +43,24 @@ function savePref(key: string, value: string): void {
   }
 }
 
+/** The grid divides by this to lay out its folder section, so a response that
+ *  somehow lacks it has to arrive as a number and not propagate as NaN into a
+ *  row count. */
+function clampDirs(dirs: unknown, total: number): number {
+  if (typeof dirs !== 'number' || !Number.isFinite(dirs)) return 0
+  return Math.min(Math.max(0, Math.floor(dirs)), Math.max(0, total))
+}
+
 const VIEWS = ['list', 'grid'] as const
 const DENSITIES = ['compact', 'comfortable', 'spacious'] as const
 
 export class BrowseState {
   path = $state<string>('/')
   total = $state(0)
+  /** How many of `total` are folders, and therefore the index files start at.
+   *  The grid renders folders and files as two separately windowed sections
+   *  and cannot derive this from the sparse row cache. */
+  dirs = $state(0)
   dirEtag = $state<string | null>(null)
   sort = $state<Sort>({ key: 'name', order: 'asc' })
   loading = $state(false)
@@ -98,7 +110,7 @@ export class BrowseState {
   #generation = 0
   #windowAbort: AbortController | null = null
   #windowTimer: ReturnType<typeof setTimeout> | null = null
-  #pendingRange: { start: number; end: number } | null = null
+  #pendingRanges: Array<{ start: number; end: number }> | null = null
   /** Unsubscribes the live-invalidation watch (`state/events.ts`) for
    *  whichever directory `open()` last subscribed to — reassigned, never
    *  left dangling, so a stale directory never keeps triggering `refresh()`
@@ -122,6 +134,13 @@ export class BrowseState {
   )
 
   /** Read a loaded row, or undefined if it hasn't been fetched (yet). Reactive. */
+  /** Absolute position of an entry in the current listing, or `-1` if it is
+   *  not loaded. Reads the same name -> index map selection already uses, so a
+   *  caller never has to scan the sparse row cache itself. */
+  indexOf(entry: Entry): number {
+    return this.#index.get(entry.name) ?? -1
+  }
+
   rowAt(index: number): Entry | undefined {
     return this.#rows.get(index)
   }
@@ -152,6 +171,7 @@ export class BrowseState {
       const res = await api.list(path, { sort: this.sort.key, order: this.sort.order, limit: PAGE_LIMIT })
       if (gen !== this.#generation) return
       this.total = res.total
+      this.dirs = clampDirs(res.dirs, res.total)
       this.dirEtag = res.dir_etag
       this.#listing = res.listing
       this.#applyPage(0, res.entries)
@@ -170,37 +190,60 @@ export class BrowseState {
    * per scroll event — / task requirement #2.
    */
   scheduleWindow(start: number, end: number): void {
-    this.#pendingRange = { start, end }
+    this.scheduleWindows([{ start, end }])
+  }
+
+  /**
+   * The same debounce for a view that is looking at more than one place in
+   * the listing at once. The grid renders folders and files as two separately
+   * scrolled sections, so once the folder section has been scrolled past its
+   * window sits at the end of the folders while the file window is thousands
+   * of rows further down. Merging those into one range would ask for every
+   * row in between, so each range keeps its own request.
+   */
+  scheduleWindows(ranges: Array<{ start: number; end: number }>): void {
+    this.#pendingRanges = ranges
     if (this.#windowTimer) clearTimeout(this.#windowTimer)
     this.#windowTimer = setTimeout(() => {
       this.#windowTimer = null
-      const range = this.#pendingRange
-      this.#pendingRange = null
-      if (range) void this.#ensureWindow(range.start, range.end)
+      const pending = this.#pendingRanges
+      this.#pendingRanges = null
+      if (pending) void this.#ensureWindows(pending)
     }, WINDOW_DEBOUNCE_MS)
   }
 
-  async #ensureWindow(start: number, end: number): Promise<void> {
-    if (!this.#listing || end <= start) return
-    let allLoaded = true
-    for (let i = start; i < end; i++) {
-      if (!this.#rows.has(i)) {
-        allLoaded = false
-        break
-      }
-    }
-    if (allLoaded) return
+  async #ensureWindows(ranges: Array<{ start: number; end: number }>): Promise<void> {
+    if (!this.#listing) return
+    const wanted = ranges.filter((r) => r.end > r.start && !this.#rangeLoaded(r.start, r.end))
+    if (wanted.length === 0) return
 
     // A newer window supersedes whatever was in flight for a window the
     // user has since scrolled past (task requirement #3: AbortController).
+    // One controller for the whole batch: the ranges are issued together and
+    // are superseded together.
     this.#windowAbort?.abort()
     const ac = new AbortController()
     this.#windowAbort = ac
     const gen = this.#generation
     this.loadingWindow = true
     try {
+      await Promise.all(wanted.map((r) => this.#fetchRange(r.start, r.end, ac, gen)))
+    } finally {
+      if (ac === this.#windowAbort) this.loadingWindow = false
+    }
+  }
+
+  #rangeLoaded(start: number, end: number): boolean {
+    for (let i = start; i < end; i++) {
+      if (!this.#rows.has(i)) return false
+    }
+    return true
+  }
+
+  async #fetchRange(start: number, end: number, ac: AbortController, gen: number): Promise<void> {
+    try {
       const res = await api.list(this.path, {
-        listing: this.#listing,
+        listing: this.#listing!,
         offset: start,
         limit: end - start,
         signal: ac.signal
@@ -212,6 +255,7 @@ export class BrowseState {
         // cache, except rows backing the current selection — selection is
         // kept by name, never index, so those survive regardless.
         this.total = res.total
+        this.dirs = clampDirs(res.dirs, res.total)
         this.dirEtag = res.dir_etag
         this.#listing = res.listing
         this.#dropUnselectedRows()
@@ -225,8 +269,6 @@ export class BrowseState {
       if (gen === this.#generation && !(err instanceof ApiError)) {
         // swallow — genuinely unexpected errors still leave placeholders up
       }
-    } finally {
-      if (ac === this.#windowAbort) this.loadingWindow = false
     }
   }
 
@@ -237,7 +279,7 @@ export class BrowseState {
       clearTimeout(this.#windowTimer)
       this.#windowTimer = null
     }
-    this.#pendingRange = null
+    this.#pendingRanges = null
   }
 
   async resort(s: Sort): Promise<void> {
@@ -258,6 +300,7 @@ export class BrowseState {
       const res = await api.list(this.path, { sort: this.sort.key, order: this.sort.order, limit })
       if (gen !== this.#generation) return
       this.total = res.total
+      this.dirs = clampDirs(res.dirs, res.total)
       this.dirEtag = res.dir_etag
       this.#listing = res.listing
 
@@ -384,6 +427,22 @@ export class BrowseState {
    *  was likewise bounded to whatever had been fetched so far. */
   selectAll(): void {
     selAll(this.selection, [...this.#rows.values()].map((e) => e.name))
+  }
+
+  /**
+   * Makes `names` the whole selection.
+   *
+   * For the rubber-band drag, which recomputes what it covers on every pointer
+   * move: shrinking the rectangle has to drop the rows it no longer touches,
+   * so this replaces rather than adds. Rows outside the loaded window cannot
+   * appear here at all, the same limit `selectRangeTo` documents.
+   */
+  replaceSelection(names: Iterable<string>): void {
+    const next = new Set(names)
+    for (const name of [...this.selection]) {
+      if (!next.has(name)) this.selection.delete(name)
+    }
+    for (const name of next) this.selection.add(name)
   }
 
   clearSelection(): void {

@@ -23,6 +23,7 @@
   } from '../virtual/windowing'
   import FileRow from './FileRow.svelte'
   import FileRowSkeleton from './FileRowSkeleton.svelte'
+  import { indicesInRect, type Rect } from './marquee'
 
   interface Props {
     browse: BrowseState
@@ -152,6 +153,33 @@
     }
   }
 
+  /**
+   * The rows a rubber-band drag has swept over, for the page that owns the
+   * drag (`b/[...path]/+page.svelte`). The geometry is here because this is
+   * where it is known; the gesture is there because it starts in the blank
+   * space below this element.
+   *
+   * Only loaded rows can be named, so a rectangle thrown across an unfetched
+   * gap picks up whatever is in memory. Same limit as `selectRangeTo`.
+   */
+  export function entriesInRect(rect: Rect): Entry[] {
+    const out: Entry[] = []
+    for (const i of indicesInRect(rect, {
+      top: viewportDocumentTop,
+      left: 0,
+      rowHeight: ROW_HEIGHT,
+      columnPitch: 0,
+      cellWidth: 0,
+      columns: 1,
+      startIndex: 0,
+      count: browse.total
+    })) {
+      const entry = browse.rowAt(i)
+      if (entry) out.push(entry)
+    }
+    return out
+  }
+
   function onRowClick(e: MouseEvent, entry: Entry): void {
     if (e.shiftKey) {
       browse.selectRangeTo(entry)
@@ -161,20 +189,12 @@
       browse.toggle(entry)
       return
     }
-    // Compact (<905px, i.e. touch in practice —): a
-    // click/tap has no modifier key available at all, so a plain tap on the
-    // row body can't mean "select only this" the way it does with a mouse —
-    // that leaves no way to ever open anything by tapping (every mobile file
-    // browser opens on a plain tap) and no way to grow a selection beyond one
-    // item without the checkbox specifically. Once the checkbox (or a prior
-    // tap) has put the browser into "selection mode" (`selection.size > 0`),
-    // a row tap keeps adding/removing like the checkbox does; with nothing
-    // selected, a tap opens instead — same job `ondblclick` does for a mouse.
-    if (uiState.compact) {
-      if (browse.selection.size > 0) browse.toggle(entry)
-      else onopen(entry)
-      return
-    }
+    // A plain click selects; a double click opens. Same as a desktop file
+    // manager, and the same on every width.
+    //
+    // Shift and ctrl/cmd above are the range and the toggle, unchanged: they
+    // have no other meaning here and a mouse user reaching for a range
+    // expects them.
     browse.selectOnly(entry)
   }
 
@@ -213,6 +233,13 @@
         e.preventDefault()
         onrename?.()
         break
+      case 'Escape':
+        // Keyboard counterpart of clicking the blank area below the listing.
+        if (browse.selection.size > 0) {
+          e.preventDefault()
+          browse.clearSelection()
+        }
+        break
       case 'Delete':
         e.preventDefault()
         ondelete?.()
@@ -235,6 +262,7 @@
   bind:this={viewportEl}
   class="sc-file-table"
   class:sc-file-table--reserve-bar={uiState.compact}
+  class:sc-file-table--reserve-selection={browse.selection.size > 0}
   data-density={browse.density}
   role="grid"
   aria-multiselectable="true"
@@ -262,6 +290,10 @@
               ondblclick={() => onopen(row.entry as Entry)}
               oncontextmenu={(e) => {
                 e.preventDefault()
+                // The list container has its own handler for blank space;
+                // without this the row menu and the folder menu would both
+                // answer the same right-click.
+                e.stopPropagation()
                 oncontextmenu(row.entry as Entry, e)
               }}
               ontogglecheck={() => browse.toggle(row.entry as Entry)}
@@ -324,6 +356,11 @@
     outline: 3px solid var(--m3c-secondary);
     outline-offset: -3px;
   }
+  /* Both bottom reservations land here, each contributed by its own class
+     below and defaulting to nothing. */
+  .sc-file-table {
+    padding-bottom: calc(var(--sc-reserve-nav, 0px) + var(--sc-reserve-selection, 0px));
+  }
   /* `focusedName` is the roving cursor `aria-activedescendant` points at, and
      it is seeded on the first row -- so FileRow's `--focused` outline drew a
      3px box around row 1 of every folder before anyone had touched anything.
@@ -349,7 +386,14 @@
        content is" -- this one. Same formula as everywhere else the bar's
        height is reserved, compact (phone) width only -- the standard/rail
        layout has no bottom bar to clear. */
-    padding-bottom: calc(var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px));
+    --sc-reserve-nav: calc(var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px));
+  }
+  /* The selection bar is fixed over the bottom too, at every width, for as
+     long as something is selected. Reserving with padding rather than letting
+     it push the list is what keeps a first click from moving the row the
+     second click of a double click is aimed at (see `b/[...path]/+page.svelte`). */
+  .sc-file-table--reserve-selection {
+    --sc-reserve-selection: 80px;
   }
   .sc-file-table__window {
     will-change: transform;

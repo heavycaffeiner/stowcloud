@@ -190,6 +190,8 @@ interface ListingSession {
   sort: SortKey
   order: Order
   entries: Entry[]
+  /** Folders come first in `entries`, so this is also where files start. */
+  dirs: number
   dirEtag: string
   createdAt: number
 }
@@ -213,6 +215,7 @@ function createListingSession(path: string, sort: SortKey, order: Order): Listin
     sort,
     order,
     entries,
+    dirs: entries.filter((e) => e.kind === 'dir').length,
     dirEtag: dirEtagFor(n),
     createdAt: Date.now()
   }
@@ -271,6 +274,7 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
       return {
         listing: fresh.id,
         total: fresh.entries.length,
+        dirs: fresh.dirs,
         cursor: encodeCursor(freshOffset + page.length, fresh.entries.length),
         entries: page,
         dir_etag: fresh.dirEtag,
@@ -285,6 +289,7 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
       return {
         listing: session.id,
         total: session.entries.length,
+        dirs: session.dirs,
         cursor: encodeCursor(offset + page.length, session.entries.length),
         entries: page,
         dir_etag: session.dirEtag
@@ -298,6 +303,7 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
     return {
       listing: session.id,
       total: session.entries.length,
+      dirs: session.dirs,
       cursor: encodeCursor(offset + page.length, session.entries.length),
       entries: page,
       dir_etag: session.dirEtag
@@ -317,6 +323,7 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
   return {
     listing: session.id,
     total: session.entries.length,
+    dirs: session.dirs,
     cursor: encodeCursor(startOffset + page.length, session.entries.length),
     entries: page,
     dir_etag: session.dirEtag
@@ -1156,7 +1163,7 @@ const mockServerSettings = {
   },
   archive: { max_concurrent: 2 },
   network: {
-    bind: '127.0.0.1:8080',
+    bind: '127.0.0.1:8443',
     app_hosts: [] as string[],
     content_hosts: [] as string[],
     allowed_origins: [] as string[],

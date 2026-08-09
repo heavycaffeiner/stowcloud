@@ -11,8 +11,10 @@
     selected: boolean
     focused: boolean
     domId: string
+    /** Selects (`FileTable.onRowClick`), or extends/toggles with a modifier. */
     onclick: (e: MouseEvent) => void
-    ondblclick: () => void
+    /** Opens. A double click is what enters a folder or shows a file. */
+    ondblclick?: () => void
     oncontextmenu: (e: MouseEvent) => void
     /** Checkbox tap/click — always toggles this row into/out of the
      *  selection, independent of shift/ctrl. See the checkbox's own comment
@@ -34,13 +36,16 @@
 
   function onCheckboxClick(e: MouseEvent): void {
     // Without this, the click bubbles to the row's own `onclick` (see the
-    // markup below), which runs `selectOnly` for a plain click — so tapping
-    // the checkbox looked like "add to selection" but actually replaced it.
-    // Verified live: two taps on two different rows' checkboxes on a real
-    // touch emulation left exactly one row selected, not two. Desktop
+    // markup below), which replaces the selection with this one row, so
+    // tapping the checkbox looked like "add to selection" but actually
+    // replaced it. Verified live: two taps on two different rows' checkboxes
+    // on a real touch emulation left exactly one row selected, not two. Desktop
     // multi-select still has shift/ctrl+click; touch has no modifier keys at
     // all, so the checkbox has to be a real, independent toggle target — the
     // one touch-reachable way to build a multi-selection.
+    // `dblclick` is stopped in the markup for the same reason: it is a
+    // separate event from the two clicks that make it, so without that guard
+    // ticking a box twice quickly opens the row.
     e.stopPropagation()
     ontogglecheck()
   }
@@ -64,6 +69,7 @@
     class="sc-row__cell sc-row__cell--select sc-touch-target"
     role="gridcell"
     onclick={onCheckboxClick}
+    ondblclick={(e) => e.stopPropagation()}
   >
     <!-- m3-svelte's Checkbox is normally wrapped in a `<label>` so the label
          forwards the click to the visually hidden input. Not here: the cell
