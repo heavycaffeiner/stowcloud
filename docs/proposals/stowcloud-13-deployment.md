@@ -55,10 +55,10 @@ either about the container or about not breaking those neighbours.
 
 ### 4.1 Image layout
 
-| Image | Base | Contents |
-|---|---|---|
-| `sc:core` | distroless static | one statically-linked musl binary, frontend embedded |
-| `sc:smb` | alpine | `smbd` plus the config-sync loop — a sidecar |
+| Image | Base | Architectures | Contents |
+|---|---|---|---|
+| `sc:core` | distroless static | amd64, arm64 | one statically-linked musl binary, frontend embedded |
+| `sc:smb` | alpine | amd64, arm64 | `smbd` plus the config-sync loop, a sidecar |
 
 The core image has no shell, no package manager, and no `chown`. That is the
 point, and it is also why the health check is the same binary re-invoked with
@@ -67,6 +67,19 @@ pre-create bind-mount directories with the right owner.
 
 Two images rather than one so the majority who do not need SMB do not carry
 Samba's weight or its root process.
+
+Both tags are manifest lists, and neither architecture is published on the
+strength of a cross-build alone: `docker.yml` builds each on its own runner
+(`ubuntu-latest` and `ubuntu-24.04-arm`), starts the resulting container, and
+runs the same smoke test against it. arm64 was previously a QEMU cross-build,
+which cost 48 minutes against 5 for amd64 and could not be executed at all on
+an emulating host, so the arm64 image shipped having only ever been compiled.
+Native runners removed both the cost and that gap. The base images stay pinned
+by *per-architecture* manifest digest rather than by index, so each build passes
+the digest matching the platform it is building; passing the wrong one produces
+an image of the wrong architecture rather than an error, which is why every
+build asserts `docker image inspect --format '{{.Architecture}}'` before it is
+trusted.
 
 ### 4.2 Syscall availability — the seccomp reality
 
