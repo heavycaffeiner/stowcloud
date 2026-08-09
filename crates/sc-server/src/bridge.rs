@@ -2646,8 +2646,22 @@ fn kind_extensions(kind: &str) -> &'static [&'static str] {
     }
 }
 
-fn to_search_hit(h: sc_search::Hit) -> sc_http::search_api::SearchHit {
+/// `ShareId` -> label, for turning a walker hit back into something a client
+/// can navigate to. Built once per search rather than looked up per hit: a
+/// search returns thousands of hits across a handful of shares.
+fn share_labels(core: &sc_core::Core) -> std::collections::HashMap<sc_vfs::ShareId, String> {
+    core.share_defs().into_iter().map(|d| (d.id, d.name)).collect()
+}
+
+fn to_search_hit(
+    h: sc_search::Hit,
+    labels: &std::collections::HashMap<sc_vfs::ShareId, String>,
+) -> sc_http::search_api::SearchHit {
     sc_http::search_api::SearchHit {
+        // A hit for a share that vanished mid-search is not worth failing the
+        // whole query over; it lands with an empty label and the client shows
+        // it without a working link, which is what an unnavigable result is.
+        share: labels.get(&h.share).cloned().unwrap_or_default(),
         path: h.path,
         name: h.name.to_string(),
         is_dir: h.is_dir,
@@ -2710,10 +2724,11 @@ impl sc_http::search_api::SearchApi for SearchBridge {
         let walker_completeness = walker.walk(&walker_roots, &matcher, &acl, &budget, &tx);
         drop(tx);
 
+        let labels = share_labels(&self.core);
         let mut hits: Vec<sc_http::search_api::SearchHit> = index_hits
             .into_iter()
-            .map(to_search_hit)
-            .chain(rx.try_iter().map(to_search_hit))
+            .map(|h| to_search_hit(h, &labels))
+            .chain(rx.try_iter().map(|h| to_search_hit(h, &labels)))
             .collect();
         // Ranking is meaningful once the full (or
         // budget-exhausted) result set is in hand, which is exactly the case
@@ -2754,9 +2769,10 @@ impl sc_http::search_api::SearchApi for SearchBridge {
         let (index_hits, walker_roots, index_completeness) =
             self.consult_name_indexes(user, &roots, q, &matcher, &budget);
 
+        let labels = share_labels(&self.core);
         let mut client_stopped = false;
         for hit in index_hits {
-            if !on_hit(to_search_hit(hit)) {
+            if !on_hit(to_search_hit(hit, &labels)) {
                 client_stopped = true;
                 break;
             }
@@ -2795,7 +2811,7 @@ impl sc_http::search_api::SearchApi for SearchBridge {
             let walk =
                 scope.spawn(move || walker.walk(&walker_roots, &matcher, &acl, &budget, &tx));
             while let Ok(hit) = rx.recv() {
-                if !on_hit(to_search_hit(hit)) {
+                if !on_hit(to_search_hit(hit, &labels)) {
                     break;
                 }
             }

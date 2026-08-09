@@ -25,6 +25,16 @@ pub struct SearchQuery {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SearchHit {
+    /// The share's label, which `path` is relative to.
+    ///
+    /// `sc_search::Hit` has always carried a `ShareId` beside its path, and
+    /// this wire shape used to drop it. A virtual path is `/{label}/sub/path`,
+    /// so a hit without its label cannot be turned back into one: clicking a
+    /// result for `Share/Movie/01` navigated to `/Movie/01`, which reads
+    /// `Movie` as the share and 404s. The label, not the id, because the id
+    /// means nothing to a client.
+    pub share: String,
+    /// Share-relative, no leading slash.
     pub path: String,
     pub name: String,
     pub is_dir: bool,
