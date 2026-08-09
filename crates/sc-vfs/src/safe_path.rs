@@ -23,6 +23,15 @@ pub struct SafePath(SmallVec<[CompactString; 8]>);
 impl SafePath {
     /// Parse a share-relative path such as `"a/b/c"`. Never has a leading
     /// slash — that would make it look absolute, which is rejected.
+    ///
+    /// Names are checked for *safety*, not for portability: see
+    /// [`validate_existing_component`]. A path only ever arrives here to name
+    /// something that already exists on disk, and the disk is Linux, where
+    /// `Mods `, `CON`, `report:final` and a name with a control byte in it are
+    /// all ordinary directories somebody else's tool created. Applying the
+    /// creation table here made every one of them list fine and then fail to
+    /// open with `invalid name`, which is the worst of both: visible, and
+    /// unreachable.
     pub fn parse(s: &str, max_depth: u16) -> Result<Self, VfsError> {
         if s.len() > MAX_TOTAL_BYTES {
             return Err(VfsError::InvalidName("path exceeds 4096 bytes"));
@@ -36,7 +45,7 @@ impl SafePath {
 
         let mut comps: SmallVec<[CompactString; 8]> = SmallVec::new();
         for part in s.split('/') {
-            validate_component(part)?;
+            validate_existing_component(part)?;
             comps.push(CompactString::new(part));
         }
         if comps.len() > max_depth as usize {
@@ -80,6 +89,31 @@ impl SafePath {
     /// Append a single validated component.
     pub fn join(&self, name: &str, max_depth: u16) -> Result<Self, VfsError> {
         validate_component(name)?;
+        let mut v = self.0.clone();
+        v.push(CompactString::new(name));
+        if v.len() > max_depth as usize {
+            return Err(VfsError::TooDeep);
+        }
+        let total: usize = v.iter().map(|c| c.len() + 1).sum::<usize>().saturating_sub(1);
+        if total > MAX_TOTAL_BYTES {
+            return Err(VfsError::InvalidName("path exceeds 4096 bytes"));
+        }
+        Ok(Self(v))
+    }
+
+    /// Append a component that already exists on disk.
+    ///
+    /// [`Self::join`] applies the creation table, which is right for a name a
+    /// user just typed and wrong for one `read_dir` just handed back: walking
+    /// a directory and joining each entry is traversal, not creation, and
+    /// `join` there refuses every `Mods `, `CON` and `a:b` the listing had
+    /// already shown. Same rules as [`Self::parse`], for the same reason.
+    pub fn join_existing(&self, name: &str, max_depth: u16) -> Result<Self, VfsError> {
+        validate_existing_component(name)?;
+        self.push_checked(name, max_depth)
+    }
+
+    fn push_checked(&self, name: &str, max_depth: u16) -> Result<Self, VfsError> {
         let mut v = self.0.clone();
         v.push(CompactString::new(name));
         if v.len() > max_depth as usize {
@@ -173,6 +207,45 @@ fn validate_component(name: &str) -> Result<(), VfsError> {
 /// `SafePath::control` for our own `.sctrash`/`.scpart-*` names.
 fn validate_component_allow_reserved(name: &str) -> Result<(), VfsError> {
     validate_component_inner(name, false)
+}
+
+/// What a component has to satisfy to *name* something, as opposed to what it
+/// has to satisfy to be a good name to *create*.
+///
+/// These four are the ones that are not about taste or portability. `/` would
+/// silently become two components, `.`/`..` would escape the share, NUL would
+/// truncate the C string the kernel eventually sees, and an over-long component
+/// cannot exist on any filesystem this runs on. Everything else in
+/// [`validate_component_inner`] is a Windows-compatibility rule, and a rule
+/// about Windows has no business deciding whether a directory that already
+/// exists on a Linux disk can be opened.
+///
+/// Reserved prefixes stay rejected here, and that is not portability: they name
+/// this server's own control files, and `read_dir` hides them for the same
+/// reason. Letting a request walk into `.sctrash` would expose the trash's
+/// internals as if they were user data.
+fn validate_existing_component(name: &str) -> Result<(), VfsError> {
+    if name.is_empty() {
+        return Err(VfsError::InvalidName("empty path component"));
+    }
+    if name == "." || name == ".." {
+        return Err(VfsError::InvalidName("'.' and '..' components are rejected, not resolved"));
+    }
+    if name.contains('/') {
+        return Err(VfsError::InvalidName("component must not contain '/'"));
+    }
+    if name.bytes().any(|b| b == 0) {
+        return Err(VfsError::InvalidName("NUL is not allowed"));
+    }
+    if name.len() > MAX_COMPONENT_BYTES {
+        return Err(VfsError::InvalidName("component exceeds 255 bytes"));
+    }
+    if is_reserved_name(name) {
+        return Err(VfsError::InvalidName(
+            "reserved prefix used by our own control files",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_component_inner(name: &str, reject_reserved: bool) -> Result<(), VfsError> {

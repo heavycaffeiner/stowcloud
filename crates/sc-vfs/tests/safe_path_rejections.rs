@@ -13,6 +13,24 @@ fn assert_invalid_name(input: &str) {
     }
 }
 
+/// The creation table, which is stricter than the traversal one. `join` is
+/// what every new name goes through; `parse` only ever names something that
+/// already exists.
+fn assert_uncreatable(name: &str) {
+    match SafePath::root().join(name, DEPTH) {
+        Err(VfsError::InvalidName(_)) => {}
+        other => panic!("expected join to reject {name:?}, got {other:?}"),
+    }
+}
+
+/// ...and the same name, once it exists on disk, has to be reachable.
+fn assert_traversable(path: &str) {
+    assert!(
+        SafePath::parse(path, DEPTH).is_ok(),
+        "an existing path must stay reachable: {path:?}"
+    );
+}
+
 #[test]
 fn accepts_ordinary_relative_paths() {
     assert!(SafePath::parse("a", DEPTH).is_ok());
@@ -48,13 +66,18 @@ fn rejects_empty_components() {
 }
 
 #[test]
-fn rejects_nul_and_control_characters() {
+fn rejects_nul_everywhere_but_only_refuses_to_create_other_control_bytes() {
+    // NUL truncates the C string the kernel is eventually handed, so it is
+    // rejected on both paths.
     assert_invalid_name("a\0b");
-    assert_invalid_name("a\u{01}b");
-    assert_invalid_name("a\u{1f}b");
-    assert_invalid_name("a\u{7f}b");
-    assert_invalid_name("\nb");
-    assert_invalid_name("\tb");
+    assert_uncreatable("a\0b");
+
+    // The rest are legal on Linux. Refusing to *create* them is portability;
+    // refusing to *open* them would strand whatever another tool already wrote.
+    for n in ["a\u{01}b", "a\u{1f}b", "a\u{7f}b", "\nb", "\tb"] {
+        assert_uncreatable(n);
+        assert_traversable(n);
+    }
 }
 
 #[test]
@@ -101,32 +124,43 @@ fn rejects_depth_over_max_depth() {
 }
 
 #[test]
-fn rejects_colon_ntfs_ads_separator() {
-    assert_invalid_name("file.txt:stream");
-    assert_invalid_name("a/b:c");
+fn refuses_to_create_a_colon_but_still_opens_one() {
+    assert_uncreatable("file.txt:stream");
+    assert_traversable("file.txt:stream");
+    assert_traversable("a/b:c");
 }
 
 #[test]
-fn rejects_trailing_dot_or_space() {
-    assert_invalid_name("name.");
-    assert_invalid_name("name ");
-    assert_invalid_name("a/b.");
-    assert_invalid_name("a/b ");
-    // Leading/interior dots and spaces are fine.
-    assert!(SafePath::parse(".hidden", DEPTH).is_ok());
-    assert!(SafePath::parse("a b", DEPTH).is_ok());
-    assert!(SafePath::parse("a.b", DEPTH).is_ok());
+fn refuses_to_create_a_trailing_dot_or_space_but_still_opens_one() {
+    // The reported bug: a folder shown as `Mods` is `Mods ` on disk, it lists
+    // like anything else, and opening it answered `invalid name`.
+    for n in ["name.", "name ", "Mods "] {
+        assert_uncreatable(n);
+        assert_traversable(n);
+    }
+    assert_traversable("a/b.");
+    assert_traversable("a/b ");
+    // Leading/interior dots and spaces were always fine, on both paths.
+    for n in [".hidden", "a b", "a.b"] {
+        assert!(SafePath::root().join(n, DEPTH).is_ok(), "{n}");
+        assert_traversable(n);
+    }
 }
 
 #[test]
-fn rejects_windows_reserved_device_names() {
+fn refuses_to_create_windows_device_names_but_still_opens_them() {
     for base in [
         "CON", "PRN", "AUX", "NUL", "COM1", "COM9", "LPT1", "LPT9",
     ] {
-        assert_invalid_name(base);
-        assert_invalid_name(&base.to_lowercase());
-        assert_invalid_name(&format!("{base}.txt"));
-        assert_invalid_name(&format!("{}.txt", base.to_lowercase()));
+        for n in [
+            base.to_string(),
+            base.to_lowercase(),
+            format!("{base}.txt"),
+            format!("{}.txt", base.to_lowercase()),
+        ] {
+            assert_uncreatable(&n);
+            assert_traversable(&n);
+        }
     }
     // Not actually reserved: only exact device-name stems are blocked.
     assert!(SafePath::parse("CONTACT.txt", DEPTH).is_ok());
