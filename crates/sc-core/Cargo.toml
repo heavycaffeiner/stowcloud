@@ -35,6 +35,9 @@ rusqlite    = { workspace = true }
 r2d2        = { workspace = true }
 r2d2_sqlite = { workspace = true }
 sha2        = { workspace = true }
+# Seals the share-link token at rest under the server master key, so a link
+# can still be shown to its owner after creation (`links.rs`).
+chacha20poly1305 = { workspace = true }
 getrandom   = { workspace = true }
 data-encoding = { workspace = true }
 secrecy     = { workspace = true }

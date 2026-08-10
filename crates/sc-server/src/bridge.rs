@@ -1165,6 +1165,7 @@ impl hapi::CoreApi for CoreBridge {
             expires_ns: parse_ns_opt(req.expires_ns.as_deref())?,
             max_downloads: req.max_downloads,
             label: req.label.clone(),
+            note: None,
         };
         let (link, token) = self
             .core
@@ -1190,6 +1191,7 @@ impl hapi::CoreApi for CoreBridge {
             expires_ns: expires,
             max_downloads: patch.max_downloads,
             label: patch.label.clone(),
+            note: None,
         };
         let link = self
             .core
@@ -1425,9 +1427,10 @@ impl CoreBridge {
             label: l.label,
             has_password: l.has_password,
             created_ns: l.created_ns.to_string(),
-            // Never recoverable after creation — the plaintext was returned
-            // once and only `sha256(token)` was kept.
-            token: None,
+            // `None` only for a row predating the sealed-token column. `url`
+            // is filled by the HTTP layer, which is the side that knows the
+            // public base.
+            token: l.token,
             url: None,
         }
     }

@@ -505,10 +505,10 @@ impl ports::UploadEngine for NcUpload {
 /// OCS layer separately rejects every other `shareType` with `400` — see
 /// `sc_compat_nc::shares::share_type_to_kind`.)
 ///
-/// One further honest limitation: **`token` is `None` on list/get.** The
-/// plaintext is generated once at creation and only `sha256(token)` is kept
-/// (§7.1), so no later read can reproduce it. It *is* returned on the create
-/// response, which is the one moment it exists.
+/// `token` is populated on list and get as well as create: `sc-core` keeps it
+/// sealed under the server master key. It is `None` only for a link created
+/// before that column existed, and such a link renders with a null `url`
+/// rather than failing the whole listing.
 pub struct NcShares {
     auth: Arc<sc_auth::AuthService>,
     core: Arc<sc_core::Core>,
@@ -557,12 +557,7 @@ impl NcShares {
         }
     }
 
-    fn to_core_share(
-        &self,
-        user: UserId,
-        link: sc_core::ShareLink,
-        token: Option<String>,
-    ) -> ports::CoreShare {
+    fn to_core_share(&self, user: UserId, link: sc_core::ShareLink) -> ports::CoreShare {
         let (owner, owner_display) = self.user_name(link.owner);
         let rel = link.path.to_display_string();
         let path = format!("/{rel}");
@@ -583,10 +578,10 @@ impl NcShares {
             perms: link.perms,
             created_s: (link.created_ns / 1_000_000_000) as i64,
             expires_s: link.expires_ns.map(|v| (v / 1_000_000_000) as i64),
-            token,
+            token: link.token,
             has_password: link.has_password,
             label: link.label.unwrap_or_default(),
-            note: String::new(),
+            note: link.note.unwrap_or_default(),
             path,
             kind_is_dir: entry
                 .as_ref()
@@ -623,13 +618,13 @@ impl ports::SharePort for NcShares {
             .map_err(core_port_err)?;
         Ok(links
             .into_iter()
-            .map(|l| self.to_core_share(user, l, None))
+            .map(|l| self.to_core_share(user, l))
             .collect())
     }
 
     fn get(&self, user: UserId, id: u64) -> PortResult<ports::CoreShare> {
         let link = self.core.get_link(user, id as i64).map_err(core_port_err)?;
-        Ok(self.to_core_share(user, link, None))
+        Ok(self.to_core_share(user, link))
     }
 
     fn create(&self, user: UserId, spec: &ports::ShareSpec) -> PortResult<ports::CoreShare> {
@@ -643,12 +638,13 @@ impl ports::SharePort for NcShares {
             expires_ns: spec.expires_s.map(|s| s as i128 * 1_000_000_000),
             max_downloads: None,
             label: spec.label.clone(),
+            note: spec.note.clone(),
         };
-        let (link, token) = self
+        let (link, _token) = self
             .core
             .create_link(user, &vpath, &core_spec)
             .map_err(core_port_err)?;
-        Ok(self.to_core_share(user, link, Some(token)))
+        Ok(self.to_core_share(user, link))
     }
 
     fn update(
@@ -672,12 +668,13 @@ impl ports::SharePort for NcShares {
             expires_ns: Some(spec.expires_s.map(|s| s as i128 * 1_000_000_000)),
             max_downloads: None,
             label: Some(spec.label.clone()),
+            note: Some(spec.note.clone()),
         };
         let link = self
             .core
             .update_link(user, id as i64, &patch)
             .map_err(core_port_err)?;
-        Ok(self.to_core_share(user, link, None))
+        Ok(self.to_core_share(user, link))
     }
 
     fn delete(&self, user: UserId, id: u64) -> PortResult<()> {

@@ -2665,9 +2665,21 @@ async fn shares_list(
         Err(e) => return e.into_response(),
     };
     match state.core.share_link_list(principal.user, q.path.as_deref()) {
-        Ok(links) => Json(links).into_response(),
+        Ok(links) => {
+            let links: Vec<_> = links.into_iter().map(|l| with_link_url(&state, l)).collect();
+            Json(links).into_response()
+        }
         Err(e) => AppError::from(e).into_response(),
     }
+}
+
+/// Derive `url` from whatever token the row carries. A row written before the
+/// token was sealed at rest has neither, and is returned as-is.
+fn with_link_url(state: &AppState, mut info: crate::core_api::ShareLinkInfo) -> crate::core_api::ShareLinkInfo {
+    if let Some(t) = &info.token {
+        info.url = Some(public_link_url(state, t));
+    }
+    info
 }
 
 async fn shares_create(
@@ -2681,9 +2693,6 @@ async fn shares_create(
     };
     match state.core.share_link_create(principal.user, &req) {
         Ok((mut info, token)) => {
-            // The one and only time the plaintext token is available. It is
-            // not stored, so no later `GET` can produce it — the UI has to
-            // show it now or lose it.
             info.url = Some(public_link_url(&state, &token));
             info.token = Some(token);
             (StatusCode::CREATED, Json(info)).into_response()
@@ -2706,7 +2715,7 @@ async fn shares_get(State(state): State<AppState>, principal: Option<Extension<P
         Err(e) => return e.into_response(),
     };
     match state.core.share_link_get(principal.user, id) {
-        Ok(info) => Json(info).into_response(),
+        Ok(info) => Json(with_link_url(&state, info)).into_response(),
         Err(e) => AppError::from(e).into_response(),
     }
 }
@@ -2726,7 +2735,7 @@ async fn shares_patch(
         Err(e) => return e.into_response(),
     };
     match state.core.share_link_update(principal.user, id, &patch) {
-        Ok(info) => Json(info).into_response(),
+        Ok(info) => Json(with_link_url(&state, info)).into_response(),
         Err(e) => AppError::from(e).into_response(),
     }
 }

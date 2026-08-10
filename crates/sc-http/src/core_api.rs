@@ -590,9 +590,9 @@ impl PermsReq {
 
 /// One share link, as its **owner** sees it.
 ///
-/// `token`/`url` are populated on the create response only: the plaintext
-/// token is generated once and never persisted, so no later read can produce
-/// it ("plaintext is never stored").
+/// `token`/`url` are absent only when the row predates the sealed-token
+/// column: the token is stored encrypted under the server master key, so a
+/// later read can reproduce it as long as that key is available.
 #[derive(Clone, Debug, Serialize)]
 pub struct ShareLinkInfo {
     pub id: i64,

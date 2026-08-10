@@ -66,12 +66,15 @@ fn setup_without_links() -> (Arc<Core>, tempfile::TempDir) {
     (core, dir)
 }
 
+/// Stands in for the server's `master.key`.
+const MASTER_KEY: [u8; 32] = [7u8; 32];
+
 /// A `Core` whose link store is a real file, so a test can go behind the API
 /// and inspect what actually landed on disk.
 fn setup_on_disk() -> (Arc<Core>, tempfile::TempDir, std::path::PathBuf) {
     let (core, dir) = setup_without_links();
     let db = dir.path().join("links.db");
-    core.attach_links(LinkStore::open(&db).unwrap()).unwrap();
+    core.attach_links(LinkStore::open(&db, MASTER_KEY).unwrap()).unwrap();
     (core, dir, db)
 }
 
@@ -94,7 +97,7 @@ fn db_bytes(db: &std::path::Path) -> Vec<u8> {
 // ------------------------------------------------------------------ tokens --
 
 #[test]
-fn token_is_128_bits_of_base64url_and_only_its_hash_is_persisted() {
+fn token_is_128_bits_of_base64url_and_never_written_in_the_clear() {
     let (core, _dir, db) = setup_on_disk();
     seed_file(&core, "/root/a.txt");
     let (link, token) = core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()).unwrap();
@@ -106,9 +109,8 @@ fn token_is_128_bits_of_base64url_and_only_its_hash_is_persisted() {
     // The token round-trips through the hash lookup...
     let found = core.resolve_link(&token).unwrap().expect("token resolves");
     assert_eq!(found.id, link.id);
-    // ...but the plaintext is nowhere in the database. This is the whole
-    // point of storing `sha256(token)`: a dump of this file yields no usable
-    // link. The digest, by contrast, must be present.
+    // ...but the plaintext is nowhere in the database. A dump of this file on
+    // its own yields no usable link; the sealed copy needs the master key.
     let bytes = db_bytes(&db);
     assert!(
         !bytes.windows(token.len()).any(|w| w == token.as_bytes()),
@@ -119,6 +121,30 @@ fn token_is_128_bits_of_base64url_and_only_its_hash_is_persisted() {
         bytes.windows(32).any(|w| w == digest),
         "sha256(token) should be what was written"
     );
+
+    // A later read reproduces the token, which is what lets a client list its
+    // own links with working URLs.
+    let listed = core.list_links(OWNER, None).unwrap();
+    assert_eq!(listed[0].token.as_deref(), Some(token.as_str()));
+}
+
+#[test]
+fn a_sealed_token_opens_only_under_its_own_key_and_row() {
+    let token = "abcdefghijklmnopqrstuv";
+    let hash = crate::links::token_hash(token);
+    let sealed = crate::links::seal_token(&MASTER_KEY, token, &hash).unwrap();
+
+    assert_eq!(crate::links::open_token(&MASTER_KEY, &sealed, &hash).as_deref(), Some(token));
+    assert!(
+        crate::links::open_token(&[9u8; 32], &sealed, &hash).is_none(),
+        "another master key must not open it"
+    );
+    let other_row = crate::links::token_hash("vutsrqponmlkjihgfedcba");
+    assert!(
+        crate::links::open_token(&MASTER_KEY, &sealed, &other_row).is_none(),
+        "a ciphertext moved onto another row must not open"
+    );
+    assert!(crate::links::open_token(&MASTER_KEY, &sealed[..8], &hash).is_none());
 }
 
 #[test]
