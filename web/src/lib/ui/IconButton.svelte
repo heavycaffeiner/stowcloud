@@ -57,17 +57,51 @@
     top = Math.round(r.bottom + EDGE_MARGIN_PX)
   }
 
+  /** The top layer is what keeps the tooltip out of the folder drawer's
+   *  containing block: an ancestor carrying a `translate` makes `position:
+   *  fixed` resolve against that ancestor instead of the viewport, and the
+   *  drawer's own `overflow-y: auto` then clips whatever hangs outside it. */
+  function raise(el: HTMLElement): void {
+    try {
+      el.showPopover()
+    } catch {
+      // Already in the top layer, or a DOM with no popover support (jsdom).
+    }
+  }
+
   $effect(() => {
     // Needs the rendered width, so it can only run once the tooltip exists.
     // Until it has, the tooltip is transparent rather than briefly off to one
     // side. Reads `centre`, writes `left`: no cycle.
     if (!shown || !tip) return
+    // Before `offsetWidth`: a popover that has not been shown is `display: none`
+    // and measures 0.
+    raise(tip)
     const half = tip.offsetWidth / 2
     const lo = EDGE_MARGIN_PX + half
     const hi = window.innerWidth - EDGE_MARGIN_PX - half
     left = Math.round(hi < lo ? window.innerWidth / 2 : Math.min(Math.max(centre, lo), hi))
     placed = true
   })
+
+  /** `focusin` also fires when a click focuses the button and when script moves
+   *  focus there. Opening the folder drawer does the latter: `showModal()`
+   *  focuses the first control inside it, which raised a tooltip nobody asked
+   *  for and nothing dismissed, because focus never left. Only a keyboard
+   *  focus should show one, and that is what `:focus-visible` selects. */
+  function onFocusIn(e: FocusEvent): void {
+    const t = e.target
+    if (t instanceof Element && isFocusVisible(t)) show(0)
+  }
+
+  function isFocusVisible(el: Element): boolean {
+    try {
+      return el.matches(':focus-visible')
+    } catch {
+      // jsdom's selector engine rejects the pseudo-class, and has no keyboard.
+      return false
+    }
+  }
 
   function show(delay: number): void {
     if (disabled) return
@@ -121,7 +155,7 @@
   onpointerenter={() => show(HOVER_DELAY_MS)}
   onpointerleave={hide}
   onpointerdown={hide}
-  onfocusin={() => show(0)}
+  onfocusin={onFocusIn}
   onfocusout={hide}
 >
   <Button
@@ -143,6 +177,7 @@
     bind:this={tip}
     class="sc-icon-button__tip"
     class:sc-icon-button__tip--placed={placed}
+    popover="manual"
     aria-hidden="true"
     style:left="{left}px"
     style:top="{top}px"
@@ -162,6 +197,12 @@
   .sc-icon-button__tip {
     position: fixed;
     z-index: 40;
+    /* Undoing the UA stylesheet for `[popover]`, which centres the box with
+       `inset: 0; margin: auto` and draws a default border. `inset: auto` is
+       what lets the inline `left`/`top` place it. */
+    inset: auto;
+    margin: 0;
+    border: none;
     /* `left`/`top` put the button's bottom centre here; this moves the box so
        that point is its own top centre. */
     transform: translateX(-50%);
