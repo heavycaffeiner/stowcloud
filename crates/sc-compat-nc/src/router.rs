@@ -183,7 +183,9 @@ async fn h_ocs(
         .trim_start_matches("/ocs/v2.php");
 
     match (method.as_str(), rest) {
-        ("GET", "/cloud/capabilities") => ctx.ok(capabilities(&s.cfg)),
+        ("GET", "/cloud/capabilities") => {
+            ctx.ok(capabilities(&s.cfg, host_header(&headers).as_deref()))
+        }
 
         ("GET", "/cloud/user") => {
             let Some(p) = authenticate(&s, &headers, from) else {
@@ -283,18 +285,23 @@ async fn h_login_init(State(s): State<NcState>, headers: HeaderMap) -> Response 
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     let ip = client_ip(&headers);
-    match s.login.init(ua, &ip) {
+    match s.login.init(ua, &ip, host_header(&headers).as_deref()) {
         Ok(r) => axum::Json(r.to_json()).into_response(),
         Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
-async fn h_login_poll(State(s): State<NcState>, uri: Uri, body: String) -> Response {
+async fn h_login_poll(
+    State(s): State<NcState>,
+    uri: Uri,
+    headers: HeaderMap,
+    body: String,
+) -> Response {
     let token = poll_token(uri.query().unwrap_or(""), &body);
     let Some(token) = token else {
         return not_found_json();
     };
-    match s.login.poll(&token) {
+    match s.login.poll(&token, host_header(&headers).as_deref()) {
         Ok(v) => axum::Json(v).into_response(),
         // Pending, expired, unknown, already-consumed **and throttled** all
         // render identically, exactly as the reference does ("not found or
@@ -429,7 +436,8 @@ async fn h_login_flow(
     // Unauthenticated: bounce through our own login, preserving returnTo, so
     // the human lands back on the consent screen.
     let Some((_p, _sess)) = authenticate_session(&s, &headers, from) else {
-        return Redirect::to(&s.login.login_redirect(&token)).into_response();
+        let to = s.login.login_redirect(&token, host_header(&headers).as_deref());
+        return Redirect::to(&to).into_response();
     };
     let (p, sess) = authenticate_session(&s, &headers, from).expect("checked above");
     match s.login.consent(&token, &p, &sess) {
@@ -543,8 +551,8 @@ async fn h_avatar(State(s): State<NcState>, headers: HeaderMap, from: ClientAddr
     StatusCode::NOT_FOUND.into_response()
 }
 
-async fn h_files_redirect(State(s): State<NcState>) -> Response {
-    Redirect::to(&s.cfg.url("/")).into_response()
+async fn h_files_redirect(State(s): State<NcState>, headers: HeaderMap) -> Response {
+    Redirect::to(&s.cfg.url_for_host(host_header(&headers).as_deref(), "/")).into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -569,6 +577,23 @@ fn client_ip(headers: &HeaderMap) -> String {
         .and_then(|v| v.split(',').next())
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+/// The authority the client believes it asked for.
+///
+/// Unlike `client_ip` this is safe to read from a forwarded header, because it
+/// is never used as a value: `NcConfig::canonical_for_host` only lets it *pick*
+/// one of the origins an administrator registered, and an unrecognised
+/// authority falls back to the canonical URL. `X-Forwarded-Host` comes first
+/// because a reverse proxy that rewrites `Host` to its upstream would otherwise
+/// hide which name the user typed.
+fn host_header(headers: &HeaderMap) -> Option<String> {
+    ["x-forwarded-host", "host"]
+        .iter()
+        .find_map(|h| headers.get(*h)?.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 fn parse_pairs(s: &str) -> Vec<(String, String)> {

@@ -42,7 +42,12 @@
 //!    exception, so there may be no second attempt at all. Bounding this by
 //!    TTL + sweep keeps the exposure window the same shape as everything else
 //!    a poll token can already do.
-//! 7. **URLs are built from the configured canonical URL, never `Host`.**
+//! 7. **URLs are built from a configured origin, never from `Host` itself.**
+//!    A request's `Host` may *select* among the origins an administrator
+//!    registered (`canonical_url` plus `alt_canonical_urls`), which is what
+//!    lets a client enrolling over the internal name be answered with that
+//!    name; anything unregistered falls back to `canonical_url`. So the set of
+//!    hosts we can ever name is fixed by configuration, not by the request.
 
 use std::sync::Arc;
 
@@ -163,7 +168,16 @@ impl LoginFlowService {
     }
 
     /// Step 1. `POST /index.php/login/v2`.
-    pub fn init(&self, user_agent: &str, client_ip: &str) -> Result<InitResult, FlowError> {
+    ///
+    /// `host` is the request's `Host`, used only to pick which *registered*
+    /// origin to answer with, so a client enrolling over the internal name is
+    /// not handed public URLs it cannot resolve.
+    pub fn init(
+        &self,
+        user_agent: &str,
+        client_ip: &str,
+        host: Option<&str>,
+    ) -> Result<InitResult, FlowError> {
         let poll_token = new_token();
         let flow_token = new_token();
         let now = self.clock.now_ns();
@@ -179,13 +193,14 @@ impl LoginFlowService {
 
         Ok(InitResult {
             poll_token,
-            // Built from the CONFIGURED canonical URL. Using the request Host
-            // here would let anyone who can reach us hand a client a poll
-            // endpoint on a host they control.
-            poll_endpoint: self.cfg.url("/index.php/login/v2/poll"),
-            login_url: self
-                .cfg
-                .url(&format!("/index.php/login/v2/flow/{flow_token}")),
+            // Built from a CONFIGURED origin, never from the request Host
+            // itself: an unregistered Host falls back to the canonical URL, so
+            // nobody can hand a client a poll endpoint on a host they control.
+            poll_endpoint: self.cfg.url_for_host(host, "/index.php/login/v2/poll"),
+            login_url: self.cfg.url_for_host(
+                host,
+                &format!("/index.php/login/v2/flow/{flow_token}"),
+            ),
         })
     }
 
@@ -197,7 +212,16 @@ impl LoginFlowService {
     /// first read. Every failure mode maps onto HTTP 404 with an empty body
     /// at the route layer, matching the reference, which documents 404 as
     /// "not found **or completed**".
-    pub fn poll(&self, poll_token: &str) -> Result<serde_json::Value, FlowError> {
+    ///
+    /// The `server` handed back is chosen by the poll request's own `Host`.
+    /// The client polls the endpoint `init` gave it, so that `Host` is the
+    /// origin it enrolled on, and no flow state has to remember which one that
+    /// was. An unregistered `Host` still resolves to the canonical URL.
+    pub fn poll(
+        &self,
+        poll_token: &str,
+        host: Option<&str>,
+    ) -> Result<serde_json::Value, FlowError> {
         let now = self.clock.now_ns();
         let outcome = self.store.flow_poll(
             &sha256(poll_token),
@@ -206,7 +230,7 @@ impl LoginFlowService {
         )?;
         match outcome {
             Ok(res) => Ok(serde_json::json!({
-                "server": self.cfg.canonical_url.trim_end_matches('/'),
+                "server": self.cfg.canonical_for_host(host).trim_end_matches('/'),
                 "loginName": res.login_name,
                 "appPassword": res.app_password,
             })),
@@ -335,14 +359,18 @@ impl LoginFlowService {
 
     /// The URL an unauthenticated visitor to the flow endpoint is sent to.
     /// `returnTo` is preserved so the browser lands back on consent.
-    pub fn login_redirect(&self, flow_token: &str) -> String {
+    pub fn login_redirect(&self, flow_token: &str, host: Option<&str>) -> String {
         let return_to = format!("/index.php/login/v2/flow/{flow_token}");
         let encoded = percent_encoding::utf8_percent_encode(
             &return_to,
             percent_encoding::NON_ALPHANUMERIC,
         )
         .to_string();
-        self.cfg.url(&format!("/login?returnTo={encoded}"))
+        // Keeping the browser on the origin it arrived at matters twice over:
+        // the session cookie is scoped to that origin, so a redirect to another
+        // one loses the login it is about to ask for.
+        self.cfg
+            .url_for_host(host, &format!("/login?returnTo={encoded}"))
     }
 }
 
@@ -516,7 +544,7 @@ mod tests {
     #[test]
     fn happy_path() {
         let (s, clock, auth) = svc();
-        let init = s.init("Mozilla/5.0 (Android) Nextcloud-android/3.30.0", "10.0.0.5").unwrap();
+        let init = s.init("Mozilla/5.0 (Android) Nextcloud-android/3.30.0", "10.0.0.5", None).unwrap();
 
         assert_eq!(
             init.poll_endpoint,
@@ -527,7 +555,7 @@ mod tests {
             .starts_with("https://cloud.example.com/index.php/login/v2/flow/"));
 
         // Poll before approval -> Pending (route layer renders 404).
-        assert_eq!(s.poll(&init.poll_token), Err(FlowError::Pending));
+        assert_eq!(s.poll(&init.poll_token, None), Err(FlowError::Pending));
 
         let flow = flow_token_of(&init);
         clock.advance(2_000_000_000);
@@ -550,7 +578,7 @@ mod tests {
         assert_eq!(auth.count(), 1);
 
         clock.advance(2_000_000_000);
-        let creds = s.poll(&init.poll_token).unwrap();
+        let creds = s.poll(&init.poll_token, None).unwrap();
         assert_eq!(creds["server"], "https://cloud.example.com");
         assert_eq!(creds["loginName"], "alice");
         assert_eq!(creds["appPassword"], "stow_secret_1");
@@ -562,7 +590,7 @@ mod tests {
     #[test]
     fn get_only_approval_does_not_issue_a_password() {
         let (s, clock, auth) = svc();
-        let init = s.init("mirall/3.13.0", "10.0.0.5").unwrap();
+        let init = s.init("mirall/3.13.0", "10.0.0.5", None).unwrap();
         let flow = flow_token_of(&init);
 
         // Simulate an attacker-triggered navigation: the victim's browser hits
@@ -573,13 +601,13 @@ mod tests {
         }
 
         assert_eq!(auth.count(), 0, "GET must never mint an app password");
-        assert_eq!(s.poll(&init.poll_token), Err(FlowError::Pending));
+        assert_eq!(s.poll(&init.poll_token, None), Err(FlowError::Pending));
     }
 
     #[test]
     fn grant_without_valid_state_token_is_rejected() {
         let (s, _clock, auth) = svc();
-        let init = s.init("mirall/3.13.0", "10.0.0.5").unwrap();
+        let init = s.init("mirall/3.13.0", "10.0.0.5", None).unwrap();
         let flow = flow_token_of(&init);
 
         assert_eq!(
@@ -630,7 +658,7 @@ mod tests {
     #[test]
     fn result_survives_a_client_that_drops_the_first_response() {
         let (s, clock, auth) = svc();
-        let init = s.init("Mozilla/5.0 (Android) Nextcloud-android/34.1.0", "10.0.0.5").unwrap();
+        let init = s.init("Mozilla/5.0 (Android) Nextcloud-android/34.1.0", "10.0.0.5", None).unwrap();
         let flow = flow_token_of(&init);
         let consent = s.consent(&flow, &principal(), "sess-abc").unwrap();
         s.grant(&flow, &consent.state_token, &principal(), "sess-abc", Scope::full())
@@ -640,42 +668,42 @@ mod tests {
         clock.advance(2_000_000_000);
         // First poll: the server hands back the credential (this is the
         // response the real client failed to consume).
-        let first = s.poll(&init.poll_token).unwrap();
+        let first = s.poll(&init.poll_token, None).unwrap();
 
         clock.advance(2_000_000_000);
         // Simulated retry with the *same* poll token: must return the exact
         // same credential, not `NotFound` and not a freshly minted one.
-        let second = s.poll(&init.poll_token).unwrap();
+        let second = s.poll(&init.poll_token, None).unwrap();
         assert_eq!(first, second);
         assert_eq!(auth.count(), 1, "no second app password was minted to serve the retry");
 
         // It is still bounded: once the flow's 20-minute TTL is gone, so is
         // the credential.
         clock.advance(21 * 60 * 1_000_000_000);
-        assert_eq!(s.poll(&init.poll_token), Err(FlowError::NotFound));
+        assert_eq!(s.poll(&init.poll_token, None), Err(FlowError::NotFound));
     }
 
     #[test]
     fn poll_is_rate_limited() {
         let (s, clock, _auth) = svc();
-        let init = s.init("mirall/3.13.0", "10.0.0.5").unwrap();
-        assert_eq!(s.poll(&init.poll_token), Err(FlowError::Pending));
+        let init = s.init("mirall/3.13.0", "10.0.0.5", None).unwrap();
+        assert_eq!(s.poll(&init.poll_token, None), Err(FlowError::Pending));
         // Immediately again -> throttled.
-        assert_eq!(s.poll(&init.poll_token), Err(FlowError::RateLimited));
+        assert_eq!(s.poll(&init.poll_token, None), Err(FlowError::RateLimited));
         clock.advance(1_100_000_000);
-        assert_eq!(s.poll(&init.poll_token), Err(FlowError::Pending));
+        assert_eq!(s.poll(&init.poll_token, None), Err(FlowError::Pending));
     }
 
     #[test]
     fn expired_tokens_are_rejected() {
         let (s, clock, _auth) = svc();
-        let init = s.init("mirall/3.13.0", "10.0.0.5").unwrap();
+        let init = s.init("mirall/3.13.0", "10.0.0.5", None).unwrap();
         let flow = flow_token_of(&init);
 
         // 20 minutes + a bit.
         clock.advance(21 * 60 * 1_000_000_000);
 
-        assert_eq!(s.poll(&init.poll_token), Err(FlowError::NotFound));
+        assert_eq!(s.poll(&init.poll_token, None), Err(FlowError::NotFound));
         assert!(matches!(
             s.consent(&flow, &principal(), "sess-abc"),
             Err(FlowError::NotFound)
@@ -686,20 +714,20 @@ mod tests {
     #[test]
     fn flow_token_cannot_be_used_to_poll() {
         let (s, _clock, _auth) = svc();
-        let init = s.init("mirall/3.13.0", "10.0.0.5").unwrap();
+        let init = s.init("mirall/3.13.0", "10.0.0.5", None).unwrap();
         let flow = flow_token_of(&init);
         assert_ne!(flow, init.poll_token);
         assert_eq!(flow.len(), 64);
         assert_eq!(init.poll_token.len(), 64);
         // Knowing the flow token (it travels through a browser URL bar) gets
         // you nothing on the poll endpoint.
-        assert_eq!(s.poll(&flow), Err(FlowError::NotFound));
+        assert_eq!(s.poll(&flow, None), Err(FlowError::NotFound));
     }
 
     #[test]
     fn double_grant_issues_only_one_password() {
         let (s, _clock, auth) = svc();
-        let init = s.init("mirall/3.13.0", "10.0.0.5").unwrap();
+        let init = s.init("mirall/3.13.0", "10.0.0.5", None).unwrap();
         let flow = flow_token_of(&init);
         let consent = s.consent(&flow, &principal(), "sess-abc").unwrap();
         s.grant(&flow, &consent.state_token, &principal(), "sess-abc", Scope::full())
@@ -716,7 +744,7 @@ mod tests {
     fn client_name_is_escaped_on_the_consent_page() {
         let (s, _clock, _auth) = svc();
         let evil = "<img src=x onerror=alert(1)>";
-        let init = s.init(evil, "1.2.3.4").unwrap();
+        let init = s.init(evil, "1.2.3.4", None).unwrap();
         let flow = flow_token_of(&init);
         let consent = s.consent(&flow, &principal(), "sess").unwrap();
         let html = consent_html(&consent);
@@ -730,7 +758,7 @@ mod tests {
     #[test]
     fn scope_can_be_narrowed() {
         let (s, _clock, auth) = svc();
-        let init = s.init("mirall/3.13.0", "10.0.0.5").unwrap();
+        let init = s.init("mirall/3.13.0", "10.0.0.5", None).unwrap();
         let flow = flow_token_of(&init);
         let consent = s.consent(&flow, &principal(), "sess").unwrap();
         s.grant(
@@ -762,9 +790,74 @@ mod tests {
     #[test]
     fn login_redirect_preserves_return_to_and_uses_canonical_host() {
         let (s, _c, _a) = svc();
-        let r = s.login_redirect("abc123");
+        let r = s.login_redirect("abc123", None);
         assert!(r.starts_with("https://cloud.example.com/login?returnTo="));
         assert!(r.contains("abc123"));
         assert!(!r.contains("/index.php/login/v2/flow/abc123"), "must be encoded");
+    }
+
+    /// Same as [`svc`] with a second origin registered, for a server reachable
+    /// both from the internet and from the LAN.
+    fn svc_multi() -> Arc<LoginFlowService> {
+        let cfg = NcConfig {
+            canonical_url: "https://cloud.example.com".into(),
+            alt_canonical_urls: vec!["https://cloud.internal".into()],
+            ..NcConfig::default()
+        };
+        Arc::new(LoginFlowService::new(
+            Arc::new(MemStore::new()),
+            TestAuth::new(),
+            Arc::new(cfg),
+            TestClock::new(),
+        ))
+    }
+
+    #[test]
+    fn a_client_enrolling_on_a_registered_alternate_is_answered_on_it() {
+        let s = svc_multi();
+        let init = s
+            .init("Nextcloud-android/3.30.0", "10.0.0.5", Some("cloud.internal"))
+            .unwrap();
+        assert_eq!(
+            init.poll_endpoint,
+            "https://cloud.internal/index.php/login/v2/poll"
+        );
+        assert!(init
+            .login_url
+            .starts_with("https://cloud.internal/index.php/login/v2/flow/"));
+
+        let flow = flow_token_of(&init);
+        let consent = s.consent(&flow, &principal(), "sess").unwrap();
+        s.grant(&flow, &consent.state_token, &principal(), "sess", Scope::full())
+            .unwrap();
+
+        // The client polls the endpoint it was given, so its Host picks the same
+        // origin back out without the flow having to remember one.
+        let creds = s.poll(&init.poll_token, Some("cloud.internal")).unwrap();
+        assert_eq!(creds["server"], "https://cloud.internal");
+        // The browser must stay on the origin it arrived at: the session cookie
+        // the login page is about to set is scoped to it.
+        assert!(s
+            .login_redirect(&flow, Some("cloud.internal"))
+            .starts_with("https://cloud.internal/login?returnTo="));
+    }
+
+    #[test]
+    fn an_unregistered_host_still_gets_the_canonical_url() {
+        let s = svc_multi();
+        let init = s
+            .init("mirall/3.13.0", "10.0.0.5", Some("evil.example.net"))
+            .unwrap();
+        assert_eq!(
+            init.poll_endpoint,
+            "https://cloud.example.com/index.php/login/v2/poll"
+        );
+
+        let flow = flow_token_of(&init);
+        let consent = s.consent(&flow, &principal(), "sess").unwrap();
+        s.grant(&flow, &consent.state_token, &principal(), "sess", Scope::full())
+            .unwrap();
+        let creds = s.poll(&init.poll_token, Some("evil.example.net")).unwrap();
+        assert_eq!(creds["server"], "https://cloud.example.com");
     }
 }

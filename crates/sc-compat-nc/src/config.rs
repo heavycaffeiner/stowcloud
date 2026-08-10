@@ -124,6 +124,21 @@ pub struct NcConfig {
     /// hostname.
     pub canonical_url: String,
 
+    /// Further origins this server is legitimately reached on, in the same form
+    /// as [`Self::canonical_url`]: an internal-network name alongside the public
+    /// one, a second domain, a port-forwarded address.
+    ///
+    /// This does not weaken the rule above. A request's `Host` still never
+    /// *builds* a URL; it only selects between origins an administrator has
+    /// already written down here, and anything unrecognised falls back to
+    /// [`Self::canonical_url`]. An attacker who controls `Host` can therefore
+    /// only ever make us name a host we already serve.
+    ///
+    /// Without this, a client enrolled from the internal network was handed
+    /// public URLs it could not resolve, and Login Flow v2 bound it to a host
+    /// it would never reach again.
+    pub alt_canonical_urls: Vec<String>,
+
     /// Name of the browser session cookie, handed in rather than spelled here.
     ///
     /// This crate depends on no HTTP crate by design (§1), so it cannot import
@@ -221,6 +236,7 @@ impl Default for NcConfig {
         Self {
             matrix: CompatMatrix::default(),
             canonical_url: "https://localhost".into(),
+            alt_canonical_urls: Vec::new(),
             session_cookie: "__Host-sc_sid".into(),
             instance_id: String::new(),
             // 10 MiB. Matches the desktop client's own default target and sits
@@ -250,13 +266,49 @@ impl NcConfig {
     /// Join a path onto the canonical URL. Always use this instead of the
     /// request's `Host`.
     pub fn url(&self, path: &str) -> String {
-        let base = self.canonical_url.trim_end_matches('/');
-        if path.starts_with('/') {
-            format!("{base}{path}")
-        } else {
-            format!("{base}/{path}")
-        }
+        join(&self.canonical_url, path)
     }
+
+    /// Every origin an administrator has registered, primary first.
+    pub fn origins(&self) -> impl Iterator<Item = &str> {
+        std::iter::once(self.canonical_url.as_str()).chain(self.alt_canonical_urls.iter().map(String::as_str))
+    }
+
+    /// The registered origin that serves `host`, falling back to the canonical
+    /// one when `host` is absent or matches nothing registered.
+    ///
+    /// This is the only place a request header influences a URL, and the return
+    /// value is always one of the configured strings, never anything derived
+    /// from the header itself.
+    pub fn canonical_for_host(&self, host: Option<&str>) -> &str {
+        let Some(host) = host.map(str::trim).filter(|h| !h.is_empty()) else {
+            return &self.canonical_url;
+        };
+        self.origins()
+            .find(|o| authority_of(o).eq_ignore_ascii_case(host))
+            .unwrap_or(&self.canonical_url)
+    }
+
+    /// [`Self::url`] against the origin the client actually asked for.
+    pub fn url_for_host(&self, host: Option<&str>, path: &str) -> String {
+        join(self.canonical_for_host(host), path)
+    }
+}
+
+fn join(base: &str, path: &str) -> String {
+    let base = base.trim_end_matches('/');
+    if path.starts_with('/') {
+        format!("{base}{path}")
+    } else {
+        format!("{base}/{path}")
+    }
+}
+
+/// The `host[:port]` of a configured base URL, with the scheme and any path cut
+/// off, so it can be compared against a `Host` header.
+fn authority_of(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    rest.split(['/', '?', '#']).next().unwrap_or(rest)
 }
 
 #[cfg(test)]
@@ -286,5 +338,44 @@ mod tests {
             "https://cloud.example.com/index.php/login/v2/poll"
         );
         assert_eq!(c.url("s/tok"), "https://cloud.example.com/s/tok");
+    }
+
+    fn multi() -> NcConfig {
+        NcConfig {
+            canonical_url: "https://cloud.example.com".into(),
+            alt_canonical_urls: vec![
+                "https://Cloud.Internal:8443/".into(),
+                "http://10.0.0.5".into(),
+            ],
+            ..NcConfig::default()
+        }
+    }
+
+    #[test]
+    fn a_registered_host_selects_its_own_origin() {
+        let c = multi();
+        assert_eq!(
+            c.url_for_host(Some("cloud.internal:8443"), "/index.php/login/v2/poll"),
+            "https://Cloud.Internal:8443/index.php/login/v2/poll"
+        );
+        assert_eq!(c.canonical_for_host(Some("10.0.0.5")), "http://10.0.0.5");
+        assert_eq!(
+            c.canonical_for_host(Some("cloud.example.com")),
+            "https://cloud.example.com"
+        );
+    }
+
+    #[test]
+    fn an_unregistered_host_falls_back_to_the_canonical_url() {
+        let c = multi();
+        // The whole point: an attacker-supplied Host cannot name itself.
+        for host in ["evil.example.net", "cloud.internal", "", "  "] {
+            assert_eq!(
+                c.canonical_for_host(Some(host)),
+                "https://cloud.example.com",
+                "host {host:?}"
+            );
+        }
+        assert_eq!(c.canonical_for_host(None), "https://cloud.example.com");
     }
 }

@@ -465,6 +465,27 @@ pub struct Config {
     ///   ambiguity is resolved.
     #[serde(default)]
     pub compat_canonical_url: Option<String>,
+    /// Further origins the compat layer may answer with, for a server reached
+    /// under more than one name: a public domain and an internal one, a second
+    /// vanity domain, a LAN address.
+    ///
+    /// A compat client is told which server to bind to at enrolment, and
+    /// `compat_canonical_url` alone means a phone enrolled on the LAN is bound
+    /// to the public name it may not be able to resolve. Listing the internal
+    /// origin here lets that enrolment answer with the name the client actually
+    /// used. Only a `Host` matching one of these (or `compat_canonical_url`) is
+    /// honoured; anything else still falls back to `compat_canonical_url`, so
+    /// this widens the allowlist without trusting the header.
+    ///
+    /// Same form as `compat_canonical_url`: absolute `http(s)://` origins.
+    /// Malformed entries are dropped at startup with a warning rather than
+    /// taking the server down.
+    ///
+    /// File-only. The admin UI does not edit this, and `NetworkOverride` is
+    /// full-replace, so exposing it there would let a PATCH from an older UI
+    /// build silently erase it.
+    #[serde(default)]
+    pub compat_alt_canonical_urls: Vec<String>,
     /// Path to the master key file. Populated from `SC_MASTER_KEY_FILE` if
     /// unset in the file (`masterkey.rs`). Never the key material itself.
     pub master_key_file: Option<PathBuf>,
@@ -495,6 +516,7 @@ impl Default for Config {
             content_hosts: Vec::new(),
             allowed_origins: Vec::new(),
             compat_canonical_url: None,
+            compat_alt_canonical_urls: Vec::new(),
             master_key_file: None,
             db: DbConfig::default(),
             upload: UploadConfig::default(),
@@ -654,6 +676,32 @@ impl Config {
                 app_host_count: other.len(),
             },
         }
+    }
+
+    /// [`Config::compat_alt_canonical_urls`], keeping only the well-formed ones
+    /// and returning the rest for the caller to warn about.
+    ///
+    /// A typo here must not take the compat layer down: the canonical URL still
+    /// works, and dropping one alternate degrades enrolment on that one name
+    /// instead of every name.
+    pub fn resolve_compat_alt_canonical_urls(&self) -> (Vec<String>, Vec<String>) {
+        let canonical = match self.resolve_compat_canonical_url() {
+            CompatCanonicalUrl::Configured(u) | CompatCanonicalUrl::Derived(u) => u,
+            _ => String::new(),
+        };
+        let mut good = Vec::new();
+        let mut bad = Vec::new();
+        for raw in &self.compat_alt_canonical_urls {
+            let t = raw.trim().trim_end_matches('/');
+            let scheme_ok = t.starts_with("https://") || t.starts_with("http://");
+            let host_ok = t.split("://").nth(1).is_some_and(|h| !h.is_empty());
+            if !scheme_ok || !host_ok {
+                bad.push(raw.clone());
+            } else if t != canonical && !good.iter().any(|g: &String| g == t) {
+                good.push(t.to_string());
+            }
+        }
+        (good, bad)
     }
 }
 
