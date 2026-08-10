@@ -1793,7 +1793,7 @@ async fn fs_list(State(state): State<AppState>, principal: Option<Extension<Prin
         Ok(listing) => {
             let page = state.listings.create(principal.user.get(), listing.dir_etag.clone(), q.sort.unwrap_or(SortKey::Name), q.order.unwrap_or(Order::Asc), listing.entries, page_size);
             Json(serde_json::json!({
-                "listing": page.listing_id, "total": page.total, "cursor": page.cursor,
+                "listing": page.listing_id, "total": page.total, "dirs": page.dirs, "cursor": page.cursor,
                 "entries": page.entries, "dir_etag": page.dir_etag,
             }))
             .into_response()
@@ -5480,6 +5480,34 @@ mod tests {
         core.bump_etag();
         let resp3 = get_list(&app, &format!("?path=&limit=2&listing={listing_id}&cursor={cursor}")).await;
         assert_eq!(resp3.headers().get("Sc-Listing-Stale").unwrap(), "1");
+    }
+
+    /// Every page carries `dirs`, the first one included. The grid splits its
+    /// folder section off this number and has no other way to find the
+    /// boundary, so a page that omits it renders every folder as a file card.
+    /// That shipped: only the cursor branch serialised the field, and the
+    /// first response for a directory is exactly the one that did not.
+    #[tokio::test]
+    async fn every_list_page_reports_how_many_entries_are_folders() {
+        let entries: Vec<Entry> = (0..3)
+            .map(|i| Entry { kind: Kind::Dir, ..mk_entry(&format!("d{i}")) })
+            .chain((0..5).map(|i| mk_entry(&format!("f{i}"))))
+            .collect();
+        let (state, _dir) = test_state_with_core(Arc::new(MockCore::new(entries)));
+        let app = router_with_principal(state);
+
+        let resp = get_list(&app, "?path=&limit=2").await;
+        let bytes = http_body_util::BodyExt::collect(resp.into_body()).await.unwrap().to_bytes();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["dirs"], 3, "first page: {json}");
+        assert_eq!(json["total"], 8);
+
+        let listing_id = json["listing"].as_str().unwrap();
+        let cursor = json["cursor"].as_str().unwrap();
+        let resp2 = get_list(&app, &format!("?path=&limit=2&listing={listing_id}&cursor={cursor}")).await;
+        let bytes2 = http_body_util::BodyExt::collect(resp2.into_body()).await.unwrap().to_bytes();
+        let json2: serde_json::Value = serde_json::from_slice(&bytes2).unwrap();
+        assert_eq!(json2["dirs"], 3, "later page: {json2}");
     }
 
     #[tokio::test]
