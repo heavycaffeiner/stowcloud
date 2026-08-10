@@ -12,6 +12,7 @@ import {
 import { baseName, joinPath, normalizePath, parentOf } from './path-utils'
 import { CHUNK_SIZE_MIN } from '../upload/chunk-planner'
 import {
+  ALL_GRANT_PERMS,
   ApiError,
   type ActiveSession,
   type AdminGrant,
@@ -959,8 +960,17 @@ async function adminUnlinkUserOidc(id: number): Promise<AdminOidcUnlinkResult> {
 // identically under `VITE_API_MOCK=1` and against the real backend — the
 // same convention as every other function in this file.
 
-let mockAppPasswords: AppPasswordInfo[] = []
-let nextAppPasswordId = 1
+// Scoped against unscoped, used against never used, expiring against not: the
+// read-only chip and the two date lines each need a row that shows them and a
+// row beside them that does not.
+const pwTs = (days: number) => String(BigInt(Date.now() - days * 86_400_000) * 1_000_000n)
+
+let mockAppPasswords: AppPasswordInfo[] = [
+  { id: 1, name: '노트북 동기화', created_ns: pwTs(90), last_used_ns: pwTs(1), expires_ns: null },
+  { id: 2, name: '백업 스크립트 (읽기 전용)', created_ns: pwTs(45), last_used_ns: pwTs(7), expires_ns: null, read_only: true },
+  { id: 3, name: 'iPhone', created_ns: pwTs(3), last_used_ns: null, expires_ns: pwTs(-60) }
+]
+let nextAppPasswordId = 4
 
 const MOCK_SESSION_ID_HASH = 'mock-current-session'
 let mockSessions: ActiveSession[] = [
@@ -972,6 +982,26 @@ let mockSessions: ActiveSession[] = [
     ip_first: '127.0.0.1',
     ua_first: 'Mock/1.0',
     current: true
+  },
+  // The current-session badge only means something next to a row without it,
+  // and a real user-agent string is what tells the row whether it can wrap.
+  {
+    id_hash: 'mock-session-phone',
+    created_ns: String(BigInt(Date.now() - 4 * 86_400_000) * 1_000_000n),
+    last_seen_ns: String(BigInt(Date.now() - 3_600_000) * 1_000_000n),
+    absolute_expiry_ns: String(BigInt(Date.now() + 26 * 24 * 3600 * 1000) * 1_000_000n),
+    ip_first: '192.0.2.44',
+    ua_first: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.2 Mobile/15E148 Safari/604.1',
+    current: false
+  },
+  {
+    id_hash: 'mock-session-desktop',
+    created_ns: String(BigInt(Date.now() - 20 * 86_400_000) * 1_000_000n),
+    last_seen_ns: String(BigInt(Date.now() - 9 * 86_400_000) * 1_000_000n),
+    absolute_expiry_ns: String(BigInt(Date.now() + 10 * 24 * 3600 * 1000) * 1_000_000n),
+    ip_first: '203.0.113.7',
+    ua_first: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+    current: false
   }
 ]
 
@@ -1428,21 +1458,44 @@ async function adminBuildIndex(): Promise<{ job: string }> {
 // be unique, a password needs 10 characters, and the last active admin can
 // be neither disabled nor deleted (`sc_auth::AdminGuardError::LastAdmin`).
 
+// Six accounts, not one, and deliberately no two alike. Every conditional the
+// row renders -- the administrator chip, the inactive chip, a quota against no
+// quota, a long display name against none at all -- needs a row that shows it
+// and a row beside it that does not, or the design gate has nothing to compare
+// and the screen goes unaudited. One account cannot misalign with anything.
+const seedUser = (
+  id: number,
+  name: string,
+  display_name: string,
+  extra: Partial<AdminUser> = {}
+): AdminUser => ({
+  id,
+  name,
+  display_name,
+  is_admin: false,
+  disabled: false,
+  totp_enabled: false,
+  smb_enabled: true,
+  created_ns: String(BigInt(Date.now() - id * 86_400_000) * 1_000_000n),
+  quota_bytes: null,
+  usage_bytes: '0',
+  ...extra
+})
+
+// Exactly one active administrator, and it stays the bootstrapped account:
+// that is the invariant `mock.test.ts` checks, and the only way the
+// last-active-admin guard has anything to refuse. The variety the design gate
+// needs comes from the other five, none of which repeats a name the tests
+// create.
 let mockUsers: AdminUser[] = [
-  {
-    id: 1,
-    name: 'demo',
-    display_name: '데모 사용자',
-    is_admin: true,
-    disabled: false,
-    totp_enabled: false,
-    smb_enabled: true,
-    created_ns: String(BigInt(Date.now()) * 1_000_000n),
-    quota_bytes: null,
-    usage_bytes: '0'
-  }
+  seedUser(1, 'demo', '데모 사용자', { is_admin: true, usage_bytes: '0' }),
+  seedUser(2, 'sujin', '김수진', { quota_bytes: '10737418240', usage_bytes: '3221225472' }),
+  seedUser(3, 'minjun', '박민준', { totp_enabled: true, usage_bytes: '104857600' }),
+  seedUser(4, 'seoyeon', '이서연 (프로젝트 관리)', { quota_bytes: '53687091200', usage_bytes: '48318382080' }),
+  seedUser(5, 'contractor', '', { disabled: true, smb_enabled: false }),
+  seedUser(6, 'backup-svc', '백업 서비스 계정', { disabled: true, quota_bytes: '1073741824', usage_bytes: '1073741824' })
 ]
-let nextUserId = 2
+let nextUserId = 7
 
 function activeAdminCount(): number {
   return mockUsers.filter((u) => u.is_admin && !u.disabled).length
@@ -1543,16 +1596,32 @@ async function adminDeleteUser(id: number): Promise<void> {
 // `sc_core::Core::share_defs()` to derive this from. A small fixed list
 // matching the top-level folders `STATIC_SEED` already seeds is enough to
 // demo the grant-creation screen's share picker.
+// Both kinds of share are seeded on purpose. A config-file share renders a
+// badge and no delete button; a dynamic one renders neither badge nor the
+// same action set. Seeding only one kind meant the list never showed the two
+// side by side, and the column misalignment between them was reachable only by
+// creating a share by hand -- so no screenshot and no audit ever saw it.
 let mockShares: AdminShare[] = [
   { id: 1, name: 'Documents', host_path: '/srv/documents', config_defined: true, trash_enabled: false },
-  { id: 2, name: 'Photos', host_path: '/srv/photos', config_defined: true, trash_enabled: false },
+  { id: 2, name: 'Photos', host_path: '/srv/photos', config_defined: true, trash_enabled: true },
   { id: 3, name: 'Videos', host_path: '/srv/videos', config_defined: true, trash_enabled: false },
-  { id: 4, name: 'Music', host_path: '/srv/music', config_defined: true, trash_enabled: false }
+  { id: 4, name: 'Music', host_path: '/srv/music', config_defined: true, trash_enabled: false },
+  { id: 1_000_001, name: 'Team', host_path: '/srv/team', config_defined: false, trash_enabled: false },
+  { id: 1_000_002, name: 'Archive', host_path: '/srv/archive', config_defined: false, trash_enabled: true }
 ]
-let nextShareId = 1_000_000 // mirrors `sc_core::DYNAMIC_SHARE_ID_BASE`
+let nextShareId = 1_000_003 // mirrors `sc_core::DYNAMIC_SHARE_ID_BASE`, past the seeded dynamic pair
 
-let mockGrants: AdminGrant[] = []
-let nextGrantId = 1
+// One grant of each shape the row can take: inherited against path-only, a
+// group principal against a user one, a long label against a bare share name.
+const grantTs = (days: number) => String(BigInt(Date.now() - days * 86_400_000) * 1_000_000n)
+
+let mockGrants: AdminGrant[] = [
+  { id: 1, principal: { kind: 'user', id: 2 }, share: 1, subpath: '', allow: ['read', 'download'], deny: [], inherit: true, label: null, created_ns: grantTs(30) },
+  { id: 2, principal: { kind: 'user', id: 3 }, share: 2, subpath: '2026', allow: ['read', 'write', 'create'], deny: ['delete'], inherit: false, label: null, created_ns: grantTs(12) },
+  { id: 3, principal: { kind: 'group', id: 1 }, share: 1_000_001, subpath: '', allow: ALL_GRANT_PERMS, deny: [], inherit: true, label: '팀 공용 폴더 (전체 권한)', created_ns: grantTs(5) },
+  { id: 4, principal: { kind: 'group', id: 2 }, share: 1_000_002, subpath: '2025/분기보고', allow: ['read'], deny: [], inherit: false, label: null, created_ns: grantTs(2) }
+]
+let nextGrantId = 5
 
 async function adminListShares(): Promise<AdminShare[]> {
   await delay(15)
@@ -1707,8 +1776,14 @@ async function adminDeleteGrant(id: number): Promise<void> {
 // share cascades to `mockGrants` above), and adding/removing a member refuses
 // an unknown user id.
 
-let mockGroups: AdminGroup[] = []
-let nextGroupId = 1
+// Empty, one member, several: the member-count chip has to have something to
+// vary against, and the empty-state panel is a different screen entirely.
+let mockGroups: AdminGroup[] = [
+  { id: 1, name: '개발팀', members: [1, 2, 3] },
+  { id: 2, name: '경영지원', members: [4] },
+  { id: 3, name: '외부 협력사 (2026 상반기)', members: [] }
+]
+let nextGroupId = 4
 
 async function adminListGroups(): Promise<AdminGroup[]> {
   await delay(15)
