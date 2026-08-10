@@ -619,14 +619,26 @@ so: they compare siblings inside one container, and the elements that disagree h
 different rows. Every row is internally correct, its own gaps on the scale and its own
 children sharing an edge, and the rows only disagree with each other.
 
-Rows are matched by tag, class signature **and** the sequence of their direct children's
-signatures: without the last, every `<section>` on the settings page was a "row" of its
-neighbours and the first button of the account section was compared against the first
-button of the theme section. Elements inside a row are matched by depth, parent class
-signature, tag and class signature, and paired by ordinal within the row. A signature seen
-in two or more rows must occupy one column: either every instance shares a start edge or
-every instance shares an end edge. Sharing the start alone is enough, which is what lets a
-name cell be as wide as its text.
+The container has to say it holds a list before its children are treated as repetitions of
+one template: a `ul`, `ol`, `tbody` or `table`, a `list`, `grid`, `table`, `rowgroup`,
+`listbox`, `menu` or `tree` role, or children that are `li` or carry a `row`, `listitem`,
+`option`, `menuitem`, `treeitem` or `gridcell` role.
+
+Shape alone was tried first and is not enough. The settings page's theme and language
+sections are both an `h2`, a row of buttons and a hint, so they matched each other, and the
+second button of the theme picker was then measured against the second button of the
+language picker. Those two agree only by coincidence, and the coincidence is
+platform-dependent: on the development machine's fonts they landed within half a pixel of
+each other, so twelve clean local runs said nothing, and the first CI run on Linux failed.
+A check that answers differently on two platforms is a check that was defined wrong, not a
+flaky one.
+
+Rows are then matched by tag, class signature and the sequence of their direct children's
+signatures. Elements inside a row are matched by depth, parent class signature, tag and
+class signature, and paired by ordinal within the row. A signature seen in two or more rows
+must occupy one column: either every instance shares a start edge or every instance shares
+an end edge. Sharing the start alone is enough, which is what lets a name cell be as wide
+as its text.
 
 Three exemptions: an element whose preceding sibling's width varies across rows is
 positioned by that sibling rather than by a column (the audit log's result badge follows
@@ -971,10 +983,18 @@ jobs:
 ```
 
 One Linux job. The audit measures a browser's layout engine, and Chromium's layout on
-Windows and on Linux differ only in font metrics, which is a source of flakiness rather than
-of coverage. Fonts come from `@fontsource-variable/google-sans-flex`, an npm dependency, so
-they are identical on both; the system fallback in `--m3-font` is not, which is one more
-reason to pin the audit to one platform.
+Windows and on Linux differ only in font metrics. Fonts come from
+`@fontsource-variable/google-sans-flex`, an npm dependency, so they are identical on both;
+the system fallback in `--m3-font` is not, which is why the audit is pinned to one platform
+rather than run on two and reconciled.
+
+That difference is worth stating precisely, because the first CI run turned on it. Every
+check here is supposed to be answerable from the layout alone, so a check that gives one
+answer on Windows and another on Linux is not flaky: it is defined wrong, and it has found
+a coincidence rather than a rule. Pinning the platform makes the gate reproducible; it does
+not make a platform-dependent check correct, and when one appears the check is what gets
+fixed. The column check's first version failed exactly this way, passing twelve local runs
+and failing the first Linux one.
 
 ### 5-2. Error Handling
 
