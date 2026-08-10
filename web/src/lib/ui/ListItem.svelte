@@ -59,6 +59,11 @@
   }
   .sc-list-item__leading {
     display: inline-flex;
+    /* An icon is 20px and this slot is 32px, so without these it sat in the
+       top-left corner with 12px of empty box below and to the right of it, and
+       every leading icon in every list read 6px high of where its row was. */
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0;
     width: 32px;
     height: 32px;
@@ -86,6 +91,11 @@
   }
   .sc-list-item__trailing {
     display: inline-flex;
+    /* Without this the group stretches every child to the tallest one, which is
+       a 40px icon button. A caller's own wrapper is then a 40px block holding a
+       32px switch, and a block does not centre what it contains, so the switch
+       sat 4px above every control beside it. */
+    align-items: center;
     flex-shrink: 0;
     /* No effect while it shares the line with a growing text column; once it
      * wraps to a line of its own it is what keeps it right-aligned under the

@@ -375,6 +375,14 @@
     gap: 8px;
     margin-block: 16px;
   }
+  /* Dropped only where the row ends its section. The space after a section
+     comes from the flex `gap` on `.sc-settings__inner`, and a bottom margin
+     here does not collapse out of the section, so it stacked on that gap and
+     left 16px above the sign-out button and 40px below it. Where the row is
+     followed by its own hint, the margin is what separates the two. */
+  .sc-settings__row:last-child {
+    margin-block-end: 0;
+  }
   .sc-settings__hint {
     max-width: 480px;
     margin: 0 0 16px;

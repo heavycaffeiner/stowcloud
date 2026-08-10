@@ -297,7 +297,9 @@ a {
    `.m3-container` in the framework, which is most of them. */
 @supports not (appearance: base-select) {
   .m3-container:has(> select) > select {
-    padding-inline-end: 40px;
+    /* Clears the arrow below: 16px end inset plus its 8px box, plus an 8px
+       gap before the value starts. */
+    padding-inline-end: 32px;
   }
   /* Both pseudo-elements of `.layer` are free — the state layer lives on the
      `<select>`, not here — and it is already stretched over the field and
@@ -314,9 +316,10 @@ a {
     border-inline-end: 2px solid var(--secondary-color, currentColor);
     border-block-end: 2px solid var(--secondary-color, currentColor);
     rotate: 45deg;
-    /* The rotated square's *visible* half sits below its box centre. */
-    margin-block-start: -3px;
-    translate: 0 -50%;
+    /* The rotated square's *visible* half sits below its box centre, so the
+       nudge rides in the translate rather than in a margin: it is a visual
+       correction to a rotation, not spacing, and off-grid spacing is rejected. */
+    translate: 0 calc(-50% - 3px);
   }
 }
 

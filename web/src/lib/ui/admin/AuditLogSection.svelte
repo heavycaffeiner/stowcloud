@@ -130,7 +130,10 @@
     container-type: inline-size;
   }
   .sc-audit-log h2 {
-    margin: 0 0 8px;
+    /* 16px, the step every other screen puts between a section title and its
+       first content. 8px read as the filters belonging to the title rather
+       than following it. */
+    margin: 0 0 16px;
     @apply --m3-title-large;
   }
   .sc-audit-log__filters {

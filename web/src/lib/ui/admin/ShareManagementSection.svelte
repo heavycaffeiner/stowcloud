@@ -214,12 +214,20 @@
               {#snippet leading()}<Icon icon={icons.folder} size={20} />{/snippet}
               {#snippet headline()}
                 <span class="sc-shares__name">{s.name}</span>
-                {#if s.config_defined}<Chip variant="assist">{t('folder_share.config_file')}</Chip>{/if}
               {/snippet}
               {#snippet supporting()}
                 <span class="sc-shares__path">{s.host_path}</span>
               {/snippet}
               {#snippet trailing()}
+                <!-- Where the share came from is a fact about the row, like the
+                     trash switch beside it, so it belongs on the row's line. On
+                     the headline it sat 8px above every control here, because a
+                     two-line list item centres its controls on the row and its
+                     headline on the first line. No placeholder is needed on the
+                     rows that lack it: this group is right-aligned, so dropping
+                     its leading item shortens the group from the left and moves
+                     nothing else. -->
+                {#if s.config_defined}<Chip variant="assist">{t('folder_share.config_file')}</Chip>{/if}
                 <!-- The switch used to stand here bare, named only by a
                      `title` — nothing on screen said which setting it was.
                      The visible word is the label now; the switch keeps the
@@ -243,6 +251,13 @@
                   <IconButton label={t('common.remove', { name: s.name })} onclick={() => askDelete(s)}>
                     <Icon icon={icons.delete} size={18} />
                   </IconButton>
+                {:else}
+                  <!-- The column has to stay even where the button cannot. The
+                       trailing group is right-aligned, so without this every
+                       control on a config-file row sat 40px right of the same
+                       control on a dynamic one and the switches read as a
+                       zigzag down the list. -->
+                  <span class="sc-shares__action-gap" aria-hidden="true"></span>
                 {/if}
               {/snippet}
             </ListItem>
@@ -360,18 +375,38 @@
     @apply --m3-body-small;
     font-family: var(--sc-font-mono, monospace);
   }
+  /* `ListItem`'s trailing group has no gap of its own: every other caller puts
+     only icon buttons there, which carry their own padding. This one holds a
+     chip and a labelled switch as well, so it needs one. It replaces the
+     margin `.sc-shares__trash` used to carry for the same reason, which only
+     ever spaced the one thing that came after it. */
+  .sc-shares__list :global(.sc-list-item__trailing) {
+    gap: 8px;
+  }
   .sc-shares__trash {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    /* `ListItem`'s trailing group has no gap of its own — every other caller
-       puts only icon buttons there, which carry their own padding. */
-    margin-inline-end: 8px;
+  }
+  /* One IconButton wide, matching what it stands in for. */
+  .sc-shares__action-gap {
+    flex: none;
+    inline-size: 40px;
   }
   .sc-shares__trash-label {
     color: var(--m3c-on-surface-variant);
     white-space: nowrap;
     @apply --m3-label-large;
+  }
+  /* The trailing group cannot shrink -- it holds a chip, a switch and 40px
+     icon buttons -- so on a 360px screen it took more room than the row had
+     and ran past the card's edge. The word goes; the switch keeps the whole
+     per-share sentence as its accessible name, so nothing is lost to a screen
+     reader and the visible label returns as soon as there is room for it. */
+  @media (max-width: 599px) {
+    .sc-shares__trash-label {
+      display: none;
+    }
   }
   .sc-shares__error {
     margin: 0;

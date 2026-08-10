@@ -262,6 +262,12 @@
     gap: 16px;
     max-width: 320px;
   }
+  /* The UA gives <p> a 1em block margin, and margins do not collapse in a flex
+     container, so the first row sat 16px below the top of the form on top of
+     the gap that already separates the rows. */
+  .sc-share__unlock > p {
+    margin: 0;
+  }
   .sc-share__unlock-actions {
     align-self: flex-start;
   }

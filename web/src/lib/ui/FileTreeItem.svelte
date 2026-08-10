@@ -146,7 +146,10 @@
     flex: 1;
     min-width: 0;
     height: 100%;
-    padding-inline-end: 8px;
+    /* Both sides, not just the end: a <button>'s UA padding is `1px 6px`, so
+       declaring only the end left a 6px inset on the start that nothing here
+       asked for and that is not on the spacing scale. */
+    padding-inline: 0 8px;
     border: none;
     background: transparent;
     color: inherit;

@@ -234,7 +234,7 @@
   .sc-details__value {
     @apply --m3-body-medium;
     margin: 0;
-    padding-block-start: 2px;
+    padding-block-start: 4px;
     overflow-wrap: anywhere;
   }
 </style>

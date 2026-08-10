@@ -873,7 +873,10 @@
     @apply --m3-title-medium;
   }
   .sc-admin-section__subhead {
-    margin: 24px 0 8px;
+    /* 32 above, 8 below. The subhead starts a new settings group, and at 24
+       the space before it was only twice the 12px that separates a field from
+       its own hint, so the groups ran together. */
+    margin: 32px 0 8px;
     @apply --m3-title-small;
   }
   .sc-admin-section__hint {

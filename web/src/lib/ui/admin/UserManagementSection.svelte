@@ -268,13 +268,25 @@
           <ListItem>
             {#snippet headline()}
               <span class="sc-user-mgmt__name">{u.display_name || u.name}</span>
-              {#if u.is_admin}<Chip variant="filter" selected>{t('common.administrator')}</Chip>{/if}
-              {#if u.disabled}<Chip variant="assist">{t('user.inactive')}</Chip>{/if}
             {/snippet}
             {#snippet supporting()}
               {u.name}
             {/snippet}
             {#snippet trailing()}
+              <!-- Role and state read as chips, same as the quota beside them,
+                   so they belong on the row's own line. On the headline they
+                   sat 8px above every other control in the row, because a
+                   two-line list item centres its controls on the row and its
+                   headline on the first line. -->
+              <!-- Both chip columns are reserved rather than shrink-wrapped.
+                   The trailing group is right-aligned, so a chip that changes
+                   width or disappears moves everything after it: with a mixed
+                   list the switch landed on four different columns and the
+                   four icon buttons on four more. -->
+              <span class="sc-user-mgmt__state">
+                {#if u.is_admin}<Chip variant="filter" selected>{t('common.administrator')}</Chip>{/if}
+                {#if u.disabled}<Chip variant="assist">{t('user.inactive')}</Chip>{/if}
+              </span>
               <span
                 class="sc-user-mgmt__switch"
                 class:sc-user-mgmt__switch--locked={isLastActiveAdmin(u)}
@@ -451,11 +463,34 @@
     color: var(--m3c-error);
     @apply --m3-body-small;
   }
+  /* Flex, not the default block. The switch inside is inline-level, so a block
+     wrapper builds a line box around it and inherits the font's descender
+     space: the wrapper came out 39px tall around a 32px control and the switch
+     rode 3.5px above every button beside it. */
+  .sc-user-mgmt__switch {
+    display: flex;
+    align-items: center;
+  }
   .sc-user-mgmt__switch--locked {
     opacity: 0.5;
     pointer-events: none;
   }
+  /* One column each, wide enough for the longest label either can carry:
+     "관리자"/"비활성" and a two-sided quota like "45 GB / 50 GB". Both are
+     end-aligned so the chip stays against the control that follows it and the
+     slack falls on the name's side, where there is room for it. */
+  .sc-user-mgmt__state {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    inline-size: 72px;
+  }
   .sc-user-mgmt__quota {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    inline-size: 132px;
     border: none;
     background: none;
     padding: 0;
