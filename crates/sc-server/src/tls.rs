@@ -89,7 +89,12 @@ fn san_entries(app_hosts: &[String], lan: Option<IpAddr>) -> Vec<String> {
 /// present. Any read failure reads as "regenerate", which is always safe.
 fn recorded_sans(dir: &Path) -> Option<Vec<String>> {
     let txt = std::fs::read_to_string(dir.join("self-signed.sans")).ok()?;
-    Some(txt.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
+    Some(
+        txt.lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
+    )
 }
 
 /// Generate a self-signed certificate covering `sans` and write it out.
@@ -98,8 +103,8 @@ fn generate(dir: &Path, sans: &[String]) -> anyhow::Result<()> {
     // iPAddress SAN and everything else a dNSName. Browsers match a literal
     // address against the former only, so getting this wrong would produce a
     // certificate that fails on exactly the URL it was generated for.
-    let mut params = rcgen::CertificateParams::new(sans.to_vec())
-        .context("building certificate parameters")?;
+    let mut params =
+        rcgen::CertificateParams::new(sans.to_vec()).context("building certificate parameters")?;
     params
         .distinguished_name
         .push(rcgen::DnType::CommonName, "Stowcloud LAN (self-signed)");
@@ -115,7 +120,8 @@ fn generate(dir: &Path, sans: &[String]) -> anyhow::Result<()> {
     std::fs::write(dir.join("self-signed.crt"), cert.pem()).context("writing the certificate")?;
     // Written last, so a crash between the two leaves no `.sans` file and the
     // next start regenerates rather than trusting a half-written pair.
-    std::fs::write(dir.join("self-signed.sans"), sans.join("\n")).context("writing the SAN list")?;
+    std::fs::write(dir.join("self-signed.sans"), sans.join("\n"))
+        .context("writing the SAN list")?;
     Ok(())
 }
 
@@ -132,9 +138,13 @@ fn write_private(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         opts.mode(0o600);
     }
-    let mut f = opts.open(path).with_context(|| format!("creating {}", path.display()))?;
-    f.write_all(bytes).with_context(|| format!("writing {}", path.display()))?;
-    f.sync_all().with_context(|| format!("flushing {}", path.display()))?;
+    let mut f = opts
+        .open(path)
+        .with_context(|| format!("creating {}", path.display()))?;
+    f.write_all(bytes)
+        .with_context(|| format!("writing {}", path.display()))?;
+    f.sync_all()
+        .with_context(|| format!("flushing {}", path.display()))?;
     Ok(())
 }
 
@@ -162,7 +172,11 @@ pub fn load_or_generate(
     let usable = dir.join("self-signed.crt").exists() && dir.join("self-signed.key").exists();
     // A recorded list with no certificate beside it describes nothing, so it is
     // discarded rather than carried forward.
-    let have = if usable { recorded_sans(&dir).unwrap_or_default() } else { Vec::new() };
+    let have = if usable {
+        recorded_sans(&dir).unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let missing: Vec<&String> = want.iter().filter(|w| !have.contains(w)).collect();
     if !usable || !missing.is_empty() {
         let mut all = have.clone();
@@ -215,7 +229,9 @@ pub struct TlsListener {
 
 impl TlsListener {
     pub fn spawn(listener: TcpListener, acceptor: TlsAcceptor) -> anyhow::Result<Self> {
-        let local = listener.local_addr().context("reading the TLS listener address")?;
+        let local = listener
+            .local_addr()
+            .context("reading the TLS listener address")?;
         // Bounded, so a flood of handshakes cannot grow this without limit; the
         // accept loop simply stops taking new sockets while it is full.
         let (tx, rx) = mpsc::channel(128);
@@ -243,13 +259,17 @@ impl TlsListener {
                             // has not been given the certificate exception yet,
                             // so this is `debug`, not `warn`: at `warn` every
                             // first visit would look like a fault.
-                            Err(e) => tracing::debug!(peer = %peer, error = %e, "tls: handshake failed"),
+                            Err(e) => {
+                                tracing::debug!(peer = %peer, error = %e, "tls: handshake failed")
+                            }
                         },
                         // Anything else on this port is somebody who typed
                         // `http://`. Answer the redirect and close; the socket
                         // never reaches the router.
                         Some(_) => redirect_to_https(tcp, peer).await,
-                        None => tracing::debug!(peer = %peer, "tls: peer sent nothing before the deadline"),
+                        None => {
+                            tracing::debug!(peer = %peer, "tls: peer sent nothing before the deadline")
+                        }
                     }
                 });
             }
@@ -368,7 +388,10 @@ fn plaintext_redirect(head: &[u8]) -> Option<String> {
 
     let host = lines
         .take_while(|l| !l.is_empty())
-        .find_map(|l| l.split_once(':').filter(|(k, _)| k.eq_ignore_ascii_case("host")))
+        .find_map(|l| {
+            l.split_once(':')
+                .filter(|(k, _)| k.eq_ignore_ascii_case("host"))
+        })
         .map(|(_, v)| v.trim())?;
     if host.is_empty() || host.len() > 253 || !host.bytes().all(is_ok_host_byte) {
         return None;
@@ -422,7 +445,10 @@ mod tests {
         let a = san_entries(&hosts, Some(lan));
         let b = san_entries(&hosts, Some(lan));
         assert_eq!(a, b, "same inputs must not produce a different list");
-        assert_eq!(a, vec!["127.0.0.1", "192.168.0.50", "::1", "localhost", "nas.local"]);
+        assert_eq!(
+            a,
+            vec!["127.0.0.1", "192.168.0.50", "::1", "localhost", "nas.local"]
+        );
     }
 
     #[test]
@@ -445,9 +471,16 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         load_or_generate(dir.path(), &["nas.local".to_string()]).unwrap();
         let before = std::fs::read(dir.path().join("tls/self-signed.crt")).unwrap();
-        load_or_generate(dir.path(), &["nas.local".to_string(), "cloud.example.com".to_string()]).unwrap();
+        load_or_generate(
+            dir.path(),
+            &["nas.local".to_string(), "cloud.example.com".to_string()],
+        )
+        .unwrap();
         let after = std::fs::read(dir.path().join("tls/self-signed.crt")).unwrap();
-        assert_ne!(before, after, "a new name must be covered by a new certificate");
+        assert_ne!(
+            before, after,
+            "a new name must be covered by a new certificate"
+        );
     }
 
     /// The container case: the bridge address changes on recreation, and
@@ -456,7 +489,11 @@ mod tests {
     #[test]
     fn a_name_that_goes_away_does_not_regenerate() {
         let dir = tempfile::tempdir().unwrap();
-        load_or_generate(dir.path(), &["nas.local".to_string(), "172.17.0.2".to_string()]).unwrap();
+        load_or_generate(
+            dir.path(),
+            &["nas.local".to_string(), "172.17.0.2".to_string()],
+        )
+        .unwrap();
         let before = std::fs::read(dir.path().join("tls/self-signed.crt")).unwrap();
         load_or_generate(dir.path(), &["nas.local".to_string()]).unwrap();
         let after = std::fs::read(dir.path().join("tls/self-signed.crt")).unwrap();
@@ -482,7 +519,10 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         load_or_generate(dir.path(), &[]).unwrap();
-        let mode = std::fs::metadata(dir.path().join("tls/self-signed.key")).unwrap().permissions().mode();
+        let mode = std::fs::metadata(dir.path().join("tls/self-signed.key"))
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o077, 0, "mode was {mode:o}");
     }
 }
@@ -509,19 +549,28 @@ mod plaintext_tests {
     #[test]
     fn keeps_the_port_the_caller_reached_us_on() {
         let h = head(&["GET / HTTP/1.1", "Host: nas.example:8443"]);
-        assert_eq!(plaintext_redirect(&h).as_deref(), Some("https://nas.example:8443/"));
+        assert_eq!(
+            plaintext_redirect(&h).as_deref(),
+            Some("https://nas.example:8443/")
+        );
     }
 
     #[test]
     fn accepts_a_bracketed_ipv6_authority() {
         let h = head(&["GET /trash HTTP/1.1", "Host: [fd00::5]:8443"]);
-        assert_eq!(plaintext_redirect(&h).as_deref(), Some("https://[fd00::5]:8443/trash"));
+        assert_eq!(
+            plaintext_redirect(&h).as_deref(),
+            Some("https://[fd00::5]:8443/trash")
+        );
     }
 
     #[test]
     fn finds_host_whatever_case_it_arrives_in() {
         let h = head(&["GET / HTTP/1.1", "Accept: */*", "HOST: nas.example"]);
-        assert_eq!(plaintext_redirect(&h).as_deref(), Some("https://nas.example/"));
+        assert_eq!(
+            plaintext_redirect(&h).as_deref(),
+            Some("https://nas.example/")
+        );
     }
 
     #[test]
@@ -535,7 +584,12 @@ mod plaintext_tests {
         // A `Host` is caller-controlled and lands in a `Location`. Splitting on
         // CRLF already separates lines, so the danger is anything else a header
         // parser might rejoin: reject on the character class, not on the split.
-        for bad in ["nas.example\u{0}", "nas example", "nas.example\u{7f}", "na<s>.example"] {
+        for bad in [
+            "nas.example\u{0}",
+            "nas example",
+            "nas.example\u{7f}",
+            "na<s>.example",
+        ] {
             let h = head(&["GET / HTTP/1.1", &format!("Host: {bad}")]);
             assert_eq!(plaintext_redirect(&h), None, "accepted {bad:?}");
         }
@@ -588,12 +642,17 @@ mod dispatch_tests {
     async fn a_plaintext_request_is_answered_with_a_redirect() {
         let (_dir, addr) = listening().await;
         let mut c = TcpStream::connect(addr).await.unwrap();
-        c.write_all(format!("GET /b/home HTTP/1.1\r\nHost: {addr}\r\n\r\n").as_bytes()).await.unwrap();
+        c.write_all(format!("GET /b/home HTTP/1.1\r\nHost: {addr}\r\n\r\n").as_bytes())
+            .await
+            .unwrap();
 
         let mut reply = String::new();
         c.read_to_string(&mut reply).await.unwrap();
         assert!(reply.starts_with("HTTP/1.1 308 "), "{reply:?}");
-        assert!(reply.contains(&format!("Location: https://{addr}/b/home\r\n")), "{reply:?}");
+        assert!(
+            reply.contains(&format!("Location: https://{addr}/b/home\r\n")),
+            "{reply:?}"
+        );
     }
 
     /// The peek must not eat the `ClientHello`. This one is deliberately
@@ -604,10 +663,16 @@ mod dispatch_tests {
     async fn a_tls_record_still_reaches_the_acceptor() {
         let (_dir, addr) = listening().await;
         let mut c = TcpStream::connect(addr).await.unwrap();
-        c.write_all(&[0x16, 0x03, 0x01, 0x00, 0x04, 0x01, 0x00, 0x00, 0x00]).await.unwrap();
+        c.write_all(&[0x16, 0x03, 0x01, 0x00, 0x04, 0x01, 0x00, 0x00, 0x00])
+            .await
+            .unwrap();
 
         let mut reply = Vec::new();
         c.read_to_end(&mut reply).await.unwrap();
-        assert_eq!(reply.first(), Some(&0x15), "expected a TLS alert, got {reply:?}");
+        assert_eq!(
+            reply.first(),
+            Some(&0x15),
+            "expected a TLS alert, got {reply:?}"
+        );
     }
 }
