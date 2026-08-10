@@ -512,7 +512,6 @@ impl ports::UploadEngine for NcUpload {
 pub struct NcShares {
     auth: Arc<sc_auth::AuthService>,
     core: Arc<sc_core::Core>,
-    canonical_url: String,
 }
 
 fn grants_unavailable() -> PortError {
@@ -724,8 +723,8 @@ impl ports::SharePort for NcShares {
             .collect())
     }
 
-    fn link_url(&self, token: &str) -> String {
-        format!("{}/s/{token}", self.canonical_url.trim_end_matches('/'))
+    fn link_url(&self, origin: &str, token: &str) -> String {
+        format!("{}/s/{token}", origin.trim_end_matches('/'))
     }
 }
 
@@ -1117,7 +1116,6 @@ impl Compat {
             shares: Arc::new(NcShares {
                 auth: auth.clone(),
                 core: core.clone(),
-                canonical_url: cfg.canonical_url.clone(),
             }),
             core: Arc::new(NcCore {
                 core,

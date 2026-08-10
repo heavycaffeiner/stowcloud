@@ -221,15 +221,19 @@ async fn h_ocs(
                 subfiles: find(&q, "subfiles").as_deref() == Some("true"),
                 shared_with_me: find(&q, "shared_with_me").as_deref() == Some("true"),
             };
-            ctx.result(s.shares.index(p.user, &filter))
+            ctx.result(s.shares.index(p.user, &filter, share_origin(&s, &headers)))
         }
         ("POST", "/apps/files_sharing/api/v1/shares") => {
             let Some(p) = authenticate(&s, &headers, from) else {
                 return ctx.result(Err(OcsError::unauthorized("Unauthorised")));
             };
-            let mut pairs = parse_pairs(&body);
+            let mut pairs = body_pairs(&headers, &body);
             pairs.extend(parse_pairs(uri.query().unwrap_or("")));
-            ctx.result(s.shares.create(p.user, &ShareRequest::from_form(&pairs)))
+            ctx.result(s.shares.create(
+                p.user,
+                &ShareRequest::from_form(&pairs),
+                share_origin(&s, &headers),
+            ))
         }
         ("GET", "/apps/files_sharing/api/v1/sharees") => {
             let Some(p) = authenticate(&s, &headers, from) else {
@@ -263,11 +267,16 @@ async fn h_ocs(
             if method == axum::http::Method::DELETE {
                 ctx.result(s.shares.delete(pr.user, id))
             } else if method == axum::http::Method::GET {
-                ctx.result(s.shares.show(pr.user, id))
+                ctx.result(s.shares.show(pr.user, id, share_origin(&s, &headers)))
             } else {
-                let mut pairs = parse_pairs(&body);
+                let mut pairs = body_pairs(&headers, &body);
                 pairs.extend(parse_pairs(uri.query().unwrap_or("")));
-                ctx.result(s.shares.update(pr.user, id, &ShareRequest::from_form(&pairs)))
+                ctx.result(s.shares.update(
+                    pr.user,
+                    id,
+                    &ShareRequest::from_form(&pairs),
+                    share_origin(&s, &headers),
+                ))
             }
         }
 
@@ -594,6 +603,48 @@ fn host_header(headers: &HeaderMap) -> Option<String> {
         .and_then(|v| v.split(',').next())
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
+}
+
+/// The origin a public link should name: the one this request arrived on, so a
+/// client enrolled on an alternate origin is not handed a link on a name it may
+/// have no route to.
+fn share_origin<'a>(s: &'a NcState, headers: &HeaderMap) -> &'a str {
+    s.cfg.canonical_for_host(host_header(headers).as_deref())
+}
+
+/// The share body, whichever of the two encodings the client chose.
+///
+/// The reference reads its parameters through a body parser that switches on
+/// `Content-Type`, so clients pick freely. The Android app takes both sides of
+/// that: `POST` is form-encoded, `PUT` is a JSON object. Read as form pairs a
+/// JSON body yields none at all, and an update with no recognised parameter is
+/// a 400, so every edit to a share from that client failed.
+fn body_pairs(headers: &HeaderMap, body: &str) -> Vec<(String, String)> {
+    let json = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.split(';').next().unwrap_or("").trim() == "application/json");
+    if !json {
+        return parse_pairs(body);
+    }
+    // Values arrive as strings from that client, but a number or a bool is
+    // just as valid JSON for the same field, so flatten the scalars rather
+    // than requiring one spelling.
+    match serde_json::from_str::<serde_json::Value>(body) {
+        Ok(serde_json::Value::Object(map)) => map
+            .into_iter()
+            .filter_map(|(k, v)| {
+                let s = match v {
+                    serde_json::Value::String(s) => s,
+                    serde_json::Value::Number(n) => n.to_string(),
+                    serde_json::Value::Bool(b) => b.to_string(),
+                    _ => return None,
+                };
+                Some((k, s))
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
 }
 
 fn parse_pairs(s: &str) -> Vec<(String, String)> {

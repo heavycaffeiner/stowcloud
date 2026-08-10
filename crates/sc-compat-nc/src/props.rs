@@ -448,8 +448,8 @@ mod tests {
         ) -> PortResult<Vec<crate::ports::GranteeCandidate>> {
             Ok(vec![])
         }
-        fn link_url(&self, t: &str) -> String {
-            format!("https://h/s/{t}")
+        fn link_url(&self, origin: &str, t: &str) -> String {
+            format!("{origin}/s/{t}")
         }
     }
 

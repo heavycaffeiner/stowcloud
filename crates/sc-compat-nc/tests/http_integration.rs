@@ -181,8 +181,8 @@ impl SharePort for FakeShares {
     ) -> PortResult<Vec<GranteeCandidate>> {
         Ok(vec![])
     }
-    fn link_url(&self, t: &str) -> String {
-        format!("https://cloud.example.com/s/{t}")
+    fn link_url(&self, origin: &str, t: &str) -> String {
+        format!("{origin}/s/{t}")
     }
 }
 
@@ -1156,8 +1156,8 @@ impl SharePort for OneShare {
     ) -> PortResult<Vec<GranteeCandidate>> {
         Ok(vec![])
     }
-    fn link_url(&self, t: &str) -> String {
-        format!("https://cloud.example.com/s/{t}")
+    fn link_url(&self, origin: &str, t: &str) -> String {
+        format!("{origin}/s/{t}")
     }
 }
 
@@ -1194,6 +1194,43 @@ fn sharing_app() -> axum::Router {
     )
 }
 
+/// A link handed to a client that reached us on a registered alternate has to
+/// name that alternate. Built from the canonical URL instead, the app on a LAN
+/// address copies a link on the public name, missing whatever the two differ
+/// in: a port, a scheme, the name itself. It looks cut short and does not open.
+#[tokio::test]
+async fn a_public_link_names_the_origin_the_client_reached_us_on() {
+    let app = app_with(
+        NcConfig {
+            canonical_url: "https://cloud.example.com".into(),
+            alt_canonical_urls: vec!["https://cloud.internal:8443".into()],
+            ..NcConfig::default()
+        },
+        Arc::new(FakeAuth),
+        Arc::new(OneShare),
+    );
+    for (host, want) in [
+        ("cloud.internal:8443", "https://cloud.internal:8443/s/aB3xQ"),
+        ("cloud.example.com", "https://cloud.example.com/s/aB3xQ"),
+        // An authority nobody registered still gets the canonical URL: the
+        // `Host` header picks among origins, it never becomes one.
+        ("evil.example.net", "https://cloud.example.com/s/aB3xQ"),
+    ] {
+        let req = Request::builder()
+            .uri("/ocs/v2.php/apps/files_sharing/api/v1/shares/12?format=json")
+            .header("OCS-APIRequest", "true")
+            .header("Authorization", "Basic YWxpY2U6aHVudGVyMg==")
+            .header("Host", host)
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+        let j: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(j["ocs"]["data"][0]["url"], want, "host {host}");
+    }
+}
+
 /// The Android app reads a freshly created share back by id, and indexes into
 /// `data[0]` without checking. Before this route existed it got a 404 and
 /// showed the share as failed.
@@ -1213,6 +1250,32 @@ async fn one_share_by_id_is_a_single_element_list_carrying_its_url() {
     assert_eq!(data[0]["id"], "12");
     assert_eq!(data[0]["token"], "aB3xQ");
     assert_eq!(data[0]["url"], "https://cloud.example.com/s/aB3xQ");
+}
+
+/// The Android app posts a share form-encoded and then edits it with a JSON
+/// body. Read as form pairs that body yields no parameters at all, which is
+/// the one case `update` rejects, so every edit came back 400.
+#[tokio::test]
+async fn a_json_update_body_is_read_like_a_form_one() {
+    let resp = sharing_app()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/ocs/v2.php/apps/files_sharing/api/v1/shares/12?format=json")
+                .header("OCS-APIRequest", "true")
+                .header("Authorization", "Basic YWxpY2U6aHVudGVyMg==")
+                .header("Content-Type", "application/json; charset=UTF-8")
+                .body(Body::from(
+                    r#"{"permissions":"1","expireDate":"2026-08-27","note":"read only"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+    let j: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(j["ocs"]["meta"]["statuscode"], 200);
 }
 
 #[tokio::test]

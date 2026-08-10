@@ -72,7 +72,7 @@ pub fn share_type_to_kind(t: i64) -> Result<GranteeKind, OcsError> {
 ///   `"redacted"` (`formatPasswordField`).
 /// * `parent` is always `null`.
 /// * `expiration` is `"Y-m-d H:i:s"` in the user's timezone, not RFC 3339.
-pub fn format_share(s: &CoreShare, shares: &dyn SharePort) -> Val {
+pub fn format_share(s: &CoreShare, shares: &dyn SharePort, origin: &str) -> Val {
     let st = grantee_kind_to_share_type(s.kind);
     let perms = perms_to_nc_bits(s.perms) as i64;
 
@@ -174,7 +174,7 @@ pub fn format_share(s: &CoreShare, shares: &dyn SharePort) -> Val {
             v.push((
                 "url".into(),
                 match &s.token {
-                    Some(t) => Val::str(shares.link_url(t)),
+                    Some(t) => Val::str(shares.link_url(origin, t)),
                     None => Val::Null,
                 },
             ));
@@ -595,29 +595,45 @@ impl SharesApi {
         &self,
         user: UserId,
         filter: &crate::ports::ShareFilter,
+        origin: &str,
     ) -> Result<Val, OcsError> {
         let list = self.shares.list(user, filter).map_err(port_err)?;
         Ok(Val::List(
             list.iter()
-                .map(|s| format_share(s, self.shares.as_ref()))
+                .map(|s| format_share(s, self.shares.as_ref(), origin))
                 .collect(),
         ))
     }
 
     /// One share by id. The reference wraps it in a list, and clients index
     /// into `[0]` unconditionally.
-    pub fn show(&self, user: UserId, id: u64) -> Result<Val, OcsError> {
+    pub fn show(&self, user: UserId, id: u64, origin: &str) -> Result<Val, OcsError> {
         let s = self.shares.get(user, id).map_err(port_err)?;
-        Ok(Val::List(vec![format_share(&s, self.shares.as_ref())]))
+        Ok(Val::List(vec![format_share(
+            &s,
+            self.shares.as_ref(),
+            origin,
+        )]))
     }
 
-    pub fn create(&self, user: UserId, req: &ShareRequest) -> Result<Val, OcsError> {
+    pub fn create(
+        &self,
+        user: UserId,
+        req: &ShareRequest,
+        origin: &str,
+    ) -> Result<Val, OcsError> {
         let spec = req.to_spec()?;
         let s = self.shares.create(user, &spec).map_err(port_err)?;
-        Ok(format_share(&s, self.shares.as_ref()))
+        Ok(format_share(&s, self.shares.as_ref(), origin))
     }
 
-    pub fn update(&self, user: UserId, id: u64, req: &ShareRequest) -> Result<Val, OcsError> {
+    pub fn update(
+        &self,
+        user: UserId,
+        id: u64,
+        req: &ShareRequest,
+        origin: &str,
+    ) -> Result<Val, OcsError> {
         // An update with nothing to change is a 400 in the reference; mirror
         // that rather than performing a no-op write.
         if req.permissions.is_none()
@@ -656,7 +672,7 @@ impl SharesApi {
             note: req.note.clone().or(Some(existing.note.clone())),
         };
         let s = self.shares.update(user, id, &spec).map_err(port_err)?;
-        Ok(format_share(&s, self.shares.as_ref()))
+        Ok(format_share(&s, self.shares.as_ref(), origin))
     }
 
     /// The reference returns `DataResponse()` with no argument, which
@@ -671,6 +687,8 @@ impl SharesApi {
 mod tests {
     use super::*;
     use crate::ports::{FileId, Perms, PortResult, ShareFilter, ShareId};
+
+    const ORIGIN: &str = "https://cloud.example.com";
 
     struct FakeShares;
     impl SharePort for FakeShares {
@@ -706,8 +724,8 @@ mod tests {
                 exact: false,
             }])
         }
-        fn link_url(&self, token: &str) -> String {
-            format!("https://cloud.example.com/s/{token}")
+        fn link_url(&self, origin: &str, token: &str) -> String {
+            format!("{origin}/s/{token}")
         }
     }
 
@@ -761,7 +779,7 @@ mod tests {
 
     #[test]
     fn link_share_serialises_with_the_reference_types() {
-        let j = format_share(&link_share(), &FakeShares).to_json();
+        let j = format_share(&link_share(), &FakeShares, ORIGIN).to_json();
         // id is a STRING.
         assert_eq!(j["id"], "12");
         assert_eq!(j["share_type"], 3);
@@ -786,7 +804,7 @@ mod tests {
     fn a_link_without_a_password_reports_null_not_redacted() {
         let mut s = link_share();
         s.has_password = false;
-        let j = format_share(&s, &FakeShares).to_json();
+        let j = format_share(&s, &FakeShares, ORIGIN).to_json();
         assert!(j["password"].is_null());
     }
 
@@ -914,7 +932,7 @@ mod tests {
     fn create_without_a_path_is_404_before_share_type_is_examined() {
         let api = SharesApi::new(Arc::new(FakeShares));
         let r = ShareRequest::default();
-        assert_eq!(api.create(UserId(1), &r).unwrap_err().code, 404);
+        assert_eq!(api.create(UserId(1), &r, ORIGIN).unwrap_err().code, 404);
     }
 
     /// Serves a caller-supplied share and keeps whatever spec `update` was
@@ -965,15 +983,15 @@ mod tests {
         ) -> PortResult<Vec<GranteeCandidate>> {
             Ok(vec![])
         }
-        fn link_url(&self, token: &str) -> String {
-            format!("https://cloud.example.com/s/{token}")
+        fn link_url(&self, origin: &str, token: &str) -> String {
+            format!("{origin}/s/{token}")
         }
     }
 
     #[test]
     fn show_wraps_the_share_in_a_list() {
         let api = SharesApi::new(Arc::new(FakeShares));
-        let j = api.show(UserId(1), 12).unwrap().to_json();
+        let j = api.show(UserId(1), 12, ORIGIN).unwrap().to_json();
         let list = j.as_array().expect("clients index into [0] unconditionally");
         assert_eq!(list.len(), 1);
         assert_eq!(list[0]["id"], "12");
@@ -981,7 +999,7 @@ mod tests {
 
     #[test]
     fn a_link_carries_its_token_and_url() {
-        let j = format_share(&link_share(), &FakeShares).to_json();
+        let j = format_share(&link_share(), &FakeShares, ORIGIN).to_json();
         assert_eq!(j["token"], "aB3xQ");
         assert_eq!(j["url"], "https://cloud.example.com/s/aB3xQ");
     }
@@ -1043,7 +1061,7 @@ mod tests {
             permissions: Some(1 | 2 | 4 | 8),
             ..ShareRequest::default()
         };
-        api.update(UserId(1), 12, &req).unwrap();
+        api.update(UserId(1), 12, &req, ORIGIN).unwrap();
         assert!(!spy.spec().perms.contains(Perms::DOWNLOAD));
 
         // ...and asking for it back turns it on again.
@@ -1051,7 +1069,7 @@ mod tests {
             hide_download: Some(false),
             ..ShareRequest::default()
         };
-        api.update(UserId(1), 12, &req).unwrap();
+        api.update(UserId(1), 12, &req, ORIGIN).unwrap();
         assert!(spy.spec().perms.contains(Perms::DOWNLOAD));
     }
 
@@ -1074,13 +1092,13 @@ mod tests {
                 ..ShareRequest::default()
             },
         ] {
-            assert!(api.update(UserId(1), 12, &req).is_ok());
+            assert!(api.update(UserId(1), 12, &req, ORIGIN).is_ok());
         }
         assert_eq!(spy.spec().note.as_deref(), Some("read this"));
 
         // Genuinely empty is still a 400.
         let e = api
-            .update(UserId(1), 12, &ShareRequest::default())
+            .update(UserId(1), 12, &ShareRequest::default(), ORIGIN)
             .unwrap_err();
         assert_eq!(e.code, 400);
     }
@@ -1096,7 +1114,7 @@ mod tests {
             permissions: Some(1),
             ..ShareRequest::default()
         };
-        api.update(UserId(1), 12, &req).unwrap();
+        api.update(UserId(1), 12, &req, ORIGIN).unwrap();
         let spec = spy.spec();
         assert_eq!(spec.expires_s, Some(1_787_788_800));
         assert_eq!(spec.note.as_deref(), Some("keep me"));
@@ -1106,7 +1124,7 @@ mod tests {
             expire_date: Some(String::new()),
             ..ShareRequest::default()
         };
-        api.update(UserId(1), 12, &req).unwrap();
+        api.update(UserId(1), 12, &req, ORIGIN).unwrap();
         assert_eq!(spy.spec().expires_s, None);
     }
 }

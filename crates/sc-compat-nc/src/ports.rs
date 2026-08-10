@@ -522,8 +522,10 @@ pub trait SharePort: Send + Sync {
         scope: GranteeScope,
     ) -> PortResult<Vec<GranteeCandidate>>;
 
-    /// Absolute URL of a public link, built from the configured canonical URL.
-    fn link_url(&self, token: &str) -> String;
+    /// Absolute URL of a public link on `origin`, which the caller picks with
+    /// `NcConfig::canonical_for_host` so the link names the origin the client
+    /// reached us on rather than a different one it may not be able to resolve.
+    fn link_url(&self, origin: &str, token: &str) -> String;
 }
 
 // ---------------------------------------------------------------------------
