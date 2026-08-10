@@ -1301,7 +1301,8 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
 async function adminSetSmbSettings(req: SmbSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
   const enabledChanged = mockServerSettings.smb.enabled !== req.enabled
-  mockServerSettings.smb = { ...req }
+  // An absent `server_name` keeps the configured one, same as the server.
+  mockServerSettings.smb = { ...mockServerSettings.smb, ...req }
   return { applied_live: !enabledChanged, restart_required: enabledChanged }
 }
 

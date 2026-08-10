@@ -815,17 +815,20 @@ impl SettingsApi for SettingsBridge {
 
     fn set_smb(&self, patch: SmbPatch) -> Result<ApplyOutcome, CoreError> {
         let totp_policy = totp_policy_from_wire(&patch.totp_policy)?;
+        let mut cfg = self.cfg.lock();
+        let server_name = patch
+            .server_name
+            .unwrap_or_else(|| cfg.smb.server_name.clone());
         let ov = SmbOverride {
             enabled: patch.enabled,
             workgroup: patch.workgroup.clone(),
-            server_name: patch.server_name.clone(),
+            server_name: server_name.clone(),
             service_user: patch.service_user.clone(),
             allow_public_bind: patch.allow_public_bind,
             totp_policy,
             service_uid: patch.service_uid,
             service_gid: patch.service_gid,
         };
-        let mut cfg = self.cfg.lock();
         let enabled_changed = cfg.smb.enabled != patch.enabled;
 
         // Applied to a candidate and rendered from that, before anything is
@@ -840,7 +843,7 @@ impl SettingsApi for SettingsBridge {
         let mut candidate = cfg.clone();
         candidate.smb.enabled = patch.enabled;
         candidate.smb.workgroup = patch.workgroup;
-        candidate.smb.server_name = patch.server_name;
+        candidate.smb.server_name = server_name;
         candidate.smb.service_user = patch.service_user;
         candidate.smb.allow_public_bind = patch.allow_public_bind;
         candidate.smb.totp_policy = totp_policy;

@@ -83,11 +83,11 @@ pub struct ApplyOutcome {
 pub struct SmbPatch {
     pub enabled: bool,
     pub workgroup: String,
-    /// Defaulted, unlike every other field here, because this one was added
-    /// after the endpoint shipped and a client that predates it would
-    /// otherwise get a 400 on an otherwise valid body.
+    /// Optional, unlike every other field here. No screen edits it, so an
+    /// absent value has to keep whatever `sc.toml` set; taking it as an empty
+    /// string would clear the NetBIOS name on every unrelated save.
     #[serde(default)]
-    pub server_name: String,
+    pub server_name: Option<String>,
     pub service_user: String,
     pub allow_public_bind: bool,
     /// `"require_separate"` | `"block"` — mirrors `sc_smb::TotpPolicy`
