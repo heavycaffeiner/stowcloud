@@ -293,9 +293,19 @@ impl App {
         let compat = match cfg.resolve_compat_canonical_url() {
             crate::config::CompatCanonicalUrl::Configured(url)
             | crate::config::CompatCanonicalUrl::Derived(url) => {
+                let (alt_canonical_urls, rejected) = cfg.resolve_compat_alt_canonical_urls();
+                if !rejected.is_empty() {
+                    tracing::warn!(
+                        rejected = ?rejected,
+                        "ignoring `compat_alt_canonical_urls` entries that are not absolute \
+                         http(s):// origins; clients reaching this server under those names \
+                         will be answered with the canonical URL"
+                    );
+                }
                 Some(crate::nc::Compat::build(crate::nc::CompatBuildInputs {
                     data_dir: &data_dir,
                     canonical_url: url,
+                    alt_canonical_urls,
                     chunk_size_advisory: cfg.upload.chunk_default_bytes,
                     core: core.clone(),
                     meta: meta.clone(),

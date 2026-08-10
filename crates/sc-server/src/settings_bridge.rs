@@ -423,6 +423,15 @@ impl SettingsBridge {
             net_src,
             true,
         ));
+        // Shown but never writable from here. `NetworkOverride` is
+        // full-replace, so a PATCH from a UI build that does not know this
+        // field would erase the list an operator had put in `config.toml`.
+        fields.push(Self::readonly_needing_restart(
+            "compat_alt_canonical_urls",
+            json!(cfg.compat_alt_canonical_urls),
+            net_src,
+            "settings.readonly_alt_canonical_urls",
+        ));
 
         // --- db (restart-required) ---
         let db_src = src(

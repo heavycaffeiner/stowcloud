@@ -539,6 +539,7 @@
   "settings.must_be_at_least_one": "{field}: 1 이상이어야 합니다.",
   "settings.oidc_redirect_uri_must_be_https": "oidc.redirect_uri: https:// 로 시작해야 합니다 ({value}). 인증 공급자에 등록한 값과 정확히 같아야 합니다.",
   "settings.path_must_be_absolute": "{field}: 절대 경로여야 합니다 ({path}).",
+  "settings.readonly_alt_canonical_urls": "호환 클라이언트에게 알려 줄 추가 주소입니다. 이 화면을 저장하면 네트워크 항목 전체가 교체되므로, 예전 화면이 목록을 지우지 못하도록 config.toml 에서만 편집합니다.",
   "settings.readonly_local_password_login": "이 화면에서 거부로 바꾸면 매 부팅마다 config.toml 보다 우선 적용되어, 인증 공급자에 장애가 나면 관리자까지 로그인할 수 없게 됩니다. config.toml 을 직접 편집하세요.",
   "settings.readonly_owned_by_index_section": "색인 설정은 관리자 화면의 검색 색인 섹션에서 관리합니다.",
   "settings.readonly_owned_by_upload_section": "업로드 청크 설정은 관리자 화면의 업로드 청크 크기 섹션에서 관리합니다.",

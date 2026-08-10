@@ -21,10 +21,13 @@
 use crate::config::NcConfig;
 use crate::ocs::Val;
 
-pub fn capabilities(cfg: &NcConfig) -> Val {
+/// `host` is the request's authority, used only to report `theming.url` as the
+/// origin the client actually reached us on. See `NcConfig::canonical_for_host`
+/// for why that cannot be turned into an arbitrary URL.
+pub fn capabilities(cfg: &NcConfig, host: Option<&str>) -> Val {
     Val::map([
         ("version", version_block(cfg)),
-        ("capabilities", capability_block(cfg)),
+        ("capabilities", capability_block(cfg, host)),
     ])
 }
 
@@ -56,14 +59,14 @@ fn sharee_caps(cfg: &NcConfig) -> Val {
     ])
 }
 
-fn capability_block(cfg: &NcConfig) -> Val {
+fn capability_block(cfg: &NcConfig, host: Option<&str>) -> Val {
     Val::map([
         ("core", core_caps(cfg)),
         ("bruteforce", bruteforce_caps()),
         ("dav", dav_caps()),
         ("files", files_caps(cfg)),
         ("files_sharing", files_sharing_caps(cfg)),
-        ("theming", theming_caps(cfg)),
+        ("theming", theming_caps(cfg, host)),
         ("user_status", user_status_caps()),
         ("notifications", notifications_caps()),
         // NOTE: `activity` is deliberately ABSENT. See `activity_caps`.
@@ -251,11 +254,11 @@ fn files_sharing_caps(cfg: &NcConfig) -> Val {
     ])
 }
 
-fn theming_caps(cfg: &NcConfig) -> Val {
+fn theming_caps(cfg: &NcConfig, host: Option<&str>) -> Val {
     Val::map([
         ("name", Val::str(cfg.theming_name.clone())),
         ("productName", Val::str(cfg.theming_name.clone())),
-        ("url", Val::str(cfg.canonical_url.clone())),
+        ("url", Val::str(cfg.canonical_for_host(host).to_string())),
         ("imprintUrl", Val::str("")),
         ("privacyUrl", Val::str("")),
         ("slogan", Val::str("")),
@@ -345,7 +348,7 @@ mod tests {
     use super::*;
 
     fn caps_json() -> serde_json::Value {
-        capabilities(&NcConfig::default()).to_json()
+        capabilities(&NcConfig::default(), None).to_json()
     }
 
     #[test]
@@ -509,7 +512,7 @@ mod tests {
     #[test]
     fn advisory_chunk_size_is_published() {
         let cfg = NcConfig::default();
-        let c = capabilities(&cfg).to_json();
+        let c = capabilities(&cfg, None).to_json();
         assert_eq!(
             c["capabilities"]["files"]["chunked_upload"]["max_size"],
             10 * 1024 * 1024

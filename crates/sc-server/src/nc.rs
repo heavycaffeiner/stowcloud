@@ -1039,6 +1039,9 @@ pub struct Compat {
 pub struct CompatBuildInputs<'a> {
     pub data_dir: &'a std::path::Path,
     pub canonical_url: String,
+    /// Further origins this server answers on. Already validated by
+    /// `Config::resolve_compat_alt_canonical_urls`.
+    pub alt_canonical_urls: Vec<String>,
     pub chunk_size_advisory: u64,
     pub core: Arc<sc_core::Core>,
     pub meta: Arc<sc_meta::MetaStore>,
@@ -1053,6 +1056,7 @@ impl Compat {
         let CompatBuildInputs {
             data_dir,
             canonical_url,
+            alt_canonical_urls,
             chunk_size_advisory,
             core,
             meta,
@@ -1077,6 +1081,7 @@ impl Compat {
 
         let cfg = Arc::new(sc_compat_nc::NcConfig {
             canonical_url,
+            alt_canonical_urls,
             instance_id,
             chunk_size_advisory,
             // Handed across from the crate that sets the cookie. `sc-compat-nc`

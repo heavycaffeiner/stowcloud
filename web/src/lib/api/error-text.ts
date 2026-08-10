@@ -39,6 +39,7 @@ const SERVER_KEYS = new Set<string>([
   /* i18n */ 'settings.oidc_redirect_uri_must_be_https',
   /* i18n */ 'settings.readonly_secret_file_path',
   /* i18n */ 'settings.readonly_local_password_login',
+  /* i18n */ 'settings.readonly_alt_canonical_urls',
   /* i18n */ 'settings.readonly_owned_by_index_section',
   /* i18n */ 'settings.readonly_owned_by_upload_section',
   /* i18n */ 'settings.readonly_smb_interfaces',

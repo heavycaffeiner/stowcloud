@@ -1032,6 +1032,99 @@ async fn a_missing_client_address_degrades_to_unspecified_not_to_loopback() {
 }
 
 // ---------------------------------------------------------------------------
+// several registered origins
+// ---------------------------------------------------------------------------
+
+fn multi_origin_app() -> axum::Router {
+    app_with_auth_and_cfg(NcConfig {
+        canonical_url: "https://cloud.example.com".into(),
+        alt_canonical_urls: vec!["https://cloud.internal:8443".into()],
+        ..NcConfig::default()
+    })
+}
+
+fn app_with_auth_and_cfg(cfg: NcConfig) -> axum::Router {
+    app_with_cfg(cfg, Arc::new(FakeAuth))
+}
+
+async fn init_over(app: &axum::Router, header: &str, value: &str) -> serde_json::Value {
+    let resp = app
+        .clone()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/index.php/login/v2")
+                .header(header, value)
+                .header("User-Agent", "Nextcloud-android/3.30.0")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+    serde_json::from_slice(&bytes).unwrap()
+}
+
+#[tokio::test]
+async fn a_client_enrolling_on_a_registered_alternate_is_answered_on_it() {
+    let app = multi_origin_app();
+    let j = init_over(&app, "Host", "cloud.internal:8443").await;
+    assert_eq!(
+        j["poll"]["endpoint"],
+        "https://cloud.internal:8443/index.php/login/v2/poll"
+    );
+    assert!(j["login"]
+        .as_str()
+        .unwrap()
+        .starts_with("https://cloud.internal:8443/index.php/login/v2/flow/"));
+
+    // Behind a reverse proxy the name the user typed only survives in
+    // X-Forwarded-Host, so that one is read first.
+    let j = init_over(&app, "X-Forwarded-Host", "cloud.internal:8443").await;
+    assert_eq!(
+        j["poll"]["endpoint"],
+        "https://cloud.internal:8443/index.php/login/v2/poll"
+    );
+}
+
+/// The security property the whole design rests on: `Host` selects among
+/// configured origins, it never becomes one.
+#[tokio::test]
+async fn an_unregistered_host_still_gets_the_canonical_url() {
+    let app = multi_origin_app();
+    for host in ["evil.example.net", "cloud.internal", "cloud.example.com:9999"] {
+        let j = init_over(&app, "Host", host).await;
+        assert_eq!(
+            j["poll"]["endpoint"], "https://cloud.example.com/index.php/login/v2/poll",
+            "host {host}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn capabilities_report_the_origin_the_client_reached_us_on() {
+    let app = multi_origin_app();
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .uri("/ocs/v2.php/cloud/capabilities?format=json")
+                .header("OCS-APIRequest", "true")
+                .header("Host", "cloud.internal:8443")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+    let j: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(
+        j["ocs"]["data"]["capabilities"]["theming"]["url"],
+        "https://cloud.internal:8443"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // sharing
 // ---------------------------------------------------------------------------
 
