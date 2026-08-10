@@ -31,6 +31,7 @@
   import { page } from '$app/state'
   import { VariableTabs } from 'm3-svelte'
   import { authState } from '../../../lib/state/auth.svelte'
+  import { syncTabHash } from '../../../lib/state/tab-hash'
 
   const user = $derived(authState.session?.user ?? null)
   const isAdmin = $derived(user?.is_admin ?? false)
@@ -43,31 +44,23 @@
     { name: t('common.audit_log'), value: 'audit' }
   ]
 
+  const TAB_VALUES = tabs.map((t) => t.value)
   const fromHash = page.url.hash.slice(1)
-  let tab = $state(tabs.some((t) => t.value === fromHash) ? fromHash : 'users')
+  let tab = $state(TAB_VALUES.includes(fromHash) ? fromHash : 'users')
 
   // Same reasoning as `/settings`: the tab belongs in the URL so a reload
   // stays put, and `replaceState` keeps Back a page-level action rather than
   // a tab-level undo.
   //
-  // The sync runs both ways. Writing only tab -> URL looks right until someone
-  // opens `/admin#server` while already on `/admin`: SvelteKit treats that as a
-  // same-document hash change, `tab` never moves, and the effect promptly
-  // overwrites the URL back to the tab already on screen — the link silently
-  // does nothing. `written` records the hash this effect itself set, which is
-  // what tells an external change apart from its own echo.
-  let written = fromHash
+  // The sync runs both ways; `syncTabHash` holds the reasoning for why the
+  // hash this effect reads has to be compared against the last one it read
+  // rather than the last one it wrote.
+  let seen = fromHash
   $effect(() => {
-    const hash = page.url.hash.slice(1)
-    const current = tab
-    if (hash === current) return
-    if (hash !== written && tabs.some((t) => t.value === hash)) {
-      written = hash
-      tab = hash
-    } else {
-      written = current
-      replaceState(`#${current}`, page.state)
-    }
+    const next = syncTabHash(page.url.hash.slice(1), seen, tab, TAB_VALUES)
+    seen = next.seen
+    if (next.tab !== tab) tab = next.tab
+    else if (next.write !== null) replaceState(`#${next.write}`, page.state)
   })
 </script>
 
