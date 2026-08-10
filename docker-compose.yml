@@ -1,15 +1,19 @@
 # Reference deployment for `sc:core` and the `sc:smb` sidecar.
 # See docs/DEPLOYMENT.md §9/§10.
 #
-#   ghcr.io/heavycaffeiner/stowcloud:core   amd64 + arm64
-#   ghcr.io/heavycaffeiner/stowcloud:smb    amd64 + arm64
+#   ghcr.io/heavycaffeiner/stowcloud:core-stable    amd64 + arm64
+#   ghcr.io/heavycaffeiner/stowcloud:smb-stable     amd64 + arm64
 #
-# Both tags are manifest lists, and every architecture in them was built and
-# run on its own hardware in CI before being published.
+# Every tag below is a manifest list, and every architecture in one was built
+# and run on its own hardware in CI before being published.
 #
-# Both tags move with every master build. Pin to `:core-<sha>` / `:smb-<sha>`
-# for anything that matters, so `docker compose pull` cannot change the
-# running version underneath you.
+# Two channels. `-stable` moves when a release is tagged, and is what this file
+# pulls; `:core` and `:smb` with no suffix are the same images under their older
+# names. `-nightly` moves with every commit to master, so switch to it only if
+# you want to run the tip.
+#
+# Either way the channel tag moves under a `docker compose pull`. Pin to
+# `:core-<sha>` / `:smb-<sha>` for anything that matters.
 #
 # No `build:` key: this file deploys a published image. To build from source,
 # use `docker build -f Dockerfile .` (DEPLOYMENT.md §1) or the testbed stack in
@@ -32,7 +36,7 @@
 
 services:
   sc:
-    image: ghcr.io/heavycaffeiner/stowcloud:core
+    image: ghcr.io/heavycaffeiner/stowcloud:core-stable
     user: "1000:1000"
     # The gid that already owns /shares/* on the host (Jellyfin, *arr, ...).
     # Adjust to match yours — DEPLOYMENT.md §6.2.
@@ -137,7 +141,7 @@ services:
     # start a container bound to an address the host does not have. A quick
     # start whose first line errors out is not a quick start.
     profiles: ["smb"]
-    image: ghcr.io/heavycaffeiner/stowcloud:smb
+    image: ghcr.io/heavycaffeiner/stowcloud:smb-stable
     volumes:
       - ./smbcfg:/config/smb:ro,z
       - ./shares/photos:/shares/photos:z

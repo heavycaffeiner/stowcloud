@@ -14,6 +14,25 @@ name: docker
 # moving the `:core` tag.
 #
 # ---------------------------------------------------------------------------
+# Two channels
+# ---------------------------------------------------------------------------
+# A push to master publishes the nightly channel, `:core-nightly` and
+# `:smb-nightly`. A pushed `v*` tag publishes the stable channel: `:core-stable`
+# and `:smb-stable`, the version-stamped `:core-<version>`, and the bare
+# `:core` / `:smb` that README and every existing deployment already pull. The
+# bare tags keep being written so a self-hoster who never reads this file still
+# tracks releases rather than silently freezing on whatever they last pulled.
+#
+# Both channels also write `:core-<sha>` / `:smb-<sha>`. That is the tag to pin
+# to once a deployment matters: a channel tag moves under you, a commit-stamped
+# one cannot.
+#
+# `paths` filters the pull_request trigger only. Whether a path filter is even
+# evaluated for a tag push is undocumented, and a release that quietly does not
+# build is a worse failure than a few redundant nightly builds, so a master
+# push builds unconditionally.
+#
+# ---------------------------------------------------------------------------
 # Both architectures are built on their own hardware
 # ---------------------------------------------------------------------------
 # arm64 used to be a QEMU cross-build on an amd64 runner, and it cost 48
@@ -35,16 +54,7 @@ name: docker
 on:
   push:
     branches: [main, master]
-    paths:
-      - "Dockerfile"
-      - "Dockerfile.smb"
-      - ".dockerignore"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/**"
-      - "web/**"
-      - "deploy/smb/**"
-      - ".github/workflows/docker.yml"
+    tags: ["v*"]
   pull_request:
     paths:
       - "Dockerfile"
@@ -467,10 +477,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The moving tag and an immutable one, written together. `:core` is what
-      # docker-compose.yml references and what a self-hoster pulls; the
-      # commit-stamped tag is what you pin to once a deployment matters, and
-      # what makes "which build is this" answerable after `:core` has moved on.
+      # The channel tags and an immutable one, written together. Which channel
+      # depends on what was pushed; the commit-stamped tag is written either
+      # way, and is what makes "which build is this" answerable after a channel
+      # tag has moved on.
       - name: Staple both architectures into the pulled tags
         run: |
           cd /tmp/digests
@@ -479,13 +489,19 @@ jobs:
           # already pulling it.
           count=$(ls -1 | wc -l)
           [ "$count" -eq 2 ] || { echo "expected 2 digests, found ${count}:"; ls -la; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            channel="-t ${IMAGE}:core-stable -t ${IMAGE}:core -t ${IMAGE}:core-${GITHUB_REF_NAME#v}"
+          else
+            channel="-t ${IMAGE}:core-nightly"
+          fi
+          echo "publishing ${channel}"
           docker buildx imagetools create \
-            -t "${IMAGE}:core" \
+            $channel \
             -t "${IMAGE}:core-${GITHUB_SHA}" \
             $(printf "${IMAGE}@sha256:%s " *)
 
       - name: Show what a `docker pull` will now resolve to
-        run: docker buildx imagetools inspect "${IMAGE}:core"
+        run: docker buildx imagetools inspect "${IMAGE}:core-${GITHUB_SHA}"
 
   publish-smb:
     name: publish sc:smb (${{ matrix.arch }}, by digest)
@@ -567,10 +583,16 @@ jobs:
           cd /tmp/digests
           count=$(ls -1 | wc -l)
           [ "$count" -eq 2 ] || { echo "expected 2 digests, found ${count}:"; ls -la; exit 1; }
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            channel="-t ${IMAGE}:smb-stable -t ${IMAGE}:smb -t ${IMAGE}:smb-${GITHUB_REF_NAME#v}"
+          else
+            channel="-t ${IMAGE}:smb-nightly"
+          fi
+          echo "publishing ${channel}"
           docker buildx imagetools create \
-            -t "${IMAGE}:smb" \
+            $channel \
             -t "${IMAGE}:smb-${GITHUB_SHA}" \
             $(printf "${IMAGE}@sha256:%s " *)
 
       - name: Show what a `docker pull` will now resolve to
-        run: docker buildx imagetools inspect "${IMAGE}:smb"
+        run: docker buildx imagetools inspect "${IMAGE}:smb-${GITHUB_SHA}"
