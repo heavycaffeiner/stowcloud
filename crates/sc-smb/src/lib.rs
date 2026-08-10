@@ -3,23 +3,26 @@
 //! This crate never talks to Samba binaries and never sees plaintext
 //! passwords. It only:
 //!
-//!   1. Enforces the LAN-only bind gate (`validate_bind`) — the control
-//!      that justifies sharing the account password with
-//!      SMB is a hard refusal, not a warning.
-//!   2. Renders `smb.conf` (`generate_conf`) from `Share`/`Grant`-shaped
+//!   1. Renders `smb.conf` (`generate_conf`) from `Share`/`Grant`-shaped
 //!      input the caller already resolved — one Samba `[share]` per distinct
 //!      subpath grant, since SMB shares are path-scoped and can't express a
 //!      subpath restriction on their own.
-//!   3. Writes the three sidecar-facing files (`write_all`): `smb.conf`,
+//!   2. Writes the sidecar-facing files (`write_all`): `smb.conf`,
 //!      an `smbpasswd`(5) file (rendered by the caller from
 //!      `sc_auth::AuthService::export_smbpasswd()` — this crate never
-//!      derives or touches NT hashes), and `/etc/passwd`-style entries so
-//!      Samba's `getpwnam` succeeds for every SMB user.
+//!      derives or touches NT hashes), `/etc/passwd`-style entries so
+//!      Samba's `getpwnam` succeeds for every SMB user, and `network.policy`,
+//!      the one-line handoff telling the sidecar whether public addresses may
+//!      be bound.
 //!
-//! The sidecar itself (inotify-watch `/config/smb`, `testparm -s`,
-//! `smbcontrol reload-config`) is out of scope for this crate — that's a
-//! separate small program/container that consumes the files this crate
-//! writes.
+//! The sidecar itself (inotify-watch `/config/smb`, expand the network scope,
+//! `testparm -s`, `smbcontrol reload-config`) is out of scope for this crate —
+//! that's a separate small program/container that consumes the files this
+//! crate writes.
+//!
+//! Reach is decided in the sidecar, not here. It enumerates the host's own
+//! interfaces and expands `interfaces`/`hosts allow` from them; the config
+//! rendered here binds loopback only, so an unexpanded file is closed.
 
 mod bind;
 mod conf;
@@ -30,7 +33,6 @@ pub use bind::is_private;
 pub use error::SmbError;
 pub use passwd::render_passwd_entries;
 
-use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -80,8 +82,10 @@ pub struct SmbConfig {
     /// connection runs as; real access control is `valid users`/read/write
     /// lists, never Unix permissions.
     pub service_user: String,
-    /// Escape hatch for `validate_bind`. Off by default; turning it on
-    /// raises a permanent admin-UI warning and an audit event.
+    /// Lets the sidecar bind and admit globally-routable addresses, including
+    /// a directly-attached IPv6 GUA prefix. Off by default; turning it on
+    /// raises a permanent admin-UI warning and an audit event. Reaches the
+    /// sidecar through `network.policy`.
     pub allow_public_bind: bool,
     pub totp_policy: TotpPolicy,
 }
@@ -141,9 +145,9 @@ pub struct SmbUser {
 
 pub struct SmbOrchestrator {
     cfg: SmbConfig,
-    /// Set once `validate_bind` accepts a public bind under
-    /// `allow_public_bind = true`. Sticky for the process lifetime — this
-    /// backs the "permanent warning banner" in
+    /// Set once a config has been rendered under `allow_public_bind = true`.
+    /// Sticky for the process lifetime, which is what backs the permanent
+    /// warning banner.
     public_bind_warning: AtomicBool,
 }
 
@@ -159,49 +163,52 @@ impl SmbOrchestrator {
         &self.cfg
     }
 
-    /// `true` once a public bind has been accepted under
-    /// `allow_public_bind = true` in this process's lifetime. The admin UI
-    /// polls this to render the permanent warning banner.
+    /// `true` once a config has been rendered under `allow_public_bind = true`
+    /// in this process's lifetime. The admin UI polls this to render the
+    /// permanent warning banner.
     pub fn public_bind_warning_active(&self) -> bool {
         self.public_bind_warning.load(Ordering::SeqCst)
-    }
-
-    /// The hard gate: refuse to proceed if any
-    /// interface `smbd` would bind is a public address, unless
-    /// `cfg.allow_public_bind` is explicitly `true`. When the override is
-    /// used, emits an audit event and latches `public_bind_warning_active`.
-    ///
-    /// Callers MUST call this — and get `Ok` — before `generate_conf`/
-    /// `write_all` run for real; `generate_conf` itself does not re-check
-    /// interfaces (it isn't given any).
-    pub fn validate_bind(&self, ifaces: &[IpAddr]) -> Result<(), SmbError> {
-        let offending = bind::public_addrs(ifaces);
-        if offending.is_empty() {
-            return Ok(());
-        }
-        if !self.cfg.allow_public_bind {
-            return Err(SmbError::PublicBindRefused { offending });
-        }
-        self.public_bind_warning.store(true, Ordering::SeqCst);
-        tracing::warn!(
-            target: "audit",
-            event = "smb.public_bind_enabled",
-            offending = ?offending,
-            "smb.allow_public_bind is true: SMB will bind a public address. \
-             This is not internet-safe."
-        );
-        Ok(())
     }
 
     /// Render `smb.conf` for the given shares/users. Does not touch the
     /// network or filesystem. Every hardening directive in the module docs
     /// is unconditional; nothing here is admin-configurable.
+    ///
+    /// Latches the public-bind warning when the operator has opted in. The
+    /// opt-in itself is the thing worth warning about: whether a public
+    /// address exists is only knowable in the sidecar's namespace.
     pub fn generate_conf(
         &self,
         shares: &[SmbShareDef],
         users: &[SmbUser],
     ) -> Result<String, SmbError> {
-        conf::render(&self.cfg, shares, users)
+        let rendered = conf::render(&self.cfg, shares, users)?;
+        if self.cfg.allow_public_bind && !self.public_bind_warning.swap(true, Ordering::SeqCst) {
+            tracing::warn!(
+                target: "audit",
+                event = "smb.public_bind_enabled",
+                "smb.allow_public_bind is true: SMB may bind a globally routable \
+                 address. This is not internet-safe."
+            );
+        }
+        Ok(rendered)
+    }
+
+    /// What the sidecar needs from us to decide the network scope. It runs in
+    /// the namespace that can see the host's interfaces, so it, not this crate,
+    /// does the deciding; these two lines are the whole of its input.
+    ///
+    /// `pinned_interfaces` is the off switch: the operator named the addresses
+    /// in `smb.interfaces`, so the rendered `interfaces`/`hosts allow` are
+    /// final and detection must not widen them.
+    fn render_network_policy(&self) -> String {
+        format!(
+            "# Written by sc-server. Read by the sc-smb sidecar/agent.\n\
+             allow_public_bind={}\n\
+             pinned_interfaces={}\n",
+            u8::from(self.cfg.allow_public_bind),
+            u8::from(!self.cfg.interfaces.is_empty()),
+        )
     }
 
     /// Convenience: render `/etc/passwd`-style entries for `users`, each on
@@ -211,9 +218,9 @@ impl SmbOrchestrator {
         passwd::render_passwd_entries(users, gid)
     }
 
-    /// Write `smb.conf`, the `smbpasswd`(5) file, and passwd entries into
-    /// `cfg.config_dir`. `smbpasswd` gets mode `0600` (best-effort outside
-    /// Unix); the sidecar mounts this volume read-only.
+    /// Write `smb.conf`, the `smbpasswd`(5) file, passwd entries and
+    /// `network.policy` into `cfg.config_dir`. `smbpasswd` gets mode `0600`
+    /// (best-effort outside Unix); the sidecar mounts this volume read-only.
     pub fn write_all(&self, conf: &str, smbpasswd: &str, passwd_entries: &str) -> Result<(), SmbError> {
         std::fs::create_dir_all(&self.cfg.config_dir).map_err(|e| SmbError::Io {
             path: self.cfg.config_dir.clone(),
@@ -222,15 +229,16 @@ impl SmbOrchestrator {
         self.write_one("smb.conf", conf, 0o644)?;
         self.write_one("smbpasswd", smbpasswd, 0o600)?;
         self.write_one("passwd", passwd_entries, 0o644)?;
+        self.write_one("network.policy", &self.render_network_policy(), 0o644)?;
         Ok(())
     }
 
-    /// Remove the three rendered files, if present. Called when `smb.enabled`
+    /// Remove the rendered files, if present. Called when `smb.enabled`
     /// goes false: keeping them would leave NT hashes on disk for a disabled
     /// feature, and the bare-metal agent reads their absence as the off
     /// switch rather than as "not synced yet".
     pub fn remove_rendered(&self) -> Result<(), SmbError> {
-        for name in ["smb.conf", "smbpasswd", "passwd"] {
+        for name in ["smb.conf", "smbpasswd", "passwd", "network.policy"] {
             let path = self.cfg.config_dir.join(name);
             match std::fs::remove_file(&path) {
                 Ok(()) => {}
@@ -265,7 +273,6 @@ impl SmbOrchestrator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::Ipv4Addr;
 
     fn orch(allow_public: bool) -> SmbOrchestrator {
         SmbOrchestrator::new(SmbConfig {
@@ -275,44 +282,46 @@ mod tests {
     }
 
     #[test]
-    fn validate_bind_accepts_private_only() {
+    fn rendering_without_opt_in_raises_no_warning() {
         let o = orch(false);
-        let ifaces = [
-            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10)),
-        ];
-        assert!(o.validate_bind(&ifaces).is_ok());
+        o.generate_conf(&[], &[]).unwrap();
         assert!(!o.public_bind_warning_active());
     }
 
     #[test]
-    fn validate_bind_rejects_public_v4_by_default() {
-        let o = orch(false);
-        let ifaces = [IpAddr::V4(Ipv4Addr::new(203, 0, 113, 5))];
-        let err = o.validate_bind(&ifaces).unwrap_err();
-        match err {
-            SmbError::PublicBindRefused { offending } => {
-                assert_eq!(offending, vec![ifaces[0]]);
-            }
-            other => panic!("expected PublicBindRefused, got {other:?}"),
-        }
-        assert!(!o.public_bind_warning_active());
-    }
-
-    #[test]
-    fn validate_bind_rejects_public_v6_by_default() {
-        use std::net::Ipv6Addr;
-        let o = orch(false);
-        let ifaces = [IpAddr::V6(Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 1))];
-        assert!(o.validate_bind(&ifaces).is_err());
-    }
-
-    #[test]
-    fn validate_bind_override_sets_persistent_warning_and_succeeds() {
+    fn rendering_under_opt_in_latches_the_warning() {
         let o = orch(true);
-        let ifaces = [IpAddr::V4(Ipv4Addr::new(203, 0, 113, 5))];
-        assert!(o.validate_bind(&ifaces).is_ok());
+        o.generate_conf(&[], &[]).unwrap();
         assert!(o.public_bind_warning_active());
+    }
+
+    #[test]
+    fn rendered_conf_binds_loopback_only() {
+        let conf = orch(true).generate_conf(&[], &[]).unwrap();
+        assert!(conf.contains("\n  bind interfaces only = yes\n"));
+        assert!(conf.contains("\n  interfaces = lo\n"));
+        assert!(conf.contains("\n  hosts allow = 127.0.0.0/8 ::1/128\n"));
+        assert!(conf.contains("\n  hosts deny = 0.0.0.0/0\n"));
+    }
+
+    #[test]
+    fn network_policy_carries_the_opt_in() {
+        assert!(orch(false)
+            .render_network_policy()
+            .contains("allow_public_bind=0"));
+        assert!(orch(true)
+            .render_network_policy()
+            .contains("allow_public_bind=1"));
+    }
+
+    #[test]
+    fn network_policy_turns_detection_off_for_a_pin() {
+        assert!(orch(false)
+            .render_network_policy()
+            .contains("pinned_interfaces=0"));
+        assert!(orch_ifaces(&["192.168.1.10"])
+            .render_network_policy()
+            .contains("pinned_interfaces=1"));
     }
 
     fn sample_share(shared_externally: bool) -> SmbShareDef {
@@ -361,45 +370,6 @@ mod tests {
             "hosts allow",
         ] {
             assert!(conf.contains(directive), "missing directive: {directive}\n---\n{conf}");
-        }
-    }
-
-    #[test]
-    fn hosts_allow_lists_every_private_cidr_once() {
-        // A `skip(1)` here once dropped 10.0.0.0/8 and duplicated 127.0.0.0/8,
-        // so Samba refused every 10.x LAN client before SMB2 NEGOTIATE. The
-        // check above only looked for the substring "hosts allow", which is
-        // why it went unnoticed until the production sidecar hit it.
-        let o = orch(false);
-        let conf = o.generate_conf(&[sample_share(false)], &[]).unwrap();
-        let line = conf
-            .lines()
-            .map(str::trim)
-            .find(|l| l.starts_with("hosts allow ="))
-            .expect("no hosts allow line");
-        let cidrs: Vec<&str> = line
-            .trim_start_matches("hosts allow =")
-            .split_whitespace()
-            .collect();
-        for expected in [
-            "10.0.0.0/8",
-            "172.16.0.0/12",
-            "192.168.0.0/16",
-            "127.0.0.0/8",
-            "100.64.0.0/10",
-        ] {
-            assert_eq!(
-                cidrs.iter().filter(|c| **c == expected).count(),
-                1,
-                "{expected} must appear exactly once in: {line}"
-            );
-        }
-        for expected in ["fc00::/7", "fe80::/10", "::1/128"] {
-            assert_eq!(
-                cidrs.iter().filter(|c| **c == expected).count(),
-                1,
-                "{expected} must appear exactly once in: {line}"
-            );
         }
     }
 
@@ -524,16 +494,6 @@ mod tests {
     }
 
     #[test]
-    fn tailscale_client_is_allowed() {
-        // A CGNAT address is what a tailnet peer connects from; treating it as
-        // public put every one of them behind `hosts deny`.
-        let o = orch(false);
-        assert!(o.validate_bind(&[IpAddr::V4(Ipv4Addr::new(100, 101, 102, 103))]).is_ok());
-        let conf = o.generate_conf(&[], &[]).unwrap();
-        assert!(conf.contains("100.64.0.0/10"));
-    }
-
-    #[test]
     fn a_named_server_answers_for_itself_and_nothing_else() {
         // On host networking nmbd shares a broadcast domain with whatever else
         // browses the LAN, and its defaults would have it win elections and
@@ -566,13 +526,14 @@ mod tests {
     }
 
     #[test]
-    fn empty_interfaces_binds_every_private_range() {
+    fn empty_interfaces_leaves_the_loopback_baseline_for_detection() {
         let conf = orch_ifaces(&[]).generate_conf(&[], &[]).unwrap();
-        assert!(conf.contains("interfaces = lo 10.0.0.0/8"));
+        assert!(conf.contains("interfaces = lo\n"));
+        assert!(conf.contains("hosts allow = 127.0.0.0/8 ::1/128\n"));
     }
 
     #[test]
-    fn explicit_interfaces_replace_the_private_ranges() {
+    fn explicit_interfaces_replace_the_baseline() {
         let conf = orch_ifaces(&["192.168.1.10", "fd00::1/64"])
             .generate_conf(&[], &[])
             .unwrap();

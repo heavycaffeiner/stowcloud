@@ -829,8 +829,8 @@ impl SettingsApi for SettingsBridge {
         let enabled_changed = cfg.smb.enabled != patch.enabled;
 
         // Applied to a candidate and rendered from that, before anything is
-        // persisted. Rendering is the step that can fail — `validate_bind`'s
-        // LAN-only refusal, or an unwritable `config_dir` — and the store used
+        // persisted. Rendering is the step that can fail — a rejected server
+        // name, or an unwritable `config_dir` — and the store used
         // to be written first, so a failed enable left `smb.enabled = true`
         // durably recorded with nothing rendered anywhere. That survives a
         // restart as a deployment that reports SMB on, serves nothing, and

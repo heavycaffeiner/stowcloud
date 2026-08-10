@@ -25,6 +25,7 @@ done
 SRC=$(cd "$(dirname "$0")" && pwd)
 LIBDIR=/usr/local/lib/sc
 AGENT="$LIBDIR/sc-smb-agent.sh"
+NETSCOPE="$LIBDIR/net-scope.sh"
 
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 
@@ -50,7 +51,7 @@ if [ "$UNINSTALL" = 1 ]; then
         rc-service sc-smb-agent stop 2>/dev/null || true
         rm -f /etc/init.d/sc-smb-agent /etc/conf.d/sc-smb-agent
     fi
-    rm -f "$AGENT"
+    rm -f "$AGENT" "$NETSCOPE"
     echo "sc-smb-agent removed. Managed accounts and the passdb were left"
     echo "alone -- disable SMB in the settings screen first if you want the"
     echo "agent to tear those down."
@@ -80,6 +81,8 @@ mkdir -p "$LIBDIR" "$CONFIG_DIR"
 # as root; smbpasswd inside carries NT hashes, so nothing else may look.
 chmod 700 "$CONFIG_DIR"
 install -m 750 "$SRC/sc-smb-agent.sh" "$AGENT"
+# Sourced by the agent from its own directory, so it has to land beside it.
+install -m 640 "$SRC/../net-scope.sh" "$NETSCOPE"
 
 if [ "$INIT" = systemd ]; then
     install -m 644 "$SRC/sc-smb-agent.service" /etc/systemd/system/sc-smb-agent.service

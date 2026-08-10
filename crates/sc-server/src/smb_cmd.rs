@@ -1,5 +1,5 @@
 //! `sc-server smb-sync` — render and write `smb.conf`/`smbpasswd`/`passwd`
-//! from the live Share/Grant registry, gated by the LAN-only bind check.
+//! from the live Share/Grant registry.
 //!
 //! models Samba access as a projection of the same
 //! Share/Grant registry the HTTP layer uses: **one Samba share per distinct
@@ -21,9 +21,6 @@ pub fn run(cfg: &Config, master_key: &[u8; 32]) -> anyhow::Result<()> {
         println!("smb: disabled (smb.enabled = false); removed any rendered config");
         return Ok(());
     }
-
-    let ifaces = crate::diagnostics::local_interface_addrs();
-    orch.validate_bind(&ifaces)?;
 
     // `smbpasswd` content comes from `sc-auth`, which is the only place that
     // ever holds the NT hash and the master key needed to decrypt it
@@ -82,7 +79,9 @@ pub fn run(cfg: &Config, master_key: &[u8; 32]) -> anyhow::Result<()> {
     orch.write_all(&conf, &smbpasswd, &passwd_entries)?;
 
     if orch.public_bind_warning_active() {
-        tracing::warn!("smb: bound to a public address under allow_public_bind=true — see the admin UI warning banner");
+        tracing::warn!(
+            "smb: allow_public_bind=true, so the sidecar may bind a globally routable address; see the admin UI warning banner"
+        );
     }
     log_overgrants(&overgrants);
 
@@ -98,9 +97,9 @@ pub fn run(cfg: &Config, master_key: &[u8; 32]) -> anyhow::Result<()> {
 
 /// One audit line per grant Samba is about to render wider than the registry
 /// means it. `target: "audit"` for the same reason `smb.public_bind_enabled`
-/// uses it (`sc_smb::validate_bind`): this is a standing property of the
-/// deployment's access control, not a transient event, and an operator has to
-/// be able to find it after the fact.
+/// uses it (`sc_smb::SmbOrchestrator::generate_conf`): this is a standing
+/// property of the deployment's access control, not a transient event, and an
+/// operator has to be able to find it after the fact.
 fn log_overgrants(overgrants: &[SmbOvergrant]) {
     for o in overgrants {
         tracing::warn!(
@@ -320,7 +319,7 @@ fn project_registry_shares(
 /// that happens once at `App::build` time — so this does not re-run them.
 ///
 /// Returns what the settings screen has to show about this render: whether
-/// the LAN-only bind gate was crossed under `smb.allow_public_bind = true`
+/// `smb.allow_public_bind` is on
 /// (`sc_smb::SmbOrchestrator::public_bind_warning_active`, which cannot be
 /// read back here since this function's `orch` is dropped at the end of the
 /// call), and every grant Samba is about to widen.
@@ -334,9 +333,6 @@ pub fn render_live(
         orch.remove_rendered()?;
         return Ok(RenderOutcome::default());
     }
-    let ifaces = crate::diagnostics::local_interface_addrs();
-    orch.validate_bind(&ifaces)?;
-
     let (shares, overgrants) = if !cfg.smb_shares.is_empty() {
         (
             cfg.smb_shares.iter().map(Into::into).collect::<Vec<_>>(),

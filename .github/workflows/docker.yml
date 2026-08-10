@@ -303,6 +303,10 @@ jobs:
              workgroup = WORKGROUP
              server min protocol = SMB3_11
              security = user
+             bind interfaces only = yes
+             interfaces = lo
+             hosts allow = 127.0.0.0/8 ::1/128
+             hosts deny = 0.0.0.0/0
 
           [photos]
              path = /shares/photos
@@ -344,6 +348,32 @@ jobs:
           docker exec sc-smb-smoke cat /etc/samba/smb.conf
           docker exec sc-smb-smoke grep -q '\[photos\]' /etc/samba/smb.conf
           docker exec sc-smb-smoke grep -q 'log file = /var/log/samba/log.smbd' /etc/samba/smb.conf
+
+      - name: The loopback-only baseline was expanded from the container's own interfaces
+        # sc-core renders `interfaces = lo` / `hosts allow = 127.0.0.0/8 ::1/128`
+        # and net-scope.sh is what widens them. If it silently did nothing the
+        # config would still be valid and smbd would still start, so the smoke
+        # test above cannot tell the two apart; these greps can.
+        #
+        # This container is bridged, which is the namespaced case: only a veth
+        # is visible, so `interfaces` picks up that one device and `hosts allow`
+        # falls back to private space wholesale. `ALL` must not appear, since no
+        # network.policy was written and the default is no public bind.
+        run: |
+          conf=$(docker exec sc-smb-smoke cat /etc/samba/smb.conf)
+          line=$(printf '%s\n' "$conf" | grep -E '^[[:space:]]*interfaces[[:space:]]*=')
+          echo "$line"
+          printf '%s\n' "$line" | grep -qE '=[[:space:]]*lo[[:space:]]+[^[:space:]]' \
+            || { echo "interfaces was never expanded past lo"; exit 1; }
+          line=$(printf '%s\n' "$conf" | grep -E '^[[:space:]]*hosts allow[[:space:]]*=')
+          echo "$line"
+          printf '%s\n' "$line" | grep -q '10\.0\.0\.0/8' \
+            || { echo "hosts allow did not widen for a bridged container"; exit 1; }
+          if printf '%s\n' "$line" | grep -qw 'ALL'; then
+            echo "hosts allow admits ALL without allow_public_bind"
+            exit 1
+          fi
+          echo "scope expansion confirmed"
 
       - name: Port 445 is reachable
         run: |

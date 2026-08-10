@@ -27,6 +27,17 @@ POLL="${SC_SMB_POLL_SECONDS:-5}"
 # somebody else's and is never touched.
 MARKER=sc-managed-smb
 
+# install.sh puts net-scope.sh beside this script; in a source checkout it is
+# one directory up, so `--once` still works from the repo.
+_sc_dir=$(dirname "$0")
+if [ -f "$_sc_dir/net-scope.sh" ]; then
+    # shellcheck source=deploy/smb/net-scope.sh
+    . "$_sc_dir/net-scope.sh"
+else
+    # shellcheck source=deploy/smb/net-scope.sh
+    . "$_sc_dir/../net-scope.sh"
+fi
+
 log() { echo "sc-smb-agent: $*" >&2; }
 die() { log "$*"; exit 1; }
 
@@ -199,7 +210,11 @@ sync_once() {
     [ -f "$src" ] || return 1
 
     candidate="$STATE_DIR/smb.conf.candidate"
-    inject_logging "$src" > "$candidate"
+    inject_logging "$src" > "$STATE_DIR/smb.conf.logged"
+    # Expand `interfaces`/`hosts allow` from this host's own devices, before
+    # testparm sees the file. sc-core renders them closed: it cannot see them
+    # from where it runs, and an unexpanded config binds loopback only.
+    sc_scope_apply "$STATE_DIR/smb.conf.logged" "$CONFIG_DIR/network.policy" > "$candidate"
 
     # Validate before it can reach smbd; a rejected candidate leaves the
     # running config alone.
@@ -250,6 +265,10 @@ fingerprint() {
             printf 'absent '
         fi
     done
+    # The scope is part of the config even though sc-core does not write it: a
+    # VPN or a VLAN coming up changes what smbd should bind, and nothing in
+    # CONFIG_DIR moves when it does.
+    sc_scope_current "$CONFIG_DIR/network.policy" | cksum
 }
 
 # --- main -----------------------------------------------------------------

@@ -171,7 +171,6 @@ fn diagnostics_openat2_status() -> diagnostics::OpenAt2Status {
             generated: false,
         },
         0,
-        Ok(()),
         true,
     )
     .openat2_detail
@@ -215,21 +214,7 @@ pub fn run_diagnostics_and_print(cfg: &config::Config, key: &masterkey::MasterKe
         .and_then(|m| m.size_bytes())
         .unwrap_or(0);
 
-    let smb_bind_result = if cfg.smb.enabled {
-        let orch = sc_smb::SmbOrchestrator::new(cfg.smb.clone());
-        let ifaces = diagnostics::local_interface_addrs();
-        orch.validate_bind(&ifaces).map_err(|e| e.to_string())
-    } else {
-        Ok(())
-    };
-
-    let d = diagnostics::run(
-        cfg,
-        key,
-        db_bytes,
-        smb_bind_result,
-        cfg.content_hosts.is_empty(),
-    );
+    let d = diagnostics::run(cfg, key, db_bytes, cfg.content_hosts.is_empty());
     diagnostics::print(&d);
 
     if d.any_share_rejected() {

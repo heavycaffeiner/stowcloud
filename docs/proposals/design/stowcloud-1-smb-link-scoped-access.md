@@ -156,11 +156,29 @@ A failed or absent expansion leaves loopback-only SMB. Failure is closed.
 ```
 # config_dir/network.policy
 allow_public_bind=0
+pinned_interfaces=0
 ```
 
-The sidecar reads it and admits global scopes only when it is `1`. `testparm` strips
-comments from its output, so the flag cannot travel inside `smb.conf`; a separate file is
-also easier to assert on in a test. A missing file means `0`.
+The sidecar reads it and admits global scopes only when `allow_public_bind` is `1`.
+`testparm` strips comments from its output, so the flags cannot travel inside `smb.conf`; a
+separate file is also easier to assert on in a test. A missing file means both are `0`.
+
+### 4.6.1 The operator override
+
+`smb.interfaces` in `sc.toml` names the addresses smbd binds outright. It is the off
+switch for everything above: `sc-core` renders the operator's list plus the full internal
+`hosts allow`, sets `pinned_interfaces=1`, and detection returns without touching the
+file.
+
+This does not reintroduce what §2 complains about. Detection stays the default and needs
+no configuration; the pin is opt-in narrowing by someone who already knows which address
+they want served. Because the operator wrote the address down rather than the machine
+reporting it, it is the one bind decision `sc-core` can check, and a globally routable
+entry there is refused unless `allow_public_bind` is set.
+
+`hosts allow` stays wide under a pin on purpose. Narrowing what smbd binds must not also
+narrow who may reach the address it bound: the pin answers "which interface", not "which
+clients".
 
 ### 4.7 Detection mechanics
 
