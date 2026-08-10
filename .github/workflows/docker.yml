@@ -175,16 +175,22 @@ jobs:
           docker logs sc-smoke || true
           exit 1
 
-      - name: There is no plaintext listener
-        # The whole point of the single-socket design, so it gets asserted
-        # rather than assumed. Plain HTTP to the TLS port must not produce a
-        # usable response.
+      - name: Plain HTTP is redirected, never served
+        # The single socket detects the protocol, so plain HTTP gets a 308 to
+        # the same URL over https and nothing else. Both halves are asserted:
+        # the redirect, because a reset connection tells a person who typed the
+        # scheme nothing at all, and the empty body, because the failure this
+        # step has always guarded against is the app being served in the clear.
         run: |
-          if curl -fsS --max-time 5 http://127.0.0.1:8443/api/health >/dev/null 2>&1; then
-            echo "plain HTTP answered on the TLS port"
+          got=$(curl -sS --max-time 5 -o /dev/null \
+            -w '%{http_code} %{redirect_url} %{size_download}' \
+            http://127.0.0.1:8443/api/health)
+          echo "$got"
+          if [ "$got" != "308 https://127.0.0.1:8443/api/health 0" ]; then
+            echo "expected an empty 308 to the https URL"
             exit 1
           fi
-          echo "plain HTTP refused, as intended"
+          echo "plain HTTP redirected with no body, as intended"
 
       - name: GET /api/health
         run: |

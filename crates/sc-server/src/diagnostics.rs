@@ -670,7 +670,9 @@ pub fn print(d: &Diagnostics) {
     }
 
     println!("[sc]   listener: https://{} (self-signed, regenerated when the SANs change)", d.bind);
-    println!("[sc]     There is no plaintext listener, on any interface. A reverse proxy");
+    println!("[sc]     There is no plaintext listener, on any interface. http:// to this");
+    println!("[sc]     same port is answered with a 308 to the https URL and nothing else,");
+    println!("[sc]     so typing the wrong scheme costs a redirect, not a reset. A reverse proxy");
     println!("[sc]     in front of a public name talks https upstream and skips verifying");
     println!("[sc]     this certificate (Caddy: `transport http {{ tls_insecure_skip_verify }}`).");
     println!("[sc]     Browsers on the LAN see one interstitial per browser, because nothing");

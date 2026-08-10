@@ -233,7 +233,9 @@ COPY THIRD-PARTY-NOTICES.md /THIRD-PARTY-NOTICES.md
 #
 # Whatever address it names, that socket serves HTTPS and only HTTPS. There is
 # no plaintext listener anywhere to publish by mistake (`Config::bind`), and
-# the certificate is generated into /var/lib/sc/tls on first run.
+# the certificate is generated into /var/lib/sc/tls on first run. A plain HTTP
+# request to the same port gets a 308 to the https URL, which is a redirect,
+# not a second listener: no request is ever served in the clear.
 ENV SC_BIND=0.0.0.0:8443 \
     SC_DATA_DIR=/var/lib/sc
 
