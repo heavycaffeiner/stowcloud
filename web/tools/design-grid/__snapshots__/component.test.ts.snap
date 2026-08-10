@@ -1,0 +1,333 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`'Button' > danger keeps its rendered shape 1`] = `
+[
+  "button|filled icon-none m3-container m3-layer s",
+  "span",
+  "span",
+]
+`;
+
+exports[`'Button' > disabled keeps its rendered shape 1`] = `
+[
+  "button|filled icon-none m3-container m3-layer s|disabled=",
+  "span",
+  "span",
+]
+`;
+
+exports[`'Button' > filled keeps its rendered shape 1`] = `
+[
+  "button|filled icon-none m3-container m3-layer s",
+  "span",
+  "span",
+]
+`;
+
+exports[`'Button' > loading keeps its rendered shape 1`] = `
+[
+  "button|filled icon-none m3-container m3-layer s|disabled=",
+  "span|hidden",
+  "span",
+  "span|spinner",
+  "svg|center|aria-label=처리 중",
+  "path",
+  "animate",
+  "animatetransform",
+]
+`;
+
+exports[`'Button' > long label keeps its rendered shape 1`] = `
+[
+  "button|filled icon-none m3-container m3-layer s",
+  "span",
+  "span",
+]
+`;
+
+exports[`'Button' > outlined pressed keeps its rendered shape 1`] = `
+[
+  "button|icon-none m3-container m3-layer outlined s|aria-pressed=true",
+  "span",
+  "span",
+]
+`;
+
+exports[`'Button' > square keeps its rendered shape 1`] = `
+[
+  "button|filled icon-none m3-container m3-layer s square",
+  "span",
+  "span",
+]
+`;
+
+exports[`'Button' > with icon keeps its rendered shape 1`] = `
+[
+  "button|filled icon-left m3-container m3-layer s",
+  "span",
+  "span",
+  "span",
+]
+`;
+
+exports[`'Checkbox' > checked keeps its rendered shape 1`] = `
+[
+  "label|row",
+  "div|m3-container",
+  "input||aria-label=Select report.pdf",
+  "div|layer-container m3-layer",
+  "div|checkbox-box",
+  "svg",
+  "path",
+  "span",
+]
+`;
+
+exports[`'Checkbox' > indeterminate keeps its rendered shape 1`] = `
+[
+  "label|row",
+  "div|m3-container",
+  "input||aria-label=Select all",
+  "div|layer-container m3-layer",
+  "div|checkbox-box",
+  "svg",
+  "path",
+  "span",
+]
+`;
+
+exports[`'Checkbox' > label hidden keeps its rendered shape 1`] = `
+[
+  "label|row",
+  "div|m3-container",
+  "input||aria-label=Select report.pdf",
+  "div|layer-container m3-layer",
+  "div|checkbox-box",
+  "svg",
+  "path",
+]
+`;
+
+exports[`'Checkbox' > unchecked keeps its rendered shape 1`] = `
+[
+  "label|row",
+  "div|m3-container",
+  "input||aria-label=Select report.pdf",
+  "div|layer-container m3-layer",
+  "div|checkbox-box",
+  "svg",
+  "path",
+  "span",
+]
+`;
+
+exports[`'Chip' > assist keeps its rendered shape 1`] = `
+[
+  "label|assist m3-container m3-layer",
+  "span",
+  "span",
+]
+`;
+
+exports[`'Chip' > filter selected keeps its rendered shape 1`] = `
+[
+  "label|general m3-container m3-layer selected",
+  "span",
+  "span",
+]
+`;
+
+exports[`'Chip' > input removable keeps its rendered shape 1`] = `
+[
+  "button|input m3-container m3-layer",
+  "span",
+  "span",
+  "svg|trailing",
+  "path",
+]
+`;
+
+exports[`'Divider' > inset keeps its rendered shape 1`] = `
+[
+  "hr|inset",
+]
+`;
+
+exports[`'Divider' > plain keeps its rendered shape 1`] = `
+[
+  "hr",
+]
+`;
+
+exports[`'IconButton' > disabled keeps its rendered shape 1`] = `
+[
+  "span|sc-icon-button",
+  "button|icon-full m3-container m3-layer s square text|disabled= aria-pressed=false aria-label=Delete",
+  "span",
+]
+`;
+
+exports[`'IconButton' > expanded keeps its rendered shape 1`] = `
+[
+  "span|sc-icon-button",
+  "button|icon-full m3-container m3-layer s square text|aria-expanded=true aria-label=Details",
+  "span",
+]
+`;
+
+exports[`'IconButton' > plain keeps its rendered shape 1`] = `
+[
+  "span|sc-icon-button",
+  "button|icon-full m3-container m3-layer s square text|aria-pressed=false aria-label=Refresh",
+  "span",
+]
+`;
+
+exports[`'IconButton' > selected keeps its rendered shape 1`] = `
+[
+  "span|sc-icon-button",
+  "button|icon-full m3-container m3-layer s square tonal|aria-pressed=true aria-label=Folder tree",
+  "span",
+]
+`;
+
+exports[`'ProgressCircular' > determinate keeps its rendered shape 1`] = `
+[
+  "svg|m3-container|aria-label=로딩 중",
+  "circle",
+  "circle",
+]
+`;
+
+exports[`'ProgressCircular' > indeterminate keeps its rendered shape 1`] = `
+[
+  "svg|center|aria-label=로딩 중",
+  "path",
+  "animate",
+  "animatetransform",
+]
+`;
+
+exports[`'ProgressCircular' > sized keeps its rendered shape 1`] = `
+[
+  "svg|center|aria-label=로딩 중",
+  "path",
+  "animate",
+  "animatetransform",
+]
+`;
+
+exports[`'ProgressLinear' > fair tone keeps its rendered shape 1`] = `
+[
+  "div|bar",
+  "div|m3-container|aria-label=진행률|height:0.25rem",
+  "div|percent||width:60%",
+  "div|track",
+]
+`;
+
+exports[`'ProgressLinear' > half keeps its rendered shape 1`] = `
+[
+  "div|bar",
+  "div|m3-container|aria-label=진행률|height:0.25rem",
+  "div|percent||width:50%",
+  "div|track",
+]
+`;
+
+exports[`'ProgressLinear' > indeterminate keeps its rendered shape 1`] = `
+[
+  "svg|center|aria-label=진행률",
+  "path",
+  "animate",
+  "animatetransform",
+]
+`;
+
+exports[`'ProgressLinear' > weak tone keeps its rendered shape 1`] = `
+[
+  "div|bar",
+  "div|m3-container|aria-label=진행률|height:0.25rem",
+  "div|percent||width:20%",
+  "div|track",
+]
+`;
+
+exports[`'Switch' > label hidden keeps its rendered shape 1`] = `
+[
+  "label|row",
+  "div|m3-container",
+  "input||aria-label=Enable the account someone",
+  "div|handle",
+  "svg",
+  "path",
+  "div|hover",
+]
+`;
+
+exports[`'Switch' > off keeps its rendered shape 1`] = `
+[
+  "label|row",
+  "div|m3-container",
+  "input||aria-label=Enable trash",
+  "div|handle",
+  "svg",
+  "path",
+  "div|hover",
+  "span",
+]
+`;
+
+exports[`'Switch' > on keeps its rendered shape 1`] = `
+[
+  "label|row",
+  "div|m3-container",
+  "input||aria-label=Enable trash",
+  "div|handle",
+  "svg",
+  "path",
+  "div|hover",
+  "span",
+]
+`;
+
+exports[`'TextField' > empty keeps its rendered shape 1`] = `
+[
+  "div|field",
+  "div|m3-container",
+  "input",
+  "div|layer",
+  "label",
+]
+`;
+
+exports[`'TextField' > error keeps its rendered shape 1`] = `
+[
+  "div|field",
+  "div|error m3-container",
+  "input",
+  "div|layer",
+  "label",
+  "p|error",
+]
+`;
+
+exports[`'TextField' > filled keeps its rendered shape 1`] = `
+[
+  "div|field",
+  "div|m3-container",
+  "input",
+  "div|layer",
+  "label",
+]
+`;
+
+exports[`'TextField' > outlined keeps its rendered shape 1`] = `
+[
+  "div|field",
+  "div|m3-container",
+  "input",
+  "div|layer",
+  "label",
+]
+`;

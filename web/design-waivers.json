@@ -1,0 +1,236 @@
+{
+  "waivers": [
+    {
+      "id": "details-panel-scroll-tail",
+      "layer": "static",
+      "check": "asymmetric-padding",
+      "selector": "src/lib/ui/DetailsPanel.svelte#.sc-details#padding",
+      "reason": "The first child is a header whose close IconButton carries its own 8px of control padding, so 8px above and 16px below reads as an even inset. The 16px below is the scroll tail.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "file-grid-group-proximity",
+      "layer": "static",
+      "check": "asymmetric-padding",
+      "selector": "src/lib/ui/FileGrid.svelte#.sc-file-grid__group#padding",
+      "reason": "A section label between two card groups. The 16px above separates it from the previous group and the 8px below binds it to the cards it labels; equalising them would make it float between the two.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "file-grid-meta-binding",
+      "layer": "static",
+      "check": "asymmetric-padding",
+      "selector": "src/lib/ui/FileGrid.svelte#.sc-file-grid__meta#padding",
+      "reason": "The size line inside a card. The 4px above binds it to the file name it belongs to; the 8px below is the card's own bottom inset, not a gap after the text.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "preview-body-toolbar-adjacency",
+      "layer": "static",
+      "check": "asymmetric-padding",
+      "selector": "src/lib/ui/PreviewDialog.svelte#.sc-preview__body#padding",
+      "reason": "The toolbar directly above this row already ends with its own padding, so a top inset here would double it. The 16px below is the dialog's bottom inset.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "nav-drawer-icon-column",
+      "layer": "static",
+      "check": "spacing-scale",
+      "selector": "src/lib/ui/NavigationDrawer.svelte#.sc-nav-drawer__list :global(.m3-container.extra-large > .content)#padding-inline-start",
+      "reason": "52px is m3-svelte's own icon column metric for the extra-large NavCMLXItem. Moving it to a scale value would misalign our labels against every framework-rendered row beside them.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "sr-only-live-regions",
+      "layer": "runtime",
+      "check": "grid-snap",
+      "selector": ".sc-job-tray__sr-only, .sc-upload-tray__sr-only",
+      "reason": "The 1px-clipped screen-reader-only recipe. A live region has to stay in the accessibility tree, so it cannot be display:none, and 1px is the smallest box that keeps it there without painting anything.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "m3-checkbox-internals",
+      "layer": "runtime",
+      "check": "grid-snap",
+      "selector": ".m3-container:has(.checkbox-box)",
+      "subtree": true,
+      "reason": "m3-svelte 7.2.0 draws its checkbox at 18px and offsets the state layer by 11px. We own neither number; our own 48px touch target around it is on the grid and is still checked.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "app-shell-nav-reservation",
+      "layer": "runtime",
+      "check": "padding-asymmetry",
+      "selector": ".sc-app-shell__main",
+      "reason": "Padding here reserves space for the navigation rail or drawer, which are position:fixed and occupy no layout space. It is a one-sided reservation by construction, not an inset that should balance.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "file-list-bottom-reservation",
+      "layer": "runtime",
+      "check": "padding-asymmetry",
+      "selector": ".sc-file-table, .sc-file-grid",
+      "reason": "Bottom padding reserves room for the fixed selection bar and navigation bar so the last rows can be scrolled clear of them. There is nothing at the top to reserve for.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "details-label-value-pairs",
+      "layer": "runtime",
+      "check": "padding-asymmetry",
+      "selector": ".sc-details__label, .sc-details__value",
+      "reason": "A definition list of label-over-value pairs. The label's top padding separates one pair from the previous; adding the same below would break the label away from the value it names.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "file-grid-row-caption",
+      "layer": "runtime",
+      "check": "padding-asymmetry",
+      "selector": ".sc-file-grid__row, .sc-file-grid__group, .sc-file-grid__meta",
+      "reason": "Card captions and section labels bind upward to what they describe and separate downward from what follows, so their block padding is intentionally one-sided. Same reasoning as the static waivers on the same selectors.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "m3-nav-and-dialog-padding",
+      "layer": "runtime",
+      "check": "padding-asymmetry",
+      "selector": ".m3-container > .rail, .m3-container.extra-large > .content, dialog.m3-container",
+      "reason": "m3-svelte's own navigation rail, drawer item and dialog padding. Their values are the framework's MD3 metrics; changing them means forking the component.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "m3-dialog-internal-spacing",
+      "layer": "runtime",
+      "check": "*",
+      "selector": "dialog.m3-container > .content, dialog.m3-container > .m3-container, dialog.m3-container",
+      "subtree": false,
+      "reason": "The dialog surface and the scroll container m3-svelte puts inside it. Their gaps, insets and leading space are the framework's MD3 metrics; the content we pass in is a separate element and is still checked.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "m3-textfield-internals",
+      "layer": "runtime",
+      "check": "grid-snap",
+      "selector": ".m3-container:has(> input), .m3-container:has(> select), .m3-container > .layer",
+      "subtree": true,
+      "reason": "m3-svelte sizes its text field from the type scale, so the 56dp box comes out fractional at the font sizes we set. The field's own height is the framework's; we set none of it.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "m3-snackbar-host",
+      "layer": "runtime",
+      "check": "*",
+      "selector": ".holder",
+      "subtree": true,
+      "reason": "m3-svelte's snackbar host and item. It is mounted once in the app layout and we pass it a string; every box inside it is the framework's own.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "page-pad-split-across-panes",
+      "layer": "runtime",
+      "check": "padding-asymmetry",
+      "selector": ".sc-admin__inner, .sc-settings__inner, .sc-details",
+      "reason": "These panes take the page padding on one block edge each so a scrolled column keeps its bottom space without doubling the header's. --sc-page-pad is applied once per edge, not once per pane.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "tree-label-leading-edge",
+      "layer": "static",
+      "check": "asymmetric-padding",
+      "selector": "src/lib/ui/FileTreeItem.svelte#.sc-tree-row__label#padding",
+      "reason": "The expand twisty sits immediately before this label and supplies the leading inset, so the label takes none of its own. Declared on both sides so the UA button padding cannot leak back in.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "tree-label-leading-edge-runtime",
+      "layer": "runtime",
+      "check": "padding-asymmetry",
+      "selector": ".sc-tree-row__label",
+      "reason": "The expand twisty sits immediately before this label and supplies the leading inset, so the label takes none of its own. Same decision as the static waiver on the same rule.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "page-title-header-padding",
+      "layer": "runtime",
+      "check": "padding-asymmetry",
+      "selector": ".sc-admin__title, .sc-settings__title",
+      "reason": "A page header takes the page padding above it and hands the space below to the gap between it and the first section, so the two cannot double up when a section is added or removed.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "preview-body-toolbar-adjacency-runtime",
+      "layer": "runtime",
+      "check": "padding-asymmetry",
+      "selector": ".sc-preview__body",
+      "reason": "The toolbar directly above already ends with its own padding, so a top inset here would double it. The 16px below is the dialog's bottom inset. Same decision as the static waiver on the same rule.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "m3-nav-item-icon-slot",
+      "layer": "runtime",
+      "check": "box-centring",
+      "selector": ".m3-container > .content",
+      "subtree": true,
+      "reason": "m3-svelte stacks the icon and the label inside its navigation items itself, so the icon sits at the top of the content box by the framework's design rather than centred in it.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "m3-connected-buttons-seam",
+      "layer": "runtime",
+      "check": "spacing-scale",
+      "selector": ".sc-settings__row > .m3-container",
+      "reason": "m3-svelte's connected button group seams its segments with a 2px hairline so they read as one bar. It is the group's own MD3 metric, not spacing we chose, and widening it to 4px would break the seam.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "switch-thumb-encodes-state",
+      "layer": "runtime",
+      "check": "column-coherence",
+      "selector": "label.row",
+      "subtree": true,
+      "reason": "A switch's thumb and hover ring sit at one end of the track or the other, so their column is the control's value. Two rows with different settings are supposed to differ here; that is the whole point of the control.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "m3-container-leading-space",
+      "layer": "runtime",
+      "check": "optical-imbalance",
+      "selector": ".m3-container",
+      "reason": "m3-svelte positions the first child of its own containers against its MD3 metrics, and at our type scale that lands a fraction of a pixel off the content edge. Both the container and the offset are the framework's.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "m3-tabs-internals",
+      "layer": "runtime",
+      "check": "*",
+      "selector": ".m3-container:has(> .bar)",
+      "subtree": true,
+      "reason": "m3-svelte's tab bar. Its indicator deliberately overlaps the label row and its inputs are 13px, both of which are the framework's own layout; we pass it labels and nothing else.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "codemirror-internals",
+      "layer": "runtime",
+      "check": "*",
+      "selector": ".cm-editor",
+      "subtree": true,
+      "reason": "CodeMirror 6 lays out its own gutters, lines and cursor from the font metrics of the editor's monospace face. None of it is ours and none of it is on a 4px grid by construction.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "tree-row-depth-indent",
+      "layer": "runtime",
+      "check": "padding-asymmetry",
+      "selector": ".sc-tree-row",
+      "reason": "A folder tree row indents by depth on the leading side only. Matching that on the trailing side would push the label out of the row instead of showing where it sits in the hierarchy.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "m3-button-cross-axis",
+      "layer": "runtime",
+      "check": "sibling-edges",
+      "selector": "button.m3-container",
+      "reason": "m3-svelte centres a button's icon and label on their optical centres rather than on a shared edge, so its two children agree on neither start, end nor centre by our measure. The button's own box is on the grid.",
+      "expires": "2027-08-10"
+    }
+  ]
+}

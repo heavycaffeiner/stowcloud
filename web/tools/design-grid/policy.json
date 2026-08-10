@@ -1,0 +1,123 @@
+{
+  "gridUnit": 4,
+  "tolerancePx": 0.5,
+  "spacingScale": [0, 4, 8, 12, 16, 24, 32, 48, 64],
+  "hairlineExemptPx": [1, 2, 3],
+  "pillRadiusPx": 9999,
+
+  "spacingProperties": [
+    "margin", "margin-top", "margin-right", "margin-bottom", "margin-left",
+    "margin-block", "margin-block-start", "margin-block-end",
+    "margin-inline", "margin-inline-start", "margin-inline-end",
+    "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
+    "padding-block", "padding-block-start", "padding-block-end",
+    "padding-inline", "padding-inline-start", "padding-inline-end",
+    "gap", "row-gap", "column-gap",
+    "scroll-margin", "scroll-margin-top", "scroll-margin-right",
+    "scroll-margin-bottom", "scroll-margin-left",
+    "scroll-padding", "scroll-padding-top", "scroll-padding-right",
+    "scroll-padding-bottom", "scroll-padding-left"
+  ],
+
+  "sizingProperties": [
+    "width", "height", "min-width", "max-width", "min-height", "max-height",
+    "inline-size", "block-size", "min-inline-size", "max-inline-size",
+    "min-block-size", "max-block-size",
+    "top", "right", "bottom", "left", "inset",
+    "inset-block", "inset-block-start", "inset-block-end",
+    "inset-inline", "inset-inline-start", "inset-inline-end"
+  ],
+
+  "hairlineProperties": [
+    "border", "border-top", "border-right", "border-bottom", "border-left",
+    "border-width", "border-top-width", "border-right-width",
+    "border-bottom-width", "border-left-width",
+    "border-block", "border-block-start", "border-block-end",
+    "border-inline", "border-inline-start", "border-inline-end",
+    "border-block-width", "border-block-start-width", "border-block-end-width",
+    "border-inline-width", "border-inline-start-width", "border-inline-end-width",
+    "outline-offset", "outline-width"
+  ],
+
+  "radiusProperties": [
+    "border-radius",
+    "border-top-left-radius", "border-top-right-radius",
+    "border-bottom-left-radius", "border-bottom-right-radius",
+    "border-start-start-radius", "border-start-end-radius",
+    "border-end-start-radius", "border-end-end-radius"
+  ],
+
+  "typographyProperties": ["line-height"],
+
+  "approvedSpacingTokens": [
+    "--sc-row-height",
+    "--sc-nav-bar-height",
+    "--sc-nav-rail-width",
+    "--sc-nav-drawer-width",
+    "--sc-page-pad",
+    "--sc-reserve-nav",
+    "--sc-reserve-selection",
+    "--sc-selection-bar-offset",
+    "--sc-tray-stack-top"
+  ],
+
+  "checks": {
+    "static": ["grid", "spacing-scale", "asymmetric-padding", "line-height-grid"],
+    "component": ["inline-geometry", "unapproved-token", "shape-snapshot"],
+    "runtime": [
+      "grid-snap",
+      "sibling-edges",
+      "column-coherence",
+      "box-centring",
+      "control-centring",
+      "crowding",
+      "padding-asymmetry",
+      "optical-imbalance",
+      "spacing-scale",
+      "overlap"
+    ]
+  },
+
+  "runtime": {
+    "viewports": [
+      { "name": "mobile", "width": 360, "height": 800 },
+      { "name": "tablet", "width": 768, "height": 1024 },
+      { "name": "desktop", "width": 1440, "height": 900 }
+    ],
+    "themes": ["light", "dark"],
+    "locales": ["en", "ko"],
+    "skipTags": [
+      "SCRIPT", "STYLE", "TEMPLATE", "HEAD", "META", "LINK", "TITLE", "BR",
+      "NOSCRIPT", "SVG", "CANVAS"
+    ],
+    "pages": [
+      { "id": "login", "path": "/login", "ready": ".sc-auth-card", "minElements": 20 },
+      { "id": "setup", "path": "/setup", "ready": ".sc-auth-card", "minElements": 20 },
+      { "id": "browse", "path": "/b/home", "ready": ".sc-row", "minElements": 40 },
+      { "id": "browse-grid", "path": "/b/home", "ready": ".sc-row", "minElements": 40, "scenario": "gridView" },
+      { "id": "browse-details", "path": "/b/home", "ready": ".sc-row", "minElements": 45, "scenario": "selectAndOpenDetails" },
+      { "id": "edit", "path": "/edit/home/Documents/meeting-notes.txt", "ready": ".cm-editor", "minElements": 20 },
+      { "id": "trash", "path": "/trash", "ready": "main, .sc-trash", "minElements": 20 },
+      { "id": "settings", "path": "/settings", "ready": ".sc-settings__inner", "minElements": 30 },
+      { "id": "settings-security", "path": "/settings#security", "ready": ".sc-settings__inner", "minElements": 30 },
+      { "id": "settings-appearance", "path": "/settings#appearance", "ready": ".sc-settings__inner", "minElements": 25 },
+      { "id": "admin", "path": "/admin", "ready": ".sc-admin__section", "minElements": 30 },
+      { "id": "admin-shares", "path": "/admin#shares", "ready": ".sc-shares__name", "minElements": 40 },
+      { "id": "admin-storage", "path": "/admin#storage", "ready": ".sc-admin__section", "minElements": 20 },
+      { "id": "admin-server", "path": "/admin#server", "ready": ".sc-admin__section", "minElements": 30 },
+      { "id": "admin-audit", "path": "/admin#audit", "ready": ".sc-admin__section", "minElements": 20 },
+      { "id": "share", "path": "/s/demo", "ready": ".sc-share__title", "minElements": 15 },
+      { "id": "share-locked", "path": "/s/locked", "ready": ".sc-share__unlock", "minElements": 10 },
+      { "id": "share-drop", "path": "/s/drop", "ready": ".sc-share__title, main", "minElements": 10 },
+      { "id": "menu-row-actions", "path": "/b/home", "ready": ".sc-row", "minElements": 45, "scenario": "rowActionsMenu" },
+      { "id": "dialog-rename", "path": "/b/home", "ready": ".sc-row", "minElements": 45, "scenario": "renameDialog" },
+      { "id": "dialog-delete", "path": "/b/home", "ready": ".sc-row", "minElements": 45, "scenario": "deleteDialog" },
+      { "id": "dialog-share", "path": "/b/home", "ready": ".sc-row", "minElements": 45, "scenario": "shareManageDialog" },
+      { "id": "dialog-newfolder", "path": "/b/home", "ready": ".sc-row", "minElements": 45, "scenario": "newFolderDialog" },
+      { "id": "dialog-destination", "path": "/b/home", "ready": ".sc-row", "minElements": 45, "scenario": "destinationPicker" },
+      { "id": "dialog-preview", "path": "/b/home/Photos", "ready": ".sc-row", "minElements": 40, "scenario": "previewDialog" },
+      { "id": "tray-upload", "path": "/b/home", "ready": ".sc-row", "minElements": 45, "scenario": "uploadTray" },
+      { "id": "snackbar", "path": "/b/home", "ready": ".sc-row", "minElements": 42, "scenario": "snackbar" }
+    ]
+  }
+}

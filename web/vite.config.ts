@@ -17,6 +17,12 @@ export default defineConfig({
   // any browser. Without this plugin every elevation shadow and every type
   // style silently drops out, so it is required, not an optimisation.
   plugins: [functionsMixins({ deps: ['m3-svelte'] }), sveltekit()],
+  // Test-only, and only because svelte's package exports resolve to its server
+  // build by default under Node. Mounting a component then throws
+  // `mount(...) is not available on the server`, which is what the design
+  // gate's component layer does on every one of its cases. Guarded on VITEST
+  // so the app's own build resolution is untouched.
+  resolve: process.env.VITEST ? { conditions: ['browser'] } : {},
   test: {
     environment: 'jsdom',
     include: ['src/**/*.{test,spec}.{js,ts}', 'tools/**/*.{test,spec}.{js,ts}'],

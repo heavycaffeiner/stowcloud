@@ -17,7 +17,9 @@
     "test:watch": "vitest",
     "lint:css": "stylelint \"src/**/*.{css,svelte}\"",
     "lint:i18n": "node tools/i18n-check.mjs",
-    "check:bundle-size": "node tools/check-bundle-size.mjs"
+    "check:bundle-size": "node tools/check-bundle-size.mjs",
+    "check:design": "node tools/design-grid/check.mjs",
+    "audit:grid": "node tools/design-grid/audit.mjs"
   },
   "devDependencies": {
     "@fontsource-variable/google-sans-flex": "^5.3.0",
@@ -27,6 +29,7 @@
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@testing-library/svelte": "^5.2.0",
     "jsdom": "^30.0.1",
+    "playwright": "1.62.1",
     "postcss": "^8.5.23",
     "postcss-html": "^1.8.1",
     "postcss-value-parser": "^4.2.0",

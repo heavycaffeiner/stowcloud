@@ -1,0 +1,86 @@
+name: design
+
+# The design grid gate: three layers, one exit-code contract, hard fail.
+#
+#   static      stylelint's sc/four-px-grid over every stylesheet and every
+#               <style> block. Values only: the spacing scale, the grid,
+#               padding symmetry, line-height.
+#   component   vitest + jsdom over the leaf UI components. jsdom computes no
+#               layout, so this layer reads what a script wrote into a `style`
+#               attribute and pins each component's rendered shape.
+#   runtime     Playwright over `vite dev` with the in-memory mock backend,
+#               measuring the real DOM across 23 pages x 3 viewports x 2 themes
+#               x 2 locales. This is the only place the four relational checks
+#               can be answered at all: whether siblings share an edge, whether
+#               a gap is on the scale, whether a container's padding balances.
+#
+# Its own workflow rather than a step inside `verify`, for one reason: this job
+# downloads a Chromium build and `verify` should not. The static layer still
+# runs inside `npm run build` through `lint:css`, so `verify` keeps the
+# coverage it already had and nothing here is a second copy of it.
+#
+# Linux only. The audit measures a layout engine, and Chromium's layout differs
+# between Windows and Linux only in font metrics -- a source of flakiness, not
+# of coverage. The one font that matters ships from npm
+# (@fontsource-variable/google-sans-flex) and is identical on both; the system
+# fallback in --m3-font is not, which is the second reason to pin this to one
+# platform.
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'web/**'
+      - '.github/workflows/design.yml'
+  pull_request:
+    paths:
+      - 'web/**'
+      - '.github/workflows/design.yml'
+  workflow_dispatch:
+
+# Nothing here writes to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: design-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 24, matching verify.yml's NODE_VERSION and the `engines` floor in
+  # web/package.json. Move them together.
+  NODE_VERSION: '24'
+
+jobs:
+  grid:
+    name: design grid (ubuntu-latest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: npm ci
+        working-directory: web
+        run: npm ci
+
+      # Keyed on the lockfile because that is what pins the playwright version,
+      # and the browser build it wants moves with it.
+      - name: Cache the Chromium build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+
+      - name: Install Chromium
+        working-directory: web
+        run: npx playwright install --with-deps chromium
+
+      - name: npm run check:design
+        working-directory: web
+        run: npm run check:design
