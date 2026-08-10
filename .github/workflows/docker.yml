@@ -27,6 +27,11 @@ name: docker
 # to once a deployment matters: a channel tag moves under you, a commit-stamped
 # one cannot.
 #
+# A `v*` tag also publishes the GitHub release, from
+# `docs/releases/<tag>.md` in the tagged commit. Cutting one is therefore:
+# bump the version, write that file, commit, tag, push both. A tag with no
+# notes file fails the run rather than publishing a release without them.
+#
 # `paths` filters the pull_request trigger only. Whether a path filter is even
 # evaluated for a tag push is undocumented, and a release that quietly does not
 # build is a worse failure than a few redundant nightly builds, so a master
@@ -627,3 +632,57 @@ jobs:
 
       - name: Show what a `docker pull` will now resolve to
         run: docker buildx imagetools inspect "${IMAGE}:smb-${GITHUB_SHA}"
+
+  # ---------------------------------------------------------------------------
+  # The GitHub release
+  # ---------------------------------------------------------------------------
+  # Last, and `needs:` both manifest jobs, because the notes tell a reader to
+  # `docker compose pull` and name the tags they will get. Published before the
+  # images exist, that sentence is false for the six minutes the build takes,
+  # and a failed build would leave a release announcing images nobody can pull.
+  #
+  # Living here rather than in a workflow of its own is the same reasoning the
+  # `publish-*` jobs already follow: nothing is published that has not first
+  # been proven in this same run.
+  #
+  # The notes come from a file in the tagged commit, not from the tag message
+  # and not from the commit log. Release prose is long, it is read by people
+  # deciding whether to upgrade, and it needs the same review as the code: a
+  # tag message cannot be corrected afterwards without moving the tag, and a
+  # generated changelog is a list of commit subjects, which is not that.
+  release:
+    name: publish the GitHub release
+    needs: [publish-core-manifest, publish-smb-manifest]
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Publish the release from its notes file
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          notes="docs/releases/${GITHUB_REF_NAME}.md"
+          # A missing file fails the run rather than falling back to something
+          # generated. A release is the one artefact a self-hoster reads before
+          # deciding to upgrade, and a stub is worse than a red build: the red
+          # build gets fixed, the stub gets shipped.
+          if [ ! -f "$notes" ]; then
+            echo "::error::no release notes at ${notes}"
+            echo "Write them, commit them, and move the tag onto that commit."
+            exit 1
+          fi
+          # Idempotent, so a re-run of this workflow updates the notes instead
+          # of failing on a release that already exists.
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "release ${GITHUB_REF_NAME} exists; updating its notes"
+            gh release edit "$GITHUB_REF_NAME" --notes-file "$notes"
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file "$notes" \
+              --verify-tag
+          fi
