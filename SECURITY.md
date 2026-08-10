@@ -20,7 +20,7 @@ lands, the advisory is published with credit unless you ask otherwise.
 
 ## Supported versions
 
-Only the current `master` tip. The project is pre-1.0 (`0.2.0`), there are no
+Only the current `master` tip. The project is pre-1.0 (`0.3.0`), there are no
 release branches, and fixes are not backported.
 
 ## Scope

@@ -2148,7 +2148,7 @@ dependencies = [
 
 [[package]]
 name = "sc-acl"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bitflags",
  "lru",
@@ -2158,7 +2158,7 @@ dependencies = [
 
 [[package]]
 name = "sc-auth"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -2189,7 +2189,7 @@ dependencies = [
 
 [[package]]
 name = "sc-compat-nc"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "axum",
  "bitflags",
@@ -2220,7 +2220,7 @@ dependencies = [
 
 [[package]]
 name = "sc-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2249,7 +2249,7 @@ dependencies = [
 
 [[package]]
 name = "sc-dav"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2277,7 +2277,7 @@ dependencies = [
 
 [[package]]
 name = "sc-http"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2320,7 +2320,7 @@ dependencies = [
 
 [[package]]
 name = "sc-meta"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "blake3",
@@ -2334,7 +2334,7 @@ dependencies = [
 
 [[package]]
 name = "sc-oidc"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "base64",
@@ -2364,7 +2364,7 @@ dependencies = [
 
 [[package]]
 name = "sc-preview"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "bytes",
  "dashmap",
@@ -2389,7 +2389,7 @@ dependencies = [
 
 [[package]]
 name = "sc-search"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "compact_str",
@@ -2410,7 +2410,7 @@ dependencies = [
 
 [[package]]
 name = "sc-server"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2463,7 +2463,7 @@ dependencies = [
 
 [[package]]
 name = "sc-smb"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "serde",
  "tempfile",
@@ -2473,7 +2473,7 @@ dependencies = [
 
 [[package]]
 name = "sc-upload"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -2493,7 +2493,7 @@ dependencies = [
 
 [[package]]
 name = "sc-vfs"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "compact_str",
  "filetime",
@@ -2508,7 +2508,7 @@ dependencies = [
 
 [[package]]
 name = "sc-watch"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
