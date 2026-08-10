@@ -242,17 +242,28 @@ Linux is the only supported runtime. The code compiles on other systems, but
 nothing else is a deployment target: the guarantees this project is built on
 are Linux kernel features, and there is no substitute for them elsewhere.
 
-To turn on SMB, edit the address in the `sc-smb` service to one your machine
-actually has, then start it explicitly:
+SMB is off by default and starts explicitly:
 
 ```sh
 docker compose --profile smb up -d
 ```
 
-That gets you `\\192.168.1.10\photos`. To mount by name instead, put
-`server_name = "stowcloud"` under `[smb]` in `data/sc.toml` and give the sidecar
-`network_mode: host`: the name is announced by broadcast, which a Docker bridge
-does not carry.
+The sidecar shares the host's network stack, so port 445 must be free: stop a
+Samba already running there first. Two settings under `[smb]` in `data/sc.toml`
+are worth setting before you do.
+
+```toml
+server_name = "stowcloud"
+interfaces = ["192.168.1.10"]
+```
+
+The first is what makes shares open as `\\stowcloud\photos` instead of
+`\\192.168.1.10\photos`. It needs the host's network to work at all, because the
+name is announced by broadcast and a Docker bridge does not carry broadcast.
+
+The second pins which address smbd listens on. Left empty it binds every private
+range it finds, which on the host's stack includes the Docker bridges, so any
+container on the machine can reach it.
 
 ## How it is built
 

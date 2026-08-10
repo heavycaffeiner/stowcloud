@@ -543,6 +543,7 @@
   "settings.readonly_owned_by_index_section": "Index settings are managed in the Search index section of the admin screen.",
   "settings.readonly_owned_by_upload_section": "Upload chunk settings are managed in the Upload chunk size section of the admin screen.",
   "settings.readonly_secret_file_path": "This is the path of a file holding a secret, so it is not changed from this screen (edit config.toml).",
+  "settings.readonly_smb_interfaces": "The addresses SMB listens on, set under [smb] in config.toml. Empty means every private range the sidecar can see, which on host networking includes the Docker bridges.",
   "settings.readonly_static_bootstrap_shares": "The share list is managed on the folder share screen — folders declared in config.toml can be renamed and repointed there too.",
   "settings.readonly_static_smb_shares": "SMB shares are normally derived from the folder shares and permissions set on the admin screen. This count is the hand-written [[smb_shares]] list in config.toml, which replaces that derivation whenever it is not empty.",
   "settings.security": "Security",

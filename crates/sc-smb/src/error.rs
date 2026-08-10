@@ -23,6 +23,9 @@ pub enum SmbError {
     #[error("invalid smb.server_name {name:?}: {reason}")]
     InvalidServerName { name: String, reason: String },
 
+    #[error("invalid smb.interfaces entry {value:?}: {reason}")]
+    InvalidInterface { value: String, reason: String },
+
     #[error("io error at {path}: {source}")]
     Io {
         path: PathBuf,

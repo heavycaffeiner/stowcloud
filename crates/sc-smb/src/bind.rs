@@ -48,6 +48,26 @@ pub fn is_private(ip: &IpAddr) -> bool {
     }
 }
 
+/// The address part of `spec`, which is either a bare IP or `addr/prefix`.
+/// `Err` carries why it is neither, to be quoted back in a config error.
+pub(crate) fn parse_addr_spec(spec: &str) -> Result<IpAddr, &'static str> {
+    let (addr, prefix) = match spec.split_once('/') {
+        Some((a, p)) => (a, Some(p)),
+        None => (spec, None),
+    };
+    let ip: IpAddr = addr
+        .parse()
+        .map_err(|_| "not an IP address or CIDR block")?;
+    if let Some(p) = prefix {
+        let bits: u8 = p.parse().map_err(|_| "prefix length is not a number")?;
+        let max = if ip.is_ipv4() { 32 } else { 128 };
+        if bits > max {
+            return Err("prefix length is too long for the address family");
+        }
+    }
+    Ok(ip)
+}
+
 /// The subset of `ifaces` that is *not* private, in input order.
 pub(crate) fn public_addrs(ifaces: &[IpAddr]) -> Vec<IpAddr> {
     ifaces.iter().copied().filter(|a| !is_private(a)).collect()
@@ -93,6 +113,27 @@ mod tests {
         // just outside the 100.64.0.0/10 band
         assert!(!is_private(&IpAddr::V4(Ipv4Addr::new(100, 63, 255, 255))));
         assert!(!is_private(&IpAddr::V4(Ipv4Addr::new(100, 128, 0, 1))));
+    }
+
+    #[test]
+    fn addr_specs_parse_to_their_address() {
+        assert_eq!(
+            parse_addr_spec("192.168.1.10").unwrap(),
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))
+        );
+        assert_eq!(
+            parse_addr_spec("10.0.0.0/8").unwrap(),
+            IpAddr::V4(Ipv4Addr::new(10, 0, 0, 0))
+        );
+        assert_eq!(
+            parse_addr_spec("fd00::1/64").unwrap(),
+            IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1))
+        );
+        // An interface name is a valid `interfaces` entry to Samba and an
+        // unprovable one here, so it has to fail rather than pass through.
+        assert!(parse_addr_spec("eth0").is_err());
+        assert!(parse_addr_spec("192.168.1.0/33").is_err());
+        assert!(parse_addr_spec("192.168.1.0/lan").is_err());
     }
 
     #[test]

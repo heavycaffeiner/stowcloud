@@ -64,6 +64,16 @@ pub struct SmbConfig {
     /// which on Docker means `network_mode: host` or macvlan. Name service is
     /// broadcast UDP and does not cross a bridge.
     pub server_name: String,
+    /// Exact addresses or CIDR blocks smbd may bind, or empty for every private
+    /// range. Set this when the sidecar runs on the host's network, where it
+    /// otherwise binds the LAN, every Docker bridge and any VPN interface at
+    /// once: `["192.168.1.10"]` is what the published-port line
+    /// `192.168.1.10:445:445` says on a bridged deployment.
+    ///
+    /// Interface names are rejected. This process cannot see the host's
+    /// interfaces, so it cannot tell whether `eth0` there is the LAN or the
+    /// uplink, and an unprovable entry is worse than none.
+    pub interfaces: Vec<String>,
     /// Shared config volume the sidecar reads.
     pub config_dir: PathBuf,
     /// Samba `force user`/`force group` — the single uid every SMB
@@ -82,6 +92,7 @@ impl Default for SmbConfig {
             enabled: false,
             workgroup: "WORKGROUP".to_string(),
             server_name: String::new(),
+            interfaces: Vec::new(),
             config_dir: PathBuf::from("/config/smb"),
             service_user: "scsvc".to_string(),
             allow_public_bind: false,
@@ -520,6 +531,77 @@ mod tests {
         assert!(o.validate_bind(&[IpAddr::V4(Ipv4Addr::new(100, 101, 102, 103))]).is_ok());
         let conf = o.generate_conf(&[], &[]).unwrap();
         assert!(conf.contains("100.64.0.0/10"));
+    }
+
+    #[test]
+    fn a_named_server_answers_for_itself_and_nothing_else() {
+        // On host networking nmbd shares a broadcast domain with whatever else
+        // browses the LAN, and its defaults would have it win elections and
+        // forward unknown names to DNS.
+        let conf = orch_named("stowcloud").generate_conf(&[], &[]).unwrap();
+        for directive in [
+            "local master = no",
+            "preferred master = no",
+            "domain master = no",
+            "domain logons = no",
+            "os level = 0",
+            "wins support = no",
+            "dns proxy = no",
+        ] {
+            assert!(conf.contains(directive), "missing {directive:?}");
+        }
+    }
+
+    #[test]
+    fn multichannel_never_advertises_the_interface_list() {
+        let conf = orch(false).generate_conf(&[], &[]).unwrap();
+        assert!(conf.contains("server multi channel support = no"));
+    }
+
+    fn orch_ifaces(interfaces: &[&str]) -> SmbOrchestrator {
+        SmbOrchestrator::new(SmbConfig {
+            interfaces: interfaces.iter().map(|s| s.to_string()).collect(),
+            ..SmbConfig::default()
+        })
+    }
+
+    #[test]
+    fn empty_interfaces_binds_every_private_range() {
+        let conf = orch_ifaces(&[]).generate_conf(&[], &[]).unwrap();
+        assert!(conf.contains("interfaces = lo 10.0.0.0/8"));
+    }
+
+    #[test]
+    fn explicit_interfaces_replace_the_private_ranges() {
+        let conf = orch_ifaces(&["192.168.1.10", "fd00::1/64"])
+            .generate_conf(&[], &[])
+            .unwrap();
+        assert!(conf.contains("interfaces = lo 192.168.1.10 fd00::1/64"));
+        // Narrowing what smbd binds must not narrow who may connect to it: a
+        // client at 192.168.1.50 reaches the address above and would be denied.
+        assert!(conf.contains("hosts allow = 10.0.0.0/8"));
+    }
+
+    #[test]
+    fn interfaces_reject_names_and_public_addresses() {
+        for bad in ["eth0", "8.8.8.8", "203.0.113.0/24", "192.168.1.0/33"] {
+            let err = orch_ifaces(&[bad]).generate_conf(&[], &[]).unwrap_err();
+            assert!(
+                matches!(err, SmbError::InvalidInterface { .. }),
+                "{bad:?} was accepted, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn allow_public_bind_also_frees_the_interface_list() {
+        let o = SmbOrchestrator::new(SmbConfig {
+            interfaces: vec!["203.0.113.5".to_string()],
+            allow_public_bind: true,
+            ..SmbConfig::default()
+        });
+        let conf = o.generate_conf(&[], &[]).unwrap();
+        assert!(conf.contains("interfaces = lo 203.0.113.5"));
     }
 
     #[test]

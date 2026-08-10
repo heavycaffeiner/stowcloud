@@ -543,6 +543,7 @@
   "settings.readonly_owned_by_index_section": "색인 설정은 관리자 화면의 검색 색인 섹션에서 관리합니다.",
   "settings.readonly_owned_by_upload_section": "업로드 청크 설정은 관리자 화면의 업로드 청크 크기 섹션에서 관리합니다.",
   "settings.readonly_secret_file_path": "비밀 값이 있는 파일의 경로라 이 화면에서 바꾸지 않습니다 (config.toml 편집 필요).",
+  "settings.readonly_smb_interfaces": "SMB 가 응답할 주소이며, config.toml 의 [smb] 에서 지정합니다. 비워 두면 사이드카가 볼 수 있는 모든 사설 대역을 쓰고, 호스트 네트워크에서는 여기에 도커 브리지도 들어갑니다.",
   "settings.readonly_static_bootstrap_shares": "공유 폴더 목록은 ‘공유 폴더 설정’ 화면에서 관리합니다. 설정 파일에 선언된 폴더도 그 화면에서 이름과 경로를 바꿀 수 있습니다.",
   "settings.readonly_static_smb_shares": "SMB 공유는 보통 관리자 화면에서 정한 폴더 공유와 권한에서 자동으로 만들어집니다. 여기 숫자는 config.toml 에 손으로 적은 [[smb_shares]] 목록이며, 비어 있지 않으면 그 자동 생성을 대신합니다.",
   "settings.security": "보안",

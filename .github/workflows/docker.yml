@@ -311,14 +311,15 @@ jobs:
           EOF
 
       - name: Run the container
-        # The same cap set docker-compose.yml documents. Running it here is what
+        # The same cap set docker-compose.yml ships. Running it here is what
         # turns that list from a claim into something checked, and it is now
-        # checked on both architectures rather than on amd64 alone.
+        # checked on both architectures rather than on amd64 alone. NET_ADMIN is
+        # not in it, so this also covers the entrypoint's no-ban path.
         run: |
           docker run -d --name sc-smb-smoke \
             --cap-drop ALL \
             --cap-add NET_BIND_SERVICE --cap-add SETUID --cap-add SETGID \
-            --cap-add NET_ADMIN --cap-add NET_RAW \
+            --cap-add DAC_READ_SEARCH \
             --security-opt no-new-privileges:true \
             -v /tmp/sc-smbcfg:/config/smb:ro \
             -v /tmp/sc-shares/photos:/shares/photos \

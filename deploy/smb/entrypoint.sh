@@ -136,6 +136,20 @@ sync_nmbd() {
     return 0
 }
 
+# fail2ban's ban action is `iptables -I`, which needs CAP_NET_ADMIN. The
+# reference compose file stops granting it once this container runs on the
+# host's network, because there the capability is control of the *host's*
+# firewall and routing, handed to the process that parses SMB off the wire.
+# Checking first turns that into one line saying what is off, instead of
+# fail2ban failing at jail start with an iptables error that reads like a bug.
+has_net_admin() {
+    local eff
+    eff=$(awk '/^CapEff:/ {print $2}' /proc/self/status)
+    [ -n "$eff" ] || return 1
+    # CAP_NET_ADMIN is bit 12.
+    [ $((0x$eff & 0x1000)) -ne 0 ]
+}
+
 # smbd cannot start without at least one accepted config.
 until sync_once; do
     sleep 2
@@ -149,16 +163,20 @@ sync_nmbd
 # failed with "Have not found any log file for samba jail" / "Async
 # configuration of server failed" (a hard failure for the whole daemon, not
 # just this jail), even though the exact same path exists moments later once
-# smbd has opened it. Not fatal if fail2ban still fails to start for some
-# other reason (e.g. NET_ADMIN not granted to the container) — SMB itself
-# still has to work; brute-force mitigation is defense in depth on top of it.
+# smbd has opened it. Not fatal if fail2ban still fails to start for some other
+# reason — SMB itself still has to work; brute-force mitigation is defense in
+# depth on top of it.
 touch /var/log/samba/log.smbd
-# `--logtarget=syslog` was wrong for this container: there is no syslog
-# daemon here (no `/dev/log`), confirmed by an actual run — fail2ban-server
-# logged "Failed to change log target" and came up with 0 jails loaded
-# instead of the [samba] jail. A plain file needs no such dependency.
-fail2ban-server -b --logtarget=/var/log/fail2ban.log >"$STATE_DIR/fail2ban.boot.log" 2>&1 || \
-    echo "sc-smb: fail2ban did not start (see $STATE_DIR/fail2ban.boot.log); continuing without it" >&2
+if has_net_admin; then
+    # `--logtarget=syslog` was wrong for this container: there is no syslog
+    # daemon here (no `/dev/log`), confirmed by an actual run — fail2ban-server
+    # logged "Failed to change log target" and came up with 0 jails loaded
+    # instead of the [samba] jail. A plain file needs no such dependency.
+    fail2ban-server -b --logtarget=/var/log/fail2ban.log >"$STATE_DIR/fail2ban.boot.log" 2>&1 || \
+        echo "sc-smb: fail2ban did not start (see $STATE_DIR/fail2ban.boot.log); continuing without it" >&2
+else
+    echo "sc-smb: no CAP_NET_ADMIN, so fail2ban is not started and repeated bad passwords are never banned; what limits an attacker is 'hosts allow' plus SMB3-required auth" >&2
+fi
 
 # Re-sync on every change to the shared config volume, for the life of the
 # container. Reparented to tini (real PID 1) on exec below, so it keeps

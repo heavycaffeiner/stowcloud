@@ -504,6 +504,15 @@ impl SettingsBridge {
             smb_src,
             false,
         ));
+        // Config file only, on purpose. This is what holds smbd to one address
+        // when the sidecar runs on the host's network, and an address that
+        // stops resolving takes SMB down until someone edits a file anyway.
+        fields.push(Self::readonly_needing_restart(
+            "smb.interfaces",
+            json!(cfg.smb.interfaces),
+            SettingsSource::ConfigFile,
+            "settings.readonly_smb_interfaces",
+        ));
         fields.push(Self::field(
             "smb.service_user",
             json!(cfg.smb.service_user),

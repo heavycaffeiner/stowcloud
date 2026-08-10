@@ -62,8 +62,9 @@ FROM alpine:3.24@${ALPINE_DIGEST}
 # `shadow`: gives `groupadd`/`useradd` the same flags this file already used
 # under Debian; busybox's own `addgroup`/`adduser` take different flags.
 #
-# `iptables`: fail2ban's ban action needs it (see docker-compose.yml's
-# `cap_add` comment for which capability that costs).
+# `iptables`: fail2ban's ban action needs it. The reference compose file does
+# not grant the CAP_NET_ADMIN that makes it usable, so this ships for the
+# deployment that adds the capability back rather than for the default one.
 RUN apk add --no-cache \
        samba-server samba-common-tools samba-client \
        inotify-tools fail2ban tini iptables shadow bash \

@@ -5,7 +5,7 @@
 //! configurable by the admin (that's the point — coexistence and NTLM
 //! hardening are not options, they're facts about how this server runs).
 
-use crate::bind::{PRIVATE_CIDRS_V4, PRIVATE_CIDRS_V6};
+use crate::bind::{is_private, parse_addr_spec, PRIVATE_CIDRS_V4, PRIVATE_CIDRS_V6};
 use crate::error::SmbError;
 use crate::{SmbConfig, SmbShareDef, SmbUser};
 
@@ -19,6 +19,7 @@ pub(crate) fn render(
     _users: &[SmbUser],
 ) -> Result<String, SmbError> {
     validate_server_name(&cfg.server_name)?;
+    validate_interfaces(cfg)?;
     for s in shares {
         if s.name.trim().is_empty() {
             return Err(SmbError::InvalidShare {
@@ -71,15 +72,49 @@ fn validate_server_name(name: &str) -> Result<(), SmbError> {
     Ok(())
 }
 
-fn render_global(cfg: &SmbConfig) -> String {
-    let mut ifaces = String::from("lo");
-    for c in PRIVATE_CIDRS_V4 {
-        ifaces.push(' ');
-        ifaces.push_str(c);
+/// `interfaces` decides which addresses smbd binds, and on a host-networked
+/// sidecar that is the only thing left holding it to the LAN: `validate_bind`
+/// reads the interface list of whatever namespace *sc-core* runs in, which on a
+/// bridged container is a 172.x address and nothing the sidecar actually binds.
+///
+/// So entries are addresses and CIDRs only. Samba accepts an interface name too,
+/// but this process cannot see the host's interfaces and so cannot tell whether
+/// `eth0` there is the LAN or the uplink.
+fn validate_interfaces(cfg: &SmbConfig) -> Result<(), SmbError> {
+    for spec in &cfg.interfaces {
+        let ip = parse_addr_spec(spec).map_err(|reason| SmbError::InvalidInterface {
+            value: spec.clone(),
+            reason: reason.to_string(),
+        })?;
+        if !is_private(&ip) && !cfg.allow_public_bind {
+            return Err(SmbError::InvalidInterface {
+                value: spec.clone(),
+                reason: "not a private address; set smb.allow_public_bind = true to override"
+                    .to_string(),
+            });
+        }
     }
-    for c in PRIVATE_CIDRS_V6 {
-        ifaces.push(' ');
-        ifaces.push_str(c);
+    Ok(())
+}
+
+fn render_global(cfg: &SmbConfig) -> String {
+    // `lo` unconditionally, so `smbclient -L localhost` and the healthcheck
+    // keep working whichever list follows it.
+    let mut ifaces = String::from("lo");
+    if cfg.interfaces.is_empty() {
+        for c in PRIVATE_CIDRS_V4 {
+            ifaces.push(' ');
+            ifaces.push_str(c);
+        }
+        for c in PRIVATE_CIDRS_V6 {
+            ifaces.push(' ');
+            ifaces.push_str(c);
+        }
+    } else {
+        for spec in &cfg.interfaces {
+            ifaces.push(' ');
+            ifaces.push_str(spec);
+        }
     }
 
     // Every private CIDR, deduplicated. An earlier `skip(1)` over the V4 list
@@ -99,11 +134,26 @@ fn render_global(cfg: &SmbConfig) -> String {
     // and clients must use the address. With one, nmbd answers name queries on
     // UDP 137 while `smb ports = 445` below keeps smbd off the legacy 139
     // transport, which predates SMB3 encryption and signing.
+    //
+    // A name is only reachable when the sidecar shares the LAN's broadcast
+    // domain, which on Docker means host networking, and there nmbd's defaults
+    // stop being harmless: it would enter browser elections against whatever
+    // else browses that LAN, and answer a name it does not know by asking DNS.
+    // Both are turned off, leaving it answering for its own name only.
     let netbios = if cfg.server_name.is_empty() {
         "  disable netbios = yes\n".to_string()
     } else {
         format!(
-            "  netbios name = {name}\n  server string = {name}\n  disable netbios = no\n",
+            "\u{20}\u{20}netbios name = {name}\n\
+             \u{20}\u{20}server string = {name}\n\
+             \u{20}\u{20}disable netbios = no\n\
+             \u{20}\u{20}local master = no\n\
+             \u{20}\u{20}preferred master = no\n\
+             \u{20}\u{20}domain master = no\n\
+             \u{20}\u{20}domain logons = no\n\
+             \u{20}\u{20}os level = 0\n\
+             \u{20}\u{20}wins support = no\n\
+             \u{20}\u{20}dns proxy = no\n",
             name = cfg.server_name,
         )
     };
@@ -146,7 +196,11 @@ fn render_global(cfg: &SmbConfig) -> String {
          \u{20}\u{20}bind interfaces only = yes\n\
          \u{20}\u{20}interfaces = {ifaces}\n\
          \u{20}\u{20}hosts allow = {hosts_allow}\n\
-         \u{20}\u{20}hosts deny = 0.0.0.0/0\n",
+         \u{20}\u{20}hosts deny = 0.0.0.0/0\n\
+         \u{20}\u{20}# Multichannel hands an authenticated client the server's whole bound\n\
+         \u{20}\u{20}# interface list. On host networking that list is the host's, docker\n\
+         \u{20}\u{20}# bridges and VPN interfaces included.\n\
+         \u{20}\u{20}server multi channel support = no\n",
         workgroup = cfg.workgroup,
         netbios = netbios,
         service_user = cfg.service_user,
