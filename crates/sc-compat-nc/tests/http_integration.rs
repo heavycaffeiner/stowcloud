@@ -226,13 +226,21 @@ fn app_with_auth(auth: Arc<dyn AuthPort>) -> axum::Router {
 }
 
 fn app_with_cfg(cfg: NcConfig, auth: Arc<dyn AuthPort>) -> axum::Router {
+    app_with(cfg, auth, Arc::new(FakeShares))
+}
+
+fn app_with(
+    cfg: NcConfig,
+    auth: Arc<dyn AuthPort>,
+    shares: Arc<dyn SharePort>,
+) -> axum::Router {
     let cfg = Arc::new(cfg);
     let store: Arc<dyn NcStore> = Arc::new(MemStore::with_instance_id("ocTESTINST"));
     let deps = Deps {
         core: Arc::new(FakeCore),
         auth,
         upload: Arc::new(FakeUpload),
-        shares: Arc::new(FakeShares),
+        shares,
         preview: Arc::new(FakePreview),
     };
     let login = Arc::new(LoginFlowService::new(
@@ -1021,4 +1029,116 @@ async fn a_missing_client_address_degrades_to_unspecified_not_to_loopback() {
     let seen = client_addr_seen_by_the_auth_port(None).await;
     assert_eq!(seen, vec![ClientAddr::default()]);
     assert_eq!(seen[0].0, "0.0.0.0".parse::<std::net::IpAddr>().unwrap());
+}
+
+// ---------------------------------------------------------------------------
+// sharing
+// ---------------------------------------------------------------------------
+
+struct OneShare;
+impl SharePort for OneShare {
+    fn list(&self, _u: UserId, _f: &ShareFilter) -> PortResult<Vec<CoreShare>> {
+        Ok(vec![the_share()])
+    }
+    fn get(&self, _u: UserId, _i: u64) -> PortResult<CoreShare> {
+        Ok(the_share())
+    }
+    fn create(&self, _u: UserId, _s: &ShareSpec) -> PortResult<CoreShare> {
+        Ok(the_share())
+    }
+    fn update(&self, _u: UserId, _i: u64, _s: &ShareSpec) -> PortResult<CoreShare> {
+        Ok(the_share())
+    }
+    fn delete(&self, _u: UserId, _i: u64) -> PortResult<()> {
+        Ok(())
+    }
+    fn kinds_for(&self, _r: ShareId, _i: FileId) -> PortResult<Vec<GranteeKind>> {
+        Ok(vec![])
+    }
+    fn find_grantees(
+        &self,
+        _u: UserId,
+        _q: &str,
+        _s: GranteeScope,
+    ) -> PortResult<Vec<GranteeCandidate>> {
+        Ok(vec![])
+    }
+    fn link_url(&self, t: &str) -> String {
+        format!("https://cloud.example.com/s/{t}")
+    }
+}
+
+fn the_share() -> CoreShare {
+    CoreShare {
+        id: 12,
+        kind: GranteeKind::Link,
+        grantee: None,
+        grantee_display: None,
+        owner: "alice".into(),
+        owner_display: "Alice".into(),
+        perms: Perms::READ | Perms::DOWNLOAD,
+        created_s: 1_753_600_000,
+        expires_s: None,
+        token: Some("aB3xQ".into()),
+        has_password: false,
+        label: String::new(),
+        note: String::new(),
+        path: "/photos".into(),
+        kind_is_dir: true,
+        file_id: FileId(123),
+        parent_file_id: None,
+    }
+}
+
+fn sharing_app() -> axum::Router {
+    app_with(
+        NcConfig {
+            canonical_url: "https://cloud.example.com".into(),
+            ..NcConfig::default()
+        },
+        Arc::new(FakeAuth),
+        Arc::new(OneShare),
+    )
+}
+
+/// The Android app reads a freshly created share back by id, and indexes into
+/// `data[0]` without checking. Before this route existed it got a 404 and
+/// showed the share as failed.
+#[tokio::test]
+async fn one_share_by_id_is_a_single_element_list_carrying_its_url() {
+    let resp = sharing_app()
+        .oneshot(ocs_get_authed(
+            "/ocs/v2.php/apps/files_sharing/api/v1/shares/12?format=json",
+        ))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+    let j: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let data = j["ocs"]["data"].as_array().expect("must be a list");
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[0]["id"], "12");
+    assert_eq!(data[0]["token"], "aB3xQ");
+    assert_eq!(data[0]["url"], "https://cloud.example.com/s/aB3xQ");
+}
+
+#[tokio::test]
+async fn a_public_upload_only_update_is_accepted() {
+    let resp = sharing_app()
+        .oneshot(
+            Request::builder()
+                .method("PUT")
+                .uri("/ocs/v2.php/apps/files_sharing/api/v1/shares/12?format=json")
+                .header("OCS-APIRequest", "true")
+                .header("Authorization", "Basic YWxpY2U6aHVudGVyMg==")
+                .header("Content-Type", "application/x-www-form-urlencoded")
+                .body(Body::from("publicUpload=true"))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 20).await.unwrap();
+    let j: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(j["ocs"]["meta"]["statuscode"], 200);
 }

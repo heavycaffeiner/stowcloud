@@ -401,10 +401,7 @@ async fn the_compat_share_port_is_backed_by_the_same_store() {
     };
     let created = port.create(uid, &spec).expect("a public link is creatable");
     assert_eq!(created.kind, GranteeKind::Link);
-    assert!(
-        created.token.is_some(),
-        "the plaintext token is returned once, at creation"
-    );
+    assert!(created.token.is_some(), "creation returns the plaintext token");
 
     // Same row, seen through `sc-core`.
     assert_eq!(f.app.core.list_links(uid, None).unwrap().len(), 1);
@@ -413,9 +410,9 @@ async fn the_compat_share_port_is_backed_by_the_same_store() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, created.id);
     assert_eq!(listed[0].label, "holiday photos");
-    assert!(
-        listed[0].token.is_none(),
-        "only sha256(token) is stored, so a later read cannot reproduce the plaintext"
+    assert_eq!(
+        listed[0].token, created.token,
+        "a later read must reproduce the token, or a client has no URL to show"
     );
 
     // User and group grants have no store anywhere. Refused, not dropped.

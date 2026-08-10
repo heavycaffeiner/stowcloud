@@ -248,7 +248,7 @@ async fn h_ocs(
             ))
         }
 
-        ("PUT" | "DELETE", p) if p.starts_with("/apps/files_sharing/api/v1/shares/") => {
+        ("GET" | "PUT" | "DELETE", p) if p.starts_with("/apps/files_sharing/api/v1/shares/") => {
             let Some(pr) = authenticate(&s, &headers, from) else {
                 return ctx.result(Err(OcsError::unauthorized("Unauthorised")));
             };
@@ -260,6 +260,8 @@ async fn h_ocs(
             };
             if method == axum::http::Method::DELETE {
                 ctx.result(s.shares.delete(pr.user, id))
+            } else if method == axum::http::Method::GET {
+                ctx.result(s.shares.show(pr.user, id))
             } else {
                 let mut pairs = parse_pairs(&body);
                 pairs.extend(parse_pairs(uri.query().unwrap_or("")));

@@ -9,6 +9,7 @@
 //! ```text
 //! GET    /ocs/v2.php/apps/files_sharing/api/v1/shares
 //! POST   /ocs/v2.php/apps/files_sharing/api/v1/shares
+//! GET    /ocs/v2.php/apps/files_sharing/api/v1/shares/{id}
 //! PUT    /ocs/v2.php/apps/files_sharing/api/v1/shares/{id}
 //! DELETE /ocs/v2.php/apps/files_sharing/api/v1/shares/{id}
 //! GET    /ocs/v2.php/apps/files_sharing/api/v1/sharees
@@ -21,9 +22,11 @@ use parking_lot::Mutex;
 
 use crate::config::{NcConfig, ShareeLookup};
 use crate::ocs::{OcsError, Val};
-use crate::props::{grantee_kind_to_share_type, nc_bits_to_perms, perms_to_nc_bits, share_type};
+use crate::props::{
+    grantee_kind_to_share_type, nc_bits_to_perms, perms_to_nc_bits, share_perm_bits, share_type,
+};
 use crate::ports::{
-    CoreShare, GranteeCandidate, GranteeKind, GranteeScope, PortError, SharePort, ShareSpec,
+    CoreShare, GranteeCandidate, GranteeKind, GranteeScope, Perms, PortError, SharePort, ShareSpec,
     UserId,
 };
 
@@ -180,7 +183,8 @@ pub fn format_share(s: &CoreShare, shares: &dyn SharePort) -> Val {
 
     // Always last, in this order, and both are ints not bools.
     v.push(("mail_send".into(), Val::Int(0)));
-    v.push(("hide_download".into(), Val::Int(0)));
+    let hidden = s.perms.contains(Perms::READ) && !s.perms.contains(Perms::DOWNLOAD);
+    v.push(("hide_download".into(), Val::Int(hidden as i64)));
     v.push(("attributes".into(), Val::Null));
 
     Val::Map(v)
@@ -231,6 +235,12 @@ pub struct ShareRequest {
     pub expire_date: Option<String>,
     pub note: Option<String>,
     pub label: Option<String>,
+    /// The older upload lever. The mobile clients still send it instead of
+    /// `permissions` when the user flips "allow upload and editing".
+    pub public_upload: Option<bool>,
+    /// "May look, may not download". The permission bits cannot say this: in
+    /// the reference `READ` implies download.
+    pub hide_download: Option<bool>,
 }
 
 impl ShareRequest {
@@ -248,10 +258,28 @@ impl ShareRequest {
                 "expireDate" => r.expire_date = Some(v.clone()),
                 "note" => r.note = Some(v.clone()),
                 "label" => r.label = Some(v.clone()),
+                "publicUpload" => r.public_upload = parse_bool(v),
+                "hideDownload" => r.hide_download = parse_bool(v),
                 _ => {}
             }
         }
         r
+    }
+
+    /// Bits the request asks for, with `permissions` winning over
+    /// `publicUpload` when a client sends both.
+    fn requested_bits(&self) -> Option<u32> {
+        match (self.permissions, self.public_upload) {
+            (Some(b), _) => Some(b),
+            (None, Some(true)) => Some(
+                share_perm_bits::READ
+                    | share_perm_bits::CREATE
+                    | share_perm_bits::UPDATE
+                    | share_perm_bits::DELETE,
+            ),
+            (None, Some(false)) => Some(share_perm_bits::READ),
+            (None, None) => None,
+        }
     }
 
     pub fn to_spec(&self) -> Result<ShareSpec, OcsError> {
@@ -269,12 +297,13 @@ impl ShareRequest {
 
         // PERMISSION_ALL when unspecified, matching
         // `shareapi_default_permissions`.
-        let bits = self.permissions.unwrap_or(31);
+        let bits = self.requested_bits().unwrap_or(share_perm_bits::ALL);
         let perms = nc_bits_to_perms(bits).map_err(|unknown| {
             OcsError::bad_request(format!(
                 "Unsupported permission bits 0x{unknown:x} in `permissions`"
             ))
         })?;
+        let perms = apply_hide_download(perms, self.hide_download);
 
         if matches!(kind, GranteeKind::User | GranteeKind::Group)
             && self.share_with.as_deref().unwrap_or("").is_empty()
@@ -300,6 +329,26 @@ impl ShareRequest {
             label: self.label.clone(),
             note: self.note.clone(),
         })
+    }
+}
+
+/// PHP-ish booleans. Anything unrecognised is `None`, so a garbled value is
+/// left alone rather than read as `false`.
+fn parse_bool(v: &str) -> Option<bool> {
+    match v.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Some(true),
+        "false" | "0" | "no" | "off" | "" => Some(false),
+        _ => None,
+    }
+}
+
+/// `hideDownload` maps onto `Perms::DOWNLOAD`, which the NC bits cannot carry:
+/// their `READ` always implies download.
+fn apply_hide_download(perms: Perms, hide: Option<bool>) -> Perms {
+    match hide {
+        Some(true) => perms.difference(Perms::DOWNLOAD),
+        Some(false) if perms.contains(Perms::READ) => perms | Perms::DOWNLOAD,
+        _ => perms,
     }
 }
 
@@ -555,6 +604,13 @@ impl SharesApi {
         ))
     }
 
+    /// One share by id. The reference wraps it in a list, and clients index
+    /// into `[0]` unconditionally.
+    pub fn show(&self, user: UserId, id: u64) -> Result<Val, OcsError> {
+        let s = self.shares.get(user, id).map_err(port_err)?;
+        Ok(Val::List(vec![format_share(&s, self.shares.as_ref())]))
+    }
+
     pub fn create(&self, user: UserId, req: &ShareRequest) -> Result<Val, OcsError> {
         let spec = req.to_spec()?;
         let s = self.shares.create(user, &spec).map_err(port_err)?;
@@ -569,16 +625,23 @@ impl SharesApi {
             && req.expire_date.is_none()
             && req.note.is_none()
             && req.label.is_none()
+            && req.public_upload.is_none()
+            && req.hide_download.is_none()
         {
             return Err(OcsError::bad_request("Wrong or no update parameter given"));
         }
         let existing = self.shares.get(user, id).map_err(port_err)?;
-        let perms = match req.permissions {
+        let perms = match req.requested_bits() {
             Some(bits) => nc_bits_to_perms(bits).map_err(|u| {
                 OcsError::bad_request(format!("Unsupported permission bits 0x{u:x}"))
             })?,
             None => existing.perms,
         };
+        // A permissions-only update must not silently re-enable download on a
+        // share whose owner had turned it off.
+        let was_hidden =
+            existing.perms.contains(Perms::READ) && !existing.perms.contains(Perms::DOWNLOAD);
+        let perms = apply_hide_download(perms, Some(req.hide_download.unwrap_or(was_hidden)));
         let spec = ShareSpec {
             path: existing.path.clone(),
             kind: existing.kind,
@@ -852,5 +915,198 @@ mod tests {
         let api = SharesApi::new(Arc::new(FakeShares));
         let r = ShareRequest::default();
         assert_eq!(api.create(UserId(1), &r).unwrap_err().code, 404);
+    }
+
+    /// Serves a caller-supplied share and keeps whatever spec `update` was
+    /// handed, so a request can be checked against the write it produces.
+    struct SpyShares {
+        existing: CoreShare,
+        seen: std::sync::Mutex<Option<ShareSpec>>,
+    }
+
+    impl SpyShares {
+        fn new(existing: CoreShare) -> Arc<Self> {
+            Arc::new(Self {
+                existing,
+                seen: std::sync::Mutex::new(None),
+            })
+        }
+        fn spec(&self) -> ShareSpec {
+            self.seen.lock().unwrap().clone().expect("update was not called")
+        }
+    }
+
+    impl SharePort for SpyShares {
+        fn list(&self, _u: UserId, _f: &ShareFilter) -> PortResult<Vec<CoreShare>> {
+            Ok(vec![self.existing.clone()])
+        }
+        fn get(&self, _u: UserId, _id: u64) -> PortResult<CoreShare> {
+            Ok(self.existing.clone())
+        }
+        fn create(&self, _u: UserId, s: &ShareSpec) -> PortResult<CoreShare> {
+            *self.seen.lock().unwrap() = Some(s.clone());
+            Ok(self.existing.clone())
+        }
+        fn update(&self, _u: UserId, _id: u64, s: &ShareSpec) -> PortResult<CoreShare> {
+            *self.seen.lock().unwrap() = Some(s.clone());
+            Ok(self.existing.clone())
+        }
+        fn delete(&self, _u: UserId, _id: u64) -> PortResult<()> {
+            Ok(())
+        }
+        fn kinds_for(&self, _s: ShareId, _id: FileId) -> PortResult<Vec<GranteeKind>> {
+            Ok(vec![])
+        }
+        fn find_grantees(
+            &self,
+            _u: UserId,
+            _q: &str,
+            _s: GranteeScope,
+        ) -> PortResult<Vec<GranteeCandidate>> {
+            Ok(vec![])
+        }
+        fn link_url(&self, token: &str) -> String {
+            format!("https://cloud.example.com/s/{token}")
+        }
+    }
+
+    #[test]
+    fn show_wraps_the_share_in_a_list() {
+        let api = SharesApi::new(Arc::new(FakeShares));
+        let j = api.show(UserId(1), 12).unwrap().to_json();
+        let list = j.as_array().expect("clients index into [0] unconditionally");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0]["id"], "12");
+    }
+
+    #[test]
+    fn a_link_carries_its_token_and_url() {
+        let j = format_share(&link_share(), &FakeShares).to_json();
+        assert_eq!(j["token"], "aB3xQ");
+        assert_eq!(j["url"], "https://cloud.example.com/s/aB3xQ");
+    }
+
+    #[test]
+    fn public_upload_expands_to_the_write_bits_and_loses_to_permissions() {
+        let up = ShareRequest {
+            public_upload: Some(true),
+            ..ShareRequest::default()
+        };
+        assert_eq!(up.requested_bits(), Some(1 | 2 | 4 | 8));
+
+        let down = ShareRequest {
+            public_upload: Some(false),
+            ..ShareRequest::default()
+        };
+        assert_eq!(down.requested_bits(), Some(1));
+
+        // An explicit `permissions` wins, so a client sending both is not
+        // silently upgraded.
+        let both = ShareRequest {
+            permissions: Some(1),
+            public_upload: Some(true),
+            ..ShareRequest::default()
+        };
+        assert_eq!(both.requested_bits(), Some(1));
+    }
+
+    #[test]
+    fn the_form_parser_reads_the_flags_android_sends() {
+        let pairs = |s: &str| {
+            s.split('&')
+                .map(|kv| {
+                    let (k, v) = kv.split_once('=').unwrap();
+                    (k.to_string(), v.to_string())
+                })
+                .collect::<Vec<_>>()
+        };
+        let r = ShareRequest::from_form(&pairs(
+            "path=/a&shareType=3&publicUpload=true&hideDownload=1&note=hi",
+        ));
+        assert_eq!(r.public_upload, Some(true));
+        assert_eq!(r.hide_download, Some(true));
+        assert_eq!(r.note.as_deref(), Some("hi"));
+
+        let off = ShareRequest::from_form(&pairs("publicUpload=false&hideDownload=0"));
+        assert_eq!(off.public_upload, Some(false));
+        assert_eq!(off.hide_download, Some(false));
+    }
+
+    #[test]
+    fn hide_download_survives_a_permissions_only_update() {
+        let mut existing = link_share();
+        existing.perms = Perms::READ; // download already turned off
+        let spy = SpyShares::new(existing);
+        let api = SharesApi::new(spy.clone());
+
+        let req = ShareRequest {
+            permissions: Some(1 | 2 | 4 | 8),
+            ..ShareRequest::default()
+        };
+        api.update(UserId(1), 12, &req).unwrap();
+        assert!(!spy.spec().perms.contains(Perms::DOWNLOAD));
+
+        // ...and asking for it back turns it on again.
+        let req = ShareRequest {
+            hide_download: Some(false),
+            ..ShareRequest::default()
+        };
+        api.update(UserId(1), 12, &req).unwrap();
+        assert!(spy.spec().perms.contains(Perms::DOWNLOAD));
+    }
+
+    #[test]
+    fn an_update_carrying_only_a_flag_is_not_rejected_as_empty() {
+        let spy = SpyShares::new(link_share());
+        let api = SharesApi::new(spy.clone());
+
+        for req in [
+            ShareRequest {
+                public_upload: Some(true),
+                ..ShareRequest::default()
+            },
+            ShareRequest {
+                hide_download: Some(true),
+                ..ShareRequest::default()
+            },
+            ShareRequest {
+                note: Some("read this".into()),
+                ..ShareRequest::default()
+            },
+        ] {
+            assert!(api.update(UserId(1), 12, &req).is_ok());
+        }
+        assert_eq!(spy.spec().note.as_deref(), Some("read this"));
+
+        // Genuinely empty is still a 400.
+        let e = api
+            .update(UserId(1), 12, &ShareRequest::default())
+            .unwrap_err();
+        assert_eq!(e.code, 400);
+    }
+
+    #[test]
+    fn an_update_that_omits_the_password_does_not_clear_the_expiry_or_the_note() {
+        let mut existing = link_share();
+        existing.note = "keep me".into();
+        let spy = SpyShares::new(existing);
+        let api = SharesApi::new(spy.clone());
+
+        let req = ShareRequest {
+            permissions: Some(1),
+            ..ShareRequest::default()
+        };
+        api.update(UserId(1), 12, &req).unwrap();
+        let spec = spy.spec();
+        assert_eq!(spec.expires_s, Some(1_787_788_800));
+        assert_eq!(spec.note.as_deref(), Some("keep me"));
+
+        // An empty `expireDate` is the documented way to clear it.
+        let req = ShareRequest {
+            expire_date: Some(String::new()),
+            ..ShareRequest::default()
+        };
+        api.update(UserId(1), 12, &req).unwrap();
+        assert_eq!(spy.spec().expires_s, None);
     }
 }

@@ -91,6 +91,7 @@ impl App {
         core.attach_links(sc_core::LinkStore::open_with_config(
             &data_dir.join("links.db"),
             sc_auth::AuthConfig::default(),
+            key.key,
         )?)?;
         // Grants live in their own database too, for exactly the reason
         // links do (`sc_core::acl_store`'s module doc): `meta.db` is a

@@ -8,10 +8,16 @@
 //! Four properties are load-bearing and are each covered by a test in
 //! `crate::tests`:
 //!
-//! 1. **The plaintext token is never persisted.** 128 bits of CSPRNG, rendered
-//!    base64url (22 chars), returned exactly once from [`Core::create_link`];
-//!    the row holds `sha256(token)` and nothing else. A database read gives an
-//!    attacker no usable link.
+//! 1. **The token is never written in the clear.** 128 bits of CSPRNG,
+//!    rendered base64url (22 chars). The row holds `sha256(token)`, which is
+//!    what every lookup matches on, and the token sealed with
+//!    XChaCha20-Poly1305 under the server master key. The key lives in
+//!    `master.key`, outside the database, so a stolen database file on its own
+//!    still yields no usable link. The sealed copy exists because a client
+//!    that lists its own links has to be able to show their URLs, and a token
+//!    that only ever existed in one response cannot be shown again. Rows
+//!    written before the sealed column existed keep `NULL` and stay
+//!    unrecoverable; rotating them would invalidate links already handed out.
 //! 2. **Passwords are Argon2id**, with `sc-auth`'s parameters — link password
 //!    checks are rare, so a deliberately slow hash is the right trade
 //!    (§7.1: "Argon2 — low frequency, so a slow hash is fine").
@@ -32,6 +38,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use sc_acl::Perms;
 use sc_auth::AuthConfig;
 use sc_vfs::{FileId, Kind, SafePath, ShareId, ShareRoot, UserId};
@@ -53,6 +61,7 @@ const SCHEMA_SQL: &str = "
 CREATE TABLE IF NOT EXISTS share_link (
   id            INTEGER PRIMARY KEY,
   token_hash    BLOB UNIQUE NOT NULL,
+  token_enc     BLOB,
   share         INTEGER NOT NULL,
   path          TEXT NOT NULL,
   fileid        INTEGER,
@@ -63,17 +72,46 @@ CREATE TABLE IF NOT EXISTS share_link (
   max_downloads INTEGER,
   downloads     INTEGER NOT NULL DEFAULT 0,
   label         TEXT,
+  note          TEXT,
   created_ns    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS share_link_owner ON share_link(owner);
 CREATE INDEX IF NOT EXISTS share_link_node  ON share_link(share, fileid);
 ";
 
+/// Columns added after the table shipped. `CREATE TABLE IF NOT EXISTS` covers
+/// a fresh database and does nothing for one that already exists.
+const ADDED_COLUMNS: &[(&str, &str)] = &[
+    ("token_enc", "ALTER TABLE share_link ADD COLUMN token_enc BLOB"),
+    ("note", "ALTER TABLE share_link ADD COLUMN note TEXT"),
+];
+
+fn migrate(c: &Connection) -> rusqlite::Result<()> {
+    let mut present = Vec::new();
+    {
+        let mut stmt = c.prepare("PRAGMA table_info(share_link)")?;
+        let rows = stmt.query_map([], |r| r.get::<_, String>(1))?;
+        for r in rows {
+            present.push(r?);
+        }
+    }
+    for (col, sql) in ADDED_COLUMNS {
+        if !present.iter().any(|p| p == col) {
+            c.execute(sql, [])?;
+        }
+    }
+    Ok(())
+}
+
 /// One public link, as every caller above `sc-core` sees it. Deliberately
-/// carries no password material and no token — only whether a password is set.
+/// carries no password material, only whether a password is set.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ShareLink {
     pub id: i64,
+    /// The plaintext token, unsealed from `token_enc`. `None` for a row
+    /// written before that column existed, or when the master key cannot open
+    /// it; callers must render the link as tokenless rather than fail.
+    pub token: Option<String>,
     pub share: ShareId,
     pub path: SafePath,
     /// The target's fileid at the moment the link was minted. `None` only if
@@ -86,6 +124,8 @@ pub struct ShareLink {
     pub max_downloads: Option<u32>,
     pub downloads: u32,
     pub label: Option<String>,
+    /// Free text the owner attaches for the recipient.
+    pub note: Option<String>,
     pub has_password: bool,
     pub created_ns: i128,
 }
@@ -115,6 +155,7 @@ pub struct LinkSpec {
     pub expires_ns: Option<i128>,
     pub max_downloads: Option<u32>,
     pub label: Option<String>,
+    pub note: Option<String>,
 }
 
 impl Default for LinkSpec {
@@ -127,6 +168,7 @@ impl Default for LinkSpec {
             expires_ns: None,
             max_downloads: None,
             label: None,
+            note: None,
         }
     }
 }
@@ -142,6 +184,7 @@ pub struct LinkPatch {
     pub expires_ns: Option<Option<i128>>,
     pub max_downloads: Option<Option<u32>>,
     pub label: Option<Option<String>>,
+    pub note: Option<Option<String>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -168,8 +211,16 @@ pub struct LinkStore {
     /// much as a login attempt does, and why this is a second gate rather
     /// than `sc-auth`'s own.
     argon_gate: Arc<ArgonGate>,
+    /// Seals and unseals `token_enc`. Handed in by the server from
+    /// `master.key`; tests use [`TEST_MASTER_KEY`].
+    master_key: [u8; 32],
     _keepalive: parking_lot::Mutex<Option<Connection>>,
 }
+
+/// The key the in-memory constructors use. Not a secret and not meant to be:
+/// an in-memory database dies with the process, so there is nothing at rest
+/// for a real key to protect.
+const TEST_MASTER_KEY: [u8; 32] = [0u8; 32];
 
 enum Target {
     File(std::path::PathBuf),
@@ -177,8 +228,8 @@ enum Target {
 }
 
 impl LinkStore {
-    pub fn open(path: &Path) -> anyhow::Result<Self> {
-        Self::open_with(Target::File(path.to_path_buf()), AuthConfig::default())
+    pub fn open(path: &Path, master_key: [u8; 32]) -> anyhow::Result<Self> {
+        Self::open_with(Target::File(path.to_path_buf()), AuthConfig::default(), master_key)
     }
 
     /// Shared-cache in-memory store, for tests. A plain `:memory:` would give
@@ -194,16 +245,16 @@ impl LinkStore {
         static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let uri = format!("file:sc_links_mem_{}_{n}?mode=memory&cache=shared", std::process::id());
-        Self::open_with(Target::Memory(uri), cfg)
+        Self::open_with(Target::Memory(uri), cfg, TEST_MASTER_KEY)
     }
 
     /// As [`LinkStore::open`], but with explicit Argon2 parameters — the
     /// server passes the same `AuthConfig` it gave `sc-auth`.
-    pub fn open_with_config(path: &Path, cfg: AuthConfig) -> anyhow::Result<Self> {
-        Self::open_with(Target::File(path.to_path_buf()), cfg)
+    pub fn open_with_config(path: &Path, cfg: AuthConfig, master_key: [u8; 32]) -> anyhow::Result<Self> {
+        Self::open_with(Target::File(path.to_path_buf()), cfg, master_key)
     }
 
-    fn open_with(target: Target, cfg: AuthConfig) -> anyhow::Result<Self> {
+    fn open_with(target: Target, cfg: AuthConfig, master_key: [u8; 32]) -> anyhow::Result<Self> {
         let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE | OpenFlags::SQLITE_OPEN_URI;
         let bootstrap = match &target {
             Target::File(p) => Connection::open(p)?,
@@ -215,6 +266,7 @@ impl LinkStore {
              PRAGMA busy_timeout = 5000;",
         )?;
         bootstrap.execute_batch(SCHEMA_SQL)?;
+        migrate(&bootstrap)?;
 
         let manager = match &target {
             Target::File(p) => SqliteConnectionManager::file(p),
@@ -234,6 +286,7 @@ impl LinkStore {
             cfg,
             dummy_hash,
             argon_gate,
+            master_key,
             _keepalive: parking_lot::Mutex::new(keepalive),
         })
     }
@@ -263,6 +316,51 @@ pub fn token_hash(token: &str) -> [u8; 32] {
     h.finalize().into()
 }
 
+/// Binds a sealed token to its own row. `token_hash` is unique per row, so a
+/// ciphertext copied onto a different link fails to open instead of handing
+/// out one link's token under another link's permissions.
+fn token_aad(token_hash: &[u8; 32]) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(16 + 32);
+    aad.extend_from_slice(b"share_link_token");
+    aad.extend_from_slice(token_hash);
+    aad
+}
+
+/// XChaCha20-Poly1305 under the master key. Layout is `nonce(24) ||
+/// ciphertext`, the same as `sc-auth`'s sealed NT hashes.
+pub(crate) fn seal_token(master_key: &[u8; 32], token: &str, token_hash: &[u8; 32]) -> Result<Vec<u8>, CoreError> {
+    let cipher = XChaCha20Poly1305::new(master_key.into());
+    let mut nonce_bytes = [0u8; 24];
+    getrandom::getrandom(&mut nonce_bytes).map_err(|e| CoreError::Internal(format!("getrandom: {e}")))?;
+    let aad = token_aad(token_hash);
+    let ct = cipher
+        .encrypt(
+            XNonce::from_slice(&nonce_bytes),
+            Payload { msg: token.as_bytes(), aad: &aad },
+        )
+        .map_err(|_| CoreError::Internal("share-link token seal failed".into()))?;
+    let mut out = Vec::with_capacity(24 + ct.len());
+    out.extend_from_slice(&nonce_bytes);
+    out.extend_from_slice(&ct);
+    Ok(out)
+}
+
+/// `None` on any failure. A token that will not open is a link whose URL
+/// cannot be shown, which is a degraded row, not a broken one: it must still
+/// list, update and delete.
+pub(crate) fn open_token(master_key: &[u8; 32], blob: &[u8], token_hash: &[u8; 32]) -> Option<String> {
+    if blob.len() < 24 {
+        return None;
+    }
+    let (nonce_bytes, ct) = blob.split_at(24);
+    let cipher = XChaCha20Poly1305::new(master_key.into());
+    let aad = token_aad(token_hash);
+    let pt = cipher
+        .decrypt(XNonce::from_slice(nonce_bytes), Payload { msg: ct, aad: &aad })
+        .ok()?;
+    String::from_utf8(pt).ok()
+}
+
 fn mint_token() -> Result<String, CoreError> {
     let mut buf = [0u8; TOKEN_BYTES];
     getrandom::getrandom(&mut buf).map_err(|e| CoreError::Internal(format!("getrandom: {e}")))?;
@@ -282,15 +380,23 @@ fn ns_to_i64(v: i128) -> i64 {
     v.clamp(i64::MIN as i128, i64::MAX as i128) as i64
 }
 
-fn row_to_link(row: &rusqlite::Row<'_>, max_depth: u16) -> rusqlite::Result<ShareLink> {
+fn row_to_link(row: &rusqlite::Row<'_>, max_depth: u16, master_key: &[u8; 32]) -> rusqlite::Result<ShareLink> {
     let path_str: String = row.get("path")?;
     let path = SafePath::parse(&path_str, max_depth).unwrap_or_else(|_| SafePath::root());
     let fileid: Option<i64> = row.get("fileid")?;
     let expires: Option<i64> = row.get("expires_ns")?;
     let max_downloads: Option<i64> = row.get("max_downloads")?;
     let pw: Option<String> = row.get("password_hash")?;
+    let hash_vec: Vec<u8> = row.get("token_hash")?;
+    let token = <[u8; 32]>::try_from(hash_vec.as_slice()).ok().and_then(|h| {
+        row.get::<_, Option<Vec<u8>>>("token_enc")
+            .ok()
+            .flatten()
+            .and_then(|blob| open_token(master_key, &blob, &h))
+    });
     Ok(ShareLink {
         id: row.get("id")?,
+        token,
         share: ShareId::new(row.get::<_, i64>("share")? as u32),
         path,
         fileid_at_creation: fileid.map(FileId::new),
@@ -300,13 +406,14 @@ fn row_to_link(row: &rusqlite::Row<'_>, max_depth: u16) -> rusqlite::Result<Shar
         max_downloads: max_downloads.map(|v| v as u32),
         downloads: row.get::<_, i64>("downloads")? as u32,
         label: row.get("label")?,
+        note: row.get("note")?,
         has_password: pw.is_some(),
         created_ns: row.get::<_, i64>("created_ns")? as i128,
     })
 }
 
-const SELECT_COLS: &str = "id, token_hash, share, path, fileid, owner, perms, password_hash, \
-                           expires_ns, max_downloads, downloads, label, created_ns";
+const SELECT_COLS: &str = "id, token_hash, token_enc, share, path, fileid, owner, perms, password_hash, \
+                           expires_ns, max_downloads, downloads, label, note, created_ns";
 
 // ---------------------------------------------------------------------------
 // Core API
@@ -340,8 +447,8 @@ impl crate::Core {
         self.share(share).ok_or(CoreError::NotFound)
     }
 
-    /// Mint a link. Returns the row **and the plaintext token, which is the
-    /// only time it exists** — it is not stored and cannot be recovered.
+    /// Mint a link. Returns the row and the plaintext token, which is also
+    /// carried on the row as [`ShareLink::token`].
     ///
     /// Requires `Perms::SHARE` at the target, and the link can never carry
     /// permissions the creator does not itself hold there.
@@ -404,14 +511,17 @@ impl crate::Core {
         };
 
         let token = mint_token()?;
+        let hash = token_hash(&token);
+        let token_enc = seal_token(&store.master_key, &token, &hash)?;
         let created = now_ns();
         let conn = store.conn()?;
         conn.execute(
-            "INSERT INTO share_link (token_hash, share, path, fileid, owner, perms, password_hash, \
-                                     expires_ns, max_downloads, downloads, label, created_ns) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,0,?10,?11)",
+            "INSERT INTO share_link (token_hash, token_enc, share, path, fileid, owner, perms, password_hash, \
+                                     expires_ns, max_downloads, downloads, label, note, created_ns) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,0,?11,?12,?13)",
             rusqlite::params![
-                &token_hash(&token)[..],
+                &hash[..],
+                token_enc,
                 r.share.get() as i64,
                 r.path.to_display_string(),
                 fileid.map(|f| f.get()),
@@ -421,6 +531,7 @@ impl crate::Core {
                 spec.expires_ns.map(ns_to_i64),
                 spec.max_downloads.map(|v| v as i64),
                 spec.label.clone(),
+                spec.note.clone(),
                 ns_to_i64(created),
             ],
         )
@@ -430,6 +541,7 @@ impl crate::Core {
 
         let link = ShareLink {
             id,
+            token: Some(token.clone()),
             share: r.share,
             path: r.path,
             fileid_at_creation: fileid,
@@ -439,6 +551,7 @@ impl crate::Core {
             max_downloads: spec.max_downloads,
             downloads: 0,
             label: spec.label.clone(),
+            note: spec.note.clone(),
             has_password: password_hash_present(&spec.password),
             created_ns: created,
         };
@@ -466,7 +579,7 @@ impl crate::Core {
                     .get(&share)
                     .map(|e| e.def.policy.max_depth)
                     .unwrap_or(64);
-                row_to_link(row, max_depth)
+                row_to_link(row, max_depth, &store.master_key)
             })
             .map_err(db)?;
         let mut out = Vec::new();
@@ -547,6 +660,9 @@ impl crate::Core {
         if let Some(l) = &patch.label {
             conn.execute("UPDATE share_link SET label = ?1 WHERE id = ?2", rusqlite::params![l, id]).map_err(db)?;
         }
+        if let Some(n) = &patch.note {
+            conn.execute("UPDATE share_link SET note = ?1 WHERE id = ?2", rusqlite::params![n, id]).map_err(db)?;
+        }
         drop(conn);
         self.get_link(user, id)
     }
@@ -573,7 +689,7 @@ impl crate::Core {
         stmt.query_row([&token_hash(token)[..]], |row| {
             let share = ShareId::new(row.get::<_, i64>("share")? as u32);
             let max_depth = self.shares.get(&share).map(|e| e.def.policy.max_depth).unwrap_or(64);
-            row_to_link(row, max_depth)
+            row_to_link(row, max_depth, &store.master_key)
         })
         .optional()
         .map_err(db)
@@ -590,7 +706,7 @@ impl crate::Core {
         stmt.query_row([id], |row| {
             let share = ShareId::new(row.get::<_, i64>("share")? as u32);
             let max_depth = self.shares.get(&share).map(|e| e.def.policy.max_depth).unwrap_or(64);
-            row_to_link(row, max_depth)
+            row_to_link(row, max_depth, &store.master_key)
         })
         .optional()
         .map_err(db)
@@ -765,7 +881,9 @@ impl crate::Core {
         let sql = format!("SELECT {SELECT_COLS} FROM share_link WHERE share = ?1 AND fileid = ?2");
         let mut stmt = conn.prepare(&sql).map_err(db)?;
         let rows = stmt
-            .query_map(rusqlite::params![share.get() as i64, fileid.get()], |row| row_to_link(row, max_depth))
+            .query_map(rusqlite::params![share.get() as i64, fileid.get()], |row| {
+                row_to_link(row, max_depth, &store.master_key)
+            })
             .map_err(db)?;
         rows.collect::<rusqlite::Result<Vec<_>>>().map_err(db)
     }
