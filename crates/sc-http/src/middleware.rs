@@ -207,6 +207,12 @@ pub async fn host_guard(State(state): State<AppState>, mut req: Request, next: N
     {
         HostOrigin::App
     } else {
+        // Named, because the shortcut above covers IP literals and nothing
+        // else: reaching this server by a name it was not told about is the one
+        // way to get here, and a Tailscale MagicDNS name does it every time.
+        // Without the host in the log the operator sees only an unreachable
+        // site and has no way to learn that the fix is one `app_hosts` entry.
+        tracing::warn!(%host, "host guard: not in app_hosts or content_hosts, answering 421");
         return envelope_response(StatusCode::MISDIRECTED_REQUEST, ErrorCode::Internal, "unrecognized Host");
     };
 

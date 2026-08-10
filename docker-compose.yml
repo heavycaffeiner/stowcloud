@@ -89,6 +89,14 @@ services:
       # certificate does not name it and the browser reports a mismatch rather
       # than an unknown issuer. Both are click-through, so this is a rough edge
       # and not a failure.
+      #
+      # A *name* is different, and this one is not click-through. Private IP
+      # literals are admitted unlisted, but every name has to be in `app_hosts`
+      # or the host guard answers 421 and the site simply does not load. That
+      # includes a Tailscale MagicDNS name: `100.x.y.z` works untouched while
+      # `nas.tailnet-1234.ts.net` is refused until it is listed here. The guard
+      # exists to stop DNS rebinding, which always arrives as a name, so this
+      # cannot be relaxed by pattern. The rejected name is logged at `warn`.
       SC_BIND: 0.0.0.0:8443
     ports:
       # Published to the whole LAN on purpose: this is how you reach the app
