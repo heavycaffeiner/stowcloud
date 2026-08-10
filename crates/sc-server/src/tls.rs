@@ -233,21 +233,161 @@ impl TlsListener {
                 let acceptor = acceptor.clone();
                 let tx = tx.clone();
                 tokio::spawn(async move {
-                    match acceptor.accept(tcp).await {
-                        Ok(stream) => {
-                            let _ = tx.send((stream, peer)).await;
-                        }
-                        // The overwhelmingly common cause is a browser that has
-                        // not been given the certificate exception yet, so this
-                        // is `debug`, not `warn`: at `warn` every first visit
-                        // would look like a fault.
-                        Err(e) => tracing::debug!(peer = %peer, error = %e, "tls: handshake failed"),
+                    match first_byte(&tcp).await {
+                        // A TLS record layer opens with ContentType::Handshake.
+                        Some(TLS_HANDSHAKE) => match acceptor.accept(tcp).await {
+                            Ok(stream) => {
+                                let _ = tx.send((stream, peer)).await;
+                            }
+                            // The overwhelmingly common cause is a browser that
+                            // has not been given the certificate exception yet,
+                            // so this is `debug`, not `warn`: at `warn` every
+                            // first visit would look like a fault.
+                            Err(e) => tracing::debug!(peer = %peer, error = %e, "tls: handshake failed"),
+                        },
+                        // Anything else on this port is somebody who typed
+                        // `http://`. Answer the redirect and close; the socket
+                        // never reaches the router.
+                        Some(_) => redirect_to_https(tcp, peer).await,
+                        None => tracing::debug!(peer = %peer, "tls: peer sent nothing before the deadline"),
                     }
                 });
             }
         });
         Ok(Self { local, rx })
     }
+}
+
+/// `ContentType::Handshake`, the first byte of every TLS `ClientHello`.
+const TLS_HANDSHAKE: u8 = 0x16;
+
+/// How long a caller gets to reveal which protocol it speaks, and then to
+/// finish its request line and headers if the answer was plaintext.
+const PLAINTEXT_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Bounded so a plaintext caller cannot buy memory with headers it never ends.
+const PLAINTEXT_MAX_HEAD: usize = 8 * 1024;
+
+/// Peeks the first byte without consuming it, so the TLS acceptor still sees a
+/// whole `ClientHello`.
+///
+/// Bounded, or a client that connects and then says nothing keeps a task and a
+/// socket for as long as it cares to.
+async fn first_byte(tcp: &TcpStream) -> Option<u8> {
+    tokio::time::timeout(PLAINTEXT_DEADLINE, async {
+        let mut b = [0u8; 1];
+        loop {
+            if tcp.readable().await.is_err() {
+                return None;
+            }
+            match tcp.peek(&mut b).await {
+                Ok(0) => return None,
+                Ok(_) => return Some(b[0]),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                Err(_) => return None,
+            }
+        }
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Answers a plaintext request with `308` to the same URL over `https`.
+///
+/// This port serves TLS and nothing else, so a plaintext request here is a
+/// person who typed the scheme rather than a client with a plan. Refusing the
+/// connection told them nothing; a browser shows "the connection was reset" and
+/// no part of that names the problem or its answer.
+///
+/// `308`, not `301`: a `301` invites a client to replay a POST as GET, and the
+/// upload endpoints are the ones most likely to be hit at the wrong scheme by a
+/// script somebody wrote against the old two-listener shape.
+///
+/// The `Location` is built from the request target and this connection's own
+/// `Host`, and it only ever changes the scheme. That is not an open redirect:
+/// the host it names is the one the caller already asked for. It is still
+/// sanitised, because a `Host` is caller-controlled and lands in a header.
+async fn redirect_to_https(mut tcp: TcpStream, peer: SocketAddr) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let head = match tokio::time::timeout(PLAINTEXT_DEADLINE, async {
+        let mut buf = Vec::with_capacity(1024);
+        let mut chunk = [0u8; 1024];
+        loop {
+            let n = tcp.read(&mut chunk).await.ok()?;
+            if n == 0 {
+                return None;
+            }
+            buf.extend_from_slice(&chunk[..n]);
+            if buf.windows(4).any(|w| w == b"\r\n\r\n") {
+                return Some(buf);
+            }
+            if buf.len() > PLAINTEXT_MAX_HEAD {
+                return None;
+            }
+        }
+    })
+    .await
+    {
+        Ok(Some(h)) => h,
+        _ => return,
+    };
+
+    let reply = match plaintext_redirect(&head) {
+        Some(location) => format!(
+            "HTTP/1.1 308 Permanent Redirect\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        ),
+        None => {
+            tracing::debug!(peer = %peer, "tls: plaintext request without a usable Host");
+            "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string()
+        }
+    };
+    let _ = tcp.write_all(reply.as_bytes()).await;
+    let _ = tcp.shutdown().await;
+}
+
+/// The `Location` for a plaintext request head, or `None` when it cannot be
+/// trusted to build one.
+fn plaintext_redirect(head: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(head).ok()?;
+    let mut lines = text.split("\r\n");
+
+    // "GET /path?q HTTP/1.1"
+    let mut request_line = lines.next()?.split(' ');
+    let _method = request_line.next()?;
+    let target = request_line.next()?;
+    // Only an origin-form target. An absolute-form or `CONNECT` authority is
+    // not a browser typing the wrong scheme, and rewriting one is guesswork.
+    if !target.starts_with('/') {
+        return None;
+    }
+    if !target.bytes().all(is_ok_target_byte) {
+        return None;
+    }
+
+    let host = lines
+        .take_while(|l| !l.is_empty())
+        .find_map(|l| l.split_once(':').filter(|(k, _)| k.eq_ignore_ascii_case("host")))
+        .map(|(_, v)| v.trim())?;
+    if host.is_empty() || host.len() > 253 || !host.bytes().all(is_ok_host_byte) {
+        return None;
+    }
+
+    Some(format!("https://{host}{target}"))
+}
+
+/// Unreserved, sub-delims, and the few others a path or query may carry. No
+/// control characters, no space, and in particular no CR or LF, which is what
+/// keeps this out of the response's own header framing.
+fn is_ok_target_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b"-._~:/?#[]@!$&'()*+,;=%".contains(&b)
+}
+
+/// Host names, IPv4 literals, and the brackets and colon an IPv6 literal with a
+/// port needs.
+fn is_ok_host_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b"-._:[]".contains(&b)
 }
 
 impl axum::serve::Listener for TlsListener {
@@ -344,5 +484,82 @@ mod tests {
         load_or_generate(dir.path(), &[]).unwrap();
         let mode = std::fs::metadata(dir.path().join("tls/self-signed.key")).unwrap().permissions().mode();
         assert_eq!(mode & 0o077, 0, "mode was {mode:o}");
+    }
+}
+
+#[cfg(test)]
+mod plaintext_tests {
+    use super::plaintext_redirect;
+
+    fn head(lines: &[&str]) -> Vec<u8> {
+        let mut s = lines.join("\r\n");
+        s.push_str("\r\n\r\n");
+        s.into_bytes()
+    }
+
+    #[test]
+    fn rewrites_only_the_scheme() {
+        let h = head(&["GET /b/home?sort=name HTTP/1.1", "Host: 192.168.0.50:8443"]);
+        assert_eq!(
+            plaintext_redirect(&h).as_deref(),
+            Some("https://192.168.0.50:8443/b/home?sort=name")
+        );
+    }
+
+    #[test]
+    fn keeps_the_port_the_caller_reached_us_on() {
+        let h = head(&["GET / HTTP/1.1", "Host: nas.example:8443"]);
+        assert_eq!(plaintext_redirect(&h).as_deref(), Some("https://nas.example:8443/"));
+    }
+
+    #[test]
+    fn accepts_a_bracketed_ipv6_authority() {
+        let h = head(&["GET /trash HTTP/1.1", "Host: [fd00::5]:8443"]);
+        assert_eq!(plaintext_redirect(&h).as_deref(), Some("https://[fd00::5]:8443/trash"));
+    }
+
+    #[test]
+    fn finds_host_whatever_case_it_arrives_in() {
+        let h = head(&["GET / HTTP/1.1", "Accept: */*", "HOST: nas.example"]);
+        assert_eq!(plaintext_redirect(&h).as_deref(), Some("https://nas.example/"));
+    }
+
+    #[test]
+    fn refuses_a_request_with_no_host() {
+        let h = head(&["GET / HTTP/1.1", "Accept: */*"]);
+        assert_eq!(plaintext_redirect(&h), None);
+    }
+
+    #[test]
+    fn refuses_a_host_that_would_break_the_header_framing() {
+        // A `Host` is caller-controlled and lands in a `Location`. Splitting on
+        // CRLF already separates lines, so the danger is anything else a header
+        // parser might rejoin: reject on the character class, not on the split.
+        for bad in ["nas.example\u{0}", "nas example", "nas.example\u{7f}", "na<s>.example"] {
+            let h = head(&["GET / HTTP/1.1", &format!("Host: {bad}")]);
+            assert_eq!(plaintext_redirect(&h), None, "accepted {bad:?}");
+        }
+    }
+
+    #[test]
+    fn refuses_a_target_that_is_not_origin_form() {
+        // Absolute-form and CONNECT authority-form are not a browser typing the
+        // wrong scheme, and rewriting either one is guesswork.
+        for target in ["http://elsewhere.example/", "nas.example:8443", "*"] {
+            let h = head(&[&format!("GET {target} HTTP/1.1"), "Host: nas.example"]);
+            assert_eq!(plaintext_redirect(&h), None, "accepted {target:?}");
+        }
+    }
+
+    #[test]
+    fn refuses_a_target_carrying_control_characters() {
+        let h = head(&["GET /a\u{0}b HTTP/1.1", "Host: nas.example"]);
+        assert_eq!(plaintext_redirect(&h), None);
+    }
+
+    #[test]
+    fn refuses_a_truncated_request_line() {
+        assert_eq!(plaintext_redirect(b"GET\r\n\r\n"), None);
+        assert_eq!(plaintext_redirect(b""), None);
     }
 }
