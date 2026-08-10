@@ -643,12 +643,28 @@ export function auditDocument(input) {
       .sort()
       .join('.')
 
+  const LIST_TAGS = new Set(['UL', 'OL', 'TBODY', 'TABLE', 'MENU', 'DL'])
+  const LIST_ROLES = new Set(['list', 'grid', 'table', 'rowgroup', 'listbox', 'menu', 'tree'])
+  const ROW_ROLES = new Set(['row', 'listitem', 'option', 'menuitem', 'treeitem', 'gridcell'])
+
   for (const parent of boxes) {
     if (parent.zeroArea) continue
     const kids = parent.children
       .map((i) => boxes[i])
       .filter((k) => IN_FLOW.has(k.position) && !k.zeroArea)
     if (kids.length < 2) continue
+
+    // Only somewhere that says it holds a list. Shape alone is not enough:
+    // the settings page's theme and language sections are both an h2, a row of
+    // buttons and a hint, so they matched each other, and then the second
+    // button of the theme picker was measured against the second button of the
+    // language picker. Those two agree only by coincidence, which is why this
+    // passed on one platform's font metrics and failed on another's.
+    const listish =
+      LIST_TAGS.has(parent.el.tagName) ||
+      LIST_ROLES.has(parent.el.getAttribute('role') ?? '') ||
+      kids.some((k) => ROW_ROLES.has(k.el.getAttribute('role') ?? '') || k.el.tagName === 'LI')
+    if (!listish) continue
 
     const ax = AX[mainAxisOf(parent)]
 
