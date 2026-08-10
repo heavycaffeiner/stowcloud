@@ -1,9 +1,17 @@
-//! LAN-only bind enforcement.
+//! What counts as an internal network.
 //!
 //! "Private" = RFC1918 + `127.0.0.0/8` + `169.254.0.0/16` + `100.64.0.0/10`
 //! (IPv4) and `fc00::/7` + `fe80::/10` + `::1` (IPv6). Anything else is
-//! "public" and, absent an explicit override, must never appear in a generated
-//! `smb.conf`.
+//! "public".
+//!
+//! The sidecar owns the decision this feeds: it enumerates the host's own
+//! interfaces and expands `interfaces`/`hosts allow` from the networks the
+//! machine is actually attached to. `sc-core` runs in a different network
+//! namespace, so a gate here could only ever describe the wrong machine.
+//!
+//! What is left here serves the one case sc-core can decide: an operator who
+//! pins `smb.interfaces` has named the addresses themself, and naming a public
+//! one is checked against `allow_public_bind`.
 //!
 //! `100.64.0.0/10` is CGNAT, which is where every Tailscale address lives, and
 //! it is here for the same reason `sc_http::config::is_private_host_literal`
@@ -68,13 +76,9 @@ pub(crate) fn parse_addr_spec(spec: &str) -> Result<IpAddr, &'static str> {
     Ok(ip)
 }
 
-/// The subset of `ifaces` that is *not* private, in input order.
-pub(crate) fn public_addrs(ifaces: &[IpAddr]) -> Vec<IpAddr> {
-    ifaces.iter().copied().filter(|a| !is_private(a)).collect()
-}
-
-/// The private CIDR list embedded verbatim into the generated `smb.conf`
-/// (`interfaces` / `hosts allow`, ②).
+/// The private CIDR list written into `hosts allow` when the operator pins
+/// `smb.interfaces`. Only that path uses it: with no pin, `hosts allow` is
+/// whatever detection found on the host.
 pub(crate) const PRIVATE_CIDRS_V4: &[&str] = &[
     "10.0.0.0/8",
     "172.16.0.0/12",

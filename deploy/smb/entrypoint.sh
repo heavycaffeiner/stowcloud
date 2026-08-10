@@ -19,6 +19,9 @@ STATE_DIR=/var/lib/sc-smb-sidecar
 SMB_CONF_ACTIVE=/etc/samba/smb.conf
 PASSDB_PATH=/var/lib/samba/private/passdb.tdb
 
+# shellcheck source=deploy/smb/net-scope.sh
+. /usr/local/lib/sc/net-scope.sh
+
 mkdir -p "$STATE_DIR" /var/lib/samba/private /var/run/samba /var/log/samba
 
 # `crates/sc-smb/src/conf.rs::render_global` always emits `[global]` as the
@@ -58,7 +61,11 @@ sync_once() {
     fi
 
     local candidate="$STATE_DIR/smb.conf.candidate"
-    inject_logging "$src" > "$candidate"
+    inject_logging "$src" > "$STATE_DIR/smb.conf.logged"
+    # Expand `interfaces`/`hosts allow` from this namespace's own devices,
+    # before testparm sees the file. sc-core renders them closed because it
+    # cannot see them from where it runs.
+    sc_scope_apply "$STATE_DIR/smb.conf.logged" "$CONFIG_DIR/network.policy" > "$candidate"
 
     if ! testparm -s "$candidate" >"$STATE_DIR/testparm.out" 2>&1; then
         echo "sc-smb: rejected candidate smb.conf, keeping the previous config:" >&2
@@ -182,13 +189,29 @@ fi
 # container. Reparented to tini (real PID 1) on exec below, so it keeps
 # running and gets reaped correctly.
 (
-    while inotifywait -e close_write,create,move -q "$CONFIG_DIR" >/dev/null 2>&1; do
+    last_scope=$(sc_scope_current "$CONFIG_DIR/network.policy")
+    while :; do
+        # `-t 60` on purpose: inotify watches files, and a VPN or a VLAN coming
+        # up after boot changes what SMB should bind while writing nothing here.
+        # A non-zero exit is that timeout or inotifywait itself failing; both
+        # mean no file event, and the sleep keeps the failure case from
+        # spinning.
+        if ! inotifywait -e close_write,create,move -q -t 60 "$CONFIG_DIR" >/dev/null 2>&1; then
+            sleep 1
+            now_scope=$(sc_scope_current "$CONFIG_DIR/network.policy")
+            if [ "$now_scope" = "$last_scope" ]; then
+                continue
+            fi
+            last_scope=$now_scope
+            echo "sc-smb: network scope changed, re-syncing"
+        fi
         if sync_once; then
             smbcontrol all reload-config 2>/dev/null || true
             # After the reload, because turning a name on or off starts or
             # stops a daemon rather than changing one smbd already reread.
             sync_nmbd
-            echo "sc-smb: reloaded after a config change"
+            last_scope=$(sc_scope_current "$CONFIG_DIR/network.policy")
+            echo "sc-smb: reloaded"
         fi
     done
 ) &

@@ -382,7 +382,7 @@ impl App {
     /// reason `setup` is: `gc` and `smb-sync` build the same `App`, and
     /// neither should acquire a background publisher. `smb-sync` in
     /// particular renders explicitly and would otherwise race its own
-    /// publisher over the same three files.
+    /// publisher over the same files.
     ///
     /// **A deployment with SMB off gets no thread and no sink at all.**
     /// Turning `smb.enabled` on from the settings screen already answers

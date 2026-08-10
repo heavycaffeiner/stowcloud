@@ -13,14 +13,16 @@
 
 Expose the same shares, to the same accounts, over SMB3 — without putting a
 root-privileged `smbd` inside this server's address space. `sc-core` projects
-its Share/Grant registry into three files (`smb.conf`, `smbpasswd`, `passwd`)
-in a shared directory; a Samba sidecar watches that directory, validates each
-candidate, and reloads `smbd`.
+its Share/Grant registry into four files (`smb.conf`, `smbpasswd`, `passwd`,
+`network.policy`) in a shared directory; a Samba sidecar watches that
+directory, expands the network scope, validates each candidate, and reloads
+`smbd`.
 
 Authentication is the account password: NTLM needs `MD4(UTF-16LE(password))`,
 so an NT hash is derived alongside the Argon2 hash at every moment the
-plaintext is held. That trade is accepted **only** because SMB is confined to
-private networks by an enforced control, not by convention.
+plaintext is held. That trade is accepted **only** because SMB answers on the
+networks this machine is attached to and nowhere else, by an enforced control
+rather than by convention.
 
 ## 2. Background & Motivation
 
@@ -40,7 +42,7 @@ core image is that it never runs as root at all (`user: "1000:1000"`,
 container would give that root process the same address space as the code
 handling untrusted HTTP.
 
-Splitting them means the only thing crossing the boundary is three files on a
+Splitting them means the only thing crossing the boundary is four files on a
 volume the sidecar mounts read-only. `sc-core` never invokes a Samba binary,
 and `sc-smb` never sees a plaintext password or an NT hash.
 
@@ -57,8 +59,8 @@ Recorded because it is a real cost, not a free win.
 MD4 is not memory-hard. The scenario already assumes the attacker holds both
 the database and the master key, at which point session tokens, share links
 and TOTP seeds are gone too — so the marginal loss is "a password reused
-elsewhere". The mitigation that makes this acceptable is §4.4's enforced
-LAN-only bind, not the hash choice.
+elsewhere". The mitigation that makes this acceptable is §4.6's link-scoped
+bind, not the hash choice.
 
 ## 3. Goals & Non-Goals
 
@@ -68,8 +70,8 @@ LAN-only bind, not the hash choice.
 - [x] `valid users` / `read list` / `write list` derived from the same
       Share/Grant registry the HTTP layer uses — one source of truth.
 - [x] No plaintext and no NT hash ever crosses into the sidecar.
-- [x] SMB confined to private address ranges by a refusal at
-      config-generation time, not by documentation.
+- [x] SMB confined to the networks the machine is attached to, by what the
+      sidecar binds, not by documentation.
 - [x] A permission change in the web UI reaches `smbd` without an operator
       running anything.
 - [x] Permissions SMB cannot express are reported, never silently widened.
@@ -102,9 +104,10 @@ flowchart LR
     F1["smb.conf 0644"]
     F2["smbpasswd 0600"]
     F3["passwd 0644"]
+    F4["network.policy 0644"]
   end
   subgraph side["sc-smb sidecar (alpine, root)"]
-    WATCH["entrypoint.sh\ninotify + testparm -s"]
+    WATCH["entrypoint.sh\ninotify + net-scope + testparm -s"]
     SMBD["smbd :445"]
     WATCH --> SMBD
   end
@@ -196,18 +199,25 @@ SHARE and DOWNLOAD have no SMB counterpart, and an SMB delete is a real
 unlink — Samba's `recycle` module is not enabled, so a share with trash on in
 the web UI still deletes permanently over SMB.
 
-### 4.6 Core Logic — LAN-only, as an enforced control
+### 4.6 Core Logic: link-scoped access
 
-Four layers, because this is the premise the whole NT-hash trade rests on.
+Revised by `design/stowcloud-1-smb-link-scoped-access.md`, which supersedes the
+fixed private-CIDR list this section previously specified. Four layers, because
+this is the premise the whole NT-hash trade rests on.
 
-1. **Refusal at generation time.** `validate_bind` inspects every local
-   interface and refuses to render if any address is outside
-   `10/8`, `172.16/12`, `192.168/16`, `127/8`, `169.254/16`, `fc00::/7`,
-   `fe80::/10`, `::1/128`. `smb.allow_public_bind = true` overrides it, and
-   raises a permanent admin-UI banner plus an audit event.
-2. **Defense in depth in the generated config** — `bind interfaces only`,
+1. **A closed baseline from `sc-core`.** It renders `interfaces = lo` and
+   `hosts allow = 127.0.0.0/8 ::1/128`, because it sits in its own network
+   namespace and cannot see the devices `smbd` will bind. Nothing expands them,
+   SMB answers on loopback.
+2. **Expansion where `smbd` runs.** The sidecar (and the bare-metal agent) reads
+   the host's own UP interfaces and rewrites those two lines: the device into
+   `interfaces`, the well-known private range enclosing its address into
+   `hosts allow`. A network the machine is attached to needs no configuration;
+   a globally routable address contributes nothing unless
+   `smb.allow_public_bind` is set, which also raises a permanent admin-UI banner
+   plus an audit event.
+3. **Defense in depth in the generated config**: `bind interfaces only`,
    `interfaces`, `hosts allow`, `hosts deny = 0.0.0.0/0`.
-3. **Container port binding** to a LAN address; `0.0.0.0:445` appears nowhere.
 4. **Startup self-diagnosis** of the actually-listening sockets.
 
 ### 4.7 Core Logic — propagation
@@ -291,7 +301,7 @@ inside one tree is exactly what any flat-ACL exporter cannot carry.
 
 | Condition | Surfaced as |
 |---|---|
-| a public address would be bound, `allow_public_bind` false | 422, `SmbConfigRefused` with the offending addresses |
+| an invalid share name or server name | 422, `SmbConfigRefused` |
 | `config_dir` unwritable | 422; previous files left in place |
 | `testparm -s` rejects the candidate | sidecar keeps the running config, error to the admin UI |
 | `pdbedit -i` imported nobody | sidecar warns per name; SMB stays up for everyone else |
@@ -309,7 +319,7 @@ stale row; one bad passdb entry must not take SMB down for everyone else.
 
 | Phase | Task | Duration | Owner |
 |---|---|---|---|
-| Phase 1 | `sc-smb`: config rendering, `validate_bind`, `write_all` | done | heavycaffeiner |
+| Phase 1 | `sc-smb`: config rendering, scope baseline, `write_all` | done | heavycaffeiner |
 | Phase 2 | `sc-auth`: NT-hash derivation, sealing, `export_smbpasswd` | done | heavycaffeiner |
 | Phase 3 | Registry projection + `sc-server smb-sync` | done | heavycaffeiner |
 | Phase 4 | Sidecar image, entrypoint, fail2ban, healthcheck | done | heavycaffeiner |

@@ -4,7 +4,6 @@
 //! by policy" wherever the kernel lets us, and gate share registration on
 //! filesystem type.
 
-use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 
 use crate::config::Config;
@@ -235,7 +234,6 @@ pub struct Diagnostics {
     /// [`Diagnostics::degraded_reasons`].
     pub min_free_bytes: u64,
     pub size_guard_recommendation: Option<(bool, u64)>,
-    pub smb_bind_result: Result<(), String>,
     /// `cfg.bind`: the one socket the server listens on, always TLS. Reported
     /// because "which address, and is it really https" is the first thing an
     /// operator checks when a browser will not connect.
@@ -322,9 +320,6 @@ impl Diagnostics {
         let mut out = Vec::new();
         if self.any_share_rejected() {
             out.push("share_rejected");
-        }
-        if self.smb_bind_result.is_err() {
-            out.push("smb_bind_failed");
         }
         if self.db_size_guard && current_db_bytes >= self.max_bytes {
             out.push("db_size_guard_tripped");
@@ -474,7 +469,6 @@ pub fn run(
     cfg: &Config,
     master_key: &crate::masterkey::MasterKeyResult,
     db_bytes: u64,
-    smb_bind_result: Result<(), String>,
     single_origin: bool,
 ) -> Diagnostics {
     let kernel_caps = sc_vfs::detect_kernel_caps();
@@ -518,7 +512,6 @@ pub fn run(
         volume_free,
         min_free_bytes: cfg.db.min_free_bytes,
         size_guard_recommendation,
-        smb_bind_result,
         bind: cfg.bind,
         single_origin,
         trusted_proxies: classify_trusted_proxies(&cfg.trusted_proxies),
@@ -664,11 +657,6 @@ pub fn print(d: &Diagnostics) {
         }
     }
 
-    match &d.smb_bind_result {
-        Ok(()) => println!("[sc]   smb bind: OK"),
-        Err(e) => println!("[sc]   smb bind: REFUSED — {e}"),
-    }
-
     println!("[sc]   listener: https://{} (self-signed, regenerated when the SANs change)", d.bind);
     println!("[sc]     There is no plaintext listener, on any interface. http:// to this");
     println!("[sc]     same port is answered with a 308 to the https URL and nothing else,");
@@ -763,48 +751,6 @@ pub fn print(d: &Diagnostics) {
     }
 }
 
-/// Enumerate this host's non-loopback interface addresses, for feeding
-/// `sc_smb::SmbOrchestrator::validate_bind`. Linux-only real implementation
-/// (`getifaddrs`); everywhere else (dev platforms) returns an empty list —
-/// SMB is a Linux-deployment-only feature, so this
-/// only needs to be real where SMB actually runs.
-#[cfg(target_os = "linux")]
-pub fn local_interface_addrs() -> Vec<IpAddr> {
-    use std::mem::MaybeUninit;
-    let mut out = Vec::new();
-    unsafe {
-        let mut ifap: MaybeUninit<*mut libc::ifaddrs> = MaybeUninit::uninit();
-        if libc::getifaddrs(ifap.as_mut_ptr()) != 0 {
-            return out;
-        }
-        let head = ifap.assume_init();
-        let mut cur = head;
-        while !cur.is_null() {
-            let ifa = &*cur;
-            if !ifa.ifa_addr.is_null() {
-                let family = (*ifa.ifa_addr).sa_family as i32;
-                if family == libc::AF_INET {
-                    let sa = &*(ifa.ifa_addr as *const libc::sockaddr_in);
-                    let ip = std::net::Ipv4Addr::from(u32::from_be(sa.sin_addr.s_addr));
-                    out.push(IpAddr::V4(ip));
-                } else if family == libc::AF_INET6 {
-                    let sa = &*(ifa.ifa_addr as *const libc::sockaddr_in6);
-                    let ip = std::net::Ipv6Addr::from(sa.sin6_addr.s6_addr);
-                    out.push(IpAddr::V6(ip));
-                }
-            }
-            cur = ifa.ifa_next;
-        }
-        libc::freeifaddrs(head);
-    }
-    out
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn local_interface_addrs() -> Vec<IpAddr> {
-    Vec::new()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -846,9 +792,7 @@ mod tests {
     /// testing — also the real "unknown" sentinel `FREE_BYTES` starts at.
     const PLENTY: u64 = u64::MAX;
 
-    /// Baseline: nothing rejected, SMB bind fine (or unused), DB well under
-    /// its cap. A fresh `fn base()` per test rather than a shared `static` —
-    /// `smb_bind_result` isn't `Clone`.
+    /// Baseline: nothing rejected, DB well under its cap.
     fn base() -> Diagnostics {
         Diagnostics {
             kernel_caps: sc_vfs::KernelCaps {
@@ -871,7 +815,6 @@ mod tests {
             volume_free: None,
             min_free_bytes: 1024 * 1024 * 1024,
             size_guard_recommendation: None,
-            smb_bind_result: Ok(()),
             bind: "127.0.0.1:8443".parse().unwrap(),
             single_origin: false,
             trusted_proxies: TrustedProxies::default(),
@@ -905,14 +848,6 @@ mod tests {
         });
         assert!(d.is_degraded(0, PLENTY));
         assert_eq!(d.degraded_reasons(0, PLENTY), vec!["share_rejected"]);
-    }
-
-    #[test]
-    fn a_refused_smb_bind_is_degraded() {
-        let mut d = base();
-        d.smb_bind_result = Err("address already in use".into());
-        assert!(d.is_degraded(0, PLENTY));
-        assert_eq!(d.degraded_reasons(0, PLENTY), vec!["smb_bind_failed"]);
     }
 
     #[test]
@@ -962,18 +897,12 @@ mod tests {
             rejected: true,
             access: None,
         });
-        d.smb_bind_result = Err("nope".into());
         d.db_size_guard = true;
         d.max_bytes = 10;
         d.min_free_bytes = 500;
         assert_eq!(
             d.degraded_reasons(10, 499),
-            vec![
-                "share_rejected",
-                "smb_bind_failed",
-                "db_size_guard_tripped",
-                "db_free_space_low"
-            ]
+            vec!["share_rejected", "db_size_guard_tripped", "db_free_space_low"]
         );
     }
 

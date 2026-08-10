@@ -72,14 +72,14 @@ fn validate_server_name(name: &str) -> Result<(), SmbError> {
     Ok(())
 }
 
-/// `interfaces` decides which addresses smbd binds, and on a host-networked
-/// sidecar that is the only thing left holding it to the LAN: `validate_bind`
-/// reads the interface list of whatever namespace *sc-core* runs in, which on a
-/// bridged container is a 172.x address and nothing the sidecar actually binds.
+/// `interfaces` pins exactly which addresses smbd binds, overriding the
+/// detection the sidecar would otherwise do. Entries are addresses and CIDRs
+/// only: Samba accepts an interface name too, but this process cannot see the
+/// host's interfaces and so cannot tell whether `eth0` there is the LAN or the
+/// uplink.
 ///
-/// So entries are addresses and CIDRs only. Samba accepts an interface name too,
-/// but this process cannot see the host's interfaces and so cannot tell whether
-/// `eth0` there is the LAN or the uplink.
+/// A pin is the one bind decision sc-core can check, because the operator wrote
+/// the address down rather than the machine reporting it.
 fn validate_interfaces(cfg: &SmbConfig) -> Result<(), SmbError> {
     for spec in &cfg.interfaces {
         let ip = parse_addr_spec(spec).map_err(|reason| SmbError::InvalidInterface {
@@ -98,37 +98,49 @@ fn validate_interfaces(cfg: &SmbConfig) -> Result<(), SmbError> {
 }
 
 fn render_global(cfg: &SmbConfig) -> String {
-    // `lo` unconditionally, so `smbclient -L localhost` and the healthcheck
+    // Two shapes for the same pair of lines. With no pin they are the closed
+    // case and the sidecar rewrites them from the host's own interfaces; with a
+    // pin they are what the operator asked for and detection leaves them alone.
+    // `lo` leads either way, so `smbclient -L localhost` and the healthcheck
     // keep working whichever list follows it.
-    let mut ifaces = String::from("lo");
-    if cfg.interfaces.is_empty() {
-        for c in PRIVATE_CIDRS_V4 {
-            ifaces.push(' ');
-            ifaces.push_str(c);
-        }
-        for c in PRIVATE_CIDRS_V6 {
-            ifaces.push(' ');
-            ifaces.push_str(c);
-        }
+    let (scope_note, ifaces, hosts_allow) = if cfg.interfaces.is_empty() {
+        (
+            "\u{20}\u{20}# The sidecar/agent rewrites the two lines below from the host's own\n\
+             \u{20}\u{20}# interfaces. sc-core sits in a different network namespace and cannot\n\
+             \u{20}\u{20}# see them, so it renders the closed case: left unexpanded, SMB answers\n\
+             \u{20}\u{20}# on loopback and nowhere else.\n",
+            "lo".to_string(),
+            "127.0.0.0/8 ::1/128".to_string(),
+        )
     } else {
+        let mut ifaces = String::from("lo");
         for spec in &cfg.interfaces {
             ifaces.push(' ');
             ifaces.push_str(spec);
         }
-    }
 
-    // Every private CIDR, deduplicated. An earlier `skip(1)` over the V4 list
-    // assumed loopback came first; it is last, so the rendered list dropped
-    // 10.0.0.0/8 and repeated 127.0.0.0/8. Samba then answered every client on
-    // a 10.x LAN with an NBSS negative session response before SMB2 NEGOTIATE
-    // -- reproduced 2026-07-31 against the production sidecar.
-    let mut hosts_allow = String::new();
-    for c in PRIVATE_CIDRS_V4.iter().chain(PRIVATE_CIDRS_V6) {
-        if !hosts_allow.is_empty() {
-            hosts_allow.push(' ');
+        // Every private CIDR, deduplicated. An earlier `skip(1)` over the V4
+        // list assumed loopback came first; it is last, so the rendered list
+        // dropped 10.0.0.0/8 and repeated 127.0.0.0/8. Samba then answered
+        // every client on a 10.x LAN with an NBSS negative session response
+        // before SMB2 NEGOTIATE, reproduced 2026-07-31 against the production
+        // sidecar.
+        let mut hosts_allow = String::new();
+        for c in PRIVATE_CIDRS_V4.iter().chain(PRIVATE_CIDRS_V6) {
+            if !hosts_allow.is_empty() {
+                hosts_allow.push(' ');
+            }
+            hosts_allow.push_str(c);
         }
-        hosts_allow.push_str(c);
-    }
+
+        (
+            "\u{20}\u{20}# smb.interfaces is pinned, so detection leaves the two lines below\n\
+             \u{20}\u{20}# alone. hosts allow stays wide on purpose: narrowing what smbd binds\n\
+             \u{20}\u{20}# must not narrow who may reach the address it bound.\n",
+            ifaces,
+            hosts_allow,
+        )
+    };
 
     // Without a name there is nothing for NetBIOS to announce, so it stays off
     // and clients must use the address. With one, nmbd answers name queries on
@@ -192,7 +204,8 @@ fn render_global(cfg: &SmbConfig) -> String {
          \u{20}\u{20}map readonly = no\n\
          \u{20}\u{20}ea support = no\n\
          \n\
-         \u{20}\u{20}# ── LAN-only enforcement ──\n\
+         \u{20}\u{20}# ── network scope ──\n\
+         {scope_note}\
          \u{20}\u{20}bind interfaces only = yes\n\
          \u{20}\u{20}interfaces = {ifaces}\n\
          \u{20}\u{20}hosts allow = {hosts_allow}\n\
@@ -204,6 +217,7 @@ fn render_global(cfg: &SmbConfig) -> String {
         workgroup = cfg.workgroup,
         netbios = netbios,
         service_user = cfg.service_user,
+        scope_note = scope_note,
         ifaces = ifaces,
         hosts_allow = hosts_allow,
     )

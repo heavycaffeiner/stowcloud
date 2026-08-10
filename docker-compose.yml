@@ -176,19 +176,25 @@ services:
     #
     #   * Port 445 is the host's now, so a Samba already running there wins and
     #     this container fails to start.
-    #   * `interfaces` in the generated smb.conf is the only thing deciding what
-    #     smbd binds. `validate_bind` cannot help: it reads the interface list
-    #     of the namespace *sc-core* runs in, which is a bridge address here and
-    #     nothing this container binds.
-    #   * That list defaults to every private range, docker0 and every compose
-    #     bridge included, so any container on this host can reach 445. Pin it
-    #     to the one address you actually serve on, under `[smb]` in sc.toml:
+    #   * This is where scope detection works properly. The sidecar sees the
+    #     host's real devices and rewrites `interfaces` and `hosts allow` in the
+    #     generated smb.conf from them, admitting exactly the networks this
+    #     machine is attached to. sc-core cannot do that from its own namespace,
+    #     so it renders loopback only and this container widens it.
+    #   * "Attached to" includes docker0 and every compose bridge, so any
+    #     container on this host can reach 445. Pin what smbd binds under
+    #     `[smb]` in sc.toml to narrow it, which also turns detection off:
     #
     #       interfaces = ["192.168.1.10"]
     #
+    # A globally routable address is never admitted by detection. That needs
+    # `allow_public_bind = true`, and it means what it says.
+    #
     # Prefer a bridged sidecar? Delete the line below and put back
     # `ports: ["192.168.1.10:445:445"]`, naming a LAN address and never
-    # 0.0.0.0. `\\NAME` then stops working; the address still mounts.
+    # 0.0.0.0. `\\NAME` then stops working; the address still mounts. Detection
+    # sees only the veth there, so it admits private space wholesale and the
+    # published address is what narrows it.
     network_mode: host
     healthcheck:
       test: ["CMD-SHELL", "smbd -b >/dev/null 2>&1 && pgrep -x smbd >/dev/null"]

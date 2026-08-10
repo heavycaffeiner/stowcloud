@@ -92,9 +92,13 @@ RUN groupadd -g 1000 scsvc \
 RUN cp /etc/passwd /etc/passwd.base
 
 COPY deploy/smb/entrypoint.sh /entrypoint.sh
+# Sourced by the entrypoint, and by the bare-metal agent from the same path on
+# a host. Its `ip addr show` parsing is written against the shape busybox and
+# iproute2 both print, so Alpine needs no extra package for it.
+COPY deploy/smb/net-scope.sh /usr/local/lib/sc/net-scope.sh
 COPY deploy/smb/fail2ban-samba.local /etc/fail2ban/jail.d/samba.local
 COPY deploy/smb/fail2ban-samba-filter.conf /etc/fail2ban/filter.d/samba.conf
-RUN chmod 755 /entrypoint.sh
+RUN chmod 755 /entrypoint.sh && chmod 644 /usr/local/lib/sc/net-scope.sh
 
 # Alpine's fail2ban package ships `jail.d/alpine-ssh.conf` with the `[sshd]`
 # jail pre-enabled — a Debian install never shipped this, so it was never hit

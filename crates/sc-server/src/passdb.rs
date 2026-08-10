@@ -190,9 +190,9 @@ fn run(shared: &Arc<Shared>) {
         };
         if let Err(e) = target.render_passdb() {
             // Property 3. Loud, because the consequence is a security one:
-            // the file smbd reads no longer matches the database, and the
-            // most likely reason is `validate_bind`'s LAN-only refusal, which
-            // an operator has to act on.
+            // the file smbd reads no longer matches the database, and every
+            // reason it can fail (a rejected share name, an unwritable config
+            // directory) is one an operator has to act on.
             tracing::error!(
                 error = %e,
                 "publishing smbpasswd failed: the file smbd authenticates against is now stale \
