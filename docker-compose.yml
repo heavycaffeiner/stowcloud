@@ -1,23 +1,5 @@
-# Reference deployment for `sc:core` and the `sc:smb` sidecar.
-# See docs/DEPLOYMENT.md §9/§10.
-#
-#   ghcr.io/heavycaffeiner/stowcloud:core-stable    amd64 + arm64
-#   ghcr.io/heavycaffeiner/stowcloud:smb-stable     amd64 + arm64
-#
-# Every tag below is a manifest list, and every architecture in one was built
-# and run on its own hardware in CI before being published.
-#
-# Two channels. `-stable` moves when a release is tagged, and is what this file
-# pulls; `:core` and `:smb` with no suffix are the same images under their older
-# names. `-nightly` moves with every commit to master, so switch to it only if
-# you want to run the tip.
-#
-# Either way the channel tag moves under a `docker compose pull`. Pin to
-# `:core-<sha>` / `:smb-<sha>` for anything that matters.
-#
-# No `build:` key: this file deploys a published image. To build from source,
-# use `docker build -f Dockerfile .` (DEPLOYMENT.md §1) or the testbed stack in
-# deploy/testbed/.
+# Reference deployment. `-stable` moves on a release tag, `-nightly` on every
+# commit to master; pin `:core-<sha>` / `:smb-<sha>` for anything that matters.
 #
 # One-time host setup:
 #
@@ -25,21 +7,16 @@
 #   chown -R 1000:1000 ./data ./secrets ./smbcfg
 #   chmod 0775 ./shares/photos ./shares/video
 #
-# The image runs as uid 1000 and cannot chown anything itself — it is
-# distroless, with no `chown` binary and no root entrypoint step. Bind mounts
-# you own beforehand are what make that work; an empty named volume would be
-# created root-owned and the first write would fail EACCES.
-#
-# Share roots must be group-writable (0775, not 0755). Under `force user`
-# Samba checks the NT ACL with the authenticated user's SID, not the owner's,
-# so 0755 makes a share silently read-only (DEPLOYMENT.md §7.3).
+# The image is distroless and runs as uid 1000, so it cannot chown anything
+# itself; a named volume would be created root-owned and the first write fails.
+# Share roots need group-write because Samba checks the NT ACL against the
+# authenticated user's SID under `force user`, so 0755 makes a share read-only.
 
 services:
   sc:
     image: ghcr.io/heavycaffeiner/stowcloud:core-stable
     user: "1000:1000"
-    # The gid that already owns /shares/* on the host (Jellyfin, *arr, ...).
-    # Adjust to match yours — DEPLOYMENT.md §6.2.
+    # The gid that owns /shares/* on the host. Adjust to match yours.
     group_add: ["1001"]
     read_only: true
     tmpfs:
@@ -47,78 +24,41 @@ services:
     cap_drop: ["ALL"]
     security_opt:
       - no-new-privileges:true
-      # Only needed on Docker older than 20.10.10 / libseccomp < 2.5, where
-      # openat2/faccessat2 come back EPERM (DEPLOYMENT.md §2):
+      # Docker older than 20.10.10 returns EPERM for openat2/faccessat2:
       # - seccomp=./deploy/seccomp-openat2.json
     volumes:
       - ./data:/var/lib/sc
-      # Deliberately outside the data dir: a backup of ./data must not also
-      # carry the key that decrypts it (DESIGN-AUTH.md §7.2). Read-write, so
-      # the first run can generate the key when it is absent. Mount a
-      # pre-provisioned key read-only instead if you manage it elsewhere.
+      # Outside the data dir so a backup of ./data does not carry the key that
+      # decrypts it. Read-write, so the first run can generate it.
       - ./secrets:/run/sc-secrets
-      # Lowercase `z` (shared label), never `Z` — `Z` is exclusive and would
-      # cut off other services using the same directories (DEPLOYMENT.md §4).
-      # A no-op on non-SELinux hosts.
+      # Lowercase `z`, never `Z`: the exclusive label would cut off other
+      # services using the same directories.
       - ./shares/photos:/shares/photos:z
       - ./shares/video:/shares/video:z
-      # sc-core renders smb.conf/smbpasswd/passwd here; the sidecar reads them.
-      # Read-write here, read-only there — only sc-core touches NT hashes.
+      # sc renders smb.conf/smbpasswd/passwd here and the sidecar reads them.
       - ./smbcfg:/config/smb:z
     environment:
       SC_DATA_DIR: /var/lib/sc
       SC_MASTER_KEY_FILE: /run/sc-secrets/master.key
-      # Cloudflare's CIDRs; replace with your own proxy's (DEPLOYMENT.md §8).
-      # Running your own reverse proxy instead? These are then wrong rather than
-      # merely unused: the proxy's forwarded headers are ignored, every client
-      # folds onto the proxy's address, and the login gate shared by all of them
-      # is 20 attempts refilling at one per 10s. Put the bridge subnet the proxy
-      # reaches this container from here, not 127.0.0.1: published-port DNAT
-      # rewrites the destination, not the source.
+      # Cloudflare's CIDRs. Replace with the subnet your own proxy reaches this
+      # container from, not 127.0.0.1: published-port DNAT rewrites the
+      # destination, not the source. Wrong entries fold every client onto the
+      # proxy's address and they share one login rate limit.
       #
-      # Precedence, because it has bitten: this variable beats `sc.toml`, and
-      # the admin settings screen beats both (`Config::apply_settings_overrides`).
-      # A value saved on that screen makes this line dead without saying so.
+      # The admin settings screen overrides this variable without saying so.
       SC_TRUSTED_PROXIES: "173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,104.16.0.0/13,104.24.0.0/14,108.162.192.0/18,131.0.72.0/22,141.101.64.0/18,162.158.0.0/15,172.64.0.0/13,188.114.96.0/20,190.93.240.0/20,197.234.240.0/22,198.41.128.0/17"
-      # Must not be 127.0.0.1 in a container: published-port DNAT targets the
-      # bridge interface, not loopback.
+      # Not 127.0.0.1: published-port DNAT targets the bridge interface. HTTPS
+      # only, with a self-signed certificate generated into ./data/tls.
       #
-      # This socket serves HTTPS and nothing else, with a certificate the server
-      # generates for itself into ./data/tls on first run (DEPLOYMENT.md §4.8).
-      # There is no plaintext listener to publish by accident.
-      #
-      # Put this host's LAN address in `app_hosts` (data/sc.toml, or the admin
-      # settings screen). A bridged container sees only its own 172.x address
-      # and cannot discover the one you actually browse to, so without that the
-      # certificate does not name it and the browser reports a mismatch rather
-      # than an unknown issuer. Both are click-through, so this is a rough edge
-      # and not a failure.
-      #
-      # A *name* is different, and this one is not click-through. Private IP
-      # literals are admitted unlisted, but every name has to be in `app_hosts`
-      # or the host guard answers 421 and the site simply does not load. That
-      # includes a Tailscale MagicDNS name: `100.x.y.z` works untouched while
-      # `nas.tailnet-1234.ts.net` is refused until it is listed here. The guard
-      # exists to stop DNS rebinding, which always arrives as a name, so this
-      # cannot be relaxed by pattern. The rejected name is logged at `warn`.
+      # List this host's LAN address and any name you browse to in `app_hosts`
+      # (data/sc.toml or the admin screen). Private IP literals are admitted
+      # unlisted, but an unlisted name gets 421 and the site does not load.
       SC_BIND: 0.0.0.0:8443
     ports:
-      # Published to the whole LAN on purpose: this is how you reach the app
-      # from your own network, at `https://<this host>:8443`. Your browser will
-      # ask you to accept the certificate once, because nothing issued it.
-      #
-      # A reverse proxy for a public name goes in front of this same port and
-      # must speak https upstream, skipping verification of that self-signed
-      # certificate. In Caddy:
-      #
-      #   cloud.example.com {
-      #     reverse_proxy https://127.0.0.1:8443 {
-      #       transport http { tls_insecure_skip_verify }
-      #     }
-      #   }
-      #
-      # Bind it to a specific LAN address (`192.168.1.10:8443:8443`) if you want
-      # the proxy to be the only public route.
+      # Reachable at `https://<this host>:8443` once you accept the certificate.
+      # A reverse proxy in front of it has to speak https upstream and skip
+      # verification. Bind a specific LAN address to keep the proxy the only
+      # public route.
       - "8443:8443"
     stop_grace_period: 30s # upload draining
     # The admin restart button exits 75 and expects a supervisor to start it
@@ -131,13 +71,10 @@ services:
       start_period: 10s
       retries: 3
 
-  # Only run this with `smb.enabled = true` in sc's config; otherwise smbd
-  # just waits on an empty /config/smb forever.
+  # Needs `smb.enabled = true` in sc's config; otherwise smbd waits on an empty
+  # /config/smb forever. Behind a profile because claiming the host's port 445
+  # is not something to start by accident: `docker compose --profile smb up -d`.
   sc-smb:
-    # Behind a profile, so a plain `docker compose up -d` brings up the server
-    # alone and this starts only on `docker compose --profile smb up -d`. A
-    # sidecar that claims the host's port 445 is not something to start by
-    # accident, and on a host that already runs Samba it would fail to bind.
     profiles: ["smb"]
     image: ghcr.io/heavycaffeiner/stowcloud:smb-stable
     volumes:
@@ -146,20 +83,13 @@ services:
       - ./shares/video:/shares/video:z
     cap_drop: ["ALL"]
     # `cap_drop: ALL` strips these from root too, and smbd needs them back:
-    #   NET_BIND_SERVICE — bind :445
-    #   SETUID/SETGID    — drop to scsvc per connection
-    #   DAC_READ_SEARCH  — read the 0600 smbpasswd owned by another uid
-    # Verified on amd64 and arm64, by a container CI actually starts under this
-    # cap set on each. CAP_DAC_OVERRIDE, CAP_CHOWN and NET_RAW are not needed,
-    # since the generated smb.conf disables ACL/xattr/DOS attributes.
+    #   NET_BIND_SERVICE  bind :445
+    #   SETUID/SETGID     drop to scsvc per connection
+    #   DAC_READ_SEARCH   read the 0600 smbpasswd owned by another uid
     #
-    # NET_ADMIN is deliberately absent, and it costs something: fail2ban bans
-    # with `iptables -I` and so does not start without it, leaving repeated bad
-    # passwords unbanned. Under `network_mode: host` the capability is not the
-    # container's own firewall but this host's, granted to the process that
-    # parses SMB off the wire, which is the one thing the sidecar exists to
-    # contain. Add it back below if you would rather have the ban, and read
-    # `docker logs` for the line the entrypoint prints either way.
+    # NET_ADMIN is absent, which costs the fail2ban bans: it writes iptables
+    # rules, and under `network_mode: host` those are this host's firewall, not
+    # the container's. Add it back if you would rather have the ban.
     cap_add:
       - NET_BIND_SERVICE
       - SETUID
@@ -167,34 +97,24 @@ services:
       - DAC_READ_SEARCH
     security_opt:
       - no-new-privileges:true
-    # No `ports:`, because NetBIOS name service is broadcast UDP 137/138 and a
-    # bridge does not carry broadcast. Published ports map unicast only, so on a
-    # bridged network nmbd announces `\\stowcloud` to nobody and shares open by
-    # address alone. Sharing the host's stack is what makes the name resolve.
+    # NetBIOS name service is broadcast UDP 137/138, which a bridge does not
+    # carry and published ports do not map, so `\\stowcloud` resolves only on
+    # the host's stack. Three consequences:
     #
-    # Three things follow, all of them worth knowing before `--profile smb`:
+    #   * A Samba already on port 445 wins and this container fails to start.
+    #   * The sidecar sees the host's real devices and rewrites `interfaces`
+    #     and `hosts allow` from them, admitting the networks this machine is
+    #     attached to. sc cannot do that from its own namespace.
+    #   * That includes docker0 and every compose bridge. Narrow it by pinning
+    #     `interfaces = ["192.168.1.10"]` under `[smb]` in sc.toml, which also
+    #     turns detection off.
     #
-    #   * Port 445 is the host's now, so a Samba already running there wins and
-    #     this container fails to start.
-    #   * This is where scope detection works properly. The sidecar sees the
-    #     host's real devices and rewrites `interfaces` and `hosts allow` in the
-    #     generated smb.conf from them, admitting exactly the networks this
-    #     machine is attached to. sc-core cannot do that from its own namespace,
-    #     so it renders loopback only and this container widens it.
-    #   * "Attached to" includes docker0 and every compose bridge, so any
-    #     container on this host can reach 445. Pin what smbd binds under
-    #     `[smb]` in sc.toml to narrow it, which also turns detection off:
+    # Detection never admits a globally routable address; that needs
+    # `allow_public_bind = true`.
     #
-    #       interfaces = ["192.168.1.10"]
-    #
-    # A globally routable address is never admitted by detection. That needs
-    # `allow_public_bind = true`, and it means what it says.
-    #
-    # Prefer a bridged sidecar? Delete the line below and put back
-    # `ports: ["192.168.1.10:445:445"]`, naming a LAN address and never
-    # 0.0.0.0. `\\NAME` then stops working; the address still mounts. Detection
-    # sees only the veth there, so it admits private space wholesale and the
-    # published address is what narrows it.
+    # For a bridged sidecar instead, drop this line and publish
+    # `192.168.1.10:445:445`, naming a LAN address and never 0.0.0.0. `\\NAME`
+    # stops working and the address still mounts.
     network_mode: host
     healthcheck:
       test: ["CMD-SHELL", "smbd -b >/dev/null 2>&1 && pgrep -x smbd >/dev/null"]
