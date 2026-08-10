@@ -563,3 +563,51 @@ mod plaintext_tests {
         assert_eq!(plaintext_redirect(b""), None);
     }
 }
+
+/// The dispatch itself, over a real socket. The parsing above says what a
+/// request head turns into; these say the right head reaches the right side.
+#[cfg(test)]
+mod dispatch_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// A listener on an ephemeral loopback port, and the port it took.
+    async fn listening() -> (tempfile::TempDir, SocketAddr) {
+        let dir = tempfile::tempdir().unwrap();
+        let cfg = load_or_generate(dir.path(), &[]).unwrap();
+        let tcp = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let addr = tcp.local_addr().unwrap();
+        // The receiver is dropped, so nothing is ever taken off the channel.
+        // That is fine for both cases here: the plaintext path never reaches
+        // it, and the TLS path only has to get as far as answering.
+        TlsListener::spawn(tcp, TlsAcceptor::from(cfg)).unwrap();
+        (dir, addr)
+    }
+
+    #[tokio::test]
+    async fn a_plaintext_request_is_answered_with_a_redirect() {
+        let (_dir, addr) = listening().await;
+        let mut c = TcpStream::connect(addr).await.unwrap();
+        c.write_all(format!("GET /b/home HTTP/1.1\r\nHost: {addr}\r\n\r\n").as_bytes()).await.unwrap();
+
+        let mut reply = String::new();
+        c.read_to_string(&mut reply).await.unwrap();
+        assert!(reply.starts_with("HTTP/1.1 308 "), "{reply:?}");
+        assert!(reply.contains(&format!("Location: https://{addr}/b/home\r\n")), "{reply:?}");
+    }
+
+    /// The peek must not eat the `ClientHello`. This one is deliberately
+    /// malformed, so rustls answers with an alert rather than a handshake -- but
+    /// an alert is a TLS record, and that is the whole assertion: the socket
+    /// went to the acceptor and not to the redirect.
+    #[tokio::test]
+    async fn a_tls_record_still_reaches_the_acceptor() {
+        let (_dir, addr) = listening().await;
+        let mut c = TcpStream::connect(addr).await.unwrap();
+        c.write_all(&[0x16, 0x03, 0x01, 0x00, 0x04, 0x01, 0x00, 0x00, 0x00]).await.unwrap();
+
+        let mut reply = Vec::new();
+        c.read_to_end(&mut reply).await.unwrap();
+        assert_eq!(reply.first(), Some(&0x15), "expected a TLS alert, got {reply:?}");
+    }
+}
