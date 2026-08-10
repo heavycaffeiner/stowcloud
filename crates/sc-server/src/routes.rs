@@ -135,6 +135,12 @@ fn native_routes() -> Vec<RouteInfo> {
         },
         RouteInfo {
             method: "POST",
+            path: "/api/auth/app-passwords/{id}/wipe",
+            group: "native",
+            owner: "sc-http",
+        },
+        RouteInfo {
+            method: "POST",
             path: "/api/auth/password",
             group: "native",
             owner: "sc-http",
@@ -848,6 +854,28 @@ fn compat_nc_routes() -> Vec<RouteInfo> {
             path: "/remote.php/dav/uploads/{user}/{tid}/{*path}",
             group: "compat-nc",
             owner: "sc-compat-nc+sc-upload",
+        },
+        // The one flat trash collection the protocol has, over however many
+        // per-share trashes the caller can reach.
+        RouteInfo {
+            method: "PROPFIND",
+            path: "/remote.php/dav/trashbin/{user}/trash",
+            group: "compat-nc",
+            owner: "sc-compat-nc+sc-core",
+        },
+        // Remote wipe. Not OCS: the client posts its app password as a form
+        // field and reads a bare JSON object.
+        RouteInfo {
+            method: "POST",
+            path: "/index.php/core/wipe/check",
+            group: "compat-nc",
+            owner: "sc-compat-nc",
+        },
+        RouteInfo {
+            method: "POST",
+            path: "/index.php/core/wipe/success",
+            group: "compat-nc",
+            owner: "sc-compat-nc",
         },
     ]
 }

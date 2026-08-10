@@ -34,7 +34,7 @@ use std::sync::Arc;
 use axum::http::{HeaderMap, StatusCode};
 
 use crate::ports::{
-    Entry, PortError, SessionSpec, SessionId, ShareId, SpoolMode, UploadEngine, UserId,
+    Entry, PortError, SessionSpec, SessionId, ShareId, SpoolMode, UploadEngine, UserId, Vpath,
 };
 use crate::store::NcStore;
 
@@ -324,16 +324,16 @@ impl ChunkedUploads {
 
     /// `MOVE /remote.php/dav/uploads/{user}/{tid}/.file`.
     ///
-    /// `finished` receives the share and share-relative rest-path the
-    /// original `MKCOL`'s `Destination` resolved to, so the caller can stat
-    /// the file that was actually just assembled instead of the share root.
+    /// `finished` receives the vpath the original `MKCOL`'s `Destination`
+    /// named, so the caller can stat the file that was actually just
+    /// assembled instead of the share root.
     pub fn assemble(
         &self,
         user: UserId,
         tid: &str,
         headers: &HeaderMap,
         destination_exists: bool,
-        finished: impl FnOnce(ShareId, &str) -> Result<Entry, PortError>,
+        finished: impl FnOnce(&Vpath) -> Result<Entry, PortError>,
     ) -> Result<AssembleResult, ChunkError> {
         let binding = self.resolve(tid, user)?;
 
@@ -378,12 +378,12 @@ impl ChunkedUploads {
         // reused to address a freed session id.
         self.store.unbind_upload(tid, user)?;
 
-        // `binding.dest` is the full vpath (`{label}/{rest}`) captured at
-        // MKCOL time; strip the label to get the share-relative path
-        // `stat_entry` needs (`Core::resolve_want` re-adds the grant's
-        // `subpath` itself, so this must stay the *rest* half only).
-        let rest = binding.dest.split_once('/').map(|x| x.1).unwrap_or("");
-        let e = finished(binding.share, rest)?;
+        // `binding.dest` is the full vpath captured at MKCOL time and is
+        // handed over as one. It used to be split at the first separator to
+        // produce a share-relative path, which the host adapter then rebuilt
+        // by prefixing the label again: correct only while every grant sits at
+        // its share's own root, and off by the grant's subpath otherwise.
+        let e = finished(&Vpath::new(&binding.dest))?;
         Ok(AssembleResult {
             created: !destination_exists,
             oc_file_id: crate::props::nc_id(e.id.unwrap_or(sc_vfs::FileId(0)), &self.instance_id),
@@ -737,7 +737,7 @@ mod tests {
                 "tid-abc",
                 &move_headers(9, Some(1_700_000_000)),
                 false,
-                |_s, _p| Ok(entry()),
+                |_p| Ok(entry()),
             )
             .unwrap();
 
@@ -755,7 +755,7 @@ mod tests {
         cu.mkcol(u, "tid", "x".into(), Some(3), 0).unwrap();
         cu.put_chunk(u, "tid", "1", b"abc").unwrap();
         let r = cu
-            .assemble(u, "tid", &move_headers(3, None), true, |_s, _p| Ok(entry()))
+            .assemble(u, "tid", &move_headers(3, None), true, |_p| Ok(entry()))
             .unwrap();
         assert!(!r.created);
         assert!(!r.mtime_accepted);
@@ -788,7 +788,7 @@ mod tests {
             Err(ChunkError::NotFound)
         ));
         assert!(matches!(
-            cu.assemble(attacker, "shared-tid", &move_headers(6, None), false, |_s, _p| {
+            cu.assemble(attacker, "shared-tid", &move_headers(6, None), false, |_p| {
                 Ok(entry())
             }),
             Err(ChunkError::NotFound)
@@ -803,7 +803,7 @@ mod tests {
         cu.put_chunk(attacker, "shared-tid", "1", b"MINE").unwrap();
 
         // The victim's data is untouched.
-        cu.assemble(victim, "shared-tid", &move_headers(6, None), false, |_s, _p| {
+        cu.assemble(victim, "shared-tid", &move_headers(6, None), false, |_p| {
             Ok(entry())
         })
         .unwrap();
@@ -828,7 +828,7 @@ mod tests {
         cu.mkcol(u, "tid", "x".into(), None, 0).unwrap();
         cu.put_chunk(u, "tid", "1", b"abc").unwrap();
         let err = cu
-            .assemble(u, "tid", &move_headers(999, None), false, |_s, _p| Ok(entry()))
+            .assemble(u, "tid", &move_headers(999, None), false, |_p| Ok(entry()))
             .unwrap_err();
         assert_eq!(err.status(), StatusCode::BAD_REQUEST);
     }
@@ -852,7 +852,7 @@ mod tests {
 
         let sid = cu.resolve("tid", u).unwrap().session;
         let r = cu
-            .assemble(u, "tid", &h, false, |_s, _p| Ok(entry()))
+            .assemble(u, "tid", &h, false, |_p| Ok(entry()))
             .expect("Android's MOVE must not require OC-Total-Length");
         assert!(r.mtime_accepted);
         assert_eq!(e.assembled(sid).as_deref(), Some(&b"abcde"[..]));
@@ -867,7 +867,7 @@ mod tests {
         cu.mkcol(u, "tid", "x".into(), None, 0).unwrap();
         cu.put_chunk(u, "tid", "1", b"abc").unwrap();
         let err = cu
-            .assemble(u, "tid", &move_headers(999, None), false, |_s, _p| Ok(entry()))
+            .assemble(u, "tid", &move_headers(999, None), false, |_p| Ok(entry()))
             .unwrap_err();
         assert_eq!(err.status(), StatusCode::BAD_REQUEST);
     }
@@ -1040,7 +1040,7 @@ mod tests {
         move_h.insert("X-OC-Mtime", "1700000000".parse().unwrap());
         move_h.insert("X-OC-Ctime", "1699999999".parse().unwrap());
         let r = cu
-            .assemble(u, tid, &move_h, false, |_s, _p| Ok(entry()))
+            .assemble(u, tid, &move_h, false, |_p| Ok(entry()))
             .expect("Android's MOVE header set must be sufficient");
 
         assert!(r.created);
@@ -1087,7 +1087,7 @@ mod tests {
         move_h.insert("X-OC-MTime", "1700000000.123456".parse().unwrap());
         move_h.insert("Overwrite", "T".parse().unwrap());
         let r = cu
-            .assemble(u, tid, &move_h, false, |_s, _p| Ok(entry()))
+            .assemble(u, tid, &move_h, false, |_p| Ok(entry()))
             .expect("iOS's fractional X-OC-MTime must not fail the assembly");
 
         assert!(r.mtime_accepted);

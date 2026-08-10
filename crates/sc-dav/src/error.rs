@@ -40,6 +40,11 @@ pub enum DavError {
     Locked,
     #[error("depth infinity is refused")]
     FiniteDepthRequired,
+    /// No source claimed the report's root element. RFC 3253 §3.1.5 makes this
+    /// a 403 with a `DAV:supported-report` precondition, not a 404: the
+    /// resource exists, the report does not.
+    #[error("unsupported report")]
+    UnsupportedReport,
     #[error("bad gateway")]
     BadGateway,
     #[error("insufficient storage")]
@@ -63,7 +68,7 @@ impl DavError {
             Unauthorized => StatusCode::UNAUTHORIZED,
             // `FiniteDepthRequired` is a 403 carrying a DAV:error body — RFC
             // 4918 explicitly sanctions refusing depth infinity this way.
-            Forbidden | FiniteDepthRequired => StatusCode::FORBIDDEN,
+            Forbidden | FiniteDepthRequired | UnsupportedReport => StatusCode::FORBIDDEN,
             NotFound => StatusCode::NOT_FOUND,
             Conflict => StatusCode::CONFLICT,
             PreconditionFailed => StatusCode::PRECONDITION_FAILED,
@@ -80,6 +85,7 @@ impl DavError {
     fn error_element(&self) -> Option<&'static str> {
         match self {
             DavError::FiniteDepthRequired => Some("<d:propfind-finite-depth/>"),
+            DavError::UnsupportedReport => Some("<d:supported-report/>"),
             DavError::Locked => Some("<d:lock-token-submitted/>"),
             DavError::Conflict => None,
             _ => None,

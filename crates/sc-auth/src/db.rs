@@ -101,7 +101,12 @@ CREATE TABLE IF NOT EXISTS app_password (
   last_used_ns INTEGER,
   last_ip TEXT,
   last_ua TEXT,
-  expires_ns INTEGER
+  expires_ns INTEGER,
+  -- Set when an operator marks this credential's device as lost. The
+  -- credential keeps working until the device confirms it has erased its
+  -- local copies, because a credential revoked outright can no longer ask
+  -- whether it should wipe.
+  wipe_requested INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS app_password_user ON app_password(user);
 
@@ -207,6 +212,7 @@ pub(crate) fn open_pool(path: &Path) -> Result<DbPool> {
         conn.execute_batch(SCHEMA_SQL).context("running schema")?;
         migrate_user_role(&conn).context("migrating user.role column")?;
         migrate_user_usage_bytes(&conn).context("migrating user.usage_bytes column")?;
+        migrate_app_password_wipe(&conn).context("migrating app_password.wipe_requested column")?;
     }
     Ok(pool)
 }
@@ -269,6 +275,23 @@ fn migrate_user_usage_bytes(conn: &rusqlite::Connection) -> Result<()> {
     if has_col == 0 {
         conn.execute_batch("ALTER TABLE user ADD COLUMN usage_bytes INTEGER NOT NULL DEFAULT 0")
             .context("adding user.usage_bytes column")?;
+    }
+    Ok(())
+}
+
+/// Same rationale and pattern as the two migrations above: a database that
+/// predates remote wipe needs the column added explicitly.
+fn migrate_app_password_wipe(conn: &rusqlite::Connection) -> Result<()> {
+    let has_col: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM pragma_table_info('app_password') WHERE name = 'wipe_requested'",
+        [],
+        |r| r.get(0),
+    )?;
+    if has_col == 0 {
+        conn.execute_batch(
+            "ALTER TABLE app_password ADD COLUMN wipe_requested INTEGER NOT NULL DEFAULT 0",
+        )
+        .context("adding app_password.wipe_requested column")?;
     }
     Ok(())
 }

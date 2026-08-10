@@ -37,6 +37,7 @@ pub fn protected_routes(state: AppState) -> Router {
         .route("/api/auth/session", get(auth_session))
         .route("/api/auth/app-passwords", get(list_app_passwords).post(create_app_password))
         .route("/api/auth/app-passwords/{id}", delete(revoke_app_password))
+        .route("/api/auth/app-passwords/{id}/wipe", post(wipe_app_password))
         .route("/api/auth/password", post(auth_change_password))
         .route("/api/auth/totp/setup", post(auth_totp_setup))
         .route("/api/auth/totp/enroll", post(auth_totp_enroll))
@@ -754,6 +755,31 @@ async fn revoke_app_password(State(state): State<AppState>, principal: Option<Ex
     // ownership has to be the query's own `WHERE`, not a check bolted on
     // after the fact.
     match state.auth.revoke_app_password_owned(principal.user, id) {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => AppError::not_found().into_response(),
+        Err(_) => AppError::internal().into_response(),
+    }
+}
+
+/// Mark the device holding this app password as lost.
+///
+/// Deliberately not a revoke: a revoked credential can no longer authenticate,
+/// so it can no longer ask whether it should wipe, and the copies on the lost
+/// device stay where they are. The credential keeps working until the device
+/// reports it has erased them, at which point the server retires it.
+///
+/// Same ownership rule as the revoke above, and for the same reason: an id is
+/// a small guessable integer on a self-service route.
+async fn wipe_app_password(
+    State(state): State<AppState>,
+    principal: Option<Extension<Principal>>,
+    Path(id): Path<u32>,
+) -> Response {
+    let principal = match principal_or_401(principal) {
+        Ok(p) => p,
+        Err(e) => return e.into_response(),
+    };
+    match state.auth.request_wipe(principal.user, id) {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),
         Ok(false) => AppError::not_found().into_response(),
         Err(_) => AppError::internal().into_response(),

@@ -79,6 +79,56 @@ impl AuthService {
         Ok(n > 0)
     }
 
+    /// Mark the device holding `id` as lost, so the next `wipe/check` from it
+    /// answers "erase your local copies".
+    ///
+    /// The credential is deliberately *not* revoked here. A revoked credential
+    /// can no longer authenticate, so it can no longer ask whether it should
+    /// wipe, and the copies on the lost device stay where they are. Retiring
+    /// it is [`Self::finish_wipe`]'s job, once the device says it is done.
+    pub fn request_wipe(&self, u: UserId, id: u32) -> Result<bool> {
+        let conn = self.pool.get()?;
+        let n = conn.execute(
+            "UPDATE app_password SET wipe_requested = 1 WHERE id = ?1 AND user = ?2",
+            rusqlite::params![id, u.get()],
+        )?;
+        drop(conn);
+        if n > 0 {
+            self.audit(Some(u), "apppw.wipe_requested", Some(&id.to_string()), None, true, None);
+        }
+        Ok(n > 0)
+    }
+
+    /// Whether the device holding `id` has been marked for wipe. A credential
+    /// that no longer exists answers `false`: the client treats anything other
+    /// than an explicit yes as "no wipe", and a deleted credential has already
+    /// lost its access by the ordinary route.
+    pub fn wipe_requested(&self, id: u32) -> Result<bool> {
+        let conn = self.pool.get()?;
+        let n: Option<i64> = conn
+            .query_row(
+                "SELECT wipe_requested FROM app_password WHERE id = ?1",
+                rusqlite::params![id],
+                |r| r.get(0),
+            )
+            .ok();
+        Ok(n.unwrap_or(0) != 0)
+    }
+
+    /// The device reported that it has erased its local copies, so the
+    /// credential has done its last useful thing and is retired.
+    pub fn finish_wipe(&self, id: u32) -> Result<()> {
+        let conn = self.pool.get()?;
+        conn.execute(
+            "DELETE FROM app_password WHERE id = ?1 AND wipe_requested = 1",
+            rusqlite::params![id],
+        )?;
+        drop(conn);
+        self.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.audit(None, "apppw.wiped", Some(&id.to_string()), None, true, None);
+        Ok(())
+    }
+
     pub fn list_app_passwords(&self, u: UserId) -> Result<Vec<AppPwInfo>> {
         let conn = self.pool.get()?;
         let mut stmt = conn.prepare(

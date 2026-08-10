@@ -125,6 +125,10 @@ pub trait NcStore: Send + Sync {
     // -- favourites ---------------------------------------------------------
     fn is_favorite(&self, user: UserId, file: FileId) -> PortResult<bool>;
     fn set_favorite(&self, user: UserId, file: FileId, on: bool) -> PortResult<()>;
+    /// Every file this user has marked. The favourites screen is answered from
+    /// this list rather than from a filesystem walk, because a marked file can
+    /// be anywhere and walking to find a handful of rows would be absurd.
+    fn favorites(&self, user: UserId) -> PortResult<Vec<FileId>>;
 
     // -- upload aliases -----------------------------------------------------
     /// Bind a client-chosen transfer id to an internal session id (plus the
@@ -292,6 +296,19 @@ impl NcStore for MemStore {
             g.favorites.remove(&(user.0, file.0));
         }
         Ok(())
+    }
+
+    fn favorites(&self, user: UserId) -> PortResult<Vec<FileId>> {
+        let mut ids: Vec<FileId> = self
+            .inner
+            .lock()
+            .favorites
+            .iter()
+            .filter(|(u, _)| *u == user.0)
+            .map(|(_, f)| FileId(*f))
+            .collect();
+        ids.sort_by_key(|f| f.0);
+        Ok(ids)
     }
 
     fn bind_upload(
@@ -548,6 +565,21 @@ mod sqlite_impl {
             }
             .map_err(map_err)?;
             Ok(())
+        }
+
+        fn favorites(&self, user: UserId) -> PortResult<Vec<FileId>> {
+            let conn = self.conn.lock();
+            let mut stmt = conn
+                .prepare("SELECT fileid FROM nc_favorite WHERE user = ?1 ORDER BY fileid")
+                .map_err(map_err)?;
+            let rows = stmt
+                .query_map(params![user.0], |r| r.get::<_, i64>(0))
+                .map_err(map_err)?;
+            let mut out = Vec::new();
+            for r in rows {
+                out.push(FileId(r.map_err(map_err)?));
+            }
+            Ok(out)
         }
 
         fn bind_upload(

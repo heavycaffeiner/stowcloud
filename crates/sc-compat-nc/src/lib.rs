@@ -71,15 +71,18 @@ pub mod capabilities;
 pub mod chunking;
 pub mod config;
 pub mod dav_paths;
+pub mod direct;
 pub mod login_flow;
 pub mod ocs;
 pub mod ports;
 pub mod preview;
 pub mod props;
 pub mod router;
+pub mod search;
 pub mod shares;
 pub mod status;
 pub mod store;
+pub mod unified_search;
 pub mod stubs;
 pub mod user;
 

@@ -11,12 +11,15 @@ use sc_acl::Perms;
 use sc_vfs::{SafePath, ShareId, ShareRoot, UserId};
 
 use crate::error::CoreError;
+use crate::path::{SharePath, Vpath};
 
 #[derive(Clone)]
 pub struct Resolved {
     pub share: ShareId,
     pub root: Arc<ShareRoot>,
-    pub path: SafePath,
+    /// Relative to the *share* root, so it already contains the grant's
+    /// subpath. Turning it back into a vpath goes through `Core::vpath_for`.
+    pub path: SharePath,
     /// The caller's full effective permission set at `path`. Carried on the
     /// resolution because every protocol layer that resolves a path also has
     /// to report the permissions on it, and re-deriving them means a second
@@ -29,7 +32,7 @@ impl crate::Core {
     /// a different permission (`CREATE`, `WRITE`, ...) go through the
     /// crate-private `resolve_want` instead, which is identical except for
     /// which `Perms` bit(s) are checked.
-    pub fn resolve(&self, user: UserId, vpath: &str) -> Result<Resolved, CoreError> {
+    pub fn resolve(&self, user: UserId, vpath: &Vpath) -> Result<Resolved, CoreError> {
         self.resolve_want(user, vpath, Perms::READ)
     }
 
@@ -42,11 +45,11 @@ impl crate::Core {
     /// parameterless (no `Perms` argument to get wrong) rather than exposing
     /// `resolve_want` itself, so the next upload call site cannot repeat the
     /// mistake by passing the wrong bit.
-    pub fn resolve_for_upload(&self, user: UserId, vpath: &str) -> Result<Resolved, CoreError> {
+    pub fn resolve_for_upload(&self, user: UserId, vpath: &Vpath) -> Result<Resolved, CoreError> {
         self.resolve_want(user, vpath, Perms::WRITE)
     }
 
-    pub(crate) fn resolve_want(&self, user: UserId, vpath: &str, want: Perms) -> Result<Resolved, CoreError> {
+    pub(crate) fn resolve_want(&self, user: UserId, vpath: &Vpath, want: Perms) -> Result<Resolved, CoreError> {
         // No-op when homes are disabled; otherwise a
         // one-time-per-user mkdir + grant so "/Home/..." resolves the same
         // way any other grant-projected label does, with no branch below
@@ -55,8 +58,7 @@ impl crate::Core {
             tracing::warn!(user = user.get(), error = %e, "home creation failed; continuing without it");
         }
 
-        let trimmed = vpath.trim_start_matches('/');
-        let mut parts = trimmed.splitn(2, '/');
+        let mut parts = vpath.as_str().splitn(2, '/');
         let label = parts.next().unwrap_or("");
         let rest = parts.next().unwrap_or("");
         if label.is_empty() {
@@ -95,7 +97,7 @@ impl crate::Core {
         Ok(Resolved {
             share: root_entry.share,
             root,
-            path: full,
+            path: SharePath::new(full),
             perms,
         })
     }
@@ -154,9 +156,8 @@ impl crate::Core {
     /// exists but every grant on it is a deny" — callers that need that
     /// distinction (like `resolve_want`'s own 403-vs-404 DAV mapping) must
     /// still use `resolve`/`resolve_want`.
-    pub fn resolve_share(&self, user: UserId, vpath: &str) -> Result<ShareId, CoreError> {
-        let trimmed = vpath.trim_start_matches('/');
-        let label = trimmed.split('/').next().unwrap_or("");
+    pub fn resolve_share(&self, user: UserId, vpath: &Vpath) -> Result<ShareId, CoreError> {
+        let label = vpath.label();
         if label.is_empty() {
             return Err(CoreError::NotFound);
         }

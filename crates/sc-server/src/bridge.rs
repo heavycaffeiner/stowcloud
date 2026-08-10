@@ -28,6 +28,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use sc_vfs::{GroupId, SafePath, ShareId, TrashMode, UserId};
+use sc_core::{SharePath, Vpath};
 
 /// Upper bound on a whole-file read buffered in memory.
 ///
@@ -119,7 +120,7 @@ impl CoreBridge {
             C::Io(m) => D::Io(m),
             C::Internal(m) => D::Io(m),
             C::Denied { .. } => {
-                if self.core.resolve(user, vpath).is_ok() {
+                if self.core.resolve(user, &Vpath::new(vpath)).is_ok() {
                     D::Denied
                 } else {
                     D::NotListable
@@ -140,9 +141,9 @@ impl CoreBridge {
     /// further behind, never wrongly.
     fn index_path(&self, user: UserId, vpath: &str) -> Option<(sc_vfs::ShareId, sc_vfs::SafePath)> {
         self.core
-            .resolve(user, vpath)
+            .resolve(user, &Vpath::new(vpath))
             .ok()
-            .map(|r| (r.share, r.path))
+            .map(|r| (r.share, r.path.into_safe()))
     }
 
     /// Batch operations report per-item outcomes; the single-target DAV and
@@ -160,7 +161,7 @@ impl CoreBridge {
 
 // ---------------------------------------------------------------- sc-dav --
 
-fn dav_entry(e: sc_core::Entry) -> sc_dav::Entry {
+pub(crate) fn dav_entry(e: sc_core::Entry) -> sc_dav::Entry {
     sc_dav::Entry {
         name: e.name,
         kind: e.kind,
@@ -206,11 +207,11 @@ impl sc_dav::CoreApi for CoreBridge {
     fn resolve(&self, user: UserId, vpath: &str) -> sc_dav::backend::CoreResult<sc_dav::Resolved> {
         let r = self
             .core
-            .resolve(user, vpath)
+            .resolve(user, &Vpath::new(vpath))
             .map_err(|e| self.dav_err(user, vpath, e))?;
         Ok(sc_dav::Resolved {
             share: r.share,
-            path: r.path,
+            path: r.path.into_safe(),
             perms: r.perms,
         })
     }
@@ -440,6 +441,16 @@ impl sc_dav::CoreApi for CoreBridge {
         }
         Ok(())
     }
+
+    fn ensure_fileid(&self, user: UserId, vpath: &str) -> sc_dav::backend::CoreResult<sc_vfs::FileId> {
+        let r = self
+            .core
+            .resolve(user, &Vpath::new(vpath))
+            .map_err(|e| self.dav_err(user, vpath, e))?;
+        self.core
+            .ensure_fileid(r.share, &r.path)
+            .map_err(|e| sc_dav::backend::CoreError::Io(e.to_string()))
+    }
 }
 
 /// `to_dir/<basename of from>` — the destination a `move_entries`/
@@ -629,10 +640,10 @@ fn split_trash_id(s: &str) -> Option<(ShareId, &str)> {
 
 impl hapi::CoreApi for CoreBridge {
     fn resolve(&self, user: UserId, vpath: &str) -> Result<hapi::Resolved, hapi::CoreError> {
-        let r = self.core.resolve(user, vpath).map_err(http_err)?;
+        let r = self.core.resolve(user, &Vpath::new(vpath)).map_err(http_err)?;
         Ok(hapi::Resolved {
             share: r.share,
-            subpath: r.path,
+            subpath: r.path.into_safe(),
             perms: r.perms,
         })
     }
@@ -1138,7 +1149,7 @@ impl hapi::CoreApi for CoreBridge {
         user: UserId,
         path: Option<&str>,
     ) -> Result<Vec<hapi::ShareLinkInfo>, hapi::CoreError> {
-        let links = self.core.list_links(user, path).map_err(http_err)?;
+        let links = self.core.list_links(user, path.map(Vpath::new).as_ref()).map_err(http_err)?;
         Ok(links.into_iter().map(|l| self.http_link(user, l)).collect())
     }
 
@@ -1169,7 +1180,7 @@ impl hapi::CoreApi for CoreBridge {
         };
         let (link, token) = self
             .core
-            .create_link(user, &req.path, &spec)
+            .create_link(user, &Vpath::new(&req.path), &spec)
             .map_err(http_err)?;
         Ok((self.http_link(user, link), token))
     }
@@ -1393,27 +1404,17 @@ fn parse_ns_opt(s: Option<&str>) -> Result<Option<i128>, hapi::CoreError> {
 }
 
 impl CoreBridge {
-    /// `(share, share-relative path)` back to the owner's `/{label}/…` view.
+    /// `(share, share path)` back to the owner's `/{label}/…` view.
     ///
-    /// The store keeps the share-relative path — labels are an ACL projection
-    /// that can be renamed — so the virtual path has to be rebuilt per caller.
-    fn vpath_for(&self, user: UserId, share: ShareId, path: &sc_vfs::SafePath) -> String {
-        for r in self.core.roots(user) {
-            if r.share != share || !r.subpath.is_prefix_of(path) {
-                continue;
-            }
-            let skip = r.subpath.components().len();
-            let rest: Vec<&str> = path.components()[skip..]
-                .iter()
-                .map(|c| c.as_str())
-                .collect();
-            return if rest.is_empty() {
-                format!("/{}", r.label)
-            } else {
-                format!("/{}/{}", r.label, rest.join("/"))
-            };
-        }
-        String::new()
+    /// The store keeps the share path — labels are an ACL projection that can
+    /// be renamed — so the virtual path has to be rebuilt per caller. This
+    /// used to be the workspace's one correct copy of that conversion; it now
+    /// lives in `sc-core` and every surface shares it.
+    fn vpath_for(&self, user: UserId, share: ShareId, path: &SharePath) -> String {
+        self.core
+            .vpath_for(user, share, path)
+            .map(|v| v.to_absolute_string())
+            .unwrap_or_default()
     }
 
     fn http_link(&self, user: UserId, l: sc_core::ShareLink) -> hapi::ShareLinkInfo {
@@ -1620,7 +1621,7 @@ impl UploadBridge {
         // afterward landed on disk with zero permission check ever run.
         let r = self
             .core
-            .resolve_for_upload(user, dest_vpath)
+            .resolve_for_upload(user, &Vpath::new(dest_vpath))
             .map_err(http_err)?;
         // Quota pre-check: the declared length is the
         // only size known this early — an overwrite's replaced bytes aren't
@@ -1638,7 +1639,7 @@ impl UploadBridge {
         let spec = sc_upload::SessionSpec {
             user,
             share: r.share,
-            dest: r.path,
+            dest: r.path.into_safe(),
             total_len,
             random_access,
             if_match: None,
@@ -2027,7 +2028,7 @@ pub struct SearchBridge {
     /// know each share's storage class; detection touches sysfs on Linux
     /// (`crate::storage_class`), so results are cached rather than re-read
     /// on every search.
-    pub storage_cache: crate::storage_class::StorageClassCache,
+    pub storage_cache: Arc<crate::storage_class::StorageClassCache>,
     /// The *same* object as `sc_http::AppState::search_concurrency` (shared
     /// `Arc`, constructed once in `app.rs`) — not just an equal config
     /// value. That's what guarantees the walk's own deadline
@@ -2047,8 +2048,8 @@ impl SearchBridge {
     /// you cannot see must not be distinguishable from asking about nothing.
     fn roots_for(&self, user: UserId, scope: Option<&str>) -> Vec<SearchRoot> {
         if let Some(scope) = scope {
-            return match self.core.resolve(user, scope) {
-                Ok(r) => vec![(r.root, r.path)],
+            return match self.core.resolve(user, &Vpath::new(scope)) {
+                Ok(r) => vec![(r.root, r.path.into_safe())],
                 Err(_) => Vec::new(),
             };
         }
@@ -3433,7 +3434,7 @@ mod search_bridge_tests {
 
         let bridge = SearchBridge {
             core,
-            storage_cache: crate::storage_class::StorageClassCache::default(),
+            storage_cache: Arc::new(crate::storage_class::StorageClassCache::default()),
             limits: Arc::new(SearchConcurrency::new(&SearchLimitsConfig::default())),
         };
         (bridge, dir)

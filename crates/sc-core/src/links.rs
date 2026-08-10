@@ -52,6 +52,7 @@ use sha2::{Digest, Sha256};
 use crate::argon_gate::ArgonGate;
 use crate::entry::Entry;
 use crate::error::CoreError;
+use crate::path::{SharePath, Vpath};
 
 /// Bytes of CSPRNG behind a token. 16 bytes → 22 base64url characters, which
 /// is the length specifies.
@@ -113,7 +114,9 @@ pub struct ShareLink {
     /// it; callers must render the link as tokenless rather than fail.
     pub token: Option<String>,
     pub share: ShareId,
-    pub path: SafePath,
+    /// Relative to the share root, grant subpath included. `Core::vpath_for`
+    /// is what turns it back into something the owner's own tree can name.
+    pub path: SharePath,
     /// The target's fileid at the moment the link was minted. `None` only if
     /// the metadata store could not allocate one; the cross-check then
     /// degrades to path-only rather than failing link creation outright.
@@ -382,7 +385,7 @@ fn ns_to_i64(v: i128) -> i64 {
 
 fn row_to_link(row: &rusqlite::Row<'_>, max_depth: u16, master_key: &[u8; 32]) -> rusqlite::Result<ShareLink> {
     let path_str: String = row.get("path")?;
-    let path = SafePath::parse(&path_str, max_depth).unwrap_or_else(|_| SafePath::root());
+    let path = SharePath::new(SafePath::parse(&path_str, max_depth).unwrap_or_else(|_| SafePath::root()));
     let fileid: Option<i64> = row.get("fileid")?;
     let expires: Option<i64> = row.get("expires_ns")?;
     let max_downloads: Option<i64> = row.get("max_downloads")?;
@@ -452,7 +455,7 @@ impl crate::Core {
     ///
     /// Requires `Perms::SHARE` at the target, and the link can never carry
     /// permissions the creator does not itself hold there.
-    pub fn create_link(&self, user: UserId, vpath: &str, spec: &LinkSpec) -> Result<(ShareLink, String), CoreError> {
+    pub fn create_link(&self, user: UserId, vpath: &Vpath, spec: &LinkSpec) -> Result<(ShareLink, String), CoreError> {
         let store = self.store()?;
         let r = self.resolve_want(user, vpath, Perms::SHARE)?;
 
@@ -559,7 +562,7 @@ impl crate::Core {
     }
 
     /// Every link `user` owns, optionally narrowed to one virtual path.
-    pub fn list_links(&self, user: UserId, vpath: Option<&str>) -> Result<Vec<ShareLink>, CoreError> {
+    pub fn list_links(&self, user: UserId, vpath: Option<&Vpath>) -> Result<Vec<ShareLink>, CoreError> {
         let store = self.store()?;
         let filter = match vpath {
             Some(v) => {

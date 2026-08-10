@@ -11,6 +11,7 @@ use std::sync::Arc;
 use axum::response::IntoResponse;
 use axum::Router;
 use sc_vfs::{ShareId, UserId};
+use sc_core::Vpath;
 
 use crate::bridge::{CoreBridge, MetaBridge, UploadBridge};
 use crate::config::Config;
@@ -217,10 +218,13 @@ impl App {
         let search_concurrency = Arc::new(sc_http::search_limits::SearchConcurrency::new(
             &(&cfg.search).into(),
         ));
+        // One cache, shared: the compat `SEARCH` asks the same question about
+        // the same shares, and detection touches sysfs.
+        let storage_cache = Arc::new(crate::storage_class::StorageClassCache::default());
         let search_bridge: Arc<dyn sc_http::search_api::SearchApi> =
             Arc::new(crate::bridge::SearchBridge {
                 core: core.clone(),
-                storage_cache: crate::storage_class::StorageClassCache::default(),
+                storage_cache: storage_cache.clone(),
                 limits: search_concurrency.clone(),
             });
         // Built here rather than inline in `build_http_state`, so
@@ -267,7 +271,7 @@ impl App {
             uploads.clone(),
             content_bridge,
             search_bridge,
-            search_concurrency,
+            search_concurrency.clone(),
             search_rate,
             archive_concurrency,
             settings,
@@ -313,6 +317,8 @@ impl App {
                     uploads: uploads.clone(),
                     content_host: http.cfg.content_hosts.first().cloned().unwrap_or_default(),
                     keys: http.signed_url_keys.clone(),
+                    search_limits: search_concurrency.clone(),
+                    storage: storage_cache.clone(),
                 }))
             }
             crate::config::CompatCanonicalUrl::Ambiguous { app_host_count } => {
@@ -350,6 +356,13 @@ impl App {
             #[cfg(feature = "compat-nc")]
             if let Some(c) = compat.as_ref() {
                 svc.add_prop_source(c.prop_source());
+                svc.add_prop_patch_source(c.favorite_writer());
+                // Registering these is also what puts `SEARCH` and `REPORT` in
+                // the `Allow` header. A `--no-default-features` build registers
+                // neither, advertises neither, and answers 405 for both, so the
+                // header never names a handler that was compiled out.
+                svc.set_search_source(c.search_source());
+                svc.add_report_source(c.report_source());
             }
             Arc::new(svc)
         };
@@ -808,7 +821,10 @@ pub(crate) fn decode_dav_path(uri_path: &str) -> Option<String> {
 fn dav_required_perms(method: &http::Method) -> Option<sc_acl::Perms> {
     use sc_acl::Perms;
     match method.as_str() {
-        "GET" | "HEAD" | "PROPFIND" => Some(Perms::READ),
+        // `SEARCH` and `REPORT` read; every row they can return is separately
+        // ACL-checked, so the scope bit they need is the same one a listing
+        // needs and nothing more.
+        "GET" | "HEAD" | "PROPFIND" | "SEARCH" | "REPORT" => Some(Perms::READ),
         "PUT" => Some(Perms::WRITE),
         "DELETE" => Some(Perms::DELETE),
         "MKCOL" => Some(Perms::CREATE),
@@ -953,7 +969,7 @@ async fn dav_authenticate(
                         // `shares` would otherwise sail through here).
                         true
                     } else {
-                        let in_scope = |vpath: &str| matches!(core.resolve_share(principal.user, vpath), Ok(share) if allowed.contains(&share));
+                        let in_scope = |vpath: &str| matches!(core.resolve_share(principal.user, &Vpath::new(vpath)), Ok(share) if allowed.contains(&share));
                         let primary_ok = match dav_shaped.vpath_of(&path) {
                             Some(vp) => in_scope(&vp),
                             // Chunked-upload session paths, the principal/root
@@ -1238,7 +1254,7 @@ struct AclReadCheck {
 
 impl sc_http::ws::ReadPermCheck for AclReadCheck {
     fn can_read(&self, user: UserId, vpath: &str) -> bool {
-        self.core.resolve(user, vpath).is_ok()
+        self.core.resolve(user, &Vpath::new(vpath)).is_ok()
     }
 
     // `WsHub` calls these exactly once per (connection, vpath) 0<->1
@@ -1261,7 +1277,7 @@ impl sc_http::ws::ReadPermCheck for AclReadCheck {
     // guards against that.
     fn watch_subscribe(&self, user: UserId, vpath: &str) {
         let Some(w) = &self.watcher else { return };
-        if let Ok(r) = self.core.resolve(user, vpath) {
+        if let Ok(r) = self.core.resolve(user, &Vpath::new(vpath)) {
             if let Err(e) = w.subscribe(r.share, &r.path) {
                 tracing::warn!(vpath, error = %e, "watch subscribe failed; falling back to lazy revalidation for this path");
             }
@@ -1270,7 +1286,7 @@ impl sc_http::ws::ReadPermCheck for AclReadCheck {
 
     fn watch_unsubscribe(&self, user: UserId, vpath: &str) {
         let Some(w) = &self.watcher else { return };
-        if let Ok(r) = self.core.resolve(user, vpath) {
+        if let Ok(r) = self.core.resolve(user, &Vpath::new(vpath)) {
             w.unsubscribe(r.share, &r.path);
         }
     }

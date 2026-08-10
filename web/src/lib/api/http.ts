@@ -380,6 +380,18 @@ async function revokeAppPassword(id: number): Promise<void> {
   await request(`/auth/app-passwords/${id}`, { method: 'DELETE' })
 }
 
+/**
+ * Mark the device holding this app password as lost.
+ *
+ * Deliberately not a revoke. A revoked credential can no longer authenticate,
+ * so it can no longer ask the server whether it should erase its local copies,
+ * and the files on the lost device stay where they are. The credential keeps
+ * working until the device reports it is done, and the server retires it then.
+ */
+async function wipeAppPassword(id: number): Promise<void> {
+  await request(`/auth/app-passwords/${id}/wipe`, { method: 'POST' })
+}
+
 async function listSessions(): Promise<ActiveSession[]> {
   return request('/auth/sessions')
 }
@@ -772,6 +784,7 @@ export const httpApi = {
   createAppPassword,
   createScopedAppPassword,
   revokeAppPassword,
+  wipeAppPassword,
   listSessions,
   revokeSession,
   updateSmbSettings,

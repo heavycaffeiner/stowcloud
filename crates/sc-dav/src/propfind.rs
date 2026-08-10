@@ -198,7 +198,7 @@ fn join(dir: &str, name: &str) -> String {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn write_response(
+pub(crate) fn write_response(
     svc: &DavService,
     user: UserId,
     share: ShareId,

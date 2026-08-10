@@ -15,12 +15,14 @@ use crate::{ensure_unlocked, eval_if_header, DavService};
 /// OPTIONS. Must be answerable **unauthenticated**: Windows Explorer probes
 /// before it will consider offering credentials, and a 401 here means the
 /// mount never happens.
-pub(crate) fn options() -> Response {
+pub(crate) fn options(allow: &str) -> Response {
     let mut r = crate::empty(StatusCode::OK);
     let h = r.headers_mut();
     h.insert("dav", HeaderValue::from_static("1, 2, 3"));
     h.insert("ms-author-via", HeaderValue::from_static("DAV"));
-    h.insert(header::ALLOW, HeaderValue::from_static(crate::ALLOW));
+    if let Ok(v) = HeaderValue::from_str(allow) {
+        h.insert(header::ALLOW, v);
+    }
     h.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
     h.insert(header::CONTENT_LENGTH, HeaderValue::from_static("0"));
     security_headers(&mut r);

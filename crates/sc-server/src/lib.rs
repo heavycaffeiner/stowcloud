@@ -17,6 +17,10 @@ pub mod hardening;
 pub mod masterkey;
 #[cfg(feature = "compat-nc")]
 pub mod nc;
+#[cfg(feature = "compat-nc")]
+pub mod nc_search;
+#[cfg(feature = "compat-nc")]
+pub mod nc_trash;
 // Not itself feature-gated: `build_oidc` has to exist either way so that
 // `app.rs` has one call site, and with the `oidc` feature off it answers with
 // the disabled relying party. The feature gate is inside, around the only

@@ -29,6 +29,9 @@
   let revokeTarget = $state<AppPasswordInfo | null>(null)
   let revoking = $state(false)
 
+  let wipeTarget = $state<AppPasswordInfo | null>(null)
+  let wiping = $state(false)
+
   async function load(): Promise<void> {
     loading = true
     loadError = null
@@ -111,6 +114,33 @@
       revoking = false
     }
   }
+
+  function askWipe(p: AppPasswordInfo): void {
+    wipeTarget = p
+  }
+
+  function closeWipe(): void {
+    wipeTarget = null
+  }
+
+  async function confirmWipe(): Promise<void> {
+    if (!wipeTarget) return
+    wiping = true
+    try {
+      await api.wipeAppPassword(wipeTarget.id)
+      wipeTarget = null
+      await load()
+    } catch (err) {
+      // Already gone (revoked from another tab): the device can no longer
+      // reach us at all, so there is nothing left to ask it to do.
+      if (err instanceof ApiError && err.status === 404) {
+        wipeTarget = null
+        await load()
+      }
+    } finally {
+      wiping = false
+    }
+  }
 </script>
 
 <div class="sc-app-passwords">
@@ -134,6 +164,7 @@
               {#if p.last_used_ns}· {t('app_password.last_used', { date: formatDateNs(p.last_used_ns) })}{:else}· {t('app_password.never_used')}{/if}
             {/snippet}
             {#snippet trailing()}
+              <IconButton label={t('app_password.wipe', { name: p.name })} onclick={() => askWipe(p)}><Icon icon={icons.warning} size={18} /></IconButton>
               <IconButton label={t('app_password.revoke', { name: p.name })} onclick={() => askRevoke(p)}><Icon icon={icons.delete} size={18} /></IconButton>
             {/snippet}
           </ListItem>
@@ -186,6 +217,16 @@
   {#snippet actions()}
     <Button variant="text" onclick={closeRevoke}>{t('common.cancel')}</Button>
     <Button variant="filled" onclick={confirmRevoke} loading={revoking}>{t('app_password.revoke_2')}</Button>
+  {/snippet}
+</Dialog>
+
+<Dialog open={!!wipeTarget} title={t('app_password.wipe_device')} onclose={closeWipe}>
+  <p>
+    {t('app_password.next_time_that_device_erase', { name: wipeTarget?.name ?? '' })}
+  </p>
+  {#snippet actions()}
+    <Button variant="text" onclick={closeWipe}>{t('common.cancel')}</Button>
+    <Button variant="filled" onclick={confirmWipe} loading={wiping}>{t('app_password.wipe_2')}</Button>
   {/snippet}
 </Dialog>
 

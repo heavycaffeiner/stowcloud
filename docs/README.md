@@ -18,6 +18,9 @@ code won.
 | [7 — Upload](proposals/stowcloud-7-upload.md) | TUS, the interval set, the ordering rule, compat chunking | before upload work |
 | [4 — WebDAV](proposals/stowcloud-4-webdav.md) | RFC 4918 Class 2, XML hardening, streamed PROPFIND, locking, `/dav-uploads` | before WebDAV work |
 | [8 — Compat](proposals/stowcloud-8-compat.md) | the isolation contract and the two gates that enforce it | before compat work |
+| [14 - Mobile compat](proposals/stowcloud-14-compat-mobile.md) | search, favourites, trashbin and the account lifecycle the phone apps need | with 8, before mobile work |
+| [15 - Sharing](proposals/stowcloud-15-sharing.md) | the two path vocabularies the share API mixed up, and what it advertises | before share work |
+| [16 - Correctness sweep](proposals/stowcloud-16-correctness-sweep.md) | three path vocabularies with one name, three metadata writes that fail in silence, and folder sizes no client sees correctly | before 15, and before any path-handling work |
 | [6 — Preview and sharing](proposals/stowcloud-6-preview-sharing.md) | the content origin, signed URLs, the worker jail, archives, share links | before preview or sharing work |
 | [5 — Search](proposals/stowcloud-5-search.md) | the parallel walk, the optional trigram index, the estimator | before search work |
 | [3 — Frontend](proposals/stowcloud-3-frontend.md) | virtual scroll, the upload worker, i18n, the byte budgets | before frontend work |

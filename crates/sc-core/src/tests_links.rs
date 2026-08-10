@@ -1,6 +1,7 @@
 //! Share-link tests — one per non-negotiable property in
 //! / `links.rs`'s module doc.
 
+use crate::path::Vpath;
 use std::sync::Arc;
 
 use sc_acl::{AclEngine, Grant, Perms, Principal};
@@ -100,7 +101,7 @@ fn db_bytes(db: &std::path::Path) -> Vec<u8> {
 fn token_is_128_bits_of_base64url_and_never_written_in_the_clear() {
     let (core, _dir, db) = setup_on_disk();
     seed_file(&core, "/root/a.txt");
-    let (link, token) = core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()).unwrap();
+    let (link, token) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &LinkSpec::default()).unwrap();
 
     // 128 bits, base64url-no-pad => 22 characters, alphabet only.
     assert_eq!(token.len(), 22, "expected 22 base64url chars for 16 random bytes");
@@ -153,7 +154,7 @@ fn each_link_gets_a_distinct_token() {
     seed_file(&core, "/root/a.txt");
     let mut seen = std::collections::HashSet::new();
     for _ in 0..16 {
-        let (_, t) = core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()).unwrap();
+        let (_, t) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &LinkSpec::default()).unwrap();
         assert!(seen.insert(t), "CSPRNG produced a duplicate token");
     }
 }
@@ -162,7 +163,7 @@ fn each_link_gets_a_distinct_token() {
 fn a_wrong_token_resolves_to_nothing() {
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
-    let (_, token) = core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()).unwrap();
+    let (_, token) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &LinkSpec::default()).unwrap();
     let mut wrong = token.clone();
     wrong.replace_range(0..1, if token.starts_with('A') { "B" } else { "A" });
     assert!(core.resolve_link(&wrong).unwrap().is_none());
@@ -178,7 +179,7 @@ fn password_is_stored_as_an_argon2_hash_never_as_plaintext() {
         password: Some("correct horse battery".into()),
         ..LinkSpec::default()
     };
-    let (link, _t) = core.create_link(OWNER, "/root/a.txt", &spec).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &spec).unwrap();
     assert!(link.has_password);
 
     let bytes = db_bytes(&db);
@@ -201,7 +202,7 @@ fn password_is_stored_as_an_argon2_hash_never_as_plaintext() {
 fn a_link_with_no_password_accepts_and_a_missing_link_refuses() {
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
-    let (link, _t) = core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &LinkSpec::default()).unwrap();
 
     assert!(core.check_link_password(link.id, "anything").unwrap());
     // A link id that does not exist answers `false` — and, inside, still runs
@@ -214,7 +215,7 @@ fn a_link_with_no_password_accepts_and_a_missing_link_refuses() {
 fn a_password_can_be_set_and_cleared_through_a_patch() {
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
-    let (link, _t) = core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &LinkSpec::default()).unwrap();
     assert!(!link.has_password);
 
     let set = core
@@ -236,7 +237,7 @@ fn a_password_can_be_set_and_cleared_through_a_patch() {
 fn a_live_link_resolves_to_its_target() {
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
-    let (link, _t) = core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &LinkSpec::default()).unwrap();
     let entry = core.link_target(&link).unwrap();
     assert_eq!(entry.name, "a.txt");
     assert_eq!(entry.size, 8);
@@ -255,7 +256,7 @@ fn a_link_to_the_share_root_itself_survives_its_own_first_read() {
     // disagreed.
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
-    let (link, _t) = core.create_link(OWNER, "/root", &LinkSpec::default()).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root"), &LinkSpec::default()).unwrap();
     let entry = core.link_target(&link).expect("a share-root link must not read back as Gone");
     assert!(entry.kind == sc_vfs::Kind::Dir);
 }
@@ -264,7 +265,7 @@ fn a_link_to_the_share_root_itself_survives_its_own_first_read() {
 fn a_fileid_that_no_longer_matches_the_path_is_gone_not_served() {
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
-    let (mut link, _t) = core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()).unwrap();
+    let (mut link, _t) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &LinkSpec::default()).unwrap();
     assert!(link.fileid_at_creation.is_some(), "a fileid should have been allocated");
 
     // Simulate "a different file now occupies this name": the path still
@@ -279,7 +280,7 @@ fn a_fileid_that_no_longer_matches_the_path_is_gone_not_served() {
 fn a_target_that_moved_away_is_gone() {
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
-    let (link, _t) = core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &LinkSpec::default()).unwrap();
     core.delete(OWNER, &["/root/a.txt".to_string()], true).unwrap();
     assert!(matches!(core.link_target(&link), Err(CoreError::Gone)));
 }
@@ -292,13 +293,13 @@ fn an_expired_link_is_gone_and_a_past_expiry_is_refused_up_front() {
     seed_file(&core, "/root/a.txt");
 
     let past = LinkSpec { expires_ns: Some(crate::links::now_ns() - 1), ..LinkSpec::default() };
-    assert!(core.create_link(OWNER, "/root/a.txt", &past).is_err());
+    assert!(core.create_link(OWNER, &Vpath::new("/root/a.txt"), &past).is_err());
 
     let soon = LinkSpec {
         expires_ns: Some(crate::links::now_ns() + 60_000_000), // +60ms
         ..LinkSpec::default()
     };
-    let (link, _t) = core.create_link(OWNER, "/root/a.txt", &soon).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &soon).unwrap();
     assert!(core.link_target(&link).is_ok());
     std::thread::sleep(std::time::Duration::from_millis(150));
     let refetched = core.get_link(OWNER, link.id).unwrap();
@@ -310,7 +311,7 @@ fn max_downloads_counts_up_and_then_refuses() {
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
     let spec = LinkSpec { max_downloads: Some(2), ..LinkSpec::default() };
-    let (link, _t) = core.create_link(OWNER, "/root/a.txt", &spec).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &spec).unwrap();
 
     core.note_link_download(link.id).unwrap();
     core.note_link_download(link.id).unwrap();
@@ -327,7 +328,7 @@ fn concurrent_downloads_cannot_exceed_the_cap() {
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
     let spec = LinkSpec { max_downloads: Some(3), ..LinkSpec::default() };
-    let (link, _t) = core.create_link(OWNER, "/root/a.txt", &spec).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &spec).unwrap();
 
     // Read-then-write would let all eight observe `downloads < max`. The
     // conditional UPDATE is what makes exactly three win.
@@ -356,7 +357,7 @@ fn creating_a_link_requires_the_share_permission() {
     seed_file(&core, "/root/a.txt");
     // READER can read the file but holds no SHARE bit.
     assert!(matches!(
-        core.create_link(READER, "/root/a.txt", &LinkSpec::default()),
+        core.create_link(READER, &Vpath::new("/root/a.txt"), &LinkSpec::default()),
         Err(CoreError::Denied { .. })
     ));
 }
@@ -390,10 +391,10 @@ fn a_link_cannot_grant_more_than_its_creator_holds() {
     core.mkdir(OWNER, "/root/d").unwrap();
 
     let overreach = LinkSpec { perms: Perms::READ | Perms::WRITE, ..LinkSpec::default() };
-    assert!(matches!(core.create_link(OWNER, "/root/d", &overreach), Err(CoreError::Denied { .. })));
+    assert!(matches!(core.create_link(OWNER, &Vpath::new("/root/d"), &overreach), Err(CoreError::Denied { .. })));
 
     let ok = LinkSpec { perms: Perms::READ | Perms::DOWNLOAD, ..LinkSpec::default() };
-    assert!(core.create_link(OWNER, "/root/d", &ok).is_ok());
+    assert!(core.create_link(OWNER, &Vpath::new("/root/d"), &ok).is_ok());
 }
 
 #[test]
@@ -401,7 +402,7 @@ fn an_empty_permission_set_is_refused() {
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
     let spec = LinkSpec { perms: Perms::empty(), ..LinkSpec::default() };
-    assert!(core.create_link(OWNER, "/root/a.txt", &spec).is_err());
+    assert!(core.create_link(OWNER, &Vpath::new("/root/a.txt"), &spec).is_err());
 }
 
 // ------------------------------------------------------------- file drops --
@@ -414,7 +415,7 @@ fn drop_spec() -> LinkSpec {
 fn a_file_drop_link_must_target_a_directory() {
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
-    assert!(core.create_link(OWNER, "/root/a.txt", &drop_spec()).is_err());
+    assert!(core.create_link(OWNER, &Vpath::new("/root/a.txt"), &drop_spec()).is_err());
 }
 
 #[test]
@@ -423,7 +424,7 @@ fn a_file_drop_link_lists_nothing_and_never_overwrites() {
     core.mkdir(OWNER, "/root/inbox").unwrap();
     seed_file(&core, "/root/inbox/existing.txt");
 
-    let (link, _t) = core.create_link(OWNER, "/root/inbox", &drop_spec()).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/inbox"), &drop_spec()).unwrap();
     assert!(link.is_drop());
 
     // No listing: the uploader must not learn what is already in the box.
@@ -447,7 +448,7 @@ fn a_file_drop_link_lists_nothing_and_never_overwrites() {
 fn a_read_only_link_cannot_be_used_to_upload() {
     let (core, _dir) = setup();
     core.mkdir(OWNER, "/root/pub").unwrap();
-    let (link, _t) = core.create_link(OWNER, "/root/pub", &LinkSpec::default()).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/pub"), &LinkSpec::default()).unwrap();
     assert!(matches!(core.link_drop(&link, "x.txt", b"no"), Err(CoreError::Denied { .. })));
 }
 
@@ -457,7 +458,7 @@ fn a_read_link_on_a_directory_lists_it() {
     core.mkdir(OWNER, "/root/pub").unwrap();
     seed_file(&core, "/root/pub/one.txt");
     seed_file(&core, "/root/pub/two.txt");
-    let (link, _t) = core.create_link(OWNER, "/root/pub", &LinkSpec::default()).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/pub"), &LinkSpec::default()).unwrap();
     let names: Vec<String> = core.link_list(&link).unwrap().into_iter().map(|e| e.name).collect();
     assert_eq!(names, vec!["one.txt", "two.txt"]);
 }
@@ -469,11 +470,11 @@ fn list_update_delete_roundtrip_and_path_filter() {
     let (core, _dir) = setup();
     core.mkdir(OWNER, "/root/d").unwrap();
     seed_file(&core, "/root/a.txt");
-    let (l1, _) = core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()).unwrap();
-    let (l2, _) = core.create_link(OWNER, "/root/d", &LinkSpec::default()).unwrap();
+    let (l1, _) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &LinkSpec::default()).unwrap();
+    let (l2, _) = core.create_link(OWNER, &Vpath::new("/root/d"), &LinkSpec::default()).unwrap();
 
     assert_eq!(core.list_links(OWNER, None).unwrap().len(), 2);
-    let only_file = core.list_links(OWNER, Some("/root/a.txt")).unwrap();
+    let only_file = core.list_links(OWNER, Some(&Vpath::new("/root/a.txt"))).unwrap();
     assert_eq!(only_file.len(), 1);
     assert_eq!(only_file[0].id, l1.id);
 
@@ -496,7 +497,7 @@ fn list_update_delete_roundtrip_and_path_filter() {
 fn one_user_cannot_see_or_touch_another_users_link() {
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
-    let (link, _t) = core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &LinkSpec::default()).unwrap();
 
     // `NotFound`, not `Denied`: probing ids must not confirm existence.
     assert!(matches!(core.get_link(READER, link.id), Err(CoreError::NotFound)));
@@ -509,7 +510,7 @@ fn one_user_cannot_see_or_touch_another_users_link() {
 fn links_for_node_finds_links_by_fileid() {
     let (core, _dir) = setup();
     seed_file(&core, "/root/a.txt");
-    let (link, _t) = core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()).unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/a.txt"), &LinkSpec::default()).unwrap();
     let fid = link.fileid_at_creation.unwrap();
     let found = core.links_for_node(SHARE, fid).unwrap();
     assert_eq!(found.len(), 1);
@@ -568,7 +569,7 @@ fn without_a_store_every_operation_says_not_supported_rather_than_pretending() {
     seed_file(&core, "/root/a.txt");
     assert!(!core.links_enabled());
     assert!(matches!(
-        core.create_link(OWNER, "/root/a.txt", &LinkSpec::default()),
+        core.create_link(OWNER, &Vpath::new("/root/a.txt"), &LinkSpec::default()),
         Err(CoreError::NotSupported(_))
     ));
     assert!(matches!(core.list_links(OWNER, None), Err(CoreError::NotSupported(_))));

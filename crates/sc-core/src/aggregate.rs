@@ -119,7 +119,19 @@ impl crate::Core {
                 chain.push(id);
             }
         }
-        let _ = self.meta.mark_dirty_chain(share, &chain);
+        if let Err(e) = self.meta.mark_dirty_chain(share, &chain) {
+            // Leaving this alone would let every cached aggregate in the
+            // chain keep reading as fresh, and a sync client that polls a
+            // directory ETag would conclude nothing changed. Falling back to
+            // the whole-share bump costs a recompute for directories that did
+            // not change and loses nothing.
+            tracing::warn!(error = %e, share = share.get(),
+                           "dirty-marking failed; invalidating the whole share instead");
+            if let Err(e) = self.invalidate_share(share) {
+                tracing::error!(error = %e, share = share.get(),
+                                "whole-share invalidation also failed; cached directory ETags may be stale");
+            }
+        }
     }
 
     /// O(1) whole-share invalidation: bump the share's generation counter

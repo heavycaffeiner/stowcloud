@@ -29,6 +29,17 @@ pub enum DavTarget {
     Principal { user: String },
     /// `/remote.php/dav/principals/` collection root.
     PrincipalRoot,
+    /// `/remote.php/dav/trashbin/{user}/trash` — the one flat trash
+    /// collection the protocol has, over however many per-share trashes the
+    /// caller can reach.
+    TrashRoot { user: String },
+    /// `/remote.php/dav/trashbin/{user}/trash/{entry}`.
+    TrashEntry { user: String, entry: String },
+    /// `/remote.php/dav/trashbin/{user}/restore/{anything}` — the `MOVE`
+    /// destination that means "put it back". The leaf is ignored: the core
+    /// restores to the path recorded in the entry, which is what the user
+    /// means.
+    TrashRestore { user: String },
 }
 
 /// The virtual child of an upload folder that a MOVE targets to finish an
@@ -96,6 +107,33 @@ pub fn parse(uri_path: &str) -> Option<DavTarget> {
                                 }
                             }
                         }
+                    }
+                }
+                "trashbin" => {
+                    let user = decode_seg(segs.next()?)?;
+                    if user.is_empty() {
+                        return None;
+                    }
+                    match segs.next() {
+                        // The collection above `trash` is not addressable on
+                        // its own; no client asks for it.
+                        None | Some("") => None,
+                        Some("trash") => match segs.next() {
+                            // iOS sends the same URL with a trailing slash;
+                            // both forms are the same collection.
+                            None | Some("") => Some(DavTarget::TrashRoot { user }),
+                            Some(entry) => {
+                                if segs.next().is_some_and(|s| !s.is_empty()) {
+                                    return None;
+                                }
+                                Some(DavTarget::TrashEntry {
+                                    user,
+                                    entry: decode_seg(entry)?,
+                                })
+                            }
+                        },
+                        Some("restore") => Some(DavTarget::TrashRestore { user }),
+                        _ => None,
                     }
                 }
                 "principals" => match segs.next() {

@@ -273,3 +273,62 @@ async fn the_root_etag_changes_when_the_set_of_roots_changes() {
         "adding a root must change the files root's own etag"
     );
 }
+
+/// Every top-level folder used to read 0 B.
+///
+/// This response is hand-assembled rather than served through the property
+/// source, and it carried no `oc:size` at all — so the value landed in the
+/// `404` propstat and both clients left `size` at its initialised `0`. It is
+/// also the *first* listing a client performs after enrolment, and the screen
+/// that lists every folder the user has.
+#[cfg(feature = "compat-nc")]
+#[tokio::test(flavor = "multi_thread")]
+async fn the_root_and_its_children_report_a_recursive_size() {
+    let f = fixture();
+    let tok = token(&f);
+
+    let body = propfind_root_deep(&f.app, &tok, "<d:displayname/><oc:size/>").await;
+    // `top.txt` is the fixture's only file, at 9 bytes.
+    assert!(
+        body.contains("<oc:size>9</oc:size>"),
+        "the grant root must report the rollup of its own subtree: {body}"
+    );
+    // Twice: once on the root collection's own row (the sum over distinct
+    // grants) and once on the single child row.
+    assert_eq!(
+        body.matches("<oc:size>9</oc:size>").count(),
+        2,
+        "the root's own total and its one child's must both be present: {body}"
+    );
+
+    // And never as an empty element. Android casts this value unguarded, so
+    // `<oc:size/>` fails the entire folder listing rather than one property —
+    // the same rule `props.rs` applies to every other numeric property, now
+    // applied to the response that test cannot see.
+    assert!(!body.contains("<oc:size/>"), "{body}");
+    assert!(!body.contains("<oc:fileid/>"), "{body}");
+    assert!(!body.contains("<d:getetag/>"), "{body}");
+}
+
+/// As `propfind_root`, at `Depth: 1`, so the child rows are in the body too.
+#[cfg(feature = "compat-nc")]
+async fn propfind_root_deep(app: &App, token: &str, props_xml: &str) -> String {
+    let req = Request::builder()
+        .method("PROPFIND")
+        .uri("/remote.php/dav/files/alice/")
+        .header("Host", "localhost")
+        .header("Authorization", basic_app_password(token))
+        .header("Depth", "1")
+        .body(Body::from(format!(
+            r#"<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+                 <d:prop>{props_xml}</d:prop></d:propfind>"#
+        )))
+        .unwrap();
+    let resp = app.router().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::MULTI_STATUS);
+    let bytes = http_body_util::BodyExt::collect(resp.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    String::from_utf8_lossy(&bytes).into_owned()
+}

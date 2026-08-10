@@ -2,6 +2,7 @@
 //! idempotent directory+grant per user, template-seeded when a `.template`
 //! directory exists, and never blanket-granted by `seed_full_access`.
 
+use crate::path::Vpath;
 use std::sync::Arc;
 
 use sc_acl::Principal;
@@ -33,7 +34,7 @@ fn homes_disabled_by_default_grants_no_root_and_ensure_home_is_a_silent_no_op() 
     // `roots()`/`resolve()` call `ensure_home` internally on every request;
     // with nothing attached this must stay a true no-op, not an error.
     assert!(core.roots(USER).is_empty());
-    assert!(core.resolve(USER, "/Home/file.txt").is_err());
+    assert!(core.resolve(USER, &Vpath::new("/Home/file.txt")).is_err());
 }
 
 #[test]
@@ -61,10 +62,10 @@ fn a_users_first_request_gets_a_home_directory_contained_under_homes_root() {
     assert!(host_dir.is_dir(), "per-user directory created on the host under homes_root");
 
     // Resolves and is writable end to end, same as any other grant.
-    let resolved = core.resolve_for_upload(USER, "/Home/note.txt").unwrap();
+    let resolved = core.resolve_for_upload(USER, &Vpath::new("/Home/note.txt")).unwrap();
     assert_eq!(resolved.share, HOME_SHARE_ID);
     std::fs::write(host_dir.join("note.txt"), b"hi").unwrap();
-    assert!(core.resolve(USER, "/Home/note.txt").is_ok());
+    assert!(core.resolve(USER, &Vpath::new("/Home/note.txt")).is_ok());
 }
 
 #[test]
@@ -81,7 +82,7 @@ fn ensure_home_is_idempotent_and_does_not_clobber_an_existing_home() {
     // already-provisioned home.
     for _ in 0..5 {
         core.roots(USER);
-        core.resolve(USER, "/Home/keepme.txt").unwrap();
+        core.resolve(USER, &Vpath::new("/Home/keepme.txt")).unwrap();
     }
     assert_eq!(std::fs::read(host_dir.join("keepme.txt")).unwrap(), b"important");
 
@@ -102,7 +103,7 @@ fn a_users_home_is_contained_and_invisible_to_another_user() {
 
     core.roots(OTHER);
     // OTHER's own home resolves fine...
-    assert!(core.resolve_for_upload(OTHER, "/Home/mine.txt").is_ok());
+    assert!(core.resolve_for_upload(OTHER, &Vpath::new("/Home/mine.txt")).is_ok());
     // ...but OTHER has no grant reaching into USER's subpath: same label,
     // different (and non-overlapping) subpath per grant.
     let other_home = homes_root.join(OTHER.get().to_string());

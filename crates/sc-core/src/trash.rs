@@ -139,9 +139,12 @@ impl crate::Core {
             let Some((id, rest)) = Self::split_trash_name(&e.name) else { continue };
             let Ok(p) = trash_dir.join_existing(&e.name, max_depth) else { continue };
             if let Ok(st) = root.stat(&p) {
+                let orig = decode_orig_path(rest, max_depth);
                 out.push(TrashEntry {
                     id: id.to_string(),
                     name: Self::trash_display_name(rest, max_depth),
+                    orig_path: orig.map(|p| p.to_display_string()).unwrap_or_default(),
+                    is_dir: st.kind == sc_vfs::Kind::Dir,
                     size: st.size,
                     // ctime, not mtime: the rename into `.sctrash` is an
                     // inode change and nothing else here records when it

@@ -27,7 +27,7 @@ use crate::props::{
 };
 use crate::ports::{
     CoreShare, GranteeCandidate, GranteeKind, GranteeScope, Perms, PortError, SharePort, ShareSpec,
-    UserId,
+    UserId, Vpath,
 };
 
 fn port_err(e: PortError) -> OcsError {
@@ -224,6 +224,25 @@ fn civil_from_unix(t: i64) -> (i64, u32, u32, u32, u32, u32) {
     )
 }
 
+/// A client's `path` parameter, normalised into a `ShareSpec` vpath.
+///
+/// The path a client sends is already a vpath: its files root is a synthesised
+/// collection of grant labels, so the first segment of everything below it
+/// *is* a label. Nothing downstream may prefix another one onto it.
+///
+/// Android sends a folder as `/photos/summer/` (`OCFile.getRemotePath()`
+/// appends the separator for collections) and a file as `/photos/a.jpg`. A
+/// trailing separator reaches `SafePath::parse` as an empty component and is
+/// rejected, so it is stripped here rather than at four call sites.
+///
+/// The empty result is the files root itself, which is not a directory and
+/// cannot be shared.
+pub fn normalise_client_path(raw: &str) -> Result<String, OcsError> {
+    Vpath::from_client(raw)
+        .map(|v| v.as_str().to_string())
+        .map_err(|_| OcsError::not_found("Please specify a file or folder path"))
+}
+
 /// Parsed `POST`/`PUT` body for a share.
 #[derive(Clone, Debug, Default)]
 pub struct ShareRequest {
@@ -283,13 +302,9 @@ impl ShareRequest {
     }
 
     pub fn to_spec(&self) -> Result<ShareSpec, OcsError> {
-        let path = self
-            .path
-            .clone()
-            .filter(|p| !p.is_empty())
-            // The reference checks `path` before `shareType`, and answers 404
-            // here, not 400.
-            .ok_or_else(|| OcsError::not_found("Please specify a file or folder path"))?;
+        // The reference checks `path` before `shareType`, and answers 404
+        // here, not 400.
+        let path = normalise_client_path(self.path.as_deref().unwrap_or(""))?;
 
         // Default -1 in the reference, which falls through to "Unknown share
         // type" -> 400. Same outcome here.

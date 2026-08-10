@@ -76,6 +76,11 @@ fn capability_block(cfg: &NcConfig, host: Option<&str>) -> Val {
         ("end-to-end-encryption", e2ee_caps()),
         ("systemtags", Val::map([("enabled", Val::Bool(false))])),
         ("comments", Val::Bool(false)),
+        // True because there is a trashbin collection behind it
+        // (`/remote.php/dav/trashbin/{user}/trash`), not merely because both
+        // apps put a "Deleted files" entry in the drawer on the strength of
+        // this key. Per-share trash is off by default, so on a default install
+        // that screen is correctly empty rather than broken.
         ("undelete", Val::Bool(true)),
     ])
 }
@@ -194,20 +199,25 @@ fn files_sharing_caps(cfg: &NcConfig) -> Val {
         ("exclude_reshare_from_edit", Val::Bool(false)),
         // We do not implement reshare chains.
         ("resharing", Val::Bool(false)),
-        ("group_sharing", Val::Bool(true)),
+        // `sc-acl` grants are administrator-owned and have no per-user CRUD
+        // anywhere in this workspace, so `shareType` 0 and 1 are refused at
+        // the API. These four keys used to claim otherwise. Neither app gates
+        // its people picker on any of them, so this changes no UI: it stops
+        // the capability document describing a feature the server refuses.
+        ("group_sharing", Val::Bool(false)),
         ("sharebymail", Val::map([("enabled", Val::Bool(false))])),
         (
             "user",
             Val::map([
                 ("send_mail", Val::Bool(false)),
-                ("expire_date", Val::map([("enabled", Val::Bool(true))])),
+                ("expire_date", Val::map([("enabled", Val::Bool(false))])),
             ]),
         ),
         (
             "group",
             Val::map([
-                ("enabled", Val::Bool(true)),
-                ("expire_date", Val::map([("enabled", Val::Bool(true))])),
+                ("enabled", Val::Bool(false)),
+                ("expire_date", Val::map([("enabled", Val::Bool(false))])),
             ]),
         ),
         (
@@ -375,6 +385,14 @@ mod tests {
             "files.locking",
             "files.directEditing.supportsFileId",
             "files_sharing.resharing",
+            // `sc-acl` grants are administrator-owned and have no per-user
+            // CRUD anywhere, so `shareType` 0 and 1 are refused at the API.
+            // These four used to claim otherwise: the capability document
+            // described a feature the server answers 400 for.
+            "files_sharing.group_sharing",
+            "files_sharing.group.enabled",
+            "files_sharing.group.expire_date.enabled",
+            "files_sharing.user.expire_date.enabled",
             "files_sharing.federation.outgoing",
             "files_sharing.federation.incoming",
             "files_sharing.sharee.query_lookup_default",

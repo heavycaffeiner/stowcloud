@@ -27,6 +27,7 @@ mod methods;
 mod propfind;
 mod proppatch;
 mod props;
+mod search;
 pub mod xml;
 
 use std::sync::Arc;
@@ -46,7 +47,8 @@ pub use backend::{
 pub use error::{DavError, DavResult};
 pub use ifheader::{CondKind, Condition, IfHeader, IfList, ResourceState};
 pub use locks::{DavLock, Depth, LockManager, LockStore, MemLockStore};
-pub use props::{PropCtx, PropReq, PropSource, PropSourceRef, PropWriter};
+pub use props::{PropCtx, PropPatchSource, PropReq, PropSource, PropSourceRef, PropWriter};
+pub use search::{ReportSource, SearchOp, SearchRequest, SearchSource, SearchTerm};
 pub use xml::{LockScope, PropName};
 
 /// Identity of the caller, injected by whatever authentication middleware sits
@@ -95,8 +97,21 @@ pub struct DavService {
     pub(crate) locks: Arc<LockManager>,
     pub(crate) cfg: DavConfig,
     pub(crate) sources: Vec<Arc<dyn PropSource>>,
+    pub(crate) patch_sources: Vec<Arc<dyn PropPatchSource>>,
+    pub(crate) search: Option<Arc<dyn SearchSource>>,
+    pub(crate) reports: Vec<Arc<dyn ReportSource>>,
     /// `xmlns:` declarations for the multistatus root, core plus every source.
     pub(crate) ns_decls: String,
+    /// The `Allow` header, composed at construction from the base method set
+    /// plus one entry per registered source.
+    ///
+    /// Not a constant, because a client decides whether to *send* `SEARCH` by
+    /// reading this: the Android search box issues an `OPTIONS` first and gives
+    /// up silently if `Allow` does not name the method. Advertising a method
+    /// whose handler was compiled out is the same defect class as advertising a
+    /// capability we do not have, and a constant string here would be invisible
+    /// to the stripped-build CI gate, which only greps the compat crate.
+    pub(crate) allow: String,
 }
 
 impl DavService {
@@ -122,7 +137,11 @@ impl DavService {
             locks,
             cfg,
             sources: Vec::new(),
+            patch_sources: Vec::new(),
+            search: None,
+            reports: Vec::new(),
             ns_decls: " xmlns:d=\"DAV:\"".to_string(),
+            allow: BASE_ALLOW.to_string(),
         }
     }
 
@@ -140,6 +159,39 @@ impl DavService {
             }
         }
         self.sources.push(src);
+    }
+
+    /// The write half of the decorator hook. A source that claims a property
+    /// owns both its persistence and its protection from the dead-property
+    /// store.
+    pub fn add_prop_patch_source(&mut self, src: Arc<dyn PropPatchSource>) {
+        self.patch_sources.push(src);
+    }
+
+    /// Register the search backend. Doing so is also what puts `SEARCH` in the
+    /// `Allow` header; a build without one advertises nothing and answers 405.
+    pub fn set_search_source(&mut self, src: Arc<dyn SearchSource>) {
+        self.search = Some(src);
+        self.recompose_allow();
+    }
+
+    /// Claim one report root element. `REPORT` reaches `Allow` only once both a
+    /// report source and a search source exist, because a report is answered
+    /// by translating it into a search.
+    pub fn add_report_source(&mut self, src: Arc<dyn ReportSource>) {
+        self.reports.push(src);
+        self.recompose_allow();
+    }
+
+    fn recompose_allow(&mut self) {
+        let mut allow = String::from(BASE_ALLOW);
+        if self.search.is_some() {
+            allow.push_str(", SEARCH");
+            if !self.reports.is_empty() {
+                allow.push_str(", REPORT");
+            }
+        }
+        self.allow = allow;
     }
 
     pub fn locks(&self) -> &Arc<LockManager> {
@@ -187,7 +239,11 @@ impl DavService {
                 ..self.cfg.clone()
             },
             sources: self.sources.clone(),
+            patch_sources: self.patch_sources.clone(),
+            search: self.search.clone(),
+            reports: self.reports.clone(),
             ns_decls: self.ns_decls.clone(),
+            allow: self.allow.clone(),
         })
     }
 
@@ -245,6 +301,30 @@ impl DavService {
         Ok(decoded.into_owned())
     }
 
+    /// A client-supplied href reduced the same way [`Self::vpath_of`] reduces
+    /// a request URI, but without refusing anything: a search scope that turns
+    /// out to be nonsense is the source's to reject, with a message about
+    /// scope, not this function's to reject as a malformed request URI.
+    pub(crate) fn strip_prefix(&self, href: &str) -> String {
+        // An absolute URL: keep the path and drop scheme and authority.
+        let path = match href.split_once("://") {
+            Some((_, rest)) => match rest.split_once('/') {
+                Some((_, p)) => format!("/{p}"),
+                None => "/".to_string(),
+            },
+            None => href.to_string(),
+        };
+        let p = self.cfg.prefix.trim_end_matches('/');
+        let rest = if p.is_empty() {
+            path.as_str()
+        } else {
+            path.strip_prefix(p).unwrap_or(path.as_str())
+        };
+        percent_encoding::percent_decode_str(rest.trim_matches('/'))
+            .decode_utf8_lossy()
+            .into_owned()
+    }
+
     /// Virtual path -> `<d:href>` value.
     pub(crate) fn href_of(&self, vpath: &str, is_dir: bool) -> String {
         const SET: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
@@ -276,7 +356,9 @@ impl DavService {
     }
 }
 
-pub(crate) const ALLOW: &str =
+/// The methods every build serves. [`DavService::allow`] is this plus whatever
+/// a registered source adds.
+pub(crate) const BASE_ALLOW: &str =
     "OPTIONS, GET, HEAD, PUT, DELETE, PROPFIND, PROPPATCH, MKCOL, COPY, MOVE, LOCK, UNLOCK";
 
 pub(crate) fn parse_depth(h: &HeaderMap, default: Depth) -> DavResult<Depth> {
@@ -309,7 +391,7 @@ async fn dispatch(State(svc): State<Arc<DavService>>, req: Request) -> Response 
     // even offer credentials; answering it is the difference between mounting
     // and not mounting at all.
     if method == Method::OPTIONS {
-        return methods::options();
+        return methods::options(&svc.allow);
     }
 
     let principal = req.extensions().get::<DavPrincipal>().copied();
@@ -357,6 +439,8 @@ async fn route(
         "MOVE" => copymove::handle(svc, user, vpath, headers, true).await,
         "LOCK" => lockmethods::lock(svc, user, vpath, headers, body).await,
         "UNLOCK" => lockmethods::unlock(svc, user, vpath, headers).await,
+        "SEARCH" => search::handle_search(svc, user, vpath, headers, body).await,
+        "REPORT" => search::handle_report(svc, user, vpath, headers, body).await,
         _ => Err(DavError::MethodNotAllowed),
     }
 }

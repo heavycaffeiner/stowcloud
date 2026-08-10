@@ -48,6 +48,7 @@ use http::{HeaderMap, StatusCode};
 
 use sc_upload::{SessionId, SpoolMode, UploadError};
 use sc_vfs::{ShareId, UserId};
+use sc_core::Vpath;
 
 /// The mount point. A fixed literal rather than something derived from
 /// `DavConfig::prefix`: the route table (`routes.rs`) is static, and the two
@@ -361,12 +362,12 @@ impl DavUploads {
         // its own would have been allowed to make.
         let resolved = self
             .core
-            .resolve_for_upload(user, &dest)
+            .resolve_for_upload(user, &Vpath::new(&dest))
             .map_err(core_err)?;
         let spec = sc_upload::SessionSpec {
             user,
             share: resolved.share,
-            dest: resolved.path,
+            dest: resolved.path.into_safe(),
             total_len: total,
             random_access: false,
             if_match: None,

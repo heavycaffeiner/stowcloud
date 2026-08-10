@@ -40,6 +40,14 @@ pub const PERMS_CARDINALITY: u16 = 1 << 8;
 
 pub use sc_core::Entry;
 
+/// The two path vocabularies, straight from the crate that owns the
+/// distinction. A `Vpath` is what a client names a file by (`{label}/{rest}`);
+/// a `SharePath` is what the core hands back (relative to the share root, the
+/// grant's subpath already on the front). Prefixing a label onto the second
+/// without stripping that subpath is the mistake these types exist to stop, so
+/// nothing in this crate does the conversion itself: `Core::vpath_for` does.
+pub use sc_core::{SharePath, Vpath};
+
 /// Recursive rollup of a directory subtree.
 ///
 /// `sc-meta` keeps one recursive *count*, not a file/directory split, because
@@ -82,8 +90,12 @@ pub struct PropCtx {
     /// Login name of the requesting principal.
     pub user_name: String,
     pub share: ShareId,
-    /// Share-relative path of the entry, no leading slash. Empty for the root.
-    pub path: String,
+    /// The entry's path relative to its share root, when the host adapter
+    /// could resolve one. `None` means the size property has to be omitted
+    /// rather than guessed at: the field used to be a `String` documented as
+    /// share-relative and filled with a vpath, which is how `oc:size` ended up
+    /// asking the aggregate cache about a path that does not exist.
+    pub share_path: Option<SharePath>,
     /// Login name of the owner of the share this entry lives in.
     pub owner_name: String,
     pub owner_display_name: String,
@@ -318,6 +330,10 @@ pub struct Principal {
     pub user: UserId,
     pub login_name: String,
     pub display_name: String,
+    /// Identifies the credential this request authenticated with, so a handler
+    /// can revoke exactly that one. `None` for a browser session, which is
+    /// revoked through its own path and never through the app-password API.
+    pub credential_id: Option<u32>,
 }
 
 /// The address the *host application* decided this request came from.
@@ -375,6 +391,21 @@ pub trait AuthPort: Send + Sync {
     ) -> PortResult<Option<Principal>>;
 
     fn validate_session(&self, token: &str) -> PortResult<Option<Principal>>;
+
+    /// Revoke one app password belonging to `user`. Idempotent: revoking an
+    /// already-revoked or non-existent credential is `Ok(())`, so a client that
+    /// retries its logout does not see an error it cannot act on.
+    fn revoke_app_password(&self, user: UserId, credential: u32) -> PortResult<()>;
+
+    /// Whether the device holding `credential` has been marked as lost.
+    ///
+    /// Answering `false` is always safe: the client treats anything other than
+    /// an explicit yes as "no wipe".
+    fn wipe_requested(&self, credential: u32) -> PortResult<bool>;
+
+    /// The device reported that it has erased its local copies. Retires the
+    /// credential.
+    fn finish_wipe(&self, credential: u32) -> PortResult<()>;
 }
 
 // ---------------------------------------------------------------------------
@@ -407,15 +438,37 @@ pub trait CorePort: Send + Sync {
     /// The share a user's DAV home maps to, plus its root.
     fn home_root(&self, user: UserId) -> PortResult<ShareId>;
 
-    fn resolve(&self, share: ShareId, user: UserId, path: &str) -> PortResult<Entry>;
+    // None of the three below takes a `ShareId`. The share is not an input:
+    // it is what resolving the vpath's label decides. Passing one in gave the
+    // host adapter a share it then had to reconcile with the one the path
+    // named, and it reconciled them by prefixing that share's label onto a
+    // path that already carried its own.
 
-    fn list(&self, share: ShareId, user: UserId, path: &str) -> PortResult<Vec<Entry>>;
+    fn resolve(&self, user: UserId, path: &Vpath) -> PortResult<Entry>;
 
-    fn stat_entry(&self, share: ShareId, user: UserId, path: &str) -> PortResult<Entry>;
+    fn list(&self, user: UserId, path: &Vpath) -> PortResult<Vec<Entry>>;
 
-    fn aggregate(&self, share: ShareId, id: FileId) -> PortResult<Aggregate>;
+    fn stat_entry(&self, user: UserId, path: &Vpath) -> PortResult<Entry>;
+
+    /// Takes the path rather than a file id because `Core::aggregate` takes a
+    /// path and allocates the id itself, and because a share's own root has no
+    /// `node` row to have an id at all.
+    fn aggregate(&self, share: ShareId, path: &SharePath) -> PortResult<Aggregate>;
 
     fn user_info(&self, user: UserId) -> PortResult<UserInfo>;
+
+    /// Another account by login name, or `None` when it is outside `scope` or
+    /// does not exist.
+    ///
+    /// The two answers are deliberately the same one: this is an account-name
+    /// oracle otherwise, and it is gated exactly the way the sharee search is
+    /// for exactly that reason.
+    fn user_info_by_login(
+        &self,
+        caller: UserId,
+        login: &str,
+        scope: GranteeScope,
+    ) -> PortResult<Option<UserInfo>>;
 
     /// Which share's `statvfs` to report. See: the
     /// choice is genuinely ambiguous with multiple shares, so it is a
@@ -423,7 +476,15 @@ pub trait CorePort: Send + Sync {
     fn quota(&self, user: UserId) -> PortResult<Quota>;
 
     /// Reverse lookup for the preview endpoint, which addresses by file id.
-    fn locate(&self, user: UserId, id: FileId) -> PortResult<(ShareId, String)>;
+    /// Id-to-path is a metadata lookup, so it answers a share path; turning
+    /// that into something addressable is [`CorePort::vpath_for`]'s job, and
+    /// the ACL check happens where the resulting path is used.
+    fn locate(&self, user: UserId, id: FileId) -> PortResult<(ShareId, SharePath)>;
+
+    /// The vpath a share path has in `user`'s own tree. `None` when no grant
+    /// the user holds projects it, which callers addressing a file must treat
+    /// as not-found.
+    fn vpath_for(&self, user: UserId, share: ShareId, path: &SharePath) -> Option<Vpath>;
 }
 
 // ---------------------------------------------------------------------------
@@ -457,7 +518,10 @@ pub struct CoreShare {
     pub has_password: bool,
     pub label: String,
     pub note: String,
-    /// Share-relative path of the shared node, with a leading slash.
+    /// Vpath of the shared node with a single leading separator, resolved
+    /// against the share this link actually belongs to. This is the value the
+    /// client sees as `path` and `file_target`, and it must name the same node
+    /// in the client's own file tree.
     pub path: String,
     pub kind_is_dir: bool,
     pub file_id: FileId,
@@ -466,6 +530,11 @@ pub struct CoreShare {
 
 #[derive(Clone, Debug)]
 pub struct ShareSpec {
+    /// Path of the node being shared, as a **vpath**: `{label}/{rest}`, no
+    /// leading and no trailing separator. Already normalised by
+    /// `shares::normalise_client_path`, which is where client spelling quirks
+    /// are handled. The host adapter passes it to `sc-core` unchanged and must
+    /// not re-prefix it.
     pub path: String,
     pub kind: GranteeKind,
     pub grantee: Option<String>,
@@ -478,9 +547,12 @@ pub struct ShareSpec {
 
 #[derive(Clone, Debug, Default)]
 pub struct ShareFilter {
-    /// Share-relative path with leading slash.
+    /// Vpath of the node to narrow to, normalised the same way
+    /// [`ShareSpec::path`] is. `None` lists every link the caller owns.
     pub path: Option<String>,
     pub reshares: bool,
+    /// Ask for links on the entries *inside* `path` rather than on `path`
+    /// itself. Both apps use it to badge shared children in a listing.
     pub subfiles: bool,
     pub shared_with_me: bool,
 }
@@ -529,6 +601,26 @@ pub trait SharePort: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
+// search
+// ---------------------------------------------------------------------------
+
+/// One search result, in the caller's own vocabulary.
+#[derive(Clone, Debug)]
+pub struct SearchHit {
+    /// Vpath in the caller's own tree, no leading separator.
+    pub path: String,
+    pub entry: Entry,
+}
+
+/// Filename search, the same engine the DAV `SEARCH` method is answered from.
+///
+/// The unified-search screen and the DAV search box ask the same question, so
+/// they go through one implementation; the difference is only the envelope.
+pub trait SearchPort: Send + Sync {
+    fn by_name(&self, user: UserId, term: &str, limit: u32) -> PortResult<Vec<SearchHit>>;
+}
+
+// ---------------------------------------------------------------------------
 // previews
 // ---------------------------------------------------------------------------
 
@@ -549,15 +641,24 @@ pub trait PreviewPort: Send + Sync {
     /// Mint a signed URL on the *content* origin. Returning `Ok(None)` means
     /// "no preview for this file" and results in a 404, never a placeholder
     /// icon served from the app origin.
+    ///
+    /// Takes a `Vpath` and no share, for the reason `CorePort::resolve` does:
+    /// the share this addresses is whatever the vpath's label names, and
+    /// accepting a separate one is what made every path-addressed thumbnail
+    /// resolve a level too deep.
     fn signed_thumb_url(
         &self,
         user: UserId,
-        share: ShareId,
-        path: &str,
+        path: &Vpath,
         w: u32,
         h: u32,
         fit: FitMode,
     ) -> PortResult<Option<String>>;
+
+    /// A short-lived, read-only, `GET`-only signed URL for the whole file on
+    /// the content origin. Used by the media-streaming endpoint, which hands
+    /// the URL to an external player process that carries no credentials.
+    fn signed_download_url(&self, user: UserId, path: &Vpath) -> PortResult<Option<String>>;
 }
 
 // ---------------------------------------------------------------------------
@@ -573,4 +674,5 @@ pub struct Deps {
     pub upload: Arc<dyn UploadEngine>,
     pub shares: Arc<dyn SharePort>,
     pub preview: Arc<dyn PreviewPort>,
+    pub search: Arc<dyn SearchPort>,
 }

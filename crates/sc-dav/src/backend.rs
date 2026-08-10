@@ -239,6 +239,17 @@ pub trait CoreApi: Send + Sync {
     fn create_empty(&self, user: UserId, vpath: &str) -> CoreResult<()> {
         self.write_bytes(user, vpath, b"")
     }
+
+    /// A stable file id for `vpath`, allocated if the backend has not already.
+    ///
+    /// `Entry::id` is a lazy lookup and is legitimately `None`, which is fine
+    /// for a dead property (the client resends it) and not fine for a live one
+    /// a `PropPatchSource` has to key its own row on. The default refuses, so a
+    /// backend that cannot allocate makes the write fail visibly instead of
+    /// reporting success for a value it dropped.
+    fn ensure_fileid(&self, _user: UserId, _vpath: &str) -> CoreResult<FileId> {
+        Err(CoreError::Io("this backend cannot allocate file ids".into()))
+    }
 }
 
 /// See module docs — this alias is what makes `Arc<Core>` spell a trait object.

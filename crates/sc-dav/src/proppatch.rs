@@ -20,9 +20,46 @@ use crate::props::LIVE_PROPS;
 use crate::xml::{escape_into, is_valid_xml_name, parse_proppatch, PropName, PropPatchOp, NS_DAV};
 use crate::{ensure_unlocked, eval_if_header, DavService};
 
-/// Live properties are server-maintained and cannot be set by a client.
-fn is_protected(p: &PropName) -> bool {
+/// Live properties are server-maintained and cannot be set by a client. A
+/// property a [`crate::PropPatchSource`] claims is live too, but it *is*
+/// settable: the source, not the dead-property store, decides what happens.
+fn is_protected(svc: &DavService, p: &PropName) -> bool {
+    if claim_for(svc, p).is_some() {
+        return false;
+    }
     p.ns == NS_DAV && LIVE_PROPS.contains(&p.name.as_str())
+}
+
+fn claim_for<'a>(
+    svc: &'a DavService,
+    p: &PropName,
+) -> Option<&'a Arc<dyn crate::PropPatchSource>> {
+    svc.patch_sources
+        .iter()
+        .find(|s| s.claims().iter().any(|(ns, n)| *ns == p.ns && *n == p.name))
+}
+
+/// A file id that definitely exists, allocating one if the core has not yet.
+///
+/// The core allocates lazily, so a path that has never been written to,
+/// aggregated or otherwise touched has no `node` row. A dead property can live
+/// with that; a live one cannot, because nothing will resend it.
+fn materialise_id(
+    svc: &DavService,
+    entry: &crate::backend::Entry,
+    user: UserId,
+    vpath: &str,
+) -> Option<sc_vfs::FileId> {
+    if let Some(id) = entry.id {
+        return Some(id);
+    }
+    match svc.core.ensure_fileid(user, vpath) {
+        Ok(id) => Some(id),
+        Err(e) => {
+            tracing::warn!(error = %e, vpath, "could not materialise a file id for a live PROPPATCH");
+            None
+        }
+    }
 }
 
 pub(crate) async fn handle(
@@ -59,7 +96,7 @@ pub(crate) async fn handle(
         let name = match op {
             PropPatchOp::Set(n, _) | PropPatchOp::Remove(n) => n,
         };
-        if is_protected(name) {
+        if is_protected(svc, name) {
             refused.push((name.clone(), StatusCode::FORBIDDEN));
         } else if !is_valid_xml_name(&name.name) {
             refused.push((name.clone(), StatusCode::BAD_REQUEST));
@@ -69,6 +106,39 @@ pub(crate) async fn handle(
     let mut results: Vec<(PropName, StatusCode)> = Vec::new();
     if refused.is_empty() {
         for op in &ops {
+            let name = match op {
+                PropPatchOp::Set(n, _) | PropPatchOp::Remove(n) => n,
+            };
+            // A claimed property is a live one: it never reaches the dead
+            // store, and the source is given a materialised file id because a
+            // live property that silently does not persist is worse than a
+            // visible failure. This is where the two differ from a dead
+            // property, which is legitimately accepted with a warning when no
+            // id exists (Office aborts the save on anything but 200 and
+            // re-sends the value next time; nothing re-sends a live one).
+            if let Some(src) = claim_for(svc, name) {
+                let id = match materialise_id(svc, &entry, user, vpath) {
+                    Some(id) => id,
+                    None => {
+                        results.push((name.clone(), StatusCode::INTERNAL_SERVER_ERROR));
+                        continue;
+                    }
+                };
+                let value = match op {
+                    PropPatchOp::Set(_, v) => Some(v.as_str()),
+                    PropPatchOp::Remove(_) => None,
+                };
+                let st = match src.set(user, resolved.share, id, &name.ns, &name.name, value) {
+                    Ok(()) => StatusCode::OK,
+                    Err(e) => {
+                        tracing::warn!(error = %e, ns = %name.ns, name = %name.name,
+                                       "a live property source refused a PROPPATCH");
+                        e.status()
+                    }
+                };
+                results.push((name.clone(), st));
+                continue;
+            }
             let st = match op {
                 PropPatchOp::Set(n, v) => {
                     match entry.id {

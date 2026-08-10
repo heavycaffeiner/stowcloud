@@ -27,16 +27,16 @@ impl CorePort for FakeCore {
     fn home_root(&self, _u: UserId) -> PortResult<ShareId> {
         Ok(ShareId(1))
     }
-    fn resolve(&self, _r: ShareId, _u: UserId, _p: &str) -> PortResult<Entry> {
+    fn resolve(&self, _u: UserId, _p: &Vpath) -> PortResult<Entry> {
         Err(PortError::NotFound)
     }
-    fn list(&self, _r: ShareId, _u: UserId, _p: &str) -> PortResult<Vec<Entry>> {
+    fn list(&self, _u: UserId, _p: &Vpath) -> PortResult<Vec<Entry>> {
         Ok(vec![])
     }
-    fn stat_entry(&self, _r: ShareId, _u: UserId, _p: &str) -> PortResult<Entry> {
+    fn stat_entry(&self, _u: UserId, _p: &Vpath) -> PortResult<Entry> {
         Err(PortError::NotFound)
     }
-    fn aggregate(&self, _r: ShareId, _i: FileId) -> PortResult<Aggregate> {
+    fn aggregate(&self, _r: ShareId, _p: &SharePath) -> PortResult<Aggregate> {
         Ok(Aggregate { etag: String::new(), rsize: 0, rcount: 0 })
     }
     fn user_info(&self, _u: UserId) -> PortResult<UserInfo> {
@@ -54,13 +54,33 @@ impl CorePort for FakeCore {
     fn quota(&self, _u: UserId) -> PortResult<Quota> {
         Ok(Quota { used: 42, free: 0, total: None })
     }
-    fn locate(&self, _u: UserId, _i: FileId) -> PortResult<(ShareId, String)> {
+    fn locate(&self, _u: UserId, _i: FileId) -> PortResult<(ShareId, SharePath)> {
         Err(PortError::NotFound)
+    }
+    fn user_info_by_login(
+        &self,
+        _c: UserId,
+        _l: &str,
+        _s: GranteeScope,
+    ) -> PortResult<Option<UserInfo>> {
+        Ok(None)
+    }
+    fn vpath_for(&self, _u: UserId, _s: ShareId, _p: &SharePath) -> Option<Vpath> {
+        None
     }
 }
 
 struct FakeAuth;
 impl AuthPort for FakeAuth {
+    fn revoke_app_password(&self, _u: UserId, _c: u32) -> PortResult<()> {
+        Ok(())
+    }
+    fn wipe_requested(&self, _c: u32) -> PortResult<bool> {
+        Ok(false)
+    }
+    fn finish_wipe(&self, _c: u32) -> PortResult<()> {
+        Ok(())
+    }
     fn issue_app_password(&self, _u: UserId, _n: &str, _s: Scope) -> PortResult<(u32, String)> {
         Ok((1, "stow_test".into()))
     }
@@ -75,6 +95,7 @@ impl AuthPort for FakeAuth {
                 user: UserId(1),
                 login_name: "alice".into(),
                 display_name: "Alice".into(),
+                credential_id: Some(1),
             }))
         } else {
             Ok(None)
@@ -93,6 +114,15 @@ impl SessionAuth {
     const SESSION: &'static str = "session-token-for-tests";
 }
 impl AuthPort for SessionAuth {
+    fn revoke_app_password(&self, u: UserId, c: u32) -> PortResult<()> {
+        FakeAuth.revoke_app_password(u, c)
+    }
+    fn wipe_requested(&self, c: u32) -> PortResult<bool> {
+        FakeAuth.wipe_requested(c)
+    }
+    fn finish_wipe(&self, c: u32) -> PortResult<()> {
+        FakeAuth.finish_wipe(c)
+    }
     fn issue_app_password(&self, u: UserId, n: &str, s: Scope) -> PortResult<(u32, String)> {
         FakeAuth.issue_app_password(u, n, s)
     }
@@ -110,6 +140,7 @@ impl AuthPort for SessionAuth {
                 user: UserId(1),
                 login_name: "alice".into(),
                 display_name: "Alice".into(),
+                credential_id: Some(1),
             }))
         } else {
             Ok(None)
@@ -194,13 +225,22 @@ impl PreviewPort for FakePreview {
     fn signed_thumb_url(
         &self,
         _u: UserId,
-        _r: ShareId,
-        _p: &str,
+        _p: &Vpath,
         _w: u32,
         _h: u32,
         _f: FitMode,
     ) -> PortResult<Option<String>> {
         Ok(None)
+    }
+    fn signed_download_url(&self, _u: UserId, _p: &Vpath) -> PortResult<Option<String>> {
+        Ok(None)
+    }
+}
+
+struct FakeSearch;
+impl SearchPort for FakeSearch {
+    fn by_name(&self, _u: UserId, _t: &str, _l: u32) -> PortResult<Vec<SearchHit>> {
+        Ok(vec![])
     }
 }
 
@@ -242,6 +282,7 @@ fn app_with(
         upload: Arc::new(FakeUpload),
         shares,
         preview: Arc::new(FakePreview),
+        search: Arc::new(FakeSearch),
     };
     let login = Arc::new(LoginFlowService::new(
         store.clone(),
@@ -257,6 +298,10 @@ fn app_with(
         shares: Arc::new(SharesApi::new(deps.shares.clone())),
         sharees: Arc::new(ShareesApi::new(deps.shares.clone(), cfg.clone())),
         preview: Arc::new(PreviewApi::new(deps.core.clone(), deps.preview.clone())),
+        unified: Arc::new(sc_compat_nc::unified_search::UnifiedSearchApi::new(
+            deps.search.clone(),
+            deps.preview.clone(),
+        )),
     })
 }
 
@@ -992,6 +1037,15 @@ struct RecordingAuth {
 }
 
 impl AuthPort for RecordingAuth {
+    fn revoke_app_password(&self, _u: UserId, _c: u32) -> PortResult<()> {
+        Ok(())
+    }
+    fn wipe_requested(&self, _c: u32) -> PortResult<bool> {
+        Ok(false)
+    }
+    fn finish_wipe(&self, _c: u32) -> PortResult<()> {
+        Ok(())
+    }
     fn issue_app_password(&self, _u: UserId, _n: &str, _s: Scope) -> PortResult<(u32, String)> {
         Ok((1, "stow_test".into()))
     }

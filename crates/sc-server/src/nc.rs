@@ -17,6 +17,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use axum::Router;
 use sc_compat_nc::ports::{self, PortError, PortResult};
+use sc_core::{SharePath, Vpath};
 use sc_vfs::{FileId, ShareId, UserId};
 use http::StatusCode;
 
@@ -49,26 +50,6 @@ pub struct NcCore {
 }
 
 impl NcCore {
-    /// Compat addresses files as `(share, share-relative path)`; `sc-core`
-    /// addresses them as `/{label}/…`, where the label is the virtual-root
-    /// name the ACL projection gave that grant.
-    /// Everything here funnels through this one translation.
-    fn vpath(&self, user: UserId, share: ShareId, path: &str) -> PortResult<String> {
-        let label = self
-            .core
-            .roots(user)
-            .into_iter()
-            .find(|r| r.share == share)
-            .map(|r| r.label)
-            .ok_or(PortError::NotFound)?;
-        let rest = path.trim_start_matches('/');
-        Ok(if rest.is_empty() {
-            label
-        } else {
-            format!("{label}/{rest}")
-        })
-    }
-
     /// Best-effort mtime stamp applied *after* a write has already
     /// succeeded — used to honour the upload-time header the compat layer
     /// reads on a plain (non-chunked) `PUT` (`h_put_files`, below).
@@ -86,17 +67,17 @@ impl NcCore {
     /// between the write and this call) is logged and swallowed: the PUT
     /// already succeeded and returned, and retroactively failing it over a
     /// cosmetic timestamp would be worse than leaving the mtime alone.
-    fn set_upload_mtime(&self, user: UserId, vpath: &str, mtime_ns: i128) -> bool {
+    fn set_upload_mtime(&self, user: UserId, vpath: &Vpath, mtime_ns: i128) -> bool {
         match self.core.resolve(user, vpath) {
             Ok(r) => match r.root.set_times(&r.path, mtime_ns) {
                 Ok(()) => true,
                 Err(e) => {
-                    tracing::warn!(error = %e, vpath, "failed to apply upload mtime after a successful PUT");
+                    tracing::warn!(error = %e, vpath = %vpath, "failed to apply upload mtime after a successful PUT");
                     false
                 }
             },
             Err(e) => {
-                tracing::warn!(error = %e, vpath, "failed to resolve path for upload mtime after a successful PUT");
+                tracing::warn!(error = %e, vpath = %vpath, "failed to resolve path for upload mtime after a successful PUT");
                 false
             }
         }
@@ -114,7 +95,11 @@ impl NcCore {
     /// resolve; a root that does not (a race against an in-flight ACL edit,
     /// say) is skipped rather than surfacing a broken row — a listing must
     /// never crash on a race it can quietly outlive.
-    fn root_entries(&self, user: UserId) -> Vec<(String, sc_core::Entry)> {
+    /// Carries the share and the grant's subpath alongside the entry, because
+    /// the files-root response needs them to ask for a recursive size: a
+    /// grant's subpath *is* the share path of that grant's root, so no
+    /// conversion is involved and the aggregate can be looked up directly.
+    fn root_entries(&self, user: UserId) -> Vec<RootRow> {
         self.core
             .roots(user)
             .into_iter()
@@ -134,10 +119,25 @@ impl NcCore {
                         self.core.ensure_fileid(r.share, &r.subpath).ok()
                     };
                 }
-                Some((r.label, e))
+                Some(RootRow {
+                    label: r.label,
+                    share: r.share,
+                    subpath: SharePath::new(r.subpath),
+                    entry: e,
+                })
             })
             .collect()
     }
+}
+
+/// One grant-projected root as the synthetic files-root response needs it.
+struct RootRow {
+    label: String,
+    share: ShareId,
+    /// Where the grant is rooted inside its share, which is also the share
+    /// path whose recursive size the row reports.
+    subpath: SharePath,
+    entry: sc_core::Entry,
 }
 
 /// Reserved-range marker for [`share_root_pseudo_id`]: bit 62 set, bits
@@ -194,35 +194,30 @@ impl ports::CorePort for NcCore {
             .ok_or(PortError::NotFound)
     }
 
-    fn resolve(&self, share: ShareId, user: UserId, path: &str) -> PortResult<ports::Entry> {
-        self.stat_entry(share, user, path)
+    fn resolve(&self, user: UserId, path: &Vpath) -> PortResult<ports::Entry> {
+        self.stat_entry(user, path)
     }
 
-    fn list(&self, share: ShareId, user: UserId, path: &str) -> PortResult<Vec<ports::Entry>> {
-        let vpath = self.vpath(user, share, path)?;
+    fn list(&self, user: UserId, path: &Vpath) -> PortResult<Vec<ports::Entry>> {
         self.core
-            .list(user, &vpath, sc_core::Sort::Name, sc_core::Order::Asc)
+            .list(user, path.as_str(), sc_core::Sort::Name, sc_core::Order::Asc)
             .map(|l| l.entries)
             .map_err(core_port_err)
     }
 
-    fn stat_entry(&self, share: ShareId, user: UserId, path: &str) -> PortResult<ports::Entry> {
-        let vpath = self.vpath(user, share, path)?;
-        self.core.stat_entry(user, &vpath).map_err(core_port_err)
+    fn stat_entry(&self, user: UserId, path: &Vpath) -> PortResult<ports::Entry> {
+        self.core
+            .stat_entry(user, path.as_str())
+            .map_err(core_port_err)
     }
 
-    fn aggregate(&self, share: ShareId, id: FileId) -> PortResult<ports::Aggregate> {
-        // The aggregate cache is keyed by fileid, so go back through
-        // `sc-meta`'s parent-chain resolution rather than asking the caller
-        // to carry a path it does not have.
-        let (_, path) = self
-            .meta
-            .resolve_path(id)
-            .map_err(port_io)?
-            .ok_or(PortError::NotFound)?;
-        let root = self.core.share(share).ok_or(PortError::NotFound)?;
-        let sp = sc_vfs::SafePath::parse(&path, root.policy().max_depth).map_err(port_io)?;
-        self.core.aggregate(share, &sp).map_err(port_io)
+    fn aggregate(&self, share: ShareId, path: &SharePath) -> PortResult<ports::Aggregate> {
+        // Straight through. There used to be an id-to-path lookup here,
+        // because the caller had only a file id: it could not serve a share's
+        // own root, which has no `node` row at all, so every grant root
+        // reported its directory inode's size instead of its contents'.
+        // `Core::aggregate` takes the path and allocates the id itself.
+        self.core.aggregate(share, path).map_err(port_io)
     }
 
     fn user_info(&self, user: UserId) -> PortResult<ports::UserInfo> {
@@ -244,6 +239,39 @@ impl ports::CorePort for NcCore {
             language: "en".into(),
             locale: "en".into(),
         })
+    }
+
+    fn user_info_by_login(
+        &self,
+        _caller: UserId,
+        login: &str,
+        scope: ports::GranteeScope,
+    ) -> PortResult<Option<ports::UserInfo>> {
+        // Same gate as the sharee search, for the same reason: an unscoped
+        // lookup turns a login name into an existence oracle.
+        //
+        // `SameGroup` cannot be honoured because `sc-auth` has no group table,
+        // and widening it to `All` here would reopen exactly what the setting
+        // closes. Both it and `Off` therefore answer nothing.
+        if scope != ports::GranteeScope::All {
+            return Ok(None);
+        }
+        let row = self
+            .auth
+            .list_users()
+            .map_err(port_io)?
+            .into_iter()
+            .find(|u| u.name.eq_ignore_ascii_case(login) && !u.disabled);
+        Ok(row.map(|row| ports::UserInfo {
+            id: row.id,
+            login_name: row.name.clone(),
+            display_name: row.display.unwrap_or(row.name),
+            email: None,
+            enabled: !row.disabled,
+            groups: Vec::new(),
+            language: "en".into(),
+            locale: "en".into(),
+        }))
     }
 
     fn quota(&self, user: UserId) -> PortResult<ports::Quota> {
@@ -271,11 +299,22 @@ impl ports::CorePort for NcCore {
         })
     }
 
-    fn locate(&self, _user: UserId, id: FileId) -> PortResult<(ShareId, String)> {
-        self.meta
+    /// `_user` stays unused and is now visibly correct rather than
+    /// suspicious: id-to-path is a metadata lookup, and the ACL check belongs
+    /// where the resulting path is used, which is `Core::stat_entry`.
+    fn locate(&self, _user: UserId, id: FileId) -> PortResult<(ShareId, SharePath)> {
+        let (share, path) = self
+            .meta
             .resolve_path(id)
             .map_err(port_io)?
-            .ok_or(PortError::NotFound)
+            .ok_or(PortError::NotFound)?;
+        let root = self.core.share(share).ok_or(PortError::NotFound)?;
+        let sp = SharePath::parse(&path, root.policy().max_depth).map_err(port_io)?;
+        Ok((share, sp))
+    }
+
+    fn vpath_for(&self, user: UserId, share: ShareId, path: &SharePath) -> Option<Vpath> {
+        self.core.vpath_for(user, share, path)
     }
 }
 
@@ -310,7 +349,11 @@ impl NcAuth {
     }
 }
 
-fn principal_of(auth: &sc_auth::AuthService, user: UserId) -> ports::Principal {
+fn principal_of(
+    auth: &sc_auth::AuthService,
+    user: UserId,
+    credential_id: Option<u32>,
+) -> ports::Principal {
     let row = auth.find_user_by_id(user).ok().flatten();
     let login = row.as_ref().map(|r| r.name.clone()).unwrap_or_default();
     let display = row
@@ -321,6 +364,17 @@ fn principal_of(auth: &sc_auth::AuthService, user: UserId) -> ports::Principal {
         user,
         login_name: login,
         display_name: display,
+        credential_id,
+    }
+}
+
+/// The credential id a verified principal authenticated with, when it was an
+/// app password. A session and an account password both answer `None`: neither
+/// is revocable through the app-password API.
+fn credential_of(p: &sc_auth::Principal) -> Option<u32> {
+    match p.via {
+        sc_auth::AuthVia::AppPassword(id) => Some(id),
+        _ => None,
     }
 }
 
@@ -384,7 +438,9 @@ impl ports::AuthPort for NcAuth {
         let ip = from.0;
         let result = self.block_on(self.auth.verify_basic(login, &secret, ip));
         Ok(match result {
-            sc_auth::BasicResult::Ok(p) => Some(principal_of(&self.auth, p.user)),
+            sc_auth::BasicResult::Ok(p) => {
+                Some(principal_of(&self.auth, p.user, credential_of(&p)))
+            }
             _ => None,
         })
     }
@@ -394,7 +450,26 @@ impl ports::AuthPort for NcAuth {
             .auth
             .validate_session(token)
             .map_err(port_io)?
-            .map(|p| principal_of(&self.auth, p.user)))
+            // A browser session carries no app password, so there is nothing
+            // here for the revoke endpoint to act on.
+            .map(|p| principal_of(&self.auth, p.user, None)))
+    }
+
+    fn revoke_app_password(&self, user: UserId, credential: u32) -> PortResult<()> {
+        // Idempotent by design: a client retrying its logout must not see an
+        // error it cannot act on, and "already gone" is the outcome it wanted.
+        self.auth
+            .revoke_app_password_owned(user, credential)
+            .map(|_| ())
+            .map_err(port_io)
+    }
+
+    fn wipe_requested(&self, credential: u32) -> PortResult<bool> {
+        self.auth.wipe_requested(credential).map_err(port_io)
+    }
+
+    fn finish_wipe(&self, credential: u32) -> PortResult<()> {
+        self.auth.finish_wipe(credential).map_err(port_io)
     }
 }
 
@@ -423,12 +498,12 @@ impl ports::UploadEngine for NcUpload {
     fn create(&self, spec: ports::SessionSpec) -> PortResult<(ShareId, ports::SessionId)> {
         let resolved = self
             .core
-            .resolve_for_upload(spec.owner, &spec.dest)
+            .resolve_for_upload(spec.owner, &Vpath::new(&spec.dest))
             .map_err(core_port_err)?;
         let engine_spec = sc_upload::SessionSpec {
             user: spec.owner,
             share: resolved.share,
-            dest: resolved.path,
+            dest: resolved.path.into_safe(),
             total_len: spec.total_len,
             random_access: false,
             if_match: None,
@@ -514,34 +589,33 @@ pub struct NcShares {
     core: Arc<sc_core::Core>,
 }
 
+/// Read by a person in a share dialog, not by an administrator in a log.
 fn grants_unavailable() -> PortError {
-    PortError::Invalid("this server supports public link shares only".into())
+    PortError::Invalid(
+        "This server can only share by link. Create a link and send that instead.".into(),
+    )
+}
+
+/// An expiry the caller asked for that has already passed.
+///
+/// `Core::create_link` refuses it too, as an invalid argument, and that is the
+/// right shape for the native API: the browser renders the message. The OCS
+/// surface answers `409` for it instead, which is what both apps' share sheets
+/// branch on to re-open the date picker rather than showing a generic failure.
+/// Checked here rather than translated out of the core's refusal, because
+/// matching on an error message string is a test nobody can see break.
+fn expiry_in_the_past(expires_s: Option<i64>) -> Option<PortError> {
+    let expires_s = expires_s?;
+    let now_s = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    (expires_s <= now_s).then(|| {
+        PortError::Conflict("The expiry date has already passed; pick a later one.".into())
+    })
 }
 
 impl NcShares {
-    /// The share a compat client's paths are relative to — the same first
-    /// projected root `NcCore::home_root` picks.
-    fn home(&self, user: UserId) -> PortResult<(ShareId, String)> {
-        self.core
-            .roots(user)
-            .into_iter()
-            .next()
-            .map(|r| (r.share, r.label))
-            .ok_or(PortError::NotFound)
-    }
-
-    /// Compat's `/foo/bar` (relative to the files root) → `sc-core`'s
-    /// `/{label}/foo/bar`.
-    fn vpath(&self, user: UserId, path: &str) -> PortResult<String> {
-        let (_, label) = self.home(user)?;
-        let rest = path.trim_start_matches('/');
-        Ok(if rest.is_empty() {
-            format!("/{label}")
-        } else {
-            format!("/{label}/{rest}")
-        })
-    }
-
     fn user_name(&self, user: UserId) -> (String, String) {
         match self.auth.list_users() {
             Ok(users) => users
@@ -558,15 +632,25 @@ impl NcShares {
 
     fn to_core_share(&self, user: UserId, link: sc_core::ShareLink) -> ports::CoreShare {
         let (owner, owner_display) = self.user_name(link.owner);
-        let rel = link.path.to_display_string();
-        let path = format!("/{rel}");
+        // The link's own share, not the caller's first root: a folder link in
+        // any other share used to miss its stat entirely, so `item_type` came
+        // back "file" and the file id degraded to 0.
+        //
+        // A link whose share the user can no longer reach has no label. It is
+        // still reported, with its share-relative path, so it stays listable
+        // and deletable rather than vanishing from a listing whose whole
+        // purpose is to let the owner clean it up.
+        let vpath = self.core.vpath_for(user, link.share, &link.path);
+        let path = match &vpath {
+            Some(v) => v.to_absolute_string(),
+            None => format!("/{}", link.path.to_display_string()),
+        };
         // `stat_entry` rather than `link_target`: a dead link must still be
         // listable and deletable by its owner, so its liveness is not allowed
         // to decide whether the row can be rendered.
-        let entry = self
-            .vpath(user, &rel)
-            .ok()
-            .and_then(|v| self.core.stat_entry(user, &v).ok());
+        let entry = vpath
+            .as_ref()
+            .and_then(|v| self.core.stat_entry(user, v.as_str()).ok());
         ports::CoreShare {
             id: link.id.max(0) as u64,
             kind: ports::GranteeKind::Link,
@@ -603,22 +687,38 @@ impl ports::SharePort for NcShares {
         if filter.shared_with_me {
             return Ok(Vec::new());
         }
-        let vpath = match filter
+        // The client's `path` is already a vpath; the compat layer normalised
+        // its separators and this passes it through unchanged.
+        let scope = filter
             .path
             .as_deref()
-            .filter(|p| !p.is_empty() && *p != "/")
-        {
-            Some(p) => Some(self.vpath(user, p)?),
-            None => None,
-        };
+            .filter(|p| !p.is_empty())
+            .map(Vpath::new);
+
+        // `subfiles=true` asks which entries *inside* the folder are shared,
+        // which is a different question from "is this folder shared" and
+        // cannot be answered by narrowing the core query to one node. So the
+        // core is asked for every link the caller owns and the prefix test
+        // runs here, over vpaths, comparing whole components.
+        let core_filter = if filter.subfiles { None } else { scope.as_ref() };
         let links = self
             .core
-            .list_links(user, vpath.as_deref())
+            .list_links(user, core_filter)
             .map_err(core_port_err)?;
-        Ok(links
-            .into_iter()
-            .map(|l| self.to_core_share(user, l))
-            .collect())
+        let mut out = Vec::new();
+        for l in links {
+            if filter.subfiles {
+                let Some(folder) = &scope else { continue };
+                let Some(v) = self.core.vpath_for(user, l.share, &l.path) else {
+                    continue;
+                };
+                if v == *folder || !v.is_inside(folder) {
+                    continue;
+                }
+            }
+            out.push(self.to_core_share(user, l));
+        }
+        Ok(out)
     }
 
     fn get(&self, user: UserId, id: u64) -> PortResult<ports::CoreShare> {
@@ -630,7 +730,10 @@ impl ports::SharePort for NcShares {
         if spec.kind != ports::GranteeKind::Link {
             return Err(grants_unavailable());
         }
-        let vpath = self.vpath(user, &spec.path)?;
+        if let Some(e) = expiry_in_the_past(spec.expires_s) {
+            return Err(e);
+        }
+        let vpath = Vpath::new(&spec.path);
         let core_spec = sc_core::LinkSpec {
             perms: spec.perms,
             password: spec.password.clone(),
@@ -654,6 +757,9 @@ impl ports::SharePort for NcShares {
     ) -> PortResult<ports::CoreShare> {
         if spec.kind != ports::GranteeKind::Link {
             return Err(grants_unavailable());
+        }
+        if let Some(e) = expiry_in_the_past(spec.expires_s) {
+            return Err(e);
         }
         let patch = sc_core::LinkPatch {
             perms: Some(spec.perms),
@@ -758,37 +864,80 @@ impl ports::PreviewPort for NcPreview {
     fn signed_thumb_url(
         &self,
         user: UserId,
-        share: ShareId,
-        path: &str,
+        path: &Vpath,
         w: u32,
         h: u32,
         _fit: ports::FitMode,
     ) -> PortResult<Option<String>> {
+        self.sign(
+            user,
+            path,
+            sc_http::content::Disposition::InlineThumb,
+            Some((w.min(u16::MAX as u32) as u16, h.min(u16::MAX as u32) as u16)),
+        )
+    }
+
+    fn signed_download_url(&self, user: UserId, path: &Vpath) -> PortResult<Option<String>> {
+        // `Stream`, because the whole point is that a player can seek: that
+        // disposition is the one the content origin serves `Range` requests
+        // for. Its own default lifetime is twelve hours, which is right for a
+        // share link somebody bookmarks and wrong here — the client hands this
+        // URL straight to a player process, so it needs minutes.
+        self.sign_with_ttl(
+            user,
+            path,
+            sc_http::content::Disposition::Stream,
+            None,
+            Some(DIRECT_URL_TTL),
+        )
+    }
+}
+
+/// How long a media-streaming URL stays valid.
+///
+/// Long enough to start playback and survive a retry, short enough that a URL
+/// that leaks out of a player's log or a screenshot is dead by the time anyone
+/// reads it. The URL carries no `Authorization` header, so its lifetime is the
+/// whole of its containment.
+const DIRECT_URL_TTL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+impl NcPreview {
+    /// One signed claim over `(fileid, etag prefix)`, so a stale URL stops
+    /// working the moment the file changes rather than serving an old copy of
+    /// something that has since been replaced.
+    ///
+    /// ACL-checked here, at issue time, under the requesting principal: the
+    /// URL that comes out carries no `Authorization` header.
+    fn sign(
+        &self,
+        user: UserId,
+        vpath: &Vpath,
+        disposition: sc_http::content::Disposition,
+        box_size: Option<(u16, u16)>,
+    ) -> PortResult<Option<String>> {
+        self.sign_with_ttl(user, vpath, disposition, box_size, None)
+    }
+
+    /// `ttl` of `None` takes the disposition's own default.
+    fn sign_with_ttl(
+        &self,
+        user: UserId,
+        vpath: &Vpath,
+        disposition: sc_http::content::Disposition,
+        box_size: Option<(u16, u16)>,
+        ttl: Option<std::time::Duration>,
+    ) -> PortResult<Option<String>> {
         if self.content_host.is_empty() {
             // No content origin configured. Returning `None` yields a 404,
-            // which is right: serving a preview from the *app* origin would
+            // which is right: serving user content from the *app* origin would
             // put attacker-influenced bytes on the origin that holds the
             // session cookie.
             return Ok(None);
         }
-        // The signed claim is over `(fileid, etag prefix)`, so a stale link
-        // stops working the moment the file changes instead of serving an
-        // old thumbnail for a file that has been replaced.
-        let label = self
+        let entry = self
             .core
-            .roots(user)
-            .into_iter()
-            .find(|r| r.share == share)
-            .map(|r| r.label)
-            .ok_or(PortError::NotFound)?;
-        let rest = path.trim_start_matches('/');
-        let vpath = if rest.is_empty() {
-            label
-        } else {
-            format!("{label}/{rest}")
-        };
-
-        let entry = self.core.stat_entry(user, &vpath).map_err(core_port_err)?;
+            .stat_entry(user, vpath.as_str())
+            .map_err(core_port_err)?;
         let Some(fid) = entry.id else { return Ok(None) };
 
         let mut etag8 = [0u8; 8];
@@ -796,14 +945,8 @@ impl ports::PreviewPort for NcPreview {
         let n = raw.len().min(8);
         etag8[..n].copy_from_slice(&raw[..n]);
 
-        let claim = sc_http::content::make_claim(
-            fid.0,
-            etag8,
-            sc_http::content::Disposition::InlineThumb,
-            Some((w.min(u16::MAX as u32) as u16, h.min(u16::MAX as u32) as u16)),
-            user.get(),
-            None,
-        );
+        let claim =
+            sc_http::content::make_claim(fid.0, etag8, disposition, box_size, user.get(), ttl);
         let token = sc_http::content::sign(&self.keys.lock(), claim);
         Ok(Some(format!("https://{}/c/{token}", self.content_host)))
     }
@@ -816,9 +959,9 @@ pub struct NcDirSize {
 }
 
 impl sc_compat_nc::props::DirSize for NcDirSize {
-    fn recursive_size(&self, share: ShareId, id: FileId) -> Option<u64> {
+    fn recursive_size(&self, share: ShareId, path: &SharePath) -> Option<u64> {
         use sc_compat_nc::ports::CorePort;
-        self.core.aggregate(share, id).ok().map(|a| a.rsize)
+        self.core.aggregate(share, path).ok().map(|a| a.rsize)
     }
 }
 
@@ -871,11 +1014,17 @@ impl sc_dav::PropSource for NcPropBridge {
             .map(|r| (r.display.clone().unwrap_or_else(|| r.name.clone()), r.name))
             .unwrap_or_default();
 
-        let nc_ctx = sc_compat_nc::ports::PropCtx {
+        // `ctx.path` is `sc-dav`'s own vpath, parsed straight off the URL this
+        // mount was given, label included. It is not the share-relative path
+        // the aggregate cache and `ensure_fileid` want, and treating it as one
+        // is what put `oc:size` on the wrong node.
+        let vpath = Vpath::new(&ctx.path.to_display_string());
+
+        let mut nc_ctx = sc_compat_nc::ports::PropCtx {
             user: ctx.user,
             user_name: name.1.clone(),
             share: ctx.share,
-            path: ctx.path.to_display_string(),
+            share_path: None,
             // Shares have no separate owner principal in this server: a share
             // is a configured directory, not a user's property. Reporting the
             // requesting user keeps the `oc:owner-*` properties well-formed
@@ -912,41 +1061,43 @@ impl sc_dav::PropSource for NcPropBridge {
         // call, a filesystem error) is logged and left as `None` — the rest
         // of this response, and the rest of the multistatus, must not be
         // sacrificed to one entry's identity.
-        // `ctx.path` is `sc-dav`'s own vpath (`propfind.rs`: parsed straight
-        // off the URL this mount was given, labe included — `SafePath::parse(vpath, ..)`)
-        // — for the compat mount that is `{label}/{rest}`, in `sc-core`'s
-        // `/{label}/…` vocabulary, *not* the share-internal-relative path
-        // `Core::ensure_fileid` (and `stat`/`aggregate`) expect. Re-resolving
-        // through `Core::resolve` — the same label lookup + ACL evaluation
-        // every vpath goes through, no filesystem I/O (`resolve.rs`'s own
-        // doc comment) — recovers the real share-relative path
-        // (`Resolved::path`) this needs. An empty one means this entry sits
-        // exactly at its share's physical root, which has no real `sc-meta`
-        // row to allocate at all (`share_root_pseudo_id`'s doc comment); a
-        // non-empty one goes through `ensure_fileid` for a real, chained
-        // allocation.
-        let id = if e.id.is_none()
-            && (nc_req.wants(sc_compat_nc::NS_OC, "id")
-                || nc_req.wants(sc_compat_nc::NS_OC, "fileid"))
-        {
-            match self.core.resolve(ctx.user, &nc_ctx.path) {
-                Ok(resolved) if resolved.path.is_empty() => {
-                    Some(share_root_pseudo_id(resolved.share))
-                }
-                Ok(resolved) => match self.core.ensure_fileid(resolved.share, &resolved.path) {
-                    Ok(id) => Some(id),
-                    Err(err) => {
-                        tracing::warn!(error = %err, path = %nc_ctx.path, "could not materialize a stable file id for a compat PROPFIND response");
-                        None
-                    }
-                },
+        //
+        // `Core::resolve` is the same label lookup plus ACL evaluation every
+        // vpath goes through and does no filesystem I/O, so one call recovers
+        // both things this response needs from the share's own vocabulary: the
+        // share path for `oc:size`'s aggregate, and the parent chain
+        // `ensure_fileid` allocates along. An empty share path means the entry
+        // sits exactly at its share's physical root, which has no `sc-meta`
+        // row to allocate at all — see `share_root_pseudo_id`.
+        let wants_identity = nc_req.wants(sc_compat_nc::NS_OC, "id")
+            || nc_req.wants(sc_compat_nc::NS_OC, "fileid");
+        let wants_dir_size = e.kind.is_dir() && nc_req.wants(sc_compat_nc::NS_OC, "size");
+        let resolved = if (e.id.is_none() && wants_identity) || wants_dir_size {
+            match self.core.resolve(ctx.user, &vpath) {
+                Ok(r) => Some(r),
                 Err(err) => {
-                    tracing::warn!(error = %err, path = %nc_ctx.path, "could not re-resolve a path for compat PROPFIND file-id allocation");
+                    tracing::warn!(error = %err, path = %vpath, "could not re-resolve a path while decorating a compat PROPFIND response");
                     None
                 }
             }
         } else {
-            e.id
+            None
+        };
+        nc_ctx.share_path = resolved.as_ref().map(|r| r.path.clone());
+
+        let id = match (e.id, &resolved) {
+            (Some(id), _) => Some(id),
+            (None, Some(r)) if wants_identity && r.path.is_empty() => {
+                Some(share_root_pseudo_id(r.share))
+            }
+            (None, Some(r)) if wants_identity => match self.core.ensure_fileid(r.share, &r.path) {
+                Ok(id) => Some(id),
+                Err(err) => {
+                    tracing::warn!(error = %err, path = %vpath, "could not materialize a stable file id for a compat PROPFIND response");
+                    None
+                }
+            },
+            _ => None,
         };
 
         let entry = sc_core::Entry {
@@ -1029,6 +1180,9 @@ pub struct Compat {
     preview: Arc<NcPreview>,
     auth_port: Arc<NcAuth>,
     auth: Arc<sc_auth::AuthService>,
+    /// Shared with the native search, so one `[search]` setting governs both.
+    search_limits: Arc<sc_http::search_limits::SearchConcurrency>,
+    storage: Arc<crate::storage_class::StorageClassCache>,
 }
 
 /// Inputs to [`Compat::build`], grouped into a struct rather than passed
@@ -1048,6 +1202,10 @@ pub struct CompatBuildInputs<'a> {
     pub uploads: Arc<sc_upload::UploadEngine>,
     pub content_host: String,
     pub keys: Arc<parking_lot::Mutex<sc_http::content::SignedUrlKeys>>,
+    /// The same objects the native search bridge holds, not equal copies: the
+    /// compat `SEARCH` and the native one must agree on the walk budget.
+    pub search_limits: Arc<sc_http::search_limits::SearchConcurrency>,
+    pub storage: Arc<crate::storage_class::StorageClassCache>,
 }
 
 impl Compat {
@@ -1063,6 +1221,8 @@ impl Compat {
             uploads,
             content_host,
             keys,
+            search_limits,
+            storage,
         } = inputs;
         let store: Arc<dyn sc_compat_nc::NcStore> = match sc_compat_nc::SqliteStore::open(
             &data_dir.join("compat-nc.db"),
@@ -1129,6 +1289,8 @@ impl Compat {
             cfg,
             store,
             auth,
+            search_limits,
+            storage,
         }
     }
 
@@ -1137,6 +1299,35 @@ impl Compat {
     /// two implementations that happen to agree.
     pub fn share_port(&self) -> Arc<dyn ports::SharePort> {
         self.shares.clone()
+    }
+
+    fn nc_search(&self) -> Arc<crate::nc_search::NcSearch> {
+        Arc::new(crate::nc_search::NcSearch {
+            core: self.core.core.clone(),
+            meta: self.core.meta.clone(),
+            auth: self.auth.clone(),
+            store: self.store.clone(),
+            limits: self.search_limits.clone(),
+            storage: self.storage.clone(),
+        })
+    }
+
+    /// The search backend, over the caller's readable roots.
+    pub fn search_source(&self) -> Arc<dyn sc_dav::SearchSource> {
+        self.nc_search()
+    }
+
+    /// The favourites report, answered through the same search.
+    pub fn report_source(&self) -> Arc<dyn sc_dav::ReportSource> {
+        Arc::new(crate::nc_search::NcFilterFilesReport)
+    }
+
+    /// The write side of the favourite property, so a `PROPPATCH` on it never
+    /// reaches the dead-property store.
+    pub fn favorite_writer(&self) -> Arc<dyn sc_dav::PropPatchSource> {
+        Arc::new(crate::nc_search::NcFavoriteWriter {
+            store: self.store.clone(),
+        })
     }
 
     /// The `oc:`/`nc:` property decoration, ready to hand to
@@ -1173,6 +1364,7 @@ impl Compat {
             upload: self.upload.clone(),
             shares: self.shares.clone(),
             preview: self.preview.clone(),
+            search: self.nc_search(),
         };
 
         let login = Arc::new(sc_compat_nc::login_flow::LoginFlowService::new(
@@ -1194,6 +1386,10 @@ impl Compat {
             )),
             preview: Arc::new(sc_compat_nc::preview::PreviewApi::new(
                 self.core.clone(),
+                self.preview.clone(),
+            )),
+            unified: Arc::new(sc_compat_nc::unified_search::UnifiedSearchApi::new(
+                self.nc_search(),
                 self.preview.clone(),
             )),
         };
@@ -1351,6 +1547,59 @@ async fn h_remote(State(s): State<RemoteDav>, req: Request) -> Response {
         DavTarget::UploadHome { .. }
         | DavTarget::UploadFolder { .. }
         | DavTarget::UploadChunk { .. } => h_chunked(s, target, req).await,
+        DavTarget::TrashRoot { .. }
+        | DavTarget::TrashEntry { .. }
+        | DavTarget::TrashRestore { .. } => h_trash(s, target, req).await,
+    }
+}
+
+/// The trashbin collection. Everything it needs is already public on `Core`;
+/// what is new is the flat, per-user URL shape it is served under.
+async fn h_trash(
+    s: RemoteDav,
+    target: sc_compat_nc::dav_paths::DavTarget,
+    req: Request,
+) -> Response {
+    use sc_compat_nc::dav_paths::DavTarget;
+
+    let Some(sc_dav::DavPrincipal(user)) = req.extensions().get::<sc_dav::DavPrincipal>().copied()
+    else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let api = crate::nc_trash::TrashApi {
+        core: s.core.core.clone(),
+        instance_id: s.instance_id.clone(),
+    };
+    let max_body = s.dav.config().max_request_body;
+    let method = req.method().as_str().to_string();
+
+    match (method.as_str(), target) {
+        ("PROPFIND", DavTarget::TrashRoot { user: du }) => {
+            let prefix = format!("/remote.php/dav/trashbin/{du}/trash");
+            api.propfind(user, &prefix, None, max_body, req).await
+        }
+        ("PROPFIND", DavTarget::TrashEntry { user: du, entry }) => {
+            let prefix = format!("/remote.php/dav/trashbin/{du}/trash/{entry}");
+            api.propfind(user, &prefix, Some(&entry), max_body, req).await
+        }
+        ("DELETE", DavTarget::TrashRoot { .. }) => api.empty_all(user),
+        ("DELETE", DavTarget::TrashEntry { entry, .. }) => api.purge_one(user, &entry),
+        ("MOVE", DavTarget::TrashEntry { entry, .. }) => {
+            let dest = req
+                .headers()
+                .get("destination")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            api.restore(user, &entry, dest.as_deref())
+        }
+        _ => {
+            let mut resp = StatusCode::METHOD_NOT_ALLOWED.into_response();
+            resp.headers_mut().insert(
+                http::header::ALLOW,
+                http::HeaderValue::from_static("OPTIONS, PROPFIND, DELETE, MOVE"),
+            );
+            resp
+        }
     }
 }
 
@@ -1460,7 +1709,28 @@ async fn h_files_root(s: RemoteDav, prefix: String, req: Request) -> Response {
     };
 
     let roots = s.core.root_entries(user);
-    let body = files_root_propfind_xml(&prefix, &roots, list_children, &propreq, &s.instance_id);
+    // One aggregate per grant, computed here rather than inside the XML
+    // builder so that function stays a pure renderer and can be unit-tested.
+    // A grant's `subpath` is already the share path of that grant's root, so
+    // no conversion is involved.
+    let sizes: Vec<Option<u64>> = roots
+        .iter()
+        .map(|r| {
+            s.core
+                .core
+                .aggregate(r.share, &r.subpath)
+                .ok()
+                .map(|a| a.rsize)
+        })
+        .collect();
+    let body = files_root_propfind_xml(
+        &prefix,
+        &roots,
+        &sizes,
+        list_children,
+        &propreq,
+        &s.instance_id,
+    );
     (
         StatusCode::MULTI_STATUS,
         [(http::header::CONTENT_TYPE, "application/xml; charset=utf-8")],
@@ -1509,7 +1779,7 @@ fn root_prefix_of(ns: &str) -> Option<&'static str> {
 /// on a synthetic row was simply absent from the response with no propstat
 /// at all, which several clients treat identically to "the server is
 /// broken" rather than "not applicable here".
-fn propfind_row(
+pub(crate) fn propfind_row(
     href: &str,
     known: &[(&'static str, &'static str, String)],
     req: &sc_dav::PropReq,
@@ -1554,7 +1824,7 @@ fn propfind_row(
 /// (`PROPFIND` mode `propname`) exactly the way `sc_dav::PropWriter::text`
 /// degrades in the same mode — a `propname` request wants to know *which*
 /// properties exist, never their values.
-fn prop_tag(prefix: &str, name: &str, value: &str, names_only: bool) -> String {
+pub(crate) fn prop_tag(prefix: &str, name: &str, value: &str, names_only: bool) -> String {
     if names_only {
         return format!("<{prefix}:{name}/>");
     }
@@ -1572,7 +1842,10 @@ fn prop_tag(prefix: &str, name: &str, value: &str, names_only: bool) -> String {
 /// (`chunking::chunk_listing_xml`, `dav_paths::principal_propfind_xml`).
 fn files_root_propfind_xml(
     prefix: &str,
-    roots: &[(String, sc_core::Entry)],
+    roots: &[RootRow],
+    // One per root, positionally: the recursive size of that grant's subtree,
+    // `None` when the aggregate could not be computed.
+    sizes: &[Option<u64>],
     list_children: bool,
     req: &sc_dav::PropReq,
     instance_id: &str,
@@ -1612,11 +1885,37 @@ fn files_root_propfind_xml(
     // one or fabricating a sum.
     let self_etag = {
         let mut hasher = blake3::Hasher::new();
-        for (label, e) in roots {
-            hasher.update(label.as_bytes());
-            hasher.update(e.etag.as_bytes());
+        for r in roots {
+            hasher.update(r.label.as_bytes());
+            hasher.update(r.entry.etag.as_bytes());
         }
         data_encoding::HEXLOWER.encode(&hasher.finalize().as_bytes()[..16])
+    };
+
+    // The root's own total, summed over **distinct `(share, subpath)` pairs**
+    // rather than over labels: two grants can project one subtree under two
+    // names, and summing per label would count it twice. `None` from any
+    // contributing grant makes the whole total unavailable, because a partial
+    // sum is a wrong number rather than a missing one.
+    //
+    // Unlike `quota-*` below this is a well-defined figure. A collection with
+    // no single storage behind it has no honest free-space number; a total of
+    // recursive sizes has no such problem.
+    let self_size: Option<u64> = {
+        let mut seen: Vec<(ShareId, String)> = Vec::new();
+        let mut total = Some(0u64);
+        for (r, size) in roots.iter().zip(sizes) {
+            let key = (r.share, r.subpath.to_display_string());
+            if seen.contains(&key) {
+                continue;
+            }
+            seen.push(key);
+            total = match (total, size) {
+                (Some(t), Some(s)) => Some(t.saturating_add(*s)),
+                _ => None,
+            };
+        }
+        total
     };
     // `oc:id` (`{fileid}{instance_id}`, `sc_compat_nc::nc_id`) alongside
     // `oc:fileid`, not declared 404: it is the value a client's local sync
@@ -1628,7 +1927,7 @@ fn files_root_propfind_xml(
     // views of the same resource agree byte-for-byte — proved in
     // `compat_fileid_uniqueness.rs`'s
     // `the_synthetic_root_and_a_direct_propfind_agree_on_the_same_resource`.
-    let self_known: Vec<(&'static str, &'static str, String)> = vec![
+    let mut self_known: Vec<(&'static str, &'static str, String)> = vec![
         (
             sc_dav::xml::NS_DAV,
             "resourcetype",
@@ -1675,6 +1974,17 @@ fn files_root_propfind_xml(
             ),
         ),
     ];
+    // Omitted, never emitted empty and never substituted, when the total is
+    // unavailable: an absent `oc:size` leaves the Android parser at its
+    // initialised 0, while `<oc:size/>` is an unguarded cast that fails the
+    // entire folder listing rather than one property.
+    if let Some(total) = self_size {
+        self_known.push((
+            sc_compat_nc::NS_OC,
+            "size",
+            prop_tag("oc", "size", &total.to_string(), req.names_only),
+        ));
+    }
     body.push_str(&propfind_row(
         &path_escape(&format!("{prefix}/")),
         &self_known,
@@ -1682,7 +1992,8 @@ fn files_root_propfind_xml(
     ));
 
     if list_children {
-        for (label, e) in roots {
+        for (r, size) in roots.iter().zip(sizes) {
+            let (label, e) = (&r.label, &r.entry);
             let is_dir = e.kind.is_dir();
             let href = path_escape(&format!("{prefix}/{label}/"));
             let permissions = sc_compat_nc::oc_permissions(e.perms, is_dir, false);
@@ -1692,7 +2003,7 @@ fn files_root_propfind_xml(
             } else {
                 "<d:resourcetype/>".to_string()
             };
-            let child_known: Vec<(&'static str, &'static str, String)> = vec![
+            let mut child_known: Vec<(&'static str, &'static str, String)> = vec![
                 (sc_dav::xml::NS_DAV, "resourcetype", resourcetype),
                 (
                     sc_dav::xml::NS_DAV,
@@ -1725,6 +2036,16 @@ fn files_root_propfind_xml(
                     prop_tag("oc", "fileid", &file_id.0.to_string(), req.names_only),
                 ),
             ];
+            // The reason every top-level folder read 0 B: this row carried no
+            // `oc:size` at all, and this listing is the first thing a client
+            // performs after enrolment.
+            if let Some(size) = size {
+                child_known.push((
+                    sc_compat_nc::NS_OC,
+                    "size",
+                    prop_tag("oc", "size", &size.to_string(), req.names_only),
+                ));
+            }
             body.push_str(&propfind_row(&href, &child_known, req));
         }
     }
@@ -1802,7 +2123,7 @@ async fn h_put_files(s: RemoteDav, prefix: String, rel_path: String, req: Reques
     // must not touch whatever timestamp the file already had.
     if resp.status().is_success() {
         if let (Some(ns), Some(sc_dav::DavPrincipal(user))) = (mtime_ns, principal) {
-            if s.core.set_upload_mtime(user, &rel_path, ns) {
+            if s.core.set_upload_mtime(user, &Vpath::new(&rel_path), ns) {
                 // Mirrors the reference server's own confirmation header
                 // (`File.php:363`, `X-OC-MTime: accepted`). The desktop
                 // client's non-chunked (v1) propagator reads this and only
@@ -1909,7 +2230,7 @@ async fn h_chunked(
             // `rest` is the share-relative path `chunking::assemble` derived
             // from the `dest` captured at MKCOL time (label stripped) — stat
             // the file that was actually assembled, not the share root.
-            let finished = |share, rest: &str| core.stat_entry(share, user, rest);
+            let finished = |dest: &Vpath| core.stat_entry(user, dest);
             match s.chunks.assemble(user, &tid, &headers, false, finished) {
                 Ok(r) => {
                     let code = if r.created {
@@ -1997,7 +2318,7 @@ fn chunk_status(e: &sc_compat_nc::chunking::ChunkError) -> Response {
 }
 
 /// Percent-encode a path for use inside a `<D:href>`.
-fn path_escape(p: &str) -> String {
+pub(crate) fn path_escape(p: &str) -> String {
     const SET: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
         .add(b' ')
         .add(b'"')

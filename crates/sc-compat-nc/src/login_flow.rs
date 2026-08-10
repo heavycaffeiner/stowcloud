@@ -510,6 +510,15 @@ mod tests {
         fn validate_session(&self, _t: &str) -> PortResult<Option<Principal>> {
             Ok(None)
         }
+        fn revoke_app_password(&self, _u: UserId, _c: u32) -> PortResult<()> {
+            Ok(())
+        }
+        fn wipe_requested(&self, _c: u32) -> PortResult<bool> {
+            Ok(false)
+        }
+        fn finish_wipe(&self, _c: u32) -> PortResult<()> {
+            Ok(())
+        }
     }
 
     fn principal() -> Principal {
@@ -517,6 +526,7 @@ mod tests {
             user: UserId(7),
             login_name: "alice".into(),
             display_name: "Alice".into(),
+            credential_id: None,
         }
     }
 
@@ -636,6 +646,7 @@ mod tests {
             user: UserId(8),
             login_name: "mallory".into(),
             display_name: "Mallory".into(),
+            credential_id: None,
         };
         assert_eq!(
             s.grant(&flow, &consent.state_token, &other, "sess-abc", Scope::full()),

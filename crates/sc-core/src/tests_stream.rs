@@ -1,6 +1,7 @@
 //! Tests for `stream.rs` (`Core::open_stream`/`open_stream_by_fid`) and
 //! `archive.rs` (`Core::archive_walk`).
 
+use crate::path::Vpath;
 use std::io::Read;
 use std::sync::Arc;
 
@@ -106,7 +107,7 @@ fn open_stream_denies_unauthorized_user() {
 /// callers that need a stable id do (`ensure_fileid_chain`), since these
 /// tests exercise the `FileId`-keyed entry points directly.
 fn fid_for(core: &Core, user: UserId, vpath: &str) -> sc_vfs::FileId {
-    let r = core.resolve(user, vpath).unwrap();
+    let r = core.resolve(user, &Vpath::new(vpath)).unwrap();
     core.ensure_fileid_chain(&r.root, r.share, &r.path).unwrap()
 }
 

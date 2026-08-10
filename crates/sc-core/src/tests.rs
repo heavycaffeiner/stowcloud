@@ -1,3 +1,4 @@
+use crate::path::Vpath;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -51,7 +52,7 @@ fn roots_and_resolve() {
     assert_eq!(roots.len(), 1);
     assert_eq!(roots[0].label, "root");
 
-    let resolved = core.resolve(USER, "/root/a/b").unwrap();
+    let resolved = core.resolve(USER, &Vpath::new("/root/a/b")).unwrap();
     assert_eq!(resolved.share, SHARE);
     assert_eq!(resolved.path.to_display_string(), "a/b");
 }
@@ -59,9 +60,9 @@ fn roots_and_resolve() {
 #[test]
 fn resolve_rejects_escape() {
     let (core, _dir) = setup();
-    assert!(core.resolve(USER, "/root/../../etc/passwd").is_err());
-    assert!(core.resolve(USER, "/root/a/../../b").is_err());
-    assert!(core.resolve(USER, "/nosuchlabel/a").is_err());
+    assert!(core.resolve(USER, &Vpath::new("/root/../../etc/passwd")).is_err());
+    assert!(core.resolve(USER, &Vpath::new("/root/a/../../b")).is_err());
+    assert!(core.resolve(USER, &Vpath::new("/nosuchlabel/a")).is_err());
 }
 
 #[test]

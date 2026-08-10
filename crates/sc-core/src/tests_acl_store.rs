@@ -7,6 +7,7 @@
 //! fail if the *persistence* wiring in this file is wrong, which is exactly
 //! what's new here.
 
+use crate::path::Vpath;
 use std::sync::Arc;
 
 use sc_acl::{Perms, Principal};
@@ -60,7 +61,7 @@ fn spec(principal: Principal, subpath: &str, allow: Perms) -> GrantSpec {
 fn a_user_with_no_grant_sees_no_roots() {
     let (core, _dir) = setup();
     assert!(core.roots(ALICE).is_empty(), "no grant was ever created for this user");
-    assert!(matches!(core.resolve(ALICE, "/photos/anything"), Err(CoreError::NotFound)));
+    assert!(matches!(core.resolve(ALICE, &Vpath::new("/photos/anything")), Err(CoreError::NotFound)));
 }
 
 #[test]
@@ -101,7 +102,7 @@ fn a_subpath_grant_exposes_only_that_subtree() {
     // The granted subtree resolves and lists its own contents.
     // `resolved.path` is share-root-relative (real on-disk path), not
     // virtual-root-relative — the grant's own subpath is folded in.
-    let resolved = core.resolve(ALICE, "/vacation/beach.jpg").unwrap();
+    let resolved = core.resolve(ALICE, &Vpath::new("/vacation/beach.jpg")).unwrap();
     assert_eq!(resolved.path.to_display_string(), "vacation/beach.jpg");
     let listing = core.list(ALICE, "/vacation", crate::Sort::Name, crate::Order::Asc).unwrap();
     assert_eq!(listing.entries.len(), 1);
@@ -111,8 +112,8 @@ fn a_subpath_grant_exposes_only_that_subtree() {
     // different label, because there is no other label at all: the share
     // root itself was never granted, so `secret.txt` (a sibling of
     // `vacation`, not inside it) has no virtual path that reaches it.
-    assert!(matches!(core.resolve(ALICE, "/photos/secret.txt"), Err(CoreError::NotFound)));
-    assert!(matches!(core.resolve(ALICE, "/secret.txt"), Err(CoreError::NotFound)));
+    assert!(matches!(core.resolve(ALICE, &Vpath::new("/photos/secret.txt")), Err(CoreError::NotFound)));
+    assert!(matches!(core.resolve(ALICE, &Vpath::new("/secret.txt")), Err(CoreError::NotFound)));
 }
 
 // ---------------------------------------------------------------------------
@@ -142,11 +143,11 @@ fn a_persisted_deny_beats_a_persisted_allow_at_the_same_depth() {
     .unwrap();
 
     // Outside the deny: still readable.
-    assert!(core.resolve(ALICE, "/photos/shared/ok.txt").is_ok());
+    assert!(core.resolve(ALICE, &Vpath::new("/photos/shared/ok.txt")).is_ok());
     // Inside the deny: refused, even though the shallower grant allows READ
     // on the whole share.
     assert!(matches!(
-        core.resolve(ALICE, "/photos/shared/private/nope.txt"),
+        core.resolve(ALICE, &Vpath::new("/photos/shared/private/nope.txt")),
         Err(CoreError::Denied { .. })
     ));
 }

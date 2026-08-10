@@ -17,6 +17,7 @@ use sc_acl::Perms;
 use sc_vfs::{Kind, SafePath, ShareId, ShareRoot, UserId};
 
 use crate::error::CoreError;
+use crate::path::Vpath;
 use crate::stream::CoreFileStream;
 
 /// One descendant discovered while walking an archive root.
@@ -54,7 +55,7 @@ impl crate::Core {
         vpath: &str,
         visit: &mut dyn FnMut(&WalkEntry, Option<&mut CoreFileStream>),
     ) -> Result<(), CoreError> {
-        let r = self.resolve_want(user, vpath, Perms::READ)?;
+        let r = self.resolve_want(user, &Vpath::new(vpath), Perms::READ)?;
         let base = r.path.name().unwrap_or("").to_string();
         let max_depth = r.root.policy().max_depth;
         let st = r.root.stat(&r.path)?;

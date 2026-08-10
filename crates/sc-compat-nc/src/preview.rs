@@ -18,7 +18,7 @@ use axum::body::Body;
 use axum::http::{header, StatusCode};
 use axum::response::Response;
 
-use crate::ports::{CorePort, FileId, FitMode, PreviewPort, UserId};
+use crate::ports::{CorePort, FileId, FitMode, PreviewPort, UserId, Vpath};
 
 /// Parsed `?fileId=&file=&x=&y=&a=&mode=&forceIcon=`.
 #[derive(Clone, Debug, Default)]
@@ -88,24 +88,28 @@ impl PreviewApi {
     }
 
     pub fn redirect(&self, user: UserId, q: &PreviewQuery) -> Response {
-        let located = match (q.file_id, &q.path) {
-            (Some(id), _) => self.core.locate(user, FileId(id)).ok(),
-            (None, Some(p)) => self
+        // Both branches have to arrive at a vpath, and only one of them has a
+        // share to start from. The `file` branch is already given one by the
+        // client; the `fileId` branch gets a share path out of the metadata
+        // store and has to be projected back into the caller's own tree. It
+        // used to substitute `home_root` for the share and hand the client's
+        // path through as if it were share-relative, which put every
+        // path-addressed thumbnail one label too deep.
+        let vpath = match (q.file_id, &q.path) {
+            (Some(id), _) => self
                 .core
-                .home_root(user)
+                .locate(user, FileId(id))
                 .ok()
-                .map(|root| (root, p.trim_start_matches('/').to_string())),
+                .and_then(|(share, sp)| self.core.vpath_for(user, share, &sp)),
+            (None, Some(p)) => Vpath::from_client(p).ok(),
             _ => None,
         };
 
-        let Some((root, path)) = located else {
+        let Some(vpath) = vpath else {
             return not_found();
         };
 
-        match self
-            .preview
-            .signed_thumb_url(user, root, &path, q.x, q.y, q.fit)
-        {
+        match self.preview.signed_thumb_url(user, &vpath, q.x, q.y, q.fit) {
             Ok(Some(url)) => Response::builder()
                 .status(StatusCode::FOUND)
                 .header(header::LOCATION, url)
@@ -134,38 +138,61 @@ fn not_found() -> Response {
 mod tests {
     use super::*;
     use crate::ports::{
-        Aggregate, Entry, PortError, PortResult, Quota, ShareId, UserInfo,
+        Aggregate, Entry, PortError, PortResult, Quota, ShareId, SharePath, UserInfo,
     };
 
+    /// One grant, labelled `photos`, rooted at the subpath `albums` inside
+    /// share 1. The subpath is the deployment shape that makes a dropped
+    /// conversion visible: with every grant at its share's root the wrong
+    /// answer and the right one coincide.
     struct FakeCore;
     impl CorePort for FakeCore {
         fn home_root(&self, _u: UserId) -> PortResult<ShareId> {
             Ok(ShareId(1))
         }
-        fn resolve(&self, _s: ShareId, _u: UserId, _p: &str) -> PortResult<Entry> {
+        fn resolve(&self, _u: UserId, _p: &Vpath) -> PortResult<Entry> {
             Err(PortError::NotFound)
         }
-        fn list(&self, _s: ShareId, _u: UserId, _p: &str) -> PortResult<Vec<Entry>> {
+        fn list(&self, _u: UserId, _p: &Vpath) -> PortResult<Vec<Entry>> {
             Ok(vec![])
         }
-        fn stat_entry(&self, _s: ShareId, _u: UserId, _p: &str) -> PortResult<Entry> {
+        fn stat_entry(&self, _u: UserId, _p: &Vpath) -> PortResult<Entry> {
             Err(PortError::NotFound)
         }
-        fn aggregate(&self, _s: ShareId, _i: FileId) -> PortResult<Aggregate> {
+        fn aggregate(&self, _s: ShareId, _p: &SharePath) -> PortResult<Aggregate> {
             Ok(Aggregate { etag: String::new(), rsize: 0, rcount: 0 })
         }
         fn user_info(&self, _u: UserId) -> PortResult<UserInfo> {
             Err(PortError::NotFound)
         }
+        fn user_info_by_login(
+            &self,
+            _c: UserId,
+            _l: &str,
+            _s: crate::ports::GranteeScope,
+        ) -> PortResult<Option<UserInfo>> {
+            Ok(None)
+        }
         fn quota(&self, _u: UserId) -> PortResult<Quota> {
             Ok(Quota { used: 0, free: 0, total: None })
         }
-        fn locate(&self, _u: UserId, id: FileId) -> PortResult<(ShareId, String)> {
+        fn locate(&self, _u: UserId, id: FileId) -> PortResult<(ShareId, SharePath)> {
             if id.0 == 123 {
-                Ok((ShareId(1), "pic.jpg".into()))
+                Ok((ShareId(1), SharePath::parse("albums/pic.jpg", 64).unwrap()))
             } else {
                 Err(PortError::NotFound)
             }
+        }
+        fn vpath_for(&self, _u: UserId, share: ShareId, path: &SharePath) -> Option<Vpath> {
+            if share != ShareId(1) {
+                return None;
+            }
+            let rest = path.components().first()?;
+            if rest.as_str() != "albums" {
+                return None;
+            }
+            let tail: Vec<&str> = path.components()[1..].iter().map(|c| c.as_str()).collect();
+            Some(Vpath::new(&format!("photos/{}", tail.join("/"))))
         }
     }
 
@@ -177,8 +204,7 @@ mod tests {
         fn signed_thumb_url(
             &self,
             _u: UserId,
-            _s: ShareId,
-            path: &str,
+            path: &Vpath,
             w: u32,
             h: u32,
             _f: FitMode,
@@ -187,6 +213,13 @@ mod tests {
                 Ok(Some(format!(
                     "https://content.example.com/t/{path}?w={w}&h={h}&sig=deadbeef"
                 )))
+            } else {
+                Ok(None)
+            }
+        }
+        fn signed_download_url(&self, _u: UserId, path: &Vpath) -> PortResult<Option<String>> {
+            if self.0 {
+                Ok(Some(format!("https://content.example.com/d/{path}?sig=deadbeef")))
             } else {
                 Ok(None)
             }
@@ -309,6 +342,36 @@ mod tests {
     fn missing_preview_is_404_not_a_placeholder_icon() {
         let r = api(false).redirect(UserId(1), &PreviewQuery::parse("fileId=123&forceIcon=1"));
         assert_eq!(r.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// The path branch used to substitute the caller's first share and pass
+    /// the client's path through as share-relative, so `photos` — already a
+    /// grant label — was prefixed with a second label and the thumbnail 404'd.
+    #[test]
+    fn a_path_addressed_thumbnail_uses_the_clients_path_as_the_vpath_it_is() {
+        let r = api(true).redirect(
+            UserId(1),
+            &PreviewQuery::parse("file=%2Fphotos%2Fa.jpg&x=64&y=64"),
+        );
+        let loc = r.headers().get(header::LOCATION).unwrap().to_str().unwrap();
+        assert!(
+            loc.contains("/t/photos/a.jpg?"),
+            "expected the client's own path, got {loc}"
+        );
+    }
+
+    /// The id branch resolves to a share path that still carries the grant's
+    /// subpath (`albums/`). Prefixing a label onto that without stripping it
+    /// aims at `photos/albums/pic.jpg`, one level too deep, and every
+    /// thumbnail in a subpath-rooted grant disappears.
+    #[test]
+    fn an_id_addressed_thumbnail_strips_the_grant_subpath() {
+        let r = api(true).redirect(UserId(1), &PreviewQuery::parse("fileId=123&x=256&y=256"));
+        let loc = r.headers().get(header::LOCATION).unwrap().to_str().unwrap();
+        assert!(
+            loc.contains("/t/photos/pic.jpg?"),
+            "expected the subpath stripped and the label prefixed once, got {loc}"
+        );
     }
 
     #[test]

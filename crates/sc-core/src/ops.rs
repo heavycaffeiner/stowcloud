@@ -13,6 +13,7 @@ use sc_vfs::{FileId, Kind, SafePath, ShareId, ShareRoot, Stat, SymlinkPolicy, Us
 
 use crate::entry::{Entry, ListingSession, OnConflict, OpResult, Order, Sort};
 use crate::error::CoreError;
+use crate::path::Vpath;
 use crate::resolve::Resolved;
 use crate::Listing;
 
@@ -148,7 +149,7 @@ impl crate::Core {
     }
 
     pub fn list(&self, user: UserId, vpath: &str, sort: Sort, order: Order) -> Result<Listing, CoreError> {
-        let r = self.resolve_want(user, vpath, Perms::READ)?;
+        let r = self.resolve_want(user, &Vpath::new(vpath), Perms::READ)?;
         let dir_stat = self.stat_counted(&r.root, &r.path)?;
         if dir_stat.kind != Kind::Dir {
             return Err(CoreError::InvalidPath("not a directory".into()));
@@ -263,7 +264,7 @@ impl crate::Core {
     /// the split lands here and not in `build_entry` itself, which both
     /// callers share.
     pub fn stat_entry(&self, user: UserId, vpath: &str) -> Result<Entry, CoreError> {
-        let r = self.resolve_want(user, vpath, Perms::READ)?;
+        let r = self.resolve_want(user, &Vpath::new(vpath), Perms::READ)?;
         let st = self.stat_counted(&r.root, &r.path)?;
         let name = r.path.name().unwrap_or("").to_string();
         let mut entry = self.build_entry(r.share, &r.root, &name, &r.path, &st, user);
@@ -311,7 +312,7 @@ impl crate::Core {
     }
 
     pub fn mkdir(&self, user: UserId, vpath: &str) -> Result<Entry, CoreError> {
-        let r = self.resolve_want(user, vpath, Perms::CREATE)?;
+        let r = self.resolve_want(user, &Vpath::new(vpath), Perms::CREATE)?;
         r.root.mkdir(&r.path)?;
         self.mark_dirty(r.share, &r.path);
         let st = self.stat_counted(&r.root, &r.path)?;
@@ -326,7 +327,7 @@ impl crate::Core {
         new_name: &str,
         if_match: Option<&str>,
     ) -> Result<Entry, CoreError> {
-        let r = self.resolve_want(user, vpath, Perms::RENAME)?;
+        let r = self.resolve_want(user, &Vpath::new(vpath), Perms::RENAME)?;
         let st = self.stat_counted(&r.root, &r.path)?;
         let cur_etag = MetaStore::file_etag(&st);
         if let Some(im) = if_match {
@@ -344,7 +345,14 @@ impl crate::Core {
 
         if let Ok(Some(id)) = self.meta.lookup_fileid(r.share, &st) {
             if let Ok(parent_id) = self.ensure_fileid_chain(&r.root, r.share, &r.path.parent()) {
-                let _ = self.meta.rename_node(id, parent_id, new_name);
+                // The file moved on disk and the row still names where it
+                // was, so `resolve_path` answers the old path until something
+                // re-derives it. Nothing here can undo the rename, so the row
+                // is left stale and said so out loud rather than dropped.
+                if let Err(e) = self.meta.rename_node(id, parent_id, new_name) {
+                    tracing::warn!(error = %e, fileid = id.get(), new_name,
+                                   "metadata rename failed; the node row now names a stale path");
+                }
             }
         }
         self.mark_dirty(r.share, &r.path);
@@ -454,7 +462,7 @@ impl crate::Core {
         dest: &str,
         on_conflict: OnConflict,
     ) -> Result<Vec<OpResult>, CoreError> {
-        let dest_r = self.resolve_want(user, dest, Perms::CREATE)?;
+        let dest_r = self.resolve_want(user, &Vpath::new(dest), Perms::CREATE)?;
         let max_depth = dest_r.root.policy().max_depth;
         // Once per call, not once per path: the whole batch stages into this
         // one directory.
@@ -462,7 +470,7 @@ impl crate::Core {
         let mut results = Vec::with_capacity(paths.len());
         for p in paths {
             let outcome = (|| -> Result<OpResult, CoreError> {
-                let src = self.resolve_want(user, p, Perms::READ)?;
+                let src = self.resolve_want(user, &Vpath::new(p), Perms::READ)?;
                 let name = src
                     .path
                     .name()
@@ -529,7 +537,7 @@ impl crate::Core {
         if_match: Option<&str>,
         dry_run: bool,
     ) -> Result<OpResult, CoreError> {
-        let src = self.resolve_want(user, src_vpath, Perms::MOVE)?;
+        let src = self.resolve_want(user, &Vpath::new(src_vpath), Perms::MOVE)?;
         let max_depth = dest_r.root.policy().max_depth;
         let name = src
             .path
@@ -619,7 +627,7 @@ impl crate::Core {
         on_conflict: OnConflict,
         if_match: &HashMap<String, String>,
     ) -> Result<Vec<OpResult>, CoreError> {
-        let dest_r = self.resolve_want(user, dest, Perms::CREATE)?;
+        let dest_r = self.resolve_want(user, &Vpath::new(dest), Perms::CREATE)?;
         // Only the cross-device branch of `move_one` stages, but it stages
         // here, so this is where its leftovers would be.
         self.sweep_stale_parts(&dest_r.root, &dest_r.path);
@@ -642,7 +650,7 @@ impl crate::Core {
         on_conflict: OnConflict,
         if_match: &HashMap<String, String>,
     ) -> Result<Vec<OpResult>, CoreError> {
-        let dest_r = self.resolve_want(user, dest, Perms::CREATE)?;
+        let dest_r = self.resolve_want(user, &Vpath::new(dest), Perms::CREATE)?;
         let mut results = Vec::with_capacity(paths.len());
         for p in paths {
             let im = if_match.get(p).map(|s| s.as_str());
@@ -673,7 +681,7 @@ impl crate::Core {
         let mut results = Vec::with_capacity(paths.len());
         for p in paths {
             let outcome = (|| -> Result<OpResult, CoreError> {
-                let r = self.resolve_want(user, p, Perms::DELETE)?;
+                let r = self.resolve_want(user, &Vpath::new(p), Perms::DELETE)?;
                 let st = self.stat_counted(&r.root, &r.path)?;
                 let use_trash = !permanent && r.root.policy().trash != sc_vfs::TrashMode::Off;
                 if use_trash {
@@ -707,7 +715,7 @@ impl crate::Core {
     /// arrives corrupted. Protocol layers that serve arbitrary content must
     /// call this one.
     pub fn read_bytes(&self, user: UserId, vpath: &str, max: usize) -> Result<(Vec<u8>, String), CoreError> {
-        let r = self.resolve_want(user, vpath, Perms::READ)?;
+        let r = self.resolve_want(user, &Vpath::new(vpath), Perms::READ)?;
         let st = self.stat_counted(&r.root, &r.path)?;
         if st.kind == Kind::Dir {
             return Err(CoreError::InvalidPath("is a directory".into()));
@@ -737,7 +745,7 @@ impl crate::Core {
     /// in it, and a client asking about the RAID folder must be told the
     /// RAID's numbers, not the root disk's.
     pub fn quota(&self, user: UserId, vpath: &str) -> Result<crate::entry::Quota, CoreError> {
-        let r = self.resolve_want(user, vpath, Perms::READ)?;
+        let r = self.resolve_want(user, &Vpath::new(vpath), Perms::READ)?;
         match r.root.space(&r.path) {
             Ok(s) => Ok(crate::entry::Quota {
                 used: s.used(),
@@ -757,8 +765,8 @@ impl crate::Core {
     /// composition: the copy is written to a temp file next to the
     /// destination and renamed into place, and the source is never touched.
     pub fn copy_to(&self, user: UserId, src: &str, dst: &str, overwrite: bool) -> Result<Entry, CoreError> {
-        let s = self.resolve_want(user, src, Perms::READ)?;
-        let d = self.resolve_want(user, dst, Perms::CREATE)?;
+        let s = self.resolve_want(user, &Vpath::new(src), Perms::READ)?;
+        let d = self.resolve_want(user, &Vpath::new(dst), Perms::CREATE)?;
 
         if s.path.name().is_none() {
             return Err(CoreError::InvalidPath("cannot copy a share root".into()));
@@ -831,8 +839,8 @@ impl crate::Core {
     /// source names, so it cannot express a move that also renames (WebDAV
     /// `MOVE` names its destination in the `Destination` header).
     pub fn move_to(&self, user: UserId, src: &str, dst: &str, overwrite: bool) -> Result<Entry, CoreError> {
-        let s = self.resolve_want(user, src, Perms::MOVE)?;
-        let d = self.resolve_want(user, dst, Perms::CREATE)?;
+        let s = self.resolve_want(user, &Vpath::new(src), Perms::MOVE)?;
+        let d = self.resolve_want(user, &Vpath::new(dst), Perms::CREATE)?;
 
         if s.path.name().is_none() {
             return Err(CoreError::InvalidPath("cannot move a share root".into()));
@@ -883,7 +891,14 @@ impl crate::Core {
             s.root.rename(&s.path, &d.path, !overwrite)?;
             if let Ok(Some(id)) = self.meta.lookup_fileid(s.share, &src_st) {
                 if let Ok(parent_id) = self.ensure_fileid_chain(&d.root, d.share, &d.path.parent()) {
-                    let _ = self.meta.rename_node(id, parent_id, d.path.name().unwrap_or(""));
+                    // Same as `rename` above: the move has committed, so a
+                    // failed row update leaves `resolve_path` answering the
+                    // old path and that has to be visible in the log.
+                    let new_name = d.path.name().unwrap_or("");
+                    if let Err(e) = self.meta.rename_node(id, parent_id, new_name) {
+                        tracing::warn!(error = %e, fileid = id.get(), new_name,
+                                       "metadata rename failed after a move; the node row now names a stale path");
+                    }
                 }
             }
         }
@@ -902,7 +917,7 @@ impl crate::Core {
     /// failure after the temp file is created, it is unlinked before the
     /// error is returned — never left behind.
     pub fn write_text(&self, user: UserId, vpath: &str, body: &[u8], if_match: Option<&str>) -> Result<Entry, CoreError> {
-        let r = self.resolve_want(user, vpath, Perms::WRITE)?;
+        let r = self.resolve_want(user, &Vpath::new(vpath), Perms::WRITE)?;
         let exists = path_exists(&r.root, &r.path)?;
         let mode = r.root.policy().mode_file;
 

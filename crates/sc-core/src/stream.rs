@@ -21,6 +21,7 @@ use sc_vfs::ids::FileId;
 use sc_vfs::{FileHandle, Kind, SafePath, ShareRoot, Stat, UserId};
 
 use crate::error::CoreError;
+use crate::path::Vpath;
 
 /// Bytes read per `read_at` call, regardless of the caller's buffer size
 /// (/: "memory must not scale with file
@@ -91,7 +92,7 @@ impl crate::Core {
         vpath: &str,
         range: Option<(u64, u64)>,
     ) -> Result<(FidEntry, CoreFileStream), CoreError> {
-        let r = self.resolve_want(user, vpath, Perms::READ)?;
+        let r = self.resolve_want(user, &Vpath::new(vpath), Perms::READ)?;
         self.open_stream_in(&r.root, &r.path, range)
     }
 

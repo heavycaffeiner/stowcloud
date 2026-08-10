@@ -120,6 +120,11 @@ pub struct OpResult {
 pub struct TrashEntry {
     pub id: String,
     pub name: String,
+    /// Share-relative path the entry was deleted from, decoded out of the
+    /// flat trash entry's own name. Empty when the entry predates that
+    /// encoding and only its basename was recorded.
+    pub orig_path: String,
+    pub is_dir: bool,
     pub size: u64,
     /// When the entry was moved into the trash, from the inode change time
     /// the move itself set. This used to carry the file's mtime, which a

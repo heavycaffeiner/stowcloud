@@ -158,6 +158,36 @@ pub trait PropSource: Send + Sync {
 
 pub type PropSourceRef = Arc<dyn PropSource>;
 
+/// Handles the write side of a live property, so it never reaches the
+/// dead-property store. The mirror of [`PropSource`].
+///
+/// Without this, a `PROPPATCH` on a property a `PropSource` *reads* lands in
+/// the dead-property table, answers `200`, and the next `PROPFIND` reports the
+/// old value from wherever the read side actually gets it. The client sees its
+/// change accepted and then reverted.
+pub trait PropPatchSource: Send + Sync {
+    /// `(namespace, local-name)` pairs this source claims. A claimed property
+    /// is also treated as protected against the dead-property store, so the
+    /// two can never disagree about who owns it.
+    fn claims(&self) -> &[(&'static str, &'static str)];
+
+    /// `value` is `None` for a `d:remove`. Returning `Err` fails the whole
+    /// PROPPATCH, which RFC 4918 requires to be atomic.
+    ///
+    /// `id` is a real, already-materialised file id: the caller allocates one
+    /// before calling, because a live property that silently does not persist
+    /// is the failure this trait exists to prevent.
+    fn set(
+        &self,
+        user: UserId,
+        share: ShareId,
+        id: sc_vfs::FileId,
+        ns: &str,
+        name: &str,
+        value: Option<&str>,
+    ) -> crate::error::DavResult<()>;
+}
+
 /// The live properties every PROPFIND answers.
 pub(crate) const LIVE_PROPS: &[&str] = &[
     "resourcetype",

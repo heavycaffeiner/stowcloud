@@ -37,6 +37,7 @@ pub struct NcState {
     pub shares: Arc<SharesApi>,
     pub sharees: Arc<ShareesApi>,
     pub preview: Arc<PreviewApi>,
+    pub unified: Arc<crate::unified_search::UnifiedSearchApi>,
 }
 
 /// Context an OCS handler needs before it can answer at all.
@@ -133,6 +134,13 @@ pub fn router(state: NcState) -> Router {
         // `ThumbnailsCacheManager.java:958`, iOS at `the iOS SDK's +API.swift:649`
         // — and both use the same non-OCS path shape.
         .route("/index.php/avatar/{user}/{size}", get(h_avatar))
+        // --- remote wipe ---
+        //
+        // Not OCS: the client posts the app password as a form field and reads
+        // a bare JSON object. It treats any non-200 as "no wipe", so the whole
+        // feature fails safe.
+        .route("/index.php/core/wipe/check", post(h_wipe_check))
+        .route("/index.php/core/wipe/success", post(h_wipe_success))
         // --- web UI hand-off ---
         .route("/index.php/apps/files/", get(h_files_redirect))
         .route("/index.php/apps/files", get(h_files_redirect))
@@ -214,7 +222,13 @@ async fn h_ocs(
             };
             let q = parse_pairs(uri.query().unwrap_or(""));
             let filter = crate::ports::ShareFilter {
-                path: find(&q, "path"),
+                // Same normalisation as `to_spec`: a folder path arrives from
+                // Android with a trailing separator, and it is a vpath in both
+                // directions. An unusable one becomes `None`, which lists
+                // every link the caller owns, matching the reference's
+                // treatment of an absent `path`.
+                path: find(&q, "path")
+                    .and_then(|p| crate::shares::normalise_client_path(&p).ok()),
                 // The reference compares against the literal string "true";
                 // "1" and "TRUE" are falsy there, so they are here too.
                 reshares: find(&q, "reshares").as_deref() == Some("true"),
@@ -278,6 +292,97 @@ async fn h_ocs(
                     share_origin(&s, &headers),
                 ))
             }
+        }
+
+        // --- account lifecycle ---
+        //
+        // Both apps call this when the user removes the account. Without it
+        // the app password issued by Login Flow v2 stays valid for the life of
+        // the server: the phone forgets the credential, the server does not.
+        ("DELETE", "/core/apppassword") => {
+            let Some(p) = authenticate(&s, &headers, from) else {
+                return ctx.result(Err(OcsError::unauthorized("Unauthorised")));
+            };
+            match p.credential_id {
+                Some(id) => match s.deps.auth.revoke_app_password(p.user, id) {
+                    Ok(()) => ctx.ok(Val::empty_map()),
+                    Err(_) => ctx.result(Err(OcsError::server_error(
+                        "could not revoke this app password",
+                    ))),
+                },
+                // A session-authenticated request has no app password to
+                // revoke. Letting it act on something else would be a logout
+                // that silently did nothing.
+                None => ctx.result(Err(OcsError::forbidden(
+                    "this endpoint revokes app passwords; a browser session is signed out its own way",
+                ))),
+            }
+        }
+
+        ("GET", p) if p.starts_with("/cloud/users/") => {
+            let Some(caller) = authenticate(&s, &headers, from) else {
+                return ctx.result(Err(OcsError::unauthorized("Unauthorised")));
+            };
+            let login = &p["/cloud/users/".len()..];
+            if login.is_empty() || login.contains('/') {
+                return ctx.result(Err(OcsError::not_found("User does not exist")));
+            }
+            let scope = match s.cfg.sharee_lookup {
+                crate::config::ShareeLookup::SameGroup => crate::ports::GranteeScope::SameGroup,
+                crate::config::ShareeLookup::All => crate::ports::GranteeScope::All,
+                crate::config::ShareeLookup::Off => crate::ports::GranteeScope::Off,
+            };
+            // Your own account is always in scope: asking about yourself
+            // reveals nothing you do not already hold.
+            let own = s.deps.core.user_info(caller.user).ok();
+            let found = match own.as_ref().filter(|u| u.login_name == login) {
+                Some(u) => Some(u.clone()),
+                None => s
+                    .deps
+                    .core
+                    .user_info_by_login(caller.user, login, scope)
+                    .unwrap_or(None),
+            };
+            match found {
+                // Outside scope and no such account are the same answer, and
+                // that is the point.
+                None => ctx.result(Err(OcsError::not_found("User does not exist"))),
+                Some(u) => ctx.ok(crate::user::other_user(&u)),
+            }
+        }
+
+        // --- unified search ---
+        ("GET", "/search/providers") => {
+            let Some(_) = authenticate(&s, &headers, from) else {
+                return ctx.result(Err(OcsError::unauthorized("Unauthorised")));
+            };
+            ctx.ok(crate::unified_search::providers())
+        }
+        ("GET", "/search/providers/files/search") => {
+            let Some(p) = authenticate(&s, &headers, from) else {
+                return ctx.result(Err(OcsError::unauthorized("Unauthorised")));
+            };
+            let q = parse_pairs(uri.query().unwrap_or(""));
+            ctx.result(s.unified.search(
+                p.user,
+                &find(&q, "term").unwrap_or_default(),
+                find(&q, "limit").and_then(|v| v.parse().ok()),
+                find(&q, "cursor").and_then(|v| v.parse().ok()),
+                share_origin(&s, &headers),
+            ))
+        }
+
+        // --- media streaming ---
+        ("POST", "/apps/dav/api/v1/direct") => {
+            let Some(p) = authenticate(&s, &headers, from) else {
+                return ctx.result(Err(OcsError::unauthorized("Unauthorised")));
+            };
+            let mut pairs = body_pairs(&headers, &body);
+            pairs.extend(parse_pairs(uri.query().unwrap_or("")));
+            let Some(file_id) = find(&pairs, "fileId").and_then(|v| v.parse::<i64>().ok()) else {
+                return ctx.result(Err(OcsError::bad_request("`fileId` is required")));
+            };
+            ctx.result(crate::direct::mint(&s.deps, p.user, file_id))
         }
 
         _ => ctx.result(Err(OcsError::new(998, "Invalid query, please check the syntax"))),
@@ -558,6 +663,69 @@ async fn h_avatar(State(s): State<NcState>, headers: HeaderMap, from: ClientAddr
         return StatusCode::UNAUTHORIZED.into_response();
     }
     StatusCode::NOT_FOUND.into_response()
+}
+
+/// `POST /index.php/core/wipe/check` — "has this device been marked as lost?"
+///
+/// The credential is submitted as a form field rather than in an
+/// `Authorization` header, which is the shape both clients send. It is
+/// verified the same way any other credential is: this route hands it to
+/// `AuthPort::verify_basic` and never inspects it itself.
+///
+/// A credential that does not verify answers `404`, not `401`: the client
+/// treats any non-200 as "no wipe", and a 401 would make it prompt for
+/// credentials for a request the user never made. A credential that *does*
+/// verify always gets a 200 carrying the flag, whichever way it reads.
+async fn h_wipe_check(
+    State(s): State<NcState>,
+    headers: HeaderMap,
+    from: ClientAddr,
+    body: String,
+) -> Response {
+    let pairs = body_pairs(&headers, &body);
+    let Some(token) = find(&pairs, "token").filter(|t| !t.is_empty()) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    // The app password *is* the login here: `verify_basic` resolves the
+    // account from the token itself, so the login half is not meaningful and
+    // the empty string is passed deliberately rather than guessed at.
+    let Ok(Some(p)) = s.deps.auth.verify_basic("", &token, from) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Some(cred) = p.credential_id else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    // Both answers are a 200 carrying the flag. The client treats any non-200
+    // as "no wipe", so answering 404 for "not marked" would work too — but it
+    // is the same status a credential that does not verify gets, and a device
+    // that cannot tell those apart cannot tell a server that lost its
+    // credential from one that simply has nothing to ask of it.
+    let wipe = s.deps.auth.wipe_requested(cred).unwrap_or(false);
+    axum::Json(serde_json::json!({ "wipe": wipe })).into_response()
+}
+
+/// `POST /index.php/core/wipe/success` — the device says it has erased its
+/// local copies, so the credential has done its last useful thing.
+async fn h_wipe_success(
+    State(s): State<NcState>,
+    headers: HeaderMap,
+    from: ClientAddr,
+    body: String,
+) -> Response {
+    let pairs = body_pairs(&headers, &body);
+    let Some(token) = find(&pairs, "token").filter(|t| !t.is_empty()) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Ok(Some(p)) = s.deps.auth.verify_basic("", &token, from) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Some(cred) = p.credential_id else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match s.deps.auth.finish_wipe(cred) {
+        Ok(()) => StatusCode::OK.into_response(),
+        Err(_) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    }
 }
 
 async fn h_files_redirect(State(s): State<NcState>, headers: HeaderMap) -> Response {

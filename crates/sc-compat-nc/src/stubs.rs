@@ -64,8 +64,6 @@ pub fn empty_object() -> Val {
 pub const NOT_FOUND_PATHS: &[&str] = &[
     "/ocs/v2.php/apps/activity/api/v2/activity",
     "/ocs/v1.php/apps/activity/api/v2/activity",
-    "/ocs/v2.php/apps/dav/api/v1/direct",
-    "/ocs/v1.php/apps/dav/api/v1/direct",
     "/ocs/v2.php/apps/user_status/api/v1/user_status",
     "/ocs/v1.php/apps/user_status/api/v1/user_status",
 ];

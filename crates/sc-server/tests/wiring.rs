@@ -24,6 +24,11 @@ fn fixture() -> Fixture {
     let data = tempfile::tempdir().expect("data dir");
     let share = tempfile::tempdir().expect("share dir");
     std::fs::write(share.path().join("hello.txt"), b"hello dav").unwrap();
+    // A folder, so a share test can exercise the path shape Android sends for
+    // a collection (trailing separator) and the `item_type: folder` reporting
+    // that depends on statting the link's own share.
+    std::fs::create_dir_all(share.path().join("sub")).unwrap();
+    std::fs::write(share.path().join("sub/inner.txt"), b"inner").unwrap();
 
     let cfg = Config {
         data_dir: data.path().to_path_buf(),
@@ -250,7 +255,7 @@ async fn a_share_link_survives_the_whole_stack() {
         .core
         .create_link(
             uid,
-            &format!("/{label}/hello.txt"),
+            &sc_core::Vpath::new(&format!("/{label}/hello.txt")),
             &sc_core::LinkSpec::default(),
         )
         .expect("mint a link");
@@ -293,7 +298,7 @@ async fn a_public_download_is_signed_for_nobody_and_counts_once() {
     let (link, token) = f
         .app
         .core
-        .create_link(uid, &format!("/{label}/hello.txt"), &spec)
+        .create_link(uid, &sc_core::Vpath::new(&format!("/{label}/hello.txt")), &spec)
         .expect("mint a link");
 
     let download = |token: String| {
@@ -338,7 +343,7 @@ async fn a_wrong_link_password_is_indistinguishable_from_an_unknown_token() {
     let (_link, token) = f
         .app
         .core
-        .create_link(uid, &format!("/{label}/hello.txt"), &spec)
+        .create_link(uid, &sc_core::Vpath::new(&format!("/{label}/hello.txt")), &spec)
         .expect("mint a link");
 
     let attempt = |uri: String, pw: &str| {
@@ -386,11 +391,16 @@ async fn the_compat_share_port_is_backed_by_the_same_store() {
     use sc_compat_nc::ports::{GranteeKind, ShareFilter, ShareSpec};
 
     let f = fixture();
-    let (uid, _label) = user_with_grant(&f);
+    let (uid, label) = user_with_grant(&f);
     let port = f.app.compat.as_ref().expect("compat built").share_port();
 
+    // The path a client sends is a vpath: its files root is a synthesised
+    // collection of grant labels, so the first segment is one. This used to
+    // read `/hello.txt` and the adapter prefixed the first root's label onto
+    // it, which is the defect the whole vocabulary fix exists to remove.
+    let client_path = format!("/{label}/hello.txt");
     let spec = ShareSpec {
-        path: "/hello.txt".into(),
+        path: sc_compat_nc::shares::normalise_client_path(&client_path).unwrap(),
         kind: GranteeKind::Link,
         grantee: None,
         perms: sc_acl::Perms::READ | sc_acl::Perms::DOWNLOAD,
@@ -415,6 +425,69 @@ async fn the_compat_share_port_is_backed_by_the_same_store() {
         "a later read must reproduce the token, or a client has no URL to show"
     );
 
+    // The round trip. A link created at a client path is reported back at the
+    // same client path, and that path names the node over DAV. Both halves
+    // were broken and the response field hid it: the reported path was the
+    // one the client asked for whichever node the link actually landed on.
+    assert_eq!(
+        listed[0].path, client_path,
+        "the reported path must be the one the client can address"
+    );
+    assert_eq!(created.path, client_path);
+    let over_dav = f
+        .app
+        .core
+        .stat_entry(uid, listed[0].path.trim_start_matches('/'))
+        .expect("the reported path resolves in the caller's own tree");
+    assert_eq!(over_dav.name, "hello.txt");
+
+    // Filtering by that same path finds it, which is what every file detail
+    // screen does before it draws the share sheet.
+    let by_path = port
+        .list(
+            uid,
+            &ShareFilter {
+                path: Some(spec.path.clone()),
+                ..Default::default()
+            },
+        )
+        .expect("list by path");
+    assert_eq!(by_path.len(), 1, "a filter on the client's own path matches");
+
+    // Android appends a separator to every folder path, which used to reach
+    // `SafePath::parse` as an empty component and be refused outright.
+    let folder_spec = ShareSpec {
+        path: sc_compat_nc::shares::normalise_client_path(&format!("/{label}/sub/")).unwrap(),
+        ..spec.clone()
+    };
+    let folder = port
+        .create(uid, &folder_spec)
+        .expect("a folder path with Android's trailing separator is shareable");
+    assert!(folder.kind_is_dir, "a folder link reports item_type folder");
+    assert_ne!(
+        folder.file_id,
+        sc_vfs::FileId::new(0),
+        "a folder link carries a real file id"
+    );
+    assert_eq!(folder.path, format!("/{label}/sub"));
+
+    // `subfiles=true` asks which entries *inside* the folder are shared.
+    let inside = port
+        .list(
+            uid,
+            &ShareFilter {
+                path: Some(folder_spec.path.clone()),
+                subfiles: true,
+                ..Default::default()
+            },
+        )
+        .expect("subfiles list");
+    assert!(
+        inside.is_empty(),
+        "nothing inside the folder is shared, and the folder itself is not its own child"
+    );
+    port.delete(uid, folder.id).expect("delete the folder link");
+
     // User and group grants have no store anywhere. Refused, not dropped.
     for kind in [GranteeKind::User, GranteeKind::Group] {
         let s = ShareSpec {
@@ -435,6 +508,100 @@ async fn the_compat_share_port_is_backed_by_the_same_store() {
 
     port.delete(uid, created.id).expect("delete");
     assert!(f.app.core.list_links(uid, None).unwrap().is_empty());
+}
+
+/// A link in a share that is **not** the caller's first root.
+///
+/// The reverse mapping used to stat every link under the first root's label
+/// whatever share it actually belonged to, so a link anywhere else missed its
+/// stat entirely: `item_type` came back "file" for a folder and the file id
+/// degraded to 0. With one share in the fixture the wrong answer and the right
+/// one coincide, which is why this needs a second one.
+#[cfg(feature = "compat-nc")]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_link_outside_the_first_root_is_described_by_its_own_share() {
+    use sc_compat_nc::ports::{GranteeKind, ShareFilter, ShareSpec};
+
+    let f = fixture();
+    let (uid, first_label) = user_with_grant(&f);
+
+    let second = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(second.path().join("archive")).unwrap();
+    std::fs::write(second.path().join("archive/old.txt"), b"archived").unwrap();
+    f.app
+        .core
+        .register_share(sc_core::ShareDef {
+            id: sc_vfs::ShareId::new(2),
+            name: "second".into(),
+            host_path: second.path().to_path_buf(),
+            policy: sc_vfs::SharePolicy::default(),
+            shared_externally: false,
+        })
+        .expect("register a second share");
+    f.app
+        .core
+        .seed_full_access(uid)
+        .expect("grant the second share too");
+
+    let roots = f.app.core.roots(uid);
+    assert!(roots.len() >= 2, "the fixture needs two roots to be a test");
+    let second_label = roots
+        .iter()
+        .map(|r| r.label.clone())
+        .find(|l| *l != first_label)
+        .expect("a second label");
+
+    let port = f.app.compat.as_ref().expect("compat built").share_port();
+    let client_path = format!("/{second_label}/archive");
+    let spec = ShareSpec {
+        path: sc_compat_nc::shares::normalise_client_path(&client_path).unwrap(),
+        kind: GranteeKind::Link,
+        grantee: None,
+        perms: sc_acl::Perms::READ | sc_acl::Perms::DOWNLOAD,
+        password: None,
+        expires_s: None,
+        label: None,
+        note: None,
+    };
+    let created = port.create(uid, &spec).expect("a link in the second share");
+
+    assert_eq!(created.path, client_path, "reported under its own label");
+    assert!(
+        created.kind_is_dir,
+        "a folder in a second share must still report item_type folder"
+    );
+    assert_ne!(
+        created.file_id,
+        sc_vfs::FileId::new(0),
+        "and carry a real file id rather than the zero fallback"
+    );
+
+    // It is also findable by the path the client would send back.
+    let listed = port
+        .list(
+            uid,
+            &ShareFilter {
+                path: Some(spec.path.clone()),
+                ..Default::default()
+            },
+        )
+        .expect("list by path");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].path, client_path);
+
+    // And a same-named path under the *first* root is a different node, which
+    // is the confusion the old first-root prefixing produced: it would have
+    // published this one instead.
+    let elsewhere = port
+        .list(
+            uid,
+            &ShareFilter {
+                path: Some(format!("{first_label}/archive")),
+                ..Default::default()
+            },
+        )
+        .expect("list by a path in the other root");
+    assert!(elsewhere.is_empty(), "{elsewhere:?}");
 }
 
 // -------------------------------------------------- plain-PUT X-OC-Mtime --

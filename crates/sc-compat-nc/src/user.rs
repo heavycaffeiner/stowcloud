@@ -120,6 +120,46 @@ pub fn current_user(u: &UserInfo, q: &Quota) -> Val {
     ])
 }
 
+/// Another account, for the sharee-name lookup both apps do when they need to
+/// turn a login into a display name.
+///
+/// The same shape as [`current_user`] minus `quota`, which is nobody else's
+/// business, and minus the backend capabilities, which describe what *you* may
+/// change about your own account.
+pub fn other_user(u: &UserInfo) -> Val {
+    Val::map([
+        ("id", Val::str(u.login_name.clone())),
+        ("enabled", Val::Bool(u.enabled)),
+        (
+            "email",
+            match &u.email {
+                Some(e) => Val::str(e.clone()),
+                None => Val::Null,
+            },
+        ),
+        // Both spellings, for the same split client population `current_user`
+        // documents.
+        ("displayname", Val::str(u.display_name.clone())),
+        ("display-name", Val::str(u.display_name.clone())),
+        ("phone", Val::str("")),
+        ("address", Val::str("")),
+        ("website", Val::str("")),
+        ("twitter", Val::str("")),
+        ("fediverse", Val::str("")),
+        ("organisation", Val::str("")),
+        ("role", Val::str("")),
+        ("headline", Val::str("")),
+        ("biography", Val::str("")),
+        ("profile_enabled", Val::Bool(false)),
+        (
+            "groups",
+            Val::list(u.groups.iter().map(|g| Val::str(g.clone())).collect::<Vec<_>>()),
+        ),
+        ("language", Val::str(u.language.clone())),
+        ("locale", Val::str(u.locale.clone())),
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use crate::ports::{
     Entry, FileId, GranteeKind, Perms, PreviewPort, PropCtx, PropReq, PropSource, PropWriter,
-    SharePort, ShareId,
+    SharePath, SharePort, ShareId,
 };
 use crate::store::NcStore;
 
@@ -217,7 +217,14 @@ pub struct NcPropSource {
 /// Recursive directory size lookup. Split out from `CorePort` so the property
 /// source can be unit-tested without a whole core.
 pub trait DirSize: Send + Sync {
-    fn recursive_size(&self, share: ShareId, id: FileId) -> Option<u64>;
+    /// Recursive byte total of a directory subtree.
+    ///
+    /// Takes the path rather than a file id because `Core::aggregate` takes a
+    /// path and allocates the id itself, and because a share's own root has no
+    /// `node` row to have an id: it is reachable by path and by nothing else.
+    /// `None` means the total could not be determined, and the caller must omit
+    /// the property rather than substitute a number.
+    fn recursive_size(&self, share: ShareId, path: &SharePath) -> Option<u64>;
 }
 
 impl NcPropSource {
@@ -280,12 +287,25 @@ impl PropSource for NcPropSource {
         if req.wants(NS_OC, "size") {
             // For a directory this is the recursive rollup; for a file the
             // plain size. The reference server emits oc:size for both.
+            //
+            // A directory whose rollup is unavailable gets no property at
+            // all. It used to fall back to `e.size`, which for a directory is
+            // whatever `stat` reports for the inode itself — 4096 on ext4 —
+            // so a folder holding a terabyte announced 4 KB, a number
+            // plausible enough that nobody reads it as an error. Omitting
+            // leaves Android at its initialised 0; emitting an empty element
+            // would be worse still, since its parser casts the value
+            // unguarded and fails the whole folder listing.
             let size = if is_dir {
-                self.aggregate.recursive_size(ctx.share, file_id).unwrap_or(e.size)
+                ctx.share_path
+                    .as_ref()
+                    .and_then(|p| self.aggregate.recursive_size(ctx.share, p))
             } else {
-                e.size
+                Some(e.size)
             };
-            out.num(NS_OC, "size", size);
+            if let Some(size) = size {
+                out.num(NS_OC, "size", size);
+            }
         }
         if req.wants(NS_OC, "favorite") {
             let fav = self.store.is_favorite(ctx.user, file_id).unwrap_or(false);
@@ -461,20 +481,28 @@ mod tests {
         fn signed_thumb_url(
             &self,
             _u: UserId,
-            _s: ShareId,
-            _p: &str,
+            _p: &crate::ports::Vpath,
             _w: u32,
             _h: u32,
             _f: crate::ports::FitMode,
         ) -> PortResult<Option<String>> {
             Ok(None)
         }
+        fn signed_download_url(
+            &self,
+            _u: UserId,
+            _p: &crate::ports::Vpath,
+        ) -> PortResult<Option<String>> {
+            Ok(None)
+        }
     }
 
-    struct A(u64);
+    /// `None` stands for "the aggregate could not be computed", which is the
+    /// case `oc:size` must answer by staying absent.
+    struct A(Option<u64>);
     impl DirSize for A {
-        fn recursive_size(&self, _s: ShareId, _i: FileId) -> Option<u64> {
-            Some(self.0)
+        fn recursive_size(&self, _s: ShareId, _p: &SharePath) -> Option<u64> {
+            self.0
         }
     }
 
@@ -483,7 +511,7 @@ mod tests {
             user: UserId(1),
             user_name: "alice".into(),
             share: ShareId(1),
-            path: "photos".into(),
+            share_path: Some(SharePath::parse("photos", 64).unwrap()),
             owner_name: "alice".into(),
             owner_display_name: "Alice".into(),
         }
@@ -509,7 +537,7 @@ mod tests {
             Arc::new(MemStore::with_instance_id("ocINST0001")),
             Arc::new(S(kinds)),
             Arc::new(P(preview)),
-            Arc::new(A(4096)),
+            Arc::new(A(Some(4096))),
             "ocINST0001".into(),
         )
     }
@@ -648,7 +676,7 @@ mod tests {
             store,
             Arc::new(S(vec![])),
             Arc::new(P(false)),
-            Arc::new(A(0)),
+            Arc::new(A(Some(0))),
             "ocINST0001".into(),
         );
         let mut w = PropWriter::new();
@@ -832,6 +860,49 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A directory whose recursive rollup cannot be computed reports no size
+    /// at all.
+    ///
+    /// It used to fall back to `Entry::size`, which for a directory is the
+    /// inode's own size — 4096 on ext4 — so a folder holding a terabyte
+    /// announced 4 KB. That is worse than nothing: it is a plausible number,
+    /// so nobody reads it as an error. Absent leaves the Android parser at its
+    /// initialised 0; an empty element would fail the whole folder listing.
+    #[test]
+    fn a_directory_with_no_computable_aggregate_omits_oc_size_entirely() {
+        let s = NcPropSource::new(
+            Arc::new(MemStore::with_instance_id("ocINST0001")),
+            Arc::new(S(vec![])),
+            Arc::new(P(false)),
+            Arc::new(A(None)),
+            "ocINST0001".into(),
+        );
+        let mut dir = entry(Kind::Dir);
+        dir.size = 4096;
+        let mut w = PropWriter::new();
+        s.emit(&dir, &ctx(), &PropReq::allprop(), &mut w);
+        assert!(
+            w.get(NS_OC, "size").is_none(),
+            "an unavailable rollup must omit the property, never substitute the inode size"
+        );
+
+        // A file's size is always known, so it is always emitted.
+        let mut w = PropWriter::new();
+        s.emit(&entry(Kind::File), &ctx(), &PropReq::allprop(), &mut w);
+        assert!(w.get(NS_OC, "size").is_some());
+    }
+
+    /// The same, when the host adapter could not resolve a share path at all.
+    #[test]
+    fn a_directory_with_no_resolved_share_path_omits_oc_size() {
+        let s = source(vec![], false);
+        let mut c = ctx();
+        c.share_path = None;
+        let mut w = PropWriter::new();
+        s.emit(&entry(Kind::Dir), &c, &PropReq::allprop(), &mut w);
+        assert!(w.get(NS_OC, "size").is_none());
     }
 
     /// iOS asks for these in the `oc:` namespace but *parses* them with a `d:`
