@@ -19,7 +19,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 # Raised from 1.85 because the lockfile already needed it: `image@0.25.10`
 # and `time@0.3.54` declare 1.88.0. Nothing here was compiling on 1.85 — the
