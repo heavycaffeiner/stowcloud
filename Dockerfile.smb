@@ -109,7 +109,12 @@ RUN chmod 755 /entrypoint.sh
 # was never wanted here.
 RUN rm -f /etc/fail2ban/jail.d/alpine-ssh.conf
 
-EXPOSE 445
+# 137/138 are nmbd's, and only open when `smb.server_name` is set. They are
+# documented here for completeness rather than as something to publish: NetBIOS
+# name service is broadcast UDP, a published port maps unicast only, so
+# `\\NAME` resolves only when the container shares the LAN's broadcast domain
+# (`network_mode: host` or macvlan). 445 alone is enough to mount by address.
+EXPOSE 445 137/udp 138/udp
 
 # `smbd -b` prints the compiled-in paths/options and exits 0 iff the binary
 # itself is sane; it does not need a config file to be valid, which matters

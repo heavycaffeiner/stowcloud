@@ -163,6 +163,19 @@ services:
       - DAC_READ_SEARCH
     security_opt:
       - no-new-privileges:true
+    # Mounting by name (`\\stowcloud\photos` rather than `\\192.168.1.10\
+    # photos`) needs two things: `smb.server_name` set on the settings screen,
+    # which is what makes the sidecar run nmbd, and this container sharing the
+    # LAN's broadcast domain. NetBIOS name service is broadcast UDP 137/138 and
+    # a bridge does not carry it, so on the default network nmbd announces the
+    # name to nobody. Replace the `ports:` block below with:
+    #
+    #   network_mode: host
+    #
+    # A host-networked container publishes no ports at all, so `interfaces` and
+    # `hosts allow` in the generated smb.conf become the only thing keeping smbd
+    # off a public address. Both are already generated from the same LAN-only
+    # rule this port binding states by hand.
     ports:
       # A LAN address, never 0.0.0.0 (§7.4) — validate_bind refuses a public one.
       # Replace this with your own before enabling the profile: it is an

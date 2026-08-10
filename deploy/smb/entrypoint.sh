@@ -108,10 +108,39 @@ verify_passdb() {
     [ -z "$missing" ] || echo "sc-smb: WARNING: no passdb entry for:$missing — they cannot authenticate over SMB (check the uid field in smbpasswd against $CONFIG_DIR/passwd)" >&2
 }
 
+# nmbd, but only while the active config asks for a name. `disable netbios` is
+# what `sc-smb`'s renderer flips when `smb.server_name` is set, and reading it
+# back from the promoted file rather than from an env var is what lets a
+# settings change take effect on the next reload instead of the next restart.
+#
+# Name service is broadcast UDP 137/138 and does not cross a Docker bridge, so
+# on a bridged network nmbd starts and nobody hears it. `network_mode: host`
+# or macvlan is what makes `\\NAME` resolve.
+#
+# smbd stays on 445 either way (`smb ports = 445`): nmbd publishes the name,
+# it does not bring back the 139 transport, which predates SMB3 signing and
+# encryption.
+sync_nmbd() {
+    local disabled
+    disabled=$(testparm -s --parameter-name='disable netbios' "$SMB_CONF_ACTIVE" 2>/dev/null \
+        | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+    if [ "$disabled" = 'no' ]; then
+        if pgrep -x nmbd >/dev/null 2>&1; then
+            return 0
+        fi
+        nmbd --daemon >/dev/null 2>&1 || \
+            echo "sc-smb: nmbd did not start, so \\\\NAME will not resolve; the address still works" >&2
+    else
+        pkill -x nmbd >/dev/null 2>&1 || true
+    fi
+    return 0
+}
+
 # smbd cannot start without at least one accepted config.
 until sync_once; do
     sleep 2
 done
+sync_nmbd
 
 # fail2ban watches the log path `inject_logging` just pointed smbd at
 # (jail.d/samba.conf, baked into the image). smbd itself doesn't start until
@@ -138,6 +167,9 @@ fail2ban-server -b --logtarget=/var/log/fail2ban.log >"$STATE_DIR/fail2ban.boot.
     while inotifywait -e close_write,create,move -q "$CONFIG_DIR" >/dev/null 2>&1; do
         if sync_once; then
             smbcontrol all reload-config 2>/dev/null || true
+            # After the reload, because turning a name on or off starts or
+            # stops a daemon rather than changing one smbd already reread.
+            sync_nmbd
             echo "sc-smb: reloaded after a config change"
         fi
     done

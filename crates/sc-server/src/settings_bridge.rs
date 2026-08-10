@@ -482,7 +482,9 @@ impl SettingsBridge {
         // `App::build`); everything else is live via `render_live`. ---
         let smb_src = src(
             o.smb.is_some(),
-            cfg.smb.enabled == default.smb.enabled && cfg.smb.workgroup == default.smb.workgroup,
+            cfg.smb.enabled == default.smb.enabled
+                && cfg.smb.workgroup == default.smb.workgroup
+                && cfg.smb.server_name == default.smb.server_name,
         );
         fields.push(Self::field(
             "smb.enabled",
@@ -493,6 +495,12 @@ impl SettingsBridge {
         fields.push(Self::field(
             "smb.workgroup",
             json!(cfg.smb.workgroup),
+            smb_src,
+            false,
+        ));
+        fields.push(Self::field(
+            "smb.server_name",
+            json!(cfg.smb.server_name),
             smb_src,
             false,
         ));
@@ -792,6 +800,7 @@ impl SettingsApi for SettingsBridge {
         let ov = SmbOverride {
             enabled: patch.enabled,
             workgroup: patch.workgroup.clone(),
+            server_name: patch.server_name.clone(),
             service_user: patch.service_user.clone(),
             allow_public_bind: patch.allow_public_bind,
             totp_policy,
@@ -813,6 +822,7 @@ impl SettingsApi for SettingsBridge {
         let mut candidate = cfg.clone();
         candidate.smb.enabled = patch.enabled;
         candidate.smb.workgroup = patch.workgroup;
+        candidate.smb.server_name = patch.server_name;
         candidate.smb.service_user = patch.service_user;
         candidate.smb.allow_public_bind = patch.allow_public_bind;
         candidate.smb.totp_policy = totp_policy;
@@ -1206,6 +1216,7 @@ mod tests {
         "homes.root",
         "smb.enabled",
         "smb.workgroup",
+        "smb.server_name",
         "smb.service_user",
         "smb.allow_public_bind",
         "smb.totp_policy",
@@ -1270,6 +1281,7 @@ mod tests {
                 // `smb_cmd::render_live` rewrites `smb.conf`/`passwd` and the
                 // privileged agent reloads smbd.
                 "smb.workgroup",
+                "smb.server_name",
                 "smb.service_user",
                 "smb.allow_public_bind",
                 "smb.totp_policy",

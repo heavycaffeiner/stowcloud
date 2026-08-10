@@ -55,6 +55,15 @@ pub struct SmbConfig {
     /// SMB is off by default ("default is least privilege").
     pub enabled: bool,
     pub workgroup: String,
+    /// NetBIOS name clients can reach this server by, so a share opens as
+    /// `\\NAME\photos` instead of `\\192.168.1.10\photos`. Empty is the
+    /// default and means no name at all: `disable netbios = yes`, nothing
+    /// listening on 137/138, and only the address works.
+    ///
+    /// A name only resolves if the sidecar shares the LAN's broadcast domain,
+    /// which on Docker means `network_mode: host` or macvlan. Name service is
+    /// broadcast UDP and does not cross a bridge.
+    pub server_name: String,
     /// Shared config volume the sidecar reads.
     pub config_dir: PathBuf,
     /// Samba `force user`/`force group` — the single uid every SMB
@@ -72,6 +81,7 @@ impl Default for SmbConfig {
         Self {
             enabled: false,
             workgroup: "WORKGROUP".to_string(),
+            server_name: String::new(),
             config_dir: PathBuf::from("/config/smb"),
             service_user: "scsvc".to_string(),
             allow_public_bind: false,
@@ -365,6 +375,7 @@ mod tests {
             "172.16.0.0/12",
             "192.168.0.0/16",
             "127.0.0.0/8",
+            "100.64.0.0/10",
         ] {
             assert_eq!(
                 cidrs.iter().filter(|c| **c == expected).count(),
@@ -463,6 +474,52 @@ mod tests {
         // Disabling SMB twice must not be an error, and the bare-metal agent
         // polls a directory that may legitimately be empty already.
         o.remove_rendered().unwrap();
+    }
+
+    fn orch_named(server_name: &str) -> SmbOrchestrator {
+        SmbOrchestrator::new(SmbConfig {
+            server_name: server_name.to_string(),
+            ..SmbConfig::default()
+        })
+    }
+
+    #[test]
+    fn empty_server_name_leaves_netbios_off() {
+        let conf = orch_named("").generate_conf(&[], &[]).unwrap();
+        assert!(conf.contains("disable netbios = yes"));
+        assert!(!conf.contains("netbios name ="));
+    }
+
+    #[test]
+    fn server_name_enables_netbios_but_not_port_139() {
+        let conf = orch_named("stowcloud").generate_conf(&[], &[]).unwrap();
+        assert!(conf.contains("netbios name = stowcloud"));
+        assert!(conf.contains("server string = stowcloud"));
+        assert!(conf.contains("disable netbios = no"));
+        // nmbd serves the name on UDP 137; smbd must stay off the pre-SMB3
+        // transport regardless.
+        assert!(conf.contains("smb ports = 445"));
+    }
+
+    #[test]
+    fn server_name_rejects_injection_and_oversize() {
+        for bad in ["nas]\n[global", "nas smb", "nas.local", "has-sixteen-chars", "nas;evil"] {
+            let err = orch_named(bad).generate_conf(&[], &[]).unwrap_err();
+            assert!(
+                matches!(err, SmbError::InvalidServerName { .. }),
+                "{bad:?} was accepted, got {err:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn tailscale_client_is_allowed() {
+        // A CGNAT address is what a tailnet peer connects from; treating it as
+        // public put every one of them behind `hosts deny`.
+        let o = orch(false);
+        assert!(o.validate_bind(&[IpAddr::V4(Ipv4Addr::new(100, 101, 102, 103))]).is_ok());
+        let conf = o.generate_conf(&[], &[]).unwrap();
+        assert!(conf.contains("100.64.0.0/10"));
     }
 
     #[test]

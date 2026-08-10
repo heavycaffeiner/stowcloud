@@ -694,6 +694,10 @@ pub struct HomesOverride {
 pub struct SmbOverride {
     pub enabled: bool,
     pub workgroup: String,
+    /// Defaulted, because overrides stored before this field existed have no
+    /// key for it and must still deserialize.
+    #[serde(default)]
+    pub server_name: String,
     pub service_user: String,
     pub allow_public_bind: bool,
     pub totp_policy: sc_smb::TotpPolicy,
@@ -807,6 +811,7 @@ impl Config {
         if let Some(s) = &o.smb {
             self.smb.enabled = s.enabled;
             self.smb.workgroup = s.workgroup.clone();
+            self.smb.server_name = s.server_name.clone();
             self.smb.service_user = s.service_user.clone();
             self.smb.allow_public_bind = s.allow_public_bind;
             self.smb.totp_policy = s.totp_policy;

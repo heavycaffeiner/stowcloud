@@ -748,6 +748,9 @@ export interface ApplyOutcome {
 export interface SmbSettingsReq {
   enabled: boolean
   workgroup: string
+  /** NetBIOS name clients can open `\\NAME\share` by. Empty turns name
+   *  service off, which is the default. */
+  server_name: string
   service_user: string
   allow_public_bind: boolean
   totp_policy: 'require_separate' | 'block'

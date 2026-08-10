@@ -1,8 +1,17 @@
 //! LAN-only bind enforcement.
 //!
-//! "Private" = RFC1918 + `127.0.0.0/8` + `169.254.0.0/16` (IPv4) and
-//! `fc00::/7` + `fe80::/10` + `::1` (IPv6). Anything else is "public" and,
-//! absent an explicit override, must never appear in a generated `smb.conf`.
+//! "Private" = RFC1918 + `127.0.0.0/8` + `169.254.0.0/16` + `100.64.0.0/10`
+//! (IPv4) and `fc00::/7` + `fe80::/10` + `::1` (IPv6). Anything else is
+//! "public" and, absent an explicit override, must never appear in a generated
+//! `smb.conf`.
+//!
+//! `100.64.0.0/10` is CGNAT, which is where every Tailscale address lives, and
+//! it is here for the same reason `sc_http::config::is_private_host_literal`
+//! has it: a tailnet is a private network by construction. Without it the two
+//! halves disagreed, and a deployment reached over Tailscale served the web app
+//! fine while `hosts allow` refused every SMB client from the same tailnet. The
+//! cost is that a host genuinely behind an ISP's CGNAT counts as LAN, which is
+//! the same trade the HTTP side already makes.
 
 use std::net::IpAddr;
 
@@ -17,6 +26,8 @@ pub fn is_private(ip: &IpAddr) -> bool {
                 || (o[0] == 192 && o[1] == 168)
                 || o[0] == 127
                 || (o[0] == 169 && o[1] == 254)
+                // 100.64.0.0/10: top 10 bits fixed => second octet 64..=127.
+                || (o[0] == 100 && (64..=127).contains(&o[1]))
         }
         IpAddr::V6(v6) => {
             if v6.is_loopback() {
@@ -44,8 +55,13 @@ pub(crate) fn public_addrs(ifaces: &[IpAddr]) -> Vec<IpAddr> {
 
 /// The private CIDR list embedded verbatim into the generated `smb.conf`
 /// (`interfaces` / `hosts allow`, ②).
-pub(crate) const PRIVATE_CIDRS_V4: &[&str] =
-    &["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8"];
+pub(crate) const PRIVATE_CIDRS_V4: &[&str] = &[
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "127.0.0.0/8",
+    "100.64.0.0/10",
+];
 pub(crate) const PRIVATE_CIDRS_V6: &[&str] = &["fc00::/7", "fe80::/10", "::1/128"];
 
 #[cfg(test)]
@@ -61,6 +77,10 @@ mod tests {
         assert!(is_private(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))));
         assert!(is_private(&IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
         assert!(is_private(&IpAddr::V4(Ipv4Addr::new(169, 254, 1, 1))));
+        // CGNAT, which is what a Tailscale address is.
+        assert!(is_private(&IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1))));
+        assert!(is_private(&IpAddr::V4(Ipv4Addr::new(100, 101, 102, 103))));
+        assert!(is_private(&IpAddr::V4(Ipv4Addr::new(100, 127, 255, 255))));
     }
 
     #[test]
@@ -70,6 +90,9 @@ mod tests {
         // just outside the 172.16.0.0/12 band
         assert!(!is_private(&IpAddr::V4(Ipv4Addr::new(172, 32, 0, 1))));
         assert!(!is_private(&IpAddr::V4(Ipv4Addr::new(172, 15, 255, 255))));
+        // just outside the 100.64.0.0/10 band
+        assert!(!is_private(&IpAddr::V4(Ipv4Addr::new(100, 63, 255, 255))));
+        assert!(!is_private(&IpAddr::V4(Ipv4Addr::new(100, 128, 0, 1))));
     }
 
     #[test]

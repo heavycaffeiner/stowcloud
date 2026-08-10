@@ -83,6 +83,11 @@ pub struct ApplyOutcome {
 pub struct SmbPatch {
     pub enabled: bool,
     pub workgroup: String,
+    /// Defaulted, unlike every other field here, because this one was added
+    /// after the endpoint shipped and a client that predates it would
+    /// otherwise get a 400 on an otherwise valid body.
+    #[serde(default)]
+    pub server_name: String,
     pub service_user: String,
     pub allow_public_bind: bool,
     /// `"require_separate"` | `"block"` — mirrors `sc_smb::TotpPolicy`

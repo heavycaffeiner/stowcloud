@@ -249,6 +249,10 @@ actually has, then start it explicitly:
 docker compose --profile smb up -d
 ```
 
+That gets you `\\192.168.1.10\photos`. To mount by name instead, set a server
+name on the settings screen and give the sidecar `network_mode: host`: the name
+is announced by broadcast, which a Docker bridge does not carry.
+
 ## How it is built
 
 Five rules decide most of the design.

@@ -1178,6 +1178,7 @@ const mockServerSettings = {
   smb: {
     enabled: false,
     workgroup: 'WORKGROUP',
+    server_name: '',
     service_user: 'sc-smb',
     allow_public_bind: false,
     totp_policy: 'require_separate' as 'require_separate' | 'block',
@@ -1248,6 +1249,7 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       settingsField('homes.root', s.homes.root, true),
       settingsField('smb.enabled', s.smb.enabled, true),
       settingsField('smb.workgroup', s.smb.workgroup, false),
+      settingsField('smb.server_name', s.smb.server_name, false),
       settingsField('smb.service_user', s.smb.service_user, false),
       settingsField('smb.allow_public_bind', s.smb.allow_public_bind, false),
       settingsField('smb.totp_policy', s.smb.totp_policy, false),

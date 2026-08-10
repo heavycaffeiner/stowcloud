@@ -18,6 +18,7 @@ pub(crate) fn render(
     shares: &[SmbShareDef],
     _users: &[SmbUser],
 ) -> Result<String, SmbError> {
+    validate_server_name(&cfg.server_name)?;
     for s in shares {
         if s.name.trim().is_empty() {
             return Err(SmbError::InvalidShare {
@@ -41,6 +42,33 @@ pub(crate) fn render(
         out.push('\n');
     }
     Ok(out)
+}
+
+/// The name reaches `smb.conf` verbatim, so it is checked as untrusted input
+/// twice over: a `]` or a newline would end the `[global]` section early and
+/// let the rest be read as directives, and NetBIOS itself refuses anything
+/// over 15 characters. An allowlist rather than a banned-character list,
+/// because every name anyone would actually type fits inside it.
+fn validate_server_name(name: &str) -> Result<(), SmbError> {
+    if name.is_empty() {
+        return Ok(());
+    }
+    let reject = |reason: &str| {
+        Err(SmbError::InvalidServerName {
+            name: name.to_string(),
+            reason: reason.to_string(),
+        })
+    };
+    if name.chars().count() > 15 {
+        return reject("a NetBIOS name is at most 15 characters");
+    }
+    if !name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return reject("only ASCII letters, digits, '-' and '_' are allowed");
+    }
+    Ok(())
 }
 
 fn render_global(cfg: &SmbConfig) -> String {
@@ -67,6 +95,19 @@ fn render_global(cfg: &SmbConfig) -> String {
         hosts_allow.push_str(c);
     }
 
+    // Without a name there is nothing for NetBIOS to announce, so it stays off
+    // and clients must use the address. With one, nmbd answers name queries on
+    // UDP 137 while `smb ports = 445` below keeps smbd off the legacy 139
+    // transport, which predates SMB3 encryption and signing.
+    let netbios = if cfg.server_name.is_empty() {
+        "  disable netbios = yes\n".to_string()
+    } else {
+        format!(
+            "  netbios name = {name}\n  server string = {name}\n  disable netbios = no\n",
+            name = cfg.server_name,
+        )
+    };
+
     format!(
         "[global]\n\
          \u{20}\u{20}workgroup = {workgroup}\n\
@@ -82,7 +123,7 @@ fn render_global(cfg: &SmbConfig) -> String {
          \u{20}\u{20}ntlm auth = ntlmv2-only\n\
          \u{20}\u{20}lanman auth = no\n\
          \u{20}\u{20}raw NTLMv2 auth = no\n\
-         \u{20}\u{20}disable netbios = yes\n\
+         {netbios}\
          \u{20}\u{20}smb ports = 445\n\
          \u{20}\u{20}load printers = no\n\
          \u{20}\u{20}printing = bsd\n\
@@ -107,6 +148,7 @@ fn render_global(cfg: &SmbConfig) -> String {
          \u{20}\u{20}hosts allow = {hosts_allow}\n\
          \u{20}\u{20}hosts deny = 0.0.0.0/0\n",
         workgroup = cfg.workgroup,
+        netbios = netbios,
         service_user = cfg.service_user,
         ifaces = ifaces,
         hosts_allow = hosts_allow,
