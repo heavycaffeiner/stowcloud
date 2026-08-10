@@ -53,11 +53,10 @@
   // a tab-level undo.
   //
   // The sync runs both ways; `syncTabHash` holds the reasoning for why the
-  // hash this effect reads has to be compared against the last one it read
-  // rather than the last one it wrote.
+  // hash it reads off `page.url` cannot also serve as the current address.
   let seen = fromHash
   $effect(() => {
-    const next = syncTabHash(page.url.hash.slice(1), seen, tab, TAB_VALUES)
+    const next = syncTabHash(page.url.hash.slice(1), seen, location.hash.slice(1), tab, TAB_VALUES)
     seen = next.seen
     if (next.tab !== tab) tab = next.tab
     else if (next.write !== null) replaceState(`#${next.write}`, page.state)

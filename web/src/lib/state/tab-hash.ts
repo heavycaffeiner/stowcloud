@@ -8,10 +8,15 @@
 // silently does nothing.
 //
 // What makes the other direction tricky is that `replaceState` writes history
-// without touching `page.url`. The hash a component reads therefore does not
-// move when the tab does; it moves on a real navigation and nowhere else.
-// `seen` is the last hash read off `page.url`, which is what tells a genuine
-// external change apart from that stale read.
+// without touching `page.url`. That single stale hash cannot answer both
+// questions the sync asks, so each gets its own source:
+//
+//  - "did something navigate?" compares `page.url`'s hash against `seen`, the
+//    last one read off it. It moves on a real navigation and nowhere else.
+//  - "does the address bar already say this?" reads `current`, the live
+//    `location.hash`. Asking `page.url` instead makes every return to the tab
+//    the page loaded on look like a no-op: the URL keeps whichever tab was open
+//    before it, and a reload then lands on the wrong one.
 
 export interface TabHashSync {
   /** Hash to remember as last observed; feed it back on the next call. */
@@ -22,7 +27,13 @@ export interface TabHashSync {
   write: string | null
 }
 
-export function syncTabHash(hash: string, seen: string, tab: string, valid: readonly string[]): TabHashSync {
+export function syncTabHash(
+  hash: string,
+  seen: string,
+  current: string,
+  tab: string,
+  valid: readonly string[]
+): TabHashSync {
   if (hash !== seen && valid.includes(hash)) return { seen: hash, tab: hash, write: null }
-  return { seen: hash, tab, write: hash === tab ? null : tab }
+  return { seen: hash, tab, write: current === tab ? null : tab }
 }
