@@ -164,8 +164,8 @@ services:
     security_opt:
       - no-new-privileges:true
     # Mounting by name (`\\stowcloud\photos` rather than `\\192.168.1.10\
-    # photos`) needs two things: `smb.server_name` set on the settings screen,
-    # which is what makes the sidecar run nmbd, and this container sharing the
+    # photos`) needs two things: `server_name` under `[smb]` in sc.toml, which
+    # is what makes the sidecar run nmbd, and this container sharing the
     # LAN's broadcast domain. NetBIOS name service is broadcast UDP 137/138 and
     # a bridge does not carry it, so on the default network nmbd announces the
     # name to nobody. Replace the `ports:` block below with:
