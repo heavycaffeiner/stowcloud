@@ -680,7 +680,9 @@ fn a_name_windows_would_refuse_can_still_be_copied_moved_and_deleted() {
     assert_eq!(copied, vec!["CON", "a:b"]);
 
     // ...movable on its own...
-    let res = core.move_entries(USER, &["/root/src/CON".into()], "/root/dst", OnConflict::Rename).unwrap();
+    let res = core
+        .move_entries(USER, &["/root/src/CON".into()], "/root/dst", OnConflict::Rename, &HashMap::new())
+        .unwrap();
     assert!(res[0].ok, "the destination name is the source's own, not one anybody typed");
 
     // ...and deletable as a tree.
