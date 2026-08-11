@@ -398,6 +398,7 @@
   "public_share.location": "위치",
   "public_share.open_folder": "{name} 열기",
   "public_share.public_share_link": "· 공개 공유 링크",
+  "public_share.top_folder": "최상위 폴더",
   "preview.archive_empty": "이 압축 파일은 비어 있습니다.",
   "preview.archive_entries": "항목 {count}개",
   "preview.archive_too_large": "여기서 목록을 보여주기에는 너무 큽니다. 내려받아서 확인하세요.",

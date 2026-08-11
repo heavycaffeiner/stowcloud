@@ -398,6 +398,7 @@
   "public_share.location": "Location",
   "public_share.open_folder": "Open {name}",
   "public_share.public_share_link": "· public share link",
+  "public_share.top_folder": "Top folder",
   "preview.archive_empty": "This archive is empty.",
   "preview.archive_entries": "{count} entries",
   "preview.archive_too_large": "This archive is too large to list here. Download it to see what is inside.",

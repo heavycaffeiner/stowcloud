@@ -1244,6 +1244,27 @@ async function revokeAppPassword(id: number): Promise<void> {
   }
 }
 
+/**
+ * Mark the device holding this app password as lost.
+ *
+ * Deliberately not a revoke, exactly as `http.ts` documents: the credential
+ * keeps working until the device reports it has erased its local copies, which
+ * it can only do while it can still authenticate. Nothing in the mock models a
+ * device reporting back, so the row stays as it is and this only proves the
+ * call exists.
+ *
+ * It did not exist, and `api` is `mockApi | httpApi`, so the settings screen's
+ * "mark as lost" button called a method that is not on the union: a type error
+ * that nothing read until `svelte-check` became a CI gate, and a runtime
+ * `is not a function` in mock mode before that.
+ */
+async function wipeAppPassword(id: number): Promise<void> {
+  await delay(30)
+  if (!mockAppPasswords.some((p) => p.id === id)) {
+    throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
+  }
+}
+
 async function listSessions(): Promise<ActiveSession[]> {
   await delay(20)
   return mockSessions.slice()
@@ -2297,6 +2318,7 @@ export const mockApi = {
   createAppPassword,
   createScopedAppPassword,
   revokeAppPassword,
+  wipeAppPassword,
   listSessions,
   revokeSession,
   updateSmbSettings,

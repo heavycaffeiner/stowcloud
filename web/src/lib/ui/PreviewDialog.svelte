@@ -351,7 +351,7 @@
     grid-template-columns: 1fr auto auto;
     gap: 12px;
     align-items: center;
-    padding: 6px 0;
+    padding: 8px 0;
     border-bottom: 1px solid rgb(255 255 255 / 12%);
     @apply --m3-body-medium;
   }
