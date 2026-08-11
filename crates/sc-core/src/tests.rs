@@ -723,8 +723,34 @@ fn a_name_windows_would_refuse_is_reachable_by_vpath() {
     core.rename(USER, "/root/d/CON", "ordinary.txt", None).unwrap();
     assert!(core.stat_entry(USER, "/root/d/ordinary.txt").is_ok());
 
+    // A permanent delete of a directory charges quota back, which walks the
+    // path to allocate ids for it: a second place that re-derived an existing
+    // path with the creation table, and the one that failed this test first.
     let res = core.delete(USER, &["/root/d/a:b".into()], true).unwrap();
     assert!(res[0].ok, "delete: {:?}", res[0].error);
+}
+
+/// The trash records a file's original path and rebuilds that chain on
+/// restore, so an awkward *folder* meant a file could be trashed and then
+/// never put back.
+#[test]
+#[cfg(unix)]
+fn a_file_under_a_name_windows_would_refuse_can_be_trashed_and_restored() {
+    let (core, dir) =
+        setup_with_policy(SharePolicy { trash: TrashMode::ShareLocal, ..Default::default() });
+    std::fs::create_dir(dir.path().join("a:b")).unwrap();
+    std::fs::write(dir.path().join("a:b").join("note.txt"), b"keep me").unwrap();
+
+    let res = core.delete(USER, &["/root/a:b/note.txt".into()], false).unwrap();
+    assert!(res[0].ok, "trash: {:?}", res[0].error);
+    assert!(core.stat_entry(USER, "/root/a:b/note.txt").is_err());
+
+    let trashed = core.trash_list(USER, SHARE).unwrap();
+    assert_eq!(trashed.len(), 1);
+    core.trash_restore(USER, SHARE, &trashed[0].id).unwrap();
+
+    let (text, _) = core.read_text(USER, "/root/a:b/note.txt", 1 << 20).unwrap();
+    assert_eq!(text, "keep me", "restored to where it came from, not to the share root");
 }
 
 /// The creation table did not go away, it moved. Every path that mints a name

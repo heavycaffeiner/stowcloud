@@ -107,7 +107,11 @@ impl crate::Core {
     fn ensure_dir_recursive(root: &ShareRoot, dir: &SafePath, max_depth: u16) -> Result<(), CoreError> {
         let mut built = SafePath::root();
         for comp in dir.components() {
-            built = built.join(comp.as_str(), max_depth)?;
+            // `join_existing`: these components are the trashed file's own
+            // recorded original path, so they named real directories when it
+            // was deleted. With `join` a file whose folder was `a:b` could be
+            // trashed and then never restored.
+            built = built.join_existing(comp.as_str(), max_depth)?;
             if path_exists(root, &built)? {
                 continue;
             }

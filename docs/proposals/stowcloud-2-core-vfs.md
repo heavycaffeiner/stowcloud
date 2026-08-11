@@ -292,6 +292,19 @@ table throughout. They used to take the creation table on names `read_dir` had
 just handed back, so one `CON` made a whole folder undeletable and the file
 itself uncopyable.
 
+Four more sites re-derived an *already-resolved* path the same way, and each
+failed differently enough to have hidden the others:
+
+| Site | What it broke |
+|---|---|
+| `ensure_fileid_chain` | a permanent delete charges quota back through it, so a folder under an awkward name could not be deleted |
+| the dirty-marking ancestor walk | stopped part-way and left every directory above one serving a stale aggregate ETag, silently |
+| the trash's directory rebuild | a file could be trashed and then never restored to where it came from |
+| `sc-search`'s `join_child` | the walk skipped every such file, so it was absent from search results and from the recency query with no reason given |
+
+The rule they all now follow is the same one: a name that came back from
+`read_dir`, or a component of a path already resolved, is traversal.
+
 ### 4.7 Core Logic — directory aggregate ETag
 
 **A DAV/compat-path cost only.** The native web UI uses per-file ETags,

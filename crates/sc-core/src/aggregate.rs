@@ -32,7 +32,12 @@ impl crate::Core {
         let mut cur_id = FileId::new(0);
         let mut cur_path = SafePath::root();
         for comp in path.components() {
-            cur_path = cur_path.join(comp.as_str(), max_depth)?;
+            // `join_existing`: `path` was resolved before it got here, so this
+            // is re-walking something that is on disk, not naming anything new.
+            // With `join` the whole chain refused an `a:b` ancestor, and since
+            // this is what a permanent delete calls to charge quota back, a
+            // folder under one could not be deleted at all.
+            cur_path = cur_path.join_existing(comp.as_str(), max_depth)?;
             let st = root.stat(&cur_path)?;
             let is_dir = st.kind == Kind::Dir;
             cur_id = self.meta.fileid(share, cur_id, comp.as_str(), &st, is_dir)?;
@@ -99,7 +104,10 @@ impl crate::Core {
         let mut ancestors = vec![SafePath::root()];
         let mut cur = SafePath::root();
         for comp in path.parent().components() {
-            cur = match cur.join(comp.as_str(), max_depth) {
+            // Same reason, and this one failed quietly: the `break` stopped
+            // marking ancestors dirty part-way, so every directory above an
+            // awkward name kept serving a stale aggregate ETag.
+            cur = match cur.join_existing(comp.as_str(), max_depth) {
                 Ok(p) => p,
                 Err(_) => break,
             };
