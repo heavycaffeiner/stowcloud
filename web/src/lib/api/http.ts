@@ -15,7 +15,7 @@ import {
   type ApiErrorBody,
   type AppPasswordInfo,
   type ApplyOutcome,
-  type ArchiveEntry,
+  type ArchiveListing,
   type ArchiveSettingsReq,
   type AuditPage,
   type AuditQuery,
@@ -213,7 +213,7 @@ async function archive(paths: string[]): Promise<{ job: string }> {
  * this server does not do. A path the caller cannot list and a file that is
  * not a zip are the same `404`.
  */
-async function archiveList(path: string): Promise<{ entries: ArchiveEntry[] }> {
+async function archiveList(path: string): Promise<ArchiveListing> {
   return request(`/fs/archive/list${qs({ path })}`)
 }
 

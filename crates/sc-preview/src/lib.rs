@@ -59,7 +59,7 @@ pub mod service;
 pub mod sniff;
 pub mod worker;
 
-pub use archive::{list_archive, ArchiveEntry, ArchiveEntryKind, ArchiveLimits};
+pub use archive::{list_archive, ArchiveEntry, ArchiveEntryKind, ArchiveLimits, ArchiveListing};
 pub use cache::{CacheConfig, Key as CacheKey};
 pub use decode::DecodeLimits;
 pub use error::{NegativeReason, PreviewError};

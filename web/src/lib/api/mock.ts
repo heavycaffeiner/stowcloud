@@ -23,7 +23,7 @@ import {
   type AdminUserOidc,
   type AppPasswordInfo,
   type ApplyOutcome,
-  type ArchiveEntry,
+  type ArchiveListing,
   type ArchiveSettingsReq,
   type AuditPage,
   type FolderSize,
@@ -681,28 +681,27 @@ async function archive(paths: string[]): Promise<{ job: string }> {
 }
 
 /** A fixed listing for any `.zip`, since the mock stores no archive bytes. */
-async function archiveList(path: string): Promise<{ entries: ArchiveEntry[] }> {
+async function archiveList(path: string): Promise<ArchiveListing> {
   await delay(60)
   const n = normalizePath(path)
   const e = entryAt(n)
   if (!e || e.kind === 'dir' || !n.toLowerCase().endsWith('.zip')) {
     throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { path: n } })
   }
-  if (e.size > 4 * 1024 * 1024 * 1024) {
-    throw new ApiError(422, {
-      code: 'fs.invalid_name',
-      message: 'archive too large to list',
-      detail: { reason: 'over the listing ceiling' }
-    })
-  }
+  // No size ceiling any more: a listing reads the central directory, so what
+  // an archive costs follows its entry count and not its bytes. The rejection
+  // that remains is the entry-count cap, which this tree never reaches.
   return {
     entries: [
       { name: 'docs/', size: 0, kind: 'dir' },
       { name: 'docs/readme.txt', size: 1_842, kind: 'file' },
       { name: 'docs/design.pdf', size: 902_144, kind: 'file' },
+      { name: 'docs/notes/', size: 0, kind: 'dir' },
+      { name: 'docs/notes/todo.md', size: 512, kind: 'file' },
       { name: 'images/', size: 0, kind: 'dir' },
       { name: 'images/cover.png', size: 3_211_776, kind: 'file' }
-    ]
+    ],
+    skipped: 0
   }
 }
 

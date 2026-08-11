@@ -8,20 +8,36 @@
 //!
 //! Zip-slip protection reuses `sc_vfs::SafePath::parse`, which already
 //! rejects `..`, absolute paths, NUL/control bytes, Windows-reserved names,
-//! trailing dot/space, and `:`. On top of that we reject: names containing
-//! `\` (a raw Windows separator that `SafePath` doesn't need to know about
-//! since it's a Unix-style path type) and symlink/device-node entries.
+//! trailing dot/space, and `:`. On top of that: names containing `\` (a raw
+//! Windows separator that `SafePath` doesn't need to know about since it's a
+//! Unix-style path type) and symlink/device-node entries.
+//!
+//! Those names are left out of the listing and counted, not turned into a
+//! refusal of the whole archive. The rule protects whoever builds a path out
+//! of a name, and one entry that breaks it says nothing about the five
+//! thousand beside it. What still refuses an archive outright is what makes
+//! it unreadable or unbounded: not a zip, too many entries, a central
+//! directory over budget.
 
 use std::io::{Read, Seek, SeekFrom};
 
 use crate::error::PreviewError;
 
+/// What bounds a listing.
+///
+/// Every limit here bounds work *this* module does: how many entries are
+/// allocated, how long a name may be, how much of the file is read. There is
+/// deliberately no cap on uncompressed size or compression ratio any more.
+/// Those bound decompression, and this module never decompresses: the numbers
+/// they tested come out of the central directory as metadata and are copied
+/// into the listing untouched. Applying them here rejected ordinary archives
+/// for being large — a 1.2 GB installer is over a 1 GiB uncompressed budget
+/// before it contains anything unusual — and protected nothing, since no byte
+/// of any entry is ever read. A future extractor enforces its own; it is the
+/// thing that would write the bytes.
 #[derive(Debug, Clone)]
 pub struct ArchiveLimits {
     pub max_entries: u32,
-    pub max_total_uncompressed: u64,
-    /// Compression ratio cap (`uncompressed / compressed`), per entry.
-    pub max_ratio: u32,
     /// Forwarded to `SafePath::parse` as `max_depth` -- also bounds entry
     /// path component count.
     pub max_depth: u16,
@@ -36,13 +52,25 @@ impl Default for ArchiveLimits {
     fn default() -> Self {
         Self {
             max_entries: 10_000,
-            max_total_uncompressed: 1024 * 1024 * 1024, // 1 GiB
-            max_ratio: 100,
             max_depth: 32,
             max_name_len: 255,
             max_central_directory_bytes: 16 * 1024 * 1024,
         }
     }
+}
+
+/// One archive's listing, and what was left out of it.
+#[derive(Debug, Clone, Default)]
+pub struct ArchiveListing {
+    pub entries: Vec<ArchiveEntry>,
+    /// Entries whose name or type this module refuses to hand out: a path
+    /// escape, a raw Windows separator, a symlink, a device node.
+    ///
+    /// Counted rather than fatal. The rule protects whoever turns a name into
+    /// a path, and a listing is not that, so one odd entry in five thousand is
+    /// a row that is not shown and not a whole archive that will not open.
+    /// Reported so the omission is visible rather than silent.
+    pub skipped: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,14 +113,18 @@ const ZIP64_EXTRA_ID: u16 = 0x0001;
 /// used to cost.
 ///
 /// `len` is the file's size, which the caller already has from the `stat` that
-/// opened it. Rejects the *whole* archive (no partial results) the moment any
-/// entry violates a limit: a half-validated listing is not a safe thing to hand
-/// back to a caller.
+/// opened it.
+///
+/// The whole archive is refused only for what makes it unreadable or
+/// unbounded: not a zip, more entries than the cap, a central directory over
+/// the budget. An entry whose *name* cannot be handed out safely is left out
+/// of the listing and counted in [`ArchiveListing::skipped`] instead of taking
+/// the other entries with it.
 pub fn list_archive<R: Read + Seek>(
     mut reader: R,
     len: u64,
     limits: &ArchiveLimits,
-) -> Result<Vec<ArchiveEntry>, PreviewError> {
+) -> Result<ArchiveListing, PreviewError> {
     // `UnsupportedFormat`, not `ArchiveRejected`: "this file is not a zip" and
     // "this zip broke a limit" are different answers to a caller. A route
     // reports the first as `404`, since telling somebody what a file they
@@ -194,9 +226,9 @@ fn parse_central_directory(
     cd: &[u8],
     entries: u64,
     limits: &ArchiveLimits,
-) -> Result<Vec<ArchiveEntry>, PreviewError> {
+) -> Result<ArchiveListing, PreviewError> {
     let mut out = Vec::with_capacity(entries as usize);
-    let mut cumulative_uncompressed: u64 = 0;
+    let mut skipped: u32 = 0;
     let mut at = 0usize;
 
     for _ in 0..entries {
@@ -249,26 +281,28 @@ fn parse_central_directory(
             decode_cp437(raw_name)
         };
 
+        // Everything from here to the push is a per-entry refusal: the entry
+        // is left out and counted, and the rest of the archive still lists.
+        // A name is refused because handing it to whoever builds a path from
+        // it would be unsafe, which is a property of that one name.
         if name.len() > limits.max_name_len as usize {
-            return Err(PreviewError::ArchiveRejected(format!(
-                "entry name exceeds max_name_len ({} bytes): {name:?}",
-                limits.max_name_len
-            )));
+            skipped += 1;
+            continue;
         }
+        // A raw Windows separator, which `SafePath` has no reason to know
+        // about since it is a Unix-style path type.
         if name.contains('\\') {
-            return Err(PreviewError::ArchiveRejected(format!(
-                "entry name contains a backslash, rejected as a possible path escape: {name:?}"
-            )));
+            skipped += 1;
+            continue;
         }
 
         // Zip-slip: reuse the same rejection table SafePath uses everywhere
         // else. Directory entries have a trailing '/' in their zip name;
         // strip it before validating (the root itself, "", is allowed).
         let trimmed = name.trim_end_matches('/');
-        if !trimmed.is_empty() {
-            sc_vfs::SafePath::parse(trimmed, limits.max_depth).map_err(|e| {
-                PreviewError::ArchiveRejected(format!("invalid entry name {name:?}: {e}"))
-            })?;
+        if !trimmed.is_empty() && sc_vfs::SafePath::parse(trimmed, limits.max_depth).is_err() {
+            skipped += 1;
+            continue;
         }
 
         if made_by >> 8 == HOST_UNIX && external_attributes != 0 {
@@ -279,40 +313,10 @@ fn parse_central_directory(
             const S_IFIFO: u32 = 0o010000;
             const S_IFSOCK: u32 = 0o140000;
             let file_type = (external_attributes >> 16) & S_IFMT;
-            if file_type == S_IFLNK {
-                return Err(PreviewError::ArchiveRejected(format!(
-                    "symlink entries are rejected: {name:?}"
-                )));
+            if matches!(file_type, S_IFLNK | S_IFCHR | S_IFBLK | S_IFIFO | S_IFSOCK) {
+                skipped += 1;
+                continue;
             }
-            if matches!(file_type, S_IFCHR | S_IFBLK | S_IFIFO | S_IFSOCK) {
-                return Err(PreviewError::ArchiveRejected(format!(
-                    "device/fifo/socket entries are rejected: {name:?}"
-                )));
-            }
-        }
-
-        cumulative_uncompressed = cumulative_uncompressed.saturating_add(size);
-        if cumulative_uncompressed > limits.max_total_uncompressed {
-            return Err(PreviewError::ArchiveRejected(format!(
-                "cumulative uncompressed size {cumulative_uncompressed} exceeds max_total_uncompressed {}",
-                limits.max_total_uncompressed
-            )));
-        }
-
-        match size.checked_div(compressed_size) {
-            None if size > 0 => {
-                return Err(PreviewError::ArchiveRejected(format!(
-                    "entry {name:?} has zero compressed size but {size} declared uncompressed bytes (ratio bomb)"
-                )));
-            }
-            None => {}
-            Some(ratio) if ratio > u64::from(limits.max_ratio) => {
-                return Err(PreviewError::ArchiveRejected(format!(
-                    "entry {name:?} has compression ratio {ratio} exceeding max_ratio {}",
-                    limits.max_ratio
-                )));
-            }
-            Some(_) => {}
         }
 
         let kind = if name.ends_with('/') {
@@ -329,7 +333,10 @@ fn parse_central_directory(
         });
     }
 
-    Ok(out)
+    Ok(ArchiveListing {
+        entries: out,
+        skipped,
+    })
 }
 
 /// The data of the Zip64 extended information field, if the entry has one.
@@ -437,7 +444,7 @@ mod tests {
         zip::ZipWriter::new(Cursor::new(Vec::new()))
     }
 
-    fn list(cursor: Cursor<Vec<u8>>, limits: &ArchiveLimits) -> Result<Vec<ArchiveEntry>, PreviewError> {
+    fn list(cursor: Cursor<Vec<u8>>, limits: &ArchiveLimits) -> Result<ArchiveListing, PreviewError> {
         let len = cursor.get_ref().len() as u64;
         list_archive(cursor, len, limits)
     }
@@ -475,8 +482,10 @@ mod tests {
         zw.write_all(b"nested").unwrap();
         let cursor = zw.finish().unwrap();
 
-        let entries = list(cursor, &ArchiveLimits::default()).unwrap();
+        let listing = list(cursor, &ArchiveLimits::default()).unwrap();
+        let entries = &listing.entries;
         assert_eq!(entries.len(), 3);
+        assert_eq!(listing.skipped, 0);
         assert!(entries.iter().any(|e| e.name == "a.txt" && e.kind == ArchiveEntryKind::File));
         assert!(entries.iter().any(|e| e.name == "dir/" && e.kind == ArchiveEntryKind::Dir));
         assert!(entries.iter().any(|e| e.name == "dir/b.txt" && e.kind == ArchiveEntryKind::File));
@@ -507,7 +516,7 @@ mod tests {
             inner: cursor,
             reads: std::rc::Rc::clone(&reads),
         };
-        let entries = list_archive(reader, len, &ArchiveLimits::default()).unwrap();
+        let entries = list_archive(reader, len, &ArchiveLimits::default()).unwrap().entries;
         assert_eq!(entries.len(), 20);
 
         let reads = reads.borrow();
@@ -535,7 +544,7 @@ mod tests {
         let mut bytes = vec![0xAAu8; 4096];
         bytes.extend_from_slice(cursor.get_ref());
         let len = bytes.len() as u64;
-        let entries = list_archive(Cursor::new(bytes), len, &ArchiveLimits::default()).unwrap();
+        let entries = list_archive(Cursor::new(bytes), len, &ArchiveLimits::default()).unwrap().entries;
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].name, "a.txt");
     }
@@ -552,7 +561,7 @@ mod tests {
         zw.write_all(b"also small").unwrap();
         let cursor = zw.finish().unwrap();
 
-        let entries = list(cursor, &ArchiveLimits::default()).unwrap();
+        let entries = list(cursor, &ArchiveLimits::default()).unwrap().entries;
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].name, "big.bin");
         assert_eq!(entries[0].size, 16);
@@ -570,7 +579,7 @@ mod tests {
         zw.write_all(b"x").unwrap();
         let cursor = zw.finish().unwrap();
 
-        let entries = list(cursor, &ArchiveLimits::default()).unwrap();
+        let entries = list(cursor, &ArchiveLimits::default()).unwrap().entries;
         assert_eq!(entries[0].name, name);
     }
 
@@ -581,26 +590,28 @@ mod tests {
     }
 
     #[test]
-    fn rejects_zip_slip_entry() {
+    fn a_zip_slip_entry_is_left_out_and_counted() {
         let mut zw = writer();
         let opts = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Stored);
         zw.start_file("../../etc/cron.d/x", opts).unwrap();
         zw.write_all(b"evil").unwrap();
+        zw.start_file("ordinary.txt", opts).unwrap();
+        zw.write_all(b"fine").unwrap();
         let cursor = zw.finish().unwrap();
 
-        let err = list(cursor, &ArchiveLimits::default())
-            .expect_err("zip-slip entry must be rejected before any listing is returned");
-        match err {
-            PreviewError::ArchiveRejected(msg) => {
-                assert!(msg.contains("etc/cron.d/x") || msg.contains("escapes"));
-            }
-            other => panic!("expected ArchiveRejected, got {other:?}"),
-        }
+        let listing = list(cursor, &ArchiveLimits::default()).unwrap();
+        // The name never reaches a caller, which is the whole of the rule.
+        assert!(!listing.entries.iter().any(|e| e.name.contains("cron.d")));
+        assert_eq!(listing.skipped, 1);
+        // And the entry beside it is still listed, which is the point of
+        // counting instead of refusing.
+        assert_eq!(listing.entries.len(), 1);
+        assert_eq!(listing.entries[0].name, "ordinary.txt");
     }
 
     #[test]
-    fn rejects_absolute_path_entry() {
+    fn an_absolute_path_entry_is_left_out_and_counted() {
         let mut zw = writer();
         let opts = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Stored);
@@ -608,12 +619,13 @@ mod tests {
         zw.write_all(b"evil").unwrap();
         let cursor = zw.finish().unwrap();
 
-        let err = list(cursor, &ArchiveLimits::default()).expect_err("must reject");
-        assert!(matches!(err, PreviewError::ArchiveRejected(_)));
+        let listing = list(cursor, &ArchiveLimits::default()).unwrap();
+        assert!(listing.entries.is_empty());
+        assert_eq!(listing.skipped, 1);
     }
 
     #[test]
-    fn rejects_backslash_in_entry_name() {
+    fn a_backslash_in_an_entry_name_is_left_out_and_counted() {
         let mut zw = writer();
         let opts = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Stored);
@@ -621,8 +633,37 @@ mod tests {
         zw.write_all(b"evil").unwrap();
         let cursor = zw.finish().unwrap();
 
-        let err = list(cursor, &ArchiveLimits::default()).expect_err("must reject");
-        assert!(matches!(err, PreviewError::ArchiveRejected(_)));
+        let listing = list(cursor, &ArchiveLimits::default()).unwrap();
+        assert!(listing.entries.is_empty());
+        assert_eq!(listing.skipped, 1);
+    }
+
+    /// The archive this whole change is about: an installer far larger than
+    /// any decompression budget, containing nothing unusual. It lists.
+    #[test]
+    fn a_large_archive_lists_rather_than_being_refused_for_its_size() {
+        let mut zw = writer();
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored);
+        zw.start_file("big.bin", opts).unwrap();
+        zw.write_all(&[0u8; 64]).unwrap();
+        let mut cursor = zw.finish().unwrap();
+
+        // Rewrite the entry's declared uncompressed size in the central
+        // directory to 8 GiB. Nothing reads the content, so the declaration is
+        // all a listing ever sees — which is exactly why capping it protected
+        // nothing.
+        let bytes = cursor.get_mut();
+        let cd_at = bytes
+            .windows(4)
+            .position(|w| u32::from_le_bytes([w[0], w[1], w[2], w[3]]) == CDFH_SIG)
+            .expect("a central directory record");
+        let huge: u64 = 8 * 1024 * 1024 * 1024;
+        bytes[cd_at + 24..cd_at + 28].copy_from_slice(&(huge as u32).to_le_bytes());
+
+        let listing = list(cursor, &ArchiveLimits::default()).unwrap();
+        assert_eq!(listing.entries.len(), 1);
+        assert_eq!(listing.skipped, 0);
     }
 
     /// One central directory record, built by hand. `ZipWriter` masks a mode
@@ -642,46 +683,39 @@ mod tests {
     }
 
     #[test]
-    fn rejects_symlink_and_device_entries() {
-        for (mode, needle) in [
-            (0o120777u32, "symlink"),
-            (0o020644, "device"),
-            (0o060644, "device"),
-            (0o010644, "device"),
-            (0o140644, "device"),
-        ] {
+    fn symlink_and_device_entries_are_left_out_and_counted() {
+        for mode in [0o120777u32, 0o020644, 0o060644, 0o010644, 0o140644] {
             let cd = cdfh("odd", mode);
-            match parse_central_directory(&cd, 1, &ArchiveLimits::default()) {
-                Err(PreviewError::ArchiveRejected(msg)) => {
-                    assert!(msg.contains(needle), "{msg:?} does not mention {needle:?}")
-                }
-                other => panic!("expected ArchiveRejected for {mode:o}, got {other:?}"),
-            }
+            let listing = parse_central_directory(&cd, 1, &ArchiveLimits::default())
+                .unwrap_or_else(|e| panic!("{mode:o} should list, got {e:?}"));
+            assert!(listing.entries.is_empty(), "{mode:o} was listed");
+            assert_eq!(listing.skipped, 1, "{mode:o} was not counted");
         }
-        // An ordinary file with a mode is not rejected for having one.
+        // An ordinary file with a mode is not left out for having one.
         let ok = parse_central_directory(&cdfh("f", 0o100644), 1, &ArchiveLimits::default())
             .unwrap();
-        assert_eq!(ok[0].name, "f");
+        assert_eq!(ok.entries[0].name, "f");
+        assert_eq!(ok.skipped, 0);
     }
 
+    /// A zip bomb is dangerous to decompress, and this never decompresses: it
+    /// reads the central directory and copies the declared numbers out. The
+    /// ratio is reported, not refused, because refusing it here bought nothing
+    /// and cost every archive of compressible data.
     #[test]
-    fn rejects_ratio_bomb() {
+    fn a_highly_compressible_entry_lists() {
         let mut zw = writer();
         let opts = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
-        zw.start_file("bomb.bin", opts).unwrap();
-        // 4 MiB of zeros deflates to a tiny fraction of its size, giving a
-        // compression ratio comfortably over the default cap of 100.
+        zw.start_file("zeros.bin", opts).unwrap();
         let zeros = vec![0u8; 4 * 1024 * 1024];
         zw.write_all(&zeros).unwrap();
         let cursor = zw.finish().unwrap();
 
-        let err = list(cursor, &ArchiveLimits::default())
-            .expect_err("ratio bomb entry must be rejected");
-        match err {
-            PreviewError::ArchiveRejected(msg) => assert!(msg.contains("ratio")),
-            other => panic!("expected ArchiveRejected, got {other:?}"),
-        }
+        let listing = list(cursor, &ArchiveLimits::default()).unwrap();
+        assert_eq!(listing.entries.len(), 1);
+        assert_eq!(listing.entries[0].size, 4 * 1024 * 1024);
+        assert!(listing.entries[0].compressed_size < listing.entries[0].size / 100);
     }
 
     #[test]
@@ -697,25 +731,6 @@ mod tests {
 
         let tight_limits = ArchiveLimits {
             max_entries: 3,
-            ..ArchiveLimits::default()
-        };
-        let err = list(cursor, &tight_limits).expect_err("must reject");
-        assert!(matches!(err, PreviewError::ArchiveRejected(_)));
-    }
-
-    #[test]
-    fn rejects_when_cumulative_uncompressed_exceeded() {
-        let mut zw = writer();
-        let opts = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Stored);
-        zw.start_file("a.bin", opts).unwrap();
-        zw.write_all(&vec![7u8; 1000]).unwrap();
-        zw.start_file("b.bin", opts).unwrap();
-        zw.write_all(&vec![7u8; 1000]).unwrap();
-        let cursor = zw.finish().unwrap();
-
-        let tight_limits = ArchiveLimits {
-            max_total_uncompressed: 1500,
             ..ArchiveLimits::default()
         };
         let err = list(cursor, &tight_limits).expect_err("must reject");

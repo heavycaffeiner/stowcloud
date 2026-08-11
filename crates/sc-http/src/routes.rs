@@ -2064,7 +2064,7 @@ async fn fs_archive_list(
     let result = tokio::task::spawn_blocking(move || core.archive_list(user, &path)).await;
 
     match result {
-        Ok(Ok(Some(entries))) => Json(serde_json::json!({ "entries": entries })).into_response(),
+        Ok(Ok(Some(listing))) => Json(listing).into_response(),
         Ok(Ok(None)) => AppError::not_found().into_response(),
         Ok(Err(e)) => AppError::from(e).into_response(),
         Err(_) => AppError::internal().into_response(),

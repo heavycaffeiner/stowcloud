@@ -1061,17 +1061,18 @@ impl hapi::CoreApi for CoreBridge {
         &self,
         user: UserId,
         vpath: &str,
-    ) -> Result<Option<Vec<hapi::ArchiveEntryWire>>, hapi::CoreError> {
+    ) -> Result<Option<hapi::ArchiveListingWire>, hapi::CoreError> {
         let (entry, reader) = self.core.open_seekable(user, vpath).map_err(http_err)?;
-        // The shipped defaults: no deployment knob exists for these, and the
-        // limits that matter here (entry count, name length, depth) are the
-        // same ones the streamed download enforces. There is no file-size
+        // The shipped defaults: no deployment knob exists for these, and every
+        // one of them bounds work this process does. There is no file-size
         // ceiling: a listing reads the metadata region and nothing else, so a
         // 40 GB archive of 500 files costs what a 4 MB one costs, and the
         // central directory budget bounds it where the cost actually is.
         match sc_preview::list_archive(reader, entry.size, &sc_preview::ArchiveLimits::default()) {
-            Ok(entries) => Ok(Some(
-                entries
+            Ok(listing) => Ok(Some(hapi::ArchiveListingWire {
+                skipped: listing.skipped,
+                entries: listing
+                    .entries
                     .into_iter()
                     .map(|e| hapi::ArchiveEntryWire {
                         name: e.name,
@@ -1082,7 +1083,7 @@ impl hapi::CoreApi for CoreBridge {
                         },
                     })
                     .collect(),
-            )),
+            })),
             // Not a zip. The route answers this identically to a path the
             // caller cannot list.
             Err(sc_preview::PreviewError::UnsupportedFormat) => Ok(None),

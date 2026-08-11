@@ -560,6 +560,16 @@ export interface ArchiveEntry {
   kind: 'file' | 'dir'
 }
 
+/** `GET /api/fs/archive/list`. */
+export interface ArchiveListing {
+  entries: ArchiveEntry[]
+  /** Entries the server left out because their names cannot be handed out
+   *  safely: a path escape, a raw Windows separator, a symlink, a device
+   *  node. Counted rather than fatal, so one odd entry does not hide the
+   *  archive. Absent on an older server. */
+  skipped?: number
+}
+
 // ── folder size ──
 
 /** `GET /api/fs/size`. No directory count: the server keeps a single recursive

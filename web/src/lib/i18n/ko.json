@@ -402,6 +402,7 @@
   "preview.archive_empty": "이 폴더는 비어 있습니다.",
   "preview.archive_entries": "항목 {count}개",
   "preview.archive_location": "압축 파일 안에서의 위치",
+  "preview.archive_skipped": "({count}개는 이름이 안전하지 않아 표시하지 않음)",
   "preview.archive_up": "상위 폴더로",
   "preview.cannot_preview": "파일을 미리 볼 수 없습니다.",
   "preview.failed": "파일을 열지 못했습니다.",

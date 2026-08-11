@@ -251,16 +251,28 @@ pub struct Aggregate {
 /// clickable on the screen: opening an entry means extraction, which this
 /// server does not do.
 ///
-/// No `truncated` alongside the list, because there is no partial listing to
-/// report: `sc_preview::list_archive` refuses a whole archive that breaks a
-/// limit rather than handing back the part it had validated, and the route
-/// turns that into a `422` with the reason.
 #[derive(Clone, Debug, Serialize)]
 pub struct ArchiveEntryWire {
     pub name: String,
     pub size: u64,
     /// `"file"` or `"dir"`.
     pub kind: &'static str,
+}
+
+/// One archive's listing.
+///
+/// `skipped` is what the listing left out: an entry whose name cannot be
+/// handed out safely (a path escape, a raw Windows separator) or whose type
+/// is not a file or a directory. Reported rather than hidden, and counted
+/// rather than fatal — the rule guards whoever turns a name into a path, and
+/// one such entry is no reason to refuse the other five thousand.
+///
+/// An archive that breaks a *bound* (entry count, central directory size) is
+/// still refused whole, as a `422` with the reason.
+#[derive(Clone, Debug, Serialize)]
+pub struct ArchiveListingWire {
+    pub entries: Vec<ArchiveEntryWire>,
+    pub skipped: u32,
 }
 
 /// One item in the trash.
@@ -828,7 +840,7 @@ pub trait CoreApi: Send + Sync {
     /// Every entry in a ZIP archive at `vpath`, `READ`-checked. `Ok(None)`
     /// means the file is not a zip, which the route answers identically to a
     /// path the caller cannot list.
-    fn archive_list(&self, _user: UserId, _vpath: &str) -> Result<Option<Vec<ArchiveEntryWire>>, CoreError> {
+    fn archive_list(&self, _user: UserId, _vpath: &str) -> Result<Option<ArchiveListingWire>, CoreError> {
         Err(not_wired())
     }
     /// `/api/admin/storage`. Lives on `CoreApi` rather than in a handler

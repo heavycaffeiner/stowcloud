@@ -402,6 +402,7 @@
   "preview.archive_empty": "This folder is empty.",
   "preview.archive_entries": "{count} entries",
   "preview.archive_location": "Location inside the archive",
+  "preview.archive_skipped": "({count} not shown: unsafe names)",
   "preview.archive_up": "Up one folder",
   "preview.cannot_preview": "This file cannot be previewed.",
   "preview.failed": "It could not be opened.",
