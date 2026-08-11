@@ -198,7 +198,11 @@ mod tests {
         assert!(out.contains("  hosts allow = 127.0.0.0/8 ::1/128 192.168.0.0/16\n"));
         assert!(out.contains("  hosts deny = 0.0.0.0/0\n"));
         assert!(out.contains("  workgroup = WORKGROUP\n"));
-        assert_eq!(out.matches("interfaces =").count(), 2); // ours and `bind interfaces only`
+        // The directive whose name contains another directive's name. It is
+        // not the one being substituted, and rewriting it would turn
+        // `bind interfaces only` into a second `interfaces` line.
+        assert!(out.contains("  bind interfaces only = yes\n"));
+        assert_eq!(out.matches("\n  interfaces =").count(), 1);
     }
 
     /// A pin means `sc-core` already wrote the final answer.

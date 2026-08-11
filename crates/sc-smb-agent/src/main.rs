@@ -23,16 +23,24 @@
 //! `/etc/passwd` and Unix sockets are the whole job. It exists so the
 //! workspace still builds on the Windows development host.
 
+// Which addresses SMB answers on, and what reaches smbd, are decided by two
+// pure functions over data. They stay compiled everywhere, and their tests
+// with them: gating them behind `unix` once meant a wrong assertion in each
+// was invisible until CI ran, which is the slowest possible place to find
+// out that the config renderer disagrees with its own test.
+//
+// Nothing calls them on a non-unix host, hence the `allow`.
+#[cfg_attr(not(unix), allow(dead_code))]
+mod conf;
+#[cfg_attr(not(unix), allow(dead_code))]
+mod scope;
+
 #[cfg(unix)]
 mod accounts;
-#[cfg(unix)]
-mod conf;
 #[cfg(unix)]
 mod control;
 #[cfg(unix)]
 mod run;
-#[cfg(unix)]
-mod scope;
 #[cfg(unix)]
 mod smbd;
 #[cfg(unix)]

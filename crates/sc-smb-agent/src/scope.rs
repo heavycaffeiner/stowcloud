@@ -22,9 +22,7 @@
 //! [`Scope::detected`] makes an empty answer something the caller has to
 //! report rather than something that looks like a decision.
 
-use std::ffi::CStr;
-use std::io;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::IpAddr;
 
 /// One network device and every address configured on it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,14 +47,22 @@ pub struct Scope {
 }
 
 /// Every UP, non-loopback device carrying at least one address.
-pub fn devices() -> io::Result<Vec<Device>> {
+///
+/// The only part of this module that talks to the operating system. What it
+/// returns is folded by [`compute`], which is a pure function and stays
+/// compiled everywhere, so the decision that determines who can reach SMB is
+/// testable on any development host rather than on CI alone.
+#[cfg(unix)]
+pub fn devices() -> std::io::Result<Vec<Device>> {
+    use std::ffi::CStr;
+
     let mut out: Vec<Device> = Vec::new();
     // SAFETY: `getifaddrs` fills `head` with a list it owns; every pointer is
     // read before `freeifaddrs` and none escapes the loop.
     unsafe {
         let mut head: *mut libc::ifaddrs = std::ptr::null_mut();
         if libc::getifaddrs(&mut head) != 0 {
-            return Err(io::Error::last_os_error());
+            return Err(std::io::Error::last_os_error());
         }
         let mut cur = head;
         while !cur.is_null() {
@@ -93,7 +99,10 @@ pub fn devices() -> io::Result<Vec<Device>> {
 
 /// # Safety
 /// `sa` must be a valid `sockaddr` from `getifaddrs`.
+#[cfg(unix)]
 unsafe fn sockaddr_ip(sa: *const libc::sockaddr) -> Option<IpAddr> {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+
     match (*sa).sa_family as libc::c_int {
         libc::AF_INET => {
             let v4: libc::sockaddr_in = std::ptr::read_unaligned(sa.cast());
@@ -111,12 +120,21 @@ unsafe fn sockaddr_ip(sa: *const libc::sockaddr) -> Option<IpAddr> {
 /// device, a bridge and a tun all point at themselves. Unreadable means "not
 /// a veth" rather than an error: this only decides how wide `hosts allow`
 /// gets, and the narrow answer is the safe one.
+#[cfg(unix)]
 fn is_veth(name: &str) -> bool {
     let read = |f: &str| std::fs::read_to_string(format!("/sys/class/net/{name}/{f}")).ok();
     match (read("iflink"), read("ifindex")) {
         (Some(a), Some(b)) => a.trim() != b.trim(),
         _ => false,
     }
+}
+
+/// [`devices`] then [`compute`]. An error here is the caller's to report: it
+/// means the machine's own interfaces could not be read, which is not a
+/// reason to promote a config that says loopback and call it a scope.
+#[cfg(unix)]
+pub fn detect(allow_public: bool) -> std::io::Result<Scope> {
+    Ok(compute(&devices()?, allow_public))
 }
 
 /// Fold devices into the two `smb.conf` lines.
@@ -180,13 +198,6 @@ pub fn compute(devices: &[Device], allow_public: bool) -> Scope {
     }
 }
 
-/// [`devices`] then [`compute`]. An error here is the caller's to report: it
-/// means the machine's own interfaces could not be read, which is not a
-/// reason to promote a config that says loopback and call it a scope.
-pub fn detect(allow_public: bool) -> io::Result<Scope> {
-    Ok(compute(&devices()?, allow_public))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,11 +243,15 @@ mod tests {
         assert!(!s.hosts_allow.contains("ALL"));
     }
 
+    /// The device is named rather than the address, because with the opt-in
+    /// nothing on it is being refused and there is nothing to keep off the
+    /// bind. That is what the opt-in means: SMB is on the internet.
     #[test]
     fn the_opt_in_takes_the_public_address_and_says_all() {
         let s = compute(&[dev("eth0", &["203.0.113.5"], false)], true);
-        assert_eq!(s.interfaces, "lo 203.0.113.5");
+        assert_eq!(s.interfaces, "lo eth0");
         assert!(s.hosts_allow.contains("ALL"));
+        assert!(s.detected);
     }
 
     /// A device carrying both must not be named wholesale: naming `eth0`
