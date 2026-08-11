@@ -11,6 +11,10 @@ data_dir = "/var/lib/sc"
 # publishes 8443 on the guest's loopback only, so these are the only two
 # literals that ever arrive.
 app_hosts = ["127.0.0.1", "localhost"]
+# Two `app_hosts` entries is ambiguous, so nothing is derived: without this the
+# compat layer never mounted here at all, and every share link was a guess.
+# The first entry is what an unrecognised `Host` is answered with.
+public_origins = ["https://127.0.0.1:8443", "https://localhost:8443"]
 # `allowed_origins` is deliberately absent. Left empty it is derived from
 # `app_hosts` as `https://{host}` and `https://{host}:{bind port}`, which is
 # exactly right here; the explicit `http://` list this used to carry became

@@ -431,6 +431,88 @@ fn native_routes() -> Vec<RouteInfo> {
             group: "native",
             owner: "sc-http+sc-server",
         },
+        RouteInfo {
+            method: "PATCH",
+            path: "/api/admin/server-settings/watch",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
+        RouteInfo {
+            method: "PATCH",
+            path: "/api/admin/server-settings/paths",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
+        RouteInfo {
+            method: "PATCH",
+            path: "/api/admin/server-settings/oidc",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
+        // Drop one group's stored override so `config.toml` and the
+        // environment decide it again. One per section rather than a single
+        // `{section}` row, because the table is what the drift test probes and
+        // a parameter is not a path anything can send.
+        RouteInfo {
+            method: "DELETE",
+            path: "/api/admin/server-settings/smb",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
+        RouteInfo {
+            method: "DELETE",
+            path: "/api/admin/server-settings/search",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
+        RouteInfo {
+            method: "DELETE",
+            path: "/api/admin/server-settings/archive",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
+        RouteInfo {
+            method: "DELETE",
+            path: "/api/admin/server-settings/network",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
+        RouteInfo {
+            method: "DELETE",
+            path: "/api/admin/server-settings/db",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
+        RouteInfo {
+            method: "DELETE",
+            path: "/api/admin/server-settings/symlink-policy",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
+        RouteInfo {
+            method: "DELETE",
+            path: "/api/admin/server-settings/homes",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
+        RouteInfo {
+            method: "DELETE",
+            path: "/api/admin/server-settings/watch",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
+        RouteInfo {
+            method: "DELETE",
+            path: "/api/admin/server-settings/paths",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
+        RouteInfo {
+            method: "DELETE",
+            path: "/api/admin/server-settings/oidc",
+            group: "native",
+            owner: "sc-http+sc-server",
+        },
         // Notifies `cmd_serve`'s restart branch — see `lib.rs`'s
         // `restart_signal`/exit-code-75 handling.
         RouteInfo {

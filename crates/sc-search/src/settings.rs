@@ -33,6 +33,11 @@ pub struct IndexSettingsStore {
     /// admin-triggered build gate, the CLI's `ensure_name_index_enabled`)
     /// reads this instead of re-querying SQLite per call.
     name_enabled: AtomicBool,
+    /// Whether a row exists at all, kept beside the value because collapsing
+    /// the two loses the answer: once `unwrap_or(default_enabled)` has run,
+    /// "an admin stored this" and "it defaulted to the config value" are the
+    /// same bool, and the settings screen has to report which.
+    stored: AtomicBool,
 }
 
 impl IndexSettingsStore {
@@ -61,11 +66,19 @@ impl IndexSettingsStore {
         Ok(Self {
             db: Mutex::new(conn),
             name_enabled: AtomicBool::new(stored.unwrap_or(default_enabled)),
+            stored: AtomicBool::new(stored.is_some()),
         })
     }
 
     pub fn name_enabled(&self) -> bool {
         self.name_enabled.load(Ordering::Relaxed)
+    }
+
+    /// Has an admin ever written this, as opposed to it defaulting to
+    /// `config.toml`'s value? The settings screen reports the source of every
+    /// row it shows, and this is the only thing that can answer for this one.
+    pub fn has_stored_override(&self) -> bool {
+        self.stored.load(Ordering::Relaxed)
     }
 
     /// Persists first, flips the live flag second — same ordering
@@ -81,6 +94,7 @@ impl IndexSettingsStore {
             )?;
         }
         self.name_enabled.store(enabled, Ordering::Relaxed);
+        self.stored.store(true, Ordering::Relaxed);
         Ok(())
     }
 }
@@ -93,8 +107,27 @@ mod tests {
     fn falls_back_to_config_default_with_no_row() {
         let store = IndexSettingsStore::open_in_memory(true).unwrap();
         assert!(store.name_enabled());
+        assert!(!store.has_stored_override());
         let store = IndexSettingsStore::open_in_memory(false).unwrap();
         assert!(!store.name_enabled());
+    }
+
+    /// An admin who sets the value to what the config file already said has
+    /// still overridden it, and the settings screen has to say so — that row
+    /// now beats `config.toml` on every boot.
+    #[test]
+    fn storing_the_same_value_still_counts_as_an_override() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("index.db");
+        {
+            let store = IndexSettingsStore::open(&path, true).unwrap();
+            assert!(!store.has_stored_override());
+            store.set_name_enabled(true).unwrap();
+            assert!(store.has_stored_override());
+        }
+        assert!(IndexSettingsStore::open(&path, true)
+            .unwrap()
+            .has_stored_override());
     }
 
     #[test]

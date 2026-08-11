@@ -21,8 +21,8 @@ use sc_http::rate_limit::KeyedTokenBucket;
 use sc_http::search_limits::{SearchConcurrency, SearchLimitsConfig};
 use sc_http::settings_api::{
     ApplyOutcome, ArchivePatch, DbPatch, HomesPatch, NetworkPatch, PathsPatch, SearchPatch,
-    SettingsApi, SettingsField, SettingsSnapshot, SettingsSource, SmbPatch, SymlinkPatch,
-    WatchPatch,
+    SettingsApi, SettingsField, SettingsSection, SettingsSnapshot, SettingsSource, SmbPatch,
+    SymlinkPatch, WatchPatch,
 };
 use sc_http::state::ResizableSemaphore;
 use parking_lot::Mutex;
@@ -266,8 +266,55 @@ fn validate_paths(
     Ok((data_dir, master_key_file, smb_config_dir))
 }
 
+/// The three rows a store other than this one owns at runtime.
+///
+/// `index.name_enabled` lives in `index.db` and the two chunk sizes in
+/// `upload.db`, and neither store ever writes back into the `Config` this
+/// bridge holds. Reading them from the bridge's own copy therefore reported
+/// the boot value and hardcoded `config_file` as the source, on three rows
+/// that a different admin screen can change at any moment.
+#[derive(Clone, Copy, Debug)]
+pub struct DelegatedValues {
+    pub name_enabled: bool,
+    /// A row exists in `index.db`, so this is an admin override rather than
+    /// the config file's value having been passed through.
+    pub name_enabled_overridden: bool,
+    pub chunk_min_bytes: u64,
+    pub chunk_default_bytes: u64,
+    pub chunk_overridden: bool,
+}
+
+/// Fill in `running_value` wherever the saved value and the one this process
+/// booted with disagree.
+///
+/// Restart-required rows only. A live-applied field's saved value *is* its
+/// running value, so flagging it would announce a pending change that has
+/// already happened — which is the same lie, from the other direction, as the
+/// one this field exists to stop.
+fn mark_pending(fields: &mut [SettingsField], booted: &[SettingsField]) {
+    for f in fields.iter_mut() {
+        if !f.restart_required {
+            continue;
+        }
+        if let Some(b) = booted.iter().find(|b| b.key == f.key) {
+            if b.value != f.value {
+                f.running_value = Some(b.value.clone());
+            }
+        }
+    }
+}
+
 pub struct SettingsBridge {
     store: Arc<SettingsStore>,
+    /// `config.toml` plus the environment, **before** any stored override was
+    /// applied. What a revert restores, and the reason `bootstrap()` keeps a
+    /// copy: applying the overlay in place drops this on the floor, and a
+    /// bridge built from the result cannot reconstruct it.
+    file_cfg: Config,
+    /// What this process actually started with: file + env + the overrides as
+    /// of boot. Only used to answer whether a saved change has taken effect
+    /// yet (`SettingsField::running_value`).
+    boot_cfg: Config,
     /// Effective config, seeded from `App::build`'s already-overlaid `cfg`
     /// and kept current as patches land — this is what `snapshot()` reads
     /// and what `set_smb` hands to `smb_cmd::render_live`.
@@ -275,6 +322,9 @@ pub struct SettingsBridge {
     search_concurrency: Arc<SearchConcurrency>,
     search_rate: Arc<KeyedTokenBucket>,
     archive_concurrency: Arc<ResizableSemaphore>,
+    /// The live owners of the three delegated rows above.
+    index_settings: Arc<sc_search::IndexSettingsStore>,
+    uploads: Arc<sc_upload::UploadEngine>,
     core: Arc<sc_core::Core>,
     auth: Arc<sc_auth::AuthService>,
     restart_signal: Arc<tokio::sync::Notify>,
@@ -285,29 +335,65 @@ pub struct SettingsBridge {
     smb_overgrants: Mutex<Vec<crate::smb_cmd::SmbOvergrant>>,
 }
 
+/// Everything [`SettingsBridge::new`] needs. A struct rather than a parameter
+/// list because five of these are `Arc`s the caller holds side by side and
+/// two of the configs have the same type, which is exactly the shape an
+/// argument-order mistake hides in.
+pub struct SettingsBridgeInputs {
+    pub store: Arc<SettingsStore>,
+    pub file_cfg: Config,
+    pub cfg: Config,
+    pub search_concurrency: Arc<SearchConcurrency>,
+    pub search_rate: Arc<KeyedTokenBucket>,
+    pub archive_concurrency: Arc<ResizableSemaphore>,
+    pub index_settings: Arc<sc_search::IndexSettingsStore>,
+    pub uploads: Arc<sc_upload::UploadEngine>,
+    pub core: Arc<sc_core::Core>,
+    pub auth: Arc<sc_auth::AuthService>,
+    pub restart_signal: Arc<tokio::sync::Notify>,
+}
+
 impl SettingsBridge {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        store: Arc<SettingsStore>,
-        cfg: Config,
-        search_concurrency: Arc<SearchConcurrency>,
-        search_rate: Arc<KeyedTokenBucket>,
-        archive_concurrency: Arc<ResizableSemaphore>,
-        core: Arc<sc_core::Core>,
-        auth: Arc<sc_auth::AuthService>,
-        restart_signal: Arc<tokio::sync::Notify>,
-    ) -> Self {
+    pub fn new(inputs: SettingsBridgeInputs) -> Self {
+        let SettingsBridgeInputs {
+            store,
+            file_cfg,
+            cfg,
+            search_concurrency,
+            search_rate,
+            archive_concurrency,
+            index_settings,
+            uploads,
+            core,
+            auth,
+            restart_signal,
+        } = inputs;
         Self {
             store,
+            file_cfg,
+            boot_cfg: cfg.clone(),
             cfg: Mutex::new(cfg),
             search_concurrency,
             search_rate,
             archive_concurrency,
+            index_settings,
+            uploads,
             core,
             auth,
             restart_signal,
             smb_public_bind_warning: AtomicBool::new(false),
             smb_overgrants: Mutex::new(Vec::new()),
+        }
+    }
+
+    fn delegated(&self) -> DelegatedValues {
+        let (min, default) = self.uploads.chunk_settings();
+        DelegatedValues {
+            name_enabled: self.index_settings.name_enabled(),
+            name_enabled_overridden: self.index_settings.has_stored_override(),
+            chunk_min_bytes: min,
+            chunk_default_bytes: default,
+            chunk_overridden: self.uploads.chunk_settings_overridden(),
         }
     }
 
@@ -322,6 +408,7 @@ impl SettingsBridge {
             value,
             source,
             restart_required,
+            running_value: None,
             readonly_reason_key: None,
         }
     }
@@ -339,6 +426,7 @@ impl SettingsBridge {
             value,
             source,
             restart_required: false,
+            running_value: None,
             readonly_reason_key: Some(reason_key.to_string()),
         }
     }
@@ -360,6 +448,7 @@ impl SettingsBridge {
             value,
             source,
             restart_required: true,
+            running_value: None,
             readonly_reason_key: Some(reason_key.to_string()),
         }
     }
@@ -369,7 +458,11 @@ impl SettingsBridge {
     /// `every_config_field_is_reachable` can assert the completeness
     /// requirement — every `Config` field either editable here or read-only
     /// with a stated reason — without standing up a `Core`/`AuthService`.
-    fn snapshot_fields(cfg: &Config, o: &crate::config::SettingsOverrides) -> Vec<SettingsField> {
+    fn snapshot_fields(
+        cfg: &Config,
+        o: &crate::config::SettingsOverrides,
+        live: DelegatedValues,
+    ) -> Vec<SettingsField> {
         let src = |present: bool, cfg_val_is_default: bool| {
             if present {
                 SettingsSource::AdminOverride
@@ -418,19 +511,10 @@ impl SettingsBridge {
             true,
         ));
         fields.push(Self::field(
-            "compat_canonical_url",
-            json!(cfg.compat_canonical_url),
+            "public_origins",
+            json!(cfg.public_origins),
             net_src,
             true,
-        ));
-        // Shown but never writable from here. `NetworkOverride` is
-        // full-replace, so a PATCH from a UI build that does not know this
-        // field would erase the list an operator had put in `config.toml`.
-        fields.push(Self::readonly_needing_restart(
-            "compat_alt_canonical_urls",
-            json!(cfg.compat_alt_canonical_urls),
-            net_src,
-            "settings.readonly_alt_canonical_urls",
         ));
 
         // --- db (restart-required) ---
@@ -673,8 +757,8 @@ impl SettingsBridge {
         fields.push(Self::field("oidc.issuer", json!(cfg.oidc.issuer), oidc_src, true));
         fields.push(Self::field("oidc.client_id", json!(cfg.oidc.client_id), oidc_src, true));
         fields.push(Self::field(
-            "oidc.redirect_uri",
-            json!(cfg.oidc.redirect_uri),
+            "oidc.redirect_uris",
+            json!(cfg.oidc.redirect_uris),
             oidc_src,
             true,
         ));
@@ -718,31 +802,39 @@ impl SettingsBridge {
             "settings.readonly_local_password_login",
         ));
 
-        // --- owned by another section of the admin UI, or by another
-        // agent's part of this codebase — shown read-only with why, never
-        // hidden. ---
+        // --- owned by another section of the admin UI — shown read-only with
+        // why, never hidden, and with the value that section is *currently*
+        // serving rather than the one this process booted with. ---
+        let delegated_src = |overridden: bool, is_default: bool| {
+            if overridden {
+                SettingsSource::AdminOverride
+            } else if is_default {
+                SettingsSource::BuiltinDefault
+            } else {
+                SettingsSource::ConfigFile
+            }
+        };
         fields.push(Self::readonly(
             "index.name_enabled",
-            json!(cfg.index.name_enabled),
-            SettingsSource::ConfigFile,
+            json!(live.name_enabled),
+            delegated_src(
+                live.name_enabled_overridden,
+                cfg.index.name_enabled == default.index.name_enabled,
+            ),
             "settings.readonly_owned_by_index_section",
         ));
-        fields.push(Self::readonly(
-            "index.content_enabled",
-            json!(cfg.index.content_enabled),
-            SettingsSource::ConfigFile,
-            "settings.readonly_owned_by_index_section",
-        ));
+        let chunk_is_default = cfg.upload.chunk_min_bytes == default.upload.chunk_min_bytes
+            && cfg.upload.chunk_default_bytes == default.upload.chunk_default_bytes;
         fields.push(Self::readonly(
             "upload.chunk_min_bytes",
-            json!(cfg.upload.chunk_min_bytes),
-            SettingsSource::ConfigFile,
+            json!(live.chunk_min_bytes),
+            delegated_src(live.chunk_overridden, chunk_is_default),
             "settings.readonly_owned_by_upload_section",
         ));
         fields.push(Self::readonly(
             "upload.chunk_default_bytes",
-            json!(cfg.upload.chunk_default_bytes),
-            SettingsSource::ConfigFile,
+            json!(live.chunk_default_bytes),
+            delegated_src(live.chunk_overridden, chunk_is_default),
             "settings.readonly_owned_by_upload_section",
         ));
         fields.push(Self::readonly(
@@ -796,8 +888,13 @@ impl crate::passdb::PassdbRender for SettingsBridge {
 
 impl SettingsApi for SettingsBridge {
     fn snapshot(&self) -> SettingsSnapshot {
+        let overrides = self.store.load();
+        let live = self.delegated();
+        let mut fields = Self::snapshot_fields(&self.cfg.lock(), &overrides, live);
+        let booted = Self::snapshot_fields(&self.boot_cfg, &overrides, live);
+        mark_pending(&mut fields, &booted);
         SettingsSnapshot {
-            fields: Self::snapshot_fields(&self.cfg.lock(), &self.store.load()),
+            fields,
             smb_public_bind_warning: self.smb_public_bind_warning.load(Ordering::Relaxed),
             smb_overgrants: self
                 .smb_overgrants
@@ -824,9 +921,7 @@ impl SettingsApi for SettingsBridge {
     fn set_smb(&self, patch: SmbPatch) -> Result<ApplyOutcome, CoreError> {
         let totp_policy = totp_policy_from_wire(&patch.totp_policy)?;
         let mut cfg = self.cfg.lock();
-        let server_name = patch
-            .server_name
-            .unwrap_or_else(|| cfg.smb.server_name.clone());
+        let server_name = patch.server_name.clone();
         let ov = SmbOverride {
             enabled: patch.enabled,
             workgroup: patch.workgroup.clone(),
@@ -894,6 +989,15 @@ impl SettingsApi for SettingsBridge {
     }
 
     fn set_search(&self, patch: SearchPatch) -> Result<ApplyOutcome, CoreError> {
+        // Zero was accepted and applied live, and from that moment every
+        // search from every user answered 429. Refused where it is typed.
+        if patch.rate_per_minute == 0 {
+            return Err(reject(
+                "settings.must_be_at_least_one",
+                json!({ "field": "search.rate_per_minute" }),
+                "search.rate_per_minute: must be at least 1",
+            ));
+        }
         let ov = SearchOverride {
             max_concurrent_fast: patch.max_concurrent_fast,
             max_concurrent_slow: patch.max_concurrent_slow,
@@ -929,6 +1033,16 @@ impl SettingsApi for SettingsBridge {
     }
 
     fn set_archive(&self, patch: ArchivePatch) -> Result<ApplyOutcome, CoreError> {
+        // The semaphore already clamps zero to one; the stored and displayed
+        // value did not, so the screen showed a number the server was not
+        // using.
+        if patch.max_concurrent == 0 {
+            return Err(reject(
+                "settings.must_be_at_least_one",
+                json!({ "field": "archive.max_concurrent" }),
+                "archive.max_concurrent: must be at least 1",
+            ));
+        }
         self.store
             .mutate(|o| o.archive_max_concurrent = Some(patch.max_concurrent))
             .map_err(store_err)?;
@@ -952,13 +1066,32 @@ impl SettingsApi for SettingsBridge {
                     format!("invalid bind address: {}", patch.bind),
                 )
             })?;
+        // Refused here, unlike the boot path which drops a malformed entry
+        // with a warning. Taking the server down over a typo is worse than
+        // costing an administrator one correction while the field is in front
+        // of them, and the two directions are asymmetric for that reason.
+        let public_origins: Vec<String> = patch
+            .public_origins
+            .iter()
+            .map(|s| s.trim().trim_end_matches('/').to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        for origin in &public_origins {
+            if !crate::config::is_absolute_origin(origin) {
+                return Err(reject(
+                    "settings.invalid_origin",
+                    json!({ "value": origin }),
+                    format!("public_origins: {origin} is not an absolute http(s):// origin"),
+                ));
+            }
+        }
         let ov = NetworkOverride {
             bind,
             app_hosts: patch.app_hosts.clone(),
             content_hosts: patch.content_hosts.clone(),
             allowed_origins: patch.allowed_origins.clone(),
             trusted_proxies: patch.trusted_proxies.clone(),
-            compat_canonical_url: patch.compat_canonical_url.clone(),
+            public_origins: public_origins.clone(),
         };
         self.store
             .mutate(|o| o.network = Some(ov.clone()))
@@ -970,7 +1103,7 @@ impl SettingsApi for SettingsBridge {
         cfg.content_hosts = patch.content_hosts;
         cfg.allowed_origins = patch.allowed_origins;
         cfg.trusted_proxies = patch.trusted_proxies;
-        cfg.compat_canonical_url = patch.compat_canonical_url;
+        cfg.public_origins = public_origins;
 
         Ok(ApplyOutcome {
             applied_live: false,
@@ -1126,26 +1259,63 @@ impl SettingsApi for SettingsBridge {
     /// over the operator's file.
     fn set_oidc(&self, patch: sc_http::settings_api::OidcPatch) -> Result<ApplyOutcome, CoreError> {
         let smb_policy = oidc_smb_policy_from_wire(&patch.smb_policy)?;
-        let redirect = patch.redirect_uri.trim();
+        let redirect_uris: Vec<String> = patch
+            .redirect_uris
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        let mut cfg = self.cfg.lock();
         // Refused at save time rather than discovered as "the SSO button
-        // stopped appearing" after the restart. `enabled` with a redirect URI
-        // that cannot activate is the one combination an operator would
-        // otherwise have no feedback on (§4.3.1).
-        if patch.enabled && !redirect.is_empty() && !redirect.starts_with("https://") {
-            return Err(reject(
-                "settings.oidc_redirect_uri_must_be_https",
-                json!({ "value": redirect }),
-                format!(
-                    "oidc.redirect_uri: must start with https:// ({redirect}); it has to match \
-                     what is registered with the IdP exactly"
-                ),
-            ));
+        // stopped appearing" after the restart. Checked against the
+        // *effective* `app_hosts`, not the booted one: an administrator who
+        // has just added a host and not yet restarted is declaring intent,
+        // and both changes need the same restart before either takes effect.
+        if patch.enabled {
+            for uri in &redirect_uris {
+                if let Some(problem) = crate::config::redirect_uri_problem(uri, &cfg.app_hosts) {
+                    let key = if uri.starts_with("https://") {
+                        "settings.oidc_redirect_host_not_served"
+                    } else {
+                        "settings.oidc_redirect_uri_must_be_https"
+                    };
+                    return Err(reject(
+                        key,
+                        json!({ "value": uri }),
+                        format!("oidc.redirect_uris: {problem}"),
+                    ));
+                }
+            }
+            // `client_secret_file` is `config.toml` only, deliberately, and
+            // nothing checked it here: saving `enabled = true` reported
+            // success and the next boot logged "client_secret_file is not
+            // set" and stayed off.
+            let readable = cfg
+                .oidc
+                .client_secret_file
+                .as_ref()
+                .is_some_and(|p| std::fs::File::open(p).is_ok());
+            if !readable {
+                return Err(reject(
+                    "settings.oidc_secret_file_missing",
+                    json!({
+                        "path": cfg
+                            .oidc
+                            .client_secret_file
+                            .as_ref()
+                            .map(|p| p.display().to_string())
+                            .unwrap_or_default()
+                    }),
+                    "oidc.client_secret_file is not set or cannot be read; single sign-on \
+                     would stay off after the restart",
+                ));
+            }
         }
         let ov = OidcOverride {
             enabled: patch.enabled,
             issuer: patch.issuer.trim().to_string(),
             client_id: patch.client_id.trim().to_string(),
-            redirect_uri: redirect.to_string(),
+            redirect_uris,
             scopes: patch.scopes.clone(),
             display_name: patch.display_name.clone(),
             allow_private_endpoints: patch.allow_private_endpoints,
@@ -1155,11 +1325,10 @@ impl SettingsApi for SettingsBridge {
             .mutate(|o| o.oidc = Some(ov.clone()))
             .map_err(store_err)?;
 
-        let mut cfg = self.cfg.lock();
         cfg.oidc.enabled = ov.enabled;
         cfg.oidc.issuer = ov.issuer;
         cfg.oidc.client_id = ov.client_id;
-        cfg.oidc.redirect_uri = ov.redirect_uri;
+        cfg.oidc.redirect_uris = ov.redirect_uris;
         cfg.oidc.scopes = ov.scopes;
         cfg.oidc.display_name = ov.display_name;
         cfg.oidc.allow_private_endpoints = ov.allow_private_endpoints;
@@ -1171,6 +1340,99 @@ impl SettingsApi for SettingsBridge {
         })
     }
 
+    /// Drop one group's override and put the process back on what
+    /// `config.toml` and the environment say.
+    ///
+    /// The restored config is rebuilt as `file_cfg` plus the *remaining*
+    /// overrides, so reverting one group never disturbs another. For a
+    /// live-appliable group the restored values are then pushed into the
+    /// running components exactly as the corresponding `set_*` would —
+    /// otherwise this would report success and leave the process running the
+    /// value it just discarded.
+    fn clear_section(&self, section: SettingsSection) -> Result<ApplyOutcome, CoreError> {
+        let mut cfg = self.cfg.lock();
+        let mut next = self.store.load();
+        if !next.is_set(section) {
+            // Already the file's. Reported as a no-op success rather than an
+            // error: the button is disabled in that state, and a double click
+            // must not read as a failure.
+            return Ok(ApplyOutcome {
+                applied_live: false,
+                restart_required: false,
+            });
+        }
+        next.clear(section);
+        let mut candidate = self.file_cfg.clone();
+        candidate.apply_settings_overrides(&next);
+
+        // Everything that can fail happens before anything is persisted, the
+        // same ordering `set_smb` uses and for the same reason: a failed
+        // render must not leave `smb.enabled` durably recorded with nothing
+        // rendered anywhere.
+        let mut restored_render = None;
+        if section == SettingsSection::Smb {
+            // Both enforcement sites read `totp_policy` off `AuthService`, so
+            // the render below sees the restored value only if it is pushed
+            // first, and the old one goes back if the render fails.
+            let previous = self.auth.smb_totp_policy();
+            self.auth
+                .set_smb_totp_policy(match candidate.smb.totp_policy {
+                    sc_smb::TotpPolicy::RequireSeparate => sc_auth::SmbTotpPolicy::RequireSeparate,
+                    sc_smb::TotpPolicy::Block => sc_auth::SmbTotpPolicy::Block,
+                });
+            match crate::smb_cmd::render_live(&candidate, &self.core, &self.auth) {
+                Ok(out) => restored_render = Some(out),
+                Err(e) => {
+                    self.auth.set_smb_totp_policy(previous);
+                    return Err(CoreError::InvalidName(e.to_string()));
+                }
+            }
+        }
+
+        self.store
+            .mutate(|o| o.clear(section))
+            .map_err(store_err)?;
+
+        match section {
+            SettingsSection::Search => {
+                self.search_concurrency
+                    .reconfigure(&SearchLimitsConfig::from(&candidate.search));
+                self.search_rate.reconfigure(
+                    candidate.search.rate_per_minute,
+                    Duration::from_secs(60),
+                );
+            }
+            SettingsSection::Archive => {
+                self.archive_concurrency
+                    .resize(candidate.archive.max_concurrent.max(1) as usize);
+            }
+            SettingsSection::Smb => {
+                if let Some(out) = restored_render {
+                    self.record_render_outcome(out);
+                }
+            }
+            _ => {}
+        }
+
+        let smb_enabled_changed = cfg.smb.enabled != candidate.smb.enabled;
+        *cfg = candidate;
+
+        Ok(match section {
+            SettingsSection::Search | SettingsSection::Archive => ApplyOutcome {
+                applied_live: true,
+                restart_required: false,
+            },
+            SettingsSection::Smb => ApplyOutcome {
+                applied_live: !smb_enabled_changed,
+                restart_required: smb_enabled_changed,
+            },
+            _ => ApplyOutcome {
+                applied_live: false,
+                restart_required: true,
+            },
+        })
+    }
+
     fn request_restart(&self) -> Result<(), CoreError> {
         self.restart_signal.notify_one();
         Ok(())
@@ -1178,9 +1440,30 @@ impl SettingsApi for SettingsBridge {
 }
 
 #[cfg(test)]
+impl DelegatedValues {
+    /// What the two delegated stores report for a deployment where neither
+    /// has ever been written: the config file's own values.
+    fn from_config(cfg: &Config) -> Self {
+        Self {
+            name_enabled: cfg.index.name_enabled,
+            name_enabled_overridden: false,
+            chunk_min_bytes: cfg.upload.chunk_min_bytes,
+            chunk_default_bytes: cfg.upload.chunk_default_bytes,
+            chunk_overridden: false,
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::config::SettingsOverrides;
+
+    fn default_fields() -> Vec<SettingsField> {
+        let cfg = Config::default();
+        let live = DelegatedValues::from_config(&cfg);
+        SettingsBridge::snapshot_fields(&cfg, &SettingsOverrides::default(), live)
+    }
 
     /// `Config` serialized to JSON, flattened to the same dotted keys
     /// `snapshot_fields` emits. Derived from the struct itself rather than
@@ -1225,7 +1508,8 @@ mod tests {
         let mut config_keys = Vec::new();
         config_leaf_keys(&serde_json::to_value(&cfg).unwrap(), "", &mut config_keys);
 
-        let fields = SettingsBridge::snapshot_fields(&cfg, &SettingsOverrides::default());
+        let live = DelegatedValues::from_config(&cfg);
+        let fields = SettingsBridge::snapshot_fields(&cfg, &SettingsOverrides::default(), live);
         let covered: std::collections::HashSet<&str> =
             fields.iter().map(|f| f.key.as_str()).collect();
 
@@ -1239,63 +1523,58 @@ mod tests {
         );
     }
 
-    /// `ServerSettingsSection.svelte` renders a dedicated control for exactly
-    /// these keys and dumps everything else into its read-only "other" list.
-    /// A field that is editable here but absent there would be shown as if
-    /// `config.toml` were the only way to change it.
-    const UI_EDITABLE_KEYS: &[&str] = &[
-        "bind",
-        "app_hosts",
-        "content_hosts",
-        "allowed_origins",
-        "trusted_proxies",
-        "compat_canonical_url",
-        "db.size_guard",
-        "db.max_bytes",
-        "db.min_free_bytes",
-        "symlink_policy",
-        "homes.enabled",
-        "homes.root",
-        "smb.enabled",
-        "smb.workgroup",
-        "smb.server_name",
-        "smb.service_user",
-        "smb.allow_public_bind",
-        "smb.totp_policy",
-        "smb.service_uid",
-        "smb.service_gid",
-        "search.max_concurrent_fast",
-        "search.max_concurrent_slow",
-        "search.walk_deadline_fast_ms",
-        "search.walk_deadline_slow_ms",
-        "search.rate_per_minute",
-        "archive.max_concurrent",
-        "watch.backend",
-        "watch.hot_set_max",
-        "watch.full_threshold",
-        "data_dir",
-        "master_key_file",
-        "smb.config_dir",
-        // §6-4's editable rows. `oidc.client_secret_file` and
-        // `oidc.local_password_login` are deliberately not here: they carry a
-        // `readonly_reason` instead, and this list and that reason are
-        // asserted to agree.
-        "oidc.enabled",
-        "oidc.issuer",
-        "oidc.client_id",
-        "oidc.redirect_uri",
-        "oidc.scopes",
-        "oidc.display_name",
-        "oidc.allow_private_endpoints",
-        "oidc.smb_policy",
-    ];
+    /// `ServerSettingsSection.svelte`'s own source, read at compile time.
+    ///
+    /// The list this test needs is a fact only the frontend knows, and a
+    /// hand-written copy of it here is a second source of truth with nothing
+    /// comparing the two — which is exactly how `smb.server_name` came to be
+    /// advertised as editable with no control anywhere. Reaching outside the
+    /// crate directory is safe because this workspace sets `publish = false`;
+    /// it would not be in a crate that is packaged.
+    ///
+    /// A Rust test rather than a frontend one because the frontend suite
+    /// cannot run on every development machine here, and this particular
+    /// check has to fail on the machine making the change.
+    const UI_SOURCE: &str =
+        include_str!("../../../web/src/lib/ui/admin/ServerSettingsSection.svelte");
 
+    /// The `EDITABLE_KEYS` array from that source, as the screen means it:
+    /// the keys it excludes from its read-only "other" list.
+    fn ui_editable_keys() -> Vec<String> {
+        let (_, rest) = UI_SOURCE
+            .split_once("const EDITABLE_KEYS = new Set([")
+            .expect("ServerSettingsSection.svelte must declare EDITABLE_KEYS");
+        let (body, _) = rest.split_once("])").expect("EDITABLE_KEYS must be closed");
+        body.split(',')
+            .filter_map(|entry| {
+                let e = entry.trim();
+                // Skip comment lines and the trailing empty split.
+                let e = e.lines().map(str::trim).find(|l| l.starts_with('\''))?;
+                e.trim_matches(|c| c == '\'' || c == ',')
+                    .to_string()
+                    .into()
+            })
+            .collect()
+    }
+
+    /// What the screen can change and what the server says it can change,
+    /// asserted against each other rather than against a copy.
+    ///
+    /// What this catches is a key that falls into the read-only section with
+    /// no reason attached. What it cannot see is whether a listed key has an
+    /// input rendered for it, and there is one key where those differ on
+    /// purpose: `oidc.smb_policy` has a single accepted value, so the form
+    /// sends the constant and the hint under it says what the value means.
     #[test]
     fn a_field_is_either_editable_in_the_ui_or_carries_a_reason() {
-        let fields =
-            SettingsBridge::snapshot_fields(&Config::default(), &SettingsOverrides::default());
+        let ui: std::collections::HashSet<String> = ui_editable_keys().into_iter().collect();
+        assert!(!ui.is_empty(), "EDITABLE_KEYS parsed as empty");
+        let fields = default_fields();
+        let emitted: std::collections::HashSet<&str> =
+            fields.iter().map(|f| f.key.as_str()).collect();
+
         for f in &fields {
-            let has_control = UI_EDITABLE_KEYS.contains(&f.key.as_str());
+            let has_control = ui.contains(f.key.as_str());
             assert_eq!(
                 has_control,
                 f.readonly_reason_key.is_none(),
@@ -1303,6 +1582,10 @@ mod tests {
                 f.key
             );
         }
+        // And the other direction: a control for a key the server no longer
+        // sends is a form field that saves nothing.
+        let stale: Vec<&String> = ui.iter().filter(|k| !emitted.contains(k.as_str())).collect();
+        assert!(stale.is_empty(), "UI controls for keys the server does not send: {stale:?}");
     }
 
     /// The classification an operator acts on. Wrong here is worse than
@@ -1310,8 +1593,7 @@ mod tests {
     /// means the change looks done and is not.
     #[test]
     fn only_the_genuinely_live_fields_are_advertised_as_live() {
-        let fields =
-            SettingsBridge::snapshot_fields(&Config::default(), &SettingsOverrides::default());
+        let fields = default_fields();
         let live: Vec<&str> = fields
             .iter()
             .filter(|f| f.readonly_reason_key.is_none() && !f.restart_required)
@@ -1341,6 +1623,85 @@ mod tests {
             ],
             "everything else is baked in at App::build and must say so"
         );
+    }
+
+    /// Three rows are owned at runtime by `index.db` and `upload.db`, and the
+    /// screen used to show this bridge's own boot-time `Config` copy for all
+    /// three with `config_file` hardcoded as the source.
+    #[test]
+    fn the_delegated_rows_report_the_live_value_and_a_real_source() {
+        let cfg = Config::default();
+        let live = DelegatedValues {
+            name_enabled: true,
+            name_enabled_overridden: true,
+            chunk_min_bytes: 8 * 1024 * 1024,
+            chunk_default_bytes: 32 * 1024 * 1024,
+            chunk_overridden: true,
+        };
+        let fields = SettingsBridge::snapshot_fields(&cfg, &SettingsOverrides::default(), live);
+        let row = |k: &str| fields.iter().find(|f| f.key == k).expect(k);
+
+        assert_eq!(row("index.name_enabled").value, json!(true));
+        assert_eq!(row("index.name_enabled").source, SettingsSource::AdminOverride);
+        assert_eq!(row("upload.chunk_default_bytes").value, json!(32 * 1024 * 1024));
+        assert_eq!(
+            row("upload.chunk_min_bytes").source,
+            SettingsSource::AdminOverride
+        );
+
+        // With no row in either store, the config file's own value is what is
+        // reported and the source says so.
+        let untouched = SettingsBridge::snapshot_fields(
+            &cfg,
+            &SettingsOverrides::default(),
+            DelegatedValues::from_config(&cfg),
+        );
+        let row = |k: &str| untouched.iter().find(|f| f.key == k).expect(k);
+        assert_eq!(row("index.name_enabled").value, json!(false));
+        assert_eq!(
+            row("index.name_enabled").source,
+            SettingsSource::BuiltinDefault
+        );
+    }
+
+    /// Saved-but-pending used to be indistinguishable from in-effect: the
+    /// screen showed the new value with nothing to say the running server was
+    /// still on the old one.
+    #[test]
+    fn a_saved_restart_required_change_reports_what_the_server_is_still_running() {
+        let booted = Config::default();
+        let saved = Config {
+            public_origins: vec!["https://cloud.example.com".into()],
+            search: crate::config::SearchConfig {
+                rate_per_minute: 90,
+                ..booted.search.clone()
+            },
+            ..booted.clone()
+        };
+        let live = DelegatedValues::from_config(&booted);
+        let o = SettingsOverrides::default();
+        let mut fields = SettingsBridge::snapshot_fields(&saved, &o, live);
+        mark_pending(&mut fields, &SettingsBridge::snapshot_fields(&booted, &o, live));
+        let row = |k: &str| fields.iter().find(|f| f.key == k).expect(k);
+
+        assert_eq!(row("public_origins").value, json!(["https://cloud.example.com"]));
+        assert_eq!(row("public_origins").running_value, Some(json!([])));
+        // A live-applied field's saved value is its running value, so it must
+        // not be flagged as waiting for anything.
+        assert_eq!(row("search.rate_per_minute").value, json!(90));
+        assert_eq!(row("search.rate_per_minute").running_value, None);
+        // And an untouched restart-required row says nothing at all.
+        assert_eq!(row("bind").running_value, None);
+    }
+
+    /// The dead key is gone from the screen entirely, not shown read-only
+    /// with a better reason: nothing read it, so it looked like a supported
+    /// switch that did nothing.
+    #[test]
+    fn the_dead_content_index_key_has_no_row_at_all() {
+        assert!(!default_fields()
+            .iter()
+            .any(|f| f.key == "index.content_enabled"));
     }
 
     /// The snapshot's value has to be a value the patch would accept back —

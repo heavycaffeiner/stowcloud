@@ -57,7 +57,11 @@ pub struct App {
 }
 
 impl App {
-    pub fn build(cfg: Config, key: &MasterKeyResult) -> anyhow::Result<Self> {
+    /// `file_cfg` is `config.toml` plus the environment, before the admin
+    /// override store was folded in. It is threaded here only so
+    /// `SettingsBridge` can answer what a revert restores; nothing else in
+    /// this function reads it.
+    pub fn build(cfg: Config, file_cfg: Config, key: &MasterKeyResult) -> anyhow::Result<Self> {
         let data_dir = cfg.data_dir.clone();
         std::fs::create_dir_all(&data_dir)?;
 
@@ -261,14 +265,19 @@ impl App {
         // publisher needs a `Weak` to *this* object, and a `Weak<dyn
         // SettingsApi>` cannot be turned back into the renderer it also is.
         let settings_bridge = Arc::new(crate::settings_bridge::SettingsBridge::new(
-            settings_store,
-            cfg.clone(),
-            search_concurrency.clone(),
-            search_rate.clone(),
-            archive_concurrency.clone(),
-            core.clone(),
-            auth.clone(),
-            restart_signal.clone(),
+            crate::settings_bridge::SettingsBridgeInputs {
+                store: settings_store,
+                file_cfg,
+                cfg: cfg.clone(),
+                search_concurrency: search_concurrency.clone(),
+                search_rate: search_rate.clone(),
+                archive_concurrency: archive_concurrency.clone(),
+                index_settings: index_settings.clone(),
+                uploads: uploads.clone(),
+                core: core.clone(),
+                auth: auth.clone(),
+                restart_signal: restart_signal.clone(),
+            },
         ));
         let settings: Arc<dyn sc_http::settings_api::SettingsApi> = settings_bridge.clone();
 
@@ -307,55 +316,57 @@ impl App {
         // device binds to it forever afterward; reordering `app_hosts` for an
         // unrelated reason (adding a bind alias, alphabetising) would silently
         // repoint every future client enrolment at a different origin. See
-        // `Config::resolve_compat_canonical_url`'s doc comment for the full
+        // `Config::resolve_public_origins`'s doc comment for the full
         // reasoning and `diagnostics.rs` for the startup report.
         #[cfg(feature = "compat-nc")]
-        let compat = match cfg.resolve_compat_canonical_url() {
-            crate::config::CompatCanonicalUrl::Configured(url)
-            | crate::config::CompatCanonicalUrl::Derived(url) => {
-                let (alt_canonical_urls, rejected) = cfg.resolve_compat_alt_canonical_urls();
-                if !rejected.is_empty() {
-                    tracing::warn!(
-                        rejected = ?rejected,
-                        "ignoring `compat_alt_canonical_urls` entries that are not absolute \
-                         http(s):// origins; clients reaching this server under those names \
-                         will be answered with the canonical URL"
-                    );
+        let compat = {
+            let (resolved, rejected) = cfg.resolve_public_origins();
+            if !rejected.is_empty() {
+                tracing::warn!(
+                    rejected = ?rejected,
+                    "ignoring `public_origins` entries that are not absolute http(s):// \
+                     origins; clients reaching this server under those names will be \
+                     answered with the canonical origin"
+                );
+            }
+            match &resolved {
+                crate::config::PublicOrigins::Configured(_)
+                | crate::config::PublicOrigins::Derived(_) => {
+                    let mut origins = resolved.origins().to_vec();
+                    let canonical_url = origins.remove(0);
+                    Some(crate::nc::Compat::build(crate::nc::CompatBuildInputs {
+                        data_dir: &data_dir,
+                        canonical_url,
+                        alt_canonical_urls: origins,
+                        core: core.clone(),
+                        meta: meta.clone(),
+                        auth: auth.clone(),
+                        uploads: uploads.clone(),
+                        content_host: http.cfg.content_hosts.first().cloned().unwrap_or_default(),
+                        keys: http.signed_url_keys.clone(),
+                        search_limits: search_concurrency.clone(),
+                        storage: storage_cache.clone(),
+                    }))
                 }
-                Some(crate::nc::Compat::build(crate::nc::CompatBuildInputs {
-                    data_dir: &data_dir,
-                    canonical_url: url,
-                    alt_canonical_urls,
-                    chunk_size_advisory: cfg.upload.chunk_default_bytes,
-                    core: core.clone(),
-                    meta: meta.clone(),
-                    auth: auth.clone(),
-                    uploads: uploads.clone(),
-                    content_host: http.cfg.content_hosts.first().cloned().unwrap_or_default(),
-                    keys: http.signed_url_keys.clone(),
-                    search_limits: search_concurrency.clone(),
-                    storage: storage_cache.clone(),
-                }))
-            }
-            crate::config::CompatCanonicalUrl::Ambiguous { app_host_count } => {
-                tracing::error!(
-                    app_host_count,
-                    "compat layer NOT mounted: `compat_canonical_url` is unset \
-                     and `app_hosts` has {app_host_count} entries, so there is no single \
-                     unambiguous origin to hand a real client's system browser. Set \
-                     `compat_canonical_url` explicitly in the config file to enable legacy \
-                     client compatibility (native web UI, WebDAV and the plain API are \
-                     unaffected)."
-                );
-                None
-            }
-            crate::config::CompatCanonicalUrl::Invalid(value) => {
-                tracing::error!(
-                    value = %value,
-                    "compat layer NOT mounted: `compat_canonical_url` is set \
-                     but is not an absolute http(s):// origin"
-                );
-                None
+                crate::config::PublicOrigins::Ambiguous { app_host_count } => {
+                    tracing::error!(
+                        app_host_count,
+                        "compat layer NOT mounted: `public_origins` is unset and `app_hosts` \
+                         has {app_host_count} entries, so there is no single unambiguous \
+                         origin to hand a real client's system browser. Set `public_origins` \
+                         explicitly in the config file to enable legacy client compatibility \
+                         (native web UI, WebDAV and the plain API are unaffected)."
+                    );
+                    None
+                }
+                crate::config::PublicOrigins::Invalid(value) => {
+                    tracing::error!(
+                        value = %value,
+                        "compat layer NOT mounted: the first `public_origins` entry is not an \
+                         absolute http(s):// origin"
+                    );
+                    None
+                }
             }
         };
 
@@ -1100,16 +1111,14 @@ fn build_http_state(
         body_limit_bytes: 16 * 1024 * 1024,
         chunk_size_min: cfg.upload.chunk_min_bytes,
         chunk_size_default: cfg.upload.chunk_default_bytes,
-        // Same resolution the compatibility layer mounts on, and for the same
-        // reason: a URL handed to somebody else has to be one they can reach.
-        // Ambiguous or invalid leaves this `None`, so share links keep the
-        // old `https://{app_hosts[0]}` guess rather than losing the feature
-        // over a config value only the compat layer previously needed.
-        public_base_url: match cfg.resolve_compat_canonical_url() {
-            crate::config::CompatCanonicalUrl::Configured(url)
-            | crate::config::CompatCanonicalUrl::Derived(url) => Some(url),
-            _ => None,
-        },
+        // The same resolution the compatibility layer mounts on, from the
+        // same list, and for the same reason: a URL handed to somebody else
+        // has to be one they can reach. Ambiguous or invalid leaves this
+        // empty, so share links fall back to the old `https://{app_hosts[0]}`
+        // guess rather than losing the feature over a config value.
+        origins: sc_http::config::OriginSet::new(
+            cfg.resolve_public_origins().0.origins().to_vec(),
+        ),
         // What the CSRF check compares a private-LAN `Origin` against, so that
         // a neighbouring service on the same address but another port is not
         // mistaken for us (`sc_http::config::is_self_lan_origin`).
@@ -1945,7 +1954,7 @@ mod passdb_arming_tests {
             inside_data_dir: false,
             generated: true,
         };
-        (App::build(cfg, &key).expect("app builds"), dir)
+        (App::build(cfg.clone(), cfg, &key).expect("app builds"), dir)
     }
 
     /// "Do not spin up work for a deployment that never enabled SMB": no

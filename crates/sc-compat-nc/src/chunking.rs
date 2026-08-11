@@ -663,6 +663,9 @@ mod tests {
             sess.aborted = true;
             Ok(())
         }
+        fn chunk_size_advisory(&self) -> u64 {
+            10 * 1024 * 1024
+        }
     }
 
     fn setup() -> (ChunkedUploads, Arc<FakeEngine>) {

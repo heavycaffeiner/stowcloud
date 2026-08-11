@@ -66,10 +66,10 @@ fn fixture(trusted_proxies: &[&str]) -> Fixture {
         }],
         trusted_proxies: trusted_proxies.iter().map(|s| s.to_string()).collect(),
         // `Config::default()`'s three-entry `app_hosts` is deliberately
-        // ambiguous for `resolve_compat_canonical_url` (`app.rs`); set this
+        // ambiguous for `resolve_public_origins` (`app.rs`); set this
         // explicitly so the compat-mount tests below keep exercising a
         // mounted layer.
-        compat_canonical_url: Some("https://localhost".into()),
+        public_origins: vec!["https://localhost".into()],
         ..Config::default()
     };
     let key = MasterKeyResult {
@@ -77,7 +77,7 @@ fn fixture(trusted_proxies: &[&str]) -> Fixture {
         inside_data_dir: false,
         generated: true,
     };
-    let app = App::build(cfg, &key).expect("app builds");
+    let app = App::build(cfg.clone(), cfg, &key).expect("app builds");
     Fixture {
         app,
         _data: data,

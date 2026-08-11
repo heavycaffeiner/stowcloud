@@ -59,6 +59,7 @@ import {
   type SessionInfo,
   type SettingsField,
   type SettingsSnapshot,
+  type SettingsSectionId,
   type ShareLinkCreateReq,
   type ShareLinkInfo,
   type ShareLinkPatchReq,
@@ -1370,7 +1371,7 @@ const mockServerSettings = {
   smb: {
     enabled: false,
     workgroup: 'WORKGROUP',
-    server_name: '',
+    server_name: 'NAS',
     service_user: 'sc-smb',
     allow_public_bind: false,
     totp_policy: 'require_separate' as 'require_separate' | 'block',
@@ -1387,11 +1388,11 @@ const mockServerSettings = {
   archive: { max_concurrent: 2 },
   network: {
     bind: '127.0.0.1:8443',
-    app_hosts: [] as string[],
+    app_hosts: ['nas.local'] as string[],
     content_hosts: [] as string[],
     allowed_origins: [] as string[],
     trusted_proxies: [] as string[],
-    compat_canonical_url: null as string | null
+    public_origins: ['https://nas.local'] as string[]
   },
   db: { size_guard: true, max_bytes: 5_000_000_000, min_free_bytes: 1_000_000_000 },
   symlink_policy: 'deny' as 'deny' | 'within_share' | 'follow',
@@ -1410,7 +1411,7 @@ const mockServerSettings = {
     enabled: false,
     issuer: '',
     client_id: '',
-    redirect_uri: '',
+    redirect_uris: [] as string[],
     scopes: ['openid', 'profile'] as string[],
     display_name: '',
     allow_private_endpoints: false,
@@ -1418,8 +1419,50 @@ const mockServerSettings = {
   }
 }
 
+/** The groups whose stored override the mock is currently holding, so the
+ *  revert button behaves the way it does against a real server: enabled only
+ *  where something is overriding the file, and disabled again after a revert. */
+const mockOverriddenSections = new Set<SettingsSectionId>(['network', 'smb'])
+
+/** What each group falls back to when its override is dropped, standing in
+ *  for `config.toml` plus the environment. */
+const mockFileSettings = JSON.parse(JSON.stringify(mockServerSettings)) as typeof mockServerSettings
+mockFileSettings.network.public_origins = []
+mockFileSettings.smb.server_name = 'STOWCLOUD'
+
+/** Which group each row belongs to, so the screen can ask one field for a
+ *  group's source. */
+const MOCK_SECTION_OF: Record<string, SettingsSectionId> = {
+  bind: 'network',
+  app_hosts: 'network',
+  content_hosts: 'network',
+  allowed_origins: 'network',
+  trusted_proxies: 'network',
+  public_origins: 'network',
+  symlink_policy: 'symlink-policy',
+  data_dir: 'paths',
+  master_key_file: 'paths',
+  'smb.config_dir': 'paths'
+}
+
+function sectionOf(key: string): SettingsSectionId | undefined {
+  if (MOCK_SECTION_OF[key]) return MOCK_SECTION_OF[key]
+  const prefix = key.split('.')[0]
+  if (['db', 'homes', 'smb', 'search', 'archive', 'watch', 'oidc'].includes(prefix)) {
+    return prefix as SettingsSectionId
+  }
+  return undefined
+}
+
 function settingsField(key: string, value: unknown, restartRequired: boolean): SettingsField {
-  return { key, value, source: 'admin_override', restart_required: restartRequired, readonly_reason_key: null }
+  const section = sectionOf(key)
+  return {
+    key,
+    value,
+    source: section && mockOverriddenSections.has(section) ? 'admin_override' : 'config_file',
+    restart_required: restartRequired,
+    readonly_reason_key: null
+  }
 }
 
 async function adminGetServerSettings(): Promise<SettingsSnapshot> {
@@ -1432,7 +1475,13 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       settingsField('content_hosts', s.network.content_hosts, true),
       settingsField('allowed_origins', s.network.allowed_origins, true),
       settingsField('trusted_proxies', s.network.trusted_proxies, true),
-      settingsField('compat_canonical_url', s.network.compat_canonical_url, true),
+      // The one row carrying a pending-restart value, so the badge is
+      // exercisable under the mock: the file says nothing is declared and the
+      // saved override says otherwise, and the process is still on the file's.
+      {
+        ...settingsField('public_origins', s.network.public_origins, true),
+        running_value: mockFileSettings.network.public_origins
+      },
       settingsField('db.size_guard', s.db.size_guard, true),
       settingsField('db.max_bytes', s.db.max_bytes, true),
       settingsField('db.min_free_bytes', s.db.min_free_bytes, true),
@@ -1462,7 +1511,7 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       settingsField('oidc.enabled', s.oidc.enabled, true),
       settingsField('oidc.issuer', s.oidc.issuer, true),
       settingsField('oidc.client_id', s.oidc.client_id, true),
-      settingsField('oidc.redirect_uri', s.oidc.redirect_uri, true),
+      settingsField('oidc.redirect_uris', s.oidc.redirect_uris, true),
       settingsField('oidc.scopes', s.oidc.scopes, true),
       settingsField('oidc.display_name', s.oidc.display_name, true),
       settingsField('oidc.allow_private_endpoints', s.oidc.allow_private_endpoints, true),
@@ -1483,6 +1532,28 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
         source: 'builtin_default',
         restart_required: true,
         readonly_reason_key: 'settings.readonly_local_password_login'
+      },
+      // Owned by other admin screens, and reported live by the real bridge.
+      {
+        key: 'index.name_enabled',
+        value: false,
+        source: 'config_file',
+        restart_required: false,
+        readonly_reason_key: 'settings.readonly_owned_by_index_section'
+      },
+      {
+        key: 'upload.chunk_min_bytes',
+        value: 5 * 1024 * 1024,
+        source: 'builtin_default',
+        restart_required: false,
+        readonly_reason_key: 'settings.readonly_owned_by_upload_section'
+      },
+      {
+        key: 'upload.chunk_default_bytes',
+        value: 10 * 1024 * 1024,
+        source: 'builtin_default',
+        restart_required: false,
+        readonly_reason_key: 'settings.readonly_owned_by_upload_section'
       }
     ],
     smb_public_bind_warning: false,
@@ -1493,44 +1564,109 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
 async function adminSetSmbSettings(req: SmbSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
   const enabledChanged = mockServerSettings.smb.enabled !== req.enabled
-  // An absent `server_name` keeps the configured one, same as the server.
   mockServerSettings.smb = { ...mockServerSettings.smb, ...req }
+  mockOverriddenSections.add('smb')
   return { applied_live: !enabledChanged, restart_required: enabledChanged }
 }
 
+/** Reverting drops the group's override and puts the file's values back,
+ *  exactly as `DELETE /api/admin/server-settings/{section}` does. */
+async function adminClearServerSettings(section: SettingsSectionId): Promise<ApplyOutcome> {
+  await delay(30)
+  if (!(section in MOCK_SECTION_RESTORE)) {
+    throw new ApiError(404, {
+      code: 'fs.not_found',
+      message: 'not found',
+      detail: { reason: `unknown settings section: ${section}`, reason_key: 'settings.unknown_section' }
+    })
+  }
+  MOCK_SECTION_RESTORE[section]()
+  mockOverriddenSections.delete(section)
+  return section === 'search' || section === 'archive'
+    ? { applied_live: true, restart_required: false }
+    : { applied_live: false, restart_required: true }
+}
+
+const MOCK_SECTION_RESTORE: Record<SettingsSectionId, () => void> = {
+  network: () => (mockServerSettings.network = { ...mockFileSettings.network }),
+  db: () => (mockServerSettings.db = { ...mockFileSettings.db }),
+  'symlink-policy': () => (mockServerSettings.symlink_policy = mockFileSettings.symlink_policy),
+  homes: () => (mockServerSettings.homes = { ...mockFileSettings.homes }),
+  smb: () => (mockServerSettings.smb = { ...mockFileSettings.smb }),
+  search: () => (mockServerSettings.search = { ...mockFileSettings.search }),
+  archive: () => (mockServerSettings.archive = { ...mockFileSettings.archive }),
+  watch: () => (mockServerSettings.watch = { ...mockFileSettings.watch }),
+  paths: () => (mockServerSettings.paths = { ...mockFileSettings.paths }),
+  oidc: () => (mockServerSettings.oidc = { ...mockFileSettings.oidc })
+}
+
+/** Zero rejects every search from every user the moment it is applied, so the
+ *  real bridge refuses it where it is typed and so does this. */
 async function adminSetSearchSettings(req: SearchSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
+  if (req.rate_per_minute < 1) throw mustBeAtLeastOne('search.rate_per_minute')
   mockServerSettings.search = { ...req }
+  mockOverriddenSections.add('search')
   return { applied_live: true, restart_required: false }
+}
+
+function mustBeAtLeastOne(field: string): ApiError {
+  return new ApiError(422, {
+    code: 'fs.invalid_name',
+    message: 'invalid name',
+    detail: {
+      reason: `${field}: must be at least 1`,
+      reason_key: 'settings.must_be_at_least_one',
+      reason_params: { field }
+    }
+  })
 }
 
 async function adminSetArchiveSettings(req: ArchiveSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
+  if (req.max_concurrent < 1) throw mustBeAtLeastOne('archive.max_concurrent')
   mockServerSettings.archive = { ...req }
+  mockOverriddenSections.add('archive')
   return { applied_live: true, restart_required: false }
 }
 
 async function adminSetNetworkSettings(req: NetworkSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
+  const bad = req.public_origins.find((o) => !/^https?:\/\/[^/]+/.test(o.trim()))
+  if (bad !== undefined) {
+    throw new ApiError(422, {
+      code: 'fs.invalid_name',
+      message: 'invalid name',
+      detail: {
+        reason: `public_origins: ${bad} is not an absolute http(s):// origin`,
+        reason_key: 'settings.invalid_origin',
+        reason_params: { value: bad }
+      }
+    })
+  }
   mockServerSettings.network = { ...req }
+  mockOverriddenSections.add('network')
   return { applied_live: false, restart_required: true }
 }
 
 async function adminSetDbSettings(req: DbSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
   mockServerSettings.db = { ...req }
+  mockOverriddenSections.add('db')
   return { applied_live: false, restart_required: true }
 }
 
 async function adminSetSymlinkPolicySettings(req: SymlinkPolicyReq): Promise<ApplyOutcome> {
   await delay(30)
   mockServerSettings.symlink_policy = req.policy
+  mockOverriddenSections.add('symlink-policy')
   return { applied_live: false, restart_required: true }
 }
 
 async function adminSetHomesSettings(req: HomesSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
   mockServerSettings.homes = { ...req }
+  mockOverriddenSections.add('homes')
   return { applied_live: false, restart_required: true }
 }
 
@@ -1548,28 +1684,59 @@ async function adminSetWatchSettings(req: WatchSettingsReq): Promise<ApplyOutcom
     })
   }
   mockServerSettings.watch = { ...req }
+  mockOverriddenSections.add('watch')
   return { applied_live: false, restart_required: true }
 }
 
-/** Refuses a `redirect_uri` that is not `https://` exactly as the real bridge
- *  does, because that one is not a filesystem check: an empty or non-https
- *  value is what keeps OIDC switched off with everything else still running
- *  (§4.3.1), and a screen that only finds out at the next boot is a screen
- *  that lies. */
+/** Reproduces the two refusals a browser could not have made for itself: a
+ *  redirect URI naming a host this deployment does not answer for, and a
+ *  client secret file only the server can try to read. Both keep OIDC
+ *  switched off with everything else still running, so a screen that only
+ *  found out at the next boot would be a screen that lies. */
 async function adminSetOidcSettings(req: OidcSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
-  if (req.enabled && !req.redirect_uri.startsWith('https://')) {
+  if (req.enabled) {
+    const notHttps = req.redirect_uris.find((u) => !u.trim().startsWith('https://'))
+    if (notHttps !== undefined) {
+      throw new ApiError(422, {
+        code: 'fs.invalid_name',
+        message: 'invalid name',
+        detail: {
+          reason: 'oidc.redirect_uris: must start with https://',
+          reason_key: 'settings.oidc_redirect_uri_must_be_https',
+          reason_params: { value: notHttps }
+        }
+      })
+    }
+    const hosts = mockServerSettings.network.app_hosts
+    const unserved = req.redirect_uris.find(
+      (u) => !hosts.some((h) => u.trim().slice('https://'.length).split(/[/:?#]/)[0].toLowerCase() === h.toLowerCase())
+    )
+    if (unserved !== undefined) {
+      throw new ApiError(422, {
+        code: 'fs.invalid_name',
+        message: 'invalid name',
+        detail: {
+          reason: 'oidc.redirect_uris: names a host app_hosts does not admit',
+          reason_key: 'settings.oidc_redirect_host_not_served',
+          reason_params: { value: unserved }
+        }
+      })
+    }
+    // The mock has no filesystem, so it stands in for "no readable secret
+    // file" with the one case it can represent: nothing configured at all.
     throw new ApiError(422, {
       code: 'fs.invalid_name',
       message: 'invalid name',
       detail: {
-        reason: 'oidc.redirect_uri: must start with https://',
-        reason_key: 'settings.oidc_redirect_uri_must_be_https',
-        reason_params: { value: req.redirect_uri }
+        reason: 'oidc.client_secret_file is not set or cannot be read',
+        reason_key: 'settings.oidc_secret_file_missing',
+        reason_params: { path: '' }
       }
     })
   }
   mockServerSettings.oidc = { ...req, smb_policy: 'block' }
+  mockOverriddenSections.add('oidc')
   return { applied_live: false, restart_required: true }
 }
 
@@ -1596,6 +1763,7 @@ async function adminSetPathsSettings(req: PathsSettingsReq): Promise<ApplyOutcom
     master_key_file: req.master_key_file,
     smb_config_dir: req.smb_config_dir
   }
+  mockOverriddenSections.add('paths')
   return { applied_live: false, restart_required: true }
 }
 
@@ -2343,6 +2511,7 @@ export const mockApi = {
   adminSetWatchSettings,
   adminSetOidcSettings,
   adminSetPathsSettings,
+  adminClearServerSettings,
   adminRestartServer,
   adminListUsers,
   adminCreateUser,

@@ -24,10 +24,16 @@ use crate::ocs::Val;
 /// `host` is the request's authority, used only to report `theming.url` as the
 /// origin the client actually reached us on. See `NcConfig::canonical_for_host`
 /// for why that cannot be turned into an arbitrary URL.
-pub fn capabilities(cfg: &NcConfig, host: Option<&str>) -> Val {
+///
+/// `chunk_size_advisory` arrives as an argument rather than off `cfg` because
+/// the admin screen changes it at runtime and this document has to report
+/// what the upload engine is using now. Held on `NcConfig` it was copied once
+/// at build time, so compat clients kept being advertised the boot-time
+/// number while the core `/api/capabilities` beside it reported the live one.
+pub fn capabilities(cfg: &NcConfig, host: Option<&str>, chunk_size_advisory: u64) -> Val {
     Val::map([
         ("version", version_block(cfg)),
-        ("capabilities", capability_block(cfg, host)),
+        ("capabilities", capability_block(cfg, host, chunk_size_advisory)),
     ])
 }
 
@@ -59,12 +65,12 @@ fn sharee_caps(cfg: &NcConfig) -> Val {
     ])
 }
 
-fn capability_block(cfg: &NcConfig, host: Option<&str>) -> Val {
+fn capability_block(cfg: &NcConfig, host: Option<&str>, chunk_size_advisory: u64) -> Val {
     Val::map([
         ("core", core_caps(cfg)),
         ("bruteforce", bruteforce_caps()),
         ("dav", dav_caps()),
-        ("files", files_caps(cfg)),
+        ("files", files_caps(cfg, chunk_size_advisory)),
         ("files_sharing", files_sharing_caps(cfg)),
         ("theming", theming_caps(cfg, host)),
         ("user_status", user_status_caps()),
@@ -135,7 +141,7 @@ fn dav_caps() -> Val {
     ])
 }
 
-fn files_caps(cfg: &NcConfig) -> Val {
+fn files_caps(cfg: &NcConfig, chunk_size_advisory: u64) -> Val {
     Val::map([
         ("bigfilechunking", Val::Bool(true)),
         (
@@ -146,7 +152,7 @@ fn files_caps(cfg: &NcConfig) -> Val {
                 // number just tells the client what is unlikely to be rejected
                 // by an intermediary. If a proxy does return 413 it never
                 // reaches us and the client's own auto-adjust handles it.
-                ("max_size", Val::from(cfg.chunk_size_advisory)),
+                ("max_size", Val::from(chunk_size_advisory)),
                 (
                     "max_parallel_count",
                     Val::from(cfg.chunk_parallel_advisory),
@@ -357,8 +363,12 @@ fn e2ee_caps() -> Val {
 mod tests {
     use super::*;
 
+    /// 10 MiB: the desktop client's own default target, and comfortably under
+    /// the common 100 MB proxy body limits.
+    const ADVISORY: u64 = 10 * 1024 * 1024;
+
     fn caps_json() -> serde_json::Value {
-        capabilities(&NcConfig::default(), None).to_json()
+        capabilities(&NcConfig::default(), None, ADVISORY).to_json()
     }
 
     #[test]
@@ -527,10 +537,13 @@ mod tests {
         );
     }
 
+    /// The advertised chunk size is whatever the caller passes, which is what
+    /// makes it live: an admin who raises it from the settings screen has the
+    /// next compat client told the new number without a restart.
     #[test]
-    fn advisory_chunk_size_is_published() {
+    fn advisory_chunk_size_is_published_from_the_argument() {
         let cfg = NcConfig::default();
-        let c = capabilities(&cfg, None).to_json();
+        let c = capabilities(&cfg, None, ADVISORY).to_json();
         assert_eq!(
             c["capabilities"]["files"]["chunked_upload"]["max_size"],
             10 * 1024 * 1024
@@ -538,6 +551,12 @@ mod tests {
         assert_eq!(
             c["capabilities"]["files"]["chunked_upload"]["max_parallel_count"],
             4
+        );
+
+        let raised = capabilities(&cfg, None, 64 * 1024 * 1024).to_json();
+        assert_eq!(
+            raised["capabilities"]["files"]["chunked_upload"]["max_size"],
+            64 * 1024 * 1024
         );
     }
 

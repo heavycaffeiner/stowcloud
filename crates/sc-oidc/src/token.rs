@@ -82,6 +82,7 @@ pub(crate) async fn exchange_code(
     cfg: &ProviderConfig,
     code: &str,
     code_verifier: &str,
+    redirect_uri: &str,
 ) -> Result<TokenResponse, TokenError> {
     let method = client_auth_method(disco)?;
     let secret = cfg.client_secret.expose_secret();
@@ -90,10 +91,9 @@ pub(crate) async fn exchange_code(
         ("grant_type", "authorization_code"),
         ("code", code),
         // Identical to the authorization request's, byte for byte. This is
-        // why `oidc.redirect_uri` is a configured constant and not derived
-        // from the request: a value assembled twice is a value that can
-        // differ twice.
-        ("redirect_uri", &cfg.redirect_uri),
+        // why it arrives as an argument rather than being re-selected here: a
+        // value assembled twice is a value that can differ twice.
+        ("redirect_uri", redirect_uri),
         ("code_verifier", code_verifier),
     ];
     let basic = match method {

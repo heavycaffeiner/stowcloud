@@ -41,8 +41,8 @@ fn unarmed_fixture() -> Fixture {
         data_dir: data.path().to_path_buf(),
         shares: vec![],
         // `Config::default()`'s three-entry `app_hosts` is deliberately
-        // ambiguous for `resolve_compat_canonical_url` (`app.rs`).
-        compat_canonical_url: Some("https://localhost".into()),
+        // ambiguous for `resolve_public_origins` (`app.rs`).
+        public_origins: vec!["https://localhost".into()],
         ..Config::default()
     };
     let key = MasterKeyResult {
@@ -50,7 +50,7 @@ fn unarmed_fixture() -> Fixture {
         inside_data_dir: false,
         generated: true,
     };
-    let app = App::build(cfg, &key).expect("app builds");
+    let app = App::build(cfg.clone(), cfg, &key).expect("app builds");
     Fixture { app, data }
 }
 
@@ -221,7 +221,7 @@ async fn the_route_stays_closed_across_a_restart() {
     let cfg = Config {
         data_dir: f.data.path().to_path_buf(),
         shares: vec![],
-        compat_canonical_url: Some("https://localhost".into()),
+        public_origins: vec!["https://localhost".into()],
         ..Config::default()
     };
     let key = MasterKeyResult {
@@ -230,7 +230,7 @@ async fn the_route_stays_closed_across_a_restart() {
         generated: true,
     };
     let rebooted = Fixture {
-        app: App::build(cfg, &key).expect("app rebuilds"),
+        app: App::build(cfg.clone(), cfg, &key).expect("app rebuilds"),
         data: f.data,
     };
 

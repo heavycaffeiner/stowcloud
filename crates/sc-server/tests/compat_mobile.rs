@@ -42,7 +42,7 @@ fn fixture(trash: bool) -> Fixture {
             host_path: share.path().to_path_buf(),
             shared_externally: false,
         }],
-        compat_canonical_url: Some("https://localhost".into()),
+        public_origins: vec!["https://localhost".into()],
         ..Config::default()
     };
     let key = MasterKeyResult {
@@ -50,7 +50,7 @@ fn fixture(trash: bool) -> Fixture {
         inside_data_dir: false,
         generated: true,
     };
-    let app = App::build(cfg, &key).expect("app builds");
+    let app = App::build(cfg.clone(), cfg, &key).expect("app builds");
 
     let uid = app
         .auth

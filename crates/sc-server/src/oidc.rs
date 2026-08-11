@@ -22,14 +22,14 @@ use crate::config::Config;
 
 /// The relying party for this deployment, or the disabled stand-in.
 ///
-/// **A misconfigured `[oidc]` never stops the server starting.** §4.3.1 is
-/// explicit: an empty or non-https `oidc.redirect_uri` means OIDC does not
+/// **A misconfigured `[oidc]` never stops the server starting.** An empty,
+/// non-https or unserved `oidc.redirect_uris` entry means OIDC does not
 /// activate and everything else keeps working, with the reason in the startup
 /// log. A redirect URI is registered at the IdP by hand and has to match byte
 /// for byte, so getting it wrong is an ordinary operator mistake — one that
 /// should cost single sign-on and nothing else.
 pub fn build_oidc(cfg: &Config) -> Arc<dyn sc_http::oidc_api::OidcApi> {
-    if let Some(reason) = cfg.oidc.inactive_reason() {
+    if let Some(reason) = cfg.oidc.inactive_reason(&cfg.app_hosts) {
         // `info` when the operator never asked for OIDC at all, `warn` when
         // they did and it did not come up. The difference matters: the second
         // is a broken deployment and the first is every deployment that has
@@ -91,7 +91,6 @@ fn build_active(cfg: &Config) -> Arc<dyn sc_http::oidc_api::OidcApi> {
             issuer: cfg.oidc.issuer.trim().to_string(),
             client_id: cfg.oidc.client_id.trim().to_string(),
             client_secret: secrecy::SecretString::from(secret),
-            redirect_uri: cfg.oidc.redirect_uri.trim().to_string(),
             scopes: cfg.oidc.scopes.clone(),
             allow_private_endpoints: cfg.oidc.allow_private_endpoints,
         },
@@ -99,12 +98,20 @@ fn build_active(cfg: &Config) -> Arc<dyn sc_http::oidc_api::OidcApi> {
     );
     tracing::info!(
         issuer = %cfg.oidc.issuer,
+        redirect_uris = cfg.oidc.redirect_uris.len(),
         "single sign-on is active; the provider is contacted lazily, not at startup"
     );
     Arc::new(active::OidcBridge {
         provider,
         issuer: cfg.oidc.issuer.trim().to_string(),
         display_name: cfg.oidc.display_name.clone(),
+        redirect_uris: cfg
+            .oidc
+            .redirect_uris
+            .iter()
+            .map(|u| u.trim().to_string())
+            .filter(|u| !u.is_empty())
+            .collect(),
     })
 }
 
@@ -118,6 +125,20 @@ mod active {
         pub provider: sc_oidc::OidcProvider,
         pub issuer: String,
         pub display_name: String,
+        /// Already validated by `OidcConfig::inactive_reason`: every entry is
+        /// `https://` and names a host `app_hosts` admits.
+        pub redirect_uris: Vec<String>,
+    }
+
+    impl OidcBridge {
+        /// The registered redirect URI for the origin this request arrived
+        /// on. `begin` and `redeem` both call it, and both are given the same
+        /// `Host`, because the callback lands at the very URI `begin` chose.
+        fn redirect_uri(&self, host: Option<&str>) -> Result<&str, OidcError> {
+            sc_http::config::select_by_authority(&self.redirect_uris, host).ok_or_else(|| {
+                OidcError::Internal("oidc.redirect_uris is empty".into())
+            })
+        }
     }
 
     /// Everything `sc-oidc` can fail with, collapsed onto the two answers the
@@ -143,12 +164,13 @@ mod active {
             Some(self.issuer.clone())
         }
 
-        async fn begin(&self) -> Result<StartedFlow, OidcError> {
+        async fn begin(&self, host: Option<&str>) -> Result<StartedFlow, OidcError> {
+            let redirect_uri = self.redirect_uri(host)?.to_string();
             let disco = self.provider.discovery().await.map_err(unavailable)?;
             let flow = sc_oidc::FlowSecrets::generate().map_err(|e| OidcError::Internal(e.to_string()))?;
             let authorize_url = self
                 .provider
-                .authorize_url(&disco, &flow)
+                .authorize_url(&disco, &flow, &redirect_uri)
                 .map_err(|e| OidcError::Internal(e.to_string()))?;
             Ok(StartedFlow {
                 authorize_url,
@@ -162,15 +184,17 @@ mod active {
 
         async fn redeem(
             &self,
+            host: Option<&str>,
             code: &str,
             code_verifier: &SecretString,
             nonce_hash: &[u8; 32],
         ) -> Result<VerifiedIdentity, OidcError> {
             use secrecy::ExposeSecret;
+            let redirect_uri = self.redirect_uri(host)?.to_string();
             let disco = self.provider.discovery().await.map_err(unavailable)?;
             let tokens = self
                 .provider
-                .exchange_code(&disco, code, code_verifier.expose_secret())
+                .exchange_code(&disco, code, code_verifier.expose_secret(), &redirect_uri)
                 .await
                 .map_err(unavailable)?;
             let claims = self
@@ -192,7 +216,17 @@ mod tests {
     use crate::config::{OidcConfig, OidcLocalPasswordLoginCfg};
 
     fn cfg_with(oidc: OidcConfig) -> Config {
-        Config { oidc, ..Config::default() }
+        Config {
+            oidc,
+            app_hosts: vec!["cloud.example.com".into()],
+            ..Config::default()
+        }
+    }
+
+    const HOSTS: &[&str] = &["cloud.example.com", "nas.internal"];
+
+    fn hosts() -> Vec<String> {
+        HOSTS.iter().map(|h| (*h).to_string()).collect()
     }
 
     /// The activation rules of §4.3.1, one refusal at a time. Each of these
@@ -208,40 +242,74 @@ mod tests {
             issuer: "https://idp.example.com".into(),
             client_id: "sc".into(),
             client_secret_file: Some(secret.clone()),
-            redirect_uri: "https://cloud.example.com/api/auth/oidc/callback".into(),
+            redirect_uris: vec![
+                "https://cloud.example.com/api/auth/oidc/callback".into(),
+                "https://nas.internal/api/auth/oidc/callback".into(),
+            ],
             ..OidcConfig::default()
         };
-        assert_eq!(complete.inactive_reason(), None);
+        assert_eq!(complete.inactive_reason(&hosts()), None);
 
         let off = OidcConfig { enabled: false, ..complete.clone() };
-        assert!(off.inactive_reason().unwrap().contains("enabled"));
+        assert!(off.inactive_reason(&hosts()).unwrap().contains("enabled"));
 
         let no_issuer = OidcConfig { issuer: "  ".into(), ..complete.clone() };
-        assert!(no_issuer.inactive_reason().unwrap().contains("issuer"));
+        assert!(no_issuer.inactive_reason(&hosts()).unwrap().contains("issuer"));
 
         let no_client = OidcConfig { client_id: String::new(), ..complete.clone() };
-        assert!(no_client.inactive_reason().unwrap().contains("client_id"));
+        assert!(no_client.inactive_reason(&hosts()).unwrap().contains("client_id"));
 
-        // The one §4.3.1 calls out by name: a redirect URI that is not https
-        // is one the IdP will refuse anyway, and a `__Host-` cookie would not
-        // survive the round trip either.
+        // A redirect URI that is not https is one the IdP will refuse anyway,
+        // and a `__Host-` cookie would not survive the round trip either.
         let plaintext = OidcConfig {
-            redirect_uri: "http://cloud.example.com/api/auth/oidc/callback".into(),
+            redirect_uris: vec!["http://cloud.example.com/api/auth/oidc/callback".into()],
             ..complete.clone()
         };
-        assert!(plaintext.inactive_reason().unwrap().contains("https://"));
+        assert!(plaintext.inactive_reason(&hosts()).unwrap().contains("https://"));
 
-        let no_redirect = OidcConfig { redirect_uri: String::new(), ..complete.clone() };
-        assert!(no_redirect.inactive_reason().unwrap().contains("redirect_uri"));
+        // A host this server does not admit answers the callback with 421,
+        // which is a login nobody can complete.
+        let unserved = OidcConfig {
+            redirect_uris: vec!["https://elsewhere.example/api/auth/oidc/callback".into()],
+            ..complete.clone()
+        };
+        assert!(unserved.inactive_reason(&hosts()).unwrap().contains("app_hosts"));
+
+        let no_redirect = OidcConfig { redirect_uris: Vec::new(), ..complete.clone() };
+        assert!(no_redirect.inactive_reason(&hosts()).unwrap().contains("redirect_uris"));
 
         let no_secret = OidcConfig { client_secret_file: None, ..complete.clone() };
-        assert!(no_secret.inactive_reason().unwrap().contains("client_secret_file"));
+        assert!(no_secret.inactive_reason(&hosts()).unwrap().contains("client_secret_file"));
 
         let missing_secret = OidcConfig {
             client_secret_file: Some(dir.path().join("nope")),
             ..complete
         };
-        assert!(missing_secret.inactive_reason().unwrap().contains("does not exist"));
+        assert!(missing_secret.inactive_reason(&hosts()).unwrap().contains("does not exist"));
+    }
+
+    /// The request's `Host` picks which registered URI this flow uses, and it
+    /// can only ever pick one that was registered.
+    #[test]
+    fn the_redirect_uri_is_selected_by_host_and_never_derived_from_it() {
+        let oidc = OidcConfig {
+            redirect_uris: vec![
+                "https://cloud.example.com/api/auth/oidc/callback".into(),
+                "https://nas.internal/api/auth/oidc/callback".into(),
+            ],
+            ..OidcConfig::default()
+        };
+        assert_eq!(
+            oidc.redirect_uri_for_host(Some("nas.internal")),
+            Some("https://nas.internal/api/auth/oidc/callback")
+        );
+        for host in [Some("evil.example.net"), None, Some("")] {
+            assert_eq!(
+                oidc.redirect_uri_for_host(host),
+                Some("https://cloud.example.com/api/auth/oidc/callback"),
+                "host {host:?}"
+            );
+        }
     }
 
     /// Whatever is wrong with `[oidc]`, `build_oidc` answers with a relying
@@ -252,7 +320,7 @@ mod tests {
             enabled: true,
             issuer: "https://idp.example.com".into(),
             client_id: "sc".into(),
-            redirect_uri: "http://not-https".into(),
+            redirect_uris: vec!["http://not-https".into()],
             ..OidcConfig::default()
         });
         assert!(!build_oidc(&cfg).display().enabled);
@@ -280,7 +348,7 @@ mod tests {
             issuer = "https://idp.example.com"
             client_id = "sc"
             client_secret_file = "/etc/sc/oidc_client_secret"
-            redirect_uri = "https://cloud.example.com/api/auth/oidc/callback"
+            redirect_uris = ["https://cloud.example.com/api/auth/oidc/callback"]
             display_name = "회사 계정"
             local_password_login = "deny"
             "#,

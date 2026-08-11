@@ -182,6 +182,9 @@ impl UploadEngine for FakeUpload {
     fn abort(&self, _s: SessionId, _u: UserId) -> PortResult<()> {
         Ok(())
     }
+    fn chunk_size_advisory(&self) -> u64 {
+        10 * 1024 * 1024
+    }
 }
 
 struct FakeShares;

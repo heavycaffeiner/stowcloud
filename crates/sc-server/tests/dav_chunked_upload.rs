@@ -61,7 +61,7 @@ fn fixture() -> Fixture {
         inside_data_dir: false,
         generated: true,
     };
-    let app = App::build(cfg, &key).expect("app builds");
+    let app = App::build(cfg.clone(), cfg, &key).expect("app builds");
     Fixture {
         app,
         _data: data,

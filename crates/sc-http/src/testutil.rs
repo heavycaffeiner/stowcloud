@@ -692,7 +692,10 @@ impl crate::oidc_api::OidcApi for ScriptedOidc {
         self.enabled.then(|| self.issuer.clone())
     }
 
-    async fn begin(&self) -> Result<crate::oidc_api::StartedFlow, crate::oidc_api::OidcError> {
+    async fn begin(
+        &self,
+        _host: Option<&str>,
+    ) -> Result<crate::oidc_api::StartedFlow, crate::oidc_api::OidcError> {
         if let Some(e) = &self.begin_error {
             return Err(e.clone());
         }
@@ -715,6 +718,7 @@ impl crate::oidc_api::OidcApi for ScriptedOidc {
 
     async fn redeem(
         &self,
+        _host: Option<&str>,
         code: &str,
         _code_verifier: &secrecy::SecretString,
         _nonce_hash: &[u8; 32],

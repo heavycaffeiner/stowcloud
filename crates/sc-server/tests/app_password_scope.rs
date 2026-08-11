@@ -39,11 +39,11 @@ fn fixture() -> Fixture {
         // `Config::default()`'s `app_hosts` has three entries (`sc-http`'s
         // own default, for a fresh install answering `localhost`/`127.0.0.1`/
         // `::1` without a 421), which is ambiguous for
-        // `resolve_compat_canonical_url` on purpose (`app.rs`) — set it
+        // `resolve_public_origins` on purpose (`app.rs`) — set it
         // explicitly here so these compat-mount tests keep exercising a
         // mounted layer, matching what every one of `app_hosts`' entries
         // would have derived to before that change.
-        compat_canonical_url: Some("https://localhost".into()),
+        public_origins: vec!["https://localhost".into()],
         ..Config::default()
     };
     let key = MasterKeyResult {
@@ -51,7 +51,7 @@ fn fixture() -> Fixture {
         inside_data_dir: false,
         generated: true,
     };
-    let app = App::build(cfg, &key).expect("app builds");
+    let app = App::build(cfg.clone(), cfg, &key).expect("app builds");
     Fixture {
         app,
         _data: data,
@@ -360,7 +360,7 @@ fn two_share_fixture() -> TwoShareFixture {
             },
         ],
         // See the other fixture in this file for why this must be explicit.
-        compat_canonical_url: Some("https://localhost".into()),
+        public_origins: vec!["https://localhost".into()],
         ..Config::default()
     };
     let key = MasterKeyResult {
@@ -368,7 +368,7 @@ fn two_share_fixture() -> TwoShareFixture {
         inside_data_dir: false,
         generated: true,
     };
-    let app = App::build(cfg, &key).expect("app builds");
+    let app = App::build(cfg.clone(), cfg, &key).expect("app builds");
     TwoShareFixture {
         app,
         _data: data,

@@ -45,7 +45,7 @@ fn fixture() -> Fixture {
             host_path: share.path().to_path_buf(),
             shared_externally: false,
         }],
-        compat_canonical_url: Some("https://localhost".into()),
+        public_origins: vec!["https://localhost".into()],
         // A content origin, so a resolved thumbnail is a 302 to it and an
         // unresolved one is a 404. Without one every preview answers 404 and
         // the two are indistinguishable — which is exactly the failure these
@@ -58,7 +58,7 @@ fn fixture() -> Fixture {
         inside_data_dir: false,
         generated: true,
     };
-    let app = App::build(cfg, &key).expect("app builds");
+    let app = App::build(cfg.clone(), cfg, &key).expect("app builds");
 
     let uid = app
         .auth

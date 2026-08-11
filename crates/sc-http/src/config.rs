@@ -55,17 +55,15 @@ pub struct HttpConfig {
     /// mounting keeps that gate meaningful instead of carving out an
     /// exception for it.
     pub reserved_path_prefixes: Vec<String>,
-    /// The externally reachable origin (`scheme://host[:port]`, no trailing
-    /// slash) a public share link is built from, when the deployment has
-    /// declared one. `None` falls back to `https://{app_hosts[0]}`.
+    /// The externally reachable origins this deployment declared
+    /// (`sc-server`'s `public_origins`), canonical first. Empty when nothing
+    /// was declared and nothing could be derived, which is the one case where
+    /// a caller falls back to its own guess.
     ///
-    /// This exists because that fallback is a guess and was the only thing
-    /// `public_link_url` ever used: it drops the port and hardcodes `https`,
-    /// so any deployment not sitting on 443 handed its users a link that
-    /// resolves to nothing. The assembler already resolves this origin for
-    /// the compatibility layer, which has always been documented as
-    /// governing "every public share link" as well.
-    pub public_base_url: Option<String>,
+    /// A public share link is built from the entry matching the requesting
+    /// `Host`, so an administrator working on the internal name is handed an
+    /// internal link. The header selects; it never contributes a byte.
+    pub origins: OriginSet,
     /// Startup-time seed only. `capabilities`/`GET /api/auth/session` read
     /// the *live* value via `AppState::uploads::chunk_limits()` instead (that
     /// value can change at runtime via `PATCH /api/admin/upload-settings`,
@@ -114,12 +112,91 @@ impl Default for HttpConfig {
             body_limit_bytes: 16 * 1024 * 1024,
             extensions: Vec::new(),
             reserved_path_prefixes: Vec::new(),
-            public_base_url: None,
+            origins: OriginSet::default(),
             chunk_size_min: 5 * 1024 * 1024,
             chunk_size_default: 10 * 1024 * 1024,
             https_port: None,
         }
     }
+}
+
+/// The origins an administrator declared, canonical first.
+///
+/// The property that makes this safe is worth stating: a request's `Host`
+/// never *builds* a URL here, it only *selects* one already written down. An
+/// attacker who controls `Host` can therefore only ever make this server name
+/// a host it already serves, and anything unrecognised falls back to the
+/// canonical entry.
+#[derive(Clone, Debug, Default)]
+pub struct OriginSet {
+    /// Non-empty in every deployment that declared or derived one. Empty is
+    /// the ambiguous case, where callers fall back to their own last resort.
+    origins: Vec<String>,
+}
+
+impl OriginSet {
+    pub fn new(origins: Vec<String>) -> Self {
+        Self { origins }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.origins.is_empty()
+    }
+
+    pub fn canonical(&self) -> Option<&str> {
+        self.origins.first().map(String::as_str)
+    }
+
+    /// The declared origin whose authority equals `host`, or the canonical
+    /// one. Never anything derived from `host` itself.
+    pub fn for_host(&self, host: Option<&str>) -> Option<&str> {
+        select_by_authority(&self.origins, host)
+    }
+
+    pub fn url_for_host(&self, host: Option<&str>, path: &str) -> Option<String> {
+        let base = self.for_host(host)?.trim_end_matches('/');
+        Some(if path.starts_with('/') {
+            format!("{base}{path}")
+        } else {
+            format!("{base}/{path}")
+        })
+    }
+}
+
+/// The entry of `declared` whose authority equals `host`, or the first entry.
+///
+/// Shared by [`OriginSet`] and `sc-server`'s `oidc.redirect_uris`, which is a
+/// separate list selected by the same rule: a redirect URI is registered at an
+/// identity provider and cannot be derived from a declared public origin.
+pub fn select_by_authority<'a>(declared: &'a [String], host: Option<&str>) -> Option<&'a str> {
+    let first = declared.first().map(String::as_str)?;
+    let Some(host) = host.map(str::trim).filter(|h| !h.is_empty()) else {
+        return Some(first);
+    };
+    Some(
+        declared
+            .iter()
+            .map(String::as_str)
+            .find(|o| authority_of(o).eq_ignore_ascii_case(host))
+            .unwrap_or(first),
+    )
+}
+
+/// The `host[:port]` of a declared URL, with the scheme and any path cut off,
+/// so it can be compared against a `Host` header.
+fn authority_of(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, r)| r);
+    rest.split(['/', '?', '#']).next().unwrap_or(rest)
+}
+
+/// The `Host` header, if there is a usable one. The only input to origin
+/// selection, and never anything more than that.
+pub fn host_of(headers: &axum::http::HeaderMap) -> Option<&str> {
+    headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|h| !h.is_empty())
 }
 
 /// Split a `Host`/authority into host and optional port, keeping IPv6 literals
@@ -237,6 +314,87 @@ impl Cidr {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shared origin-selection vector. `sc-compat-nc` keeps its own
+    /// resolver rather than importing this one — that crate deliberately
+    /// depends on nothing from the HTTP assembly layer — so the two
+    /// implementations are held together by this table, which appears
+    /// verbatim in `sc_compat_nc::config`'s tests as well. Changing one row
+    /// here without changing it there fails on the other side.
+    const ORIGIN_VECTOR: &[(&[&str], Option<&str>, &str)] = &[
+        // An unrecognised, absent or empty Host answers with the canonical.
+        (&["https://cloud.example.com"], None, "https://cloud.example.com"),
+        (&["https://cloud.example.com"], Some("evil.example.net"), "https://cloud.example.com"),
+        (&["https://cloud.example.com"], Some("  "), "https://cloud.example.com"),
+        // A registered host selects its own origin, case-insensitively, port
+        // and scheme included.
+        (
+            &["https://cloud.example.com", "https://Cloud.Internal:8443", "http://10.0.0.5"],
+            Some("cloud.internal:8443"),
+            "https://Cloud.Internal:8443",
+        ),
+        (
+            &["https://cloud.example.com", "https://Cloud.Internal:8443", "http://10.0.0.5"],
+            Some("10.0.0.5"),
+            "http://10.0.0.5",
+        ),
+        // The port is part of the authority: the same name on another port is
+        // not the same origin.
+        (
+            &["https://cloud.example.com", "https://Cloud.Internal:8443"],
+            Some("cloud.internal"),
+            "https://cloud.example.com",
+        ),
+        // An IPv6 literal survives the split intact.
+        (
+            &["https://cloud.example.com", "https://[fd00::5]:8443"],
+            Some("[fd00::5]:8443"),
+            "https://[fd00::5]:8443",
+        ),
+    ];
+
+    #[test]
+    fn origin_selection_matches_the_shared_vector() {
+        for (declared, host, expected) in ORIGIN_VECTOR {
+            let set = OriginSet::new(declared.iter().map(|s| (*s).to_string()).collect());
+            assert_eq!(set.for_host(*host), Some(*expected), "host {host:?}");
+        }
+    }
+
+    #[test]
+    fn an_empty_origin_set_selects_nothing() {
+        let set = OriginSet::default();
+        assert!(set.is_empty());
+        assert_eq!(set.canonical(), None);
+        assert_eq!(set.for_host(Some("cloud.example.com")), None);
+        assert_eq!(set.url_for_host(None, "/s/tok"), None);
+    }
+
+    #[test]
+    fn a_url_is_joined_onto_the_selected_origin() {
+        let set = OriginSet::new(vec![
+            "https://cloud.example.com".into(),
+            "https://nas.internal:8443/".into(),
+        ]);
+        assert_eq!(
+            set.url_for_host(Some("nas.internal:8443"), "/s/tok").as_deref(),
+            Some("https://nas.internal:8443/s/tok")
+        );
+        assert_eq!(
+            set.url_for_host(Some("nas.internal:8443"), "s/tok").as_deref(),
+            Some("https://nas.internal:8443/s/tok")
+        );
+    }
+
+    #[test]
+    fn host_of_reads_the_header_and_rejects_a_blank_one() {
+        let mut h = axum::http::HeaderMap::new();
+        assert_eq!(host_of(&h), None);
+        h.insert(axum::http::header::HOST, "nas.internal:8443".parse().unwrap());
+        assert_eq!(host_of(&h), Some("nas.internal:8443"));
+        h.insert(axum::http::header::HOST, "   ".parse().unwrap());
+        assert_eq!(host_of(&h), None);
+    }
 
     #[test]
     fn cidr_v4_matches() {
