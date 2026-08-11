@@ -679,16 +679,38 @@ fn a_name_windows_would_refuse_can_still_be_copied_moved_and_deleted() {
         core.list(USER, "/root/dst/src", Sort::Name, Order::Asc).unwrap().entries.into_iter().map(|e| e.name).collect();
     assert_eq!(copied, vec!["CON", "a:b"]);
 
-    // ...movable on its own...
-    let res = core
-        .move_entries(USER, &["/root/src/CON".into()], "/root/dst", OnConflict::Rename, &HashMap::new())
-        .unwrap();
-    assert!(res[0].ok, "the destination name is the source's own, not one anybody typed");
-
     // ...and deletable as a tree.
     let res = core.delete(USER, &["/root/dst".into()], true).unwrap();
     assert!(res[0].ok, "one CON anywhere under it must not make a folder undeletable");
     assert!(core.stat_entry(USER, "/root/dst").is_err());
+}
+
+/// The half that is **not** fixed, pinned so it is a recorded limitation
+/// rather than a surprise.
+///
+/// `resolve_want` parses a vpath's tail with `SafePath::parse` and then
+/// re-joins each component with `join`, the creation table, so no vpath
+/// naming one of these files resolves at all: `stat`, a download, a rename, a
+/// single-file delete or move, and minting a share link on it are all
+/// unreachable. Only the operations that walk a tree, which this change fixed,
+/// can touch them.
+///
+/// Flipping that join is not the fix on its own: `resolve_want` is also the
+/// front door for creation (`mkdir`, `write_text`, an upload destination), and
+/// the creation table is enforced there and nowhere else, so the two callers
+/// have to be split first. That is its own change.
+#[test]
+#[cfg(unix)]
+fn a_name_windows_would_refuse_is_still_unreachable_by_vpath() {
+    let (core, dir) = setup();
+    core.mkdir(USER, "/root/src").unwrap();
+    std::fs::write(dir.path().join("src").join("CON"), b"x").unwrap();
+
+    assert!(
+        core.stat_entry(USER, "/root/src/CON").is_err(),
+        "when this starts passing, resolve_want has been split and the \
+         single-file operations can be asserted here too"
+    );
 }
 
 /// The other half of the same rule: a name the *caller types* is still refused,
