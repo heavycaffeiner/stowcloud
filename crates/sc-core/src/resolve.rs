@@ -45,8 +45,31 @@ impl crate::Core {
     /// parameterless (no `Perms` argument to get wrong) rather than exposing
     /// `resolve_want` itself, so the next upload call site cannot repeat the
     /// mistake by passing the wrong bit.
+    /// An upload names its own destination file, so a session opened on a name
+    /// that is not there yet is this server minting one.
     pub fn resolve_for_upload(&self, user: UserId, vpath: &Vpath) -> Result<Resolved, CoreError> {
-        self.resolve_want(user, vpath, Perms::WRITE)
+        let r = self.resolve_want(user, vpath, Perms::WRITE)?;
+        if !crate::ops::path_exists(&r.root, &r.path)? {
+            Self::require_creatable_leaf(&r.path)?;
+        }
+        Ok(r)
+    }
+
+    /// Refuse a leaf a Windows or SMB client could never open, at the moment
+    /// one is about to be brought into existence.
+    ///
+    /// The rule is one sentence: **the creation table applies to a leaf that
+    /// does not exist yet.** Anything already on the share stays fully usable,
+    /// whoever wrote it; nothing typed through this server can add to it. A
+    /// caller that resolves a destination and then finds it absent calls this
+    /// before creating; a caller that only addresses what is there does not
+    /// call it at all.
+    pub(crate) fn require_creatable_leaf(path: &SafePath) -> Result<(), CoreError> {
+        match path.name() {
+            // The share root is not a name anybody created.
+            None => Ok(()),
+            Some(leaf) => Ok(sc_vfs::validate_created_name(leaf)?),
+        }
     }
 
     pub(crate) fn resolve_want(&self, user: UserId, vpath: &Vpath, want: Perms) -> Result<Resolved, CoreError> {
@@ -79,9 +102,22 @@ impl crate::Core {
             SafePath::parse(rest, max_depth)?
         };
 
+        // `join_existing`, not `join`. Resolution *addresses* a path; it does
+        // not create one. `join` applies the creation table, so a `CON` or an
+        // `a:b` sitting on the share -- put there by SMB, rsync, or anything
+        // else writing the same directory -- could not be named by any virtual
+        // path at all: no stat, no download, no rename, no delete, no share
+        // link. The tree walks were repaired first and left this, the front
+        // door, still refusing.
+        //
+        // The creation table did not go anywhere. It moved to the five sites
+        // that genuinely mint a name, where [`Core::require_creatable_leaf`]
+        // applies it to the leaf being created and nothing else. Applying it
+        // here also meant an *ancestor* was held to it, which is why a folder
+        // could not even be entered.
         let mut full = root_entry.subpath.clone();
         for comp in rest_path.components() {
-            full = full.join(comp.as_str(), max_depth)?;
+            full = full.join_existing(comp.as_str(), max_depth)?;
         }
 
         let decision = self.acl.evaluate(user, root_entry.share, &full, want);

@@ -254,6 +254,44 @@ existing account is granted full access once, preserving pre-grants
 behaviour — and the migration never re-runs, so an admin who later revokes
 everything stays revoked.
 
+### 4.6a Two name tables, and which one applies where
+
+`SafePath` holds a name to one of two tables.
+
+**Traversal** (`parse`, `join_existing`) refuses what breaks isolation: an
+empty component, `.` or `..`, an embedded `/`, a NUL, a component over 255
+bytes, and the reserved prefixes naming this server's own control files.
+
+**Creation** (`join`) refuses all of that plus what a Windows or SMB client
+could never address: control characters, `:`, a trailing dot or space, and the
+reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`).
+
+The rule for choosing is: **the creation table applies to a leaf that does not
+exist yet, and to nothing else.**
+
+That is not where it started. Resolution used to parse a virtual path's tail
+with `parse` and then re-join every component with `join`, which made the two
+tables disagree with each other inside one function: a name that parsed was
+then refused. Principle 3 says a shared folder is not ours, so `CON` and `a:b`
+arrive on a share whatever this server would have allowed, and the effect was
+that no virtual path could name one at all. Not a stat, not a download, not a
+rename, not a single-file delete, not a share link. An awkward *ancestor* was
+worse still: the folder could not be entered, so nothing under it existed as
+far as the API was concerned, and the one repair a person would reach for,
+renaming it to something ordinary, was itself unreachable.
+
+Resolution now joins with `join_existing`, and the five sites that mint a name
+hold the leaf to the creation table themselves: `mkdir`, a `copy_to`/`move_to`
+destination, a text write, and an upload destination. Nothing this server
+creates has changed; what changed is that it can now address what other
+services put there.
+
+The tree operations (`copy_entries`, `move_entries`, `delete`, a listing, an
+archive walk) never resolve a virtual path per entry and take the traversal
+table throughout. They used to take the creation table on names `read_dir` had
+just handed back, so one `CON` made a whole folder undeletable and the file
+itself uncopyable.
+
 ### 4.7 Core Logic — directory aggregate ETag
 
 **A DAV/compat-path cost only.** The native web UI uses per-file ETags,

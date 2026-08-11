@@ -313,6 +313,8 @@ impl crate::Core {
 
     pub fn mkdir(&self, user: UserId, vpath: &str) -> Result<Entry, CoreError> {
         let r = self.resolve_want(user, &Vpath::new(vpath), Perms::CREATE)?;
+        // The name is the whole point of the call, and it is always new.
+        Self::require_creatable_leaf(&r.path)?;
         r.root.mkdir(&r.path)?;
         self.mark_dirty(r.share, &r.path);
         let st = self.stat_counted(&r.root, &r.path)?;
@@ -808,6 +810,11 @@ impl crate::Core {
         if dst_exists && !overwrite {
             return Err(CoreError::Conflict);
         }
+        // The caller named the destination, so a new one is a name this
+        // server is about to mint.
+        if !dst_exists {
+            Self::require_creatable_leaf(&d.path)?;
+        }
 
         // Quota check: a copy duplicates bytes, so it is
         // one of the two write paths (with upload finalize) that can grow a
@@ -881,6 +888,11 @@ impl crate::Core {
         if dst_exists && !overwrite {
             return Err(CoreError::Conflict);
         }
+        // The caller named the destination, so a new one is a name this
+        // server is about to mint.
+        if !dst_exists {
+            Self::require_creatable_leaf(&d.path)?;
+        }
 
         // Same filesystem: a plain rename, which is atomic and free.
         // Otherwise copy-then-delete, which is what `will_copy` warns about.
@@ -940,6 +952,11 @@ impl crate::Core {
     pub fn write_text(&self, user: UserId, vpath: &str, body: &[u8], if_match: Option<&str>) -> Result<Entry, CoreError> {
         let r = self.resolve_want(user, &Vpath::new(vpath), Perms::WRITE)?;
         let exists = path_exists(&r.root, &r.path)?;
+        // Only when this write brings the name into existence. Editing a file
+        // another service put there under an awkward name is not creating one.
+        if !exists {
+            Self::require_creatable_leaf(&r.path)?;
+        }
         let mode = r.root.policy().mode_file;
 
         let mut old_size = 0u64;

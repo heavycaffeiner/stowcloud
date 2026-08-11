@@ -29,7 +29,7 @@ pub use error::VfsError;
 pub use handle::{DirHandle, FileHandle};
 pub use ids::*;
 pub use reserved::{is_reserved_name, RESERVED_PREFIXES};
-pub use safe_path::SafePath;
+pub use safe_path::{validate_created_name, SafePath};
 pub use share_root::ShareRoot;
 pub use types::{
     DirEntry, FsSpace, FsType, IdStrategy, Kind, SharePolicy, Stat, SymlinkPolicy, TrashMode,
