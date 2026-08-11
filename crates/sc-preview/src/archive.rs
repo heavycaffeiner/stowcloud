@@ -558,18 +558,20 @@ mod tests {
         assert_eq!(entries[0].size, 16);
     }
 
-    /// A name written with the UTF-8 flag set comes back as it went in.
+    /// A name written with the UTF-8 flag set comes back as it went in, at two
+    /// and at three bytes per character.
     #[test]
     fn a_utf8_entry_name_round_trips() {
+        let name = "café/日本語.txt";
         let mut zw = writer();
         let opts = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Stored);
-        zw.start_file("사진/여름.txt", opts).unwrap();
+        zw.start_file(name, opts).unwrap();
         zw.write_all(b"x").unwrap();
         let cursor = zw.finish().unwrap();
 
         let entries = list(cursor, &ArchiveLimits::default()).unwrap();
-        assert_eq!(entries[0].name, "사진/여름.txt");
+        assert_eq!(entries[0].name, name);
     }
 
     #[test]
