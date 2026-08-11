@@ -50,12 +50,6 @@
    *  the viewer offers the editor instead, which is the thing that already
    *  knows how to open something large. */
   const TEXT_MAX_BYTES = 2 * 1024 * 1024
-  /** Past this an archive gets no listing at all. A zip's central directory
-   *  sits at the end of the file, so listing one means seeking into it, and on
-   *  a NAS that means a cold seek somewhere past the four-gigabyte mark on
-   *  rotational storage for a panel nobody asked to wait on. The server
-   *  enforces the same ceiling; this is what stops the request being made. */
-  const ARCHIVE_MAX_BYTES = 4 * 1024 * 1024 * 1024
   /** Long edge to ask the thumbnailer for. Sized for a full-screen viewer on a
    *  normal display rather than for the row icons the same endpoint feeds. */
   const PREVIEW_DIM: [number, number] = [1600, 1600]
@@ -70,15 +64,15 @@
     | { kind: 'text' }
     | { kind: 'too-large-text' }
     | { kind: 'archive' }
-    | { kind: 'too-large-archive' }
     | { kind: 'none' }
 
   const body = $derived.by((): Body => {
     if (!entry) return { kind: 'none' }
     if (entry.preview?.available) return { kind: 'image' }
-    if (extensionOf(entry.name) === 'zip') {
-      return entry.size > ARCHIVE_MAX_BYTES ? { kind: 'too-large-archive' } : { kind: 'archive' }
-    }
+    // No size ceiling: the server reads a zip's metadata region and nothing
+    // else, so what a listing costs follows the entry count, which file size
+    // does not predict.
+    if (extensionOf(entry.name) === 'zip') return { kind: 'archive' }
     if (!TEXT_EXT.has(extensionOf(entry.name))) return { kind: 'none' }
     return entry.size > TEXT_MAX_BYTES ? { kind: 'too-large-text' } : { kind: 'text' }
   })
@@ -232,8 +226,6 @@
                 {failed}
               {:else if body.kind === 'too-large-text'}
                 {t('preview.too_large_for_text')}
-              {:else if body.kind === 'too-large-archive'}
-                {t('preview.archive_too_large')}
               {:else}
                 {t('preview.no_preview')}
               {/if}

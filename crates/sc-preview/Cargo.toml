@@ -13,9 +13,6 @@ sc-vfs = { path = "../sc-vfs" }
 image        = { workspace = true }
 infer        = { workspace = true }
 
-# --- archives ---
-zip          = { workspace = true }
-
 # --- async / concurrency ---
 tokio        = { workspace = true }
 dashmap      = { workspace = true }
@@ -53,3 +50,8 @@ libc         = { workspace = true }
 
 [dev-dependencies]
 tempfile     = { workspace = true }
+# Fixture archives only. `archive.rs` reads the central directory itself, so
+# the crate is not in the request path and not in the release binary; keeping
+# it here means the tests are written against an independent implementation of
+# the format, which is the same call `sc-http`'s `archive_zip` makes.
+zip          = { workspace = true }

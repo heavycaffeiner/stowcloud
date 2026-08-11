@@ -1,11 +1,12 @@
 <script lang="ts">
-  // /recent — the newest files by mtime across every root the caller can read.
+  // /recent — what you did here, newest first.
   //
-  // Recency is mtime and nothing else. A file uploaded or edited becomes
-  // recent; one renamed or moved does not, because a rename changes ctime, and
-  // ctime also moves for a chmod, so ordering on it would surface files nobody
-  // touched. A trashed file leaves the list the moment it is trashed, since the
-  // walk skips `.sctrash`.
+  // Not "what changed on disk": these shares are also written by Samba and by
+  // whatever else has the directory, and an mtime ordering over them is
+  // dominated by writers nobody reading this screen has a relationship with.
+  // The list is what this server recorded doing on your behalf, verified
+  // against the filesystem row by row, so a file somebody else wrote is not
+  // here and a file you moved is, at its new path.
   //
   // No virtualization, for the same reason the trash page has none: the row
   // count is capped server-side at 500. A row click navigates to the containing
@@ -14,7 +15,7 @@
   // dialog needs.
   import { goto } from '$app/navigation'
   import { api, ApiError } from '../../../lib/api/client'
-  import type { RecentCompleteness, RecentHit } from '../../../lib/api/types'
+  import type { RecentHit } from '../../../lib/api/types'
   import { formatDateNs, t } from '../../../lib/i18n'
   import { formatBytes } from '../../../lib/format/bytes'
   import { Icon } from 'm3-svelte'
@@ -23,7 +24,6 @@
   import ProgressCircular from '../../../lib/ui/ProgressCircular.svelte'
 
   let hits = $state<RecentHit[]>([])
-  let completeness = $state<RecentCompleteness>({ state: 'full' })
   let loading = $state(true)
   let loadError = $state<string | null>(null)
 
@@ -33,7 +33,6 @@
     try {
       const res = await api.recentList()
       hits = res.hits
-      completeness = res.completeness
     } catch (err) {
       loadError = err instanceof ApiError ? err.message : t('recent.could_not_load')
     } finally {
@@ -57,6 +56,14 @@
   function open(hit: RecentHit): void {
     goto(`/b/${parentOfVpath(hit.vpath)}`)
   }
+
+  /** The one-word verb for what was done. Text, never a colour or an icon on
+   *  its own: a restored file sits at the top of the list carrying a
+   *  three-year-old modification time, and without the word that reads as a
+   *  bug. */
+  function verb(hit: RecentHit): string {
+    return t(`recent.op_${hit.op}`)
+  }
 </script>
 
 <svelte:head><title>{t('recent.title_stowcloud')}</title></svelte:head>
@@ -78,12 +85,6 @@
     {:else if hits.length === 0}
       <p class="sc-recent__empty">{t('recent.nothing_recent')}</p>
     {:else}
-      {#if completeness.state === 'truncated'}
-        <!-- Text, not a colour or an icon on its own: a truncated answer is
-             the newest N of what the walk reached, and saying how much it
-             reached is the difference between that and a complete list. -->
-        <p class="sc-recent__truncated">{t('recent.partial_result', { seen: completeness.seen })}</p>
-      {/if}
       <ul class="sc-recent__list">
         {#each hits as hit (hit.vpath)}
           <li>
@@ -104,8 +105,9 @@
                 <span class="sc-filename sc-recent__name">{hit.name}</span>
                 <span class="sc-recent__path">{parentOfVpath(hit.vpath)}</span>
               </span>
+              <span class="sc-recent__meta">{verb(hit)}</span>
               <span class="sc-recent__meta">{formatBytes(hit.size)}</span>
-              <span class="sc-recent__meta">{formatDateNs(hit.mtime_ns)}</span>
+              <span class="sc-recent__meta">{formatDateNs(hit.at_ns)}</span>
             </button>
           </li>
         {/each}
@@ -134,14 +136,6 @@
   .sc-recent__header h1 {
     flex: 1;
     @apply --m3-headline-small;
-  }
-  .sc-recent__truncated {
-    margin: 0 0 8px;
-    padding: 8px 16px;
-    border-radius: var(--m3-shape-medium);
-    background: var(--m3c-surface-container);
-    color: var(--m3c-on-surface-variant);
-    @apply --m3-body-small;
   }
   .sc-recent__list {
     list-style: none;

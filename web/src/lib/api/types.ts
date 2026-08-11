@@ -572,6 +572,8 @@ export interface FolderSize {
 
 // ── recent files ──
 
+export type RecentOp = 'upload' | 'edit' | 'copy' | 'move' | 'restore'
+
 export interface RecentHit {
   /** Navigable virtual path, `{label}/{rest}`. */
   vpath: string
@@ -580,14 +582,11 @@ export interface RecentHit {
   size: number
   /** Nanoseconds as a string, same rule as `Entry.mtime_ns`. */
   mtime_ns: string
+  /** When the write happened, which is not `mtime_ns` for a restore or a copy
+   *  that preserved timestamps. */
+  at_ns: string
+  op: RecentOp
 }
-
-/** The search UI adds a `done` listener and discards the payload, so
- *  truncation has never reached a screen. The recent tab is the first thing
- *  that has to show it. */
-export type RecentCompleteness =
-  | { state: 'full' }
-  | { state: 'truncated'; reason: string; seen: number; elapsed_ms: number }
 
 // ── content links ──
 

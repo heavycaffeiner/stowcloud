@@ -2054,10 +2054,20 @@ async fn fs_archive_list(
         Ok(p) => p,
         Err(e) => return e.into_response(),
     };
-    match state.core.archive_list(principal.user, &q.path) {
-        Ok(Some(entries)) => Json(serde_json::json!({ "entries": entries })).into_response(),
-        Ok(None) => AppError::not_found().into_response(),
-        Err(e) => AppError::from(e).into_response(),
+    // Blocking work: a seek and up to three positional reads, then parsing.
+    // No concurrency permit, because that is the same order of work as
+    // `fs_stat`, and the file-size ceiling that used to guard this is gone
+    // along with the per-entry seeking it was guarding against.
+    let core = state.core.clone();
+    let user = principal.user;
+    let path = q.path.clone();
+    let result = tokio::task::spawn_blocking(move || core.archive_list(user, &path)).await;
+
+    match result {
+        Ok(Ok(Some(entries))) => Json(serde_json::json!({ "entries": entries })).into_response(),
+        Ok(Ok(None)) => AppError::not_found().into_response(),
+        Ok(Err(e)) => AppError::from(e).into_response(),
+        Err(_) => AppError::internal().into_response(),
     }
 }
 
@@ -3866,8 +3876,14 @@ struct RecentQueryWire {
     scope: Option<String>,
 }
 
-/// `GET /api/recent` — the newest files by mtime across every root the caller
-/// can read.
+/// `GET /api/recent` — every file this account wrote through this server
+/// inside the window, newest first.
+///
+/// Not "what changed on disk": a share is also written by Samba, rsync and
+/// whatever else has the directory, and an mtime ordering over such a tree is
+/// dominated by writers the person reading the screen has no relationship
+/// with. This answers from the record of what this server did on the caller's
+/// behalf, verified against the filesystem row by row.
 ///
 /// `limit` and `since_days` are clamped rather than rejected. `scope` is
 /// validated and refused, because a scope is a security boundary: silently
@@ -3899,26 +3915,18 @@ async fn recent(
     };
 
     let user = principal.user;
-    // Same per-tier budget as search, and for the same reason: this walk stats
-    // every file under the caller's roots, because a name cannot tell you when
-    // it was written.
-    let tier = state.recent.recent_tier(user, &query);
-    let permit = match state.search_concurrency.try_acquire(tier) {
-        Some(p) => p,
-        None => return search_rate_limited_response(&state, tier),
-    };
-
+    // No concurrency permit: the tiered budget existed to bound a walk, and
+    // there is no walk left. `spawn_blocking` stays, because a SQLite read and
+    // a few hundred `stat` calls are still blocking work. The per-account rate
+    // limit above stays too: a cheaper query is not a reason to drop one.
     let engine = state.recent.clone();
-    let result = tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        engine.recent(user, &query)
-    })
-    .await;
+    let result = tokio::task::spawn_blocking(move || engine.recent(user, &query)).await;
 
     match result {
-        Ok(Ok((hits, completeness))) => Json(serde_json::json!({
+        // No `completeness`: there is nothing left to truncate, and a field
+        // that is always `full` is a field that will one day be believed.
+        Ok(Ok(hits)) => Json(serde_json::json!({
             "hits": hits.iter().map(recent_hit_json).collect::<Vec<_>>(),
-            "completeness": completeness_json(&completeness),
         }))
         .into_response(),
         Ok(Err(e)) => AppError::from(e).into_response(),
@@ -3939,6 +3947,10 @@ fn recent_hit_json(h: &crate::recent_api::RecentHit) -> serde_json::Value {
         // nanosecond epoch is around 1.8e18 and JavaScript's `number` loses
         // precision past 2^53.
         "mtime_ns": h.mtime_ns.to_string(),
+        // When the write happened, which is not the file's mtime for a
+        // restore or a copy that preserved timestamps.
+        "at_ns": h.at_ns.to_string(),
+        "op": h.op,
     })
 }
 
@@ -4949,6 +4961,10 @@ async fn admin_delete_user(
     match state.auth.delete_user(uid) {
         Ok(()) => {
             state.ws.revoke_user(uid);
+            // `user.id` is `INTEGER PRIMARY KEY` with no `AUTOINCREMENT`, so
+            // this id is reused. Without this the next person to hold it would
+            // read the previous holder's private history.
+            state.recent.forget_user(uid);
             StatusCode::NO_CONTENT.into_response()
         }
         Err(e) => admin_guard_error_response(e).into_response(),

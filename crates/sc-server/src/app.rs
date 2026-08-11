@@ -38,6 +38,10 @@ pub struct App {
     /// CLI paths never arm it.
     pub passdb: std::sync::OnceLock<crate::passdb::PassdbPublisher>,
     pub uploads: Arc<sc_upload::UploadEngine>,
+    /// The per-account record of the writes this server performs. `None` when
+    /// `journal.db` could not be opened; every write path then skips its
+    /// recording call and `GET /api/recent` answers empty.
+    pub journal: Option<Arc<crate::journal::WriteJournal>>,
     pub dav: Arc<sc_dav::DavService>,
     pub http: sc_http::AppState,
     /// Kept alive for as long as the server runs; dropping it stops watching.
@@ -190,11 +194,29 @@ impl App {
         )?);
         let restart_signal = Arc::new(tokio::sync::Notify::new());
 
+        // The one store in this directory that is not load-bearing. A
+        // convenience index that takes the server down with it when it is
+        // corrupt would contradict the best-effort promise it makes at the one
+        // moment the promise matters: with `None` every write path skips its
+        // recording call and the endpoint answers an empty list.
+        let journal = match crate::journal::WriteJournal::open(&data_dir.join("journal.db")) {
+            Ok(j) => Some(Arc::new(j)),
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    "journal.db could not be opened; the recent-activity record is off for \
+                     this run and `GET /api/recent` will answer empty"
+                );
+                None
+            }
+        };
+
         let core_bridge = Arc::new(CoreBridge::new(
             core.clone(),
             cfg.smb.enabled,
             watcher.clone(),
             index_settings.clone(),
+            journal.clone(),
         ));
         let idle_merge = spawn_idle_merge(core_bridge.clone());
 
@@ -243,8 +265,7 @@ impl App {
         let recent_engine: Arc<dyn sc_http::recent_api::RecentApi> =
             Arc::new(crate::recent::RecentEngine {
                 core: core.clone(),
-                storage_cache: storage_cache.clone(),
-                limits: search_concurrency.clone(),
+                journal: journal.clone(),
             });
         // Built here rather than inline in `build_http_state`, so
         // `SettingsBridge` (below) can reconfigure the very same rate
@@ -303,6 +324,7 @@ impl App {
             restart_signal,
             ws_hub,
             oidc,
+            journal.clone(),
         )?;
 
         // The compatibility layer is assembled before the DAV service is
@@ -346,6 +368,7 @@ impl App {
                         keys: http.signed_url_keys.clone(),
                         search_limits: search_concurrency.clone(),
                         storage: storage_cache.clone(),
+                        journal: journal.clone(),
                     }))
                 }
                 crate::config::PublicOrigins::Ambiguous { app_host_count } => {
@@ -415,6 +438,7 @@ impl App {
             settings: settings_bridge,
             passdb: std::sync::OnceLock::new(),
             uploads,
+            journal,
             dav,
             http,
             watcher,
@@ -487,6 +511,7 @@ impl App {
                 self.core.clone(),
                 self.uploads.clone(),
                 &self.dav,
+                self.journal.clone(),
             )));
 
         #[cfg(feature = "compat-nc")]
@@ -1099,6 +1124,7 @@ fn build_http_state(
     restart_signal: Arc<tokio::sync::Notify>,
     ws_hub: Arc<sc_http::ws::WsHub>,
     oidc: Arc<dyn sc_http::oidc_api::OidcApi>,
+    journal: Option<Arc<crate::journal::WriteJournal>>,
 ) -> anyhow::Result<sc_http::AppState> {
     let mut http_cfg = sc_http::config::HttpConfig {
         trusted_proxy_cidrs: cfg
@@ -1203,6 +1229,7 @@ fn build_http_state(
         uploads: Arc::new(UploadBridge {
             engine: uploads,
             core: core.clone(),
+            journal,
         }),
         content,
         search,

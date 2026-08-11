@@ -478,6 +478,7 @@ impl ports::AuthPort for NcAuth {
 pub struct NcUpload {
     engine: Arc<sc_upload::UploadEngine>,
     core: Arc<sc_core::Core>,
+    journal: Option<Arc<crate::journal::WriteJournal>>,
 }
 
 impl NcUpload {
@@ -543,9 +544,22 @@ impl ports::UploadEngine for NcUpload {
         mtime_ns: Option<i128>,
     ) -> PortResult<()> {
         let root = self.root(share)?;
-        self.engine
+        // The journal is read and written here, and `()` still goes back up:
+        // no vocabulary and no new value crosses the isolation boundary.
+        let published = self
+            .engine
             .assemble_and_finalize(&root, session, user, total, mtime_ns)
-            .map_err(port_io)
+            .map_err(port_io)?;
+        if let Some(j) = &self.journal {
+            j.note(
+                user,
+                share,
+                &published,
+                crate::journal::WriteOp::Upload,
+                crate::journal::now_ns(),
+            );
+        }
+        Ok(())
     }
 
     fn list_chunks(&self, session: ports::SessionId) -> PortResult<Vec<u32>> {
@@ -1169,6 +1183,7 @@ struct RemoteDav {
     /// value by a different route (`self.cfg.instance_id` inside
     /// `Compat::prop_source`).
     instance_id: Arc<str>,
+    journal: Option<Arc<crate::journal::WriteJournal>>,
 }
 
 /// Everything the compatibility layer needs, assembled once.
@@ -1190,6 +1205,7 @@ pub struct Compat {
     /// Shared with the native search, so one `[search]` setting governs both.
     search_limits: Arc<sc_http::search_limits::SearchConcurrency>,
     storage: Arc<crate::storage_class::StorageClassCache>,
+    journal: Option<Arc<crate::journal::WriteJournal>>,
 }
 
 /// Inputs to [`Compat::build`], grouped into a struct rather than passed
@@ -1212,6 +1228,9 @@ pub struct CompatBuildInputs<'a> {
     /// compat `SEARCH` and the native one must agree on the walk budget.
     pub search_limits: Arc<sc_http::search_limits::SearchConcurrency>,
     pub storage: Arc<crate::storage_class::StorageClassCache>,
+    /// The same record the native surface writes, so a restore or an upload
+    /// through a phone lands in the same list as one through the web tab.
+    pub journal: Option<Arc<crate::journal::WriteJournal>>,
 }
 
 impl Compat {
@@ -1228,6 +1247,7 @@ impl Compat {
             keys,
             search_limits,
             storage,
+            journal,
         } = inputs;
         let store: Arc<dyn sc_compat_nc::NcStore> = match sc_compat_nc::SqliteStore::open(
             &data_dir.join("compat-nc.db"),
@@ -1271,6 +1291,7 @@ impl Compat {
             upload: Arc::new(NcUpload {
                 engine: uploads,
                 core: core.clone(),
+                journal: journal.clone(),
             }),
             preview: Arc::new(NcPreview {
                 content_host,
@@ -1295,6 +1316,7 @@ impl Compat {
             auth,
             search_limits,
             storage,
+            journal,
         }
     }
 
@@ -1313,6 +1335,7 @@ impl Compat {
             store: self.store.clone(),
             limits: self.search_limits.clone(),
             storage: self.storage.clone(),
+            journal: self.journal.clone(),
         })
     }
 
@@ -1407,6 +1430,7 @@ impl Compat {
             )),
             core: self.core.clone(),
             instance_id: Arc::from(self.cfg.instance_id.as_str()),
+            journal: self.journal.clone(),
         };
 
         sc_compat_nc::router(state)
@@ -1573,6 +1597,7 @@ async fn h_trash(
     let api = crate::nc_trash::TrashApi {
         core: s.core.core.clone(),
         instance_id: s.instance_id.clone(),
+        journal: s.journal.clone(),
     };
     let max_body = s.dav.config().max_request_body;
     let method = req.method().as_str().to_string();

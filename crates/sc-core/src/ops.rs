@@ -498,9 +498,9 @@ impl crate::Core {
                 if path_exists(&dest_r.root, &dest_path)? {
                     match on_conflict {
                         OnConflict::Fail => {
-                            return Ok(OpResult { path: p.clone(), ok: false, error: Some(CoreError::Conflict), will_copy: false })
+                            return Ok(OpResult { path: p.clone(), ok: false, error: Some(CoreError::Conflict), will_copy: false, created: None })
                         }
-                        OnConflict::Skip => return Ok(OpResult { path: p.clone(), ok: true, error: None, will_copy: false }),
+                        OnConflict::Skip => return Ok(OpResult { path: p.clone(), ok: true, error: None, will_copy: false, created: None }),
                         OnConflict::Rename => {
                             dest_path = self.unique_name(&dest_r.root, &dest_r.path, &name)?;
                         }
@@ -538,9 +538,9 @@ impl crate::Core {
                     self.copy_recursive(&src.root, &src.path, &dest_r.root, &dest_path)?;
                 }
                 self.mark_dirty(dest_r.share, &dest_path);
-                Ok(OpResult { path: p.clone(), ok: true, error: None, will_copy: false })
+                Ok(OpResult { path: p.clone(), ok: true, error: None, will_copy: false, created: Some(dest_path) })
             })();
-            results.push(outcome.unwrap_or_else(|e| OpResult { path: p.clone(), ok: false, error: Some(e), will_copy: false }));
+            results.push(outcome.unwrap_or_else(|e| OpResult { path: p.clone(), ok: false, error: Some(e), will_copy: false, created: None }));
         }
         Ok(results)
     }
@@ -569,8 +569,8 @@ impl crate::Core {
 
         if path_exists(&dest_r.root, &dest_path)? {
             match on_conflict {
-                OnConflict::Fail => return Ok(OpResult { path: src_vpath.into(), ok: false, error: Some(CoreError::Conflict), will_copy: false }),
-                OnConflict::Skip => return Ok(OpResult { path: src_vpath.into(), ok: true, error: None, will_copy: false }),
+                OnConflict::Fail => return Ok(OpResult { path: src_vpath.into(), ok: false, error: Some(CoreError::Conflict), will_copy: false, created: None }),
+                OnConflict::Skip => return Ok(OpResult { path: src_vpath.into(), ok: true, error: None, will_copy: false, created: None }),
                 OnConflict::Rename => {
                     dest_path = self.unique_name(&dest_r.root, &dest_r.path, &name)?;
                 }
@@ -585,6 +585,7 @@ impl crate::Core {
                                 ok: false,
                                 error: Some(CoreError::Precondition { current_etag: cur_etag }),
                                 will_copy: false,
+                                created: None,
                             })
                         }
                     }
@@ -595,7 +596,7 @@ impl crate::Core {
         let will_copy = src.share != dest_r.share || dest_r.root.root_dev() != src_st.dev;
 
         if dry_run {
-            return Ok(OpResult { path: src_vpath.into(), ok: true, error: None, will_copy });
+            return Ok(OpResult { path: src_vpath.into(), ok: true, error: None, will_copy, created: None });
         }
 
         if will_copy {
@@ -636,7 +637,7 @@ impl crate::Core {
         }
         self.mark_dirty(src.share, &src.path);
         self.mark_dirty(dest_r.share, &dest_path);
-        Ok(OpResult { path: src_vpath.into(), ok: true, error: None, will_copy })
+        Ok(OpResult { path: src_vpath.into(), ok: true, error: None, will_copy, created: Some(dest_path) })
     }
 
     pub fn move_entries(
@@ -655,7 +656,7 @@ impl crate::Core {
         for p in paths {
             let im = if_match.get(p).map(|s| s.as_str());
             let outcome = self.move_one(user, p, &dest_r, on_conflict, im, false);
-            results.push(outcome.unwrap_or_else(|e| OpResult { path: p.clone(), ok: false, error: Some(e), will_copy: false }));
+            results.push(outcome.unwrap_or_else(|e| OpResult { path: p.clone(), ok: false, error: Some(e), will_copy: false, created: None }));
         }
         Ok(results)
     }
@@ -675,7 +676,7 @@ impl crate::Core {
         for p in paths {
             let im = if_match.get(p).map(|s| s.as_str());
             let outcome = self.move_one(user, p, &dest_r, on_conflict, im, true);
-            results.push(outcome.unwrap_or_else(|e| OpResult { path: p.clone(), ok: false, error: Some(e), will_copy: false }));
+            results.push(outcome.unwrap_or_else(|e| OpResult { path: p.clone(), ok: false, error: Some(e), will_copy: false, created: None }));
         }
         Ok(results)
     }
@@ -723,9 +724,9 @@ impl crate::Core {
                     self.charge_quota(user, -(freed as i64));
                 }
                 self.mark_dirty(r.share, &r.path);
-                Ok(OpResult { path: p.clone(), ok: true, error: None, will_copy: false })
+                Ok(OpResult { path: p.clone(), ok: true, error: None, will_copy: false, created: None })
             })();
-            results.push(outcome.unwrap_or_else(|e| OpResult { path: p.clone(), ok: false, error: Some(e), will_copy: false }));
+            results.push(outcome.unwrap_or_else(|e| OpResult { path: p.clone(), ok: false, error: Some(e), will_copy: false, created: None }));
         }
         Ok(results)
     }

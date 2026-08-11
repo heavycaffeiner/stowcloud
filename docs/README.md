@@ -29,6 +29,8 @@ code won.
 | [17 - Audit gaps](proposals/stowcloud-17-audit-gaps.md) | seven promises 0-13 make that the code does not keep, and what closes each | with 1, before any SMB credential work |
 | [18 - Recent files](proposals/stowcloud-18-recent-files.md) | the recency query, why an ordered walk truncated at N is not the newest N, and the Recent Files destination | with 5 and 14, before any recency work |
 | [19 - Share browsing](proposals/stowcloud-19-share-browsing.md) | the subpath a share link had no way to name, the folder download that never worked, and the viewer arrows that move the picture | with 6, before any public share-page work |
+| [20 - Origins and settings](proposals/stowcloud-20-origins-and-settings.md) | one declared origin list for a server reached under several names, and the nine settings-screen defects that had to be fixed before it could be edited | with 13, before any host, origin or admin-settings work |
+| [21 - Recorded activity and archive listing](proposals/stowcloud-21-recorded-activity-and-archive-listing.md) | what this server wrote for you, the date literal that made both phone apps' recency query a 400, and an archive listing that reads the directory instead of the file | supersedes 18's recency answer, not its collector; with 14, before any recency, mobile search or archive-preview work |
 
 ## Five principles, everything else follows from these
 
@@ -42,6 +44,23 @@ code won.
    feature-stripped build, not by discipline.
 5. **The default is least privilege.** No user homes, no symlinks, SMB off, no
    inline content rendering.
+
+## Known client behaviour
+
+Defects that live in a client, reported here so the next person who sees one
+does not go looking for it in this code.
+
+- **The Android app shows the "synced" tick on folders that were never
+  synced.** `OCFileListDelegate` asks its own database whether every file in
+  the folder has a local copy, with a `NOT EXISTS` query that is vacuously true
+  for a folder whose children have never been listed on the device. Every input
+  to the guard comes from this server and every one of them is already
+  truthful: `oc:size` is the real recursive rollup, the folder ETag is the real
+  one, and `nc:is-encrypted` is `0`, which is what a reference server answers
+  for an unencrypted folder too. The three ways to suppress the tick from a
+  server are a false size, a withheld ETag and a false encryption flag, and all
+  three are lies about the data, so none is used. Proposal 21 §2.6 carries the
+  evidence.
 
 ## Conventions
 

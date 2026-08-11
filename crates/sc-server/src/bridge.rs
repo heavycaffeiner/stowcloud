@@ -30,6 +30,8 @@ use std::sync::Arc;
 use sc_vfs::{GroupId, SafePath, ShareId, TrashMode, UserId};
 use sc_core::{SharePath, Vpath};
 
+use crate::journal::{self, WriteJournal, WriteOp};
+
 /// Upper bound on a whole-file read buffered in memory.
 ///
 /// Both `sc-dav`'s `GET` and `sc-http`'s `/api/fs/read` read a file into a
@@ -37,16 +39,6 @@ use sc_core::{SharePath, Vpath};
 /// between one request for a 40 GB file and the OOM killer. Larger files are
 /// refused rather than truncated: a silently short body is corruption.
 const MAX_INLINE_READ: usize = 256 * 1024 * 1024;
-
-/// Largest archive `GET /api/fs/archive/list` will open.
-///
-/// Not a memory bound: the listing reads the central directory and never an
-/// entry's bytes, and `ArchiveLimits` already caps the entry count. It is a
-/// latency bound. The central directory sits at the *end* of a zip, so the
-/// first thing the reader does is seek there, and on a cold rotational share
-/// that seek is what the panel waits on. Past this the viewer offers no
-/// preview at all rather than a spinner over a file nobody chose to wait for.
-const ARCHIVE_LIST_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct CoreBridge {
@@ -69,6 +61,11 @@ pub struct CoreBridge {
     /// job; `run_idle_merge_pass` checks it so the idle scheduler never
     /// contends with a build the admin explicitly asked for right now.
     index_build_running: Arc<std::sync::atomic::AtomicBool>,
+    /// The per-account record of the writes this server performed. `None`
+    /// when `journal.db` could not be opened, which is not a reason to refuse
+    /// a write: the record is best-effort and the endpoint that reads it
+    /// answers an empty list.
+    journal: Option<Arc<WriteJournal>>,
 }
 
 impl CoreBridge {
@@ -77,6 +74,7 @@ impl CoreBridge {
         smb_enabled: bool,
         watcher: Option<Arc<sc_watch::Watcher>>,
         index_settings: Arc<sc_search::IndexSettingsStore>,
+        journal: Option<Arc<WriteJournal>>,
     ) -> Self {
         Self {
             core,
@@ -84,6 +82,49 @@ impl CoreBridge {
             watcher,
             index_settings,
             index_build_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            journal,
+        }
+    }
+
+    /// Record a write this server performed on `user`'s behalf, at the vpath
+    /// it landed at.
+    ///
+    /// Best-effort by construction: the file operation has already succeeded
+    /// when this runs, so a row that does not appear costs a line in a list,
+    /// never data. Nothing may read a missing row as evidence that a write did
+    /// not happen.
+    fn note_write(&self, user: UserId, vpath: &str, op: WriteOp) {
+        let Some(j) = &self.journal else { return };
+        if let Some((share, path)) = self.index_path(user, vpath) {
+            j.note(user, share, &path, op, journal::now_ns());
+        }
+    }
+
+    /// The same, for a write whose destination is already known as a
+    /// `(share, path)` pair rather than as a vpath.
+    fn note_write_at(&self, user: UserId, share: ShareId, path: &SafePath, op: WriteOp) {
+        let Some(j) = &self.journal else { return };
+        j.note(user, share, path, op, journal::now_ns());
+    }
+
+    /// Record what a batch copy or move actually created, and nothing else.
+    ///
+    /// The caller's own `OnConflict` reaches this one: `Rename` publishes at a
+    /// name only `sc-core` can name, and `Skip` reports `ok` for an item it
+    /// did not copy. So the rule is the operation's own answer, `OpResult::
+    /// created`, rather than a destination reconstructed from the source name.
+    fn note_batch(&self, user: UserId, dest: &str, results: &[sc_core::OpResult], op: WriteOp) {
+        if self.journal.is_none() || results.iter().all(|r| r.created.is_none()) {
+            return;
+        }
+        // One destination per batch, so one resolution.
+        let Some((share, _)) = self.index_path(user, dest) else {
+            return;
+        };
+        for r in results.iter().filter(|r| r.ok) {
+            if let Some(path) = &r.created {
+                self.note_write_at(user, share, path, op);
+            }
         }
     }
 
@@ -277,6 +318,7 @@ impl sc_dav::CoreApi for CoreBridge {
         let removed = self.index_path(user, from).into_iter().collect::<Vec<_>>();
         let added = self.index_path(user, to).into_iter().collect::<Vec<_>>();
         note_index_change(&self.core, &added, &removed);
+        self.note_write(user, to, WriteOp::Move);
         Ok(())
     }
 
@@ -314,12 +356,15 @@ impl sc_dav::CoreApi for CoreBridge {
         // in `from` really landed at `to_dir/<its old basename>` — this mode
         // is hardcoded `Overwrite`, never `Rename`, so the destination name
         // never differs from the source's own.
-        let added: Vec<_> = from
+        let destinations: Vec<String> = from.iter().filter_map(|p| dest_under(to_dir, p)).collect();
+        let added: Vec<_> = destinations
             .iter()
-            .filter_map(|p| dest_under(to_dir, p))
-            .filter_map(|to_vpath| self.index_path(user, &to_vpath))
+            .filter_map(|to_vpath| self.index_path(user, to_vpath))
             .collect();
         note_index_change(&self.core, &added, &removed);
+        for to_vpath in &destinations {
+            self.note_write(user, to_vpath, WriteOp::Move);
+        }
         Ok(())
     }
 
@@ -345,12 +390,15 @@ impl sc_dav::CoreApi for CoreBridge {
         }
         // Same "reached ⇒ every item ok" reasoning as `move_entries`; a copy
         // never removes the source, so only `added` applies.
-        let added: Vec<_> = from
+        let destinations: Vec<String> = from.iter().filter_map(|p| dest_under(to_dir, p)).collect();
+        let added: Vec<_> = destinations
             .iter()
-            .filter_map(|p| dest_under(to_dir, p))
-            .filter_map(|to_vpath| self.index_path(user, &to_vpath))
+            .filter_map(|to_vpath| self.index_path(user, to_vpath))
             .collect();
         note_index_change(&self.core, &added, &[]);
+        for to_vpath in &destinations {
+            self.note_write(user, to_vpath, WriteOp::Copy);
+        }
         Ok(())
     }
 
@@ -365,6 +413,7 @@ impl sc_dav::CoreApi for CoreBridge {
         if let Some(p) = self.index_path(user, to) {
             note_index_change(&self.core, &[p], &[]);
         }
+        self.note_write(user, to, WriteOp::Copy);
         Ok(())
     }
 
@@ -418,6 +467,15 @@ impl sc_dav::CoreApi for CoreBridge {
         if let Some(p) = self.index_path(user, vpath) {
             note_index_change(&self.core, &[p], &[]);
         }
+        // `Core::write_text` refuses an overwrite without the current etag and
+        // refuses a create that carries one, so on the success path
+        // `if_match.is_some()` is exactly "the file already existed". No extra
+        // `stat` is needed to tell the two apart.
+        self.note_write(
+            user,
+            vpath,
+            if if_match.is_some() { WriteOp::Edit } else { WriteOp::Upload },
+        );
         Ok(())
     }
 
@@ -738,12 +796,16 @@ impl hapi::CoreApi for CoreBridge {
         // `rename` (unlike DAV `MOVE`) only ever changes the last component,
         // never the parent directory, so the destination vpath is `vpath`'s
         // own parent plus the new name.
-        let added = dest_under_vpath(vpath, new_name).and_then(|to| self.index_path(user, &to));
+        let to = dest_under_vpath(vpath, new_name);
+        let added = to.as_deref().and_then(|to| self.index_path(user, to));
         note_index_change(
             &self.core,
             &added.into_iter().collect::<Vec<_>>(),
             &removed.into_iter().collect::<Vec<_>>(),
         );
+        if let Some(to) = &to {
+            self.note_write(user, to, WriteOp::Move);
+        }
         Ok(entry)
     }
 
@@ -755,10 +817,12 @@ impl hapi::CoreApi for CoreBridge {
         on_conflict: hapi::OnConflict,
         if_match: &HashMap<String, hapi::Etag>,
     ) -> Result<Vec<hapi::OpResult>, hapi::CoreError> {
-        self.core
+        let results = self
+            .core
             .move_entries(user, paths, dest, core_on_conflict(on_conflict), if_match)
-            .map(|v| v.into_iter().map(http_op_result).collect())
-            .map_err(http_err)
+            .map_err(http_err)?;
+        self.note_batch(user, dest, &results, WriteOp::Move);
+        Ok(results.into_iter().map(http_op_result).collect())
     }
 
     fn move_entries_dry_run(
@@ -783,10 +847,12 @@ impl hapi::CoreApi for CoreBridge {
         on_conflict: hapi::OnConflict,
         _if_match: &HashMap<String, hapi::Etag>,
     ) -> Result<Vec<hapi::OpResult>, hapi::CoreError> {
-        self.core
+        let results = self
+            .core
             .copy_entries(user, paths, dest, core_on_conflict(on_conflict))
-            .map(|v| v.into_iter().map(http_op_result).collect())
-            .map_err(http_err)
+            .map_err(http_err)?;
+        self.note_batch(user, dest, &results, WriteOp::Copy);
+        Ok(results.into_iter().map(http_op_result).collect())
     }
 
     fn delete(
@@ -843,6 +909,14 @@ impl hapi::CoreApi for CoreBridge {
         if let Some(p) = self.index_path(user, vpath) {
             note_index_change(&self.core, &[p], &[]);
         }
+        // The route hands the etag down, and `Core::write_text` only accepts
+        // one when the file was already there, so this is the create-versus-
+        // overwrite answer without a second `stat`.
+        self.note_write(
+            user,
+            vpath,
+            if if_match.is_some() { WriteOp::Edit } else { WriteOp::Upload },
+        );
         Ok(entry)
     }
 
@@ -880,12 +954,20 @@ impl hapi::CoreApi for CoreBridge {
             .iter()
             .map(|id| match split_trash_id(id) {
                 Some((share, handle)) => match self.core.trash_restore(user, share, handle) {
-                    Ok(()) => hapi::OpResult {
-                        path: id.clone(),
-                        ok: true,
-                        error: None,
-                        will_copy: false,
-                    },
+                    Ok(restored) => {
+                        // The entry decides its own destination, and for an
+                        // entry written before the original path was encoded
+                        // in its name it lands in the share root. Deriving it
+                        // from `TrashEntry::orig_path` would name a file that
+                        // is not there for exactly those.
+                        self.note_write_at(user, share, &restored, WriteOp::Restore);
+                        hapi::OpResult {
+                            path: id.clone(),
+                            ok: true,
+                            error: None,
+                            will_copy: false,
+                        }
+                    }
                     Err(e) => hapi::OpResult {
                         path: id.clone(),
                         ok: false,
@@ -957,21 +1039,13 @@ impl hapi::CoreApi for CoreBridge {
         vpath: &str,
     ) -> Result<Option<Vec<hapi::ArchiveEntryWire>>, hapi::CoreError> {
         let (entry, reader) = self.core.open_seekable(user, vpath).map_err(http_err)?;
-        // A zip's central directory sits at the end of the file, so listing one
-        // is a seek to somewhere past this mark on storage that may be
-        // rotational. Past the ceiling the viewer shows "no preview" and never
-        // asks; this is the same rule stated where a direct API call reaches
-        // it.
-        if entry.size > ARCHIVE_LIST_MAX_BYTES {
-            return Err(hapi::CoreError::InvalidName(format!(
-                "archive is {} bytes, over the {ARCHIVE_LIST_MAX_BYTES}-byte listing ceiling",
-                entry.size
-            )));
-        }
         // The shipped defaults: no deployment knob exists for these, and the
         // limits that matter here (entry count, name length, depth) are the
-        // same ones the streamed download enforces.
-        match sc_preview::list_archive(reader, &sc_preview::ArchiveLimits::default()) {
+        // same ones the streamed download enforces. There is no file-size
+        // ceiling: a listing reads the metadata region and nothing else, so a
+        // 40 GB archive of 500 files costs what a 4 MB one costs, and the
+        // central directory budget bounds it where the cost actually is.
+        match sc_preview::list_archive(reader, entry.size, &sc_preview::ArchiveLimits::default()) {
             Ok(entries) => Ok(Some(
                 entries
                     .into_iter()
@@ -1134,7 +1208,14 @@ impl hapi::CoreApi for CoreBridge {
     }
 
     fn delete_share(&self, id: u32) -> Result<(), hapi::CoreError> {
-        self.core.delete_share(ShareId::new(id)).map_err(http_err)
+        self.core.delete_share(ShareId::new(id)).map_err(http_err)?;
+        // Share ids are reused: `share_.id` is `INTEGER PRIMARY KEY` with no
+        // `AUTOINCREMENT`, so the next share created can take this id and
+        // inherit rows about files it never held.
+        if let Some(j) = &self.journal {
+            j.forget_share(ShareId::new(id));
+        }
+        Ok(())
     }
 
     fn list_grants(
@@ -1619,9 +1700,18 @@ impl sc_core::QuotaSink for AuthQuotaSink {
 pub struct UploadBridge {
     pub engine: Arc<sc_upload::UploadEngine>,
     pub core: Arc<sc_core::Core>,
+    pub journal: Option<Arc<WriteJournal>>,
 }
 
 impl UploadBridge {
+    /// A finished upload, recorded at the path the engine says it published.
+    /// `SessionStatus` carries no destination, so this value is the only one
+    /// either finalize site here can name.
+    fn note_upload(&self, user: UserId, share: ShareId, path: &SafePath) {
+        let Some(j) = &self.journal else { return };
+        j.note(user, share, path, WriteOp::Upload, journal::now_ns());
+    }
+
     fn parse_id(id: &str) -> Result<sc_upload::SessionId, hapi::CoreError> {
         sc_upload::SessionId::parse_b64(id)
             .ok_or_else(|| hapi::CoreError::InvalidName("malformed upload id".into()))
@@ -1814,9 +1904,11 @@ impl UploadBridge {
             .patch(&root, sid, user, offset, data, checksum)
             .map_err(Self::upload_err)?;
         if st.total_len == Some(new_offset) {
-            self.engine
+            let published = self
+                .engine
                 .finalize(&root, sid, user)
                 .map_err(Self::upload_err)?;
+            self.note_upload(user, st.share, &published);
             // Charge on the actual finalized size, not the declared one —
             // `create_session`'s check above only pre-checked, it never
             // charged (`quota.rs`: check and charge are
@@ -1890,9 +1982,11 @@ impl sc_http::upload_api::UploadApi for UploadBridge {
                 .patch(&root, id, user, 0, initial_body, None)
                 .map_err(Self::upload_err)?;
             if Some(new_offset) == total_len {
-                self.engine
+                let published = self
+                    .engine
                     .finalize(&root, id, user)
                     .map_err(Self::upload_err)?;
+                self.note_upload(user, root.id(), &published);
                 self.core.charge_quota(user, new_offset as i64);
             }
             new_offset
@@ -3084,7 +3178,7 @@ mod upload_bridge_tests {
             )
             .unwrap(),
         );
-        (UploadBridge { engine, core }, acl, dir)
+        (UploadBridge { engine, core, journal: None }, acl, dir)
     }
 
     #[test]
@@ -3753,6 +3847,7 @@ mod search_bridge_tests {
             false,
             None,
             Arc::new(sc_search::IndexSettingsStore::open_in_memory(false).unwrap()),
+            None,
         );
         <CoreBridge as hapi::CoreApi>::write_text(
             &core_bridge,
@@ -3785,6 +3880,7 @@ mod search_bridge_tests {
             false,
             None,
             Arc::new(sc_search::IndexSettingsStore::open_in_memory(false).unwrap()),
+            None,
         );
         <CoreBridge as hapi::CoreApi>::delete(
             &core_bridge,
@@ -3819,6 +3915,7 @@ mod search_bridge_tests {
             false,
             None,
             Arc::new(sc_search::IndexSettingsStore::open_in_memory(false).unwrap()),
+            None,
         );
         hapi::CoreApi::rename(&core_bridge, USER, "/root/old.txt", "new.txt")
             .expect("rename through CoreBridge");
@@ -3845,6 +3942,7 @@ mod search_bridge_tests {
             false,
             None,
             Arc::new(sc_search::IndexSettingsStore::open_in_memory(false).unwrap()),
+            None,
         );
         hapi::CoreApi::mkdir(&core_bridge, USER, "/root/newdir").unwrap();
         <CoreBridge as hapi::CoreApi>::write_text(
@@ -3897,6 +3995,7 @@ mod search_bridge_tests {
             false,
             None,
             Arc::new(sc_search::IndexSettingsStore::open_in_memory(false).unwrap()),
+            None,
         );
         let fresh = hapi::CoreApi::index_settings(&core_bridge).unwrap();
         assert!(!fresh.name_enabled);
@@ -4020,6 +4119,7 @@ mod search_bridge_tests {
             false,
             None,
             Arc::new(sc_search::IndexSettingsStore::open_in_memory(false).unwrap()),
+            None,
         );
         let est = hapi::CoreApi::index_estimate(&core_bridge).expect("estimate");
         assert_eq!(

@@ -254,6 +254,17 @@ async fn a_chunked_upload_over_webdav_assembles_the_original_bytes() {
     assert_eq!(resp.status(), StatusCode::OK);
     assert_eq!(body_bytes(resp).await, whole);
 
+    // 7. Recorded against the account that uploaded it, at the path the engine
+    //    published, so the phone's Recent screen shows what the phone did.
+    //    Nothing about accounts crosses the compat isolation boundary to make
+    //    this work: the port still answers `()`.
+    let uid = f.app.auth.find_user("alice").unwrap().unwrap().id;
+    let journal = f.app.journal.as_ref().expect("the journal opened");
+    let rows = journal.newest(uid, i64::MIN);
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].path, "big.bin");
+    assert_eq!(rows[0].op, sc_server::journal::WriteOp::Upload);
+
     // The session is gone with it — a replayed MOVE cannot address a freed
     // session id through the same tid.
     let resp = send(

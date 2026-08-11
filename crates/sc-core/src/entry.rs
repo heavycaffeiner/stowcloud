@@ -114,6 +114,14 @@ pub struct OpResult {
     pub ok: bool,
     pub error: Option<CoreError>,
     pub will_copy: bool,
+    /// Where the operation actually published, relative to the batch's
+    /// destination share, or `None` when it published nothing.
+    ///
+    /// No caller can reconstruct this: `OnConflict::Rename` lands at a name
+    /// `unique_name` chose, and `OnConflict::Skip` reports `ok` for a copy it
+    /// did not make. A dry run also sets `None`, because a dry run creates
+    /// nothing.
+    pub created: Option<sc_vfs::SafePath>,
 }
 
 #[derive(Clone, Debug)]

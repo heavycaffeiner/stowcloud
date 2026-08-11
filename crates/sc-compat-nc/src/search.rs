@@ -18,37 +18,49 @@ pub struct VendorFilters {
     pub file_id: Option<i64>,
 }
 
-/// Interpret `(namespace, local-name, literal)` triples.
+/// Interpret `(namespace, local-name, literal, in_disjunction)` tuples, and
+/// report back the comparisons that were not read.
 ///
 /// The literal spelling differs by client: Android sends `yes` for the
 /// favourites flag and iOS sends `1`. Both mean the same thing and both are
 /// accepted; anything else is read as "not filtering on it" rather than as an
 /// error, because a client that sends a third spelling wants its favourites,
 /// not a 400.
-pub fn vendor_filters<'a, I>(terms: I) -> VendorFilters
+///
+/// The second half of the return names every comparison this vocabulary does
+/// not read and that sat outside a `d:or`. Dropping one of those would answer a
+/// wider query than was asked, so the caller refuses the request; a disjunct is
+/// left out of the list, because dropping it narrows. `sc-dav` cannot make this
+/// call: it deliberately does not know what `oc:favorite` means, so it cannot
+/// tell a claimed property from an unclaimed one.
+pub fn vendor_filters<'a, I>(terms: I) -> (VendorFilters, Vec<String>)
 where
-    I: IntoIterator<Item = (&'a str, &'a str, &'a str)>,
+    I: IntoIterator<Item = (&'a str, &'a str, &'a str, bool)>,
 {
     let mut f = VendorFilters::default();
-    for (ns, name, literal) in terms {
-        if ns != NS_OC && ns != NS_NC {
-            continue;
-        }
-        match name {
-            "favorite" => {
-                if matches!(literal.trim(), "1" | "yes" | "true") {
-                    f.favourites_only = true;
+    let mut unread = Vec::new();
+    for (ns, name, literal, in_disjunction) in terms {
+        let read = (ns == NS_OC || ns == NS_NC)
+            && match name {
+                "favorite" => {
+                    if matches!(literal.trim(), "1" | "yes" | "true") {
+                        f.favourites_only = true;
+                    }
+                    true
                 }
-            }
-            "fileid" | "id" => {
-                if let Ok(n) = literal.trim().parse::<i64>() {
-                    f.file_id = Some(n);
+                "fileid" | "id" => {
+                    if let Ok(n) = literal.trim().parse::<i64>() {
+                        f.file_id = Some(n);
+                    }
+                    true
                 }
-            }
-            _ => {}
+                _ => false,
+            };
+        if !read && !in_disjunction {
+            unread.push(format!("{{{ns}}}{name}"));
         }
     }
-    f
+    (f, unread)
 }
 
 /// The `(namespace, local-name)` of the favourites report both clients send.
@@ -126,18 +138,28 @@ mod tests {
     #[test]
     fn both_clients_spellings_of_the_favourites_flag_are_accepted() {
         // Android sends `yes`, iOS sends `1`.
-        assert!(vendor_filters([(NS_OC, "favorite", "yes")]).favourites_only);
-        assert!(vendor_filters([(NS_OC, "favorite", "1")]).favourites_only);
-        assert!(!vendor_filters([(NS_OC, "favorite", "0")]).favourites_only);
+        assert!(vendor_filters([(NS_OC, "favorite", "yes", false)]).0.favourites_only);
+        assert!(vendor_filters([(NS_OC, "favorite", "1", false)]).0.favourites_only);
+        assert!(!vendor_filters([(NS_OC, "favorite", "0", false)]).0.favourites_only);
     }
 
     #[test]
     fn a_file_id_comparison_is_read_as_a_lookup() {
         assert_eq!(
-            vendor_filters([(NS_OC, "fileid", "4711")]).file_id,
+            vendor_filters([(NS_OC, "fileid", "4711", false)]).0.file_id,
             Some(4711)
         );
-        assert_eq!(vendor_filters([(NS_OC, "fileid", "abc")]).file_id, None);
+        assert_eq!(vendor_filters([(NS_OC, "fileid", "abc", false)]).0.file_id, None);
+    }
+
+    /// A conjunct nobody read would widen the answer, so it is reported. The
+    /// same comparison inside a `d:or` narrows when dropped, so it is not.
+    #[test]
+    fn an_unread_conjunct_is_reported_and_an_unread_disjunct_is_not() {
+        let (_, unread) = vendor_filters([(NS_OC, "size", "0", false)]);
+        assert_eq!(unread, vec![format!("{{{NS_OC}}}size")]);
+        let (_, unread) = vendor_filters([(NS_OC, "size", "0", true)]);
+        assert!(unread.is_empty());
     }
 
     #[test]

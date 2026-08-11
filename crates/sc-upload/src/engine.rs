@@ -560,7 +560,7 @@ impl UploadEngine {
         user: UserId,
         total: u64,
         mtime_ns: Option<i128>,
-    ) -> Result<(), UploadError> {
+    ) -> Result<SafePath, UploadError> {
         let cs = self.load_cached(id)?;
         {
             let row = cs.row.lock();
@@ -633,19 +633,28 @@ impl UploadEngine {
             }
         }
 
-        self.finalize_locked(&cs, id, share)?;
+        let published = self.finalize_locked(&cs, id, share)?;
 
         if let Some(sd) = spool_dir_to_remove {
             let _ = share.rmdir(&sd); // best-effort; should be empty
         }
-        Ok(())
+        Ok(published)
     }
 
     // ---------------------------------------------------------------
     // shared finalize core (§5.3) — native and NC paths converge here
     // ---------------------------------------------------------------
 
-    pub fn finalize(&self, share: &ShareRoot, id: SessionId, user: UserId) -> Result<(), UploadError> {
+    /// Publish the assembled upload, and answer the share-relative path it
+    /// landed at. `SessionStatus` carries the share and the offsets but not
+    /// the destination, so three of the four callers cannot name the file
+    /// they just published without this.
+    pub fn finalize(
+        &self,
+        share: &ShareRoot,
+        id: SessionId,
+        user: UserId,
+    ) -> Result<SafePath, UploadError> {
         let cs = self.load_cached(id)?;
         {
             let row = cs.row.lock();
@@ -656,7 +665,7 @@ impl UploadEngine {
         self.finalize_locked(&cs, id, share)
     }
 
-    fn finalize_locked(&self, cs: &Arc<CachedSession>, id: SessionId, share: &ShareRoot) -> Result<(), UploadError> {
+    fn finalize_locked(&self, cs: &Arc<CachedSession>, id: SessionId, share: &ShareRoot) -> Result<SafePath, UploadError> {
         let (total, if_match, mtime, verify) = {
             let row = cs.row.lock();
             let total = row.total_len.ok_or(UploadError::Incomplete)?;
@@ -753,7 +762,7 @@ impl UploadEngine {
 
         let conn = self.db.lock();
         db::delete_row(&conn, id)?;
-        Ok(())
+        Ok(dest_path)
     }
 
     /// Compare the finished file's digest against `expected`

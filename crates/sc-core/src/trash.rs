@@ -164,7 +164,18 @@ impl crate::Core {
         Ok(out)
     }
 
-    pub fn trash_restore(&self, user: UserId, share: ShareId, id: &str) -> Result<(), CoreError> {
+    /// Restore one trashed entry, and answer where it landed.
+    ///
+    /// The path is returned rather than derived by the caller because only
+    /// this function knows it: `TrashEntry::orig_path` is empty for an entry
+    /// written before that encoding existed, and those are exactly the entries
+    /// that take the legacy fallback below and land in the share root.
+    pub fn trash_restore(
+        &self,
+        user: UserId,
+        share: ShareId,
+        id: &str,
+    ) -> Result<SafePath, CoreError> {
         let root = self.share(share).ok_or(CoreError::NotFound)?;
         let decision = self.acl.evaluate(user, share, &SafePath::root(), Perms::CREATE);
         if !decision.is_allowed() {
@@ -210,7 +221,7 @@ impl crate::Core {
         }
         root.rename(&trash_path, &dest_path, true)?;
         self.mark_dirty(share, &dest_path);
-        Ok(())
+        Ok(dest_path)
     }
 
     pub fn trash_purge(&self, user: UserId, share: ShareId, id: Option<&str>) -> Result<(), CoreError> {

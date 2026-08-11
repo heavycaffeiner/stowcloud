@@ -290,6 +290,7 @@ pub struct DavUploads {
     /// `/dav/{label}/{rest}` can be reduced to the `{label}/{rest}` vpath
     /// `sc_core` speaks. Read once at wiring time.
     dav_prefix: Arc<str>,
+    journal: Option<Arc<crate::journal::WriteJournal>>,
 }
 
 impl DavUploads {
@@ -444,8 +445,20 @@ impl DavUploads {
         let existed = self.core.stat_entry(user, &dest).is_ok();
 
         let root = self.root(share)?;
-        self.uploads
+        // The engine's own answer, not the vpath in scope: one value for all
+        // four finalize sites is one fewer way for two of them to disagree.
+        let published = self
+            .uploads
             .assemble_and_finalize(&root, session, user, total, mtime_ns)?;
+        if let Some(j) = &self.journal {
+            j.note(
+                user,
+                share,
+                &published,
+                crate::journal::WriteOp::Upload,
+                crate::journal::now_ns(),
+            );
+        }
         // The alias dies with the session; leaving it would let the tid keep
         // addressing a freed session id.
         self.uploads.unbind_alias(tid, user)?;
@@ -527,11 +540,13 @@ pub fn router(
     core: Arc<sc_core::Core>,
     uploads: Arc<sc_upload::UploadEngine>,
     dav: &Arc<sc_dav::DavService>,
+    journal: Option<Arc<crate::journal::WriteJournal>>,
 ) -> Router {
     let state = Arc::new(DavUploads {
         core,
         uploads,
         dav_prefix: Arc::from(dav.config().prefix.trim_end_matches('/')),
+        journal,
     });
     Router::new()
         .route(&format!("{PREFIX}/{{*rest}}"), any(handle))

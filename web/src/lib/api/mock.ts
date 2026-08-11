@@ -27,7 +27,6 @@ import {
   type ArchiveSettingsReq,
   type AuditPage,
   type FolderSize,
-  type RecentCompleteness,
   type RecentHit,
   type AuditQuery,
   type AuditRow,
@@ -736,11 +735,12 @@ async function folderSize(path: string): Promise<FolderSize> {
   return { bytes, files }
 }
 
-/** Every file in the seeded tree, newest first. `since_days` is honoured so
- *  the tab's own controls do something; `scope` narrows the walk. */
+/** Every file in the seeded tree, newest first, as though this account had
+ *  written all of them. `since_days` is honoured so the tab's own controls do
+ *  something; `scope` narrows it. */
 async function recentList(
   opts: { limit?: number; sinceDays?: number; scope?: string } = {}
-): Promise<{ hits: RecentHit[]; completeness: RecentCompleteness }> {
+): Promise<{ hits: RecentHit[] }> {
   await delay(120)
   const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500)
   const sinceDays = Math.min(Math.max(opts.sinceDays ?? 30, 1), 365)
@@ -760,7 +760,9 @@ async function recentList(
           share: vpath.split('/')[0] ?? '',
           name: child.name,
           size: child.size,
-          mtime_ns: child.mtime_ns
+          mtime_ns: child.mtime_ns,
+          at_ns: child.mtime_ns,
+          op: 'upload'
         })
       }
     }
@@ -770,7 +772,7 @@ async function recentList(
     if (a.mtime_ns === b.mtime_ns) return a.vpath.localeCompare(b.vpath)
     return BigInt(a.mtime_ns) < BigInt(b.mtime_ns) ? 1 : -1
   })
-  return { hits: hits.slice(0, limit), completeness: { state: 'full' } }
+  return { hits: hits.slice(0, limit) }
 }
 
 // ── text editor (`/edit/[...path]`) ──

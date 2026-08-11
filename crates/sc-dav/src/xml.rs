@@ -460,6 +460,32 @@ pub fn parse_report_body(body: &[u8], max_body: usize) -> DavResult<ReportBody> 
     Ok(out)
 }
 
+/// The one `d:getcontenttype` literal that is a resource kind rather than a
+/// media type. Plain it means folders only; under a `d:not`, files only.
+const DIRECTORY_CONTENT_TYPE: &str = "httpd/unix-directory";
+
+/// An open `d:not`.
+struct OpenNot {
+    /// `stack.len()` at the moment it opened, so a direct child comparison is
+    /// the one that opened at `depth + 1`.
+    depth: usize,
+    in_disjunction: bool,
+    /// Whether the negation it wraps was one this parser can invert.
+    understood: bool,
+}
+
+/// Dropping a predicate that sits outside any `d:or` widens the answer, so the
+/// request is refused instead. Inside one it narrows, which this parser has
+/// always erred towards, so it is dropped as before.
+fn refuse_unless_disjunct(in_disjunction: bool, what: &str) -> DavResult<()> {
+    if in_disjunction {
+        return Ok(());
+    }
+    Err(DavError::BadRequest(format!(
+        "this search constrains {what}, which this server cannot apply"
+    )))
+}
+
 /// RFC 5323 `DAV:searchrequest` carrying a `DAV:basicsearch`.
 ///
 /// # What is deliberately not honoured
@@ -467,26 +493,30 @@ pub fn parse_report_body(body: &[u8], max_body: usize) -> DavResult<ReportBody> 
 /// The boolean structure of `d:where` is flattened. Every comparison in the
 /// tree is collected and applied conjunctively, except media-type prefixes,
 /// which accumulate into a set matched disjunctively because that is the one
-/// place either client uses `d:or` (`image/%` or `video/%`). A `d:not` is
-/// ignored rather than inverted.
+/// place either client uses `d:or` (`image/%` or `video/%`). Applying a
+/// disjunct conjunctively answers a narrower query than was asked, which is the
+/// direction this parser errs in on purpose.
 ///
-/// Refusing the queries that do not fit would fail the whole search box for a
-/// shape no client actually sends; answering a superset would be worse. In
-/// practice the union of both clients' query bodies is small and fixed, and
-/// every member of it maps exactly.
+/// Dropping a conjunct is the other direction and is not tolerated: a bound the
+/// server silently drops turns "modified since Tuesday" into "everything". So a
+/// predicate this parser cannot apply and that sits outside any `d:or` makes
+/// the whole request a 400 naming it. One negation is understood, the
+/// directory content type; every other `d:not` falls under the same rule.
 pub fn parse_searchrequest(
     body: &[u8],
     max_body: usize,
 ) -> DavResult<crate::search::SearchRequest> {
-    use crate::search::{like_needle, parse_http_date_ns, SearchOp, SearchTerm};
+    use crate::search::{like_needle, parse_search_date_ns, SearchOp, SearchTerm};
 
     let mut sc = Scanner::new(body, max_body)?;
     let mut stack: Vec<PropName> = Vec::new();
     let mut saw_root = false;
+    let mut nots: Vec<OpenNot> = Vec::new();
 
     // Which comparison element we are inside, and the property/literal it has
-    // named so far. A comparison is `<op><prop><NAME/></prop><literal>V</literal></op>`.
-    let mut op: Option<(SearchOp, Option<PropName>, String, usize)> = None;
+    // named so far, plus whether it sat inside a `d:or`. A comparison is
+    // `<op><prop><NAME/></prop><literal>V</literal></op>`.
+    let mut op: Option<(SearchOp, Option<PropName>, String, usize, bool)> = None;
     let mut select: Vec<PropName> = Vec::new();
     let mut select_all = false;
     let mut scope_href = String::new();
@@ -536,15 +566,33 @@ pub fn parse_searchrequest(
                 };
                 if let Some(o) = as_op {
                     if op.is_none() && !empty {
-                        op = Some((o, None, String::new(), stack.len()));
+                        let in_or = stack.iter().any(|p| p.is_dav("or"));
+                        op = Some((o, None, String::new(), stack.len(), in_or));
                         stack.push(name);
                         continue;
                     }
                 }
 
+                if name.is_dav("not") {
+                    let in_disjunction = stack.iter().any(|p| p.is_dav("or"));
+                    if empty {
+                        // A negation of nothing negates nothing this parser can
+                        // name, so it falls under the same rule as any other.
+                        refuse_unless_disjunct(in_disjunction, "an empty DAV:not")?;
+                    } else {
+                        nots.push(OpenNot {
+                            depth: stack.len(),
+                            in_disjunction,
+                            understood: false,
+                        });
+                        stack.push(name);
+                    }
+                    continue;
+                }
+
                 // Inside a comparison, the first element under `d:prop` is the
                 // property being compared.
-                if let Some((_, prop, _, _)) = op.as_mut() {
+                if let Some((_, prop, _, _, _)) = op.as_mut() {
                     let parent_is_prop = stack.last().map(|p| p.is_dav("prop")).unwrap_or(false);
                     if parent_is_prop && prop.is_none() {
                         *prop = Some(name.clone());
@@ -568,9 +616,12 @@ pub fn parse_searchrequest(
                     // so the `d:eq`-on-a-property spelling some clients use
                     // instead is handled separately, below.
                     //
-                    // A `d:not` around it is ignored rather than inverted,
-                    // like every other boolean this parser flattens.
-                    is_collection = Some(true);
+                    // Under a `d:not` it is left alone: asserting it there
+                    // would assert the opposite of what was asked, and the
+                    // enclosing negation is refused or dropped on its own.
+                    if nots.is_empty() {
+                        is_collection = Some(true);
+                    }
                 } else if name.is_dav("href") && !empty {
                     text_sink = Some(("href", String::new(), stack.len()));
                 } else if name.is_dav("depth") && !empty {
@@ -601,7 +652,7 @@ pub fn parse_searchrequest(
                             "depth" => depth_infinity = buf.eq_ignore_ascii_case("infinity"),
                             "nresults" => limit = buf.parse().unwrap_or(0),
                             "literal" => {
-                                if let Some((_, _, lit, _)) = op.as_mut() {
+                                if let Some((_, _, lit, _, _)) = op.as_mut() {
                                     *lit = buf;
                                 }
                             }
@@ -610,17 +661,55 @@ pub fn parse_searchrequest(
                     }
                 }
                 stack.pop();
-                if let Some((_, _, _, at)) = op.as_ref() {
+                if let Some(n) = nots.last() {
+                    if stack.len() == n.depth {
+                        let n = nots.pop().expect("checked above");
+                        if !n.understood {
+                            refuse_unless_disjunct(
+                                n.in_disjunction,
+                                "a DAV:not this server cannot invert",
+                            )?;
+                        }
+                        continue;
+                    }
+                }
+                if let Some((_, _, _, at, _)) = op.as_ref() {
                     if stack.len() == *at {
-                        let (o, prop, literal, _) = op.take().unwrap();
-                        let Some(prop) = prop else { continue };
+                        let (o, prop, literal, at, in_or) = op.take().unwrap();
+                        let Some(prop) = prop else {
+                            refuse_unless_disjunct(in_or, "a comparison naming no property")?;
+                            continue;
+                        };
+                        // The directory content type is a resource kind, not a
+                        // media type, and it is the only negation either client
+                        // sends. Plain it means folders only; negated, files.
+                        let is_dir_type = prop.is_dav("getcontenttype")
+                            && o == SearchOp::Eq
+                            && literal.trim() == DIRECTORY_CONTENT_TYPE;
+                        if let Some(n) = nots.last_mut() {
+                            if is_dir_type && !n.understood && at == n.depth + 1 {
+                                n.understood = true;
+                                is_collection = Some(false);
+                            } else {
+                                refuse_unless_disjunct(
+                                    in_or || n.in_disjunction,
+                                    "a negated comparison this server cannot invert",
+                                )?;
+                            }
+                            continue;
+                        }
                         if prop.ns != NS_DAV {
                             vendor.push(SearchTerm {
                                 ns: prop.ns,
                                 name: prop.name,
                                 op: o,
                                 literal,
+                                in_disjunction: in_or,
                             });
+                            continue;
+                        }
+                        if is_dir_type {
+                            is_collection = Some(true);
                             continue;
                         }
                         match (prop.name.as_str(), o) {
@@ -636,16 +725,28 @@ pub fn parse_searchrequest(
                                     content_type_prefixes.push(needle);
                                 }
                             }
+                            // Repeated bounds in one `d:where` are a
+                            // conjunction, so the lower bound is the greatest
+                            // of them and the upper bound the least. Android's
+                            // Recent body sends two lower bounds and one upper.
                             ("getlastmodified", SearchOp::Gt) => {
-                                mtime_from_ns = Some(parse_http_date_ns(&literal)?);
+                                let v = parse_search_date_ns(&literal)?;
+                                mtime_from_ns =
+                                    Some(mtime_from_ns.map_or(v, |c: i128| c.max(v)));
                             }
                             ("getlastmodified", SearchOp::Lt) => {
-                                mtime_to_ns = Some(parse_http_date_ns(&literal)?);
+                                let v = parse_search_date_ns(&literal)?;
+                                mtime_to_ns = Some(mtime_to_ns.map_or(v, |c: i128| c.min(v)));
                             }
                             ("iscollection", _) | ("is-collection", _) => {
                                 is_collection = Some(matches!(literal.trim(), "1" | "true" | "T"));
                             }
-                            _ => {}
+                            _ => {
+                                refuse_unless_disjunct(
+                                    in_or,
+                                    &format!("DAV:{} with this operator", prop.name),
+                                )?;
+                            }
                         }
                     }
                 }
@@ -939,6 +1040,156 @@ mod search_tests {
         assert_eq!(r.vendor[0].op, SearchOp::Eq);
         assert_eq!(r.vendor[0].literal, "yes");
         assert!(r.name_contains.is_none(), "nothing DAV: was invented from it");
+    }
+
+    /// Android's Recent screen sends two lower bounds and one upper bound on
+    /// `d:getlastmodified` in one `d:and`, as Unix seconds and as an ISO
+    /// datetime. Keeping whichever was read last is right only by accident; a
+    /// conjunction of lower bounds is their maximum.
+    #[test]
+    fn the_android_recent_body_merges_its_three_bounds() {
+        let r = parse(
+            r#"<d:searchrequest xmlns:d="DAV:"><d:basicsearch>
+                 <d:from><d:scope><d:href>/files/alice</d:href><d:depth>infinity</d:depth></d:scope></d:from>
+                 <d:where><d:and>
+                   <d:gt><d:prop><d:getlastmodified/></d:prop><d:literal>1785321600</d:literal></d:gt>
+                   <d:lt><d:prop><d:getlastmodified/></d:prop><d:literal>1786531200</d:literal></d:lt>
+                   <d:gt><d:prop><d:getlastmodified/></d:prop><d:literal>2026-08-04T13:22:05Z</d:literal></d:gt>
+                 </d:and></d:where>
+                 <d:orderby><d:order><d:prop><d:getlastmodified/></d:prop><d:descending/></d:order></d:orderby>
+                 <d:limit><d:nresults>100</d:nresults></d:limit>
+               </d:basicsearch></d:searchrequest>"#,
+        );
+        assert_eq!(r.mtime_from_ns, Some(1_785_849_725i128 * 1_000_000_000));
+        assert_eq!(r.mtime_to_ns, Some(1_786_531_200i128 * 1_000_000_000));
+        assert!(r.newest_first);
+        assert_eq!(r.limit, 100);
+    }
+
+    /// The gallery pages by a Unix-second upper bound and names two media
+    /// types, so it is not a recency request and must not become one.
+    #[test]
+    fn the_android_gallery_body_keeps_its_media_types() {
+        let r = parse(
+            r#"<d:searchrequest xmlns:d="DAV:"><d:basicsearch>
+                 <d:where><d:and>
+                   <d:or>
+                     <d:like><d:prop><d:getcontenttype/></d:prop><d:literal>image/%</d:literal></d:like>
+                     <d:like><d:prop><d:getcontenttype/></d:prop><d:literal>video/%</d:literal></d:like>
+                   </d:or>
+                   <d:lt><d:prop><d:getlastmodified/></d:prop><d:literal>1786531200</d:literal></d:lt>
+                 </d:and></d:where>
+                 <d:orderby><d:order><d:prop><d:getlastmodified/></d:prop><d:descending/></d:order></d:orderby>
+               </d:basicsearch></d:searchrequest>"#,
+        );
+        assert_eq!(r.content_type_prefixes, vec!["image/", "video/"]);
+        assert_eq!(r.mtime_to_ns, Some(1_786_531_200i128 * 1_000_000_000));
+    }
+
+    /// iOS asks for "not a directory" as a negated content-type comparison,
+    /// beside a vendor-property disjunct nothing reads. The negation is a resource
+    /// kind, so it becomes the files-only filter rather than a media type; the
+    /// disjunct is dropped, which narrows, and is reported as a disjunct so the
+    /// vendor layer does not refuse it either.
+    #[test]
+    fn the_ios_recent_body_asks_for_files_only() {
+        let r = parse(
+            r#"<d:searchrequest xmlns:d="DAV:" xmlns:v="urn:vendor:example"><d:basicsearch>
+                 <d:where><d:and>
+                   <d:gt><d:prop><d:getlastmodified/></d:prop><d:literal>1785321600</d:literal></d:gt>
+                   <d:or>
+                     <d:not><d:eq><d:prop><d:getcontenttype/></d:prop><d:literal>httpd/unix-directory</d:literal></d:eq></d:not>
+                     <d:eq><d:prop><v:size/></d:prop><d:literal>0</d:literal></d:eq>
+                   </d:or>
+                 </d:and></d:where>
+                 <d:orderby><d:order><d:prop><d:getlastmodified/></d:prop><d:descending/></d:order></d:orderby>
+               </d:basicsearch></d:searchrequest>"#,
+        );
+        assert_eq!(r.is_collection, Some(false));
+        assert!(
+            r.content_type_prefixes.is_empty(),
+            "the directory content type is a resource kind, not a media type"
+        );
+        assert_eq!(r.vendor.len(), 1);
+        assert!(r.vendor[0].in_disjunction);
+    }
+
+    /// The same comparison unnegated is the folders-only query.
+    #[test]
+    fn an_unnegated_directory_content_type_asks_for_folders_only() {
+        let r = parse(
+            r#"<d:searchrequest xmlns:d="DAV:"><d:basicsearch><d:where>
+                 <d:eq><d:prop><d:getcontenttype/></d:prop><d:literal>httpd/unix-directory</d:literal></d:eq>
+               </d:where></d:basicsearch></d:searchrequest>"#,
+        );
+        assert_eq!(r.is_collection, Some(true));
+        assert!(r.content_type_prefixes.is_empty());
+    }
+
+    /// iOS's media timeline writes a local-offset datetime.
+    #[test]
+    fn the_ios_media_body_reads_its_offset_datetime() {
+        let r = parse(
+            r#"<d:searchrequest xmlns:d="DAV:"><d:basicsearch>
+                 <d:where><d:and>
+                   <d:or>
+                     <d:like><d:prop><d:getcontenttype/></d:prop><d:literal>image/%</d:literal></d:like>
+                     <d:like><d:prop><d:getcontenttype/></d:prop><d:literal>video/%</d:literal></d:like>
+                   </d:or>
+                   <d:lt><d:prop><d:getlastmodified/></d:prop><d:literal>2026-08-11T00:00:00+09:00</d:literal></d:lt>
+                 </d:and></d:where>
+               </d:basicsearch></d:searchrequest>"#,
+        );
+        // 2026-08-11T00:00:00+09:00 is 2026-08-10T15:00:00Z.
+        assert_eq!(r.mtime_to_ns, Some(1_786_374_000i128 * 1_000_000_000));
+    }
+
+    /// Dropping a conjunct answers a wider query than was asked, so the request
+    /// is refused and the message names what could not be applied.
+    #[test]
+    fn an_unapplicable_conjunct_is_refused_by_name() {
+        for (body, needle) in [
+            (
+                r#"<d:searchrequest xmlns:d="DAV:"><d:basicsearch><d:where>
+                     <d:eq><d:prop><d:getcontentlanguage/></d:prop><d:literal>en</d:literal></d:eq>
+                   </d:where></d:basicsearch></d:searchrequest>"#,
+                "getcontentlanguage",
+            ),
+            (
+                r#"<d:searchrequest xmlns:d="DAV:"><d:basicsearch><d:where>
+                     <d:eq><d:prop/><d:literal>en</d:literal></d:eq>
+                   </d:where></d:basicsearch></d:searchrequest>"#,
+                "naming no property",
+            ),
+            (
+                r#"<d:searchrequest xmlns:d="DAV:"><d:basicsearch><d:where>
+                     <d:not><d:like><d:prop><d:displayname/></d:prop><d:literal>%x%</d:literal></d:like></d:not>
+                   </d:where></d:basicsearch></d:searchrequest>"#,
+                "invert",
+            ),
+        ] {
+            match parse_searchrequest(body.as_bytes(), 64 * 1024) {
+                Err(DavError::BadRequest(m)) => {
+                    assert!(m.contains(needle), "{m:?} does not name {needle:?}")
+                }
+                other => panic!("expected a named refusal, got {other:?}"),
+            }
+        }
+    }
+
+    /// The same predicates inside a `d:or` are dropped, because the remaining
+    /// disjuncts narrow the answer rather than widening it.
+    #[test]
+    fn an_unapplicable_disjunct_is_still_dropped() {
+        let r = parse(
+            r#"<d:searchrequest xmlns:d="DAV:"><d:basicsearch><d:where><d:or>
+                 <d:like><d:prop><d:displayname/></d:prop><d:literal>%x%</d:literal></d:like>
+                 <d:eq><d:prop><d:getcontentlanguage/></d:prop><d:literal>en</d:literal></d:eq>
+                 <d:not><d:eq><d:prop><d:iscollection/></d:prop><d:literal>1</d:literal></d:eq></d:not>
+               </d:or></d:where></d:basicsearch></d:searchrequest>"#,
+        );
+        assert_eq!(r.name_contains.as_deref(), Some("x"));
+        assert_eq!(r.is_collection, None);
     }
 
     #[test]

@@ -73,6 +73,7 @@ fn trash_shares(core: &sc_core::Core, user: UserId) -> Vec<ShareId> {
 pub struct TrashApi {
     pub core: Arc<sc_core::Core>,
     pub instance_id: Arc<str>,
+    pub journal: Option<Arc<crate::journal::WriteJournal>>,
 }
 
 impl TrashApi {
@@ -247,7 +248,21 @@ impl TrashApi {
             return StatusCode::NOT_FOUND.into_response();
         }
         match self.core.trash_restore(user, share, id) {
-            Ok(()) => StatusCode::CREATED.into_response(),
+            Ok(restored) => {
+                // Recorded here as well as on the native side: a restore is a
+                // restore whichever surface asked for it, and the two lists
+                // are meant to agree.
+                if let Some(j) = &self.journal {
+                    j.note(
+                        user,
+                        share,
+                        &restored,
+                        crate::journal::WriteOp::Restore,
+                        crate::journal::now_ns(),
+                    );
+                }
+                StatusCode::CREATED.into_response()
+            }
             Err(sc_core::CoreError::Conflict) => StatusCode::PRECONDITION_FAILED.into_response(),
             Err(sc_core::CoreError::Denied { .. }) | Err(sc_core::CoreError::NotFound) => {
                 StatusCode::NOT_FOUND.into_response()

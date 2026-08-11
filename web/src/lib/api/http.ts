@@ -41,7 +41,6 @@ import {
   type PathsSettingsReq,
   type FolderSize,
   type ReadFileResponse,
-  type RecentCompleteness,
   type RecentHit,
   type SearchSettingsReq,
   type SessionInfo,
@@ -232,14 +231,12 @@ async function folderSize(path: string): Promise<FolderSize> {
 }
 
 /**
- * `GET /api/recent` — the newest files by mtime across every readable root.
- *
- * A `full` completeness is the newest N under those roots; a `truncated` one
- * is the newest N of what the walk's budget reached, and says so.
+ * `GET /api/recent` — every file this account wrote through this server inside
+ * the window, newest first. Exact: there is no walk to truncate.
  */
 async function recentList(
   opts: { limit?: number; sinceDays?: number; scope?: string } = {}
-): Promise<{ hits: RecentHit[]; completeness: RecentCompleteness }> {
+): Promise<{ hits: RecentHit[] }> {
   return request(`/recent${qs({ limit: opts.limit, since_days: opts.sinceDays, scope: opts.scope })}`)
 }
 

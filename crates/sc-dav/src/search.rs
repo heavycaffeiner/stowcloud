@@ -37,6 +37,13 @@ pub struct SearchTerm {
     pub name: String,
     pub op: SearchOp,
     pub literal: String,
+    /// The comparison sat inside a `d:or`.
+    ///
+    /// A fact about the document, not about the property: this crate does not
+    /// know what a vendor property means, so it cannot decide whether ignoring
+    /// one is safe. The claiming source can, and needs this to make the call:
+    /// dropping a disjunct narrows the answer, dropping a conjunct widens it.
+    pub in_disjunction: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -221,16 +228,203 @@ pub(crate) fn like_needle(literal: &str) -> (String, bool) {
     (literal.trim_matches('%').to_string(), leading)
 }
 
-/// `d:getlastmodified` literals are RFC 1123 dates; both clients send them that
-/// way. Anything unparseable makes the whole request a 400, because a bound the
-/// server silently drops turns "modified since Tuesday" into "everything".
-pub(crate) fn parse_http_date_ns(s: &str) -> DavResult<i128> {
-    httpdate::parse_http_date(s.trim())
-        .map_err(|_| DavError::BadRequest("a date literal is not an HTTP-date".into()))
+/// A `d:getlastmodified` literal, in any of the three forms the shipped clients
+/// and the ecosystem's own documentation use.
+///
+/// In order: a bare decimal integer of Unix **seconds**, an ISO 8601 / RFC 3339
+/// datetime, an HTTP-date. Anything else makes the whole request a 400, because
+/// a bound the server silently drops turns "modified since Tuesday" into
+/// "everything".
+pub(crate) fn parse_search_date_ns(s: &str) -> DavResult<i128> {
+    let s = s.trim();
+    if let Some(secs) = parse_decimal(s) {
+        return Ok(i128::from(secs) * 1_000_000_000);
+    }
+    if let Some(ns) = parse_iso8601_ns(s) {
+        return Ok(ns);
+    }
+    httpdate::parse_http_date(s)
+        .map_err(|_| {
+            DavError::BadRequest(
+                "a date literal is not a Unix time, an ISO 8601 datetime or an HTTP-date".into(),
+            )
+        })
         .and_then(|t| {
             t.duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos() as i128)
                 .map_err(|_| DavError::BadRequest("a date literal predates the epoch".into()))
         })
+}
+
+/// A whole decimal integer, optionally signed. Not a prefix of one: `2026-08`
+/// has to fall through to the datetime reading rather than come back as 2026.
+fn parse_decimal(s: &str) -> Option<i64> {
+    let (sign, digits) = match s.strip_prefix('-') {
+        Some(rest) => (-1i64, rest),
+        None => (1i64, s),
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse::<i64>().ok().map(|n| sign * n)
+}
+
+/// Fixed-width unsigned field, all digits.
+fn field(s: &str, from: usize, to: usize) -> Option<i64> {
+    let part = s.get(from..to)?;
+    if !part.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    part.parse().ok()
+}
+
+/// `YYYY-MM-DDTHH:MM:SS`, optional fractional seconds, optional `Z`, `+HH:MM`,
+/// `-HH:MM`, `+HHMM` or `-HHMM`.
+///
+/// A missing offset is read as UTC. That is what the clients omitting one
+/// intend, and it is also what Android's local-time-plus-`Z` string literally
+/// says: guessing the device's offset would be inventing data.
+fn parse_iso8601_ns(s: &str) -> Option<i128> {
+    if s.len() < 19 {
+        return None;
+    }
+    let b = s.as_bytes();
+    if b[4] != b'-' || b[7] != b'-' || b[13] != b':' || b[16] != b':' {
+        return None;
+    }
+    if !matches!(b[10], b'T' | b't' | b' ') {
+        return None;
+    }
+    let year = field(s, 0, 4)?;
+    let month = field(s, 5, 7)?;
+    let day = field(s, 8, 10)?;
+    let hour = field(s, 11, 13)?;
+    let minute = field(s, 14, 16)?;
+    let second = field(s, 17, 19)?;
+    if !(1..=12).contains(&month) || day < 1 || day > days_in_month(year, month) {
+        return None;
+    }
+    // 60 is a leap second, which no clock here has and every client may still
+    // write. It carries into the next minute rather than being refused.
+    if hour > 23 || minute > 59 || second > 60 {
+        return None;
+    }
+
+    let mut rest = &s[19..];
+    let mut nanos: i128 = 0;
+    if let Some(frac) = rest.strip_prefix('.').or_else(|| rest.strip_prefix(',')) {
+        let n = frac.bytes().take_while(u8::is_ascii_digit).count();
+        if n == 0 {
+            return None;
+        }
+        for (i, c) in frac[..n].bytes().take(9).enumerate() {
+            nanos += i128::from(c - b'0') * 10i128.pow(8 - i as u32);
+        }
+        rest = &frac[n..];
+    }
+
+    let offset_secs = match rest {
+        "" | "Z" | "z" => 0,
+        _ => {
+            let sign = match rest.as_bytes()[0] {
+                b'+' => 1,
+                b'-' => -1,
+                _ => return None,
+            };
+            let t = &rest[1..];
+            let (oh, om) = match t.len() {
+                5 if t.as_bytes()[2] == b':' => (field(t, 0, 2)?, field(t, 3, 5)?),
+                4 => (field(t, 0, 2)?, field(t, 2, 4)?),
+                2 => (field(t, 0, 2)?, 0),
+                _ => return None,
+            };
+            if oh > 23 || om > 59 {
+                return None;
+            }
+            sign * (oh * 3600 + om * 60)
+        }
+    };
+
+    let secs = days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second
+        - offset_secs;
+    Some(i128::from(secs) * 1_000_000_000 + nanos)
+}
+
+fn days_in_month(year: i64, month: i64) -> i64 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
+/// Days between the epoch and a proleptic-Gregorian date, by the era method.
+fn days_from_civil(year: i64, month: i64, day: i64) -> i64 {
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+#[cfg(test)]
+mod date_tests {
+    use super::parse_search_date_ns;
+
+    const NS: i128 = 1_000_000_000;
+
+    #[test]
+    fn a_bare_integer_is_unix_seconds() {
+        assert_eq!(parse_search_date_ns("1785321600").unwrap(), 1_785_321_600 * NS);
+        assert_eq!(parse_search_date_ns(" 0 ").unwrap(), 0);
+        assert_eq!(parse_search_date_ns("-1").unwrap(), -NS);
+    }
+
+    #[test]
+    fn the_three_forms_agree_on_one_instant() {
+        let iso = parse_search_date_ns("2026-08-04T13:22:05Z").unwrap();
+        let http = parse_search_date_ns("Tue, 04 Aug 2026 13:22:05 GMT").unwrap();
+        let unix = parse_search_date_ns("1785849725").unwrap();
+        assert_eq!(iso, http);
+        assert_eq!(iso, unix);
+    }
+
+    #[test]
+    fn an_offset_moves_the_instant_and_a_missing_one_is_utc() {
+        let utc = parse_search_date_ns("2026-08-11T00:00:00Z").unwrap();
+        assert_eq!(
+            parse_search_date_ns("2026-08-11T00:00:00+09:00").unwrap(),
+            utc - 9 * 3600 * NS
+        );
+        assert_eq!(
+            parse_search_date_ns("2026-08-11T00:00:00+0900").unwrap(),
+            utc - 9 * 3600 * NS
+        );
+        assert_eq!(parse_search_date_ns("2026-08-11T00:00:00").unwrap(), utc);
+    }
+
+    #[test]
+    fn fractional_seconds_are_kept() {
+        let base = parse_search_date_ns("2026-08-11T00:00:00Z").unwrap();
+        assert_eq!(
+            parse_search_date_ns("2026-08-11T00:00:00.5Z").unwrap(),
+            base + NS / 2
+        );
+        assert_eq!(
+            parse_search_date_ns("2026-08-11T00:00:00.123456789Z").unwrap(),
+            base + 123_456_789
+        );
+    }
+
+    #[test]
+    fn nonsense_is_still_a_refusal() {
+        for s in ["", "yesterday", "2026-13-01T00:00:00Z", "2026-02-30T00:00:00Z", "2026-08-11"] {
+            assert!(parse_search_date_ns(s).is_err(), "{s:?} must not parse");
+        }
+    }
 }
 

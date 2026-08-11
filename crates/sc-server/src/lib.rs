@@ -14,6 +14,7 @@ pub mod config;
 pub mod dav_uploads;
 pub mod diagnostics;
 pub mod hardening;
+pub mod journal;
 pub mod masterkey;
 #[cfg(feature = "compat-nc")]
 pub mod nc;

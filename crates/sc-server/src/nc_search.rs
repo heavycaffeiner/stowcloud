@@ -15,6 +15,8 @@ use sc_core::{SharePath, Vpath};
 use sc_dav::{DavError, DavResult};
 use sc_vfs::{FileId, ShareId, UserId};
 
+use crate::journal::{WriteJournal, WriteRow};
+
 /// Upper bound on rows a single `SEARCH` may return.
 ///
 /// The protocol has no field for "there was more", so a truncated answer is
@@ -26,6 +28,51 @@ const MAX_RESULTS: u32 = 500;
 /// Body limit for a report. A favourites report is a property list and one
 /// filter rule; nothing legitimate approaches this.
 const MAX_REPORT_BODY: usize = 64 * 1024;
+
+/// How many hits sit between the walk and the collector at once.
+///
+/// `Walker::emit` uses a blocking `send`, so a full channel applies
+/// backpressure instead of allocating. An unbounded one would hold every
+/// matching file at once now that `max_results` no longer stops the walk. This
+/// bounds the channel, not the walk: the larger allocation is the walker's own
+/// `pending` vector, which is unchanged.
+const CHANNEL_DEPTH: usize = 4096;
+
+/// Walk `roots` with `matcher` and return the newest `limit` hits it reached,
+/// newest first, ties broken by path ascending, plus the walk's completeness.
+///
+/// `WalkBudget::max_results` bounds a walk by *stopping* it, so an ordered,
+/// limited query used to end after the first `cap` matches the stat phase
+/// happened to reach (inode order on rotational storage, readdir order
+/// otherwise) and only then sort those. On any share with more than `cap` files
+/// inside the window the answer was wrong, and wrong while reporting `Full`.
+///
+/// The caller must have set a size or mtime filter on `matcher`, because
+/// `TopN` orders on `Hit::mtime_ns` and only those make the walk stat.
+/// `budget` should carry `max_results(u32::MAX)`: the point of collecting is
+/// that the walk is bounded by time and entries rather than by result count.
+pub fn collect_newest(
+    walker: &sc_search::Walker,
+    roots: &[(Arc<sc_vfs::ShareRoot>, sc_vfs::SafePath)],
+    matcher: &sc_search::Matcher,
+    acl: &(dyn Fn(ShareId, &sc_vfs::SafePath) -> bool + Sync),
+    budget: &sc_search::WalkBudget,
+    limit: u32,
+) -> (Vec<sc_search::Hit>, sc_search::Completeness) {
+    let (tx, rx) = crossbeam_channel::bounded::<sc_search::Hit>(CHANNEL_DEPTH);
+    // No deadlock risk: the consumer only receives and the walk only sends.
+    let consumer = std::thread::spawn(move || {
+        let mut top = sc_search::TopN::new(limit as usize);
+        for hit in rx {
+            top.offer(hit);
+        }
+        top.into_sorted_vec()
+    });
+    let completeness = walker.walk(roots, matcher, acl, budget, &tx);
+    drop(tx);
+    let hits = consumer.join().unwrap_or_default();
+    (hits, completeness)
+}
 
 pub struct NcSearch {
     pub core: Arc<sc_core::Core>,
@@ -40,6 +87,31 @@ pub struct NcSearch {
     /// rather than re-read per search. Shared with the native bridge for the
     /// same reason `limits` is.
     pub storage: Arc<crate::storage_class::StorageClassCache>,
+    /// The same record `/api/recent` reads, so the phone's Recent screen and
+    /// the web tab show the same list.
+    pub journal: Option<Arc<WriteJournal>>,
+}
+
+/// Whether this request asks the recency question rather than a content one.
+///
+/// It orders by `d:getlastmodified` descending, bounds
+/// `d:getlastmodified`, and constrains nothing else: no name substring, no
+/// media type, no folders-only filter. The favourites flag and the file id are
+/// answered by their own branches before this is consulted.
+///
+/// The cost, stated rather than buried: such a request receives what this
+/// account wrote through this server in that window, which is a subset of the
+/// resources matching the filter it wrote. The only thing that sends this query
+/// is a screen labelled Recent, and this is the answer that screen is asking
+/// for; a truthful answer to the literal query is dominated by SMB and backup
+/// writers the person reading it has no relationship with. Every query naming
+/// any content at all still gets the filesystem.
+fn is_recency_request(req: &sc_dav::SearchRequest) -> bool {
+    req.newest_first
+        && (req.mtime_from_ns.is_some() || req.mtime_to_ns.is_some())
+        && req.name_contains.is_none()
+        && req.content_type_prefixes.is_empty()
+        && req.is_collection != Some(true)
 }
 
 impl NcSearch {
@@ -89,6 +161,69 @@ impl NcSearch {
             .filter_map(|r| self.core.share(r.share).map(|root| (root, r.subpath)))
             .collect()
     }
+
+    /// The recency answer, from the record of what this account wrote here.
+    ///
+    /// The journal is read with no lower bound of its own. Passing the
+    /// request's `d:getlastmodified` bound to it would filter the *recorded*
+    /// time by a bound the client wrote about the file's *modification* time:
+    /// two different quantities, and a wrong answer whenever they differ,
+    /// which is exactly the restore case. The bounds are applied below to the
+    /// mtime each row's `stat` already produces, because that is the property
+    /// the client named, and the rows come back ordered by it for the same
+    /// reason. The per-account row cap is what bounds the read.
+    fn recency(
+        &self,
+        user: UserId,
+        req: &sc_dav::SearchRequest,
+        scope: Option<&str>,
+    ) -> DavResult<Vec<(String, sc_dav::Entry)>> {
+        let Some(journal) = &self.journal else {
+            return Ok(Vec::new());
+        };
+        let rows = journal.newest(user, i64::MIN);
+        let mut out: Vec<(String, sc_dav::Entry)> = Vec::new();
+        // Only a row whose file the read proved gone. A revoked grant and an
+        // unmounted share both hide rows without deleting them, because both
+        // reverse and this record cannot be rebuilt.
+        let mut dead: Vec<WriteRow> = Vec::new();
+
+        for row in rows {
+            let Ok(sp) = SharePath::parse(&row.path, u16::MAX) else {
+                continue;
+            };
+            let Some(vpath) = self.core.vpath_for(user, row.share, &sp) else {
+                continue;
+            };
+            if let Some(s) = scope {
+                if !vpath.is_inside(&Vpath::new(s)) {
+                    continue;
+                }
+            }
+            let entry = match self.core.stat_entry(user, vpath.as_str()) {
+                Ok(e) => e,
+                Err(sc_core::CoreError::NotFound) => {
+                    dead.push(row);
+                    continue;
+                }
+                Err(_) => continue,
+            };
+            if entry.kind != sc_vfs::Kind::File || !entry.perms.contains(sc_acl::Perms::READ) {
+                continue;
+            }
+            if req.mtime_from_ns.is_some_and(|lo| entry.mtime_ns < lo)
+                || req.mtime_to_ns.is_some_and(|hi| entry.mtime_ns > hi)
+            {
+                continue;
+            }
+            out.push((vpath.as_str().to_string(), crate::bridge::dav_entry(entry)));
+        }
+
+        journal.forget(user, &dead);
+        sort_rows(&mut out, true);
+        truncate(&mut out, req.limit);
+        Ok(out)
+    }
 }
 
 impl sc_dav::SearchSource for NcSearch {
@@ -107,11 +242,22 @@ impl sc_dav::SearchSource for NcSearch {
             || DavError::BadRequest("the search scope is not a path in your own files".into()),
         )?;
 
-        let vendor = sc_compat_nc::search::vendor_filters(
-            req.vendor
-                .iter()
-                .map(|t| (t.ns.as_str(), t.name.as_str(), t.literal.as_str())),
-        );
+        let (vendor, unread) = sc_compat_nc::search::vendor_filters(req.vendor.iter().map(|t| {
+            (
+                t.ns.as_str(),
+                t.name.as_str(),
+                t.literal.as_str(),
+                t.in_disjunction,
+            )
+        }));
+        // Same rule `sc-dav` applies to its own properties, decided in the
+        // crate that knows this vocabulary: dropping a conjunct would answer a
+        // wider query than the client asked for.
+        if let Some(first) = unread.first() {
+            return Err(DavError::BadRequest(format!(
+                "this search constrains {first}, which this server cannot apply"
+            )));
+        }
 
         // A file id is a direct lookup, and a favourites query is a table read.
         // Neither walks: a marked file can be anywhere, and walking a tree to
@@ -134,6 +280,14 @@ impl sc_dav::SearchSource for NcSearch {
             sort_rows(&mut rows, req.newest_first);
             truncate(&mut rows, req.limit);
             return Ok(rows);
+        }
+
+        // Selected by what the request constrains, after parsing, and never by
+        // a client or a user agent. Every other shape keeps walking: a name
+        // search, a gallery or media query carrying `image/%`, a folders-only
+        // ordered query, and an ordered query with no date bound at all.
+        if is_recency_request(req) {
+            return self.recency(user, req, scope.as_deref());
         }
 
         let roots = self.roots_for(user, scope.as_deref());
@@ -209,7 +363,7 @@ impl sc_dav::SearchSource for NcSearch {
         // order on rotational storage and readdir order otherwise, and neither
         // has anything to do with mtime.
         let (hits, completeness) = if req.newest_first {
-            crate::recent::collect_newest(&walker, &roots, &matcher, &acl, &budget, cap)
+            collect_newest(&walker, &roots, &matcher, &acl, &budget, cap)
         } else {
             let (tx, rx) = crossbeam_channel::unbounded::<sc_search::Hit>();
             let completeness = walker.walk(&roots, &matcher, &acl, &budget, &tx);
@@ -354,6 +508,7 @@ impl sc_dav::ReportSource for NcFilterFilesReport {
                 name: "favorite".to_string(),
                 op: sc_dav::SearchOp::Eq,
                 literal: "1".to_string(),
+                in_disjunction: false,
             }],
             props,
         })
