@@ -1214,7 +1214,7 @@
      state invisible to anyone who cannot see the difference. */
   .sc-server-settings__badge {
     display: inline-block;
-    padding: 2px 8px;
+    padding: 4px 8px;
     border-radius: var(--m3-shape-extra-small);
     background: var(--m3c-tertiary-container);
     color: var(--m3c-on-tertiary-container);
