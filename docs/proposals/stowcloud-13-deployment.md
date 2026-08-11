@@ -106,7 +106,7 @@ outright:
 | FUSE (mergerfs, rclone, s3fs) | identity and `btime` unknown → forces path-based ids and periodic rescan |
 | NFS | inotify cannot see server-side changes → forces a shorter rescan interval |
 | CIFS/SMB | as NFS, plus name restrictions; strong warning |
-| squashfs | read-only registration |
+| squashfs | classified, but not special-cased: registration succeeds and the kernel refuses every write with `EROFS`, which surfaces as `403`. The answer is right; the diagnosis arrives per request instead of once at startup |
 
 Refusing at registration is the design decision. The alternative — accept
 anything and degrade quietly — produces a deployment that looks healthy and

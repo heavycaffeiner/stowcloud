@@ -181,9 +181,15 @@ pub struct OidcUnlink {
     /// Whether the account-password NT hash was re-derived on the spot.
     /// `false` means SMB stays closed for this account until its owner
     /// changes their password. Always `false` when no password was supplied,
-    /// and also `false` when the account opted out of SMB or holds a
-    /// dedicated SMB password that was never removed in the first place.
+    /// and also `false` when the account opted out of SMB.
     pub smb_nt_restored: bool,
+    /// Whether that re-derivation replaced a dedicated SMB password the user
+    /// had set. A user-initiated unlink is the exact undo of the link that
+    /// closed the account password as an SMB credential, so it restores the
+    /// state that preceded it rather than leaving a separate password in place
+    /// that nothing needs any more. The screen says so before the user
+    /// commits; this is what it reports afterwards.
+    pub smb_password_replaced: bool,
     /// Sessions deleted because they carried [`crate::AMR_OIDC`]. Password
     /// sessions are left alone: unlinking withdraws one way in, not every
     /// way in.
@@ -428,8 +434,10 @@ impl AuthService {
             }
 
             // Re-derivation mirrors `totp_disable`'s conditions exactly: an
-            // account that opted out of SMB does not want a hash at all, and
-            // a dedicated SMB password is not ours to overwrite.
+            // account that opted out of SMB does not want a hash at all, and a
+            // dedicated SMB password is replaced, because a user-initiated
+            // unlink undoes the event that made a separate password necessary.
+            let mut smb_password_replaced = false;
             let smb_nt_restored = match pw {
                 None => false,
                 Some(pw) => {
@@ -445,9 +453,10 @@ impl AuthService {
                             |r| r.get(0),
                         )
                         .optional()?;
-                    if smb_opt_out || source == Some(NT_SOURCE_DEDICATED) {
+                    if smb_opt_out {
                         false
                     } else {
+                        smb_password_replaced = source == Some(NT_SOURCE_DEDICATED);
                         // `store_nt_from_plaintext` returns `anyhow`, not
                         // `rusqlite`, because sealing can fail on its own.
                         self.store_nt_from_plaintext(&tx, u, pw.expose_secret(), NT_SOURCE_ACCOUNT)
@@ -466,7 +475,7 @@ impl AuthService {
                 rusqlite::params![u.get(), i64::from(crate::AMR_OIDC)],
             )? as u64;
 
-            Ok(Ok(OidcUnlink { smb_nt_restored, oidc_sessions_revoked }))
+            Ok(Ok(OidcUnlink { smb_nt_restored, smb_password_replaced, oidc_sessions_revoked }))
         })()
         .map_err(|e| E::Internal(e.to_string()))??;
 

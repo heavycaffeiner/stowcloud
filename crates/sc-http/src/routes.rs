@@ -45,6 +45,10 @@ pub fn protected_routes(state: AppState) -> Router {
         .route("/api/auth/sessions", get(auth_list_sessions))
         .route("/api/auth/sessions/{id_hash}", delete(auth_revoke_session))
         .route("/api/auth/smb", post(auth_smb_settings))
+        .route(
+            "/api/auth/smb/password",
+            post(auth_smb_password_set).delete(auth_smb_password_clear),
+        )
         // OIDC login (`docs/proposals/stowcloud-0-oidc-login.md` §5-1). The
         // first three are reached without a session -- `middleware::
         // is_public_path` for the first two, `is_optional_session_path` for
@@ -65,12 +69,15 @@ pub fn protected_routes(state: AppState) -> Router {
         .route("/api/fs/write", put(fs_write))
         .route("/api/fs/link", post(fs_link))
         .route("/api/fs/archive", post(fs_archive))
+        .route("/api/fs/archive/list", get(fs_archive_list))
+        .route("/api/fs/size", get(fs_size))
         .route("/api/trash", get(trash_list))
         .route("/api/trash/restore", post(trash_restore))
         .route("/api/trash/purge", post(trash_purge))
         .route("/api/shares", get(shares_list).post(shares_create))
         .route("/api/shares/{id}", get(shares_get).patch(shares_patch).delete(shares_delete))
         .route("/api/search", get(search))
+        .route("/api/recent", get(recent))
         .route("/api/search/stream", get(search_stream))
         .route("/api/jobs", get(job_list))
         .route("/api/jobs/{id}", get(job_status).delete(job_cancel))
@@ -115,6 +122,7 @@ pub fn protected_routes(state: AppState) -> Router {
         .route("/s/{token}", get(public_link_get))
         .route("/s/{token}/auth", post(public_link_auth))
         .route("/s/{token}/download", post(public_link_download))
+        .route("/s/{token}/zip", get(public_link_zip))
         .route("/s/{token}/drop", post(public_link_drop))
         .with_state(state)
         // axum bakes a 2MB cap into `Bytes`/`Json`/`String` extractors
@@ -139,6 +147,34 @@ pub fn upload_routes(state: AppState) -> Router {
         )
         .with_state(state)
         .layer(axum::extract::DefaultBodyLimit::disable())
+}
+
+/// TUS 1.0.0 requires `Tus-Resumable` on every request except `OPTIONS`, and
+/// requires `412` with a `Tus-Version` response header when the version is not
+/// supported, so the client learns what this server speaks.
+///
+/// `None` if the request may proceed. Called from each of the four TUS
+/// handlers rather than from a layer over the router: a layer cannot see which
+/// methods the matched path declares, so it answered `412` for `PATCH
+/// /api/uploads`, which this server does not mount at all and which owes the
+/// caller a `405`.
+///
+/// This is a refusal that did not exist before, so it can break a client that
+/// was getting away with omitting the header. `/dav-uploads` is a different
+/// protocol and is untouched.
+fn tus_version_refusal(headers: &axum::http::HeaderMap) -> Option<Response> {
+    let supported = headers
+        .get("tus-resumable")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.trim() == "1.0.0");
+    if supported {
+        return None;
+    }
+    let mut resp =
+        AppError::new(ErrorCode::FsPrecondition, "Tus-Resumable must be 1.0.0").into_response();
+    resp.headers_mut()
+        .insert("Tus-Version", axum::http::HeaderValue::from_static("1.0.0"));
+    Some(resp)
 }
 
 fn principal_or_401(p: Option<Extension<Principal>>) -> Result<Principal, AppError> {
@@ -512,6 +548,14 @@ struct SessionUserWire {
     totp_enabled: bool,
     smb_opt_out: bool,
     smb_enabled: bool,
+    /// What actually works over SMB right now, not which row exists: the
+    /// deployment's `smb.totp_policy` is folded in first, because the two can
+    /// disagree and a line reading "SMB uses a separate password you set"
+    /// would then be something the user can only disprove by failing to
+    /// connect.
+    smb_credential: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    smb_unavailable_reason: Option<&'static str>,
 }
 
 /// The caller's own OIDC link, for the settings screen's connect/disconnect
@@ -590,6 +634,12 @@ async fn auth_session(State(state): State<AppState>, principal: Option<Extension
     // to be looked up — which is exactly what `find_user_by_id` documents
     // itself as being for.
     let row = state.auth.find_user_by_id(principal.user).ok().flatten();
+    // A read failure degrades to "no credential, none set" for the same reason
+    // the OIDC block below degrades to "not linked": this seeds one settings
+    // section and the response it belongs to gates the whole first paint.
+    let smb = state.auth.smb_credential_state(principal.user).unwrap_or(
+        sc_auth::SmbCredential::None(sc_auth::SmbUnavailable::NotSet),
+    );
     let user = match row {
         Some(u) => SessionUserWire {
             id: u.id.get(),
@@ -599,6 +649,8 @@ async fn auth_session(State(state): State<AppState>, principal: Option<Extension
             totp_enabled: u.totp_enabled,
             smb_opt_out: u.smb_opt_out,
             smb_enabled: u.smb_enabled,
+            smb_credential: smb.as_str(),
+            smb_unavailable_reason: smb.reason_str(),
         },
         // The session validated (a `Principal` exists) but the account row
         // is gone — shouldn't happen outside a racing account deletion, but
@@ -612,6 +664,8 @@ async fn auth_session(State(state): State<AppState>, principal: Option<Extension
             totp_enabled: false,
             smb_opt_out: false,
             smb_enabled: false,
+            smb_credential: "none",
+            smb_unavailable_reason: Some("not_set"),
         },
     };
     // A read failure here degrades to "not linked" rather than failing the
@@ -916,7 +970,10 @@ async fn auth_totp_disable(
     // in-session, it does not log the user out. `totp_disable` itself
     // re-derives the SMB NT hash in the same transaction.
     match state.auth.totp_disable(principal.user, &pw).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        // `smb_password_replaced` is what the screen turns into "your separate
+        // SMB password was removed and SMB is back on your account password".
+        // The dialog said so before this ran; this confirms it happened.
+        Ok(replaced) => Json(serde_json::json!({ "smb_password_replaced": replaced })).into_response(),
         Err(_) => AppError::invalid_credentials().into_response(),
     }
 }
@@ -1001,6 +1058,91 @@ async fn auth_smb_settings(
     match state.auth.set_smb_settings(principal.user, req.opt_out, req.enabled) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(_) => AppError::internal().into_response(),
+    }
+}
+
+#[derive(Deserialize)]
+struct SmbPasswordSetReq {
+    current_password: String,
+    smb_password: String,
+}
+
+#[derive(Deserialize)]
+struct SmbPasswordClearReq {
+    current_password: String,
+}
+
+/// `POST /api/auth/smb/password` — set an SMB-only password.
+///
+/// `current_password` is the account password, re-confirmed for the same
+/// reason TOTP enable, TOTP disable and OIDC link and unlink all re-confirm
+/// it: a live session alone must not be enough to add a permanent credential.
+/// `smb_password` reuses the account password's own length floor; it is typed
+/// into Explorer and Finder like any other password and there is no reason for
+/// a second one.
+///
+/// `smb_toggles_cleared` reports that this account's own SMB switches were off
+/// and have been turned back on, because a credential that is never published
+/// is not what the request asked for. The screen confirms it rather than
+/// letting the switches change under the user with nothing said.
+async fn auth_smb_password_set(
+    State(state): State<AppState>,
+    principal: Option<Extension<Principal>>,
+    Json(req): Json<SmbPasswordSetReq>,
+) -> Response {
+    let principal = match principal_or_401(principal) {
+        Ok(p) => p,
+        Err(e) => return e.into_response(),
+    };
+    let current = SecretString::from(req.current_password);
+    let smb = SecretString::from(req.smb_password);
+    match state.auth.set_dedicated_smb_password(principal.user, &current, &smb).await {
+        Ok(out) => {
+            Json(serde_json::json!({ "smb_toggles_cleared": out.opt_out_cleared })).into_response()
+        }
+        Err(e) => smb_password_error_response(principal.user, e).into_response(),
+    }
+}
+
+/// `DELETE /api/auth/smb/password` — remove the SMB-only password and, when
+/// the account is eligible to hold one, go back to the account password.
+///
+/// `reverted_to_account_password` reports whether the account came out of this
+/// holding an SMB credential at all: `false` for one that is TOTP-enrolled,
+/// OIDC-linked or opted out, which is the case where clearing means losing SMB
+/// access. The screen has to be able to say that before the user commits, so
+/// the same fact is on the session as `smb_credential`.
+async fn auth_smb_password_clear(
+    State(state): State<AppState>,
+    principal: Option<Extension<Principal>>,
+    Json(req): Json<SmbPasswordClearReq>,
+) -> Response {
+    let principal = match principal_or_401(principal) {
+        Ok(p) => p,
+        Err(e) => return e.into_response(),
+    };
+    let current = SecretString::from(req.current_password);
+    match state.auth.clear_dedicated_smb_password(principal.user, &current).await {
+        Ok(reverted) => {
+            Json(serde_json::json!({ "reverted_to_account_password": reverted })).into_response()
+        }
+        Err(e) => smb_password_error_response(principal.user, e).into_response(),
+    }
+}
+
+fn smb_password_error_response(user: sc_vfs::UserId, e: sc_auth::SmbPasswordError) -> AppError {
+    use sc_auth::SmbPasswordError as E;
+    match e {
+        E::BadPassword => AppError::invalid_credentials(),
+        // The same code and `detail.min_length` `POST /api/auth/password`
+        // answers with, so one "need N characters" message covers both.
+        E::TooShort { min } => AppError::new(ErrorCode::AuthWeakPassword, "password is too short")
+            .with_detail(serde_json::json!({ "min_length": min })),
+        E::NotSet => AppError::not_found(),
+        E::Internal(m) => {
+            tracing::error!(detail = %m, user = user.get(), "changing a dedicated smb password failed");
+            AppError::internal()
+        }
     }
 }
 
@@ -1584,11 +1726,15 @@ async fn oidc_unlink(
         .collect();
 
     match state.auth.unlink_oidc_identity(principal.user, Some(&SecretString::from(req.password))) {
-        Ok(_) => {
+        Ok(outcome) => {
             for hash in &oidc_session_hashes {
                 state.ws.revoke_session(principal.user, hash);
             }
-            StatusCode::NO_CONTENT.into_response()
+            // Identical field and identical meaning to `POST
+            // /api/auth/totp/disable`: a user who has been through one of them
+            // should not have to learn a second rule for the other.
+            Json(serde_json::json!({ "smb_password_replaced": outcome.smb_password_replaced }))
+                .into_response()
         }
         Err(sc_auth::OidcUnlinkError::BadPassword) => AppError::invalid_credentials().into_response(),
         Err(sc_auth::OidcUnlinkError::NotLinked) => {
@@ -1841,6 +1987,117 @@ async fn fs_stat(State(state): State<AppState>, principal: Option<Extension<Prin
     match state.core.stat_entry(principal.user, &q.path) {
         Ok(entry) => Json(entry).into_response(),
         Err(e) => AppError::from(e).into_response(),
+    }
+}
+
+/// `GET /api/fs/archive/list` — every entry in a ZIP archive, by name, size
+/// and kind.
+///
+/// A path the caller cannot list and a file that is not a zip are the same
+/// `404` on purpose: distinguishing them tells a caller what a file it cannot
+/// read contains. A zip that breaks one of the archive limits, or carries an
+/// entry name `SafePath::parse` refuses, is `422` with the reason, because by
+/// then the caller has already been told the file is an archive.
+async fn fs_archive_list(
+    State(state): State<AppState>,
+    principal: Option<Extension<Principal>>,
+    Query(q): Query<PathQuery>,
+) -> Response {
+    let principal = match principal_or_401(principal) {
+        Ok(p) => p,
+        Err(e) => return e.into_response(),
+    };
+    match state.core.archive_list(principal.user, &q.path) {
+        Ok(Some(entries)) => Json(serde_json::json!({ "entries": entries })).into_response(),
+        Ok(None) => AppError::not_found().into_response(),
+        Err(e) => AppError::from(e).into_response(),
+    }
+}
+
+/// `GET /api/fs/size` — one folder's recursive size, on demand.
+///
+/// Deliberately not folded into `GET /api/fs/stat`, which every selection
+/// already calls and which must stay free of any walk, and deliberately not on
+/// a listing row: opening a directory of a thousand subfolders would otherwise
+/// start a thousand tree walks.
+///
+/// The walk descends the real tree, not the caller's view, so a folder holding
+/// a subtree the caller is denied would report a byte count covering data they
+/// cannot read. That is refused rather than filtered: a per-user recursive size
+/// needs a per-user walk, which throws away the aggregate cache's whole reason
+/// for existing.
+async fn fs_size(
+    State(state): State<AppState>,
+    principal: Option<Extension<Principal>>,
+    Query(q): Query<PathQuery>,
+) -> Response {
+    let principal = match principal_or_401(principal) {
+        Ok(p) => p,
+        Err(e) => return e.into_response(),
+    };
+    let user = principal.user;
+    let resolved = match state.core.resolve(user, &q.path) {
+        Ok(r) => r,
+        Err(e) => return AppError::from(e).into_response(),
+    };
+    // A file gets the same answer as a path that does not resolve: its size is
+    // already on every listing row, so there is nothing here for it.
+    match state.core.stat_entry(user, &q.path) {
+        Ok(entry) if entry.kind == crate::core_api::Kind::Dir => {}
+        Ok(_) => return AppError::not_found().into_response(),
+        Err(e) => return AppError::from(e).into_response(),
+    }
+
+    let denied = state.core.denies_below(user, resolved.share, &resolved.subpath);
+    if !denied.is_empty() {
+        // Not an application of the 404-not-403 rule. `Core::list` does not
+        // drop a denied child from a listing, so the caller can already see
+        // that something is there; what they cannot see is how big it is, and
+        // an unfiltered recursive size hands them exactly that.
+        return AppError::new(ErrorCode::AclDenied, "this folder contains areas this account cannot see")
+            .with_detail(serde_json::json!({ "reason": "denies_below" }))
+            .into_response();
+    }
+
+    // Immediately, never a server-side queue: an uncapped endpoint that starts
+    // a tree walk per request is a way to make the server walk the whole disk.
+    let permit = match state.folder_size_concurrency.current().try_acquire_owned() {
+        Ok(p) => p,
+        Err(_) => {
+            let mut resp = AppError::rate_limited(1).into_response();
+            resp.headers_mut()
+                .insert("Retry-After", axum::http::HeaderValue::from_static("1"));
+            return resp;
+        }
+    };
+
+    let core = state.core.clone();
+    let share = resolved.share;
+    let subpath = resolved.subpath.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        core.aggregate(share, &subpath)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(agg)) => {
+            // No directory count: `sc-meta` rolls the whole subtree into one
+            // recursive file count and keeps no split, so `dirs` would be a
+            // number this server does not have.
+            let mut resp = Json(serde_json::json!({
+                "bytes": agg.total_bytes,
+                "files": agg.file_count,
+            }))
+            .into_response();
+            // The caching that makes a second call cheap is `diretag`, server
+            // side and invalidated by the write path. An HTTP cache on top of
+            // it would serve a number the server already knows is stale.
+            resp.headers_mut()
+                .insert("Cache-Control", axum::http::HeaderValue::from_static("no-store"));
+            resp
+        }
+        Ok(Err(_)) | Err(_) => AppError::internal().into_response(),
     }
 }
 
@@ -2400,6 +2657,9 @@ async fn uploads_create(
         Err(e) => return e.into_response(),
     };
     let headers = req.headers().clone();
+    if let Some(resp) = tus_version_refusal(&headers) {
+        return resp;
+    }
     let total_len = headers
         .get("upload-length")
         .and_then(|v| v.to_str().ok())
@@ -2491,11 +2751,15 @@ async fn uploads_head(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
     Path(id): Path<String>,
+    headers: axum::http::HeaderMap,
 ) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
         Err(e) => return e.into_response(),
     };
+    if let Some(resp) = tus_version_refusal(&headers) {
+        return resp;
+    }
     match state.uploads.status(principal.user, &id) {
         Ok(st) => {
             let mut resp = StatusCode::NO_CONTENT.into_response();
@@ -2536,6 +2800,9 @@ async fn uploads_patch(
         Err(e) => return e.into_response(),
     };
     let headers = req.headers().clone();
+    if let Some(resp) = tus_version_refusal(&headers) {
+        return resp;
+    }
     let offset = match headers
         .get("upload-offset")
         .and_then(|v| v.to_str().ok())
@@ -2614,11 +2881,15 @@ async fn uploads_delete(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
     Path(id): Path<String>,
+    headers: axum::http::HeaderMap,
 ) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
         Err(e) => return e.into_response(),
     };
+    if let Some(resp) = tus_version_refusal(&headers) {
+        return resp;
+    }
     match state.uploads.terminate(principal.user, &id) {
         Ok(()) => {
             let mut resp = StatusCode::NO_CONTENT.into_response();
@@ -2916,7 +3187,45 @@ fn wants_html(headers: &axum::http::HeaderMap) -> bool {
     }
 }
 
-/// Metadata for the public page.
+/// The subpath a public-link request names, relative to the link's own target.
+///
+/// Optional everywhere and defaulting to the target, so a client written
+/// against the previous API keeps working. Never stored, never trusted: it is
+/// re-resolved from the link row on every request, so a visitor who edits it
+/// gets the same answer as a visitor who was handed it.
+#[derive(Deserialize, Default)]
+struct LinkPathQuery {
+    #[serde(default)]
+    path: Option<String>,
+}
+
+impl LinkPathQuery {
+    fn rel(&self) -> &str {
+        self.path.as_deref().unwrap_or("")
+    }
+}
+
+/// `None` if the caller may proceed, `Some(response)` if the per-token listing
+/// budget refused it.
+///
+/// A flat listing of the link root is one `read_dir` per request; a browsable
+/// tree is one per directory in it. The general per-IP limiter is the wrong
+/// axis for a link, for the reason `KeyedTokenBucket`'s own doc gives: one
+/// office behind a NAT shares a bucket, and a botnet gets one bucket per host
+/// against a single link. Sixty folder openings back to back and one a second
+/// after that is more than a person opening folders, and caps a crawler at one
+/// directory a second per link.
+fn check_link_browse_rate(state: &AppState, token: &str) -> Option<Response> {
+    let retry = state.link_browse_rate.check(token)?;
+    let mut resp = AppError::rate_limited(retry).into_response();
+    if let Ok(v) = axum::http::HeaderValue::from_str(&retry.to_string()) {
+        resp.headers_mut().insert("Retry-After", v);
+    }
+    Some(resp)
+}
+
+/// Metadata for the public page, for the link's target or for one node under
+/// it.
 ///
 /// Never carries the host path, the owner, the virtual path, or any hint that
 /// other links exist on the same file. A password-protected link answers with
@@ -2924,6 +3233,7 @@ fn wants_html(headers: &axum::http::HeaderMap) -> bool {
 async fn public_link_get(
     State(state): State<AppState>,
     Path(token): Path<String>,
+    Query(q): Query<LinkPathQuery>,
     req: axum::extract::Request,
 ) -> Response {
     // `/s/{token}` is carved out of `routes::admin_catch_all`'s SPA fallback
@@ -2968,17 +3278,49 @@ async fn public_link_get(
         audit_link(req.headers(), ip, "view.locked", Some(id), false);
         return Json(serde_json::json!({ "protected": true })).into_response();
     }
+    // The subpath is deliberately absent from the audit line. The log already
+    // identifies the link, and the point of not logging the token is that log
+    // access must not become link access.
     audit_link(req.headers(), ip, "view", Some(id), true);
+
+    // A pathless request on a drop link answers exactly as it did before: the
+    // target's metadata, `drop: true`, no entries. Only a request that names a
+    // path reaches the resolver, which refuses every one of them.
+    let rel = q.rel();
+    let node = if rel.is_empty() {
+        crate::core_api::PublicNode {
+            name: link.name.clone(),
+            is_dir: link.is_dir,
+            size: link.size,
+            mtime_ns: link.mtime_ns,
+            fid: link.fid,
+            etag8: link.etag8,
+        }
+    } else {
+        if let Some(resp) = check_link_browse_rate(&state, &token) {
+            return resp;
+        }
+        match state.core.share_link_node(id, rel) {
+            Ok(n) => n,
+            Err(e) => return AppError::from(e).into_response(),
+        }
+    };
 
     let mut body = serde_json::json!({
         "protected": link.has_password,
-        "name": link.name,
-        "is_dir": link.is_dir,
-        "size": link.size,
-        "mtime_ns": link.mtime_ns.to_string(),
+        // The resolved node, not the link target. `label` still describes the
+        // link, so the page can show both its title and where in it the
+        // visitor is.
+        "name": node.name,
+        "is_dir": node.is_dir,
+        "size": node.size,
+        "mtime_ns": node.mtime_ns.to_string(),
         "label": link.label,
         "drop": link.is_drop,
         "can_download": link.can_download,
+        // What the server actually resolved, which is how a client tells that
+        // its request was honoured.
+        "path": rel,
     });
 
     // The uploader has to learn its own ceiling from somewhere, and this page
@@ -2991,9 +3333,15 @@ async fn public_link_get(
     }
 
     // A file-drop link lists nothing — that is what makes it a drop box and
-    // not a shared folder (§7.2).
-    if link.is_dir && !link.is_drop {
-        match state.core.share_link_entries(id) {
+    // not a shared folder (§7.2). `entries` stays absent, not empty, for a
+    // file and for a locked link too.
+    if node.is_dir && !link.is_drop {
+        if rel.is_empty() {
+            if let Some(resp) = check_link_browse_rate(&state, &token) {
+                return resp;
+            }
+        }
+        match state.core.share_link_entries_at(id, rel) {
             Ok(entries) => body["entries"] = serde_json::to_value(entries).unwrap_or_default(),
             Err(e) => return AppError::from(e).into_response(),
         }
@@ -3071,15 +3419,26 @@ async fn public_link_auth(
     resp
 }
 
-/// Mint the signed content URL for a link's target.
+/// Mint the signed content URL for one file under a link.
 ///
 /// `sub = 0` marks the claim as issued to nobody in particular
 /// (`content::Claim::sub`, "0 = public link") — the bytes still leave through
 /// the same signed-URL machinery every authenticated download uses, so the
 /// content origin needs no share-link awareness at all.
+///
+/// **Every minted URL counts one download.** A folder link with
+/// `max_downloads = 5` is spent after five files. That is the honest reading
+/// of a cap whose purpose is to bound what leaves the server.
+///
+/// A pathless request on a **folder** link answers `422` without touching the
+/// counter, where it used to spend one download and then answer `404`: minting
+/// a claim for a directory produced a not-found on a link that exists and is
+/// live, so a folder link with `max_downloads = 3` was dead after three clicks
+/// on a button that never worked once.
 async fn public_link_download(
     State(state): State<AppState>,
     Path(token): Path<String>,
+    Query(q): Query<LinkPathQuery>,
     req: axum::extract::Request,
 ) -> Response {
     let ip = client_ip_ext(&req);
@@ -3105,7 +3464,22 @@ async fn public_link_download(
         audit_link(req.headers(), ip, "download", Some(id), false);
         return AppError::acl_denied("link.perms").into_response();
     }
-    let Some(fid) = link.fid else {
+
+    let node = match state.core.share_link_node(id, q.rel()) {
+        Ok(n) => n,
+        Err(e) => {
+            audit_link(req.headers(), ip, "download", Some(id), false);
+            return AppError::from(e).into_response();
+        }
+    };
+    if node.is_dir {
+        // Before the counter, deliberately: a directory has no bytes, so this
+        // request can never produce any, and failing at it must not be
+        // expensive. `GET /s/{token}/zip` is what downloads a folder.
+        audit_link(req.headers(), ip, "download", Some(id), false);
+        return AppError::invalid_name("is a directory").into_response();
+    }
+    let Some(fid) = node.fid else {
         audit_link(req.headers(), ip, "download", Some(id), false);
         return AppError::gone().into_response();
     };
@@ -3118,13 +3492,168 @@ async fn public_link_download(
     }
     audit_link(req.headers(), ip, "download", Some(id), true);
 
-    let claim = content::make_claim(fid, link.etag8, Disposition::Attachment, None, 0, None);
+    let claim = content::make_claim(fid, node.etag8, Disposition::Attachment, None, 0, None);
     let signed = content::sign(&state.signed_url_keys.lock(), claim);
     // See `content::content_url`'s doc comment: the naive
     // `format!("https://{host}/c/{token}")` with an empty `content_hosts`
     // produces `https:///c/<token>`, which browsers parse as host `c`.
     let url = content::content_url(state.cfg.content_hosts.first().map(String::as_str), &signed);
     Json(serde_json::json!({ "url": url })).into_response()
+}
+
+/// `std::io::Write` that hands each buffered block to an async response body.
+///
+/// The zip is produced by a blocking task and consumed by the body as it is
+/// written, so nothing is buffered whole, in memory or on disk. A closed
+/// receiver (the visitor cancelled the download) surfaces as a write error,
+/// which stops the walk instead of letting it run to the end for nobody.
+struct ChannelWriter {
+    tx: tokio::sync::mpsc::Sender<Result<bytes::Bytes, std::io::Error>>,
+    buf: Vec<u8>,
+}
+
+/// Bytes buffered before a block is handed over. One TCP-window-ish chunk:
+/// small enough that a cancelled download stops promptly, large enough that a
+/// zip's small headers do not each become their own body frame.
+const ZIP_BLOCK: usize = 64 * 1024;
+
+impl std::io::Write for ChannelWriter {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        self.buf.extend_from_slice(data);
+        if self.buf.len() >= ZIP_BLOCK {
+            self.flush()?;
+        }
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        if self.buf.is_empty() {
+            return Ok(());
+        }
+        let block = bytes::Bytes::from(std::mem::take(&mut self.buf));
+        self.tx
+            .blocking_send(Ok(block))
+            .map_err(|_| std::io::Error::from(std::io::ErrorKind::BrokenPipe))
+    }
+}
+
+/// `GET /s/{token}/zip` — a streamed ZIP64/STORE archive of one directory
+/// under a link.
+///
+/// Three deliberate differences from the authenticated archive. There is no
+/// `_skipped.txt`: the list of paths the owner could not read is useful to
+/// their owner and is a list of file names to an anonymous visitor. It is a
+/// stream, not a job, because a job is owned by a user and its artifact is
+/// fetched from a session-gated route. And it holds an `archive_concurrency`
+/// permit for the life of the stream, because an anonymous tree walk is
+/// precisely the thing that cap exists for.
+async fn public_link_zip(
+    State(state): State<AppState>,
+    Path(token): Path<String>,
+    Query(q): Query<LinkPathQuery>,
+    req: axum::extract::Request,
+) -> Response {
+    let ip = client_ip_ext(&req);
+    let headers = req.headers().clone();
+    let Some(id) = (match state.core.share_link_lookup(&token) {
+        Ok(v) => v,
+        Err(e) => return AppError::from(e).into_response(),
+    }) else {
+        audit_link(&headers, ip, "download", None, false);
+        return AppError::not_found().into_response();
+    };
+    let link = match state.core.share_link_public(id) {
+        Ok(l) => l,
+        Err(e) => {
+            audit_link(&headers, ip, "download", Some(id), false);
+            return AppError::from(e).into_response();
+        }
+    };
+    if !link_authorized(&state, &headers, &token, link.has_password) {
+        audit_link(&headers, ip, "download", Some(id), false);
+        return AppError::acl_denied("link.password").into_response();
+    }
+    if !link.can_download || link.is_drop {
+        audit_link(&headers, ip, "download", Some(id), false);
+        return AppError::acl_denied("link.perms").into_response();
+    }
+    if let Some(resp) = check_link_browse_rate(&state, &token) {
+        return resp;
+    }
+
+    let rel = q.rel().to_string();
+    let node = match state.core.share_link_node(id, &rel) {
+        Ok(n) => n,
+        Err(e) => {
+            audit_link(&headers, ip, "download", Some(id), false);
+            return AppError::from(e).into_response();
+        }
+    };
+    if !node.is_dir {
+        audit_link(&headers, ip, "download", Some(id), false);
+        return AppError::invalid_name("is not a directory").into_response();
+    }
+
+    let permit = match state.archive_concurrency.current().try_acquire_owned() {
+        Ok(p) => p,
+        Err(_) => {
+            let mut resp = AppError::rate_limited(1).into_response();
+            resp.headers_mut()
+                .insert("Retry-After", axum::http::HeaderValue::from_static("1"));
+            return resp;
+        }
+    };
+
+    // One download counted per stream started, on the same rule the per-file
+    // route follows: a transfer that breaks does not give it back.
+    if let Err(e) = state.core.share_link_note_download(id) {
+        audit_link(&headers, ip, "download", Some(id), false);
+        return AppError::from(e).into_response();
+    }
+    audit_link(&headers, ip, "download", Some(id), true);
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<Result<bytes::Bytes, std::io::Error>>(4);
+    let core = state.core.clone();
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let mut writer = ChannelWriter { tx: tx.clone(), buf: Vec::with_capacity(ZIP_BLOCK) };
+        let result = core.share_link_archive(id, &rel, &mut writer);
+        let flushed = std::io::Write::flush(&mut writer);
+        if result.is_err() || flushed.is_err() {
+            // The body has no trailer to report a failure in, so the archive
+            // is deliberately cut short rather than closed cleanly: a truncated
+            // zip fails to open, which is the honest outcome. A closed receiver
+            // means the visitor already left, and needs no error at all.
+            let _ = tx.blocking_send(Err(std::io::Error::other("archive stream failed")));
+        }
+    });
+
+    let stream = futures::stream::poll_fn(move |cx| rx.poll_recv(cx));
+    let mut resp = Response::new(axum::body::Body::from_stream(stream));
+    let h = resp.headers_mut();
+    h.insert(
+        axum::http::header::CONTENT_TYPE,
+        axum::http::HeaderValue::from_static("application/zip"),
+    );
+    // No size up front: that is inherent to ZIP64 with data descriptors, and
+    // is the same for the authenticated archive.
+    if let Ok(v) = axum::http::HeaderValue::from_str(&content_disposition_zip(&node.name)) {
+        h.insert(axum::http::header::CONTENT_DISPOSITION, v);
+    }
+    resp
+}
+
+/// `attachment; filename*=UTF-8''...` for a folder's zip. Percent-encoded
+/// throughout rather than emitting a bare `filename=`, since a folder name is
+/// whatever its owner called it.
+fn content_disposition_zip(name: &str) -> String {
+    let stem = if name.is_empty() { "download" } else { name };
+    let encoded: String = percent_encoding::utf8_percent_encode(
+        &format!("{stem}.zip"),
+        percent_encoding::NON_ALPHANUMERIC,
+    )
+    .to_string();
+    format!("attachment; filename*=UTF-8''{encoded}")
 }
 
 #[derive(Deserialize)]
@@ -3248,6 +3777,90 @@ fn hit_json(h: &crate::search_api::SearchHit) -> serde_json::Value {
         "size": h.size,
         "mtime_ns": h.mtime_ns.map(|v| v.to_string()),
         "score": h.score,
+    })
+}
+
+/// Query for `GET /api/recent`. Every field optional.
+#[derive(Deserialize)]
+struct RecentQueryWire {
+    limit: Option<u32>,
+    since_days: Option<u32>,
+    scope: Option<String>,
+}
+
+/// `GET /api/recent` — the newest files by mtime across every root the caller
+/// can read.
+///
+/// `limit` and `since_days` are clamped rather than rejected. `scope` is
+/// validated and refused, because a scope is a security boundary: silently
+/// widening one is how a scoped endpoint becomes an unscoped read.
+async fn recent(
+    State(state): State<AppState>,
+    principal: Option<Extension<Principal>>,
+    Query(q): Query<RecentQueryWire>,
+) -> Response {
+    let principal = match principal_or_401(principal) {
+        Ok(p) => p,
+        Err(e) => return e.into_response(),
+    };
+    let user_key = principal.user.get().to_string();
+    if let Some(resp) = check_search_rate(&state, &user_key) {
+        return resp;
+    }
+
+    let limit = q.limit.unwrap_or(100).clamp(1, 500);
+    let since_days = i128::from(q.since_days.unwrap_or(30).clamp(1, 365));
+    let now_ns = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as i128)
+        .unwrap_or(0);
+    let query = crate::recent_api::RecentQuery {
+        scope: q.scope,
+        since_ns: now_ns - since_days * 86_400 * 1_000_000_000,
+        limit,
+    };
+
+    let user = principal.user;
+    // Same per-tier budget as search, and for the same reason: this walk stats
+    // every file under the caller's roots, because a name cannot tell you when
+    // it was written.
+    let tier = state.recent.recent_tier(user, &query);
+    let permit = match state.search_concurrency.try_acquire(tier) {
+        Some(p) => p,
+        None => return search_rate_limited_response(&state, tier),
+    };
+
+    let engine = state.recent.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        engine.recent(user, &query)
+    })
+    .await;
+
+    match result {
+        Ok(Ok((hits, completeness))) => Json(serde_json::json!({
+            "hits": hits.iter().map(recent_hit_json).collect::<Vec<_>>(),
+            "completeness": completeness_json(&completeness),
+        }))
+        .into_response(),
+        Ok(Err(e)) => AppError::from(e).into_response(),
+        Err(_) => AppError::internal().into_response(),
+    }
+}
+
+fn recent_hit_json(h: &crate::recent_api::RecentHit) -> serde_json::Value {
+    serde_json::json!({
+        // Directly navigable as `/b/{vpath}`, unlike search's `{share, path}`
+        // pair, which cannot be rebuilt into one for a grant rooted at a
+        // subpath.
+        "vpath": h.vpath,
+        "share": h.share,
+        "name": h.name,
+        "size": h.size,
+        // A decimal string, like every other nanosecond value on this API: a
+        // nanosecond epoch is around 1.8e18 and JavaScript's `number` loses
+        // precision past 2^53.
+        "mtime_ns": h.mtime_ns.to_string(),
     })
 }
 
@@ -5624,8 +6237,11 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let j = body_json(resp).await;
         assert_eq!(j["name"], "shared.txt");
-        // Never the host path, the owner, or the virtual path.
-        for leaked in ["path", "owner", "share", "host_path"] {
+        // `path` is the subpath the server resolved, relative to the link's
+        // own target and empty at the root. It is not the virtual path, and
+        // nothing else about where the target lives may appear.
+        assert_eq!(j["path"], "");
+        for leaked in ["owner", "share", "host_path", "vpath"] {
             assert!(j.get(leaked).is_none(), "public link response leaked `{leaked}`");
         }
     }
@@ -7100,6 +7716,61 @@ mod tests {
         }
     }
 
+    /// TUS 1.0.0 requires `Tus-Resumable` on every request except `OPTIONS`,
+    /// and requires `412` with `Tus-Version` when the version is unsupported.
+    /// This server used to write the header onto responses and read nothing.
+    #[tokio::test]
+    async fn a_tus_request_without_the_version_header_is_refused() {
+        let (state, _dir) = crate::testutil::test_state();
+        let app = upload_routes(state);
+
+        for (method, uri) in [
+            ("POST", "/api/uploads"),
+            ("HEAD", "/api/uploads/abc"),
+            ("PATCH", "/api/uploads/abc"),
+            ("DELETE", "/api/uploads/abc"),
+        ] {
+            for header in [None, Some("0.9.0")] {
+                let mut req = HttpRequest::builder()
+                    .method(method)
+                    .uri(uri)
+                    .extension(Principal {
+                        user: sc_vfs::ids::UserId::new(1),
+                        scope: sc_auth::Scope::default(),
+                        via: sc_auth::AuthVia::Session,
+                    });
+                if let Some(v) = header {
+                    req = req.header("tus-resumable", v);
+                }
+                let resp = app.clone().oneshot(req.body(Body::empty()).unwrap()).await.unwrap();
+                assert_eq!(
+                    resp.status(),
+                    StatusCode::PRECONDITION_FAILED,
+                    "{method} {uri} with Tus-Resumable {header:?}"
+                );
+                assert_eq!(
+                    resp.headers().get("Tus-Version").and_then(|v| v.to_str().ok()),
+                    Some("1.0.0"),
+                    "the client has to learn what this server speaks"
+                );
+            }
+        }
+
+        // `OPTIONS` is the one method the specification exempts, and it is how
+        // a client discovers the version in the first place.
+        let resp = app
+            .oneshot(
+                HttpRequest::builder()
+                    .method("OPTIONS")
+                    .uri("/api/uploads")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+    }
+
     /// Pins a fixed defect: `uploads_patch` used to read the
     /// body with `axum::body::to_bytes(req.into_body(), usize::MAX)`, which
     /// has no timeout parameter at all — a client that opens a `PATCH` and
@@ -7139,6 +7810,7 @@ mod tests {
             .uri("/api/uploads/abc")
             .extension(Principal { user: sc_vfs::ids::UserId::new(1), scope: sc_auth::Scope::default(), via: sc_auth::AuthVia::Session })
             .header("upload-offset", "0")
+            .header("tus-resumable", "1.0.0")
             .body(Body::from_stream(stream))
             .unwrap();
 
@@ -8317,7 +8989,11 @@ mod tests {
             assert!(auth.oidc_linked(uid).unwrap(), "a refused re-confirmation must not unlink");
 
             let ok = app.clone().oneshot(unlink(PASSWORD)).await.unwrap();
-            assert_eq!(ok.status(), StatusCode::NO_CONTENT);
+            assert_eq!(ok.status(), StatusCode::OK);
+            // No dedicated SMB password on this account, so nothing was
+            // replaced; the screen needs the distinction to know whether to
+            // say a credential the user set has just been removed.
+            assert_eq!(json_of(ok).await["smb_password_replaced"], false);
             assert!(!auth.oidc_linked(uid).unwrap());
             // The password this route re-confirmed is what makes SMB
             // recoverable here and not on the admin path (§4.3.6).

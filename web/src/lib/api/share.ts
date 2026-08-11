@@ -37,7 +37,16 @@ export interface ShareInfo {
    *  that's still password-locked -- never an empty-but-present array used
    *  to mean any of those. */
   entries: ShareEntry[] | null
+  /** The subpath the server actually resolved, relative to the link's own
+   *  target and empty at its root. Echoed back so a client can tell that its
+   *  request was honoured rather than quietly widened. */
+  path: string
 }
+
+/** A subpath the server refused. Distinct from "gone" so the page can clear
+ *  back to the link root and say the folder is no longer there, rather than
+ *  showing an empty list that looks like an empty folder. */
+export class SharePathGoneError extends Error {}
 
 export class ShareNotFoundError extends Error {}
 /** A drop upload the server refused for size. Its own class so the page can
@@ -62,7 +71,22 @@ const MOCK_DROP_LIMIT = 16 * 1024 * 1024
  *  server's auto-rename instead of silently looking like an overwrite. */
 const mockDropped = new Set<string>()
 
-async function mockGetShare(token: string): Promise<ShareInfo> {
+/** A two-level tree, so the mock exercises the subpath the real link now
+ *  carries rather than only its root. */
+const MOCK_TREE: Record<string, ShareEntry[]> = {
+  '': [
+    { name: '2026-07', kind: 'dir', size: 0 },
+    { name: '휴가-2026-07-01.jpg', kind: 'file', size: 4_213_665 },
+    { name: '가족사진.png', kind: 'file', size: 2_112_004 }
+  ],
+  '2026-07': [
+    { name: 'beach', kind: 'dir', size: 0 },
+    { name: '휴가-2026-07-02.jpg', kind: 'file', size: 3_982_211 }
+  ],
+  '2026-07/beach': [{ name: 'IMG_0001.jpg', kind: 'file', size: 5_002_318 }]
+}
+
+async function mockGetShare(token: string, path: string): Promise<ShareInfo> {
   await new Promise((r) => setTimeout(r, 150))
   if (token === 'expired') throw new ShareNotFoundError('expired')
   if (token === 'locked') throw new SharePasswordRequiredError(token)
@@ -75,22 +99,23 @@ async function mockGetShare(token: string): Promise<ShareInfo> {
       isDrop: true,
       maxUploadBytes: MOCK_DROP_LIMIT,
       canDownload: false,
-      entries: null
+      entries: null,
+      path: ''
     }
   }
+  const entries = MOCK_TREE[path]
+  if (!entries) throw new SharePathGoneError(path)
+  const name = path === '' ? '공유된 사진' : (path.split('/').pop() ?? '')
   return {
-    name: '공유된 사진',
+    name,
     isDir: true,
     size: 0,
     label: '공유된 사진',
     isDrop: false,
     maxUploadBytes: null,
     canDownload: true,
-    entries: [
-      { name: '휴가-2026-07-01.jpg', kind: 'file', size: 4_213_665 },
-      { name: '휴가-2026-07-02.jpg', kind: 'file', size: 3_982_211 },
-      { name: '가족사진.png', kind: 'file', size: 2_112_004 }
-    ]
+    entries,
+    path
   }
 }
 
@@ -103,11 +128,17 @@ interface RawLinkGetResponse {
   drop?: boolean
   max_upload_bytes?: number
   can_download?: boolean
+  path?: string
   entries?: { name: string; kind: 'file' | 'dir'; size: number }[]
 }
 
-async function httpGetShare(token: string): Promise<ShareInfo> {
-  const res = await fetch(`${ORIGIN}/s/${encodeURIComponent(token)}`, { credentials: 'include' })
+async function httpGetShare(token: string, path: string): Promise<ShareInfo> {
+  const res = await fetch(`${ORIGIN}/s/${encodeURIComponent(token)}${shareQuery(path)}`, {
+    credentials: 'include'
+  })
+  // A refused subpath and a dead link are different states to the page: the
+  // first clears back to the root, the second has nowhere to go.
+  if (res.status === 404 && path !== '') throw new SharePathGoneError(path)
   if (res.status === 404 || res.status === 410) throw new ShareNotFoundError(token)
   if (!res.ok) throw new Error(`share lookup failed: ${res.status}`)
   const body: RawLinkGetResponse = await res.json()
@@ -125,12 +156,19 @@ async function httpGetShare(token: string): Promise<ShareInfo> {
     isDrop: body.drop ?? false,
     maxUploadBytes: body.max_upload_bytes ?? null,
     canDownload: body.can_download ?? false,
-    entries: body.entries ? body.entries.map((e) => ({ name: e.name, kind: e.kind, size: e.size })) : null
+    entries: body.entries ? body.entries.map((e) => ({ name: e.name, kind: e.kind, size: e.size })) : null,
+    path: body.path ?? ''
   }
 }
 
-export function getShare(token: string): Promise<ShareInfo> {
-  return IS_MOCK ? mockGetShare(token) : httpGetShare(token)
+/** `?path=…`, or nothing at the link's own root, so a client written against
+ *  the previous API sends exactly what it always did. */
+function shareQuery(path: string): string {
+  return path ? `?path=${encodeURIComponent(path)}` : ''
+}
+
+export function getShare(token: string, path = ''): Promise<ShareInfo> {
+  return IS_MOCK ? mockGetShare(token, path) : httpGetShare(token, path)
 }
 
 async function mockUnlockShare(token: string, password: string): Promise<boolean> {
@@ -158,13 +196,15 @@ async function mockRequestDownload(): Promise<string> {
   return '#mock-download'
 }
 
-/** `POST /s/{token}/download` — mints a one-time signed content URL for the
- *  link's target as a whole (the shared file, or the shared folder's root;
- *  there is no per-entry variant of this route, so a folder share only ever
- *  offers one "download everything" action, not per-row downloads). */
-export function requestShareDownload(token: string): Promise<string> {
+/** `POST /s/{token}/download?path=…` — mints a one-time signed content URL for
+ *  one file under the link.
+ *
+ *  **Every minted URL counts one download**, so a folder link with a small
+ *  `max_downloads` is spent faster than its owner expects. The cap counts at
+ *  mint time so that a broken transfer cannot be replayed for free. */
+export function requestShareDownload(token: string, path = ''): Promise<string> {
   if (IS_MOCK) return mockRequestDownload()
-  return fetch(`${ORIGIN}/s/${encodeURIComponent(token)}/download`, {
+  return fetch(`${ORIGIN}/s/${encodeURIComponent(token)}/download${shareQuery(path)}`, {
     method: 'POST',
     credentials: 'include'
   }).then(async (res) => {
@@ -172,6 +212,14 @@ export function requestShareDownload(token: string): Promise<string> {
     const body: { url: string } = await res.json()
     return body.url
   })
+}
+
+/** `GET /s/{token}/zip?path=…` — the streamed archive of one folder under the
+ *  link. A plain navigation rather than a `fetch`: the response is the bytes
+ *  themselves, with `Content-Disposition: attachment`, and there is no signed
+ *  URL to fetch first. */
+export function shareZipUrl(token: string, path = ''): string {
+  return `${ORIGIN}/s/${encodeURIComponent(token)}/zip${shareQuery(path)}`
 }
 
 /** Mirrors the core's own collision handling (`sc-core::links::unique_name`):

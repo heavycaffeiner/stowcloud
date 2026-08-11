@@ -375,7 +375,13 @@ impl crate::Core {
                 Some(e) => format!("{stem} ({n}).{e}"),
                 None => format!("{stem} ({n})"),
             };
-            let p = dest_dir.join(&candidate, max_depth)?;
+            // `join_existing`, because `candidate` is `name` with a counter
+            // spliced in and `name` came off the disk. `a:b` yields `a:b (2)`,
+            // which the creation table refuses, so a colliding copy of a file
+            // Windows could never address failed outright instead of landing
+            // beside it. The source is already un-addressable from Windows;
+            // refusing here loses the copy and protects nothing.
+            let p = dest_dir.join_existing(&candidate, max_depth)?;
             if !path_exists(root, &p)? {
                 return Ok(p);
             }
@@ -445,8 +451,14 @@ impl crate::Core {
                 dest_root.mkdir(dest_path)?;
             }
             for entry in src_root.read_dir(src_path)? {
-                let sp = src_path.join(&entry.name, max_depth)?;
-                let dp = dest_path.join(&entry.name, max_depth)?;
+                // Both sides `join_existing`. The source is plain traversal.
+                // The destination is not a name anybody typed either: it is the
+                // source's own name, which the filesystem already accepted
+                // once, so reproducing it is not the invention the creation
+                // table guards against. With `join` the `?` aborted the whole
+                // copy over one `CON` or `a:b` somewhere in the tree.
+                let sp = src_path.join_existing(&entry.name, max_depth)?;
+                let dp = dest_path.join_existing(&entry.name, max_depth)?;
                 self.copy_recursive(src_root, &sp, dest_root, &dp)?;
             }
             Ok(())
@@ -476,7 +488,10 @@ impl crate::Core {
                     .name()
                     .ok_or_else(|| CoreError::InvalidPath("cannot copy share root".into()))?
                     .to_string();
-                let mut dest_path = dest_r.path.join(&name, max_depth)?;
+                // The source's own basename, not a name the caller chose, so
+                // `join_existing`: with `join` a file named `CON` could not be
+                // copied anywhere at all.
+                let mut dest_path = dest_r.path.join_existing(&name, max_depth)?;
 
                 if path_exists(&dest_r.root, &dest_path)? {
                     match on_conflict {
@@ -544,7 +559,10 @@ impl crate::Core {
             .name()
             .ok_or_else(|| CoreError::InvalidPath("cannot move share root".into()))?
             .to_string();
-        let mut dest_path = dest_r.path.join(&name, max_depth)?;
+        // The source's own basename again: a move does not invent a name, and
+        // with `join` a file named `CON` could not be moved out of the folder
+        // it was in.
+        let mut dest_path = dest_r.path.join_existing(&name, max_depth)?;
         let src_st = self.stat_counted(&src.root, &src.path)?;
 
         if path_exists(&dest_r.root, &dest_path)? {
@@ -666,7 +684,10 @@ impl crate::Core {
     pub(crate) fn delete_recursive(root: &ShareRoot, path: &SafePath) -> Result<(), CoreError> {
         let max_depth = root.policy().max_depth;
         for entry in root.read_dir(path)? {
-            let p = path.join(&entry.name, max_depth)?;
+            // `join_existing`: these names came out of `read_dir`, and the `?`
+            // meant one `CON` anywhere under a folder made the whole folder
+            // undeletable, with nothing on screen saying why.
+            let p = path.join_existing(&entry.name, max_depth)?;
             if entry.kind == Kind::Dir {
                 Self::delete_recursive(root, &p)?;
             } else {

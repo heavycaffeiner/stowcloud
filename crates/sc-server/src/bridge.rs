@@ -38,6 +38,16 @@ use sc_core::{SharePath, Vpath};
 /// refused rather than truncated: a silently short body is corruption.
 const MAX_INLINE_READ: usize = 256 * 1024 * 1024;
 
+/// Largest archive `GET /api/fs/archive/list` will open.
+///
+/// Not a memory bound: the listing reads the central directory and never an
+/// entry's bytes, and `ArchiveLimits` already caps the entry count. It is a
+/// latency bound. The central directory sits at the *end* of a zip, so the
+/// first thing the reader does is seek there, and on a cold rotational share
+/// that seek is what the panel waits on. Past this the viewer offers no
+/// preview at all rather than a spinner over a file nobody chose to wait for.
+const ARCHIVE_LIST_MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+
 #[derive(Clone)]
 pub struct CoreBridge {
     pub core: Arc<sc_core::Core>,
@@ -558,7 +568,7 @@ fn http_grant(rec: sc_core::GrantRecord) -> hapi::GrantInfo {
     }
 }
 
-fn http_err(e: sc_core::CoreError) -> hapi::CoreError {
+pub(crate) fn http_err(e: sc_core::CoreError) -> hapi::CoreError {
     use sc_core::CoreError as C;
     match e {
         C::NotFound => hapi::CoreError::NotFound,
@@ -937,6 +947,51 @@ impl hapi::CoreApi for CoreBridge {
         })
     }
 
+    fn denies_below(&self, user: UserId, share: ShareId, root: &SafePath) -> Vec<String> {
+        self.core.denies_below(user, share, root)
+    }
+
+    fn archive_list(
+        &self,
+        user: UserId,
+        vpath: &str,
+    ) -> Result<Option<Vec<hapi::ArchiveEntryWire>>, hapi::CoreError> {
+        let (entry, reader) = self.core.open_seekable(user, vpath).map_err(http_err)?;
+        // A zip's central directory sits at the end of the file, so listing one
+        // is a seek to somewhere past this mark on storage that may be
+        // rotational. Past the ceiling the viewer shows "no preview" and never
+        // asks; this is the same rule stated where a direct API call reaches
+        // it.
+        if entry.size > ARCHIVE_LIST_MAX_BYTES {
+            return Err(hapi::CoreError::InvalidName(format!(
+                "archive is {} bytes, over the {ARCHIVE_LIST_MAX_BYTES}-byte listing ceiling",
+                entry.size
+            )));
+        }
+        // The shipped defaults: no deployment knob exists for these, and the
+        // limits that matter here (entry count, name length, depth) are the
+        // same ones the streamed download enforces.
+        match sc_preview::list_archive(reader, &sc_preview::ArchiveLimits::default()) {
+            Ok(entries) => Ok(Some(
+                entries
+                    .into_iter()
+                    .map(|e| hapi::ArchiveEntryWire {
+                        name: e.name,
+                        size: e.size,
+                        kind: match e.kind {
+                            sc_preview::ArchiveEntryKind::Dir => "dir",
+                            sc_preview::ArchiveEntryKind::File => "file",
+                        },
+                    })
+                    .collect(),
+            )),
+            // Not a zip. The route answers this identically to a path the
+            // caller cannot list.
+            Err(sc_preview::PreviewError::UnsupportedFormat) => Ok(None),
+            Err(e) => Err(hapi::CoreError::InvalidName(e.to_string())),
+        }
+    }
+
     fn storage_report(&self) -> Result<hapi::StorageReport, hapi::CoreError> {
         let mut shares = Vec::new();
         for def in self.core.share_defs() {
@@ -1249,7 +1304,28 @@ impl hapi::CoreApi for CoreBridge {
         })
     }
 
-    fn share_link_entries(&self, id: i64) -> Result<Vec<hapi::Entry>, hapi::CoreError> {
+    fn share_link_node(&self, id: i64, path: &str) -> Result<hapi::PublicNode, hapi::CoreError> {
+        let link = self
+            .core
+            .link_by_id(id)
+            .map_err(http_err)?
+            .ok_or(hapi::CoreError::NotFound)?;
+        let node = self.core.link_resolve_at(&link, path).map_err(http_err)?;
+        Ok(hapi::PublicNode {
+            name: node.entry.name,
+            is_dir: node.entry.kind == sc_vfs::Kind::Dir,
+            size: node.entry.size,
+            mtime_ns: node.entry.mtime_ns,
+            fid: node.entry.id.map(|f| f.get()),
+            etag8: etag8_of(&node.entry.etag),
+        })
+    }
+
+    fn share_link_entries_at(
+        &self,
+        id: i64,
+        path: &str,
+    ) -> Result<Vec<hapi::PublicEntry>, hapi::CoreError> {
         let link = self
             .core
             .link_by_id(id)
@@ -1257,11 +1333,39 @@ impl hapi::CoreApi for CoreBridge {
             .ok_or(hapi::CoreError::NotFound)?;
         Ok(self
             .core
-            .link_list(&link)
+            .link_list_at(&link, path)
             .map_err(http_err)?
             .into_iter()
-            .map(http_entry)
+            .map(|e| hapi::PublicEntry {
+                name: e.name,
+                kind: e.kind.into(),
+                size: e.size,
+            })
             .collect())
+    }
+
+    fn share_link_archive(
+        &self,
+        id: i64,
+        path: &str,
+        out: &mut (dyn std::io::Write + Send),
+    ) -> Result<(), hapi::CoreError> {
+        let link = self
+            .core
+            .link_by_id(id)
+            .map_err(http_err)?
+            .ok_or(hapi::CoreError::NotFound)?;
+        let mut zip = sc_http::archive_zip::ZipStreamWriter::new(out);
+        self.core
+            .link_archive_walk(&link, path, &mut |rel, _size, mtime_ns, reader| {
+                zip.add_file(rel, mtime_ns, reader)
+                    .map(|_| ())
+                    .map_err(|e| sc_core::CoreError::Io(e.to_string()))
+            })
+            .map_err(http_err)?;
+        zip.finish()
+            .map_err(|e| hapi::CoreError::Internal(e.to_string()))?;
+        Ok(())
     }
 
     fn share_link_check_password(&self, id: i64, candidate: &str) -> Result<bool, hapi::CoreError> {
@@ -2676,7 +2780,9 @@ fn to_search_hit(
     }
 }
 
-fn to_search_completeness(c: sc_search::Completeness) -> sc_http::search_api::SearchCompleteness {
+pub(crate) fn to_search_completeness(
+    c: sc_search::Completeness,
+) -> sc_http::search_api::SearchCompleteness {
     match c {
         sc_search::Completeness::Full => sc_http::search_api::SearchCompleteness::Full,
         sc_search::Completeness::Truncated {

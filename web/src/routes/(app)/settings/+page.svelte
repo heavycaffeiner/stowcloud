@@ -155,7 +155,11 @@
         </p>
         {#await import('../../../lib/ui/settings/TotpSection.svelte') then mod}
           {@const TotpSection = mod.default}
-          <TotpSection enabled={user?.totp_enabled ?? false} onchanged={refreshSession} />
+          <TotpSection
+            enabled={user?.totp_enabled ?? false}
+            smbDedicated={user?.smb_credential === 'dedicated'}
+            onchanged={refreshSession}
+          />
         {/await}
       </section>
       <Divider />
@@ -174,6 +178,7 @@
               linked={oidc?.linked ?? false}
               subjectHint={oidc?.subject_hint}
               linkedNs={oidc?.linked_ns}
+              smbDedicated={user?.smb_credential === 'dedicated'}
               onchanged={refreshSession}
             />
           {/await}
@@ -212,6 +217,10 @@
           <SmbSection
             optOut={user?.smb_opt_out ?? false}
             enabled={user?.smb_enabled ?? false}
+            credential={user?.smb_credential ?? 'none'}
+            reason={user?.smb_unavailable_reason}
+            totpEnabled={user?.totp_enabled ?? false}
+            oidcLinked={oidc?.linked ?? false}
             onchanged={refreshSession}
           />
         {/await}

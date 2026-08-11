@@ -63,8 +63,12 @@ pub fn list_archive<R: Read + Seek>(
     reader: R,
     limits: &ArchiveLimits,
 ) -> Result<Vec<ArchiveEntry>, PreviewError> {
-    let mut zip = zip::ZipArchive::new(reader)
-        .map_err(|e| PreviewError::ArchiveRejected(format!("not a valid zip: {e}")))?;
+    // `UnsupportedFormat`, not `ArchiveRejected`: "this file is not a zip" and
+    // "this zip broke a limit" are different answers to a caller. A route
+    // reports the first as `404`, since telling somebody what a file they
+    // cannot read contains is exactly what that code exists to avoid, and the
+    // second as `422` with the reason.
+    let mut zip = zip::ZipArchive::new(reader).map_err(|_| PreviewError::UnsupportedFormat)?;
 
     let n = zip.len();
     if n as u64 > u64::from(limits.max_entries) {

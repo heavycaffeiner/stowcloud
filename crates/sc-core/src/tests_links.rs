@@ -428,7 +428,7 @@ fn a_file_drop_link_lists_nothing_and_never_overwrites() {
     assert!(link.is_drop());
 
     // No listing: the uploader must not learn what is already in the box.
-    assert!(matches!(core.link_list(&link), Err(CoreError::Denied { .. })));
+    assert!(matches!(core.link_list_at(&link, ""), Err(CoreError::Denied { .. })));
 
     // A colliding name is renamed, not replaced.
     let e = core.link_drop(&link, "existing.txt", b"from a stranger").unwrap();
@@ -459,7 +459,7 @@ fn a_read_link_on_a_directory_lists_it() {
     seed_file(&core, "/root/pub/one.txt");
     seed_file(&core, "/root/pub/two.txt");
     let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/pub"), &LinkSpec::default()).unwrap();
-    let names: Vec<String> = core.link_list(&link).unwrap().into_iter().map(|e| e.name).collect();
+    let names: Vec<String> = core.link_list_at(&link, "").unwrap().into_iter().map(|e| e.name).collect();
     assert_eq!(names, vec!["one.txt", "two.txt"]);
 }
 
@@ -561,6 +561,190 @@ fn concurrent_share_link_password_checks_are_gated_not_unbounded() {
         "expected Argon2 concurrency bounded to 2, saw {high_water} instead — the share-link \
          password gate must serialize concurrent verifies exactly like sc-auth's own login gate"
     );
+}
+
+// ---------------------------------------------------------- browsing a link --
+// Every defect below survived because the public path was only ever exercised
+// at the link root, where a traversal test has nothing to traverse.
+
+/// The whole of the input validation is `SafePath::parse`, and it is enough.
+/// Malformed, absent and forbidden are one answer, so a refusal tells a visitor
+/// nothing about what surrounds the subtree they were given.
+#[test]
+fn a_link_refuses_an_escaping_subpath() {
+    let (core, _dir) = setup();
+    core.mkdir(OWNER, "/root/pub").unwrap();
+    core.mkdir(OWNER, "/root/secret").unwrap();
+    seed_file(&core, "/root/secret/keys.txt");
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/pub"), &LinkSpec::default()).unwrap();
+
+    for rel in ["..", "../secret", "/root/secret", "a/../../secret", "a/./b"] {
+        assert!(
+            matches!(core.link_resolve_at(&link, rel), Err(CoreError::NotFound)),
+            "{rel:?} must be refused, and refused the same way an absent name is"
+        );
+    }
+}
+
+#[test]
+fn a_link_opens_a_subfolder_and_the_empty_subpath_is_the_target_itself() {
+    let (core, _dir) = setup();
+    core.mkdir(OWNER, "/root/pub").unwrap();
+    core.mkdir(OWNER, "/root/pub/2026").unwrap();
+    seed_file(&core, "/root/pub/2026/one.txt");
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/pub"), &LinkSpec::default()).unwrap();
+
+    assert_eq!(core.link_resolve_at(&link, "").unwrap().entry.name, "pub");
+    let names: Vec<String> =
+        core.link_list_at(&link, "2026").unwrap().into_iter().map(|e| e.name).collect();
+    assert_eq!(names, vec!["one.txt"]);
+}
+
+/// Directories first, then by name. A flat lexicographic sort puts a folder
+/// between two files, which is not what the app's own listing does.
+#[test]
+fn a_link_listing_puts_directories_first() {
+    let (core, _dir) = setup();
+    core.mkdir(OWNER, "/root/pub").unwrap();
+    seed_file(&core, "/root/pub/a.txt");
+    core.mkdir(OWNER, "/root/pub/m-folder").unwrap();
+    seed_file(&core, "/root/pub/z.txt");
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/pub"), &LinkSpec::default()).unwrap();
+
+    let names: Vec<String> =
+        core.link_list_at(&link, "").unwrap().into_iter().map(|e| e.name).collect();
+    assert_eq!(names, vec!["m-folder", "a.txt", "z.txt"]);
+}
+
+/// `link.perms` and the owner's own access are both upper bounds, and what a
+/// visitor gets is their intersection. The second is re-read on every request,
+/// so a deny placed below the link root after it was minted takes effect.
+#[test]
+fn a_link_never_lists_or_serves_what_its_owner_may_not_read() {
+    let (core, _dir) = setup();
+    core.mkdir(OWNER, "/root/pub").unwrap();
+    core.mkdir(OWNER, "/root/pub/private").unwrap();
+    seed_file(&core, "/root/pub/private/notes.txt");
+    seed_file(&core, "/root/pub/open.txt");
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/pub"), &LinkSpec::default()).unwrap();
+    assert_eq!(core.link_list_at(&link, "").unwrap().len(), 2);
+
+    let mut with_deny = grants();
+    with_deny.push(Grant {
+        id: 3,
+        principal: Principal::User(OWNER),
+        share: SHARE,
+        subpath: SafePath::parse("pub/private", 64).unwrap(),
+        allow: Perms::empty(),
+        deny: Perms::READ,
+        inherit: true,
+        label: None,
+    });
+    core.acl.replace_grants(with_deny);
+
+    let names: Vec<String> =
+        core.link_list_at(&link, "").unwrap().into_iter().map(|e| e.name).collect();
+    assert_eq!(names, vec!["open.txt"], "a denied child is omitted, never reported");
+    assert!(
+        matches!(core.link_resolve_at(&link, "private"), Err(CoreError::NotFound)),
+        "not `Denied`: to an anonymous visitor those two must be the same answer"
+    );
+    assert!(matches!(core.link_resolve_at(&link, "private/notes.txt"), Err(CoreError::NotFound)));
+}
+
+/// `join` applies the table for names being *created*, which refuses `CON`,
+/// `a:b` and a trailing dot. Walking a directory is traversal, and the `?`
+/// propagated, so one such name on disk failed the entire listing rather than
+/// skipping one row.
+#[test]
+#[cfg(unix)]
+fn a_link_lists_a_name_a_windows_client_would_refuse() {
+    let (core, dir) = setup();
+    core.mkdir(OWNER, "/root/pub").unwrap();
+    std::fs::write(dir.path().join("pub").join("CON"), b"x").unwrap();
+    seed_file(&core, "/root/pub/ordinary.txt");
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/pub"), &LinkSpec::default()).unwrap();
+
+    let names: Vec<String> =
+        core.link_list_at(&link, "").unwrap().into_iter().map(|e| e.name).collect();
+    assert_eq!(names, vec!["CON", "ordinary.txt"]);
+}
+
+/// Upload-only means the holder never learns what is already in there, at any
+/// depth, not just at the root.
+#[test]
+fn a_drop_link_is_refused_for_every_subpath() {
+    let (core, _dir) = setup();
+    core.mkdir(OWNER, "/root/inbox").unwrap();
+    core.mkdir(OWNER, "/root/inbox/sub").unwrap();
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/inbox"), &drop_spec()).unwrap();
+
+    for rel in ["", "sub"] {
+        assert!(matches!(core.link_resolve_at(&link, rel), Err(CoreError::Denied { .. })));
+        assert!(matches!(core.link_list_at(&link, rel), Err(CoreError::Denied { .. })));
+    }
+}
+
+/// Liveness runs before anything touches the subpath, so a dead link answers
+/// `Gone` whatever path was asked for. The order is the contract.
+#[test]
+fn a_dead_link_answers_gone_before_the_subpath_is_looked_at() {
+    let (core, _dir) = setup();
+    core.mkdir(OWNER, "/root/pub").unwrap();
+    core.mkdir(OWNER, "/root/pub/2026").unwrap();
+    // Spent, not expired: an expiry in the past is refused at mint time, and
+    // `link_target` treats an exhausted cap as `Gone` the same way.
+    let spec = LinkSpec { max_downloads: Some(1), ..LinkSpec::default() };
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/pub"), &spec).unwrap();
+    core.note_link_download(link.id).unwrap();
+    let link = core.link_by_id(link.id).unwrap().unwrap();
+
+    for rel in ["", "2026", "../secret"] {
+        assert!(
+            matches!(core.link_resolve_at(&link, rel), Err(CoreError::Gone)),
+            "a malformed path on a dead link is still `410`, not `404`"
+        );
+    }
+}
+
+/// The public zip walks the same tree the listing shows, and omits what the
+/// owner cannot read with no marker: the authenticated archive's
+/// `_skipped.txt` is useful to its owner and is a list of file names to an
+/// anonymous visitor.
+#[test]
+fn a_link_archive_walk_skips_what_the_listing_skips() {
+    let (core, _dir) = setup();
+    core.mkdir(OWNER, "/root/pub").unwrap();
+    core.mkdir(OWNER, "/root/pub/private").unwrap();
+    seed_file(&core, "/root/pub/private/notes.txt");
+    core.mkdir(OWNER, "/root/pub/open").unwrap();
+    seed_file(&core, "/root/pub/open/a.txt");
+    seed_file(&core, "/root/pub/top.txt");
+    let (link, _t) = core.create_link(OWNER, &Vpath::new("/root/pub"), &LinkSpec::default()).unwrap();
+
+    let mut with_deny = grants();
+    with_deny.push(Grant {
+        id: 3,
+        principal: Principal::User(OWNER),
+        share: SHARE,
+        subpath: SafePath::parse("pub/private", 64).unwrap(),
+        allow: Perms::empty(),
+        deny: Perms::READ,
+        inherit: true,
+        label: None,
+    });
+    core.acl.replace_grants(with_deny);
+
+    let mut seen = Vec::new();
+    core.link_archive_walk(&link, "", &mut |rel, _size, _mtime, reader| {
+        let mut buf = Vec::new();
+        std::io::Read::read_to_end(reader, &mut buf).unwrap();
+        seen.push(rel.to_string());
+        Ok(())
+    })
+    .unwrap();
+    seen.sort();
+    assert_eq!(seen, vec!["open/a.txt".to_string(), "top.txt".to_string()]);
 }
 
 #[test]

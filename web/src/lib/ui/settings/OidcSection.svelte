@@ -37,9 +37,22 @@
     linked: boolean
     subjectHint?: string
     linkedNs?: string
+    /** Whether this account holds a separate SMB-only password. Disconnecting
+     *  is the exact undo of the link that closed the account password as an
+     *  SMB credential, so it replaces one, and a credential the user set is
+     *  never removed in silence. */
+    smbDedicated?: boolean
     onchanged?: () => void
   }
-  let { configured, providerName, linked, subjectHint, linkedNs, onchanged }: Props = $props()
+  let {
+    configured,
+    providerName,
+    linked,
+    subjectHint,
+    linkedNs,
+    smbDedicated = false,
+    onchanged
+  }: Props = $props()
 
   // §5-2 table B: a link-mode callback that failed redirects here with the
   // code in the query string. `+page.svelte`'s tab sync leaves the query alone,
@@ -57,6 +70,9 @@
   let disconnectPassword = $state('')
   let disconnectError = $state<string | null>(null)
   let disconnecting = $state(false)
+  /** This section's own live region, for the one thing disconnecting does that
+   *  the user did not come here to do. */
+  let smbAnnouncement = $state('')
 
   function openConnect(): void {
     connectPassword = ''
@@ -106,8 +122,9 @@
     disconnectError = null
     disconnecting = true
     try {
-      await api.oidcUnlink(disconnectPassword)
+      const res = await api.oidcUnlink(disconnectPassword)
       disconnectOpen = false
+      smbAnnouncement = res.smb_password_replaced ? t('smb.replaced_by_account_password') : ''
       onchanged?.()
     } catch (err) {
       disconnectError = describeError(err, t('oidc.could_not_disconnect_try_again'))
@@ -164,6 +181,7 @@
   {:else if configured}
     <p class="sc-oidc__detail">{t('oidc.connect_sign_instead_your_account', { provider: providerLabel })}</p>
   {/if}
+  <p class="sc-oidc__detail" aria-live="polite">{smbAnnouncement}</p>
 </div>
 
 <Dialog open={connectOpen} title={t('oidc.connect_provider', { provider: providerLabel })} onclose={closeConnect}>
@@ -193,6 +211,9 @@
     <Icon icon={icons.warning} size={16} />
     {t('oidc.every_session_opened_through_signed')}
   </p>
+  {#if smbDedicated}
+    <p class="sc-oidc__detail">{t('smb.dedicated_will_be_replaced')}</p>
+  {/if}
   <TextField
     type="password"
     label={t('common.current_password')}

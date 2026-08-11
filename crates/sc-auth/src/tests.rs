@@ -1852,3 +1852,248 @@ async fn reconfirm_password_answers_for_accounts_login_would_refuse() {
     // An account that does not exist answers the same as a wrong password.
     assert!(!svc.reconfirm_password(sc_vfs::UserId::new(4242), &pw("correct horse battery")).await);
 }
+
+// ------------------------------------------- the dedicated SMB password --
+// The defect this closes: `smb.totp_policy` defaults to `require_separate`,
+// enrolling in TOTP deletes the account-derived NT hash, and until now no
+// route in this product could create the separate credential the policy then
+// demands. The account could not reach SMB again except by disabling TOTP.
+
+fn nt_hex(password: &str) -> String {
+    nt_hash::nt_hash(password).iter().map(|b| format!("{b:02X}")).collect()
+}
+
+#[tokio::test]
+async fn a_totp_account_can_set_and_use_a_separate_smb_password() {
+    let (svc, _dir) = new_service(test_cfg());
+    let sink = with_passdb_sink(&svc);
+    let uid = svc.create_user("nadia", &pw("correct horse battery")).unwrap();
+    let _ = enroll_totp(&svc, uid, "correct horse battery");
+    assert!(!svc.nt_hash_present(uid).unwrap(), "enrolling drops the account-derived hash");
+
+    let before = sink.count();
+    svc.set_dedicated_smb_password(uid, &pw("correct horse battery"), &pw("a separate smb password"))
+        .await
+        .unwrap();
+
+    assert!(svc
+        .export_smbpasswd(1000)
+        .unwrap()
+        .contains(&format!(":{}:", nt_hex("a separate smb password"))));
+    assert_eq!(sink.count(), before + 1, "a stored credential nobody publishes does not work");
+    assert_eq!(svc.smb_credential_state(uid).unwrap(), SmbCredential::Dedicated);
+}
+
+#[tokio::test]
+async fn setting_a_separate_password_re_confirms_and_enforces_the_length_floor() {
+    let (svc, _dir) = new_service(test_cfg());
+    let uid = svc.create_user("olof", &pw("correct horse battery")).unwrap();
+
+    assert_eq!(
+        svc.set_dedicated_smb_password(uid, &pw("not my password"), &pw("a separate smb password"))
+            .await,
+        Err(SmbPasswordError::BadPassword),
+        "a live session alone must not be enough to add a permanent credential"
+    );
+    assert_eq!(
+        svc.set_dedicated_smb_password(uid, &pw("correct horse battery"), &pw("short")).await,
+        Err(SmbPasswordError::TooShort { min: 10 })
+    );
+    // Neither refusal touched the account-derived hash it started with.
+    assert!(svc
+        .export_smbpasswd(1000)
+        .unwrap()
+        .contains(&format!(":{}:", nt_hex("correct horse battery"))));
+}
+
+/// Both toggles are the same account's own settings on the same screen, and a
+/// credential that is never published is not what the request asked for.
+#[tokio::test]
+async fn setting_a_separate_password_clears_the_accounts_own_smb_toggles() {
+    let (svc, _dir) = new_service(test_cfg());
+    let uid = svc.create_user("petra", &pw("correct horse battery")).unwrap();
+    svc.set_smb_settings(uid, true, false).unwrap();
+    assert!(!svc.nt_hash_present(uid).unwrap(), "opting out erases what is stored");
+
+    let out = svc
+        .set_dedicated_smb_password(uid, &pw("correct horse battery"), &pw("a separate smb password"))
+        .await
+        .unwrap();
+
+    assert!(out.opt_out_cleared, "the screen has to be able to say the switches moved");
+    assert_eq!(svc.smb_credential_state(uid).unwrap(), SmbCredential::Dedicated);
+    assert!(svc
+        .export_smbpasswd(1000)
+        .unwrap()
+        .contains(&format!(":{}:", nt_hex("a separate smb password"))));
+}
+
+#[tokio::test]
+async fn clearing_a_separate_password_goes_back_to_the_account_password() {
+    let (svc, _dir) = new_service(test_cfg());
+    let uid = svc.create_user("quirin", &pw("correct horse battery")).unwrap();
+    svc.set_dedicated_smb_password(uid, &pw("correct horse battery"), &pw("a separate smb password"))
+        .await
+        .unwrap();
+
+    assert!(svc.clear_dedicated_smb_password(uid, &pw("correct horse battery")).await.unwrap());
+    assert_eq!(svc.smb_credential_state(uid).unwrap(), SmbCredential::Account);
+    assert!(svc
+        .export_smbpasswd(1000)
+        .unwrap()
+        .contains(&format!(":{}:", nt_hex("correct horse battery"))));
+
+    assert_eq!(
+        svc.clear_dedicated_smb_password(uid, &pw("correct horse battery")).await,
+        Err(SmbPasswordError::NotSet),
+        "clearing twice is a 404, not a silent success"
+    );
+}
+
+/// The case the screen has to warn about before the user commits: clearing
+/// leaves this account with no SMB credential at all.
+#[tokio::test]
+async fn clearing_a_separate_password_can_end_smb_access() {
+    let (svc, _dir) = new_service(test_cfg());
+    let uid = svc.create_user("rikke", &pw("correct horse battery")).unwrap();
+    let _ = enroll_totp(&svc, uid, "correct horse battery");
+    svc.set_dedicated_smb_password(uid, &pw("correct horse battery"), &pw("a separate smb password"))
+        .await
+        .unwrap();
+
+    assert!(!svc.clear_dedicated_smb_password(uid, &pw("correct horse battery")).await.unwrap());
+    assert!(!svc.nt_hash_present(uid).unwrap());
+    assert_eq!(
+        svc.smb_credential_state(uid).unwrap(),
+        SmbCredential::None(SmbUnavailable::NotSet)
+    );
+}
+
+/// Turning TOTP off is the exact undo of the event that made a separate
+/// password necessary, so it restores the state that preceded it rather than
+/// leaving the user holding a credential nothing needs any more.
+#[tokio::test]
+async fn turning_totp_off_replaces_a_separate_smb_password() {
+    let (svc, _dir) = new_service(test_cfg());
+    let uid = svc.create_user("sonja", &pw("correct horse battery")).unwrap();
+    let _ = enroll_totp(&svc, uid, "correct horse battery");
+    svc.set_dedicated_smb_password(uid, &pw("correct horse battery"), &pw("a separate smb password"))
+        .await
+        .unwrap();
+
+    assert!(svc.totp_disable(uid, &pw("correct horse battery")).await.unwrap());
+    assert_eq!(svc.smb_credential_state(uid).unwrap(), SmbCredential::Account);
+    assert!(svc
+        .export_smbpasswd(1000)
+        .unwrap()
+        .contains(&format!(":{}:", nt_hex("correct horse battery"))));
+}
+
+/// Identical rule on the other flow, deliberately: a user who has been through
+/// one of them should not have to learn a second rule for the other.
+#[test]
+fn a_user_unlink_replaces_a_separate_smb_password() {
+    let (svc, _dir) = new_service(test_cfg());
+    let uid = svc.create_user("tobias", &pw("correct horse battery")).unwrap();
+    {
+        let conn = svc.pool.get().unwrap();
+        svc.store_nt_from_plaintext(&conn, uid, "a separate smb password", nt_ops::NT_SOURCE_DEDICATED)
+            .unwrap();
+    }
+    svc.link_oidc_identity(uid, ISSUER, "sub-tobias").unwrap();
+
+    let out = svc.unlink_oidc_identity(uid, Some(&pw("correct horse battery"))).unwrap();
+    assert!(out.smb_password_replaced);
+    assert!(out.smb_nt_restored);
+    assert!(svc
+        .export_smbpasswd(1000)
+        .unwrap()
+        .contains(&format!(":{}:", nt_hex("correct horse battery"))));
+}
+
+/// The admin path holds no plaintext, so it cannot restore anything, and a
+/// dedicated password it never touched is still the account's way in.
+#[test]
+fn an_admin_unlink_leaves_a_separate_smb_password_alone() {
+    let (svc, _dir) = new_service(test_cfg());
+    let uid = svc.create_user("ulrik", &pw("correct horse battery")).unwrap();
+    {
+        let conn = svc.pool.get().unwrap();
+        svc.store_nt_from_plaintext(&conn, uid, "a separate smb password", nt_ops::NT_SOURCE_DEDICATED)
+            .unwrap();
+    }
+    svc.link_oidc_identity(uid, ISSUER, "sub-ulrik").unwrap();
+
+    let out = svc.unlink_oidc_identity(uid, None).unwrap();
+    assert!(!out.smb_nt_restored);
+    assert!(!out.smb_password_replaced);
+    assert_eq!(svc.smb_credential_state(uid).unwrap(), SmbCredential::Dedicated);
+}
+
+// --------------------------------------------- smb.totp_policy's reader --
+// Before this, `block` and `require_separate` behaved identically: the setting
+// was visible in the admin UI, persisted, and changed nothing.
+
+#[tokio::test]
+async fn the_totp_policy_decides_whether_a_totp_account_is_published_at_all() {
+    let (svc, _dir) = new_service(test_cfg());
+    let uid = svc.create_user("vidar", &pw("correct horse battery")).unwrap();
+    let _ = enroll_totp(&svc, uid, "correct horse battery");
+    svc.set_dedicated_smb_password(uid, &pw("correct horse battery"), &pw("a separate smb password"))
+        .await
+        .unwrap();
+
+    // The default: a separate credential is what the policy asks for, so it is
+    // exported normally.
+    assert_eq!(svc.smb_totp_policy(), SmbTotpPolicy::RequireSeparate);
+    assert!(svc.export_smbpasswd(1000).unwrap().contains("vidar"));
+    assert_eq!(svc.smb_credential_state(uid).unwrap(), SmbCredential::Dedicated);
+
+    svc.set_smb_totp_policy(SmbTotpPolicy::Block);
+    assert!(
+        !svc.export_smbpasswd(1000).unwrap().contains("vidar"),
+        "under `block` a TOTP account is excluded whatever credential it holds"
+    );
+    assert_eq!(
+        svc.smb_credential_state(uid).unwrap(),
+        SmbCredential::None(SmbUnavailable::TotpBlocked),
+        "reporting the row it holds would be a claim only a failed connection disproves"
+    );
+
+    // Not retroactive to stored rows: flipping it back restores access with
+    // nobody setting a password again.
+    svc.set_smb_totp_policy(SmbTotpPolicy::RequireSeparate);
+    assert!(svc.export_smbpasswd(1000).unwrap().contains("vidar"));
+}
+
+/// A separate SMB password exists precisely because it is *not* the account
+/// password, so changing the account password must not re-derive over it.
+/// This used to overwrite, and it did so in silence: the change-password
+/// screen has no warning, unlike the two flows that do replace it.
+#[tokio::test]
+async fn changing_the_account_password_leaves_a_separate_smb_password_alone() {
+    let (svc, _dir) = new_service(test_cfg());
+    let uid = svc.create_user("xenia2", &pw("correct horse battery")).unwrap();
+    svc.set_dedicated_smb_password(uid, &pw("correct horse battery"), &pw("a separate smb password"))
+        .await
+        .unwrap();
+
+    svc.set_password(uid, &pw("a brand new password")).unwrap();
+
+    assert_eq!(svc.smb_credential_state(uid).unwrap(), SmbCredential::Dedicated);
+    let out = svc.export_smbpasswd(1000).unwrap();
+    assert!(out.contains(&format!(":{}:", nt_hex("a separate smb password"))));
+    assert!(
+        !out.contains(&format!(":{}:", nt_hex("a brand new password"))),
+        "the new account password must not have become an SMB credential"
+    );
+}
+
+/// The policy is about TOTP and nothing else.
+#[test]
+fn the_block_policy_leaves_an_ordinary_account_alone() {
+    let (svc, _dir) = new_service(test_cfg());
+    svc.create_user("wilma", &pw("correct horse battery")).unwrap();
+    svc.set_smb_totp_policy(SmbTotpPolicy::Block);
+    assert!(svc.export_smbpasswd(1000).unwrap().contains("wilma"));
+}

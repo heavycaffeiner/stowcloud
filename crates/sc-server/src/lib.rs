@@ -27,6 +27,7 @@ pub mod nc_trash;
 // code that mentions `sc-oidc`.
 pub mod oidc;
 pub mod passdb;
+pub mod recent;
 pub mod routes;
 pub mod settings_bridge;
 pub mod settings_store;

@@ -102,7 +102,11 @@ impl crate::Core {
             Err(_) => return Ok(()),
         };
         for entry in entries {
-            let Ok(child_path) = path.join(&entry.name, max_depth) else {
+            // `join_existing`, not `join`: `join` applies the table for names
+            // being *created*, which refuses `CON`, `a:b` and a trailing dot,
+            // and these came out of `read_dir`. With `join` the archive
+            // silently left out a name the listing beside it showed.
+            let Ok(child_path) = path.join_existing(&entry.name, max_depth) else {
                 continue;
             };
             let child_rel = format!("{rel}/{}", entry.name);

@@ -50,9 +50,11 @@ the product. `/dav-uploads` is the same capability, compiled unconditionally.
 
 ### 3.2 Non-Goals
 
-- [ ] `REPORT`. Out of scope for the core — and not present in the compat
-      layer either, so no client has WebDAV search
-      (`stowcloud-8-compat.md` §7). Only the native `GET /api/search` works.
+- [ ] `REPORT`. Out of scope for the core. WebDAV `SEARCH` is **not** a
+      non-goal any more: `stowcloud-14-compat-mobile.md` specifies it and
+      the compat layer answers it, because the phone apps have no other way
+      to search. It is served from `sc-dav`'s own module, above this
+      proposal's method surface rather than inside it.
 - [ ] Multi-range `GET`. Unused by media clients; a multi-range request gets
       the whole body as `200`, which the RFC permits.
 - [ ] Depth-infinity PROPFIND by default. Unbounded on a million-file tree it
@@ -244,8 +246,17 @@ beats a silent timeout.
 ### 6-2. Dependencies
 
 - `quick-xml` (namespace reader), `axum`, `tokio`, `uuid`.
-- Litmus, `rclone` and a DAVx⁵ simulation in CI; `cargo-fuzz` for every body
-  parser plus the `If` and `Destination` headers.
+- `proptest` for the `If` header grammar
+  (`crates/sc-dav/tests/if_header_prop.rs`), which asserts the parser never
+  panics on any input. No fuzzing toolchain, for the reason
+  `stowcloud-2-core-vfs.md` §4.4 gives.
+- **No protocol conformance suite runs anywhere.** Litmus, `rclone` and a
+  DAVx⁵ simulation were all specified for CI and none of them is wired.
+  Every client behaviour in §7 is pinned by a hand-written test against our
+  own server instead, which catches a regression in what we decided to send
+  and cannot catch a disagreement with the RFC.
+  `stowcloud-12-architecture.md` §4.4 carries this in its list of what is
+  still open.
 
 ## 7. Client-specific behaviour
 

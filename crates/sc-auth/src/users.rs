@@ -1,6 +1,6 @@
 use crate::db::now_ns;
 use crate::nt_hash::open_nt;
-use crate::nt_ops::NT_SOURCE_ACCOUNT;
+use crate::nt_ops::{NT_SOURCE_ACCOUNT, NT_SOURCE_DEDICATED};
 use crate::password::needs_rehash;
 use crate::{AdminGuardError, AuthService, ChangePasswordError, CreateUserError, UserRow};
 use anyhow::{anyhow, bail, Result};
@@ -77,18 +77,26 @@ impl AuthService {
             rusqlite::params![u.get()],
             |r| r.get(0),
         )?;
-        // §2.4 lifecycle table: password change always (re)derives the
-        // AccountPassword-sourced NT hash, unconditionally overwriting even
-        // a previously Dedicated one — unlike opportunistic backfill, this
-        // is an explicit user action with the plaintext in hand.
+        // A password change (re)derives the AccountPassword-sourced NT hash:
+        // unlike opportunistic backfill, this is an explicit user action with
+        // the plaintext in hand.
         //
-        // Unless an OIDC identity is linked. This is the derivation site the
-        // OIDC carve-out most needs (proposal §4.3.6 step 3): without it, a
-        // linked user changing their password hands themselves a working SMB
-        // credential again, and neither they nor the admin would have any
-        // reason to think they had.
+        // Not when an OIDC identity is linked. This is the derivation site the
+        // OIDC carve-out most needs: without it, a linked user changing their
+        // password hands themselves a working SMB credential again, and
+        // neither they nor the admin would have any reason to think they had.
+        //
+        // Not when a dedicated SMB password is set either. That credential
+        // exists precisely because it is *not* the account password, so
+        // re-deriving over it destroys the separation its owner asked for, and
+        // it would do so in silence: the change-password screen has nothing to
+        // warn with, unlike the TOTP-disable and SSO-unlink dialogs, which are
+        // the two flows that do replace it and say so first. This used to
+        // overwrite, which meant a user with a separate SMB password lost it,
+        // and their mounts, by changing their web password.
         let oidc_linked = crate::oidc::linked_on(&conn, u)?;
-        let re_derived = !totp_enabled && !smb_opt_out && !oidc_linked;
+        let dedicated = self.nt_source(&conn, u)? == Some(NT_SOURCE_DEDICATED);
+        let re_derived = !totp_enabled && !smb_opt_out && !oidc_linked && !dedicated;
         if re_derived {
             self.store_nt_from_plaintext(&conn, u, new.expose_secret(), NT_SOURCE_ACCOUNT)?;
         }
@@ -442,10 +450,18 @@ impl AuthService {
     /// Uniqueness costs nothing elsewhere: `force user = scsvc` decides what a
     /// connection writes as, so a distinct uid here never reaches a file on
     /// disk (verified — a second account's uploads still land `scsvc:scsvc`).
+    ///
+    /// `smb.totp_policy = block` excludes every TOTP-enrolled account here,
+    /// whatever credential it holds. `require_separate` excludes none: an
+    /// account under it reaches SMB with the dedicated password it was told to
+    /// set. The policy decides what is published, never what is stored, so
+    /// flipping it back restores access without anybody setting a password
+    /// again.
     pub fn export_smbpasswd(&self, base_uid: u32) -> Result<String> {
+        let block_totp = self.smb_totp_policy() == crate::SmbTotpPolicy::Block;
         let conn = self.pool.get()?;
         let mut stmt = conn.prepare(
-            "SELECT u.id, u.name, s.nt_hash_ct, s.key_ver \
+            "SELECT u.id, u.name, s.nt_hash_ct, s.key_ver, u.totp_secret IS NOT NULL \
              FROM user u JOIN user_smb_secret s ON s.user = u.id \
              WHERE u.smb_enabled = 1 AND u.disabled = 0",
         )?;
@@ -455,6 +471,7 @@ impl AuthService {
                 r.get::<_, String>(1)?,
                 r.get::<_, Vec<u8>>(2)?,
                 r.get::<_, i64>(3)? as u32,
+                r.get::<_, bool>(4)?,
             ))
         })?;
         let mut out = String::new();
@@ -462,7 +479,10 @@ impl AuthService {
             // `row_id` is this account's primary key: the AAD `open_nt` needs
             // (that is what the hash was sealed against) and, offset by
             // `base_uid`, what makes the rendered uid unique.
-            let (row_id, name, ct, key_ver) = row?;
+            let (row_id, name, ct, key_ver, totp_enabled) = row?;
+            if block_totp && totp_enabled {
+                continue;
+            }
             let nt = match open_nt(&self.master_key, &ct, UserId::new(row_id), key_ver) {
                 Ok(nt) => nt,
                 Err(e) => {

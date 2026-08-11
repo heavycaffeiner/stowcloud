@@ -32,6 +32,7 @@ import iconLock from '@ktibow/iconset-material-symbols/lock-outline'
 import iconMenu from '@ktibow/iconset-material-symbols/menu'
 import iconMore from '@ktibow/iconset-material-symbols/more-vert'
 import iconMove from '@ktibow/iconset-material-symbols/drive-file-move-outline'
+import iconRecent from '@ktibow/iconset-material-symbols/history'
 import iconRefresh from '@ktibow/iconset-material-symbols/refresh'
 import iconRename from '@ktibow/iconset-material-symbols/edit-outline'
 import iconRestore from '@ktibow/iconset-material-symbols/restore-from-trash-outline'
@@ -64,6 +65,7 @@ export {
   iconMenu,
   iconMore,
   iconMove,
+  iconRecent,
   iconRefresh,
   iconRename,
   iconRestore,
@@ -100,6 +102,7 @@ export const icons = {
   menu: iconMenu,
   'more-vert': iconMore,
   move: iconMove,
+  recent: iconRecent,
   refresh: iconRefresh,
   rename: iconRename,
   restore: iconRestore,

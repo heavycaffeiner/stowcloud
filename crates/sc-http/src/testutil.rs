@@ -214,7 +214,27 @@ impl CoreApi for LinkMockCore {
         Ok(())
     }
 
-    fn share_link_entries(&self, _id: i64) -> Result<Vec<crate::core_api::Entry>, crate::core_api::CoreError> {
+    fn share_link_node(&self, id: i64, path: &str) -> Result<crate::core_api::PublicNode, crate::core_api::CoreError> {
+        if self.dead.lock().contains(&id) {
+            return Err(crate::core_api::CoreError::Gone);
+        }
+        // One node, the link's own target: this fake has no tree, so any
+        // subpath is not found, which is what a real link answers for a name
+        // that is not there.
+        if !path.is_empty() {
+            return Err(crate::core_api::CoreError::NotFound);
+        }
+        Ok(crate::core_api::PublicNode {
+            name: "shared.txt".into(),
+            is_dir: self.is_dir,
+            size: 3,
+            mtime_ns: 0,
+            fid: Some(77),
+            etag8: [1, 2, 3, 4, 5, 6, 7, 8],
+        })
+    }
+
+    fn share_link_entries_at(&self, _id: i64, _path: &str) -> Result<Vec<crate::core_api::PublicEntry>, crate::core_api::CoreError> {
         Ok(Vec::new())
     }
 
@@ -468,6 +488,7 @@ pub fn test_state_with_core(core: Arc<dyn CoreApi>) -> (AppState, tempfile::Temp
         uploads: Arc::new(crate::upload_api::UnimplementedUploads),
         content: Arc::new(UnimplementedContent),
         search: Arc::new(UnimplementedSearch),
+        recent: Arc::new(crate::recent_api::UnimplementedRecent),
         setup: Arc::new(SetupClosed),
         oidc: Arc::new(crate::oidc_api::OidcDisabled),
         oidc_rate: Arc::new(IpTokenBucket::new(1000, std::time::Duration::from_secs(1))),
@@ -477,12 +498,14 @@ pub fn test_state_with_core(core: Arc<dyn CoreApi>) -> (AppState, tempfile::Temp
         jobs: Arc::new(crate::state::JobStore::open_in_memory().expect("in-memory jobs db")),
         rate_limiter: Arc::new(IpTokenBucket::new(1000, std::time::Duration::from_secs(1))),
         link_rate: Arc::new(KeyedTokenBucket::new(10, std::time::Duration::from_secs(360))),
+        link_browse_rate: Arc::new(KeyedTokenBucket::new(1000, std::time::Duration::from_secs(1))),
         search_rate: Arc::new(KeyedTokenBucket::new(1000, std::time::Duration::from_secs(60))),
         setup_rate: Arc::new(IpTokenBucket::new(1000, std::time::Duration::from_secs(1))),
         search_concurrency: Arc::new(crate::search_limits::SearchConcurrency::new(
             &crate::search_limits::SearchLimitsConfig::default(),
         )),
         archive_concurrency: Arc::new(crate::state::ResizableSemaphore::new(4)),
+        folder_size_concurrency: Arc::new(crate::state::ResizableSemaphore::new(4)),
         csrf_key: [9u8; 32],
         boot_time: std::time::Instant::now(),
         settings: Arc::new(crate::settings_api::UnimplementedSettings),

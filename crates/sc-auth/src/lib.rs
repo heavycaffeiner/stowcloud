@@ -75,6 +75,11 @@ pub struct AuthService {
     /// See [`nt_ops::PassdbSink`] for why deleting an NT hash is only half
     /// the job.
     passdb_sink: std::sync::OnceLock<Arc<dyn nt_ops::PassdbSink>>,
+
+    /// `smb.totp_policy`, seeded from [`AuthConfig`] and replaceable at
+    /// runtime because the admin settings screen changes it without a
+    /// restart. `0 = RequireSeparate`, `1 = Block`.
+    smb_totp_policy: std::sync::atomic::AtomicU8,
 }
 
 impl AuthService {
@@ -116,6 +121,11 @@ impl AuthService {
         let ip_gate = IpGate::new(cfg.rate_ip_capacity, cfg.rate_ip_refill);
         let account_gate = AccountGate::new(cfg.rate_account_refill);
 
+        let smb_totp_policy = std::sync::atomic::AtomicU8::new(match cfg.smb_totp_policy {
+            SmbTotpPolicy::RequireSeparate => 0,
+            SmbTotpPolicy::Block => 1,
+        });
+
         Ok(Self {
             pool,
             cfg,
@@ -131,6 +141,7 @@ impl AuthService {
             account_gate,
             generation: AtomicU64::new(0),
             passdb_sink: std::sync::OnceLock::new(),
+            smb_totp_policy,
         })
     }
 
@@ -392,6 +403,92 @@ impl std::fmt::Display for RecoveryReissueError {
 }
 
 impl std::error::Error for RecoveryReissueError {}
+
+/// Error surface for the two dedicated-SMB-password calls, distinct from a
+/// bare `anyhow::Error` for the same reason [`ChangePasswordError`] is: the
+/// HTTP layer answers a different status for each and must not reach that
+/// decision by string-matching a message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SmbPasswordError {
+    /// The re-confirmed account password was wrong.
+    BadPassword,
+    /// The new SMB password is under `min_password_len`.
+    TooShort { min: usize },
+    /// A clear was asked for and no dedicated password is set.
+    NotSet,
+    Internal(String),
+}
+
+/// What setting an SMB-only password did beyond storing it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmbPasswordSet {
+    /// The account's own SMB toggles were off and have been turned back on,
+    /// because a credential that is never published is not one the user asked
+    /// for. The screen says so afterwards.
+    pub opt_out_cleared: bool,
+}
+
+impl std::fmt::Display for SmbPasswordError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SmbPasswordError::BadPassword => write!(f, "bad password"),
+            SmbPasswordError::TooShort { min } => write!(f, "smb password shorter than {min}"),
+            SmbPasswordError::NotSet => write!(f, "no dedicated smb password is set"),
+            SmbPasswordError::Internal(m) => write!(f, "internal error: {m}"),
+        }
+    }
+}
+
+impl std::error::Error for SmbPasswordError {}
+
+/// What works over SMB for one account right now, with `smb.totp_policy`
+/// already folded in. Reported on the session so the settings screen can state
+/// which password SMB wants without a second request, and never carrying any
+/// part of a credential.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SmbCredential {
+    /// The account password. Changing it changes both.
+    Account,
+    /// A separate password the user set. The account password does not work.
+    Dedicated,
+    None(SmbUnavailable),
+}
+
+/// Why an account has no working SMB credential. An OIDC link is deliberately
+/// not one of these: a linked account may hold and use a dedicated password,
+/// and what the link removes is the account password, which is
+/// [`SmbUnavailable::NotSet`] until the user sets one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SmbUnavailable {
+    /// No credential is held. Setting a separate password is what fixes it.
+    NotSet,
+    /// TOTP is on and the deployment's policy is `block`, so no credential of
+    /// any kind is exported and setting one would not help.
+    TotpBlocked,
+    /// The account's own SMB toggles.
+    OptedOut,
+}
+
+impl SmbCredential {
+    /// The wire value, and the i18n key suffix the screen renders.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SmbCredential::Account => "account",
+            SmbCredential::Dedicated => "dedicated",
+            SmbCredential::None(_) => "none",
+        }
+    }
+
+    /// Present only alongside `"none"`.
+    pub fn reason_str(self) -> Option<&'static str> {
+        match self {
+            SmbCredential::None(SmbUnavailable::NotSet) => Some("not_set"),
+            SmbCredential::None(SmbUnavailable::TotpBlocked) => Some("totp_blocked"),
+            SmbCredential::None(SmbUnavailable::OptedOut) => Some("opted_out"),
+            _ => None,
+        }
+    }
+}
 
 /// A freshly generated, **not yet persisted** TOTP secret plus the
 /// `otpauth://` URL a client renders as a QR code. Nothing is written to the

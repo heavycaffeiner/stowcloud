@@ -289,6 +289,18 @@ fn classify_trusted_proxies(entries: &[String]) -> TrustedProxies {
 }
 
 impl Diagnostics {
+    /// Shares sitting on tmpfs, by name. Not a refusal: tmpfs works, and a
+    /// deployment may genuinely want a scratch share. It vanishes on reboot,
+    /// which is a configuration mistake far more often than a choice, so the
+    /// startup log and the admin screen both say so.
+    pub fn tmpfs_shares(&self) -> Vec<String> {
+        self.shares
+            .iter()
+            .filter(|s| s.fstype == sc_vfs::FsType::Tmpfs)
+            .map(|s| s.name.clone())
+            .collect()
+    }
+
     pub fn any_share_rejected(&self) -> bool {
         self.shares.iter().any(|s| s.rejected)
     }
@@ -609,6 +621,17 @@ pub fn print(d: &Diagnostics) {
                 );
             }
         }
+    }
+
+    let tmpfs = d.tmpfs_shares();
+    if !tmpfs.is_empty() {
+        println!(
+            "[sc]   WARNING: share(s) {} are on tmpfs, which lives in RAM: everything stored \
+             there is gone at the next reboot and counts against this machine's memory. \
+             Permitted, but almost never what a file share is meant to be — point them at a \
+             volume or a bind mount unless this is deliberately scratch space.",
+            tmpfs.join(", ")
+        );
     }
 
     if d.selinux == SelinuxStatus::Enforcing && !d.shares.is_empty() {
