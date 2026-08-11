@@ -60,9 +60,25 @@
   /** The one-word verb for what was done. Text, never a colour or an icon on
    *  its own: a restored file sits at the top of the list carrying a
    *  three-year-old modification time, and without the word that reads as a
-   *  bug. */
+   *  bug.
+   *
+   *  Spelled out rather than interpolated into the key, because a key built at
+   *  runtime cannot be extracted and `tools/i18n-check.mjs` would have no call
+   *  site to tie the catalogue entries to. A verb this build does not know
+   *  still renders a word. */
   function verb(hit: RecentHit): string {
-    return t(`recent.op_${hit.op}`)
+    switch (hit.op) {
+      case 'edit':
+        return t('recent.op_edit')
+      case 'copy':
+        return t('recent.op_copy')
+      case 'move':
+        return t('recent.op_move')
+      case 'restore':
+        return t('recent.op_restore')
+      default:
+        return t('recent.op_upload')
+    }
   }
 </script>
 
