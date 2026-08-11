@@ -38,11 +38,17 @@ pub fn parse_path(s: &str) -> Option<SafePath> {
 /// Append one component read from a directory listing.
 ///
 /// `None` when the name is not addressable as a `SafePath` — it contains a
-/// separator, a control character, or something else the rejection table
-/// forbids. Such an entry is skipped rather than reported: we could not safely
+/// separator or a NUL, is over-long, or names one of this server's own control
+/// files. Such an entry is skipped rather than reported: we could not safely
 /// re-open it, so promising the user a result there would be a lie.
+///
+/// `join_existing`, because that is exactly what this is: a name the kernel
+/// just handed back. `join` applies the table for names being *created*, so
+/// every `CON` and `a:b` on the share was skipped by the walk — silently
+/// absent from search results and from the recency query, with no reason given
+/// anywhere.
 pub fn join_child(parent: &SafePath, name: &str) -> Option<SafePath> {
-    parent.join(name, JOIN_MAX_DEPTH).ok()
+    parent.join_existing(name, JOIN_MAX_DEPTH).ok()
 }
 
 /// Display form (`"a/b/c"`; the root is `""`).

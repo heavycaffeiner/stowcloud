@@ -679,38 +679,111 @@ fn a_name_windows_would_refuse_can_still_be_copied_moved_and_deleted() {
         core.list(USER, "/root/dst/src", Sort::Name, Order::Asc).unwrap().entries.into_iter().map(|e| e.name).collect();
     assert_eq!(copied, vec!["CON", "a:b"]);
 
+    // ...movable on its own...
+    let res = core
+        .move_entries(USER, &["/root/src/CON".into()], "/root/dst", OnConflict::Rename, &HashMap::new())
+        .unwrap();
+    assert!(res[0].ok, "move: {:?}", res[0].error);
+
     // ...and deletable as a tree.
     let res = core.delete(USER, &["/root/dst".into()], true).unwrap();
     assert!(res[0].ok, "one CON anywhere under it must not make a folder undeletable");
     assert!(core.stat_entry(USER, "/root/dst").is_err());
 }
 
-/// The half that is **not** fixed, pinned so it is a recorded limitation
-/// rather than a surprise.
-///
-/// `resolve_want` parses a vpath's tail with `SafePath::parse` and then
-/// re-joins each component with `join`, the creation table, so no vpath
-/// naming one of these files resolves at all: `stat`, a download, a rename, a
-/// single-file delete or move, and minting a share link on it are all
-/// unreachable. Only the operations that walk a tree, which this change fixed,
-/// can touch them.
-///
-/// Flipping that join is not the fix on its own: `resolve_want` is also the
-/// front door for creation (`mkdir`, `write_text`, an upload destination), and
-/// the creation table is enforced there and nowhere else, so the two callers
-/// have to be split first. That is its own change.
+/// The front door, addressed one file at a time. `resolve_want` used to
+/// re-join a parsed vpath's components with the creation table, so none of
+/// these could name the file at all: not a stat, not a read, not a rename, not
+/// a single-file delete, not a share link.
 #[test]
 #[cfg(unix)]
-fn a_name_windows_would_refuse_is_still_unreachable_by_vpath() {
+fn a_name_windows_would_refuse_is_reachable_by_vpath() {
     let (core, dir) = setup();
-    core.mkdir(USER, "/root/src").unwrap();
-    std::fs::write(dir.path().join("src").join("CON"), b"x").unwrap();
+    core.mkdir(USER, "/root/d").unwrap();
+    std::fs::write(dir.path().join("d").join("CON"), b"payload").unwrap();
+    std::fs::create_dir(dir.path().join("d").join("a:b")).unwrap();
+    std::fs::write(dir.path().join("d").join("a:b").join("inner.txt"), b"deep").unwrap();
 
+    let st = core.stat_entry(USER, "/root/d/CON").unwrap();
+    assert_eq!(st.size, 7);
+    let (text, _) = core.read_text(USER, "/root/d/CON", 1 << 20).unwrap();
+    assert_eq!(text, "payload");
+
+    // An awkward name as an *ancestor* was the worse half: the folder could
+    // not be entered, so nothing under it existed as far as this API was
+    // concerned.
+    let (deep, _) = core.read_text(USER, "/root/d/a:b/inner.txt", 1 << 20).unwrap();
+    assert_eq!(deep, "deep");
+    let names: Vec<String> =
+        core.list(USER, "/root/d/a:b", Sort::Name, Order::Asc).unwrap().entries.into_iter().map(|e| e.name).collect();
+    assert_eq!(names, vec!["inner.txt"]);
+
+    // Renaming one *out* of the awkward name is how a person fixes this by
+    // hand, and it was the thing they could not do.
+    core.rename(USER, "/root/d/CON", "ordinary.txt", None).unwrap();
+    assert!(core.stat_entry(USER, "/root/d/ordinary.txt").is_ok());
+
+    // A permanent delete of a directory charges quota back, which walks the
+    // path to allocate ids for it: a second place that re-derived an existing
+    // path with the creation table, and the one that failed this test first.
+    let res = core.delete(USER, &["/root/d/a:b".into()], true).unwrap();
+    assert!(res[0].ok, "delete: {:?}", res[0].error);
+}
+
+/// The trash records a file's original path and rebuilds that chain on
+/// restore, so an awkward *folder* meant a file could be trashed and then
+/// never put back.
+#[test]
+#[cfg(unix)]
+fn a_file_under_a_name_windows_would_refuse_can_be_trashed_and_restored() {
+    let (core, dir) =
+        setup_with_policy(SharePolicy { trash: TrashMode::ShareLocal, ..Default::default() });
+    std::fs::create_dir(dir.path().join("a:b")).unwrap();
+    std::fs::write(dir.path().join("a:b").join("note.txt"), b"keep me").unwrap();
+
+    let res = core.delete(USER, &["/root/a:b/note.txt".into()], false).unwrap();
+    assert!(res[0].ok, "trash: {:?}", res[0].error);
+    assert!(core.stat_entry(USER, "/root/a:b/note.txt").is_err());
+
+    let trashed = core.trash_list(USER, SHARE).unwrap();
+    assert_eq!(trashed.len(), 1);
+    core.trash_restore(USER, SHARE, &trashed[0].id).unwrap();
+
+    let (text, _) = core.read_text(USER, "/root/a:b/note.txt", 1 << 20).unwrap();
+    assert_eq!(text, "keep me", "restored to where it came from, not to the share root");
+}
+
+/// The creation table did not go away, it moved. Every path that mints a name
+/// still refuses one no Windows or SMB client could open, and it is the *leaf*
+/// that is held to it: an awkward ancestor no longer blocks creating an
+/// ordinary name beneath it.
+#[test]
+#[cfg(unix)]
+fn creating_a_name_windows_would_refuse_is_still_refused() {
+    let (core, dir) = setup();
+    core.mkdir(USER, "/root/d").unwrap();
+
+    assert!(core.mkdir(USER, "/root/d/CON").is_err(), "mkdir");
+    assert!(core.write_text(USER, "/root/d/a:b", b"x", None).is_err(), "write_text");
     assert!(
-        core.stat_entry(USER, "/root/src/CON").is_err(),
-        "when this starts passing, resolve_want has been split and the \
-         single-file operations can be asserted here too"
+        core.resolve_for_upload(USER, &Vpath::new("/root/d/LPT1")).is_err(),
+        "an upload destination is a name this server is about to mint"
     );
+    core.write_text(USER, "/root/d/ok.txt", b"x", None).unwrap();
+    assert!(core.rename(USER, "/root/d/ok.txt", "trailing.", None).is_err(), "rename");
+    assert!(core.copy_to(USER, "/root/d/ok.txt", "/root/d/COM1", false).is_err(), "copy_to");
+    assert!(core.move_to(USER, "/root/d/ok.txt", "/root/d/x:y", false).is_err(), "move_to");
+
+    // ...but an ordinary name under an awkward ancestor is fine, which the
+    // old whole-path check refused.
+    std::fs::create_dir(dir.path().join("d").join("NUL")).unwrap();
+    core.mkdir(USER, "/root/d/NUL/fine").unwrap();
+    assert!(core.stat_entry(USER, "/root/d/NUL/fine").is_ok());
+
+    // And writing over one that another service already put there is editing,
+    // not creating.
+    std::fs::write(dir.path().join("d").join("PRN"), b"old").unwrap();
+    core.write_text(USER, "/root/d/PRN", b"new", Some(&core.stat_entry(USER, "/root/d/PRN").unwrap().etag)).unwrap();
 }
 
 /// The other half of the same rule: a name the *caller types* is still refused,

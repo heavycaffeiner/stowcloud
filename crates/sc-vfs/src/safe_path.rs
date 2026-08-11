@@ -224,6 +224,23 @@ fn validate_component_allow_reserved(name: &str) -> Result<(), VfsError> {
 /// this server's own control files, and `read_dir` hides them for the same
 /// reason. Letting a request walk into `.sctrash` would expose the trash's
 /// internals as if they were user data.
+/// The creation table, on its own, for a caller that has a name rather than a
+/// path to join it onto.
+///
+/// [`SafePath::join`] applies this while also building a path, which is how
+/// it used to reach every component of a resolved virtual path and make a
+/// `CON` already on disk unaddressable. Resolution now joins with
+/// [`SafePath::join_existing`], and the sites that genuinely *create* a name
+/// call this on the leaf instead: `sc-core`'s `mkdir`, the destination of a
+/// `copy_to`/`move_to`, a text write and an upload destination.
+///
+/// Same rules as `join`, so the two cannot drift: the isolation checks, plus
+/// the Windows portability table that stops this server minting a name no SMB
+/// or Windows client could ever open.
+pub fn validate_created_name(name: &str) -> Result<(), VfsError> {
+    validate_component(name)
+}
+
 fn validate_existing_component(name: &str) -> Result<(), VfsError> {
     if name.is_empty() {
         return Err(VfsError::InvalidName("empty path component"));
