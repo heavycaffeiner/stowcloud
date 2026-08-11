@@ -18,6 +18,7 @@
   import type {
     SettingsSnapshot,
     SettingsField,
+    SettingsSectionId,
     ApplyOutcome,
     SmbSettingsReq,
     SearchSettingsReq,
@@ -84,10 +85,104 @@
     return parts.join(' ')
   }
 
+  function formatValue(v: unknown): string {
+    if (v === null || v === undefined) return t('server.none')
+    if (Array.isArray(v)) return v.length ? v.join(', ') : t('server.empty')
+    if (typeof v === 'boolean') return v ? t('server.on') : t('server.off')
+    return String(v)
+  }
+
+  // ── revert one group to config.toml ──
+  //
+  // Every group is otherwise one-way: a stored override beats the file on
+  // every boot, so without this the only way back is deleting `settings.db`,
+  // which discards the other nine groups with it.
+  //
+  // Each button carries its own accessible name naming the group it reverts,
+  // rather than ten copies of "Revert": a screen reader reaching the fourth
+  // one has no other way to tell which.
+
+  type Section = { id: SettingsSectionId; sourceKey: string; name: string }
+
+  const SECTIONS: Section[] = [
+    { id: 'smb', sourceKey: 'smb.enabled', name: 'SMB' },
+    { id: 'search', sourceKey: 'search.rate_per_minute', name: t('common.search') },
+    { id: 'archive', sourceKey: 'archive.max_concurrent', name: t('server.zip_download') },
+    { id: 'network', sourceKey: 'bind', name: t('server.network') },
+    { id: 'db', sourceKey: 'db.size_guard', name: t('server.database_size_guard') },
+    { id: 'symlink-policy', sourceKey: 'symlink_policy', name: t('server.symlink_policy') },
+    { id: 'homes', sourceKey: 'homes.enabled', name: t('server.home_folders') },
+    { id: 'watch', sourceKey: 'watch.backend', name: t('server.file_watching') },
+    { id: 'oidc', sourceKey: 'oidc.enabled', name: t('settings.single_sign_on') },
+    { id: 'paths', sourceKey: 'data_dir', name: t('server.storage_paths') }
+  ]
+
+  function section(id: SettingsSectionId): Section {
+    return SECTIONS.find((s) => s.id === id) as Section
+  }
+
+  /** Is this group currently overriding `config.toml`? Read off one
+   *  representative row, since every row in a group shares one source. */
+  function isOverridden(id: SettingsSectionId): boolean {
+    return field(section(id).sourceKey)?.source === 'admin_override'
+  }
+
+  /** The values a revert discards, named rather than left to the admin's
+   *  memory. It cannot name what replaces them: the file's own values are not
+   *  on this screen, and inventing them would be worse than saying so. */
+  function revertPreview(id: SettingsSectionId): string {
+    const rows = snapshot?.fields.filter((f) => sectionIdOf(f.key) === id) ?? []
+    // `ConfirmDialog` renders its message as a single paragraph, so the
+    // separator has to read inline.
+    return rows.map((f) => `${f.key}: ${formatValue(f.value)}`).join(', ')
+  }
+
+  const SECTION_OF_KEY: Record<string, SettingsSectionId> = {
+    bind: 'network',
+    app_hosts: 'network',
+    content_hosts: 'network',
+    allowed_origins: 'network',
+    trusted_proxies: 'network',
+    public_origins: 'network',
+    symlink_policy: 'symlink-policy',
+    data_dir: 'paths',
+    master_key_file: 'paths',
+    'smb.config_dir': 'paths'
+  }
+
+  function sectionIdOf(key: string): SettingsSectionId | undefined {
+    if (SECTION_OF_KEY[key]) return SECTION_OF_KEY[key]
+    const prefix = key.split('.')[0]
+    return SECTIONS.some((s) => s.id === prefix) ? (prefix as SettingsSectionId) : undefined
+  }
+
+  let revertTarget = $state<SettingsSectionId | null>(null)
+  let reverting = $state(false)
+  let revertError = $state<string | null>(null)
+  let revertOutcome = $state<ApplyOutcome | null>(null)
+
+  async function confirmRevert(): Promise<void> {
+    const id = revertTarget
+    revertTarget = null
+    if (!id) return
+    revertError = null
+    revertOutcome = null
+    reverting = true
+    try {
+      revertOutcome = await api.adminClearServerSettings(id)
+      await load()
+    } catch (err) {
+      revertError = describeApiError(err, t('server.could_not_revert_settings'))
+    } finally {
+      reverting = false
+    }
+  }
+
   // ── SMB ──
 
   let smbEnabled = $state(false)
   let smbWorkgroup = $state('')
+  let smbServerName = $state('')
   let smbServiceUser = $state('')
   let smbAllowPublicBind = $state(false)
   let smbTotpPolicy = $state<'require_separate' | 'block'>('require_separate')
@@ -106,13 +201,14 @@
       smbError = t('server.uid_gid_must_integer_0')
       return
     }
-    if (!smbWorkgroup.trim() || !smbServiceUser.trim()) {
-      smbError = t('server.enter_workgroup_service_account_name')
+    if (!smbWorkgroup.trim() || !smbServiceUser.trim() || !smbServerName.trim()) {
+      smbError = t('server.enter_workgroup_server_name_service_account')
       return
     }
     const req: SmbSettingsReq = {
       enabled: smbEnabled,
       workgroup: smbWorkgroup,
+      server_name: smbServerName,
       service_user: smbServiceUser,
       allow_public_bind: smbAllowPublicBind,
       totp_policy: smbTotpPolicy,
@@ -147,6 +243,13 @@
     const nums = [searchMaxFast, searchMaxSlow, searchDeadlineFast, searchDeadlineSlow, searchRate].map(Number)
     if (nums.some((n) => !Number.isInteger(n) || n < 0)) {
       searchError = t('server.every_value_must_integer_0')
+      return
+    }
+    // Zero here is not a low limit, it is an off switch: every search from
+    // every user answers 429 from the moment it applies, live. The server
+    // refuses it too; this just says so before the round trip.
+    if (nums[4] < 1) {
+      searchError = t('server.must_integer_1_or_more')
       return
     }
     const req: SearchSettingsReq = {
@@ -200,25 +303,71 @@
   let netContentHosts = $state('')
   let netAllowedOrigins = $state('')
   let netTrustedProxies = $state('')
-  let netCanonicalUrl = $state('')
+  let netPublicOrigins = $state('')
   let netSaving = $state(false)
   let netError = $state<string | null>(null)
   let netOutcome = $state<ApplyOutcome | null>(null)
 
-  async function saveNetwork(): Promise<void> {
+  /** The authority of a declared origin, for comparing against `app_hosts`. */
+  function authorityOf(origin: string): string {
+    const rest = origin.includes('://') ? origin.split('://')[1] : origin
+    return rest.split(/[/?#]/)[0]
+  }
+
+  /** Origins whose host this server will not answer on. Not a refusal: the
+   *  admin may be about to fill in `app_hosts` on the same screen. Declaring
+   *  an origin does not admit it, and silently widening a security allowlist
+   *  as a side effect of editing a display setting would be worse than the
+   *  warning. */
+  const netUnservedOrigins = $derived.by(() => {
+    const hosts = strToArr(netAppHosts).map((h) => h.split(':')[0].toLowerCase())
+    if (!hosts.length) return []
+    return strToArr(netPublicOrigins).filter(
+      (o) => !hosts.includes(authorityOf(o).split(':')[0].toLowerCase())
+    )
+  })
+
+  /** What `public_origins` was when this screen loaded, so a save can say
+   *  what is changing about it. */
+  let netOriginsLoaded = $state<string[]>([])
+  let netOriginsConfirmOpen = $state(false)
+
+  /** Neither of these disconnects an enrolled client: admission is
+   *  `app_hosts`, and these edits only change which name the server offers.
+   *  They are still not something an operator infers from a text field, so
+   *  they are said out loud before the save. */
+  const netOriginChanges = $derived.by(() => {
+    const next = strToArr(netPublicOrigins)
+    const removed = netOriginsLoaded.filter((o) => !next.includes(o))
+    const canonicalChanged = (netOriginsLoaded[0] ?? '') !== (next[0] ?? '')
+    return { removed, canonicalChanged, canonical: next[0] ?? '' }
+  })
+
+  function openNetworkSave(): void {
     netError = null
     netOutcome = null
     if (!netBind.trim()) {
       netError = t('server.enter_bind_address')
       return
     }
+    if (netOriginChanges.removed.length || netOriginChanges.canonicalChanged) {
+      netOriginsConfirmOpen = true
+      return
+    }
+    void saveNetwork()
+  }
+
+  async function saveNetwork(): Promise<void> {
+    netOriginsConfirmOpen = false
+    netError = null
+    netOutcome = null
     const req: NetworkSettingsReq = {
       bind: netBind.trim(),
       app_hosts: strToArr(netAppHosts),
       content_hosts: strToArr(netContentHosts),
       allowed_origins: strToArr(netAllowedOrigins),
       trusted_proxies: strToArr(netTrustedProxies),
-      compat_canonical_url: netCanonicalUrl.trim() || null
+      public_origins: strToArr(netPublicOrigins)
     }
     netSaving = true
     try {
@@ -360,7 +509,7 @@
   let oidcEnabled = $state(false)
   let oidcIssuer = $state('')
   let oidcClientId = $state('')
-  let oidcRedirectUri = $state('')
+  let oidcRedirectUris = $state('')
   let oidcScopes = $state('')
   let oidcDisplayName = $state('')
   let oidcAllowPrivate = $state(false)
@@ -371,24 +520,40 @@
   async function saveOidc(): Promise<void> {
     oidcError = null
     oidcOutcome = null
-    // Checked here as well as server-side, because the server's answer to a
-    // bad redirect URI is not an error at all: an empty or non-https value
-    // simply keeps single sign-on switched off while the rest of the server
-    // runs normally (§4.3.1). An admin who typed one and pressed Save would
-    // otherwise see "saved" and find out at the next restart.
-    if (oidcEnabled && !oidcRedirectUri.trim().startsWith('https://')) {
-      oidcError = t('server.redirect_uri_must_start_https')
-      return
-    }
-    if (oidcEnabled && (!oidcIssuer.trim() || !oidcClientId.trim())) {
-      oidcError = t('server.enter_issuer_client_id')
-      return
+    // Pre-checked here as well as server-side, for the two rules the browser
+    // can actually see. The server's answer to a bad redirect URI is not an
+    // error at boot: it keeps single sign-on switched off while the rest of
+    // the server runs normally, so an admin who typed one and pressed Save
+    // would otherwise see "saved" and find out at the next restart.
+    //
+    // The client secret file is deliberately not among them: only the server
+    // can tell whether a path is readable, so that one comes back as
+    // `settings.oidc_secret_file_missing` and renders from the catalogue like
+    // any other server refusal.
+    const redirectUris = strToArr(oidcRedirectUris)
+    if (oidcEnabled) {
+      if (!redirectUris.length || redirectUris.some((u) => !u.startsWith('https://'))) {
+        oidcError = t('server.redirect_uri_must_start_https')
+        return
+      }
+      const hosts = strToArr(netAppHosts).map((h) => h.split(':')[0].toLowerCase())
+      const unserved = redirectUris.filter(
+        (u) => !hosts.includes(authorityOf(u).split(':')[0].toLowerCase())
+      )
+      if (unserved.length) {
+        oidcError = t('server.redirect_host_must_be_in_app_hosts', { value: unserved.join(', ') })
+        return
+      }
+      if (!oidcIssuer.trim() || !oidcClientId.trim()) {
+        oidcError = t('server.enter_issuer_client_id')
+        return
+      }
     }
     const req: OidcSettingsReq = {
       enabled: oidcEnabled,
       issuer: oidcIssuer.trim(),
       client_id: oidcClientId.trim(),
-      redirect_uri: oidcRedirectUri.trim(),
+      redirect_uris: redirectUris,
       scopes: strToArr(oidcScopes),
       display_name: oidcDisplayName.trim(),
       allow_private_endpoints: oidcAllowPrivate,
@@ -461,7 +626,7 @@
     'content_hosts',
     'allowed_origins',
     'trusted_proxies',
-    'compat_canonical_url',
+    'public_origins',
     'db.size_guard',
     'db.max_bytes',
     'db.min_free_bytes',
@@ -470,6 +635,7 @@
     'homes.root',
     'smb.enabled',
     'smb.workgroup',
+    'smb.server_name',
     'smb.service_user',
     'smb.allow_public_bind',
     'smb.totp_policy',
@@ -487,7 +653,7 @@
     'oidc.enabled',
     'oidc.issuer',
     'oidc.client_id',
-    'oidc.redirect_uri',
+    'oidc.redirect_uris',
     'oidc.scopes',
     'oidc.display_name',
     'oidc.allow_private_endpoints',
@@ -499,12 +665,9 @@
 
   const otherFields = $derived(snapshot?.fields.filter((f) => !EDITABLE_KEYS.has(f.key)) ?? [])
 
-  function formatOtherValue(v: unknown): string {
-    if (v === null || v === undefined) return t('server.none')
-    if (Array.isArray(v)) return v.length ? v.join(', ') : t('server.empty')
-    if (typeof v === 'boolean') return v ? t('server.on') : t('server.off')
-    return String(v)
-  }
+  /** Rows whose saved value is not what the running process is on, because
+   *  the restart has not happened yet. */
+  const pendingFields = $derived(snapshot?.fields.filter((f) => f.running_value !== undefined) ?? [])
 
   // ── restart (`POST /api/admin/server-settings/restart`) ──
   //
@@ -562,6 +725,7 @@
       snapshot = await api.adminGetServerSettings()
       smbEnabled = Boolean(field('smb.enabled')?.value)
       smbWorkgroup = String(field('smb.workgroup')?.value ?? '')
+      smbServerName = String(field('smb.server_name')?.value ?? '')
       smbServiceUser = String(field('smb.service_user')?.value ?? '')
       smbAllowPublicBind = Boolean(field('smb.allow_public_bind')?.value)
       smbTotpPolicy = (field('smb.totp_policy')?.value as 'require_separate' | 'block') ?? 'require_separate'
@@ -581,7 +745,8 @@
       netContentHosts = arrToStr(field('content_hosts')?.value)
       netAllowedOrigins = arrToStr(field('allowed_origins')?.value)
       netTrustedProxies = arrToStr(field('trusted_proxies')?.value)
-      netCanonicalUrl = String(field('compat_canonical_url')?.value ?? '')
+      netPublicOrigins = arrToStr(field('public_origins')?.value)
+      netOriginsLoaded = strToArr(netPublicOrigins)
 
       dbSizeGuard = Boolean(field('db.size_guard')?.value)
       dbMaxMb = String(bytesToMb(Number(field('db.max_bytes')?.value ?? 0)))
@@ -599,7 +764,7 @@
       oidcEnabled = Boolean(field('oidc.enabled')?.value)
       oidcIssuer = String(field('oidc.issuer')?.value ?? '')
       oidcClientId = String(field('oidc.client_id')?.value ?? '')
-      oidcRedirectUri = String(field('oidc.redirect_uri')?.value ?? '')
+      oidcRedirectUris = arrToStr(field('oidc.redirect_uris')?.value)
       oidcScopes = arrToStr(field('oidc.scopes')?.value)
       oidcDisplayName = String(field('oidc.display_name')?.value ?? '')
       oidcAllowPrivate = Boolean(field('oidc.allow_private_endpoints')?.value)
@@ -652,16 +817,54 @@
       </div>
     {/if}
 
+    {#snippet revertButton(id: SettingsSectionId)}
+      <!-- The group's name is in the visible label, not an aria-label beside
+           a generic one: ten buttons reading "Revert" give a screen reader no
+           way to tell the fourth from the seventh. -->
+      <Button
+        variant="outlined"
+        disabled={!isOverridden(id) || reverting}
+        onclick={() => (revertTarget = id)}
+      >
+        {t('server.revert_group_to_config', { group: section(id).name })}
+      </Button>
+    {/snippet}
+
+    <!-- One badge per row that is waiting, grouped under the form it belongs
+         to. A single global "something is pending" bit would not tell an
+         administrator *which* change is waiting, which is the only useful
+         part. -->
+    {#snippet pendingRows(id: SettingsSectionId)}
+      {@const rows = pendingFields.filter((f) => sectionIdOf(f.key) === id)}
+      {#each rows as f (f.key)}
+        <p class="sc-server-settings__pending">
+          <span class="sc-server-settings__badge">{t('server.pending_restart')}</span>
+          {f.key}: {t('server.running_value_is', { value: formatValue(f.running_value) })}
+        </p>
+      {/each}
+    {/snippet}
+
+    {#if pendingFields.length}
+      <p class="sc-admin-section__warning" role="status">
+        {t('server.saved_changes_awaiting_restart', { count: pendingFields.length })}
+      </p>
+    {/if}
+    {#if revertError}<p class="sc-admin-section__error" role="alert">{revertError}</p>{/if}
+    {#if revertOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(revertOutcome)}</p>{/if}
+
     <h4 class="sc-admin-section__subhead">SMB</h4>
     <div class="sc-server-settings__form">
       <Switch checked={smbEnabled} onchange={(v) => (smbEnabled = v)} label={t('server.enable_smb')} />
       <TextField label={t('server.workgroup')} bind:value={smbWorkgroup} />
+      <TextField label={t('server.smb_server_name')} bind:value={smbServerName} />
       <TextField label={t('server.service_account_name')} bind:value={smbServiceUser} />
       <Switch checked={smbAllowPublicBind} onchange={(v) => (smbAllowPublicBind = v)} label={t('server.allow_access_from_outside_private')} />
       <SelectOutlined label={t('server.smb_access_2fa_users')} width="100%" options={SMB_TOTP_OPTIONS} bind:value={smbTotpPolicy} />
       <TextField label={t('server.service_account_uid')} bind:value={smbServiceUid} />
       <TextField label={t('server.service_account_gid')} bind:value={smbServiceGid} />
       <Button variant="filled" onclick={saveSmb} loading={smbSaving}>{t('common.save')}</Button>
+      {@render pendingRows('smb')}
+      {@render revertButton('smb')}
     </div>
     <p class="sc-admin-section__hint">
       {t('server.only_toggling_enable_smb_needs')}
@@ -677,6 +880,7 @@
       <TextField label={t('server.slow_search_timeout_ms')} bind:value={searchDeadlineSlow} />
       <TextField label={t('server.requests_per_minute')} bind:value={searchRate} />
       <Button variant="filled" onclick={saveSearch} loading={searchSaving}>{t('common.save')}</Button>
+      {@render revertButton('search')}
     </div>
     <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
     {#if searchError}<p class="sc-admin-section__error" role="alert">{searchError}</p>{/if}
@@ -686,6 +890,7 @@
     <div class="sc-server-settings__form">
       <TextField label={t('server.concurrent_zip_streams')} bind:value={archiveMax} />
       <Button variant="filled" onclick={saveArchive} loading={archiveSaving}>{t('common.save')}</Button>
+      {@render revertButton('archive')}
     </div>
     <p class="sc-admin-section__hint">{t('server.applies_immediately_no_restart_needed')}</p>
     {#if archiveError}<p class="sc-admin-section__error" role="alert">{archiveError}</p>{/if}
@@ -699,8 +904,19 @@
       <TextField label={t('server.content_hosts_comma_separated')} bind:value={netContentHosts} />
       <TextField label={t('server.allowed_origins_cors_comma_separated')} bind:value={netAllowedOrigins} />
       <TextField label={t('server.trusted_proxies_comma_separated')} bind:value={netTrustedProxies} />
-      <TextField label={t('server.compat_canonical_url')} bind:value={netCanonicalUrl} />
-      <Button variant="filled" onclick={saveNetwork} loading={netSaving}>{t('common.save')}</Button>
+      <TextField label={t('server.public_origins_comma_separated')} bind:value={netPublicOrigins} />
+      <p class="sc-admin-section__hint">{t('server.public_origins_hint')}</p>
+      {#if !strToArr(netPublicOrigins).length}
+        <p class="sc-admin-section__hint">{t('server.no_public_origin_declared')}</p>
+      {/if}
+      {#if netUnservedOrigins.length}
+        <p class="sc-admin-section__hint">
+          {t('server.public_origin_not_in_app_hosts', { value: netUnservedOrigins.join(', ') })}
+        </p>
+      {/if}
+      {@render pendingRows('network')}
+      <Button variant="filled" onclick={openNetworkSave} loading={netSaving}>{t('common.save')}</Button>
+      {@render revertButton('network')}
     </div>
     <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart_listener')}</p>
     {#if netError}<p class="sc-admin-section__error" role="alert">{netError}</p>{/if}
@@ -712,6 +928,8 @@
       <TextField label={t('server.maximum_size_mb')} bind:value={dbMaxMb} />
       <TextField label={t('server.minimum_free_space_mb')} bind:value={dbMinFreeMb} />
       <Button variant="filled" onclick={saveDb} loading={dbSaving}>{t('common.save')}</Button>
+      {@render pendingRows('db')}
+      {@render revertButton('db')}
     </div>
     <p class="sc-admin-section__hint">
       {t('server.takes_effect_after_restart_currently', {
@@ -726,6 +944,8 @@
     <div class="sc-server-settings__form">
       <SelectOutlined label={t('server.policy')} width="100%" options={SYMLINK_OPTIONS} bind:value={symlinkPolicy} />
       <Button variant="filled" onclick={saveSymlinkPolicy} loading={symlinkSaving}>{t('common.save')}</Button>
+      {@render pendingRows('symlink-policy')}
+      {@render revertButton('symlink-policy')}
     </div>
     <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart')}</p>
     {#if symlinkError}<p class="sc-admin-section__error" role="alert">{symlinkError}</p>{/if}
@@ -736,6 +956,8 @@
       <Switch checked={homesEnabled} onchange={(v) => (homesEnabled = v)} label={t('server.enable_home_folders')} />
       <TextField label={t('server.root_path')} bind:value={homesRoot} placeholder="/srv/homes" />
       <Button variant="filled" onclick={saveHomes} loading={homesSaving}>{t('common.save')}</Button>
+      {@render pendingRows('homes')}
+      {@render revertButton('homes')}
     </div>
     <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart')}</p>
     {#if homesError}<p class="sc-admin-section__error" role="alert">{homesError}</p>{/if}
@@ -748,6 +970,8 @@
       <TextField label={t('server.maximum_folders_watched_at_once')} bind:value={watchHotSetMax} />
       <TextField label={t('server.changes_before_a_full_rescan')} bind:value={watchFullThreshold} />
       <Button variant="filled" onclick={saveWatch} loading={watchSaving}>{t('common.save')}</Button>
+      {@render pendingRows('watch')}
+      {@render revertButton('watch')}
     </div>
     <p class="sc-admin-section__hint">
       {t('server.takes_effect_after_restart_when')}
@@ -761,10 +985,11 @@
       <TextField label={t('server.issuer_url')} bind:value={oidcIssuer} placeholder="https://idp.example.com/realms/main" />
       <TextField label={t('server.client_id')} bind:value={oidcClientId} />
       <TextField
-        label={t('server.redirect_uri')}
-        bind:value={oidcRedirectUri}
+        label={t('server.redirect_uris_comma_separated')}
+        bind:value={oidcRedirectUris}
         placeholder="https://files.example.com/api/auth/oidc/callback"
       />
+      <p class="sc-admin-section__hint">{t('server.redirect_uris_hint')}</p>
       <TextField label={t('server.scopes_comma_separated')} bind:value={oidcScopes} placeholder="openid, profile" />
       <TextField label={t('server.button_name_login_screen')} bind:value={oidcDisplayName} />
       <Switch
@@ -773,6 +998,8 @@
         label={t('server.allow_provider_private_network_address')}
       />
       <Button variant="filled" onclick={saveOidc} loading={oidcSaving}>{t('common.save')}</Button>
+      {@render pendingRows('oidc')}
+      {@render revertButton('oidc')}
     </div>
     <p class="sc-admin-section__hint">
       {t('server.takes_effect_after_restart_redirect')}
@@ -791,6 +1018,8 @@
       />
       <TextField label={t('server.smb_config_directory')} bind:value={pathsSmbConfigDir} placeholder="/etc/stowcloud/smb" />
       <Button variant="filled" onclick={openPathsConfirm} loading={pathsSaving}>{t('common.save')}</Button>
+      {@render pendingRows('paths')}
+      {@render revertButton('paths')}
     </div>
     <p class="sc-admin-section__hint">
       {t('server.takes_effect_after_restart_these')} <strong>{t('server.tell_server_where_you_have')}</strong> {t('server.they_do_not_move_server')}
@@ -808,8 +1037,12 @@
           <div>
             <dt>{f.key}</dt>
             <dd>
-              {formatOtherValue(f.value)}
+              {formatValue(f.value)}
               <span class="sc-server-settings__source">({sourceLabel(f.source)})</span>
+              {#if f.running_value !== undefined}
+                <br /><span class="sc-server-settings__badge">{t('server.pending_restart')}</span>
+                {t('server.running_value_is', { value: formatValue(f.running_value) })}
+              {/if}
               {#if f.readonly_reason_key}<br /><span class="sc-server-settings__reason">{serverKeyText(f.readonly_reason_key)}</span>{/if}
             </dd>
           </div>
@@ -830,6 +1063,33 @@
     {/if}
   {/if}
 </section>
+
+<!-- Naming the values it restores, because two of them are not obvious from
+     the button: removing an origin stops new enrolments on that name (the
+     name keeps serving as long as it is in `app_hosts`), and changing the
+     first entry changes what an unrecognised `Host` is answered with. -->
+<ConfirmDialog
+  open={revertTarget !== null}
+  title={t('server.revert_group_to_config', { group: revertTarget ? section(revertTarget).name : '' })}
+  message={`${t('server.revert_restores_these_values')}\n\n${revertTarget ? revertPreview(revertTarget) : ''}`}
+  confirmLabel={t('server.revert')}
+  danger
+  onclose={() => (revertTarget = null)}
+  onconfirm={confirmRevert}
+/>
+
+<ConfirmDialog
+  open={netOriginsConfirmOpen}
+  title={t('server.change_public_origins')}
+  message={t('server.public_origin_change_effects', {
+    removed: netOriginChanges.removed.join(', ') || t('server.none'),
+    canonical: netOriginChanges.canonical || t('server.none')
+  })}
+  confirmLabel={t('common.save')}
+  danger
+  onclose={() => (netOriginsConfirmOpen = false)}
+  onconfirm={saveNetwork}
+/>
 
 <ConfirmDialog
   open={pathsConfirmOpen}
@@ -944,5 +1204,20 @@
   .sc-server-settings__reason {
     color: var(--m3c-on-surface-variant);
     @apply --m3-body-small;
+  }
+  .sc-server-settings__pending {
+    margin: 0;
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
+  }
+  /* The badge carries its own text. Colour alone would leave a row's pending
+     state invisible to anyone who cannot see the difference. */
+  .sc-server-settings__badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: var(--m3-shape-extra-small);
+    background: var(--m3c-tertiary-container);
+    color: var(--m3c-on-tertiary-container);
+    @apply --m3-label-small;
   }
 </style>

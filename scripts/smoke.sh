@@ -30,13 +30,13 @@ cat > "$DIR/sc.toml" <<EOF
 bind = "127.0.0.1:$PORT"
 data_dir = "$W/data"
 # Without this the compat layer does not mount at all: app_hosts defaults to
-# three entries, resolve_compat_canonical_url refuses to guess which of them a
-# real client should bind to, and /status.php below then answers 401 instead of
+# three entries, resolve_public_origins refuses to guess which of them a real
+# client should bind to, and /status.php below then answers 401 instead of
 # 200. The check had been asserting a route that was not there.
 #
 # No backticks in this comment: the heredoc below is unquoted, so the shell
 # would run whatever they wrapped before writing the file.
-compat_canonical_url = "https://127.0.0.1:$PORT"
+public_origins = ["https://127.0.0.1:$PORT"]
 
 [[shares]]
 id = 1

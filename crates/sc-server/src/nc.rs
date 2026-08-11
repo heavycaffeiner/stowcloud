@@ -566,6 +566,13 @@ impl ports::UploadEngine for NcUpload {
     fn abort(&self, session: ports::SessionId, user: UserId) -> PortResult<()> {
         self.engine.abort(session, user).map_err(port_io)
     }
+
+    /// The live default, not the one this process booted with:
+    /// `PATCH /api/admin/upload-settings` moves it and the core
+    /// `/api/capabilities` has always reported the new number immediately.
+    fn chunk_size_advisory(&self) -> u64 {
+        self.engine.chunk_settings().1
+    }
 }
 
 // --------------------------------------------------------------- SharePort --
@@ -1193,9 +1200,8 @@ pub struct CompatBuildInputs<'a> {
     pub data_dir: &'a std::path::Path,
     pub canonical_url: String,
     /// Further origins this server answers on. Already validated by
-    /// `Config::resolve_compat_alt_canonical_urls`.
+    /// `Config::resolve_public_origins`.
     pub alt_canonical_urls: Vec<String>,
-    pub chunk_size_advisory: u64,
     pub core: Arc<sc_core::Core>,
     pub meta: Arc<sc_meta::MetaStore>,
     pub auth: Arc<sc_auth::AuthService>,
@@ -1214,7 +1220,6 @@ impl Compat {
             data_dir,
             canonical_url,
             alt_canonical_urls,
-            chunk_size_advisory,
             core,
             meta,
             auth,
@@ -1242,7 +1247,6 @@ impl Compat {
             canonical_url,
             alt_canonical_urls,
             instance_id,
-            chunk_size_advisory,
             // Handed across from the crate that sets the cookie. `sc-compat-nc`
             // depends on no HTTP crate, so it cannot read the constant itself —
             // and when the name was written out on both sides instead, they

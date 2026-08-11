@@ -769,9 +769,29 @@ export interface SettingsField {
   key: string
   value: unknown
   source: SettingsSource
+  /** A static property of the field, not a statement about this value. What
+   *  the process is actually on is `running_value`. */
   restart_required: boolean
+  /** Present only when the saved value differs from the one the running
+   *  process is using, because the change needs a restart that has not
+   *  happened. Absent in the ordinary case, and on older servers. */
+  running_value?: unknown
   readonly_reason_key: string | null
 }
+
+/** `DELETE /api/admin/server-settings/{section}` — the ten groups whose
+ *  override can be reverted. */
+export type SettingsSectionId =
+  | 'network'
+  | 'db'
+  | 'symlink-policy'
+  | 'homes'
+  | 'smb'
+  | 'search'
+  | 'archive'
+  | 'watch'
+  | 'paths'
+  | 'oidc'
 
 export interface SettingsSnapshot {
   fields: SettingsField[]
@@ -805,9 +825,11 @@ export interface ApplyOutcome {
 export interface SmbSettingsReq {
   enabled: boolean
   workgroup: string
-  /** NetBIOS name clients can open `\\NAME\share` by. No screen edits it, so
-   *  omitting it keeps whatever `sc.toml` set. */
-  server_name?: string
+  /** NetBIOS name clients can open `\\NAME\share` by. Required, like every
+   *  other field: it used to be optional, and the server filling in the
+   *  absent value froze the name into the stored override on the first save
+   *  of any other SMB setting. */
+  server_name: string
   service_user: string
   allow_public_bind: boolean
   totp_policy: 'require_separate' | 'block'
@@ -839,7 +861,9 @@ export interface NetworkSettingsReq {
   content_hosts: string[]
   allowed_origins: string[]
   trusted_proxies: string[]
-  compat_canonical_url: string | null
+  /** Absolute `http(s)://` origins, first canonical. Refused at save time if
+   *  malformed, unlike the boot path which drops the entry with a warning. */
+  public_origins: string[]
 }
 
 /** `PATCH /api/admin/server-settings/db` body (`DbPatch`) —
@@ -886,9 +910,10 @@ export interface OidcSettingsReq {
   enabled: boolean
   issuer: string
   client_id: string
-  /** Must match what is registered at the IdP byte for byte. Empty, or
-   *  anything not starting with `https://`, and the server keeps OIDC off. */
-  redirect_uri: string
+  /** Each must match what is registered at the IdP byte for byte, start with
+   *  `https://`, and name a host `app_hosts` admits. The entry matching the
+   *  request's `Host` is used, the first otherwise. */
+  redirect_uris: string[]
   /** `openid` is always included server-side whether or not it is listed. */
   scopes: string[]
   display_name: string

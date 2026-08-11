@@ -57,7 +57,7 @@ pub(crate) fn provider(idp: Arc<FakeIdp>) -> OidcProvider {
             issuer: ISSUER.to_string(),
             client_id: CLIENT_ID.to_string(),
             client_secret: SecretString::from(CLIENT_SECRET.to_string()),
-            redirect_uri: REDIRECT_URI.to_string(),
+
             scopes: vec!["openid".to_string(), "profile".to_string()],
             allow_private_endpoints: false,
         },

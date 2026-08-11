@@ -28,11 +28,11 @@ pub struct ProviderConfig {
     pub issuer: String,
     pub client_id: String,
     pub client_secret: SecretString,
-    /// One configured constant, never derived from the incoming request.
-    /// It has to equal what is registered at the IdP exactly, and the
-    /// authorization request and the token request have to carry the same
-    /// bytes.
-    pub redirect_uri: String,
+    // The redirect URI is not here. It is a configured constant that has to
+    // equal what is registered at the IdP exactly, and a deployment reached
+    // under several names registers several of them — so which one applies is
+    // decided per request, by the assembler that owns `app_hosts`, and handed
+    // to `authorize_url` and `exchange_code` as the same string.
     /// `openid` is added if the operator left it out; without it no ID
     /// token is issued and the whole flow is pointless.
     pub scopes: Vec<String>,
@@ -78,10 +78,15 @@ impl OidcProvider {
     }
 
     /// Where `/api/auth/oidc/start` sends the browser.
+    ///
+    /// `redirect_uri` is one of [`ProviderConfig::redirect_uris`], chosen by
+    /// the caller from the request's `Host`. Passed in rather than read here
+    /// so that the token exchange can be handed the identical string.
     pub fn authorize_url(
         &self,
         disco: &Discovery,
         flow: &FlowSecrets,
+        redirect_uri: &str,
     ) -> Result<String, EndpointError> {
         let mut url = check_endpoint_url(
             &disco.authorization_endpoint,
@@ -94,7 +99,7 @@ impl OidcProvider {
         url.query_pairs_mut()
             .append_pair("response_type", "code")
             .append_pair("client_id", &self.cfg.client_id)
-            .append_pair("redirect_uri", &self.cfg.redirect_uri)
+            .append_pair("redirect_uri", redirect_uri)
             .append_pair("scope", &scopes.join(" "))
             .append_pair("state", &flow.state)
             .append_pair("nonce", &flow.nonce)
@@ -103,11 +108,16 @@ impl OidcProvider {
         Ok(url.to_string())
     }
 
+    /// `redirect_uri` must be byte for byte the one
+    /// [`Self::authorize_url`] carried, which is why both take it rather than
+    /// each reading a field: a value assembled twice is a value that can
+    /// differ twice.
     pub async fn exchange_code(
         &self,
         disco: &Discovery,
         code: &str,
         code_verifier: &str,
+        redirect_uri: &str,
     ) -> Result<TokenResponse, TokenError> {
         exchange_code(
             self.http.as_ref(),
@@ -115,6 +125,7 @@ impl OidcProvider {
             &self.cfg,
             code,
             code_verifier,
+            redirect_uri,
         )
         .await
     }

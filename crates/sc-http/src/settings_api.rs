@@ -27,6 +27,73 @@ pub enum SettingsSource {
     AdminOverride,
 }
 
+/// One settings group, as the wire names it.
+///
+/// The vocabulary of `DELETE /api/admin/server-settings/{section}` and of
+/// `SettingsOverrides`'s own `clear`/`is_set`. Spelled here rather than in
+/// `sc-server` because it is a wire name before it is a config concept, and
+/// an unknown one has to be a 404 rather than a silent no-op.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SettingsSection {
+    Network,
+    Db,
+    SymlinkPolicy,
+    Homes,
+    Smb,
+    Search,
+    Archive,
+    Watch,
+    Paths,
+    Oidc,
+}
+
+impl SettingsSection {
+    pub const ALL: &'static [SettingsSection] = &[
+        Self::Network,
+        Self::Db,
+        Self::SymlinkPolicy,
+        Self::Homes,
+        Self::Smb,
+        Self::Search,
+        Self::Archive,
+        Self::Watch,
+        Self::Paths,
+        Self::Oidc,
+    ];
+
+    pub fn from_wire(s: &str) -> Option<Self> {
+        Some(match s {
+            "network" => Self::Network,
+            "db" => Self::Db,
+            "symlink-policy" => Self::SymlinkPolicy,
+            "homes" => Self::Homes,
+            "smb" => Self::Smb,
+            "search" => Self::Search,
+            "archive" => Self::Archive,
+            "watch" => Self::Watch,
+            "paths" => Self::Paths,
+            "oidc" => Self::Oidc,
+            _ => return None,
+        })
+    }
+
+    pub fn as_wire(self) -> &'static str {
+        match self {
+            Self::Network => "network",
+            Self::Db => "db",
+            Self::SymlinkPolicy => "symlink-policy",
+            Self::Homes => "homes",
+            Self::Smb => "smb",
+            Self::Search => "search",
+            Self::Archive => "archive",
+            Self::Watch => "watch",
+            Self::Paths => "paths",
+            Self::Oidc => "oidc",
+        }
+    }
+}
+
 /// One row on the settings screen.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct SettingsField {
@@ -37,7 +104,18 @@ pub struct SettingsField {
     pub value: serde_json::Value,
     pub source: SettingsSource,
     /// Changing this field only takes effect after a restart.
+    ///
+    /// A static property of the field, not a statement about this value. What
+    /// the running process is actually on is [`Self::running_value`].
     pub restart_required: bool,
+    /// The value the running process is actually using, when it differs from
+    /// `value` because the change needs a restart that has not happened.
+    /// `None` when the two agree, which is the ordinary case.
+    ///
+    /// Per-field rather than one global "something is pending" bit, because
+    /// an administrator needs to know *which* change is waiting.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub running_value: Option<serde_json::Value>,
     /// `None` if this screen can change it; `Some(key)` — a catalogue key the
     /// browser renders in the reader's language — if not. A field the admin
     /// cannot safely change here is shown read-only with the reason, never
@@ -89,11 +167,12 @@ pub struct ApplyOutcome {
 pub struct SmbPatch {
     pub enabled: bool,
     pub workgroup: String,
-    /// Optional, unlike every other field here. No screen edits it, so an
-    /// absent value has to keep whatever `sc.toml` set; taking it as an empty
-    /// string would clear the NetBIOS name on every unrelated save.
-    #[serde(default)]
-    pub server_name: Option<String>,
+    /// Required, like every other field here. It used to be optional because
+    /// no screen edited it, and reading the current value for the absent
+    /// field wrote it straight into the stored override: one save of any
+    /// other SMB setting froze the NetBIOS name forever, out of reach of both
+    /// the screen and `config.toml`. The screen has a control for it now.
+    pub server_name: String,
     pub service_user: String,
     pub allow_public_bind: bool,
     /// `"require_separate"` | `"block"` — mirrors `sc_smb::TotpPolicy`
@@ -124,7 +203,12 @@ pub struct NetworkPatch {
     pub content_hosts: Vec<String>,
     pub allowed_origins: Vec<String>,
     pub trusted_proxies: Vec<String>,
-    pub compat_canonical_url: Option<String>,
+    /// Absolute `http(s)://` origins, first canonical. Refused at save time
+    /// if malformed, unlike the boot path which drops the entry with a
+    /// warning: refusing at boot would take the server down over a typo, and
+    /// refusing at save costs an administrator one correction while they are
+    /// looking at the field.
+    pub public_origins: Vec<String>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize)]
@@ -170,7 +254,9 @@ pub struct OidcPatch {
     pub enabled: bool,
     pub issuer: String,
     pub client_id: String,
-    pub redirect_uri: String,
+    /// Every entry must be `https://` and name a host `app_hosts` admits: the
+    /// callback comes back to us and nothing else can answer it.
+    pub redirect_uris: Vec<String>,
     pub scopes: Vec<String>,
     pub display_name: String,
     pub allow_private_endpoints: bool,
@@ -280,6 +366,20 @@ pub trait SettingsApi: Send + Sync {
     /// is registered at the IdP, which is not a thing a live swap could
     /// verify.
     fn set_oidc(&self, _patch: OidcPatch) -> Result<ApplyOutcome, CoreError> {
+        Err(not_wired())
+    }
+
+    /// `DELETE /api/admin/server-settings/{section}` — drop this group's
+    /// stored override so `config.toml` and the environment decide it again,
+    /// and push the restored values into the running components exactly as
+    /// the corresponding `set_*` would.
+    ///
+    /// Without this every group was one-way: after the first save, the file
+    /// was dead for every key in it and the only recovery was deleting
+    /// `settings.db`, which discards the other nine groups with it. Nothing
+    /// else on this screen is safe to add until reverting one thing is
+    /// possible.
+    fn clear_section(&self, _section: SettingsSection) -> Result<ApplyOutcome, CoreError> {
         Err(not_wired())
     }
 

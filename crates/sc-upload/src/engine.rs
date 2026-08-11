@@ -18,6 +18,7 @@
 //! so the disguise is gone.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -112,6 +113,11 @@ pub struct UploadEngine {
     /// `cfg.chunk_size_min`/`chunk_size_default` are left untouched after
     /// startup; this is the one field every live reader must consult instead.
     chunk_settings: Arc<ChunkSettings>,
+    /// Whether `upload_chunk_settings` holds a row, kept beside the values
+    /// because `unwrap_or` collapses the two: once it has run, "an admin
+    /// stored this" and "it fell back to `sc.toml`" are the same pair of
+    /// numbers, and the settings screen has to report which.
+    chunk_settings_overridden: AtomicBool,
     cache: Mutex<HashMap<SessionId, Arc<CachedSession>>>,
 }
 
@@ -126,12 +132,14 @@ impl UploadEngine {
         // Precedence: a persisted admin override
         // beats the `sc.toml`-derived `cfg`, which beats `UploadConfig::default()`
         // (`cfg` itself already carries that fallback by construction).
-        let (min, default) = db::load_chunk_settings(&conn)?.unwrap_or((cfg.chunk_size_min, cfg.chunk_size_default));
+        let stored = db::load_chunk_settings(&conn)?;
+        let (min, default) = stored.unwrap_or((cfg.chunk_size_min, cfg.chunk_size_default));
         let chunk_settings = Arc::new(ChunkSettings::new(min, default));
         Ok(Self {
             db: Mutex::new(conn),
             cfg,
             chunk_settings,
+            chunk_settings_overridden: AtomicBool::new(stored.is_some()),
             cache: Mutex::new(HashMap::new()),
         })
     }
@@ -144,6 +152,13 @@ impl UploadEngine {
     /// limit should read instead of `config()`'s startup-time values.
     pub fn chunk_settings(&self) -> (u64, u64) {
         (self.chunk_settings.min(), self.chunk_settings.default_size())
+    }
+
+    /// Has an admin ever written these, as opposed to them coming from
+    /// `sc.toml`? The settings screen reports the source of every row it
+    /// shows, and this is the only thing that can answer for these two.
+    pub fn chunk_settings_overridden(&self) -> bool {
+        self.chunk_settings_overridden.load(Ordering::Relaxed)
     }
 
     /// How many sessions (any user) are still accepting bytes right now —
@@ -174,6 +189,7 @@ impl UploadEngine {
             db::save_chunk_settings(&conn, min, default)?;
         }
         self.chunk_settings.set(min, default);
+        self.chunk_settings_overridden.store(true, Ordering::Relaxed);
         Ok(())
     }
 

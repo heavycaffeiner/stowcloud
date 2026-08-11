@@ -243,13 +243,20 @@ pub struct Diagnostics {
     /// out loud — it gives up the XSS isolation separation exists to provide.
     pub single_origin: bool,
     pub trusted_proxies: TrustedProxies,
-    /// What `Config::resolve_compat_canonical_url` resolved to — reported
-    /// unconditionally (computing it touches nothing beyond `cfg`'s own
-    /// fields), but only ever *printed* when this binary was built with
-    /// `feature = "compat-nc"` (`print`, below): a `--no-default-features`
-    /// build has no compatibility layer to report on, and printing this
-    /// anyway would be a confusing, meaningless line in that binary's logs.
-    pub compat_canonical_url: crate::config::CompatCanonicalUrl,
+    /// What `Config::resolve_public_origins` resolved to. Printed in every
+    /// build, unlike the compat-layer line derived from it: this governs
+    /// every share link too, so a deployment with no compatibility layer
+    /// still needs to be told when nothing is declared.
+    pub public_origins: crate::config::PublicOrigins,
+    /// `public_origins` entries that were dropped for not being absolute
+    /// `http(s)://` origins.
+    pub rejected_origins: Vec<String>,
+    /// A `content_hosts` entry that is a name rather than an address, which
+    /// only works when something terminates 443 for that name: `content_url`
+    /// cannot carry a port, because the host guard strips the port off the
+    /// `Host` header before comparing, so an entry carrying one can never
+    /// match. A real constraint, written down nowhere until now.
+    pub named_content_host: Option<String>,
 }
 
 /// What `trusted_proxies` actually parsed to.
@@ -508,6 +515,14 @@ pub fn run(
         None => (None, None),
     };
     let size_guard_recommendation = guard_recommendation(volume_total);
+    let (public_origins, rejected_origins) = cfg.resolve_public_origins();
+    // An IP literal needs no DNS and no proxy, so it is not the case this
+    // warns about; a name is.
+    let named_content_host = cfg
+        .content_hosts
+        .first()
+        .filter(|h| h.parse::<std::net::IpAddr>().is_err() && !h.trim().is_empty())
+        .cloned();
 
     Diagnostics {
         kernel_caps,
@@ -527,7 +542,9 @@ pub fn run(
         bind: cfg.bind,
         single_origin,
         trusted_proxies: classify_trusted_proxies(&cfg.trusted_proxies),
-        compat_canonical_url: cfg.resolve_compat_canonical_url(),
+        public_origins,
+        rejected_origins,
+        named_content_host,
     }
 }
 
@@ -728,6 +745,57 @@ pub fn print(d: &Diagnostics) {
         println!("[sc]     A stored-XSS in an uploaded file can reach the session cookie.");
         println!("[sc]     Set `content_hosts` to a separate hostname to restore the");
         println!("[sc]     isolation. Acceptable for local use.");
+    } else if let Some(host) = &d.named_content_host {
+        println!("[sc]   content origin: {host} — must be reachable on port 443");
+        println!("[sc]     A content URL is https://{host}/c/... with no port, and cannot");
+        println!("[sc]     carry one: the host guard compares `Host` with its port stripped,");
+        println!("[sc]     so an entry naming a port could never match. Terminate 443 for");
+        println!("[sc]     that name, or use the app origin instead.");
+    }
+
+    // Printed in every build, unlike the compat-layer line below it: this
+    // list governs every public share link too.
+    use crate::config::PublicOrigins;
+    match &d.public_origins {
+        PublicOrigins::Configured(urls) => {
+            println!(
+                "[sc]   public origins: {} (canonical: {})",
+                urls.join(", "),
+                urls.first().map(String::as_str).unwrap_or("none")
+            );
+        }
+        PublicOrigins::Derived(urls) => {
+            let url = urls.first().map(String::as_str).unwrap_or("none");
+            println!("[sc]   public origins: {url} (derived — the sole `app_hosts` entry)");
+            println!("[sc]     This is the URL every share link is built from, and the one");
+            println!("[sc]     Login Flow v2 hands a real device's system browser, which then");
+            println!("[sc]     binds to it permanently. Set `public_origins` explicitly before");
+            println!("[sc]     depending on this in production.");
+        }
+        PublicOrigins::Ambiguous { app_host_count } => {
+            println!("[sc]   public origins: NONE DECLARED");
+            println!(
+                "[sc]     `public_origins` is unset and `app_hosts` has {app_host_count} entries,"
+            );
+            println!("[sc]     so nothing here knows which name to hand out. Share links fall");
+            println!("[sc]     back to https://{{app_hosts[0]}} with the port dropped, which is");
+            println!("[sc]     right behind a proxy on 443 and wrong for a direct LAN one.");
+            println!("[sc]     Declare `public_origins` to fix it.");
+        }
+        PublicOrigins::Invalid(value) => {
+            println!("[sc]   public origins: INVALID ({value:?})");
+            println!("[sc]     The first `public_origins` entry must be an absolute http(s)://");
+            println!("[sc]     origin. Share links fall back to a guess and the compatibility");
+            println!("[sc]     layer does not mount.");
+        }
+    }
+    if !d.rejected_origins.is_empty() {
+        println!(
+            "[sc]   WARNING: {} `public_origins` entr(ies) are not absolute http(s):// \
+             origins and were DROPPED: {}",
+            d.rejected_origins.len(),
+            d.rejected_origins.join(", ")
+        );
     }
 
     // `cfg!(...)`, not `#[cfg(...)]`: the field above is always populated (it
@@ -737,40 +805,10 @@ pub fn print(d: &Diagnostics) {
     // through every caller. The dead branch costs nothing — this is a
     // compile-time-constant condition, so rustc drops whichever side does not
     // apply to this build.
-    if cfg!(feature = "compat-nc") {
-        use crate::config::CompatCanonicalUrl;
-        match &d.compat_canonical_url {
-            CompatCanonicalUrl::Configured(url) => {
-                println!("[sc]   compat canonical_url: {url} (explicit `compat_canonical_url`)");
-            }
-            CompatCanonicalUrl::Derived(url) => {
-                println!(
-                    "[sc]   compat canonical_url: {url} (derived — the sole `app_hosts` entry)"
-                );
-                println!("[sc]     This is the URL Login Flow v2 hands a real device's system");
-                println!("[sc]     browser, which then binds to it permanently. Set");
-                println!("[sc]     `compat_canonical_url` explicitly before depending on this in");
-                println!("[sc]     production.");
-            }
-            CompatCanonicalUrl::Ambiguous { app_host_count } => {
-                println!(
-                    "[sc]   compat canonical_url: UNRESOLVED — compatibility layer NOT mounted"
-                );
-                println!(
-                    "[sc]     `compat_canonical_url` is unset and `app_hosts` has {app_host_count} \
-                     entries: no single origin to hand a real device without guessing."
-                );
-                println!(
-                    "[sc]     Set `compat_canonical_url` to enable compat client support."
-                );
-            }
-            CompatCanonicalUrl::Invalid(value) => {
-                println!(
-                    "[sc]   compat canonical_url: INVALID ({value:?}) — compatibility layer NOT mounted"
-                );
-                println!("[sc]     `compat_canonical_url` must be an absolute http(s):// origin.");
-            }
-        }
+    if cfg!(feature = "compat-nc") && d.public_origins.canonical().is_none() {
+        println!("[sc]   compatibility layer: NOT MOUNTED (no declared origin, above)");
+        println!("[sc]     Enrolled clients bind permanently to whichever origin they are");
+        println!("[sc]     given, so no origin means no enrolment rather than a guess.");
     }
 }
 
@@ -841,9 +879,11 @@ mod tests {
             bind: "127.0.0.1:8443".parse().unwrap(),
             single_origin: false,
             trusted_proxies: TrustedProxies::default(),
-            compat_canonical_url: crate::config::CompatCanonicalUrl::Configured(
+            public_origins: crate::config::PublicOrigins::Configured(vec![
                 "https://cloud.example.com".into(),
-            ),
+            ]),
+            rejected_origins: Vec::new(),
+            named_content_host: None,
         }
     }
 

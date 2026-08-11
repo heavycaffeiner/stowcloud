@@ -254,6 +254,15 @@ impl AppError {
         )
     }
 
+    /// A `404` carrying a catalogue key, for the one route whose "not found"
+    /// is a name the caller typed rather than a resource that went away:
+    /// `DELETE /api/admin/server-settings/{section}`.
+    pub fn not_found_keyed(key: &str, params: serde_json::Value, message: &str) -> Self {
+        Self::new(ErrorCode::FsNotFound, "not found").with_detail(
+            serde_json::json!({ "reason": message, "reason_key": key, "reason_params": params }),
+        )
+    }
+
     /// `active_uploads`/`running_jobs` let the settings screen name the exact
     /// number of jobs in flight instead of showing a generic refusal — the
     /// admin needs that number to decide whether `force` is safe right now.

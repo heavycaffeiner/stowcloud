@@ -38,10 +38,10 @@ fn fixture() -> Fixture {
             shared_externally: false,
         }],
         // `Config::default()`'s three-entry `app_hosts` is deliberately
-        // ambiguous for `resolve_compat_canonical_url` (`app.rs`); set it
+        // ambiguous for `resolve_public_origins` (`app.rs`); set it
         // explicitly so this fixture's compat-mount tests keep exercising a
         // mounted layer.
-        compat_canonical_url: Some("https://localhost".into()),
+        public_origins: vec!["https://localhost".into()],
         ..Config::default()
     };
     let key = MasterKeyResult {
@@ -49,7 +49,7 @@ fn fixture() -> Fixture {
         inside_data_dir: false,
         generated: true,
     };
-    let app = App::build(cfg, &key).expect("app builds");
+    let app = App::build(cfg.clone(), cfg, &key).expect("app builds");
     Fixture {
         app,
         _data: data,

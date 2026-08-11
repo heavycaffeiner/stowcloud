@@ -11,6 +11,7 @@ use std::collections::HashMap;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Path, Query, State};
+use axum::http::HeaderMap;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, options, patch, post, put};
 use axum::{Extension, Json, Router};
@@ -89,17 +90,53 @@ pub fn protected_routes(state: AppState) -> Router {
         .route("/api/admin/index/build", post(admin_build_index))
         .route("/api/admin/upload-settings", patch(admin_set_upload_settings))
         .route("/api/admin/server-settings", get(admin_get_server_settings))
-        .route("/api/admin/server-settings/smb", patch(admin_set_smb_settings))
-        .route("/api/admin/server-settings/search", patch(admin_set_search_settings))
-        .route("/api/admin/server-settings/archive", patch(admin_set_archive_settings))
-        .route("/api/admin/server-settings/network", patch(admin_set_network_settings))
-        .route("/api/admin/server-settings/db", patch(admin_set_db_settings))
-        .route("/api/admin/server-settings/symlink-policy", patch(admin_set_symlink_policy_settings))
-        .route("/api/admin/server-settings/homes", patch(admin_set_homes_settings))
-        .route("/api/admin/server-settings/watch", patch(admin_set_watch_settings))
-        .route("/api/admin/server-settings/paths", patch(admin_set_paths_settings))
-        .route("/api/admin/server-settings/oidc", patch(admin_set_oidc_settings))
+        // Every group's `DELETE` is the same handler, which reads the section
+        // from the last path segment. The `{section}` route below it exists
+        // only so an unknown name answers `404 settings.unknown_section`
+        // instead of falling through to the SPA fallback; a static segment
+        // outranks a parameter, so the ten above always win.
+        .route(
+            "/api/admin/server-settings/smb",
+            patch(admin_set_smb_settings).delete(admin_clear_server_settings),
+        )
+        .route(
+            "/api/admin/server-settings/search",
+            patch(admin_set_search_settings).delete(admin_clear_server_settings),
+        )
+        .route(
+            "/api/admin/server-settings/archive",
+            patch(admin_set_archive_settings).delete(admin_clear_server_settings),
+        )
+        .route(
+            "/api/admin/server-settings/network",
+            patch(admin_set_network_settings).delete(admin_clear_server_settings),
+        )
+        .route(
+            "/api/admin/server-settings/db",
+            patch(admin_set_db_settings).delete(admin_clear_server_settings),
+        )
+        .route(
+            "/api/admin/server-settings/symlink-policy",
+            patch(admin_set_symlink_policy_settings).delete(admin_clear_server_settings),
+        )
+        .route(
+            "/api/admin/server-settings/homes",
+            patch(admin_set_homes_settings).delete(admin_clear_server_settings),
+        )
+        .route(
+            "/api/admin/server-settings/watch",
+            patch(admin_set_watch_settings).delete(admin_clear_server_settings),
+        )
+        .route(
+            "/api/admin/server-settings/paths",
+            patch(admin_set_paths_settings).delete(admin_clear_server_settings),
+        )
+        .route(
+            "/api/admin/server-settings/oidc",
+            patch(admin_set_oidc_settings).delete(admin_clear_server_settings),
+        )
         .route("/api/admin/server-settings/restart", post(admin_restart_server))
+        .route("/api/admin/server-settings/{section}", delete(admin_clear_server_settings))
         .route("/api/admin/users", get(admin_list_users).post(admin_create_user))
         .route("/api/admin/users/{id}", patch(admin_patch_user).delete(admin_delete_user))
         .route(
@@ -1359,7 +1396,7 @@ async fn oidc_start(State(state): State<AppState>, req: axum::extract::Request) 
         .and_then(|Query(m)| m.get("returnTo").cloned());
     let return_to = raw_return_to.as_deref().and_then(safe_return_to);
 
-    let started = match state.oidc.begin().await {
+    let started = match state.oidc.begin(crate::config::host_of(req.headers())).await {
         Ok(s) => s,
         Err(e) => return oidc_begin_error(e),
     };
@@ -1478,7 +1515,16 @@ async fn oidc_callback(
         tracing::error!("oidc flow row carries a nonce hash that is not 32 bytes");
         return oidc_error_redirect(landing, "internal");
     };
-    let identity = match state.oidc.redeem(code, &flow.code_verifier, &nonce_hash).await {
+    let identity = match state
+        .oidc
+        .redeem(
+            crate::config::host_of(req.headers()),
+            code,
+            &flow.code_verifier,
+            &nonce_hash,
+        )
+        .await
+    {
         Ok(i) => i,
         Err(crate::oidc_api::OidcError::ProviderUnavailable(m)) => {
             tracing::warn!(detail = %m, "the oidc code exchange or id token verification failed");
@@ -1647,6 +1693,7 @@ struct OidcLinkStartReq {
 async fn oidc_link_start(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
+    headers: HeaderMap,
     Json(req): Json<OidcLinkStartReq>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
@@ -1662,7 +1709,7 @@ async fn oidc_link_start(
     }
     let return_to = req.return_to.as_deref().and_then(safe_return_to);
 
-    let started = match state.oidc.begin().await {
+    let started = match state.oidc.begin(crate::config::host_of(&headers)).await {
         Ok(s) => s,
         Err(e) => return oidc_begin_error(e),
     };
@@ -2955,6 +3002,7 @@ struct SharesQuery {
 async fn shares_list(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
+    headers: HeaderMap,
     Query(q): Query<SharesQuery>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
@@ -2963,7 +3011,10 @@ async fn shares_list(
     };
     match state.core.share_link_list(principal.user, q.path.as_deref()) {
         Ok(links) => {
-            let links: Vec<_> = links.into_iter().map(|l| with_link_url(&state, l)).collect();
+            let links: Vec<_> = links
+                .into_iter()
+                .map(|l| with_link_url(&state, &headers, l))
+                .collect();
             Json(links).into_response()
         }
         Err(e) => AppError::from(e).into_response(),
@@ -2972,9 +3023,19 @@ async fn shares_list(
 
 /// Derive `url` from whatever token the row carries. A row written before the
 /// token was sealed at rest has neither, and is returned as-is.
-fn with_link_url(state: &AppState, mut info: crate::core_api::ShareLinkInfo) -> crate::core_api::ShareLinkInfo {
+///
+/// All four share handlers pass their own `HeaderMap` through here or to
+/// [`public_link_url`] directly. Missing one is not a cosmetic gap: the create
+/// dialog would name the origin the admin is on and the list beside it would
+/// name a different one for the same link, which is worse than one consistent
+/// guess.
+fn with_link_url(
+    state: &AppState,
+    headers: &HeaderMap,
+    mut info: crate::core_api::ShareLinkInfo,
+) -> crate::core_api::ShareLinkInfo {
     if let Some(t) = &info.token {
-        info.url = Some(public_link_url(state, t));
+        info.url = Some(public_link_url(state, headers, t));
     }
     info
 }
@@ -2982,6 +3043,7 @@ fn with_link_url(state: &AppState, mut info: crate::core_api::ShareLinkInfo) -> 
 async fn shares_create(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
+    headers: HeaderMap,
     Json(req): Json<crate::core_api::ShareLinkCreate>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
@@ -2990,7 +3052,7 @@ async fn shares_create(
     };
     match state.core.share_link_create(principal.user, &req) {
         Ok((mut info, token)) => {
-            info.url = Some(public_link_url(&state, &token));
+            info.url = Some(public_link_url(&state, &headers, &token));
             info.token = Some(token);
             (StatusCode::CREATED, Json(info)).into_response()
         }
@@ -3002,7 +3064,12 @@ fn parse_share_id(raw: &str) -> Result<i64, AppError> {
     raw.parse::<i64>().map_err(|_| AppError::not_found())
 }
 
-async fn shares_get(State(state): State<AppState>, principal: Option<Extension<Principal>>, Path(id): Path<String>) -> Response {
+async fn shares_get(
+    State(state): State<AppState>,
+    principal: Option<Extension<Principal>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
         Err(e) => return e.into_response(),
@@ -3012,7 +3079,7 @@ async fn shares_get(State(state): State<AppState>, principal: Option<Extension<P
         Err(e) => return e.into_response(),
     };
     match state.core.share_link_get(principal.user, id) {
-        Ok(info) => Json(with_link_url(&state, info)).into_response(),
+        Ok(info) => Json(with_link_url(&state, &headers, info)).into_response(),
         Err(e) => AppError::from(e).into_response(),
     }
 }
@@ -3020,6 +3087,7 @@ async fn shares_get(State(state): State<AppState>, principal: Option<Extension<P
 async fn shares_patch(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
+    headers: HeaderMap,
     Path(id): Path<String>,
     Json(patch): Json<crate::core_api::ShareLinkPatch>,
 ) -> Response {
@@ -3032,7 +3100,7 @@ async fn shares_patch(
         Err(e) => return e.into_response(),
     };
     match state.core.share_link_update(principal.user, id, &patch) {
-        Ok(info) => Json(with_link_url(&state, info)).into_response(),
+        Ok(info) => Json(with_link_url(&state, &headers, info)).into_response(),
         Err(e) => AppError::from(e).into_response(),
     }
 }
@@ -3067,20 +3135,30 @@ const LINK_SESSION_TTL_SECS: u64 = 30 * 60;
 /// The link handed to whoever will open it, so it has to be the address they
 /// can actually reach, not the one this process happens to be bound to.
 ///
-/// `public_base_url` carries the deployment's declared origin when it has
-/// one. Without it this falls back to `https://{app_hosts[0]}`, which is what
-/// this function used to do unconditionally: an origin with the port dropped
-/// and the scheme assumed. That is right for the reverse-proxied deployment
-/// this is designed for and wrong for every other one, and nothing in the
-/// dialog that shows the link says which it got.
-fn public_link_url(state: &AppState, token: &str) -> String {
-    match &state.cfg.public_base_url {
-        Some(base) => format!("{base}/s/{token}"),
-        None => {
-            let host = state.cfg.app_hosts.first().cloned().unwrap_or_default();
-            format!("https://{host}/s/{token}")
-        }
+/// The declared origin this request arrived on is what the link names, so an
+/// administrator working on the internal name is handed an internal link. The
+/// `Host` header selects among origins already written down; it never
+/// contributes a byte to the result.
+///
+/// The fallback, for a deployment that declared none, is deliberately left as
+/// it was: `https://{app_hosts[0]}`, with the port dropped and the scheme
+/// assumed. That is right for the reverse-proxied deployment this is designed
+/// for and wrong for a direct one on 8443, and the server cannot tell which it
+/// is — `bind` is the internal port, and behind a proxy it is not the port a
+/// recipient would dial. Appending it would trade a broken link for direct
+/// deployments against a broken link for proxied ones. The improvement is to
+/// make the undeclared case visible instead, which startup diagnostics and the
+/// settings screen both do.
+fn public_link_url(state: &AppState, headers: &HeaderMap, token: &str) -> String {
+    if let Some(url) = state
+        .cfg
+        .origins
+        .url_for_host(crate::config::host_of(headers), &format!("/s/{token}"))
+    {
+        return url;
     }
+    let host = state.cfg.app_hosts.first().cloned().unwrap_or_default();
+    format!("https://{host}/s/{token}")
 }
 
 /// Stateless link-session value: `{expiry}.{HMAC(csrf_key, token|expiry)}`.
@@ -4302,6 +4380,41 @@ async fn admin_set_upload_settings(
 // `smb.conf` regeneration) lives in `sc-server`'s `SettingsBridge`, same
 // split as `admin_set_upload_settings` above and `sc_upload`.
 
+/// A settings patch body, with a refusal a browser can render.
+///
+/// Every field in every patch type is required, and stays required: a client
+/// that does not know a field must fail loudly rather than send a default
+/// that erases a value it never saw, which is what makes a full-replace group
+/// safe. The cost is that an open tab running the previous SPA build sends a
+/// body this release cannot deserialize, and axum's own `Json` rejection
+/// answers that with the framework's plain-text body instead of the error
+/// envelope the SPA knows how to render — an unhelpful string on the one
+/// screen this is otherwise making legible. The request still fails; it now
+/// says to reload the page.
+pub struct SettingsJson<T>(pub T);
+
+impl<T, S> axum::extract::FromRequest<S> for SettingsJson<T>
+where
+    T: serde::de::DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = AppError;
+
+    async fn from_request(
+        req: axum::extract::Request,
+        state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        match Json::<T>::from_request(req, state).await {
+            Ok(Json(v)) => Ok(Self(v)),
+            Err(rejection) => Err(AppError::invalid_keyed(
+                "settings.stale_client",
+                serde_json::json!({}),
+                &rejection.body_text(),
+            )),
+        }
+    }
+}
+
 /// `GET /api/admin/server-settings` — every field this screen covers,
 /// tagged with its source (built-in default / `config.toml` / admin
 /// override) and whether changing it needs a restart. A field this screen
@@ -4326,7 +4439,7 @@ async fn admin_get_server_settings(State(state): State<AppState>, principal: Opt
 async fn admin_set_smb_settings(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
-    Json(req): Json<crate::settings_api::SmbPatch>,
+    SettingsJson(req): SettingsJson<crate::settings_api::SmbPatch>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
@@ -4345,7 +4458,7 @@ async fn admin_set_smb_settings(
 async fn admin_set_search_settings(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
-    Json(req): Json<crate::settings_api::SearchPatch>,
+    SettingsJson(req): SettingsJson<crate::settings_api::SearchPatch>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
@@ -4365,7 +4478,7 @@ async fn admin_set_search_settings(
 async fn admin_set_archive_settings(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
-    Json(req): Json<crate::settings_api::ArchivePatch>,
+    SettingsJson(req): SettingsJson<crate::settings_api::ArchivePatch>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
@@ -4387,7 +4500,7 @@ async fn admin_set_archive_settings(
 async fn admin_set_network_settings(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
-    Json(req): Json<crate::settings_api::NetworkPatch>,
+    SettingsJson(req): SettingsJson<crate::settings_api::NetworkPatch>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
@@ -4408,7 +4521,7 @@ async fn admin_set_network_settings(
 async fn admin_set_db_settings(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
-    Json(req): Json<crate::settings_api::DbPatch>,
+    SettingsJson(req): SettingsJson<crate::settings_api::DbPatch>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
@@ -4428,7 +4541,7 @@ async fn admin_set_db_settings(
 async fn admin_set_symlink_policy_settings(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
-    Json(req): Json<crate::settings_api::SymlinkPatch>,
+    SettingsJson(req): SettingsJson<crate::settings_api::SymlinkPatch>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
@@ -4448,7 +4561,7 @@ async fn admin_set_symlink_policy_settings(
 async fn admin_set_homes_settings(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
-    Json(req): Json<crate::settings_api::HomesPatch>,
+    SettingsJson(req): SettingsJson<crate::settings_api::HomesPatch>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
@@ -4469,7 +4582,7 @@ async fn admin_set_homes_settings(
 async fn admin_set_watch_settings(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
-    Json(req): Json<crate::settings_api::WatchPatch>,
+    SettingsJson(req): SettingsJson<crate::settings_api::WatchPatch>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
@@ -4495,7 +4608,7 @@ async fn admin_set_watch_settings(
 async fn admin_set_oidc_settings(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
-    Json(req): Json<crate::settings_api::OidcPatch>,
+    SettingsJson(req): SettingsJson<crate::settings_api::OidcPatch>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
@@ -4519,7 +4632,7 @@ async fn admin_set_oidc_settings(
 async fn admin_set_paths_settings(
     State(state): State<AppState>,
     principal: Option<Extension<Principal>>,
-    Json(req): Json<crate::settings_api::PathsPatch>,
+    SettingsJson(req): SettingsJson<crate::settings_api::PathsPatch>,
 ) -> Response {
     let principal = match principal_or_401(principal) {
         Ok(p) => p,
@@ -4529,6 +4642,41 @@ async fn admin_set_paths_settings(
         return e.into_response();
     }
     match state.settings.set_paths(req) {
+        Ok(o) => Json(o).into_response(),
+        Err(e) => AppError::from(e).into_response(),
+    }
+}
+
+/// `DELETE /api/admin/server-settings/{section}` — drop this group's override
+/// and fall back to `config.toml` plus the environment. Answers with the same
+/// `ApplyOutcome` a patch does, so the screen reacts identically.
+///
+/// The section comes off the last path segment rather than a `Path` extractor
+/// because this one handler serves both the ten static routes and the
+/// parameter route that exists to make an unknown name a keyed 404 instead of
+/// a silent no-op.
+async fn admin_clear_server_settings(
+    State(state): State<AppState>,
+    principal: Option<Extension<Principal>>,
+    uri: axum::http::Uri,
+) -> Response {
+    let principal = match principal_or_401(principal) {
+        Ok(p) => p,
+        Err(e) => return e.into_response(),
+    };
+    if let Err(e) = require_admin(&state, &principal) {
+        return e.into_response();
+    }
+    let raw = uri.path().rsplit('/').next().unwrap_or_default();
+    let Some(section) = crate::settings_api::SettingsSection::from_wire(raw) else {
+        return AppError::not_found_keyed(
+            "settings.unknown_section",
+            serde_json::json!({ "section": raw }),
+            &format!("unknown settings section: {raw}"),
+        )
+        .into_response();
+    };
+    match state.settings.clear_section(section) {
         Ok(o) => Json(o).into_response(),
         Err(e) => AppError::from(e).into_response(),
     }
@@ -5676,6 +5824,12 @@ mod tests {
 
     // ---------------------------------------------------- share link URLs --
 
+    fn host_header(host: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert(axum::http::header::HOST, host.parse().unwrap());
+        h
+    }
+
     /// The link is handed to someone who is not on this machine, so the
     /// origin has to be the one the deployment says it is reachable at.
     /// This used to be `https://{app_hosts[0]}` unconditionally: scheme
@@ -5687,13 +5841,42 @@ mod tests {
         let (mut state, _dir) = test_state_with_core(Arc::new(MockCore::new(vec![])));
         let mut cfg = (*state.cfg).clone();
         cfg.app_hosts = vec!["127.0.0.1".into(), "localhost".into()];
-        cfg.public_base_url = Some("http://files.example.org:8080".into());
+        cfg.origins = crate::config::OriginSet::new(vec![
+            "http://files.example.org:8080".into(),
+        ]);
         state.cfg = Arc::new(cfg);
 
         assert_eq!(
-            public_link_url(&state, "tok"),
+            public_link_url(&state, &HeaderMap::new(), "tok"),
             "http://files.example.org:8080/s/tok"
         );
+    }
+
+    /// An administrator on the internal name is handed an internal link.
+    /// Selection, not construction: an unrecognised `Host` gets the
+    /// canonical origin, so nothing a header carries can name a host this
+    /// deployment did not declare.
+    #[test]
+    fn a_share_link_names_the_origin_the_request_arrived_on() {
+        let (mut state, _dir) = test_state_with_core(Arc::new(MockCore::new(vec![])));
+        let mut cfg = (*state.cfg).clone();
+        cfg.origins = crate::config::OriginSet::new(vec![
+            "https://files.example.org".into(),
+            "https://nas.internal:8443".into(),
+        ]);
+        state.cfg = Arc::new(cfg);
+
+        assert_eq!(
+            public_link_url(&state, &host_header("nas.internal:8443"), "tok"),
+            "https://nas.internal:8443/s/tok"
+        );
+        for host in ["evil.example.net", "nas.internal"] {
+            assert_eq!(
+                public_link_url(&state, &host_header(host), "tok"),
+                "https://files.example.org/s/tok",
+                "host {host}"
+            );
+        }
     }
 
     /// No declared origin is still the old guess, not an error and not an
@@ -5704,10 +5887,13 @@ mod tests {
         let (mut state, _dir) = test_state_with_core(Arc::new(MockCore::new(vec![])));
         let mut cfg = (*state.cfg).clone();
         cfg.app_hosts = vec!["files.example.org".into(), "127.0.0.1".into()];
-        cfg.public_base_url = None;
+        cfg.origins = crate::config::OriginSet::default();
         state.cfg = Arc::new(cfg);
 
-        assert_eq!(public_link_url(&state, "tok"), "https://files.example.org/s/tok");
+        assert_eq!(
+            public_link_url(&state, &host_header("127.0.0.1"), "tok"),
+            "https://files.example.org/s/tok"
+        );
     }
 
     // ------------------------------------------------------------ smb cap --
@@ -6407,6 +6593,107 @@ mod tests {
         assert!(core.dropped.lock().is_empty(), "an over-limit body was written anyway");
     }
 
+    /// A `CoreApi` whose four share-link reads all answer with the same row,
+    /// so the only thing that can differ between the handlers is how each
+    /// builds the URL.
+    struct FourWayLinkCore;
+
+    impl crate::core_api::CoreApi for FourWayLinkCore {
+        fn share_link_list(
+            &self,
+            _u: sc_vfs::ids::UserId,
+            _p: Option<&str>,
+        ) -> Result<Vec<crate::core_api::ShareLinkInfo>, crate::core_api::CoreError> {
+            Ok(vec![four_way_row()])
+        }
+        fn share_link_get(
+            &self,
+            _u: sc_vfs::ids::UserId,
+            _id: i64,
+        ) -> Result<crate::core_api::ShareLinkInfo, crate::core_api::CoreError> {
+            Ok(four_way_row())
+        }
+        fn share_link_create(
+            &self,
+            _u: sc_vfs::ids::UserId,
+            _r: &crate::core_api::ShareLinkCreate,
+        ) -> Result<(crate::core_api::ShareLinkInfo, String), crate::core_api::CoreError> {
+            Ok((four_way_row(), "tok".to_string()))
+        }
+        fn share_link_update(
+            &self,
+            _u: sc_vfs::ids::UserId,
+            _id: i64,
+            _p: &crate::core_api::ShareLinkPatch,
+        ) -> Result<crate::core_api::ShareLinkInfo, crate::core_api::CoreError> {
+            Ok(four_way_row())
+        }
+    }
+
+    fn four_way_row() -> crate::core_api::ShareLinkInfo {
+        crate::core_api::ShareLinkInfo {
+            id: 1,
+            path: "/photos".into(),
+            perms: sc_acl::Perms::READ,
+            expires_ns: None,
+            max_downloads: None,
+            downloads: 0,
+            label: None,
+            has_password: false,
+            created_ns: "0".into(),
+            token: Some("tok".into()),
+            url: None,
+        }
+    }
+
+    /// `with_link_url` has three call sites and `shares_create` reaches the
+    /// URL builder directly, so this drives all four with one `Host` and
+    /// asserts they agree. Missing one is not cosmetic: the create dialog
+    /// would name the origin the admin is on and the list beside it would
+    /// name another for the same link, which is worse than one consistent
+    /// guess.
+    #[tokio::test]
+    async fn all_four_share_handlers_name_the_same_origin() {
+        let (mut state, _dir) = test_state_with_core(Arc::new(FourWayLinkCore));
+        let mut cfg = (*state.cfg).clone();
+        cfg.origins = crate::config::OriginSet::new(vec![
+            "https://files.example.org".into(),
+            "https://nas.internal:8443".into(),
+        ]);
+        state.cfg = Arc::new(cfg);
+        let app = shares_router(state);
+
+        let user = sc_vfs::ids::UserId::new(1);
+        let probe = |method: &'static str, uri: &'static str, body: &'static str| {
+            let app = app.clone();
+            async move {
+                let req = HttpRequest::builder()
+                    .method(method)
+                    .uri(uri)
+                    .header("host", "nas.internal:8443")
+                    .header("content-type", "application/json")
+                    .extension(Principal {
+                        user,
+                        scope: sc_auth::Scope::default(),
+                        via: sc_auth::AuthVia::Session,
+                    })
+                    .body(Body::from(body))
+                    .unwrap();
+                body_json(app.oneshot(req).await.unwrap()).await
+            }
+        };
+
+        let expected = "https://nas.internal:8443/s/tok";
+        let list = probe("GET", "/api/shares", "").await;
+        assert_eq!(list[0]["url"], expected, "shares_list");
+        let created = probe("POST", "/api/shares", r#"{"path":"/photos"}"#).await;
+        assert_eq!(created["url"], expected, "shares_create");
+        let got = probe("GET", "/api/shares/1", "").await;
+        assert_eq!(got["url"], expected, "shares_get");
+        let patched = probe("PATCH", "/api/shares/1", "{}").await;
+        assert_eq!(patched["url"], expected, "shares_patch");
+    }
+
     #[tokio::test]
     async fn share_crud_requires_a_session() {
         let (state, _dir) = test_state_with_core(Arc::new(LinkMockCore::with_link("tok", 1)));
@@ -7028,16 +7315,51 @@ mod tests {
         fn router(state: AppState) -> Router {
             Router::new()
                 .route("/api/admin/server-settings", get(admin_get_server_settings))
-                .route("/api/admin/server-settings/smb", patch(admin_set_smb_settings))
-                .route("/api/admin/server-settings/search", patch(admin_set_search_settings))
-                .route("/api/admin/server-settings/archive", patch(admin_set_archive_settings))
-                .route("/api/admin/server-settings/network", patch(admin_set_network_settings))
-                .route("/api/admin/server-settings/db", patch(admin_set_db_settings))
-                .route("/api/admin/server-settings/symlink-policy", patch(admin_set_symlink_policy_settings))
-                .route("/api/admin/server-settings/homes", patch(admin_set_homes_settings))
-                .route("/api/admin/server-settings/watch", patch(admin_set_watch_settings))
-                .route("/api/admin/server-settings/paths", patch(admin_set_paths_settings))
+                // `.delete` on each static route as well as the parameter one
+                // below: a static segment outranks a parameter, so without it
+                // a `DELETE` on a real section answers 405 from the static
+                // entry and never reaches the handler.
+                .route(
+                    "/api/admin/server-settings/smb",
+                    patch(admin_set_smb_settings).delete(admin_clear_server_settings),
+                )
+                .route(
+                    "/api/admin/server-settings/search",
+                    patch(admin_set_search_settings).delete(admin_clear_server_settings),
+                )
+                .route(
+                    "/api/admin/server-settings/archive",
+                    patch(admin_set_archive_settings).delete(admin_clear_server_settings),
+                )
+                .route(
+                    "/api/admin/server-settings/network",
+                    patch(admin_set_network_settings).delete(admin_clear_server_settings),
+                )
+                .route(
+                    "/api/admin/server-settings/db",
+                    patch(admin_set_db_settings).delete(admin_clear_server_settings),
+                )
+                .route(
+                    "/api/admin/server-settings/symlink-policy",
+                    patch(admin_set_symlink_policy_settings).delete(admin_clear_server_settings),
+                )
+                .route(
+                    "/api/admin/server-settings/homes",
+                    patch(admin_set_homes_settings).delete(admin_clear_server_settings),
+                )
+                .route(
+                    "/api/admin/server-settings/watch",
+                    patch(admin_set_watch_settings).delete(admin_clear_server_settings),
+                )
+                .route(
+                    "/api/admin/server-settings/paths",
+                    patch(admin_set_paths_settings).delete(admin_clear_server_settings),
+                )
                 .route("/api/admin/server-settings/restart", post(admin_restart_server))
+                .route(
+                    "/api/admin/server-settings/{section}",
+                    delete(admin_clear_server_settings),
+                )
                 .with_state(state)
         }
 
@@ -7071,10 +7393,10 @@ mod tests {
             assert_eq!(app.clone().oneshot(get).await.unwrap().status(), StatusCode::FORBIDDEN);
 
             let patches: &[(&str, &str)] = &[
-                ("/api/admin/server-settings/smb", r#"{"enabled":false,"workgroup":"WORKGROUP","service_user":"sc-smb","allow_public_bind":false,"totp_policy":"require_separate","service_uid":1000,"service_gid":1000}"#),
+                ("/api/admin/server-settings/smb", r#"{"enabled":false,"workgroup":"WORKGROUP","server_name":"STOWCLOUD","service_user":"sc-smb","allow_public_bind":false,"totp_policy":"require_separate","service_uid":1000,"service_gid":1000}"#),
                 ("/api/admin/server-settings/search", r#"{"max_concurrent_fast":4,"max_concurrent_slow":2,"walk_deadline_fast_ms":100,"walk_deadline_slow_ms":500,"rate_per_minute":30}"#),
                 ("/api/admin/server-settings/archive", r#"{"max_concurrent":2}"#),
-                ("/api/admin/server-settings/network", r#"{"bind":"127.0.0.1:8080","app_hosts":[],"content_hosts":[],"allowed_origins":[],"trusted_proxies":[],"compat_canonical_url":null}"#),
+                ("/api/admin/server-settings/network", r#"{"bind":"127.0.0.1:8080","app_hosts":[],"content_hosts":[],"allowed_origins":[],"trusted_proxies":[],"public_origins":[]}"#),
                 ("/api/admin/server-settings/db", r#"{"size_guard":true,"max_bytes":1000,"min_free_bytes":100}"#),
                 ("/api/admin/server-settings/symlink-policy", r#"{"policy":"deny"}"#),
                 ("/api/admin/server-settings/homes", r#"{"enabled":false,"root":null}"#),
@@ -7090,11 +7412,55 @@ mod tests {
                 assert_eq!(resp.status(), StatusCode::FORBIDDEN, "PATCH {path} must 403 for a non-admin");
             }
 
+            let revert = as_principal(plain, HttpRequest::builder().uri("/api/admin/server-settings/network").method("DELETE"))
+                .body(Body::empty())
+                .unwrap();
+            assert_eq!(app.clone().oneshot(revert).await.unwrap().status(), StatusCode::FORBIDDEN);
+
             let restart = as_principal(plain, HttpRequest::builder().uri("/api/admin/server-settings/restart").method("POST"))
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"force":false}"#))
                 .unwrap();
             assert_eq!(app.oneshot(restart).await.unwrap().status(), StatusCode::FORBIDDEN);
+        }
+
+        /// An unknown section is a `404` naming what went wrong, not a silent
+        /// no-op that reports the revert succeeded.
+        #[tokio::test]
+        async fn an_unknown_section_is_a_named_404() {
+            let (state, _dir, admin) = admin_state();
+            let app = router(state);
+            let req = as_principal(
+                admin,
+                HttpRequest::builder().uri("/api/admin/server-settings/nonsense").method("DELETE"),
+            )
+            .body(Body::empty())
+            .unwrap();
+            let resp = app.oneshot(req).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+            let body = json_body(resp).await;
+            assert_eq!(body["error"]["detail"]["reason_key"], "settings.unknown_section");
+        }
+
+        /// A page older than this release sends a body missing a field, and
+        /// gets an envelope that says to reload rather than the framework's
+        /// own plain-text rejection. It still fails: every patch field stays
+        /// required, which is what makes a full-replace group safe.
+        #[tokio::test]
+        async fn a_patch_body_from_an_older_page_is_refused_with_a_readable_reason() {
+            let (state, _dir, admin) = admin_state();
+            let app = router(state);
+            let req = as_principal(
+                admin,
+                HttpRequest::builder().uri("/api/admin/server-settings/archive").method("PATCH"),
+            )
+            .header("content-type", "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+            let resp = app.oneshot(req).await.unwrap();
+            assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+            let body = json_body(resp).await;
+            assert_eq!(body["error"]["detail"]["reason_key"], "settings.stale_client");
         }
 
         #[tokio::test]

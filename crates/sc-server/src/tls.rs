@@ -75,9 +75,18 @@ fn primary_lan_address() -> Option<IpAddr> {
 /// recorded beside the certificate to decide whether to regenerate, and an
 /// unstable ordering would regenerate on every start and re-prompt every
 /// browser that had accepted the old one.
-fn san_entries(app_hosts: &[String], lan: Option<IpAddr>) -> Vec<String> {
+/// `content_hosts` is in the list as well as `app_hosts`, and the case where
+/// leaving it out bit was a server bound to 443 itself: the content URL
+/// resolves to this very listener, the handshake carries that name in SNI, and
+/// the certificate did not have it.
+fn san_entries(app_hosts: &[String], content_hosts: &[String], lan: Option<IpAddr>) -> Vec<String> {
     let mut v: Vec<String> = vec!["localhost".into(), "127.0.0.1".into(), "::1".into()];
-    v.extend(app_hosts.iter().map(|h| h.trim().to_ascii_lowercase()));
+    v.extend(
+        app_hosts
+            .iter()
+            .chain(content_hosts.iter())
+            .map(|h| h.trim().to_ascii_lowercase()),
+    );
     v.extend(lan.map(|ip| ip.to_string()));
     v.retain(|s| !s.is_empty());
     v.sort();
@@ -165,9 +174,10 @@ fn write_private(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
 pub fn load_or_generate(
     data_dir: &Path,
     app_hosts: &[String],
+    content_hosts: &[String],
 ) -> anyhow::Result<Arc<rustls::ServerConfig>> {
     let dir = tls_dir(data_dir);
-    let want = san_entries(app_hosts, primary_lan_address());
+    let want = san_entries(app_hosts, content_hosts, primary_lan_address());
 
     let usable = dir.join("self-signed.crt").exists() && dir.join("self-signed.key").exists();
     // A recorded list with no certificate beside it describes nothing, so it is
@@ -442,8 +452,8 @@ mod tests {
     fn san_list_is_stable_and_deduplicated() {
         let hosts = vec!["NAS.local".to_string(), "localhost".to_string()];
         let lan: IpAddr = "192.168.0.50".parse().unwrap();
-        let a = san_entries(&hosts, Some(lan));
-        let b = san_entries(&hosts, Some(lan));
+        let a = san_entries(&hosts, &[], Some(lan));
+        let b = san_entries(&hosts, &[], Some(lan));
         assert_eq!(a, b, "same inputs must not produce a different list");
         assert_eq!(
             a,
@@ -451,17 +461,29 @@ mod tests {
         );
     }
 
+    /// A named content origin resolving to this server's own listener
+    /// presents that name in SNI, so the certificate has to carry it.
+    #[test]
+    fn a_named_content_origin_is_covered_too() {
+        let sans = san_entries(
+            &["nas.local".to_string()],
+            &["Content.Example.com".to_string()],
+            None,
+        );
+        assert!(sans.contains(&"content.example.com".to_string()), "{sans:?}");
+    }
+
     #[test]
     fn generated_material_round_trips_into_a_server_config() {
         let dir = tempfile::tempdir().unwrap();
         let hosts = vec!["nas.local".to_string()];
-        let cfg = load_or_generate(dir.path(), &hosts).unwrap();
+        let cfg = load_or_generate(dir.path(), &hosts, &[]).unwrap();
         assert_eq!(cfg.alpn_protocols, vec![b"http/1.1".to_vec()]);
 
         // A second call with the same inputs must reuse what is on disk, or
         // every restart would invalidate the exception each browser stored.
         let before = std::fs::read(dir.path().join("tls/self-signed.crt")).unwrap();
-        load_or_generate(dir.path(), &hosts).unwrap();
+        load_or_generate(dir.path(), &hosts, &[]).unwrap();
         let after = std::fs::read(dir.path().join("tls/self-signed.crt")).unwrap();
         assert_eq!(before, after, "an unchanged SAN list must not regenerate");
     }
@@ -469,11 +491,12 @@ mod tests {
     #[test]
     fn a_new_name_regenerates() {
         let dir = tempfile::tempdir().unwrap();
-        load_or_generate(dir.path(), &["nas.local".to_string()]).unwrap();
+        load_or_generate(dir.path(), &["nas.local".to_string()], &[]).unwrap();
         let before = std::fs::read(dir.path().join("tls/self-signed.crt")).unwrap();
         load_or_generate(
             dir.path(),
             &["nas.local".to_string(), "cloud.example.com".to_string()],
+            &[],
         )
         .unwrap();
         let after = std::fs::read(dir.path().join("tls/self-signed.crt")).unwrap();
@@ -492,10 +515,11 @@ mod tests {
         load_or_generate(
             dir.path(),
             &["nas.local".to_string(), "172.17.0.2".to_string()],
+            &[],
         )
         .unwrap();
         let before = std::fs::read(dir.path().join("tls/self-signed.crt")).unwrap();
-        load_or_generate(dir.path(), &["nas.local".to_string()]).unwrap();
+        load_or_generate(dir.path(), &["nas.local".to_string()], &[]).unwrap();
         let after = std::fs::read(dir.path().join("tls/self-signed.crt")).unwrap();
         assert_eq!(before, after, "a dropped entry is not a reason to reissue");
     }
@@ -506,8 +530,8 @@ mod tests {
     #[test]
     fn a_replaced_address_is_added_to_what_was_already_covered() {
         let dir = tempfile::tempdir().unwrap();
-        load_or_generate(dir.path(), &["172.17.0.2".to_string()]).unwrap();
-        load_or_generate(dir.path(), &["172.17.0.3".to_string()]).unwrap();
+        load_or_generate(dir.path(), &["172.17.0.2".to_string()], &[]).unwrap();
+        load_or_generate(dir.path(), &["172.17.0.3".to_string()], &[]).unwrap();
         let sans = std::fs::read_to_string(dir.path().join("tls/self-signed.sans")).unwrap();
         assert!(sans.contains("172.17.0.2"), "{sans}");
         assert!(sans.contains("172.17.0.3"), "{sans}");
@@ -518,7 +542,7 @@ mod tests {
     fn the_private_key_is_not_world_readable() {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
-        load_or_generate(dir.path(), &[]).unwrap();
+        load_or_generate(dir.path(), &[], &[]).unwrap();
         let mode = std::fs::metadata(dir.path().join("tls/self-signed.key"))
             .unwrap()
             .permissions()
@@ -628,7 +652,7 @@ mod dispatch_tests {
     /// A listener on an ephemeral loopback port, and the port it took.
     async fn listening() -> (tempfile::TempDir, SocketAddr) {
         let dir = tempfile::tempdir().unwrap();
-        let cfg = load_or_generate(dir.path(), &[]).unwrap();
+        let cfg = load_or_generate(dir.path(), &[], &[]).unwrap();
         let tcp = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let addr = tcp.local_addr().unwrap();
         // The receiver is dropped, so nothing is ever taken off the channel.

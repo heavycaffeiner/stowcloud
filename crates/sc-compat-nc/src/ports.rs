@@ -305,6 +305,12 @@ pub trait UploadEngine: Send + Sync {
     ///   determine the expected length itself.
     fn received_len(&self, session: SessionId, user: UserId) -> PortResult<u64>;
     fn abort(&self, session: SessionId, user: UserId) -> PortResult<()>;
+    /// The chunk size to advertise in `capabilities`, read live rather than
+    /// copied at build time: the admin screen changes it without a restart,
+    /// and a client still being told the boot-time number is the divergence
+    /// this accessor exists to close. Advisory in both directions — nothing
+    /// rejects an upload over it.
+    fn chunk_size_advisory(&self) -> u64;
 }
 
 // ---------------------------------------------------------------------------

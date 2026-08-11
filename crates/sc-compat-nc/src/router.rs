@@ -191,9 +191,11 @@ async fn h_ocs(
         .trim_start_matches("/ocs/v2.php");
 
     match (method.as_str(), rest) {
-        ("GET", "/cloud/capabilities") => {
-            ctx.ok(capabilities(&s.cfg, host_header(&headers).as_deref()))
-        }
+        ("GET", "/cloud/capabilities") => ctx.ok(capabilities(
+            &s.cfg,
+            host_header(&headers).as_deref(),
+            s.deps.upload.chunk_size_advisory(),
+        )),
 
         ("GET", "/cloud/user") => {
             let Some(p) = authenticate(&s, &headers, from) else {

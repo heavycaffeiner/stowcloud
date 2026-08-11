@@ -35,7 +35,7 @@ async fn the_token_request_carries_grant_type_redirect_uri_and_the_verifier() {
     let disco = discovered(&p).await;
 
     let tokens = p
-        .exchange_code(&disco, "the-code", "the-verifier")
+        .exchange_code(&disco, "the-code", "the-verifier", REDIRECT_URI)
         .await
         .expect("exchange succeeds");
     assert_eq!(tokens.id_token, "header.claims.signature");
@@ -59,7 +59,7 @@ async fn client_secret_basic_is_the_default() {
     let p = provider(Arc::clone(&idp));
     let disco = discovered(&p).await;
 
-    p.exchange_code(&disco, "c", "v").await.expect("exchange");
+    p.exchange_code(&disco, "c", "v", REDIRECT_URI).await.expect("exchange");
     let calls = idp.post_calls();
     assert_eq!(
         calls[0].basic,
@@ -81,7 +81,7 @@ async fn client_secret_post_is_used_when_that_is_all_the_provider_offers() {
     let p = provider(Arc::clone(&idp));
     let disco = discovered(&p).await;
 
-    p.exchange_code(&disco, "c", "v").await.expect("exchange");
+    p.exchange_code(&disco, "c", "v", REDIRECT_URI).await.expect("exchange");
     let calls = idp.post_calls();
     assert_eq!(calls[0].basic, None);
     assert_eq!(field(&calls[0], "client_id"), Some(CLIENT_ID));
@@ -99,7 +99,7 @@ async fn basic_wins_when_the_provider_offers_both() {
     let p = provider(Arc::clone(&idp));
     let disco = discovered(&p).await;
 
-    p.exchange_code(&disco, "c", "v").await.expect("exchange");
+    p.exchange_code(&disco, "c", "v", REDIRECT_URI).await.expect("exchange");
     assert!(idp.post_calls()[0].basic.is_some());
 }
 
@@ -114,7 +114,7 @@ async fn a_provider_offering_neither_method_is_a_configuration_error() {
     let disco = discovered(&p).await;
 
     assert!(matches!(
-        p.exchange_code(&disco, "c", "v").await.unwrap_err(),
+        p.exchange_code(&disco, "c", "v", REDIRECT_URI).await.unwrap_err(),
         TokenError::UnsupportedAuthMethod(_)
     ));
     assert!(
@@ -131,7 +131,7 @@ async fn a_rejected_exchange_surfaces_the_status() {
     let disco = discovered(&p).await;
 
     assert!(matches!(
-        p.exchange_code(&disco, "c", "v").await.unwrap_err(),
+        p.exchange_code(&disco, "c", "v", REDIRECT_URI).await.unwrap_err(),
         TokenError::Fetch(crate::fetch::FetchError::Status(400))
     ));
 }
@@ -146,7 +146,7 @@ async fn a_response_without_an_id_token_is_malformed() {
     let disco = discovered(&p).await;
 
     assert!(matches!(
-        p.exchange_code(&disco, "c", "v").await.unwrap_err(),
+        p.exchange_code(&disco, "c", "v", REDIRECT_URI).await.unwrap_err(),
         TokenError::Malformed(_)
     ));
 }

@@ -169,16 +169,11 @@ pub struct NcConfig {
     /// file data without `nc_instance` is not a restore. See.
     pub instance_id: String,
 
-    /// Advisory chunk size published as `files.chunked_upload.max_size`.
-    ///
-    /// The NC field name says "max". **We do not enforce it.** There is no
-    /// server-side chunk size ceiling; a larger chunk
-    /// is accepted normally. This value exists purely to tell clients what size
-    /// is unlikely to trip an intermediary proxy. If one does return 413 the
-    /// client's own auto-adjust handles it, and the 413 never reaches us.
-    pub chunk_size_advisory: u64,
-
     /// Published as `files.chunked_upload.max_parallel_count`. Also advisory.
+    ///
+    /// Not a `config.toml` key at all, unlike the chunk size beside it in the
+    /// capabilities document: nothing sets this, nothing at runtime changes
+    /// it, and no screen shows it.
     pub chunk_parallel_advisory: u32,
 
     pub sharee_lookup: ShareeLookup,
@@ -239,9 +234,6 @@ impl Default for NcConfig {
             alt_canonical_urls: Vec::new(),
             session_cookie: "__Host-sc_sid".into(),
             instance_id: String::new(),
-            // 10 MiB. Matches the desktop client's own default target and sits
-            // under the common 100 MB proxy body limits with a wide margin.
-            chunk_size_advisory: 10 * 1024 * 1024,
             chunk_parallel_advisory: 4,
             sharee_lookup: ShareeLookup::SameGroup,
             sharee_min_search: 3,
@@ -363,6 +355,52 @@ mod tests {
             c.canonical_for_host(Some("cloud.example.com")),
             "https://cloud.example.com"
         );
+    }
+
+    /// The shared origin-selection vector, verbatim from
+    /// `sc_http::config`'s tests. This crate keeps its own resolver — it
+    /// depends on nothing from the HTTP assembly layer, and importing
+    /// `OriginSet` to save fifteen lines of authority comparison would spend
+    /// that property on a small duplication — so the two implementations are
+    /// held together by this table instead. Changing one row here without
+    /// changing it there fails on the other side.
+    const ORIGIN_VECTOR: &[(&[&str], Option<&str>, &str)] = &[
+        (&["https://cloud.example.com"], None, "https://cloud.example.com"),
+        (&["https://cloud.example.com"], Some("evil.example.net"), "https://cloud.example.com"),
+        (&["https://cloud.example.com"], Some("  "), "https://cloud.example.com"),
+        (
+            &["https://cloud.example.com", "https://Cloud.Internal:8443", "http://10.0.0.5"],
+            Some("cloud.internal:8443"),
+            "https://Cloud.Internal:8443",
+        ),
+        (
+            &["https://cloud.example.com", "https://Cloud.Internal:8443", "http://10.0.0.5"],
+            Some("10.0.0.5"),
+            "http://10.0.0.5",
+        ),
+        (
+            &["https://cloud.example.com", "https://Cloud.Internal:8443"],
+            Some("cloud.internal"),
+            "https://cloud.example.com",
+        ),
+        (
+            &["https://cloud.example.com", "https://[fd00::5]:8443"],
+            Some("[fd00::5]:8443"),
+            "https://[fd00::5]:8443",
+        ),
+    ];
+
+    #[test]
+    fn origin_selection_matches_the_shared_vector() {
+        for (declared, host, expected) in ORIGIN_VECTOR {
+            let (canonical, alt) = declared.split_first().expect("a vector row declares one");
+            let c = NcConfig {
+                canonical_url: (*canonical).to_string(),
+                alt_canonical_urls: alt.iter().map(|s| (*s).to_string()).collect(),
+                ..NcConfig::default()
+            };
+            assert_eq!(c.canonical_for_host(*host), *expected, "host {host:?}");
+        }
     }
 
     #[test]

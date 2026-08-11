@@ -181,10 +181,24 @@ fn diagnostics_openat2_status() -> diagnostics::OpenAt2Status {
     .openat2_detail
 }
 
-/// Load config + master key, run diagnostics, and return both. Shared by
+/// What [`bootstrap`] resolved.
+///
+/// `file_cfg` is kept rather than dropped because a revert has to have
+/// something to revert *to*: applying the override store in place is what
+/// made every settings group a one-way door, since nothing afterwards could
+/// reconstruct `config.toml` plus the environment.
+pub struct Bootstrapped {
+    /// File + env, before any stored override was applied.
+    pub file_cfg: config::Config,
+    /// File + env + the override store: what this process runs on.
+    pub cfg: config::Config,
+    pub key: masterkey::MasterKeyResult,
+}
+
+/// Load config + master key, run diagnostics, and return them. Shared by
 /// `serve`, `gc`, and `smb-sync` so every entry point sees the same
 /// derived state.
-pub fn bootstrap(cli: &Cli) -> anyhow::Result<(config::Config, masterkey::MasterKeyResult)> {
+pub fn bootstrap(cli: &Cli) -> anyhow::Result<Bootstrapped> {
     let (mut cfg, from) = config::Config::load_from(cli.config.as_deref())?;
     // Printed rather than logged: this runs before the startup diagnostics
     // block and answers the question an operator asks when a setting appears
@@ -204,13 +218,60 @@ pub fn bootstrap(cli: &Cli) -> anyhow::Result<(config::Config, masterkey::Master
     // three call this function. `cmd_masterkey_rotate` deliberately does not
     // call `bootstrap` (see its own doc), so it never sees these overrides —
     // it doesn't build an `App` or serve, so it has nothing to apply them to.
+    //
+    // The pre-override config is cloned rather than overwritten, because it
+    // is what `DELETE /api/admin/server-settings/{section}` restores.
+    let file_cfg = cfg.clone();
     let settings_db = cfg.data_dir.join("settings.db");
     match settings_store::SettingsStore::open(&settings_db) {
-        Ok(store) => cfg.apply_settings_overrides(&store.load()),
+        Ok(store) => {
+            let overrides = store.load();
+            print_active_overrides(&overrides);
+            cfg.apply_settings_overrides(&overrides);
+        }
         Err(e) => tracing::warn!(error = %e, "settings overrides not loaded; using config.toml as-is"),
     }
     let key = masterkey::load_or_generate(&cfg)?;
-    Ok((cfg, key))
+    Ok(Bootstrapped { file_cfg, cfg, key })
+}
+
+/// Say which settings groups the admin screen is currently overriding, and
+/// which environment variable each one shadows.
+///
+/// Precedence is file, then env, then this store — so `SC_BIND` set by an
+/// operator who then saved the network form from the screen is silently not
+/// in effect, and until this line existed there was nothing to read that said
+/// so.
+fn print_active_overrides(o: &config::SettingsOverrides) {
+    use sc_http::settings_api::SettingsSection as S;
+    let shadowed = |s: S| -> &'static [&'static str] {
+        match s {
+            S::Network => &["SC_BIND", "SC_TRUSTED_PROXIES"],
+            S::Paths => &["SC_DATA_DIR", "SC_MASTER_KEY_FILE"],
+            _ => &[],
+        }
+    };
+    for section in S::ALL {
+        if !o.is_set(*section) {
+            continue;
+        }
+        let env: Vec<&str> = shadowed(*section)
+            .iter()
+            .copied()
+            .filter(|v| std::env::var_os(v).is_some())
+            .collect();
+        if env.is_empty() {
+            println!("[sc] settings override active: {}", section.as_wire());
+        } else {
+            println!(
+                "[sc] settings override active: {} (shadows {})",
+                section.as_wire(),
+                env.join(", ")
+            );
+            println!("[sc]   The stored override wins. Revert it from the settings screen");
+            println!("[sc]   to let the environment decide again.");
+        }
+    }
 }
 
 pub fn run_diagnostics_and_print(cfg: &config::Config, key: &masterkey::MasterKeyResult) {
@@ -260,14 +321,14 @@ pub fn connect_info_service(
 }
 
 pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
-    let (cfg, key) = bootstrap(cli)?;
+    let Bootstrapped { file_cfg, cfg, key } = bootstrap(cli)?;
     run_diagnostics_and_print(&cfg, &key);
 
     // Before the Landlock domain below and before anything else is armed: this
     // writes into the data directory on first run, and a deployment whose
     // certificate cannot be written should fail while the failure is still the
     // only thing that has happened.
-    let tls_config = tls::load_or_generate(&cfg.data_dir, &cfg.app_hosts)?;
+    let tls_config = tls::load_or_generate(&cfg.data_dir, &cfg.app_hosts, &cfg.content_hosts)?;
 
     #[cfg(target_os = "linux")]
     {
@@ -300,7 +361,7 @@ pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
     let bind = cfg.bind;
     let data_dir = cfg.data_dir.clone();
     let min_free_bytes = cfg.db.min_free_bytes;
-    let app = app::App::build(cfg, &key)?;
+    let app = app::App::build(cfg, file_cfg, &key)?;
 
     // 's always-on floor and its size cap. Both have
     // to be sampled by something to be a floor and a cap at all:
@@ -401,7 +462,7 @@ pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
 }
 
 pub fn cmd_gc(cli: &Cli) -> anyhow::Result<()> {
-    let (cfg, key) = bootstrap(cli)?;
+    let Bootstrapped { file_cfg, cfg, key } = bootstrap(cli)?;
     let db_path = cfg.data_dir.join("meta.db");
     let meta = sc_meta::MetaStore::open(&db_path)?;
     let before = meta.size_bytes()?;
@@ -409,7 +470,7 @@ pub fn cmd_gc(cli: &Cli) -> anyhow::Result<()> {
     // Step 1: reap `node` rows whose `(dev, ino)`
     // is gone. That needs a live share tree to check against, which means
     // opening the shares — so build the domain layer, not just the DB.
-    let app = app::App::build(cfg, &key)?;
+    let app = app::App::build(cfg, file_cfg, &key)?;
     let mut reaped = 0usize;
     for def in app.core.share_defs() {
         let Some(root) = app.core.share(def.id) else {
@@ -471,7 +532,7 @@ fn collect_live(
 /// operator whose server is *already running*, because that process holds its
 /// own token in memory and will reject this one.
 pub fn cmd_setup(cli: &Cli) -> anyhow::Result<()> {
-    let (cfg, key) = bootstrap(cli)?;
+    let Bootstrapped { cfg, key, .. } = bootstrap(cli)?;
     let auth = sc_auth::AuthService::new(
         &cfg.data_dir.join("auth.db"),
         sc_auth::AuthConfig::default(),
@@ -505,7 +566,7 @@ pub fn cmd_routes(json: bool) {
 }
 
 pub fn cmd_smb_sync(cli: &Cli) -> anyhow::Result<()> {
-    let (cfg, key) = bootstrap(cli)?;
+    let Bootstrapped { cfg, key, .. } = bootstrap(cli)?;
     smb_cmd::run(&cfg, &key.key)
 }
 
@@ -556,13 +617,13 @@ pub fn cmd_masterkey_rotate(cli: &Cli) -> anyhow::Result<()> {
 /// comment for why this is a CLI subcommand and why it is gated on
 /// `[index] name_enabled`.
 pub fn cmd_index(cli: &Cli, action: IndexAction) -> anyhow::Result<()> {
-    let (cfg, key) = bootstrap(cli)?;
+    let Bootstrapped { file_cfg, cfg, key } = bootstrap(cli)?;
     ensure_name_index_enabled(&cfg)?;
     // Building/inspecting an index needs live `ShareRoot`s (to crawl, or to
     // find the host path an index would live under), so this needs the whole
     // domain layer — same reasoning `cmd_gc` gives for building an `App`
     // rather than opening just the metadata DB.
-    let app = app::App::build(cfg, &key)?;
+    let app = app::App::build(cfg, file_cfg, &key)?;
     run_index_action(&app, action)
 }
 
@@ -804,7 +865,7 @@ mod tests {
 
         // First run: generates the key file and one account with an SMB
         // secret to rotate.
-        let (cfg, key) = bootstrap(&cli).unwrap();
+        let Bootstrapped { cfg, key, .. } = bootstrap(&cli).unwrap();
         let auth = sc_auth::AuthService::new(
             &cfg.data_dir.join("auth.db"),
             sc_auth::AuthConfig::default(),
@@ -927,10 +988,7 @@ mod tests {
                 host_path: dir.path().join("share"),
                 shared_externally: false,
             }],
-            index: config::IndexConfig {
-                name_enabled: true,
-                content_enabled: false,
-            },
+            index: config::IndexConfig { name_enabled: true },
             ..config::Config::default()
         };
         let key = masterkey::MasterKeyResult {
@@ -938,7 +996,7 @@ mod tests {
             inside_data_dir: false,
             generated: true,
         };
-        let app = app::App::build(cfg, &key).expect("app builds");
+        let app = app::App::build(cfg.clone(), cfg, &key).expect("app builds");
         (app, dir)
     }
 

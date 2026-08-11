@@ -125,12 +125,16 @@ impl Default for WatchConfig {
     }
 }
 
-/// /: both off by default.
+/// Off by default.
+///
+/// `content_enabled` used to sit here beside `name_enabled` and nothing ever
+/// read it: content indexing is not built, so the key was a switch that
+/// looked supported and did nothing. A file that still sets it parses
+/// normally and keeps doing what it always did, which is nothing.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct IndexConfig {
     pub name_enabled: bool,
-    pub content_enabled: bool,
 }
 
 /// "user homes are opt-in; homes.enabled = false by default".
@@ -261,16 +265,19 @@ pub struct OidcConfig {
     /// pushes and in every backup of it; the same reasoning keeps
     /// `master_key_file` a path.
     pub client_secret_file: Option<PathBuf>,
-    /// The exact redirect URI registered at the IdP, e.g.
-    /// `https://cloud.example.com/api/auth/oidc/callback`.
+    /// The exact redirect URIs registered at the IdP, e.g.
+    /// `https://cloud.example.com/api/auth/oidc/callback`. The entry whose
+    /// authority equals the request's `Host` is used; the first entry
+    /// otherwise.
     ///
-    /// Configured, never derived (§4.3.1). The existing derivation logic
-    /// (`resolve_compat_canonical_url`) accepts `http://`, does not fully
-    /// parse a URL, and is ambiguous when `app_hosts` has zero or several
-    /// entries; a redirect URI has to match what is registered byte for byte,
-    /// and the authorization request and the token request have to carry the
-    /// same value, so this is not a place for inference.
-    pub redirect_uri: String,
+    /// Configured, never derived. A redirect URI has to match what is
+    /// registered byte for byte, and the authorization request and the token
+    /// request have to carry the same value, so this is not a place for
+    /// inference. It is its own list rather than a slice of
+    /// [`Config::public_origins`] for the same reason: OIDC works in a
+    /// deployment that has declared no public origin at all, and coupling the
+    /// two would break that deployment on upgrade.
+    pub redirect_uris: Vec<String>,
     /// `openid` is added if it is missing -- without it the IdP issues no ID
     /// token and the whole flow is pointless. Nothing else is required:
     /// §3.2's non-goals rule out reading `email`, `name` or
@@ -300,7 +307,7 @@ impl Default for OidcConfig {
             issuer: String::new(),
             client_id: String::new(),
             client_secret_file: None,
-            redirect_uri: String::new(),
+            redirect_uris: Vec::new(),
             scopes: vec!["openid".to_string()],
             display_name: String::new(),
             allow_private_endpoints: false,
@@ -310,15 +317,42 @@ impl Default for OidcConfig {
     }
 }
 
+/// Why one `oidc.redirect_uris` entry cannot be used, or `None` when it can.
+///
+/// The `app_hosts` half is checked against the operator's own list, not the
+/// wider set the host guard admits: `app.rs` injects the bind address and the
+/// guard additionally lets through any private-range IP literal, and neither
+/// is a name somebody typed into an identity provider's console by hand.
+pub fn redirect_uri_problem(uri: &str, app_hosts: &[String]) -> Option<String> {
+    let uri = uri.trim();
+    if uri.is_empty() {
+        return Some("must not be empty".into());
+    }
+    let Some(rest) = uri.strip_prefix("https://") else {
+        return Some(format!("must start with https:// (got {uri})"));
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.is_empty() {
+        return Some(format!("names no host ({uri})"));
+    }
+    let (host, _) = sc_http::config::split_host_port(authority);
+    if !app_hosts.iter().any(|h| h.trim().eq_ignore_ascii_case(host)) {
+        return Some(format!(
+            "{host} is not in app_hosts, so the callback would be refused with 421"
+        ));
+    }
+    None
+}
+
 impl OidcConfig {
     /// Why OIDC will not activate, or `None` when it will.
     ///
-    /// §4.3.1: an empty or non-https `redirect_uri` means OIDC does not come
-    /// up, **and everything else on the server keeps working**. The reason is
+    /// An empty or unusable `redirect_uris` means OIDC does not come up,
+    /// **and everything else on the server keeps working**. The reason is
     /// returned rather than logged here so that the one caller
     /// (`crate::oidc::build_oidc`) can log it once, with the same wording an
     /// operator will search for.
-    pub fn inactive_reason(&self) -> Option<String> {
+    pub fn inactive_reason(&self, app_hosts: &[String]) -> Option<String> {
         if !self.enabled {
             return Some("oidc.enabled is false".into());
         }
@@ -328,14 +362,13 @@ impl OidcConfig {
         if self.client_id.trim().is_empty() {
             return Some("oidc.client_id is empty".into());
         }
-        let redirect = self.redirect_uri.trim();
-        if redirect.is_empty() {
-            return Some("oidc.redirect_uri is empty".into());
+        if self.redirect_uris.iter().all(|u| u.trim().is_empty()) {
+            return Some("oidc.redirect_uris is empty".into());
         }
-        if !redirect.starts_with("https://") {
-            return Some(format!(
-                "oidc.redirect_uri must start with https:// (got {redirect})"
-            ));
+        for uri in &self.redirect_uris {
+            if let Some(problem) = redirect_uri_problem(uri, app_hosts) {
+                return Some(format!("oidc.redirect_uris: {problem}"));
+            }
         }
         match &self.client_secret_file {
             None => Some("oidc.client_secret_file is not set".into()),
@@ -345,6 +378,13 @@ impl OidcConfig {
             )),
             Some(_) => None,
         }
+    }
+
+    /// The registered redirect URI for the origin this request arrived on,
+    /// falling back to the first entry. Selection only: the `Host` header
+    /// never contributes a byte to the result.
+    pub fn redirect_uri_for_host(&self, host: Option<&str>) -> Option<&str> {
+        sc_http::config::select_by_authority(&self.redirect_uris, host)
     }
 }
 
@@ -431,25 +471,20 @@ pub struct Config {
     /// server never sees in a `Host` header.
     #[serde(default)]
     pub allowed_origins: Vec<String>,
-    /// The externally-reachable `https://host[:port]` origin the (feature-
-    /// gated) compat layer builds every client-facing URL
-    /// from: the Login Flow v2 `login`/`poll.endpoint` URLs a real device's
-    /// system browser opens and then binds to **permanently**, every public
-    /// share link, and the `theming.url` capability. `sc_compat_nc::config::
-    /// NcConfig`'s own doc comment explains why this may never be derived
-    /// from a request's `Host` header (host-header trust would let anyone who
-    /// can reach the server hand a client a poll endpoint on a host they
-    /// control); the question this field answers is where it comes from
-    /// *instead*.
+    /// Externally reachable origins, `scheme://host[:port]`, no trailing
+    /// slash. The first entry is canonical: it is what a request on an
+    /// unrecognised `Host` is answered with, and what a URL built outside a
+    /// request uses.
     ///
-    /// Before this field existed the answer was "whichever `app_hosts` entry
-    /// happens to be listed first" (`app.rs`) — silent and order-dependent:
-    /// reordering `app_hosts` for an unrelated reason (adding a bind alias,
-    /// alphabetising) silently repoints every future client enrolment at a
-    /// different origin, with nothing to say so. A client that binds to the
-    /// wrong server this way is not a small bug an error message surfaces
-    /// immediately; it is a permanent misconfiguration discovered only when a
-    /// real handset fails, far away from whoever changed the config.
+    /// **A request's `Host` never builds a URL. It only selects among these.**
+    /// That is what makes host-awareness safe here: an attacker who controls
+    /// `Host` can only ever make this server name a host it already serves,
+    /// and anything unrecognised falls back to the canonical entry.
+    ///
+    /// Everything the server hands out reads this list: the compat layer's
+    /// Login Flow v2 `login`/`poll.endpoint` URLs a real device's system
+    /// browser opens and then binds to **permanently**, the `theming.url`
+    /// capability, and every public share link.
     ///
     /// Set this explicitly in production. Left unset:
     /// - exactly one `app_hosts` entry: still auto-derived as
@@ -457,35 +492,17 @@ pub struct Config {
     ///   could mean), logged loudly at startup so the derivation is visible
     ///   rather than assumed;
     /// - zero or more-than-one `app_hosts` entries: **ambiguous, and the
-    ///   compatibility layer does not mount at all** (`app.rs::
-    ///   resolve_compat_canonical_url`) rather than guess which host a real
-    ///   client should be told to bind to. Every other surface (the native
-    ///   web UI, WebDAV, the plain API) is completely unaffected — this only
-    ///   withholds the compat-client surface until the
-    ///   ambiguity is resolved.
+    ///   compatibility layer does not mount at all** rather than guess which
+    ///   host a real client should be told to bind to. Every other surface
+    ///   (the native web UI, WebDAV, the plain API) is completely unaffected,
+    ///   and share links fall back to a guess that startup says out loud.
+    ///
+    /// A malformed entry after the first is dropped with a warning; a
+    /// malformed *first* entry invalidates the list, because letting the
+    /// second entry silently become canonical is the failure this key exists
+    /// to prevent.
     #[serde(default)]
-    pub compat_canonical_url: Option<String>,
-    /// Further origins the compat layer may answer with, for a server reached
-    /// under more than one name: a public domain and an internal one, a second
-    /// vanity domain, a LAN address.
-    ///
-    /// A compat client is told which server to bind to at enrolment, and
-    /// `compat_canonical_url` alone means a phone enrolled on the LAN is bound
-    /// to the public name it may not be able to resolve. Listing the internal
-    /// origin here lets that enrolment answer with the name the client actually
-    /// used. Only a `Host` matching one of these (or `compat_canonical_url`) is
-    /// honoured; anything else still falls back to `compat_canonical_url`, so
-    /// this widens the allowlist without trusting the header.
-    ///
-    /// Same form as `compat_canonical_url`: absolute `http(s)://` origins.
-    /// Malformed entries are dropped at startup with a warning rather than
-    /// taking the server down.
-    ///
-    /// File-only. The admin UI does not edit this, and `NetworkOverride` is
-    /// full-replace, so exposing it there would let a PATCH from an older UI
-    /// build silently erase it.
-    #[serde(default)]
-    pub compat_alt_canonical_urls: Vec<String>,
+    pub public_origins: Vec<String>,
     /// Path to the master key file. Populated from `SC_MASTER_KEY_FILE` if
     /// unset in the file (`masterkey.rs`). Never the key material itself.
     pub master_key_file: Option<PathBuf>,
@@ -515,8 +532,7 @@ impl Default for Config {
             app_hosts: sc_http::config::HttpConfig::default().app_hosts,
             content_hosts: Vec::new(),
             allowed_origins: Vec::new(),
-            compat_canonical_url: None,
-            compat_alt_canonical_urls: Vec::new(),
+            public_origins: Vec::new(),
             master_key_file: None,
             db: DbConfig::default(),
             upload: UploadConfig::default(),
@@ -541,8 +557,12 @@ impl Config {
     /// Parse a TOML document on top of every documented default — any key
     /// the file omits keeps its default (`#[serde(default)]` all the way
     /// down), so a one-line config file is valid.
+    ///
+    /// Two keys are refused rather than ignored: see [`refuse_removed_keys`].
     pub fn from_toml_str(s: &str) -> anyhow::Result<Config> {
-        let mut cfg: Config = toml::from_str(s)?;
+        let doc: toml::Value = toml::from_str(s)?;
+        refuse_removed_keys(&doc)?;
+        let mut cfg: Config = doc.try_into()?;
         cfg.upload.normalize();
         Ok(cfg)
     }
@@ -565,13 +585,21 @@ impl Config {
 
     /// Load from `path` if given and existing, else from
     /// [`Config::default_config_path`] if that exists, else pure defaults;
-    /// then apply environment overrides. This is `TOML + env` per the
-    /// deployment contract, in that order: env always wins.
+    /// then apply environment overrides.
+    ///
+    /// **Precedence, as the code actually behaves: file, then env, then the
+    /// admin override store.** This function does the first two; `bootstrap()`
+    /// applies the third on top, so a settings-screen save beats `SC_BIND`,
+    /// `SC_TRUSTED_PROXIES`, `SC_DATA_DIR` and `SC_MASTER_KEY_FILE` on every
+    /// subsequent boot. That is reversible from the same screen
+    /// (`DELETE /api/admin/server-settings/{section}`) and the startup report
+    /// names every active override and the variable it shadows, but "env
+    /// always wins", which this comment used to claim, was never true.
     ///
     /// The default location is not decoration. `--config`'s help text
     /// promised it from the start and nothing implemented it, so a
     /// deployment that wrote `<data_dir>/sc.toml` and restarted got a server
-    /// with no shares, no `compat_canonical_url`, and no indication that the
+    /// with no shares, no `public_origins`, and no indication that the
     /// file it had just written was never opened. Returns the path actually
     /// used alongside the config so the caller can say so out loud.
     pub fn load(path: Option<&Path>) -> anyhow::Result<Config> {
@@ -644,76 +672,125 @@ impl Config {
         self.homes.root.clone().unwrap_or_else(|| self.data_dir.join("homes"))
     }
 
-    /// Resolve [`Config::compat_canonical_url`] against [`Config::app_hosts`].
+    /// Resolve [`Config::public_origins`] against [`Config::app_hosts`],
+    /// alongside the malformed entries that were dropped so the caller can
+    /// warn about them.
     ///
-    /// Shared by `app.rs` (decides whether the compat layer
-    /// mounts at all) and `diagnostics.rs` (reports the outcome at startup,
-    /// the same way `single_origin`/`trusted_proxies` already do) — one
-    /// function, so the two can never disagree about what "configured" means.
-    pub fn resolve_compat_canonical_url(&self) -> CompatCanonicalUrl {
-        if let Some(v) = &self.compat_canonical_url {
-            let trimmed = v.trim();
-            if trimmed.is_empty() {
-                return CompatCanonicalUrl::Ambiguous {
-                    app_host_count: self.app_hosts.len(),
-                };
-            }
-            // Not a full URL parse (no `url` crate dependency here) — just
-            // enough to catch the realistic operator mistakes: a bare host
-            // with no scheme, or a scheme this layer cannot hand a real
-            // client (Login Flow v2's `login` URL is opened in a system
-            // browser, which understands http(s) and nothing else).
-            let has_scheme = trimmed.starts_with("https://") || trimmed.starts_with("http://");
-            let host_part = trimmed.split("://").nth(1).unwrap_or("");
-            if !has_scheme || host_part.is_empty() {
-                return CompatCanonicalUrl::Invalid(trimmed.to_string());
-            }
-            return CompatCanonicalUrl::Configured(trimmed.trim_end_matches('/').to_string());
+    /// Shared by `app.rs` (decides whether the compat layer mounts at all,
+    /// and what every share link is built from) and `diagnostics.rs` (reports
+    /// the outcome at startup, the same way `single_origin`/`trusted_proxies`
+    /// already do) — one function, so the two can never disagree about what
+    /// "configured" means.
+    pub fn resolve_public_origins(&self) -> (PublicOrigins, Vec<String>) {
+        let declared: Vec<&String> = self
+            .public_origins
+            .iter()
+            .filter(|v| !v.trim().is_empty())
+            .collect();
+        if declared.is_empty() {
+            let resolved = match self.app_hosts.as_slice() {
+                [single] => PublicOrigins::Derived(vec![format!("https://{single}")]),
+                other => PublicOrigins::Ambiguous {
+                    app_host_count: other.len(),
+                },
+            };
+            return (resolved, Vec::new());
         }
-        match self.app_hosts.as_slice() {
-            [single] => CompatCanonicalUrl::Derived(format!("https://{single}")),
-            other => CompatCanonicalUrl::Ambiguous {
-                app_host_count: other.len(),
-            },
-        }
-    }
 
-    /// [`Config::compat_alt_canonical_urls`], keeping only the well-formed ones
-    /// and returning the rest for the caller to warn about.
-    ///
-    /// A typo here must not take the compat layer down: the canonical URL still
-    /// works, and dropping one alternate degrades enrolment on that one name
-    /// instead of every name.
-    pub fn resolve_compat_alt_canonical_urls(&self) -> (Vec<String>, Vec<String>) {
-        let canonical = match self.resolve_compat_canonical_url() {
-            CompatCanonicalUrl::Configured(u) | CompatCanonicalUrl::Derived(u) => u,
-            _ => String::new(),
-        };
-        let mut good = Vec::new();
-        let mut bad = Vec::new();
-        for raw in &self.compat_alt_canonical_urls {
+        let mut good: Vec<String> = Vec::new();
+        let mut bad: Vec<String> = Vec::new();
+        for (i, raw) in declared.iter().enumerate() {
             let t = raw.trim().trim_end_matches('/');
-            let scheme_ok = t.starts_with("https://") || t.starts_with("http://");
-            let host_ok = t.split("://").nth(1).is_some_and(|h| !h.is_empty());
-            if !scheme_ok || !host_ok {
-                bad.push(raw.clone());
-            } else if t != canonical && !good.iter().any(|g: &String| g == t) {
+            if !is_absolute_origin(t) {
+                // Dropping the first entry would silently promote the second
+                // to canonical, which is the one substitution this key exists
+                // to prevent. Anywhere else costs that one name.
+                if i == 0 {
+                    return (PublicOrigins::Invalid((*raw).clone()), vec![(*raw).clone()]);
+                }
+                bad.push((*raw).clone());
+            } else if !good.iter().any(|g| g == t) {
                 good.push(t.to_string());
             }
         }
-        (good, bad)
+        (PublicOrigins::Configured(good), bad)
     }
+}
+
+/// Is this an absolute `http(s)://` origin with a non-empty authority?
+///
+/// Not a full URL parse (no `url` crate dependency here) — just enough to
+/// catch the realistic operator mistakes: a bare host with no scheme, or a
+/// scheme this server cannot hand a real client (Login Flow v2's `login` URL
+/// is opened in a system browser, which understands http(s) and nothing else).
+pub fn is_absolute_origin(s: &str) -> bool {
+    let s = s.trim();
+    let has_scheme = s.starts_with("https://") || s.starts_with("http://");
+    has_scheme && s.split("://").nth(1).is_some_and(|h| !h.is_empty())
+}
+
+/// Keys a previous release accepted and this one does not. Refused rather
+/// than ignored, because ignoring changes behaviour under an operator who
+/// touched nothing: a deployment that comes back up with no declared origin
+/// either stops mounting the compat layer (every enrolled client starts
+/// getting 404s) or silently re-derives a different canonical URL and logs it
+/// as a normal derivation.
+const REMOVED_KEYS: &[(&str, &str, &str)] = &[
+    (
+        "",
+        "compat_canonical_url",
+        "public_origins = [\"https://cloud.example.com\"]",
+    ),
+    (
+        "",
+        "compat_alt_canonical_urls",
+        "public_origins = [\"https://cloud.example.com\", \"https://nas.internal\"]",
+    ),
+    (
+        "oidc",
+        "redirect_uri",
+        "redirect_uris = [\"https://cloud.example.com/api/auth/oidc/callback\"]",
+    ),
+];
+
+/// A pre-pass over the parsed document, because serde will not raise this:
+/// `Config` does not set `deny_unknown_fields`, and turning that on globally
+/// would start rejecting every forward-compatible key an operator has.
+fn refuse_removed_keys(doc: &toml::Value) -> anyhow::Result<()> {
+    for (table, key, replacement) in REMOVED_KEYS {
+        let present = if table.is_empty() {
+            doc.get(key).is_some()
+        } else {
+            doc.get(table).and_then(|t| t.get(key)).is_some()
+        };
+        if present {
+            let full = if table.is_empty() {
+                (*key).to_string()
+            } else {
+                format!("[{table}] {key}")
+            };
+            anyhow::bail!(
+                "`{full}` was removed. Replace it with:\n    {replacement}\n\
+                 The server refuses to start rather than ignore it: a deployment that \
+                 came back up with no declared origin would hand new clients a \
+                 different one, silently."
+            );
+        }
+    }
+    Ok(())
 }
 
 // --------------------------------------------------------- admin overrides
 // The server-settings admin screen's persisted state (`settings_store.rs`,
 // `settings_bridge.rs`): changes made from the UI, kept outside
-// `config.toml` because that file is the operator's and is overwritten on
-// every `scripts/deploy.sh` push (same reasoning as `sc-upload`'s
-// `upload_chunk_settings` and `sc-search`'s `IndexSettingsStore`). Each
-// section is `Option` and full-replace (not per-field partial), matching
-// `admin_set_upload_settings`'s existing precedent: the UI always sends the
-// whole group it's editing.
+// `config.toml` because that file is the operator's, and a server that
+// rewrote it would have to merge with whatever they were editing — a
+// comment-preserving TOML round-trip is a dependency and a class of bug this
+// does not need. Same reasoning as `sc-upload`'s `upload_chunk_settings` and
+// `sc-search`'s `IndexSettingsStore`. Each section is `Option` and
+// full-replace (not per-field partial), matching `admin_set_upload_settings`'s
+// existing precedent: the UI always sends the whole group it's editing, and
+// `DELETE /api/admin/server-settings/{section}` puts it back to `None`.
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NetworkOverride {
@@ -722,7 +799,7 @@ pub struct NetworkOverride {
     pub content_hosts: Vec<String>,
     pub allowed_origins: Vec<String>,
     pub trusted_proxies: Vec<String>,
-    pub compat_canonical_url: Option<String>,
+    pub public_origins: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -784,7 +861,7 @@ pub struct OidcOverride {
     pub enabled: bool,
     pub issuer: String,
     pub client_id: String,
-    pub redirect_uri: String,
+    pub redirect_uris: Vec<String>,
     pub scopes: Vec<String>,
     pub display_name: String,
     pub allow_private_endpoints: bool,
@@ -828,6 +905,47 @@ pub struct SettingsOverrides {
     pub oidc: Option<OidcOverride>,
 }
 
+impl SettingsOverrides {
+    /// Drop one section, so `config.toml` and the environment decide it again.
+    ///
+    /// Without this every group was a one-way door: after the first save of a
+    /// group, the file was dead for every key in it and the only recovery was
+    /// deleting `settings.db`, which discards the other nine groups with it.
+    pub fn clear(&mut self, section: sc_http::settings_api::SettingsSection) {
+        use sc_http::settings_api::SettingsSection as S;
+        match section {
+            S::Network => self.network = None,
+            S::Db => self.db = None,
+            S::SymlinkPolicy => self.symlink_policy = None,
+            S::Homes => self.homes = None,
+            S::Smb => self.smb = None,
+            S::Search => self.search = None,
+            S::Archive => self.archive_max_concurrent = None,
+            S::Watch => self.watch = None,
+            S::Paths => self.paths = None,
+            S::Oidc => self.oidc = None,
+        }
+    }
+
+    /// Is this section currently overriding the file? Drives the settings
+    /// screen's per-group revert button and the startup log line.
+    pub fn is_set(&self, section: sc_http::settings_api::SettingsSection) -> bool {
+        use sc_http::settings_api::SettingsSection as S;
+        match section {
+            S::Network => self.network.is_some(),
+            S::Db => self.db.is_some(),
+            S::SymlinkPolicy => self.symlink_policy.is_some(),
+            S::Homes => self.homes.is_some(),
+            S::Smb => self.smb.is_some(),
+            S::Search => self.search.is_some(),
+            S::Archive => self.archive_max_concurrent.is_some(),
+            S::Watch => self.watch.is_some(),
+            S::Paths => self.paths.is_some(),
+            S::Oidc => self.oidc.is_some(),
+        }
+    }
+}
+
 impl Config {
     /// Fold a persisted admin override on top of the file+env config. Called
     /// once from `bootstrap()`, before any `App`/orchestrator is built, so
@@ -840,7 +958,7 @@ impl Config {
             self.content_hosts = n.content_hosts.clone();
             self.allowed_origins = n.allowed_origins.clone();
             self.trusted_proxies = n.trusted_proxies.clone();
-            self.compat_canonical_url = n.compat_canonical_url.clone();
+            self.public_origins = n.public_origins.clone();
         }
         if let Some(d) = &o.db {
             self.db = DbConfig {
@@ -902,7 +1020,7 @@ impl Config {
             self.oidc.enabled = oi.enabled;
             self.oidc.issuer = oi.issuer.clone();
             self.oidc.client_id = oi.client_id.clone();
-            self.oidc.redirect_uri = oi.redirect_uri.clone();
+            self.oidc.redirect_uris = oi.redirect_uris.clone();
             self.oidc.scopes = oi.scopes.clone();
             self.oidc.display_name = oi.display_name.clone();
             self.oidc.allow_private_endpoints = oi.allow_private_endpoints;
@@ -912,31 +1030,52 @@ impl Config {
     }
 }
 
-/// See [`Config::resolve_compat_canonical_url`].
+/// See [`Config::resolve_public_origins`].
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CompatCanonicalUrl {
-    /// `compat_canonical_url` was set, and is a well-formed absolute
-    /// `http(s)://host[:port]` origin (trailing slash stripped).
-    Configured(String),
+pub enum PublicOrigins {
+    /// `public_origins` was set, and its first entry is a well-formed
+    /// absolute `http(s)://host[:port]` origin (trailing slash stripped,
+    /// duplicates collapsed). Malformed later entries are already dropped.
+    Configured(Vec<String>),
     /// Not configured, but `app_hosts` had exactly one entry — unambiguous,
     /// so it is safe to derive `https://{that entry}` automatically. Still
     /// reported loudly at startup (`diagnostics.rs`): implicit is not the
     /// same as wrong, but an operator relying on this for a production
     /// Login Flow v2 deployment should be told the derivation is happening.
-    Derived(String),
+    Derived(Vec<String>),
     /// Not configured, and `app_hosts` had zero or more than one entry: no
     /// single value can be chosen without guessing which host a real client
-    /// should permanently bind to. The compat layer does not
-    /// mount at all in this state (`app.rs`) — every other surface (the
-    /// native web UI, WebDAV, the plain API) is unaffected.
+    /// should permanently bind to. The compat layer does not mount at all in
+    /// this state (`app.rs`) and share links fall back to a guess — every
+    /// other surface (the native web UI, WebDAV, the plain API) is
+    /// unaffected.
     Ambiguous { app_host_count: usize },
-    /// `compat_canonical_url` was set, but is not an absolute `http(s)://`
-    /// origin (missing scheme, or empty after it). Treated the same as
-    /// `Ambiguous` for mounting purposes — a value this layer cannot even
-    /// parse is worse than no value at all — but reported distinctly so the
-    /// startup log points at the actual mistake instead of "app_hosts is
-    /// ambiguous", which would be a red herring here.
+    /// The first `public_origins` entry is not an absolute `http(s)://`
+    /// origin. Treated the same as `Ambiguous` for mounting purposes — a
+    /// value this layer cannot even parse is worse than no value at all — but
+    /// reported distinctly so the startup log points at the actual mistake
+    /// instead of "app_hosts is ambiguous", which would be a red herring.
+    ///
+    /// Deliberately *not* the same as absent: an absent value with one
+    /// `app_hosts` entry derives happily, while a typo refuses. Treating a
+    /// typo as "nothing declared" would let a single-host deployment silently
+    /// derive an origin the operator never wrote.
     Invalid(String),
+}
+
+impl PublicOrigins {
+    /// Every declared origin, canonical first. Empty in the ambiguous and
+    /// invalid cases, where callers fall back to their own last resort.
+    pub fn origins(&self) -> &[String] {
+        match self {
+            Self::Configured(v) | Self::Derived(v) => v,
+            Self::Ambiguous { .. } | Self::Invalid(_) => &[],
+        }
+    }
+
+    pub fn canonical(&self) -> Option<&str> {
+        self.origins().first().map(String::as_str)
+    }
 }
 
 #[cfg(test)]
@@ -956,7 +1095,7 @@ mod tests {
         let stored: SettingsOverrides = serde_json::from_str(
             r#"{"network":{"bind":"0.0.0.0:8080","tls_bind":"0.0.0.0:8443",
                 "app_hosts":["nas.local"],"content_hosts":[],"allowed_origins":[],
-                "trusted_proxies":[],"compat_canonical_url":null}}"#,
+                "trusted_proxies":[],"public_origins":[]}}"#,
         )
         .expect("a row from the two-listener release must still deserialize");
 
@@ -976,7 +1115,6 @@ mod tests {
         assert_eq!(cfg.upload.chunk_default_bytes, 10 * 1024 * 1024);
         assert!(!cfg.db.size_guard);
         assert!(!cfg.index.name_enabled);
-        assert!(!cfg.index.content_enabled);
         assert_eq!(cfg.watch.backend, WatchBackend::Auto);
         assert_eq!(cfg.watch.hot_set_max, 4096);
         assert_eq!(cfg.symlink_policy, SymlinkPolicyCfg::Deny);
@@ -1045,32 +1183,60 @@ mod tests {
         assert_eq!(cfg.upload.chunk_default_bytes, CHUNK_MIN_BYTES_FLOOR);
     }
 
-    // --- `resolve_compat_canonical_url` ------------------------------------
+    // --- `resolve_public_origins` ------------------------------------------
+
+    fn origins_of(cfg: &Config) -> PublicOrigins {
+        cfg.resolve_public_origins().0
+    }
 
     #[test]
-    fn explicit_canonical_url_wins_over_app_hosts() {
+    fn explicit_origins_win_over_app_hosts() {
         let cfg = Config {
             app_hosts: vec!["a.example".into(), "b.example".into()],
-            compat_canonical_url: Some("https://cloud.example.com/".into()),
+            public_origins: vec!["https://cloud.example.com/".into()],
             ..Config::default()
         };
         assert_eq!(
-            cfg.resolve_compat_canonical_url(),
-            CompatCanonicalUrl::Configured("https://cloud.example.com".into()),
+            origins_of(&cfg),
+            PublicOrigins::Configured(vec!["https://cloud.example.com".into()]),
             "trailing slash must be stripped, same as NcConfig::url() expects"
         );
+    }
+
+    /// Ordering is meaningful: the first entry is what an unrecognised `Host`
+    /// is answered with, so a duplicate is collapsed rather than refused and
+    /// the rest keep their order.
+    #[test]
+    fn several_origins_keep_their_order_and_collapse_duplicates() {
+        let cfg = Config {
+            public_origins: vec![
+                "https://cloud.example.com".into(),
+                "https://nas.internal:8443/".into(),
+                "https://cloud.example.com".into(),
+            ],
+            ..Config::default()
+        };
+        let (resolved, rejected) = cfg.resolve_public_origins();
+        assert_eq!(
+            resolved,
+            PublicOrigins::Configured(vec![
+                "https://cloud.example.com".into(),
+                "https://nas.internal:8443".into(),
+            ])
+        );
+        assert!(rejected.is_empty());
+        assert_eq!(resolved.canonical(), Some("https://cloud.example.com"));
     }
 
     #[test]
     fn single_app_host_is_derived_unambiguously() {
         let cfg = Config {
             app_hosts: vec!["cloud.example.com".into()],
-            compat_canonical_url: None,
             ..Config::default()
         };
         assert_eq!(
-            cfg.resolve_compat_canonical_url(),
-            CompatCanonicalUrl::Derived("https://cloud.example.com".into())
+            origins_of(&cfg),
+            PublicOrigins::Derived(vec!["https://cloud.example.com".into()])
         );
     }
 
@@ -1078,25 +1244,22 @@ mod tests {
     fn zero_or_many_app_hosts_without_an_explicit_value_is_ambiguous() {
         let empty = Config {
             app_hosts: vec![],
-            compat_canonical_url: None,
             ..Config::default()
         };
         assert_eq!(
-            empty.resolve_compat_canonical_url(),
-            CompatCanonicalUrl::Ambiguous { app_host_count: 0 }
+            origins_of(&empty),
+            PublicOrigins::Ambiguous { app_host_count: 0 }
         );
 
         let many = Config {
             app_hosts: vec!["a.example".into(), "b.example".into(), "c.example".into()],
-            compat_canonical_url: None,
             ..Config::default()
         };
         assert_eq!(
-            many.resolve_compat_canonical_url(),
-            CompatCanonicalUrl::Ambiguous { app_host_count: 3 },
-            "this is exactly the .dev/sc.toml shape before it set compat_canonical_url \
-             explicitly: 'first entry wins' silently repoints Login Flow v2 if the list \
-             is ever reordered, so it must not be chosen automatically"
+            origins_of(&many),
+            PublicOrigins::Ambiguous { app_host_count: 3 },
+            "'first entry wins' silently repoints Login Flow v2 if the list is ever \
+             reordered, so it must not be chosen automatically"
         );
     }
 
@@ -1104,27 +1267,131 @@ mod tests {
     fn a_value_with_no_scheme_is_invalid_not_silently_ambiguous() {
         let cfg = Config {
             app_hosts: vec!["cloud.example.com".into()],
-            compat_canonical_url: Some("cloud.example.com".into()),
+            public_origins: vec!["cloud.example.com".into()],
             ..Config::default()
         };
         assert_eq!(
-            cfg.resolve_compat_canonical_url(),
-            CompatCanonicalUrl::Invalid("cloud.example.com".into()),
+            origins_of(&cfg),
+            PublicOrigins::Invalid("cloud.example.com".into()),
             "a bare host is the realistic operator typo (forgetting the scheme); it must \
              be reported as its own mistake, not folded into the generic 'ambiguous' case"
         );
     }
 
+    /// A typo at position one is fatal to the list; anywhere else it costs
+    /// that one name. Promoting the second entry to canonical would change
+    /// what every future client is told to bind to, silently.
     #[test]
-    fn an_empty_explicit_value_falls_back_to_ambiguous_handling() {
-        let cfg = Config {
-            app_hosts: vec!["cloud.example.com".into()],
-            compat_canonical_url: Some("   ".into()),
+    fn a_bad_first_entry_invalidates_the_list_and_a_later_one_is_dropped() {
+        let first_bad = Config {
+            public_origins: vec!["cloud.example.com".into(), "https://ok.example".into()],
             ..Config::default()
         };
         assert_eq!(
-            cfg.resolve_compat_canonical_url(),
-            CompatCanonicalUrl::Ambiguous { app_host_count: 1 }
+            origins_of(&first_bad),
+            PublicOrigins::Invalid("cloud.example.com".into())
+        );
+
+        let later_bad = Config {
+            public_origins: vec!["https://ok.example".into(), "nas.internal".into()],
+            ..Config::default()
+        };
+        let (resolved, rejected) = later_bad.resolve_public_origins();
+        assert_eq!(
+            resolved,
+            PublicOrigins::Configured(vec!["https://ok.example".into()])
+        );
+        assert_eq!(rejected, vec!["nas.internal".to_string()]);
+    }
+
+    #[test]
+    fn an_empty_explicit_value_falls_back_to_derivation() {
+        let cfg = Config {
+            app_hosts: vec!["cloud.example.com".into()],
+            public_origins: vec!["   ".into()],
+            ..Config::default()
+        };
+        assert_eq!(
+            origins_of(&cfg),
+            PublicOrigins::Derived(vec!["https://cloud.example.com".into()])
+        );
+    }
+
+    /// An old file is refused with the replacement line, never parsed with
+    /// the key ignored.
+    #[test]
+    fn a_config_file_carrying_a_removed_key_refuses_to_parse() {
+        for (doc, expected) in [
+            (
+                "compat_canonical_url = \"https://cloud.example.com\"",
+                "public_origins",
+            ),
+            (
+                "compat_alt_canonical_urls = [\"https://nas.internal\"]",
+                "public_origins",
+            ),
+            (
+                "[oidc]\nredirect_uri = \"https://cloud.example.com/api/auth/oidc/callback\"",
+                "redirect_uris",
+            ),
+        ] {
+            let err = Config::from_toml_str(doc).unwrap_err().to_string();
+            assert!(err.contains(expected), "{err}");
+        }
+    }
+
+    /// `index.content_enabled` is *not* in that refusal, and this is the
+    /// difference: it never had behaviour to change, so refusing to start
+    /// over it would be an outage bought with no information.
+    #[test]
+    fn a_config_file_still_setting_the_dead_index_key_starts_normally() {
+        let cfg = Config::from_toml_str("[index]\nname_enabled = true\ncontent_enabled = true")
+            .expect("a dead key is ignored, not refused");
+        assert!(cfg.index.name_enabled);
+    }
+
+    #[test]
+    fn public_origins_are_toml_reachable() {
+        let cfg = Config::from_toml_str(
+            r#"
+            app_hosts = ["one.example", "two.example"]
+            public_origins = ["https://one.example", "https://two.example"]
+            "#,
+        )
+        .unwrap();
+        assert_eq!(
+            origins_of(&cfg),
+            PublicOrigins::Configured(vec![
+                "https://one.example".into(),
+                "https://two.example".into(),
+            ])
+        );
+    }
+
+    /// A redirect URI is checked against the operator's own `app_hosts`, not
+    /// the wider set the guard admits: the callback comes back to us and a
+    /// host we do not answer for is an unrecoverable login.
+    #[test]
+    fn a_redirect_uri_must_be_https_and_name_a_served_host() {
+        let hosts = vec!["cloud.example.com".to_string()];
+        assert_eq!(
+            redirect_uri_problem("https://cloud.example.com/api/auth/oidc/callback", &hosts),
+            None
+        );
+        assert!(
+            redirect_uri_problem("http://cloud.example.com/cb", &hosts)
+                .unwrap()
+                .contains("https://")
+        );
+        assert!(
+            redirect_uri_problem("https://elsewhere.example/cb", &hosts)
+                .unwrap()
+                .contains("app_hosts")
+        );
+        // A declared port does not change which host was declared.
+        assert_eq!(
+            redirect_uri_problem("https://cloud.example.com:8443/cb", &hosts),
+            None
         );
     }
 
@@ -1153,7 +1420,7 @@ mod tests {
                 enabled: true,
                 issuer: "https://idp.example.com".into(),
                 client_id: "sc".into(),
-                redirect_uri: "https://cloud.example.com/api/auth/oidc/callback".into(),
+                redirect_uris: vec!["https://cloud.example.com/api/auth/oidc/callback".into()],
                 scopes: vec!["openid".into()],
                 display_name: "회사 계정".into(),
                 allow_private_endpoints: true,
@@ -1175,18 +1442,28 @@ mod tests {
         assert_eq!(cfg.oidc.local_password_login, OidcLocalPasswordLoginCfg::Deny);
     }
 
+    /// Reverting one group leaves the other nine alone, which is the whole
+    /// reason `clear` takes a section rather than the screen deleting
+    /// `settings.db`.
     #[test]
-    fn resolve_compat_canonical_url_is_toml_reachable() {
-        let cfg = Config::from_toml_str(
-            r#"
-            app_hosts = ["one.example", "two.example"]
-            compat_canonical_url = "https://one.example"
-            "#,
-        )
-        .unwrap();
-        assert_eq!(
-            cfg.resolve_compat_canonical_url(),
-            CompatCanonicalUrl::Configured("https://one.example".into())
-        );
+    fn clearing_one_section_leaves_the_others_standing() {
+        use sc_http::settings_api::SettingsSection;
+        let mut o = SettingsOverrides {
+            archive_max_concurrent: Some(8),
+            symlink_policy: Some(SymlinkPolicyCfg::Follow),
+            ..SettingsOverrides::default()
+        };
+        assert!(o.is_set(SettingsSection::Archive));
+        o.clear(SettingsSection::Archive);
+        assert!(!o.is_set(SettingsSection::Archive));
+        assert!(o.is_set(SettingsSection::SymlinkPolicy));
+
+        // And the file's value is what a cleared section resolves to again.
+        let mut cfg = Config {
+            archive: ArchiveConfig { max_concurrent: 2 },
+            ..Config::default()
+        };
+        cfg.apply_settings_overrides(&o);
+        assert_eq!(cfg.archive.max_concurrent, 2);
     }
 }

@@ -117,7 +117,7 @@ async fn the_authorize_url_carries_everything_the_flow_needs() {
     let disco = discovered(&p).await;
     let f = FlowSecrets::generate().expect("csprng");
 
-    let raw = p.authorize_url(&disco, &f).expect("authorize url builds");
+    let raw = p.authorize_url(&disco, &f, REDIRECT_URI).expect("authorize url builds");
     let url = Url::parse(&raw).expect("a valid url");
     let q: HashMap<String, String> = url.query_pairs().into_owned().collect();
 
@@ -147,7 +147,7 @@ async fn openid_is_added_when_the_operator_leaves_it_out() {
             issuer: ISSUER.to_string(),
             client_id: CLIENT_ID.to_string(),
             client_secret: secrecy::SecretString::from(CLIENT_SECRET.to_string()),
-            redirect_uri: REDIRECT_URI.to_string(),
+
             scopes: vec!["email".to_string()],
             allow_private_endpoints: false,
         },
@@ -157,7 +157,7 @@ async fn openid_is_added_when_the_operator_leaves_it_out() {
     let f = FlowSecrets::generate().expect("csprng");
 
     let raw = cfg_provider
-        .authorize_url(&disco, &f)
+        .authorize_url(&disco, &f, REDIRECT_URI)
         .expect("authorize url builds");
     let url = Url::parse(&raw).expect("a valid url");
     let scope = url

@@ -136,7 +136,10 @@ pub trait OidcApi: Send + Sync {
     /// hour), which is why this is fallible and why a dead IdP shows up here
     /// as `ProviderUnavailable` rather than at startup: §4.3.4 refuses to make
     /// the server's boot depend on the provider being up.
-    async fn begin(&self) -> Result<StartedFlow, OidcError> {
+    /// `host` selects which registered `oidc.redirect_uris` entry this flow
+    /// uses, the same way every other URL this server hands out is selected.
+    /// Nothing is derived from it: an unrecognised host gets the first entry.
+    async fn begin(&self, _host: Option<&str>) -> Result<StartedFlow, OidcError> {
         Err(not_wired())
     }
 
@@ -150,8 +153,13 @@ pub trait OidcApi: Send + Sync {
     /// check the binding cookie, only then look at what the IdP sent -- is the
     /// part that matters, and it stays entirely in the handler where it can be
     /// read and tested.
+    /// `host` selects the same redirect URI `begin` did, and it selects it
+    /// the same way rather than by storing it with the flow: the callback
+    /// lands *at* that redirect URI, so its `Host` is that entry's authority
+    /// by construction.
     async fn redeem(
         &self,
+        _host: Option<&str>,
         _code: &str,
         _code_verifier: &SecretString,
         _nonce_hash: &[u8; 32],
