@@ -57,6 +57,12 @@ pub struct SettingsSnapshot {
     /// difference. Empty in the ordinary case.
     #[serde(default)]
     pub smb_overgrants: Vec<SmbOvergrantWire>,
+    /// Names of shares sitting on tmpfs, detected once at startup. A share
+    /// whose contents vanish on reboot is a configuration mistake far more
+    /// often than a deliberate choice, so it is said out loud rather than
+    /// refused. Names only: the screen writes the sentence.
+    #[serde(default)]
+    pub tmpfs_shares: Vec<String>,
 }
 
 /// One entry of [`SettingsSnapshot::smb_overgrants`]. `key` is a catalogue
@@ -207,6 +213,7 @@ pub trait SettingsApi: Send + Sync {
             fields: Vec::new(),
             smb_public_bind_warning: false,
             smb_overgrants: Vec::new(),
+            tmpfs_shares: Vec::new(),
         }
     }
 

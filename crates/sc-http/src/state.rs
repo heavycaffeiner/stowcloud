@@ -835,6 +835,10 @@ pub struct AppState {
     /// `sc-search`'s walker in `sc-server`; see `search_api` module docs for
     /// why this isn't just another `CoreApi` method.
     pub search: Arc<dyn SearchApi>,
+    /// `GET /api/recent` — the same walker as `search`, collected through a
+    /// bounded top-N instead of stopped at the first N matches found. Its own
+    /// port for the same reason `search` has one.
+    pub recent: Arc<dyn crate::recent_api::RecentApi>,
     /// `GET`/`POST /api/setup` — bound to a real gate
     /// by `sc-server`, which is the only crate that knows about the one-time
     /// token file. Defaults to [`crate::setup_api::SetupClosed`], so an
@@ -861,6 +865,11 @@ pub struct AppState {
     /// Share-link password attempts, keyed by the token in the URL
     /// (10 per hour per token).
     pub link_rate: Arc<KeyedTokenBucket>,
+    /// Share-link listing and zip attempts, keyed by the token in the URL
+    /// (60 burst, one a second after that). Its own budget rather than the
+    /// general per-IP limiter: one office behind a NAT shares an IP bucket,
+    /// and a botnet gets one per host against a single link.
+    pub link_browse_rate: Arc<KeyedTokenBucket>,
     /// Per-user search rate limit (30/min), keyed by
     /// the caller's `UserId`.
     pub search_rate: Arc<KeyedTokenBucket>,
@@ -882,6 +891,12 @@ pub struct AppState {
     /// entire duration, so unbounded concurrency here is a resource-
     /// exhaustion vector). Default 4 — see `crate::routes::fs_archive`.
     pub archive_concurrency: Arc<ResizableSemaphore>,
+    /// Global concurrent-folder-size cap (`GET /api/fs/size`). Sized like
+    /// search's tier caps and for the same reason: each request can start a
+    /// recursive tree walk, and an uncapped endpoint that does that is a way
+    /// to make the server walk the whole disk. Over the cap the answer is
+    /// `429` with `Retry-After`, immediately, never a server-side queue.
+    pub folder_size_concurrency: Arc<ResizableSemaphore>,
     /// Server-local CSRF derivation key. The token
     /// handed to the client is `HMAC(csrf_key, sha256(session_token))`,
     /// which lets `Csrf` verify without any additional storage beyond the

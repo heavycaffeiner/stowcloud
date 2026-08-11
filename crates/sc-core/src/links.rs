@@ -149,6 +149,19 @@ impl ShareLink {
     }
 }
 
+/// What [`Core::link_archive_walk`] calls per file: the archive-relative path,
+/// its size, its mtime, and an open reader over its bytes.
+pub type LinkArchiveVisit<'a> =
+    &'a mut dyn FnMut(&str, u64, i128, &mut dyn std::io::Read) -> Result<(), CoreError>;
+
+/// One node under a share link: where it is in the share, and what it looks
+/// like to the visitor.
+#[derive(Clone, Debug)]
+pub struct LinkNode {
+    pub path: SharePath,
+    pub entry: Entry,
+}
+
 /// What [`Core::create_link`] is asked to mint.
 #[derive(Clone, Debug)]
 pub struct LinkSpec {
@@ -809,30 +822,187 @@ impl crate::Core {
         Ok(self.build_entry(link.share, &root, &name, &link.path, &st, link.owner))
     }
 
-    /// Directory listing behind a link. Refused outright for file-drop links:
-    /// upload-only means the holder never learns what is already in there.
-    pub fn link_list(&self, link: &ShareLink) -> Result<Vec<Entry>, CoreError> {
+    /// One node under a link, named by a path relative to the link's own
+    /// target. The empty subpath resolves to the target itself, which is what
+    /// makes every caller that passes nothing keep working.
+    ///
+    /// Five things happen in this order, and the order is the contract:
+    ///
+    /// 1. **Liveness first**, so expiry, the download cap and the
+    ///    path-plus-fileid cross-check still answer `Gone` for a dead link
+    ///    whatever path was asked for.
+    /// 2. **Drop links are refused** for every subpath, as the listing already
+    ///    is: upload-only means the holder never learns what is in there.
+    /// 3. **Parse.** `SafePath::parse` is the whole of the input validation,
+    ///    and it is enough: it rejects an absolute path, a `.` or `..`
+    ///    component, an embedded NUL, an over-long component or path, anything
+    ///    deeper than the share's policy, and the reserved prefixes that name
+    ///    this server's own control files. There is no normalisation step and
+    ///    no string concatenation anywhere in this path.
+    /// 4. **Join** each parsed component onto the link's own path with
+    ///    `join_existing`, so the combined depth is checked against the
+    ///    share's `max_depth` rather than the relative depth alone.
+    /// 5. **Authorize, then stat.** `NotFound`, never `Denied`: to an
+    ///    anonymous visitor "you may not see this" and "there is nothing here"
+    ///    have to be the same answer.
+    pub fn link_resolve_at(&self, link: &ShareLink, rel: &str) -> Result<LinkNode, CoreError> {
+        let mut target = self.link_target(link)?;
         if link.is_drop() || !link.perms.contains(Perms::READ) {
             return Err(CoreError::Denied { by: None });
         }
-        let target = self.link_target(link)?;
-        if target.kind != Kind::Dir {
+        if rel.is_empty() {
+            self.link_owner_may_read(link, &link.path)?;
+            // The visitor's permissions are the link's, not the owner's, at
+            // the root as much as anywhere below it.
+            target.perms = link.perms;
+            return Ok(LinkNode { path: link.path.clone(), entry: target });
+        }
+
+        let root = self.root_of(link.share)?;
+        let max_depth = root.policy().max_depth;
+        let rel = SafePath::parse(rel, max_depth).map_err(|_| CoreError::NotFound)?;
+        let mut path = link.path.as_safe().clone();
+        for comp in rel.components() {
+            path = path
+                .join_existing(comp.as_str(), max_depth)
+                .map_err(|_| CoreError::NotFound)?;
+        }
+        let path = SharePath::new(path);
+
+        self.link_owner_may_read(link, &path)?;
+        let st = root.stat(&path).map_err(|_| CoreError::NotFound)?;
+        let name = path.name().unwrap_or("").to_string();
+        let mut entry = self.build_entry(link.share, &root, &name, &path, &st, link.owner);
+        // The visitor's permissions are the link's, not the owner's.
+        entry.perms = link.perms;
+        Ok(LinkNode { path, entry })
+    }
+
+    /// The owner's own access at `path`, re-read on every request.
+    ///
+    /// `link.perms` and the owner's access are both upper bounds, and what a
+    /// visitor gets is their intersection. The first was fixed when the link
+    /// was minted and can never exceed what its creator held then; the second
+    /// changes underneath it. Without this a `Deny` grant placed below the
+    /// link root is never evaluated, so a directory the owner themselves
+    /// cannot read is served through the link.
+    fn link_owner_may_read(&self, link: &ShareLink, path: &SharePath) -> Result<(), CoreError> {
+        if self
+            .acl
+            .effective(link.owner, link.share, path)
+            .contains(Perms::READ)
+        {
+            Ok(())
+        } else {
+            Err(CoreError::NotFound)
+        }
+    }
+
+    /// Directory listing behind a link, at `rel` under its target. Refused
+    /// outright for file-drop links.
+    ///
+    /// Entries the link's owner may not read are omitted rather than reported,
+    /// and a name even `join_existing` refuses skips that one row rather than
+    /// failing the whole listing.
+    ///
+    /// Directories first, then by name, matching what the app's own listing
+    /// does; a flat lexicographic sort puts a folder between two files.
+    pub fn link_list_at(&self, link: &ShareLink, rel: &str) -> Result<Vec<Entry>, CoreError> {
+        let node = self.link_resolve_at(link, rel)?;
+        if node.entry.kind != Kind::Dir {
             return Err(CoreError::InvalidPath("not a directory".into()));
         }
         let root = self.root_of(link.share)?;
         let max_depth = root.policy().max_depth;
-        let mut names: Vec<String> = root.read_dir(&link.path)?.into_iter().map(|e| e.name.to_string()).collect();
+        let mut names: Vec<String> = root
+            .read_dir(&node.path)?
+            .into_iter()
+            .map(|e| e.name.to_string())
+            .collect();
         names.sort();
         let mut out = Vec::with_capacity(names.len());
         for name in names {
-            let p = link.path.join(&name, max_depth)?;
+            // `join_existing`, not `join`: walking a directory is traversal,
+            // not creation, so the portability table that refuses `CON` and
+            // `a:b` has no business here. With `join` one such name on disk
+            // failed the entire listing rather than skipping one row.
+            let Ok(p) = node.path.join_existing(&name, max_depth) else {
+                continue;
+            };
+            let p = SharePath::new(p);
+            if self.link_owner_may_read(link, &p).is_err() {
+                continue;
+            }
             let Ok(st) = root.stat(&p) else { continue };
             let mut e = self.build_entry(link.share, &root, &name, &p, &st, link.owner);
-            // The visitor's permissions are the link's, not the owner's.
             e.perms = link.perms;
             out.push(e);
         }
+        out.sort_by(|a, b| {
+            let dir = (b.kind == Kind::Dir).cmp(&(a.kind == Kind::Dir));
+            dir.then_with(|| a.name.cmp(&b.name))
+        });
         Ok(out)
+    }
+
+    /// Walk one directory under a link for the streamed public zip, calling
+    /// `visit` with a share-relative path and an open reader per file.
+    ///
+    /// Entries the owner cannot read are skipped silently, with no marker: the
+    /// authenticated archive lists what it could not read in a `_skipped.txt`,
+    /// which is useful to their owner and is a list of file names to an
+    /// anonymous visitor.
+    pub fn link_archive_walk(
+        &self,
+        link: &ShareLink,
+        rel: &str,
+        visit: LinkArchiveVisit<'_>,
+    ) -> Result<(), CoreError> {
+        let node = self.link_resolve_at(link, rel)?;
+        if node.entry.kind != Kind::Dir {
+            return Err(CoreError::InvalidPath("not a directory".into()));
+        }
+        let root = self.root_of(link.share)?;
+        self.link_walk_rec(link, &root, &node.path, "", visit)
+    }
+
+    fn link_walk_rec(
+        &self,
+        link: &ShareLink,
+        root: &Arc<ShareRoot>,
+        dir: &SharePath,
+        prefix: &str,
+        visit: LinkArchiveVisit<'_>,
+    ) -> Result<(), CoreError> {
+        let max_depth = root.policy().max_depth;
+        let mut names: Vec<String> = root
+            .read_dir(dir)?
+            .into_iter()
+            .map(|e| e.name.to_string())
+            .collect();
+        names.sort();
+        for name in names {
+            let Ok(child) = dir.join_existing(&name, max_depth) else {
+                continue;
+            };
+            let child = SharePath::new(child);
+            if self.link_owner_may_read(link, &child).is_err() {
+                continue;
+            }
+            let Ok(st) = root.stat(&child) else { continue };
+            let rel = if prefix.is_empty() {
+                name.clone()
+            } else {
+                format!("{prefix}/{name}")
+            };
+            if st.kind == Kind::Dir {
+                self.link_walk_rec(link, root, &child, &rel, visit)?;
+            } else if st.kind == Kind::File {
+                let (_, mut stream) = self.open_stream_in(root, &child, None)?;
+                visit(&rel, st.size, st.mtime_ns, &mut stream)?;
+            }
+        }
+        Ok(())
     }
 
     /// Accept an upload through a file-drop link.

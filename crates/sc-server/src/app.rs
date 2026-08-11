@@ -77,6 +77,13 @@ impl App {
                 // `OidcOverride`'s doc comment for why the settings screen
                 // must never be able to set it.
                 oidc_local_password_login: cfg.oidc.local_password_login.into(),
+                // Seeds the live value. The settings screen can change this
+                // without a restart, and `SettingsBridge` pushes the new one
+                // in before it re-renders Samba's files.
+                smb_totp_policy: match cfg.smb.totp_policy {
+                    sc_smb::TotpPolicy::RequireSeparate => sc_auth::SmbTotpPolicy::RequireSeparate,
+                    sc_smb::TotpPolicy::Block => sc_auth::SmbTotpPolicy::Block,
+                },
                 ..sc_auth::AuthConfig::default()
             },
             key.key,
@@ -227,6 +234,14 @@ impl App {
                 storage_cache: storage_cache.clone(),
                 limits: search_concurrency.clone(),
             });
+        // The same walker, the same tier budgets and the same storage cache;
+        // what differs is how an ordered, limited result is collected.
+        let recent_engine: Arc<dyn sc_http::recent_api::RecentApi> =
+            Arc::new(crate::recent::RecentEngine {
+                core: core.clone(),
+                storage_cache: storage_cache.clone(),
+                limits: search_concurrency.clone(),
+            });
         // Built here rather than inline in `build_http_state`, so
         // `SettingsBridge` (below) can reconfigure the very same rate
         // limiter a `[search]` patch is meant to affect, instead of each
@@ -271,6 +286,7 @@ impl App {
             uploads.clone(),
             content_bridge,
             search_bridge,
+            recent_engine,
             search_concurrency.clone(),
             search_rate,
             archive_concurrency,
@@ -1064,6 +1080,7 @@ fn build_http_state(
     uploads: Arc<sc_upload::UploadEngine>,
     content: Arc<dyn sc_http::content_api::ContentApi>,
     search: Arc<dyn sc_http::search_api::SearchApi>,
+    recent: Arc<dyn sc_http::recent_api::RecentApi>,
     search_concurrency: Arc<sc_http::search_limits::SearchConcurrency>,
     search_rate: Arc<sc_http::rate_limit::KeyedTokenBucket>,
     archive_concurrency: Arc<sc_http::state::ResizableSemaphore>,
@@ -1180,6 +1197,7 @@ fn build_http_state(
         }),
         content,
         search,
+        recent,
         setup,
         oidc,
         // 20 attempts, then one every 3 seconds per IP. A whole office behind
@@ -1210,6 +1228,11 @@ fn build_http_state(
             10,
             std::time::Duration::from_secs(3600),
         )),
+        // 60 folder openings back to back, then one a second, per token.
+        link_browse_rate: Arc::new(sc_http::rate_limit::KeyedTokenBucket::new(
+            60,
+            std::time::Duration::from_secs(1),
+        )),
         // Per-user search rate limit, config-reachable via `[search]` — shared
         // with `SettingsBridge` (`App::build`) so a live rate-limit change
         // reconfigures the same bucket this state serves requests through.
@@ -1233,6 +1256,10 @@ fn build_http_state(
         // Shared with `SettingsBridge` (`App::build`), same reasoning as
         // `search_rate` above.
         archive_concurrency,
+        // Not config-reachable: four concurrent tree walks is already more
+        // than a screen that asks for one folder at a time can produce, and
+        // there is no deployment asking for a knob here.
+        folder_size_concurrency: Arc::new(sc_http::state::ResizableSemaphore::new(4)),
         csrf_key,
         boot_time: std::time::Instant::now(),
         settings,

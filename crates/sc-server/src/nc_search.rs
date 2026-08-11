@@ -164,6 +164,14 @@ impl sc_dav::SearchSource for NcSearch {
             (Some(lo), Some(hi)) => matcher = matcher.mtime_range(lo, hi),
             (Some(lo), None) => matcher = matcher.mtime_range(lo, i128::MAX),
             (None, Some(hi)) => matcher = matcher.mtime_range(i128::MIN, hi),
+            // An ordering implies the property it orders on. A client may send
+            // `d:orderby` with no date bound at all, and the top-N collector
+            // below orders on `Hit::mtime_ns`, which only exists when the stat
+            // phase ran, which only an mtime or size filter makes happen.
+            // `post_matches` accepts everything in this range, so nothing is
+            // filtered out and every hit arrives with the mtime the ordering
+            // is defined on.
+            (None, None) if req.newest_first => matcher = matcher.mtime_range(i128::MIN, i128::MAX),
             (None, None) => {}
         }
         if let Some(dirs_only) = req.is_collection {
@@ -185,22 +193,36 @@ impl sc_dav::SearchSource for NcSearch {
             roots.iter().map(|(r, _)| self.storage.get_or_detect(r)),
         );
         let rotational = tier == sc_http::search_limits::SearchTier::Slow;
+        // `max_results` has to be set explicitly in both branches:
+        // `WalkBudget::new` defaults it to 1000, so simply dropping it for the
+        // ordered case would swap a cap of `cap` for a cap of 1000 and keep
+        // the defect.
         let budget = sc_search::WalkBudget::new(self.limits.walk_deadline(tier))
-            .max_results(cap)
+            .max_results(if req.newest_first { u32::MAX } else { cap })
             .max_depth(u16::MAX);
         let walker = sc_search::Walker::new(sc_search::Walker::decide_threads(rotational, None))
             .with_rotational(rotational);
-        let (tx, rx) = crossbeam_channel::unbounded::<sc_search::Hit>();
         let acl = |share: ShareId, path: &sc_vfs::SafePath| self.core.can_read(user, share, path);
-        let completeness = walker.walk(&roots, &matcher, &acl, &budget, &tx);
-        drop(tx);
+        // The only correct way to truncate an ordered query is to keep the top
+        // of the order. Stopping the walk at the first `cap` matches ends it in
+        // whatever order the stat phase happened to reach them, which is inode
+        // order on rotational storage and readdir order otherwise, and neither
+        // has anything to do with mtime.
+        let (hits, completeness) = if req.newest_first {
+            crate::recent::collect_newest(&walker, &roots, &matcher, &acl, &budget, cap)
+        } else {
+            let (tx, rx) = crossbeam_channel::unbounded::<sc_search::Hit>();
+            let completeness = walker.walk(&roots, &matcher, &acl, &budget, &tx);
+            drop(tx);
+            (rx.try_iter().collect(), completeness)
+        };
         if let sc_search::Completeness::Truncated { reason, seen, .. } = &completeness {
             // Logged, not signalled: there is nowhere on the wire to say it.
             tracing::info!(?reason, seen, "a compat search was truncated by its budget");
         }
 
         let mut rows: Vec<(String, sc_dav::Entry)> = Vec::new();
-        for hit in rx.try_iter() {
+        for hit in hits {
             let sp = match SharePath::parse(&hit.path, u16::MAX) {
                 Ok(p) => p,
                 Err(_) => continue,

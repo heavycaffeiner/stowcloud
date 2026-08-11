@@ -60,6 +60,7 @@
   // Still 3-4 items, inside MD3's 3-5 for a bottom bar.
   const navItems = $derived([
     { id: 'files', label: t('nav.files'), icon: icons.home },
+    { id: 'recent', label: t('nav.recent'), icon: icons.recent, href: '/recent' },
     { id: 'trash', label: t('common.trash'), icon: icons.trash, href: '/trash' },
     ...(authState.session?.user.is_admin
       // `nav.admin`, not `common.administrator`: the rail gives a label a
@@ -75,6 +76,7 @@
     const p = page.url.pathname
     if (p.startsWith('/settings')) return 'settings'
     if (p.startsWith('/admin')) return 'admin'
+    if (p.startsWith('/recent')) return 'recent'
     if (p.startsWith('/trash')) return 'trash'
     return 'files'
   })

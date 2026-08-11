@@ -15,6 +15,7 @@ import {
   type ApiErrorBody,
   type AppPasswordInfo,
   type ApplyOutcome,
+  type ArchiveEntry,
   type ArchiveSettingsReq,
   type AuditPage,
   type AuditQuery,
@@ -38,7 +39,10 @@ import {
   type NetworkSettingsReq,
   type OidcSettingsReq,
   type PathsSettingsReq,
+  type FolderSize,
   type ReadFileResponse,
+  type RecentCompleteness,
+  type RecentHit,
   type SearchSettingsReq,
   type SessionInfo,
   type SettingsSnapshot,
@@ -202,6 +206,42 @@ async function archive(paths: string[]): Promise<{ job: string }> {
   return request('/fs/archive', { method: 'POST', body: JSON.stringify({ paths }) })
 }
 
+/**
+ * `GET /api/fs/archive/list` — every entry in a ZIP archive.
+ *
+ * Nothing in the result is openable: opening an entry means extraction, which
+ * this server does not do. A path the caller cannot list and a file that is
+ * not a zip are the same `404`.
+ */
+async function archiveList(path: string): Promise<{ entries: ArchiveEntry[] }> {
+  return request(`/fs/archive/list${qs({ path })}`)
+}
+
+/**
+ * `GET /api/fs/size` — one folder's recursive size, on demand.
+ *
+ * Deliberately not folded into `stat`, which every selection already calls:
+ * a size column on a listing row would start one tree walk per row. A folder
+ * containing a subtree this account is denied answers `403` with
+ * `detail.reason = 'denies_below'` rather than a byte count covering data the
+ * caller cannot read.
+ */
+async function folderSize(path: string): Promise<FolderSize> {
+  return request(`/fs/size${qs({ path })}`)
+}
+
+/**
+ * `GET /api/recent` — the newest files by mtime across every readable root.
+ *
+ * A `full` completeness is the newest N under those roots; a `truncated` one
+ * is the newest N of what the walk's budget reached, and says so.
+ */
+async function recentList(
+  opts: { limit?: number; sinceDays?: number; scope?: string } = {}
+): Promise<{ hits: RecentHit[]; completeness: RecentCompleteness }> {
+  return request(`/recent${qs({ limit: opts.limit, since_days: opts.sinceDays, scope: opts.scope })}`)
+}
+
 // ── long-running jobs ──
 // Every `fs_move`/`fs_copy`/`fs_delete`/`fs_archive` request always answers
 // `202 { job }` (`crates/sc-http/src/routes.rs`) — there is no size/count
@@ -309,8 +349,14 @@ async function totpEnroll(password: string, secret: string, code: string): Promi
   return request('/auth/totp/enroll', { method: 'POST', body: JSON.stringify({ password, secret, code }) })
 }
 
-async function totpDisable(password: string): Promise<void> {
-  await request('/auth/totp/disable', { method: 'POST', body: JSON.stringify({ password }) })
+/**
+ * `smb_password_replaced` says a separate SMB password the user had set was
+ * removed and replaced by one derived from the password this call just
+ * re-confirmed. Turning TOTP off is the exact undo of the event that closed
+ * the account password as an SMB credential, so it restores what preceded it.
+ */
+async function totpDisable(password: string): Promise<{ smb_password_replaced: boolean }> {
+  return request('/auth/totp/disable', { method: 'POST', body: JSON.stringify({ password }) })
 }
 
 /**
@@ -404,6 +450,43 @@ async function updateSmbSettings(optOut: boolean, enabled: boolean): Promise<voi
   await request('/auth/smb', { method: 'POST', body: JSON.stringify({ opt_out: optOut, enabled }) })
 }
 
+/**
+ * `POST /api/auth/smb/password`. Sets an SMB-only password.
+ *
+ * `currentPassword` is the account password, re-confirmed for the same reason
+ * enabling TOTP and linking SSO re-confirm it: a live session alone must not
+ * be enough to add a permanent credential.
+ *
+ * `smb_toggles_cleared` says this account's own SMB switches were off and have
+ * been turned back on, because a credential that is never published is not
+ * what the request asked for.
+ */
+async function setSmbPassword(
+  currentPassword: string,
+  smbPassword: string
+): Promise<{ smb_toggles_cleared: boolean }> {
+  return request('/auth/smb/password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, smb_password: smbPassword })
+  })
+}
+
+/**
+ * `DELETE /api/auth/smb/password`.
+ *
+ * `reverted_to_account_password` is `false` for an account that is
+ * TOTP-enrolled, OIDC-linked or opted out, which is the case where clearing
+ * the separate password means losing SMB access altogether.
+ */
+async function clearSmbPassword(
+  currentPassword: string
+): Promise<{ reverted_to_account_password: boolean }> {
+  return request('/auth/smb/password', {
+    method: 'DELETE',
+    body: JSON.stringify({ current_password: currentPassword })
+  })
+}
+
 // ── single sign-on, self-service (`docs/proposals/stowcloud-0-oidc-login.md`
 // §4.3.2) ──
 //
@@ -445,8 +528,8 @@ async function oidcLinkStart(password: string, returnTo?: string): Promise<{ aut
  * password's NT hash when the identity is attached, and the plaintext is the
  * only thing that can put it back, which is why the admin unlink cannot.
  */
-async function oidcUnlink(password: string): Promise<void> {
-  await request('/auth/oidc/link', { method: 'DELETE', body: JSON.stringify({ password }) })
+async function oidcUnlink(password: string): Promise<{ smb_password_replaced: boolean }> {
+  return request('/auth/oidc/link', { method: 'DELETE', body: JSON.stringify({ password }) })
 }
 
 // ── admin: single sign-on links (§5-1's three admin routes) ──
@@ -787,7 +870,12 @@ export const httpApi = {
   wipeAppPassword,
   listSessions,
   revokeSession,
+  archiveList,
+  folderSize,
+  recentList,
   updateSmbSettings,
+  setSmbPassword,
+  clearSmbPassword,
   oidcLinkStart,
   oidcUnlink,
   adminStorage,

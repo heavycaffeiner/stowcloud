@@ -26,6 +26,9 @@ code won.
 | [3 — Frontend](proposals/stowcloud-3-frontend.md) | virtual scroll, the upload worker, i18n, the byte budgets | before frontend work |
 | [1 — SMB](proposals/stowcloud-1-smb.md) | the Samba sidecar, the uid contract, propagation, what SMB cannot express | before SMB work |
 | [13 — Deployment](proposals/stowcloud-13-deployment.md) | seccomp reality, the filesystem gate, uid/gid, production topology | deployment and operations |
+| [17 - Audit gaps](proposals/stowcloud-17-audit-gaps.md) | seven promises 0-13 make that the code does not keep, and what closes each | with 1, before any SMB credential work |
+| [18 - Recent files](proposals/stowcloud-18-recent-files.md) | the recency query, why an ordered walk truncated at N is not the newest N, and the Recent Files destination | with 5 and 14, before any recency work |
+| [19 - Share browsing](proposals/stowcloud-19-share-browsing.md) | the subpath a share link had no way to name, the folder download that never worked, and the viewer arrows that move the picture | with 6, before any public share-page work |
 
 ## Five principles, everything else follows from these
 

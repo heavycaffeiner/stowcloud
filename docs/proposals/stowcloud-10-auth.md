@@ -49,8 +49,13 @@ stronger in practice.
 
 - [ ] JIT provisioning from an identity provider. The provider authenticates;
       it never creates accounts. Authority stays in the local database.
-- [ ] A password-strength meter as a gate. Length minimum plus a breach-style
-      denylist, not composition rules.
+- [ ] A password-strength meter as a gate, and a breached-password denylist.
+      The gate is a 10-character minimum with no composition rules; the meter
+      is advisory and lives only in the browser. The denylist was considered
+      and dropped: the smallest useful one is six figures of entries, which
+      is a megabyte inside a binary `stowcloud-13-deployment.md` keeps
+      deliberately small, and §4.7's dual rate gate already blocks the online
+      guessing it would defend against.
 - [ ] Storing the SMB password separately from the account password. That
       trade is examined in `stowcloud-1-smb.md`; it is accepted only because
       SMB is confined to private networks.
@@ -211,8 +216,11 @@ a restore can put out of step.
 ### 6-2. Dependencies
 
 - `argon2`, `hmac`/`sha2`, `subtle` for constant-time comparison,
-  `secrecy` so plaintext is not copied around casually, `totp-rs`,
-  `jsonwebtoken` for ID-token verification.
+  `secrecy` so plaintext is not copied around casually, `totp-rs`.
+- ID-token verification uses `ring` directly, not `jsonwebtoken`. `ring` is
+  already in the tree as rustls's crypto provider, and `jsonwebtoken` sits
+  on top of it, so the wrapper buys nothing.
+  `stowcloud-0-oidc-login.md` §4.1.2 records the comparison.
 
 ## 7. References
 

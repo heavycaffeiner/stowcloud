@@ -79,7 +79,10 @@ boundary is the performance win.
 - [ ] A search result cache. The kernel's dentry cache already does that job
       better; a userspace copy spends the same RAM twice and reintroduces
       invalidation — which is indistinguishable from having an index.
-- [ ] WebDAV `SEARCH`/`REPORT`. No compat search exists either.
+- [ ] `REPORT`. WebDAV `SEARCH` is no longer excluded:
+      `stowcloud-14-compat-mobile.md` adds it, along with the compat search
+      the phone apps need. Both are adapters onto the tiers specified here
+      and neither introduces a fifth tier.
 
 ## 4. Technical Design
 
@@ -285,8 +288,11 @@ with streaming, so re-sorting happens client-side once the walk completes.
 Recorded because they are the difference between "the index is maintained" and
 "the index is maintained *by everything*":
 
-- **Watcher-driven reconciliation is written and tested but not wired.** A
-  change made by another process is invisible to the index until a rebuild.
+- Watcher-driven reconciliation **is** wired: the watch-event forwarder in
+  `sc-server`'s `App` calls `bridge::reconcile_watch_event` for every
+  directory an event names, and it is a no-op on a share with no index. An
+  earlier revision of this section recorded it as written but unwired; that
+  is no longer true.
 - Two self-write paths do not update the index — a conflict-policy move/copy
   (the destination name is not knowable without re-deriving the conflict
   logic) and TUS finalize (no destination path at that layer). Both fall

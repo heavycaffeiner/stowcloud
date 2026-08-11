@@ -23,8 +23,12 @@ import {
   type AdminUserOidc,
   type AppPasswordInfo,
   type ApplyOutcome,
+  type ArchiveEntry,
   type ArchiveSettingsReq,
   type AuditPage,
+  type FolderSize,
+  type RecentCompleteness,
+  type RecentHit,
   type AuditQuery,
   type AuditRow,
   type BatchItemResult,
@@ -58,7 +62,9 @@ import {
   type ShareLinkCreateReq,
   type ShareLinkInfo,
   type ShareLinkPatchReq,
+  type SmbCredential,
   type SmbSettingsReq,
+  type SmbUnavailableReason,
   type SortKey,
   type StorageReport,
   type SymlinkPolicyReq,
@@ -674,6 +680,98 @@ async function archive(paths: string[]): Promise<{ job: string }> {
   return { job: id }
 }
 
+/** A fixed listing for any `.zip`, since the mock stores no archive bytes. */
+async function archiveList(path: string): Promise<{ entries: ArchiveEntry[] }> {
+  await delay(60)
+  const n = normalizePath(path)
+  const e = entryAt(n)
+  if (!e || e.kind === 'dir' || !n.toLowerCase().endsWith('.zip')) {
+    throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { path: n } })
+  }
+  if (e.size > 4 * 1024 * 1024 * 1024) {
+    throw new ApiError(422, {
+      code: 'fs.invalid_name',
+      message: 'archive too large to list',
+      detail: { reason: 'over the listing ceiling' }
+    })
+  }
+  return {
+    entries: [
+      { name: 'docs/', size: 0, kind: 'dir' },
+      { name: 'docs/readme.txt', size: 1_842, kind: 'file' },
+      { name: 'docs/design.pdf', size: 902_144, kind: 'file' },
+      { name: 'images/', size: 0, kind: 'dir' },
+      { name: 'images/cover.png', size: 3_211_776, kind: 'file' }
+    ]
+  }
+}
+
+/** Walks the seeded tree, so the number the panel shows is the sum of what the
+ *  same tree lists. */
+async function folderSize(path: string): Promise<FolderSize> {
+  await delay(200)
+  const n = normalizePath(path)
+  const e = entryAt(n)
+  if (n !== '/' && (!e || e.kind !== 'dir')) {
+    throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { path: n } })
+  }
+  let bytes = 0
+  let files = 0
+  const walk = (dir: string): void => {
+    // The 100k-row benchmark directory is generated on demand and is not what
+    // this control is for; walking it here would block the main thread for
+    // seconds in mock mode alone.
+    if (dir === BENCH_DIR) return
+    for (const child of resolveDirEntries(dir)) {
+      if (child.kind === 'dir') {
+        walk(joinPath(dir, child.name))
+      } else {
+        bytes += child.size
+        files += 1
+      }
+    }
+  }
+  walk(n)
+  return { bytes, files }
+}
+
+/** Every file in the seeded tree, newest first. `since_days` is honoured so
+ *  the tab's own controls do something; `scope` narrows the walk. */
+async function recentList(
+  opts: { limit?: number; sinceDays?: number; scope?: string } = {}
+): Promise<{ hits: RecentHit[]; completeness: RecentCompleteness }> {
+  await delay(120)
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500)
+  const sinceDays = Math.min(Math.max(opts.sinceDays ?? 30, 1), 365)
+  const cutoff = BigInt(Date.now() - sinceDays * 86_400_000) * 1_000_000n
+  const root = opts.scope ? normalizePath(opts.scope) : '/'
+  const hits: RecentHit[] = []
+  const walk = (dir: string): void => {
+    if (dir === BENCH_DIR) return
+    for (const child of resolveDirEntries(dir)) {
+      const full = joinPath(dir, child.name)
+      if (child.kind === 'dir') {
+        walk(full)
+      } else if (BigInt(child.mtime_ns) >= cutoff) {
+        const vpath = full.replace(/^\//, '')
+        hits.push({
+          vpath,
+          share: vpath.split('/')[0] ?? '',
+          name: child.name,
+          size: child.size,
+          mtime_ns: child.mtime_ns
+        })
+      }
+    }
+  }
+  walk(root)
+  hits.sort((a, b) => {
+    if (a.mtime_ns === b.mtime_ns) return a.vpath.localeCompare(b.vpath)
+    return BigInt(a.mtime_ns) < BigInt(b.mtime_ns) ? 1 : -1
+  })
+  return { hits: hits.slice(0, limit), completeness: { state: 'full' } }
+}
+
 // ── text editor (`/edit/[...path]`) ──
 
 async function readFile(path: string): Promise<{ content: string }> {
@@ -770,6 +868,9 @@ const mockAuthState: {
    *  connect direction cannot, since there is no identity provider to send a
    *  browser to. */
   oidcLinked: boolean
+  /** Whether a separate SMB-only password has been set. The credential itself
+   *  is never modelled: the mock stores no NT hash and never could. */
+  smbDedicated: boolean
 } = {
   loggedIn: true,
   pendingChallenge: null,
@@ -777,12 +878,32 @@ const mockAuthState: {
   totpEnabled: false,
   smbOptOut: false,
   smbEnabled: true,
+  smbDedicated: false,
   pendingTotpSecret: null,
   recoveryCodesRemaining: 0,
   chunkMin: 5 * 1024 * 1024,
   chunkDefault: 10 * 1024 * 1024,
   indexNameEnabled: false,
   oidcLinked: true
+}
+
+/**
+ * What works over SMB right now, folded the same way the server folds it. The
+ * mock deployment's TOTP policy is the default (`require_separate`), so a
+ * TOTP account is never `totp_blocked` here.
+ */
+function mockSmbCredential(): {
+  smb_credential: SmbCredential
+  smb_unavailable_reason?: SmbUnavailableReason
+} {
+  if (mockAuthState.smbOptOut || !mockAuthState.smbEnabled) {
+    return { smb_credential: 'none', smb_unavailable_reason: 'opted_out' }
+  }
+  if (mockAuthState.smbDedicated) return { smb_credential: 'dedicated' }
+  if (mockAuthState.totpEnabled || mockAuthState.oidcLinked) {
+    return { smb_credential: 'none', smb_unavailable_reason: 'not_set' }
+  }
+  return { smb_credential: 'account' }
 }
 
 function mockSetupAdmin(): { username: string; password: string } | null {
@@ -842,7 +963,8 @@ async function session(): Promise<SessionInfo> {
       is_admin: true,
       totp_enabled: mockAuthState.totpEnabled,
       smb_opt_out: mockAuthState.smbOptOut,
-      smb_enabled: mockAuthState.smbEnabled
+      smb_enabled: mockAuthState.smbEnabled,
+      ...mockSmbCredential()
     },
     roots: [
       { label: 'home', perms: defaultPerms(), share_kind: 'Home', shared_externally: false, trash_enabled: false }
@@ -891,7 +1013,7 @@ async function oidcLinkStart(password: string, _returnTo?: string): Promise<{ au
   throw new ApiError(503, { code: 'oidc.provider_unavailable', message: 'no identity provider in the mock backend' })
 }
 
-async function oidcUnlink(password: string): Promise<void> {
+async function oidcUnlink(password: string): Promise<{ smb_password_replaced: boolean }> {
   await delay(80)
   if (password !== mockAuthState.password) {
     throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
@@ -900,6 +1022,11 @@ async function oidcUnlink(password: string): Promise<void> {
     throw new ApiError(404, { code: 'oidc.not_linked', message: 'no linked identity' })
   }
   mockAuthState.oidcLinked = false
+  // Identical rule to `totpDisable`, on purpose: a user who has been through
+  // one of them should not have to learn a second rule for the other.
+  const replaced = mockAuthState.smbDedicated && !mockAuthState.totpEnabled && !mockAuthState.smbOptOut
+  if (replaced) mockAuthState.smbDedicated = false
+  return { smb_password_replaced: replaced }
 }
 
 /** Which mock accounts have an identity attached. Keyed by the same ids
@@ -1046,13 +1173,18 @@ async function totpEnroll(password: string, secret: string, code: string): Promi
   return { recovery_codes: Array.from({ length: 10 }, (_, i) => `MOCK${i}CODE7X`) }
 }
 
-async function totpDisable(password: string): Promise<void> {
+async function totpDisable(password: string): Promise<{ smb_password_replaced: boolean }> {
   await delay(80)
   if (password !== mockAuthState.password) {
     throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
   }
   mockAuthState.totpEnabled = false
   mockAuthState.recoveryCodesRemaining = 0
+  // The undo of what made a separate SMB password necessary, so it goes back
+  // to the account password.
+  const replaced = mockAuthState.smbDedicated && !mockAuthState.oidcLinked && !mockAuthState.smbOptOut
+  if (replaced) mockAuthState.smbDedicated = false
+  return { smb_password_replaced: replaced }
 }
 
 /** Mock counterpart of `http.ts`'s function of the same name. */
@@ -1112,6 +1244,27 @@ async function revokeAppPassword(id: number): Promise<void> {
   }
 }
 
+/**
+ * Mark the device holding this app password as lost.
+ *
+ * Deliberately not a revoke, exactly as `http.ts` documents: the credential
+ * keeps working until the device reports it has erased its local copies, which
+ * it can only do while it can still authenticate. Nothing in the mock models a
+ * device reporting back, so the row stays as it is and this only proves the
+ * call exists.
+ *
+ * It did not exist, and `api` is `mockApi | httpApi`, so the settings screen's
+ * "mark as lost" button called a method that is not on the union: a type error
+ * that nothing read until `svelte-check` became a CI gate, and a runtime
+ * `is not a function` in mock mode before that.
+ */
+async function wipeAppPassword(id: number): Promise<void> {
+  await delay(30)
+  if (!mockAppPasswords.some((p) => p.id === id)) {
+    throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
+  }
+}
+
 async function listSessions(): Promise<ActiveSession[]> {
   await delay(20)
   return mockSessions.slice()
@@ -1130,6 +1283,45 @@ async function updateSmbSettings(optOut: boolean, enabled: boolean): Promise<voi
   await delay(30)
   mockAuthState.smbOptOut = optOut
   mockAuthState.smbEnabled = enabled
+}
+
+async function setSmbPassword(
+  currentPassword: string,
+  smbPassword: string
+): Promise<{ smb_toggles_cleared: boolean }> {
+  await delay(60)
+  if (currentPassword !== mockAuthState.password) {
+    throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
+  }
+  if (smbPassword.length < 10) {
+    throw new ApiError(422, {
+      code: 'auth.weak_password',
+      message: 'password is too short',
+      detail: { min_length: 10 }
+    })
+  }
+  const cleared = mockAuthState.smbOptOut || !mockAuthState.smbEnabled
+  mockAuthState.smbOptOut = false
+  mockAuthState.smbEnabled = true
+  mockAuthState.smbDedicated = true
+  return { smb_toggles_cleared: cleared }
+}
+
+async function clearSmbPassword(
+  currentPassword: string
+): Promise<{ reverted_to_account_password: boolean }> {
+  await delay(60)
+  if (currentPassword !== mockAuthState.password) {
+    throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
+  }
+  if (!mockAuthState.smbDedicated) {
+    throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
+  }
+  mockAuthState.smbDedicated = false
+  return {
+    reverted_to_account_password:
+      !mockAuthState.totpEnabled && !mockAuthState.oidcLinked && !mockAuthState.smbOptOut
+  }
 }
 
 async function adminStorage(): Promise<StorageReport> {
@@ -2099,6 +2291,9 @@ export const mockApi = {
   delete: del,
   link,
   archive,
+  archiveList,
+  folderSize,
+  recentList,
   jobList,
   jobStatus,
   jobCancel,
@@ -2123,9 +2318,12 @@ export const mockApi = {
   createAppPassword,
   createScopedAppPassword,
   revokeAppPassword,
+  wipeAppPassword,
   listSessions,
   revokeSession,
   updateSmbSettings,
+  setSmbPassword,
+  clearSmbPassword,
   oidcLinkStart,
   oidcUnlink,
   adminStorage,

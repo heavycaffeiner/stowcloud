@@ -18,6 +18,7 @@ pub mod middleware;
 pub mod oidc_api;
 pub mod rate_limit;
 pub mod routes;
+pub mod recent_api;
 pub mod search_api;
 pub mod search_limits;
 pub mod settings_api;

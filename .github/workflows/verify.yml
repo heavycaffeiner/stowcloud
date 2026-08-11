@@ -88,10 +88,17 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      # Each before the build, so a failing unit test is reported as a failing
+      # unit test and a type error as a type error, rather than as whatever the
+      # build does next. `vite build` strips types with esbuild without
+      # checking them, so without `npm run check` nothing in CI ever reads the
+      # types in `web/`.
       - name: Build frontend
         run: |
           cd web
           npm ci
+          npm run test
+          npm run check
           npm run build
 
       # Enforces the byte budgets DESIGN-FRONTEND.md §8 records. Deliberately
@@ -162,6 +169,8 @@ jobs:
         run: |
           cd web
           npm ci
+          npm run test
+          npm run check
           npm run build
 
       - name: Check frontend bundle-size budgets

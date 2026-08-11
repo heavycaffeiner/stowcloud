@@ -128,9 +128,10 @@ fn log_overgrants(overgrants: &[SmbOvergrant]) {
 /// either is also in `valid users`: that is Samba's gate, and the two lists
 /// only choose between read-only and read-write behind it.
 ///
-/// Users who cannot use SMB at all (`disabled`, `smb_opt_out`, or no
-/// `smb_enabled` flag) are omitted entirely rather than listed and rejected
-/// at connect time — `smb.conf` is also documentation of who has access.
+/// Users who cannot use SMB at all (`disabled`, `smb_opt_out`, no
+/// `smb_enabled` flag, or TOTP-enrolled under `smb.totp_policy = block`) are
+/// omitted entirely rather than listed and rejected at connect time —
+/// `smb.conf` is also documentation of who has access.
 fn shares_from_registry(
     cfg: &Config,
     auth: &sc_auth::AuthService,
@@ -234,10 +235,16 @@ fn project_registry_shares(
     let mut sections: BTreeMap<String, (String, Vec<String>, Vec<String>)> = BTreeMap::new();
     let mut overgrants: Vec<SmbOvergrant> = Vec::new();
 
+    // The second enforcement site for `smb.totp_policy`. `export_smbpasswd` is
+    // the first, and both are needed: an account that cannot log in must not
+    // be listed in `smb.conf` as if it could.
+    let block_totp = auth.smb_totp_policy() == sc_auth::SmbTotpPolicy::Block;
+
     for u in auth
         .list_users()?
         .iter()
         .filter(|u| !u.disabled && u.smb_enabled && !u.smb_opt_out)
+        .filter(|u| !(block_totp && u.totp_enabled))
     {
         for root in core.roots(u.id) {
             let Some(mut path) = core.share_host_path(root.share) else {

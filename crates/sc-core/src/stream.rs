@@ -202,4 +202,72 @@ impl crate::Core {
         let entry = Self::fid_entry(path, &st);
         Ok((entry, CoreFileStream { fh, pos: start, end }))
     }
+
+    /// A whole-file `Read + Seek`, ACL-checked (`Perms::READ`) like every
+    /// other `Core` entry point. The zip central directory lives at the end of
+    /// the file, so a zip reader has to seek; nothing else above this crate
+    /// does.
+    pub fn open_seekable(
+        &self,
+        user: UserId,
+        vpath: &str,
+    ) -> Result<(FidEntry, SeekableFile), CoreError> {
+        let r = self.resolve_want(user, &Vpath::new(vpath), Perms::READ)?;
+        let fh = r.root.open_read(&r.path)?;
+        let st = fh.stat()?;
+        if st.kind == Kind::Dir {
+            return Err(CoreError::InvalidPath("is a directory".into()));
+        }
+        let entry = Self::fid_entry(&r.path, &st);
+        Ok((entry, SeekableFile { fh, pos: 0, len: st.size }))
+    }
+}
+
+/// `std::io::Read + Seek` over one whole file.
+///
+/// [`sc_vfs::FileHandle`] offers `read_at(buf, off)` and nothing else, on
+/// purpose: nothing above it holds a file cursor. A reader that needs one
+/// keeps it here, beside the handle, because the cursor belongs to the reader
+/// and not to the file.
+pub struct SeekableFile {
+    fh: FileHandle,
+    pos: u64,
+    len: u64,
+}
+
+impl std::io::Read for SeekableFile {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if self.pos >= self.len {
+            return Ok(0);
+        }
+        let remaining = (self.len - self.pos) as usize;
+        let cap = remaining.min(buf.len()).min(CHUNK);
+        let n = self
+            .fh
+            .read_at(&mut buf[..cap], self.pos)
+            .map_err(std::io::Error::other)?;
+        self.pos += n as u64;
+        Ok(n)
+    }
+}
+
+impl std::io::Seek for SeekableFile {
+    fn seek(&mut self, from: std::io::SeekFrom) -> std::io::Result<u64> {
+        use std::io::SeekFrom;
+        let target: i128 = match from {
+            SeekFrom::Start(n) => n as i128,
+            SeekFrom::End(n) => self.len as i128 + n as i128,
+            SeekFrom::Current(n) => self.pos as i128 + n as i128,
+        };
+        if target < 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "seek before the start of the file",
+            ));
+        }
+        // Seeking past the end is legal and reads nothing, which is what
+        // `File` does too.
+        self.pos = target as u64;
+        Ok(self.pos)
+    }
 }

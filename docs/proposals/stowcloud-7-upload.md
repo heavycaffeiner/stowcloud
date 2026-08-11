@@ -250,9 +250,10 @@ compare-and-rename. **A brand-new file closes it completely** via
   check.
 - `Tus-Resumable` on a request is not validated; the server always answers
   with its own.
-- The GC sweep exists and is tested, but nothing schedules it, so expired
-  sessions and orphaned part files are reclaimed only by whatever an operator
-  arranges externally.
+The GC sweep used to be listed here too. It is scheduled now: `App` spawns a
+15-minute sweep thread at startup and `UploadApi::drain` runs one final pass
+at shutdown, so expired sessions and orphaned part files are reclaimed
+without an operator arranging anything.
 
 ## 8. References
 

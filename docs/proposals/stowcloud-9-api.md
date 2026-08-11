@@ -156,13 +156,13 @@ cancel is possible.
 |---|---|---|
 | `auth.required` | 401 | |
 | `auth.invalid_credentials` | 401 | identical whether or not the account exists |
-| `auth.totp_required` | 200 | a flow step, not an error |
+| `auth.totp_required` | 200 | a flow step, not an error. It travels as `{"status":"totp_required","challenge":…}` in the login body, not inside the error envelope, because nothing failed |
 | `acl.denied` | 403 | `detail.by` names the denying grant |
 | `fs.not_found` | 404 | also what an unlistable path gets |
 | `fs.conflict` | 409 | destination exists / name collision |
 | `fs.precondition` | 412 | carries `detail.current_etag` |
 | `fs.invalid_name` | 422 | carries the rejection reason |
-| `fs.cross_device` | 200 | advance notice, not an error |
+| `fs.invalid_name` + `detail.reason = "cross_device"` | 200 | advance notice, not an error. It reuses `fs.invalid_name` rather than owning a code, and carries `will_copy` and `total_bytes` so the client can say how much and how long |
 | `quota.exceeded` | 507 | |
 | `rate.limited` | 429 | with `Retry-After` |
 | `setup.completed` | 410 | the route is gone for good |

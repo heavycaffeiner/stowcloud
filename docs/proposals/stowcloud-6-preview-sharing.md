@@ -46,12 +46,20 @@ loops.
 
 - [ ] Server-side PDF and office rendering. A PDF renderer's attack surface
       is larger than an image decoder's, and office conversion needs a
-      resident LibreOffice. `pdf.js` runs in a sandboxed iframe on the
-      content origin instead; office documents are download-only.
+      resident LibreOffice. Rendering PDFs in the browser instead was
+      considered and dropped: `pdf.js` gzips to more than
+      `stowcloud-3-frontend.md`'s entire 150 KB initial-JS budget, for a
+      file type this product does not otherwise treat as special. PDF and
+      office documents are both download-only, and the viewer classifies
+      them the same way it classifies video.
 - [ ] Video thumbnails. See §4.5 — the refusal is deliberate and honest.
 - [ ] IP-binding signed URLs. They false-positive constantly on mobile
       networks; etag binding and audit logging are used instead.
-- [ ] Nested archive decompression, and extraction of encrypted archives.
+- [ ] Extracting an archive into the tree, in any form. The limits in §4.6
+      were written for it and are enforced on listing instead. Extraction
+      needs a background job, conflict handling and a second ACL pass at the
+      destination, which is a feature, not the tail of this one. Nested
+      decompression and encrypted archives stay excluded on top of that.
 
 ## 4. Technical Design
 
@@ -79,9 +87,20 @@ nothing here.
 
 | table | key | note |
 |---|---|---|
-| `preview_cache` | `(fileid, w, h)` | plus `etag8`, so an external edit misses |
-| `preview_negative` | `fileid` | failure cache, default 7-day TTL |
 | `share_link` | id, unique `token_hash` | `sha256(token)`; plaintext never stored |
+
+`share_link` is the only persisted table here. The thumbnail cache and the
+failure cache are **not** tables: both live in memory, keyed `(fileid, w, h,
+etag8)` and `(fileid, etag8)` respectively, with a best-effort on-disk copy
+of the *bytes* alongside the in-memory LRU. Earlier drafts of this section
+specified `preview_cache` and `preview_negative` as SQLite tables; the code
+never grew them, and the names survive only as the module's own vocabulary.
+
+The consequence worth stating: **the failure cache does not survive a
+restart.** A file that cannot be previewed is retried once per process
+lifetime rather than once per 7-day TTL. That is cheap because the negative
+verdict is reached by magic-byte sniffing or by a header read, not by a full
+decode.
 
 **Without the negative cache**, a file that cannot be previewed would wake the
 worker on every scroll past it.
@@ -174,8 +193,10 @@ people believe a guarantee nobody checked.
 
 ### 4.6 Core Logic — archives
 
-Listing only; extraction is a separate explicit action, bounded by entry
-count, total uncompressed size, compression ratio, depth and name length.
+Listing only. Nothing extracts, here or anywhere else in the product (§3.2).
+The listing walk is bounded by entry count, total uncompressed size,
+compression ratio, depth and name length, and those bounds are what stop a
+zip bomb from being expensive to *describe*.
 
 Every entry name goes through the same `SafePath::parse` the rest of the
 system uses, so `../`, an absolute path or a NUL rejects the whole archive
@@ -223,9 +244,22 @@ streaming continues, so the zip stays valid.
 
 ```
 GET  /c/<payload>.<sig>        content origin; signature only, no session
-GET  /s/<token>                public share page
+GET  /s/<token>       path=<rel>  public share page: listing or metadata
+POST /s/<token>/download path=<rel>  one-time signed URL for one file
+GET  /s/<token>/zip   path=<rel>  streamed ZIP64/STORE of one directory
 POST /api/fs/archive           { paths: [...] } -> signed attachment URL
+GET  /api/fs/archive/list      path=<vpath> -> { entries: [...] }
 ```
+
+`path` on the three public routes is relative to the link's own target,
+optional everywhere, and defaults to that target, so a client written against
+the earlier API keeps working. It is never stored: it is re-resolved from the
+link row on every request. `stowcloud-19-share-browsing.md` §4.3 is where the
+resolution order and the owner-ACL re-check are argued.
+
+`GET /api/fs/archive/list` is the authenticated half: it lists a ZIP's entries
+by name, size and kind. Nothing in the result is openable, because opening an
+entry means extraction (§3.2).
 
 Response headers on every content response:
 
@@ -253,7 +287,13 @@ stripped to block header injection.
 | image over the pixel cap | rejected before decode |
 | video preview requested | *unimplemented*, distinct from a decode failure |
 | decoder crash | that job fails; the pool re-forks |
-| archive over any limit | listing/extraction stops at the cap |
+| archive over any limit | the whole archive is refused: a half-validated listing is not a safe thing to hand back, so `GET /api/fs/archive/list` answers `422` with the reason rather than a partial list |
+| a file that is not an archive | `404`, identical to a path the caller cannot list: telling somebody what a file they cannot read contains is what that code exists to avoid |
+| a share-link subpath that is malformed, absent, or something its owner may not read | `404`, all three identically, so a refusal maps nothing around the subtree the visitor was given |
+| a share-link subpath on a dead link | `410`: liveness answers before the path is looked at |
+| `POST /s/<token>/download` naming a directory | `422`, and the download counter is not touched |
+| `GET /s/<token>/zip` naming a file | `422` |
+| share-link listing or zip past the per-token budget | `429` with `Retry-After` (60 burst, one a second, keyed by token) |
 
 ## 6. Implementation Plan
 
@@ -271,7 +311,8 @@ stripped to block header injection.
 
 - `image`, `zune-jpeg`, `zune-png`, `webp`, `avif-decode` — pure Rust, no C.
 - `landlock`, `seccompiler`, `nix` for the jail; `hmac`/`sha2`, `postcard`.
-- `pdf.js` client-side. ffmpeg is not a dependency and is not bundled.
+- No client-side document renderer. ffmpeg is not a dependency and is not
+  bundled.
 
 ## 7. Verification
 

@@ -114,7 +114,25 @@ export interface UserInfo {
   /** — the two self-service SMB toggles. */
   smb_opt_out: boolean
   smb_enabled: boolean
+  /**
+   * What actually works over SMB right now, not which credential row exists:
+   * the deployment's TOTP policy is folded in server-side, because the two can
+   * disagree and a line reading "SMB uses a separate password you set" would
+   * then be something the user can only disprove by failing to connect.
+   */
+  smb_credential?: SmbCredential
+  /** Present only with `'none'`. */
+  smb_unavailable_reason?: SmbUnavailableReason
 }
+
+export type SmbCredential = 'account' | 'dedicated' | 'none'
+
+/**
+ * An SSO link is deliberately not one of these. A linked account may hold and
+ * use a separate SMB password; what the link removes is the account password,
+ * which is `'not_set'` until the user sets one.
+ */
+export type SmbUnavailableReason = 'not_set' | 'totp_blocked' | 'opted_out'
 
 // ── settings ──
 
@@ -531,6 +549,45 @@ export interface TrashEntry {
    *  deleted a minute ago listed as deleted a year ago. */
   deleted_at_ns: string
 }
+
+// ── archive listing ──
+
+/** One entry of `GET /api/fs/archive/list`. Not openable: opening an entry
+ *  means extraction, which this server does not do. */
+export interface ArchiveEntry {
+  name: string
+  size: number
+  kind: 'file' | 'dir'
+}
+
+// ── folder size ──
+
+/** `GET /api/fs/size`. No directory count: the server keeps a single recursive
+ *  count with no file/directory split, so reporting one would be a number it
+ *  does not have. */
+export interface FolderSize {
+  bytes: number
+  files: number
+}
+
+// ── recent files ──
+
+export interface RecentHit {
+  /** Navigable virtual path, `{label}/{rest}`. */
+  vpath: string
+  share: string
+  name: string
+  size: number
+  /** Nanoseconds as a string, same rule as `Entry.mtime_ns`. */
+  mtime_ns: string
+}
+
+/** The search UI adds a `done` listener and discards the payload, so
+ *  truncation has never reached a screen. The recent tab is the first thing
+ *  that has to show it. */
+export type RecentCompleteness =
+  | { state: 'full' }
+  | { state: 'truncated'; reason: string; seen: number; elapsed_ms: number }
 
 // ── content links ──
 

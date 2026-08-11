@@ -810,6 +810,14 @@ impl SettingsApi for SettingsBridge {
                     detail: o.detail(),
                 })
                 .collect(),
+            // Off the startup probe rather than re-`statfs`ing per request: a
+            // share does not change filesystem while the process runs, and the
+            // probe already ran. Empty when diagnostics never ran, which is
+            // only true in tests.
+            tmpfs_shares: crate::diagnostics::SNAPSHOT
+                .get()
+                .map(|d| d.tmpfs_shares())
+                .unwrap_or_default(),
         }
     }
 
@@ -857,8 +865,21 @@ impl SettingsApi for SettingsBridge {
         // serving from stale files until someone restarted the server.
         // A refusal is a validation rejection with a reason rather than a
         // server fault, so it maps to 422 via `InvalidName` and not 500.
-        let out = crate::smb_cmd::render_live(&candidate, &self.core, &self.auth)
-            .map_err(|e| CoreError::InvalidName(e.to_string()))?;
+        // Both enforcement sites for `totp_policy` read it off `AuthService`,
+        // so the render below sees the new value only if it is pushed first.
+        // Restored on a failed render, which leaves nothing applied anywhere.
+        let previous_policy = self.auth.smb_totp_policy();
+        self.auth.set_smb_totp_policy(match totp_policy {
+            sc_smb::TotpPolicy::RequireSeparate => sc_auth::SmbTotpPolicy::RequireSeparate,
+            sc_smb::TotpPolicy::Block => sc_auth::SmbTotpPolicy::Block,
+        });
+        let out = match crate::smb_cmd::render_live(&candidate, &self.core, &self.auth) {
+            Ok(out) => out,
+            Err(e) => {
+                self.auth.set_smb_totp_policy(previous_policy);
+                return Err(CoreError::InvalidName(e.to_string()));
+            }
+        };
 
         self.store
             .mutate(|o| o.smb = Some(ov.clone()))

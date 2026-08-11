@@ -647,6 +647,83 @@ fn copy_to_refuses_a_destination_inside_the_source() {
 }
 
 /// `move_to` is `copy_to`'s mirror and exists for the same reason: WebDAV
+/// `SafePath::join` applies the table for names being *created*, which refuses
+/// `CON`, `a:b` and a trailing dot. Every operation below addresses a name that
+/// is already on disk, and each used `join` with a `?`, so one such name made
+/// the whole operation fail: a folder holding a `CON` could not be deleted,
+/// and the file itself could not be copied or moved anywhere at all.
+///
+/// Unix only: these names cannot be created on Windows in the first place,
+/// which is exactly why the table exists and exactly why it does not belong on
+/// a name that got there anyway.
+#[test]
+#[cfg(unix)]
+fn a_name_windows_would_refuse_can_still_be_copied_moved_and_deleted() {
+    let (core, dir) = setup();
+    core.mkdir(USER, "/root/src").unwrap();
+    core.mkdir(USER, "/root/dst").unwrap();
+    // Behind `Core`'s back: `mkdir`/`write_text` would refuse these, which is
+    // the point. Another service sharing the directory has no such scruples.
+    std::fs::write(dir.path().join("src").join("CON"), b"x").unwrap();
+    std::fs::write(dir.path().join("src").join("a:b"), b"y").unwrap();
+
+    // A directory holding one is listable...
+    let names: Vec<String> =
+        core.list(USER, "/root/src", Sort::Name, Order::Asc).unwrap().entries.into_iter().map(|e| e.name).collect();
+    assert_eq!(names, vec!["CON", "a:b"]);
+
+    // ...copyable as a tree, with both awkward names reproduced...
+    let res = core.copy_entries(USER, &["/root/src".into()], "/root/dst", OnConflict::Fail).unwrap();
+    assert!(res[0].ok, "one CON in the tree must not fail the whole copy");
+    let copied: Vec<String> =
+        core.list(USER, "/root/dst/src", Sort::Name, Order::Asc).unwrap().entries.into_iter().map(|e| e.name).collect();
+    assert_eq!(copied, vec!["CON", "a:b"]);
+
+    // ...and deletable as a tree.
+    let res = core.delete(USER, &["/root/dst".into()], true).unwrap();
+    assert!(res[0].ok, "one CON anywhere under it must not make a folder undeletable");
+    assert!(core.stat_entry(USER, "/root/dst").is_err());
+}
+
+/// The half that is **not** fixed, pinned so it is a recorded limitation
+/// rather than a surprise.
+///
+/// `resolve_want` parses a vpath's tail with `SafePath::parse` and then
+/// re-joins each component with `join`, the creation table, so no vpath
+/// naming one of these files resolves at all: `stat`, a download, a rename, a
+/// single-file delete or move, and minting a share link on it are all
+/// unreachable. Only the operations that walk a tree, which this change fixed,
+/// can touch them.
+///
+/// Flipping that join is not the fix on its own: `resolve_want` is also the
+/// front door for creation (`mkdir`, `write_text`, an upload destination), and
+/// the creation table is enforced there and nowhere else, so the two callers
+/// have to be split first. That is its own change.
+#[test]
+#[cfg(unix)]
+fn a_name_windows_would_refuse_is_still_unreachable_by_vpath() {
+    let (core, dir) = setup();
+    core.mkdir(USER, "/root/src").unwrap();
+    std::fs::write(dir.path().join("src").join("CON"), b"x").unwrap();
+
+    assert!(
+        core.stat_entry(USER, "/root/src/CON").is_err(),
+        "when this starts passing, resolve_want has been split and the \
+         single-file operations can be asserted here too"
+    );
+}
+
+/// The other half of the same rule: a name the *caller types* is still refused,
+/// because that is a name being invented and the table is what stops a web
+/// user creating something no Windows client can ever open.
+#[test]
+fn a_typed_name_windows_would_refuse_is_still_refused() {
+    let (core, _dir) = setup();
+    assert!(core.mkdir(USER, "/root/CON").is_err());
+    core.write_text(USER, "/root/ok.txt", b"x", None).unwrap();
+    assert!(core.rename(USER, "/root/ok.txt", "a:b", None).is_err());
+}
+
 /// MOVE names its destination, which `move_entries` cannot express.
 #[test]
 fn move_to_names_its_destination() {

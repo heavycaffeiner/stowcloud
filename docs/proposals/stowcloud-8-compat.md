@@ -181,7 +181,9 @@ cannot list is `404`, never `403`.
 
 - Exact per-chunk size cannot be dictated to every client; the advertised
   value is advisory and a spec-correct 413 is part of normal operation.
-- There is no `REPORT`/search handling, so a compat client has no search.
+- `REPORT` is still unhandled. Search is not: it arrived with
+  `stowcloud-14-compat-mobile.md`, which specifies WebDAV `SEARCH` and the
+  unified-search endpoint the phone apps call.
 - Some behaviour is only verifiable on real hardware, and is marked as such
   rather than assumed from source reading — see §4.5 for why that distinction
   is load-bearing here.

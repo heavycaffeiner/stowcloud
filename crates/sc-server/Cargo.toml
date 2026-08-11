@@ -141,3 +141,6 @@ windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
 tempfile = { workspace = true }
 tower = { workspace = true, features = ["util"] }
 http-body-util = { workspace = true }
+# `recent`'s tests need files with known, distinct mtimes; std has no portable
+# mtime setter. Already a workspace dependency via `sc-vfs`.
+filetime = { workspace = true }

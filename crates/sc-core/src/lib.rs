@@ -41,12 +41,14 @@ pub use entry::{Entry, Listing, OnConflict, OpResult, Order, Quota, Sort, TrashE
 pub use error::CoreError;
 pub use sc_acl::{Decision, Perms, Principal, RootEntry};
 pub use sc_meta::Aggregate;
-pub use links::{token_hash, LinkPatch, LinkSpec, LinkStore, ShareLink};
+pub use links::{
+    token_hash, LinkArchiveVisit, LinkNode, LinkPatch, LinkSpec, LinkStore, ShareLink,
+};
 pub use path::{SharePath, Vpath};
 pub use quota::QuotaSink;
 pub use resolve::Resolved;
 pub use share::{probe_access, AccessProbe, ShareDef, ShareStore, DYNAMIC_SHARE_ID_BASE};
-pub use stream::{CoreFileStream, FidEntry, CHUNK};
+pub use stream::{CoreFileStream, FidEntry, SeekableFile, CHUNK};
 
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;

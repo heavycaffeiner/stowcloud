@@ -6,10 +6,12 @@
   // looking is what a click does now, and downloading moved to a button inside
   // here (and stayed on the action menus).
   //
-  // Three bodies, decided per file: an image, text, or neither. "Neither" is a
-  // real state with its own screen rather than an empty box, because most of a
-  // NAS is video and archives and this is what the viewer shows for them.
+  // Four bodies, decided per file: an image, text, an archive listing, or
+  // neither. "Neither" is a real state with its own screen rather than an empty
+  // box, because most of a NAS is video and this is what the viewer shows for
+  // it.
   import { api, type Entry } from '../api/client'
+  import type { ArchiveEntry } from '../api/types'
   import { formatBytes } from '../format/bytes'
   import { t } from '../i18n'
   import { Icon } from 'm3-svelte'
@@ -48,6 +50,12 @@
    *  the viewer offers the editor instead, which is the thing that already
    *  knows how to open something large. */
   const TEXT_MAX_BYTES = 2 * 1024 * 1024
+  /** Past this an archive gets no listing at all. A zip's central directory
+   *  sits at the end of the file, so listing one means seeking into it, and on
+   *  a NAS that means a cold seek somewhere past the four-gigabyte mark on
+   *  rotational storage for a panel nobody asked to wait on. The server
+   *  enforces the same ceiling; this is what stops the request being made. */
+  const ARCHIVE_MAX_BYTES = 4 * 1024 * 1024 * 1024
   /** Long edge to ask the thumbnailer for. Sized for a full-screen viewer on a
    *  normal display rather than for the row icons the same endpoint feeds. */
   const PREVIEW_DIM: [number, number] = [1600, 1600]
@@ -61,17 +69,25 @@
     | { kind: 'image' }
     | { kind: 'text' }
     | { kind: 'too-large-text' }
+    | { kind: 'archive' }
+    | { kind: 'too-large-archive' }
     | { kind: 'none' }
 
   const body = $derived.by((): Body => {
     if (!entry) return { kind: 'none' }
     if (entry.preview?.available) return { kind: 'image' }
+    if (extensionOf(entry.name) === 'zip') {
+      return entry.size > ARCHIVE_MAX_BYTES ? { kind: 'too-large-archive' } : { kind: 'archive' }
+    }
     if (!TEXT_EXT.has(extensionOf(entry.name))) return { kind: 'none' }
     return entry.size > TEXT_MAX_BYTES ? { kind: 'too-large-text' } : { kind: 'text' }
   })
 
   let imageUrl = $state<string | null>(null)
   let text = $state<string | null>(null)
+  /** The archive's entries. Nothing here is clickable: opening one means
+   *  extraction, which this server does not do. */
+  let archive = $state<ArchiveEntry[] | null>(null)
   let loading = $state(false)
   let failed = $state<string | null>(null)
 
@@ -82,11 +98,12 @@
     const kind = body.kind
     imageUrl = null
     text = null
+    archive = null
     failed = null
     if (!open || !target) return
 
     let cancelled = false
-    loading = kind === 'image' || kind === 'text'
+    loading = kind === 'image' || kind === 'text' || kind === 'archive'
     void (async () => {
       try {
         if (kind === 'image') {
@@ -106,6 +123,9 @@
         } else if (kind === 'text') {
           const res = await api.readFile(path)
           if (!cancelled) text = res.content
+        } else if (kind === 'archive') {
+          const res = await api.archiveList(path)
+          if (!cancelled) archive = res.entries
         }
       } catch (err) {
         if (!cancelled) failed = err instanceof Error ? err.message : t('preview.failed')
@@ -155,13 +175,19 @@
     </header>
 
     <div class="sc-preview__body">
-      {#if hasPrev}
-        <div class="sc-preview__nav sc-preview__nav--prev">
-          <IconButton label={t('preview.previous')} onclick={onprev}>
-            <Icon icon={icons['chevron-left']} />
-          </IconButton>
-        </div>
-      {/if}
+      <!-- Both columns are always rendered, and the one with no neighbour is
+           hidden with `visibility`. `{#if}` removed the box, so the stage
+           absorbed its width and the image recentred by half of it at the ends
+           of a folder: stepping through with the arrow keys ended with the
+           picture jumping sideways on its own. `visibility: hidden` keeps the
+           box, takes the button out of the tab order and the accessibility
+           tree, and receives no pointer events, so the tooltip cannot fire on
+           an arrow that is not there. -->
+      <div class="sc-preview__nav sc-preview__nav--prev" class:sc-preview__nav--empty={!hasPrev}>
+        <IconButton label={t('preview.previous')} onclick={onprev}>
+          <Icon icon={icons['chevron-left']} />
+        </IconButton>
+      </div>
 
       <div class="sc-preview__stage">
         {#if loading}
@@ -170,6 +196,28 @@
           <img class="sc-preview__image" src={imageUrl} alt={entry.name} />
         {:else if text !== null}
           <pre class="sc-preview__text">{text}</pre>
+        {:else if archive !== null}
+          {@const entries = archive}
+          <div class="sc-preview__archive">
+            <p class="sc-preview__archive-count">{t('preview.archive_entries', { count: entries.length })}</p>
+            {#if entries.length === 0}
+              <p class="sc-preview__archive-empty">{t('preview.archive_empty')}</p>
+            {:else}
+              <ul class="sc-preview__archive-list">
+                {#each entries as e (e.name)}
+                  <li class="sc-preview__archive-row">
+                    <span class="sc-filename sc-preview__archive-name">{e.name}</span>
+                    <span class="sc-preview__archive-kind">
+                      {e.kind === 'dir' ? t('details.folder') : t('details.file')}
+                    </span>
+                    <span class="sc-preview__archive-size">
+                      {e.kind === 'dir' ? '' : formatBytes(e.size)}
+                    </span>
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
         {:else}
           <!-- Everything that cannot be shown lands here, and it is a card
                rather than bare text on the scrim: a message floating over a
@@ -184,6 +232,8 @@
                 {failed}
               {:else if body.kind === 'too-large-text'}
                 {t('preview.too_large_for_text')}
+              {:else if body.kind === 'too-large-archive'}
+                {t('preview.archive_too_large')}
               {:else}
                 {t('preview.no_preview')}
               {/if}
@@ -203,13 +253,11 @@
         {/if}
       </div>
 
-      {#if hasNext}
-        <div class="sc-preview__nav sc-preview__nav--next">
-          <IconButton label={t('preview.next')} onclick={onnext}>
-            <Icon icon={icons['chevron-right']} />
-          </IconButton>
-        </div>
-      {/if}
+      <div class="sc-preview__nav sc-preview__nav--next" class:sc-preview__nav--empty={!hasNext}>
+        <IconButton label={t('preview.next')} onclick={onnext}>
+          <Icon icon={icons['chevron-right']} />
+        </IconButton>
+      </div>
     </div>
   </div>
 {/if}
@@ -271,6 +319,52 @@
   }
   .sc-preview__nav {
     flex: 0 0 auto;
+  }
+  /* Keeps the box, so the stage's width and the image's centre never depend on
+     where in the folder the viewer is. */
+  .sc-preview__nav--empty {
+    visibility: hidden;
+  }
+  .sc-preview__archive {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    max-width: 720px;
+    max-height: 100%;
+    padding: 16px;
+    overflow: auto;
+    color: light-dark(#fff, #fff);
+  }
+  .sc-preview__archive-count,
+  .sc-preview__archive-empty {
+    margin: 0;
+    @apply --m3-body-small;
+  }
+  .sc-preview__archive-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .sc-preview__archive-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid rgb(255 255 255 / 12%);
+    @apply --m3-body-medium;
+  }
+  .sc-preview__archive-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sc-preview__archive-kind,
+  .sc-preview__archive-size {
+    @apply --m3-body-small;
+    white-space: nowrap;
   }
   .sc-preview__stage {
     flex: 1 1 auto;

@@ -130,10 +130,17 @@ impl AuthService {
     }
 
     /// Re-confirms `pw`, disables TOTP, and — in the same transaction —
-    /// re-derives the AccountPassword NT hash (unless the user has a
-    /// Dedicated SMB password or opted out), since the plaintext is
-    /// available right here (§2.4 "re-derive immediately on TOTP disable").
-    pub async fn totp_disable(&self, u: UserId, pw: &SecretString) -> Result<()> {
+    /// re-derives the AccountPassword NT hash (unless the user opted out or
+    /// holds an OIDC link), since the plaintext is available right here.
+    ///
+    /// Returns whether a dedicated SMB password was replaced by that
+    /// re-derivation. Disabling TOTP is the exact undo of the event that
+    /// deleted the account-derived hash, so it restores the state that
+    /// preceded it: a user who only set a separate SMB password because TOTP
+    /// forced them to would otherwise be left holding it with no signal that
+    /// it is now optional. The screen says so before the user commits, which
+    /// is why this is deliberately destructive rather than silent.
+    pub async fn totp_disable(&self, u: UserId, pw: &SecretString) -> Result<bool> {
         let stored_hash = self.pw_hash_of(u)?;
         let ok = self.verify_password_async(&stored_hash, pw.clone()).await;
         if !ok {
@@ -165,13 +172,15 @@ impl AuthService {
         )?;
         tx.execute("DELETE FROM totp_used WHERE user = ?1", rusqlite::params![u.get()])?;
         tx.execute("DELETE FROM recovery_code WHERE user = ?1", rusqlite::params![u.get()])?;
-        // The third condition is not in §2.4's lifecycle table because OIDC
-        // did not exist when it was written. An account that is both TOTP
-        // enrolled and OIDC linked would otherwise get a working SMB
-        // credential back by turning TOTP off, which is a carve-out cancelling
-        // a carve-out. The proposal names `users.rs` and `nt_ops.rs` as the
-        // derivation sites to gate (§4.3.6) and misses this one.
-        let re_derived = !smb_opt_out && existing_source != Some(NT_SOURCE_DEDICATED) && !oidc_linked;
+        // The OIDC condition: an account that is both TOTP enrolled and OIDC
+        // linked would otherwise get a working SMB credential back by turning
+        // TOTP off, which is a carve-out cancelling a carve-out.
+        //
+        // A dedicated password is *not* a condition. It is replaced, because
+        // turning TOTP off is the undo of what made a separate password
+        // necessary.
+        let re_derived = !smb_opt_out && !oidc_linked;
+        let replaced_dedicated = re_derived && existing_source == Some(NT_SOURCE_DEDICATED);
         if re_derived {
             let nt = crate::nt_hash::nt_hash(pw.expose_secret());
             let ct = crate::nt_hash::seal_nt(&self.master_key, &nt, u, self.cfg.key_ver)?;
@@ -191,8 +200,15 @@ impl AuthService {
             self.republish_passdb();
         }
         self.generation.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        self.audit(Some(u), "auth.totp_disabled", None, None, true, None);
-        Ok(())
+        self.audit(
+            Some(u),
+            "auth.totp_disabled",
+            None,
+            None,
+            true,
+            replaced_dedicated.then_some("smb_password_replaced"),
+        );
+        Ok(replaced_dedicated)
     }
 
     /// How many of `u`'s recovery codes are still unused (the "≤3 remain" nudge). Zero for an account with TOTP disabled

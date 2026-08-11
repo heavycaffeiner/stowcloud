@@ -181,9 +181,14 @@ from one definition, so the three cannot drift.
 **Unicode**: a lookup tries the given bytes, then NFC, then NFD (macOS SMB
 clients write NFD). New names are NFC-normalized **on creation only**.
 
-`SafePath::parse` is the primary fuzz target: arbitrary bytes in, checked for
-no panic and for the invariant that anything which parses contains no `..`,
-no absolute prefix, no NUL.
+`SafePath::parse` is covered by a fixed rejection suite
+(`crates/sc-vfs/tests/safe_path_rejections.rs`), which asserts the invariant
+that anything which parses contains no `..`, no absolute prefix and no NUL.
+A `cargo-fuzz` target was considered and dropped: it wants a nightly
+toolchain and a corpus, and this workspace is developed on a host that
+cannot execute the Linux binaries it builds, so the target would be written
+and then never run. A `proptest` case over arbitrary bytes is the cheap
+substitute, and it is not written yet.
 
 ### 4.5 Core Logic — ACL evaluation
 
@@ -252,9 +257,18 @@ everything stays revoked.
 ### 4.7 Core Logic — directory aggregate ETag
 
 **A DAV/compat-path cost only.** The native web UI uses per-file ETags,
-explicit refresh and WebSocket invalidation, so a web-only deployment can have
-this table empty and lose nothing. Isolating the cost this way is the key
-design decision.
+explicit refresh and WebSocket invalidation, so a web-only deployment's copy of
+this table is **populated only on request** and never by browsing. Isolating
+the cost this way is the key design decision.
+
+The wording used to say "empty". `GET /api/fs/size`
+(`stowcloud-17-audit-gaps.md` §4.3.6) narrowed it: the details panel can ask
+for one folder's recursive size, which computes and caches that folder's
+aggregate. It is one folder at a time, when a user presses a control, so
+opening a directory of a thousand subfolders still costs one `read_dir` and
+starts no walk at all. What the claim guarantees is unchanged, which is that
+browsing never pays for the aggregate; what it can no longer say is that the
+table stays empty.
 
 File ETag is `blake3(dev, ino, size, mtime)[..16]` — content is never hashed,
 since reading 10 GB to describe a 10 GB file is not viable. A mtime-preserving
@@ -273,8 +287,12 @@ recursion. Cost is O(depth × fan-out), not O(subtree).
 *Invalidation sources*: our own writes call `mark_dirty` directly after commit
 rather than waiting on the watcher, so they are immediately consistent;
 inotify events do the same; `IN_Q_OVERFLOW`, a mount reconnect or an admin
-action bumps the share generation, invalidating every row at once; a lazy
-revalidation and a 6-hour periodic rescan catch the rest.
+action bumps the share generation, invalidating every row at once; lazy
+revalidation on the next read catches the rest. There is deliberately no
+whole-table periodic sweep on top of those four. A draft specified a 6-hour
+one; nothing was left for it to find that the generation bump and the lazy
+path do not already cover, and a timer that walks every share on a 12 TB
+floor is not a free background task.
 
 *Cold start* is a full tree walk, deliberately unmitigated: a sync client's
 first run PROPFINDs the whole tree anyway, so the cost amortizes into work
@@ -364,7 +382,7 @@ displays an entry must not assume `id` is populated.
   and Landlock are probed and degrade individually.
 - `rusqlite` (bundled SQLite, WAL), `blake3`, `smallvec`, `compact_str`,
   `dashmap`, `r2d2`.
-- `cargo-fuzz` for the `SafePath` target.
+- `proptest` for property tests; no fuzzing toolchain, per §4.4.
 
 ## 7. References
 

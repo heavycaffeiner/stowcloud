@@ -14,9 +14,13 @@
 
   interface Props {
     enabled: boolean
+    /** Whether this account holds a separate SMB-only password. Turning TOTP
+     *  off is the exact undo of what made one necessary, so it replaces it,
+     *  and a credential the user set is never removed in silence. */
+    smbDedicated?: boolean
     onchanged?: () => void
   }
-  let { enabled, onchanged }: Props = $props()
+  let { enabled, smbDedicated = false, onchanged }: Props = $props()
 
   // ── enroll flow ──
   let enrollOpen = $state(false)
@@ -34,6 +38,9 @@
   let disablePassword = $state('')
   let disableError = $state<string | null>(null)
   let disabling = $state(false)
+  /** This section's own live region, for the one thing turning TOTP off does
+   *  that the user did not come here to do. */
+  let smbAnnouncement = $state('')
 
   // ── recovery codes: remaining count + reissue ──
   let recoveryRemaining = $state<number | null>(null)
@@ -161,8 +168,9 @@
     disableError = null
     disabling = true
     try {
-      await api.totpDisable(disablePassword)
+      const res = await api.totpDisable(disablePassword)
       disableOpen = false
+      smbAnnouncement = res.smb_password_replaced ? t('smb.replaced_by_account_password') : ''
       onchanged?.()
     } catch (err) {
       disableError =
@@ -209,6 +217,7 @@
       <Button variant="outlined" onclick={openReissue}>{t('totp.reissue_recovery_codes')}</Button>
     </div>
   {/if}
+  <p class="sc-totp__announce" aria-live="polite">{smbAnnouncement}</p>
 </div>
 
 <Dialog open={enrollOpen} title={t('totp.set_up_two_factor_authentication')} onclose={closeEnroll}>
@@ -244,6 +253,9 @@
 
 <Dialog open={disableOpen} title={t('totp.turn_off_two_factor_authentication_2')} onclose={closeDisable}>
   <p>{t('totp.enter_your_current_password_continue')}</p>
+  {#if smbDedicated}
+    <p class="sc-totp__smb-warning">{t('smb.dedicated_will_be_replaced')}</p>
+  {/if}
   <TextField
     type="password"
     label={t('common.current_password')}
@@ -331,6 +343,18 @@
   .sc-totp__recovery-count--low {
     color: var(--m3c-error);
     font-weight: 500;
+  }
+  .sc-totp__announce {
+    margin: 0;
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
+  }
+  .sc-totp__smb-warning {
+    padding: 12px;
+    border-radius: var(--m3-shape-extra-small);
+    background: var(--m3c-surface-container-highest);
+    color: var(--m3c-on-surface);
+    @apply --m3-body-medium;
   }
   .sc-totp__reissue-warning {
     display: flex;

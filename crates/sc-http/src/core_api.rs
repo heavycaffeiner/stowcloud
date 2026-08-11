@@ -247,6 +247,22 @@ pub struct Aggregate {
     pub total_bytes: u64,
 }
 
+/// One entry of an archive listing, as the wire carries it. Nothing here is
+/// clickable on the screen: opening an entry means extraction, which this
+/// server does not do.
+///
+/// No `truncated` alongside the list, because there is no partial listing to
+/// report: `sc_preview::list_archive` refuses a whole archive that breaks a
+/// limit rather than handing back the part it had validated, and the route
+/// turns that into a `422` with the reason.
+#[derive(Clone, Debug, Serialize)]
+pub struct ArchiveEntryWire {
+    pub name: String,
+    pub size: u64,
+    /// `"file"` or `"dir"`.
+    pub kind: &'static str,
+}
+
 /// One item in the trash.
 ///
 /// The id is an **opaque string**, not a `FileId`: a trashed entry has no
@@ -670,6 +686,39 @@ pub struct PublicLink {
     pub label: Option<String>,
 }
 
+/// One node under a share link, as the public page needs it.
+///
+/// Mirrors the subset of [`PublicLink`] that describes the *resolved node*
+/// rather than the link: `label`, `has_password`, `is_drop` and `can_download`
+/// are properties of the link and stay on that document.
+#[derive(Clone, Debug)]
+pub struct PublicNode {
+    pub name: String,
+    pub is_dir: bool,
+    pub size: u64,
+    pub mtime_ns: i128,
+    /// Needed to mint a signed content URL. `None` if no stable id exists.
+    pub fid: Option<i64>,
+    pub etag8: [u8; 8],
+}
+
+/// One row of a public listing.
+///
+/// A public document's shape is chosen rather than inherited. Serialising the
+/// internal `Entry` shipped the file id, the ETag, the permission set, the
+/// preview flag and the confusable-name flag to an anonymous caller, of which
+/// the page reads three fields.
+///
+/// No `mtime_ns`, deliberately: the page has never shown a date per row, so
+/// shipping the field would be the same mistake in smaller print. The link
+/// target's own `mtime_ns` stays on the document, where it already is.
+#[derive(Clone, Debug, Serialize)]
+pub struct PublicEntry {
+    pub name: String,
+    pub kind: Kind,
+    pub size: u64,
+}
+
 /// The `sc-core::Core` contract (see module docs). `async_trait`-free: every
 /// method that needs to block on I/O is written as returning a boxed future
 /// so the trait stays object-safe (`Arc<dyn CoreApi>` in `AppState`).
@@ -765,6 +814,22 @@ pub trait CoreApi: Send + Sync {
     }
     fn aggregate(&self, _share: ShareId, _subpath: &SafePath) -> anyhow::Result<Aggregate> {
         Ok(Aggregate { file_count: 0, dir_count: 0, total_bytes: 0 })
+    }
+    /// Subpaths below `root` that deny `user` something `root` allows.
+    ///
+    /// Already on `sc_core::Core`, where it was built for SMB over-grant
+    /// reporting: `smb.conf` has no per-path ACL, so a deny below a share root
+    /// has to be reported rather than enforced. `GET /api/fs/size` asks the
+    /// same question for a different reason, and gets to refuse rather than
+    /// report.
+    fn denies_below(&self, _user: UserId, _share: ShareId, _root: &SafePath) -> Vec<String> {
+        Vec::new()
+    }
+    /// Every entry in a ZIP archive at `vpath`, `READ`-checked. `Ok(None)`
+    /// means the file is not a zip, which the route answers identically to a
+    /// path the caller cannot list.
+    fn archive_list(&self, _user: UserId, _vpath: &str) -> Result<Option<Vec<ArchiveEntryWire>>, CoreError> {
+        Err(not_wired())
     }
     /// `/api/admin/storage`. Lives on `CoreApi` rather than in a handler
     /// because only the backend knows which shares exist and where their
@@ -943,8 +1008,27 @@ pub trait CoreApi: Send + Sync {
     fn share_link_public(&self, _id: i64) -> Result<PublicLink, CoreError> {
         Err(CoreError::NotSupported)
     }
-    fn share_link_entries(&self, _id: i64) -> Result<Vec<Entry>, CoreError> {
-        Err(CoreError::NotSupported)
+    /// One node under a link, named by a path relative to the link's own
+    /// target. An empty `path` is the target itself.
+    fn share_link_node(&self, _id: i64, _path: &str) -> Result<PublicNode, CoreError> {
+        Err(not_wired())
+    }
+    /// Children of one directory under a link, in the public projection.
+    fn share_link_entries_at(&self, _id: i64, _path: &str) -> Result<Vec<PublicEntry>, CoreError> {
+        Err(not_wired())
+    }
+    /// Stream a ZIP of one directory under a link into `out`.
+    ///
+    /// `Send` on the writer is load-bearing: the walk runs in
+    /// `spawn_blocking` and the writer is the sending half of the response
+    /// body's channel.
+    fn share_link_archive(
+        &self,
+        _id: i64,
+        _path: &str,
+        _out: &mut (dyn std::io::Write + Send),
+    ) -> Result<(), CoreError> {
+        Err(not_wired())
     }
     /// CPU-bound (Argon2). Callers on the async path must `spawn_blocking`.
     /// An id that does not exist still performs the hash before answering.

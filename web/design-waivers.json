@@ -199,6 +199,14 @@
       "expires": "2027-08-10"
     },
     {
+      "id": "preview-reserved-arrow-column",
+      "layer": "runtime",
+      "check": "optical-imbalance",
+      "selector": ".sc-preview__body",
+      "reason": "A three-column viewer: previous, stage, next. Both arrow columns are always rendered and the one with no neighbour is hidden with visibility, so the stage keeps a constant width and the image's centre never depends on where in the folder the viewer is. At the first and last file the reserved column reads as a leading inset, which is the fix rather than the fault: rendering it conditionally made the picture jump sideways when the arrow keys reached either end. The stage is still centred, because the hidden column and the visible button on the far side are the same width.",
+      "expires": "2027-08-10"
+    },
+    {
       "id": "m3-tabs-internals",
       "layer": "runtime",
       "check": "*",

@@ -44,17 +44,17 @@ So this proposal is **link-only**. SSO starts working for an account the moment 
 
 ### 3.1 Goals
 
-- [ ] Web UI login through a single administrator-configured OIDC provider.
-- [ ] The server runs Authorization Code + PKCE (S256) as a confidential client.
-- [ ] The ID token's signature is verified against the provider's JWKS, and `iss`, `aud`, `azp`, `exp`, `iat` and `nonce` are all checked per §4.3.3.
-- [ ] The callback is confirmed to come from **the same browser that started the flow** (the flow-binding cookie in §4.3.1). `state` alone does not stop login-CSRF.
-- [ ] A session is issued **only when a link from `(issuer, subject)` to a `UserId` already exists**.
-- [ ] A signed-in user can **link or unlink** SSO on their own account from the settings screen. **Both directions require re-entering the password** (§4.3.2). A live session alone must not be enough to add a permanent credential.
-- [ ] An administrator can **inspect and remove** any account's link, and can **link manually** by entering a `subject` directly.
-- [ ] A linked account **cannot use its account password for WebDAV Basic** — an app password is required. That refusal must happen **after** the password is verified (§4.3.5); refusing before verification would be an account-enumeration oracle.
-- [ ] A linked account **cannot use its account password for SMB.** This is not an authentication-time check but a change at **NT hash derivation/publication time**: linking must actually delete the existing hash and republish the passdb (§4.3.6).
-- [ ] The whole OIDC feature sits behind **a cargo feature**, so a `--no-default-features` build drops the TLS and HTTP-client dependencies entirely.
-- [ ] Every test in `sc-oidc` passes **with no network**.
+- [x] Web UI login through a single administrator-configured OIDC provider.
+- [x] The server runs Authorization Code + PKCE (S256) as a confidential client.
+- [x] The ID token's signature is verified against the provider's JWKS, and `iss`, `aud`, `azp`, `exp`, `iat` and `nonce` are all checked per §4.3.3.
+- [x] The callback is confirmed to come from **the same browser that started the flow** (the flow-binding cookie in §4.3.1). `state` alone does not stop login-CSRF.
+- [x] A session is issued **only when a link from `(issuer, subject)` to a `UserId` already exists**.
+- [x] A signed-in user can **link or unlink** SSO on their own account from the settings screen. **Both directions require re-entering the password** (§4.3.2). A live session alone must not be enough to add a permanent credential.
+- [x] An administrator can **inspect and remove** any account's link, and can **link manually** by entering a `subject` directly.
+- [x] A linked account **cannot use its account password for WebDAV Basic** — an app password is required. That refusal must happen **after** the password is verified (§4.3.5); refusing before verification would be an account-enumeration oracle.
+- [x] A linked account **cannot use its account password for SMB.** This is not an authentication-time check but a change at **NT hash derivation/publication time**: linking must actually delete the existing hash and republish the passdb (§4.3.6).
+- [x] The whole OIDC feature sits behind **a cargo feature**, so a `--no-default-features` build drops the TLS and HTTP-client dependencies entirely.
+- [x] Every test in `sc-oidc` passes **with no network**.
 
 ### 3.2 Non-Goals
 
@@ -514,17 +514,23 @@ The existing `totp_enabled` check **is not moved.** It is the same class of pre-
 
 The draft wanted to reuse `smb.totp_policy`. That field's name and its documentation (`sc-smb/src/lib.rs:39-41`, `proposals/stowcloud-10-auth.md`) are TOTP-specific, so an administrator who set `block` because of TOTP would end up blocking SSO users too without knowing why. Hence a separate `oidc.smb_policy`.
 
-> **Why there is no `require_separate`.** The draft offered it, as TOTP does. **There is no way
-> to use that value today.** The only route that changes an account's own SMB settings,
-> `POST /api/auth/smb`, takes just `{ opt_out: bool, enabled: bool }`
-> (`crates/sc-http/src/routes.rs:890-894`), and the UI is two toggles
-> (`web/src/lib/ui/settings/SmbSection.svelte`). No user-facing API creates a
-> `NtSource::Dedicated` row at all. TOTP's own `require_separate` falls short of its
-> documentation for the same reason, but that is not a problem this work created.
+> **Why there is no `require_separate`.** The draft offered it, as TOTP does. When this was
+> written there was **no way to use that value**: the only route that changed an account's own
+> SMB settings, `POST /api/auth/smb`, took just `{ opt_out: bool, enabled: bool }`, the UI was
+> two toggles, and no user-facing API created a `NtSource::Dedicated` row at all.
 >
-> **Resolution:** `oidc.smb_policy` has one value, `block`. A linked account cannot use SMB, and
-> the settings screen and the audit event say so. Building an API for dedicated SMB passwords is
-> separate work and a Non-Goal here. Features that do not exist are not written up as if they do.
+> **Resolution:** `oidc.smb_policy` has one value, `block`. Building an API for dedicated SMB
+> passwords was separate work and a Non-Goal here.
+>
+> **Corrected by `stowcloud-17-audit-gaps.md` §4.3.1.** That API exists now
+> (`POST`/`DELETE /api/auth/smb/password`), so `block` narrows to its precise meaning: **the
+> account password is not an SMB credential for a linked account.** A linked account that sets a
+> separate password reaches SMB with it, which is what this code already assumed anyway, since
+> the link leaves a `Dedicated` row alone and skips re-derivation when one exists. The sentence
+> that used to sit here, "a linked account cannot use SMB", was the proposal being pessimistic
+> ahead of its own code. A user-initiated unlink now replaces that separate password with one
+> derived from the password it re-confirms, and says so before it does; the administrator unlink
+> holds no plaintext and is unchanged.
 
 **What happens to sessions on unlink.** `validate_session` (`session.rs:67-100`) looks only at the account's `disabled` flag and expiry — not at identities, not at `amr`. So deleting the identity row alone would leave **already-issued OIDC sessions alive.** This proposal does not leave that. Unlink, in the same transaction, **deletes every session of that user with `amr & AMR_OIDC != 0` and bumps `generation`.** Only then is "removing the link removes access" true.
 
