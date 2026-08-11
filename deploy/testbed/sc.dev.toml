@@ -34,9 +34,12 @@ host_path = "/shares/video"
 [smb]
 # Left off here on purpose: turning SMB on through
 # `PATCH /api/admin/server-settings/smb` is the path a real deployment takes,
-# and it exercises the in-process render + the sidecar's inotify reload that
-# a pre-enabled config file would skip.
+# and it exercises the in-process render plus the push to the agent that a
+# pre-enabled config file would skip.
 enabled = false
 workgroup = "WORKGROUP"
 config_dir = "/config/smb"
 service_user = "scsvc"
+# Where the sidecar listens for "apply now". The default, written down here
+# because it has to match the volume both services mount it on.
+agent_socket = "/run/sc-smb/agent.sock"

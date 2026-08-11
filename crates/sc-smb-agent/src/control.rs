@@ -76,31 +76,51 @@ fn handle(stream: UnixStream, agent: &Agent) {
     let _ = (&stream).flush();
 }
 
-/// Best effort by construction: a socket nobody can reach costs the push and
-/// leaves the agent's own poll doing the work, which is the behaviour before
-/// this channel existed.
+/// Make the socket reachable by `sc-core` and by nothing else that can be
+/// helped.
+///
+/// The identity to hand it to is whoever owns the rendered config directory:
+/// that is the process which writes there, which is `sc-core` by
+/// construction. On bare metal both sides are root and there is nothing to
+/// do.
+///
+/// The container case cannot chown at all. `cap_drop: ALL` leaves the sidecar
+/// without `CAP_CHOWN`, so root there may not give a file away, and a socket
+/// left at 0660 root:root is one the `sc` container (uid 1000) gets EACCES
+/// on. Adding the capability back to a container that parses SMB off the wire
+/// buys less than it costs, so the fallback is 0666 — which is not the wide
+/// grant it looks like, because the socket lives on a Docker volume under
+/// `/var/lib/docker/volumes`. Only the containers that mount it and host root
+/// can reach the path at all, and the vocabulary behind it is "apply" and
+/// "status".
 fn set_socket_owner(socket: &Path, config_dir: &Path) {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
 
-    let owner = std::fs::metadata(config_dir).map(|m| (m.uid(), m.gid()));
-    match owner {
-        Ok((uid, gid)) if uid != 0 => {
+    let mode = match std::fs::metadata(config_dir).map(|m| (m.uid(), m.gid())) {
+        Ok((uid, gid)) if uid != unsafe { libc::geteuid() } => {
             let c = std::ffi::CString::new(socket.as_os_str().as_encoded_bytes()).unwrap_or_default();
             // SAFETY: a NUL-terminated path this process just created.
-            let rc = unsafe { libc::chown(c.as_ptr(), uid, gid) };
-            if rc != 0 {
-                tracing::warn!(
+            if unsafe { libc::chown(c.as_ptr(), uid, gid) } == 0 {
+                0o660
+            } else {
+                tracing::info!(
+                    uid,
                     error = %std::io::Error::last_os_error(),
-                    "could not hand the control socket to the sc-core account; it may not be able to connect"
+                    "cannot hand the control socket to the sc-core account (no CAP_CHOWN), \
+                     so it is opened to anything that can already reach this directory"
                 );
+                0o666
             }
-            let _ = std::fs::set_permissions(socket, std::fs::Permissions::from_mode(0o660));
         }
-        _ => {
-            // The config directory is root-owned (a bare-metal install), so
-            // there is no unprivileged identity to hand it to and the
-            // directory's own mode is the gate.
-            let _ = std::fs::set_permissions(socket, std::fs::Permissions::from_mode(0o660));
-        }
+        // Same identity on both ends, or the directory is unreadable. Either
+        // way there is nobody to hand it to.
+        _ => 0o660,
+    };
+    if let Err(e) = std::fs::set_permissions(socket, std::fs::Permissions::from_mode(mode)) {
+        // A socket nobody can reach costs the push and leaves the poll doing
+        // the work, which is what this deployment had before the channel
+        // existed. `sc-core` reports it as unreachable rather than silently
+        // continuing.
+        tracing::warn!(error = %e, "could not set the control socket's mode");
     }
 }

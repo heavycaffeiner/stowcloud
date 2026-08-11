@@ -3,8 +3,8 @@
 #
 # One-time host setup:
 #
-#   mkdir -p ./data ./secrets ./smbcfg ./smbrun ./shares/photos ./shares/video
-#   chown -R 1000:1000 ./data ./secrets ./smbcfg ./smbrun
+#   mkdir -p ./data ./secrets ./smbcfg ./shares/photos ./shares/video
+#   chown -R 1000:1000 ./data ./secrets ./smbcfg
 #   chmod 0775 ./shares/photos ./shares/video
 #
 # The image is distroless and runs as uid 1000, so it cannot chown anything
@@ -43,7 +43,13 @@ services:
       # over there, which accounts have no passdb entry. Without it sc writes
       # four files and learns nothing, and a change waits for the sidecar's
       # own poll instead of taking effect now.
-      - ./smbrun:/run/sc-smb:z
+      #
+      # A named volume and not a host directory, unlike every other mount
+      # here. The agent creates the socket as root, so the directory has to be
+      # root-owned, which is exactly what an empty named volume is and what a
+      # host directory made by the operator is not. It also keeps the socket
+      # off the host filesystem: only these two containers can reach it.
+      - sc-smb-control:/run/sc-smb
     environment:
       SC_DATA_DIR: /var/lib/sc
       SC_MASTER_KEY_FILE: /run/sc-secrets/master.key
@@ -86,9 +92,8 @@ services:
     image: ghcr.io/heavycaffeiner/stowcloud:smb-stable
     volumes:
       - ./smbcfg:/config/smb:ro,z
-      # The other end of the control socket. The agent creates it here and
-      # hands it to whoever owns ./smbcfg, which is the sc account.
-      - ./smbrun:/run/sc-smb:z
+      # The other end of the control socket.
+      - sc-smb-control:/run/sc-smb
       # Every share path sc knows has to exist in *this* container under the
       # same path, or smbd tells the client the network name is invalid while
       # everything on the sc side looks right. The agent reports such a path
@@ -137,3 +142,8 @@ services:
       timeout: 5s
       start_period: 15s
       retries: 3
+
+volumes:
+  # The control socket only. Nothing durable lives here: it is a rendezvous
+  # point between the two services, and losing it costs one reconnection.
+  sc-smb-control:

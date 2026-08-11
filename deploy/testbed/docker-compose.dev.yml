@@ -40,6 +40,11 @@ services:
       - ./shares/photos:/shares/photos:z
       - ./shares/video:/shares/video:z
       - ./smbcfg:/config/smb:z
+      # The sidecar's control socket: sc asks it to apply a render and gets
+      # back what happened. A named volume rather than a bind mount, for the
+      # reason the root file's comment gives — the agent creates the socket as
+      # root, and only an empty named volume is root-owned to begin with.
+      - sc-smb-control:/run/sc-smb
     environment:
       SC_MASTER_KEY_FILE: /run/sc-secrets/master.key
       RUST_LOG: info
@@ -68,6 +73,12 @@ services:
     image: sc:smb-dev
     volumes:
       - ./smbcfg:/config/smb:ro,z
+      - sc-smb-control:/run/sc-smb
+      # Every share path sc knows has to exist here too, under the same path.
+      # smbd opens it from this container, testparm does not check that it
+      # exists, and a client asking for a share whose directory is missing is
+      # told the network name is invalid. The agent reports such a path by
+      # name on the settings screen; only a mount here fixes it.
       - ./shares/photos:/shares/photos:z
       - ./shares/video:/shares/video:z
     cap_drop: ["ALL"]
@@ -88,3 +99,6 @@ services:
       timeout: 5s
       start_period: 15s
       retries: 3
+
+volumes:
+  sc-smb-control:
