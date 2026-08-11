@@ -7,7 +7,7 @@ use clap::Parser;
 
 use crate::control;
 use crate::smbd::Mode;
-use crate::sync::{Agent, Paths};
+use crate::sync::{self, Agent, Paths};
 
 /// Long enough not to spin, short enough that a scope change nobody announced
 /// is noticed while the operator is still looking at the screen. Not the main
@@ -87,7 +87,7 @@ pub fn main() -> std::process::ExitCode {
     // The first apply is what starts smbd, so it happens before the socket:
     // an "apply now" that arrives during startup would otherwise race it.
     let first = agent.apply();
-    log_report(&first);
+    sync::log_report(&first, "startup");
     if matches!(mode, Mode::Supervise) {
         // After the first apply, because the jail's log path is the one
         // `conf::candidate` pointed smbd at and fail2ban treats a missing log
@@ -126,7 +126,7 @@ pub fn main() -> std::process::ExitCode {
         let now = agent.fingerprint();
         if now != last {
             last = now;
-            log_report(&agent.apply());
+            sync::log_report(&agent.apply(), "poll");
             continue;
         }
         // A supervised smbd that died takes the whole service with it, and
@@ -140,29 +140,11 @@ pub fn main() -> std::process::ExitCode {
         let wanted_up = agent.last().smbd != sc_smb::agent::SmbdAction::Stopped;
         if matches!(mode, Mode::Supervise) && wanted_up && !agent.smbd_running() {
             tracing::warn!("smbd is not running; starting it again");
-            log_report(&agent.apply());
+            sync::log_report(&agent.apply(), "poll");
         }
     }
     tracing::info!("stopping");
     std::process::ExitCode::SUCCESS
-}
-
-fn log_report(r: &sc_smb::agent::Report) {
-    if r.ok {
-        tracing::info!(
-            shares = r.shares.len(),
-            interfaces = %r.interfaces,
-            smbd = ?r.smbd,
-            "applied"
-        );
-    } else {
-        tracing::error!(
-            interfaces = %r.interfaces,
-            smbd = ?r.smbd,
-            "{}",
-            r.error.as_deref().unwrap_or("apply failed")
-        );
-    }
 }
 
 static STOP: AtomicBool = AtomicBool::new(false);

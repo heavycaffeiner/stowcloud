@@ -85,6 +85,33 @@ pub fn needs_restart(bound: &str, wanted: &str) -> bool {
     bound != wanted
 }
 
+/// One line per apply, whoever asked for it.
+///
+/// `source` is the half that used to be missing. An apply that arrives on the
+/// control socket is the interesting one — it is `sc-core` reacting to an
+/// administrator — and it logged nothing at all when it succeeded, so the
+/// only evidence in the log was the *next* poll finding nothing left to do.
+/// Reading that back was guesswork.
+pub fn log_report(r: &Report, source: &str) {
+    if r.ok {
+        tracing::info!(
+            source,
+            shares = r.shares.len(),
+            interfaces = %r.interfaces,
+            smbd = ?r.smbd,
+            "applied"
+        );
+    } else {
+        tracing::error!(
+            source,
+            interfaces = %r.interfaces,
+            smbd = ?r.smbd,
+            "{}",
+            r.error.as_deref().unwrap_or("apply failed")
+        );
+    }
+}
+
 impl Agent {
     pub fn new(paths: Paths, mode: Mode) -> Self {
         Self {

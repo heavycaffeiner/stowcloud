@@ -137,6 +137,12 @@ pub fn detect(allow_public: bool) -> std::io::Result<Scope> {
     Ok(compute(&devices()?, allow_public))
 }
 
+/// Reachable only from the same link, and only by a client that names the
+/// scope. Not a network this server is "on".
+fn is_link_local(range: &str) -> bool {
+    range == "fe80::/10" || range == "169.254.0.0/16"
+}
+
 /// Fold devices into the two `smb.conf` lines.
 pub fn compute(devices: &[Device], allow_public: bool) -> Scope {
     let mut ifaces = vec!["lo".to_string()];
@@ -150,24 +156,38 @@ pub fn compute(devices: &[Device], allow_public: bool) -> Scope {
     let mut detected = false;
     for dev in devices {
         let mut accepted: Vec<String> = Vec::new();
+        let mut ranges: Vec<&str> = Vec::new();
         let mut rejected = false;
         for ip in &dev.addrs {
             match sc_smb::enclosing_private_range(ip) {
                 Some(range) => {
                     accepted.push(ip.to_string());
-                    add_host(range, &mut hosts);
+                    ranges.push(range);
                 }
                 None if allow_public => {
                     // The documented meaning of the opt-in is "SMB is on the
                     // internet". Naming a subnet here would understate it.
                     accepted.push(ip.to_string());
-                    add_host("ALL", &mut hosts);
+                    ranges.push("ALL");
                 }
                 None => rejected = true,
             }
         }
-        if accepted.is_empty() {
+        // A device whose every address is link-local is not a network anyone
+        // reaches this server on: an SMB client would need a scope id to use
+        // one, and nothing routes there. Binding it buys nothing and costs
+        // real service, because on host networking every container that
+        // starts brings up a veth carrying exactly one `fe80::` address —
+        // which moves the `interfaces` line, which smbd can only apply by
+        // being restarted, which drops whatever transfer was in flight.
+        //
+        // A real NIC is unaffected: it carries its own address alongside the
+        // link-local one.
+        if accepted.is_empty() || ranges.iter().all(|r| is_link_local(r)) {
             continue;
+        }
+        for r in &ranges {
+            add_host(r, &mut hosts);
         }
         detected = true;
         // The device name survives a DHCP lease change; individual addresses
@@ -278,6 +298,35 @@ mod tests {
     fn host_networking_does_not_widen() {
         let s = compute(&[dev("ens160", &["192.168.1.10"], false)], false);
         assert!(!s.hosts_allow.contains("10.0.0.0/8"));
+    }
+
+    /// The churn this exists to stop: on host networking every container that
+    /// starts brings up a veth with one `fe80::` address, and naming it would
+    /// move the `interfaces` line, which costs an smbd restart.
+    #[test]
+    fn a_link_local_only_device_is_not_bound() {
+        let s = compute(
+            &[
+                dev("enp6s0", &["192.168.0.100", "fe80::1"], false),
+                dev("vetha39caeb", &["fe80::2"], true),
+            ],
+            false,
+        );
+        assert_eq!(s.interfaces, "lo enp6s0");
+        assert!(s.hosts_allow.contains("192.168.0.0/16"));
+        // The rule is about which devices are named, not about which ranges
+        // are admitted: `enp6s0` is bound and does carry a link-local
+        // address, so a client on the same link reaches it.
+        assert!(s.hosts_allow.contains("fe80::/10"));
+    }
+
+    /// A machine with nothing but link-local addresses has no network to
+    /// serve on, and that is a state to report rather than to bind.
+    #[test]
+    fn link_local_only_everywhere_is_not_detected() {
+        let s = compute(&[dev("veth0", &["fe80::2"], true), dev("veth1", &["169.254.3.4"], true)], false);
+        assert_eq!(s.interfaces, "lo");
+        assert!(!s.detected);
     }
 
     #[test]

@@ -58,15 +58,19 @@ fn handle(stream: UnixStream, agent: &Agent) {
         return;
     }
     let report = match serde_json::from_str::<Request>(line.trim()) {
-        Ok(Request::Apply) => agent.apply(),
-        Ok(Request::Status) => agent.last(),
-        Err(e) => Report::failed(format!("unintelligible request: {e}")),
-    };
-    if !report.ok {
-        if let Some(err) = &report.error {
-            tracing::warn!(error = %err, "apply finished with something to report");
+        Ok(Request::Apply) => {
+            let r = agent.apply();
+            crate::sync::log_report(&r, "sc-core");
+            r
         }
-    }
+        // Repeating the last answer is not an event.
+        Ok(Request::Status) => agent.last(),
+        Err(e) => {
+            let r = Report::failed(format!("unintelligible request: {e}"));
+            crate::sync::log_report(&r, "sc-core");
+            r
+        }
+    };
     let mut body = match serde_json::to_string(&report) {
         Ok(b) => b,
         Err(e) => format!(r#"{{"ok":false,"error":"encoding the report: {e}"}}"#),
