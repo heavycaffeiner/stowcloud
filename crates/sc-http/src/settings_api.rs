@@ -141,6 +141,41 @@ pub struct SettingsSnapshot {
     /// refused. Names only: the screen writes the sentence.
     #[serde(default)]
     pub tmpfs_shares: Vec<String>,
+    /// What the SMB agent said about the last render it was handed. `None`
+    /// when SMB is off or no agent has ever answered.
+    ///
+    /// Rendering the files is only half of publishing; the other half runs
+    /// beside smbd, where this process can see neither the filesystem nor the
+    /// network. Everything here is something only that side knows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smb_agent: Option<SmbAgentWire>,
+}
+
+/// [`SettingsSnapshot::smb_agent`]. `key` is a catalogue key for the headline
+/// the screen writes; `detail` is the agent's own diagnostic text, which is
+/// not translatable for the same reason `testparm`'s output is not — it comes
+/// from another program.
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct SmbAgentWire {
+    /// `smb.agent_applied`, `smb.agent_problem`, `smb.agent_unreachable` or
+    /// `smb.agent_absent`.
+    pub key: String,
+    pub ok: bool,
+    /// The `[section]` names smbd is serving right now.
+    pub shares: Vec<String>,
+    /// The scope as it ended up after detection, which `sc-core` renders
+    /// closed and cannot otherwise see.
+    pub interfaces: String,
+    pub hosts_allow: String,
+    /// `unchanged`, `reloaded`, `restarted`, `started`, `stopped`, `failed`.
+    pub smbd: String,
+    /// Share paths that do not exist where smbd runs. A client asking for one
+    /// of these is told the network name is invalid.
+    pub missing_paths: Vec<String>,
+    /// Accounts that cannot authenticate because the passdb import produced
+    /// no entry for them.
+    pub missing_passdb: Vec<String>,
+    pub detail: Option<String>,
 }
 
 /// One entry of [`SettingsSnapshot::smb_overgrants`]. `key` is a catalogue
@@ -300,6 +335,7 @@ pub trait SettingsApi: Send + Sync {
             smb_public_bind_warning: false,
             smb_overgrants: Vec::new(),
             tmpfs_shares: Vec::new(),
+            smb_agent: None,
         }
     }
 

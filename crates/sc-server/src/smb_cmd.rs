@@ -18,6 +18,9 @@ pub fn run(cfg: &Config, master_key: &[u8; 32]) -> anyhow::Result<()> {
 
     if !cfg.smb.enabled {
         orch.remove_rendered()?;
+        // Their absence is the off switch, and telling the agent now is what
+        // makes it one immediately rather than at its next poll.
+        push(cfg);
         println!("smb: disabled (smb.enabled = false); removed any rendered config");
         return Ok(());
     }
@@ -92,6 +95,24 @@ pub fn run(cfg: &Config, master_key: &[u8; 32]) -> anyhow::Result<()> {
         source,
         users.len()
     );
+    match push(cfg) {
+        AgentOutcome::Answered(r) if r.ok => println!(
+            "smb: the agent applied it ({} share(s), interfaces = {}, smbd {:?})",
+            r.shares.len(),
+            r.interfaces,
+            r.smbd
+        ),
+        AgentOutcome::Answered(r) => println!(
+            "smb: the agent reported a problem: {}",
+            r.error.as_deref().unwrap_or("(no detail)")
+        ),
+        AgentOutcome::Unreachable(e) => println!("smb: could not reach the agent: {e}"),
+        AgentOutcome::NoAgent => println!(
+            "smb: no agent is listening at {}; whatever consumes {} has to pick the files up itself",
+            cfg.smb.agent_socket.display(),
+            cfg.smb.config_dir.display()
+        ),
+    }
     Ok(())
 }
 
@@ -147,7 +168,16 @@ fn shares_from_registry(
     // grants at all and this command would silently export zero shares for
     // every user.
     core.attach_acl_store(sc_core::AclStore::open(&cfg.data_dir.join("acl.db"))?)?;
+    // Admin-created shares live in `shares.db`, not in `config.toml`, so
+    // `register_shares` below does not see them. Without this the projection
+    // found the grants on such a share, could not resolve a host path for it
+    // (`share_host_path` answers `None` for a share nobody registered),
+    // skipped the root, and exported an `smb.conf` with every UI-created
+    // folder missing and nothing said about it. `App::build` attaches the same
+    // store in the same order; this is the CLI's copy of that wiring.
+    core.attach_share_store(sc_core::ShareStore::open(&cfg.data_dir.join("shares.db"))?)?;
     crate::app::register_shares(&core, cfg)?;
+    core.load_persisted_shares()?;
     crate::app::project_grants(&core, &acl, auth)?;
     project_registry_shares(&core, auth)
 }
@@ -338,7 +368,10 @@ pub fn render_live(
     let orch = sc_smb::SmbOrchestrator::new(cfg.smb.clone());
     if !cfg.smb.enabled {
         orch.remove_rendered()?;
-        return Ok(RenderOutcome::default());
+        return Ok(RenderOutcome {
+            agent: push(cfg),
+            ..RenderOutcome::default()
+        });
     }
     let (shares, overgrants) = if !cfg.smb_shares.is_empty() {
         (
@@ -366,10 +399,70 @@ pub fn render_live(
     let passwd_entries = orch.render_passwd_entries(&users, cfg.smb_service_gid);
     orch.write_all(&conf, &smbpasswd, &passwd_entries)?;
     log_overgrants(&overgrants);
+    let agent = push(cfg);
     Ok(RenderOutcome {
         public_bind_warning: orch.public_bind_warning_active(),
         overgrants,
+        agent,
     })
+}
+
+/// Hand the freshly written files to `sc-smb-agent` and keep what it says
+/// back.
+///
+/// Writing them is only half of publishing. The other half runs beside smbd,
+/// in a namespace and a filesystem this process cannot see, and everything it
+/// finds there — a rejected config, a share path that does not exist, an
+/// import that produced no passdb entry, a scope that came back empty — used
+/// to be knowable only by trying to connect a client.
+///
+/// Nothing listening is not a failure. A bare-metal install can run the agent
+/// on its poll with no socket, and a deployment with no SMB sidecar at all is
+/// a legitimate configuration; both had exactly this behaviour before the
+/// channel existed.
+fn push(cfg: &Config) -> AgentOutcome {
+    match sc_smb::agent::apply(&cfg.smb.agent_socket) {
+        Ok(report) => {
+            if report.ok {
+                tracing::info!(
+                    shares = report.shares.len(),
+                    interfaces = %report.interfaces,
+                    smbd = ?report.smbd,
+                    "smb: the agent applied the new configuration"
+                );
+            } else {
+                tracing::error!(
+                    detail = report.error.as_deref().unwrap_or(""),
+                    "smb: the agent could not fully apply the new configuration"
+                );
+            }
+            AgentOutcome::Answered(report)
+        }
+        Err(sc_smb::agent::AgentError::NotListening(path)) => {
+            tracing::debug!(
+                socket = %path.display(),
+                "smb: no agent to push to; the rendered files stand on their own"
+            );
+            AgentOutcome::NoAgent
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "smb: could not reach the agent");
+            AgentOutcome::Unreachable(e.to_string())
+        }
+    }
+}
+
+/// What the agent had to say about the files this render just wrote.
+#[derive(Clone, Debug, Default)]
+pub enum AgentOutcome {
+    /// Nothing is listening, which is a supported deployment rather than a
+    /// fault.
+    #[default]
+    NoAgent,
+    /// Something is there and could not be talked to. Always worth showing:
+    /// the files were written and nobody is known to have applied them.
+    Unreachable(String),
+    Answered(sc_smb::agent::Report),
 }
 
 /// What one `render_live` call has to tell the settings screen.
@@ -377,6 +470,7 @@ pub fn render_live(
 pub struct RenderOutcome {
     pub public_bind_warning: bool,
     pub overgrants: Vec<SmbOvergrant>,
+    pub agent: AgentOutcome,
 }
 
 /// Pair each name with the uid its `passwd` entry gets: `base_uid` plus the

@@ -71,8 +71,8 @@ cd stowcloud
 **2. 쓸 폴더를 만듭니다.**
 
 ```sh
-mkdir -p ./data ./secrets ./smbcfg ./shares/photos ./shares/video
-chown -R 1000:1000 ./data ./secrets ./smbcfg
+mkdir -p ./data ./secrets ./smbcfg ./smbrun ./shares/photos ./shares/video
+chown -R 1000:1000 ./data ./secrets ./smbcfg ./smbrun
 ```
 
 `data`에는 캐시 데이터베이스가, `secrets`에는 암호화 키가 들어갑니다.

@@ -73,8 +73,8 @@ cd stowcloud
 **2. Make the folders it will use.**
 
 ```sh
-mkdir -p ./data ./secrets ./smbcfg ./shares/photos ./shares/video
-chown -R 1000:1000 ./data ./secrets ./smbcfg
+mkdir -p ./data ./secrets ./smbcfg ./smbrun ./shares/photos ./shares/video
+chown -R 1000:1000 ./data ./secrets ./smbcfg ./smbrun
 ```
 
 `data` holds the cache database, `secrets` holds the encryption key, and the

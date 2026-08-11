@@ -37,6 +37,11 @@ pub struct App {
     /// deployment with `smb.enabled = false`: see that method for why the
     /// CLI paths never arm it.
     pub passdb: std::sync::OnceLock<crate::passdb::PassdbPublisher>,
+    /// Held for the same reason `settings` is: `arm_passdb_publisher` hands
+    /// it the republish handle, which is what makes a share or a grant
+    /// created in the admin UI reach `smb.conf` without a restart. `http`'s
+    /// `CoreApi` is the same object.
+    pub core_bridge: Arc<CoreBridge>,
     pub uploads: Arc<sc_upload::UploadEngine>,
     /// The per-account record of the writes this server performs. `None` when
     /// `journal.db` could not be opened; every write path then skips its
@@ -437,6 +442,7 @@ impl App {
             setup,
             settings: settings_bridge,
             passdb: std::sync::OnceLock::new(),
+            core_bridge,
             uploads,
             journal,
             dav,
@@ -485,9 +491,17 @@ impl App {
             );
             return;
         }
+        // The same publisher, for the changes that never touch an NT hash: a
+        // share created in the admin UI, a grant edited, a group membership
+        // moved. Without this the rendered files kept describing the
+        // deployment as of the last password change, and a folder created in
+        // the web UI reached SMB only after a settings-screen save or an
+        // `smb-sync`.
+        self.core_bridge.set_smb_republish(publisher.republish_handle());
         let _ = self.passdb.set(publisher);
         tracing::info!(
-            "passdb publisher armed: an NT hash change now rewrites smbpasswd without `smb-sync`"
+            "smb publisher armed: an NT hash, share, grant or membership change now rewrites \
+             the rendered files and pushes them to the agent without `smb-sync`"
         );
     }
 
@@ -1957,6 +1971,21 @@ mod passdb_arming_tests {
         fn republish(&self) {}
     }
 
+    /// Stands in for the publisher: these tests care that the mark is made,
+    /// not that a render follows it, which `passdb.rs` covers on its own.
+    #[derive(Default)]
+    struct CountingRepublish(std::sync::atomic::AtomicU64);
+    impl crate::passdb::Republish for CountingRepublish {
+        fn republish(&self) {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    impl CountingRepublish {
+        fn count(&self) -> u64 {
+            self.0.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
     fn app_with_smb(enabled: bool) -> (App, tempfile::TempDir) {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("share")).unwrap();
@@ -1982,6 +2011,58 @@ mod passdb_arming_tests {
             generated: true,
         };
         (App::build(cfg.clone(), cfg, &key).expect("app builds"), dir)
+    }
+
+    /// The gap this closes. A folder created in the admin UI is a share plus
+    /// a grant, and neither used to rewrite anything: `smb.conf` kept
+    /// describing the deployment as of the last password change, and the
+    /// folder was not shared over SMB until somebody saved the settings
+    /// screen or ran `smb-sync`. Reported as "the folder I made is not
+    /// there", which is exactly what it looked like.
+    #[test]
+    fn a_share_created_at_runtime_marks_the_rendered_files_stale() {
+        use sc_http::core_api::CoreApi;
+
+        let (app, dir) = app_with_smb(true);
+        let marks = Arc::new(CountingRepublish::default());
+        app.core_bridge.set_smb_republish(marks.clone());
+        assert_eq!(marks.count(), 0);
+
+        // Not under the config-file share: an overlapping path is refused,
+        // and a refusal marks nothing.
+        let host = dir.path().join("added-later");
+        std::fs::create_dir_all(&host).unwrap();
+        let share = app
+            .core_bridge
+            .create_share(sc_http::core_api::ShareCreateReq {
+                name: "photos".into(),
+                host_path: host.to_string_lossy().into_owned(),
+            })
+            .expect("the share is created");
+        assert_eq!(marks.count(), 1, "creating a share has to mark the files stale");
+
+        app.core_bridge
+            .create_grant(sc_http::core_api::GrantSpec {
+                principal: sc_http::core_api::GrantPrincipal::User(1),
+                share: share.id,
+                subpath: String::new(),
+                allow: sc_acl::Perms::READ,
+                deny: sc_acl::Perms::empty(),
+                inherit: true,
+                label: Some("photos".into()),
+            })
+            .expect("the grant is created");
+        assert_eq!(marks.count(), 2, "the grant is the share, as far as smb.conf is concerned");
+    }
+
+    /// A deployment with SMB off installs no handle, so the same calls cost
+    /// nothing rather than rendering for a feature nobody turned on.
+    #[test]
+    fn with_smb_off_nothing_is_marked() {
+        let (app, _dir) = app_with_smb(false);
+        app.arm_passdb_publisher();
+        // No handle was installed, so this is the no-op path.
+        app.core_bridge.set_smb_republish(Arc::new(CountingRepublish::default()));
     }
 
     /// "Do not spin up work for a deployment that never enabled SMB": no

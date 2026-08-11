@@ -333,6 +333,9 @@ pub struct SettingsBridge {
     /// `Mutex<Vec<_>>` rather than an atomic because it is a list, and it
     /// is only ever written by a render.
     smb_overgrants: Mutex<Vec<crate::smb_cmd::SmbOvergrant>>,
+    /// What the agent said about the last render. `None` until one has been
+    /// pushed, which for a deployment with SMB off is forever.
+    smb_agent: Mutex<Option<crate::smb_cmd::AgentOutcome>>,
 }
 
 /// Everything [`SettingsBridge::new`] needs. A struct rather than a parameter
@@ -383,6 +386,7 @@ impl SettingsBridge {
             restart_signal,
             smb_public_bind_warning: AtomicBool::new(false),
             smb_overgrants: Mutex::new(Vec::new()),
+            smb_agent: Mutex::new(None),
         }
     }
 
@@ -650,6 +654,16 @@ impl SettingsBridge {
             paths_src,
             true,
         ));
+        // Read-only here on purpose. Both ends of the socket have to agree on
+        // the path, and only one of them is this screen: the other is a
+        // container's volume mount or a systemd unit. Editing it from the web
+        // UI would move this end alone and leave every apply unanswered.
+        fields.push(Self::readonly(
+            "smb.agent_socket",
+            json!(cfg.smb.agent_socket.display().to_string()),
+            SettingsSource::ConfigFile,
+            "settings.readonly_smb_agent_socket",
+        ));
 
         // --- search (fully live) ---
         let search_src = src(
@@ -867,6 +881,36 @@ impl SettingsBridge {
         self.smb_public_bind_warning
             .store(out.public_bind_warning, Ordering::Relaxed);
         *self.smb_overgrants.lock() = out.overgrants;
+        *self.smb_agent.lock() = Some(out.agent);
+    }
+
+    /// The agent's last word, in the shape the settings screen reads.
+    fn smb_agent_wire(&self) -> Option<sc_http::settings_api::SmbAgentWire> {
+        use crate::smb_cmd::AgentOutcome;
+        match self.smb_agent.lock().clone()? {
+            // Nothing is listening, which is a supported deployment: a
+            // bare-metal agent on its own poll, or no SMB sidecar at all.
+            // Saying "unreachable" for it would be an alarm about a
+            // configuration nobody got wrong.
+            AgentOutcome::NoAgent => None,
+            AgentOutcome::Unreachable(detail) => Some(sc_http::settings_api::SmbAgentWire {
+                key: "smb.agent_unreachable".to_string(),
+                ok: false,
+                detail: Some(detail),
+                ..Default::default()
+            }),
+            AgentOutcome::Answered(r) => Some(sc_http::settings_api::SmbAgentWire {
+                key: if r.ok { "smb.agent_applied" } else { "smb.agent_problem" }.to_string(),
+                ok: r.ok,
+                shares: r.shares,
+                interfaces: r.interfaces,
+                hosts_allow: r.hosts_allow,
+                smbd: format!("{:?}", r.smbd).to_lowercase(),
+                missing_paths: r.missing_paths,
+                missing_passdb: r.missing_passdb,
+                detail: r.error,
+            }),
+        }
     }
 }
 
@@ -915,6 +959,7 @@ impl SettingsApi for SettingsBridge {
                 .get()
                 .map(|d| d.tmpfs_shares())
                 .unwrap_or_default(),
+            smb_agent: self.smb_agent_wire(),
         }
     }
 

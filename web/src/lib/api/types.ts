@@ -801,6 +801,33 @@ export interface SettingsSnapshot {
    *  because `smb.conf` cannot express the difference. Empty in the ordinary
    *  case; older servers omit the field entirely. */
   smb_overgrants?: SmbOvergrant[]
+  /** What the SMB agent did with the files the last render produced.
+   *  Absent when SMB is off, when no agent is deployed, or on an older
+   *  server. Everything in it is true of the machine smbd runs on, which is
+   *  not the one that rendered the files. */
+  smb_agent?: SmbAgentReport
+}
+
+/** One answer from `sc-smb-agent`. `key` is a catalogue key; `detail` is a
+ *  diagnostic from testparm, pdbedit or the agent itself and is shown
+ *  verbatim, not translated. */
+export interface SmbAgentReport {
+  key: string
+  ok: boolean
+  /** The `[section]` names smbd is serving. */
+  shares: string[]
+  /** The addresses smbd ended up bound to, after the agent expanded the
+   *  loopback-only baseline this server renders. */
+  interfaces: string
+  hosts_allow: string
+  /** `unchanged`, `reloaded`, `restarted`, `started`, `stopped` or `failed`. */
+  smbd: string
+  /** Share paths that do not exist where smbd runs. A client asking for one
+   *  of these is told the network name is invalid. */
+  missing_paths: string[]
+  /** Accounts with no passdb entry, which cannot authenticate. */
+  missing_passdb: string[]
+  detail?: string | null
 }
 
 /** `key` is a catalogue key, `detail` its placeholders — the server never

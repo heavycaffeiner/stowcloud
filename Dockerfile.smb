@@ -34,6 +34,47 @@
 # (anonymous registry-token pull against registry-1.docker.io), image
 # version label 3.24.1:
 ARG ALPINE_DIGEST=sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+# Same toolchain image and same reasoning as the core Dockerfile's builder.
+ARG RUST_IMAGE=rust:1.88-slim-bookworm@sha256:38bc5a86d998772d4aec2348656ed21438d20fcdce2795b56ca434cf21430d89
+
+# ----------------------------------------------------------------------------
+# Stage: builder — `sc-smb-agent`, statically linked against musl.
+#
+# It replaces `deploy/smb/entrypoint.sh` and `deploy/smb/net-scope.sh`, which
+# used to be COPYed in here. Two reasons, both of which cost a production
+# deployment its SMB:
+#
+#   * The scope detection shelled out to `ip addr show` with the failure
+#     swallowed. On an image without `ip` the scan came back empty, the closed
+#     `interfaces = lo` survived into the promoted config, testparm accepted
+#     it, and smbd answered on loopback and nowhere else with nothing logged.
+#     The agent reads the interfaces through `getifaddrs` and has no such
+#     dependency.
+#   * There is no channel back. sc-core wrote four files and learned nothing;
+#     a rejected config or a share path missing from *this* container looked
+#     exactly like success from over there. The agent answers on a Unix socket.
+#
+# No C toolchain needed, unlike the core image: this binary links libc, clap,
+# serde and tracing, and nothing that builds a C dependency.
+# ----------------------------------------------------------------------------
+FROM ${RUST_IMAGE} AS builder
+ARG TARGETARCH
+RUN case "${TARGETARCH}" in \
+      amd64) echo x86_64-unknown-linux-musl > /rust_target.txt ;; \
+      arm64) echo aarch64-unknown-linux-musl > /rust_target.txt ;; \
+      *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac
+RUN rustup target add "$(cat /rust_target.txt)"
+
+WORKDIR /src
+COPY Cargo.toml Cargo.lock ./
+COPY crates/ ./crates/
+RUN RUST_TARGET="$(cat /rust_target.txt)" && \
+    cargo build --profile release-dist --locked \
+      --target "${RUST_TARGET}" -p sc-smb-agent && \
+    mkdir -p /out && \
+    cp "target/${RUST_TARGET}/release-dist/sc-smb-agent" /out/sc-smb-agent
+
 FROM alpine:3.24@${ALPINE_DIGEST}
 # Per-arch manifest digests, for building a single platform explicitly
 # rather than letting buildx resolve the index. `ALPINE_DIGEST` above defaults
@@ -51,23 +92,22 @@ FROM alpine:3.24@${ALPINE_DIGEST}
 # `samba`/`samba-common-bin` split — Alpine packages the same upstream Samba
 # (4.23.8 on v3.24) more finely, nothing is missing.
 #
-# `bash`: entrypoint.sh is unmodified bash (`local`, `set -o pipefail`) —
-# Alpine's default shell is busybox `ash`, which has no `pipefail` at all
-# (`set -o pipefail` errors out immediately under ash, before `set -e` even
-# takes effect, confirmed by an actual run). Porting a script whose job is
-# gating a root-owned samba config swap onto a shell with weaker error
-# semantics, to save one package, was judged not worth the risk. `bash` is
-# ~5 MB.
-#
 # `shadow`: gives `groupadd`/`useradd` the same flags this file already used
-# under Debian; busybox's own `addgroup`/`adduser` take different flags.
+# under Debian; busybox's own `addgroup`/`adduser` take different flags. Build
+# time only — the agent reconciles `/etc/passwd` itself at run time, because
+# busybox `adduser` cannot create the several accounts that must share one
+# gid, having no `-o`.
 #
 # `iptables`: fail2ban's ban action needs it. The reference compose file does
 # not grant the CAP_NET_ADMIN that makes it usable, so this ships for the
 # deployment that adds the capability back rather than for the default one.
+#
+# `bash` and `inotify-tools` are gone with the shell entrypoint they existed
+# for. Nothing here now depends on a shell at all: the agent is the entrypoint
+# and execs nothing but samba's own binaries.
 RUN apk add --no-cache \
        samba-server samba-common-tools samba-client \
-       inotify-tools fail2ban tini iptables shadow bash \
+       fail2ban tini iptables shadow \
     && rm -rf /var/cache/apk/*
 
 # `force user`/`force group = scsvc` in the generated smb.conf
@@ -85,20 +125,10 @@ RUN apk add --no-cache \
 RUN groupadd -g 1000 scsvc \
     && useradd -u 1000 -g 1000 -M -s /sbin/nologin -d /nonexistent scsvc
 
-# Snapshot of a base /etc/passwd (root + scsvc + system accounts, no SMB
-# users yet) that entrypoint.sh restores from on every sync, so a user
-# removed from sc-core's registry actually disappears from getpwnam instead
-# of accumulating as a stale entry forever.
-RUN cp /etc/passwd /etc/passwd.base
-
-COPY deploy/smb/entrypoint.sh /entrypoint.sh
-# Sourced by the entrypoint, and by the bare-metal agent from the same path on
-# a host. Its `ip addr show` parsing is written against the shape busybox and
-# iproute2 both print, so Alpine needs no extra package for it.
-COPY deploy/smb/net-scope.sh /usr/local/lib/sc/net-scope.sh
+COPY --from=builder /out/sc-smb-agent /sc-smb-agent
 COPY deploy/smb/fail2ban-samba.local /etc/fail2ban/jail.d/samba.local
 COPY deploy/smb/fail2ban-samba-filter.conf /etc/fail2ban/filter.d/samba.conf
-RUN chmod 755 /entrypoint.sh && chmod 644 /usr/local/lib/sc/net-scope.sh
+RUN chmod 755 /sc-smb-agent
 
 # Alpine's fail2ban package ships `jail.d/alpine-ssh.conf` with the `[sshd]`
 # jail pre-enabled — a Debian install never shipped this, so it was never hit
@@ -121,6 +151,11 @@ RUN rm -f /etc/fail2ban/jail.d/alpine-ssh.conf
 # (`network_mode: host` or macvlan). 445 alone is enough to mount by address.
 EXPOSE 445 137/udp 138/udp
 
+# The control socket sc-core pushes to. Its own volume rather than a file in
+# /config/smb, which this container mounts read-only: a listener has to create
+# its own socket, and that directory holds NT hashes only sc-core writes.
+VOLUME ["/run/sc-smb"]
+
 # `smbd -b` prints the compiled-in paths/options and exits 0 iff the binary
 # itself is sane; it does not need a config file to be valid, which matters
 # because a fresh sidecar can legitimately have no accepted config yet
@@ -131,4 +166,11 @@ EXPOSE 445 137/udp 138/udp
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD smbd -b >/dev/null 2>&1 && pgrep -x smbd >/dev/null
 
-ENTRYPOINT ["/sbin/tini", "--", "/entrypoint.sh"]
+# `--supervise`: there is no service manager in here, so the agent owns the
+# smbd process. That ownership is what lets it *replace* smbd when the
+# interface list changes, which a reload cannot do — smbd binds its listening
+# sockets once, at startup.
+#
+# tini stays PID 1 for reaping; the agent is its child and forwards nothing,
+# it just stops its own children on SIGTERM.
+ENTRYPOINT ["/sbin/tini", "--", "/sc-smb-agent", "--supervise"]

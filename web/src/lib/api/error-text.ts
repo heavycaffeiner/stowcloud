@@ -46,6 +46,7 @@ const SERVER_KEYS = new Set<string>([
   /* i18n */ 'settings.readonly_local_password_login',
   /* i18n */ 'settings.readonly_owned_by_index_section',
   /* i18n */ 'settings.readonly_owned_by_upload_section',
+  /* i18n */ 'settings.readonly_smb_agent_socket',
   /* i18n */ 'settings.readonly_smb_interfaces',
   /* i18n */ 'settings.readonly_static_smb_shares',
   /* i18n */ 'settings.readonly_static_bootstrap_shares',

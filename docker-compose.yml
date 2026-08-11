@@ -3,8 +3,8 @@
 #
 # One-time host setup:
 #
-#   mkdir -p ./data ./secrets ./smbcfg ./shares/photos ./shares/video
-#   chown -R 1000:1000 ./data ./secrets ./smbcfg
+#   mkdir -p ./data ./secrets ./smbcfg ./smbrun ./shares/photos ./shares/video
+#   chown -R 1000:1000 ./data ./secrets ./smbcfg ./smbrun
 #   chmod 0775 ./shares/photos ./shares/video
 #
 # The image is distroless and runs as uid 1000, so it cannot chown anything
@@ -37,6 +37,13 @@ services:
       - ./shares/video:/shares/video:z
       # sc renders smb.conf/smbpasswd/passwd here and the sidecar reads them.
       - ./smbcfg:/config/smb:z
+      # The sidecar's control socket. sc connects to it after every render and
+      # gets back what actually happened: whether the config was accepted,
+      # which addresses smbd ended up bound to, which share paths do not exist
+      # over there, which accounts have no passdb entry. Without it sc writes
+      # four files and learns nothing, and a change waits for the sidecar's
+      # own poll instead of taking effect now.
+      - ./smbrun:/run/sc-smb:z
     environment:
       SC_DATA_DIR: /var/lib/sc
       SC_MASTER_KEY_FILE: /run/sc-secrets/master.key
@@ -79,6 +86,14 @@ services:
     image: ghcr.io/heavycaffeiner/stowcloud:smb-stable
     volumes:
       - ./smbcfg:/config/smb:ro,z
+      # The other end of the control socket. The agent creates it here and
+      # hands it to whoever owns ./smbcfg, which is the sc account.
+      - ./smbrun:/run/sc-smb:z
+      # Every share path sc knows has to exist in *this* container under the
+      # same path, or smbd tells the client the network name is invalid while
+      # everything on the sc side looks right. The agent reports such a path
+      # by name on the settings screen rather than leaving it to be found by
+      # a failing client, but only mounting it here fixes it.
       - ./shares/photos:/shares/photos:z
       - ./shares/video:/shares/video:z
     cap_drop: ["ALL"]

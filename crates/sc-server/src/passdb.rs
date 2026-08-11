@@ -75,14 +75,43 @@ struct Shared {
     window: Duration,
 }
 
-impl sc_auth::PassdbSink for Shared {
-    /// Called from inside `sc-auth`'s write paths, sometimes with a database
-    /// connection still open. Everything here is a flag and a notify: no
-    /// database, no filesystem, no lock this crate holds elsewhere.
-    fn republish(&self) {
+impl Shared {
+    /// Called from inside a write path, sometimes with a database connection
+    /// still open. Everything here is a flag and a notify: no database, no
+    /// filesystem, no lock this crate holds elsewhere.
+    fn mark(&self) {
         self.state.lock().dirty = true;
         self.wake.notify_one();
     }
+}
+
+impl sc_auth::PassdbSink for Shared {
+    fn republish(&self) {
+        self.mark();
+    }
+}
+
+impl Republish for Shared {
+    fn republish(&self) {
+        self.mark();
+    }
+}
+
+/// "What Samba should be serving has changed."
+///
+/// An NT hash is not the only thing that changes it. A share created in the
+/// admin UI, a grant edited, a group membership moved: each of those changes
+/// what [`crate::smb_cmd::render_live`] would write, and none of them goes
+/// anywhere near `sc-auth`. Before this trait existed they went nowhere at
+/// all — the rendered files kept describing the deployment as it was at the
+/// last password change, and a folder created in the web UI was not shared
+/// over SMB until someone touched the settings screen or ran `smb-sync`.
+///
+/// A separate trait from `sc_auth::PassdbSink` only so a caller that is not
+/// `sc-auth` does not have to name `sc-auth`'s to say it. Same object behind
+/// both, same coalescing, same off-thread render.
+pub trait Republish: Send + Sync {
+    fn republish(&self);
 }
 
 /// Owns the publisher thread. `App` holds one, armed by `cmd_serve` and
@@ -126,6 +155,12 @@ impl PassdbPublisher {
 
     /// The object to hand `AuthService::set_passdb_sink`.
     pub fn sink(&self) -> Arc<dyn sc_auth::PassdbSink> {
+        self.shared.clone()
+    }
+
+    /// The same object, for callers that change what Samba should serve
+    /// without touching an NT hash: shares, grants, group membership.
+    pub fn republish_handle(&self) -> Arc<dyn Republish> {
         self.shared.clone()
     }
 

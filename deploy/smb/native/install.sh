@@ -5,27 +5,43 @@
 # samba, create the service account, or turn SMB on. Those are the operator's
 # and the settings screen's, respectively.
 #
-#   ./install.sh [--config-dir DIR] [--service-user NAME] [--uninstall]
+#   ./install.sh [--config-dir DIR] [--service-user NAME] [--binary PATH]
+#                [--uninstall]
 set -eu
 
 CONFIG_DIR=/var/lib/sc/smbcfg
 SERVICE_USER=scsvc
+BINARY=
 UNINSTALL=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --config-dir)   CONFIG_DIR=$2; shift 2 ;;
         --service-user) SERVICE_USER=$2; shift 2 ;;
+        --binary)       BINARY=$2; shift 2 ;;
         --uninstall)    UNINSTALL=1; shift ;;
-        -h|--help)      sed -n '2,9p' "$0"; exit 0 ;;
+        -h|--help)      sed -n '2,10p' "$0"; exit 0 ;;
         *)              echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
 
 SRC=$(cd "$(dirname "$0")" && pwd)
-LIBDIR=/usr/local/lib/sc
-AGENT="$LIBDIR/sc-smb-agent.sh"
-NETSCOPE="$LIBDIR/net-scope.sh"
+AGENT=/usr/local/bin/sc-smb-agent
+
+# The agent is a compiled binary now, not a shell script that could be copied
+# out of this directory. Look where a release artifact and a source build each
+# land, in that order.
+if [ -z "$BINARY" ]; then
+    for candidate in \
+        "$SRC/sc-smb-agent" \
+        "$SRC/../../../target/release/sc-smb-agent" \
+        "$SRC/../../../target/release-dist/sc-smb-agent"
+    do
+        [ -x "$candidate" ] || continue
+        BINARY=$candidate
+        break
+    done
+fi
 
 [ "$(id -u)" = 0 ] || { echo "run as root" >&2; exit 1; }
 
@@ -34,7 +50,7 @@ if command -v systemctl >/dev/null 2>&1; then
 elif command -v rc-update >/dev/null 2>&1; then
     INIT=openrc
 else
-    echo "no systemd and no OpenRC: install $SRC/sc-smb-agent.sh by hand" >&2
+    echo "no systemd and no OpenRC: install the sc-smb-agent binary by hand" >&2
     exit 1
 fi
 
@@ -51,7 +67,9 @@ if [ "$UNINSTALL" = 1 ]; then
         rc-service sc-smb-agent stop 2>/dev/null || true
         rm -f /etc/init.d/sc-smb-agent /etc/conf.d/sc-smb-agent
     fi
-    rm -f "$AGENT" "$NETSCOPE"
+    rm -f "$AGENT"
+    # Left over from the shell version this replaced.
+    rm -f /usr/local/lib/sc/sc-smb-agent.sh /usr/local/lib/sc/net-scope.sh
     echo "sc-smb-agent removed. Managed accounts and the passdb were left"
     echo "alone -- disable SMB in the settings screen first if you want the"
     echo "agent to tear those down."
@@ -76,13 +94,18 @@ awk -F: -v u="$SERVICE_USER" '$1 == u { found = 1 } END { exit !found }' /etc/pa
     exit 1
 }
 
-mkdir -p "$LIBDIR" "$CONFIG_DIR"
+[ -n "$BINARY" ] && [ -x "$BINARY" ] || {
+    echo "no sc-smb-agent binary found. Build it first:" >&2
+    echo "  cargo build --release -p sc-smb-agent" >&2
+    echo "or point at one: ./install.sh --binary /path/to/sc-smb-agent" >&2
+    exit 1
+}
+
+mkdir -p "$CONFIG_DIR" /run/sc-smb
 # sc-server writes here as its own (unprivileged) user and the agent reads it
 # as root; smbpasswd inside carries NT hashes, so nothing else may look.
 chmod 700 "$CONFIG_DIR"
-install -m 750 "$SRC/sc-smb-agent.sh" "$AGENT"
-# Sourced by the agent from its own directory, so it has to land beside it.
-install -m 640 "$SRC/../net-scope.sh" "$NETSCOPE"
+install -m 755 "$BINARY" "$AGENT"
 
 if [ "$INIT" = systemd ]; then
     install -m 644 "$SRC/sc-smb-agent.service" /etc/systemd/system/sc-smb-agent.service

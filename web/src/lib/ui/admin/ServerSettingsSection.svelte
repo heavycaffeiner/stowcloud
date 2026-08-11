@@ -872,6 +872,45 @@
     {#if smbError}<p class="sc-admin-section__error" role="alert">{smbError}</p>{/if}
     {#if smbOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(smbOutcome)}</p>{/if}
 
+    <!-- What the agent beside smbd did with the files this server rendered.
+         Everything here is true of that side and unknowable from this one:
+         which addresses smbd ended up bound to, which share paths do not
+         exist over there, which accounts have no passdb entry. Writing the
+         files used to be the end of it, and a share that never reached a
+         client looked exactly like one that did.
+         The key comes from the server, so the extractor cannot see it at the
+         call site — these are the three it can send:
+                      /* i18n */ 'smb.agent_applied'
+                      /* i18n */ 'smb.agent_problem'
+                      /* i18n */ 'smb.agent_unreachable' -->
+    {#if snapshot.smb_agent}
+      {@const agent = snapshot.smb_agent}
+      <div
+        class={agent.ok ? 'sc-admin-section__hint' : 'sc-admin-section__warning'}
+        role={agent.ok ? 'status' : 'alert'}
+      >
+        <p>
+          {t(agent.key, {
+            shares: agent.shares.length,
+            interfaces: agent.interfaces,
+            smbd: agent.smbd
+          })}
+        </p>
+        {#if agent.missing_paths.length}
+          <p>{t('smb.agent_missing_paths', { paths: agent.missing_paths.join(', ') })}</p>
+        {/if}
+        {#if agent.missing_passdb.length}
+          <p>{t('smb.agent_missing_passdb', { users: agent.missing_passdb.join(', ') })}</p>
+        {/if}
+        <!-- Verbatim, not translated: it comes from testparm, pdbedit or the
+             agent itself, and rewording a diagnostic is how it stops matching
+             what a search finds. -->
+        {#if agent.detail && !agent.ok}
+          <p class="sc-server-settings__agent-detail">{agent.detail}</p>
+        {/if}
+      </div>
+    {/if}
+
     <h4 class="sc-admin-section__subhead">{t('common.search')}</h4>
     <div class="sc-server-settings__form">
       <TextField label={t('server.concurrent_fast_searches')} bind:value={searchMaxFast} />
@@ -1208,6 +1247,16 @@
   .sc-server-settings__pending {
     margin: 0;
     color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
+  }
+  /* A diagnostic from another program: monospace so a path or a directive in
+     it reads as the literal string it is, and wrapping so a long testparm
+     line stays inside the card. */
+  .sc-server-settings__agent-detail {
+    margin: 8px 0 0;
+    font-family: var(--m3-font-mono, ui-monospace, monospace);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
     @apply --m3-body-small;
   }
   /* The badge carries its own text. Colour alone would leave a row's pending

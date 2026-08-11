@@ -24,12 +24,13 @@
 //! interfaces and expands `interfaces`/`hosts allow` from them; the config
 //! rendered here binds loopback only, so an unexpanded file is closed.
 
+pub mod agent;
 mod bind;
 mod conf;
 mod error;
 mod passwd;
 
-pub use bind::is_private;
+pub use bind::{enclosing_private_range, is_private, PRIVATE_CIDRS_V4, PRIVATE_CIDRS_V6};
 pub use error::SmbError;
 pub use passwd::render_passwd_entries;
 
@@ -78,6 +79,16 @@ pub struct SmbConfig {
     pub interfaces: Vec<String>,
     /// Shared config volume the sidecar reads.
     pub config_dir: PathBuf,
+    /// Where `sc-smb-agent` listens for "apply now" ([`agent`]). Rendering
+    /// the four files above is only half of publishing; this is how the other
+    /// half reports back, and how a change reaches smbd without waiting for
+    /// the agent's own poll.
+    ///
+    /// Deliberately not under `config_dir`: the agent mounts that read-only,
+    /// and a listener has to create its own socket. A deployment with no agent
+    /// leaves nothing listening here, which is not an error — the files are
+    /// still written and a poll-driven agent still picks them up.
+    pub agent_socket: PathBuf,
     /// Samba `force user`/`force group` — the single uid every SMB
     /// connection runs as; real access control is `valid users`/read/write
     /// lists, never Unix permissions.
@@ -98,6 +109,7 @@ impl Default for SmbConfig {
             server_name: String::new(),
             interfaces: Vec::new(),
             config_dir: PathBuf::from("/config/smb"),
+            agent_socket: PathBuf::from(agent::DEFAULT_SOCKET),
             service_user: "scsvc".to_string(),
             allow_public_bind: false,
             totp_policy: TotpPolicy::default(),

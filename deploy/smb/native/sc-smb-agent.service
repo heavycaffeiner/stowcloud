@@ -8,7 +8,7 @@ Wants=network-online.target
 
 [Service]
 Type=exec
-ExecStart=/usr/local/lib/sc/sc-smb-agent.sh
+ExecStart=/usr/local/bin/sc-smb-agent
 Restart=on-failure
 RestartSec=5
 # Root is the point -- it edits /etc/passwd and the samba passdb. Everything

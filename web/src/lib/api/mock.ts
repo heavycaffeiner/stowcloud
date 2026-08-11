@@ -1559,7 +1559,22 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       }
     ],
     smb_public_bind_warning: false,
-    smb_overgrants: []
+    smb_overgrants: [],
+    // The ordinary case: the agent answered and everything it checked was
+    // fine. The interesting shapes to try by hand are a non-empty
+    // `missing_paths` (a share mounted on this side and not on the file
+    // server's) and `key: 'smb.agent_unreachable'`.
+    smb_agent: {
+      key: 'smb.agent_applied',
+      ok: true,
+      shares: ['Share'],
+      interfaces: 'lo eth0',
+      hosts_allow: '127.0.0.0/8 ::1/128 192.168.0.0/16',
+      smbd: 'reloaded',
+      missing_paths: [],
+      missing_passdb: [],
+      detail: null
+    }
   }
 }
 

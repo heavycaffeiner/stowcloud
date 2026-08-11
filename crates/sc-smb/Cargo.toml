@@ -8,9 +8,10 @@ publish.workspace = true
 description = "Samba (smbd) sidecar orchestration: smb.conf generation, LAN-only bind enforcement, smbpasswd/passwd sync. See,"
 
 [dependencies]
-thiserror = { workspace = true }
-serde     = { workspace = true }
-tracing   = { workspace = true }
+thiserror  = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+tracing    = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

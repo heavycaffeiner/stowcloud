@@ -75,8 +75,9 @@ bind, not the hash choice.
 - [x] A permission change in the web UI reaches `smbd` without an operator
       running anything.
 - [x] Permissions SMB cannot express are reported, never silently widened.
-- [x] The same contract on bare metal, with no Docker
-      (`deploy/smb/native/sc-smb-agent.sh`).
+- [x] The same contract on bare metal, with no Docker: the same
+      `sc-smb-agent` binary, under systemd or OpenRC instead of supervising
+      smbd itself.
 
 ### 3.2 Non-Goals
 
@@ -107,11 +108,12 @@ flowchart LR
     F4["network.policy 0644"]
   end
   subgraph side["sc-smb sidecar (alpine, root)"]
-    WATCH["entrypoint.sh\ninotify + net-scope + testparm -s"]
+    WATCH["sc-smb-agent\ngetifaddrs + testparm -s + pdbedit"]
     SMBD["smbd :445"]
     WATCH --> SMBD
   end
   RENDER --> vol --> WATCH
+  RENDER <-->|"apply now / report\n/run/sc-smb/agent.sock"| WATCH
   core -.->|both mount| SHARES[("/shares/*")]
   side -.-> SHARES
 ```
@@ -325,6 +327,14 @@ stale row; one bad passdb entry must not take SMB down for everyone else.
 | Phase 4 | Sidecar image, entrypoint, fail2ban, healthcheck | done | heavycaffeiner |
 | Phase 5 | Bare-metal agent + 3-distro test suite | done | heavycaffeiner |
 | Phase 6 | Live propagation, over-grant reporting, admin UI | done | heavycaffeiner |
+| Phase 7 | `sc-smb-agent` replaces both shell agents; control socket | done | heavycaffeiner |
+
+Phase 7 closed three failures the file-drop-only shape allowed. The scope
+detection shelled out to `ip addr show` with the error swallowed, so an image
+without `ip` served loopback and said nothing. A reload was used where the
+`interfaces` line had changed, which smbd cannot apply without rebinding.
+And a share, a grant or a group membership changed nothing at all until a
+settings-screen save or an `smb-sync`, because no write path rendered.
 
 ### 6-2. Dependencies
 

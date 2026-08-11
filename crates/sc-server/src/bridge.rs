@@ -66,6 +66,11 @@ pub struct CoreBridge {
     /// a write: the record is best-effort and the endpoint that reads it
     /// answers an empty list.
     journal: Option<Arc<WriteJournal>>,
+    /// Where "this changed what Samba should be serving" goes. Empty until
+    /// `App::arm_passdb_publisher` fills it, and left empty for every
+    /// deployment with SMB off and for the CLI paths, which render
+    /// explicitly.
+    smb_republish: std::sync::OnceLock<Arc<dyn crate::passdb::Republish>>,
 }
 
 impl CoreBridge {
@@ -83,6 +88,25 @@ impl CoreBridge {
             index_settings,
             index_build_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             journal,
+            smb_republish: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// Install the republish handle. Called once, after the publisher exists.
+    pub fn set_smb_republish(&self, r: Arc<dyn crate::passdb::Republish>) {
+        let _ = self.smb_republish.set(r);
+    }
+
+    /// A share, a grant or a membership moved, so what `smb.conf` says about
+    /// this deployment is now out of date.
+    ///
+    /// Marks and returns: the render reads several databases and writes four
+    /// files, which has no business happening inside the request that caused
+    /// it, and an admin walking through five grants should pay for it once.
+    /// A deployment with SMB off has no handle installed and this is a no-op.
+    fn smb_changed(&self) {
+        if let Some(r) = self.smb_republish.get() {
+            r.republish();
         }
     }
 
@@ -1175,6 +1199,7 @@ impl hapi::CoreApi for CoreBridge {
             .core
             .create_share(req.name, PathBuf::from(req.host_path))
             .map_err(http_err)?;
+        self.smb_changed();
         Ok(hapi::AdminShareInfo {
             id: def.id.get(),
             name: def.name,
@@ -1198,6 +1223,9 @@ impl hapi::CoreApi for CoreBridge {
                 patch.trash_enabled,
             )
             .map_err(http_err)?;
+        // A rename changes the section name only when a grant took its label
+        // from the share, and a repoint changes every `path =` under it.
+        self.smb_changed();
         Ok(hapi::AdminShareInfo {
             id: def.id.get(),
             name: def.name,
@@ -1215,6 +1243,9 @@ impl hapi::CoreApi for CoreBridge {
         if let Some(j) = &self.journal {
             j.forget_share(ShareId::new(id));
         }
+        // Deleting cascades to every grant on it, so the sections it produced
+        // have to leave `smb.conf` with it rather than at the next restart.
+        self.smb_changed();
         Ok(())
     }
 
@@ -1240,7 +1271,13 @@ impl hapi::CoreApi for CoreBridge {
             inherit: spec.inherit,
             label: spec.label,
         };
-        self.core.create_grant(&s).map(http_grant).map_err(http_err)
+        let out = self.core.create_grant(&s).map(http_grant).map_err(http_err);
+        if out.is_ok() {
+            // The grant *is* the SMB share: one Samba section per grant root,
+            // named by the grant's label.
+            self.smb_changed();
+        }
+        out
     }
 
     fn update_grant(
@@ -1254,18 +1291,27 @@ impl hapi::CoreApi for CoreBridge {
             inherit: patch.inherit,
             label: patch.label,
         };
-        self.core
+        let out = self
+            .core
             .update_grant(id, &p)
             .map(http_grant)
-            .map_err(http_err)
+            .map_err(http_err);
+        if out.is_ok() {
+            self.smb_changed();
+        }
+        out
     }
 
     fn delete_grant(&self, id: u32) -> Result<(), hapi::CoreError> {
-        self.core.delete_grant(id).map_err(http_err)
+        self.core.delete_grant(id).map_err(http_err)?;
+        self.smb_changed();
+        Ok(())
     }
 
     fn refresh_group_memberships(&self, m: HashMap<UserId, Vec<sc_vfs::GroupId>>) {
         self.core.set_group_memberships(m);
+        // Membership decides who lands in `valid users` for a group grant.
+        self.smb_changed();
     }
 
     // --------------------------------------------------------------- smb --

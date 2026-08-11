@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Exercise deploy/smb/native/sc-smb-agent.sh on each distro the bare-metal
-# path claims to support.
+# Exercise sc-smb-agent on each distro the bare-metal path claims to support.
 #
 # Run on a Docker host. Each distro gets a throwaway container with nothing
 # but its own samba package, which is the premise of that path -- no
@@ -40,6 +39,19 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
+
+# One statically linked binary for all three distros. glibc and musl images
+# share the mount, so a dynamically linked build would fail on Alpine only,
+# which is the least useful place to find out.
+TARGET=x86_64-unknown-linux-musl
+mkdir -p "$WORK/bin"
+echo "building sc-smb-agent for $TARGET"
+( cd "$REPO" && cargo build --release --locked --target "$TARGET" -p sc-smb-agent ) || {
+    echo "could not build the agent. Add the target first:" >&2
+    echo "  rustup target add $TARGET" >&2
+    exit 1
+}
+install -m 755 "$REPO/target/$TARGET/release/sc-smb-agent" "$WORK/bin/sc-smb-agent"
 
 # Keep the real [global] verbatim; render_global emits it as the literal
 # first line and stops at the first share section.
@@ -119,15 +131,16 @@ mkdir -p /shares/test
 chown scsvc:scsvc /shares/test
 chmod 0775 /shares/test
 
-# Invoked through `sh` rather than executed, and so is install.sh below: the
-# repo is mounted from whatever tree the Docker host happens to hold, and
-# every sftp/zip/CI-artefact route into that host drops the executable bit --
+# install.sh is invoked through `sh` rather than executed: the repo is mounted
+# from whatever tree the Docker host happens to hold, and every
+# sftp/zip/CI-artefact route into that host drops the executable bit --
 # `vm.mjs push` lands the whole tree 0644, which failed the first apply here
-# with nothing louder than a suppressed "Permission denied". Both files
-# declare `#!/bin/sh`, and install.sh sets its own mode with `install -m 750`
-# when it copies the agent into place, so nothing downstream depends on the
-# bit surviving the trip.
-AGENT="sh /agent/sc-smb-agent.sh"
+# with nothing louder than a suppressed "Permission denied".
+#
+# The agent cannot go through `sh`: it is a binary now. The caller builds it
+# statically against musl and mounts it at /agent/bin with the mode it needs,
+# so it runs on all three distros regardless of their libc.
+AGENT=/agent/bin/sc-smb-agent
 INSTALL="sh /agent/install.sh"
 export SC_SMB_CONFIG_DIR=/config/smb
 
@@ -275,7 +288,8 @@ case "$ID" in
              /run/openrc/daemons /run/openrc/options
     touch /run/openrc/softlevel
 
-    $INSTALL --config-dir "$SC_SMB_CONFIG_DIR" --service-user scsvc >/dev/null \
+    $INSTALL --config-dir "$SC_SMB_CONFIG_DIR" --service-user scsvc \
+        --binary /agent/bin/sc-smb-agent >/dev/null \
         || fail "install.sh (OpenRC) failed"
     [ -x /etc/init.d/sc-smb-agent ] || fail "init script not installed"
     grep -q "SC_SMB_CONFIG_DIR=$SC_SMB_CONFIG_DIR" /etc/conf.d/sc-smb-agent \
@@ -305,7 +319,7 @@ case "$ID" in
     # By process, not by pidfile: `command_background` leaves the pidfile
     # empty under rc_sys=lxc, and a stopped service that is still running is
     # exactly what this has to catch.
-    pgrep -f sc-smb-agent.sh >/dev/null 2>&1 && fail "the agent survived uninstall"
+    pgrep -f sc-smb-agent >/dev/null 2>&1 && fail "the agent survived uninstall"
     ok "install.sh --uninstall stopped the service and removed its files"
     ;;
 
@@ -326,7 +340,8 @@ SHIM
     chmod +x /tmp/shim/systemctl
 
     PATH=/tmp/shim:$PATH $INSTALL \
-        --config-dir "$SC_SMB_CONFIG_DIR" --service-user scsvc >/dev/null \
+        --config-dir "$SC_SMB_CONFIG_DIR" --service-user scsvc \
+        --binary /agent/bin/sc-smb-agent >/dev/null \
         || fail "install.sh (systemd) failed"
     grep -q 'daemon-reload' /tmp/systemctl.log || fail "install.sh never reloaded the unit"
     grep -q 'enable --now sc-smb-agent.service' /tmp/systemctl.log \
@@ -372,6 +387,7 @@ for image in $IMAGES; do
     if docker run --rm --name "$name" \
         -e "SC_PASSWORD=$PASSWORD" \
         -v "$REPO/deploy/smb/native:/agent:ro" \
+        -v "$WORK/bin:/agent/bin:ro" \
         -v "$WORK/cfg-run:/config/smb" \
         -v "$WORK/run.sh:/run.sh:ro" \
         "$image" /run.sh

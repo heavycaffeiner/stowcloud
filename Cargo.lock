@@ -2467,9 +2467,24 @@ name = "sc-smb"
 version = "0.3.2"
 dependencies = [
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "tracing",
+]
+
+[[package]]
+name = "sc-smb-agent"
+version = "0.3.2"
+dependencies = [
+ "clap",
+ "libc",
+ "parking_lot",
+ "sc-smb",
+ "serde_json",
+ "tempfile",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

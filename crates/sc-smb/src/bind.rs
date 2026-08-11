@@ -77,16 +77,56 @@ pub(crate) fn parse_addr_spec(spec: &str) -> Result<IpAddr, &'static str> {
 }
 
 /// The private CIDR list written into `hosts allow` when the operator pins
-/// `smb.interfaces`. Only that path uses it: with no pin, `hosts allow` is
-/// whatever detection found on the host.
-pub(crate) const PRIVATE_CIDRS_V4: &[&str] = &[
+/// `smb.interfaces`, and the list the agent falls back to inside a container
+/// namespace, where the only subnet it can see is the bridge's and LAN
+/// clients arrive through DNAT wearing their own addresses.
+pub const PRIVATE_CIDRS_V4: &[&str] = &[
     "10.0.0.0/8",
     "172.16.0.0/12",
     "192.168.0.0/16",
     "127.0.0.0/8",
     "100.64.0.0/10",
+    "169.254.0.0/16",
 ];
-pub(crate) const PRIVATE_CIDRS_V6: &[&str] = &["fc00::/7", "fe80::/10", "::1/128"];
+pub const PRIVATE_CIDRS_V6: &[&str] = &["fc00::/7", "fe80::/10", "::1/128"];
+
+/// The well-known private range enclosing `ip`, or `None` if it is globally
+/// routable.
+///
+/// The enclosing range and not the on-link prefix, for two reasons that both
+/// showed up in practice: an internal network is routinely several subnets
+/// behind a router, and a `tailscale0` address carries a /32 whose own subnet
+/// admits nobody while `100.64.0.0/10` admits the whole tailnet.
+pub fn enclosing_private_range(ip: &IpAddr) -> Option<&'static str> {
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            match o {
+                [10, ..] => Some("10.0.0.0/8"),
+                [172, b, ..] if (16..=31).contains(&b) => Some("172.16.0.0/12"),
+                [192, 168, ..] => Some("192.168.0.0/16"),
+                [127, ..] => Some("127.0.0.0/8"),
+                [169, 254, ..] => Some("169.254.0.0/16"),
+                // CGNAT, which is where every Tailscale address lives.
+                [100, b, ..] if (64..=127).contains(&b) => Some("100.64.0.0/10"),
+                _ => None,
+            }
+        }
+        IpAddr::V6(v6) => {
+            if v6.is_loopback() {
+                return Some("::1/128");
+            }
+            let seg = v6.segments();
+            if (0xfc..=0xfd).contains(&((seg[0] >> 8) as u8)) {
+                return Some("fc00::/7");
+            }
+            if (seg[0] & 0xffc0) == 0xfe80 {
+                return Some("fe80::/10");
+            }
+            None
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -152,6 +192,47 @@ mod tests {
         assert!(is_private(&IpAddr::V6(Ipv6Addr::new(
             0xfe80, 0, 0, 0, 0, 0, 0, 1
         ))));
+    }
+
+    /// The two halves have to answer the same question the same way: an
+    /// address the bind gate calls private must have a range the agent can
+    /// admit, or a client would reach an interface `hosts allow` then denies.
+    #[test]
+    fn every_private_address_has_an_enclosing_range() {
+        for ip in [
+            IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)),
+            IpAddr::V4(Ipv4Addr::new(172, 20, 0, 5)),
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10)),
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(169, 254, 3, 4)),
+            IpAddr::V4(Ipv4Addr::new(100, 101, 102, 103)),
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+            IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1)),
+            IpAddr::V6(Ipv6Addr::new(0xfe80, 0, 0, 0, 0, 0, 0, 1)),
+        ] {
+            assert!(is_private(&ip), "{ip} is not private");
+            assert!(enclosing_private_range(&ip).is_some(), "{ip} has no range");
+        }
+    }
+
+    #[test]
+    fn public_addresses_have_no_enclosing_range() {
+        assert_eq!(enclosing_private_range(&IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))), None);
+        assert_eq!(enclosing_private_range(&IpAddr::V4(Ipv4Addr::new(172, 32, 0, 1))), None);
+        assert_eq!(
+            enclosing_private_range(&IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1))),
+            None
+        );
+    }
+
+    #[test]
+    fn ranges_are_the_enclosing_one_not_the_on_link_prefix() {
+        // A tailnet address carries a /32; the range that admits the rest of
+        // the tailnet is the CGNAT block.
+        assert_eq!(
+            enclosing_private_range(&IpAddr::V4(Ipv4Addr::new(100, 90, 1, 1))),
+            Some("100.64.0.0/10")
+        );
     }
 
     #[test]
