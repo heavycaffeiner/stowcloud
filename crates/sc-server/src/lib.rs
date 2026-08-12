@@ -14,6 +14,7 @@ pub mod config;
 pub mod dav_uploads;
 pub mod diagnostics;
 pub mod hardening;
+pub mod instance_lock;
 pub mod journal;
 pub mod masterkey;
 #[cfg(feature = "compat-nc")]
@@ -323,6 +324,13 @@ pub fn connect_info_service(
 
 pub async fn cmd_serve(cli: &Cli) -> anyhow::Result<()> {
     let Bootstrapped { file_cfg, cfg, key } = bootstrap(cli)?;
+
+    // Held for the whole of this function, which is the whole of the server's
+    // life. It is what makes "stop the server first" enforceable rather than a
+    // sentence in a runbook: the Go build's importer takes the same lock and
+    // refuses if it cannot.
+    let _instance = instance_lock::acquire(&cfg.data_dir)?;
+
     run_diagnostics_and_print(&cfg, &key);
 
     // Before the Landlock domain below and before anything else is armed: this

@@ -19,6 +19,10 @@
 # after the app_password or totp_secret table holds a SQL statement, not a
 # credential. The tenth is the import closing databases it only ever read.
 #
-# Phase 2.5 added one, the other direction of the same signed-integer crossing:
-# reading a stored device or inode number back out of the override table.
-24
+# Phase 2.5 added two. One is the other direction of the same signed-integer
+# crossing: reading a stored device or inode number back out of the override
+# table. The other is the source-table inventory's row count, the one statement
+# in the tree that names a table rather than binding it, whose name comes from
+# that file's own literal map and is checked against a plain-identifier rule
+# before it is used.
+25

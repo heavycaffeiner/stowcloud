@@ -128,3 +128,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	insFavorite = `
 INSERT INTO favorite(user, share, dev, ino, btime_present, btime_ns) VALUES (?, ?, ?, ?, ?, ?)`
 )
+
+// selUserTables is a database's own account of what it holds. sqlite_% is
+// SQLite's own bookkeeping and is never a source table.
+const selUserTables = `
+SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`
