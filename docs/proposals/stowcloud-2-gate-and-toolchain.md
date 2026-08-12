@@ -167,13 +167,15 @@ and `grep_gate` helpers so failure output behaves identically:
 | lint | `golangci-lint run` | `cargo clippy -D warnings` |
 | test | `go test -count=1 ./...`, for the host's own OS | `cargo test` |
 | race | `go test -race -count=1 ./...`, where cgo is available | nothing today |
-| fuzz corpus | `go test -run 'Fuzz.*/corpus' ./...` | nothing today |
+| fuzz corpus | `go test -run '^Fuzz' ./...` | nothing today |
 | vuln | `govulncheck ./...` | `cargo-deny advisories` |
 | deps | direct-module allowlist diff against `go/deps.allow` | `cargo-deny bans` |
 | exceptions | `//nolint` count against `go/nolint.budget` | nothing today |
 | one clock | D8: `time.Now(` outside `internal/clock` | nothing today |
 | randomness | D9: `math/rand` in any import | nothing today |
 | renames | D11: `os.Rename`, `unix.Renameat2` outside `internal/vfs` | nothing today |
+| descriptors | `.Fd()` outside the two keepalive helpers ([3](stowcloud-3-vfs-and-paths.md) §4.3.2) | nothing today |
+| read intent | F5: `IntentReadWrite` outside `internal/vfs`, at most once | nothing today |
 | SQL | D14: formatting verbs in `internal/store` | nothing today |
 | compat isolation | five gates, [13](stowcloud-13-compat-nc.md) §4.2: the transitive graph, the layer's direct imports, the seam's vocabulary, the stripped build, the narrowed text scan | the `oc:`/`ocs` grep and `--no-default-features` |
 | text scan | the Korean scan, over a `unicode.RangeTable` | the `grep -P` gate |
@@ -183,6 +185,18 @@ and `grep_gate` helpers so failure output behaves identically:
 The build step runs both architectures because the image publishes both, and
 because F3 is what happens when it does not: `linux/arm64` ships with an empty
 process seccomp list and nothing in the Rust gate ever compiled that path.
+
+**The fuzz step's pattern is `^Fuzz` and not `Fuzz.*/corpus`**, which is a
+correction rather than a simplification. Go names a seed entry after the file it
+came from, or `seed#N` for one added in code, so nothing is ever a subtest
+called `corpus` and the second pattern selects no subtest at all. The step
+passed while running nothing, which is the same shape as F14: a gate reporting
+PASS whatever the tree contains.
+
+Two rows arrive with Phase 1. The descriptor gate is what makes
+[3](stowcloud-3-vfs-and-paths.md) §4.3.2's third reason mechanical rather than
+something a reviewer has to remember to look for, and the read-intent gate is
+the one F5 asks for by name.
 
 The race step is the one whose environment differs from the shipping build's,
 for the reason [`1`](stowcloud-1-defensive-standard.md) D17 gives, and the

@@ -116,8 +116,15 @@ internal/jail
   rlimit.go       setrlimit for the worker
   reexec.go       the restrict-then-exec sequence and its env marker
   proof.go        the probe types and the executable demonstration
-  policy.go       Policy: required | preferred | off, and what each does
+  policy.go       Policy: required | preferred | off, and the status type
+  apply.go        the sequence itself, and the startup refusal it renders
 ```
+
+`policy.go` carries no build tag and everything else here does. The enum, its
+parser and the status a health endpoint reports are ordinary data that the
+config layer has to be able to name on any host; the sequence that applies them
+is Linux and has no portable stand-in, because a second implementation of a
+security boundary is a second implementation that is never the one that ships.
 
 ```mermaid
 sequenceDiagram
@@ -233,7 +240,17 @@ D4, and F1 and F3 are exactly the absence of its first four instructions.
   ld  [0]                    ; seccomp_data.nr
   jge X32_SYSCALL_BIT, KILL  ; x86_64 only
   ... policy ...
+  <default action for this policy>
+  <matched action for this policy>
+  KILL                       ; where the two prologue jumps land
 ```
+
+**That trailing `KILL` is a third terminal instruction and not the policy's own
+default**, which is the one detail an implementation gets wrong while looking
+correct. The process filter's default action is `ALLOW`, so a prologue that
+jumped to it on an ABI mismatch would wave through exactly the task the arch
+check exists to catch: F1 with the check present and pointed one instruction
+too far. An unexpected ABI is killed under both policies.
 
 - `AUDIT_ARCH` is compiled in per `GOARCH`: `0xC000003E` for `amd64`,
   `0xC00000B7` for `arm64`. An architecture with no entry in the table has no
@@ -344,10 +361,14 @@ job, which is the same status `examples/jail_proof.rs` has today.
 ```go
 package jail
 
-// Spec describes a Landlock domain: which access rights to handle, and which
-// paths to grant beneath. A right handled with no grant is denied everywhere.
+// Spec describes a Landlock domain: which paths to grant beneath, and the one
+// right that may be left unhandled. Every other right the running ABI reports
+// is handled, so a right handled with no grant is denied everywhere.
+//
+// There is no HandleAll field. An earlier draft had one, and both call sites
+// set it to true: a ruleset that handles nothing restricts nothing, so the only
+// other value is a lie about being sandboxed.
 type Spec struct {
-    HandleAll   bool     // handle every right the running ABI reports
     ExceptExec  bool     // leave LANDLOCK_ACCESS_FS_EXECUTE unhandled; see §4.3.2
     GrantBeneath []Grant
 }
@@ -360,6 +381,11 @@ type Spec struct {
 // The caller must hold the OS thread. Landlock restricts the calling thread
 // only, and a goroutine that migrates between the restrict and the exec leaves
 // the domain on a thread that is not the one that execs.
+//
+// It grants read and execute on the binary's own path itself rather than
+// leaving that to spec. A domain built without it makes the exec below fail
+// with EACCES and the process die, and a sequence that can be assembled wrong
+// in one place is one that will be.
 func RestrictAndReexec(spec Spec, marker string) error
 
 // InstallSeccomp assembles and installs the policy for kind with
@@ -369,11 +395,23 @@ func RestrictAndReexec(spec Spec, marker string) error
 // an architecture with no verified mapping.
 func InstallSeccomp(kind FilterKind) error
 
-// Apply runs the whole sequence for the server process under policy. Under
-// Required it returns only on success, because a failure has already exited.
-// Under Preferred it returns a Status naming what was and was not applied,
-// which GET /api/health reports.
+// Apply runs the whole sequence for the server process under policy.
+//
+// It is called once in the life of a process image and twice in the life of a
+// server: the first time it builds the domain and replaces the image, so on
+// success it does not return at all, and the second time, in the new image, it
+// installs the filter and returns the Status GET /api/health reports.
+//
+// Under Required a step that could not be applied returns an error wrapping
+// ErrHardeningRefused; the caller renders it with Refuse and exits 78. Apply
+// does not exit by itself, because a refusal path that calls os.Exit is a
+// refusal path no test ever runs, and F2 is precisely that path not existing.
 func Apply(policy Policy, spec Spec) (Status, error)
+
+// Refuse writes the step, the errno and the kernel version to w and returns the
+// exit code. Separated from Apply so the message an operator gets when the
+// container will not start is itself asserted.
+func Refuse(w io.Writer, st Status) int
 ```
 
 ```go

@@ -98,6 +98,8 @@ Findings F4, F5, F6 and F7 all live in this package.
 internal/vfs
   path.go        SafePath, Vpath, SharePath, parsing, reserved names
   norm.go        NFC/NFD candidate spellings
+  types.go       Stat, SharePolicy, FsType, DirEntry: the plain data
+  errors.go      the typed errors, which path.go raises off Linux too
   root.go        ShareRoot: the anchor descriptor, policy, registration
   open.go        openat2 resolution: resolve_dir, the leaf hop
   read.go        streaming and buffered directory reads
@@ -112,6 +114,15 @@ internal/vfs
 One package, not a package per concern. It is the security core and it is read
 as a unit; splitting it would put the resolve flags in one file and the calls
 that depend on them in another.
+
+**Five of those files carry no build tag and the rest are `//go:build linux`.**
+That split is not portability, it is the opposite: `path.go`, `norm.go`,
+`types.go` and `errors.go` issue no syscall, so the parser, the candidate
+spellings and the fuzz target run in the ordinary `go test` on the development
+host, while everything that touches a descriptor compiles only for the target
+that ships and runs only in the guest. `errors.go` exists because `path.go`
+raises `ErrTooLarge` and `ErrReservedName` on both, so the sentinels cannot live
+beside the errno table.
 
 ### 4.2 Data Model Changes
 
@@ -173,13 +184,23 @@ func (r *ShareRoot) ReadDirFunc(p SafePath, policy ReservedPolicy, fn func(DirEn
 func (r *ShareRoot) ReadDir(p SafePath, policy ReservedPolicy) ([]DirEntry, error)
 ```
 
-`ReadDirFunc` is `unix.Getdents` into a reused 32 KiB buffer, parsed with
-`unix.ParseDirent`. `.` and `..` are skipped, and `ReservedPolicy` decides
-whether the `.scpart-` prefix is filtered, at the call site, visibly (F6).
+`ReadDirFunc` is `unix.Getdents` into a reused 32 KiB buffer. `.` and `..` are
+skipped, and `ReservedPolicy` decides whether the `.scpart-` prefix is filtered,
+at the call site, visibly (F6).
 
 `DT_UNKNOWN` stays conservative: reported as `KindOther` rather than paying a
 `statx` per entry. Callers that need certainty stat the specific entry, exactly
 as today.
+
+**The records are walked directly rather than through `unix.ParseDirent`**, and
+that is a correction to an earlier draft of this document rather than a
+preference. `ParseDirent`'s signature returns names only
+(`func ParseDirent(buf []byte, max int, names []string) (consumed, count int,
+newnames []string)`), so it drops both fields this section depends on: `d_type`,
+which is what the `DT_UNKNOWN` rule above is about, and `d_ino`, which is what
+lets a caller order a later `stat` batch by `(dev, ino)`. `getdents64` lays a
+record out identically on every architecture, so the four field offsets are the
+kernel ABI and are read with `binary.NativeEndian` rather than through `unsafe`.
 
 #### 4.3.4 Open intent
 
@@ -216,8 +237,20 @@ D11 and F7. One function, and `os.Rename`, `unix.Renameat` and
 // publishes it under p atomically. The staging name is unlistable while it
 // exists, the mode and ownership of a file being replaced are restored before
 // the rename, and the parent directory is synced after it.
-func (r *ShareRoot) WriteDurable(p SafePath, opt DurableOpts, write func(*File) error) error
+//
+// Durable reports what the write did to the entry it replaced: whether there
+// was one, and the error that refused a uid restore if one did.
+func (r *ShareRoot) WriteDurable(p SafePath, opt DurableOpts, write func(*File) error) (Durable, error)
 ```
+
+**Why there is a return value at all**, since step 5 below is what forces it.
+The mode is fatal: a replacement that could not take the original's mode fails.
+The ownership is not, and cannot be, because `fchown` failing with `EPERM` is
+the ordinary answer for an unprivileged process and failing the write there
+would discard content that was otherwise fine. "Surfaced to the caller, which
+decides whether transplanting the group alone is enough" is only true if the
+caller is told after the file is published, so it is a field rather than an
+error.
 
 The sequence, and every step is load-bearing:
 
@@ -240,7 +273,12 @@ The sequence, and every step is load-bearing:
    surfaced to the caller, which decides whether transplanting the group alone
    is enough, rather than being swallowed here.
 6. `renameat2` with `RENAME_NOREPLACE` when no-clobber was asked for, falling
-   back to `renameat` on `ENOSYS` only when the flag was empty anyway.
+   back to `renameat` on `ENOSYS` only when the flag was empty anyway. **The
+   destination is published under the spelling already on disk**, and NFC only
+   when there was nothing there. Normalising unconditionally is a
+   data-duplication bug rather than a tidy-up: a file another client wrote in
+   NFD, renamed onto its NFC spelling, becomes a second entry with the same
+   user-visible name and the one the caller meant to replace is still there.
 7. `fsync` the **parent directory**. This is a separate act from step 4 and it
    is what makes the *name* durable. Without it, on ext4 or XFS, a power cut can
    leave the full contents under a `.scpart-` name nobody will look for. Note
@@ -409,14 +447,23 @@ func (r *ShareRoot) Space(p SafePath) (FsSpace, error)
 // rejects empty components, "." and "..", NUL, a component over 255 bytes, a
 // path over limits.PathBytes, more than limits.PathComponents components, and
 // any component carrying a reserved prefix. It is the trust boundary for every
-// path that arrives over the wire (D20).
+// path that arrives over the wire (D20). The empty string is the virtual root,
+// which is the one path naming no share.
 func ParseVpath(s string) (Vpath, error)
 
 // JoinControl appends a control-file name under the reserved prefix. It is the
 // only function that may produce one, and user input cannot reach it because
-// ParseVpath rejects the prefix.
-func (p SafePath) JoinControl(id string) SafePath
+// ParseVpath rejects the prefix. It returns an error for the same reason every
+// other join does: the length and component bounds still apply, and a helper
+// that can only panic on a bound is a helper that will.
+func (p SafePath) JoinControl(name string) (SafePath, error)
 ```
+
+**No depth parameter anywhere.** The Rust tree threads a per-share `max_depth`
+through `parse`, `join` and `control`; D5 says nothing takes a limit as a
+parameter a caller could widen, so every bound here is `limits.PathComponents`,
+`limits.PathBytes` and `limits.NameBytes` read directly. That also removes
+`max_depth` from `SharePolicy`.
 
 ### 5-2. Error Handling
 
