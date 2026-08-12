@@ -11,9 +11,9 @@
 
 ## 1. Summary
 
-Two SQLite databases split by whether their contents can be regenerated from the
-filesystem, a real migration runner, and the pure-Go driver decision with the
-measurement that would reverse it. Node ids stop being rowids and become a
+Three SQLite databases split by what losing each one costs: a rebuild, an
+account, or a listing. A real migration runner, and the pure-Go driver decision
+with the measurement that would reverse it. Node ids stop being rowids and become a
 derivation from the file's identity, so that deleting the cache costs a rebuild
 and not a full reconciliation for every attached sync client, which is what it
 costs today.
@@ -72,8 +72,8 @@ Three further problems come with it:
 
 ### 3.1 Goals
 
-- [ ] `cache.db` deletable at any time with no loss, and `state.db` the only
-      file in the backup instruction.
+- [ ] `cache.db` deletable at any time with no loss, `state.db` the only file
+      in the backup instruction, and `journal.db` losable without either.
 - [ ] A numbered migration runner with a version table and a refusal to open a
       database written by a newer binary.
 - [ ] `CGO_ENABLED=0` preserved, which constrains the driver choice.
@@ -112,15 +112,26 @@ internal/store
   sql.go         every statement, as package-level constants (D14)
 ```
 
-Two files on disk under the data directory:
+Under the data directory:
 
 ```
 data/
   cache.db       deletable; rebuilt on demand
   state.db       the backup instruction, and the whole of it
+  journal.db     what this server did per account; §4.2.3
   search/        the index cache directory
-  secrets/       the master key, unchanged
+  tls/           the self-signed certificate, generated on first run
+  setup-token    present only until the first administrator exists
 ```
+
+**The master key should not be in this directory**, and where it is is
+configuration rather than layout. It lives wherever `SC_MASTER_KEY_FILE` points,
+defaulting to `master.key` here, and the shipped compose file puts it on its own
+mount instead: backing up the data directory should not back up the key that
+decrypts it. Resolving inside the data directory is a startup warning rather
+than a refusal, because it is the default and refusing would make an unconfigured
+install fail to start. [`6`](stowcloud-6-auth-and-acl.md) §4.3.10 owns the rest
+of the key's lifecycle.
 
 ### 4.2 Data Model Changes
 
@@ -198,7 +209,40 @@ told not to reap it. In `state.db` they key by the identity tuple
 the cache. Deleting `cache.db` then costs a lookup, not a dangling row, and
 nothing has to be pinned.
 
-#### 4.2.3 Migrations
+#### 4.2.3 `journal.db`, and why it is neither of the other two
+
+One row per `(account, file)` holding the last thing that account did to it. It
+is what the Recent Files destination reads, and it is a third file rather than a
+table in either of the two above, for a reason on each side:
+
+- **Not in `cache.db`**, because it cannot be rebuilt from anything. There is no
+  way to reconstruct who wrote what before the record existed.
+- **Not in `state.db`**, because losing it costs a listing and not an account.
+  Keeping it separate makes that difference visible in the data directory, where
+  an operator deciding what to back up can see it.
+
+Three properties are carried over exactly, because each was arrived at by
+thinking about a failure:
+
+1. **It is not an audit log.** The file write has already succeeded by the time
+   a row is written, so a failure here is logged and dropped. Nothing may treat
+   the absence of a row as evidence that a write did not happen, and the audit
+   log in `state.db` is the thing that may.
+2. **It is capped by row count per account, not by age.** A prune comparing a
+   stored timestamp against now deletes the whole table when the clock jumps
+   forward, which is an ordinary event on a small box with a dead RTC before NTP
+   corrects it. The cap is deterministic and clock-independent, and the oldest
+   rows beyond it are deleted in the same transaction as the upsert. This is D8
+   applied to a retention policy rather than to a timestamp.
+3. **It is not an activity stream.** No per-event history, and no reader other
+   than the account itself. Rebuilding the reference server's Activity app is a
+   recorded non-goal, and the name avoids inviting it.
+
+A `journal.db` that cannot be opened is a warning and a disabled feature, not a
+refusal to start. The server still serves files; it just stops recording what it
+did with them.
+
+#### 4.2.4 Migrations
 
 ```sql
 CREATE TABLE schema_version (

@@ -81,8 +81,7 @@ go/
   go.mod                module github.com/heavycaffeiner/stowcloud/go
   go.sum
   cmd/
-    stowcloud/          the only binary. Subcommands: serve, healthcheck,
-                        preview-worker, migrate, smb-render
+    stowcloud/          the only binary; the subcommand set is §5-1
   internal/
     limits/ clock/ task/ secret/ num/ apierr/    the D-rule packages
     vfs/ jail/ store/ acl/ auth/ core/ watch/
@@ -98,7 +97,7 @@ go/
     golden/             cross-implementation fixtures (search, ETag, wire)
 ```
 
-**One binary, five entry points.** `cmd/stowcloud` dispatches on `argv[1]` the
+**One binary, one dispatch.** `cmd/stowcloud` dispatches on `argv[1]` the
 way `crates/sc-server/src/main.rs` already intercepts `healthcheck` before the
 flag parser runs. This is contradiction C2 in the index resolved: the
 overview proposed a second binary for the preview worker, which doubles the
@@ -263,11 +262,20 @@ them, and each one's answer is written back into that document.
 // subcommand costs nothing in the flag set and works in a shell-less image
 // where Docker's exec-form HEALTHCHECK runs an argv directly.
 //
-//   stowcloud serve            the server
-//   stowcloud healthcheck      loopback TLS probe, exit 0 on ok or degraded
-//   stowcloud preview-worker   the jailed decoder; never run by hand
-//   stowcloud migrate          one-shot state migration from the Rust tree
-//   stowcloud smb-render       write smb.conf and exit
+//   stowcloud serve                the server, and the default with no argv
+//   stowcloud healthcheck          loopback TLS probe, exit 0 on ok or degraded
+//   stowcloud preview-worker       the jailed decoder; never run by hand
+//   stowcloud caps                 print the kernel capability probe and exit
+//   stowcloud setup                print and persist a one-time setup token
+//   stowcloud gc                   housekeeping: incremental vacuum, trash and
+//                                  upload sweeps
+//   stowcloud routes [--json]      dump the route table
+//   stowcloud smb-sync             render smb.conf, smbpasswd and passwd
+//   stowcloud index build|merge|status
+//                                  T3 name-index maintenance; each refuses
+//                                  unless the index is enabled in config
+//   stowcloud masterkey rotate     new key, re-encrypt every secret, swap
+//   stowcloud migrate              one-shot state migration from the Rust tree
 func main()
 ```
 
@@ -275,6 +283,21 @@ The `healthcheck` semantics are carried over unchanged, including the part that
 is easy to get wrong: exit 0 for both `ok` and `degraded`, and 1 only when the
 server does not answer at all. A degraded server is a configuration state, and
 mapping it to unhealthy makes Docker restart-loop a problem forever.
+
+**Five of these are operator-triggered offline operations**, and that is a
+deliberate placement rather than an omission of admin routes. `gc`,
+`smb-sync`, `index build`, `index merge` and `masterkey rotate` each walk a
+whole tree, hold a lock for minutes, or touch a secret, so none is a request a
+browser tab should be able to start and then walk away from. `masterkey rotate`
+has the sharper reason: a master key has no business ever reaching a browser,
+so rotation sits at the same trust level as shell access to the data directory
+([`6`](stowcloud-6-auth-and-acl.md) §4.3.10).
+
+`routes --json` exists so the route table can be asserted against from outside
+the process. The compat isolation gates in
+[`13`](stowcloud-13-compat-nc.md) §4.2 read the import graph rather than this,
+but a dump of what is actually mounted is the check that catches a route
+registered under the wrong tag, which the graph cannot see.
 
 ### 5-2. Error Handling
 

@@ -162,6 +162,9 @@ number, and nothing takes a limit as a parameter that a caller could widen.
 | upload sessions per user | 256 | 429 |
 | WebDAV locks per user | 256 | 507 |
 | search results | 1,000 | truncated, flagged in the response |
+| concurrent searches, server-wide | 4 on SSD, 2 on rotational | 503 |
+| search walk deadline | 3 s on SSD, 8 s on rotational | partial result, flagged |
+| journal rows per account | 1,000 | the oldest are deleted in the upsert's transaction |
 | archive entries listed | 10,000 | truncated, flagged in the response |
 | worker wire message | 8 KiB | worker killed |
 | preview source pixels | from `DecodeLimits` | `ErrTooLarge` |

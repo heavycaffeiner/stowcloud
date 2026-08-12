@@ -143,6 +143,23 @@ tree, and it must not check a context a million times to do so.
 The result set is capped (D5) and a truncated result says so in the response
 rather than looking like a complete one.
 
+**The bounds depend on the storage class**, and that is the same argument §3.2
+makes about the index: a walk on an NVMe array and a walk on a cold rotational
+one are different operations wearing one name. The classification comes from
+the filesystem gate ([`15`](stowcloud-15-deployment.md) §4.3), and it moves two
+numbers:
+
+| | SSD or NVMe | rotational or network |
+|---|---|---|
+| concurrent searches, server-wide | 4 | 2 |
+| walk deadline | 3 s | 8 s |
+
+A lower concurrency on slow storage is not a smaller allowance, it is a larger
+one: four concurrent seek-bound walks on one array finish later than two do,
+and they take the interactive listing requests down with them. The longer
+deadline on the same storage is the matching admission that the work genuinely
+takes longer there.
+
 **Two stances decide the shape of the walk**, and both are easy to lose:
 
 - **No existence leak, in results or in response time**

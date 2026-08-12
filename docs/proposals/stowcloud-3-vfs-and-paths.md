@@ -65,6 +65,8 @@ Findings F4, F5, F6 and F7 all live in this package.
 - [ ] Mode and ownership failures surfaced (F7).
 - [ ] One durable-write helper, and a gate that nothing else renames (D11).
 - [ ] A fuzz target on path parsing (D16).
+- [ ] An **executable escape proof**, ported: S17 applies here as much as it
+      does to the jail. §4.5 says what it has to attempt.
 
 ### 3.2 Non-Goals
 
@@ -102,6 +104,9 @@ internal/vfs
   file.go        File: pread, pwrite, stat, truncate, sync, copy_range
   durable.go     the write-then-rename helper (D11 lives here)
   errno.go       errno to typed error
+  caps.go        the kernel capability probe, which has to tell a syscall
+                 blocked by a seccomp profile from one an old kernel lacks
+                 (stowcloud-15 §4.2); `stowcloud caps` prints what it found
 ```
 
 One package, not a package per concern. It is the security core and it is read
@@ -287,6 +292,43 @@ The `fanotify` configuration value is deleted (F12). The enum accepts `inotify`
 and nothing else, and an unknown value is a configuration refusal rather than a
 warning and a fallback.
 
+**The watch strategy is layered rather than absolute**, because
+`fs.inotify.max_user_watches` cannot be raised from inside a container and a
+watch is per directory, so a large tree cannot be fully watched. A hot set of
+directories is watched, everything else is lazily revalidated, and a periodic
+rescan backstops both. A queue overflow bumps the share generation to invalidate
+everything at once rather than trying to replay what was missed.
+
+What survives every one of those degradations is the property the design
+actually promises: **a stale answer is always detectable and self-correcting.**
+Not "every change is seen immediately", which no container can promise.
+
+### 4.5 The escape proof
+
+The jail has one ([`4`](stowcloud-4-jail-and-hardening.md) §4.3.6) and so does
+this package, for the same reason: the claim that the *kernel* confines a share,
+rather than this code's own checks, is a claim that can be executed.
+
+A Linux-only test that, from a real share root on a real filesystem, attempts
+each escape and asserts the kernel refused it:
+
+| Attempt | Expected |
+|---|---|
+| a path containing `..` | rejected at parse, before any syscall |
+| an absolute path | rejected at parse |
+| a symlink inside the share pointing outside it | `ErrSymlinkDenied` under `Deny`, resolved inside the root under `WithinShare` |
+| a symlink pointing at `/proc/self/fd/N` | refused; this is what `RESOLVE_NO_MAGICLINKS` is for |
+| a component replaced by a symlink between two calls | refused; there is no window to race, which is the whole point |
+| a path crossing a bind mount inside the share, under `NO_XDEV` | `ErrCrossDevice` |
+| a name spelled in the other Unicode form | found, because the candidate loop is not an escape |
+
+It skips on non-Linux and is **required** on the Linux job, which is the same
+status the jail proof has. The distinction it exists to demonstrate is worth
+restating: every one of these could be made to pass by string validation, and
+string validation is what S1 refuses. A proof that passes for the wrong reason
+is worse than none, so each case asserts the *errno* the kernel returned, not
+merely that the operation failed.
+
 ## 5. API Design
 
 ### 5-1. New / Modified
@@ -384,7 +426,8 @@ function, and the existence rule (an unlistable path is 404 everywhere, never
 | Phase 1b | `root.go`, `open.go`, `errno.go`: resolution with the policy flags | M | 1a | heavycaffeiner |
 | Phase 1c | `read.go`, `file.go`: streaming reads, pread/pwrite, statx, copy_file_range | M | 1b | heavycaffeiner |
 | Phase 1d | `durable.go` and the D11 gate | S | 1c | heavycaffeiner |
-| Phase 1e | `internal/watch`: inotify, the `fanotify` deletion | S | 1b | heavycaffeiner |
+| Phase 1e | `internal/watch`: inotify, the hot set, the periodic rescan, the `fanotify` deletion | S | 1b | heavycaffeiner |
+| Phase 1k | `caps.go` and the escape proof (§4.5), required on the Linux job | S | 1c | heavycaffeiner |
 
 1e is independent of 1c and 1d. Phase 1a can start before Phase 0c's answers
 land; 1b cannot, because A1 and A2 are about the calls it makes.

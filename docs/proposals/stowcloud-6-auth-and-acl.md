@@ -118,11 +118,15 @@ were arrived at by fixing something:
 internal/auth
   password.go   Argon2id hashing, the encoded form, rehash-on-verify
   gate.go       the counting semaphore (peak memory bound)
+  credcache.go  the three tiers above Argon2, and auth_generation
   session.go    creation, lookup, expiry, rotation
   apppw.go      app passwords and their scopes
   totp.go       enrolment and verification, with the drift window
   recovery.go   single-use codes
+  crockford.go  the Base32 alphabet both of the above are printed in
+  groups.go     group and membership storage, no ACL knowledge
   nthash.go     the SMB NT hash, encrypted at rest
+  masterkey.go  load, generate, rotate, and the startup decrypt check
   login.go      the flow, and the enumeration defence
   ratelimit.go  the login bucket, keyed by client address
   audit.go      the append-only log
@@ -173,6 +177,41 @@ migrate as-is and nobody has to reset one.
 // existing accounts and not only new ones.
 func (s *Service) Verify(ctx context.Context, enc Encoded, pw secret.Secret) (ok bool, stale bool, err error)
 ```
+
+#### 4.3.2a The three-tier verification path
+
+§2.0 poses the question and this is the answer. Three tiers, each cheaper than
+the one below it, all of them invalidated together by an `auth_generation`
+counter that any credential change bumps:
+
+| Tier | Key | Holds | Lifetime |
+|---|---|---|---|
+| 1, connection memo | `sha256(the raw Authorization header bytes)` | the resolved principal | until `auth_generation` moves; a bounded LRU rather than per-connection state, because the auth package has no connection object to hang it off |
+| 2, credential cache | `HMAC(ephemeral key, "dav\x00" ‖ user ‖ "\x00" ‖ password)` | the Argon2 outcome, accepted or rejected | 15 minutes absolute, 5 minutes idle, positive; 30 seconds negative |
+| 3, Argon2 | none | the answer itself | one invocation |
+
+Four properties are load-bearing and each would be easy to drop:
+
+- **The tier-2 key is an HMAC under a per-process ephemeral key**, not a hash of
+  the password. A process dump then yields nothing offline-attackable, and the
+  cache dies with the process.
+- **Rejections are cached too**, for a much shorter window. Without that, a
+  client looping with a wrong password pays Argon2 every time and so does the
+  server, which is the denial of service §2.0 exists to avoid, arriving from
+  the direction nobody looks at.
+- **Invalidation is a counter, not a sweep.** A password change, an app-password
+  revocation or an account disable bumps `auth_generation`, and every entry in
+  every tier becomes stale by comparison rather than by being found and deleted.
+  That is what makes revocation immediate on a surface that never re-reads the
+  database.
+- **App-password tokens get their own tier-3 bypass**, a 60-second cache keyed
+  by `sha256(token)`, because an app password is high-entropy and does not need
+  a memory-hard function to be safe. It is still invalidated by the same
+  counter.
+
+The tiers exist for WebDAV, and they are correct for the browser too. Nothing
+in them is protocol-specific, which is why they live in `internal/auth` and not
+in the DAV package.
 
 #### 4.3.3 The enumeration defence
 
@@ -230,6 +269,23 @@ rest under the master key.
 Recovery codes are single-use, stored hashed, and consumed in the same
 transaction that accepts them so a concurrent second use finds nothing.
 
+**Recovery codes and app passwords are Crockford Base32.** The alphabet
+excludes `I`, `L`, `O` and `U`, so a code read off a screen and typed into a
+phone does not fail on a character the reader guessed wrong. That is a
+usability property with a security consequence: a code people mistype is a code
+people write down somewhere worse. Decoding accepts the confusable characters
+and folds them, which is the half of Crockford that matters here.
+
+#### 4.3.6a Groups
+
+Groups exist and carry membership; grants may name a group instead of a user.
+The auth package owns `group` and `membership` as thin storage with no ACL
+knowledge, and there is exactly one function that pushes a membership change
+into the live permission engine. That single crossing is the design: two places
+writing membership means two places that can disagree with what the evaluator
+currently believes, and a stale membership is a grant that is wrong in the
+direction that matters.
+
 #### 4.3.7 The NT hash
 
 MD4 of the UTF-16LE password, encrypted at rest with XChaCha20-Poly1305 under
@@ -258,6 +314,48 @@ grant means the account cannot tell the parent exists. That is the existence
 rule from [`stowcloud-8`](stowcloud-8-http-and-api.md) §4.3 applied at the ACL
 layer, and its test is that a path outside the grant answers identically to a
 path that does not exist, on every mount.
+
+#### 4.3.10 The master key
+
+Everything encrypted at rest here (the NT hash, the TOTP secret) and in
+[`7`](stowcloud-7-core-domain.md) (share-link secrets) is under one key. Its
+lifecycle is specified here because everything it protects is auth state.
+
+**Loading.** From the file `SC_MASTER_KEY_FILE` points at, defaulting to
+`master.key` in the data directory. Absent, it is generated and written with
+mode `0600`. The key must be **ready before the first request**, not derived
+lazily, because SMB credential rendering needs it at startup.
+
+**Four rules, and each has a reason worth keeping:**
+
+1. **Never from an environment variable.** Only a *path* may come from the
+   environment. An env var is visible through `docker inspect` and
+   `/proc/*/environ` to anyone who can inspect the container, which defeats the
+   point of a key file entirely. The presence of a `SC_MASTER_KEY` variable is a
+   **hard error regardless of its value**, because someone who set it believes
+   it is being used.
+2. **A warning, not a refusal, when the key resolves inside the data
+   directory.** Backing up the database and the key together defeats
+   encryption at rest. It is the default location, so refusing would make the
+   default configuration fail to start; the warning is what an operator acts on
+   when they set up backups.
+3. **A key version travels with every ciphertext**, as additional
+   authenticated data alongside the user id, so a value cannot be transplanted
+   between accounts or replayed across a rotation.
+4. **A startup check refuses to serve on a key that cannot decrypt what is
+   already on disk.** The failure it prevents is the loud one arriving late:
+   a wrong key mounted, the server starting happily, and every SMB login and
+   every TOTP verification failing one at a time with no common cause visible.
+
+**Rotation** generates a new key, re-encrypts every NT hash and every TOTP
+secret under it, and bumps the key version, **all inside one transaction**, then
+swaps the key file. A crash mid-rotation leaves the old key and the old
+ciphertexts, which is the only safe direction to fail in.
+
+It is a CLI subcommand and not an HTTP route
+([`2`](stowcloud-2-gate-and-toolchain.md) §5-1), because a master key has no
+business ever reaching a browser tab. Rotation sits at the trust level of shell
+access to the data directory, which is the level the key file already sits at.
 
 ## 5. API Design
 

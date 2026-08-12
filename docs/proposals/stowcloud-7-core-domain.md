@@ -93,6 +93,7 @@ internal/core
   links.go      share links
   archive.go    server-side zip of a subtree
   quota.go      the free-space floor
+  homes.go      per-user home directories, off by default
 ```
 
 ### 4.2 Data Model Changes
@@ -176,6 +177,13 @@ Copy uses `copy_file_range` through the vfs helper: a reflink on btrfs and XFS
 when aligned, an in-kernel copy otherwise, and a bounded buffered fallback for
 the remainder on the three documented "cannot do this here" errnos only.
 
+**Every successful mutation records one journal row**, upserting the last thing
+this account did to this file ([`5`](stowcloud-5-store-and-schema.md) §4.2.3).
+It happens after the write has already succeeded, so a failure to record is
+logged and dropped and never fails the operation the user asked for. This is the
+write side of the Recent Files destination; the read side is a query in
+[`8`](stowcloud-8-http-and-api.md).
+
 #### 4.3.5 Trash
 
 Per share, off by default, and the setting is reported in the listing response
@@ -199,6 +207,21 @@ grant.
 
 The link secret is encrypted at rest with XChaCha20-Poly1305 under the master
 key, as today.
+
+#### 4.3.6a Per-user home directories
+
+Off by default, which is principle 5, and the phrase "no user homes" in that
+principle means "not unless an operator turns them on" rather than "never".
+
+The important property is what a home is **not**: it is not a second resolution
+mechanism. One share root is opened at startup, homes are subtrees under it, and
+they reach a caller through the same grant-projected virtual root and the same
+single `Resolve` that every other share uses. A home that resolved by a
+different path would be a second place the existence rule could be got wrong,
+and §4.3.1 exists precisely so there is only one.
+
+What the feature adds is a grant that is implied by the account rather than
+created by an administrator. Everything downstream of that is unchanged.
 
 #### 4.3.7 Long operations
 

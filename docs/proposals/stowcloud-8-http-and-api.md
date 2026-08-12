@@ -82,6 +82,7 @@ internal/httpapi
   handler/
     browse.go  upload.go  search.go  share.go  link.go  trash.go
     settings.go  session.go  recent.go  preview.go  archive.go
+    setup.go   the first-run bootstrap, and the gate that closes it
   static/         the embedded SPA
   ws/             the change channel
 internal/server
@@ -238,6 +239,31 @@ purpose**, so that a later edit setting them has to change the test.
 Certificate handling is carried over: self-signed, generated into
 `data/tls` on first start, with `127.0.0.1` always in the SAN list because the
 healthcheck dials it and verifies properly rather than skipping verification.
+
+#### 4.3.3a First-run setup
+
+The one route reachable with no credential that creates one, so it gets stated
+rather than assumed.
+
+A one-time token is generated at first start, printed to stdout and written to
+`setup-token` in the data directory with mode `0600`. `POST /api/setup` spends
+it and creates the first administrator. Four properties:
+
+- **Single use, and fifteen minutes.** Both, not either: a token that is only
+  single-use sits valid in a log forever until someone finds it.
+- **It stops existing the moment an administrator does.** Not "is refused":
+  the gate closes permanently, so a token recovered from a log or a backup of
+  the data directory after setup is worth nothing.
+- **No environment variable for the first password.** Anything passed that way
+  is visible in `docker inspect` and in the process list, which is the same
+  reasoning the master key uses ([`6`](stowcloud-6-auth-and-acl.md) §4.3.10) and
+  the same reason it is not merely discouraged.
+- **`GET /api/setup` answers a bare boolean**, whether setup is still open, and
+  nothing else. The login screen needs it to decide what to draw, and it is the
+  one thing an unauthenticated caller may learn about this server's state.
+
+`stowcloud setup` re-prints and re-persists a token from the command line, for
+the case where the first one scrolled out of a log before anyone read it.
 
 #### 4.3.4 Static frontend
 
