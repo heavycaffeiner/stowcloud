@@ -150,6 +150,35 @@ func rustDir(t *testing.T) string {
 		`INSERT INTO dav_lock VALUES ('lapsed', 6, 7, 'docs/b.txt', 1, 'alice', 0, 0,
 		   '`+strconv.FormatInt(nowNs-1, 10)+`', 60)`,
 	)
+
+	// The Phase 4 durable sources. One admin-created share (whose id the
+	// dynamic-share base is added to at registration, never here), an override
+	// for a config-defined share, a trash override, and a running job plus its
+	// results. A second job belongs to a user the import refuses to carry, so
+	// it is dropped with a reason.
+	mkdb(t, filepath.Join(dir, "shares.db"),
+		`CREATE TABLE share_ (id INTEGER PRIMARY KEY, name TEXT NOT NULL, host_path TEXT NOT NULL,
+		   created_at INTEGER NOT NULL)`,
+		`INSERT INTO share_ VALUES (7, 'photos', '/srv/photos', 100)`,
+		`CREATE TABLE share_identity_override (share_id INTEGER PRIMARY KEY, name TEXT NOT NULL,
+		   host_path TEXT NOT NULL)`,
+		`INSERT INTO share_identity_override VALUES (2, 'renamed', '/srv/renamed')`,
+		`CREATE TABLE share_trash_override (share_id INTEGER PRIMARY KEY, enabled INTEGER NOT NULL)`,
+		`INSERT INTO share_trash_override VALUES (2, 1)`,
+	)
+
+	mkdb(t, filepath.Join(dir, "jobs.db"),
+		`CREATE TABLE jobs (id TEXT PRIMARY KEY, owner INTEGER NOT NULL, kind TEXT NOT NULL,
+		   state TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0, total INTEGER NOT NULL,
+		   current TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
+		`INSERT INTO jobs VALUES ('j1', 1, 'copy', 'running', 2, 4, 'b.txt', 100, 150)`,
+		`INSERT INTO jobs VALUES ('j2', 99, 'copy', 'running', 0, 2, NULL, 100, 100)`,
+		`CREATE TABLE job_results (job_id TEXT NOT NULL, seq INTEGER NOT NULL, path TEXT NOT NULL,
+		   status TEXT NOT NULL, error TEXT, will_copy INTEGER NOT NULL DEFAULT 0,
+		   PRIMARY KEY (job_id, seq))`,
+		`INSERT INTO job_results VALUES ('j1', 0, 'a.txt', 'ok', NULL, 0)`,
+		`INSERT INTO job_results VALUES ('j1', 1, 'b.txt', 'failed', 'some lower-layer prose', 1)`,
+	)
 	return dir
 }
 
@@ -206,6 +235,11 @@ func TestImportCarriesTheDurableHalf(t *testing.T) {
 		{"dead properties", `SELECT count(*) FROM dav_prop`, 2},
 		{"favorites", `SELECT count(*) FROM favorite`, 1},
 		{"webdav locks", `SELECT count(*) FROM dav_lock`, 1},
+		{"persisted shares", `SELECT count(*) FROM share_definition`, 1},
+		{"identity overrides", `SELECT count(*) FROM share_identity_override`, 1},
+		{"trash overrides", `SELECT count(*) FROM share_trash_override`, 1},
+		{"operations", `SELECT count(*) FROM operation`, 1},
+		{"operation results", `SELECT count(*) FROM operation_result`, 2},
 	} {
 		if got := count(t, d, tc.query); got != tc.want {
 			t.Errorf("%s: %d, want %d", tc.what, got, tc.want)

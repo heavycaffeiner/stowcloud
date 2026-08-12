@@ -6,14 +6,6 @@ import (
 	"fmt"
 )
 
-// Loading grants and memberships is a data read, so it goes through an
-// interface only the store's read surface satisfies. The evaluator keeps the
-// two sets in memory behind a generation counter; a reload is a swap.
-
-type readDB interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
-
 // LoadFromState replaces the evaluator's grants and memberships from the
 // store. Membership and grants move as one load so the two can never be read a
 // generation apart.
@@ -29,6 +21,11 @@ func (e *Evaluator) LoadFromState(ctx context.Context, db readDB) error {
 	e.ReplaceGrants(grants)
 	e.SetMemberships(m)
 	return nil
+}
+
+// readDB is the store's read surface.
+type readDB interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
 
 func readGrants(ctx context.Context, db readDB) (grants []Grant, err error) {

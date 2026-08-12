@@ -50,6 +50,14 @@ func ParsePath(s string) Path {
 	return Path{comps: raw}
 }
 
+// Name is the last component, empty at the root.
+func (p Path) Name() string {
+	if len(p.comps) == 0 {
+		return ""
+	}
+	return p.comps[len(p.comps)-1]
+}
+
 // String joins the components for a diagnostic.
 func (p Path) String() string { return "/" + strings.Join(p.comps, "/") }
 

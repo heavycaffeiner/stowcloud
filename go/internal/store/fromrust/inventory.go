@@ -93,13 +93,13 @@ func inventory() map[string]map[string]disposition {
 		},
 		locksFile: {"dav_lock": {how: copied}},
 		sharesFile: {
-			"share_":                  {how: deferred, phase: 4},
-			"share_identity_override": {how: deferred, phase: 4},
-			"share_trash_override":    {how: deferred, phase: 4},
+			"share_":                  {how: transformed},
+			"share_identity_override": {how: copied},
+			"share_trash_override":    {how: copied},
 		},
 		jobsFile: {
-			"jobs":        {how: deferred, phase: 4},
-			"job_results": {how: deferred, phase: 4},
+			"jobs":        {how: transformed},
+			"job_results": {how: transformed},
 		},
 		indexFile: {"index_settings": {how: deferred, phase: 8}},
 		compatFile: {

@@ -193,14 +193,6 @@ func TestDeferredTablesRefuseOnlyWhenTheyHoldRows(t *testing.T) {
 		phase string
 	}{
 		{
-			"an admin-created share", "shares.db",
-			[]string{
-				`CREATE TABLE share_ (id INTEGER PRIMARY KEY, label TEXT)`,
-				`INSERT INTO share_ VALUES (1, 'photos')`,
-			},
-			true, "Phase 4",
-		},
-		{
 			"the persisted name-index switch", "index.db",
 			[]string{
 				`CREATE TABLE index_settings (id INTEGER PRIMARY KEY, name_index INTEGER)`,

@@ -1,6 +1,7 @@
 package acl
 
 import (
+	"fmt"
 	"sync"
 )
 
@@ -217,6 +218,74 @@ func findAllowAny(level []Grant, want Perms) *Grant {
 		}
 	}
 	return nil
+}
+
+// RootEntry is one entry of the virtual root: a share the user can read, under
+// its display label. The core resolves a virtual path by finding the entry
+// whose label matches, without re-reading the grant table.
+//
+// The two flags at the bottom are filled in by the caller that owns the share
+// registry (the core), which is why they are carried here rather than looked
+// up: a client's root listing needs to render the "shared with another
+// service" badge and the "this delete is undoable" warning, and re-deriving
+// them means a second walk of the share table.
+type RootEntry struct {
+	Label   string
+	Share   int64
+	Subpath Path
+	Perms   Perms
+
+	TrashEnabled     bool
+	SharedExternally bool
+}
+
+// Roots is the virtual root projection for user: one entry per distinct
+// READ-granted rule, labeled, with label collisions given a " (2)", " (3)"
+// suffix in encounter order. It is what the core's one resolver looks up a
+// virtual path's share by.
+func (e *Evaluator) Roots(user int64) []RootEntry {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	seen := map[string]int{}
+	var out []RootEntry
+	for _, g := range e.grants {
+		if !e.grantMatches(user, g) || !g.Allow.Has(Read) {
+			continue
+		}
+		base := g.Label
+		if base == "" {
+			if name := g.Subpath.Name(); name != "" {
+				base = name
+			} else {
+				base = fmt.Sprintf("share-%d", g.Share)
+			}
+		}
+		seen[base]++
+		label := base
+		if n := seen[base]; n > 1 {
+			label = fmt.Sprintf("%s (%d)", base, n)
+		}
+		out = append(out, RootEntry{
+			Label:   label,
+			Share:   g.Share,
+			Subpath: g.Subpath,
+			Perms:   e.effectiveLocked(user, g.Share, g.Subpath),
+		})
+	}
+	return out
+}
+
+// effectiveLocked computes the maximal perms at path using the read lock
+// already held, which is the depth-first single-bit OR.
+func (e *Evaluator) effectiveLocked(user, share int64, path Path) Perms {
+	var out Perms
+	for _, bit := range orderedBits() {
+		if e.evaluate(user, share, path, bit).Allowed {
+			out |= bit
+		}
+	}
+	return out
 }
 
 // membership is the user-to-groups map.

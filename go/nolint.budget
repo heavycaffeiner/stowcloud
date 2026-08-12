@@ -39,5 +39,13 @@
 # seed/step/bit-width casts are all proven in range beside the cast, and MD4 and
 # SHA-1 are fixed by the SMB and TOTP protocols, not chosen. The rest are the
 # rows.Close folds that use the errors.Join pattern the store owns first.
-63
+#
+# Phase 4 added four. Two are the file ETag feeding a signed nanosecond
+# timestamp into a hash as its bit pattern, which is what a change token is:
+# reinterpreting a mtime or ctime through a narrowing check would refuse
+# nothing and prove nothing. One is the quota ledger's negated freed size,
+# clamped to the signed range on the line above the cast. One is the job
+# importer folding a uuid into a 63-bit id, masked before the conversion so the
+# value is proven in range beside the cast.
+67
 

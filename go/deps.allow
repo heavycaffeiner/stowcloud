@@ -24,3 +24,9 @@ golang.org/x/text
 # CGO_ENABLED=0 and with it the static binary and the toolchain-free cross
 # build. Arrived with Phase 2's store.
 modernc.org/sqlite
+
+# The directory ETag hash, which is wire-visible so parity keeps it BLAKE3.
+# Pure Go, so CGO_ENABLED=0 has no fallback to disable. Arrived with Phase 4's
+# aggregate; Phase 6 reuses it for the client-selected upload checksum, which
+# is why it is one entry here and one direct dependency rather than two.
+lukechampine.com/blake3

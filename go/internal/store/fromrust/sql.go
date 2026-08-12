@@ -137,6 +137,36 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	selFavorite = `SELECT user, fileid FROM nc_favorite`
 	insFavorite = `
 INSERT INTO favorite(user, share, dev, ino, btime_present, btime_ns) VALUES (?, ?, ?, ?, ?, ?)`
+
+	// The Phase 4 shares.db and jobs.db. The Rust share_ table's rowid is what
+	// DYNAMIC_SHARE_ID_BASE was added to, so the id is carried as-is: grants
+	// and API payloads already refer to the external id, and the destination
+	// keeps the same arithmetic.
+	selShare = `SELECT id, name, host_path, created_at FROM share_`
+	insShare = `
+INSERT INTO share_definition(id, name, host_path, created_ns) VALUES (?, ?, ?, ?)`
+
+	selShareIdentityOverride = `SELECT share_id, name, host_path FROM share_identity_override`
+	insShareIdentityOverride = `
+INSERT INTO share_identity_override(share_id, name, host_path) VALUES (?, ?, ?)
+ON CONFLICT(share_id) DO UPDATE SET name = excluded.name, host_path = excluded.host_path`
+
+	selShareTrashOverride = `SELECT share_id, enabled FROM share_trash_override`
+	insShareTrashOverride = `
+INSERT INTO share_trash_override(share_id, enabled) VALUES (?, ?)
+ON CONFLICT(share_id) DO UPDATE SET enabled = excluded.enabled`
+
+	selJob = `
+SELECT id, owner, kind, state, done, total, current, created_at, updated_at
+FROM jobs`
+	insJob = `
+INSERT INTO operation(id, user, kind, state, progress, total, message, cancellation, created_ns, finished_ns)
+VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+
+	selJobResult = `SELECT job_id, seq, path, status, error, will_copy FROM job_results`
+	insJobResult = `
+INSERT INTO operation_result(operation, idx, path, ok, reason, text)
+VALUES (?, ?, ?, ?, ?, ?)`
 )
 
 // selUserTables is a database's own account of what it holds. sqlite_% is

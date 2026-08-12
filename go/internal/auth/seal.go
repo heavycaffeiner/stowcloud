@@ -142,3 +142,27 @@ func openLink(key [keyLen]byte, blob, tokenHash []byte, keyVer uint32) ([]byte, 
 func openLinkLegacy(key [keyLen]byte, blob, tokenHash []byte) ([]byte, error) {
 	return open(key, blob, aadLink(tokenHash, 0, false))
 }
+
+// LinkCipher is the at-rest cryptography for share-link tokens, exported for
+// the core's link store which owns the rows this seals. The AAD binds the
+// token hash and key version, so a ciphertext cannot be transplanted between
+// links or replayed across a rotation.
+type LinkCipher struct {
+	key [keyLen]byte
+}
+
+// NewLinkCipher returns a cipher over one master key, which the core receives
+// from the server that loaded the key ring.
+func NewLinkCipher(key [32]byte) LinkCipher { return LinkCipher{key: key} }
+
+// Seal turns a token into nonce||ciphertext under this cipher's key and the
+// given version.
+func (c LinkCipher) Seal(token, tokenHash []byte, keyVer uint32) ([]byte, error) {
+	return sealLink(c.key, token, tokenHash, keyVer)
+}
+
+// Open is the inverse. A token that will not open is a degraded row, not a
+// broken one: the hash in the same row still authenticates the public URL.
+func (c LinkCipher) Open(blob, tokenHash []byte, keyVer uint32) ([]byte, error) {
+	return openLink(c.key, blob, tokenHash, keyVer)
+}

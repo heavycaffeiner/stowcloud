@@ -1,0 +1,84 @@
+//go:build linux
+
+package core
+
+import (
+	"context"
+	"errors"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/store/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
+)
+
+// Long operations: recursive copy, delete or archive that outlives the request
+// that started it. The operation gets an id, progress is readable, and a client
+// that refreshes the tab reattaches.
+//
+// In Go this is a task.Go with a context that is not the request's: cancelling
+// on client disconnect is exactly the bug. The operation's own cancellation is
+// explicit, a separate API call that marks the row; the running task observes
+// it through its own context and stops at the next item boundary.
+
+// Operation is one long operation, as a client sees it.
+type Operation struct {
+	ID    int64
+	Kind  state.OpKind
+	State state.OpState
+	// Results is the bounded per-item outcome, present once the operation is
+	// terminal. Nothing streams during the run.
+	Results []state.OpResult
+}
+
+// Operation returns a stored operation's restart-visible state and its results.
+func (c *Core) Operation(ctx context.Context, owner UserID, id int64) (Operation, error) {
+	op, results, err := c.state.GetOp(ctx, id)
+	if errors.Is(err, state.ErrNoSuchOp) {
+		return Operation{}, ErrNotFound
+	}
+	if err != nil {
+		return Operation{}, err
+	}
+	// Scoped to its owner: another user's operation id answers NotFound, so an
+	// id-probing client learns nothing.
+	if op.User != int64(owner) {
+		return Operation{}, ErrNotFound
+	}
+	return Operation{ID: op.ID, Kind: op.Kind, State: op.State, Results: results}, nil
+}
+
+// CancelOperation requests a running operation's cancellation. It goes through
+// the operation's own context; disconnecting the request that created it does
+// not.
+func (c *Core) CancelOperation(ctx context.Context, owner UserID, id int64) error {
+	op, _, err := c.state.GetOp(ctx, id)
+	if errors.Is(err, state.ErrNoSuchOp) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if op.User != int64(owner) {
+		return ErrNotFound
+	}
+	return c.state.RequestOpCancel(ctx, id)
+}
+
+// StartCopy is the long form of a recursive copy, bound by an operation row.
+// The protocol layer calls it, and the work runs on a goroutine this package
+// started through task.Go, which is the only legal spawn in the tree.
+func (c *Core) StartCopy(ctx context.Context, owner UserID, from, to Resolved) (int64, error) {
+	id, err := c.state.CreateOp(ctx, int64(owner), state.OpCopy, 1, c.clk.Nanos())
+	if err != nil {
+		return 0, err
+	}
+	task.Go(ctx, "core: long copy", func() {
+		now := c.clk.Nanos()
+		if cerr := c.copyRecursive(ctx, from, to, vfs.Stat{}); cerr != nil {
+			_ = c.state.FinishOp(ctx, id, state.OpFailed, 0, cerr.Error(), now, nil)
+			return
+		}
+		_ = c.state.FinishOp(ctx, id, state.OpDone, 1, "", now, nil)
+	})
+	return id, nil
+}

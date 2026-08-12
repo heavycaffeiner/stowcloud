@@ -287,6 +287,8 @@ type sources struct {
 	meta     *sql.DB
 	compat   *sql.DB
 	locks    *sql.DB
+	shares   *sql.DB
+	jobs     *sql.DB
 }
 
 func openSources(dir string) (*sources, error) {
@@ -309,6 +311,8 @@ func openSources(dir string) (*sources, error) {
 	s.meta = s.byName(metaFile)
 	s.compat = s.byName(compatFile)
 	s.locks = s.byName(locksFile)
+	s.shares = s.byName(sharesFile)
+	s.jobs = s.byName(jobsFile)
 
 	if s.auth == nil {
 		s.close()

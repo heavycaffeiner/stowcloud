@@ -343,6 +343,56 @@ CREATE TABLE totp_used (
 CREATE INDEX totp_used_user ON totp_used(user);
 `
 
+// migration 4 lands the Phase 4 durable tables: the persisted share registry
+// (admin-created shares and the editable properties of config-defined ones,
+// which replace the Rust-era shares.db) and the operation store (the bounded,
+// restart-visible history of long operations, replacing jobs.db). None of it
+// is reconstructible from the filesystem, which is what makes it the data
+// backup: deleting cache.db rebuilds; deleting these rows does not.
+const schemaV4 = `
+CREATE TABLE share_definition (
+  id         INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL,
+  host_path  TEXT NOT NULL,
+  created_ns INTEGER NOT NULL
+);
+
+CREATE TABLE share_identity_override (
+  share_id  INTEGER PRIMARY KEY,
+  name      TEXT NOT NULL,
+  host_path TEXT NOT NULL
+);
+
+CREATE TABLE share_trash_override (
+  share_id INTEGER PRIMARY KEY,
+  enabled  INTEGER NOT NULL
+);
+
+CREATE TABLE operation (
+  id           INTEGER PRIMARY KEY,
+  user         INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  kind         INTEGER NOT NULL,
+  state        INTEGER NOT NULL,
+  progress     INTEGER NOT NULL DEFAULT 0,
+  total        INTEGER NOT NULL DEFAULT 0,
+  message      TEXT,
+  cancellation INTEGER NOT NULL DEFAULT 0,
+  created_ns   INTEGER NOT NULL,
+  finished_ns  INTEGER
+);
+CREATE INDEX operation_user ON operation(user);
+
+CREATE TABLE operation_result (
+  operation INTEGER NOT NULL REFERENCES operation(id) ON DELETE CASCADE,
+  idx       INTEGER NOT NULL,
+  path      TEXT NOT NULL,
+  ok        INTEGER NOT NULL,
+  reason    INTEGER,
+  text      TEXT,
+  PRIMARY KEY (operation, idx)
+) WITHOUT ROWID;
+`
+
 // migrations is a function rather than a package-level slice so the list
 // cannot be reassigned. Position is version, so a step that has shipped is
 // never edited, renumbered or reordered.
@@ -355,6 +405,7 @@ func migrations() []dbfile.Migration {
 			Precondition: checkShareLinkTargets,
 		},
 		{Name: "3: the durable auth state", SQL: schemaV3},
+		{Name: "4: the share registry and operation store", SQL: schemaV4},
 	}
 }
 

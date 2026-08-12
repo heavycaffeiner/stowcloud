@@ -80,7 +80,13 @@ func (s *sources) into(ctx context.Context, tx *sql.Tx, rep *Report, clk clock.C
 	if err := s.copyIdentityKeyed(ctx, tx, rep, users); err != nil {
 		return err
 	}
-	return s.copyLocks(ctx, tx, rep, users, clk)
+	if err := s.copyLocks(ctx, tx, rep, users, clk); err != nil {
+		return err
+	}
+	if err := s.copyShares(ctx, tx, rep); err != nil {
+		return err
+	}
+	return s.copyJobs(ctx, tx, rep, users)
 }
 
 func record(rep *Report, table string, kept int, drops map[Reason]int) {
