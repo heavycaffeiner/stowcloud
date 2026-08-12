@@ -6,11 +6,16 @@
 #
 # The parent proposal's table says why each one is not the standard library.
 # The ones it commits to that have not arrived yet, and the phase that brings
-# each: x/crypto, x/sync, modernc.org/sqlite (2), klauspost/compress (9),
-# BurntSushi/toml (5), a pure-Go BLAKE3 (6), x/image (9).
+# each: x/crypto, x/sync, klauspost/compress (9), BurntSushi/toml (5), a
+# pure-Go BLAKE3 (6), x/image (9).
 
 golang.org/x/sys
 
 # NFC and NFD candidate spellings, so a name another program wrote in either
 # form is found as it is written. Arrived with Phase 1's path layer.
 golang.org/x/text
+
+# SQLite, translated to Go rather than wrapped, which is what keeps
+# CGO_ENABLED=0 and with it the static binary and the toolchain-free cross
+# build. Arrived with Phase 2's store.
+modernc.org/sqlite
