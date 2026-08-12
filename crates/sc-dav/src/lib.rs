@@ -64,7 +64,25 @@ pub struct DavConfig {
     /// a single-request denial of service.
     pub allow_infinite_depth: bool,
     pub infinite_depth_max_entries: u32,
+    /// Cap on a request body this server has to *parse*: PROPFIND, PROPPATCH,
+    /// LOCK, SEARCH. Sized for XML, which is what all of those are.
     pub max_request_body: usize,
+    /// Cap on a `PUT` body, which is a file and not something to parse.
+    ///
+    /// Separate from `max_request_body` because it was not, and one limit for
+    /// both meant an XML-sized number decided how large a file could be
+    /// uploaded: a plain `PUT` of 3.8 MB answered `413`. Nextcloud clients hid
+    /// most of it — they switch to the chunked flow above ~10 MB, and each
+    /// chunk lands just under a megabyte — so what failed was the middle band,
+    /// which is where ordinary photos and documents live.
+    ///
+    /// This is also a memory bound: `PUT` is an atomic replace and the body is
+    /// buffered before the write, so a caller that sends a file this large
+    /// costs that much resident memory for the length of the request. That is
+    /// the reason it is a number at all rather than "unlimited", and the
+    /// reason a client with something bigger should be using the chunked
+    /// upload path, which streams.
+    pub max_put_body: usize,
     /// Below this many entries, buffer the multistatus and send a
     /// `Content-Length` — Windows clients dislike a chunked 207.
     pub buffer_propfind_under: usize,
@@ -82,6 +100,7 @@ impl Default for DavConfig {
             allow_infinite_depth: false,
             infinite_depth_max_entries: 50_000,
             max_request_body: 1024 * 1024,
+            max_put_body: 256 * 1024 * 1024,
             buffer_propfind_under: 1000,
             sync_copy_limit: 2 * 1024 * 1024 * 1024,
             lock_default_timeout_s: 300,
@@ -399,7 +418,14 @@ async fn dispatch(State(svc): State<Arc<DavService>>, req: Request) -> Response 
         return DavError::Unauthorized.into_response_with_realm(&svc.cfg.realm);
     };
 
-    let max = svc.cfg.max_request_body;
+    // A `PUT` body is a file; every other body here is XML this server parses.
+    // One limit for both is what made an XML budget decide the largest file a
+    // client could upload.
+    let max = if method == Method::PUT {
+        svc.cfg.max_put_body
+    } else {
+        svc.cfg.max_request_body
+    };
     let body = match axum::body::to_bytes(req.into_body(), max).await {
         Ok(b) => b,
         Err(_) => return DavError::TooLarge.into_response_now(),

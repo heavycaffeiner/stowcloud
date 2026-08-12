@@ -179,6 +179,37 @@ async fn oversized_body_is_rejected() {
     assert_eq!(r.status, StatusCode::PAYLOAD_TOO_LARGE);
 }
 
+/// The upload this split exists for. The XML budget is what a PROPFIND is
+/// held to, and holding a file to it answered `413` for an ordinary 3.8 MB
+/// upload: Nextcloud clients send anything under their chunking threshold as
+/// one plain `PUT`.
+#[tokio::test]
+async fn a_put_is_not_held_to_the_xml_budget() {
+    let mut c = cfg();
+    c.max_request_body = 512;
+    c.max_put_body = 8 * 1024 * 1024;
+    let (_s, app) = build(tree(), MemMeta::new(), c);
+
+    let file = "A".repeat(4 * 1024 * 1024);
+    let r = send(&app, "PUT", "/dav/docs/big.txt", &[], &file, true).await;
+    assert_eq!(r.status, StatusCode::CREATED);
+
+    let back = send(&app, "GET", "/dav/docs/big.txt", &[], "", true).await;
+    assert_eq!(back.body.len(), file.len());
+}
+
+/// And the `PUT` budget still exists: it is a memory bound, since the body is
+/// buffered for an atomic replace.
+#[tokio::test]
+async fn a_put_over_its_own_budget_is_still_rejected() {
+    let mut c = cfg();
+    c.max_put_body = 1024;
+    let (_s, app) = build(tree(), MemMeta::new(), c);
+    let file = "A".repeat(4096);
+    let r = send(&app, "PUT", "/dav/docs/big.txt", &[], &file, true).await;
+    assert_eq!(r.status, StatusCode::PAYLOAD_TOO_LARGE);
+}
+
 #[test]
 fn all_four_prefix_styles_parse_identically() {
     use sc_dav::xml::{parse_propfind, PropFindBody, PropName};
