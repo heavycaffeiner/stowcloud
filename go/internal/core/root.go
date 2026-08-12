@@ -100,10 +100,10 @@ func New(s *store.Store, opt Options) (*Core, error) {
 // recognises a share by.
 type ShareID = vfs.ShareID
 
-// ShareDef is one configured share as the admin-facing API sees it. Nothing
+// Share is one configured share as the admin-facing API returns it. Nothing
 // here opens or validates the host path; registration is the config layer's
 // boundary, and this is the fact it passes in.
-type ShareDef struct {
+type Share struct {
 	ID   ShareID
 	Name string
 	// Host is the on-disk path. It is trusted server-side configuration and
@@ -117,6 +117,27 @@ type ShareDef struct {
 	// SharedExternally marks a share another service also reads, which the
 	// client renders as a badge.
 	SharedExternally bool
+}
+
+// ShareDef is the internal spelling of Share, kept separate so the config
+// layer's registration surface is not the admin API's.
+type ShareDef = Share
+
+// ShareSpec is what CreateShare is asked to mint.
+type ShareSpec struct {
+	Name string
+	// Host is the on-disk path. It is trusted server-side configuration and
+	// must never reach a client response.
+	Host string
+}
+
+// SharePatch is what UpdateShare accepts. The pointers distinguish "field
+// absent" from "field cleared", which is exactly the difference between
+// leaving trash alone and disabling it.
+type SharePatch struct {
+	Name         *string
+	Host         *string
+	TrashEnabled *bool
 }
 
 // RegisterShare opens host as a share root and remembers it. Re-registering an

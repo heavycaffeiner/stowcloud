@@ -65,36 +65,36 @@ func (c *Core) appliedTrash(ctx context.Context, id int64) (bool, error) {
 // CreateShare registers a validated host directory and returns the externally
 // visible id stored with it. The id is dynamicShareIDBase plus the durable row
 // id, which is what keeps a dynamic share out of the config-derived range.
-func (c *Core) CreateShare(ctx context.Context, name, host string) (ShareDef, error) {
-	def, err := c.shareDefByName(name)
+func (c *Core) CreateShare(ctx context.Context, spec ShareSpec) (Share, error) {
+	def, err := c.shareDefByName(spec.Name)
 	if err != nil {
-		return ShareDef{}, err
+		return Share{}, err
 	}
 	if def != nil {
-		return ShareDef{}, errf(ErrConflict, "a share named %q already exists", name)
+		return Share{}, errf(ErrConflict, "a share named %q already exists", spec.Name)
 	}
 
-	rowid, err := c.state.InsertShare(ctx, name, host, c.clk.Nanos())
+	rowid, err := c.state.InsertShare(ctx, spec.Name, spec.Host, c.clk.Nanos())
 	if err != nil {
-		return ShareDef{}, err
+		return Share{}, err
 	}
 	// The dynamic-share base is added to the fresh rowid, which is a small
 	// positive number; a rowid that overflows the id space is corruption.
 	combined, nerr := num.Narrow[uint64](dynamicShareIDBase + rowid)
 	if nerr != nil {
 		_ = c.state.DeleteShare(ctx, rowid)
-		return ShareDef{}, fmt.Errorf("a share row id overflowed the id space: %w", nerr)
+		return Share{}, fmt.Errorf("a share row id overflowed the id space: %w", nerr)
 	}
 	id := ShareID(combined)
 	trash, _, terr := c.state.TrashOverrideFor(ctx, int64(id))
 	if terr != nil {
 		_ = c.state.DeleteShare(ctx, rowid)
-		return ShareDef{}, terr
+		return Share{}, terr
 	}
-	created := ShareDef{
+	created := Share{
 		ID:           id,
-		Name:         name,
-		Host:         host,
+		Name:         spec.Name,
+		Host:         spec.Host,
 		Policy:       vfs.DefaultSharePolicy(),
 		TrashEnabled: trash,
 	}
@@ -103,7 +103,7 @@ func (c *Core) CreateShare(ctx context.Context, name, host string) (ShareDef, er
 		// leaves a row with no live share, so it is rolled back like the
 		// reference does.
 		_ = c.state.DeleteShare(ctx, rowid)
-		return ShareDef{}, fmt.Errorf("share rejected: %w", err)
+		return Share{}, fmt.Errorf("share rejected: %w", err)
 	}
 	return created, nil
 }
@@ -112,33 +112,46 @@ func (c *Core) CreateShare(ctx context.Context, name, host string) (ShareDef, er
 // a config-defined share. Only a dynamic share's name and host edit owns a
 // row; a config-defined one goes to the override table that registration reads
 // back.
-func (c *Core) UpdateShare(ctx context.Context, id ShareID, name string, host string, trashEnabled *bool) (ShareDef, error) {
+func (c *Core) UpdateShare(ctx context.Context, id ShareID, patch SharePatch) (Share, error) {
 	existing, ok := c.Share(id)
 	if !ok {
-		return ShareDef{}, ErrNotFound
+		return Share{}, ErrNotFound
 	}
+	name := existing.Name
+	if patch.Name != nil {
+		name = *patch.Name
+	}
+	host := existing.Host
+	if patch.Host != nil {
+		host = *patch.Host
+	}
+	trashEnabled := existing.TrashEnabled
+	if patch.TrashEnabled != nil {
+		trashEnabled = *patch.TrashEnabled
+	}
+
 	if id < dynamicShareIDBase {
 		// Config-defined: write the identity override and the trash override.
-		if name != "" || host != "" {
+		if patch.Name != nil || patch.Host != nil {
 			if err := c.state.SetIdentityOverride(ctx, int64(id), name, host); err != nil {
-				return ShareDef{}, err
+				return Share{}, err
 			}
 		}
-		if trashEnabled != nil {
-			if err := c.state.SetTrashOverride(ctx, int64(id), *trashEnabled); err != nil {
-				return ShareDef{}, err
+		if patch.TrashEnabled != nil {
+			if err := c.state.SetTrashOverride(ctx, int64(id), *patch.TrashEnabled); err != nil {
+				return Share{}, err
 			}
 		}
 	} else {
 		rowid := int64(id) - dynamicShareIDBase
-		if name != "" || host != "" {
+		if patch.Name != nil || patch.Host != nil {
 			if err := c.state.UpdateShare(ctx, rowid, name, host); err != nil {
-				return ShareDef{}, err
+				return Share{}, err
 			}
 		}
-		if trashEnabled != nil {
-			if err := c.state.SetTrashOverride(ctx, int64(id), *trashEnabled); err != nil {
-				return ShareDef{}, err
+		if patch.TrashEnabled != nil {
+			if err := c.state.SetTrashOverride(ctx, int64(id), *patch.TrashEnabled); err != nil {
+				return Share{}, err
 			}
 		}
 	}
@@ -146,26 +159,16 @@ func (c *Core) UpdateShare(ctx context.Context, id ShareID, name string, host st
 	// Re-register under the same id; an in-flight request holding the old
 	// *vfs.ShareRoot finishes against it, and every request after this sees the
 	// new one.
-	newName, newHost := name, host
-	if newName == "" {
-		newName = existing.Name
-	}
-	if newHost == "" {
-		newHost = existing.Host
-	}
-	def := ShareDef{
+	def := Share{
 		ID:               id,
-		Name:             newName,
-		Host:             newHost,
+		Name:             name,
+		Host:             host,
 		Policy:           existing.Policy,
-		TrashEnabled:     existing.TrashEnabled,
+		TrashEnabled:     trashEnabled,
 		SharedExternally: existing.SharedExternally,
 	}
-	if trashEnabled != nil {
-		def.TrashEnabled = *trashEnabled
-	}
 	if err := c.RegisterShare(ctx, def); err != nil {
-		return ShareDef{}, err
+		return Share{}, err
 	}
 	return def, nil
 }

@@ -102,8 +102,8 @@ func TestOutsideGrantAndMissingAreIndistinguishable(t *testing.T) {
 	c, _, _ := testCore(t)
 
 	cases := []struct {
-		name   string
-		run    func() error
+		name string
+		run  func() error
 	}{
 		{
 			"a label outside every grant",

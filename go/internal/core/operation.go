@@ -20,9 +20,12 @@ import (
 // explicit, a separate API call that marks the row; the running task observes
 // it through its own context and stops at the next item boundary.
 
+// OperationID is a long operation's external identity.
+type OperationID int64
+
 // Operation is one long operation, as a client sees it.
 type Operation struct {
-	ID    int64
+	ID    OperationID
 	Kind  state.OpKind
 	State state.OpState
 	// Results is the bounded per-item outcome, present once the operation is
@@ -31,8 +34,8 @@ type Operation struct {
 }
 
 // Operation returns a stored operation's restart-visible state and its results.
-func (c *Core) Operation(ctx context.Context, owner UserID, id int64) (Operation, error) {
-	op, results, err := c.state.GetOp(ctx, id)
+func (c *Core) Operation(ctx context.Context, owner UserID, id OperationID) (Operation, error) {
+	op, results, err := c.state.GetOp(ctx, int64(id))
 	if errors.Is(err, state.ErrNoSuchOp) {
 		return Operation{}, ErrNotFound
 	}
@@ -44,14 +47,14 @@ func (c *Core) Operation(ctx context.Context, owner UserID, id int64) (Operation
 	if op.User != int64(owner) {
 		return Operation{}, ErrNotFound
 	}
-	return Operation{ID: op.ID, Kind: op.Kind, State: op.State, Results: results}, nil
+	return Operation{ID: OperationID(op.ID), Kind: op.Kind, State: op.State, Results: results}, nil
 }
 
 // CancelOperation requests a running operation's cancellation. It goes through
 // the operation's own context; disconnecting the request that created it does
 // not.
-func (c *Core) CancelOperation(ctx context.Context, owner UserID, id int64) error {
-	op, _, err := c.state.GetOp(ctx, id)
+func (c *Core) CancelOperation(ctx context.Context, owner UserID, id OperationID) error {
+	op, _, err := c.state.GetOp(ctx, int64(id))
 	if errors.Is(err, state.ErrNoSuchOp) {
 		return ErrNotFound
 	}
@@ -61,7 +64,7 @@ func (c *Core) CancelOperation(ctx context.Context, owner UserID, id int64) erro
 	if op.User != int64(owner) {
 		return ErrNotFound
 	}
-	return c.state.RequestOpCancel(ctx, id)
+	return c.state.RequestOpCancel(ctx, int64(id))
 }
 
 // StartCopy is the long form of a recursive copy, bound by an operation row.
