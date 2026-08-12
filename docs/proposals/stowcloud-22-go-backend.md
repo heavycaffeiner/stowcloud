@@ -121,15 +121,17 @@ Each one is closed by a named rule in §4.4.
 - [ ] The four Linux guarantees kept and provable in Go: `openat2`-resolved
       paths, a process Landlock sandbox, a process seccomp filter, and a
       decoder jail that has no filesystem and no network.
-- [ ] The decoder jail moved to a separate `stowcloud-preview` binary that is
-      `exec`'d, replacing the `fork`-without-`exec` pool.
+- [ ] The decoder jail moved to an `exec`'d `stowcloud preview-worker`
+      subcommand of the same binary, replacing the `fork`-without-`exec` pool.
 - [ ] Hardening turned from best-effort-and-logged into a declared policy with
       a `required` mode that refuses to start when the kernel cannot deliver it.
 - [ ] Every finding in §2.4 closed, each with a test that fails without the fix.
 - [ ] One defensive-coding standard (§4.4) applied across the tree and enforced
       by lints in `scripts/verify.sh`, not by review.
-- [ ] `CGO_ENABLED=0`, one statically linked binary plus one worker binary, in a
-      distroless image no larger than today's.
+- [ ] `CGO_ENABLED=0`, **one** statically linked binary with four subcommands,
+      in a distroless image no larger than today's. Two binaries were proposed
+      and rejected: they roughly double the image, and the `healthcheck` argv
+      dispatch already in `main.rs` shows why a second one is unnecessary.
 - [ ] `stowcloud-12-architecture.md` §4.2 amended so the recorded stack decision
       matches the shipped one.
 
@@ -163,8 +165,8 @@ Each one is closed by a named rule in §4.4.
 crates/           the Rust implementation, untouched, deleted at cutover
 go/
   cmd/
-    stowcloud/            the server binary
-    stowcloud-preview/    the jailed decoder worker binary
+    stowcloud/   the only binary. Subcommands: serve, healthcheck,
+                 preview-worker, migrate
   internal/
     vfs/         kernel-handle filesystem layer, the security core
     store/       SQLite: state.db and cache.db
@@ -193,8 +195,8 @@ enforcing what the Rust tree enforced by `publish = false` plus a comment.
 ```mermaid
 flowchart LR
   subgraph container["distroless image"]
-    A["stowcloud (pid 1)\nLandlock: shares + data dir\nseccomp: deny-list, TSYNC"]
-    B["stowcloud-preview\nLandlock: empty ruleset\nseccomp: 22-call allow-list"]
+    A["stowcloud serve (pid 1)\nLandlock: shares + data dir\nseccomp: deny-list, TSYNC"]
+    B["stowcloud preview-worker\nLandlock: nothing granted\nseccomp: allow-list, kill"]
     A -- "SOCK_SEQPACKET\njob + 2 fds via SCM_RIGHTS" --> B
   end
   C["client"] -- TLS 8443 --> A
@@ -401,8 +403,8 @@ Server startup, in order:
 2. Build the Landlock ruleset: handle every filesystem access right the running
    kernel's ABI knows about, grant `PathBeneath` on each share root, the data
    directory and the SMB config directory, and grant read plus execute on the
-   `stowcloud-preview` binary path (without that grant the exec in step 6
-   fails).
+   binary's own path (without that grant both the re-exec in step 4 and the
+   worker exec in step 6 fail, since both exec the same file).
 3. `landlock_restrict_self`.
 4. `unix.Exec(self, argv, env)` with `SC_REEXEC=1` in the environment so this
    happens exactly once. The re-exec'd process is single-threaded at the moment
@@ -411,8 +413,9 @@ Server startup, in order:
    `SECCOMP_FILTER_FLAG_TSYNC`, after `PR_SET_NO_NEW_PRIVS`. The filter checks
    `seccomp_data.arch` before it looks at the syscall number, rejects the x32
    range on `x86_64`, and has an entry for both `x86_64` and `aarch64` (F1, F3).
-6. Start the worker pool by `exec`ing `stowcloud-preview`, one process per
-   worker, with the job socket passed as fd 3 through `Cmd.ExtraFiles`.
+6. Start the worker pool by `exec`ing this same binary as
+   `stowcloud preview-worker`, one process per worker, with the job socket
+   passed as fd 3 through `Cmd.ExtraFiles`.
 
 Worker startup, in order, before it reads one byte of user input:
 
@@ -434,11 +437,15 @@ Worker startup, in order, before it reads one byte of user input:
    `openat2`, `execve`, `socket`, `connect`, `clone`, `ptrace`.
 7. Only then, read from fd 3.
 
-The cost of this shape is two extra `execve` per worker start and a little more
-memory per worker than a copy-on-write fork. The gain is that the deadlock
-window the current code documents (a child that allocates after a fork taken
-while another thread held the allocator lock) does not exist, and the worker
-binary can be run standalone under a test.
+The cost of this shape is two extra `execve` per worker start and materially
+more resident memory per worker than a copy-on-write fork, because each worker
+carries its own Go runtime and heap arenas rather than sharing the parent's
+pages. That is measured in Phase 13 against
+`stowcloud-11-footprint.md`'s budget, not asserted here, and if it does not fit
+the lever is the pool size rather than the isolation. The gain is that the
+deadlock window the current code documents (a child that allocates after a fork
+taken while another thread held the allocator lock) does not exist, and the
+worker can be run standalone under a test.
 
 **Failure is fatal for the worker, never for the server.** If any step from 2
 to 6 fails, the worker exits non-zero and the parent reports the pool as
@@ -550,7 +557,7 @@ vulnerability rather than a bug:
 | NT hash for SMB | `md4` | `golang.org/x/crypto/md4` (deprecated upstream, and correct here: the algorithm is fixed by the protocol) |
 | TOTP | `totp-rs` | stdlib `crypto/hmac` + `crypto/sha1`, about 40 lines |
 | OIDC ID token RS256/ES256 | `ring` | stdlib `crypto/rsa`, `crypto/ecdsa`. No JWT library, same as today |
-| Directory and file digests | `blake3` | stdlib `crypto/sha256`. These are internal cache values, never client-visible, so the dependency is dropped rather than replaced |
+| Directory and file digests | `blake3` | a pure-Go BLAKE3. **Not** SHA-256: an earlier draft of this row dropped BLAKE3 on the grounds that every digest here is an internal cache value, and `Checksum::Blake3` is a TUS `Upload-Checksum` value a client sends (`crates/sc-upload/src/model.rs:95`). The module has to be in the tree for that, so the directory ETag keeps the same hash rather than invalidating every stored rollup for nothing |
 | CRC32C | `crc32c` | stdlib `hash/crc32` with the Castagnoli table |
 | Constant-time comparison | `subtle` | stdlib `crypto/subtle` |
 | Randomness | `getrandom` | stdlib `crypto/rand` only. `math/rand` is banned by lint |
@@ -655,10 +662,17 @@ document is a wish.
 - `rust-embed` and the `embed-ui` feature, with its `cargo clean -p sc-http`
   hazard. Go's `embed` package reads `web/build` at compile time with a real
   dependency edge, so a stale frontend cannot be embedded silently.
-- The portable filesystem backend as a shipping concern. It stays so the tree
-  builds and tests on Windows, but the Linux backend is no longer type-checked
-  through a cross-compile: `GOOS=linux go build` is the same build the release
-  uses.
+- **The portable filesystem backend, entirely.** An earlier draft of this
+  section kept it "so the tree builds and tests on Windows", which contradicts
+  Windows being a non-target and, more to the point, is what hid two real bugs.
+  The Rust tree's own comments record both: `sync_dir` returned `EBADF` on every
+  write because `fsync` on an `O_PATH` descriptor fails, and `create_excl`
+  opened write-only so every upload finalize's digest read failed. Each broke
+  the only platform that ships, and each was invisible on the development host
+  precisely because a second implementation was standing in for the real one.
+  `GOOS=linux go build` and `go vet` run on the Windows box with no toolchain
+  at all; the test suite runs in the Linux VM. What that costs is stated in
+  `go-port/stowcloud-2-gate-and-toolchain.md` §4.3.3 rather than glossed.
 
 ## 5. API Design
 
@@ -812,6 +826,7 @@ removes the musl-probe skip path from `verify.sh` entirely.
 | `modernc.org/sqlite` | `rusqlite`, `r2d2` | pure-Go SQLite; the alternative is cgo, which costs the static build |
 | `github.com/klauspost/compress` | `zstd`, `ruzstd` | zstd; `archive/zip` and `compress/flate` are stdlib |
 | `github.com/BurntSushi/toml` | `toml` | no stdlib TOML |
+| a pure-Go BLAKE3 | `blake3` | a client-facing TUS checksum algorithm, so it cannot be swapped for a standard-library hash |
 
 Everything else the Rust tree carries is stdlib in Go: HTTP server and client,
 TLS, X.509 and certificate generation, JSON, XML, zip, base64, hex, UUID
@@ -843,6 +858,11 @@ binary in the same image.
 
 ## 7. References
 
+- [`go-port/`](go-port/README.md): the seventeen detail proposals this document
+  is the index for, one per phase plus the findings ledger and the defensive
+  standard. Its README also carries the contradiction ledger, which records five
+  places where an earlier draft of **this** document was wrong and what
+  replaced each.
 - `docs/proposals/stowcloud-12-architecture.md`: the five principles and the
   §4.2 table this proposal amends.
 - `docs/proposals/stowcloud-2-core-vfs.md`: `SafePath`, the syscall contract,
