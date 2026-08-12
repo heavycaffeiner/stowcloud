@@ -80,6 +80,12 @@ func run(args []string, stderr io.Writer) int {
 	}
 
 	cmd := commands[i]
+	if cmd.name == "migrate" {
+		// Phase 2's command, and one that has to exist before the phase that
+		// would otherwise own it: it is what an operator runs between stopping
+		// the old build and starting this one.
+		return runMigrate(args[1:], stderr)
+	}
 	if cmd.name == "caps" {
 		// The one command Phase 1 implements, because the phase's claim is that
 		// the kernel confines a share and this is what executes that claim

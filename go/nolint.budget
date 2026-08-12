@@ -9,9 +9,13 @@
 # proof re-executing its own binary to build a mount boundary in a private
 # namespace, which is the only way that row runs without being root.
 #
-# Phase 2 added four, all the same shape: SQLite has one integer type and it
-# is signed, so a device number, an inode number and a birth time cross into
-# it as their bit pattern and come back unchanged. Narrowing them would refuse
-# values a real filesystem hands out, which is the opposite of what the rule
-# is for.
-17
+# Phase 2 added ten. Five are the same shape: SQLite has one integer type and
+# it is signed, so a device number, an inode number, a birth time and a byte
+# offset cross into it as their bit pattern and come back unchanged. Narrowing
+# them would refuse values a real filesystem hands out, which is the opposite
+# of what the rule is for.
+#
+# Four are gosec reading an identifier rather than a value: a constant named
+# after the app_password or totp_secret table holds a SQL statement, not a
+# credential. The tenth is the import closing databases it only ever read.
+23
