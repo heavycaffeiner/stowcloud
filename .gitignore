@@ -23,3 +23,7 @@ setup-token
 # A broad `git add -A` swept four of these into a commit once.
 .tmp-*
 web/.tmp-*
+
+# Gate tooling and cross-compiled test binaries: build products, not source.
+/go/.tools/
+/go/.testbin/

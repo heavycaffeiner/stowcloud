@@ -1,0 +1,5 @@
+# D1. The number of //nolint directives in go/. The gate counts them and fails
+# on a mismatch, so an exception being added is a two-line diff rather than one
+# line nobody sees. Raise it deliberately, with the reason on the line the
+# directive sits on.
+9

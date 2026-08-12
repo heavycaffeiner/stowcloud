@@ -1,0 +1,13 @@
+# D18. Every direct module this tree may depend on, one path per line. The gate
+# diffs the module graph against this file, so taking a new dependency is a
+# visible change here rather than a line in go.mod nobody reads.
+#
+# Blank lines and lines starting with # are ignored.
+#
+# The parent proposal's table says why each one is not the standard library.
+# The ones it commits to that have not arrived yet, and the phase that brings
+# each: x/crypto, x/text, x/sync (Phase 1 onward), modernc.org/sqlite (2),
+# klauspost/compress (9), BurntSushi/toml (5), a pure-Go BLAKE3 (6),
+# x/image (9).
+
+golang.org/x/sys

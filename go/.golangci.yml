@@ -1,0 +1,67 @@
+# The tier-2 half of the defensive standard: rules a gate can check, wired
+# before the code they govern exists. A rule added after that code is a
+# refactor; added before, it is just how the code gets written.
+version: "2"
+
+run:
+  # The only target that ships. Nothing here is ever linted for another one,
+  # and a host-only run never compiles a line of the code that matters.
+  build-tags:
+    - compat_nc
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    # D1. No discarded error.
+    - errcheck
+    # D2. No ambient mutable state.
+    - gochecknoglobals
+    # D6. G115 covers the unchecked numeric conversions it can see.
+    - gosec
+    # A response body left open is a leaked descriptor and a leaked
+    # connection, and Go's own API makes forgetting the default.
+    - bodyclose
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+
+  settings:
+    errcheck:
+      # D1 says an empty exclude list, so the built-in one goes too. Every
+      # ignored return needs a nolint with a reason on the line, and the gate
+      # counts those against a committed budget.
+      disable-default-exclusions: true
+      check-type-assertions: true
+      check-blank: true
+
+    gosec:
+      excludes:
+        # G104 is errcheck's job and errcheck does it without the built-in
+        # exclusions this one carries.
+        - G104
+
+    govet:
+      enable-all: true
+      disable:
+        # Field alignment optimises padding, which is not a defect and would
+        # dictate struct field order for a few bytes.
+        - fieldalignment
+
+  exclusions:
+    generated: strict
+    rules:
+      # The analysers and the scan are build tooling a developer points at
+      # their own tree: taking a directory argument, opening what a walk
+      # returned and running the go command are what they are for, and none of
+      # it is reachable from a request. Every other linter still applies to
+      # them, errcheck included.
+      - path: tools/
+        linters:
+          - gochecknoglobals
+          - gosec
+
+formatters:
+  enable:
+    - gofmt

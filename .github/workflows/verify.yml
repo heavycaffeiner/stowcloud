@@ -54,6 +54,10 @@ env:
   # 24, not 22, for the same reason Dockerfile's NODE_IMAGE moved: node 22
   # bundles npm 10.9.8, which cannot `npm ci` a lockfile npm 11 wrote.
   NODE_VERSION: "24"
+  # The floor is what golang.org/x/sys declares, not a preference: its own
+  # go directive is 1.25.0, so a 1.24 toolchain cannot build this module at
+  # all. Move go/go.mod's directive and this together.
+  GO_VERSION: "1.26"
   # Incremental compilation buys nothing on a runner that starts from an empty
   # target/ every time, and costs a second copy of every object file.
   CARGO_INCREMENTAL: "0"
@@ -81,6 +85,14 @@ jobs:
 
       - name: Install musl cross toolchain
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends musl-tools
+
+      # This runner has a C compiler, so it is where the race detector runs.
+      # The detector needs cgo; the shipping build never does, and the binary
+      # this produces is a test binary.
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go/go.sum
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -120,6 +132,10 @@ jobs:
           # SKIP here would mean the workflow broke, not that they are absent.
           VERIFY_REQUIRE_MUSL: "1"
           VERIFY_REQUIRE_UI: "1"
+          # And it has a Go toolchain and a C compiler, so the gate's own tool
+          # installs and the race run have nothing to be absent for either.
+          VERIFY_REQUIRE_GOTOOLS: "1"
+          VERIFY_REQUIRE_RACE: "1"
         run: bash scripts/verify.sh
 
       # The one thing verify.sh cannot prove. Its musl section stops at `cargo
@@ -158,6 +174,14 @@ jobs:
           rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal -c clippy
           rustup default "${RUST_TOOLCHAIN}"
 
+      # No C compiler is installed here on purpose, so the race step SKIPs and
+      # the Linux job above is what covers it. Everything else in the Go half
+      # cross-compiles with the toolchain alone.
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go/go.sum
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -179,12 +203,15 @@ jobs:
           cd web
           npm run check:bundle-size
 
-      # No VERIFY_REQUIRE_MUSL here: the musl steps SKIP on this job by design,
-      # and the Linux job above is what covers them.
+      # No VERIFY_REQUIRE_MUSL and no VERIFY_REQUIRE_RACE here: those steps
+      # SKIP on this job by design, and the Linux job above is what covers
+      # them. The Go tool installs are required, because a Go toolchain is
+      # installed above and `go install` needs nothing else.
       - name: bash scripts/verify.sh
         shell: bash
         env:
           VERIFY_REQUIRE_UI: "1"
+          VERIFY_REQUIRE_GOTOOLS: "1"
         run: bash scripts/verify.sh
 
       - name: Disk

@@ -13,6 +13,12 @@
 #                           reasoning: both CI jobs build the frontend first,
 #                           so a SKIP there means the workflow broke, not that
 #                           the checkout is bare.
+#   VERIFY_REQUIRE_GOTOOLS=1
+#                           a golangci-lint or govulncheck that could not be
+#                           found or installed is a failure, not a SKIP.
+#   VERIFY_REQUIRE_RACE=1   a skipped race run is a failure. The detector needs
+#                           cgo, which the Windows box has no compiler for, so
+#                           it runs where one exists and CI is where that is.
 #
 # Two rules this script exists to keep, both learned from a red CI:
 #
@@ -213,6 +219,238 @@ else
            "cargo build -p sc-server --features embed-ui" \
            "cargo check -p sc-server --features embed-ui ($MUSL)"; do
     skipped "$s" "$why" "${VERIFY_REQUIRE_UI:-0}"
+  done
+fi
+
+# ==========================================================================
+# The Go half.
+#
+# It keeps the two rules above and adds nothing to them: a failing step prints
+# everything it said, and a step that did not run says so with a name the
+# caller can require. What it does not keep is the shape underneath, because
+# four of the Rust steps work around problems Go does not have — the musl cross
+# probe (Go cross-compiles with no toolchain), the `cargo clean` before the
+# embed build (`//go:embed` is a real dependency edge), the second clippy run
+# under the musl target (`go vet` on GOOS=linux compiles every _linux.go file),
+# and the --no-default-features build (a build tag).
+#
+# Everything here builds and vets for GOOS=linux, because that is the only
+# target that ships, and tests for the host's own OS, because a linux test
+# binary does not execute on the development box. Cross-compiled test binaries
+# for the packages that need a real kernel are copied to the Linux guest and
+# run there; that loop is deliberate and is what a portable filesystem backend
+# would have hidden two real bugs behind.
+# ==========================================================================
+
+GO_TOOLS="$PWD/go/.tools/bin"
+# Pinned, because a linter that changes its rule set between two runs of this
+# script is a gate that means something different each time.
+GOLANGCI="github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2"
+# Not pinned, and deliberately: its whole job is to know about advisories
+# published after this line was written.
+GOVULN="golang.org/x/vuln/cmd/govulncheck@latest"
+
+# native <path> -- a path in the form this host's own programs understand.
+native() { if [ "$HOST" = windows ]; then cygpath -w "$1"; else printf '%s' "$1"; fi; }
+
+# ingo <args...>      -- the shipping build environment, run from go/.
+# ingo_host <args...> -- this host's own OS, which is what tests need.
+ingo()      { ( cd go && env CGO_ENABLED=0 GOOS=linux "$@" ); }
+ingo_host() { ( cd go && env CGO_ENABLED=0 "$@" ); }
+
+# go_tool <name> <module@version> -- print the path to a gate tool, installing
+# it under go/.tools/bin if it is not already there or on PATH. Installing into
+# the checkout rather than GOPATH/bin means a gate run writes nothing outside
+# the repository it was pointed at.
+go_tool() {
+  local name="$1" mod="$2" p
+  for p in "$GO_TOOLS/$name" "$GO_TOOLS/$name.exe"; do
+    [ -x "$p" ] && { printf '%s' "$p"; return 0; }
+  done
+  p=$(command -v "$name" 2>/dev/null)
+  if [ -n "$p" ]; then printf '%s' "$p"; return 0; fi
+  ( cd go && env CGO_ENABLED=0 GOBIN="$(native "$GO_TOOLS")" go install "$mod" ) \
+    >/dev/null 2>&1 || return 1
+  for p in "$GO_TOOLS/$name" "$GO_TOOLS/$name.exe"; do
+    [ -x "$p" ] && { printf '%s' "$p"; return 0; }
+  done
+  return 1
+}
+
+# native_tool <exe> <args...> -- run a program that is not an MSYS one. On
+# Windows it cannot read this shell's PATH at all, and golangci-lint shells out
+# to the go command, so it is handed a PATH holding exactly that.
+native_tool() {
+  local exe="$1"; shift
+  if [ "$HOST" = windows ]; then
+    ( cd go && env CGO_ENABLED=0 GOOS=linux \
+        PATH="$(native "$(dirname "$(command -v go)")")" "$exe" "$@" )
+  else
+    ( cd go && env CGO_ENABLED=0 GOOS=linux "$exe" "$@" )
+  fi
+}
+
+if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
+  echo
+  echo "=== go: $(go version) ==="
+  echo
+
+  # Both architectures the image publishes. arm64 is not a formality: the Rust
+  # tree ships an arm64 image whose process seccomp filter is an empty list,
+  # and nothing in its gate compiled that path.
+  run "go build (linux/amd64)" ingo env GOARCH=amd64 go build ./...
+  run "go build (linux/arm64)" ingo env GOARCH=arm64 go build ./...
+  run "go vet (linux)"         ingo go vet ./...
+
+  # The two in-tree analysers and the text scan. They run for the host's own
+  # OS because `go run` has to execute what it built, and each one is pointed
+  # at the shipping target from the inside.
+  run "vetgo (D7: one goroutine spawn)"        ingo_host go run ./tools/vetgo ./cmd ./internal
+  run "vetsecret (D12: no secret to a verb)"   ingo_host go run ./tools/vetsecret ./...
+  run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./internal ./tools
+
+  FMT=$(cd go && gofmt -l . 2>/dev/null)
+  grep_gate "gofmt" "$FMT" "Run: cd go && gofmt -w ."
+
+  if LINT=$(go_tool golangci-lint "$GOLANGCI"); then
+    run "golangci-lint run" native_tool "$LINT" run ./...
+  else
+    skipped "golangci-lint run" "not on PATH and could not be installed" \
+            "${VERIFY_REQUIRE_GOTOOLS:-0}"
+  fi
+
+  run "go test ($HOST)" ingo_host go test -count=1 ./...
+
+  # D17. The detector needs cgo and cgo needs a C compiler, so this is the one
+  # step whose environment differs from the shipping build's. The binary it
+  # produces is a test binary and is never shipped.
+  if [ "$HOST" = linux ] && command -v cc >/dev/null 2>&1; then
+    run "go test -race" bash -c 'cd go && CGO_ENABLED=1 go test -race -count=1 ./...'
+  else
+    skipped "go test -race" "the race detector needs cgo and a C compiler" \
+            "${VERIFY_REQUIRE_RACE:-0}"
+  fi
+
+  # D16. The gate runs the committed seed corpus; the nightly job runs the
+  # fuzzer. With no fuzz target yet this matches nothing and passes, which is
+  # the correct answer and not a hidden skip.
+  run "fuzz seed corpus" ingo_host go test -run 'Fuzz.*/corpus' -count=1 ./...
+
+  if VULN=$(go_tool govulncheck "$GOVULN"); then
+    run "govulncheck" native_tool "$VULN" ./...
+  else
+    skipped "govulncheck" "not on PATH and could not be installed" \
+            "${VERIFY_REQUIRE_GOTOOLS:-0}"
+  fi
+
+  # D18. The module graph against the checked-in allowlist, so a new direct
+  # dependency is a diff to a file rather than a line in go.mod nobody reads.
+  DEPS_WANT=$(grep -vE '^[[:space:]]*(#|$)' go/deps.allow | sort)
+  DEPS_HAVE=$(ingo go list -m -f '{{if and (not .Main) (not .Indirect)}}{{.Path}}{{end}}' all \
+              2>/dev/null | grep -v '^$' | sort)
+  DEPS_DIFF=$(diff <(printf '%s\n' "$DEPS_WANT") <(printf '%s\n' "$DEPS_HAVE") 2>/dev/null)
+  grep_gate "direct modules match go/deps.allow" "$DEPS_DIFF" \
+    "< is allowed and absent, > is present and not allowed. Edit go/deps.allow."
+
+  # D1. Exceptions are countable, and the count is committed, so one being
+  # added shows up in the diff beside the reason it was added for.
+  NOLINT_WANT=$(grep -vE '^[[:space:]]*(#|$)' go/nolint.budget | head -1 | tr -d '[:space:]')
+  NOLINT_HAVE=$(grep -rIo '//nolint:[a-zA-Z,]*' go --include='*.go' 2>/dev/null | wc -l | tr -d '[:space:]')
+  NOLINT_HITS=""
+  [ "$NOLINT_WANT" = "$NOLINT_HAVE" ] || \
+    NOLINT_HITS="go/nolint.budget says $NOLINT_WANT, the tree has $NOLINT_HAVE"
+  grep_gate "//nolint count matches go/nolint.budget" "$NOLINT_HITS" \
+    "Every exception carries a reason on its line. Update the budget deliberately."
+
+  # Three rules that are about a call appearing outside the one package that
+  # owns it. Each scans code, not comments, for the same reason the compat
+  # gate below does: a package may explain in a comment why the exception
+  # exists without being the exception.
+  go_code() { grep -rIn --include='*.go' -E "$1" go 2>/dev/null | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)'; }
+
+  # D8. One clock. F10 was a now_ns that unwrapped duration_since(UNIX_EPOCH),
+  # which aborts the process on a machine whose RTC has not been set.
+  CLOCK_HITS=$(go_code 'time\.Now\(' | grep -v '^go/internal/clock/')
+  grep_gate "D8: time.Now only in internal/clock" "$CLOCK_HITS" \
+    "Take a clock.Clock. Nothing else reads the wall clock."
+
+  # D9. crypto/rand only.
+  RAND_HITS=$(go_code '"math/rand(/v2)?"')
+  grep_gate "D9: no math/rand" "$RAND_HITS" \
+    "crypto/rand. A predictable token is a token."
+
+  # D11. Durable writes through one helper, whose sequence internal/vfs owns.
+  RENAME_HITS=$(go_code 'os\.Rename\(|unix\.Renameat2?\(' | grep -v '^go/internal/vfs/')
+  grep_gate "D11: rename only from internal/vfs" "$RENAME_HITS" \
+    "Publish through the durable-write helper, which fsyncs the parent."
+
+  # D14. SQL is parameters only. Every statement is a package-level constant.
+  SQL_HITS=$(go_code 'fmt\.Sprintf\(|fmt\.Sprint\(|strings\.Builder' \
+             | grep '^go/internal/store/' || true)
+  grep_gate "D14: no built SQL in internal/store" "$SQL_HITS" \
+    "Bind parameters. A query built from parts is an injection waiting for input."
+
+  # D19. Closes F8, where two files carried thirteen per cent of the Rust tree
+  # with no seam a reader could navigate by.
+  BIG=$(find go -name '*.go' -not -path '*/testdata/*' \
+        -exec awk 'END { if (NR > 1500) printf "%s: %d lines\n", FILENAME, NR }' {} \; 2>/dev/null)
+  grep_gate "no Go file over 1,500 lines" "$BIG" \
+    "Split along a seam the problem already has, not one invented to hit a count."
+
+  # Principle 4, by the import graph rather than by a text search. The grep it
+  # replaces reads source, so a constant defined elsewhere or a string built
+  # from parts passes it while doing exactly what it exists to prevent.
+  go_compat_isolation() {
+    local hits="" core=""
+    for d in core dav auth acl store upload vfs preview search httpapi watch smb; do
+      [ -d "go/internal/$d" ] && core="$core ./internal/$d/..."
+    done
+    # G1: no core package imports the compat layer, transitively.
+    if [ -n "$core" ]; then
+      # shellcheck disable=SC2086
+      hits="$hits$(ingo go list -deps $core 2>/dev/null | grep 'internal/compat' || true)"
+    fi
+    # G2: the layer imports the seam and nothing else from the tree.
+    hits="$hits$(ingo go list -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' ./internal/compat/nc/... \
+                 2>/dev/null | grep 'stowcloud/go/internal/' | grep -v 'internal/compat/ncport$' || true)"
+    # G3: the seam carries no vendor vocabulary.
+    hits="$hits$(grep -rIn -iE '\boc[:_-]|\bocs\b|remote\.php|nextcloud' \
+                 go/internal/compat/ncport/ 2>/dev/null || true)"
+    # G5: the text scan, kept and narrowed, because it catches a core package
+    # that learned the vocabulary without importing anything.
+    for d in core dav auth acl store upload vfs preview search httpapi watch smb; do
+      [ -d "go/internal/$d" ] || continue
+      hits="$hits$(grep -rIn -iE '\boc[:_-]|\bocs\b|remote\.php' "go/internal/$d" 2>/dev/null || true)"
+    done
+    printf '%s' "$hits"
+  }
+  if [ -d go/internal/compat ]; then
+    NC_HITS=$(go_compat_isolation)
+    grep_gate "compat isolation (import graph, seam, text)" "$NC_HITS" \
+      "Compat wire vocabulary belongs behind internal/compat/ncport."
+    # G4: the stripped build, which is stronger than the feature flag it
+    # replaces: with no tag the packages are not compiled at all.
+    run "go build (compat stripped)" ingo go build ./...
+    run "go build -tags compat_nc"   ingo go build -tags compat_nc ./...
+  else
+    skipped "compat isolation (import graph, seam, text)" \
+            "go/internal/compat does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
+  fi
+
+  # The single-binary build. `//go:embed` reads web/build with a real
+  # dependency edge, so the `cargo clean -p sc-http` hazard has no counterpart
+  # here: rebuilding after `npm run build` picks up the new files or fails to
+  # compile.
+  if [ -f web/build/index.html ]; then
+    run "go build -tags embed_ui" ingo go build -tags embed_ui ./...
+  else
+    skipped "go build -tags embed_ui" "no web/build; run: cd web && npm run build" \
+            "${VERIFY_REQUIRE_UI:-0}"
+  fi
+else
+  why="no go/go.mod, or the go toolchain is not on PATH"
+  for s in "go build (linux/amd64)" "go vet (linux)" "golangci-lint run" "go test ($HOST)"; do
+    skipped "$s" "$why" 0
   done
 fi
 
