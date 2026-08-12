@@ -93,35 +93,58 @@ func gidArg(v int64) any {
 }
 
 // TestOutsideGrantAndMissingAreIndistinguishable is the "Done when" proof: a
-// path outside the caller's grant and a path that simply does not exist return
-// the same error, in a table test.
+// path outside the caller's grant and a path that simply does not exist produce
+// the same answer, in a table test. The two failures arrive at different
+// layers (Resolve for the first, the operation for the second) but must be the
+// same sentinel, because a protocol layer maps both to the same 404 and a
+// caller must not be able to tell them apart.
 func TestOutsideGrantAndMissingAreIndistinguishable(t *testing.T) {
 	c, _, _ := testCore(t)
 
-	vpaths := []string{
-		// Outside every grant: the label names nothing the user may read.
-		"nonexistent",
-		"docs/../other",
-		// Inside the grant but the path does not exist.
-		"docs/missing.txt",
-		"docs/deep/nested/missing.txt",
+	cases := []struct {
+		name   string
+		run    func() error
+	}{
+		{
+			"a label outside every grant",
+			func() error {
+				v, _ := vfs.ParseVpath("nonexistent")
+				_, err := c.Resolve(UserID(42), v, acl.Read)
+				return err
+			},
+		},
+		{
+			"a label the user cannot read",
+			func() error {
+				v, _ := vfs.ParseVpath("noread")
+				_, err := c.Resolve(UserID(42), v, acl.Read)
+				return err
+			},
+		},
+		{
+			"a path that does not exist inside the grant",
+			func() error {
+				r, err := resolve(t, c, "docs/missing_dir", acl.Read)
+				if err != nil {
+					return err
+				}
+				_, err = c.List(ctx(), r, "")
+				return err
+			},
+		},
 	}
 
-	var firstErr error
-	for i, p := range vpaths {
-		v, perr := vfs.ParseVpath(p)
-		if perr != nil {
-			t.Fatalf("ParseVpath(%q): %v", p, perr)
-		}
-		_, rerr := c.Resolve(UserID(42), v, acl.Read)
-		if !errors.Is(rerr, ErrNotFound) {
-			t.Errorf("case %d (%q): Resolve = %v, want ErrNotFound", i, p, rerr)
+	var baseline error
+	for i, tc := range cases {
+		err := tc.run()
+		if !errors.Is(err, ErrNotFound) {
+			t.Errorf("case %d (%s): got %v, want ErrNotFound", i, tc.name, err)
 		}
 		if i == 0 {
-			firstErr = rerr
-		} else if rerr == nil || firstErr == nil || rerr.Error() != firstErr.Error() {
-			t.Errorf("case %d (%q) error %v differs from case 0 error %v; the two must be byte-identical",
-				i, p, rerr, firstErr)
+			baseline = err
+		} else if err == nil || baseline == nil || err.Error() != baseline.Error() {
+			t.Errorf("case %d (%s) answers %q, baseline %q; the two must be byte-identical",
+				i, tc.name, err, baseline)
 		}
 	}
 }
