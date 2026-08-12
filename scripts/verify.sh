@@ -353,9 +353,13 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   fi
 
   # D16. The gate runs the committed seed corpus; the nightly job runs the
-  # fuzzer. With no fuzz target yet this matches nothing and passes, which is
-  # the correct answer and not a hidden skip.
-  run "fuzz seed corpus" ingo_host go test -run 'Fuzz.*/corpus' -count=1 ./...
+  # fuzzer.
+  #
+  # The pattern is '^Fuzz' and not 'Fuzz.*/corpus'. Go names a seed entry after
+  # the file it came from, or "seed#N" for one added in code, so the second
+  # pattern selects no subtest at all and the step passed while running nothing
+  # -- the same shape as a gate that reports PASS whatever the tree contains.
+  run "fuzz seed corpus" ingo_host go test -run '^Fuzz' -count=1 ./...
 
   if VULN=$(go_tool govulncheck "$GOVULN"); then
     run "govulncheck" native_tool "$VULN" ./...
@@ -404,6 +408,30 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   RENAME_HITS=$(go_code 'os\.Rename\(|unix\.Renameat2?\(' | grep -v '^go/internal/vfs/')
   grep_gate "D11: rename only from internal/vfs" "$RENAME_HITS" \
     "Publish through the durable-write helper, which fsyncs the parent."
+
+  # Every descriptor is an *os.File and every use of a raw one keeps the file
+  # alive across the call. (*os.File).Fd takes the descriptor out of the
+  # runtime's view for the duration, so nothing keeps the owner reachable and a
+  # finalizer is free to close it underneath the syscall. Two helpers do the
+  # keepalive; this is what stops a third site doing it by hand and forgetting.
+  FD_HITS=$(go_code '\.Fd\(\)' \
+            | grep -vE '^go/internal/(vfs/open\.go|jail/landlock\.go):')
+  grep_gate "raw descriptors only through a keepalive helper" "$FD_HITS" \
+    "Use withFd or withFd2 in internal/vfs; internal/jail/landlock.go is the other named site."
+
+  # F5. IntentReadWrite has exactly one call site, the upload engine's lazy
+  # reopen of a part file. A second one is a read path holding a writable
+  # descriptor again, which is the defect the argument replaced.
+  # internal/vfs is where it is declared and dispatched on, so the count is of
+  # what is outside it. Test code is excluded: a test that proves the two
+  # intents differ has to name both.
+  RW_SITES=$(go_code 'IntentReadWrite' | grep -v '_test\.go:' \
+             | grep -vc '^go/internal/vfs/')
+  RW_HITS=""
+  [ "${RW_SITES:-0}" -le 1 ] || RW_HITS=$(go_code 'IntentReadWrite' \
+    | grep -v '_test\.go:' | grep -v '^go/internal/vfs/')
+  grep_gate "IntentReadWrite has at most one call site" "$RW_HITS" \
+    "Only the upload finalizer may take a writable descriptor on a read path."
 
   # D14. SQL is parameters only. Every statement is a package-level constant.
   SQL_HITS=$(go_code 'fmt\.Sprintf\(|fmt\.Sprint\(|strings\.Builder' \
