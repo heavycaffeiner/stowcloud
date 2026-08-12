@@ -255,8 +255,24 @@ native() { if [ "$HOST" = windows ]; then cygpath -w "$1"; else printf '%s' "$1"
 
 # ingo <args...>      -- the shipping build environment, run from go/.
 # ingo_host <args...> -- this host's own OS, which is what tests need.
+# ingo_cgo <args...>  -- the one environment that is not the shipping one.
+#
+# CGO_ENABLED=0 is written out on every step rather than left to the default,
+# and that is load-bearing rather than tidy: go defaults it to 1 whenever a C
+# compiler is on PATH, so on a box that has one the difference between a static
+# binary and one linked against libc is this word.
 ingo()      { ( cd go && env CGO_ENABLED=0 GOOS=linux "$@" ); }
 ingo_host() { ( cd go && env CGO_ENABLED=0 "$@" ); }
+ingo_cgo()  { ( cd go && env CGO_ENABLED=1 "$@" ); }
+
+# have_cc -- is there a C compiler cgo can drive? Probed, never configured: a
+# committed absolute path to one box's toolchain is what the musl wiring had to
+# be taken apart for.
+have_cc() {
+  command -v cc >/dev/null 2>&1 ||
+    command -v gcc >/dev/null 2>&1 ||
+    command -v clang >/dev/null 2>&1
+}
 
 # go_tool <name> <module@version> -- print the path to a gate tool, installing
 # it under go/.tools/bin if it is not already there or on PATH. Installing into
@@ -324,10 +340,15 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # D17. The detector needs cgo and cgo needs a C compiler, so this is the one
   # step whose environment differs from the shipping build's. The binary it
   # produces is a test binary and is never shipped.
-  if [ "$HOST" = linux ] && command -v cc >/dev/null 2>&1; then
-    run "go test -race" bash -c 'cd go && CGO_ENABLED=1 go test -race -count=1 ./...'
+  #
+  # The condition is "is there a compiler", not "is this Linux". Those looked
+  # like the same question while this box had no compiler on it, and they are
+  # not: a race the detector can find is a race in portable code, and the host
+  # that runs the tests every day is worth finding it on.
+  if have_cc; then
+    run "go test -race ($HOST)" ingo_cgo go test -race -count=1 ./...
   else
-    skipped "go test -race" "the race detector needs cgo and a C compiler" \
+    skipped "go test -race" "no C compiler on PATH, and the detector needs cgo" \
             "${VERIFY_REQUIRE_RACE:-0}"
   fi
 

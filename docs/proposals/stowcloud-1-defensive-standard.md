@@ -313,16 +313,23 @@ header, the OIDC discovery document, the archive lister, the `X-Forwarded-For`
 walker. Go's native fuzzing; the seed corpus is committed and the gate runs the
 corpus, while the nightly job runs the fuzzer.
 
-**D17. `-race` wherever it can run, and a named refusal wherever it cannot.**
-`go test -race ./...` is a step in the gate rather than a separate job, but it
-is the one step whose environment differs from the shipping build's: the
-detector needs cgo, and `go test -race` under `CGO_ENABLED=0` refuses outright
-with `-race requires cgo`. The development box has no C compiler, so the step
-reports a named SKIP there and `VERIFY_REQUIRE_RACE=1` turns that SKIP into a
-failure on the CI job that installs one. The binary it produces is a test
-binary and is never shipped, so the static-binary story is untouched. Go's race
-detector finds a class the Rust tree could not have and the Go tree can: two
-goroutines on one map.
+**D17. `-race` wherever a C compiler is reachable, and a named refusal
+wherever one is not.** `go test -race ./...` is a step in the gate rather than
+a separate job, but it is the one step whose environment differs from the
+shipping build's: the detector needs cgo, and `go test -race` under
+`CGO_ENABLED=0` refuses outright with `-race requires cgo`. The gate probes for
+a compiler rather than deciding by host, and `VERIFY_REQUIRE_RACE=1` turns a
+SKIP into a failure on the CI job that installs one. The binary it produces is
+a test binary and is never shipped, so the static-binary story is untouched.
+Go's race detector finds a class the Rust tree could not have and the Go tree
+can: two goroutines on one map.
+
+A C compiler on the development box has a second consequence, and it is the
+kind that is invisible until it ships: `go` defaults `CGO_ENABLED` to 1
+whenever one is on `PATH`. Every other step in the gate writes
+`CGO_ENABLED=0` out rather than relying on the default, which is what keeps
+the difference between a static binary and one linked against libc from being
+a property of whatever the developer happens to have installed.
 
 **D18. `govulncheck` and a direct-dependency allowlist.** Replaces
 `cargo-deny`. The allowlist is a checked-in file of module paths; a new direct

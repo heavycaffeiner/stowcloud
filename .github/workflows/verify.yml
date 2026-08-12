@@ -174,9 +174,10 @@ jobs:
           rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal -c clippy
           rustup default "${RUST_TOOLCHAIN}"
 
-      # No C compiler is installed here on purpose, so the race step SKIPs and
-      # the Linux job above is what covers it. Everything else in the Go half
-      # cross-compiles with the toolchain alone.
+      # This job installs no C compiler. Whether the runner image ships one
+      # anyway decides whether the race step runs or reports a SKIP, and it is
+      # left at that deliberately: the Linux job below requires it, so this one
+      # does not need to make a claim about an image it does not control.
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -203,10 +204,11 @@ jobs:
           cd web
           npm run check:bundle-size
 
-      # No VERIFY_REQUIRE_MUSL and no VERIFY_REQUIRE_RACE here: those steps
-      # SKIP on this job by design, and the Linux job above is what covers
-      # them. The Go tool installs are required, because a Go toolchain is
-      # installed above and `go install` needs nothing else.
+      # No VERIFY_REQUIRE_MUSL and no VERIFY_REQUIRE_RACE here: the musl steps
+      # SKIP on this job by design, and the race step depends on whether the
+      # image happens to carry a compiler. The Linux job above covers both.
+      # The Go tool installs are required, because a Go toolchain is installed
+      # above and `go install` needs nothing else.
       - name: bash scripts/verify.sh
         shell: bash
         env:
