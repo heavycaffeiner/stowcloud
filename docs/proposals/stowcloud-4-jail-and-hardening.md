@@ -425,6 +425,21 @@ Nothing else, and that is deliberate: the jail around the most dangerous code
 path in the product adds no module the rest of the tree does not already need.
 This mirrors the third reason the current seccomp filter is hand-built.
 
+**What that module actually carries for Landlock**, settled by compiling in
+Phase 0 as assumption A2 rather than assumed here. `x/sys/unix` v0.47.0 has the
+two structures (`LandlockRulesetAttr`, `LandlockPathBeneathAttr`), the whole
+`LANDLOCK_ACCESS_FS_*` and `LANDLOCK_ACCESS_NET_*` constant set, and
+`SYS_LANDLOCK_CREATE_RULESET`, `SYS_LANDLOCK_ADD_RULE` and
+`SYS_LANDLOCK_RESTRICT_SELF` on both `amd64` and `arm64`. It has no function
+wrappers for the three. `landlock.go` therefore issues them through
+`unix.Syscall`, which is what `seccomp.go` does regardless, so this changes one
+implementation detail and no design. `go/internal/unixprobe/probe_linux.go` is
+the file that compiles this claim, and it fails the build if any of it moves.
+
+`prctl`, `setrlimit`, `close_range`, `socketpair`, `UnixRights`,
+`ParseSocketControlMessage` and `Exec` are all present as wrappers, so the jail
+issues raw syscalls only where Landlock forces it to.
+
 **Kernel.** Landlock needs 5.13 or newer and degrades to unavailable below it,
 which under `Preferred` is a named degradation and under `Required` a refusal.
 `close_range` needs 5.9. `seccomp` with TSYNC needs 3.17. The floor for the

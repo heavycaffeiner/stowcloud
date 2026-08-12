@@ -646,8 +646,12 @@ Three rows need a word, because "closed" means two different things:
 
 ### 6-2. Dependencies
 
-**Toolchain.** Go 1.24 or newer as a floor, `CGO_ENABLED=0`, `GOOS=linux`,
-`GOARCH=amd64` and `arm64`. No cross-linker and no C toolchain.
+**Toolchain.** Go 1.25.0 or newer as a floor, which is what `x/sys` v0.47.0's
+own module file requires rather than a preference ([`2`](stowcloud-2-gate-and-toolchain.md)
+§6-2), `CGO_ENABLED=0`, `GOOS=linux`, `GOARCH=amd64` and `arm64`. No
+cross-linker and no C toolchain, with one exception that is a test binary and
+never ships: the race detector needs cgo, so D17's step runs where a C compiler
+exists and names its own absence where one does not.
 
 **Direct modules**, and why each is not the standard library:
 

@@ -34,6 +34,11 @@ something unverified rather than asserting it. That inversion ends at cutover;
 | [16 - Frontend client](proposals/stowcloud-16-frontend-client.md) | what changes in `web/src/lib/api` and what does not | Phase 12 |
 | [17 - Parity and cutover](proposals/stowcloud-17-parity-and-cutover.md) | the response differ, the conformance run, the footprint remeasurement, the commit that deletes `crates/` | Phase 13 |
 
+[`proposals/OPEN-QUESTIONS.md`](proposals/OPEN-QUESTIONS.md) sits beside them
+and holds what the port surfaced that only the maintainer can settle. Each
+entry carries an answer taken in the meantime, so it is a list of decisions
+made provisionally rather than a list of things blocking work.
+
 Two directories sit beside them and are not part of the port:
 
 | Directory | Content |

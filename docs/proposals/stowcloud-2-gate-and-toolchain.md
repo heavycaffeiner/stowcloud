@@ -228,8 +228,20 @@ convenience.
 
 **What makes that tolerable** is that it is one command against a running guest,
 and that the guest needs no Go toolchain: the Windows box cross-compiles the
-test binaries (`go test -c -o`) and copies them over. This is worth confirming
-at Phase 0 rather than assuming, and it is assumption A4 in §4.4.
+test binaries (`go test -c -o`) and copies them over.
+
+**A4 is settled and the loop works.** `CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+go test -c` on the Windows box produces a statically linked ELF binary that
+runs unmodified on a Rocky 10 guest (kernel 6.12) with no Go toolchain, no
+libc dependency and no runtime configuration; all six D-rule packages were
+built and run that way. §4.3.3's trade does not have to be reopened.
+
+One thing about the copy is worth writing down, because it costs an hour to
+rediscover: Hyper-V's own guest file copy is not the way to move the binaries.
+Linux 6.10 removed the `/dev/vmbus/hv_fcopy` device that `hypervfcopyd`
+attaches to, so `Copy-VMFile` fails on any current guest while the daemon
+still reports itself active. The transfer is `scp`, which needs the guest's
+network rather than the VMBus.
 
 #### 4.3.4 The image
 
@@ -249,6 +261,22 @@ the pinned `cargo install` line and the version-skew note against
 
 Each of these is something this document and the ones after it depend on and
 this machine cannot confirm. Phase 0's real output is the answers.
+
+**All four are settled.** Each one's answer is written into the document that
+depends on it, and this is the summary:
+
+| # | Answer | Written into |
+|---|---|---|
+| A1 | every wrapper present and shaped as assumed, on both architectures | [3](stowcloud-3-vfs-and-paths.md) §6-2 |
+| A2 | structs, constants and syscall numbers, but no function wrappers; the jail issues the three through `unix.Syscall` | [4](stowcloud-4-jail-and-hardening.md) §6-2 |
+| A3 | still WebP decodes in all three shapes; animation does not, and there is no encoder at all, so the thumbnail output becomes PNG | [12](stowcloud-12-preview.md) §3.1 |
+| A4 | the loop works; the guest needs nothing installed | §4.3.3 above, and [5](stowcloud-5-store-and-schema.md) §4.3.1 |
+
+A fifth thing was settled by the same compile and is not an assumption this
+document made: the toolchain floor. `x/sys` v0.47.0 declares `go 1.25.0` in its
+own module file, so a 1.24 toolchain cannot build this module at all and the
+floor in §6-2 is 1.25.0 rather than the 1.24 that was written down before
+anything had been resolved.
 
 **A1. The syscall surface is present and shaped as assumed.** A single file that
 references `unix.Openat2`, `unix.OpenHow`, `unix.Statx`, `unix.Renameat2`,
@@ -348,8 +376,10 @@ registered under the wrong tag, which the graph cannot see.
 
 ### 6-2. Dependencies
 
-**Toolchain.** Go 1.24 or newer, which is the floor for the language features
-used here rather than a preference; the current stable release is what CI pins.
+**Toolchain.** Go 1.25.0 or newer. The floor is not a preference and not the
+language features used here: `golang.org/x/sys` v0.47.0 declares `go 1.25.0`,
+so a 1.24 toolchain refuses the module outright. `go/go.mod` and the CI job's
+`GO_VERSION` move together, and the current stable release is what CI pins.
 `CGO_ENABLED=0` everywhere. No C compiler, no cross-linker, no `zig cc`, which
 deletes `tools/zigcc-musl.ps1` and `scripts/musl-env.sh` at cutover.
 

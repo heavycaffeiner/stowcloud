@@ -59,8 +59,26 @@ are genuinely new work rather than translation:
 
 ### 3.1 Goals
 
-- [ ] Thumbnails for the formats the current build accepts, or a recorded
-      reduction where a decoder is not available (assumption A3).
+- [ ] Thumbnails for the formats the current build accepts, with the one
+      recorded reduction below.
+
+**A3 is settled, and it splits in two.** On the decode side there is no
+reduction for still images: `x/image/webp` v0.45.0 reads `VP8 ` (lossy),
+`VP8L` (lossless) and `VP8X` with an `ALPH` chunk (alpha), which is the whole
+of what the `image` crate accepts for a still WebP. What it does not read is an
+animated WebP, where the current build decodes the first frame; a preview of
+one is refused rather than produced, and that is the reduction. It is the same
+shape as the GIF preset, which asks for the first frame only, so the loss is
+one format's animation and not a format.
+
+On the encode side the answer is not a reduction, it is a format change, and
+it is recorded in `OPEN-QUESTIONS.md` rather than settled here: the current
+pipeline writes lossless WebP (`crates/sc-preview/src/exif_strip.rs:31`) and
+there is no WebP encoder in the standard library or in `x/image`. The thumbnail
+output becomes PNG, which is lossless, keeps alpha, writes no EXIF, and is
+standard library, so it is what this port's dependency table implies. What it
+costs is cache footprint against the 2 GB default, and that is a measurement
+Phase 9 owes.
 - [ ] The worker never told a path; input and output arrive as descriptors.
 - [ ] A wire codec with a fixed layout and no reflection.
 - [ ] Decode limits as the graceful stop, with `RLIMIT_AS` as the hard one.
@@ -276,9 +294,10 @@ a decoder to exercise and this is the phase that produces one.
 | `golang.org/x/image` | BMP, TIFF and WebP decoding |
 | `golang.org/x/sys/unix` | the socket, `SCM_RIGHTS`, and the jail |
 
-JPEG, PNG, GIF and zip are standard library. Assumption A3 in
-[`stowcloud-2`](stowcloud-2-gate-and-toolchain.md) §4.4 is about the WebP
-coverage, and its answer is written into §3.1's first bullet.
+JPEG, PNG, GIF and zip are standard library, and so is the thumbnail encoder:
+`x/image` has no encoder for any of the three formats it decodes here, which is
+why §3.1 records the output moving to PNG. Assumption A3 in
+[`stowcloud-2`](stowcloud-2-gate-and-toolchain.md) §4.4 is settled there.
 
 ## 7. References
 

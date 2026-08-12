@@ -282,7 +282,13 @@ criteria are set here rather than argued about later:
   populating `node` for a multi-million-file tree on rotational storage, then
   steady-state ETag invalidation as the watcher feeds changes in.
 - The measurement is taken in the Linux VM at Phase 2, against the Rust
-  implementation's numbers on the same tree.
+  implementation's numbers on the same tree. The loop that makes that possible
+  is assumption A4, and it is settled: the Windows box cross-compiles a test
+  binary with `go test -c` and the guest runs it with no Go toolchain and no
+  libc dependency of its own
+  ([`2`](stowcloud-2-gate-and-toolchain.md) §4.3.3). The benchmark that decides
+  this driver is one of those binaries, so nothing about it waits on the guest
+  growing a toolchain.
 - The threshold is a cold-populate that takes more than **three times** as long,
   or a steady-state invalidation that cannot keep up with the walk feeding it.
 - The fallback, if it trips, is stated now so it is not improvised: `cache.db`

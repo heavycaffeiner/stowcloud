@@ -456,7 +456,20 @@ land; 1b cannot, because A1 and A2 are about the calls it makes.
 | `golang.org/x/sys/unix` | every syscall in this document |
 | `golang.org/x/text/unicode/norm` | NFC and NFD candidate spellings |
 
-Both are assumption A1 and A2's subject matter. Nothing else.
+Nothing else.
+
+**A1 is settled.** Every wrapper this document calls is present in
+`x/sys/unix` v0.47.0 and shaped as assumed, compiling for both `linux/amd64`
+and `linux/arm64`: `Openat2` with `OpenHow`, `Statx` with `Statx_t`,
+`Renameat2`, `CopyFileRange`, `CloseRange`, `Fstatfs` with `Statfs_t`,
+`Getdents`, `ParseDirent`, `Socketpair`, `UnixRights`,
+`ParseSocketControlMessage`, `Prctl`, `Setrlimit` with `Rlimit`, and `Exec`.
+None of them has to become a raw `unix.Syscall` and nothing in this document
+moves. `go/internal/unixprobe/probe_linux.go` is the file that compiles the
+claim; a rename or a changed signature in a future `x/sys` is a build failure
+there rather than a surprise in the phase that needs it. A2, which is about
+Landlock and does not have the same answer, is in
+[`4`](stowcloud-4-jail-and-hardening.md) §6-2.
 
 ## 7. References
 
