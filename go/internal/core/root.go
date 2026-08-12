@@ -3,8 +3,8 @@
 // Package core is the protocol-agnostic domain API every protocol sits on.
 //
 // It must not know any of them exist, which an import graph rather than a text
-// search now enforces: nothing in this package may import a WebDAV, Nextcloud
-// or SMB package, and the gate scans the import graph to say so.
+// search now enforces: nothing in this package may import a protocol package,
+// and the gate scans the import graph to say so.
 //
 // The one thing that makes the ACL gate unskippable lives here: Resolve is the
 // only place the existence rule is applied, and Resolved cannot be constructed
