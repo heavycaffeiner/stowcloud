@@ -19,9 +19,12 @@ import (
 // read does not yield a live credential.
 const sessionTokenLen = 32
 
-// defaultSessionIdle is the idle window a session survives without use. The
-// absolute lifetime is set by CreateSession's caller.
-const defaultSessionIdle = 30 * time.Minute
+// defaultSessionIdle is the idle window a session survives without use, and
+// defaultSessionLifetime is the absolute lifetime when no caller sets one.
+const (
+	defaultSessionIdle     = 30 * time.Minute
+	defaultSessionLifetime = 30 * 24 * time.Hour
+)
 
 // Session is a freshly minted session. Token is shown once and never stored.
 type Session struct {
@@ -29,20 +32,23 @@ type Session struct {
 	UserID int64
 }
 
-// CreateSession mints a session for an authenticated account.
-func (s *Service) CreateSession(ctx context.Context, userID int64, ip, ua string, amr int, absoluteTTL, idleTTL time.Duration) (Session, error) {
+// CreateSession mints a session for an authenticated account. lifetime is the
+// absolute time the session lives, whatever the account does; the idle window
+// is the fixed defaultSessionIdle, applied at lookup because the schema keeps
+// no per-session idle column.
+func (s *Service) CreateSession(ctx context.Context, userID int64, ip, ua string, amr int, lifetime time.Duration) (Session, error) {
 	token := make([]byte, sessionTokenLen)
 	if _, err := rand.Read(token); err != nil {
 		return Session{}, fmt.Errorf("minting a session token: %w", err)
 	}
-	if idleTTL <= 0 {
-		idleTTL = defaultSessionIdle
+	if lifetime <= 0 {
+		lifetime = defaultSessionLifetime
 	}
 	hash := sha256.Sum256(token)
 	now := s.now()
 	err := s.write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, sqlInsertSession,
-			hash[:], userID, now, now, now+idleTTL.Nanoseconds(), ip, ua, amr)
+			hash[:], userID, now, now, now+lifetime.Nanoseconds(), ip, ua, amr)
 		return err
 	})
 	if err != nil {

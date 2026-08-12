@@ -110,7 +110,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest, sessionTTL time.D
 		}
 	}
 
-	sess, err := s.CreateSession(ctx, user.id, req.IP, req.UA, req.AMR, sessionTTL, 0)
+	sess, err := s.CreateSession(ctx, user.id, req.IP, req.UA, req.AMR, sessionTTL)
 	if err != nil {
 		return Session{}, err
 	}

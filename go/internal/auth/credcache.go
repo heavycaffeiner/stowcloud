@@ -66,6 +66,7 @@ type connEntry struct {
 
 type tokenEntry struct {
 	principal Principal
+	scope     Scope
 	gen       int64
 	inserted  time.Time
 }
@@ -178,28 +179,28 @@ func (c *caches) Tier1Store(hash [32]byte, p Principal, gen int64) {
 // tokenLookup is the app-password tier-3 bypass, keyed by sha256(token) with
 // a 60-second TTL and the same generation invalidation as the other two
 // tiers.
-func (c *caches) TokenLookup(hash [32]byte, gen int64) (Principal, bool) {
+func (c *caches) TokenLookup(hash [32]byte, gen int64) (Principal, Scope, bool) {
 	c.token.mu.Lock()
 	defer c.token.mu.Unlock()
 	e, present := c.token.peek(hash)
 	if !present {
-		return Principal{}, false
+		return Principal{}, Scope{}, false
 	}
 	switch {
 	case e.gen != gen:
 		c.token.remove(hash)
-		return Principal{}, false
+		return Principal{}, Scope{}, false
 	case c.clk.Now().Sub(e.inserted) > tokenTTL:
 		c.token.remove(hash)
-		return Principal{}, false
+		return Principal{}, Scope{}, false
 	}
-	return e.principal, true
+	return e.principal, e.scope, true
 }
 
-func (c *caches) TokenStore(hash [32]byte, p Principal, gen int64) {
+func (c *caches) TokenStore(hash [32]byte, p Principal, scope Scope, gen int64) {
 	c.token.mu.Lock()
 	defer c.token.mu.Unlock()
-	c.token.put(hash, tokenEntry{principal: p, gen: gen, inserted: c.clk.Now()})
+	c.token.put(hash, tokenEntry{principal: p, scope: scope, gen: gen, inserted: c.clk.Now()})
 }
 
 // lru is a bounded map with FIFO-evicted entries, guarded by its own mutex.

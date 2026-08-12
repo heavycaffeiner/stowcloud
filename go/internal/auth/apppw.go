@@ -71,8 +71,8 @@ func (s *Service) VerifyAppPassword(ctx context.Context, token string) (Principa
 		return Principal{}, Scope{}, ErrCredentials
 	}
 	hash := sha256.Sum256([]byte(folded))
-	if p, ok := s.cache.TokenLookup(hash, s.Generation()); ok {
-		return p, Scope{}, nil
+	if p, scope, ok := s.cache.TokenLookup(hash, s.Generation()); ok {
+		return p, scope, nil
 	}
 
 	var (
@@ -109,7 +109,7 @@ func (s *Service) VerifyAppPassword(ctx context.Context, token string) (Principa
 		scope.Shares = append(scope.Shares, string(part))
 	}
 	principal := Principal{UserID: user, Display: u.display, Disabled: u.disabled}
-	s.cache.TokenStore(hash, principal, s.Generation())
+	s.cache.TokenStore(hash, principal, scope, s.Generation())
 	return principal, scope, nil
 }
 

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -90,6 +91,79 @@ func reopenService(t *testing.T, dir string, clk clock.Clock) *Service {
 		t.Fatalf("reopening the master key: %v", err)
 	}
 	return s
+}
+
+// mutableClock is a clock a test can advance, so an expiry is a fact about
+// the data rather than about how long the test took.
+type mutableClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (m *mutableClock) Now() time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.t
+}
+
+func (m *mutableClock) Since(t time.Time) time.Duration { return m.Now().Sub(t) }
+func (m *mutableClock) Nanos() int64                    { return m.Now().UnixNano() }
+
+func (m *mutableClock) advance(d time.Duration) {
+	m.mu.Lock()
+	m.t = m.t.Add(d)
+	m.mu.Unlock()
+}
+
+// A session's absolute lifetime is what dies at the deadline, not the idle
+// window: advancing the clock past the configured lifetime revokes it even
+// while it would still be idle-fresh.
+func TestSessionAbsoluteLifetimeIsHonoured(t *testing.T) {
+	clk := &mutableClock{t: time.Unix(0, 0)}
+	s, _ := openService(t, clk)
+	ctx := context.Background()
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw"))); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	sess, err := s.CreateSession(ctx, 1, "127.0.0.1", "ua", 1, time.Minute)
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	if _, err := s.LookupSession(ctx, sess.Token); err != nil {
+		t.Fatalf("LookupSession within the lifetime: %v", err)
+	}
+	clk.advance(2 * time.Minute)
+	if _, err := s.LookupSession(ctx, sess.Token); !errors.Is(err, ErrCredentials) {
+		t.Errorf("a session outlived its configured absolute lifetime: %v", err)
+	}
+}
+
+// The tier-3 app-password cache carries the scope along with the principal, so
+// a cache hit answers every question the enforcement layer asks.
+func TestAppPasswordScopeSurvivesTheCache(t *testing.T) {
+	s, _ := openService(t, nil)
+	ctx := context.Background()
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw"))); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	tok, err := s.CreateAppPassword(ctx, 1, "desktop", Scope{Perms: 1, Shares: []string{"photos"}}, 0)
+	if err != nil {
+		t.Fatalf("CreateAppPassword: %v", err)
+	}
+	_, first, err := s.VerifyAppPassword(ctx, tok)
+	if err != nil {
+		t.Fatalf("first VerifyAppPassword: %v", err)
+	}
+	_, second, err := s.VerifyAppPassword(ctx, tok)
+	if err != nil {
+		t.Fatalf("cached VerifyAppPassword: %v", err)
+	}
+	if len(second.Shares) != 1 || second.Shares[0] != "photos" || second.Perms != 1 {
+		t.Errorf("the cached scope was lost or wrong: %+v, want photos/1", second)
+	}
+	if first.Perms != second.Perms || len(first.Shares) != len(second.Shares) {
+		t.Errorf("the cached scope differs from the freshly read one: %+v vs %+v", first, second)
+	}
 }
 
 func TestPasswordPHC(t *testing.T) {
@@ -357,7 +431,7 @@ func TestSessionLifecycle(t *testing.T) {
 	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw"))); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	sess, err := s.CreateSession(ctx, 1, "127.0.0.1", "ua", 1, time.Hour, 0)
+	sess, err := s.CreateSession(ctx, 1, "127.0.0.1", "ua", 1, time.Hour)
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -393,7 +467,7 @@ func TestAppPasswordRevocationIsImmediate(t *testing.T) {
 	}
 	// The token is now in the tier-3 cache under the current generation.
 	hash := sha256.Sum256([]byte(mustFold(t, tok)))
-	if _, ok := s.cache.TokenLookup(hash, s.Generation()); !ok {
+	if _, _, ok := s.cache.TokenLookup(hash, s.Generation()); !ok {
 		t.Fatal("the token was not cached after its first verify")
 	}
 	// A folded re-type still verifies.
