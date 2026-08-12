@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/num"
 )
 
@@ -23,6 +24,39 @@ import (
 //    commits or releases when it ends, so two concurrent uploads cannot both
 //    pass a check against the same headroom. The compat layer reports it to
 //    clients, so it is client-visible as well as enforced.
+
+// FreeSpace is the filesystem-backed half of quota, reported to clients as
+// RFC 4331 disk space.
+type FreeSpace struct {
+	// Used is what the filesystem holds, including the root-reserved blocks.
+	Used uint64
+	// Available is what an unprivileged writer can actually consume,
+	// f_bavail, never f_bfree: the reserved blocks in the difference are not
+	// ours to write into.
+	Available uint64
+	// Total is the filesystem's whole size.
+	Total uint64
+}
+
+// FreeSpace reports the filesystem backing r. It resolves to the filesystem
+// holding the path asked about, not the one holding the share root: a share
+// with a RAID array mounted at one of its subdirectories has two filesystems
+// in it, and a client asking about the RAID folder must be told the RAID's
+// numbers.
+func (c *Core) FreeSpace(ctx context.Context, r Resolved) (FreeSpace, error) {
+	if err := r.Require(acl.Read); err != nil {
+		return FreeSpace{}, err
+	}
+	s, err := r.root.Space(r.path)
+	if err != nil {
+		return FreeSpace{}, mapVFSErr(err)
+	}
+	return FreeSpace{
+		Used:      s.Used(),
+		Available: s.Available,
+		Total:     s.Total,
+	}, nil
+}
 
 // QuotaSink is the ledger side of the per-user quota. It is attached like the
 // other optional stores: a Core with none attached enforces nothing, which is

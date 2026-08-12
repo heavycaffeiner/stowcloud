@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
@@ -338,6 +339,95 @@ func (c *Core) LinkCheckPassword(ctx context.Context, link Link, candidate strin
 		return true, nil
 	}
 	return c.verifyLinkPassword(ctx, h.String, candidate)
+}
+
+// LinkDrop accepts an upload through a link. It is the upload-only surface:
+// a bearer with CREATE but no READ or DOWNLOAD can write into the link's
+// directory and can never list it.
+//
+// Never overwrites: a name already taken gets the same "name (2).ext"
+// treatment as a rename-on-conflict, so an anonymous uploader cannot destroy,
+// or probe for, what somebody else already put there.
+func (c *Core) LinkDrop(ctx context.Context, link Link, name string, body []byte) (Entry, error) {
+	if !link.Perms.Has(acl.Create) {
+		return Entry{}, ErrDenied
+	}
+	if link.IsExpired(c.clk.Nanos()) {
+		return Entry{}, ErrLinkExpired
+	}
+	root, ok := c.ShareRoot(link.Share)
+	if !ok {
+		return Entry{}, ErrLinkExpired
+	}
+	dir, perr := link.Path.Safe()
+	if perr != nil {
+		return Entry{}, ErrLinkExpired
+	}
+	st, serr := root.Stat(dir)
+	if serr != nil || !st.Kind.IsDir() {
+		return Entry{}, ErrLinkExpired
+	}
+
+	dest := dir
+	dest, jerr := dest.Join(name)
+	if jerr != nil {
+		return Entry{}, jerr
+	}
+	if p, err := pathExists(root, dest); err != nil {
+		return Entry{}, err
+	} else if p {
+		// A name already taken gets a counting suffix rather than an
+		// overwrite, which is the drop-box contract.
+		uniq, uerr := c.uniqueDropName(root, dir, name)
+		if uerr != nil {
+			return Entry{}, uerr
+		}
+		dest = uniq
+	}
+
+	mode := root.Policy().ModeFile
+	if _, werr := root.WriteDurable(dest, vfs.DurableOpts{Mode: mode, NoClobber: true}, func(f *vfs.File) error {
+		_, cerr := f.WriteAt(body, 0)
+		return cerr
+	}); werr != nil {
+		return Entry{}, mapVFSErr(werr)
+	}
+	c.markDirty(ctx, link.Share, dest)
+	entry := c.buildEntry(Resolved{share: link.Share, root: root, path: dest, perms: link.Perms},
+		dest.Name(), dest)
+	entry.Perms = link.Perms
+	return entry, nil
+}
+
+// uniqueDropName picks the next free "name (2).ext" in a directory.
+func (c *Core) uniqueDropName(root *vfs.ShareRoot, dir vfs.SafePath, name string) (vfs.SafePath, error) {
+	stem, ext := name, ""
+	if i := lastDot(name); i >= 0 {
+		stem, ext = name[:i], name[i:]
+	}
+	for n := 2; n < 10_000; n++ {
+		candidate := stem + " (" + strconv.Itoa(n) + ")" + ext
+		p, jerr := dir.Join(candidate)
+		if jerr != nil {
+			continue
+		}
+		if exists, err := pathExists(root, p); err != nil {
+			return vfs.SafePath{}, err
+		} else if !exists {
+			return p, nil
+		}
+	}
+	return vfs.SafePath{}, ErrConflict
+}
+
+// lastDot finds the last '.' in a name, which is where the extension starts.
+func lastDot(s string) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == '.' {
+			return i
+		}
+	}
+	return -1
 }
 
 // sameIdent compares a stat against the identity a link pinned at creation.
