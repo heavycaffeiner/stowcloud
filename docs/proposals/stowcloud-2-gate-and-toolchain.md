@@ -87,10 +87,14 @@ has different versions of all three.
 go/
   go.mod                module github.com/heavycaffeiner/stowcloud/go
   go.sum
+  .golangci.yml         the tier-2 rules, configured before the code exists
+  deps.allow            D18: every direct module, one path per line
+  nolint.budget         D1: how many exceptions the tree is allowed
   cmd/
     stowcloud/          the only binary; the subcommand set is §5-1
   internal/
     limits/ clock/ task/ secret/ num/ apierr/    the D-rule packages
+    unixprobe/          §4.4's A1 and A2, as a file that has to compile
     vfs/ jail/ store/ acl/ auth/ core/ watch/
     search/ upload/ preview/ httpapi/ dav/ smb/ oidc/ server/
     compat/             behind the compat_nc build tag, three packages:
@@ -98,11 +102,17 @@ go/
       nc/               the layer: imports ncport and nothing else from internal/
       ncwire/           the adapter: the only package that sees both sides
   tools/
-    vetgo/              D7: the go-statement analyser
-    vetsecret/          D12: the Secret formatting analyser
+    vetgo/              D7: the go-statement check
+    vetsecret/          D12: the Secret formatting check
+    koscan/             D15: the Korean scan, over a unicode.RangeTable
   testdata/
     golden/             cross-implementation fixtures (search, ETag, wire)
 ```
+
+`internal/unixprobe` is not a subsystem and nothing calls it. It names every
+syscall wrapper the design depends on so that one going missing or changing
+shape is a build failure there rather than a surprise in the phase that needs
+it, which is what makes §4.4's answers stay answered.
 
 **One binary, one dispatch.** `cmd/stowcloud` dispatches on `argv[1]` the
 way `crates/sc-server/src/main.rs` already intercepts `healthcheck` before the

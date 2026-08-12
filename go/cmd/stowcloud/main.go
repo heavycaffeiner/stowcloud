@@ -71,14 +71,15 @@ func run(args []string, stderr io.Writer) int {
 		args = []string{"serve"}
 	}
 
-	i := slices.IndexFunc(table(), func(c command) bool { return c.name == args[0] })
+	commands := table()
+	i := slices.IndexFunc(commands, func(c command) bool { return c.name == args[0] })
 	if i < 0 {
 		say(stderr, "stowcloud %s: unknown subcommand %q\n\n", version, args[0])
 		usage(stderr)
 		return exitUsage
 	}
 
-	cmd := table()[i]
+	cmd := commands[i]
 	spoken := cmd.name
 	if len(cmd.verbs) > 0 {
 		if len(args) < 2 || !slices.Contains(cmd.verbs, args[1]) {
