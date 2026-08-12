@@ -169,9 +169,11 @@ discarding what it uploaded.
 1. The interval set must be complete. If it is not, the request is refused with
    the missing ranges named.
 2. Whole-file verification if requested, read through the same handle that wrote
-   the part file. This is the one caller allowed `IntentReadWrite` from
-   [`stowcloud-3`](stowcloud-3-vfs-and-paths.md) §4.3.4, and it is the reason
-   that intent exists.
+   the part file. That handle is the one place in the tree holding
+   `IntentReadWrite` ([`3`](stowcloud-3-vfs-and-paths.md) §4.3.4), and it is
+   the reason the intent exists: the same descriptor takes chunk writes and is
+   read back here, so a read-only reopen would fail the verification it was
+   opened for.
 3. Publish through the durable-write helper: mode and ownership restored,
    `fdatasync`, `renameat2`, parent `fsync`.
 4. Invalidate the directory's generation.

@@ -82,7 +82,7 @@ rather than a matter of convenience:
 
 ```
 tier 1  the type system      cannot be violated, no configuration to disable
-        D10 D12 D15 D20      a violation does not compile
+        D5 D10 D12 D15 D20   a violation does not compile
 
 tier 2  the gate             verify.sh fails; a bypass is a visible diff
         D1 D2 D6 D7 D8 D9 D11 D13 D14 D17 D18 D19
@@ -92,8 +92,10 @@ tier 3  a required test      the rule is about runtime behaviour
 ```
 
 Nothing is in tier 3 that could be in tier 2, and nothing in tier 2 that could
-be in tier 1. Where a rule appears in two tiers, both are listed: D5's limits
-are constants (tier 1 for the value) checked by tests (tier 3 for the refusal).
+be in tier 1. D5 is the one rule in two tiers and is listed in both: its limits
+are constants, which is tier 1 for the value, checked by tests that the limit
+is what refuses, which is tier 3 for the behaviour. A constant nothing asserts
+against is a number, not a bound.
 
 ### 4.2 Data Model Changes
 

@@ -126,11 +126,19 @@ needs a profile change. A downgrade to a weaker path-resolution mechanism is
 logged loudly, because it is a real weakening of the guarantee the whole
 security model rests on.
 
-This is stance S3, and it is the same stance D3 turns into a startup refusal
-for Landlock and seccomp. The difference is deliberate: `openat2` being blocked
-is a refusal to serve at all under `hardening = "required"`, because there is
-no safe fallback for principle 2, while Landlock being unavailable is a
-degradation the operator may accept.
+This is stance S3, and it is the same stance D3 turns into a startup refusal.
+Under `hardening = "required"` both a blocked `openat2` and an unavailable
+Landlock refuse to start; the difference is what happens under `preferred`, and
+it is worth being exact because the two degradations are not equivalent.
+
+Landlock missing costs a layer. A blocked `openat2` costs **principle 2**: the
+fallback is per-component resolution, which is the normalise-then-open shape S1
+exists to refuse, so it reintroduces the TOCTOU window rather than merely
+narrowing the sandbox. It is implemented, it is what `preferred` degrades to,
+and it is logged as a weakening rather than as a compatibility note. An
+operator who cannot change the seccomp profile has that option; an operator who
+has not read this should not be given it silently, which is why `required` is
+the shipped default.
 
 ### 4.3 The filesystem gate
 
@@ -263,7 +271,7 @@ does (D15).
 | Condition | Effect |
 |---|---|
 | share on overlayfs | registration refused, named, startup continues without that share |
-| `openat2` blocked by a seccomp profile | refusal to start under `required`; a loud downgrade otherwise |
+| `openat2` blocked by a seccomp profile | refusal to start under `required`; under `preferred`, per-component resolution with the loss of principle 2 logged as a weakening (§4.2) |
 | Landlock or seccomp unavailable | refusal to start under `required`; `degraded` under `preferred` |
 | data directory not writable by the runtime uid | refusal to start, naming the path and the uid |
 | certificate generation fails | refusal to start; there is no plaintext fallback to degrade into |

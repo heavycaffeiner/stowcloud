@@ -598,32 +598,51 @@ column.
 | 2 | cache.db, state.db, migrations | [5](stowcloud-5-store-and-schema.md) | M | 0 |
 | 3 | auth, acl | [6](stowcloud-6-auth-and-acl.md) | L | 2 |
 | 4 | the core domain | [7](stowcloud-7-core-domain.md) | L | 1, 2, 3 |
-| 5 | http, middleware, REST | [8](stowcloud-8-http-and-api.md) | XL | 4 |
+| 5 | http, middleware, REST | [8](stowcloud-8-http-and-api.md) | XL | 3, 4 |
 | 6 | upload | [9](stowcloud-9-upload.md) | M | 4 |
-| 7 | webdav | [10](stowcloud-10-webdav.md) | L | 4, 5 |
-| 8 | search | [11](stowcloud-11-search.md) | L | 1, 2 |
-| 9 | preview and the worker | [12](stowcloud-12-preview.md) | M | 1 |
-| 10 | compat | [13](stowcloud-13-compat-nc.md) | XL | 5, 6, 7, 9 |
+| 7 | webdav | [10](stowcloud-10-webdav.md) | L | 2, 4, 6 |
+| 8 | search | [11](stowcloud-11-search.md) | L | 4 |
+| 9 | preview and the worker | [12](stowcloud-12-preview.md) | M | 1, 4 |
+| 10 | compat | [13](stowcloud-13-compat-nc.md) | XL | 5, 6, 7, 8, 9 |
 | 11 | smb, oidc, and the operational surface: the filesystem gate, the syscall probe, health reasons, the image | [14](stowcloud-14-smb-and-oidc.md), [15](stowcloud-15-deployment.md) | M | 1, 3, 5 |
-| 12 | frontend API client | [16](stowcloud-16-frontend-client.md) | M | 5 |
+| 12 | frontend API client | [16](stowcloud-16-frontend-client.md) | M | 5, 6 |
 | 13 | parity, measurement, cutover | [17](stowcloud-17-parity-and-cutover.md) | L | all |
 
-Phases 6, 7, 8 and 9 are independent of each other and can be taken in any
-order once their dependencies are met. Phase 10 needs all four. Phase 13 is the
-only phase that may claim a performance or footprint number.
+The column is what each phase's own milestone table names, not a minimal set,
+so a phase reached transitively is still listed where a milestone depends on it
+directly. Two orderings follow from it and are easy to get wrong:
+
+- **Phase 7 is not independent of Phase 6.** WebDAV's `/dav-uploads` collection
+  is backed by the upload engine's name-ordered spool mode, so 7f waits on it.
+  Phases 8 and 9 are independent of both and of each other.
+- **Phase 10 needs all four of 6, 7, 8 and 9**, one per surface: chunked upload,
+  the WebDAV mounts, mobile search, and the thumbnail endpoints.
+
+Phase 13 is the only phase that may claim a performance or footprint number.
 
 Each phase ends green on the full gate, including `-race`, closes the findings
 assigned to it, and leaves no `TODO` for a later phase to find.
 
 | Phase | Findings it closes |
 |---|---|
-| 0 | F12, F14, and the lints behind F1 to F11 |
-| 1 | F1, F2, F3, F4, F5, F6, F7 |
+| 0 | F9, F10, F14, and the gates and lints the rest are closed by |
+| 1 | F1, F2, F3, F4, F5, F6, F7, F12 |
 | 4 | F11 |
-| 5 | F8, F9 |
+| 5 | F8 |
 | 10 | F13 |
 
-F10 is a Phase 0 lint whose first users appear in Phase 2.
+Three rows need a word, because "closed" means two different things:
+
+- **F9, F10 and F14 are closed by a rule existing**, not by code changing. D7's
+  panic policy, D8's single clock and D15's `MessageKey` all land in Phase 0,
+  and after that the defect cannot be written. F10's first real callers appear
+  in Phase 2 and F14's in Phase 5; neither can reintroduce it.
+- **F8 is closed twice.** D19's line-count gate lands in Phase 0, where it
+  guards nothing because there is no code, and Phase 5 is where it would
+  otherwise be violated, so that is the phase credited with it.
+- **F12 is a deletion in Phase 1**, not Phase 0: the `fanotify` value comes out
+  of the watch configuration in [`3`](stowcloud-3-vfs-and-paths.md) §3.2, which
+  is where the watcher is written.
 
 ### 6-2. Dependencies
 
@@ -641,8 +660,15 @@ F10 is a Phase 0 lint whose first users appear in Phase 2.
 | `golang.org/x/sync` | `rayon`, `crossbeam` | `errgroup` and `semaphore` |
 | `modernc.org/sqlite` | `rusqlite`, `r2d2` | pure-Go SQLite; the alternative is cgo, which costs the static build |
 | `github.com/klauspost/compress` | `zstd`, `ruzstd` | zstd |
-| `github.com/BurntSushi/toml` | `toml` | no stdlib TOML |
-| a pure-Go BLAKE3 | `blake3` | a client-facing TUS checksum algorithm, so it cannot be swapped for a stdlib hash |
+| `github.com/BurntSushi/toml` | `toml` | no stdlib TOML. Enters at Phase 5 ([`8`](stowcloud-8-http-and-api.md) §6-2) |
+| a pure-Go BLAKE3 | `blake3` | a client-facing TUS checksum algorithm, so it cannot be swapped for a stdlib hash. Enters at Phase 6 ([`9`](stowcloud-9-upload.md) §6-2) |
+
+Two more are **conditional and not committed to**, listed so that adding one is
+a diff to this table rather than a surprise: a small HTTP router, if
+`net/http.ServeMux`'s patterns turn out not to cover the route list
+([`8`](stowcloud-8-http-and-api.md) §6-2), and a generic integer constraint for
+D6, which [`1`](stowcloud-1-defensive-standard.md) §6-2 prefers to hand-write
+in four lines rather than take `golang.org/x/exp` for.
 
 Everything else the Rust tree carries is standard library in Go, per §4.2.
 

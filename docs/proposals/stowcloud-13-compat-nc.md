@@ -121,6 +121,7 @@ internal/compat/nc/
   chunking.go    upload v2
   ocs.go         the OCS envelope
   capabilities.go  shares.go  login_flow.go
+  preview.go     the client's thumbnail endpoints, over PreviewPort
   search.go  trash.go  favorites.go  recent.go
 ```
 
@@ -438,6 +439,7 @@ mount rather than against the native API alone.
 | Phase 10c | `chunking.go` | M | 10b, Phase 6 | heavycaffeiner |
 | Phase 10d | `ocs.go`, `capabilities.go`, `login_flow.go`, `shares.go` | L | 10a | heavycaffeiner |
 | Phase 10e | `search.go`, `trash.go`, `favorites.go`, `recent.go` | M | 10b, Phase 8 | heavycaffeiner |
+| Phase 10f | `preview.go`: the thumbnail endpoints the clients call, over `PreviewPort` | S | 10b, Phase 9 | heavycaffeiner |
 
 10a is small and blocks everything, so it lands first even though it produces no
 client-visible behaviour. Landing the gates before the code they govern is the

@@ -184,15 +184,22 @@ F5's fix. `OpenRead` takes what the caller means to do:
 type AccessIntent uint8
 const (
     IntentRead      AccessIntent = iota // O_RDONLY. Everything except the below.
-    IntentReadWrite                     // O_RDWR. Only the upload finalizer,
-                                        // which verifies a digest through the
-                                        // handle it created.
+    IntentReadWrite                     // O_RDWR. Only the upload engine's
+                                        // part-file handle, which takes chunk
+                                        // writes and is read back at finalize
+                                        // to verify the whole-file digest.
 )
 ```
 
-`IntentReadWrite` is used at exactly one call site, and a gate greps for a
-second. The fallback chain disappears with it: an `O_RDONLY` open does not fail
-with `EACCES` on a readable file, so there is nothing to fall back from.
+`IntentReadWrite` is used at exactly one call site, the upload engine's lazy
+reopen of a part file ([`9`](stowcloud-9-upload.md) §4.3.2), and a gate greps
+for a second. Note that the *create* path does not need it: the durable-write
+helper opens its staging file `O_RDWR` by construction (§4.3.5 step 2), so a
+freshly created part file is already writable without going through here.
+
+The fallback chain disappears with the intent argument. An `O_RDONLY` open does
+not fail with `EACCES` on a readable file, so there is nothing to fall back
+from.
 
 #### 4.3.5 The durable-write helper
 

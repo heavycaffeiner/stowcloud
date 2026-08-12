@@ -284,7 +284,9 @@ and the Rocky VM with enough disk for a representative tree.
 **Non-code dependency**: the Rust build has to still work at this point. That is
 the argument for keeping `crates/` in the tree until the cutover commit rather
 than deleting it when the Go equivalent lands, and it is why the folder layout
-in [`stowcloud-2`](stowcloud-2-gate-and-toolchain.md) §4.1 has both.
+in [`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §4.1.1 has both.
+[`2`](stowcloud-2-gate-and-toolchain.md) §4.1 details only the `go/` half,
+which is the one being built.
 
 ## 7. References
 

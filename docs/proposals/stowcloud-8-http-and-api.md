@@ -194,8 +194,17 @@ type Error struct {
 }
 ```
 
-One mapper from domain error to `(status, Error)`. It is a `switch` over
-`errors.Is` and it is the only function in the tree that names an HTTP status.
+One mapper from domain error to `(status, Error)`, a `switch` over `errors.Is`,
+and the only place a status is chosen **for this surface**.
+
+Three other surfaces choose their own, and they are named here so that
+"one mapper" is not read as a claim it cannot keep:
+[`9`](stowcloud-9-upload.md) §5-2 for TUS, [`10`](stowcloud-10-webdav.md) §5-2
+for WebDAV, and [`13`](stowcloud-13-compat-nc.md) §5-2 for the compat mounts.
+Each has a status vocabulary set outside this repository, so folding them into
+this switch would mean this function knowing what OCS is, which principle 4
+forbids. What they share is the layer below: every one of them maps from the
+same domain errors, so a new error kind reaches all four mappers or none.
 
 The existence rule is applied here and nowhere else: `ErrNotFound` and the
 subset of `ErrDenied` that the caller may not know about both map to 404 with
@@ -337,15 +346,25 @@ func Map(err error) (int, *Error)
 
 | Module | Used for |
 |---|---|
-| a routing library, or `net/http`'s own pattern matching | path parameters |
+| `github.com/BurntSushi/toml` | `sc.toml`, parsed in `internal/server/config.go`. This phase is where it enters the module graph, which is why it is listed here rather than left implicit in [`0`](stowcloud-0-motivation-and-findings.md) §6-2's table |
+| a routing library, **only if needed** | path parameters |
 
 Go 1.22 gave `net/http.ServeMux` method and wildcard patterns, which covers this
 surface, and Phase 5a's first task is confirming that against the real route
 list rather than adding a router by reflex. If it does not cover it, one small
-router is added and named here; a framework is not.
+router is added and named in this table and in
+[`0`](stowcloud-0-motivation-and-findings.md) §6-2; a framework is not. The
+conditional entry is the honest shape: a dependency this document has not
+committed to should not appear in a list that reads as committed.
 
 Everything else is standard library: `crypto/tls`, `crypto/x509`, `net/http`,
 `encoding/json`, `embed`, `log/slog`.
+
+**Config parsing is a trust boundary** (D20), and TOML being a module rather
+than the standard library does not change where the validation happens. The
+parser produces a struct of raw values; one validating constructor turns that
+into the typed configuration every other package accepts, and an out-of-range
+value is a startup refusal naming the key.
 
 ## 7. References
 

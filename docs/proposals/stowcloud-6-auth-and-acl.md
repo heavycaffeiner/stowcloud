@@ -296,7 +296,7 @@ func (e *Evaluator) Evaluate(user UserID, vpath Vpath) (Perms, error)
 | `ErrCredentials` | the single credential-failure error |
 | `ErrSecondFactor` | a factor is required and was not supplied; distinct because the client must be told to ask |
 | `ErrScope` | the app password's scope does not cover this route |
-| `ErrLocked` | the account is disabled |
+| `ErrAccountDisabled` | the account is disabled. Not `ErrLocked`, which [`10`](stowcloud-10-webdav.md) §5-2 uses for a WebDAV resource lock; two sentinels with one name in two packages is a name a reader conflates |
 
 `ErrSecondFactor` being distinct from `ErrCredentials` is a deliberate leak: the
 client cannot prompt for a code without it. It is only ever returned after the
