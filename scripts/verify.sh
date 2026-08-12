@@ -263,16 +263,31 @@ native() { if [ "$HOST" = windows ]; then cygpath -w "$1"; else printf '%s' "$1"
 # binary and one linked against libc is this word.
 ingo()      { ( cd go && env CGO_ENABLED=0 GOOS=linux "$@" ); }
 ingo_host() { ( cd go && env CGO_ENABLED=0 "$@" ); }
-ingo_cgo()  { ( cd go && env CGO_ENABLED=1 "$@" ); }
 
-# have_cc -- is there a C compiler cgo can drive? Probed, never configured: a
-# committed absolute path to one box's toolchain is what the musl wiring had to
-# be taken apart for.
-have_cc() {
-  command -v cc >/dev/null 2>&1 ||
-    command -v gcc >/dev/null 2>&1 ||
-    command -v clang >/dev/null 2>&1
+# ingo_cgo <args...> -- the one environment that is not the shipping one.
+#
+# On Windows the compiler has to be on a PATH the *go command* can read, and
+# this shell's is not one: go is a native program and cannot resolve an MSYS
+# path. Finding a compiler here and not handing its directory over is how this
+# step failed with `C compiler "gcc" not found` on a box that has one.
+ingo_cgo() {
+  if [ "$HOST" = windows ]; then
+    ( cd go && env CGO_ENABLED=1 \
+        PATH="$(native "$(dirname "$(cc_path)")");$(native "$(dirname "$(command -v go)")")" \
+        "$@" )
+  else
+    ( cd go && env CGO_ENABLED=1 "$@" )
+  fi
 }
+
+# cc_path -- the C compiler cgo can drive, or nothing. Probed, never
+# configured: a committed absolute path to one box's toolchain is what the musl
+# wiring had to be taken apart for.
+cc_path() {
+  command -v cc 2>/dev/null || command -v gcc 2>/dev/null || command -v clang 2>/dev/null
+}
+
+have_cc() { [ -n "$(cc_path)" ]; }
 
 # go_tool <name> <module@version> -- print the path to a gate tool, installing
 # it under go/.tools/bin if it is not already there or on PATH. Installing into
