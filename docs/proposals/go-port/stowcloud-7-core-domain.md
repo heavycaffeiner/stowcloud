@@ -31,10 +31,24 @@ the product advertises passes and an edit is lost. Unlikely, and likeliest in
 exactly the case principle 3 says to expect: another program rewriting a file in
 place.
 
-**Path vocabulary is where this layer has already been wrong.**
-`docs/proposals/stowcloud-16-correctness-sweep.md` records three vocabularies
-under one name, and D10 turns them into three types precisely because this is
-the layer that converts between them.
+**Path vocabulary is where this layer has already been wrong.** Three
+vocabularies were carried under one name, and D10 turns them into three types
+precisely because this is the layer that converts between them.
+
+Three stances from
+[`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 decide the close
+calls here, and each one is a place where the obvious implementation is wrong:
+
+- **S2, existence is never revealed.** The obvious implementation returns 403
+  for a path the caller may not touch. That tells a stranger the path exists.
+  §4.3.1 makes it one function so the rule cannot be half-applied.
+- **S6, the neighbours' access survives us.** The obvious implementation of a
+  replace is truncate-and-write, which is neither atomic nor mode-preserving.
+  Every mutation goes through the durable helper instead.
+- **A permission decision carries its own reason.** An evaluation that returns
+  a bare boolean cannot tell the UI why an action is unavailable and cannot
+  tell the audit log what was actually decided, so `Perms` travels with the
+  grant that produced it rather than collapsing to yes or no.
 
 ## 3. Goals & Non-Goals
 
@@ -55,7 +69,9 @@ the layer that converts between them.
 
 ### 3.2 Non-Goals
 
-- [ ] Versioning. A non-goal in `docs/proposals/stowcloud-12` and it stays one.
+- [ ] Versioning. A standing non-goal: keeping old copies of a file means
+      owning storage the folder's other writers know nothing about, which is
+      principle 3 inverted.
 - [ ] Server-side move or copy across shares as a single atomic operation. It is
       a copy plus a delete today and the semantics are documented.
 - [ ] A quota system beyond the existing free-space floor.
@@ -274,12 +290,10 @@ standard library.
 
 ## 7. References
 
-- `docs/proposals/stowcloud-2-core-vfs.md`: ACL evaluation, the virtual root,
-  directory ETags, trash.
-- `docs/proposals/stowcloud-15-sharing.md` and `stowcloud-19-share-browsing.md`:
-  the share API's path vocabularies and the subpath a link had no way to name.
-- `docs/proposals/stowcloud-16-correctness-sweep.md`: the three vocabularies
-  D10 turns into three types.
+- `crates/sc-core/src/resolve.rs`, `ops.rs`, `aggregate.rs`, `trash.rs`,
+  `links.rs`, `share.rs`: the layer this translates.
+- `crates/sc-core/src/path.rs`: the two path vocabularies as they exist today,
+  and the conversion D10 makes unskippable.
 - [`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §4.3: F11.
 - `crates/sc-core/src/ops.rs`, `aggregate.rs`, `links.rs`.
 - RFC 9110 §8.8 on weak validators, which §4.3.2's flag exists to use.

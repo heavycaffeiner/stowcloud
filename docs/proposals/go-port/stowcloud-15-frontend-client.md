@@ -101,6 +101,18 @@ a key and placeholders, never a sentence. The settings screen printing
 `detail.reason` raw, in Korean, whatever locale the reader had picked, is what
 the rule exists to prevent and it is the reason the i18n check exists.
 
+The stance is that **the server never decides what language a reader wants**,
+and it has a consequence this phase owns: a key the server can send and the
+frontend cannot render is a defect on this side of the wire, not the other.
+That is why the i18n check is a gate rather than a report, and why §4.3.2 does
+not permit an English-only placeholder to land "for now".
+
+The same stance governs one thing this phase must **not** add: the listing has
+no MIME type field and the client does not invent one. The icon is chosen from
+the name and the directory flag. A type guessed on either side invites
+rendering something that should have been downloaded, which is the failure the
+separate content origin exists to prevent.
+
 #### 4.3.2 The i18n check
 
 `web/tools/i18n-check.mjs` runs unchanged and it is the gate that catches a new
@@ -180,10 +192,10 @@ it as out of sync.
 
 ## 7. References
 
-- `docs/proposals/stowcloud-3-frontend.md`: virtual scroll, the upload worker,
-  i18n, the byte budgets.
-- `docs/proposals/stowcloud-20-origins-and-settings.md`: the settings defects
-  and the `detail.reason` incident §4.3.1 refers to.
+- `web/src/lib/api/`: the client this phase changes, and nothing else in
+  `web/`.
+- `web/src/lib/api/error-text.ts`: the catalogue §4.3.1 adds keys to, and the
+  place the `detail.reason` incident was fixed.
 - [`stowcloud-8-http-and-api.md`](stowcloud-8-http-and-api.md) §4.4: the five
   changes, and the rule that limits them to five.
 - `web/tools/i18n-check.mjs`, `web/src/lib/api/error-text.ts`.

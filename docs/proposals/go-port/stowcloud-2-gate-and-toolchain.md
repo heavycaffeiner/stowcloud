@@ -22,7 +22,17 @@ worth what enforces it and nothing more.
 
 `scripts/verify.sh` is what decides whether a change is releasable, and it
 carries two rules learned from a red CI: a failing step prints everything it
-said, and every build passes `--locked`. Both survive. What does not survive is
+said, and every build passes `--locked`. Both survive.
+
+A third rule is inherited from
+[`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S3, and it is the
+one a gate is most likely to lose: **a step that did not run says so, loudly,
+and the caller decides whether that is acceptable.** The Rust gate has this in
+`VERIFY_REQUIRE_MUSL` and `VERIFY_REQUIRE_UI`: a missing toolchain is a SKIP on
+a laptop and a failure in CI, because a SKIP there means the workflow broke
+rather than that the checkout is bare. The Go gate keeps the mechanism even
+though it needs it for fewer steps, because the failure it prevents is a green
+run that verified less than the reader assumed. What does not survive is
 the shape underneath them, which is six Rust steps and two greps, four of which
 exist to work around problems Go does not have:
 

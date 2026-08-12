@@ -32,6 +32,26 @@ Every finding in document 0 maps to one, and every rule that maps to no finding
 is there because Go's defaults are actively unsafe in that spot (D13 is the
 clearest: `http.Server`'s zero timeouts).
 
+**Most of them are not new positions.** They are
+[`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5's inherited
+stances, turned into something a compiler or a gate can check, because a stance
+that only a careful author enforces is a stance a tired author does not:
+
+| Stance | Becomes |
+|---|---|
+| S1, by construction not by validation | D10's three unconvertible path types, and the `.`/`..` rejection in [`3`](stowcloud-3-vfs-and-paths.md) §4.3.6 |
+| S2, existence is never revealed | D15's `MessageKey`, and the single mapper in [`8`](stowcloud-8-http-and-api.md) §4.3.2 that is the only function choosing a status |
+| S3, a downgrade is loud | D3 |
+| S5, measured not asserted | D5's named limits, each with a test that the limit is what refuses rather than that a large input happens to fail |
+| S6, the neighbours' access survives us | D1, which is why F7's three discarded results are a rule and not a nit |
+| S7, the server does not decide how a client renders | D15 |
+| S10, a parameter is chosen against the whole budget | D5's concurrency and in-flight bounds, which exist for the same reason 48 MiB was chosen over 64 |
+| S11, fail closed on security and open on data | D3 for the first half; the size guard in [`5`](stowcloud-5-store-and-schema.md) §4.3.4 for the second |
+| S17, a claim that cannot be executed is a comment | D16's fuzz targets, and the jail proof in [`4`](stowcloud-4-jail-and-hardening.md) §4.3.6 |
+
+The four rules §4.3 calls load-bearing are load-bearing because a stance
+becomes false without them, not because they are harder to implement.
+
 ## 3. Goals & Non-Goals
 
 ### 3.1 Goals
@@ -171,11 +191,11 @@ clean; a struct with an unexported field cannot be constructed outside its
 package, so every crossing goes through a named function that says which
 direction it is going.
 
-`docs/proposals/stowcloud-16-correctness-sweep.md` records what the absence of
-this costs: three vocabularies under one name, and a share API that prefixed a
-label onto a path that already had the subpath on it. Load-bearing because the
-mistake it prevents is a path-confusion bug in the layer that decides what a
-caller may see.
+What the absence of this cost the Rust tree, twice: three vocabularies carried
+under one name, and a share API that prefixed a share label onto a path that
+already had the grant's subpath on its front. Load-bearing because the mistake
+it prevents is a path-confusion bug in the layer that decides what a caller may
+see.
 
 #### The rest
 
@@ -361,8 +381,8 @@ the hand-written one is four lines and is preferred.
   has a finding number attached.
 - [`stowcloud-2-gate-and-toolchain.md`](stowcloud-2-gate-and-toolchain.md):
   where the enforcement is actually configured.
-- `docs/proposals/stowcloud-16-correctness-sweep.md`: what the absence of D10
-  cost the current tree.
+- `crates/sc-core/src/path.rs`, `crates/sc-vfs/src/safe_path.rs`: the three
+  vocabularies D10 turns into three types, as they exist today.
 - `scripts/verify.sh`: the two Rust gates whose reasoning D13 and D15 carry
   over, both of which exist because the failure was invisible to the test suite.
 - Go: `net/http.Server` field documentation (the zero-value timeouts D13

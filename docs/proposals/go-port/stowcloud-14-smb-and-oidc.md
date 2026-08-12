@@ -28,7 +28,19 @@ empty interface list binds every private range it finds, which on that stack
 includes the Docker bridges, and any container on the machine can then reach it.
 The rule is enforced in the generated configuration, not documented as advice.
 
-**OIDC** is link-only single sign-on. The security-relevant part is the
+The stance that decides both is that a control is enforced where it cannot be
+skipped: SMB's bind restriction lives in the generated file rather than in the
+documentation, and OIDC's address rule lives in the dial rather than in a check
+before the dial. A rule that a later step can route around is advice.
+
+**OIDC** is link-only single sign-on, and "link-only" is a position rather than
+a scope decision: the provider authenticates and never creates an account, so
+authority stays in the local database. That is what makes revocation here total.
+An identity provider that can provision accounts is an identity provider that
+can grant access to this server, and the trust that would require is not the
+trust an operator thinks they are extending when they configure single sign-on.
+
+The security-relevant part is the
 back-channel token exchange, which is the only outbound HTTP this server makes.
 The Rust implementation wraps the DNS resolver so the private-address rule is
 enforced on the addresses actually connected to, rather than on a separate
@@ -207,7 +219,8 @@ algorithm selects nothing, it is compared against what the key can do.
 An OIDC identity attaches to an existing account. It cannot create one, and it
 cannot elevate one. A successful authentication for an unlinked identity is a
 refusal that tells the user to link from inside their account, which is the
-behaviour `docs/proposals/stowcloud-0-oidc-login.md` specifies.
+behaviour §2 gives the reason for: the provider authenticates, and authority
+over who has an account stays here.
 
 ## 5. API Design
 
@@ -285,11 +298,14 @@ one shows.
 
 ## 7. References
 
-- `docs/proposals/stowcloud-1-smb.md`: the sidecar, the uid contract,
-  propagation, what SMB cannot express.
-- `docs/proposals/stowcloud-17-audit-gaps.md`: the SMB credential work, and the
-  promises the current code does not keep.
-- `docs/proposals/stowcloud-0-oidc-login.md`: link-only single sign-on.
+- `crates/sc-smb/src/lib.rs`, `crates/sc-server/src/smb_cmd.rs`, `passdb.rs`,
+  `crates/sc-smb-agent/`: the generation, the passdb and the sidecar loop this
+  translates.
+- `crates/sc-oidc/src/`: discovery, the exchange, the address guard and the JWS
+  verification this translates, including the resolver wrapper §4.4.1 replaces
+  with `Dialer.Control`.
+- `docker-compose.yml`, `Dockerfile.smb`: the sidecar's deployment shape, which
+  does not change.
 - `Cargo.toml:51-86`: the outbound stack the Rust tree needed and why, including
   the resolver wrapper §4.4.1 replaces with `Dialer.Control`.
 - `Cargo.toml:66-70`: the `webpki-roots` reasoning §4.4.2 preserves.

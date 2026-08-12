@@ -19,6 +19,29 @@ asserted.
 
 ## 2. Background & Motivation
 
+### 2.1 Why a process, and why that survives the language change
+
+[`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S8: a thread
+shares the address space, so memory corruption in a decoder is full process
+compromise. That is the argument that put the decoder in a separate process
+rather than a worker thread, and it is worth restating because the obvious
+objection changes shape in Go and the answer does not.
+
+The Rust tree's decoders are pure Rust and it jailed them anyway, on the
+grounds that memory safety removes one class and leaves logic bugs, crashes and
+infinite loops. Go's decoders are memory-safe on the same terms and leave the
+same residue: `image/gif` decoding every frame of an animation is not a memory
+error, and neither is a decode loop that does not terminate. A pure-Go decoder
+is not a reason to drop the boundary. It was never the reason the boundary
+existed.
+
+Two other stances decide things here. **S3**, a downgrade is loud, is what F2
+violates and what D3 turns into a startup refusal. **S17**, a claim that cannot
+be executed is a comment, is why §4.3.6 ports the probe mechanism rather than
+describing the jail and moving on.
+
+### 2.2 The constraint Go adds
+
 This is the one place where the Go runtime forces a different shape, and the
 naive version is silently broken in a way no test would catch.
 
@@ -74,9 +97,9 @@ of the same one (folder README, contradiction C2).
 ### 3.2 Non-Goals
 
 - [ ] cgo, `libpsx`, or a Landlock binding that needs either.
-- [ ] A user namespace, a chroot, or a second container. The layers are the ones
-      `docs/proposals/stowcloud-13-deployment.md` names, and adding one is a
-      separate proposal.
+- [ ] A user namespace, a chroot, or a second container. The layers are the six
+      named in [`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §4.3 F2,
+      and adding a seventh is a separate proposal.
 - [ ] Argument inspection in either filter. Both policies are flat syscall
       number lists, which is what makes them readable in one screen.
 - [ ] Landlock ABI negotiation beyond what the running kernel reports. Handle
@@ -194,10 +217,11 @@ in a decoder has nothing to traverse.
 **Go runtime cost, stated.** An exec'd Go process is not a copy-on-write fork.
 Each worker carries its own runtime, its own heap arenas and its own threads, so
 a pool of N workers costs materially more resident memory than N forks do today.
-The default pool size (`available_parallelism / 2`, minimum 1) is kept, and the
-real number is measured in Phase 13 against
-`docs/proposals/stowcloud-11-footprint.md`'s budget rather than asserted here.
-If it does not fit, the lever is the pool size, not the isolation.
+The default pool size (half the available parallelism, minimum one) is kept, and
+the real number is measured in Phase 13 against the resource budget in
+[`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §4.3 F4 rather than
+asserted here. If it does not fit, the lever is the pool size, not the
+isolation.
 
 #### 4.3.3 The seccomp assembler
 
@@ -405,7 +429,6 @@ without Landlock, and that combination is a supported `Preferred` state.
   checks its arch, and the three reasons it is hand-built.
 - `crates/sc-server/src/hardening.rs`: F1, F2 and F3 in one file.
 - `crates/sc-preview/examples/jail_proof.rs`: the executable claim §4.3.6 ports.
-- `docs/proposals/stowcloud-6-preview-sharing.md` §4.2: the jail's specification.
-- `docs/proposals/stowcloud-13-deployment.md`: seccomp reality, the layers.
+- `crates/sc-server/src/lib.rs:358`: the call site F2 is about.
 - `landlock(7)`, `seccomp(2)`, `prctl(2)`, `close_range(2)`, `unix(7)` for
   `SCM_RIGHTS`, `execve(2)` on what survives it.

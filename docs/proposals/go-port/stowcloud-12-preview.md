@@ -23,6 +23,27 @@ because it is the only place where a byte sequence a stranger chose is fed to a
 parser complex enough to have bugs, and that is why it is the only place with a
 jail.
 
+### 2.0 The two threats, and the two defences
+
+| Threat | Vector | Defence |
+|---|---|---|
+| stored XSS | uploaded HTML, SVG or PDF rendered on the app origin, then session theft | content-origin separation |
+| decoder RCE | a crafted JPEG or TIFF fed to a parser, then memory corruption | a jailed worker process |
+
+They are separate defences for separate threats, and neither substitutes for
+the other. The first is why **the app origin never returns user-content bytes**
+and why access to content is a capability rather than a cookie
+([`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S9): a signed URL
+that carries no session cannot be turned into one by anything the content
+does. The second is [`4`](stowcloud-4-jail-and-hardening.md) §2.1.
+
+One defence was considered and rejected with a reason worth keeping, because it
+is the one a reviewer suggests first: **binding a signed URL to the requesting
+IP address**. It false-positives constantly on mobile networks, where an
+address changes mid-download, so it would break ordinary use to raise the cost
+of an attack that etag binding and audit logging already raise. A control that
+users route around is a control that is off.
+
 The Go port changes the jail's shape and keeps its properties. Two things here
 are genuinely new work rather than translation:
 
@@ -51,15 +72,24 @@ are genuinely new work rather than translation:
 
 ### 3.2 Non-Goals
 
-- [ ] Video thumbnails. A recorded non-goal in
-      `docs/proposals/stowcloud-6-preview-sharing.md` §4.5, because it means
-      running ffmpeg. The honest "not implemented" answer is kept, including
-      over the wire.
+- [ ] **Video thumbnails.** A standing non-goal, because it means running
+      ffmpeg: a large decoder surface, a process this jail's syscall list does
+      not fit, and the end of the distroless base. The honest "not implemented"
+      answer is kept, including over the wire.
 - [ ] Linking C decoders into any process. Pure Go, which is also what keeps
       `CGO_ENABLED=0`.
+- [ ] **Server-side PDF and office rendering.** A PDF renderer's attack surface
+      is larger than an image decoder's, and office conversion needs a resident
+      converter process. Rendering PDFs in the browser instead was considered
+      and dropped too: `pdf.js` gzips to more than the frontend's entire
+      initial-JS budget, for a file type this product does not otherwise treat
+      as special. PDF and office documents are download-only and the viewer
+      classifies them the way it classifies video.
+- [ ] **Bundling `ffmpeg`.** It would end the distroless base for a feature
+      that is already a non-goal.
 - [ ] Generating previews eagerly on upload. On demand, cached.
-- [ ] Rendering uploaded content inline anywhere. The content origin and
-      capability URLs are `docs/proposals/stowcloud-6`'s and unchanged.
+- [ ] Rendering uploaded content inline anywhere. The content origin and the
+      capability URLs are unchanged; §2.0 is why they exist.
 
 ## 4. Technical Design
 
@@ -249,10 +279,11 @@ coverage, and its answer is written into §3.1's first bullet.
 
 ## 7. References
 
-- `docs/proposals/stowcloud-6-preview-sharing.md`: the content origin, signed
-  URLs, the worker jail, archives, share links.
-- `docs/proposals/stowcloud-21-recorded-activity-and-archive-listing.md`: the
-  archive listing that reads the directory instead of the file.
+- `crates/sc-preview/src/pipeline.rs`, `decode.rs`, `exif_strip.rs`,
+  `sniff.rs`, `cache.rs`, `preset.rs`, `archive.rs`: the pipeline this
+  translates.
+- `crates/sc-http/src/content.rs`: the content origin and the signed URLs §2.0
+  describes.
 - `crates/sc-preview/src/worker/jailed/mod.rs`: the wire message shape and the
   worker-death handling §4.3.2 carries over.
 - `crates/sc-preview/src/lib.rs:14`: the video non-goal and its honest answer.

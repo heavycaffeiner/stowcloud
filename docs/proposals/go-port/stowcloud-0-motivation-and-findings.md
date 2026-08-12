@@ -40,13 +40,32 @@ built. Those documents are the functional requirement for this rewrite: the Go
 implementation has to satisfy them, and where it cannot, this folder says so by
 name.
 
-### 2.2 What the current design owes to the language
+### 2.2 The five principles, and what they owe to the language
 
-The five principles in `../stowcloud-12-architecture.md` are not
-language-neutral. Principle 2 ("a path is a kernel handle, not a string") is
-implemented as direct `openat2` calls in `crates/sc-vfs/src/backend/linux.rs`,
-and the security model of the whole product rests on it. The syscalls actually
-in use:
+Everything the product does follows from five positions. They are restated here
+in full rather than cited, because this folder has to be enough on its own:
+
+1. **The filesystem is the only source of truth.** The database is a cache,
+   deletable and rebuildable. Nothing may treat "not in the database" as "the
+   file does not exist", which is exactly where database-of-record designs
+   fail. The exception is stated rather than implied: accounts, grants and
+   share links are not reconstructible from the tree and must be backed up.
+2. **A path is a kernel handle, not a string.** Every access resolves through a
+   share root's directory descriptor. String concatenation followed by a prefix
+   check is TOCTOU-prone and forbidden.
+3. **A shared folder is not ours.** No sidecar litter, ownership and
+   permissions preserved, external changes reflected. Other services are
+   assumed to be writing the same directory at the same time, always.
+4. **The compat layer does not invade the core.** Not one conditional, no
+   vendor-prefixed field, no vendor-only table in any core package. It must be
+   removable in its entirety by a build flag, and that is enforced by a gate
+   rather than by intentions.
+5. **The default is the restrictive one.** No user homes, no symlinks followed,
+   SMB off, uploaded content never rendered inline.
+
+They are not language-neutral. Principle 2 is implemented as direct `openat2`
+calls in `crates/sc-vfs/src/backend/linux.rs`, and the security model of the
+whole product rests on it. The syscalls actually in use:
 
 | Syscall | Where | Why it cannot be dropped |
 |---|---|---|
@@ -65,12 +84,12 @@ syscall contract is therefore not the thing a Go port loses.
 
 ### 2.3 The recorded decision this reverses
 
-`../stowcloud-12-architecture.md` §4.2 records the backend choice as "Rust:
+The repository's architecture document records the backend choice as "Rust:
 memory safety plus direct syscall control", chosen over "a GC'd runtime, where
 the syscall contract is someone else's". That row becomes false the moment this
-plan lands, so amending it is a deliverable
+plan lands. Correcting the record is a deliverable
 ([`stowcloud-16-parity-and-cutover.md`](stowcloud-16-parity-and-cutover.md)
-§4.4 step 4), not a follow-up.
+§4.4), not a follow-up.
 
 The replacement row has to state what actually changed, which is three things
 and not the syscall contract:
@@ -108,6 +127,52 @@ the process sandbox and none would show up in a test, because the tests that
 exist assert what the sandbox does when it works, not what the process does when
 the sandbox is absent.
 
+### 2.5 The stances these documents inherit
+
+The five principles are the headline, and underneath them sit a set of
+positions that decide the close calls. They were settled while the Rust tree was
+built and they are carried over whole. They are not restated in each phase
+document as slogans; each one is applied where it decides something, and named
+here so that a reader can tell an inherited position from a new opinion.
+
+Where the Go port makes one harder to keep, the document that owns it says so
+rather than dropping it quietly.
+
+| # | Stance |
+|---|---|
+| S1 | **By construction, not by validation.** Normalise-then-check-then-open is TOCTOU-prone by shape: between the check and the open, a component can become a symlink. Every published escape in that class comes from treating a path as a string that is validated once and trusted afterwards. `.` and `..` are rejected, never normalised, because normalising is what creates the bypass. There is no window because there is no second step. |
+| S2 | **Existence is never revealed, including by timing.** A path outside a grant is 404 on every surface, never 403. A search must not leak through response time either, and an unknown account costs exactly what a known one costs. |
+| S3 | **A downgrade is loud.** A security control the runtime refused is reported, never silently skipped. F2 is this stance being stated and not implemented. |
+| S4 | **Refuse at setup, not mid-work.** A share on a filesystem that cannot support the design is refused at registration rather than discovered later. A capability that does not exist is not advertised, because the client then fails in the middle of someone's work instead of at configuration time. |
+| S5 | **Measured, not asserted.** A design that only works on generous hardware has not been validated. Numbers come from a benchmark, and a claim with no measurement behind it is written as unmeasured. Twice in this codebase's history, measuring produced an answer that invalidated a design already written down. |
+| S6 | **The neighbours' access survives us.** No sidecar litter, ownership and permissions preserved, no `chown -R` on a mounted volume ever. The failure mode being avoided is a media server or a backup script losing access to files it could read a moment earlier. |
+| S7 | **The server does not decide how a client renders.** A refusal travels as a code plus parameters and the browser owns the wording and the reader's language. A listing entry carries no MIME type, because a guessed type invites a client to render what it should download. |
+| S8 | **Isolation is a process boundary.** A thread shares the address space, so memory corruption in a decoder is full process compromise. Memory-safe decoders and resource limits still leave logic bugs, crashes and infinite loops, so the boundary has to be a process. This survives the language change intact: pure Go decoders do not remove the reason, because memory safety was never the reason. |
+| S9 | **Access to content is a capability, not a cookie.** The app origin never returns user-content bytes. |
+| S10 | **A security parameter is chosen against the whole budget.** The question was never "how strong a KDF" but "how few times must it run", and 48 MiB was chosen over 64 because the cost is multiplied by the concurrency cap. A per-hash setting that lets four concurrent logins exhaust the container is not stronger in practice. |
+| S11 | **Fail closed on a security control, fail open on the user's own data.** These pull in opposite directions and the split is deliberate: hardening that cannot be applied is a refusal to start, and a cache-size guard stays off by default, because an instance that stops accepting writes because a cache grew is worse than one that uses more disk than expected. |
+| S12 | **A correct refusal is normal operation.** Returning a spec-correct 413 so a client drives its own auto-adjust is not an error path. Not enforcing a limit does not make middleboxes disappear; it means we are not the one rejecting. |
+| S13 | **The security boundary is sometimes the performance win.** Walking through the share's own directory handles avoids the whole-path re-resolution a path-based walker pays per entry. The two are not always a trade. |
+| S14 | **The lie is never used.** Where server-side ways exist to paper over a client-side defect and each of them is a lie about the data, none is used, and the evidence is recorded instead. |
+| S15 | **A non-goal carries the reasoning that made it one**, in the document for the subsystem it belongs to, because a non-goal without a reason gets re-proposed every six months. |
+| S16 | **A comment states its own reason.** No document citations, no ticket ids: a reader with only the file in front of them has to be able to use it. The proposal carries the long-form argument and the code stands alone. |
+| S17 | **A claim that cannot be executed is a comment.** The jail's probe mechanism exists because a security property that no test exercises is a sentence in a document. |
+
+Three of these are worth reading together, because the Go port strains them in
+a way the Rust tree did not:
+
+- **S8 with the jail.** The forked worker is gone and the process boundary is
+  not. [`4`](stowcloud-4-jail-and-hardening.md) replaces the mechanism and
+  keeps the property, and it costs more memory per worker to do so.
+- **S5 with everything.** More of this port is unmeasured than the Rust tree's
+  documents are, because the code does not exist yet. Every phase document
+  marks its unverified premises in the sentence that depends on them, and
+  [`16`](stowcloud-16-parity-and-cutover.md) is the only phase allowed to state
+  a number.
+- **S16 with this folder.** These documents describe code that does not exist,
+  so they invert the directory's house rule. That inversion ends at cutover,
+  and [`16`](stowcloud-16-parity-and-cutover.md) §4.4 step 6 is where.
+
 ## 3. Goals & Non-Goals
 
 ### 3.1 Goals
@@ -127,8 +192,9 @@ the sandbox is absent.
       lints in `scripts/verify.sh`, not by review.
 - [ ] `CGO_ENABLED=0`, **one** statically linked binary with four subcommands,
       in a distroless image no larger than today's.
-- [ ] `../stowcloud-12-architecture.md` §4.2 amended so the recorded stack
-      decision matches the shipped one.
+- [ ] The repository's recorded stack decision brought back in line with the
+      shipped one, and this folder left as the only specification a reader
+      needs.
 
 ### 3.2 Non-Goals
 
@@ -284,8 +350,10 @@ configuration key that makes either mandatory.
 
 A deployment whose kernel or container runtime silently refuses Landlock,
 seccomp, or both starts identically to one where both are enforced.
-`../stowcloud-13-deployment.md` describes a security posture in layers; this is
-the layer that can be absent without anyone finding out.
+The product's security posture is layers, none load-bearing alone: `openat2`
+resolution, a non-root uid with all capabilities dropped and a read-only
+rootfs, Landlock, seccomp, the decoder jail, the separate content origin. This
+is the layer that can be absent without anyone finding out.
 
 **Closed by** D3. **Test**: a startup test with the kernel probe faulted, under
 `hardening = "required"`, asserting a refusal to start and the reason on stderr.
@@ -314,10 +382,13 @@ to start under `required` where there is none.
 Every caller, including the ones that want the first page of a listing and the
 ones that want a single name, gets the entire directory allocated first.
 
-`../stowcloud-11-footprint.md` sets the target at 32 GB of RAM and 12 TB of
-files. One directory with several million entries is bounded by available memory
-and nothing else, and the product's premise is that other programs write these
-directories, so its size is not ours to assume.
+The resource target this plan is held to is a deliberately modest one: a 32 GB
+system disk and a 12 TB share array, with roughly 18 GB of the former available
+to spend after the OS, the container runtime, the image and headroom for WAL,
+temporary files and upgrades. Of that, the metadata database targets 4 GB and
+the thumbnail cache 2 GB by default. One directory with several million entries
+is bounded by available memory and nothing else, and the product's premise is
+that other programs write these directories, so its size is not ours to assume.
 
 **Closed by** D5 and the streaming signature in
 [`3`](stowcloud-3-vfs-and-paths.md) §4.3.3.
@@ -370,7 +441,8 @@ whose configured ownership was not applied, is exactly the failure that makes
 Jellyfin or a backup script stop seeing files, and it produces no error, no log
 line and no failed request.
 
-`../stowcloud-16-correctness-sweep.md` records the same class.
+This is not the only instance of the class in the tree; it is the one in the
+layer where it costs the most.
 
 **Closed by** D1 and the durable-write helper in
 [`3`](stowcloud-3-vfs-and-paths.md) §4.3.5.
@@ -584,16 +656,16 @@ disk for a representative tree.
 
 ## 7. References
 
+**These documents cite code, and each other, and nothing else.** A reader
+implementing a phase needs this folder and the repository's source tree, not a
+second set of proposals: everything the Rust-era documents carried that is
+still true has been folded in here, and everything they carried that describes
+deleted code stops being true at cutover. Where one of them was the only record
+of an incident or a measurement, the incident or the measurement is restated
+where it decides something, not pointed at.
+
 - [`README.md`](README.md): the index, and the contradiction ledger recording
   five places where an earlier draft of this plan was wrong.
-- `../stowcloud-12-architecture.md`: the five principles and the §4.2 table
-  this plan amends.
-- `../stowcloud-11-footprint.md`: the 32 GB and 12 TB floor F4 is measured
-  against and Phase 13 remeasures.
-- `../stowcloud-16-correctness-sweep.md`: F7's class, and the three path
-  vocabularies D10 turns into three types.
-- `../stowcloud-17-audit-gaps.md`: seven further promises the current code does
-  not keep, each owned by the phase for its subsystem.
 - `crates/sc-server/src/hardening.rs`, `crates/sc-vfs/src/backend/linux.rs`,
   `crates/sc-upload/src/engine.rs`, `crates/sc-watch/src/lib.rs`,
   `scripts/verify.sh`: the code every finding is read from.

@@ -36,6 +36,29 @@ the compat layer consumes only public APIs of the core crates. Nothing in the
 core-facing half of that boundary carries compat vocabulary, which is why the
 grep can be run over it at all.
 
+**Why the boundary is defended this hard.** The clients exist, they are good,
+and people already run them; reimplementing a desktop and two mobile apps to
+reach the same tree would be the larger project by far. So the layer is worth
+having. The risk is equally plain: a compatibility layer that leaks its
+vocabulary into the core makes the core permanently shaped by someone else's
+protocol, and that shape is not reversible once other subsystems have been
+written against it. Every decision in this document follows from refusing that,
+which is why the isolation gets three gates and not one.
+
+**Two stances decide what this layer will and will not do**
+([`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5):
+
+- **S4.** A capability that does not exist is not advertised, in the
+  documentation *and* in the capabilities response. Advertising one is worse
+  than not having it, because the client then fails in the middle of someone's
+  work rather than at configuration time. The non-goal list in §3.2 is
+  therefore also a wire-level commitment.
+- **S14.** Where a client-side defect could be papered over by sending
+  something untrue, it is not. The Android "synced" tick is the worked example:
+  three server-side suppressions exist and all three are lies about the data (a
+  false size, a withheld ETag, a false encryption flag), so none is used and
+  the evidence is recorded instead.
+
 ## 3. Goals & Non-Goals
 
 ### 3.1 Goals
@@ -55,10 +78,17 @@ grep can be run over it at all.
 
 - [ ] Anything past the boundary: versioning, comments, tags, groupware,
       federation, office-suite integration, activity streams, external storage
-      mounts, workflows. All recorded in `docs/proposals/stowcloud-12` §3.2.
+      mounts, workflows. Beyond the sync, browse, share and preview boundary
+      lies rebuilding the server this layer only pretends to be.
 - [ ] Suppressing the Android client's "synced" tick. All three server-side ways
-      to do it are lies about the data, and `docs/README.md` records the
-      evidence.
+      to do it are lies about the data. The client asks its own database
+      whether every file in a folder has a local copy, with a query that is
+      vacuously true for a folder whose children have never been listed on the
+      device. Every input to that guard comes from this server and every one is
+      already truthful: the recursive size is real, the folder ETag is real,
+      and the encryption flag is `0`, which is what a reference server answers
+      for an unencrypted folder too. The three server-side suppressions are a
+      false size, a withheld ETag and a false encryption flag, so none is used.
 - [ ] Improving the OCS shapes. They are wrong in ways this repository cannot
       fix, and reproducing them exactly is the job.
 
@@ -284,16 +314,15 @@ end of 10b, 10c and 10e rather than being saved up.
 
 ## 7. References
 
-- `docs/proposals/stowcloud-8-compat.md`: the isolation contract and the two
-  gates §4.2 replaces with three.
-- `docs/proposals/stowcloud-14-compat-mobile.md`: search, favourites, trashbin,
-  the account lifecycle.
-- `docs/proposals/stowcloud-15-sharing.md`: the two path vocabularies the share
-  API mixed up.
-- `docs/proposals/stowcloud-21-recorded-activity-and-archive-listing.md`: the
-  date literal that made the recency query a 400.
-- `docs/README.md`, "Known client behaviour": the Android tick, and why none of
-  the three server-side suppressions is used.
+- `crates/sc-compat-nc/src/`: the whole layer this translates, in particular
+  `router.rs`, `props.rs`, `chunking.rs`, `ocs.rs`, `shares.rs`,
+  `login_flow.rs`, `capabilities.rs`.
+- `crates/sc-server/src/nc.rs`, `nc_search.rs`, `nc_trash.rs`, `recent.rs`: the
+  assembly-side half, including the recency query §4.4.6 fixes.
+- `scripts/verify.sh:140`: the text grep §4.2 keeps as the third gate.
+- `crates/sc-server/tests/compat_mobile.rs`,
+  `crates/sc-compat-nc/tests/http_integration.rs`: the behavioural tests a
+  ported mount has to keep passing in spirit.
 - `crates/sc-compat-nc/src/ports.rs`: the boundary this reproduces, including
   the note on why a `ShareID` is passed rather than a `ShareRoot`.
 - `crates/sc-compat-nc/src/props.rs:256`: the two fallbacks §4.4.3 carries over.

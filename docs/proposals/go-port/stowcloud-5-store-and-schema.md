@@ -20,6 +20,29 @@ costs today.
 
 ## 2. Background & Motivation
 
+### 2.0 Why a cache exists at all, given principle 1
+
+Worth restating before the split, because it is the thing that makes the split
+legitimate rather than a convenience. Two facts a POSIX filesystem will not
+give you:
+
+- **A stable id for a file across renames.** Sync clients key their entire
+  local journal on it.
+- **Whether anything under this directory changed.** The sync algorithm is "if
+  a directory's ETag is unchanged, skip its subtree", and without it every sync
+  is a full crawl and the client is unusable on a real tree.
+
+Both are reconstructible by walking, which is exactly what makes them
+compatible with "the database is a cache you can delete". Accounts, grants and
+share links are not reconstructible, which is what makes them a different kind
+of thing that has been living in the same kind of file. §4.2 is that
+distinction made physical.
+
+§4.5 is the same argument taken one step further: a stable id that is not
+stable across a rebuild is only half of what a sync client was promised.
+
+### 2.1 What is there now
+
 The current tree has four stores: `sc-meta`'s metadata cache, `sc-auth`'s
 accounts, `sc-upload`'s sessions, and the search index directory. They are split
 by which crate owns them, and the split that actually matters cuts across all
@@ -64,8 +87,9 @@ Three further problems come with it:
 
 ### 3.2 Non-Goals
 
-- [ ] A server database. Single node, and `docs/proposals/stowcloud-12` records
-      the decision.
+- [ ] A server database. This is a single-node product and SQLite in WAL mode
+      is the recorded choice; a network database would add an operational
+      dependency to a thing whose selling point is that it is one binary.
 - [ ] An ORM or a query builder. D14 wants package-level constant statements,
       prepared once, and a builder is exactly the thing that makes a query
       string dynamic.
@@ -209,8 +233,10 @@ document 2 §4.3.1.
 **This is the one decision in the port that a measurement can reverse**, and the
 criteria are set here rather than argued about later:
 
-- The workload is `docs/proposals/stowcloud-11-footprint.md`'s: a cold walk
-  populating `node` for a large tree, then steady-state ETag invalidation.
+- The workload is the resource-budget one from
+  [`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §4.3 F4: a cold walk
+  populating `node` for a multi-million-file tree on rotational storage, then
+  steady-state ETag invalidation as the watcher feeds changes in.
 - The measurement is taken in the Linux VM at Phase 2, against the Rust
   implementation's numbers on the same tree.
 - The threshold is a cold-populate that takes more than **three times** as long,
@@ -260,12 +286,24 @@ second process are not the only things that can touch these files.
 Every statement is a package-level constant prepared once per connection (D14).
 Nothing builds a query string.
 
-#### 4.3.4 The write-blocked guard
+#### 4.3.4 The write-blocked guard, and why it is off by default
 
 The current tree has a database-size guard that trips and reports `degraded`
 through `GET /api/health`. It is carried over unchanged in behaviour, including
 the part that matters: a tripped guard blocks writes and keeps serving reads,
 because the failure it prevents is a full disk taking the whole store with it.
+
+It is also **off by default**, and that is deliberate rather than an oversight
+waiting to be tidied up. It is
+[`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S11's second half:
+an instance that stops accepting writes because a cache grew is worse than one
+that uses more disk than expected. The first half of that stance points the
+other way, and D3 makes hardening a startup refusal, so the two look
+inconsistent until the split is named. It is not "fail closed" versus "fail
+open", it is **fail closed on a security control and fail open on the user's
+own data**. A sandbox that silently did not apply is a lie about the product's
+guarantees; a cache that grew past a guess is an inconvenience, and refusing
+writes turns it into an outage.
 
 ### 4.4 Migration from the Rust tree
 
@@ -309,10 +347,11 @@ id  = 1 + (be64(BLAKE3(key)[0:8]) & (2^63 - 1)) % (2^63 - 1)
 Four properties, each chosen rather than inherited:
 
 - **The identity tuple is `(share, dev, ino, btime_ns)`**, the same one
-  `node_ident` already keys on. `../stowcloud-2-core-vfs.md` §4.2 records why
-  all four are needed: `dev` and `ino` alone are not enough on a backend that
-  cannot distinguish two directories, and `btime_ns` alone is not either, since
-  two directories can share a creation tick or report none.
+  `node_ident` already keys on. All four are needed, and the reason is
+  recorded in this codebase rather than theoretical: `dev` and `ino` alone are
+  not enough on a backend that cannot distinguish two directories, and
+  `btime_ns` alone is not either, since two directories can share a creation
+  tick or report none.
 - **A present and an absent btime are domain-separated by the flag byte**, so a
   file with `btime_ns = 0` and a file with no btime at all do not derive the
   same id.
@@ -330,12 +369,13 @@ Sixty-three bits gives a birthday collision at roughly 3e9 files. At ten million
 files the probability is about 5e-6 and at a hundred million about 5e-4. Small,
 and **not** small enough to wave away, because of what a collision does here.
 
-`../stowcloud-2-core-vfs.md` §4.2 records the incident: the portable backend
-once returned a hardcoded `(0, 0)` for `dev`/`ino`, so a share root and one of
-its own subdirectories reported the same fileid over WebDAV. A sync client keys
-its journal on that id, so to the client two different resources **were** the
-same file. A hash collision reproduces that failure exactly, and it would be
-persistent rather than transient.
+It has already happened here once. The portable filesystem backend returned a
+hardcoded `(0, 0)` for `dev`/`ino`, so a share root and one of its own
+subdirectories derived the same identity and reported the same fileid over
+WebDAV. A sync client keys its journal on that id, so to the client two
+different resources **were** the same file. The fix was to read real volume and
+file-index identity; the failure mode is what matters here, and a hash
+collision reproduces it exactly, persistently rather than transiently.
 
 So the derivation is a proposal and the table is the authority:
 
@@ -510,13 +550,14 @@ assignment.
 - `crates/sc-meta/src/lib.rs`: the schema this carries over, the `PINNED` bit
   this deletes, and the `busy_timeout` ordering comment quoted in §4.3.2.
 - `crates/sc-compat-nc/src/props.rs:282`: `oc:fileid`, the reason §4.5 exists.
-- `../stowcloud-2-core-vfs.md` §4.2: why the identity tuple has four fields, and
-  the incident where a share root and its own subdirectory reported the same
-  fileid, which is what §4.5.3 refuses to reproduce.
+- `crates/sc-meta/src/node.rs`: the identity tuple and the allocation this
+  replaces with a derivation.
 - `crates/sc-server/tests/compat_fileid_uniqueness.rs`: the existing uniqueness
-  test, which §4.5.3's collision test extends rather than replaces.
-- `docs/proposals/stowcloud-11-footprint.md`: the workload §4.3.1 measures
-  against, and the two findings that shaped this schema.
-- `docs/proposals/stowcloud-2-core-vfs.md`: directory ETags and the aggregate.
+  test, which §4.5.3's collision test extends rather than replaces, and the
+  record of the incident §4.5.3 refuses to reproduce.
+- `crates/sc-meta/src/etag.rs`, `admin.rs`: the aggregate and the size guard
+  §4.3.4 carries over.
+- `crates/sc-auth/src/db.rs`, `crates/sc-upload/src/db.rs`: the two stores
+  §4.4's migration reads.
 - SQLite: WAL mode, `busy_timeout`, `WITHOUT ROWID`, the `INTEGER PRIMARY KEY`
   rowid alias §4.5 turns on.

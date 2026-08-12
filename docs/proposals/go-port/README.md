@@ -52,13 +52,41 @@ looked right and was not, and the code the correction was checked against.
 | C1 | The overview dropped BLAKE3 for SHA-256 on the grounds that every digest is an internal cache value. It is not: `Checksum::Blake3` is a TUS `Upload-Checksum` value a client sends (`crates/sc-upload/src/model.rs:95`). | BLAKE3 stays, as a Go module. Only the directory ETag hash is free to change, and it does not, because changing it for no reason invalidates every cached rollup at cutover. See [9](stowcloud-9-upload.md) §4.3 and [7](stowcloud-7-core-domain.md) §4.3. |
 | C2 | The overview shipped two binaries while also targeting an image no larger than today's. Two Go binaries roughly double the image, and the `healthcheck` subcommand already in `Dockerfile` shows the argv dispatch that makes a second binary unnecessary. | One binary. The worker is `stowcloud preview-worker`, exec'd from the same path. See [2](stowcloud-2-gate-and-toolchain.md) §4.1.1 for the layout and [4](stowcloud-4-jail-and-hardening.md) §4.3.2 for what it does at startup. |
 | C3 | The overview kept the portable filesystem backend "so the tree builds on Windows", while also making Windows a non-target. The Rust tree's own comments record two bugs that existed only on Linux and were invisible because Windows compiled the portable backend instead (`sync_dir`'s `EBADF` on `O_PATH`, and `create_excl` opening write-only). | No portable backend. `GOOS=linux go build` and `go vet` run on the Windows box with no toolchain at all; the test suite runs in the Linux VM. See [2](stowcloud-2-gate-and-toolchain.md) §4.3.3, which also states what this costs. |
-| C4 | The overview deleted `node.flags`' `PINNED` bit when dead properties move to `state.db`, without noting that `node.id` is `oc:fileid` on the wire (`crates/sc-compat-nc/src/props.rs:282`). Deleting the cache re-mints every id, and every sync client sees every file as new. | Resolved by design rather than by disclaimer: [5](stowcloud-5-store-and-schema.md) §4.5 derives the id from the file's identity, so a rebuilt cache produces the same ids. The collision case is recorded durably in `fileid_override` rather than allowed to conflate two files, which is the failure `../stowcloud-2-core-vfs.md` §4.2 records having already happened once. The one-time change at cutover is in [16](stowcloud-16-parity-and-cutover.md) §4.4. |
+| C4 | The overview deleted `node.flags`' `PINNED` bit when dead properties move to `state.db`, without noting that `node.id` is `oc:fileid` on the wire (`crates/sc-compat-nc/src/props.rs:282`). Deleting the cache re-mints every id, and every sync client sees every file as new. | Resolved by design rather than by disclaimer: [5](stowcloud-5-store-and-schema.md) §4.5 derives the id from the file's identity, so a rebuilt cache produces the same ids. The collision case is recorded durably in `fileid_override` rather than allowed to conflate two files, which is a failure this codebase has already had once. The one-time change at cutover is in [16](stowcloud-16-parity-and-cutover.md) §4.4. |
 | C5 | The overview said the distroless base ships a CA bundle, while `Cargo.toml` records `webpki-roots` being chosen precisely because it does not guarantee one. | The OIDC client takes an explicit pool and refuses to start with an empty one. See [14](stowcloud-14-smb-and-oidc.md) §4.4.2. |
+
+## The inherited stances
+
+[`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 lists seventeen
+positions the Rust proposals settled, with the document each came from. They
+are not restated as slogans; each phase document applies the ones that decide
+something in it, and names them so a reader can tell an inherited position from
+a new opinion. Where the Go port makes one harder to keep, the document that
+owns it says so rather than dropping it quietly.
+
+The shortest form of why they are written down at all: a stance that only a
+careful author enforces is a stance a tired author does not, which is why
+[`1`](stowcloud-1-defensive-standard.md) §2 maps nine of them onto something a
+compiler or a gate checks.
 
 ## Conventions
 
-These follow the parent directory's, with one addition: where a document
-depends on a fact about Go, the standard library or a module that has not been
-verified on this machine, it says so in the sentence that depends on it. A
-proposal for code that does not exist yet cannot also pretend its premises are
-measured.
+Two additions to the parent directory's.
+
+**These documents cite code and each other, and nothing else.** Implementing a
+phase needs this folder and the repository's source tree, not a second set of
+proposals. Everything the Rust-era documents carried that is still true has
+been restated here where it decides something: the five principles
+([`0`](stowcloud-0-motivation-and-findings.md) §2.2), the seventeen stances
+(§2.5), the resource budget, the measured incidents. What they carried that
+describes the Rust implementation stops being true at cutover, which is why
+[`16`](stowcloud-16-parity-and-cutover.md) §4.4 step 4 retires them rather than
+leaving a reader two specifications with nothing marking which one is wrong.
+
+A path like `crates/sc-vfs/src/backend/linux.rs` is a citation of the codebase
+and is expected; a path like `docs/proposals/stowcloud-N-*.md` is not, and its
+absence from these files is deliberate rather than an oversight.
+
+**Where a document depends on an unverified fact** about Go, the standard
+library or a module, it says so in the sentence that depends on it. A proposal
+for code that does not exist yet cannot also pretend its premises are measured.

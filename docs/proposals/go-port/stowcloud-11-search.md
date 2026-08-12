@@ -51,13 +51,23 @@ and it is checkable.
 
 ### 3.2 Non-Goals
 
-- [ ] Content indexing and OCR. A recorded non-goal in
-      `docs/proposals/stowcloud-5-search.md` §3.2 and it stays one.
+- [ ] **Content indexing and OCR.** Not implemented, not planned, and the
+      reason is structural rather than scheduling: a walk cannot substitute for
+      it, because 12 TB cannot be grepped per query. It is therefore the one
+      tier that would *require* an index and would need the heaviest
+      guardrails, and every unbounded implementation of it gets punished at a
+      few million files.
 - [ ] Changing the on-disk format. The whole verification strategy depends on
       not changing it.
 - [ ] A general-purpose query language. Name substring matching, folded.
-- [ ] Turning the index on by default. It is an escalation taken when
-      measurement says the walk is not fast enough.
+- [ ] **Turning the index on by default.** It is an escalation taken when
+      measurement says the walk is not fast enough, and the trigger is not a
+      file count. Cold storage is a different world: the same corpus that walks
+      in under a second warm takes tens of minutes on a cold 12 TB array, one
+      seek per directory. Keeping the dentry cache warm costs roughly 192 bytes
+      per file, so whether a tree stays warm depends on RAM, storage and
+      whatever else competes for both, none of which is knowable in advance.
+      A threshold would be a guess wearing a number.
 
 ## 4. Technical Design
 
@@ -132,6 +142,27 @@ tree, and it must not check a context a million times to do so.
 
 The result set is capped (D5) and a truncated result says so in the response
 rather than looking like a complete one.
+
+**Two stances decide the shape of the walk**, and both are easy to lose:
+
+- **No existence leak, in results or in response time**
+  ([`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S2). Search
+  sweeps the whole tree, so it is the broadest possible place to leak. The ACL
+  check happens before an entry is scored, and a query that would match many
+  entries the caller cannot see must not be measurably slower than one that
+  would match none. That is a test, not an aspiration.
+- **Never `statx` for a name-only query.** Published measurement puts metadata
+  at roughly half the cost of a walk, so a name query that stats is twice the
+  price for information nobody asked for. Size and time are resolved only for
+  the entries that survive filtering and ranking.
+
+The walker is written in-tree rather than taken off the shelf, and that is a
+security decision before it is a performance one. `filepath.WalkDir` and every
+library built on it resolve a path per entry, which reintroduces symlink escape
+and TOCTOU by bypassing the `openat2` invariant. Walking through the share's own
+directory handles also avoids the whole-path re-resolution a path-based walker
+pays per entry, so the boundary is also the faster option
+([`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S13).
 
 #### 4.3.3 The T3 index
 
@@ -250,12 +281,11 @@ checked by 8c's byte-identical requirement rather than assumed.
 
 ## 7. References
 
-- `docs/proposals/stowcloud-5-search.md`: the parallel walk, the trigram index,
-  the estimator, and the content-indexing non-goal.
+- `crates/sc-search/src/walker.rs`, `index/`, `estimate.rs`, `fold.rs`,
+  `trigram.rs`, `varint.rs`, `hll.rs`, `rank.rs`: the implementation §4.3.1
+  generates fixtures from.
 - `crates/sc-search/src/index/mod.rs`: the segment layout and the reason the
   split is a necessity, quoted in §4.3.3.
 - `crates/sc-search/src/estimate.rs`: the HyperLogLog term and the CJK case.
-- `docs/proposals/stowcloud-21-recorded-activity-and-archive-listing.md`: the
-  mobile search behaviour the compat layer needs from this.
-- `docs/proposals/stowcloud-11-footprint.md`: the corpus size the estimator is
-  tuned against.
+- `crates/sc-server/src/nc_search.rs`: the mobile search surface the compat
+  layer needs from this.

@@ -26,6 +26,20 @@ in one multi-component `openat2` call, so the kernel enforces the resolve flags
 across every intermediate component atomically, then act on the leaf with a
 plain `*at()` call against that already-safe descriptor.
 
+**The stance underneath it** is
+[`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S1: the class of
+bug this package exists to remove is normalise, prefix-check, then open. Every
+published escape in that class comes from treating a path as a string that is
+validated once and trusted afterwards. `openat2(RESOLVE_BENEATH)` moves the
+check into the same syscall as the open, so there is no window because there is
+no second step. Nothing in this package may reintroduce a step: no descriptor
+cache, no normalisation, no revalidation of a path already resolved.
+
+S6 is the other one that decides things here. The share is not ours, so the
+package's job on every write is to leave the directory as usable to its other
+readers as it found it, and a mode that could not be restored is an error
+rather than a log line (F7).
+
 Go changes three things about how that gets written and none about what it
 means:
 
@@ -60,6 +74,15 @@ Findings F4, F5, F6 and F7 all live in this package.
 - [ ] `fanotify`. The value is removed from the watch configuration until
       something implements it (F12), which is a deletion in this phase and a
       one-line addition whenever it stops being a lie.
+- [ ] **Path normalisation.** `.` and `..` are rejected, never normalised, and
+      this is a non-goal rather than an omission: normalising is what creates
+      the bypass. A resolver that rewrites `a/../b` into `b` has to be right
+      about every encoding, every separator and every Unicode form, and being
+      wrong once is an escape. Rejecting is right by not deciding.
+- [ ] **Rewriting on-disk filenames to a Unicode normal form.** The candidate
+      loop in §4.3.6 exists so that a name another program wrote is found as it
+      is written. Renaming it to suit us is the sidecar-litter failure wearing a
+      different hat.
 - [ ] Extended attributes, ACLs beyond mode bits, or `io_uring`. None is used
       today and none is needed for parity.
 - [ ] Caching resolved descriptors across requests. The current tree does not,
@@ -375,8 +398,8 @@ Both are assumption A1 and A2's subject matter. Nothing else.
   history quoted in §4.3.5.
 - `crates/sc-upload/src/engine.rs:1-18`: the naming note that records what
   disguising a control file cost.
-- `docs/proposals/stowcloud-2-core-vfs.md`: `SafePath`, the syscall contract,
-  the virtual root.
+- `crates/sc-vfs/src/safe_path.rs`, `reserved.rs`, `share_root.rs`: the path
+  validation, the reserved set and the anchor handling this translates.
 - [`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §4.3: F4, F5, F6, F7, F12.
 - `openat2(2)`, `statx(2)`, `renameat2(2)`, `copy_file_range(2)`,
   `getdents64(2)`, `inotify(7)`.

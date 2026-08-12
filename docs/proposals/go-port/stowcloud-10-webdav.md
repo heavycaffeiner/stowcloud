@@ -33,6 +33,21 @@ Go changes how three of those are implemented and none of what they mean, and it
 adds one problem the Rust version does not have: `encoding/xml`'s encoder is not
 usable for a multistatus response.
 
+**The refusal is the design, not a shortcut.** The tempting implementation of
+the first rule is to allow a DTD and expand entities safely, with a depth cap
+and an expansion budget. That is a parser feature with a long history of being
+subtly wrong, deployed on a body a stranger sends, to support a construct no
+WebDAV client emits. Refusing outright closes XXE and billion-laughs together
+and has nothing left to be subtly wrong about. It is the same shape as
+rejecting `.` and `..` rather than normalising them
+([`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S1): the safest
+handling of a construct nobody needs is to not handle it.
+
+The existence rule (S2) applies to this mount exactly as it does to the native
+API, and it is worth saying because WebDAV's status vocabulary makes 403
+feel natural. A path outside a grant is 404 here too, and the test is a table
+run against every mount rather than against the native API alone.
+
 ## 3. Goals & Non-Goals
 
 ### 3.1 Goals
@@ -249,8 +264,8 @@ what the pin was buying.
 
 ## 7. References
 
-- `docs/proposals/stowcloud-4-webdav.md`: Class 2, the XML hardening, streamed
-  PROPFIND, locking, `/dav-uploads`.
+- `crates/sc-dav/src/xml.rs`, `lib.rs`, `locks.rs`,
+  `crates/sc-server/src/dav_uploads.rs`: the implementation this translates.
 - `crates/sc-dav/src/xml.rs`: the three rules, and the text-trimming note
   §4.3.1 carries over.
 - `Cargo.toml:128-134`: the two advisories that made the XML parser a pinned

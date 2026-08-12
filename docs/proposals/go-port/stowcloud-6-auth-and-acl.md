@@ -19,6 +19,25 @@ behaviour with tests rather than as intentions.
 
 ## 2. Background & Motivation
 
+### 2.0 The question this subsystem answers
+
+Not "how strong a KDF", but **"how few times must it run"**. Argon2id at 48 MiB
+takes about 80 ms, which is right for a login form and impossible for WebDAV,
+where a sync client sends hundreds of requests a minute and every one carries
+the same Basic credential. Running the KDF per request would make the server
+slower than the disk it fronts and turn an ordinary sync into a self-inflicted
+denial of service. The three-tier verification path is the answer to that
+question, and it is the reason this subsystem has the shape it has.
+
+The parameter choice follows the same logic and is
+[`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S10: 48 MiB rather
+than 64, because the memory cost is multiplied by the concurrency cap and 48 by
+4 is 192 MiB of the container's budget. A stronger per-hash setting that lets
+four concurrent logins exhaust the container is not stronger in practice. Any
+future proposal to raise it has to raise the product, not the number.
+
+### 2.1 What the current tree already learned
+
 `sc-auth` is 6,569 lines and `sc-acl` is 763. Neither is complicated; both are
 easy to get subtly wrong, and the subtle wrongness is not visible in a passing
 test.
@@ -51,15 +70,39 @@ were arrived at by fixing something:
       remembers.
 - [ ] Grants evaluated against the virtual root with the default of "a new
       account sees nothing".
+- [ ] **Revocation that actually revokes, including over SMB.** Disabling an
+      account, revoking an app password or rotating a credential takes effect
+      on every surface, not only the one it was issued on. The SMB path is the
+      one that gets forgotten, because the credential lives in a passdb the
+      sidecar reads, so revocation there is a file that has to be rewritten
+      rather than a row that stops matching.
+- [ ] **Second-factor enforcement no protocol path can bypass.** A factor
+      required for the web UI and not for WebDAV is not a factor.
 
 ### 3.2 Non-Goals
 
 - [ ] New authentication factors. WebAuthn is not in scope and is not a
       non-goal on the merits, only on scope.
-- [ ] Changing the Argon2 parameters. They are `docs/proposals/stowcloud-10`'s
-      and this port does not relitigate them.
-- [ ] Password policy beyond a length floor. The current tree does not have one
-      and adding one is a product decision.
+- [ ] Changing the Argon2 parameters. This port does not relitigate them, for
+      the reason in §2.0: the number is not the knob, the product is.
+- [ ] **Just-in-time provisioning from an identity provider.** The provider
+      authenticates; it never creates an account. Authority stays in the local
+      database, which is what makes revocation here total rather than advisory.
+- [ ] **A password-strength meter as a gate, and a breached-password
+      denylist.** The gate is a ten-character minimum with no composition
+      rules, and the meter is advisory and lives only in the browser. The
+      denylist was considered and dropped rather than merely unscheduled: the
+      smallest useful one is six figures of entries, which is a megabyte inside
+      a binary the deployment proposal keeps deliberately small, and the dual
+      rate gate already blocks the online guessing it would defend against.
+- [ ] Storing the SMB password separately from the account password. SMB needs
+      an NT hash, which no password-hashing function can produce from an Argon2
+      digest, so the account password is additionally kept in a reversible form
+      encrypted under the master key. That is a real weakening and it is
+      accepted because the alternative is a second password per account for a
+      protocol most people reach through the same credential. The trade is not
+      reopened here; the mitigation is that the ciphertext is useless without
+      the master key, and revocation clears it.
 - [ ] Session storage outside `state.db`.
 
 ## 4. Technical Design
@@ -138,6 +181,14 @@ password must produce the same status, the same error key, and a duration
 within a stated band. The band is wide enough not to be flaky and narrow enough
 to catch the case where the lookup short-circuits.
 
+Timing is part of the surface, not an afterthought to it
+([`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S2). The stance is
+"no account-existence oracle on **any** surface", and a response that is
+identical in content and 80 ms faster is an oracle. The same reasoning governs
+search, where a query that returns nothing quickly for a path the caller cannot
+see is the same leak wearing different clothes
+([`11`](stowcloud-11-search.md) §4.3.2).
+
 #### 4.3.4 Sessions
 
 A session token is 256 bits from `crypto/rand`, returned once, and stored as a
@@ -145,8 +196,12 @@ SHA-256 hash. Lookup hashes the presented token and compares in constant time.
 Expiry is absolute and idle, both configured. Rotation on privilege change.
 
 The cookie is `Secure`, `HttpOnly`, `SameSite=Lax`, and there is no non-TLS
-listener for it to leak on, which is a property of the deployment rather than of
-this package and is stated in `docs/proposals/stowcloud-13`.
+listener anywhere for it to leak on. That last part is a property of the
+product rather than of this package: one socket, always TLS, with a plain
+request to the same port answered by a redirect rather than served. A `Secure`
+cookie on a plaintext origin fails silently, so a plaintext listener would make
+login mysteriously not work rather than obviously insecure, which is why there
+is not one.
 
 #### 4.3.5 App passwords and scopes
 
@@ -269,12 +324,13 @@ dependency for an encoding.
 
 ## 7. References
 
-- `docs/proposals/stowcloud-10-auth.md`: the parameters, the three-tier
-  verification path, sessions, app passwords, TOTP, the enumeration defence.
-- `docs/proposals/stowcloud-0-oidc-login.md`: link-only single sign-on, ported
-  in [`stowcloud-14-smb-and-oidc.md`](stowcloud-14-smb-and-oidc.md).
+- `crates/sc-auth/src/login.rs`, `password.rs`, `session.rs`, `app_password.rs`,
+  `totp.rs`, `rate_limit.rs`: the flow and the primitives this translates.
+- `crates/sc-acl/src/lib.rs`, `crates/sc-core/src/acl_store.rs`: grants and
+  evaluation.
 - `crates/sc-auth/src/argon_gate.rs`: the memory bound and why the gate exists.
 - `crates/sc-auth/src/tests.rs:125`: the bug where synchronous paths bypassed
   the gate.
 - `crates/sc-auth/src/nt_hash.rs`: the encrypted-at-rest NT hash.
-- `docs/proposals/stowcloud-17-audit-gaps.md`: the SMB credential work.
+- `crates/sc-auth/src/nt_ops.rs`, `crates/sc-server/src/passdb.rs`: the SMB
+  credential path revocation has to reach.

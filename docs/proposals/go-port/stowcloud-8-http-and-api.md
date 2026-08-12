@@ -59,6 +59,15 @@ suite, and both have Go counterparts that are not the same shape:
       plain request to the TLS port is a redirect, not a second listener.
 - [ ] Redesigning the REST surface beyond §4.4. The frontend is not being
       rewritten and churn without a recorded reason costs it for nothing.
+- [ ] **Server-rendered messages.** A refusal travels as a code plus
+      parameters, and the browser owns the wording and the reader's language.
+      This is the stance D15 makes structural, and the incident behind it is a
+      settings screen printing a lower layer's reason raw, in Korean, whatever
+      locale the reader had chosen.
+- [ ] **A MIME type on a listing entry.** The server never states one. The icon
+      is the client's business, and a guessed type invites a client to render
+      what it should download, which is the same failure the separate content
+      origin exists to prevent one layer down.
 
 ## 4. Technical Design
 
@@ -106,6 +115,28 @@ None.
 func Chain(s *State) func(http.Handler) http.Handler
 ```
 
+**The order is a cost argument, not a taste.** Each step is placed so that the
+cheap refusal happens before the expensive work it would otherwise pay for.
+RateLimit is step 5 and Auth is step 7 because a flood must be rejected before
+it costs an Argon2 invocation, and 48 MiB times the concurrency cap is what a
+flood would otherwise reserve. BodyLimit is step 6 for the same reason one
+level down: a body is refused by its declared length before a handler reads it.
+Moving Auth above RateLimit compiles, passes every test, and hands an attacker
+the container's memory budget.
+
+Two other properties of this surface are inherited and easy to lose in a
+rewrite:
+
+- **Paging does not re-read the directory.** A directory can hold 100k entries
+  and the filesystem offers no sorted iterator: `getdents64` order is unstable,
+  and a full sort means reading every name, so re-sorting per page is the entry
+  count times the page count. The cursor carries enough to resume, so page two
+  does not pay for page one again.
+- **Timestamps are nanoseconds that survive JavaScript.** A nanosecond value
+  does not fit a double without loss, so it does not travel as a JSON number.
+  Whatever encoding is chosen, the test is a round trip through the browser,
+  not through Go.
+
 **2. TrustedProxy** is the one with fail-closed rules that break quietly when
 reimplemented casually, so they are restated as testable statements:
 
@@ -128,9 +159,10 @@ Hop parsing accepts the four shapes proxies actually emit: `1.2.3.4`,
 `1.2.3.4:51234`, `[2001:db8::1]`, `[2001:db8::1]:443`. A fuzz target covers it
 (D16).
 
-**3. HostGuard** compares against the declared origin list from
-`docs/proposals/stowcloud-20`, which exists because one server is reached under
-several names and each has to be declared rather than inferred from the request.
+**3. HostGuard** compares the request's host against a declared origin list.
+The list is configuration, never inference: one server is reached under a LAN
+address, a Tailscale name and a public name through a proxy, and a guard that
+learned the origin from the request it is guarding is not a guard.
 
 **6. BodyLimit** is `http.MaxBytesReader` at the D5 value for the route class,
 applied before the handler reads a byte. XML routes get the smaller limit.
@@ -200,9 +232,10 @@ dependency edge to `web/build`, so the `cargo clean -p sc-http` hazard has no
 counterpart: after `npm run build`, the next `go build` picks up the new files
 or fails.
 
-Uploaded content is never rendered inline. It is served from the separate
-content origin with no session cookie, reached by capability URL, exactly as
-`docs/proposals/stowcloud-6` specifies.
+Uploaded content is never rendered inline. It is served from a separate content
+origin that carries no session cookie and is reached by a capability URL, so
+that a stored HTML or SVG file executing in a browser has no session to steal
+([`stowcloud-12`](stowcloud-12-preview.md) §2.0).
 
 #### 4.3.5 WebSocket
 
@@ -311,12 +344,12 @@ Everything else is standard library: `crypto/tls`, `crypto/x509`, `net/http`,
 
 ## 7. References
 
-- `docs/proposals/stowcloud-9-api.md`: the error envelope, the middleware order,
-  listing sessions.
-- `docs/proposals/stowcloud-20-origins-and-settings.md`: the declared origin
-  list step 3 checks against, and the settings defects §4.4 fixes.
-- `docs/proposals/stowcloud-6-preview-sharing.md`: the content origin and
-  capability URLs.
+- `crates/sc-http/src/error.rs`, `state.rs`, `routes.rs`, `core_api.rs`: the
+  envelope, the state and the route surface this translates.
+- `crates/sc-http/src/config.rs`: the declared origin list step 3 checks
+  against, and the trusted-proxy CIDRs step 2 reads.
+- `crates/sc-http/src/content.rs`, `content_api.rs`: the content origin and the
+  capability URLs §4.3.4 refers to.
 - `crates/sc-http/src/middleware.rs`: the proxy rules §4.3.1 restates, with the
   reasoning for each.
 - `scripts/verify.sh:173`: the bind-site gate, and why a test could not catch

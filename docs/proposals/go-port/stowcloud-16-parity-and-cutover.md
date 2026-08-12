@@ -30,10 +30,24 @@ suite from outside this repository, and a sync client from outside this
 repository.
 
 The fourth is the footprint measurement, and it is the one that can send work
-back. `docs/proposals/stowcloud-11-footprint.md` sets a 32 GB and 12 TB floor
-from two findings that changed the schema, and three decisions in this port
-touch it: the pure-Go SQLite driver, the exec'd worker pool (which costs more
-resident memory than copy-on-write forks), and Go's garbage collector.
+back. The resource budget in
+[`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §4.3 F4 is a 32 GB
+system disk and a 12 TB array, and three decisions in this port touch it: the
+pure-Go SQLite driver, the exec'd worker pool (which costs more resident memory
+than copy-on-write forks), and Go's garbage collector.
+
+**The floor is deliberately modest, and that is the method rather than a
+limitation.** A design that only works on generous hardware has not been
+validated; picking a small target turns "how much does this cost" from an
+opinion into arithmetic, and in the Rust tree it twice produced an answer that
+invalidated a design already written down. The same is expected here, which is
+why this phase is allowed to send work back to a phase that has already closed.
+Measurement that cannot change a decision is theatre
+([`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S5).
+
+Tuning for fast storage is not part of it. The fast path is welcome and the
+design is validated against the slow one, because cold rotational storage is
+where the honest numbers live.
 
 ## 3. Goals & Non-Goals
 
@@ -144,12 +158,14 @@ A desktop sync client and a mobile client, each against both builds:
 6. A share link, opened by a browser with no account.
 
 The Android "synced" tick is expected to appear in both, for the reason
-`docs/README.md` records, and its appearance is not a defect.
+[`13`](stowcloud-13-compat-nc.md) §3.2 gives, and its appearance is not a
+defect of either build.
 
 #### 4.3.5 The footprint remeasurement
 
-Against `docs/proposals/stowcloud-11-footprint.md`'s workload, on the same
-tree, in the VM:
+Against the workload in
+[`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.3.1, on the same tree, in
+the VM:
 
 | Measure | Compared against |
 |---|---|
@@ -184,12 +200,25 @@ One commit, and the order inside it matters only in that it should be readable:
    `rust-toolchain.toml`, `scripts/musl-env.sh`, `tools/zigcc-musl.ps1`.
 2. Reduce `scripts/verify.sh` to its Go half.
 3. Replace the builder stage in `Dockerfile`.
-4. Amend `docs/proposals/stowcloud-12-architecture.md`: §4.1's crate layout
-   becomes the package layout, and §4.2's backend row stops saying Rust was
-   chosen over "a GC'd runtime, where the syscall contract is someone else's".
-   The replacement row states what actually changed, which is the three things
-   in [`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.3 and not the
-   syscall contract.
+4. **Retire the Rust-era proposals and promote this folder in their place.**
+   Those documents are specifications written from what was built, and what was
+   built is deleted in step 1: their crate layouts, their syscall contracts and
+   their stack decisions describe code that no longer exists. Leaving them
+   beside the Go tree leaves a reader two specifications, one of which is
+   wrong, with nothing marking which.
+
+   Everything in them that is still true is already here. That was the point of
+   writing these documents to cite only code: every principle, stance,
+   measurement and recorded incident they carried has been restated where it
+   decides something ([`stowcloud-0`](stowcloud-0-motivation-and-findings.md)
+   §2.2 and §2.5 are the bulk of it), so the promotion removes duplication
+   rather than information.
+
+   Concretely: this folder's files move up to `docs/proposals/`, renumbered
+   into that directory's sequence, and the proposals describing the Rust
+   implementation are deleted in the same commit. The index is rewritten to the
+   new reading order. Git history keeps the old ones for anyone who wants to
+   see what the Rust tree promised.
 5. Update `README.md` and `README.ko.md`'s build instructions, and record the
    one operator-visible consequence of the cutover in the release notes: every
    `oc:fileid` changes once, so every attached sync client performs a full
@@ -259,13 +288,11 @@ in [`stowcloud-2`](stowcloud-2-gate-and-toolchain.md) §4.1.1 has both.
 
 ## 7. References
 
-- `docs/proposals/stowcloud-11-footprint.md`: the workload and the budget
-  §4.3.5 measures against.
-- `docs/proposals/stowcloud-12-architecture.md` §4.2: the row §4.4 amends.
-- `docs/README.md`, "Known client behaviour": the Android tick that is expected
-  in both builds.
+- `crates/`: the implementation the differ compares against, and what step 1
+  deletes.
 - `README.md`, "Status": WebDAV conformance in CI and an automated sync-client
   regression suite, both listed as missing, and both partly closed here.
+- `.github/workflows/`: the jobs step 2 and step 3 change.
 - [`stowcloud-5-store-and-schema.md`](stowcloud-5-store-and-schema.md) §4.3.1
   and §4.5: the threshold that can send work back, and the fileid decision that
   changes what §4.3.2 allows to differ.

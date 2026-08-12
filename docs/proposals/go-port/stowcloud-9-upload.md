@@ -40,6 +40,21 @@ Verification could never fail whatever arrived on disk. The fixed shape is
 guarded separately, so the rare and brief metadata write never blocks the common
 and potentially large disk write.
 
+**A 413 is normal operation here, not an error path.** The legacy desktop
+client starts at a 100 MB chunk and adjusts dynamically, and a server can
+advertise a smaller maximum and still not always be honoured. Returning a
+spec-correct 413 is what drives that client's own auto-adjust, so the refusal is
+part of the protocol working rather than a symptom of it failing, and it is not
+logged as an error or counted against an error budget. That distinction is
+[`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S12 and it matters
+in a rewrite because the natural instinct is to treat every 4xx as a fault.
+
+**Two invariants are absolute**, and both are about not producing a half-thing:
+a partial upload can never appear at the destination, and no staging file is
+ever read back and rewritten on the native path. The first is why publication
+is a rename and not a stream-to-destination. The second is why assembly uses
+`copy_file_range` rather than a copy loop.
+
 ## 3. Goals & Non-Goals
 
 ### 3.1 Goals
@@ -60,6 +75,18 @@ and potentially large disk write.
       design and the interval set exists for resume, not concurrency.
 - [ ] Changing the reserved prefix.
 - [ ] Changing the checksum algorithm set. It is client-facing.
+- [ ] **Dynamic chunk sizing.** Fixed size with parallel transfer instead.
+      Memory use here is independent of chunk size, because the body flows
+      through a reused 256 KiB buffer into `pwrite` and nothing buffers a whole
+      chunk anywhere, so a 1 GiB chunk leaves resident memory unchanged. There
+      is therefore no memory argument for dynamic sizing, and what it buys
+      elsewhere, parallelism buys here more simply.
+- [ ] **A chunk-size ceiling.** Not enforcing one does not make middleboxes
+      disappear; it means we are not the one rejecting
+      ([`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.5 S12). The
+      advertised value is a recommendation, never a requirement.
+- [ ] Per-chunk `fdatasync`. It would collapse throughput, and the durability
+      the design actually promises is delivered at finalize.
 
 ## 4. Technical Design
 
@@ -260,8 +287,8 @@ CRC32C is standard library.
 
 ## 7. References
 
-- `docs/proposals/stowcloud-7-upload.md`: TUS, the interval set, the ordering
-  rule, compat chunking.
+- `crates/sc-upload/src/engine.rs`, `interval_set.rs`, `model.rs`, `db.rs`:
+  the engine this translates.
 - `crates/sc-upload/src/engine.rs:1-18`: the part-file naming history quoted in
   §2.
 - `crates/sc-upload/src/model.rs:128-136`: the verify shape that could never
