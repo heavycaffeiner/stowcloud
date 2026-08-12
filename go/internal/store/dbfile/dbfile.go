@@ -92,6 +92,17 @@ type Spec struct {
 	// everything else: discarding a database nothing can rebuild is data loss
 	// with a version bump on top.
 	Rebuildable bool
+
+	// Adopt inspects a file that carries no version row and reports the version
+	// its shape already amounts to, or zero for one this runner should migrate
+	// from scratch. It is for a database another implementation wrote and this
+	// one inherits: running migration 1 against an existing table is an error,
+	// and an empty file that happens to be the same name is not.
+	//
+	// Refusing is its other answer. A shape that nearly matches is not adopted
+	// on the strength of the resemblance, because the runner would then record
+	// a version the file does not have.
+	Adopt func(context.Context, *sql.DB) (int, error)
 }
 
 // DB is one open database file.

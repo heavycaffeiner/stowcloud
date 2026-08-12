@@ -96,9 +96,16 @@ type DB struct {
 }
 
 // Spec is this database's file. It is not rebuildable: there is no way to
-// reconstruct who wrote what before the record existed.
+// reconstruct who wrote what before the record existed. It carries an adoption
+// check because a Rust install keeps this file rather than migrating it, and
+// that file has no version row.
 func Spec(path string) dbfile.Spec {
-	return dbfile.Spec{Path: path, Migrations: migrations(), Rebuildable: false}
+	return dbfile.Spec{
+		Path:        path,
+		Migrations:  migrations(),
+		Rebuildable: false,
+		Adopt:       adopt,
+	}
 }
 
 // New wraps an open file.
