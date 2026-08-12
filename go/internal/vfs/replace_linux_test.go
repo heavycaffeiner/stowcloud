@@ -14,10 +14,13 @@ import (
 // default 022 would be 0644 and readable by everything on the box. The umask is
 // set to refuse every bit here, which is the strongest form of the question.
 func TestReplaceFileDurableTakesTheExactModeDespiteUmask(t *testing.T) {
+	// The directory comes first. A umask of 0777 refuses the mkdir that
+	// TempDir does, so setting it any earlier fails the test before the thing
+	// it is about has run.
+	dir := t.TempDir()
 	old := unix.Umask(0o777)
 	defer unix.Umask(old)
 
-	dir := t.TempDir()
 	path := filepath.Join(dir, "master.key")
 	if err := ReplaceFileDurable(path, 0o600, func(f *os.File) error {
 		_, werr := f.Write([]byte("k"))
