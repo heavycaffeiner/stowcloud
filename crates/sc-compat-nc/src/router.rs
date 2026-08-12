@@ -73,6 +73,19 @@ impl OcsCtx {
     fn new(version: OcsVersion, uri: &Uri, headers: &HeaderMap) -> Result<Self, Response> {
         let format = OcsFormat::negotiate(uri.query(), headers);
         if let Err(e) = require_ocs_api_request(headers) {
+            // Logged here and not only in `result`: this refusal happens
+            // before any handler runs, so it is the one that leaves the least
+            // behind, and it rejects *every* OCS call from a client that
+            // omits the header rather than one endpoint. A grep that found
+            // nothing used to be consistent with both "the server answered"
+            // and "the server refused everything at the door".
+            tracing::warn!(
+                target: "compat",
+                path = %uri.path(),
+                code = e.code,
+                detail = %e.message,
+                "ocs request refused"
+            );
             return Err(Ocs::err(version, format, e).into_response());
         }
         Ok(Self {
