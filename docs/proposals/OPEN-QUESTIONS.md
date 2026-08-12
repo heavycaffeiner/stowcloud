@@ -144,3 +144,45 @@ the kernel turned out to offer.
 **Reopen by** Phase 9, which is the first phase with a worker to scope and the
 place `proof.go` would demonstrate it.
 
+---
+
+## Q4. Which hash derives `node.id`, given that it can only be chosen once
+
+**Raised by** Phase 2a, building the derivation
+([`5`](stowcloud-5-store-and-schema.md) §4.5.2).
+
+**What was found.** §4.5.2 specified BLAKE3 and justified it with "already in
+the tree for the upload checksum, so this adds no dependency". That is a fact
+about the Rust tree. In the Go tree BLAKE3 is a module that
+[`0`](stowcloud-0-motivation-and-findings.md) §6-2 admits at **Phase 6**, and
+admits on one ground: a TUS `Upload-Checksum` header names an algorithm a
+client chose, so that one digest cannot be swapped for a stdlib hash.
+[`9`](stowcloud-9-upload.md) §4.3.3 records the same split as correction C1.
+§6-2 of the parent document says this phase takes one dependency, the driver,
+and nothing else.
+
+Nothing outside this server recomputes a `node.id`. The derivation needs a hash
+that distributes and nothing more.
+
+**Options.**
+
+| # | Hash | Cost |
+|---|---|---|
+| 1 | `crypto/sha256` | standard library, and the derivation is settled at Phase 2 with no dependency |
+| 2 | BLAKE3, pulled forward from Phase 6 | one module three phases early, for a digest no client ever sees |
+| 3 | BLAKE3 later, switching at Phase 6 | every id changes a second time, for every install already running the Go build |
+
+**What decides between them.** Whether anything outside this process ever has
+to reproduce the derivation. Nothing does today: the id reaches a client as
+`oc:fileid` and is compared, never recomputed. If a future tool has to derive
+ids without this binary, the hash becomes part of a wire contract and the
+argument reopens.
+
+**Taken: option 1.** The documents' own rule is that a client-facing digest
+buys a dependency and an internal one does not, and this one is internal.
+Option 3 is ruled out on its own terms rather than on preference: §4.5's whole
+purpose is that an id survives a rebuild, and changing the hash breaks that for
+every install that already rebuilt once.
+
+**Reopen by** Phase 6, which is where BLAKE3 actually arrives and where the
+cost of option 2 would be zero if the answer had been different.

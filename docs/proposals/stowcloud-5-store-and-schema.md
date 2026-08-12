@@ -104,13 +104,21 @@ Three further problems come with it:
 
 ```
 internal/store
-  open.go        open, pragmas, the pool
-  migrate.go     the runner and the version table
+  open.go        the data directory, and which file gets which schema
+  errors.go      the four errors in §5-2
+  dbfile/        one SQLite file: the pragmas, the migration runner, the
+                 version table, and the single serialised write path
   cache/         node, diretag, share_gen
   state/         users, sessions, grants, links, props, locks, uploads,
-                 settings, audit, oidc
-  sql.go         every statement, as package-level constants (D14)
+                 settings, audit, oidc, fileid_override
+  journal/       one row per (account, file); §4.2.3
 ```
+
+Every package holds its own `sql.go` of package-level statement constants
+(D14). The shared file mechanism is a package of its own rather than
+`open.go` and `migrate.go` beside the two halves, because `cache/` and
+`state/` need it and neither may import its parent: Go has no upward import
+and `store` already imports both.
 
 Under the data directory:
 
@@ -262,8 +270,15 @@ One ordered slice of migration functions per database. On open:
    shape rather than a half-applied one.
 
 For `cache.db` there is a second option a migration may take: declare itself
-unmigratable and have the runner delete and rebuild the file. That is legitimate
-here and nowhere else, and it is what makes cache schema changes cheap.
+unmigratable and have the runner discard what is there and rebuild. That is
+legitimate here and nowhere else, and it is what makes cache schema changes
+cheap.
+
+Discarding drops every table and index inside the migration's own transaction
+rather than unlinking the file. Unlinking cannot be part of the transaction
+that bumps the version, so a crash between the two leaves a fresh empty file
+claiming the new version, and reopening would have to reapply the pragmas on a
+pool that is already handing out connections.
 
 ### 4.3 Core Logic
 
@@ -394,7 +409,7 @@ key = "stowcloud/fileid/v1"
      || u8(btime_present) || u64be(btime_ns_or_zero)
      || u32be(attempt)
 
-id  = 1 + (be64(BLAKE3(key)[0:8]) & (2^63 - 1)) % (2^63 - 1)
+id  = 1 + (be64(SHA-256(key)[0:8]) & (2^63 - 1)) % (2^63 - 1)
 ```
 
 Four properties, each chosen rather than inherited:
@@ -413,8 +428,20 @@ Four properties, each chosen rather than inherited:
   Zero is the "no id" sentinel the property emitter already uses.
 - **`attempt` exists for §4.5.3** and is zero in every normal case.
 
-BLAKE3 is already in the tree for the upload checksum
-([`stowcloud-9`](stowcloud-9-upload.md) §4.3.3), so this adds no dependency.
+**The hash is `crypto/sha256`, and it was BLAKE3 until this phase built it.**
+BLAKE3 needed no argument in the Rust tree, where it was already a dependency.
+In the Go tree it is a module that
+[`0`](stowcloud-0-motivation-and-findings.md) §6-2 admits at Phase 6 and only
+because a TUS `Upload-Checksum` header is a client-facing algorithm that
+cannot be swapped for a stdlib hash; the same table sends every internal digest
+to `crypto/sha256`, and [`9`](stowcloud-9-upload.md) §4.3.3 records that split
+as correction C1. Nothing outside this server ever recomputes a `node.id`, so
+this hash is internal, and §6-2 here says the only dependency this phase takes
+is the driver.
+
+The choice is a one-way door: the hash is part of the derivation, so changing
+it changes every id. `OPEN-QUESTIONS.md` Q4 records that, and the version
+string in the key is what a deliberate change would move.
 
 #### 4.5.3 The collision case, which is not theoretical
 
@@ -434,16 +461,24 @@ So the derivation is a proposal and the table is the authority:
 
 ```sql
 CREATE TABLE fileid_override (
-  share    INTEGER NOT NULL,
-  dev      INTEGER NOT NULL,
-  ino      INTEGER NOT NULL,
-  btime_ns INTEGER,
-  id       INTEGER NOT NULL UNIQUE,
-  PRIMARY KEY (share, dev, ino, btime_ns)
+  share         INTEGER NOT NULL,
+  dev           INTEGER NOT NULL,
+  ino           INTEGER NOT NULL,
+  btime_present INTEGER NOT NULL,
+  btime_ns      INTEGER NOT NULL,
+  id            INTEGER NOT NULL UNIQUE,
+  PRIMARY KEY (share, dev, ino, btime_present, btime_ns)
 ) WITHOUT ROWID;
 ```
 
-Allocation, in one transaction:
+**The btime is two columns here and one in `node`**, and the difference is
+SQLite's rather than a choice: a `WITHOUT ROWID` table enforces `NOT NULL` on
+every column of its primary key, so the nullable `btime_ns` this table was
+first written with refuses exactly the rows a filesystem carrying no birth time
+produces. The pair is the derivation's own flag byte, stored, so an absent
+btime and a zero one stay different facts on disk as well as in the hash.
+
+Allocation:
 
 1. Look up `fileid_override` for the identity. A hit is the answer, always, and
    it is consulted first precisely so that a past decision is never revisited.
@@ -452,6 +487,15 @@ Allocation, in one transaction:
 3. If it is held by a **different** identity, increment `attempt` and derive
    again until an id is free, then write `(identity, id)` into
    `fileid_override` before returning it.
+
+**Step 3's write commits before the `node` row does, and the order is the
+whole of the crash story.** The two rows are in two files, and SQLite's
+cross-database atomic commit does not exist in WAL mode, so there is no
+transaction that covers both. Committing the override first means a crash
+between them leaves an override with no node, which is the state every rebuild
+starts from anyway. The other order leaves a node holding an id that nothing
+records, and the next rebuild races the collision again and may answer
+differently.
 
 Step 3's outcome depends on which of the two colliding files was seen first,
 which is insertion order, which a rebuild does not reproduce. That is exactly
@@ -523,8 +567,17 @@ func (s *Store) Cache() *cache.DB
 // State is the durable half. It is the entire backup instruction.
 func (s *Store) State() *state.DB
 
-// Write runs fn in the single serialised write path. Readers are not blocked.
-func (s *Store) Write(ctx context.Context, fn func(*sql.Tx) error) error
+// Journal is the third file, and nil when it could not be opened: §4.2.3 makes
+// that a disabled feature rather than a refusal to start.
+func (s *Store) Journal() *journal.DB
+```
+
+```go
+// Write runs fn in this database's single serialised write path. Readers are
+// not blocked. It is a method on each of the three handles rather than on
+// Store, because there are three files and one serialised path per file, and a
+// Write on the facade could not say which one it locks.
+func (d *DB) Write(ctx context.Context, fn func(*sql.Tx) error) error
 ```
 
 ```go
@@ -545,9 +598,9 @@ type Ident struct {
 func (d *DB) Resolve(id FileID) (SharePath, error)
 
 // AllocateID returns the id for ident, deriving it per §4.5.2 and consulting
-// the override table first. It is the only function that may write an id, and
-// it runs in one transaction so that a derived id and the override row that
-// records a collision cannot disagree.
+// the override table first. It is the only function that may write an id. tx is
+// the cache's write transaction; an override row is committed to state.db
+// before this returns, in the order §4.5.3 gives and for the reason it gives.
 //
 // A caller must not cache the result across a share re-registration: the share
 // id is part of the derivation.
