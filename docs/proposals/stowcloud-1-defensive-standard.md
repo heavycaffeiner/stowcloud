@@ -69,9 +69,11 @@ becomes false without them, not because they are harder to implement.
 - [ ] A coverage target. Coverage measures which lines ran, and every finding in
       document 0 is in a line that runs.
 - [ ] Applying these to `web/`. The frontend has its own gates.
-- [ ] A custom linter framework. Rules that need one are written as `go vet`
-      analysers, which is the standard mechanism, or as a grep in the gate when
-      that is honestly enough.
+- [ ] A custom linter framework. A rule that needs its own check is a small
+      command in `go/tools/` over `go/ast` and `go/types`, run by the gate, or
+      a grep in the gate when that is honestly enough. Not
+      `golang.org/x/tools/go/analysis`: that is the standard mechanism and it
+      is a dependency, and §6-2 wants these three to have none.
 
 ## 4. Technical Design
 
@@ -221,9 +223,12 @@ answer is a parameter. Closes F6.
 func Narrow[To, From constraints.Integer](v From) (To, error)
 ```
 
-`gosec` G115 plus a `go vet` analyser for the conversions G115 does not see.
-Builds are 64-bit only and the check runs regardless, because "we only build
-64-bit" is a fact about today.
+`gosec` G115 is the Phase 0 mechanism, and it is the whole of it until there is
+a conversion to catch. The supplementary analyser for what G115 does not see
+lands with the first package that converts between integer widths, which is
+Phase 1's `vfs`; writing it against no conversions would be writing it against
+no evidence of what G115 misses. Builds are 64-bit only and the check runs
+regardless, because "we only build 64-bit" is a fact about today.
 
 **D7. Panic policy.** No bare `go` statement outside one helper:
 
@@ -308,9 +313,16 @@ header, the OIDC discovery document, the archive lister, the `X-Forwarded-For`
 walker. Go's native fuzzing; the seed corpus is committed and the gate runs the
 corpus, while the nightly job runs the fuzzer.
 
-**D17. `-race` always.** `go test -race ./...` in the gate, not in a separate
-job that can be skipped. Go's race detector finds a class the Rust tree could
-not have and the Go tree can: two goroutines on one map.
+**D17. `-race` wherever it can run, and a named refusal wherever it cannot.**
+`go test -race ./...` is a step in the gate rather than a separate job, but it
+is the one step whose environment differs from the shipping build's: the
+detector needs cgo, and `go test -race` under `CGO_ENABLED=0` refuses outright
+with `-race requires cgo`. The development box has no C compiler, so the step
+reports a named SKIP there and `VERIFY_REQUIRE_RACE=1` turns that SKIP into a
+failure on the CI job that installs one. The binary it produces is a test
+binary and is never shipped, so the static-binary story is untouched. Go's race
+detector finds a class the Rust tree could not have and the Go tree can: two
+goroutines on one map.
 
 **D18. `govulncheck` and a direct-dependency allowlist.** Replaces
 `cargo-deny`. The allowlist is a checked-in file of module paths; a new direct
@@ -361,7 +373,8 @@ implementation needs explaining is a rule that will be worked around.
 
 | Phase | Task | Size | Owner |
 |---|---|---|---|
-| Phase 0 | The six packages in §5-1, the lint configuration, the two `go vet` analysers (D7, D12), and the gate wiring for D1, D2, D6, D8, D9, D11, D13, D14, D17, D18, D19 | M | heavycaffeiner |
+| Phase 0 | The six packages in §5-1, the lint configuration, the three in-tree checks (D7, D12, D15), and the gate wiring for D1, D2, D6, D8, D9, D11, D14, D17, D18, D19 | M | heavycaffeiner |
+| Phase 5 | D13's timeout assertion, which is a test of a construction site that does not exist until then | with the phase | heavycaffeiner |
 | Phase 1 | D3 and D4, with the tests that fault the kernel probe | with the phase | heavycaffeiner |
 | every phase | D5's limits for that subsystem, D10 at every crossing, D16's targets for that subsystem's parsers, D20's constructor for its boundary | with the phase | heavycaffeiner |
 
@@ -373,8 +386,18 @@ gets written.
 
 **Tools**, all installed by the gate rather than assumed present:
 `golangci-lint` (running `errcheck`, `gochecknoglobals`, `gosec`, `staticcheck`,
-`ineffassign`, `bodyclose`), `govulncheck`. The two custom analysers are in-tree
-under `go/tools/`, built by the gate, with no external dependency.
+`ineffassign`, `bodyclose`, `unused` and `govet`), `govulncheck`. The gate
+installs them under `go/.tools/bin` rather than into `GOPATH/bin`, so running
+it writes nothing outside the checkout it was pointed at, and reports a named
+SKIP when it can neither find nor install one.
+
+The three custom checks are in-tree under `go/tools/`, built by the gate, with
+no external dependency: `vetgo` for D7, `vetsecret` for D12, and `koscan` for
+D15's text scan. `vetgo` and `koscan` parse; `vetsecret` type-checks, because
+"is this expression a secret" is a question about types and a name-based guess
+is exactly the kind of rule that passes while doing nothing. Its type
+information comes from export data the go command already produces, which is
+what keeps it inside the standard library.
 
 **Constraint**: `golang.org/x/exp/constraints` for D6's generic bound, or a
 hand-written constraint interface to avoid the dependency. Decided at Phase 0;

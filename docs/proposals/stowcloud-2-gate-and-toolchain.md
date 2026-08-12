@@ -55,8 +55,15 @@ has different versions of all three.
 - [ ] `go/` builds, vets and tests with one command on the Windows box and in
       the Linux VM, with no toolchain beyond Go itself.
 - [ ] Every tier-2 rule from document 1 enforced before any code it governs
-      exists.
-- [ ] The two custom `go vet` analysers (D7, D12) written and wired.
+      exists. "Empty but compiling" is the wrong shape for the six D-rule
+      packages, and it is worth saying why rather than leaving it as an
+      inconsistency: D7's mechanism is a rejection of every `go` statement
+      outside `internal/task`, so `internal/task` has to hold the one that is
+      allowed, and D12's is a check on a type that has to exist to be
+      type-checked against. A rule whose subject is absent is not enforced,
+      it is merely configured.
+- [ ] The three custom checks (D7's `vetgo`, D12's `vetsecret`, D15's
+      `koscan`) written and wired.
 - [ ] `verify.sh` gains a Go half and keeps the Rust half until cutover, with
       one summary line for both.
 - [ ] The four assumptions in §4.4 settled by compiling, and the answers written
@@ -143,17 +150,36 @@ and `grep_gate` helpers so failure output behaves identically:
 
 | Step | Command | Replaces |
 |---|---|---|
-| build | `go build ./...` | `cargo build` |
-| vet | `go vet ./...` plus the two in-tree analysers | part of clippy |
+| build | `go build ./...` for `linux/amd64` and `linux/arm64` | `cargo build` |
+| vet | `go vet ./...` | part of clippy |
+| analysers | `vetgo`, `vetsecret`, `koscan` | nothing today |
+| format | `gofmt -l` | `cargo fmt --check`, which this workspace never had |
 | lint | `golangci-lint run` | `cargo clippy -D warnings` |
-| test | `go test -race -count=1 ./...` | `cargo test` |
+| test | `go test -count=1 ./...`, for the host's own OS | `cargo test` |
+| race | `go test -race -count=1 ./...`, where cgo is available | nothing today |
 | fuzz corpus | `go test -run 'Fuzz.*/corpus' ./...` | nothing today |
 | vuln | `govulncheck ./...` | `cargo-deny advisories` |
-| deps | direct-module allowlist diff | `cargo-deny bans` |
+| deps | direct-module allowlist diff against `go/deps.allow` | `cargo-deny bans` |
+| exceptions | `//nolint` count against `go/nolint.budget` | nothing today |
+| one clock | D8: `time.Now(` outside `internal/clock` | nothing today |
+| randomness | D9: `math/rand` in any import | nothing today |
+| renames | D11: `os.Rename`, `unix.Renameat2` outside `internal/vfs` | nothing today |
+| SQL | D14: formatting verbs in `internal/store` | nothing today |
 | compat isolation | five gates, [13](stowcloud-13-compat-nc.md) §4.2: the transitive graph, the layer's direct imports, the seam's vocabulary, the stripped build, the narrowed text scan | the `oc:`/`ocs` grep and `--no-default-features` |
 | text scan | the Korean scan, over a `unicode.RangeTable` | the `grep -P` gate |
 | file size | no file over 1,500 lines | nothing today |
 | embed | `go build -tags embed_ui` when `web/build` exists | the embed-ui steps |
+
+The build step runs both architectures because the image publishes both, and
+because F3 is what happens when it does not: `linux/arm64` ships with an empty
+process seccomp list and nothing in the Rust gate ever compiled that path.
+
+The race step is the one whose environment differs from the shipping build's,
+for the reason [`1`](stowcloud-1-defensive-standard.md) D17 gives, and the
+test step runs for the host's own OS because a `GOOS=linux` test binary does
+not execute on the development box. Four steps carry a `VERIFY_REQUIRE_*` name
+between them: the musl probe and the frontend from the Rust half, plus
+`VERIFY_REQUIRE_GOTOOLS` and `VERIFY_REQUIRE_RACE`.
 
 Two steps in the Rust half have no Go counterpart and are deleted with it: the
 musl cross probe (Go cross-compiles with no toolchain, so the SKIP path has
@@ -314,8 +340,8 @@ registered under the wrong tag, which the graph cannot see.
 
 | Phase | Task | Size | Depends on | Owner |
 |---|---|---|---|---|
-| Phase 0a | `go.mod`, `cmd/stowcloud` with dispatch and version, the six D-rule packages as empty-but-compiling | S | none | heavycaffeiner |
-| Phase 0b | `golangci-lint` configuration, the two in-tree analysers, the gate's Go half, the CI job | S | 0a | heavycaffeiner |
+| Phase 0a | `go.mod`, `cmd/stowcloud` with dispatch and version, the six D-rule packages carrying the helpers [`1`](stowcloud-1-defensive-standard.md) §5-1 names and nothing else | S | none | heavycaffeiner |
+| Phase 0b | `golangci-lint` configuration, the three in-tree checks, the gate's Go half, the CI job | S | 0a | heavycaffeiner |
 | Phase 0c | A1 to A4 settled, answers written back into documents 3, 4, 5 and 12 | S | 0a | heavycaffeiner |
 
 0b and 0c are independent of each other.
@@ -327,7 +353,13 @@ used here rather than a preference; the current stable release is what CI pins.
 `CGO_ENABLED=0` everywhere. No C compiler, no cross-linker, no `zig cc`, which
 deletes `tools/zigcc-musl.ps1` and `scripts/musl-env.sh` at cutover.
 
-**Tools**, installed by the gate: `golangci-lint`, `govulncheck`.
+**Tools**, installed by the gate under `go/.tools/bin` rather than into
+`GOPATH/bin`: `golangci-lint`, pinned, because a linter whose rule set changes
+between two runs is a gate that means something different each time; and
+`govulncheck`, deliberately not pinned, because its whole job is to know about
+advisories published after the line naming it was written. Installing into the
+checkout is what keeps a gate run from writing outside the repository it was
+pointed at.
 
 **Nothing else in this phase.** The module list in the parent proposal arrives
 with the phases that need it, so `go.sum` at the end of Phase 0 has `x/sys` and
