@@ -69,4 +69,29 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 UPDATE node SET parent = ?, name = ?, size = ?, mtime_ns = ?, flags = ? WHERE id = ?`
 
 	sqlTouchNode = `UPDATE node SET size = ?, mtime_ns = ? WHERE id = ?`
+
+	sqlNodeRowByID = `SELECT share, parent, name FROM node WHERE id = ?`
+
+	sqlRenameNode = `UPDATE node SET parent = ?, name = ? WHERE id = ?`
+
+	sqlReadDiretag = `
+SELECT etag, rsize, rcount, gen, valid FROM diretag WHERE share = ? AND fileid = ?`
+
+	sqlPutDiretag = `
+INSERT INTO diretag(share, fileid, etag, rsize, rcount, gen, valid)
+VALUES (?, ?, ?, ?, ?, ?, 1)
+ON CONFLICT(share, fileid) DO UPDATE SET
+  etag = excluded.etag, rsize = excluded.rsize, rcount = excluded.rcount,
+  gen = excluded.gen, valid = 1`
+
+	sqlDirtyDiretag = `
+INSERT INTO diretag(share, fileid, etag, rsize, rcount, gen, valid)
+VALUES (?, ?, '', 0, 0, 0, 0)
+ON CONFLICT(share, fileid) DO UPDATE SET valid = 0`
+
+	sqlBumpShareGen = `
+INSERT INTO share_gen(share, gen) VALUES (?, 1)
+ON CONFLICT(share) DO UPDATE SET gen = gen + 1`
+
+	sqlReadShareGen = `SELECT gen FROM share_gen WHERE share = ?`
 )
