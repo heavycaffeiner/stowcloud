@@ -21,6 +21,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/state"
+	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
 // The files the Rust build wrote, by the names it wrote them under.
@@ -32,6 +33,9 @@ const (
 	settingsFile = "settings.db"
 	metaFile     = "meta.db"
 	compatFile   = "compat-nc.db"
+
+	// stagedSuffix names the database being built, beside the name it takes.
+	stagedSuffix = ".importing"
 )
 
 // ErrStateExists is a data directory that has already been migrated, or one
@@ -75,6 +79,12 @@ func (r *Report) Write(w io.Writer) error {
 
 // Import reads the Rust-era databases under dir and writes state.db beside
 // them. The old files are left exactly as they were.
+//
+// It builds the whole thing under a staged name and publishes it with one
+// rename at the end. A run that fails part way therefore leaves nothing behind
+// and can simply be run again, which matters because the alternative is an
+// operator staring at a state.db that exists, is incomplete, and blocks the
+// retry that would fix it.
 func Import(ctx context.Context, dir string) (*Report, error) {
 	target := filepath.Join(dir, store.StateFile)
 	if _, err := os.Stat(target); err == nil {
@@ -89,7 +99,28 @@ func Import(ctx context.Context, dir string) (*Report, error) {
 	}
 	defer src.close()
 
-	out, err := dbfile.Open(ctx, state.Spec(target))
+	staged := filepath.Join(dir, store.StateFile+stagedSuffix)
+	// Whatever a previous run left is ours and is worth nothing: it is a
+	// partial import that was never published.
+	if derr := discardStaged(staged); derr != nil {
+		return nil, derr
+	}
+
+	rep, err := build(ctx, staged, src)
+	if err != nil {
+		return nil, errors.Join(err, discardStaged(staged))
+	}
+	if err := vfs.PublishNew(target, staged); err != nil {
+		return nil, errors.Join(err, discardStaged(staged))
+	}
+	return rep, nil
+}
+
+// build writes the staged database and closes it, which checkpoints the
+// write-ahead log back into the file so that the one rename that follows
+// carries the whole of it.
+func build(ctx context.Context, staged string, src *sources) (*Report, error) {
+	out, err := dbfile.Open(ctx, state.Spec(staged))
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +132,19 @@ func Import(ctx context.Context, dir string) (*Report, error) {
 		return nil, err
 	}
 	return rep, nil
+}
+
+// discardStaged removes a staged database and the two files SQLite keeps
+// beside one. Closing the database normally deletes those two; a run that died
+// before closing did not.
+func discardStaged(staged string) error {
+	var err error
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if rerr := os.Remove(staged + suffix); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+			err = errors.Join(err, fmt.Errorf("removing %s: %w", filepath.Base(staged+suffix), rerr))
+		}
+	}
+	return err
 }
 
 // sources is every old database that exists, and nil for each one that does

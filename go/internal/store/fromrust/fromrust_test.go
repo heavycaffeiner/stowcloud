@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
@@ -356,5 +357,66 @@ func TestImportRefusesAnExistingState(t *testing.T) {
 func TestImportRefusesADirectoryWithNoAuthDatabase(t *testing.T) {
 	if _, err := fromrust.Import(context.Background(), t.TempDir()); err == nil {
 		t.Fatal("an empty directory was imported")
+	}
+}
+
+// The import publishes with one rename, so a run that fails part way leaves
+// nothing behind and the operator can simply run it again. A half-written
+// state.db that exists is worse than none: it blocks the retry that would fix
+// it.
+func TestAFailedImportLeavesNothingAndIsRetryable(t *testing.T) {
+	ctx := context.Background()
+	dir := rustDir(t)
+
+	// A grant whose principal kind is neither a user nor a group, which the
+	// import refuses rather than guesses at, half way through the copy.
+	mkdb(t, filepath.Join(dir, "acl.db"),
+		`INSERT INTO grant_ VALUES (4, 7, 1, 7, '', 1, 0, 1, NULL, 0)`)
+
+	if _, err := fromrust.Import(ctx, dir); err == nil {
+		t.Fatal("a row the import cannot read was imported anyway")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading the directory: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), store.StateFile) {
+			t.Errorf("a failed import left %s behind", e.Name())
+		}
+	}
+
+	// With the bad row gone the same directory imports, which is what
+	// "retryable" means.
+	mkdb(t, filepath.Join(dir, "acl.db"), `DELETE FROM grant_ WHERE id = 4`)
+	if _, err := fromrust.Import(ctx, dir); err != nil {
+		t.Fatalf("the retry failed: %v", err)
+	}
+	d := openState(t, dir)
+	if n := count(t, d, `SELECT count(*) FROM "grant"`); n != 2 {
+		t.Errorf("the retry imported %d grants, want 2", n)
+	}
+}
+
+// What the rename publishes is the whole database: closing it first
+// checkpoints the write-ahead log back into the file, so nothing is left in a
+// sidecar the rename does not carry.
+func TestTheImportPublishesOneFile(t *testing.T) {
+	dir := rustDir(t)
+	if _, err := fromrust.Import(context.Background(), dir); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("reading the directory: %v", err)
+	}
+	var stateFiles []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), store.StateFile) {
+			stateFiles = append(stateFiles, e.Name())
+		}
+	}
+	if len(stateFiles) != 1 || stateFiles[0] != store.StateFile {
+		t.Errorf("the import left %v, want just %s", stateFiles, store.StateFile)
 	}
 }
