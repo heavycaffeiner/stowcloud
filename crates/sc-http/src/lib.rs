@@ -49,8 +49,7 @@ use tower_http::limit::RequestBodyLimitLayer;
 /// Anything that reads or writes this cookie must use this constant.
 pub const SESSION_COOKIE: &str = "__Host-sc_sid";
 
-/// The OIDC flow-binding cookie
-/// (`docs/proposals/stowcloud-0-oidc-login.md` §4.3.1).
+/// The OIDC flow-binding cookie.
 ///
 /// Set by `/api/auth/oidc/start` and `POST /api/auth/oidc/link/start`, read
 /// once by the callback, and expired immediately afterwards whether the

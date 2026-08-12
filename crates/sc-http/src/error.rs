@@ -74,11 +74,9 @@ pub enum ErrorCode {
     /// `crates/sc-compat-nc/src/user.rs`), so accepting it would be a no-op
     /// that looks like it did something.
     AdminInvalidQuota,
-    /// OIDC login (`docs/proposals/stowcloud-0-oidc-login.md` §5-2 table A).
-    /// The same six symbolic codes also travel as `?oidc_error=` on the
-    /// callback's redirects (table B) -- two transports, one vocabulary, which
-    /// is why they are named here rather than written as literals at each
-    /// route.
+    /// OIDC login. The same six symbolic codes also travel as `?oidc_error=`
+    /// on the callback's redirects -- two transports, one vocabulary, which is
+    /// why they are named here rather than written as literals at each route.
     ///
     /// `oidc.disabled` is `404`, not `503`: on a deployment with no `[oidc]`
     /// section these routes are not temporarily unavailable, they are not a

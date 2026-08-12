@@ -96,58 +96,163 @@ which is why the isolation gets three gates and not one.
 
 ### 4.1 Architecture Overview
 
+Three packages, not one, and the split is the isolation rather than a tidying
+of it. Every file in all three carries `//go:build compat_nc`.
+
 ```
-internal/compat/nc          all files carry //go:build compat_nc
-  ports.go       the interfaces the assembly layer implements
+internal/compat/
+  ncport/     THE SEAM. Interfaces the core side implements, and type aliases
+              for the core value types the layer needs. No logic, no vendor
+              vocabulary, no wire strings. May import core packages.
+  nc/         THE LAYER. Routers, property emitters, OCS, chunking, the mobile
+              surfaces. May import ncport, the standard library and third-party
+              modules. May NOT import any other internal/ package.
+  ncwire/     THE ADAPTER. Implements ncport from the real core and mounts nc's
+              handlers. The only package in the tree that sees both sides.
+```
+
+`nc/` itself is split by surface, and no file exceeds D19's limit:
+
+```
+internal/compat/nc/
   router.go      the mounts: /remote.php/..., /ocs/..., /index.php/...
   dav.go         the WebDAV decoration and the vendor property source
   props.go       oc:, nc: and d: properties
   chunking.go    upload v2
   ocs.go         the OCS envelope
-  capabilities.go
-  shares.go
-  login_flow.go
+  capabilities.go  shares.go  login_flow.go
   search.go  trash.go  favorites.go  recent.go
-  store.go       favourites and instance identity
 ```
 
-The direction of dependency is one way and it is now checkable:
+#### 4.1.1 Why three packages and not one
+
+The Rust layer defines its ports and *also* consumes the core crates' public
+APIs directly. That is one-way and it works, but "one-way" is then a property
+of a hundred import lines rather than of one, and the gate that checks it has
+to reason about which direction each edge points.
+
+With `ncport` in the middle, the direction is a property of three package
+boundaries and the check is an exact match rather than a judgement:
 
 ```
-internal/compat/nc  ->  internal/{core,dav,auth,acl,store,upload,preview}
-                    ->  never the reverse
+        core packages
+             ^
+             | (imports)
+          ncport  <------ nc          nc sees core types, never core packages
+             ^             ^
+             |             |
+          ncwire ----------+          the only package that sees both
+             ^
+             | (one tagged file)
+        internal/server
 ```
+
+**This costs no mirror types**, which is the reason the Rust layer consumed the
+core directly. Go type aliases re-export the real type rather than copying it:
+
+```go
+package ncport
+
+// The real types, aliased rather than mirrored. A value produced by the core
+// and a value consumed here are the same type to the compiler, so nothing
+// converts and nothing drifts.
+type (
+    Entry     = core.Entry
+    SharePath = core.SharePath
+    Vpath     = core.Vpath
+    Perms     = acl.Perms
+    Aggregate = meta.Aggregate
+)
+```
+
+`nc/` therefore handles `core.Entry` values without importing `internal/core`.
+A mirror type would have been the cost of strictness; an alias is not.
+
+#### 4.1.2 What may not cross, and why each way round
+
+**Core to compat is forbidden** because that is principle 4: one import edge in
+that direction and the core is permanently shaped by someone else's protocol,
+in a way no later refactor undoes cheaply.
+
+**Compat to core is forbidden** for a different and less obvious reason: it is
+what keeps the layer removable. A build with the tag off drops all three
+packages, and if `nc/` reached into `internal/core` directly then every place
+it did so would be a place where a core signature change breaks a build nobody
+runs by default. The seam is also a version boundary: `ncport` is the list of
+things the compat layer is allowed to depend on, and it is short enough to read.
+
+**`ncwire` sees both** and is the price. It is adapter code, it is dull, and it
+is where every conversion lives so that no conversion lives anywhere else.
 
 ### 4.2 The isolation gates
 
-Three, replacing two.
+Five, replacing two. Each is one line in `verify.sh` and each catches a
+different mistake; none is a judgement call.
 
-**1. The import graph.** In `verify.sh`:
+**G1. No core package imports the compat layer.** Transitive, because a
+laundered edge is still an edge:
 
 ```sh
-go list -deps ./internal/core/... ./internal/dav/... ./internal/auth/... \
+go list -deps ./internal/core/... ./internal/dav/... ./internal/auth/...   \
               ./internal/acl/... ./internal/store/... ./internal/upload/... \
               ./internal/vfs/... ./internal/preview/... ./internal/search/... \
+              ./internal/httpapi/... ./internal/watch/... ./internal/smb/... \
   | grep 'internal/compat' && exit 1
 ```
 
-This reads the real dependency edges the compiler resolved. The grep it replaces
-reads source text, so an indirection defeats it; an indirection is exactly what
-this catches, because the indirection is still an import.
+This reads the dependency edges the compiler resolved. The text grep it
+replaces reads source, so one level of indirection defeats it; an indirection is
+exactly what this catches, because the indirection is still an import.
 
-**2. The stripped build.** `go build -tags '' ./...` must link. Every file in
-`internal/compat/nc` carries `//go:build compat_nc`, and every reference to it
-from the assembly layer is behind the same tag with a no-op alternative. This is
-the direct replacement for `cargo build --no-default-features`.
+**G2. The layer imports the seam and nothing else from the tree.** Direct
+imports, not transitive, because `nc` reaches core *types* through `ncport` by
+design and would otherwise fail its own gate:
 
-**3. The text scan, narrowed.** The `oc:`, `ocs` and `remote.php` grep is kept
-and pointed at strings and comments only, because it catches a mistake the graph
-does not: a core package that has learned the vocabulary without importing
-anything, for example an error message mentioning `remote.php` or a field named
-after a vendor property.
+```sh
+go list -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' ./internal/compat/nc/... \
+  | grep 'stowcloud/go/internal/' | grep -v 'internal/compat/ncport$' && exit 1
+```
 
-Keeping the weak gate alongside the strong one is deliberate. It costs
+**G3. The seam carries no vendor vocabulary.** `ncport` is the one package both
+sides see, so it is the one place where a leak would be invisible to G1 and G2
+alike:
+
+```sh
+grep -rIn -iE '\boc[:_-]|\bocs\b|remote\.php|nextcloud' internal/compat/ncport/ && exit 1
+```
+
+**G4. The stripped build links.** `go build -tags '' ./...`, and the release
+gate runs it. Every file in all three compat packages carries
+`//go:build compat_nc`, and `internal/server`'s reference to `ncwire` lives in a
+single file behind the same tag with a no-op sibling. This is the direct
+replacement for `cargo build --no-default-features`, and it is stronger in one
+respect: the no-tag build does not compile the packages at all, so a
+compilation error there cannot hide behind a feature flag that still typechecks.
+
+**G5. The text scan, kept and narrowed.** The `oc:`, `ocs` and `remote.php`
+grep over core source stays, pointed at strings and comments. It catches what
+the graph cannot: a core package that has learned the vocabulary without
+importing anything, for example an error message mentioning `remote.php`, or a
+field named after a vendor property.
+
+Keeping the weak gate alongside the strong ones is deliberate. It costs
 milliseconds and it catches a different class.
+
+#### 4.2.1 What was considered and rejected
+
+**A separate Go module for the compat layer.** The module graph would enforce
+the direction with no gate at all, which is genuinely stronger than G1. It was
+rejected on cost: a second `go.mod` needs a `replace` directive for local
+development, it splits the dependency set into two lockfiles that can skew, and
+it makes a change spanning the seam a two-commit operation. G1 and G2 read the
+real graph and run in milliseconds, so the residual risk is a gate being
+deleted, which is a visible diff.
+
+**Mirror types in `ncport` instead of aliases.** This would sever the type
+dependency as well as the package dependency. Rejected because it converts
+every value at the boundary, which is code that exists only to be wrong later,
+and because the Rust layer already learned this: an earlier revision of it
+mirrored the core types and the mirrors drifted.
 
 ### 4.3 Data Model Changes
 
@@ -178,11 +283,13 @@ Two consequences this layer owns:
 
 #### 4.4.1 The ports
 
-The compat layer defines interfaces; `internal/server` implements them from the
-real core. This is dependency inversion at the boundary, and it is what lets the
-whole layer be stripped: the core has never heard of the interfaces.
+`ncport` declares interfaces; `ncwire` implements them from the real core. This
+is dependency inversion at the boundary, and it is what lets the whole layer be
+stripped: the core has never heard of the interfaces.
 
 ```go
+package ncport
+
 // CorePort is what the compat layer needs from the domain. Note what is not
 // here: nothing takes or returns a vendor type, and nothing carries a vendor
 // name. A ShareID is passed rather than a ShareRoot, because this layer never
@@ -190,11 +297,26 @@ whole layer be stripped: the core has never heard of the interfaces.
 // descriptor it has no use for.
 type CorePort interface {
     List(ctx context.Context, u UserID, p Vpath, cur Cursor) (Page, error)
-    Stat(ctx context.Context, u UserID, p Vpath) (core.Entry, error)
+    Stat(ctx context.Context, u UserID, p Vpath) (Entry, error)
+    // Vpath converts a SharePath into the path a client names a file by. It is
+    // on this interface rather than done here because a SharePath already
+    // carries the grant's subpath on its front, and prefixing a share label
+    // onto one without stripping that subpath is the bug the two types exist
+    // to prevent. The conversion lives in the core; this layer asks for it.
     Vpath(share ShareID, sp SharePath) (Vpath, error)
     // ...
 }
+
+// The other four: AuthPort, SharePort, PreviewPort, UploadPort. Every method
+// on all five takes and returns aliased core types or scalars, so nothing in
+// this file is a shape invented for the compat layer's convenience.
 ```
+
+**The interface set is the whole of what the layer may depend on.** Adding a
+method is a deliberate widening of the seam and shows up as a diff to one small
+file, which is the property that makes G2 worth having: without it, "what does
+the compat layer need from the core" is answerable only by reading ten thousand
+lines.
 
 `Vpath` is on the interface for a specific reason recorded in the current tree:
 a `SharePath` already has the grant's subpath on its front, and prefixing a
@@ -293,14 +415,16 @@ mount rather than against the native API alone.
 
 | Phase | Task | Size | Depends on | Owner |
 |---|---|---|---|---|
-| Phase 10a | `ports.go`, the build tag on every file, the three gates in §4.2, the stripped build in CI | S | Phase 5 | heavycaffeiner |
+| Phase 10a | `ncport/`, `ncwire/`'s skeleton, the build tag on every file, and all five gates in §4.2 wired into `verify.sh` before a handler exists | S | Phase 5 | heavycaffeiner |
 | Phase 10b | `router.go`, `dav.go`, `props.go`: the WebDAV mounts and the property source | L | 10a, Phase 7 | heavycaffeiner |
 | Phase 10c | `chunking.go` | M | 10b, Phase 6 | heavycaffeiner |
 | Phase 10d | `ocs.go`, `capabilities.go`, `login_flow.go`, `shares.go` | L | 10a | heavycaffeiner |
 | Phase 10e | `search.go`, `trash.go`, `favorites.go`, `recent.go` | M | 10b, Phase 8 | heavycaffeiner |
 
 10a is small and blocks everything, so it lands first even though it produces no
-client-visible behaviour. 10d is independent of 10b.
+client-visible behaviour. Landing the gates before the code they govern is the
+point: a boundary added after the fact is a refactor, and this one has already
+been argued for once in this codebase's history. 10d is independent of 10b.
 
 ### 6-2. Dependencies
 

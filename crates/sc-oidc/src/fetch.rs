@@ -1,6 +1,6 @@
 //! The one seam between this crate and the network.
 //!
-//! `docs/proposals/stowcloud-0-oidc-login.md` §4.1.3: every outbound request
+//! Every outbound request
 //! goes through `HttpFetch`, so the whole OIDC flow can be exercised on a CI
 //! runner that has no identity provider and no outbound access at all.
 

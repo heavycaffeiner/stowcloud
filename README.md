@@ -290,10 +290,12 @@ them in the list yet.
 
 [`docs/README.md`](docs/README.md) is the index and opens with a reading
 order. Start with
-[Architecture](docs/proposals/stowcloud-12-architecture.md) for the design
-and layout, and [Deployment](docs/proposals/stowcloud-13-deployment.md) for
-running it in earnest. Every subsystem has a document written from what was
-built, not from what was planned.
+[Motivation and findings](docs/proposals/stowcloud-0-motivation-and-findings.md)
+for the principles and the design, and
+[Deployment](docs/proposals/stowcloud-15-deployment.md) for running it in
+earnest. Note what those documents specify: the backend is being rewritten in
+Go, and the proposals describe that rewrite rather than the Rust code this
+repository currently ships.
 
 <details>
 <summary><b>Building from source</b></summary>

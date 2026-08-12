@@ -101,11 +101,24 @@ lives in `state.db` encrypted under the master key, as today. Nothing else.
 #### 4.3.1 Generation is the enforcement point
 
 The interface list in the generated `smb.conf` is computed, not copied. An
-operator-supplied list is filtered to private ranges and a supplied address
-outside them is a configuration refusal, naming the address. An empty list does
-**not** mean "bind everything": it means the enumerated private interfaces
-minus the container bridges, and if that set is empty the render refuses rather
-than producing a file that binds broadly.
+empty operator list does **not** mean "bind everything", and a supplied address
+the host is not actually attached to is a configuration refusal naming the
+address.
+
+**The set is derived from the host's own interfaces, not from a hardcoded CIDR
+table.** The Rust implementation hardcodes eight private CIDRs and renders all
+of them into both `interfaces` and `hosts allow` on every host regardless of
+what that host is connected to, which is wrong in both directions: it offers
+reach on networks the machine is not on, and it refuses to render at all when a
+legitimate local address falls outside the table. The port takes the revision
+already designed for it (`design/stowcloud-1-smb-link-scoped-access.md`): the
+sidecar enumerates the host's addresses, classifies each as internal or global,
+and expands the two directives from what it found.
+
+The baseline the core renders is **loopback only**, so a configuration that was
+never expanded is closed rather than open. Global addresses stay behind an
+explicit `smb.allow_public_bind`, which keeps its meaning, its audit event and
+its admin banner.
 
 `bind interfaces only = yes` accompanies every interface list, because an
 interface list without it is advice to `smbd` rather than a restriction.

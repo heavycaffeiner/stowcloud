@@ -1,72 +1,89 @@
 # Proposals
 
-Every subsystem is specified as a proposal written from what is built, not
-from what was planned. `Status: Implemented` means the code exists and the
-proposal describes it; where the two disagreed while these were written, the
-code won.
+These specify the **Go backend**: what it does, why it is shaped that way, and
+what each phase of building it has to deliver. They replaced the proposals that
+specified the Rust backend, which described code this plan deletes.
+
+Every one of them is `Status: Draft`, and unlike the directory's previous
+occupants they describe code that does not exist yet. The house rule there
+("written from what is built, not from what was planned") is inverted by
+necessity, so each document states its assumptions where it depends on
+something unverified rather than asserting it. That inversion ends at cutover;
+[17](proposals/stowcloud-17-parity-and-cutover.md) §4.4 is where.
 
 ## Reading order
 
 | Proposal | Content | When to read it |
 |---|---|---|
-| [12 — Architecture](proposals/stowcloud-12-architecture.md) | the five principles, crate layout, technology choices and what was rejected, product boundary | **First** |
-| [2 — Core](proposals/stowcloud-2-core-vfs.md) | `SafePath`, the syscall contract, ACL evaluation, the virtual root, directory ETags, trash | before any core work |
-| [11 — Footprint](proposals/stowcloud-11-footprint.md) | the 32 GB / 12 TB floor and the two findings that changed the schema | **before assuming a resource budget** |
-| [10 — Auth](proposals/stowcloud-10-auth.md) | Argon2 parameters, the three-tier verification path, sessions, app passwords, TOTP, enumeration defence | before any auth work |
-| [0 — OIDC login](proposals/stowcloud-0-oidc-login.md) | link-only single sign-on | with 10 |
-| [9 — API](proposals/stowcloud-9-api.md) | the error envelope, listing sessions, the middleware order | API and frontend contract |
-| [7 — Upload](proposals/stowcloud-7-upload.md) | TUS, the interval set, the ordering rule, compat chunking | before upload work |
-| [4 — WebDAV](proposals/stowcloud-4-webdav.md) | RFC 4918 Class 2, XML hardening, streamed PROPFIND, locking, `/dav-uploads` | before WebDAV work |
-| [8 — Compat](proposals/stowcloud-8-compat.md) | the isolation contract and the two gates that enforce it | before compat work |
-| [14 - Mobile compat](proposals/stowcloud-14-compat-mobile.md) | search, favourites, trashbin and the account lifecycle the phone apps need | with 8, before mobile work |
-| [15 - Sharing](proposals/stowcloud-15-sharing.md) | the two path vocabularies the share API mixed up, and what it advertises | before share work |
-| [16 - Correctness sweep](proposals/stowcloud-16-correctness-sweep.md) | three path vocabularies with one name, three metadata writes that fail in silence, and folder sizes no client sees correctly | before 15, and before any path-handling work |
-| [6 — Preview and sharing](proposals/stowcloud-6-preview-sharing.md) | the content origin, signed URLs, the worker jail, archives, share links | before preview or sharing work |
-| [5 — Search](proposals/stowcloud-5-search.md) | the parallel walk, the optional trigram index, the estimator | before search work |
-| [3 — Frontend](proposals/stowcloud-3-frontend.md) | virtual scroll, the upload worker, i18n, the byte budgets | before frontend work |
-| [1 — SMB](proposals/stowcloud-1-smb.md) | the Samba sidecar, the uid contract, propagation, what SMB cannot express | before SMB work |
-| [13 — Deployment](proposals/stowcloud-13-deployment.md) | seccomp reality, the filesystem gate, uid/gid, production topology | deployment and operations |
-| [17 - Audit gaps](proposals/stowcloud-17-audit-gaps.md) | seven promises 0-13 make that the code does not keep, and what closes each | with 1, before any SMB credential work |
-| [18 - Recent files](proposals/stowcloud-18-recent-files.md) | the recency query, why an ordered walk truncated at N is not the newest N, and the Recent Files destination | with 5 and 14, before any recency work |
-| [19 - Share browsing](proposals/stowcloud-19-share-browsing.md) | the subpath a share link had no way to name, the folder download that never worked, and the viewer arrows that move the picture | with 6, before any public share-page work |
-| [20 - Origins and settings](proposals/stowcloud-20-origins-and-settings.md) | one declared origin list for a server reached under several names, and the nine settings-screen defects that had to be fixed before it could be edited | with 13, before any host, origin or admin-settings work |
-| [21 - Recorded activity and archive listing](proposals/stowcloud-21-recorded-activity-and-archive-listing.md) | what this server wrote for you, the date literal that made both phone apps' recency query a 400, and an archive listing that reads the directory instead of the file | supersedes 18's recency answer, not its collector; with 14, before any recency, mobile search or archive-preview work |
-| [go-port/](proposals/go-port/README.md) | replacing the Rust backend with a Go one: the fourteen findings a read of the current tree turned up, what a port keeps and what it cannot, the jail without `fork`, the defensive standard the port is held to, and one document per phase | **Draft, and the only documents here describing code that does not exist.** Self-contained on purpose: they cite the source tree and each other, never a proposal in this table, because at cutover they replace it |
+| [0 - Motivation and findings](proposals/stowcloud-0-motivation-and-findings.md) | the five principles, the seventeen stances underneath them, why Go, what a port keeps and what it cannot, the technology mapping, the phase table, and the fourteen defects a read of the Rust tree turned up | **First**, and before arguing about any of it |
+| [1 - Defensive standard](proposals/stowcloud-1-defensive-standard.md) | D1 to D20, what enforces each, and the four rules that are load-bearing rather than hygiene | **Second**, and before writing a line |
+| [2 - Gate and toolchain](proposals/stowcloud-2-gate-and-toolchain.md) | the module layout, the lint set, the Go half of `verify.sh`, the four assumptions Phase 0 settles by compiling | Phase 0 |
+| [3 - VFS and paths](proposals/stowcloud-3-vfs-and-paths.md) | `openat2` in Go, descriptor ownership without `Drop`, the three path types, streaming directory reads, the durable-write helper | Phase 1, before anything else touches the filesystem |
+| [4 - Jail and hardening](proposals/stowcloud-4-jail-and-hardening.md) | why Landlock cannot be applied from a goroutine, the restrict-then-re-exec sequence, the seccomp assembler, the executable proof | Phase 1, with 3 |
+| [5 - Store and schema](proposals/stowcloud-5-store-and-schema.md) | the cache/state split, migrations, the pure-Go SQLite decision and its abort criteria, and the derived node id that survives a cache rebuild | Phase 2 |
+| [6 - Auth and ACL](proposals/stowcloud-6-auth-and-acl.md) | why the question is "how few times must the KDF run", the parameters, sessions, app-password scopes, TOTP, the enumeration defence, grants | Phase 3 |
+| [7 - Core domain](proposals/stowcloud-7-core-domain.md) | the protocol-agnostic API, the virtual root, directory ETags and the rollup, trash, conflict detection, share links | Phase 4 |
+| [8 - HTTP and API](proposals/stowcloud-8-http-and-api.md) | the twelve-step chain and why its order is a cost argument, the error envelope, the five REST changes and why only five | Phase 5 |
+| [9 - Upload](proposals/stowcloud-9-upload.md) | TUS, the interval set, the ordering rule, spool modes, checksum verification, the orphan sweep | Phase 6 |
+| [10 - WebDAV](proposals/stowcloud-10-webdav.md) | the hardened XML scanner in `encoding/xml` terms, the hand-written multistatus writer, Class 2 locking | Phase 7 |
+| [11 - Search](proposals/stowcloud-11-search.md) | the golden-file port of the on-disk trigram format, the walk, the estimator, the two leaks a search can have | Phase 8 |
+| [12 - Preview](proposals/stowcloud-12-preview.md) | the two threats and the two defences, the pool parent, the wire codec, decode limits, EXIF stripping, archive listing | Phase 9, after 4 |
+| [13 - Compat](proposals/stowcloud-13-compat-nc.md) | the three-package seam, the five gates that hold it, chunked upload v2, OCS, the mobile surfaces | Phase 10 |
+| [14 - SMB and OIDC](proposals/stowcloud-14-smb-and-oidc.md) | `smb.conf` generation and the private-range rule, the passdb, discovery, and the address guard that closes DNS rebinding | Phase 11 |
+| [15 - Deployment](proposals/stowcloud-15-deployment.md) | the two images, the seccomp reality, the filesystem gate, the uid contract, the proxy contract, one socket | deployment and operations |
+| [16 - Frontend client](proposals/stowcloud-16-frontend-client.md) | what changes in `web/src/lib/api` and what does not | Phase 12 |
+| [17 - Parity and cutover](proposals/stowcloud-17-parity-and-cutover.md) | the response differ, the conformance run, the footprint remeasurement, the commit that deletes `crates/` | Phase 13 |
 
-## Five principles, everything else follows from these
+Two directories sit beside them and are not part of the port:
 
-1. **The filesystem is the only source of truth.** The database is a cache you
-   can delete and rebuild.
-2. **A path is a kernel handle, not a string.** `openat2(RESOLVE_BENEATH)`
-   removes TOCTOU by construction, not by convention.
-3. **A shared folder is not ours.** Other services are assumed to be writing
-   the same directory at the same time.
-4. **The compat layer does not invade the core.** Enforced by a CI grep and a
-   feature-stripped build, not by discipline.
-5. **The default is least privilege.** No user homes, no symlinks, SMB off, no
-   inline content rendering.
+| Directory | Content |
+|---|---|
+| [`proposals/frontend/`](proposals/frontend/stowcloud-0-frontend.md) | the SvelteKit SPA: virtual scroll, the upload worker, i18n, the byte budgets. `web/` is unchanged by the port, so this proposal still describes what is built |
+| [`proposals/design/`](proposals/design/) | design-system work, written against the frontend rather than the backend |
 
-## Known client behaviour
+## The five principles
 
-Defects that live in a client, reported here so the next person who sees one
-does not go looking for it in this code.
+They are stated in full in
+[0 §2.2](proposals/stowcloud-0-motivation-and-findings.md), with the seventeen
+positions underneath them in §2.5. In short: the filesystem is the only source
+of truth, a path is a kernel handle rather than a string, a shared folder is not
+ours, the compat layer does not invade the core, and the default is the
+restrictive one.
 
-- **The Android app shows the "synced" tick on folders that were never
-  synced.** `OCFileListDelegate` asks its own database whether every file in
-  the folder has a local copy, with a `NOT EXISTS` query that is vacuously true
-  for a folder whose children have never been listed on the device. Every input
-  to the guard comes from this server and every one of them is already
-  truthful: `oc:size` is the real recursive rollup, the folder ETag is the real
-  one, and `nc:is-encrypted` is `0`, which is what a reference server answers
-  for an unencrypted folder too. The three ways to suppress the tick from a
-  server are a false size, a withheld ETag and a false encryption flag, and all
-  three are lies about the data, so none is used. Proposal 21 §2.6 carries the
-  evidence.
+## The contradiction ledger
+
+Five places where an early draft of this plan and the codebase disagreed, found
+by splitting the plan per phase and checking each claim against the tree it
+described. All five are corrected in the documents; the ledger stays because
+each entry records a premise that looked right and was not.
+
+| # | Contradiction | Resolution |
+|---|---|---|
+| C1 | The draft dropped BLAKE3 for SHA-256 on the grounds that every digest is an internal cache value. It is not: `Checksum::Blake3` is a TUS `Upload-Checksum` value a client sends (`crates/sc-upload/src/model.rs:95`). | BLAKE3 stays, as a Go module. The directory ETag keeps the same hash, because changing it for no reason invalidates every cached rollup at cutover. [9](proposals/stowcloud-9-upload.md) §4.3.3. |
+| C2 | The draft shipped two binaries while also targeting an image no larger than today's. Two Go binaries roughly double it, and the `healthcheck` subcommand already in `Dockerfile` shows the argv dispatch that makes a second one unnecessary. | One binary, four subcommands. [2](proposals/stowcloud-2-gate-and-toolchain.md) §4.1.1 for the layout, [4](proposals/stowcloud-4-jail-and-hardening.md) §4.3.2 for what the worker does at startup. |
+| C3 | The draft kept the portable filesystem backend "so the tree builds on Windows", while also making Windows a non-target. That backend is what hid two bugs that broke every write and every upload finalize on the only platform that ships. | No portable backend. `GOOS=linux go build` and `go vet` run on the Windows box with no toolchain at all; the test suite runs in the Linux VM. [2](proposals/stowcloud-2-gate-and-toolchain.md) §4.3.3 states what that costs. |
+| C4 | The draft deleted `node.flags`' `PINNED` bit without noting that `node.id` is `oc:fileid` on the wire (`crates/sc-compat-nc/src/props.rs:282`). Deleting the cache re-mints every id, so every sync client sees every file as new. | Resolved by design rather than disclaimer: [5](proposals/stowcloud-5-store-and-schema.md) §4.5 derives the id from the file's identity. The collision case is recorded durably rather than allowed to conflate two files, which this codebase has already had happen once. |
+| C5 | The draft said the distroless base ships a CA bundle, while `Cargo.toml` records `webpki-roots` being chosen precisely because it does not guarantee one. | The OIDC client takes an explicit pool and refuses to start with an empty one. [14](proposals/stowcloud-14-smb-and-oidc.md) §4.4.2. |
 
 ## Conventions
 
-- Code comments do not cite these documents. A comment states its own reason,
-  so the code stands alone; the proposal carries the long-form argument.
-- A non-goal is recorded with the reasoning that made it one, in the proposal
-  for the subsystem it belongs to.
-- `scripts/verify.sh` is what decides whether a change is releasable.
+**These documents cite code and each other, and nothing else.** Implementing a
+phase needs this directory and the repository's source tree, not a second set of
+proposals. A path like `crates/sc-vfs/src/backend/linux.rs` is a citation of the
+codebase and is expected. That rule is why the Rust-era proposals could be
+removed rather than left beside a Go tree as a second specification with nothing
+marking which one was wrong.
+
+**A code comment states its own reason.** No document citations, no ticket ids:
+a reader with only the file in front of them has to be able to use it. The
+proposal carries the long-form argument and the code stands alone.
+
+**A non-goal carries the reasoning that made it one**, in the document for the
+subsystem it belongs to, because a non-goal without a reason gets re-proposed
+every six months.
+
+**Where a document depends on an unverified fact** about Go, the standard
+library or a module, it says so in the sentence that depends on it. A proposal
+for code that does not exist yet cannot also pretend its premises are measured.
+
+`scripts/verify.sh` is what decides whether a change is releasable.

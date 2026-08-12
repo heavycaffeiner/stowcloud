@@ -844,8 +844,7 @@ pub struct AppState {
     /// token file. Defaults to [`crate::setup_api::SetupClosed`], so an
     /// `AppState` built without one cannot create an administrator.
     pub setup: Arc<dyn SetupApi>,
-    /// `/api/auth/oidc/**` and the admin link routes
-    /// (`docs/proposals/stowcloud-0-oidc-login.md` §5-1) -- bound to a real
+    /// `/api/auth/oidc/**` and the admin link routes, bound to a real
     /// `sc_oidc::OidcProvider` by `sc-server` when `[oidc]` is configured and
     /// active. Defaults to [`crate::oidc_api::OidcDisabled`], so an
     /// `AppState` built without one answers `oidc.disabled` everywhere

@@ -199,8 +199,7 @@ impl Default for ArchiveConfig {
     }
 }
 
-/// What an OIDC-linked account may do over SMB
-/// (`docs/proposals/stowcloud-0-oidc-login.md` §4.3.6).
+/// What an OIDC-linked account may do over SMB.
 ///
 /// One variant, and that is the honest shape rather than an oversight. The
 /// draft offered `require_separate` too, mirroring `smb.totp_policy` -- but

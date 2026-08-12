@@ -1052,7 +1052,7 @@ fn interrupted_rotation_leaves_every_record_readable_under_the_old_key() {
 }
 
 // ------------------------------------------------------- OIDC flows --
-// `docs/proposals/stowcloud-0-oidc-login.md` §4.2 and §4.3.1. A flow row is
+// A flow row is
 // the only server-side state an authorization-code round trip has, so what
 // matters is that it can be spent exactly once and that expiry is visible to
 // the caller rather than swallowed.

@@ -274,8 +274,7 @@ pub struct WatchPatch {
     pub full_threshold: u32,
 }
 
-/// The editable half of `[oidc]`
-/// (`docs/proposals/stowcloud-0-oidc-login.md` §6-4).
+/// The editable half of `[oidc]`.
 ///
 /// Three keys are missing from this patch and that is the point.
 /// `client_secret_file` is a path to a secret and does not belong on a screen

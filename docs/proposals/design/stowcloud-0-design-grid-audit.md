@@ -1118,7 +1118,7 @@ Repository files this proposal builds on or modifies:
   themes.
 - `.github/workflows/verify.yml` and `scripts/verify.sh`, the existing gate this proposal
   deliberately leaves alone.
-- `docs/proposals/stowcloud-3-frontend.md`, the frontend proposal this one extends.
+- `docs/proposals/frontend/stowcloud-0-frontend.md`, the frontend proposal this one extends.
 
 External:
 

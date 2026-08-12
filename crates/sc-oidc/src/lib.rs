@@ -3,10 +3,7 @@
 //! Discovery, JWKS, ID token verification, PKCE/state/nonce generation, and
 //! the authorization-code token exchange. Nothing here knows about HTTP
 //! routes, cookies, sessions, or the account database; `sc-http` and
-//! `sc-auth` own all of that. See
-//! `docs/proposals/stowcloud-0-oidc-login.md` for the design this
-//! implements, and for the account model it plugs
-//! into.
+//! `sc-auth` own all of that.
 //!
 //! Why a separate crate at all (proposal §4.1.1): this is where the TLS
 //! stack and the outbound HTTP client live, and neither existed anywhere in

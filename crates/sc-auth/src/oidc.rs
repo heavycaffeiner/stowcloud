@@ -1,5 +1,4 @@
-//! OIDC storage. See `docs/proposals/stowcloud-0-oidc-login.md` §4.2 for the
-//! schema and §4.3.1 for the flow this half of it exists to protect.
+//! OIDC storage: the schema, and the flow this half of it exists to protect.
 //!
 //! This module deliberately knows nothing about HTTP, JWTs, or the IdP. It
 //! stores what an authorization-code round trip has to survive on, and it

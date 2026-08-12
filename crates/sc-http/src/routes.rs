@@ -50,7 +50,7 @@ pub fn protected_routes(state: AppState) -> Router {
             "/api/auth/smb/password",
             post(auth_smb_password_set).delete(auth_smb_password_clear),
         )
-        // OIDC login (`docs/proposals/stowcloud-0-oidc-login.md` §5-1). The
+        // OIDC login. The
         // first three are reached without a session -- `middleware::
         // is_public_path` for the first two, `is_optional_session_path` for
         // the callback, which needs one only in link mode.
@@ -596,7 +596,7 @@ struct SessionUserWire {
 }
 
 /// The caller's own OIDC link, for the settings screen's connect/disconnect
-/// section (`docs/proposals/stowcloud-0-oidc-login.md` §5-1).
+/// section.
 ///
 /// `subject_hint` rather than the subject: the screen only has to let a
 /// person recognise *which* identity is attached, and the full `sub` is a
@@ -1184,7 +1184,7 @@ fn smb_password_error_response(user: sc_vfs::UserId, e: sc_auth::SmbPasswordErro
 }
 
 // ------------------------------------------------------------------- oidc --
-// `docs/proposals/stowcloud-0-oidc-login.md` §5-1. Eight routes: three a
+// Eight routes: three a
 // browser walks through with no credential, two self-service, three admin.
 //
 // The two transports here are not interchangeable, and §5-2 splits its error
@@ -8574,8 +8574,7 @@ mod tests {
 
     // ------------------------------------------------------------ oidc --
 
-    /// `docs/proposals/stowcloud-0-oidc-login.md` §5-1 and §5-2, route by
-    /// route. The relying party is `testutil::ScriptedOidc` -- discovery,
+    /// Route by route. The relying party is `testutil::ScriptedOidc` -- discovery,
     /// JWKS and the eleven ID-token checks are `sc-oidc`'s to prove, and it
     /// does, against an in-process fake IdP. What is proved here is the part
     /// that lives in this crate: the callback's ordering, the binding cookie,

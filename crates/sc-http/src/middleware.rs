@@ -390,7 +390,7 @@ fn is_public_path(cfg: &HttpConfig, path: &str, method: &Method) -> bool {
     path == "/api/capabilities"
         || path == "/api/auth/login"
         || path == "/api/auth/login/totp"
-        // OIDC login (`docs/proposals/stowcloud-0-oidc-login.md` §4.3.1).
+        // OIDC login.
         // The login screen has to know whether to draw the SSO button before
         // anyone has a credential, and `/start` *is* the act of going to get
         // one. `/api/auth/oidc/callback` is deliberately absent: it needs an

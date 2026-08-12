@@ -5,7 +5,7 @@
 | Author     | heavycaffeiner(Dong Hyun Kim)    |
 | Created    | 2026-08-10                       |
 | Status     | **Draft** / In Review / Approved |
-| Revises    | `stowcloud-1-smb.md` §4.6        |
+| Revises    | `../stowcloud-14-smb-and-oidc.md` §4.3 |
 
 ---
 

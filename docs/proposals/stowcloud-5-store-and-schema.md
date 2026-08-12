@@ -432,7 +432,7 @@ difference is that they are now written down.
 The Rust build assigns rowids and the Go build derives, so **every fileid
 changes once, at cutover**, and every attached sync client performs a full
 reconciliation. That is stated here and repeated in
-[`stowcloud-16`](stowcloud-16-parity-and-cutover.md) §4.4 rather than
+[`stowcloud-17`](stowcloud-17-parity-and-cutover.md) §4.4 rather than
 discovered by whoever runs it.
 
 Carrying the old assignments across is possible and is deliberately not built:

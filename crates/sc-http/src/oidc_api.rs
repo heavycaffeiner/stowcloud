@@ -1,8 +1,8 @@
 //! Trait boundary for the OpenID Connect relying party.
 //!
-//! `docs/proposals/stowcloud-0-oidc-login.md` §4.1.1 puts the protocol core
-//! in its own crate (`sc-oidc`) so that the TLS stack and the outbound HTTP
-//! client it needs stay out of everything else. This module is the other end
+//! The protocol core lives in its own crate (`sc-oidc`) so that the TLS stack
+//! and the outbound HTTP client it needs stay out of everything else. This
+//! module is the other end
 //! of that split: the narrow waist `sc-http` drives from a route handler,
 //! implemented in `sc-server` over a real `sc_oidc::OidcProvider`.
 //!

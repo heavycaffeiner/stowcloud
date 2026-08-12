@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
-description = "OpenID Connect relying-party core: discovery, JWKS, ID token verification, PKCE/state/nonce, token exchange. See docs/proposals/stowcloud-0-oidc-login.md §4.1."
+description = "OpenID Connect relying-party core: discovery, JWKS, ID token verification, PKCE/state/nonce, token exchange."
 
 [features]
 # `net` is ON by default, and that is deliberate even though it is the only

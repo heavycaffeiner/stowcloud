@@ -23,7 +23,7 @@ path = "src/bin/sc-caps.rs"
 # than asserted.
 default = ["compat-nc", "oidc"]
 compat-nc = ["dep:sc-compat-nc"]
-# OpenID Connect login (`docs/proposals/stowcloud-0-oidc-login.md` §4.1.1).
+# OpenID Connect login.
 # **On by default, deliberately.** The tempting layout is opt-in, but
 # `cargo clippy --all-targets` -- this repo's hard gate -- only ever compiles
 # what the default feature set turns on, so an off-by-default relying party is

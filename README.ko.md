@@ -262,11 +262,13 @@ docker compose --profile smb up -d
 
 ## 문서
 
-[`docs/README.md`](docs/README.md)가 목차이고 읽는 순서로 시작합니다. 설계와 구조는
-[Architecture](docs/proposals/stowcloud-12-architecture.md), 실제 운영은
-[Deployment](docs/proposals/stowcloud-13-deployment.md)부터 보세요. 모든 하위
-시스템에 문서가 있고, 계획한 내용이 아니라 만들어진 내용을 기준으로 쓰여
-있습니다. 문서는 영어입니다.
+[`docs/README.md`](docs/README.md)가 목차이고 읽는 순서로 시작합니다. 원칙과
+설계는
+[Motivation and findings](docs/proposals/stowcloud-0-motivation-and-findings.md),
+실제 운영은 [Deployment](docs/proposals/stowcloud-15-deployment.md)부터
+보세요. 다만 그 문서들이 명세하는 대상에 주의하세요. 백엔드는 Go로 다시
+쓰는 중이고, 프로포절은 지금 이 저장소가 배포하는 Rust 코드가 아니라 그
+재작성을 서술합니다. 문서는 영어입니다.
 
 <details>
 <summary><b>소스에서 빌드하기</b></summary>

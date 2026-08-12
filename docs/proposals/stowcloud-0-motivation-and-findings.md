@@ -88,7 +88,7 @@ The repository's architecture document records the backend choice as "Rust:
 memory safety plus direct syscall control", chosen over "a GC'd runtime, where
 the syscall contract is someone else's". That row becomes false the moment this
 plan lands. Correcting the record is a deliverable
-([`stowcloud-16-parity-and-cutover.md`](stowcloud-16-parity-and-cutover.md)
+([`stowcloud-17-parity-and-cutover.md`](stowcloud-17-parity-and-cutover.md)
 §4.4), not a follow-up.
 
 The replacement row has to state what actually changed, which is three things
@@ -167,11 +167,11 @@ a way the Rust tree did not:
 - **S5 with everything.** More of this port is unmeasured than the Rust tree's
   documents are, because the code does not exist yet. Every phase document
   marks its unverified premises in the sentence that depends on them, and
-  [`16`](stowcloud-16-parity-and-cutover.md) is the only phase allowed to state
+  [`17`](stowcloud-17-parity-and-cutover.md) is the only phase allowed to state
   a number.
 - **S16 with this folder.** These documents describe code that does not exist,
   so they invert the directory's house rule. That inversion ends at cutover,
-  and [`16`](stowcloud-16-parity-and-cutover.md) §4.4 step 6 is where.
+  and [`17`](stowcloud-17-parity-and-cutover.md) §4.4 step 6 is where.
 
 ## 3. Goals & Non-Goals
 
@@ -209,7 +209,7 @@ a way the Rust tree did not:
 - [ ] Replacing Samba. The SMB sidecar and the `smb.conf` generation contract
       are unchanged in behaviour.
 - [ ] Any performance claim that has not been measured on the Linux runtime.
-      [`stowcloud-16`](stowcloud-16-parity-and-cutover.md) is where measurement
+      [`stowcloud-17`](stowcloud-17-parity-and-cutover.md) is where measurement
       happens; nothing before it may assert parity.
 - [ ] Changing the Nextcloud compatibility boundary. It stays sync, browse,
       share, preview.
@@ -604,8 +604,8 @@ column.
 | 9 | preview and the worker | [12](stowcloud-12-preview.md) | M | 1 |
 | 10 | compat | [13](stowcloud-13-compat-nc.md) | XL | 5, 6, 7, 9 |
 | 11 | smb, oidc | [14](stowcloud-14-smb-and-oidc.md) | M | 3, 5 |
-| 12 | frontend API client | [15](stowcloud-15-frontend-client.md) | M | 5 |
-| 13 | parity, measurement, cutover | [16](stowcloud-16-parity-and-cutover.md) | L | all |
+| 12 | frontend API client | [15](stowcloud-16-frontend-client.md) | M | 5 |
+| 13 | parity, measurement, cutover | [16](stowcloud-17-parity-and-cutover.md) | L | all |
 
 Phases 6, 7, 8 and 9 are independent of each other and can be taken in any
 order once their dependencies are met. Phase 10 needs all four. Phase 13 is the
@@ -664,7 +664,7 @@ deleted code stops being true at cutover. Where one of them was the only record
 of an incident or a measurement, the incident or the measurement is restated
 where it decides something, not pointed at.
 
-- [`README.md`](README.md): the index, and the contradiction ledger recording
+- [`../README.md`](../README.md): the index, and the contradiction ledger recording
   five places where an earlier draft of this plan was wrong.
 - `crates/sc-server/src/hardening.rs`, `crates/sc-vfs/src/backend/linux.rs`,
   `crates/sc-upload/src/engine.rs`, `crates/sc-watch/src/lib.rs`,

@@ -1,8 +1,7 @@
 //! Binds `sc_http::oidc_api::OidcApi` to a real `sc_oidc::OidcProvider`.
 //!
 //! This is where the two halves of the OIDC feature meet, and it is the only
-//! file in the workspace that knows both exist:
-//! `docs/proposals/stowcloud-0-oidc-login.md` §4.1.1's crate split says
+//! file in the workspace that knows both exist. The crate split is that
 //! `sc-oidc` never learns about routes or accounts and `sc-http` never learns
 //! about TLS, so somebody has to be the assembler, and that is this crate's
 //! whole job (`app.rs`'s module doc).

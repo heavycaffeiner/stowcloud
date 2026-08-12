@@ -110,8 +110,7 @@ CREATE TABLE IF NOT EXISTS app_password (
 );
 CREATE INDEX IF NOT EXISTS app_password_user ON app_password(user);
 
--- A local account's link to one identity at the configured IdP
--- (`docs/proposals/stowcloud-0-oidc-login.md` §4.2). `subject` is the ID
+-- A local account's link to one identity at the configured IdP. `subject` is the ID
 -- token's `sub`, the only identifier an IdP promises is immutable; `email`
 -- and `preferred_username` are deliberately neither read nor stored (§3.2).
 CREATE TABLE IF NOT EXISTS oidc_identity (
@@ -129,8 +128,7 @@ CREATE TABLE IF NOT EXISTS oidc_identity (
 -- this index first.
 CREATE UNIQUE INDEX IF NOT EXISTS oidc_identity_user ON oidc_identity(user);
 
--- One in-flight OIDC authorization-code round trip
--- (`docs/proposals/stowcloud-0-oidc-login.md` §4.2). Same nature as
+-- One in-flight OIDC authorization-code round trip. Same nature as
 -- `login_challenge` above: a server-side, single-use record with a short TTL,
 -- created before the user leaves for the IdP and consumed when they come
 -- back.
