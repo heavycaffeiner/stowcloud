@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/task"
 )
 
 func open(t *testing.T, spec Spec) *DB {
@@ -100,13 +102,13 @@ func TestFreshDatabaseUnderConcurrentOpen(t *testing.T) {
 	errs := make([]error, poolSize*2)
 	for i := range errs {
 		wg.Add(1)
-		go func() {
+		task.Go(ctx, "dbfile: concurrent writer", func() {
 			defer wg.Done()
 			errs[i] = d.Write(ctx, func(tx *sql.Tx) error {
 				_, err := tx.ExecContext(ctx, `INSERT INTO thing(v) VALUES (?)`, "v")
 				return err
 			})
-		}()
+		})
 	}
 	wg.Wait()
 	for i, err := range errs {

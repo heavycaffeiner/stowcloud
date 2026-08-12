@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/num"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/cache"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
@@ -36,23 +37,29 @@ func TestDriverMeasurement(t *testing.T) {
 	}
 	ctx := context.Background()
 
+	// Elapsed time comes from the one clock this tree has, which measures a
+	// duration monotonically: a wall-clock subtraction moves when NTP steps
+	// the clock, and a measurement that runs for minutes is exactly where that
+	// would land.
+	clk := clock.System()
+
 	// One row per transaction, which is the shape the implementation this
 	// replaces has: its allocation takes a pooled connection and commits on
 	// its own.
 	perRow := openPair(t, t.TempDir(), 0)
 	chain := makeChain(t, perRow.cache)
-	start := time.Now()
+	start := clk.Now()
 	populateMeasured(t, perRow.cache, chain[len(chain)-1], 0, rows, 1)
-	perRowElapsed := time.Since(start)
+	perRowElapsed := clk.Since(start)
 	report(t, "cold populate, one transaction per file", rows, perRowElapsed)
 
 	// One transaction per batch, which is the shape a walker has: it commits
 	// what it has read so far and carries on.
 	batched := openPair(t, t.TempDir(), 0)
 	batchChain := makeChain(t, batched.cache)
-	start = time.Now()
+	start = clk.Now()
 	populateMeasured(t, batched.cache, batchChain[len(batchChain)-1], 0, rows, 10_000)
-	report(t, "cold populate, 10,000 files per transaction", rows, time.Since(start))
+	report(t, "cold populate, 10,000 files per transaction", rows, clk.Since(start))
 
 	// Steady state, measured the way it actually happens: a change arrives,
 	// the file's ancestors are invalidated and its directory's aggregate is
@@ -63,7 +70,7 @@ func TestDriverMeasurement(t *testing.T) {
 	if events > 200_000 {
 		events = 200_000
 	}
-	start = time.Now()
+	start = clk.Now()
 	for i := range events {
 		if err := perRow.cache.Write(ctx, func(tx *sql.Tx) error {
 			if err := perRow.cache.MarkDirty(ctx, tx, testShare, chain); err != nil {
@@ -75,7 +82,7 @@ func TestDriverMeasurement(t *testing.T) {
 			t.Fatalf("invalidating: %v", err)
 		}
 	}
-	report(t, "steady-state invalidation", events, time.Since(start))
+	report(t, "steady-state invalidation", events, clk.Since(start))
 
 	// The threshold with a number in it. The comparison is against the
 	// implementation this replaces on the same tree, so the number comes from
