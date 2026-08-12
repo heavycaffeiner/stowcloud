@@ -86,8 +86,12 @@ func (r *ShareRoot) Dev() uint64 { return r.dev }
 func (r *ShareRoot) FsType() FsType { return r.fsType }
 
 // Stat resolves p under the share's policy and stats the leaf.
+//
+// No O_NOFOLLOW here, and that is the policy doing its job rather than an
+// omission: under the default the resolve flags refuse a symlink outright, and
+// under a policy that says to follow one, following it is what stat means.
 func (r *ShareRoot) Stat(p SafePath) (Stat, error) {
-	f, err := r.openLeaf(p, unix.O_PATH|unix.O_CLOEXEC|unix.O_NOFOLLOW)
+	f, err := r.openLeaf(p, unix.O_PATH|unix.O_CLOEXEC)
 	if err != nil {
 		return Stat{}, err
 	}

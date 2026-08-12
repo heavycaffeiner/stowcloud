@@ -141,16 +141,14 @@ func probeStatxBtime() Support {
 	return SupportPresent
 }
 
-// probeRenameat2 aims at a name that does not exist, so the expected outcome is
-// ENOENT, meaning the syscall is there and had nothing to rename.
+// probeRenameat2 passes a flag combination the kernel rejects before it looks
+// at either path, so nothing is renamed and no name has to be invented: EINVAL
+// means the syscall is there, ENOSYS means it is not.
 func probeRenameat2() Support {
-	const absent = ".sc-cap-probe-absent"
-	err := unix.Renameat2(unix.AT_FDCWD, absent, unix.AT_FDCWD, absent+"-2", unix.RENAME_NOREPLACE)
+	err := unix.Renameat2(unix.AT_FDCWD, ".", unix.AT_FDCWD, ".",
+		unix.RENAME_NOREPLACE|unix.RENAME_EXCHANGE)
 	if errors.Is(err, unix.EINVAL) {
-		// A filesystem that does not implement the flags reports EINVAL, which
-		// is the same practical answer as absence for the caller that would
-		// have used them.
-		return SupportMissing
+		return SupportPresent
 	}
 	return classify(err)
 }
