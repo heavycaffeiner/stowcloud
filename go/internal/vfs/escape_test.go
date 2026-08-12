@@ -272,7 +272,9 @@ const mountProofEnv = "SC_MOUNT_PROOF"
 // that stops running. The child does the mounting; the namespace dies with it,
 // so nothing survives into the host's mount table.
 func TestEscapeAcrossAMountBoundary(t *testing.T) {
-	if os.Getenv(mountProofEnv) == "1" {
+	if os.Getenv(mountProofEnv) == "1" || os.Geteuid() == 0 {
+		// Already privileged, or already the child. Either way the boundary can
+		// be built here.
 		mountBoundaryProof(t)
 		return
 	}
@@ -293,6 +295,9 @@ func TestEscapeAcrossAMountBoundary(t *testing.T) {
 		return
 	}
 	if errors.Is(err, unix.EPERM) {
+		// A kernel that forbids an unprivileged user namespace, which some
+		// distributions do by policy. Nothing this test can do reaches around
+		// that, and running it as root is the other way to get the row.
 		t.Skipf("this kernel does not allow an unprivileged user namespace, so the boundary cannot be built: %v", err)
 	}
 	t.Fatalf("the mount-boundary child failed: %v\n%s", err, out)

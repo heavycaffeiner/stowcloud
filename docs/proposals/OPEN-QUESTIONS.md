@@ -102,3 +102,45 @@ size is still caught by the format's own check.
 **Reopen by** Phase 8c, which writes `base.idx` in Go and is where the
 comparison is actually run.
 
+---
+
+## Q3. Whether the jail takes Landlock's IPC scoping, now that the kernel has it
+
+**Raised by** Phase 1g, building the ruleset
+([`4`](stowcloud-4-jail-and-hardening.md) §4.3.2).
+
+**What was found.** The design was written against a Landlock that handles
+filesystem access rights and nothing else, and `Spec` reflects that. The test
+guest reports **ABI 6**, and `unix.LandlockRulesetAttr` has three fields rather
+than one: `Access_fs`, `Access_net`, and `Scoped`. ABI 6 added
+`LANDLOCK_SCOPE_ABSTRACT_UNIX_SOCKET` and `LANDLOCK_SCOPE_SIGNAL`, which confine
+a domain's reach over two channels the filesystem rights say nothing about. The
+implementation passes `Scoped` as zero, so neither is applied.
+
+This matters most for the decoder, whose whole premise is that it holds two
+descriptors and can reach nothing else. `socket` is not on its allow-list, so an
+abstract unix socket is already out of reach; signals are not, and
+`LANDLOCK_SCOPE_SIGNAL` would stop a compromised worker signalling the parent.
+
+**Options.**
+
+| # | Scoping | Cost |
+|---|---|---|
+| 1 | Leave `Scoped` at zero | the design as specified, and one channel a decoder can still reach |
+| 2 | Scope signals in the worker's domain only | closes it where it matters, on a kernel 5.13 to 6.11 the field is simply not handled, so it degrades by itself |
+| 3 | Scope signals and abstract sockets in both domains | the server signals nothing outside itself either, but the SMB sidecar and any future subprocess become a thing to check rather than assume |
+
+**What decides between them.** Whether the preview worker is the only
+subprocess this product ever holds. Option 2 is free where the kernel has it and
+invisible where it does not; option 3 is a claim about the whole process
+topology, which [`14`](stowcloud-14-smb-and-oidc.md) owns and Phase 11 settles.
+
+**Taken for now: option 1.** [`4`](stowcloud-4-jail-and-hardening.md) §3.2 says
+the layers are the six named in [`0`](stowcloud-0-motivation-and-findings.md)
+§4.3 F2 and that adding a seventh is a separate proposal, and an IPC boundary is
+a seventh. Phase 1 ships what the document specifies rather than the superset
+the kernel turned out to offer.
+
+**Reopen by** Phase 9, which is the first phase with a worker to scope and the
+place `proof.go` would demonstrate it.
+
