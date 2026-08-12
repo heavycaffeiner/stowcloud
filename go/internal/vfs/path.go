@@ -11,6 +11,8 @@
 package vfs
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -18,6 +20,27 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 )
+
+// stagingPrefix is the one reserved prefix a write ever produces.
+const stagingPrefix = ".scpart-"
+
+// stagingName is the control name a write stages under. The random half comes
+// from crypto/rand so two concurrent writes to one destination cannot pick the
+// same name, and O_EXCL turns a collision into a refusal rather than a clobber.
+func stagingName() (string, error) {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("name a staging file: %w", err)
+	}
+	return stagingPrefix + hex.EncodeToString(b[:]), nil
+}
+
+// IsStagingName reports a name this package produced for a write in flight. The
+// upload orphan sweep needs it, and it is here rather than there so the prefix
+// has one definition.
+func IsStagingName(name string) bool {
+	return strings.HasPrefix(name, stagingPrefix) && len(name) > len(stagingPrefix)
+}
 
 // Vpath is what a client names a file by: "{share label}/{rest}". It is the
 // only one of the three path types that appears in a request or a response.

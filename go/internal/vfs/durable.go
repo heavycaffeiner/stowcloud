@@ -3,18 +3,12 @@
 package vfs
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 
 	"golang.org/x/sys/unix"
 )
-
-// stagingPrefix is the one reserved prefix a write ever produces.
-const stagingPrefix = ".scpart-"
 
 // DurableOpts is what a durable write needs beyond the content itself.
 type DurableOpts struct {
@@ -191,23 +185,4 @@ func (r *ShareRoot) priorOf(dir *os.File, leaf string) (Stat, string, bool, erro
 		return st, cand, true, nil
 	}
 	return Stat{}, "", false, nil
-}
-
-// stagingName is the control name a write stages under. The random half comes
-// from crypto/rand so two concurrent writes to one destination cannot pick the
-// same name, and O_EXCL turns a collision into a refusal rather than a
-// clobber.
-func stagingName() (string, error) {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "", fmt.Errorf("name a staging file: %w", err)
-	}
-	return stagingPrefix + hex.EncodeToString(b[:]), nil
-}
-
-// IsStagingName reports a name this package produced for a write in flight. The
-// upload orphan sweep needs it, and it is here rather than there so the prefix
-// has one definition.
-func IsStagingName(name string) bool {
-	return strings.HasPrefix(name, stagingPrefix) && len(name) > len(stagingPrefix)
 }

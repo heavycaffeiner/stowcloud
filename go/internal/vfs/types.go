@@ -69,7 +69,10 @@ const (
 	// SymlinkWithinShare follows a symlink as long as the target stays inside
 	// the share root.
 	SymlinkWithinShare
-	// SymlinkFollow follows unconditionally. Trusted environments only.
+	// SymlinkFollow follows a relative symlink under RESOLVE_BENEATH. An
+	// absolute target still fails and nothing reaches outside the share:
+	// SymlinkWithinShare is the mode that rebases an absolute target, through
+	// RESOLVE_IN_ROOT.
 	SymlinkFollow
 )
 
@@ -212,26 +215,23 @@ func (t FsType) String() string {
 	return "unknown"
 }
 
-// Rejected reports a filesystem a share may not be registered on. This package
+// Supported reports a filesystem a share may be registered on. This package
 // does not act on it: registration is the config layer's boundary, and this is
 // the fact it decides from.
-func (t FsType) Rejected() bool { return t == FsOverlay }
-
-// ForcesPathIDs reports a filesystem whose inode numbers are not a trustworthy
-// stable identity, so a derived file id has to come from the path instead.
-func (t FsType) ForcesPathIDs() bool {
+//
+// It is a whitelist, and the default answer is no. There is one file identity
+// scheme in this server, derived from (share, dev, ino, btime), and every
+// durable property, lock, favourite and share link is keyed by it. A filesystem
+// whose inode numbers do not survive a remount, or that reports none at all,
+// silently detaches all of that; a new value here that nobody classified would
+// otherwise be admitted by omission.
+//
+// tmpfs is admitted and is the one that loses everything on reboot. That is a
+// deployment's own decision and the warning belongs where a share is
+// registered, not here.
+func (t FsType) Supported() bool {
 	switch t {
-	case FsNfs, FsCifs, FsSmb2, FsFuse:
-		return true
-	}
-	return false
-}
-
-// WatchUnreliable reports a filesystem where inotify cannot see a change
-// another host made, so the periodic rescan is the only thing that notices one.
-func (t FsType) WatchUnreliable() bool {
-	switch t {
-	case FsNfs, FsCifs, FsSmb2, FsFuse, FsOverlay:
+	case FsExt4, FsBtrfs, FsXfs, FsZfs, FsF2fs, FsTmpfs:
 		return true
 	}
 	return false

@@ -419,10 +419,15 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   grep_gate "D9: no math/rand" "$RAND_HITS" \
     "crypto/rand. A predictable token is a token."
 
-  # D11. Durable writes through one helper, whose sequence internal/vfs owns.
+  # D11. A raw rename is callable from internal/vfs and nowhere else. That is
+  # all this proves: the package holds four operations with different contracts
+  # -- WriteDurable for staged share content, ShareRoot.Rename for a namespace
+  # move, PublishNew for an already-complete database with no clobber, and
+  # ReplaceFileDurable for a trusted private control file -- and no grep can
+  # tell which one a caller should have taken.
   RENAME_HITS=$(go_code 'os\.Rename\(|unix\.Renameat2?\(' | grep -v '^go/internal/vfs/')
   grep_gate "D11: rename only from internal/vfs" "$RENAME_HITS" \
-    "Publish through the durable-write helper, which fsyncs the parent."
+    "Take the operation in internal/vfs whose contract matches, and add one there if none does."
 
   # Every descriptor is an *os.File and every use of a raw one keeps the file
   # alive across the call. (*os.File).Fd takes the descriptor out of the

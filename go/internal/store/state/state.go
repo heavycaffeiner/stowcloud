@@ -1,6 +1,10 @@
 // Package state is the durable half of the store. Nothing in it can be
-// reconstructed from the filesystem, which is what makes it the entire backup
-// instruction and what makes it a different kind of thing from the cache.
+// reconstructed from the filesystem, which is what makes it the data backup and
+// what makes it a different kind of thing from the cache.
+//
+// The master key is not in here and is not in that backup either: it has its own
+// artifact and its own protected lifecycle, because one artifact holding both
+// the encrypted state and the key that opens it has encrypted nothing.
 package state
 
 import (

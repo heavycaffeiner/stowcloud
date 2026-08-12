@@ -3,10 +3,13 @@
 //
 // cache.db costs a rebuild: everything in it can be walked back out of the
 // filesystem, and deleting it is a supported operation. state.db costs an
-// account, a grant or a share link, and it is the entire backup instruction.
-// journal.db costs a listing, and it is a third file rather than a table in
-// either of the other two so that the difference is visible to whoever decides
-// what to back up.
+// account, a grant or a share link, and it is the data backup. journal.db costs
+// a listing, and it is a third file rather than a table in either of the other
+// two so that the difference is visible to whoever decides what to back up.
+//
+// The data backup is not the whole backup instruction. The master key has its
+// own protected lifecycle and its own artifact, because a backup that carries
+// both the encrypted state and the key that opens it has encrypted nothing.
 package store
 
 import (
@@ -102,7 +105,8 @@ func Open(dir string, opt Options) (*Store, error) {
 // a missing row as a missing file.
 func (s *Store) Cache() *cache.DB { return s.cache }
 
-// State is the durable half. It is the entire backup instruction.
+// State is the durable half. Back it up as data; the master key is a separate
+// artifact with a protected lifecycle of its own.
 func (s *Store) State() *state.DB { return s.state }
 
 // Journal is the third file, and nil when it could not be opened. Its methods
