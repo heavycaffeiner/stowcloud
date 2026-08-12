@@ -261,6 +261,11 @@ what deletes the `PINNED` bit
 ([`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.2.2). The instance
 identity, used to build `oc:id`, is a `settings` row.
 
+Both are reached through `StatePort` (§4.4.1) rather than by importing the
+store, because G2 forbids that import. The table definitions live with the rest
+of `state.db`'s schema and the statements live in `ncwire`, so the compat layer
+declares what it needs and touches no SQL.
+
 `oc:fileid` now survives a cache rebuild.
 [`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.5 derives `node.id` from the
 file's identity instead of letting SQLite mint a rowid, so deleting the cache
@@ -307,9 +312,22 @@ type CorePort interface {
     // ...
 }
 
-// The other four: AuthPort, SharePort, PreviewPort, UploadPort. Every method
-// on all five takes and returns aliased core types or scalars, so nothing in
-// this file is a shape invented for the compat layer's convenience.
+// The other five: AuthPort, SharePort, PreviewPort, UploadPort, and StatePort.
+// Every method on all six takes and returns aliased core types or scalars, so
+// nothing in this file is a shape invented for the compat layer's convenience.
+
+// StatePort exists because of the boundary rather than in spite of it. This
+// layer owns two pieces of durable state, favourites and the instance
+// identity, and G2 forbids it from importing internal/store to reach them. So
+// the queries are declared here and implemented in ncwire, which means the
+// only SQL in the tree that knows what a favourite is lives on the core side
+// of the seam, where D14's prepared-statement rule already applies.
+type StatePort interface {
+    IsFavorite(ctx context.Context, u UserID, id Ident) (bool, error)
+    SetFavorite(ctx context.Context, u UserID, id Ident, on bool) error
+    ListFavorites(ctx context.Context, u UserID) ([]Ident, error)
+    InstanceID(ctx context.Context) (string, error)
+}
 ```
 
 **The interface set is the whole of what the layer may depend on.** Adding a

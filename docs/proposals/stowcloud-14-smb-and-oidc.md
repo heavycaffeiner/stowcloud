@@ -21,12 +21,16 @@ checked earlier.
 `sc-smb` plus `sc-smb-agent` is 3,121 lines and `sc-oidc` is 2,750.
 
 **SMB** does not implement the protocol. It orchestrates a Samba sidecar:
-generates `smb.conf`, maintains the password database, and enforces at
-generation time that `smbd` binds only private-range interfaces. That last part
-matters more than it looks: the sidecar shares the host's network stack, so an
-empty interface list binds every private range it finds, which on that stack
-includes the Docker bridges, and any container on the machine can then reach it.
-The rule is enforced in the generated configuration, not documented as advice.
+generates `smb.conf`, maintains the password database, and decides at
+generation time which interfaces `smbd` may bind. That last part matters more
+than it looks. The sidecar shares the host's network stack, so a broadly
+written interface list reaches everything on that stack, which includes the
+Docker bridges, and any container on the machine can then reach the share.
+
+The rule is therefore enforced in the generated file rather than documented as
+advice, and §4.3.1 states what it computes: the networks the machine is
+actually attached to, internal ones only unless the operator explicitly opts
+in, with a loopback-only baseline so an unexpanded configuration is closed.
 
 The stance that decides both is that a control is enforced where it cannot be
 skipped: SMB's bind restriction lives in the generated file rather than in the
@@ -51,8 +55,9 @@ loses first.
 
 ### 3.1 Goals
 
-- [ ] `smb.conf` generation with the private-range bind rule enforced in the
-      output, not in the documentation.
+- [ ] `smb.conf` generation with the bind rule enforced in the output rather
+      than in the documentation, computed from the host's own interfaces, and
+      closed by default when nothing expanded it.
 - [ ] The passdb, with the NT hash decrypted only at the moment it is written.
 - [ ] The uid contract that makes SMB and the web UI see the same ownership.
 - [ ] OIDC discovery, the authorize URL, the back-channel exchange, RS256 and
@@ -189,7 +194,7 @@ discovery document said it is, and a redirect is a refusal.
 
 #### 4.4.2 Trust anchors
 
-C5 from the folder README. `webpki-roots` was chosen in the Rust tree
+C5 in the index. `webpki-roots` was chosen in the Rust tree
 specifically because a compiled-in anchor list does not depend on the runtime
 image shipping a CA bundle, which `Cargo.toml` records the distroless image as
 not guaranteeing.
@@ -272,7 +277,7 @@ func (c *Client) VerifyIDToken(ctx context.Context, raw string, nonce string) (C
 
 | Error | Meaning |
 |---|---|
-| `ErrBindRefused` | the interface list would bind outside the private ranges |
+| `ErrBindRefused` | the computed list would bind a global address without `smb.allow_public_bind`, or names an address this host is not attached to |
 | `ErrUnsafeValue` | a value cannot be represented in `smb.conf` safely |
 | `ErrAddressBlocked` | the dial guard refused the resolved address |
 | `ErrDiscovery` | the document failed validation, with the field named |

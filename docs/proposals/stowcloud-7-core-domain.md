@@ -150,7 +150,7 @@ invalidated by a generation counter bumped when the watcher sees a change under
 the share.
 
 The hash stays BLAKE3. Changing it to SHA-256 was proposed in the parent
-document and reverted (folder README, C1): it buys nothing, because BLAKE3 has
+document and reverted (the index, C1): it buys nothing, because BLAKE3 has
 to be in the tree anyway for the upload checksum, and changing it invalidates
 every stored rollup at cutover for no reason.
 

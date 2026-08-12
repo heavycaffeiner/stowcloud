@@ -17,7 +17,7 @@ absent one, the filesystem gate that refuses a share rather than degrading
 quietly, the uid contract, the proxy contract, and the single TLS socket.
 
 Almost none of this changes with the language. It is written down here because
-it is not derivable from any other document in this folder, and deleting the
+it is not derivable from any other document in this directory, and deleting the
 Rust-era proposals without it would lose the operational half of the product.
 
 ## 2. Background & Motivation

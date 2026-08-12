@@ -20,7 +20,7 @@ keep their wire behaviour because they are not ours to change.
 
 This document carries the program-level part: why, what the port keeps and what
 it cannot, the shape of the plan, and the fourteen defects a read of the current
-tree turned up. Every other document in this folder is one phase of it.
+tree turned up. Every other document in this directory is one phase of it.
 
 ## 2. Background & Motivation
 
@@ -35,15 +35,17 @@ tree turned up. Every other document in this folder is one phase of it.
 | Release profile | `lto = "thin"`, `panic = "abort"`, `strip = true` |
 | Ship target | `x86_64-unknown-linux-musl`, static, distroless, about 30 MB |
 
-Every subsystem is already specified in `docs/proposals/`, written from what was
-built. Those documents are the functional requirement for this rewrite: the Go
-implementation has to satisfy them, and where it cannot, this folder says so by
-name.
+Every subsystem was specified in this directory, in proposals written from what
+was built. Those proposals were the functional requirement for this rewrite and
+have been retired: they specified Rust code this plan deletes, so leaving them
+beside these documents would give a reader two specifications with nothing
+marking which one is wrong. What they carried that is still true is restated
+here where it decides something, and git history holds the originals.
 
 ### 2.2 The five principles, and what they owe to the language
 
 Everything the product does follows from five positions. They are restated here
-in full rather than cited, because this folder has to be enough on its own:
+in full rather than cited, because this directory has to be enough on its own:
 
 1. **The filesystem is the only source of truth.** The database is a cache,
    deletable and rebuildable. Nothing may treat "not in the database" as "the
@@ -84,15 +86,14 @@ syscall contract is therefore not the thing a Go port loses.
 
 ### 2.3 The recorded decision this reverses
 
-The repository's architecture document records the backend choice as "Rust:
-memory safety plus direct syscall control", chosen over "a GC'd runtime, where
-the syscall contract is someone else's". That row becomes false the moment this
-plan lands. Correcting the record is a deliverable
-([`stowcloud-17-parity-and-cutover.md`](stowcloud-17-parity-and-cutover.md)
-§4.4), not a follow-up.
+The architecture proposal recorded the backend choice as "Rust: memory safety
+plus direct syscall control", chosen over "a GC'd runtime, where the syscall
+contract is someone else's". This section is what replaces that row, which is
+why it is here rather than left as a correction to make later: the reasoning
+that reverses a recorded decision belongs where the new decision is recorded.
 
-The replacement row has to state what actually changed, which is three things
-and not the syscall contract:
+What actually changed is three things, and the syscall contract is not one of
+them:
 
 1. **`fork` without `exec` stops being available.** The Go runtime is
    multi-threaded before `main` runs, so the preview jail's current shape (a
@@ -169,7 +170,7 @@ a way the Rust tree did not:
   marks its unverified premises in the sentence that depends on them, and
   [`17`](stowcloud-17-parity-and-cutover.md) is the only phase allowed to state
   a number.
-- **S16 with this folder.** These documents describe code that does not exist,
+- **S16 with this directory.** These documents describe code that does not exist,
   so they invert the directory's house rule. That inversion ends at cutover,
   and [`17`](stowcloud-17-parity-and-cutover.md) §4.4 step 6 is where.
 
@@ -190,10 +191,10 @@ a way the Rust tree did not:
 - [ ] Every finding in §4.3 closed, each with a test that fails without the fix.
 - [ ] One defensive-coding standard applied across the tree and enforced by
       lints in `scripts/verify.sh`, not by review.
-- [ ] `CGO_ENABLED=0`, **one** statically linked binary with four subcommands,
+- [ ] `CGO_ENABLED=0`, **one** statically linked binary with five subcommands,
       in a distroless image no larger than today's.
 - [ ] The repository's recorded stack decision brought back in line with the
-      shipped one, and this folder left as the only specification a reader
+      shipped one, and this directory left as the only specification a reader
       needs.
 
 ### 3.2 Non-Goals
@@ -224,7 +225,7 @@ a way the Rust tree did not:
 
 ```
 crates/           the Rust implementation, untouched, deleted at cutover
-go/               the Go implementation; layout in stowcloud-2 §4.1.1
+go/               the Go implementation; layout in stowcloud-2 §4.1
 web/              unchanged except web/src/lib/api
 ```
 
@@ -258,8 +259,8 @@ Phase 3         6 auth and acl
 Phase 4         7 core domain
 Phase 5         8 http and api
 Phase 6-9       9 upload   10 webdav   11 search   12 preview
-Phase 10-12    13 compat  14 smb and oidc   15 frontend client
-Phase 13       16 parity and cutover
+Phase 10-12    13 compat  14 smb and oidc  15 deployment  16 frontend client
+Phase 13       17 parity and cutover
 ```
 
 The findings group into four kinds, and the grouping decides where each closes:
@@ -603,9 +604,9 @@ column.
 | 8 | search | [11](stowcloud-11-search.md) | L | 1, 2 |
 | 9 | preview and the worker | [12](stowcloud-12-preview.md) | M | 1 |
 | 10 | compat | [13](stowcloud-13-compat-nc.md) | XL | 5, 6, 7, 9 |
-| 11 | smb, oidc | [14](stowcloud-14-smb-and-oidc.md) | M | 3, 5 |
-| 12 | frontend API client | [15](stowcloud-16-frontend-client.md) | M | 5 |
-| 13 | parity, measurement, cutover | [16](stowcloud-17-parity-and-cutover.md) | L | all |
+| 11 | smb, oidc, and the operational surface: the filesystem gate, the syscall probe, health reasons, the image | [14](stowcloud-14-smb-and-oidc.md), [15](stowcloud-15-deployment.md) | M | 1, 3, 5 |
+| 12 | frontend API client | [16](stowcloud-16-frontend-client.md) | M | 5 |
+| 13 | parity, measurement, cutover | [17](stowcloud-17-parity-and-cutover.md) | L | all |
 
 Phases 6, 7, 8 and 9 are independent of each other and can be taken in any
 order once their dependencies are met. Phase 10 needs all four. Phase 13 is the
@@ -657,7 +658,7 @@ disk for a representative tree.
 ## 7. References
 
 **These documents cite code, and each other, and nothing else.** A reader
-implementing a phase needs this folder and the repository's source tree, not a
+implementing a phase needs this directory and the repository's source tree, not a
 second set of proposals: everything the Rust-era documents carried that is
 still true has been folded in here, and everything they carried that describes
 deleted code stops being true at cutover. Where one of them was the only record

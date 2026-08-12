@@ -137,6 +137,11 @@ rewrite:
   Whatever encoding is chosen, the test is a round trip through the browser,
   not through Go.
 
+**1. RequestID** mints a v4 UUID, puts it in the request context, and writes it
+back as an `Sc-Trace` response header. It is also the envelope's `trace` field
+(§4.3.2), so a user reporting a failure hands over one value that appears in
+both the response they saw and the log line that produced it.
+
 **2. TrustedProxy** is the one with fail-closed rules that break quietly when
 reimplemented casually, so they are restated as testable statements:
 

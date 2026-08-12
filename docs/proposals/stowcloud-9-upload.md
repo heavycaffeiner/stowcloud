@@ -151,7 +151,7 @@ it thinks is filled.
 #### 4.3.3 Checksums
 
 Two algorithms, and both are client-facing: CRC32C and BLAKE3. This is the
-correction the folder README records as C1: the parent proposal dropped BLAKE3
+correction the index records as C1: the parent proposal dropped BLAKE3
 for SHA-256 on the grounds that every digest here is internal, and
 `Checksum::Blake3` is a value a client puts in a TUS `Upload-Checksum` header.
 

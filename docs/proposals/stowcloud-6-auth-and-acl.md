@@ -96,13 +96,18 @@ were arrived at by fixing something:
       a binary the deployment proposal keeps deliberately small, and the dual
       rate gate already blocks the online guessing it would defend against.
 - [ ] Storing the SMB password separately from the account password. SMB needs
-      an NT hash, which no password-hashing function can produce from an Argon2
-      digest, so the account password is additionally kept in a reversible form
-      encrypted under the master key. That is a real weakening and it is
+      the NT hash, `MD4(UTF-16LE(password))`, which cannot be derived from an
+      Argon2 digest, so setting an SMB password additionally stores that hash
+      encrypted under the master key. It is not the password, and it is
+      password-equivalent for SMB authentication, which is the weakening: an
+      attacker holding both the database and the master key can authenticate as
+      that account over SMB without ever recovering the password. It is
       accepted because the alternative is a second password per account for a
-      protocol most people reach through the same credential. The trade is not
-      reopened here; the mitigation is that the ciphertext is useless without
-      the master key, and revocation clears it.
+      protocol most people reach with the same credential. The trade is not
+      reopened here; the mitigations are that the ciphertext is useless without
+      the master key, that it is bound to the user id and key version as
+      additional authenticated data so it cannot be transplanted between
+      accounts, and that revocation clears it.
 - [ ] Session storage outside `state.db`.
 
 ## 4. Technical Design

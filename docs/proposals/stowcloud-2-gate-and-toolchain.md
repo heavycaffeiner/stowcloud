@@ -86,8 +86,11 @@ go/
   internal/
     limits/ clock/ task/ secret/ num/ apierr/    the D-rule packages
     vfs/ jail/ store/ acl/ auth/ core/ watch/
-    search/ upload/ preview/ httpapi/ dav/ smb/ server/
-    compat/nc/          behind the compat_nc build tag
+    search/ upload/ preview/ httpapi/ dav/ smb/ oidc/ server/
+    compat/             behind the compat_nc build tag, three packages:
+      ncport/           the seam: interfaces and core type aliases
+      nc/               the layer: imports ncport and nothing else from internal/
+      ncwire/           the adapter: the only package that sees both sides
   tools/
     vetgo/              D7: the go-statement analyser
     vetsecret/          D12: the Secret formatting analyser
@@ -95,9 +98,9 @@ go/
     golden/             cross-implementation fixtures (search, ETag, wire)
 ```
 
-**One binary, four entry points.** `cmd/stowcloud` dispatches on `argv[1]` the
+**One binary, five entry points.** `cmd/stowcloud` dispatches on `argv[1]` the
 way `crates/sc-server/src/main.rs` already intercepts `healthcheck` before the
-flag parser runs. This is contradiction C2 from the folder README resolved: the
+flag parser runs. This is contradiction C2 in the index resolved: the
 overview proposed a second binary for the preview worker, which doubles the
 image for no gain when the process can exec its own path with a different
 argument. The `Dockerfile` comment that anticipates a second binary becomes
@@ -142,15 +145,14 @@ and `grep_gate` helpers so failure output behaves identically:
 | Step | Command | Replaces |
 |---|---|---|
 | build | `go build ./...` | `cargo build` |
-| build, compat stripped | `go build -tags '' ./...` | `cargo build --no-default-features` |
 | vet | `go vet ./...` plus the two in-tree analysers | part of clippy |
 | lint | `golangci-lint run` | `cargo clippy -D warnings` |
 | test | `go test -race -count=1 ./...` | `cargo test` |
 | fuzz corpus | `go test -run 'Fuzz.*/corpus' ./...` | nothing today |
 | vuln | `govulncheck ./...` | `cargo-deny advisories` |
 | deps | direct-module allowlist diff | `cargo-deny bans` |
-| import graph | `go list -deps` compat check | the `oc:`/`ocs` grep |
-| text scan | the narrowed vocabulary and Korean scans | the two greps |
+| compat isolation | five gates, [13](stowcloud-13-compat-nc.md) §4.2: the transitive graph, the layer's direct imports, the seam's vocabulary, the stripped build, the narrowed text scan | the `oc:`/`ocs` grep and `--no-default-features` |
+| text scan | the Korean scan, over a `unicode.RangeTable` | the `grep -P` gate |
 | file size | no file over 1,500 lines | nothing today |
 | embed | `go build -tags embed_ui` when `web/build` exists | the embed-ui steps |
 
@@ -316,7 +318,7 @@ nothing more.
 - `Dockerfile`: the stage structure kept, the builder stage replaced, and the
   comment about a second binary that C2 makes obsolete.
 - `crates/sc-server/src/main.rs`: the `healthcheck` argv interception this
-  generalises to four subcommands.
+  generalises to the five subcommands in §5-1.
 - `crates/sc-vfs/src/backend/linux.rs:548` and `:304`: the two comments quoted
   in §4.3.3, both recording a bug the portable backend hid.
 - Go: `go help build`, `//go:embed`, `go vet` analyser API, `go version -m`.

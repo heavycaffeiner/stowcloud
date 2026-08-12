@@ -127,7 +127,7 @@ short is the point:
 |---|---|
 | `Date` | wall clock |
 | `Sc-Trace` and the envelope's `trace` | a per-request id |
-| `ETag` where the algorithm changed | it did not; the hash is unchanged (folder README C1), so an ETag difference here is a real failure |
+| `ETag` where the algorithm changed | it did not; the hash is unchanged (the index, C1), so an ETag difference here is a real failure |
 | `Server` | if it is sent at all |
 | Session cookie values | new tokens |
 | JSON key order | Go's `encoding/json` orders struct fields by declaration; the comparison is structural, not textual |
@@ -200,37 +200,37 @@ One commit, and the order inside it matters only in that it should be readable:
    `rust-toolchain.toml`, `scripts/musl-env.sh`, `tools/zigcc-musl.ps1`.
 2. Reduce `scripts/verify.sh` to its Go half.
 3. Replace the builder stage in `Dockerfile`.
-4. **Retire the Rust-era proposals and promote this folder in their place.**
-   Those documents are specifications written from what was built, and what was
-   built is deleted in step 1: their crate layouts, their syscall contracts and
-   their stack decisions describe code that no longer exists. Leaving them
-   beside the Go tree leaves a reader two specifications, one of which is
-   wrong, with nothing marking which.
+4. **Nothing, for the documentation.** This step is recorded as already done
+   rather than deleted, because a reader arriving at the cutover will look for
+   it: the Rust-era proposals were retired and these documents took their place
+   in advance of the port, not at the end of it.
 
-   Everything in them that is still true is already here. That was the point of
-   writing these documents to cite only code: every principle, stance,
-   measurement and recorded incident they carried has been restated where it
-   decides something ([`stowcloud-0`](stowcloud-0-motivation-and-findings.md)
-   §2.2 and §2.5 are the bulk of it), so the promotion removes duplication
-   rather than information.
+   Doing it early cost nothing, because these documents cite code and each
+   other and never a proposal, so retiring the old set removed duplication
+   rather than information. It bought two things. Every phase implements
+   against one specification instead of choosing between two. And it means the
+   documentation is not the thing being rushed in the same commit that deletes
+   99,614 lines of Rust.
 
-   Concretely: this folder's files move up to `docs/proposals/`, renumbered
-   into that directory's sequence, and the proposals describing the Rust
-   implementation are deleted in the same commit. The index is rewritten to the
-   new reading order. Git history keeps the old ones for anyone who wants to
-   see what the Rust tree promised.
-5. Update `README.md` and `README.ko.md`'s build instructions, and record the
+   What that leaves behind, and it is a real cost stated rather than glossed:
+   between then and this commit, `docs/proposals/` specifies a Go backend while
+   `crates/` ships a Rust one, and the only record of what the shipping code
+   promises is git history. Both readme files say so at the point a reader
+   would be misled.
+5. Update `README.md` and `README.ko.md`'s build instructions, and remove the
+   note they carry saying the proposals describe a rewrite rather than the
+   shipping code, because at this commit it stops being true. Record the
    one operator-visible consequence of the cutover in the release notes: every
    `oc:fileid` changes once, so every attached sync client performs a full
    reconciliation on first contact with the new binary. It is a one-time cost
    and it buys the opposite property afterwards, since from then on a cache
    rebuild costs nothing to a client
    ([`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.5.5).
-6. Move this folder's documents from `Draft` to `Implemented`, and rewrite each
+6. Move this directory's documents from `Draft` to `Implemented`, and rewrite each
    one's assumptions into statements, because at that point they describe code
    that exists and the directory's own convention applies again.
 
-Step 6 is the one that is easy to skip and is the reason the folder README says
+Step 6 is the one that is easy to skip and is the reason the index says
 these documents invert the house rule "by necessity". The necessity ends here.
 
 ## 5. API Design
@@ -284,7 +284,7 @@ and the Rocky VM with enough disk for a representative tree.
 **Non-code dependency**: the Rust build has to still work at this point. That is
 the argument for keeping `crates/` in the tree until the cutover commit rather
 than deleting it when the Go equivalent lands, and it is why the folder layout
-in [`stowcloud-2`](stowcloud-2-gate-and-toolchain.md) §4.1.1 has both.
+in [`stowcloud-2`](stowcloud-2-gate-and-toolchain.md) §4.1 has both.
 
 ## 7. References
 

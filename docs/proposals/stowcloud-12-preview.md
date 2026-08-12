@@ -262,9 +262,12 @@ death might have been the machine rather than the file.
 | Phase 9d | `pool.go`: exec, dispatch, reap, replace | M | 9c | heavycaffeiner |
 | Phase 9e | `service.go`, `cache.go`, `sniff.go` | M | 9d, Phase 4 | heavycaffeiner |
 | Phase 9f | `ListArchive` and its fuzz target | S | Phase 4 | heavycaffeiner |
-| Phase 9g | The `SECCOMP_RET_LOG` corpus run that produces the worker allow-list (stowcloud-4 §4.3.3), and the jail proof | S | 9d | heavycaffeiner |
+| Phase 9g | The `SECCOMP_RET_LOG` corpus run that produces the worker allow-list ([`4`](stowcloud-4-jail-and-hardening.md) §4.3.3) | S | 9d | heavycaffeiner |
+| Phase 9h | The jail proof, on a real kernel ([`4`](stowcloud-4-jail-and-hardening.md) §4.3.6) | S | 9d | heavycaffeiner |
 
-9f is independent of everything else in this phase.
+9f is independent of everything else in this phase. 9g and 9h are specified in
+[`4`](stowcloud-4-jail-and-hardening.md) and scheduled here, because both need
+a decoder to exercise and this is the phase that produces one.
 
 ### 6-2. Dependencies
 

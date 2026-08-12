@@ -77,7 +77,7 @@ this as a known limitation and names the fix:
 > deliberately left as follow-up rather than pretended away.
 
 The port takes that shape, with one change: not a dedicated binary, a subcommand
-of the same one (folder README, contradiction C2).
+of the same one (the index, contradiction C2).
 
 ## 3. Goals & Non-Goals
 
@@ -398,12 +398,15 @@ func (p *Pool) Generate(ctx context.Context, src, dst *os.File, spec Spec) (Resu
 | Phase 1f | `seccomp.go`: the assembler, both policies, the arch prologue, the jump-offset tests | M | Phase 0c (A1) | heavycaffeiner |
 | Phase 1g | `landlock.go` and `reexec.go`: the ABI probe, ruleset construction, the restrict-then-exec sequence | M | Phase 0c (A2) | heavycaffeiner |
 | Phase 1h | `policy.go`: Required/Preferred/Off, the startup refusal, the health degradation | S | 1f, 1g | heavycaffeiner |
-| Phase 1i | The `SECCOMP_RET_LOG` run against an image corpus that produces the worker allow-list | S | 1f, Phase 9's decoder | heavycaffeiner |
-| Phase 1j | `proof.go` and the required Linux test | S | 1f, 1g, Phase 9's pool | heavycaffeiner |
+| Phase 9g | The `SECCOMP_RET_LOG` run against an image corpus that produces the worker allow-list | S | 1f, 9d | heavycaffeiner |
+| Phase 9h | `proof.go` and the required Linux test | S | 1f, 1g, 9d | heavycaffeiner |
 
-1i and 1j need a decoder to exercise, so they land with Phase 9 even though they
-belong to this document. That is stated rather than hidden: the jail is not
-provably finished until something runs inside it.
+The last two rows carry Phase 9 numbers on purpose. They are specified here and
+scheduled there, because both need a decoder to exercise and there is no
+decoder until [`12`](stowcloud-12-preview.md) lands. That is stated rather than
+hidden, and it has a consequence worth naming: **the jail is not provably
+finished at the end of Phase 1.** Phase 1 delivers a sandbox that compiles and
+installs; Phase 9 delivers the evidence that it holds.
 
 ### 6-2. Dependencies
 
