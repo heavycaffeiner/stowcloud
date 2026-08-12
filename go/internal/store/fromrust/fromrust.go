@@ -174,8 +174,8 @@ func Import(ctx context.Context, dir string, clk clock.Clock) (*Report, error) {
 
 	rep := newReport()
 	rep.Ignored = found
-	if err := src.checkInventory(ctx, rep); err != nil {
-		return nil, err
+	if ierr := src.checkInventory(ctx, rep); ierr != nil {
+		return nil, ierr
 	}
 
 	// A staging name of this invocation's own, so that two runs cannot mistake
@@ -227,6 +227,7 @@ func reserveStaging(dir string) (string, error) {
 	}
 	staged := filepath.Join(dir, store.StateFile+stagedSuffix+hex.EncodeToString(b[:]))
 
+	//nolint:gosec // the name is this function's own random hex under the directory it was handed.
 	f, err := os.OpenFile(staged, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("reserving %s: %w", filepath.Base(staged), err)

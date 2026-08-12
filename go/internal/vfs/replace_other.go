@@ -24,6 +24,7 @@ func ReplaceFileDurable(path string, mode uint32, write func(*os.File) error) (e
 	}
 	staged := filepath.Join(dir, name)
 
+	//nolint:gosec // the name is this function's own random hex beside the path it was handed.
 	f, err := os.OpenFile(staged, os.O_CREATE|os.O_EXCL|os.O_WRONLY, os.FileMode(mode))
 	if err != nil {
 		return fmt.Errorf("staging %s: %w", filepath.Base(path), err)

@@ -24,5 +24,11 @@
 # table. The other is the source-table inventory's row count, the one statement
 # in the tree that names a table rather than binding it, whose name comes from
 # that file's own literal map and is checked against a plain-identifier rule
-# before it is used.
-25
+# before it is used. Two more are gosec reading a variable where a path is
+# expected: the data directory's lock file, whose name is this package's own
+# constant, and the import's staging database, whose name is its own random hex.
+# Both sit under a directory the caller handed in and neither takes a component
+# from anywhere else. The third of that shape is the development host's copy of
+# the control-file replacement, which the gate's own linter run never compiles
+# because it runs for GOOS=linux.
+28

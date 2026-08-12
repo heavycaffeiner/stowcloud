@@ -39,6 +39,7 @@ type InstanceLock struct{ f *os.File }
 // silently.
 func LockInstance(dir string) (*InstanceLock, error) {
 	path := filepath.Join(dir, InstanceLockFile)
+	//nolint:gosec // the name is this package's own constant under the directory it was handed.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("opening %s: %w", InstanceLockFile, err)

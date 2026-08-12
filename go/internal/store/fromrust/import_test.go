@@ -1,6 +1,7 @@
 package fromrust_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/fromrust"
+	"github.com/heavycaffeiner/stowcloud/go/internal/task"
 )
 
 // The source is several independent WAL databases with nothing to snapshot
@@ -49,14 +51,15 @@ func TestImportRefusesWhileTheDirectoryIsInUse(t *testing.T) {
 func TestConcurrentImportersDoNotTouchEachOther(t *testing.T) {
 	dir := rustDir(t)
 
+	ctx := context.Background()
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
 	for i := range errs {
 		wg.Add(1)
-		go func() {
+		task.Go(ctx, "concurrent import", func() {
 			defer wg.Done()
-			_, errs[i] = fromrust.Import(context.Background(), dir, testClock())
-		}()
+			_, errs[i] = fromrust.Import(ctx, dir, testClock())
+		})
 	}
 	wg.Wait()
 
@@ -259,7 +262,7 @@ func TestDiscardedTablesAreReportedWithTheirReason(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
-	var out strings.Builder
+	var out bytes.Buffer
 	if werr := rep.Write(&out); werr != nil {
 		t.Fatalf("writing the report: %v", werr)
 	}

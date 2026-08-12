@@ -1,6 +1,7 @@
 package fromrust_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -241,7 +242,7 @@ func TestTheReportNamesTheRealReason(t *testing.T) {
 		}
 	}
 
-	var out strings.Builder
+	var out bytes.Buffer
 	if werr := rep.Write(&out); werr != nil {
 		t.Fatalf("writing the report: %v", werr)
 	}

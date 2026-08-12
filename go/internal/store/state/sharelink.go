@@ -63,7 +63,7 @@ func checkShareLinkTargets(ctx context.Context, tx *sql.Tx) (err error) {
 			}
 		}
 		pathOnly = set == 0
-		coherent = set == 4 && *present == 1 && !(*dev == 0 && *ino == 0)
+		coherent = set == 4 && *present == 1 && (*dev != 0 || *ino != 0)
 		fabricate = set == 4 && *dev == 0 && *ino == 0 && *present == 0 && *btime == 0
 
 		switch {
