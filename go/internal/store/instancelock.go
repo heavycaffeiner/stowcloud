@@ -8,7 +8,12 @@ import (
 )
 
 // InstanceLockFile is the advisory lock every process that owns a data
-// directory holds for its lifetime: both servers, and the one-shot import.
+// directory holds for its lifetime.
+//
+// Two hold it today: the tree this replaces, which takes it as its serve
+// command starts, and the one-shot import, which takes it so that "stop the
+// old server first" is a refusal rather than a sentence in a runbook. The
+// serve command on this side takes it too when there is one to take it.
 //
 // It is not a PID file. Nothing is written into it and nothing reads it. The
 // only state is the kernel lock on the open descriptor, which the kernel drops

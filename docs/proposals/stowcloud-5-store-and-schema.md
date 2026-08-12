@@ -817,6 +817,16 @@ func (d *DB) Upsert(ctx context.Context, tx *sql.Tx,
 // exported so the rebuild-identity test can assert the derivation directly
 // rather than through the table.
 func DeriveID(ident Ident, attempt uint32) FileID
+
+// Overrides is the durable record, which lives in state.db and therefore
+// reaches this package as an interface. Both lookups are needed: by identity so
+// a past decision is never revisited, and by id so a reservation holds while
+// its owner's node row does not exist, which is every rebuild's starting state.
+type Overrides interface {
+    LookupFileID(ctx context.Context, ident Ident) (FileID, bool, error)
+    LookupFileIDOwner(ctx context.Context, id FileID) (Ident, bool, error)
+    RecordFileIDs(ctx context.Context, assignments ...Assignment) error
+}
 ```
 
 ### 5-2. Error Handling
