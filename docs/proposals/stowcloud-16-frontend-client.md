@@ -35,8 +35,12 @@ that otherwise belongs to nobody and gets discovered at cutover.
       or hand-updated to match.
 - [ ] The error-text mapping updated for any new catalogue key, in every
       locale the repository carries.
-- [ ] The upload worker updated if the TUS surface moved, and confirmed
-      unchanged if it did not.
+- [ ] The upload path updated if the TUS surface moved, and confirmed unchanged
+      if it did not. Note that there is no `upload/` directory: the upload calls
+      are in `http.ts` with everything else, and the worker lives outside
+      `lib/api`.
+- [ ] `events-transport.ts` confirmed against whatever framing Phase 5f settles
+      on.
 - [ ] `npm run build`, the i18n check and the frontend test suite green.
 - [ ] The embedded build proven: a binary built with `embed_ui` serves the SPA
       that was just built, not a previous one.
@@ -60,16 +64,30 @@ Only `web/src/lib/api` changes:
 
 ```
 web/src/lib/api/
-  client.ts       the fetch wrapper, the envelope, the trace header
-  error-text.ts   catalogue key to rendered text
-  types.ts        the wire types
-  shares.ts       changed: one path vocabulary
-  recent.ts       changed: ISO-8601 timestamps
-  listing.ts      changed: the rollup field
-  settings.ts     changed: typed values, named refusals
-  archive.ts      changed: the truncation flag
-  upload/         confirmed, likely unchanged
+  client.ts          the fetch wrapper, the envelope, the trace header
+  error-text.ts      catalogue key to rendered text
+  types.ts           the wire types
+  http.ts            everything else, one file: sharesList, recentList, list,
+                     archiveList, the settings calls. All five changed
+                     surfaces are functions in here
+  share.ts           the public-link page's client, not admin shares
+  oidc.ts  setup.ts  untouched by the five changes
+  events-transport.ts  the WebSocket client half; see the note below
+  mock.ts  mock-seed.ts  path-utils.ts  untouched
 ```
+
+An earlier draft of this section invented a file per surface (`shares.ts`,
+`recent.ts`, `listing.ts`, `settings.ts`, `archive.ts`, an `upload/` directory)
+and none of them exists. **Splitting `http.ts` is not a precondition for this
+phase** and is not proposed here: the five changes are five functions inside it,
+and a refactor bundled into an API migration makes the diff unreviewable.
+
+**`events-transport.ts` is the one file that may need more than an adaptation.**
+It is the client half of the WebSocket channel, and
+[`8`](stowcloud-8-http-and-api.md) §4.3.5 records that the server side was
+mis-specified as push-only. If the ported server keeps the current frame
+vocabulary this file is untouched; if the Phase 5f dependency decision changes
+the framing, this is where it lands. Phase 12c confirms which.
 
 ### 4.2 Data Model Changes
 
@@ -181,7 +199,7 @@ a server that added a key ahead of the frontend degrade rather than break.
 |---|---|---|---|---|
 | Phase 12a | `types.ts` and the five changed modules | S | Phase 5 | heavycaffeiner |
 | Phase 12b | `error-text.ts` entries for new keys, in every locale | S | 12a | heavycaffeiner |
-| Phase 12c | The upload worker: confirm or adapt | S | Phase 6 | heavycaffeiner |
+| Phase 12c | The upload path and `events-transport.ts`: confirm or adapt | S | Phase 6, Phase 5f | heavycaffeiner |
 | Phase 12d | The embedded-build check in §4.3.3 | S | 12a, Phase 5 | heavycaffeiner |
 
 ### 6-2. Dependencies

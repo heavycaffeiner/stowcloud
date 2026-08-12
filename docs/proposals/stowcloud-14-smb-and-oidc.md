@@ -110,20 +110,28 @@ empty operator list does **not** mean "bind everything", and a supplied address
 the host is not actually attached to is a configuration refusal naming the
 address.
 
-**The set is derived from the host's own interfaces, not from a hardcoded CIDR
-table.** The Rust implementation hardcodes eight private CIDRs and renders all
-of them into both `interfaces` and `hosts allow` on every host regardless of
-what that host is connected to, which is wrong in both directions: it offers
-reach on networks the machine is not on, and it refuses to render at all when a
-legitimate local address falls outside the table. The port takes the revision
-already designed for it (`design/stowcloud-1-smb-link-scoped-access.md`): the
-sidecar enumerates the host's addresses, classifies each as internal or global,
-and expands the two directives from what it found.
+**The set is derived from the host's own interfaces, and that is what the Rust
+tree already does.** This is worth stating carefully, because an earlier draft
+of this section described the current implementation as a hardcoded CIDR table
+rendered on every host, and every clause of that was wrong. What is actually
+there, and what the port carries over unchanged:
 
-The baseline the core renders is **loopback only**, so a configuration that was
-never expanded is closed rather than open. Global addresses stay behind an
-explicit `smb.allow_public_bind`, which keeps its meaning, its audit event and
-its admin banner.
+- The sidecar enumerates the host's own devices, classifies each address as
+  internal or global, and skips devices that have only a link-local address.
+- The core renders **loopback only** when `smb.interfaces` is unpinned, so a
+  configuration nothing expanded is closed rather than open. That baseline is
+  the default today, not a new idea.
+- The private-CIDR list (nine entries) goes into **`hosts allow` only**, never
+  into `interfaces`, and only when the operator pinned `smb.interfaces` or when
+  the container's network namespace shows nothing but veth devices and there is
+  no host address to classify.
+- Global addresses stay behind an explicit `smb.allow_public_bind`, with its
+  audit event and its admin banner.
+
+The port's contribution here is not a redesign. It is that the two halves live
+in one document with the fallback's conditions written down, because the thing
+that is easy to get wrong is treating the CIDR list as the policy when it is the
+fallback.
 
 `bind interfaces only = yes` accompanies every interface list, because an
 interface list without it is advice to `smbd` rather than a restriction.
@@ -144,6 +152,14 @@ available given the residual risk recorded in
 
 The file is written through the durable helper: correct mode before publish, and
 the mode is `0600` because it is a credential store.
+
+**Republishing is a revocation path, not a maintenance task.** `smbd`
+authenticates against the last file published to it, so a credential revoked in
+`state.db` and not republished here stays usable over SMB. The six paths that
+must reach the sink are listed in [`6`](stowcloud-6-auth-and-acl.md) §4.3.8a,
+and the property to test is the file's contents after each of them rather than
+the database row. This is the one gap in the product where a completed
+transaction is not a completed security decision.
 
 #### 4.3.3 The uid contract
 

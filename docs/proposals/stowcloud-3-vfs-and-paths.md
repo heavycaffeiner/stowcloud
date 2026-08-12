@@ -299,6 +299,19 @@ directories is watched, everything else is lazily revalidated, and a periodic
 rescan backstops both. A queue overflow bumps the share generation to invalidate
 everything at once rather than trying to replay what was missed.
 
+**The hot set has two halves and only one of them is an LRU.** The *recent* half
+is capped and evicts, which is the part that sounds like the whole feature. The
+*sticky* half is refcounted and never auto-evicted, and its input comes from
+outside this package: a WebSocket subscription pins the directory it is watching
+and releases it on unsubscribe
+([`8`](stowcloud-8-http-and-api.md) §4.3.5).
+
+Building only the LRU half is the failure mode, and it is silent. The directory
+a user is currently looking at is exactly the one an LRU will evict under load,
+so invalidations stop arriving for the folder in front of them while everything
+else keeps working. `Subscribe` and `Unsubscribe` are therefore part of this
+package's public surface, not an internal detail of the HTTP layer.
+
 What survives every one of those degradations is the property the design
 actually promises: **a stale answer is always detectable and self-correcting.**
 Not "every change is seen immediately", which no container can promise.
@@ -310,17 +323,21 @@ this package, for the same reason: the claim that the *kernel* confines a share,
 rather than this code's own checks, is a claim that can be executed.
 
 A Linux-only test that, from a real share root on a real filesystem, attempts
-each escape and asserts the kernel refused it:
+each escape and asserts the kernel refused it. **Five of the eight have a Rust
+ancestor to translate; three are new work**, written against §4.3.1's resolve
+flags rather than ported, and they are marked below. The distinction matters
+for estimating this task: "port the escape proof" is most of it and not all.
 
-| Attempt | Expected |
-|---|---|
-| a path containing `..` | rejected at parse, before any syscall |
-| an absolute path | rejected at parse |
-| a symlink inside the share pointing outside it | `ErrSymlinkDenied` under `Deny`, resolved inside the root under `WithinShare` |
-| a symlink pointing at `/proc/self/fd/N` | refused; this is what `RESOLVE_NO_MAGICLINKS` is for |
-| a component replaced by a symlink between two calls | refused; there is no window to race, which is the whole point |
-| a path crossing a bind mount inside the share, under `NO_XDEV` | `ErrCrossDevice` |
-| a name spelled in the other Unicode form | found, because the candidate loop is not an escape |
+| Attempt | Expected | Source |
+|---|---|---|
+| a path containing `..` | rejected at parse, before any syscall | ported |
+| an absolute path | rejected at parse | ported |
+| a symlink inside the share pointing at a file outside it | `ErrSymlinkDenied` under `Deny`, resolved inside the root under `WithinShare` | ported |
+| traversal through a symlinked directory | same | ported |
+| a symlink pointing at `/proc/self/fd/N` | refused; this is what `RESOLVE_NO_MAGICLINKS` is for | **new** |
+| a component replaced by a symlink between two calls | refused; there is no window to race, which is the whole point | **new** |
+| a path crossing a bind mount inside the share, under `NO_XDEV` | `ErrCrossDevice` | **new** |
+| a name spelled in the other Unicode form | found, because the candidate loop is not an escape | ported |
 
 It skips on non-Linux and is **required** on the Linux job, which is the same
 status the jail proof has. The distinction it exists to demonstrate is worth

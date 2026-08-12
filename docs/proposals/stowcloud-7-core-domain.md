@@ -74,7 +74,9 @@ calls here, and each one is a place where the obvious implementation is wrong:
       principle 3 inverted.
 - [ ] Server-side move or copy across shares as a single atomic operation. It is
       a copy plus a delete today and the semantics are documented.
-- [ ] A quota system beyond the existing free-space floor.
+- [ ] A **new** quota system. The existing one is ported as-is and §4.3.6b says
+      what it is; what is out of scope is adding group quotas, per-share quotas,
+      or soft limits with grace periods.
 - [ ] Content-addressed storage of any kind. The folder on disk is the storage.
 
 ## 4. Technical Design
@@ -92,7 +94,8 @@ internal/core
   aggregate.go  directory ETag and the recursive rollup
   links.go      share links
   archive.go    server-side zip of a subtree
-  quota.go      the free-space floor
+  quota.go      two different things, §4.3.6b: the free-space floor, and the
+                per-user byte quota with its reserve-then-commit ledger
   homes.go      per-user home directories, off by default
 ```
 
@@ -222,6 +225,34 @@ and §4.3.1 exists precisely so there is only one.
 
 What the feature adds is a grant that is implied by the account rather than
 created by an administrator. Everything downstream of that is unchanged.
+
+**One thing is not downstream of it: a new home is seeded from a template.**
+When `{homes.root}/.template` exists, the home is created by copying that tree
+recursively; when it does not, the home is a `mkdir`. That is an admin-facing
+feature with no other trace in configuration, so a port that only creates empty
+directories loses it silently and nobody notices until a new account is missing
+files everyone else has.
+
+The template directory is unreachable as anybody's own home, because homes are
+named by numeric user id and `.template` is not a number.
+
+#### 4.3.6b Quota, which is two things under one word
+
+They are separate mechanisms and the word covers both, which is how one of them
+nearly got dropped from this plan as a non-goal:
+
+1. **The free-space floor.** What the filesystem has left, reported to clients
+   as RFC 4331 disk space and used to refuse a write that would fill the disk.
+   Not per account.
+2. **The per-user byte quota.** A cap on the account and a running ledger of
+   what it has used, both columns on the user row, enforced through a
+   reserve-then-commit seam: a write reserves before it starts and commits or
+   releases when it ends, so two concurrent uploads cannot both pass a check
+   against the same headroom. The compat layer reports it to clients, so it is
+   client-visible as well as enforced.
+
+The second is easy to lose in a port because the free-space floor answers the
+same protocol question and looks like the whole feature from the wire.
 
 #### 4.3.7 Long operations
 

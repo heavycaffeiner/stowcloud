@@ -122,6 +122,8 @@ internal/compat/nc/
   ocs.go         the OCS envelope
   capabilities.go  shares.go  login_flow.go
   preview.go     the client's thumbnail endpoints, over PreviewPort
+  direct.go      the media-player direct-URL endpoint, §4.4.7
+  stubs.go       the endpoints that exist to not crash clients, §4.4.8
   search.go  trash.go  favorites.go  recent.go
 ```
 
@@ -396,6 +398,42 @@ one with a recorded defect: a bare date literal made both phone apps' request a
 400, and the fix is ISO-8601 timestamps
 ([`stowcloud-8`](stowcloud-8-http-and-api.md) §4.4). The collector behind it is
 unchanged; only the query shape moves.
+
+#### 4.4.7 The direct-URL endpoint
+
+`POST /ocs/v2.php/apps/dav/api/v1/direct` mints a URL an external media player
+can fetch. The player is a separate process carrying none of the caller's
+credentials, which is the whole reason the endpoint exists and also the reason
+it is the sharpest thing in this layer.
+
+Four rules, all of them at issue time rather than at fetch time:
+
+1. **One file id, resolved and ACL-checked under the calling principal** when
+   the URL is minted. The URL itself carries no identity.
+2. **Minutes, not hours.** It is handed to a player that is about to use it.
+3. **GET and read only.** It is not a general capability for that file.
+4. **The content origin only**, so a URL that leaks cannot reach the app origin
+   and has no session cookie to borrow ([`12`](stowcloud-12-preview.md) §2.0).
+
+#### 4.4.8 The stub endpoints
+
+`notifications`, `user_status`, `navigation_apps`, `autocomplete` and the
+provisioning `config` endpoint answer empty successes, and a fixed set of paths
+answers 404. This looks like padding and is not: **the exact shape is a
+client-crash workaround with a recorded cause.**
+
+The Android client's status probe only special-cases 404. Given a `200` with an
+empty object, it hands the body to its JSON layer, which allocates a
+non-nullable Kotlin field through `Unsafe.allocateInstance` and leaves it null,
+and the app dies on the next dereference. So the four paths in that set must
+answer **404 rather than an empty success**, and the ones that answer success
+must return an empty **array** where the client expects a list and an empty
+**object** where it expects a record.
+
+A reimplementation that rationalises this into "return 200 with an empty body
+everywhere" reproduces a crash somebody already debugged. The table of paths and
+their shapes is ported verbatim and the test asserts the shape, not merely the
+status.
 
 ## 5. API Design
 

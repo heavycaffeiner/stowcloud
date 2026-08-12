@@ -259,15 +259,22 @@ The worker allow-list's absences are the proof obligations: no `openat`, no
 `openat2`, no `execve`, no `socket`, no `connect`, no `clone`, no `ptrace`.
 `recvmsg` and `sendmsg` are on it because they are how a job arrives at all.
 
-**Go-specific additions to the allow-list.** The Rust worker's 22 calls are the
-starting point, not the answer. A Go runtime needs calls a Rust one does not:
-`futex`, `nanosleep`, `sched_yield`, `mmap`, `munmap`, `madvise`, `sigaltstack`,
+**Go-specific additions to the allow-list, and how few there are.** The Rust
+worker's 22 calls are the starting point. A Go runtime needs `futex`,
+`nanosleep`, `sched_yield`, `mmap`, `munmap`, `madvise`, `sigaltstack`,
 `rt_sigaction`, `rt_sigprocmask`, `rt_sigreturn`, `gettid`, `tgkill`,
-`clock_gettime`, `exit_group`. The final list is produced by running the worker
-under `SECCOMP_RET_LOG` with a corpus of real images and reading the audit log,
-not by guessing, and the resulting list is committed with the corpus that
-produced it. This is expected to be larger than 22 and that is a real reduction
-in the jail's tightness, recorded here rather than discovered later.
+`clock_gettime` and `exit_group`, and **nine of those fourteen are already on
+the 22-call list**, because a Rust worker allocating and blocking on a socket
+needs most of them too. Only five are genuinely new: `nanosleep`,
+`sigaltstack`, `rt_sigaction`, `gettid` and `tgkill`, all of them scheduler and
+signal plumbing.
+
+So the expected loss of tightness is smaller than it first looks: roughly 27
+calls rather than 22, not a doubling. That estimate is still an estimate. The
+final list is produced by running the worker under `SECCOMP_RET_LOG` against a
+corpus of real images and reading the audit log, never by guessing, and it is
+committed with the corpus that produced it. If the measured list is much larger
+than 27, that is a finding worth stopping on rather than absorbing.
 
 #### 4.3.4 The policy
 

@@ -131,7 +131,7 @@ internal/auth
   ratelimit.go  the login bucket, keyed by client address
   audit.go      the append-only log
 internal/acl
-  perms.go      the permission bits
+  perms.go      the eight permission bits, enumerated in §4.3.9
   grant.go      storage
   eval.go       evaluation against the virtual root
 ```
@@ -273,8 +273,14 @@ transaction that accepts them so a concurrent second use finds nothing.
 excludes `I`, `L`, `O` and `U`, so a code read off a screen and typed into a
 phone does not fail on a character the reader guessed wrong. That is a
 usability property with a security consequence: a code people mistype is a code
-people write down somewhere worse. Decoding accepts the confusable characters
-and folds them, which is the half of Crockford that matters here.
+people write down somewhere worse.
+
+**Folding happens before hashing, at minting and at verification alike**, and
+that placement is the whole of the requirement. The stored value is a SHA-256 of
+the code *string*, not of decoded bytes, so folding a typed `I` to `1` at some
+later decode step would still hash differently and still fail. The current tree
+only encodes; verification hashes whatever was typed. Getting this wrong looks
+like the feature working, because a correctly typed code still passes.
 
 #### 4.3.6a Groups
 
@@ -303,7 +309,49 @@ onto one key, and one attacker locks out everyone. That failure is named in the
 README and it is the reason the address resolution is one function with one
 implementation.
 
+#### 4.3.8a Revocation has to reach the SMB passdb
+
+**Deleting a credential row closes SMB in the database and nowhere else.**
+`smbd` authenticates against the last file that was published to it, so a
+revocation that stops at SQLite leaves the sidecar serving the revoked
+credential until something happens to rewrite that file.
+
+The port makes republishing a sink that every credential-changing path calls,
+rather than a step each one remembers. Six paths reach it today and all six are
+covered by one test that asserts the file changed:
+
+| Path | Why it touches SMB |
+|---|---|
+| set password | the NT hash is derived from it |
+| OIDC link | may disable local password login for the account |
+| OIDC unlink | restores it |
+| set SMB settings | the account's SMB access itself |
+| TOTP enrol | the SMB policy may block an account with a second factor |
+| TOTP disable | unblocks it |
+
+This is one of the two places in the product where a security decision is not
+complete when the transaction commits. The other is the preview cache, and that
+one only costs a stale thumbnail.
+
 #### 4.3.9 Grants
+
+A grant carries eight permission bits, and two of the splits are the kind a
+reimplementation collapses by accident:
+
+| Bit | Meaning |
+|---|---|
+| `READ` | list and read |
+| `DOWNLOAD` | **separate from `READ`.** Off leaves preview and streaming intact and refuses the bytes as a file, which is what "you may look at this and not take it away" means |
+| `WRITE` | modify an existing file |
+| `CREATE` | make a new one |
+| `DELETE` | remove one |
+| `RENAME` | change a name **within one directory** |
+| `MOVE` | **separate from `RENAME`.** Cross a directory boundary |
+| `SHARE` | mint a share link |
+
+Collapsing `DOWNLOAD` into `READ` silently widens every grant that was meant to
+be view-only. Collapsing `MOVE` into `RENAME` lets an account move a file out of
+the only subtree it was granted.
 
 A grant names a share and, optionally, one subpath, with read and write decided
 separately. Evaluation happens against the virtual root, and the default for an
@@ -342,10 +390,26 @@ lazily, because SMB credential rendering needs it at startup.
 3. **A key version travels with every ciphertext**, as additional
    authenticated data alongside the user id, so a value cannot be transplanted
    between accounts or replayed across a rotation.
-4. **A startup check refuses to serve on a key that cannot decrypt what is
-   already on disk.** The failure it prevents is the loud one arriving late:
-   a wrong key mounted, the server starting happily, and every SMB login and
-   every TOTP verification failing one at a time with no common cause visible.
+
+   **This is a change, and it is a migration hazard.** Today the NT hash binds
+   the key version into its AAD and the TOTP secret does not: its AAD is the
+   literal `totp` and the user id. AAD is authenticated, so adding a field to it
+   makes every TOTP ciphertext already on disk fail to open, and rule 4 turns
+   that into a refusal to start. The migration therefore re-seals every TOTP
+   secret under the new AAD **in the same transaction that bumps the key
+   version**, and a rotation that cannot do both does neither.
+4. **A startup check refuses to serve on a key that cannot decrypt an existing
+   TOTP secret, and warns on an SMB NT hash it cannot decrypt.** Not one blanket
+   rule, and the asymmetry is the point. A TOTP secret is the only copy of a
+   second factor, so a key that cannot open it means the server is about to lock
+   people out silently. An NT hash is derived material that one password change
+   regenerates, so holding the whole server down for one stale row is worse than
+   the fault. The Rust tree learned this the hard way: the SMB half was fatal
+   once and a single stale row took production down.
+
+   What the check prevents either way is the loud failure arriving late: a wrong
+   key mounted, the server starting happily, and logins failing one at a time
+   with no common cause visible.
 
 **Rotation** generates a new key, re-encrypts every NT hash and every TOTP
 secret under it, and bumps the key version, **all inside one transaction**, then

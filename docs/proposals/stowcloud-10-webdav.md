@@ -61,6 +61,9 @@ run against every mount rather than against the native API alone.
 - [ ] Dead properties, stored in `state.db`, keyed by the identity tuple.
 - [ ] Locks with timeout, refresh, depth, and the `If` header.
 - [ ] `/dav-uploads`, the chunked-upload collection.
+- [ ] `SEARCH` and the `filter-files` `REPORT`, with vendor property
+      comparisons collected verbatim and handed to whichever source claims the
+      namespace (§4.3.5a). Both phone apps' favourites view depends on it.
 - [ ] A fuzz target on the scanner (D16).
 
 ### 3.2 Non-Goals
@@ -70,7 +73,10 @@ run against every mount rather than against the native API alone.
       own path handling, which is precisely the layer this product replaces with
       kernel handles.
 - [ ] Shared locks. Exclusive write locks only, as today.
-- [ ] Property search (`SEARCH`, RFC 5323).
+- [ ] **Extending** `SEARCH` beyond what the clients already use. The methods
+      themselves are in scope and §4.3.5a specifies them; an earlier draft listed
+      them as a non-goal, which would have broken the favourites view on both
+      phone apps.
 
 ## 4. Technical Design
 
@@ -84,6 +90,7 @@ internal/dav
   props.go      live properties, and the PropSource decorator hook
   write.go      the multistatus writer
   lock.go       the lock table, the If header
+  search.go     SEARCH and REPORT, and the source registry they dispatch to
   method.go     the method dispatch
   uploads.go    /dav-uploads
 ```
@@ -186,6 +193,33 @@ holds or ignoring one somebody does.
 
 A lock count per user is capped (D5) and the refusal is 507, because an
 unbounded lock table is a durable resource a client can exhaust for free.
+
+#### 4.3.5a `SEARCH` and `REPORT`
+
+Both are implemented today and both are load-bearing for the mobile clients, so
+they are ported rather than dropped.
+
+- **`SEARCH`** (RFC 5323) carries a query over properties. It is how filename
+  search reaches this mount.
+- **`REPORT`** (RFC 3253) carries `filter-files`, which is how both phone apps
+  fetch the favourites list. `stowcloud-13`'s favourites goal depends on it and
+  names no other transport.
+
+The design constraint is the same one the property emitter has: **this package
+must not learn the vendor vocabulary.** A query can filter on `oc:favorite`,
+which `internal/dav` has never heard of. So the parser collects property
+comparisons **verbatim**, as namespace-resolved names and values, and hands them
+to whichever registered source claims that namespace. The source decides what
+the comparison means; this package decides only that the request was well
+formed and bounded.
+
+Registering a source is also what puts the method into the `Allow` header. A
+build with the compat tag off advertises neither method, which is the isolation
+rule holding at the protocol surface rather than only in the import graph.
+
+The scanner's caps apply unchanged: a `SEARCH` body is XML from a stranger and
+gets the same DTD refusal, element count, depth and name-length bounds as a
+`PROPFIND`.
 
 #### 4.3.6 `/dav-uploads`
 

@@ -131,14 +131,23 @@ Under `hardening = "required"` both a blocked `openat2` and an unavailable
 Landlock refuse to start; the difference is what happens under `preferred`, and
 it is worth being exact because the two degradations are not equivalent.
 
-Landlock missing costs a layer. A blocked `openat2` costs **principle 2**: the
-fallback is per-component resolution, which is the normalise-then-open shape S1
-exists to refuse, so it reintroduces the TOCTOU window rather than merely
-narrowing the sandbox. It is implemented, it is what `preferred` degrades to,
-and it is logged as a weakening rather than as a compatibility note. An
-operator who cannot change the seccomp profile has that option; an operator who
-has not read this should not be given it silently, which is why `required` is
-the shipped default.
+Landlock missing costs a layer. A blocked `openat2` costs **principle 2**, and
+there is no degradation that keeps it: the only fallback anyone would write is
+per-component resolution, which is the normalise-then-open shape S1 exists to
+refuse, so it would reintroduce the TOCTOU window rather than merely narrow the
+sandbox.
+
+**So `openat2` is not a `preferred` degradation at all.** A blocked `openat2` is
+a refusal to start under every hardening policy, `off` included, because `off`
+means "I accept a weaker sandbox" and not "I accept a path resolver that can be
+raced". The probe's job is to say *which* of the two failures happened so the
+operator knows whether to change a seccomp profile or upgrade a kernel.
+
+This is worth being explicit about because the Rust tree does not have a runtime
+fallback either. `openat2` is called unconditionally; the only `ENOSYS`
+fallbacks anywhere are `renameat2` and `copy_file_range`, both of which have
+safe equivalents. Nothing in [`3`](stowcloud-3-vfs-and-paths.md) §4.1 builds a
+second resolver, and an earlier draft of this section claimed one existed.
 
 ### 4.3 The filesystem gate
 
@@ -271,7 +280,7 @@ does (D15).
 | Condition | Effect |
 |---|---|
 | share on overlayfs | registration refused, named, startup continues without that share |
-| `openat2` blocked by a seccomp profile | refusal to start under `required`; under `preferred`, per-component resolution with the loss of principle 2 logged as a weakening (§4.2) |
+| `openat2` blocked by a seccomp profile | refusal to start under every policy including `off`, naming whether the cause was a profile or an old kernel (§4.2) |
 | Landlock or seccomp unavailable | refusal to start under `required`; `degraded` under `preferred` |
 | data directory not writable by the runtime uid | refusal to start, naming the path and the uid |
 | certificate generation fails | refusal to start; there is no plaintext fallback to degrade into |

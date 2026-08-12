@@ -279,25 +279,78 @@ that a stored HTML or SVG file executing in a browser has no session to steal
 
 #### 4.3.5 WebSocket
 
-`golang.org/x/net/websocket` is not used; the channel is small enough that a
-minimal handshake plus frame writer in-tree is smaller than the dependency, and
-the traffic is server-to-client change notifications with no client frames
-beyond pings. This is decided at Phase 5 with the alternative (`nhooyr`-lineage
-`coder/websocket`) as the fallback if the in-tree version grows past a few
-hundred lines.
+**The channel is bidirectional and stateful.** An earlier draft called it
+push-only with no client frames beyond pings, and used that to argue for a
+hand-rolled frame layer. The premise was wrong, so the conclusion has to be
+re-derived rather than kept.
+
+What the protocol actually carries:
+
+- **`sub` and `unsub` frames from the client, each with a list of paths.** A
+  browser tab subscribes to what it is looking at and unsubscribes when it
+  navigates away.
+- **A READ recheck at subscribe time, and again at send.** A grant revoked
+  between the two must not leak the next event, and checking only at subscribe
+  is the bug that makes a revoked grant keep delivering.
+- **A 200 ms debounce, coalescing per `(connection, path)`.** A recursive copy
+  produces thousands of events for one directory and the tab needs one.
+- **Refcounted watch registration.** Subscribing pins the directory into the
+  watcher's sticky set and unsubscribing releases it
+  ([`3`](stowcloud-3-vfs-and-paths.md) §4.4). This is the load-bearing part: the
+  subscription is *why* the directory a user is looking at stays watched, so a
+  port that drops the refcount leaves the sticky set with no input and
+  invalidations stop arriving for exactly the folder in front of them.
+- **Revocation at two grains**, per user and per session, so signing out one
+  device does not disconnect the others.
+
+**The dependency decision is therefore reopened, not settled.** A hand-rolled
+frame layer was argued for on the strength of "no client frames"; with client
+frames, control-frame handling, close codes and fragmentation all come back. The
+Phase 5f task is to choose against the real protocol, and the honest default is
+a maintained WebSocket module rather than an in-tree writer.
 
 ### 4.4 The five REST changes
 
 The envelope, the route shapes and the session model are kept. These five change
 because an existing proposal records a defect, and nothing else changes:
 
-| Area | Change | Recorded in |
+| Area | Change | The defect it fixes |
 |---|---|---|
-| Share API paths | one vocabulary; the subpath is named explicitly rather than inferred | `stowcloud-15`, `stowcloud-19` |
-| Recency query | ISO-8601 timestamps; the bare date literal that made both phone apps' query a 400 is gone | `stowcloud-21` |
-| Folder size | one rollup field with a documented unit | `stowcloud-16` |
-| Settings | typed values with declared ranges, and a refusal that names the field | `stowcloud-20` |
-| Archive listing | listed from the file, with the cost bound stated in the response | `stowcloud-21` |
+| Share API paths | one vocabulary; the subpath is named explicitly rather than inferred | a share label was prefixed onto a path that already carried the grant's subpath, and a link had no way to name a subpath at all |
+| Recency query | ISO-8601 timestamps | a bare date literal made the query a 400 on both phone apps |
+| Folder size | one rollup field with a documented unit | no client read the recursive size correctly |
+| Settings | typed values with declared ranges, and a refusal that names the field | nine defects on the settings screen, including a lower layer's reason printed raw in one language |
+| Archive listing | listed from the file, with the cost bound stated in the response | the listing read the directory instead of the archive |
+
+Each defect is stated rather than cited, because the documents that recorded
+them specified the Rust backend and were retired with it.
+
+**Two things about settings that no other section owns**, and both cut across
+rules stated elsewhere:
+
+- **Some D5 limits are admin-mutable at runtime.** Search concurrency, both
+  walk deadlines, the search rate, archive concurrency and the watcher's
+  hot-set cap are patchable and are applied to live components after they
+  persist. D5's table calls them named constants and its prose says nothing
+  takes a limit a caller could widen. Both are true of a *request* and neither
+  is true of an administrator. The reconciliation: a D5 constant is the
+  **compiled-in default and the outer bound**, an administrator may move a
+  value within it, and no request path may move any of them. A patch outside
+  the bound is refused naming the field, which is what the declared range is
+  for.
+- **A setting reports whether it took effect.** Some apply live and some need a
+  restart, so the response carries the running value alongside the stored one
+  rather than implying they agree.
+
+**The proxy trust boundary is live-editable too**, and it is the one worth being
+nervous about: the trusted-proxy ranges, the allowed origins, and the app,
+content and public host lists are all patchable by an authenticated
+administrator, which §4.3.1 step 2 and step 3 treat as boot configuration. Two
+rules keep that from being a foot-gun, and they deliberately disagree with each
+other. A malformed entry is **refused at save**, where an administrator is
+watching and can fix it. The same entry is **dropped with a warning at boot**,
+because refusing there would make a server unbootable over a typo committed
+weeks ago. Validation therefore lives on both paths and does different things.
 
 The compatibility mounts are not touched at all. Their shape is set by the
 clients, and [`stowcloud-13-compat-nc.md`](stowcloud-13-compat-nc.md) owns them.

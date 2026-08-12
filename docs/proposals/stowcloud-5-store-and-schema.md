@@ -315,9 +315,12 @@ a fresh database in the current tree.
 `page_size` and `auto_vacuum` are database-level, must be set before the first
 table exists, and are applied once on a bootstrap connection.
 
-`foreign_keys = ON` is new. `state.db` has real referential structure (a session
-belongs to a user, a grant to a user and a share) and SQLite defaults it off per
-connection.
+`foreign_keys = ON` is **uniform**, which is the change. SQLite defaults it off
+per connection, and today three of the current databases set it and the rest do
+not. The tables that gain it by being folded into `state.db` are `grant`,
+`dav_prop`, `dav_lock`, `upload_session` and `settings`, all of which have real
+referential structure that nothing currently enforces: a grant belongs to a user
+and a share, an upload session to a user.
 
 #### 4.3.3 Concurrency
 
