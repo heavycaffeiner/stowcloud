@@ -151,3 +151,45 @@ func TestLoadFromState(t *testing.T) {
 		t.Errorf("MembershipOf(7) = %v, want [3]", got)
 	}
 }
+
+// Roots builds the virtual-root projection: one entry per READ-granted rule,
+// labeled with the grant's label, and the full effective permission set there.
+func TestRoots(t *testing.T) {
+	e := NewEvaluator()
+	e.ReplaceGrants([]Grant{
+		{ID: 1, User: 7, Share: 1, Subpath: NewPath(), Label: "docs", Allow: Read, Inherit: true},
+		{ID: 2, User: 7, Share: 2, Subpath: NewPath("media"), Label: "media", Allow: Read | Download, Inherit: true},
+		// A deny-only rule contributes no root.
+		{ID: 3, User: 7, Share: 3, Subpath: NewPath(), Deny: Delete, Inherit: true},
+	})
+
+	roots := e.Roots(7)
+	if len(roots) != 2 {
+		t.Fatalf("Roots(7) = %d entries, want 2", len(roots))
+	}
+	if roots[0].Label != "docs" || roots[0].Share != 1 {
+		t.Errorf("roots[0] = %+v, want label docs share 1", roots[0])
+	}
+	if !roots[1].Perms.Has(Read) || !roots[1].Perms.Has(Download) || roots[1].Subpath.String() != "/media" {
+		t.Errorf("roots[1] = %+v, want read+download at /media", roots[1])
+	}
+
+	// A user with no grants sees an empty root.
+	if got := e.Roots(99); len(got) != 0 {
+		t.Errorf("Roots(99) = %v, want empty", got)
+	}
+}
+
+// Roots disambiguates a label collision with a " (2)" suffix in encounter
+// order, which is what keeps two shares of the same name apart in the client.
+func TestRootsLabelCollision(t *testing.T) {
+	e := NewEvaluator()
+	e.ReplaceGrants([]Grant{
+		{ID: 1, User: 7, Share: 1, Subpath: NewPath(), Label: "docs", Allow: Read, Inherit: true},
+		{ID: 2, User: 7, Share: 2, Subpath: NewPath(), Label: "docs", Allow: Read, Inherit: true},
+	})
+	roots := e.Roots(7)
+	if len(roots) != 2 || roots[0].Label != "docs" || roots[1].Label != "docs (2)" {
+		t.Fatalf("colliding labels = %+v, want docs and docs (2)", roots)
+	}
+}
