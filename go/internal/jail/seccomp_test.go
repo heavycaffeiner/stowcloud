@@ -198,15 +198,54 @@ func TestTheWorkerListDoesNotCarryWhatTheJailExistsToDeny(t *testing.T) {
 	}
 }
 
-// F3. An architecture with no verified mapping produces no filter, and no
-// filter is a refusal rather than a warning and an empty list.
-func TestAnUnmappedArchitectureRefusesRatherThanEmittingAnEmptyFilter(t *testing.T) {
-	if _, _, ok := archProfile(); ok {
-		t.Skip("this architecture has a verified mapping")
+// F3, both halves.
+//
+// The Rust tree's process filter was an empty list on anything but x86_64, and
+// an empty list short-circuited to a warning. The image publishes linux/arm64,
+// so a published image ran with no process-level syscall filter and the only
+// signal was one log line.
+//
+// The architecture is a parameter here rather than the one this test happens to
+// run on, because otherwise the refusal branch is unreachable from either
+// architecture that ships and the test would report a skip forever.
+func TestEveryPublishedArchitectureHasAVerifiedMapping(t *testing.T) {
+	for _, arch := range []struct {
+		goarch    string
+		auditArch uint32
+		rejectX32 bool
+	}{
+		{"amd64", auditArchAmd64, true},
+		{"arm64", auditArchArm64, false},
+	} {
+		got, x32, ok := archProfileFor(arch.goarch)
+		if !ok {
+			t.Fatalf("%s is published and has no verified mapping", arch.goarch)
+		}
+		if got != arch.auditArch || x32 != arch.rejectX32 {
+			t.Fatalf("%s maps to %#x x32=%v", arch.goarch, got, x32)
+		}
+		for _, kind := range kinds() {
+			prog, err := assembleFor(kind, arch.goarch)
+			if err != nil {
+				t.Fatalf("%s kind %d: %v", arch.goarch, kind, err)
+			}
+			if len(prog) < 4 {
+				t.Fatalf("%s kind %d assembled %d instructions, which cannot be a filter",
+					arch.goarch, kind, len(prog))
+			}
+		}
 	}
-	for _, kind := range kinds() {
-		if _, err := assemble(kind); !errors.Is(err, ErrArchUnsupported) {
-			t.Fatalf("kind %d assembled a filter for an unmapped architecture: %v", kind, err)
+}
+
+func TestAnUnmappedArchitectureRefusesRatherThanEmittingAnEmptyFilter(t *testing.T) {
+	for _, goarch := range []string{"riscv64", "ppc64le", "s390x", "386", ""} {
+		if _, _, ok := archProfileFor(goarch); ok {
+			t.Fatalf("%q reports a mapping this build has not verified", goarch)
+		}
+		for _, kind := range kinds() {
+			if _, err := assembleFor(kind, goarch); !errors.Is(err, ErrArchUnsupported) {
+				t.Fatalf("%q kind %d assembled a filter anyway: %v", goarch, kind, err)
+			}
 		}
 	}
 }

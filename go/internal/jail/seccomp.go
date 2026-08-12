@@ -65,17 +65,23 @@ const (
 	FilterWorker
 )
 
-// archProfile is a table rather than a build tag, because an architecture with
-// no entry has to be a refusal at runtime and not a compile error nobody sees
-// until they try to build for it.
-func archProfile() (auditArch uint32, rejectX32 bool, ok bool) {
-	switch runtime.GOARCH {
+// archProfileFor is a table rather than a build tag, because an architecture
+// with no entry has to be a refusal at runtime and not a compile error nobody
+// sees until they try to build for it. Taking the name as an argument is what
+// lets the refusal be tested from the two architectures that do have entries,
+// which is otherwise a branch nothing ever runs.
+func archProfileFor(goarch string) (auditArch uint32, rejectX32 bool, ok bool) {
+	switch goarch {
 	case "amd64":
 		return auditArchAmd64, true, true
 	case "arm64":
 		return auditArchArm64, false, true
 	}
 	return 0, false, false
+}
+
+func archProfile() (auditArch uint32, rejectX32 bool, ok bool) {
+	return archProfileFor(runtime.GOARCH)
 }
 
 // deniedSyscalls is the server's list. Each one is a way out of the process or
@@ -171,9 +177,13 @@ func jump(code uint16, k uint32, jt, jf uint8) unix.SockFilter {
 // instruction, so the longest jump has to stay under 256. There is headroom at
 // these list lengths; this checks rather than trusting that nobody grows one.
 func assemble(kind FilterKind) ([]unix.SockFilter, error) {
-	auditArch, rejectX32, ok := archProfile()
+	return assembleFor(kind, runtime.GOARCH)
+}
+
+func assembleFor(kind FilterKind, goarch string) ([]unix.SockFilter, error) {
+	auditArch, rejectX32, ok := archProfileFor(goarch)
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrArchUnsupported, runtime.GOARCH)
+		return nil, fmt.Errorf("%w: %s", ErrArchUnsupported, goarch)
 	}
 
 	var list []int
