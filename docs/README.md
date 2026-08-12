@@ -31,6 +31,7 @@ code won.
 | [19 - Share browsing](proposals/stowcloud-19-share-browsing.md) | the subpath a share link had no way to name, the folder download that never worked, and the viewer arrows that move the picture | with 6, before any public share-page work |
 | [20 - Origins and settings](proposals/stowcloud-20-origins-and-settings.md) | one declared origin list for a server reached under several names, and the nine settings-screen defects that had to be fixed before it could be edited | with 13, before any host, origin or admin-settings work |
 | [21 - Recorded activity and archive listing](proposals/stowcloud-21-recorded-activity-and-archive-listing.md) | what this server wrote for you, the date literal that made both phone apps' recency query a 400, and an archive listing that reads the directory instead of the file | supersedes 18's recency answer, not its collector; with 14, before any recency, mobile search or archive-preview work |
+| [22 - Go backend rewrite](proposals/stowcloud-22-go-backend.md) | the fourteen findings a read of the current tree turned up, what a Go port keeps and what it cannot, the jail without `fork`, and the defensive-coding standard the port is held to | **Draft, and the only one here describing code that does not exist**; with 12, before any work on the rewrite |
 
 ## Five principles, everything else follows from these
 
