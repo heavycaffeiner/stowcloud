@@ -604,7 +604,18 @@ func (d *DB) Resolve(id FileID) (SharePath, error)
 //
 // A caller must not cache the result across a share re-registration: the share
 // id is part of the derivation.
-func (d *DB) AllocateID(tx *sql.Tx, ident Ident) (FileID, error)
+//
+// It takes the caller's context as well as the transaction, because the
+// override write is a second database's transaction and a caller that gave up
+// should not be left waiting on it.
+func (d *DB) AllocateID(ctx context.Context, tx *sql.Tx, ident Ident) (FileID, error)
+
+// Upsert returns the stable id for the file st names, allocating on first
+// sight and otherwise refreshing what a rename or a write moved. It is the
+// only thing that inserts into node, so a deployment that never asks for a
+// stable id creates no rows at all.
+func (d *DB) Upsert(ctx context.Context, tx *sql.Tx,
+    share vfs.ShareID, parent FileID, name string, st vfs.Stat) (FileID, error)
 
 // DeriveID is the pure half of AllocateID: no I/O, no uniqueness check. It is
 // exported so the rebuild-identity test can assert the derivation directly

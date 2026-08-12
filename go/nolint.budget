@@ -8,4 +8,10 @@
 # x/sys/unix carries no wrapper for any of the three. The fourth is the escape
 # proof re-executing its own binary to build a mount boundary in a private
 # namespace, which is the only way that row runs without being root.
-13
+#
+# Phase 2 added four, all the same shape: SQLite has one integer type and it
+# is signed, so a device number, an inode number and a birth time cross into
+# it as their bit pattern and come back unchanged. Narrowing them would refuse
+# values a real filesystem hands out, which is the opposite of what the rule
+# is for.
+17
