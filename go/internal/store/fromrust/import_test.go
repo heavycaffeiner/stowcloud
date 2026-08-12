@@ -325,3 +325,30 @@ func TestImportPreservesSMBSecretsAndLiveReplaySteps(t *testing.T) {
 		t.Errorf("the report does not count the dropped expired replay step: %+v", rep.Dropped)
 	}
 }
+
+// An SMB ciphertext whose user is missing, or whose recorded key version is
+// missing, aborts the import: a credential that vanishes in silence is worse
+// than an operator-facing refusal.
+func TestImportRefusesASilentSMBLoss(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		rows []string
+	}{
+		{"a missing user", []string{
+			`CREATE TABLE user_smb_secret (user INTEGER, nt_hash_ct BLOB, key_ver INTEGER)`,
+			`INSERT INTO user_smb_secret VALUES (99, X'00', 1)`,
+		}},
+		{"a missing key version", []string{
+			`CREATE TABLE user_smb_secret (user INTEGER, nt_hash_ct BLOB, key_ver INTEGER)`,
+			`INSERT INTO user_smb_secret VALUES (1, X'00', NULL)`,
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := rustDir(t)
+			mkdb(t, filepath.Join(dir, "auth.db"), tc.rows...)
+			if _, err := fromrust.Import(context.Background(), dir, testClock()); err == nil {
+				t.Error("the import succeeded over a ciphertext that must be refused")
+			}
+		})
+	}
+}

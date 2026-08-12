@@ -157,7 +157,9 @@ func (s *sources) copyGroups(ctx context.Context, tx *sql.Tx, rep *Report) (map[
 // copySMBSecrets carries the encrypted NT hashes, preserving each one's
 // recorded key version: re-sealing is the master key's own rotation, and an
 // import is not the place to touch a ciphertext it cannot open. A source that
-// predates the table has nothing to carry.
+// predates the table has nothing to carry. A ciphertext whose user is missing
+// or whose recorded key version is missing aborts the import: dropping either
+// would be a credential disappearing in silence.
 func (s *sources) copySMBSecrets(ctx context.Context, tx *sql.Tx, rep *Report, users map[int64]bool) error {
 	ok, err := hasTable(ctx, s.auth, "user_smb_secret")
 	if err != nil {
@@ -167,7 +169,17 @@ func (s *sources) copySMBSecrets(ctx context.Context, tx *sql.Tx, rep *Report, u
 		return nil
 	}
 	kept, drops, err := copyRows(ctx, tx, s.auth, selSMB, insSMB, 3,
-		dropUnknownUser(users, 0))
+		func(v []any) ([]any, Reason, error) {
+			if !known(users, v[0]) {
+				return nil, keep, fmt.Errorf(
+					"the SMB ciphertext belongs to user %v, which %s holds no row for: "+
+						"refusing rather than dropping a credential in silence", v[0], authFile)
+			}
+			if v[2] == nil {
+				return nil, keep, errors.New("an SMB ciphertext carries no recorded key version: refusing")
+			}
+			return v, keep, nil
+		})
 	if err != nil {
 		return fmt.Errorf("importing user_smb_secret: %w", err)
 	}
