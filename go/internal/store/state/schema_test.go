@@ -51,9 +51,10 @@ func TestEveryDurableTableExists(t *testing.T) {
 
 	want := []string{
 		"app_password", "audit", "dav_lock", "dav_prop", "favorite",
-		"fileid_override", "grant", "group", "membership", "oidc_link",
-		"recovery_code", "session", "settings", "share_link", "totp_secret",
-		"upload_interval", "upload_session", "user",
+		"fileid_override", "grant", "group", "key_version", "membership",
+		"oidc_link", "recovery_code", "session", "settings", "share_link",
+		"totp_secret", "totp_used", "upload_interval", "upload_session",
+		"user", "user_smb_secret",
 	}
 	rows, err := d.SQL().QueryContext(ctx,
 		`SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)

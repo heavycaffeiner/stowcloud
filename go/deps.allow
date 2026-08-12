@@ -11,6 +11,11 @@
 
 golang.org/x/sys
 
+# Argon2id password hashing, XChaCha20-Poly1305 at rest and MD4 for the SMB NT
+# hash, none of which the standard library provides. Arrived with Phase 3's
+# auth subsystem.
+golang.org/x/crypto
+
 # NFC and NFD candidate spellings, so a name another program wrote in either
 # form is found as it is written. Arrived with Phase 1's path layer.
 golang.org/x/text

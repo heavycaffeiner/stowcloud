@@ -31,4 +31,13 @@
 # from anywhere else. The third of that shape is the development host's copy of
 # the control-file replacement, which the gate's own linter run never compiles
 # because it runs for GOOS=linux.
-28
+#
+# Phase 3 added thirty-four. The auth package's at-rest crypto and its
+# credential-path queries are the bulk of them: the XChaCha20 buffers and the
+# HMAC/hash writers never fail, the identifier-name G101 hits on SQL statements
+# that mention a password or a secret table, the deliberately narrow
+# seed/step/bit-width casts are all proven in range beside the cast, and MD4 and
+# SHA-1 are fixed by the SMB and TOTP protocols, not chosen. The rest are the
+# rows.Close folds that use the errors.Join pattern the store owns first.
+63
+

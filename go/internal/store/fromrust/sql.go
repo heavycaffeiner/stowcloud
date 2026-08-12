@@ -26,6 +26,16 @@ INSERT INTO user(id, name, display, pw_hash, disabled, role, quota_bytes, usage_
                  smb_opt_out, smb_enabled, created_ns)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
+	selSMB = `SELECT user, nt_hash_ct, key_ver FROM user_smb_secret`
+	insSMB = `INSERT INTO user_smb_secret(user, nt_hash_ct, key_ver) VALUES (?, ?, ?)`
+
+	// time_step is the Rust spelling of the replay step, and used_ns is
+	// stamped at import because the old table kept no timestamp.
+	selTotpUsed = `SELECT user, time_step FROM totp_used`
+	insTotpUsed = `INSERT INTO totp_used(user, step, used_ns) VALUES (?, ?, ?)`
+
+	sqlHasTable = `SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`
+
 	selKeyVersion = `SELECT ver FROM key_version WHERE id = 1`
 
 	//nolint:gosec // G101 reads the identifier: this one names a table, and the value is a statement.

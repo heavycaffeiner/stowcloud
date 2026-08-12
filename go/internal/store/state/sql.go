@@ -252,7 +252,6 @@ CREATE TABLE fileid_override (
 
 // Migration 2 gives a share link one coherent target representation and pairs
 // the encrypted token with the key version that sealed it.
-//
 // Version 1 made all four identity columns nullable and constrained no
 // combination of them, so "path only", "path plus identity" and "the importer
 // could not work it out" were the same shape on disk. A link is the one durable
@@ -317,6 +316,33 @@ CREATE INDEX share_link_owner ON share_link(owner);
 CREATE INDEX share_link_target ON share_link(share, path);
 `
 
+// migration 3 lands the durable auth state the auth package owns: the
+// singleton key version named by every sealed ciphertext, the encrypted-at-rest
+// SMB NT hash, and the TOTP replay-guard steps still inside the accepted
+// window. These are empty tables produced by migration; the re-seal that gives
+// them meaning is the auth package's startup step, because it needs the master
+// key and a password hash is no SQL migration's business.
+const schemaV3 = `
+CREATE TABLE key_version (
+  id  INTEGER PRIMARY KEY CHECK (id = 1),
+  ver INTEGER NOT NULL
+);
+
+CREATE TABLE user_smb_secret (
+  user       INTEGER PRIMARY KEY REFERENCES user(id) ON DELETE CASCADE,
+  nt_hash_ct BLOB NOT NULL,
+  key_ver    INTEGER NOT NULL
+);
+
+CREATE TABLE totp_used (
+  user    INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  step    INTEGER NOT NULL,
+  used_ns INTEGER NOT NULL,
+  PRIMARY KEY (user, step)
+) WITHOUT ROWID;
+CREATE INDEX totp_used_user ON totp_used(user);
+`
+
 // migrations is a function rather than a package-level slice so the list
 // cannot be reassigned. Position is version, so a step that has shipped is
 // never edited, renumbered or reordered.
@@ -328,6 +354,7 @@ func migrations() []dbfile.Migration {
 			SQL:          schemaV2,
 			Precondition: checkShareLinkTargets,
 		},
+		{Name: "3: the durable auth state", SQL: schemaV3},
 	}
 }
 

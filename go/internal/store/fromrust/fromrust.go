@@ -69,6 +69,7 @@ const (
 	ReasonMissingNode  Reason = "the metadata cache holds no row for the file they named"
 	ReasonExpired      Reason = "they had already expired"
 	ReasonCorruptRange Reason = "their received-range set would not decode"
+	ReasonStaleFactor  Reason = "a TOTP replay step outside the live window"
 )
 
 // Drop is one table and one reason, which is the granularity the report has to

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -192,19 +193,6 @@ func TestDeferredTablesRefuseOnlyWhenTheyHoldRows(t *testing.T) {
 		phase string
 	}{
 		{
-			"an SMB secret", "auth.db",
-			[]string{
-				`CREATE TABLE user_smb_secret (user INTEGER PRIMARY KEY, nt_hash BLOB)`,
-				`INSERT INTO user_smb_secret VALUES (1, X'00')`,
-			},
-			true, "Phase 3",
-		},
-		{
-			"an empty SMB secret table", "auth.db",
-			[]string{`CREATE TABLE user_smb_secret (user INTEGER PRIMARY KEY, nt_hash BLOB)`},
-			false, "",
-		},
-		{
 			"an admin-created share", "shares.db",
 			[]string{
 				`CREATE TABLE share_ (id INTEGER PRIMARY KEY, label TEXT)`,
@@ -286,5 +274,54 @@ func assertOneStateFile(t *testing.T, dir string) {
 	}
 	if len(found) != 1 || found[0] != store.StateFile {
 		t.Errorf("the directory holds %v, want just %s", found, store.StateFile)
+	}
+}
+
+// The importer carries the Phase 3 durable auth state: SMB ciphertexts keep
+// their recorded key version, and only the TOTP replay steps still inside the
+// live window come across. A source that carries this state is no longer a
+// refusal.
+func TestImportPreservesSMBSecretsAndLiveReplaySteps(t *testing.T) {
+	dir := rustDir(t)
+	// nowStep = nowNs / 30s; a step at nowStep is live, one at step 1000 is
+	// long expired.
+	liveStep := nowNs / (30 * 1e9)
+	mkdb(t, filepath.Join(dir, "auth.db"),
+		`CREATE TABLE user_smb_secret (user INTEGER, nt_hash_ct BLOB, key_ver INTEGER)`,
+		`INSERT INTO user_smb_secret VALUES (1, X'c0ffee', 5)`,
+		`CREATE TABLE totp_used (user INTEGER, time_step INTEGER)`,
+		`INSERT INTO totp_used VALUES (1, 1000)`,
+		`INSERT INTO totp_used VALUES (1, `+strconv.FormatInt(liveStep, 10)+`)`,
+	)
+
+	rep, err := fromrust.Import(context.Background(), dir, testClock())
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	st := openState(t, dir)
+	var keyVer int
+	if err := st.SQL().QueryRow(`SELECT key_ver FROM user_smb_secret WHERE user = 1`).Scan(&keyVer); err != nil {
+		t.Fatalf("the SMB ciphertext did not come across: %v", err)
+	}
+	if keyVer != 5 {
+		t.Errorf("the SMB ciphertext's key version = %d, want 5 preserved", keyVer)
+	}
+
+	var live, stale int
+	if err := st.SQL().QueryRow(`SELECT count(*) FROM totp_used WHERE step = ?`, liveStep).Scan(&live); err != nil {
+		t.Fatalf("counting live steps: %v", err)
+	}
+	if err := st.SQL().QueryRow(`SELECT count(*) FROM totp_used WHERE step = 1000`).Scan(&stale); err != nil {
+		t.Fatalf("counting stale steps: %v", err)
+	}
+	if live != 1 {
+		t.Errorf("a live TOTP replay step was not preserved (live=%d)", live)
+	}
+	if stale != 0 {
+		t.Errorf("an expired TOTP replay step was carried across (stale=%d)", stale)
+	}
+	if rep.Dropped[fromrust.Drop{Table: "totp_used", Reason: fromrust.ReasonStaleFactor}] != 1 {
+		t.Errorf("the report does not count the dropped expired replay step: %+v", rep.Dropped)
 	}
 }

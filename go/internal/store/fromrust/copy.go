@@ -31,6 +31,12 @@ func (s *sources) into(ctx context.Context, tx *sql.Tx, rep *Report, clk clock.C
 	if err != nil {
 		return err
 	}
+	if err := s.copySMBSecrets(ctx, tx, rep, users); err != nil {
+		return err
+	}
+	if err := s.copyTotpUsed(ctx, tx, rep, users, clk); err != nil {
+		return err
+	}
 
 	for _, step := range []struct {
 		table string
@@ -104,11 +110,20 @@ func (s *sources) copyUsers(ctx context.Context, tx *sql.Tx, rep *Report) (map[i
 
 	// The secrets are sealed under the key version the old database recorded,
 	// so the version travels with them: re-sealing is the master key's own
-	// rotation and not an import's business.
+	// rotation and not an import's business. A database that predates the
+	// key_version table means version 1; a table that is declared and empty,
+	// or holds a non-integer, is corruption rather than another default.
 	keyVer := int64(1)
-	if kerr := s.auth.QueryRowContext(ctx, selKeyVersion).Scan(&keyVer); kerr != nil &&
-		!errors.Is(kerr, sql.ErrNoRows) {
-		return nil, fmt.Errorf("reading the key version: %w", kerr)
+	hasKV, kerr := hasTable(ctx, s.auth, "key_version")
+	if kerr != nil {
+		return nil, fmt.Errorf("looking for the key_version table: %w", kerr)
+	}
+	if hasKV {
+		if kerr := s.auth.QueryRowContext(ctx, selKeyVersion).Scan(&keyVer); errors.Is(kerr, sql.ErrNoRows) {
+			return nil, errors.New("the declared key_version table is empty, which is corruption")
+		} else if kerr != nil {
+			return nil, fmt.Errorf("reading the key version: %w", kerr)
+		}
 	}
 	secrets, _, err := copyRows(ctx, tx, s.auth, selTotpSecret, insTotpSecret, 3,
 		func(v []any) ([]any, Reason, error) {
@@ -138,6 +153,69 @@ func (s *sources) copyGroups(ctx context.Context, tx *sql.Tx, rep *Report) (map[
 	record(rep, "group", kept, nil)
 	return groups, nil
 }
+
+// copySMBSecrets carries the encrypted NT hashes, preserving each one's
+// recorded key version: re-sealing is the master key's own rotation, and an
+// import is not the place to touch a ciphertext it cannot open. A source that
+// predates the table has nothing to carry.
+func (s *sources) copySMBSecrets(ctx context.Context, tx *sql.Tx, rep *Report, users map[int64]bool) error {
+	ok, err := hasTable(ctx, s.auth, "user_smb_secret")
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	kept, drops, err := copyRows(ctx, tx, s.auth, selSMB, insSMB, 3,
+		dropUnknownUser(users, 0))
+	if err != nil {
+		return fmt.Errorf("importing user_smb_secret: %w", err)
+	}
+	record(rep, "user_smb_secret", kept, drops)
+	return nil
+}
+
+// copyTotpUsed carries only the replay steps still inside the accepted
+// window. A step the window has left cannot reject anything, and it is the
+// one bit of replay state that is meaningful after a cutover; the rest are
+// transient and reported as such.
+func (s *sources) copyTotpUsed(ctx context.Context, tx *sql.Tx, rep *Report, users map[int64]bool, clk clock.Clock) error {
+	ok, err := hasTable(ctx, s.auth, "totp_used")
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return nil
+	}
+	nowStep := clk.Nanos() / (totpStepSeconds * 1e9)
+	keepFrom := nowStep - totpWindowSteps
+	kept, drops, err := copyRows(ctx, tx, s.auth, selTotpUsed, insTotpUsed, 2,
+		func(v []any) ([]any, Reason, error) {
+			if !known(users, v[0]) {
+				return nil, ReasonUnknownUser, nil
+			}
+			step, ok := asInt(v[1])
+			if !ok {
+				return nil, keep, errors.New("a TOTP replay row carries a non-integer step")
+			}
+			if step < keepFrom {
+				return nil, ReasonStaleFactor, nil
+			}
+			return []any{v[0], v[1], clk.Nanos()}, keep, nil
+		})
+	if err != nil {
+		return fmt.Errorf("importing totp_used: %w", err)
+	}
+	record(rep, "totp_used", kept, drops)
+	return nil
+}
+
+// The TOTP drift window the replay guard uses, mirrored here so the importer
+// keeps the same steps live that the verifier would accept.
+const (
+	totpStepSeconds = 30
+	totpWindowSteps = 1
+)
 
 // copyShareLinks carries the links and turns a Rust node id into the identity
 // of the file it named.
@@ -388,6 +466,7 @@ func copyRows(
 	return kept, drops, rows.Err()
 }
 
+// scanBuffers returns the value slots and scan pointers for one row.
 func scanBuffers(cols int) (vals, ptrs []any) {
 	vals = make([]any, cols)
 	ptrs = make([]any, cols)
@@ -395,6 +474,14 @@ func scanBuffers(cols int) (vals, ptrs []any) {
 		ptrs[i] = &vals[i]
 	}
 	return vals, ptrs
+}
+
+// hasTable reports whether a source database has a named table, so an import
+// can skip a table a source that predates it never had.
+func hasTable(ctx context.Context, db *sql.DB, table string) (bool, error) {
+	var n int
+	err := db.QueryRowContext(ctx, sqlHasTable, table).Scan(&n)
+	return n > 0, err
 }
 
 func asInt(v any) (int64, bool) {

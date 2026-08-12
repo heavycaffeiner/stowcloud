@@ -92,6 +92,12 @@ func run(args []string, stderr io.Writer) int {
 		// against the container an operator actually deployed.
 		return printCaps(stderr)
 	}
+	if len(args) > 1 && cmd.name == "masterkey" && args[1] == "rotate" {
+		// Phase 3's command: re-seal every ciphertext under a new key and swap
+		// the ring file. It is a CLI and never an HTTP route, because a master
+		// key must not reach a browser tab.
+		return runMasterkeyRotate(args[2:], stderr)
+	}
 
 	spoken := cmd.name
 	if len(cmd.verbs) > 0 {

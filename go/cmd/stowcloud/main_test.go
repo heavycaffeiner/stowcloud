@@ -56,7 +56,7 @@ func TestAVerbedCommandRefusesAMissingVerb(t *testing.T) {
 func TestAVerbedCommandAcceptsItsVerbs(t *testing.T) {
 	for _, args := range [][]string{
 		{"index", "build"}, {"index", "merge"}, {"index", "status"},
-		{"masterkey", "rotate"},
+		{"masterkey", "rotate", t.TempDir()},
 	} {
 		var out strings.Builder
 		if code := run(args, &out); code == exitUsage {

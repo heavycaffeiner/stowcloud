@@ -72,8 +72,8 @@ func TestMigrationKeepsBothLinkRepresentations(t *testing.T) {
 		}
 	}()
 
-	if v, verr := f.Version(ctx); verr != nil || v != 2 {
-		t.Fatalf("version %d, %v; want 2 and no error", v, verr)
+	if v, verr := f.Version(ctx); verr != nil || v != 3 {
+		t.Fatalf("version %d, %v; want 3 and no error", v, verr)
 	}
 
 	var keyVer *int64
