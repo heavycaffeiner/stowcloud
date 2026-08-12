@@ -18,8 +18,8 @@ Depends on Phases 3 and 4. Blocks Phases 7, 10, 11 and 12.
   fuzz target.
 - **5b**: `apierr/`: the envelope, the mapper, the existence-rule test.
 - **5c**: `route/`: the table, startup validation, scope wiring.
-- **5d**: `handler/`: browse, session, settings, trash, link, share, recent,
-  setup.
+- **5d**: `handler/`: browse, session, settings, trash, share-link, admin
+  folder-share, operation, recent, archive, setup.
 - **5e**: `internal/server`: TLS, config, wiring, shutdown, health, the D13 test.
 - **5f**: `static/` and `ws/`.
 

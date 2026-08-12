@@ -17,25 +17,28 @@ Depends on Phase 4. Blocks Phase 10. Independent of Phases 6, 7 and 9.
 - **8a**: the Rust-side golden-file generator and the committed fixtures.
 - **8b**: `varint.go`, `fold.go`, `trigram.go`, `hll.go`, `rank.go` against
   those fixtures.
-- **8c**: `index/base.go`: read and write, byte-identical.
+- **8c**: `index/base.go`: read and write, byte-identical structural fields and
+  identical decoded block payloads.
 - **8d**: `index/seg.go`, `index/index.go`: the overlay, the union, the merge
   gate.
 - **8e**: `walk.go`, `estimate.go`, the service.
+- **8f**: import the Rust `index_settings` override into the unified settings
+  row; rebuild the index payload instead of copying it.
 
 ## Do 8a early, out of order
 
 **8a runs against the Rust tree, which Phase 13 deletes.** It depends on nothing
 and can be done before Phase 0. It emits the fixtures the entire search port is
-verified against, and losing the chance means falling back from "byte-identical
-output" to "a passing behavioural test", which is a much weaker claim for seven
-hand-written algorithms.
+verified against, and losing the chance means falling back from an exact
+structural and decoded-payload comparison to a passing behavioural test, which
+is a much weaker claim for seven hand-written algorithms.
 
 ## Traps
 
-- **The on-disk format does not change.** That is what turns seven algorithm
-  ports into a diff instead of a judgement. If a byte-identical write is
-  impossible, make the writer's ordering explicit rather than weakening the
-  check.
+- **The on-disk format does not change.** Format-defined bytes are compared
+  exactly and zstd payloads after decompression. Independent zstd encoders need
+  not emit the same frames. Any other difference is fixed by making writer
+  ordering explicit rather than weakening the check.
 - **Never `statx` for a name-only query.** Published measurement puts metadata
   at roughly half the cost of a walk, so a name query that stats is double
   price for information nobody asked for.
@@ -56,6 +59,8 @@ hand-written algorithms.
   the performance win here rather than a trade against it.
 - **The index is a cache.** A corrupt segment disables it and search continues
   on the walk. It never fails a query.
+- **The admin's index switch is not a cache.** Import `index_settings` into
+  `state.db`; deleting the old index payload must not reset the override.
 - **`meta` is swapped by atomic rename** through the durable helper, parent
   fsync included.
 - **Unmap segments explicitly.** A mapping held across a merge is a file that
@@ -69,6 +74,6 @@ hand-written algorithms.
 
 - The gate is green, including `-race`.
 - Every golden fixture reads correctly, and re-writing `base.idx` from the same
-  corpus produces identical bytes.
+  corpus produces identical structural bytes and identical decoded payloads.
 - The timing-leak test passes.
 - A deliberately corrupted segment disables the index and leaves search working.

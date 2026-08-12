@@ -22,6 +22,8 @@ upload, WebDAV, mobile search, thumbnails. Blocks Phase 13.
 - **10d**: `ocs.go`, `capabilities.go`, `login_flow.go`, `shares.go`.
 - **10e**: `search.go`, `trash.go`, `favorites.go`, `recent.go`.
 - **10f**: `preview.go`, `direct.go`, `stubs.go`.
+- **10g**: compat state migrations and Rust-import extension for instance
+  identity, aliases and login flows.
 
 10a is small and blocks everything. 10d is independent of 10b.
 
@@ -38,7 +40,8 @@ upload, WebDAV, mobile search, thumbnails. Blocks Phase 13.
 - **G2 checks direct imports, not transitive.** `nc` reaches core types through
   `ncport` by design and would fail its own gate under a transitive check.
 - **`StatePort` exists because G2 forbids `nc` from importing the store.** The
-  only SQL that knows what a favourite is lives on the core side of the seam.
+  SQL for compat-owned aliases and login flows lives in tagged `ncwire`; core
+  state exposes only its serialized migration and transaction boundary.
 - **Every file in all three packages carries `//go:build compat_nc`**, and the
   assembly layer's reference lives in one tagged file with a no-op sibling.
 - **Capture the compat request corpus from a real client session**, do not write
@@ -64,6 +67,14 @@ upload, WebDAV, mobile search, thumbnails. Blocks Phase 13.
   lies about the data: a false size, a withheld ETag, a false encryption flag.
 - **`Vpath` conversion lives in the core**, and this layer asks for it. Doing it
   here is the bug the two path types exist to prevent.
+- **Never persist the device-flow app password.** Consent stores an authorized
+  user marker; polling consumes it and mints the credential for one-time
+  delivery. The Rust importer revokes the copied credential corresponding to
+  an approved flow before translating that flow, so no orphan credential is
+  left behind.
+- **Extend the Rust importer with compat state.** Preserve the instance id,
+  active chunk aliases and unexpired login flows. Expired flows are reasoned
+  drops; malformed or unmatched approved flows refuse migration.
 
 ## Done when
 
@@ -72,3 +83,6 @@ upload, WebDAV, mobile search, thumbnails. Blocks Phase 13.
 - F13 is closed.
 - A real desktop client and a real mobile client each complete an initial sync,
   see a server-side change, and produce a deliberate conflict.
+- An import preserves the instance identity and resumable aliases, and an
+  approved device flow survives cutover without storing or orphaning its old
+  plaintext app password.

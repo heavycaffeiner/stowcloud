@@ -4,12 +4,17 @@
 |------------|----------------------------------|
 | Author     | heavycaffeiner(Dong Hyun Kim)    |
 | Created    | 2026-08-10                       |
-| Status     | **Draft** / In Review / Approved |
-| Revises    | `../stowcloud-14-smb-and-oidc.md` §4.3 |
+| Status     | Superseded                       |
+| Superseded by | [`../stowcloud-14-smb-and-oidc.md`](../stowcloud-14-smb-and-oidc.md) §4.3 |
 
 ---
 
 ## 1. Summary
+
+This is a historical Rust implementation design, not an instruction for the
+Go port. The parent proposal is authoritative. In particular, this document's
+POSIX shell layout was replaced by the Rust `sc-smb-agent`, and its description
+of the earlier core behaviour is not the baseline the Go port carries over.
 
 Replace the fixed private-CIDR allow list with detection of the networks this machine is
 actually attached to. The SMB sidecar (and its bare-metal twin) enumerates the host's

@@ -13,8 +13,9 @@
 
 The protocol-agnostic domain API: the virtual root, entry listing, the
 operations (create, move, copy, delete, restore), directory ETags and the
-recursive rollup, trash, conflict detection, and share links. This is the layer
-every protocol sits on and the layer that must not know any of them exist.
+recursive rollup, trash, conflict detection, share registration, restart-visible
+long operations and share links. This is the layer every protocol sits on and
+the layer that must not know any of them exist.
 
 ## 2. Background & Motivation
 
@@ -44,7 +45,8 @@ calls here, and each one is a place where the obvious implementation is wrong:
   §4.3.1 makes it one function so the rule cannot be half-applied.
 - **S6, the neighbours' access survives us.** The obvious implementation of a
   replace is truncate-and-write, which is neither atomic nor mode-preserving.
-  Every mutation goes through the durable helper instead.
+  Every content replacement goes through `WriteDurable`; other namespace
+  mutations use their named VFS operation.
 - **A permission decision carries its own reason.** An evaluation that returns
   a bare boolean cannot tell the UI why an action is unavailable and cannot
   tell the audit log what was actually decided, so `Perms` travels with the
@@ -57,15 +59,19 @@ calls here, and each one is a place where the obvious implementation is wrong:
 - [ ] A domain API with no protocol vocabulary in any signature.
 - [ ] The virtual root assembled from grants, with an ungranted path
       indistinguishable from a missing one.
-- [ ] A file ETag that notices a same-nanosecond same-length rewrite where the
-      filesystem makes that possible, and says so where it does not (F11).
+- [ ] A file ETag that includes every change field Linux exposes, is marked
+      weak, and is never accepted as a strong mutation precondition (F11).
 - [ ] Directory ETags and the recursive rollup, invalidated by generation.
 - [ ] Trash per share, off by default, with the setting visible rather than
       guessable.
-- [ ] Conflict detection on every mutation, producing a conflict rather than an
-      overwrite.
-- [ ] Share links: created once, shown once, unrecoverable afterwards.
-- [ ] Long operations that survive a client disconnect.
+- [ ] Strong mutation preconditions and no-replace creates produce a conflict
+      rather than an overwrite. A weak precondition is refused rather than
+      presented as proof.
+- [ ] Share links: the hash authenticates public requests and encrypted token
+      storage lets the owner list an existing URL again.
+- [ ] Admin-created shares and edits to config-defined shares survive restart.
+- [ ] Long operations that survive a client disconnect and retain an honest
+      terminal record across restart or cutover.
 
 ### 3.2 Non-Goals
 
@@ -101,9 +107,29 @@ internal/core
 
 ### 4.2 Data Model Changes
 
-None beyond [`stowcloud-5`](stowcloud-5-store-and-schema.md). `share_link` moves
-to `state.db` and `diretag` stays in `cache.db`, which is the split working as
-intended: a link is not reconstructible and a rollup is.
+`share_link` is already in `state.db` and `diretag` stays in `cache.db`, which
+is the split working as intended: a link is not reconstructible and a rollup
+is. This phase adds five later-owned durable tables to `state.db`:
+
+- `share_definition` for shares created through the admin API;
+- `share_identity_override` and `share_trash_override` for editable properties
+  of config-defined shares;
+- `operation` and `operation_result` for the bounded, restart-visible history
+  of long operations.
+
+The first three replace `shares.db`. The last two replace `jobs.db`. A job that
+was running when the Rust server stopped is imported as interrupted, because no
+Go task exists to resume it. Completed history, progress and per-item results
+remain readable. Phase 4 extends `migrate --from-rust` for both source files and
+does not alter either source file. Imported dynamic shares preserve their
+external ids, including the Rust dynamic-share base offset, because grants and
+API payloads already refer to those values. Config-share overrides keep the
+config-derived ids they were keyed by. A job with an unknown owner is a
+reasoned import refusal, not an orphaned history row. Imported result paths are
+parsed through the same path boundary as live operations. A Rust result's raw
+error sentence is mapped to a known typed reason or replaced with the generic
+item-failed reason; lower-layer prose is not carried into the native REST wire
+shape.
 
 ### 4.3 Core Logic
 
@@ -128,19 +154,19 @@ the unexported-field pattern).
 F11's fix, and it has an honest limit.
 
 ```go
-// FileETag derives a change token for e. It uses mtime, size, and the inode
-// generation where statx reports one (STATX_ATTR / ext4, XFS and btrfs carry a
-// generation; many filesystems do not). Where no generation is available the
-// token is mtime and size, and Weak reports true so that a caller performing a
-// lost-update check knows it is relying on nanosecond mtime alone.
+// FileETag derives a change token from the identity, size, mtime and ctime that
+// statx actually exposes. Linux statx has no inode change-version field, so the
+// token is always weak: it is useful for caching and conflict warnings but is
+// not represented as a strong validator.
 func FileETag(st vfs.Stat) (token string, weak bool)
 ```
 
-The `weak` flag is the point. Today the caller cannot tell, so an `If-Match`
-against a filesystem with coarse timestamps looks exactly as strong as one
-against a filesystem with fine ones. With the flag, the HTTP layer can emit a
-weak ETag validator, which is what RFC 9110 has the syntax for, and a client
-that cares learns the difference.
+The `weak` flag is the point. An earlier draft claimed `statx` exposed an inode
+generation that changes on write. It does not. Reporting a metadata-derived
+token as strong would therefore preserve F11's false guarantee. The HTTP layer
+emits a weak ETag validator, and mutation preconditions never use weak
+comparison as proof that the bytes are unchanged. The frontend treats it as a
+conflict warning, not as a lost-update guarantee.
 
 **What is deliberately not done:** hashing the content to make the token strong.
 That reads every byte of every file on every listing, and the product's premise
@@ -154,9 +180,9 @@ invalidated by a generation counter bumped when the watcher sees a change under
 the share.
 
 The hash stays BLAKE3. Changing it to SHA-256 was proposed in the parent
-document and reverted (the index, C1): it buys nothing, because BLAKE3 has
-to be in the tree anyway for the upload checksum, and changing it invalidates
-every stored rollup at cutover for no reason.
+document and reverted (the index, C1): it changes a wire-visible ETag and breaks
+the parity corpus for no benefit. Phase 4 introduces the module; Phase 6 reuses
+it for the client-facing upload checksum.
 
 `oc:size` needs `rsize` and nothing else, which is why the rollup is a size and
 a count rather than a file and directory split. That is the compat layer's
@@ -167,14 +193,17 @@ here change, and how big is it".
 #### 4.3.4 Operations and conflicts
 
 Every mutation is: resolve, check permissions, check the precondition, act
-through [`stowcloud-3`](stowcloud-3-vfs-and-paths.md)'s durable-write helper,
-invalidate.
+through the named VFS operation, invalidate. Content replacement and upload
+finalization use `WriteDurable`; explicit moves use `ShareRoot.Rename`.
+[`stowcloud-3`](stowcloud-3-vfs-and-paths.md) keeps the raw rename primitives
+inside `internal/vfs`.
 
-The precondition is an `If-Match` token where the caller supplied one, and a
-`RENAME_NOREPLACE` where it did not but the operation is a create. A mismatch is
-`ErrConflict` carrying the current token, never an overwrite. The product
-advertises "a conflict screen, not a silent overwrite" and this is where that is
-true or false.
+A caller-supplied `If-Match` uses RFC 9110 strong comparison. A weak file ETag
+therefore cannot satisfy it and returns `ErrPrecondition` carrying the current weak
+token. The frontend may offer an explicit unconditional retry, but neither the
+core nor HTTP silently converts a weak token into proof. A strong mismatch is
+also `ErrPrecondition`. A create without a precondition uses `RENAME_NOREPLACE`, so
+another writer cannot be overwritten between the check and publication.
 
 Copy uses `copy_file_range` through the vfs helper: a reflink on btrfs and XFS
 when aligned, an in-kernel copy otherwise, and a bounded buffered fallback for
@@ -199,9 +228,16 @@ something is there, rather than overwriting.
 
 #### 4.3.6 Share links
 
-Created once, the full URL exists in exactly one response, and it is not
-recoverable afterwards because only a hash of the secret is stored. Revocation
-is permanent and the same link can never be recreated.
+Created once, the full URL is returned immediately and remains recoverable to
+its owner, matching the existing API. A hash authenticates public requests and
+an XChaCha20-Poly1305 ciphertext under the master key supports owner listings.
+Legacy rows may lack the ciphertext and are the only links that cannot be
+recovered. Revocation is permanent and the same link is never recreated.
+Every ciphertext carries `token_key_ver`, and its AAD binds that version and
+the token hash. Phase 3 upgrades imported Rust ciphertexts from their legacy
+AAD before this package reads them. An imported owner copy that an earlier Rust
+key rotation had already made unreadable is represented like any older row
+without ciphertext; its token hash still keeps the issued public URL valid.
 
 Options at creation: expiry, password, download cap, upload-only. Upload-only
 means the recipient can write and cannot list, which is a distinct permission
@@ -210,6 +246,16 @@ grant.
 
 The link secret is encrypted at rest with XChaCha20-Poly1305 under the master
 key, as today.
+
+The target contract also stays as today: the row stores a path and, when one
+could be allocated at creation, an identity. Access resolves the stored path
+and requires the current identity to match. A rename therefore makes the link
+gone instead of moving it, and replacement at the same path also makes it gone.
+A path-only legacy or root link keeps the weaker path-only check rather than
+being assigned a fabricated zero identity. New non-root links require a birth
+time in that identity. `(dev, ino)` without it cannot distinguish the original
+from a later inode reuse, so an imported identity-bearing link lacking birth
+time blocks cutover instead of being weakened.
 
 #### 4.3.6a Per-user home directories
 
@@ -296,8 +342,23 @@ func (c *Core) List(ctx context.Context, r Resolved, cur Cursor) (Page, error)
 // shares it is not atomic, and it says so in the return rather than pretending.
 func (c *Core) Move(ctx context.Context, from, to Resolved, opt MoveOpts) (MoveResult, error)
 
-// CreateLink mints a share link and returns the only copy of its secret that
-// will ever exist. Storing the return value is the caller's single chance.
+// CreateShare registers a validated host directory and returns the externally
+// visible id stored with it. UpdateShare persists edits to a dynamic share or
+// the allowed overrides for a config-defined share. Only a dynamic share can
+// be deleted.
+func (c *Core) CreateShare(ctx context.Context, spec ShareSpec) (Share, error)
+func (c *Core) UpdateShare(ctx context.Context, id ShareID, patch SharePatch) (Share, error)
+func (c *Core) DeleteShare(ctx context.Context, id ShareID) error
+
+// Operation returns the restart-visible state and bounded item results for a
+// long mutation. Cancel changes a running operation through its own context;
+// disconnecting the request that created it does not.
+func (c *Core) Operation(ctx context.Context, id OperationID) (Operation, error)
+func (c *Core) CancelOperation(ctx context.Context, id OperationID) error
+
+// CreateLink mints a share link and returns its bearer secret. The store keeps
+// a verification hash and an encrypted copy so the owner can list the URL
+// again without making public access depend on decryption.
 func (c *Core) CreateLink(ctx context.Context, r Resolved, spec LinkSpec) (Link, secret.Secret, error)
 ```
 
@@ -307,7 +368,8 @@ func (c *Core) CreateLink(ctx context.Context, r Resolved, spec LinkSpec) (Link,
 |---|---|
 | `ErrNotFound` | missing, or outside every grant. The two are one answer |
 | `ErrDenied` | permitted to know it exists, not permitted to do this |
-| `ErrConflict` | precondition failed, carrying the current token |
+| `ErrPrecondition` | a supplied validator failed strong comparison, carrying the current token |
+| `ErrConflict` | an operation conflicts with current state without a supplied validator |
 | `ErrExists` | create against an existing name with no-clobber |
 | `ErrNotEmpty` | directory delete without recursion |
 | `ErrCrossShare` | an operation that cannot span shares atomically, naming which half completed |
@@ -326,9 +388,11 @@ func (c *Core) CreateLink(ctx context.Context, r Resolved, spec LinkSpec) (Link,
 | Phase 4c | `aggregate.go`: ETags, the rollup, generation invalidation, F11 | M | 4a | heavycaffeiner |
 | Phase 4d | `trash.go` | M | 4b | heavycaffeiner |
 | Phase 4e | `links.go` | M | 4a | heavycaffeiner |
-| Phase 4f | `archive.go`, `quota.go` | S | 4b | heavycaffeiner |
+| Phase 4f | `archive.go`, `quota.go`, `homes.go` | S | 4b | heavycaffeiner |
+| Phase 4g | persisted share registry, operation store and the `shares.db`/`jobs.db` importer extension | M | 4a, Phase 2.5 | heavycaffeiner |
 
-4c, 4d, 4e and 4f are independent of each other.
+4c, 4d, 4e, 4f and 4g are independent of each other after their listed
+dependencies.
 
 ### 6-2. Dependencies
 
@@ -337,10 +401,11 @@ func (c *Core) CreateLink(ctx context.Context, r Resolved, spec LinkSpec) (Link,
 | `lukechampine.com/blake3` or `github.com/zeebo/blake3` | the directory ETag hash, shared with the upload checksum |
 | `golang.org/x/crypto/chacha20poly1305` | link secrets at rest |
 
-The BLAKE3 module choice is made at Phase 6, where the checksum requirement is
-concrete, and both packages are evaluated on the same criterion: a pure-Go
-fallback path, because `CGO_ENABLED=0` is not negotiable. `archive/zip` is
-standard library.
+The BLAKE3 module choice is made here because the directory ETag is
+wire-visible and parity requires the algorithm to stay unchanged. Phase 6
+reuses the same implementation for the client-selected checksum. The module
+must have a pure-Go fallback path because `CGO_ENABLED=0` is not negotiable.
+`archive/zip` is standard library.
 
 ## 7. References
 

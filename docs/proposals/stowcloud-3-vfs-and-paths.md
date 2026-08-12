@@ -13,9 +13,9 @@
 
 The security core in Go: `openat2` resolution from a share root descriptor, the
 three path types, descriptor ownership without `Drop`, streaming directory
-reads, and the one durable-write helper every mutation goes through. This is
-principle 2 ("a path is a kernel handle, not a string") and it is the phase
-everything else waits on.
+reads, and the VFS-owned mutation and publication boundaries. This is principle
+2 ("a path is a kernel handle, not a string") and it is the phase everything
+else waits on.
 
 ## 2. Background & Motivation
 
@@ -63,7 +63,9 @@ Findings F4, F5, F6 and F7 all live in this package.
 - [ ] Descriptor privilege decided by caller intent, not file mode (F5).
 - [ ] The reserved-name policy as an argument (F6).
 - [ ] Mode and ownership failures surfaced (F7).
-- [ ] One durable-write helper, and a gate that nothing else renames (D11).
+- [ ] One durable content-replacement helper, named namespace and database
+      publication operations, and a gate that no raw rename escapes
+      `internal/vfs` (D11).
 - [ ] A fuzz target on path parsing (D16).
 - [ ] An **executable escape proof**, ported: S17 applies here as much as it
       does to the jail. §4.5 says what it has to attempt.
@@ -105,6 +107,14 @@ internal/vfs
   read.go        streaming and buffered directory reads
   file.go        File: pread, pwrite, stat, truncate, sync, copy_range
   durable.go     the write-then-rename helper (D11 lives here)
+  publish_linux.go
+                 durable no-clobber publication for a complete non-share file
+  publish_other.go
+                 development-host stand-in for importer tests only
+  replace_linux.go
+                 durable replacement of a trusted private control file
+  replace_other.go
+                 development-host stand-in, never a shipping guarantee
   errno.go       errno to typed error
   caps.go        the kernel capability probe, which has to tell a syscall
                  blocked by a seccomp profile from one an old kernel lacks
@@ -115,13 +125,15 @@ One package, not a package per concern. It is the security core and it is read
 as a unit; splitting it would put the resolve flags in one file and the calls
 that depend on them in another.
 
-**Five of those files carry no build tag and the rest are `//go:build linux`.**
-That split is not portability, it is the opposite: `path.go`, `norm.go`,
-`types.go` and `errors.go` issue no syscall, so the parser, the candidate
-spellings and the fuzz target run in the ordinary `go test` on the development
-host, while everything that touches a descriptor compiles only for the target
-that ships and runs only in the guest. `errors.go` exists because `path.go`
-raises `ErrTooLarge` and `ErrReservedName` on both, so the sentinels cannot live
+**Four of those files carry no build tag.** `path.go`, `norm.go`, `types.go`
+and `errors.go` issue no syscall, so the parser, the candidate spellings and
+the fuzz target run in the ordinary `go test` on the development host. The
+descriptor and share-filesystem backend is `//go:build linux`.
+The `_other.go` publication and private-file replacements are narrow
+development-host stand-ins. They let ordinary control-file tests compile and
+run, but they are not a portable share backend or a shipping durability
+guarantee. `errors.go` exists because `path.go` raises
+`ErrTooLarge` and `ErrReservedName` on both hosts, so the sentinels cannot live
 beside the errno table.
 
 ### 4.2 Data Model Changes
@@ -144,6 +156,13 @@ it is the whole security posture in five lines:
 `RESOLVE_NO_MAGICLINKS` is added unconditionally, because it is what blocks
 escape through `/proc/self/fd/*`. `RESOLVE_NO_XDEV` is added unless the share
 opts into crossing mounts.
+
+The names are an existing wire contract, and `Follow` does not mean escape the
+share. It follows relative symlinks while `RESOLVE_BENEATH` keeps the result
+beneath the root; an absolute target is refused. `WithinShare` additionally
+rebases an absolute target into the share through `RESOLVE_IN_ROOT`. The Go
+type comments must state this distinction and must not describe `Follow` as
+unconditional.
 
 #### 4.3.2 Descriptor ownership
 
@@ -229,8 +248,8 @@ from.
 
 #### 4.3.5 The durable-write helper
 
-D11 and F7. One function, and `os.Rename`, `unix.Renameat` and
-`unix.Renameat2` are callable from nowhere else in the tree:
+D11 and F7. `WriteDurable` is the only staged share-content replacement
+operation. Raw rename calls are callable nowhere outside `internal/vfs`:
 
 ```go
 // WriteDurable stages content under the reserved prefix, makes it durable, and
@@ -242,6 +261,13 @@ D11 and F7. One function, and `os.Rename`, `unix.Renameat` and
 // was one, and the error that refused a uid restore if one did.
 func (r *ShareRoot) WriteDurable(p SafePath, opt DurableOpts, write func(*File) error) (Durable, error)
 ```
+
+This does not subsume an explicit namespace move, publication of an already
+complete database, or replacement of a trusted private control file.
+`ShareRoot.Rename`, `PublishNew` and `ReplaceFileDurable` own those cases.
+`PublishNew` is no-clobber. `ReplaceFileDurable` stages with the requested
+private mode, syncs, replaces and syncs the parent. Neither is a substitute for
+`WriteDurable` on share-content replacement or upload finalization.
 
 **Why there is a return value at all**, since step 5 below is what forces it.
 The mode is fatal: a replacement that could not take the original's mode fails.

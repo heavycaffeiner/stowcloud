@@ -11,9 +11,10 @@
 
 ## 1. Summary
 
-The smallest phase. `web/src/lib/api` is updated for the five REST changes in
-[`stowcloud-8-http-and-api.md`](stowcloud-8-http-and-api.md) §4.4, and nothing
-else in `web/` is touched.
+The API client is updated for the five REST adaptations in
+[`stowcloud-8-http-and-api.md`](stowcloud-8-http-and-api.md) §4.4. The existing
+edit-conflict route and dialog get the one behavioural correction needed for a
+weak `If-Match`; no other UI surface changes.
 
 ## 2. Background & Motivation
 
@@ -33,22 +34,26 @@ that otherwise belongs to nobody and gets discovered at cutover.
 
 - [ ] The API client updated for the five changes, with its types regenerated
       or hand-updated to match.
-- [ ] The error-text mapping updated for any new catalogue key, in every
-      locale the repository carries.
+- [ ] The error-text allowlist and locale catalogues updated for any new
+      catalogue key, in every locale the repository carries.
 - [ ] The upload path updated if the TUS surface moved, and confirmed unchanged
       if it did not. Note that there is no `upload/` directory: the upload calls
       are in `http.ts` with everything else, and the worker lives outside
       `lib/api`.
 - [ ] `events-transport.ts` confirmed against whatever framing Phase 5f settles
       on.
+- [ ] The existing edit-conflict retry omits `If-Match` only after the user
+      explicitly chooses overwrite. Resending a weak validator would always
+      fail strong comparison.
 - [ ] `npm run build`, the i18n check and the frontend test suite green.
 - [ ] The embedded build proven: a binary built with `embed_ui` serves the SPA
       that was just built, not a previous one.
 
 ### 3.2 Non-Goals
 
-- [ ] A UI redesign. Components, routes, the design system and the virtual
-      scroll are untouched.
+- [ ] A UI redesign. Route structure, the design system and virtual scroll are
+      untouched. The existing edit route and conflict dialog are adapted, not
+      replaced.
 - [ ] A framework or dependency change.
 - [ ] New screens for anything the Go port adds. The two new operator-visible
       states (a hardening degradation, a weak ETag) surface through existing
@@ -60,27 +65,38 @@ that otherwise belongs to nobody and gets discovered at cutover.
 
 ### 4.1 Architecture Overview
 
-Only `web/src/lib/api` changes:
+The client changes are concentrated in `web/src/lib/api`:
 
 ```
 web/src/lib/api/
-  client.ts          the fetch wrapper, the envelope, the trace header
+  client.ts          the one mock-or-real selection boundary
   error-text.ts      catalogue key to rendered text
   types.ts           the wire types
-  http.ts            everything else, one file: sharesList, recentList, list,
-                     archiveList, the settings calls. All five changed
-                     surfaces are functions in here
+  http.ts            the fetch wrapper and everything else: sharesList,
+                     recentList, list,
+                     stat, writeFile, archiveList, the settings calls. The five
+                     surface adaptations stay in here
   share.ts           the public-link page's client, not admin shares
   oidc.ts  setup.ts  untouched by the five changes
   events-transport.ts  the WebSocket client half; see the note below
   mock.ts  mock-seed.ts  path-utils.ts  untouched
 ```
 
+Two existing UI files also change:
+
+```
+web/src/routes/(app)/edit/[...path]/+page.svelte
+                     explicit unconditional retry after a 412
+web/src/lib/ui/EditConflictDialog.svelte
+                     weak-validator wording through existing controls
+```
+
 An earlier draft of this section invented a file per surface (`shares.ts`,
 `recent.ts`, `listing.ts`, `settings.ts`, `archive.ts`, an `upload/` directory)
 and none of them exists. **Splitting `http.ts` is not a precondition for this
-phase** and is not proposed here: the five changes are five functions inside it,
-and a refactor bundled into an API migration makes the diff unreviewable.
+phase** and is not proposed here: the five adaptations stay inside its existing
+functions, and a refactor bundled into an API migration makes the diff
+unreviewable.
 
 **`events-transport.ts` is the one file that may need more than an adaptation.**
 It is the client half of the WebSocket channel, and
@@ -97,22 +113,35 @@ Wire types only:
 |---|---|
 | `SharePath` | one vocabulary; the subpath is an explicit field rather than something the client reconstructs |
 | `RecentQuery` | `since` is an ISO-8601 instant, not a date |
-| `Entry` | one rollup size field, with the unit documented; `etagWeak` added |
+| `Entry` | one rollup size field, with the unit documented; `etag_weak` added |
 | `Setting` | a discriminated union carrying the declared range |
 | `ArchiveListing` | `truncated` and `limit` fields |
 
-`etagWeak` is the only genuinely new field, and it exists because
-[`stowcloud-7`](stowcloud-7-core-domain.md) §4.3.2 can now tell the difference
-between a strong and a weak change token. The conflict screen uses it to say
-"this file may have changed" rather than asserting it did not.
+`etag_weak` is the only genuinely new field. It follows the existing wire
+naming (`mtime_ns`, `dir_etag`) because `http.ts` returns JSON objects without a
+camel-case mapping layer. The current Linux implementation
+sets it for metadata-derived file tokens because
+[`stowcloud-7`](stowcloud-7-core-domain.md) §4.3.2 cannot produce a strong
+validator from `statx`. The conflict screen explains that the conditional write
+was refused and makes an unconditional retry an explicit user choice.
+
+The retry detail matters. The first save may send the weak ETag and receive
+412, which is the server correctly refusing weak strong-comparison. The
+dialog's overwrite action then calls `writeFile` **without** `If-Match`.
+Resending either the original or returned weak token loops forever because a
+weak validator can never satisfy `If-Match`. Only this explicit action may omit
+the header.
 
 ### 4.3 Core Logic
 
 #### 4.3.1 The error envelope is unchanged
 
-`code`, `msg` as a catalogue key, `args`, `trace`. `error-text.ts` keeps its
-shape, and the work is adding entries for new keys rather than changing how a
-key is rendered.
+Both backends use the existing
+`{error:{code,message,detail?}}` envelope. Localized validation data stays in
+`detail.reason_key` and `detail.reason_params`; `Sc-Trace` stays a response
+header and is not duplicated in the body. Phase 12 does not add a dual-read
+transition because Phase 13 can exercise both backends with the current client
+shape.
 
 The rule that produced this design holds on the Go side (D15): the server sends
 a key and placeholders, never a sentence. The settings screen printing
@@ -164,32 +193,31 @@ bug for as long as it took to notice the bundle hash had not moved.
 No server API. The client-side surface:
 
 ```ts
-// Every response carries a trace id. The client attaches it to any error it
-// surfaces, so a user-reported failure can be found in the server log without
-// asking them to reproduce it.
-export interface ApiError {
-  code: string;
-  msg: string;      // a catalogue key, never a sentence
-  args?: unknown[];
-  trace: string;
+export interface ApiErrorBody {
+  error: {
+    code: string;
+    message: string; // stable fallback, not rendered localized copy
+    detail?: Record<string, unknown>;
+  };
 }
 
-// etagWeak reports that the server could not derive a strong change token for
-// this entry, because the filesystem carries no inode generation. A conflict
-// check against a weak token is advisory, and the UI says so rather than
-// promising a guarantee it does not have.
+// etag_weak reports that Linux statx exposes no inode change version from which
+// this server can derive a strong change token. A conflict check against a weak
+// token is advisory. A weak If-Match is refused, and the UI requires an
+// explicit unconditional retry rather than promising a guarantee it does not
+// have.
 export interface Entry {
   // ...
   etag: string;
-  etagWeak: boolean;
+  etag_weak: boolean;
 }
 ```
 
 ### 5-2. Error Handling
 
-Unchanged. The client renders `msg` through `error-text.ts` and falls back to a
-generic string with the trace id for a key it does not know, which is what makes
-a server that added a key ahead of the frontend degrade rather than break.
+Unchanged. `error-text.ts` renders a recognized `detail.reason_key`, then a
+recognized `code`, and otherwise uses the caller's translated action-specific
+fallback. It never renders `message` or `detail.reason` as localized UI copy.
 
 ## 6. Implementation Plan
 
@@ -197,8 +225,8 @@ a server that added a key ahead of the frontend degrade rather than break.
 
 | Phase | Task | Size | Depends on | Owner |
 |---|---|---|---|---|
-| Phase 12a | `types.ts` and the five changed modules | S | Phase 5 | heavycaffeiner |
-| Phase 12b | `error-text.ts` entries for new keys, in every locale | S | 12a | heavycaffeiner |
+| Phase 12a | `types.ts` and the five surface adaptations in `http.ts` | S | Phase 5 | heavycaffeiner |
+| Phase 12b | `error-text.ts`, the edit route and `EditConflictDialog`: weak retry and locale copy | S | 12a | heavycaffeiner |
 | Phase 12c | The upload path and `events-transport.ts`: confirm or adapt | S | Phase 6, Phase 5f | heavycaffeiner |
 | Phase 12d | The embedded-build check in §4.3.3 | S | 12a, Phase 5 | heavycaffeiner |
 
@@ -210,8 +238,9 @@ it as out of sync.
 
 ## 7. References
 
-- `web/src/lib/api/`: the client this phase changes, and nothing else in
-  `web/`.
+- `web/src/lib/api/`: the client this phase changes.
+- `web/src/routes/(app)/edit/[...path]/+page.svelte` and
+  `web/src/lib/ui/EditConflictDialog.svelte`: the narrow weak-retry correction.
 - `web/src/lib/api/error-text.ts`: the catalogue §4.3.1 adds keys to, and the
   place the `detail.reason` incident was fixed.
 - [`stowcloud-8-http-and-api.md`](stowcloud-8-http-and-api.md) §4.4: the five

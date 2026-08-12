@@ -30,8 +30,9 @@ objection changes shape in Go and the answer does not.
 The Rust tree's decoders are pure Rust and it jailed them anyway, on the
 grounds that memory safety removes one class and leaves logic bugs, crashes and
 infinite loops. Go's decoders are memory-safe on the same terms and leave the
-same residue: `image/gif` decoding every frame of an animation is not a memory
-error, and neither is a decode loop that does not terminate. A pure-Go decoder
+same residue: a caller accidentally using `gif.DecodeAll` can materialise every
+frame of an animation, and a decode loop can fail to terminate. Neither is a
+memory-safety error. A pure-Go decoder
 is not a reason to drop the boundary. It was never the reason the boundary
 existed.
 

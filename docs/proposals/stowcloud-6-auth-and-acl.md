@@ -145,6 +145,17 @@ hash of the token, never the token, so a `state.db` read does not yield live
 credentials. Where the current tree already does this, it is carried over; where
 it stores a comparable value, the port moves it.
 
+This phase also extends `migrate --from-rust`. It copies `key_version` and
+`user_smb_secret`, preserving each ciphertext's recorded version, and copies
+only `totp_used` steps still inside the accepted replay window. Expired replay
+rows, `login_challenge` and `oidc_flow` are reported as expired transient flows.
+An auth database that predates the singleton `key_version` table means version
+1, matching the legacy raw master key; an empty or malformed table in a schema
+that declares it is corruption, not another default. An SMB ciphertext whose
+user or recorded key version is missing aborts the import. The Phase 3 AAD
+migration then re-seals TOTP and recoverable share-link ciphertexts before
+authentication starts.
+
 ### 4.3 Core Logic
 
 #### 4.3.1 Argon2 and the gate
@@ -371,8 +382,11 @@ lifecycle is specified here because everything it protects is auth state.
 
 **Loading.** From the file `SC_MASTER_KEY_FILE` points at, defaulting to
 `master.key` in the data directory. Absent, it is generated and written with
-mode `0600`. The key must be **ready before the first request**, not derived
-lazily, because SMB credential rendering needs it at startup.
+mode `0600`. The file is a small versioned key ring so rotation can cross the
+SQLite and filesystem durability boundary recoverably. A legacy raw key is
+read as version 1 and upgraded atomically on the first rotation. The key must be
+**ready before the first request**, not derived lazily, because SMB credential
+rendering needs it at startup.
 
 **Four rules, and each has a reason worth keeping:**
 
@@ -387,34 +401,58 @@ lazily, because SMB credential rendering needs it at startup.
    encryption at rest. It is the default location, so refusing would make the
    default configuration fail to start; the warning is what an operator acts on
    when they set up backups.
+   `state.db` belongs in the regular data backup. The key belongs in a separate
+   protected secret backup. Losing the key makes encrypted TOTP, SMB and share
+   link values unrecoverable, so excluding it from the data backup is not an
+   instruction to leave it without any backup.
 3. **A key version travels with every ciphertext**, as additional
-   authenticated data alongside the user id, so a value cannot be transplanted
-   between accounts or replayed across a rotation.
+   authenticated data alongside its record binding. That binding is the user
+   id for TOTP and SMB values and the token hash for a share-link token, so a
+   value cannot be transplanted between records or replayed across a rotation.
 
    **This is a change, and it is a migration hazard.** Today the NT hash binds
-   the key version into its AAD and the TOTP secret does not: its AAD is the
-   literal `totp` and the user id. AAD is authenticated, so adding a field to it
-   makes every TOTP ciphertext already on disk fail to open, and rule 4 turns
-   that into a refusal to start. The migration therefore re-seals every TOTP
-   secret under the new AAD **in the same transaction that bumps the key
-   version**, and a rotation that cannot do both does neither.
+   the key version into its AAD, while the TOTP secret and imported share-link
+   token do not. AAD is authenticated, so adding a field to it makes every old
+   ciphertext fail to open. The Phase 3 migration therefore decrypts each with
+   its legacy AAD and re-seals it under version-bound AAD in the same state
+   transaction that establishes the version. The Rust rotation path did not
+   rotate link ciphertexts, so a legacy link token that the current master key
+   cannot open was already unrecoverable to its owner. Clear that ciphertext,
+   keep its token hash and public link live, and report the degraded row. Any
+   other migration failure rolls back all rows.
 4. **A startup check refuses to serve on a key that cannot decrypt an existing
-   TOTP secret, and warns on an SMB NT hash it cannot decrypt.** Not one blanket
-   rule, and the asymmetry is the point. A TOTP secret is the only copy of a
-   second factor, so a key that cannot open it means the server is about to lock
-   people out silently. An NT hash is derived material that one password change
-   regenerates, so holding the whole server down for one stale row is worse than
-   the fault. The Rust tree learned this the hard way: the SMB half was fatal
-   once and a single stale row took production down.
+   TOTP secret, and warns on an SMB NT hash or share-link ciphertext it cannot
+   decrypt.** Not one blanket rule, and the asymmetry is the point. A TOTP
+   secret is the only copy of a second factor, so a key that cannot open it
+   means the server is about to lock people out silently. An NT hash is derived
+   material that one password change regenerates. A share-link ciphertext is
+   the owner's recoverable copy of a URL; its hash still authenticates a bearer
+   who already has the URL. Holding the whole server down for either degraded
+   row is worse than the fault. The Rust tree learned this the hard way: the SMB
+   half was fatal once and a single stale row took production down.
 
    What the check prevents either way is the loud failure arriving late: a wrong
    key mounted, the server starting happily, and logins failing one at a time
    with no common cause visible.
 
-**Rotation** generates a new key, re-encrypts every NT hash and every TOTP
-secret under it, and bumps the key version, **all inside one transaction**, then
-swaps the key file. A crash mid-rotation leaves the old key and the old
-ciphertexts, which is the only safe direction to fail in.
+**Rotation cannot be one transaction**, because SQLite cannot commit atomically
+with a key-file rename. It uses a recoverable three-step protocol under one
+exclusive rotation lock:
+
+1. Generate version `N+1` and use `vfs.ReplaceFileDurable` to persist a key ring
+   containing both `N` and `N+1`.
+2. In one `state.db` transaction, decrypt and re-seal every NT hash, TOTP secret
+   and recoverable share-link token under `N+1`, then set the database key
+   version to `N+1`. Any row that cannot be opened aborts this rotation without
+   changing the database.
+3. Use `ReplaceFileDurable` again to compact the key ring to `N+1` only.
+
+Startup selects the key version recorded by `state.db`. If the database still
+names `N` and the ring contains both entries, step 2 did not commit and startup
+discards `N+1`. If the database names `N+1` and the ring contains both, startup
+finishes step 3. If the ring lacks the database's version, startup refuses and
+names the mismatch. A crash at every boundary therefore leaves at least the key
+the committed database requires.
 
 It is a CLI subcommand and not an HTTP route
 ([`2`](stowcloud-2-gate-and-toolchain.md) §5-1), because a master key has no
@@ -470,10 +508,10 @@ password verified, so it discloses nothing an attacker did not already have.
 
 | Phase | Task | Size | Depends on | Owner |
 |---|---|---|---|---|
-| Phase 3a | `password.go`, `gate.go`, the PHC form, the rehash path, the concurrency test | M | Phase 2 | heavycaffeiner |
-| Phase 3b | `session.go`, `apppw.go`, `recovery.go`, `totp.go`, `nthash.go` | M | 3a | heavycaffeiner |
+| Phase 3a | `password.go`, `gate.go`, `credcache.go`, the PHC form, the rehash path, the concurrency test | M | Phase 2.5 | heavycaffeiner |
+| Phase 3b | `session.go`, `apppw.go`, `crockford.go`, `recovery.go`, `totp.go`, `nthash.go`, `masterkey.go`, auth migrations and Rust-import extension | M | 3a | heavycaffeiner |
 | Phase 3c | `login.go`, `ratelimit.go`, `audit.go`, and the enumeration tests | M | 3b | heavycaffeiner |
-| Phase 3d | `internal/acl`: perms, storage, evaluation, the existence-rule test | M | Phase 2 | heavycaffeiner |
+| Phase 3d | `groups.go` and `internal/acl`: perms, storage, evaluation, the existence-rule test | M | Phase 2.5 | heavycaffeiner |
 
 3d is independent of 3a to 3c.
 

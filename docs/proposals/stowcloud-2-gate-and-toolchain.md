@@ -71,8 +71,9 @@ has different versions of all three.
 
 ### 3.2 Non-Goals
 
-- [ ] Any behaviour. No handler, no schema, no syscall. A `main` that prints its
-      version is the whole of `cmd/`.
+- [ ] Any product behaviour. No handler, schema or runtime syscall. `cmd/`
+      contains the complete argv dispatch and honest "not implemented" failures
+      for commands whose owning phase has not landed yet.
 - [ ] Removing the Rust half of the gate. It goes at Phase 13.
 - [ ] A `GOOS=windows` build of anything that touches the filesystem. §4.4
       states what that costs.
@@ -243,11 +244,13 @@ can run somewhere they do not have to be correct is a backend that hides the
 bugs it was built to route around.
 
 **What this costs, stated rather than glossed.** `go test ./...` on Windows runs
-the packages that do not touch the filesystem: `limits`, `clock`, `task`,
-`secret`, `num`, `apierr`, `dav`'s XML scanner, `search`'s codec and ranking,
-`auth`'s hashing, `httpapi`'s middleware order, the config parser. It does not
-run `vfs`, `jail`, `preview`, `watch`, `store`, or any integration test. Those
-need the Linux VM, and the VM becomes a required part of the loop rather than a
+every platform-neutral package and the platform-neutral files in mixed
+packages. That includes `vfs` path parsing, `jail` policy construction,
+`watch` hot-set logic and the SQLite `store`; build tags omit the actual Linux
+syscall implementations and their tests. Filesystem operations, Landlock,
+seccomp, inotify, the preview worker and Linux integration tests need the Linux
+VM. A passing Windows package therefore proves its portable logic, not the
+shipping syscall path, and the VM is a required part of the loop rather than a
 convenience.
 
 **What makes that tolerable** is that it is one command against a running guest,
@@ -402,10 +405,13 @@ registered under the wrong tag, which the graph cannot see.
 
 **Toolchain.** Go 1.25.0 or newer. The floor is not a preference and not the
 language features used here: `golang.org/x/sys` v0.47.0 declares `go 1.25.0`,
-so a 1.24 toolchain refuses the module outright. `go/go.mod` and the CI job's
-`GO_VERSION` move together, and the current stable release is what CI pins.
-`CGO_ENABLED=0` everywhere. No C compiler, no cross-linker, no `zig cc`, which
-deletes `tools/zigcc-musl.ps1` and `scripts/musl-env.sh` at cutover.
+so a 1.24 toolchain refuses the module outright. `go/go.mod` records that
+dependency floor. The CI job separately pins the current stable Go release and
+may therefore be newer; the two values do not have to move together.
+`CGO_ENABLED=0` on every shipping build and every ordinary test. The sole
+exception is D17's `go test -race`, which requires cgo and produces only a test
+binary. No cross-linker and no `zig cc`, which deletes
+`tools/zigcc-musl.ps1` and `scripts/musl-env.sh` at cutover.
 
 **Tools**, installed by the gate under `go/.tools/bin` rather than into
 `GOPATH/bin`: `golangci-lint`, pinned, because a linter whose rule set changes
@@ -427,7 +433,7 @@ nothing more.
 - `Dockerfile`: the stage structure kept, the builder stage replaced, and the
   comment about a second binary that C2 makes obsolete.
 - `crates/sc-server/src/main.rs`: the `healthcheck` argv interception this
-  generalises to the five subcommands in §5-1.
+  generalises to the eleven top-level subcommands in §5-1.
 - `crates/sc-vfs/src/backend/linux.rs:548` and `:304`: the two comments quoted
   in §4.3.3, both recording a bug the portable backend hid.
 - Go: `go help build`, `//go:embed`, `go vet` analyser API, `go version -m`.

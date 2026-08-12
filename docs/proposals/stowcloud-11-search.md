@@ -28,10 +28,11 @@ subtly wrong in a way that a behavioural test does not catch, because a search
 that returns slightly different results still looks like a search.
 
 The on-disk format is private and is not changing, so there is a much stronger
-check available: make the Rust implementation emit fixtures, and require the Go
-implementation to read them and to produce byte-identical output when it writes
-them. A byte-identical index is a much narrower claim than a passing test suite,
-and it is checkable.
+check available: make the Rust implementation emit fixtures, require the Go
+implementation to read them, and compare every format-defined byte exactly.
+The zstd payloads are compared after decompression because independent encoders
+are not required to emit the same frame. This is narrower and more checkable
+than a passing behavioural test suite.
 
 ## 3. Goals & Non-Goals
 
@@ -100,7 +101,14 @@ data/search/names/
 
 ### 4.2 Data Model Changes
 
-None. That is the point.
+The index data remains a rebuildable cache. The one durable exception already
+present in the Rust `index.db` is `index_settings`: an administrator's
+`name_enabled` override cannot be reconstructed from the filesystem or from
+`config.toml`. Phase 8 imports that value into the unified `state.db` settings
+row with a typed merge that preserves every setting already imported from
+`settings.db`. Absence remains absence so the configured default still wins.
+The index payload and generation metadata are rebuilt under `data/search` and
+are not copied.
 
 ### 4.3 Core Logic
 
@@ -119,11 +127,12 @@ generator that emits, into `go/testdata/golden/search/`:
 | `query.tsv` | query, expected hits in expected order, with scores |
 | `hll.tsv` | insert sequence, expected estimate |
 
-The Go implementation must read every one of them and produce identical results,
-and when it writes `base.idx` from the same corpus it must produce the same
-bytes. Where a byte-identical write is impossible for a defensible reason (a map
-iteration order reaching the output, say), the fix is to make the writer's order
-explicit, not to weaken the check.
+The Go implementation must read every fixture and produce identical results.
+When it writes `base.idx` from the same corpus, the header, block directory,
+dictionary and postings must be byte-identical, and each zstd block must decode
+to identical bytes and the recorded uncompressed length. A map iteration order
+reaching any format-defined byte is fixed by making the writer's order explicit,
+not by weakening the check.
 
 **The generator exists**, at `crates/sc-search/examples/golden.rs`, and the
 fixtures are committed with a `README.md` describing each format. It is an
@@ -163,19 +172,20 @@ rather than looking like a complete one.
 **The bounds depend on the storage class**, and that is the same argument §3.2
 makes about the index: a walk on an NVMe array and a walk on a cold rotational
 one are different operations wearing one name. The classification comes from
-the filesystem gate ([`15`](stowcloud-15-deployment.md) §4.3), and it moves two
-numbers:
+the filesystem gate ([`15`](stowcloud-15-deployment.md) §4.3), uses the slowest
+admitted mount a share has encountered, and moves two numbers:
 
-| | SSD or NVMe | rotational or network |
+| | SSD or NVMe | rotational |
 |---|---|---|
 | concurrent searches, server-wide | 4 | 2 |
 | walk deadline | 3 s | 8 s |
 
-A lower concurrency on slow storage is not a smaller allowance, it is a larger
-one: four concurrent seek-bound walks on one array finish later than two do,
-and they take the interactive listing requests down with them. The longer
+A lower concurrency on rotational storage is not a smaller allowance, it is a
+larger one: four concurrent seek-bound walks on one array finish later than two
+do, and they take the interactive listing requests down with them. The longer
 deadline on the same storage is the matching admission that the work genuinely
-takes longer there.
+takes longer there. Network filesystems are not a third class here because the
+registration allow-list refuses them.
 
 **Two stances decide the shape of the walk**, and both are easy to lose:
 
@@ -294,12 +304,14 @@ cache principle applied: a broken cache costs speed, never answers.
 |---|---|---|---|---|
 | Phase 8a | The Rust-side golden-file generator and the committed fixtures | S | none | heavycaffeiner |
 | Phase 8b | `varint.go`, `fold.go`, `trigram.go`, `hll.go`, `rank.go` against the fixtures | M | 8a | heavycaffeiner |
-| Phase 8c | `index/base.go`: read and write, byte-identical | L | 8b | heavycaffeiner |
+| Phase 8c | `index/base.go`: read and write, exact structural bytes and decoded-payload identity | L | 8b | heavycaffeiner |
 | Phase 8d | `index/seg.go`, `index/index.go`: the overlay, the union, the merge gate | M | 8c | heavycaffeiner |
 | Phase 8e | `walk.go`, `estimate.go`, the service | M | 8b, Phase 4 | heavycaffeiner |
+| Phase 8f | import the Rust `index_settings` override into the unified settings row | S | 8e, Phase 2.5 | heavycaffeiner |
 
 8a runs against the Rust tree and can happen at any time, including before
-Phase 0. 8e is the only part that needs the core.
+Phase 0. 8e is the only search implementation part that needs the core. 8f
+waits for the service so the imported setting has a live consumer.
 
 ### 6-2. Dependencies
 
@@ -310,8 +322,8 @@ Phase 0. 8e is the only part that needs the core.
 | `golang.org/x/sys/unix` | `Mmap` for segment reads |
 
 The zstd module has to produce output the Rust `zstd` crate's fixtures decode,
-and vice versa. That is a format guarantee rather than a library one, so it is
-checked by 8c's byte-identical requirement rather than assumed.
+and vice versa. That is a format guarantee rather than an encoder-byte
+guarantee, so 8c checks cross-decoding, uncompressed lengths and decoded bytes.
 
 ## 7. References
 

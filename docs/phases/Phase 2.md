@@ -10,11 +10,12 @@ Read [`Ground rules.md`](Ground%20rules.md) in full, then
 Three SQLite databases split by what losing each one costs, a real migration
 runner, and node ids derived from the file's identity.
 
-Depends on Phase 0. Blocks Phase 3.
+Depends on Phase 0. Blocks Phase 2.5.
 
 ## Milestones
 
-- **2a**: §4.5's derivation, `fileid_override`, the allocation transaction, and
+- **2a**: §4.5's derivation, `fileid_override`, the ordered cross-database
+  allocation writes, and
   the rebuild-identity test.
 - **2b**: `open.go`, `migrate.go`, the pragma order, the pool, the single
   serialised write path.
@@ -35,16 +36,22 @@ Depends on Phase 0. Blocks Phase 3.
   and reproduced.
 - **`node.id` is supplied on insert, not assigned.** It stays
   `INTEGER PRIMARY KEY`; the insert provides the value.
-- **The collision answer is recorded, not recomputed.** Which of two colliding
-  files takes the base id depends on insertion order, which a rebuild does not
-  reproduce. `fileid_override` in `state.db` is the authority and is consulted
-  first, always.
+- **A no-btime identity is unique too.** SQLite treats `NULL` values as
+  distinct in an ordinary unique index. Use the two partial indexes from
+  §4.2.1 and test two inserts of the same `(share, dev, ino, NULL)` identity.
+- **Both sides of a collision are recorded, not recomputed.** Which file takes
+  the base id depends on insertion order. Record the existing holder and the
+  newcomer in one state transaction, consult overrides by identity first, and
+  treat every override id as reserved even when its node is absent from the
+  rebuilding cache.
 - **`busy_timeout` leads the pragma batch.** `journal_mode` needs an exclusive
   lock, and setting the timeout after it is what produced `database is locked`
   on a fresh database in this codebase already.
 - **`foreign_keys = ON` becomes uniform.** Three of the current databases have
-  it. The tables that gain it are `grant`, `dav_prop`, `dav_lock`,
-  `upload_session` and `settings`.
+  it. Every relationship whose parent also lives in `state.db` gets a real
+  foreign key, including grants, sessions and upload sessions belonging to
+  users. Share ids and filesystem identities have no parent table in this
+  database and are validated at their own boundaries.
 - **A schema version higher than this binary knows is a refusal to open.** A
   downgrade silently writing an old shape into a new file is how a rollback
   becomes data loss.
@@ -57,6 +64,9 @@ Depends on Phase 0. Blocks Phase 3.
   refusal to start.
 - **2e can send 2c back.** Its threshold is in §4.3.1 and the fallback is named
   there. Do not improvise a different one under time pressure.
+- **The Rust import publishes atomically.** Build a staged database, close and
+  checkpoint it, then no-clobber rename and fsync the parent. A failed import
+  must be retryable and must not leave `state.db` behind.
 
 ## Done when
 

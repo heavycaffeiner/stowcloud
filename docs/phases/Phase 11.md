@@ -61,9 +61,16 @@ Depends on Phases 1, 3 and 5. Blocks Phase 13.
 - **The ID token's algorithm is chosen by the key, never taken from the
   header.** That closes `alg: none` and algorithm confusion in one check.
 - **Link-only.** The provider authenticates and never creates an account.
-- **A share on overlayfs is refused at registration.** Accepting it produces a
-  deployment that looks healthy and loses file identity months later, after the
-  sync clients have written the wrong thing into their journals.
+- **Filesystem admission is a fail-closed allow-list.** ext4, btrfs, XFS, ZFS
+  and f2fs are supported; tmpfs is supported with a data-loss warning. Refuse
+  overlayfs, FUSE, NFS, CIFS or SMB, squashfs, NTFS and an unknown type. There
+  is no path-based id fallback or read-only share contract in the Go design.
+  Refuse even a named supported type when `statx` does not report birth time;
+  `(dev, ino)` alone cannot distinguish an inode reused after deletion.
+- **The root verdict does not cover nested mounts.** Apply the same allow-list
+  when resolution or walking first crosses each device. An unsupported bind
+  mount rejects the share before its entries or bytes are exposed. Cross-mount
+  copy-then-unlink is available only after both sides pass admission.
 - **A blocked `openat2` is a refusal to start under every policy, `off`
   included.** There is no per-component fallback and none is being built: it
   would be the normalise-then-open shape S1 exists to refuse.
@@ -75,6 +82,11 @@ Depends on Phases 1, 3 and 5. Blocks Phase 13.
 - The gate is green, including `-race`.
 - The render refuses a global bind without `allow_public_bind`, and refuses a
   share name it cannot represent safely.
+- Registration tests admit every supported type and refuse every other known
+  type plus an unknown magic value, with the filesystem named. A refused share
+  does not stop unrelated shares. A nested-mount test places an unsupported
+  filesystem below an admitted root and proves traversal fails closed. A named
+  supported type with no reported birth time is also refused.
 - A dial-guard test refuses a hostname that resolves to a private address at
   connect time.
 - `GET /api/health` names every degradation it can report, including the

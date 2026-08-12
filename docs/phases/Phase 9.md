@@ -41,8 +41,9 @@ Independent of Phases 6, 7 and 8.
 - **Re-derive `DecodeLimits` for Go's decoders.** `image/png` and the Rust
   `image` crate do not allocate the same way, so a limit tuned for one is a
   guess for the other.
-- **`image/gif` decodes every frame.** Apply the limit to the logical screen
-  size before decode, not after.
+- **Use `gif.Decode`, never `gif.DecodeAll`.** DecodeConfig supplies the logical
+  screen bounds for the pre-decode limit, and Decode stops after the first
+  frame instead of materialising the animation.
 - **The graceful limit fires before `RLIMIT_AS` for the common case.** A 40,000
   by 40,000 PNG is an ordinary thing to find in a photo library, and killing a
   worker for it is a bad trade.

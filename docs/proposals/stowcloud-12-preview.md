@@ -185,9 +185,10 @@ for it is a bad trade. The values are re-derived for Go's decoders rather than
 copied from the Rust ones: `image/png` and the `image` crate do not allocate the
 same way, and a limit tuned for one is a guess for the other.
 
-**Decoder-specific note.** Go's `image/gif` decodes every frame of an animation
-into memory. The preset asks for the first frame only, and the limit is applied
-to the logical screen size before decode, not after.
+**Decoder-specific note.** Use `gif.Decode`, which stops after the first frame.
+`gif.DecodeAll` materialises every frame and is forbidden here. Apply the source
+pixel and dimension limits from `gif.DecodeConfig` before decoding the first
+frame; the worker limit remains the backstop for malformed inputs.
 
 #### 4.3.4 EXIF
 

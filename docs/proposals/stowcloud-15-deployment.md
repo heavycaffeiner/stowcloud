@@ -35,10 +35,10 @@ either about the container or about not breaking those neighbours, which is
 principle 3 and stance S6 in
 [`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.2 and §2.5.
 
-What the Go port changes is the builder stage and nothing else. The runtime
-image, the sidecar, the uid contract and the operational surface are the same,
-which is worth stating because a rewrite is exactly when an unrelated
-operational property gets dropped by accident.
+The mechanical language change here is the builder stage. The runtime image,
+the sidecar and the uid contract keep their shape. The filesystem allow-list
+and the truthful weak-validator behaviour are the two recorded operational
+corrections, not accidental drift from the existing deployment contract.
 
 ## 3. Goals & Non-Goals
 
@@ -86,8 +86,8 @@ point, and it has three consequences that are easy to lose:
 
 1. **The health check is the same binary re-invoked with a different argv**,
    because nothing else in the image can run an exec-form probe. This is
-   already the shape the Rust build uses and it generalises to the four
-   subcommands in [`2`](stowcloud-2-gate-and-toolchain.md) §5-1.
+   already the shape the Rust build uses and it generalises to the subcommands
+   in [`2`](stowcloud-2-gate-and-toolchain.md) §5-1.
 2. **The host must pre-create bind-mount directories with the right owner.**
    Docker creates a missing one owned by root, and nothing in the container can
    fix it afterwards. This is documented at the point an operator meets it, in
@@ -151,33 +151,53 @@ second resolver, and an earlier draft of this section claimed one existed.
 
 ### 4.3 The filesystem gate
 
-`statfs` classifies a share's filesystem at registration, and one is refused
-outright:
+`statfs` classifies a share root at registration and every mount first reached
+under that root. Admission is a fail-closed allow-list:
 
 | Filesystem | Verdict |
 |---|---|
 | **overlayfs** | **refused.** A container's writable layer has unstable inodes across restarts and inotify misses lower-layer changes, so the whole file-identity design breaks, including the derived node id in [`5`](stowcloud-5-store-and-schema.md) §4.5 |
 | ext4, btrfs, XFS, ZFS, f2fs | full support; btrfs and XFS additionally get reflink copies |
 | tmpfs | allowed with a warning: data is lost on restart |
-| FUSE (mergerfs, rclone, s3fs) | identity and btime unknown, so path-based ids and a periodic rescan |
-| NFS | inotify cannot see server-side changes, so a shorter rescan interval |
-| CIFS or SMB | as NFS, plus name restrictions, plus a strong warning |
-| squashfs | classified but not special-cased: registration succeeds and the kernel refuses every write with `EROFS`, which surfaces as a 403 |
+| FUSE (mergerfs, rclone, s3fs) | refused. Stability across a process restart or remote remount cannot be proven at registration, and this design has no path-based id mode |
+| NFS | refused for the same identity reason; inotify blindness is secondary once identity cannot be guaranteed |
+| CIFS or SMB | refused for the same identity reason, plus the remote name restrictions that made support partial already |
+| squashfs | refused because the product has no read-only share contract and registration must reject a mount on which every write fails |
+| NTFS | refused because the Go design has not established stable Linux identity, name and notification semantics for this driver |
+| unknown magic | refused; a future or unclassified filesystem is unsupported until its identity and notification behaviour are documented |
 
-**Refusing at registration is the design decision** (S4). The alternative,
+The named type is necessary but not sufficient. `statx` on the admitted root,
+and on each nested mount when first encountered, must report birth time. A
+filesystem instance that omits `STATX_BTIME` is refused because `(dev, ino)` can
+be reused after deletion and cannot uphold the replacement and stable-file-id
+contracts. The optional-birth-time representation remains only for legacy
+non-capability metadata; new registered shares do not create such identities.
+
+**Refusing at registration is the design decision** (S4). `OPEN-QUESTIONS.md`
+Q5 records the compatibility cost and why the surrounding contracts select
+refusal over the Rust tree's path-id fallback. The alternative,
 accepting anything and degrading quietly, produces a deployment that looks
 healthy and loses file identity months later, at which point the sync clients
 have already written the wrong thing into their journals.
 
-The squashfs row is the one honest gap: the answer is right and the diagnosis
-arrives per request instead of once at startup.
+This gate is an allow-list rather than a blacklist. A newly encountered magic
+value cannot silently become supported merely because this version has no name
+for it.
+
+A supported root does not bless an unsupported bind mount below it. Resolution
+and directory walking cache an admission result per encountered device and
+check `fstatfs` before exposing entries or performing an operation on that
+mount. An unsupported or unknown nested mount rejects that share with the mount
+path and filesystem type. A mount added after startup is caught on first
+resolution or watch traversal and changes health to degraded. This closes the
+otherwise trivial route of placing NFS or FUSE below an ext4 share root.
 
 ### 4.4 Mount boundaries and labels
 
 A bind mount inside a share is a mount boundary, and a rename across one is
-`EXDEV`. That is not an error to surface raw: the operation is still possible
-as copy-then-unlink, it is merely slower. So it becomes advance notice before
-the user commits rather than a failure after, which is why
+`EXDEV`. Once both mounts have passed the same admission gate, the operation is
+still possible as copy-then-unlink, it is merely slower. So it becomes advance
+notice before the user commits rather than a failure after, which is why
 [`7`](stowcloud-7-core-domain.md) §5-2 has `ErrCrossShare` carrying which half
 completed rather than a bare failure.
 
@@ -279,7 +299,7 @@ does (D15).
 
 | Condition | Effect |
 |---|---|
-| share on overlayfs | registration refused, named, startup continues without that share |
+| share on any type outside the supported allow-list | registration refused, filesystem named, startup continues without that share |
 | `openat2` blocked by a seccomp profile | refusal to start under every policy including `off`, naming whether the cause was a profile or an old kernel (§4.2) |
 | Landlock or seccomp unavailable | refusal to start under `required`; `degraded` under `preferred` |
 | data directory not writable by the runtime uid | refusal to start, naming the path and the uid |

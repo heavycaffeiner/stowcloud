@@ -42,7 +42,8 @@ suite, and both have Go counterparts that are not the same shape:
 
 - [ ] The twelve steps in the documented order, composed in one file, with a
       test that asserts the order.
-- [ ] One error envelope, one mapping function, one place a status is chosen.
+- [ ] The existing error envelope, with one mapping function and one place a
+      status is chosen for the native REST surface.
 - [ ] The existence rule enforced structurally: unlistable is 404 everywhere.
 - [ ] Every `http.Server` timeout set explicitly, with a test (D13).
 - [ ] The five REST changes in §4.4 and no others.
@@ -77,11 +78,11 @@ suite, and both have Go counterparts that are not the same shape:
 internal/httpapi
   chain.go        the twelve steps, composed, in source order
   mw/             one file per step
-  apierr/         Code, MessageKey, Error, the single mapper
+  apierr/         Code, MessageKey, Error, the native REST mapper
   route/          the table: method, pattern, required scope, handler
   handler/
-    browse.go  upload.go  search.go  share.go  link.go  trash.go
-    settings.go  session.go  recent.go  preview.go  archive.go
+    browse.go  upload.go  search.go  share.go  link.go  folder_share.go
+    operation.go  trash.go  settings.go  session.go  recent.go  preview.go  archive.go
     setup.go   the first-run bootstrap, and the gate that closes it
   static/         the embedded SPA
   ws/             the change channel
@@ -139,9 +140,9 @@ rewrite:
   not through Go.
 
 **1. RequestID** mints a v4 UUID, puts it in the request context, and writes it
-back as an `Sc-Trace` response header. It is also the envelope's `trace` field
-(§4.3.2), so a user reporting a failure hands over one value that appears in
-both the response they saw and the log line that produced it.
+back as an `Sc-Trace` response header. The same value appears in the log line
+that produced the response. It is not duplicated in the JSON body, because the
+existing envelope has no trace field.
 
 **2. TrustedProxy** is the one with fail-closed rules that break quietly when
 reimplemented casually, so they are restated as testable statements:
@@ -159,7 +160,8 @@ reimplemented casually, so they are restated as testable statements:
   request pick its own address out of a header.
 - The placeholder for an unattributable request is `0.0.0.0`, chosen because it
   is unroutable and therefore cannot collide with a real client's address. It is
-  its own rate-limit bucket, shared with nothing.
+  the shared rate-limit bucket for all unattributable requests and cannot
+  collide with a real client's bucket.
 
 Hop parsing accepts the four shapes proxies actually emit: `1.2.3.4`,
 `1.2.3.4:51234`, `[2001:db8::1]`, `[2001:db8::1]:443`. A fuzz target covers it
@@ -177,23 +179,32 @@ applied before the handler reads a byte. XML routes get the smaller limit.
 virtual-path ACL check is not here: it happens inside `core.Resolve`, because
 the check needs the resolved share and the two would otherwise disagree.
 
-**11. ErrorMapper** is the only place a status code is chosen, and it takes a
-typed error. **12. AuditSink** sees the handler's result before the mapper
-turns it into a response, which is why both sit innermost.
+**11. ErrorMapper** is the only place a native REST status code is chosen, and
+it takes a typed error. **12. AuditSink** sees the handler's result before the
+mapper turns it into a response, which is why both sit innermost.
 
 #### 4.3.2 The envelope
 
 ```go
-// Error is what reaches a client. Msg is a catalogue key with placeholders,
-// never a sentence: the server does not decide what language a reader wants,
-// and lower-layer error text never reaches the wire (D15).
+// Envelope preserves the existing native REST wire shape. Message is a stable
+// generic fallback, never lower-layer text. Localized data lives in Detail as
+// reason_key and reason_params. Sc-Trace is a response header.
+type Envelope struct {
+    Error Error `json:"error"`
+}
+
 type Error struct {
-    Code    Code      `json:"code"`
-    Msg     MessageKey `json:"msg"`
-    Args    []Arg     `json:"args,omitempty"`
-    TraceID string    `json:"trace"`
+    Code    Code           `json:"code"`
+    Message string         `json:"message"`
+    Detail  map[string]any `json:"detail,omitempty"`
 }
 ```
+
+`MessageKey` and `Arg` remain useful internal types. The responder translates
+them to `detail.reason_key` and `detail.reason_params`, preserving the client
+contract instead of introducing a second envelope. The browser never renders
+`message` or `detail.reason`. An internal 500 has no `detail`; correlation uses
+the `Sc-Trace` header.
 
 One mapper from domain error to `(status, Error)`, a `switch` over `errors.Is`,
 and the only place a status is chosen **for this surface**.
@@ -309,7 +320,7 @@ frames, control-frame handling, close codes and fragmentation all come back. The
 Phase 5f task is to choose against the real protocol, and the honest default is
 a maintained WebSocket module rather than an in-tree writer.
 
-### 4.4 The five REST changes
+### 4.4 The five REST surface adaptations
 
 The envelope, the route shapes and the session model are kept. These five change
 because an existing proposal records a defect, and nothing else changes:
@@ -318,7 +329,7 @@ because an existing proposal records a defect, and nothing else changes:
 |---|---|---|
 | Share API paths | one vocabulary; the subpath is named explicitly rather than inferred | a share label was prefixed onto a path that already carried the grant's subpath, and a link had no way to name a subpath at all |
 | Recency query | ISO-8601 timestamps | a bare date literal made the query a 400 on both phone apps |
-| Folder size | one rollup field with a documented unit | no client read the recursive size correctly |
+| Folder listing | one rollup field with a documented unit, plus `etag_weak` for the existing ETag field | no client read the recursive size correctly, and a metadata token was presented as a strong validator |
 | Settings | typed values with declared ranges, and a refusal that names the field | nine defects on the settings screen, including a lower layer's reason printed raw in one language |
 | Archive listing | listed from the file, with the cost bound stated in the response | the listing read the directory instead of the archive |
 
@@ -352,8 +363,11 @@ watching and can fix it. The same entry is **dropped with a warning at boot**,
 because refusing there would make a server unbootable over a typo committed
 weeks ago. Validation therefore lives on both paths and does different things.
 
-The compatibility mounts are not touched at all. Their shape is set by the
-clients, and [`stowcloud-13-compat-nc.md`](stowcloud-13-compat-nc.md) owns them.
+The compatibility mounts keep their route and payload vocabulary. Their shape
+is set by the clients, and
+[`stowcloud-13-compat-nc.md`](stowcloud-13-compat-nc.md) owns them. They still
+inherit the core's standards correction for file validators: the same metadata
+token is emitted as weak rather than falsely strong.
 
 ## 5. API Design
 
@@ -382,8 +396,9 @@ func Table(s *State) []Route
 package apierr
 
 // Map turns a domain error into a status and a wire error. It is the only
-// function in the tree that names an HTTP status, and the only one that
-// decides whether a refusal is visible as 403 or hidden as 404.
+// function for the native REST surface that names an HTTP status, and the only
+// one on that surface that decides whether a refusal is visible as 403 or
+// hidden as 404. TUS, WebDAV and compatibility each have their own mapper.
 func Map(err error) (int, *Error)
 ```
 
@@ -396,15 +411,19 @@ func Map(err error) (int, *Error)
 | 403 | authenticated and refused, only where the caller may know the target exists |
 | 404 | not found, or not listable by this caller |
 | 405 | method not allowed on this mount |
-| 409 | conflict, carrying the current ETag |
-| 412 | precondition failed |
+| 409 | state or namespace conflict without a supplied validator |
+| 410 | a formerly valid public or setup capability is permanently gone |
+| 412 | supplied precondition failed, carrying the current ETag |
 | 413 | over a D5 limit, and the limit is in the response |
 | 415 | unsupported media type |
 | 416 | unsatisfiable range |
+| 422 | syntactically valid input that fails a named field or domain constraint |
 | 423 | locked |
 | 429 | rate limited |
-| 500 | unhandled; trace id only, never internal text |
+| 500 | unhandled; no detail or internal text, correlation through `Sc-Trace` |
+| 501 | a recognized operation that this build does not implement |
 | 503 | a named subsystem is unavailable |
+| 507 | quota or the configured free-space floor refused the write |
 
 ## 6. Implementation Plan
 
@@ -415,7 +434,7 @@ func Map(err error) (int, *Error)
 | Phase 5a | `chain.go` and `mw/`: the twelve steps, the order test, the proxy fuzz target | M | Phase 3 | heavycaffeiner |
 | Phase 5b | `apierr/`: the envelope, the mapper, the existence-rule test | S | 5a | heavycaffeiner |
 | Phase 5c | `route/`: the table, startup validation, scope wiring | S | 5a, 5b | heavycaffeiner |
-| Phase 5d | `handler/`: browse, session, settings, trash, link, share, recent | L | 5c, Phase 4 | heavycaffeiner |
+| Phase 5d | `handler/`: browse, session, settings, trash, share-link, admin folder-share, operation, recent, archive, setup | L | 5c, Phase 4 | heavycaffeiner |
 | Phase 5e | `internal/server`: TLS, config, wiring, shutdown, health, the D13 test | M | 5a | heavycaffeiner |
 | Phase 5f | `static/` and `ws/` | S | 5c | heavycaffeiner |
 

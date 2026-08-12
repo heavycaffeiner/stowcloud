@@ -14,9 +14,12 @@
 Replace the Rust backend (99,614 lines across 16 crates) with a Go
 implementation, cut over in one step rather than migrated subsystem by
 subsystem. The Go tree lives beside `crates/` until the cutover commit removes
-the Rust one. The REST API and the on-disk schema are redesigned; the protocols
-set outside this repository (RFC 4918 WebDAV, the Nextcloud sync clients, SMB)
-keep their wire behaviour because they are not ours to change.
+the Rust one. The REST API changes only in the five places named in document 8,
+and the on-disk schema is redesigned. Protocols set outside this repository
+(RFC 4918 WebDAV, the Nextcloud sync clients, SMB) keep their vocabulary and
+semantics. The one intentional validator correction is explicit:
+metadata-derived file ETags become weak because Linux exposes no inode change
+version.
 
 This document carries the program-level part: why, what the port keeps and what
 it cannot, the shape of the plan, and the fourteen defects a read of the current
@@ -47,11 +50,12 @@ here where it decides something, and git history holds the originals.
 Everything the product does follows from five positions. They are restated here
 in full rather than cited, because this directory has to be enough on its own:
 
-1. **The filesystem is the only source of truth.** The database is a cache,
-   deletable and rebuildable. Nothing may treat "not in the database" as "the
-   file does not exist", which is exactly where database-of-record designs
-   fail. The exception is stated rather than implied: accounts, grants and
-   share links are not reconstructible from the tree and must be backed up.
+1. **The filesystem is the only source of truth for files.** `cache.db` is
+   deletable and rebuildable, and nothing may treat "not in the cache" as "the
+   file does not exist". `state.db` is a separate durable record for facts the
+   filesystem cannot reconstruct, including accounts, grants, sessions,
+   settings and share links. The split is explicit so the cache rule is never
+   misread as permission to delete durable state.
 2. **A path is a kernel handle, not a string.** Every access resolves through a
    share root's directory descriptor. String concatenation followed by a prefix
    check is TOCTOU-prone and forbidden.
@@ -165,14 +169,18 @@ a way the Rust tree did not:
 - **S8 with the jail.** The forked worker is gone and the process boundary is
   not. [`4`](stowcloud-4-jail-and-hardening.md) replaces the mechanism and
   keeps the property, and it costs more memory per worker to do so.
-- **S5 with everything.** More of this port is unmeasured than the Rust tree's
-  documents are, because the code does not exist yet. Every phase document
-  marks its unverified premises in the sentence that depends on them, and
+- **S5 with everything.** Later phases of this port remain unimplemented, while
+  completed phases now have code that can replace assumptions with evidence.
+  Every phase document marks an unverified premise in the sentence that depends
+  on it, and implemented phases are audited against the tree.
   [`17`](stowcloud-17-parity-and-cutover.md) is the only phase allowed to state
-  a number.
-- **S16 with this directory.** These documents describe code that does not exist,
-  so they invert the directory's house rule. That inversion ends at cutover,
-  and [`17`](stowcloud-17-parity-and-cutover.md) §4.4 step 6 is where.
+  product parity, footprint or end-to-end performance numbers. A phase may
+  record a predeclared decision benchmark, such as the SQLite driver threshold
+  in document 5, but may not turn it into a product claim.
+- **S16 with this directory.** Prospective sections invert the directory's house
+  rule; implemented sections do not get that exemption and must describe the
+  tree. The remaining inversion ends at cutover, and
+  [`17`](stowcloud-17-parity-and-cutover.md) §4.4 step 6 is where.
 
 ## 3. Goals & Non-Goals
 
@@ -191,8 +199,8 @@ a way the Rust tree did not:
 - [ ] Every finding in §4.3 closed, each with a test that fails without the fix.
 - [ ] One defensive-coding standard applied across the tree and enforced by
       lints in `scripts/verify.sh`, not by review.
-- [ ] `CGO_ENABLED=0`, **one** statically linked binary with five subcommands,
-      in a distroless image no larger than today's.
+- [ ] `CGO_ENABLED=0`, **one** statically linked binary with eleven top-level
+      subcommands, in a distroless image no larger than today's.
 - [ ] The repository's recorded stack decision brought back in line with the
       shipped one, and this directory left as the only specification a reader
       needs.
@@ -206,7 +214,8 @@ a way the Rust tree did not:
 - [ ] Windows or macOS as a deployment target.
 - [ ] Removing `crates/` before the cutover commit.
 - [ ] A UI redesign. `web/` keeps its components, its design system and its
-      routes; only the API client layer is rewritten.
+      routes. The API client adapts, and the existing edit-conflict path gets
+      the narrow change required to retry a weak precondition unconditionally.
 - [ ] Replacing Samba. The SMB sidecar and the `smb.conf` generation contract
       are unchanged in behaviour.
 - [ ] Any performance claim that has not been measured on the Linux runtime.
@@ -224,7 +233,8 @@ a way the Rust tree did not:
 #### 4.1.1 Repository layout during the port
 
 ```
-crates/           the Rust implementation, untouched, deleted at cutover
+crates/           the Rust reference, kept buildable and changed only for
+                  cross-port fixtures and measurements, deleted at cutover
 go/               the Go implementation; layout in stowcloud-2 §4.1
 web/              unchanged except web/src/lib/api
 ```
@@ -255,6 +265,7 @@ front matter    0 motivation and findings    1 defensive standard
 Phase 0         2 gate and toolchain
 Phase 1         3 vfs and paths              4 jail and hardening
 Phase 2         5 store and schema
+Phase 2.5       corrections to implemented Phase 0 to 2 contracts
 Phase 3         6 auth and acl
 Phase 4         7 core domain
 Phase 5         8 http and api
@@ -497,7 +508,10 @@ A rewrite landing in the same nanosecond with the same length is invisible to
 lost. Unlikely, and likeliest in the case principle 3 says to expect: another
 program rewriting a file in place.
 
-**Closed by** [`7`](stowcloud-7-core-domain.md) §4.3.2.
+**Closed by** [`7`](stowcloud-7-core-domain.md) §4.3.2. The Go design does not
+pretend metadata is a strong validator: it emits a weak ETag and refuses a weak
+`If-Match`, so the caller must explicitly choose an unconditional retry instead
+of receiving a false no-conflict result.
 
 #### F12. A configuration mode that is not implemented
 
@@ -559,19 +573,26 @@ language.
 
 No API. Every surface is specified in the phase document that owns it, and the
 program-level contract is only this: the REST envelope and route shapes are
-kept except for the five changes in [`8`](stowcloud-8-http-and-api.md) §4.4, and
-the compatibility mounts are not touched at all.
+kept except for the five adaptations in
+[`8`](stowcloud-8-http-and-api.md) §4.4. Compatibility mounts keep their
+existing vocabulary and shapes; file validators are the one standards
+correction, becoming truthfully weak because Linux exposes no inode change
+version.
 
 ### 5-2. Error Handling
 
-The program-level error kinds, each mapped to a status by the single mapper in
-[`8`](stowcloud-8-http-and-api.md) §4.3.2:
+The foundational program-level error kinds. Subsystem documents extend this
+list, and the native REST mapper in
+[`8`](stowcloud-8-http-and-api.md) §4.3.2 maps them to statuses for that
+surface:
 
 | Kind | Meaning |
 |---|---|
 | `ErrNotFound` | the object does not exist, or the caller may not know that it does |
 | `ErrDenied` | ACL refusal where the caller may know the target exists |
-| `ErrConflict` | lost-update, ETag mismatch, `RENAME_NOREPLACE` collision |
+| `ErrPrecondition` | a supplied validator did not strongly match, carrying the current validator |
+| `ErrExists` | a no-clobber create or rename found the destination |
+| `ErrConflict` | another state or namespace conflict without a supplied validator |
 | `ErrInvalid` | failed a trust-boundary validation, with the boundary named |
 | `ErrTooLarge` | a D5 limit refused it, with the limit named |
 | `ErrSymlinkDenied` | `ELOOP` under the share's symlink policy |
@@ -596,7 +617,8 @@ column.
 | 0 | module, lint set, gate, the four assumptions | [2](stowcloud-2-gate-and-toolchain.md) | S | none |
 | 1 | vfs, paths, jail, hardening | [3](stowcloud-3-vfs-and-paths.md), [4](stowcloud-4-jail-and-hardening.md) | L | 0 |
 | 2 | cache.db, state.db, migrations | [5](stowcloud-5-store-and-schema.md) | M | 0 |
-| 3 | auth, acl | [6](stowcloud-6-auth-and-acl.md) | L | 2 |
+| 2.5 | correct Phase 0 to 2 contract violations found by the full-document audit | [Phase 2.5](../phases/Phase%202.5.md) | M | 1, 2 |
+| 3 | auth, acl | [6](stowcloud-6-auth-and-acl.md) | L | 2.5 |
 | 4 | the core domain | [7](stowcloud-7-core-domain.md) | L | 1, 2, 3 |
 | 5 | http, middleware, REST | [8](stowcloud-8-http-and-api.md) | XL | 3, 4 |
 | 6 | upload | [9](stowcloud-9-upload.md) | M | 4 |
@@ -618,7 +640,10 @@ directly. Two orderings follow from it and are easy to get wrong:
 - **Phase 10 needs all four of 6, 7, 8 and 9**, one per surface: chunked upload,
   the WebDAV mounts, mobile search, and the thumbnail endpoints.
 
-Phase 13 is the only phase that may claim a performance or footprint number.
+Phase 13 is the only phase that may claim product parity, footprint or
+end-to-end performance. A predeclared engineering decision benchmark may be
+recorded in its owning phase; Phase 2's SQLite threshold is the one current
+example.
 
 Each phase ends green on the full gate, including `-race`, closes the findings
 assigned to it, and leaves no `TODO` for a later phase to find.
@@ -665,7 +690,7 @@ exists and names its own absence where one does not.
 | `modernc.org/sqlite` | `rusqlite`, `r2d2` | pure-Go SQLite; the alternative is cgo, which costs the static build |
 | `github.com/klauspost/compress` | `zstd`, `ruzstd` | zstd |
 | `github.com/BurntSushi/toml` | `toml` | no stdlib TOML. Enters at Phase 5 ([`8`](stowcloud-8-http-and-api.md) §6-2) |
-| a pure-Go BLAKE3 | `blake3` | a client-facing TUS checksum algorithm, so it cannot be swapped for a stdlib hash. Enters at Phase 6 ([`9`](stowcloud-9-upload.md) §6-2) |
+| a pure-Go BLAKE3 | `blake3` | the directory ETag must stay wire-compatible and TUS also exposes BLAKE3 as a client-selected checksum. Enters at Phase 4 ([`7`](stowcloud-7-core-domain.md) §6-2) and is reused by Phase 6 ([`9`](stowcloud-9-upload.md) §6-2) |
 
 Two more are **conditional and not committed to**, listed so that adding one is
 a diff to this table rather than a surprise: a small HTTP router, if

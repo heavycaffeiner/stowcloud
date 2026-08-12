@@ -21,12 +21,16 @@ are not infallible. They are still the contract.
 
 ## Rules that are not negotiable
 
-1. **`CGO_ENABLED=0`** on every build and every test. It is the whole
-   static-binary story and it is what constrains the SQLite driver choice.
+1. **`CGO_ENABLED=0`** on every shipping build and every ordinary test. It is
+   the whole static-binary story and it is what constrains the SQLite driver
+   choice. D17's `go test -race` is the sole exception: the detector requires
+   cgo and produces a test binary that never ships.
 2. **D1 through D20 in proposal 1 are enforced by lints and tests, never by
    care.** A rule with no mechanism is not a rule. Build the mechanism.
-3. **Never claim parity, performance or footprint.** Phase 13 is the only phase
-   permitted to state a measured number.
+3. **Never claim product parity, footprint or end-to-end performance.** Phase
+   13 owns those claims. A phase may record a predeclared engineering decision
+   benchmark, such as Phase 2's SQLite driver threshold, without presenting it
+   as product performance.
 4. **A phase is not done while a finding it owns is open.** Proposal 0 §6-1
    maps findings to phases.
 5. **Tests touching Linux syscalls do not run on the Windows host.** Use

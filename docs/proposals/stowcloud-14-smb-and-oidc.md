@@ -263,9 +263,11 @@ over who has an account stays here.
 ```go
 package smb
 
-// Render produces smb.conf. It refuses rather than emitting a file that would
-// bind a non-private interface, and it refuses rather than escaping a share
-// name it cannot represent safely.
+// Render produces the loopback-only smb.conf baseline and the policy consumed
+// by the sidecar. A pinned global interface without allow_public_bind is
+// refused here; discovered host interfaces are classified and expanded by the
+// sidecar in the namespace that actually binds them. Unsafe share names and
+// paths are always refused.
 func Render(cfg Config, shares []Share) ([]byte, error)
 
 package oidc
@@ -293,7 +295,7 @@ func (c *Client) VerifyIDToken(ctx context.Context, raw string, nonce string) (C
 
 | Error | Meaning |
 |---|---|
-| `ErrBindRefused` | the computed list would bind a global address without `smb.allow_public_bind`, or names an address this host is not attached to |
+| `ErrBindRefused` | a pinned interface is global without `smb.allow_public_bind`, or the pinned value is invalid. Attachment of discovered interfaces is decided by the sidecar, not by the core process |
 | `ErrUnsafeValue` | a value cannot be represented in `smb.conf` safely |
 | `ErrAddressBlocked` | the dial guard refused the resolved address |
 | `ErrDiscovery` | the document failed validation, with the field named |

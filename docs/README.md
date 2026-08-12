@@ -4,12 +4,13 @@ These specify the **Go backend**: what it does, why it is shaped that way, and
 what each phase of building it has to deliver. They replaced the proposals that
 specified the Rust backend, which described code this plan deletes.
 
-Every one of them is `Status: Draft`, and unlike the directory's previous
-occupants they describe code that does not exist yet. The house rule there
-("written from what is built, not from what was planned") is inverted by
-necessity, so each document states its assumptions where it depends on
-something unverified rather than asserting it. That inversion ends at cutover;
-[17](proposals/stowcloud-17-parity-and-cutover.md) §4.4 is where.
+Every one of them is `Status: Draft`. They began as specifications for a port
+that did not exist; Phases 0 through 2 now have implementation to audit, while
+later phases remain prospective. The house rule ("written from what is built,
+not from what was planned") is therefore applied to completed phases and
+temporarily inverted for future ones. Each prospective claim names an
+unverified assumption instead of presenting it as fact. That inversion ends at
+cutover; [17](proposals/stowcloud-17-parity-and-cutover.md) §4.4 is where.
 
 ## Reading order
 
@@ -43,8 +44,8 @@ Two directories sit beside them and are not part of the port:
 
 | Directory | Content |
 |---|---|
-| [`proposals/frontend/`](proposals/frontend/stowcloud-0-frontend.md) | the SvelteKit SPA: virtual scroll, the upload worker, i18n, the byte budgets. `web/` is unchanged by the port, so this proposal still describes what is built |
-| [`proposals/design/`](proposals/design/) | design-system work, written against the frontend rather than the backend |
+| [`proposals/frontend/`](proposals/frontend/stowcloud-0-frontend.md) | the SvelteKit SPA: virtual scroll, the upload worker, i18n, the byte budgets. The port keeps that design and limits UI work to the API adaptations and the existing weak-ETag conflict path |
+| [`proposals/design/`](proposals/design/) | auxiliary design records. The grid audit targets the frontend; the SMB record is a superseded Rust-era design and is not a Go-port contract |
 
 ## The five principles
 
@@ -55,7 +56,7 @@ of truth, a path is a kernel handle rather than a string, a shared folder is not
 ours, the compat layer does not invade the core, and the default is the
 restrictive one.
 
-## The contradiction ledger
+## The original contradiction ledger
 
 Five places where an early draft of this plan and the codebase disagreed, found
 by splitting the plan per phase and checking each claim against the tree it
@@ -65,8 +66,8 @@ each entry records a premise that looked right and was not.
 | # | Contradiction | Resolution |
 |---|---|---|
 | C1 | The draft dropped BLAKE3 for SHA-256 on the grounds that every digest is an internal cache value. It is not: `Checksum::Blake3` is a TUS `Upload-Checksum` value a client sends (`crates/sc-upload/src/model.rs:95`). | BLAKE3 stays, as a Go module. The directory ETag keeps the same hash, because changing it for no reason invalidates every cached rollup at cutover. [9](proposals/stowcloud-9-upload.md) §4.3.3. |
-| C2 | The draft shipped two binaries while also targeting an image no larger than today's. Two Go binaries roughly double it, and the `healthcheck` subcommand already in `Dockerfile` shows the argv dispatch that makes a second one unnecessary. | One binary, five subcommands. [2](proposals/stowcloud-2-gate-and-toolchain.md) §4.1 for the layout, [4](proposals/stowcloud-4-jail-and-hardening.md) §4.3.2 for what the worker does at startup. |
-| C3 | The draft kept the portable filesystem backend "so the tree builds on Windows", while also making Windows a non-target. That backend is what hid two bugs that broke every write and every upload finalize on the only platform that ships. | No portable backend. `GOOS=linux go build` and `go vet` run on the Windows box with no toolchain at all; the test suite runs in the Linux VM. [2](proposals/stowcloud-2-gate-and-toolchain.md) §4.3.3 states what that costs. |
+| C2 | The draft shipped two binaries while also targeting an image no larger than today's. Two Go binaries roughly double it, and the `healthcheck` subcommand already in `Dockerfile` shows the argv dispatch that makes a second one unnecessary. | One binary, eleven top-level subcommands. [2](proposals/stowcloud-2-gate-and-toolchain.md) §4.1 for the layout, [4](proposals/stowcloud-4-jail-and-hardening.md) §4.3.2 for what the worker does at startup. |
+| C3 | The draft kept the portable filesystem backend "so the tree builds on Windows", while also making Windows a non-target. That backend is what hid two bugs that broke every write and every upload finalize on the only platform that ships. | No portable backend. The Windows Go toolchain cross-builds and vets the Linux target; the resulting test binaries run in a Linux VM that needs no Go toolchain. [2](proposals/stowcloud-2-gate-and-toolchain.md) §4.3.3 states what that costs. |
 | C4 | The draft deleted `node.flags`' `PINNED` bit without noting that `node.id` is `oc:fileid` on the wire (`crates/sc-compat-nc/src/props.rs:282`). Deleting the cache re-mints every id, so every sync client sees every file as new. | Resolved by design rather than disclaimer: [5](proposals/stowcloud-5-store-and-schema.md) §4.5 derives the id from the file's identity. The collision case is recorded durably rather than allowed to conflate two files, which this codebase has already had happen once. |
 | C5 | The draft said the distroless base ships a CA bundle, while `Cargo.toml` records `webpki-roots` being chosen precisely because it does not guarantee one. | The OIDC client takes an explicit pool and refuses to start with an empty one. [14](proposals/stowcloud-14-smb-and-oidc.md) §4.4.2. |
 
@@ -88,7 +89,8 @@ subsystem it belongs to, because a non-goal without a reason gets re-proposed
 every six months.
 
 **Where a document depends on an unverified fact** about Go, the standard
-library or a module, it says so in the sentence that depends on it. A proposal
-for code that does not exist yet cannot also pretend its premises are measured.
+library or a module, it says so in the sentence that depends on it. A
+prospective phase cannot pretend its premises are measured; an implemented
+phase must be checked against the tree instead of retaining the assumption.
 
 `scripts/verify.sh` is what decides whether a change is releasable.

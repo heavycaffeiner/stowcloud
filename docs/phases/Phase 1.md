@@ -10,7 +10,7 @@ Read [`Ground rules.md`](Ground%20rules.md) in full, then
 
 The security core. Principle 2 lives here and everything else waits on it.
 
-Depends on Phase 0. Blocks Phase 4, and Phase 9 needs its jail.
+Depends on Phase 0. Blocks Phase 2.5 and Phase 4, and Phase 9 needs its jail.
 
 ## Milestones
 

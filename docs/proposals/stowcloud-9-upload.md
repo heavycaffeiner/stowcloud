@@ -114,6 +114,14 @@ loss dressed as cleanup.
 The interval set is stored as rows rather than a blob, so a partially written
 set is not a corrupt one.
 
+This phase adds the active `upload_alias` rows that let `/dav-uploads/{tid}`
+find an existing session after restart, and extends the Rust importer to copy
+them. It also maps `upload_chunk_settings` into the typed settings
+representation. `upload_touched_dirs` is the explicit exception: the metadata
+cache is not imported, so there is no old aggregate left for that invalidation
+debt to invalidate. The migration report names it rebuildable rather than
+silently ignoring it.
+
 ### 4.3 Core Logic
 
 #### 4.3.1 The interval set
@@ -156,9 +164,9 @@ for SHA-256 on the grounds that every digest here is internal, and
 `Checksum::Blake3` is a value a client puts in a TUS `Upload-Checksum` header.
 
 - CRC32C is `hash/crc32` with the Castagnoli table, standard library.
-- BLAKE3 is a module. The choice is made here, on one criterion: it must build
-  and run with `CGO_ENABLED=0`, with any assembly path optional rather than
-  required.
+- BLAKE3 is the module selected in Phase 4 for directory ETags. This phase
+  reuses that choice; it must continue to build under `CGO_ENABLED=0`, with any
+  assembly path optional.
 
 Whole-file verification takes `(algorithm, expected)` and fails the finalize on
 a mismatch, leaving the part file in place so the client can retry rather than
@@ -175,12 +183,16 @@ discarding what it uploaded.
    read back here, so a read-only reopen would fail the verification it was
    opened for.
 3. Publish through the durable-write helper: mode and ownership restored,
-   `fdatasync`, `renameat2`, parent `fsync`.
-4. Invalidate the directory's generation.
-5. Delete the session row in the same transaction that records the publish.
+   `fdatasync`, `renameat2`, parent `fsync`. This rename is the commit point.
+4. Invalidate the directory's generation. Cache invalidation failure is logged
+   and repaired by revalidation; it cannot roll back a published file.
+5. Delete the session row. A failure here is cleanup debt and is retried by the
+   sweep; it is not reported as a resumable upload after the destination exists.
 
-A failure at any step leaves the session resumable. Nothing deletes a part file
-except an explicit termination or the sweep.
+A failure before the publish leaves the session resumable. Once the durable
+rename succeeds, finalize is idempotently complete even if cache invalidation or
+session cleanup fails. Nothing deletes an unpublished part file except an
+explicit termination or the sweep.
 
 #### 4.3.5 Spool modes
 
@@ -239,9 +251,10 @@ func (e *Engine) Create(ctx context.Context, r core.Resolved, spec SessionSpec) 
 // failed chunk gets the truth rather than the part file's size.
 func (e *Engine) Offset(ctx context.Context, id SessionID) (uint64, error)
 
-// Finalize verifies and publishes. On any failure the session stays resumable
-// and the part file stays on disk: discarding an upload because its last step
-// failed is data loss, not cleanup.
+// Finalize verifies and publishes. A failure before the durable rename leaves
+// the session resumable and its part file intact. After the rename it returns
+// the published entry even if best-effort invalidation or cleanup must be
+// retried, because the filesystem commit cannot be rolled back.
 func (e *Engine) Finalize(ctx context.Context, id SessionID, verify *Verify) (core.Entry, error)
 ```
 
@@ -273,9 +286,10 @@ func (e *Engine) Finalize(ctx context.Context, id SessionID, verify *Verify) (co
 |---|---|---|---|---|
 | Phase 6a | `intervals.go` and its property tests | S | Phase 0 | heavycaffeiner |
 | Phase 6b | `store.go`, `engine.go`: lifecycle, the write path, the two locks | M | 6a, Phase 4 | heavycaffeiner |
-| Phase 6c | `verify.go`, and the BLAKE3 module decision | S | 6b | heavycaffeiner |
+| Phase 6c | `verify.go`, reusing the Phase 4 BLAKE3 module | S | 6b | heavycaffeiner |
 | Phase 6d | `spool.go`: both modes, assembly by `copy_file_range` | M | 6b | heavycaffeiner |
 | Phase 6e | `sweep.go`, `settings.go` | S | 6b | heavycaffeiner |
+| Phase 6f | state migration and Rust-import extension for aliases and chunk settings | S | 6b | heavycaffeiner |
 
 6a can start immediately; it depends on nothing but the limits package.
 

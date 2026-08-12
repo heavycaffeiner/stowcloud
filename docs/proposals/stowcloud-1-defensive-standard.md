@@ -40,7 +40,7 @@ that only a careful author enforces is a stance a tired author does not:
 | Stance | Becomes |
 |---|---|
 | S1, by construction not by validation | D10's three unconvertible path types, and the `.`/`..` rejection in [`3`](stowcloud-3-vfs-and-paths.md) §4.3.6 |
-| S2, existence is never revealed | D15's `MessageKey`, and the single mapper in [`8`](stowcloud-8-http-and-api.md) §4.3.2 that is the only function choosing a status |
+| S2, existence is never revealed | D15's `MessageKey`, and the native REST mapper in [`8`](stowcloud-8-http-and-api.md) §4.3.2 that is the only function choosing a status for that surface |
 | S3, a downgrade is loud | D3 |
 | S5, measured not asserted | D5's named limits, each with a test that the limit is what refuses rather than that a large input happens to fail |
 | S6, the neighbours' access survives us | D1, which is why F7's three discarded results are a rule and not a nit |
@@ -145,8 +145,10 @@ under the wrong ABI is worse than no filter, because it is believed.
 
 **D5. Every input is bounded, and the bound is a named constant.**
 
-One file, `internal/limits`, holds every one of them. Nothing takes a magic
-number, and nothing takes a limit as a parameter that a caller could widen.
+One file, `internal/limits`, holds every default and hard outer bound. Nothing
+takes a magic number. A request cannot widen a limit. The authenticated admin
+settings surface may lower a live value or move it up to the compiled-in outer
+bound, and validation refuses anything outside that range.
 
 | Limit | Value | Refuses with |
 |---|---|---|
@@ -252,9 +254,14 @@ once. Gate: a grep for `time.Now(` outside `internal/clock`. Closes F10.
 
 **D9. `crypto/rand` only.** Gate: a grep for `math/rand` in any import block.
 
-**D11. Durable writes through one helper.** `os.Rename`, `unix.Renameat2` and
-`unix.Renameat` are callable only from `internal/vfs`. Gate: an import and
-call-site check. The helper's sequence is specified in
+**D11. Raw rename primitives belong to the VFS.** `os.Rename`,
+`unix.Renameat2` and `unix.Renameat` are callable only from `internal/vfs`.
+`WriteDurable` owns staged share-content replacement, `ShareRoot.Rename` owns
+explicit namespace moves, and `PublishNew` owns same-directory publication of
+an already-complete non-share database. `ReplaceFileDurable` owns durable
+replacement of a trusted private control file such as the master-key ring.
+Gate: an import and call-site check.
+The durable content sequence is specified in
 [`stowcloud-3-vfs-and-paths.md`](stowcloud-3-vfs-and-paths.md) §4.3.
 
 **D12. Secrets are a type.**
@@ -282,11 +289,12 @@ heap object, and it is accepted and recorded here rather than claimed closed.
 The master key is where this matters most, and it is held for the process
 lifetime either way.
 
-**D13. Every server timeout set.** Go's `http.Server` zero values mean no limit,
-so an unset `ReadHeaderTimeout` is a slowloris. `ReadHeaderTimeout`,
-`ReadTimeout`, `WriteTimeout`, `IdleTimeout` and `MaxHeaderBytes` are set
-explicitly at the one construction site, and a test constructs the server the
-way `serve` does and asserts each field is non-zero. This is the Go counterpart
+**D13. Every server timeout decided explicitly.** Go's `http.Server` zero
+values mean no limit, so an accidental zero `ReadHeaderTimeout` is a slowloris.
+`ReadHeaderTimeout`, `IdleTimeout` and `MaxHeaderBytes` are non-zero.
+`ReadTimeout` and `WriteTimeout` are deliberately zero because uploads and
+downloads stream. A test constructs the server the way `serve` does and asserts
+both the bounded fields and the two deliberate zeros. This is the Go counterpart
 of the existing `bind site installs ConnectInfo` gate, and it exists for the
 same reason: the failure is invisible to every test that builds its own handler.
 
@@ -294,18 +302,21 @@ same reason: the failure is invisible to every test that builds its own handler.
 reaching a query string. Every statement is a package-level constant, prepared
 once. Gate: a grep for formatting verbs in `internal/store`.
 
-**D15. Client-facing errors carry a key, not a sentence.**
+**D15. Localized client-facing errors carry a key, not lower-layer prose.**
 
 ```go
-// NewError builds a wire error. It takes a MessageKey, never a string, so a
-// sentence in any language cannot reach a response body: the browser renders
-// the key from its own catalogue.
+// NewError builds the mapped error. key and args become the existing wire
+// detail.reason_key and detail.reason_params fields. The wire's message is a
+// stable generic fallback, never lower-layer text.
 func NewError(code Code, key MessageKey, args ...Arg) *Error
 ```
 
-Closes F14 structurally. The Korean scan is kept for comments and log lines,
-implemented over a `unicode.RangeTable`, which behaves identically on every host
-unlike the current `grep -P`.
+The native REST responder preserves the existing
+`{error:{code,message,detail?}}` envelope. The browser renders the recognized
+key, never `message` or `detail.reason`. `Sc-Trace` remains a response header.
+This closes F14 structurally. The Korean scan is kept for comments and log
+lines, implemented over a `unicode.RangeTable`, which behaves identically on
+every host unlike the current `grep -P`.
 
 **D16. Fuzz targets on everything that reads untrusted bytes.** `SafePath`
 parsing, the WebDAV XML scanner, the worker wire decoder, the TUS metadata

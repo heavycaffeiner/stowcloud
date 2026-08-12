@@ -16,9 +16,11 @@ Depends on Phase 4. Blocks Phases 7, 10 and 12. Independent of Phases 8 and 9.
 
 - **6a**: `intervals.go` and its property tests.
 - **6b**: `store.go`, `engine.go`: lifecycle, the write path, the two locks.
-- **6c**: `verify.go`, and the BLAKE3 module decision.
+- **6c**: `verify.go`, reusing the BLAKE3 module chosen in Phase 4.
 - **6d**: `spool.go`: both modes, assembly by `copy_file_range`.
 - **6e**: `sweep.go`, `settings.go`.
+- **6f**: state migration and Rust-import extension for upload aliases and
+  chunk settings.
 
 6a needs nothing but the `limits` package and can start immediately.
 
@@ -33,13 +35,15 @@ Depends on Phase 4. Blocks Phases 7, 10 and 12. Independent of Phases 8 and 9.
 - **A per-chunk checksum is verified before the range is recorded.** Recording
   first means a failed chunk leaves a hole the client resumes past.
 - **BLAKE3 is client-facing.** It is a TUS `Upload-Checksum` algorithm a client
-  sends, so it cannot be swapped for a standard-library hash. Pick a pure-Go
-  module that builds under `CGO_ENABLED=0` with any assembly path optional.
+  sends, so it cannot be swapped for a standard-library hash. Reuse the
+  pure-Go module introduced for directory ETags in Phase 4.
 - **Whole-file verification takes `(algorithm, expected)`.** An algorithm with
   nothing to compare against is the shape that shipped once and could never
   fail.
-- **A failed finalize leaves the session resumable and the part file on disk.**
-  Discarding an upload because its last step failed is data loss, not cleanup.
+- **A failure before publish leaves the session resumable and the part file on
+  disk.** The durable rename is the commit point. Failures after it are
+  invalidation or cleanup debt and must never be reported as a resumable upload
+  whose destination already exists.
 - **Assembly uses `copy_file_range` with a stat'd length.** Never a userspace
   buffer, and never an oversized sentinel: some kernels reject an implausible
   length with `EINVAL`, which is not a fall-back errno and correctly so.
@@ -52,6 +56,10 @@ Depends on Phase 4. Blocks Phases 7, 10 and 12. Independent of Phases 8 and 9.
   the two reads is not mistaken for an orphan.
 - **The chunk floor distinguishes "an admin set this" from "it fell back to the
   config file".** Collapsing them loses what the settings screen has to report.
+- **Extend the Rust importer with upload aliases and chunk settings.** An alias
+  is what makes a named chunk collection resumable after cutover. Touched-dir
+  debt is not copied because the metadata cache itself is rebuilt, and the
+  disposition report says so explicitly.
 - The part file's handle is the one holder of `IntentReadWrite` in the tree.
 
 ## Done when
@@ -61,3 +69,5 @@ Depends on Phase 4. Blocks Phases 7, 10 and 12. Independent of Phases 8 and 9.
 - A finalize with a deliberately wrong whole-file digest fails and leaves the
   session resumable with the part file intact.
 - A chunk failing its checksum leaves the interval set untouched.
+- The Rust importer preserves active upload aliases and chunk-setting intent;
+  its report classifies touched-directory debt as rebuildable.

@@ -72,8 +72,9 @@ Three further problems come with it:
 
 ### 3.1 Goals
 
-- [ ] `cache.db` deletable at any time with no loss, `state.db` the only file
-      in the backup instruction, and `journal.db` losable without either.
+- [ ] `cache.db` deletable at any time with no loss, `state.db` the only
+      database in the regular data backup, and `journal.db` losable without
+      either. The master key has a separate protected backup instruction.
 - [ ] A numbered migration runner with a version table and a refusal to open a
       database written by a newer binary.
 - [ ] `CGO_ENABLED=0` preserved, which constrains the driver choice.
@@ -94,7 +95,7 @@ Three further problems come with it:
       prepared once, and a builder is exactly the thing that makes a query
       string dynamic.
 - [ ] Changing the `node` table's two load-bearing properties: no path column
-      and no index besides `node_ident`.
+      and no indexes besides the two identity indexes.
 - [ ] Moving the search index into SQLite. It is a cache directory with its own
       format and [`stowcloud-11-search.md`](stowcloud-11-search.md) owns it.
 
@@ -125,7 +126,7 @@ Under the data directory:
 ```
 data/
   cache.db       deletable; rebuilt on demand
-  state.db       the backup instruction, and the whole of it
+  state.db       the durable data backup
   journal.db     what this server did per account; §4.2.3
   search/        the index cache directory
   tls/           the self-signed certificate, generated on first run
@@ -133,13 +134,27 @@ data/
 ```
 
 **The master key should not be in this directory**, and where it is is
-configuration rather than layout. It lives wherever `SC_MASTER_KEY_FILE` points,
-defaulting to `master.key` here, and the shipped compose file puts it on its own
-mount instead: backing up the data directory should not back up the key that
-decrypts it. Resolving inside the data directory is a startup warning rather
-than a refusal, because it is the default and refusing would make an unconfigured
-install fail to start. [`6`](stowcloud-6-auth-and-acl.md) §4.3.10 owns the rest
-of the key's lifecycle.
+configuration rather than layout. It lives wherever `SC_MASTER_KEY_FILE`
+points, defaulting to `master.key` here, and the shipped compose file puts it
+on its own mount instead. The regular data backup contains `state.db`, while a
+separate protected secret backup contains the master key. Losing the key makes
+encrypted state unrecoverable; storing it in the same backup artifact defeats
+encryption at rest. Resolving inside the data directory is a startup warning
+rather than a refusal, because it is the default and refusing would make an
+unconfigured install fail to start. [`6`](stowcloud-6-auth-and-acl.md)
+§4.3.10 owns the rest of the key's lifecycle.
+
+A usable restore needs matching versions, not merely two files captured at
+unrelated times. The data-backup procedure records the committed database key
+version, and the protected secret backup must retain the ring entry for that
+version. Restore verifies the match before serving. The artifacts remain
+separate even when one coordinated backup run captures both.
+
+WAL makes a live copy of the main file alone unsafe. Capture `state.db` through
+SQLite's backup API, or stop the server cleanly, checkpoint, close it and then
+copy the main file. `state.db-wal` and `state.db-shm` are runtime sidecars, not
+independent backup artifacts. A procedure that copies a live `state.db` while
+ignoring its WAL is not a backup instruction this design permits.
 
 ### 4.2 Data Model Changes
 
@@ -160,7 +175,10 @@ CREATE TABLE node (
   size     INTEGER,
   mtime_ns INTEGER
 );
-CREATE UNIQUE INDEX node_ident ON node(share, dev, ino, btime_ns);
+CREATE UNIQUE INDEX node_ident_with_btime
+  ON node(share, dev, ino, btime_ns) WHERE btime_ns IS NOT NULL;
+CREATE UNIQUE INDEX node_ident_without_btime
+  ON node(share, dev, ino) WHERE btime_ns IS NULL;
 
 CREATE TABLE diretag (
   share  INTEGER NOT NULL,
@@ -179,9 +197,12 @@ CREATE TABLE share_gen (
 ) WITHOUT ROWID;
 ```
 
-**No path column, and no index besides `node_ident`.** Path resolution walks the
-`parent` chain. That is what makes a directory rename one row update instead of
-a subtree fan-out, and it is the single most consequential thing in this schema.
+**No path column, and no indexes besides the two identity indexes.** Two partial
+indexes are required because SQLite considers every `NULL` distinct in a unique
+index. A single `(share, dev, ino, btime_ns)` index would therefore allow the
+same no-btime identity more than once. Path resolution walks the `parent` chain.
+That is what makes a directory rename one row update instead of a subtree
+fan-out, and it is the single most consequential thing in this schema.
 
 `node.flags` keeps its `IS_DIR` bit and loses `PINNED` (§4.2.2).
 
@@ -193,7 +214,7 @@ same ids as the one it replaced.
 
 #### 4.2.2 `state.db`
 
-Everything the filesystem cannot regenerate:
+Authoritative state the filesystem cannot regenerate:
 
 | Table | From |
 |---|---|
@@ -209,17 +230,34 @@ Everything the filesystem cannot regenerate:
 | `audit` | `sc-auth` |
 | `fileid_override` | new; §4.5 |
 
-`dav_prop`, `dav_lock`, `favorite` and `share_link`'s target are the ones that
-move, and moving them is what deletes the `PINNED` bit. Today they key by
-`fileid`, which only `cache.db` mints, so a durable row points into a
-rebuildable store and the store has to be told not to reap it. In `state.db`
-they key by the identity tuple `(share, dev, ino, btime_ns)`, which is a fact
-about the file rather than about the cache. Deleting `cache.db` then costs a
-lookup, not a dangling row, and nothing has to be pinned.
+Later migrations add the same kind of non-rebuildable state when its owner
+arrives. Phase 4 adds persisted share definitions, config-share overrides,
+long-operation records and their bounded results. Phase 8 folds the persisted
+name-index switch into `settings`. These are not exceptions to the rule above
+and must not remain in separate Rust-era databases after cutover.
 
-`share_link` is the fourth because the current tree gives it a `fileid` column
-for the same purpose, so that a link survives a rename, and that column is the
-same dangling reference as the other three.
+`dav_prop`, `dav_lock` and `favorite` are the durable rows that target a file
+by identity. Today they key by `fileid`, which only `cache.db` mints, so a
+durable row points into a rebuildable store and the store has to be told not to
+reap it. In `state.db` they key by
+`(share, dev, ino, btime_present, btime_ns)`, which preserves the difference
+between an absent birth time and a real zero value and is a fact about the file
+rather than about the cache. Deleting `cache.db` then costs a lookup, not a
+dangling row, and nothing has to be pinned.
+
+`share_link` has a different contract and keeps both its path and an optional
+identity captured at creation. A link never follows a rename. When identity is
+present, access stats the stored path and requires that identity to match; a
+mismatch makes the link gone. Path-only is permitted only for the share root or
+for a legacy Rust row whose `fileid` was `NULL`. The four identity columns are
+therefore either all `NULL` or a coherent non-zero tuple with birth time
+present. `(dev, ino)` alone cannot prove replacement because an inode may be
+reused after deletion. A fabricated all-zero tuple is not a third
+representation. `token_enc` and `token_key_ver` are also
+both `NULL` or both present. Version 0 marks an imported Rust ciphertext whose
+AAD carried no version. Phase 3 either opens it with the current key and
+re-seals it under a positive version, or clears an already-unrecoverable owner
+copy while leaving `token_hash` and public access intact.
 
 **A grant's principal is two nullable columns and a `CHECK`, not a kind and an
 id.** §4.3.2 wants a grant to carry a foreign key to the user it belongs to, and
@@ -260,6 +298,14 @@ thinking about a failure:
    than the account itself. Rebuilding the reference server's Activity app is a
    recorded non-goal, and the name avoids inviting it.
 
+The first Go schema deliberately keeps the Rust table's stored vocabulary and
+constraint shape: `write_event(user, share, path, op, at_ns)` with
+`UNIQUE(user, share, path)` and `write_event_by_user`. An existing Rust journal
+has no `schema_version` row. The Go opener verifies that exact legacy shape,
+adopts it as version 1 by adding only its migration metadata, and never reruns
+the `CREATE TABLE`. An almost-matching shape is a disabled journal with a
+warning, not a guessed rewrite.
+
 A `journal.db` that cannot be opened is a warning and a disabled feature, not a
 refusal to start. The server still serves files; it just stops recording what it
 did with them.
@@ -287,6 +333,23 @@ For `cache.db` there is a second option a migration may take: declare itself
 unmigratable and have the runner discard what is there and rebuild. That is
 legitimate here and nowhere else, and it is what makes cache schema changes
 cheap.
+
+Phase 2.5 is the first use: migration 1 remains the originally shipped schema
+with its incorrect nullable identity index, while discard migration 2 installs
+the two partial indexes shown in §4.2.1. The schema block there is the shape
+after all known migrations, not permission to rewrite migration 1.
+
+State has its own version sequence. Its durable migration 2 rebuilds
+`share_link` so the four optional identity columns are either all `NULL` or a
+coherent birth-time-bearing tuple, adds the paired `token_key_ver` column for
+encrypted link tokens, and refuses malformed combinations. It also refuses the
+Phase 2 importer's ambiguous all-zero tuple. That value may have come from a
+legitimate Rust `NULL` file id or from a non-`NULL` id the broken importer could
+not resolve, so converting it to path-only could expose a replacement. Before
+product cutover, recovery is to retain or move aside that generated `state.db`
+and rerun the corrected importer from the untouched Rust sources. Unlike the
+cache migration, this one preserves valid rows and may never discard the
+database.
 
 Discarding drops every table and index inside the migration's own transaction
 rather than unlinking the file. Unlinking cannot be part of the transaction
@@ -402,10 +465,11 @@ table exists, and are applied once on a bootstrap connection.
 
 `foreign_keys = ON` is **uniform**, which is the change. SQLite defaults it off
 per connection, and today three of the current databases set it and the rest do
-not. The tables that gain it by being folded into `state.db` are `grant`,
-`dav_prop`, `dav_lock`, `upload_session` and `settings`, all of which have real
-referential structure that nothing currently enforces: a grant belongs to a user
-and a share, an upload session to a user.
+not. Every relationship whose parent is also in `state.db` is an actual foreign
+key, including grants and upload sessions belonging to users. Share ids and
+filesystem identities have no parent table in this database and are validated
+at their own boundaries rather than described as foreign keys that cannot
+exist.
 
 #### 4.3.3 Concurrency
 
@@ -439,13 +503,76 @@ writes turns it into an outage.
 
 ### 4.4 Migration from the Rust tree
 
-`stowcloud migrate --from-rust <data-dir>` reads the old auth and upload
-databases read-only and writes `state.db`. It does not touch the old files, does
-not run automatically at startup, and refuses if `state.db` already exists. It
-is removed from the tree one release after cutover.
+`stowcloud migrate --from-rust <data-dir>` reads every Rust-era data database
+read-only: auth, ACL, links, uploads, settings, metadata, WebDAV locks,
+compatibility state, shares, long-operation jobs, search settings and the
+recent-files journal. It writes a staged `state.db`. Each invocation reserves a distinct staging
+name in the same directory and never removes another invocation's file. It does
+not touch the old files, does not run automatically at startup, and refuses if
+`state.db` already exists. The staged database is checkpointed, closed and
+published with a no-clobber rename plus parent directory fsync only after every
+copy succeeds. A failed or interrupted import must therefore leave no
+destination that blocks a retry. The command is removed from the tree one
+release after cutover.
 
-The metadata cache is not migrated. It regenerates, which is what it is for, and
-that is the whole argument for the split in §4.2.
+The Rust server must be stopped before this command opens the directory. The
+source is several independent WAL databases, so there is no cross-database
+snapshot while another process is writing them. A destination transaction can
+make publication atomic and still combine a user from one instant with grants
+from another. A SQLite `busy` probe cannot prove that an idle server is stopped.
+Both shipping servers therefore hold an exclusive advisory lock on
+`<data-dir>/.stowcloud-instance.lock` for their lifetime, and the importer must
+acquire that same lock without waiting and hold it through publication. The
+file's contents and continued presence carry no state; only the live kernel
+lock does. Failure to acquire it refuses with "data directory in use"; the
+holder may be a server or another importer and the file does not guess which.
+The command help and cutover runbook state the same precondition.
+
+Metadata cache rows are not copied. The old metadata database is read only to
+translate durable rows that used a `fileid` into filesystem identity tuples;
+the cache itself regenerates, which is what it is for and the whole argument
+for the split in §4.2.
+
+An identity-bearing Rust share link whose metadata row has no birth time blocks
+migration. It is neither converted to path-only, which could expose a later
+replacement, nor silently revoked. Active WebDAV locks are copied from
+`dav-locks.db`; expired ones are omitted
+with that reason in the report. An active lock whose principal or file identity
+cannot be resolved aborts the import instead of opening a write window at
+cutover. Every omitted row is reported by table and reason. A single
+`Dropped[table]` count with an "unknown account" sentence is insufficient:
+missing nodes, expired locks and corrupt upload interval blobs are different
+operator facts.
+
+The importer is extended with the schema it targets. Phase 3 adds the Rust key
+version, SMB secret and live TOTP replay mappings. Phase 4 adds persisted share
+definitions, config-share overrides and long-operation history; a job that was
+`running` at cutover becomes `interrupted`, while its progress and results are
+preserved. Phase 6 adds active upload aliases and the upload chunk-setting
+mapping. Phase 8 imports `index_settings` into the unified settings row. Phase
+10 preserves the instance identity, compat upload aliases and unexpired
+device-login flows. A table owned by a later phase is not silently ignored in
+the meantime: if it contains a durable row the current binary cannot represent,
+migration refuses and names the minimum phase required. Short-lived login and
+OIDC challenges may be discarded only with an explicit reason.
+
+`journal.db` is already the separately backed-up recent-files store in both
+implementations. Migration validates its Rust schema and retains it in place
+rather than pretending its rows are rebuildable or copying it into `state.db`.
+On first Go open, the journal-specific legacy adoption above adds migration
+metadata without changing or losing an event row. `index.db` is different: its index payload is rebuildable, but its
+`index_settings` row is not, so Phase 8 transforms that row before the old file
+can be retired.
+
+Keep one checked source-table disposition inventory beside the importer. Every
+known non-`sqlite_%` Rust table is marked copied, transformed, retained in
+place, rebuildable, expired or deferred to a named phase. Phase 13 compares
+that inventory with `sqlite_schema` in every source database and also compares
+the set of Stowcloud-owned SQLite files in the data-directory manifest. A newly
+discovered application table, an unknown application database or an entry with
+no disposition is a migration failure, not an implicit discard. Recognized
+unpublished `state.db` staging names are control artifacts, not source
+databases; inventory reports and ignores them but never deletes them.
 
 ### 4.5 Node ids are derived, not assigned
 
@@ -478,8 +605,9 @@ id  = 1 + (be64(SHA-256(key)[0:8]) & (2^63 - 1)) % (2^63 - 1)
 
 Four properties, each chosen rather than inherited:
 
-- **The identity tuple is `(share, dev, ino, btime_ns)`**, the same one
-  `node_ident` already keys on. All four are needed, and the reason is
+- **The identity tuple is `(share, dev, ino, btime_present, btime_ns)`**, the
+  same distinction the two partial identity indexes enforce. All five values
+  are needed, and the reason is
   recorded in this codebase rather than theoretical: `dev` and `ino` alone are
   not enough on a backend that cannot distinguish two directories, and
   `btime_ns` alone is not either, since two directories can share a creation
@@ -492,16 +620,13 @@ Four properties, each chosen rather than inherited:
   Zero is the "no id" sentinel the property emitter already uses.
 - **`attempt` exists for §4.5.3** and is zero in every normal case.
 
-**The hash is `crypto/sha256`, and it was BLAKE3 until this phase built it.**
-BLAKE3 needed no argument in the Rust tree, where it was already a dependency.
-In the Go tree it is a module that
-[`0`](stowcloud-0-motivation-and-findings.md) §6-2 admits at Phase 6 and only
-because a TUS `Upload-Checksum` header is a client-facing algorithm that
-cannot be swapped for a stdlib hash; the same table sends every internal digest
-to `crypto/sha256`, and [`9`](stowcloud-9-upload.md) §4.3.3 records that split
-as correction C1. Nothing outside this server ever recomputes a `node.id`, so
-this hash is internal, and §6-2 here says the only dependency this phase takes
-is the driver.
+**The hash is `crypto/sha256`, although BLAKE3 arrives in Phase 4.** BLAKE3
+needed no argument in the Rust tree, where it was already a dependency. In the
+Go tree Phase 4 admits a module because the directory ETag is wire-visible, and
+Phase 6 reuses it for the client-selected TUS checksum. That does not justify
+changing an internal file-id derivation after Phase 2. Nothing outside this
+server ever recomputes a `node.id`, so this phase keeps the standard-library
+hash and §6-2 here keeps the driver as its only dependency.
 
 The choice is a one-way door: the hash is part of the derivation, so changing
 it changes every id. `OPEN-QUESTIONS.md` Q4 records that, and the version
@@ -546,32 +671,37 @@ Allocation:
 
 1. Look up `fileid_override` for the identity. A hit is the answer, always, and
    it is consulted first precisely so that a past decision is never revisited.
-2. Otherwise derive with `attempt = 0`. If the id is free in `node`, or already
-   held by this same identity, take it.
-3. If it is held by a **different** identity, increment `attempt` and derive
-   again until an id is free, then write `(identity, id)` into
-   `fileid_override` before returning it.
+2. Otherwise derive with `attempt = 0`. A candidate is available only when it
+   is held by neither a different `node` identity nor a different override
+   identity. An override reserves its id even while `cache.db` is empty or its
+   file has not yet appeared in the rebuild walk.
+3. On the first collision, derive until an unreserved id is found, then write
+   **both** assignments in one `state.db` transaction: the current holder keeps
+   the candidate it already had and the newcomer takes the new candidate. If
+   the current holder already has an override, assert that it agrees rather
+   than replacing it.
+4. Commit those override rows before returning the new id to the cache
+   transaction.
 
-**Step 3's write commits before the `node` row does, and the order is the
-whole of the crash story.** The two rows are in two files, and SQLite's
-cross-database atomic commit does not exist in WAL mode, so there is no
-transaction that covers both. Committing the override first means a crash
-between them leaves an override with no node, which is the state every rebuild
-starts from anyway. The other order leaves a node holding an id that nothing
-records, and the next rebuild races the collision again and may answer
-differently.
+**Step 4 commits before the new `node` row does, and the order is the whole of
+the crash story.** The rows are in two files, and SQLite's cross-database atomic
+commit does not exist in WAL mode, so there is no transaction that covers both.
+Committing the overrides first means a crash between them leaves reservations
+with no cache rows, which is safe and reproducible. The other order leaves a
+node holding an id that durable state does not reserve.
 
-Step 3's outcome depends on which of the two colliding files was seen first,
-which is insertion order, which a rebuild does not reproduce. That is exactly
-why the result is recorded: the order decides once, the row makes it permanent,
-and every later rebuild reads the row instead of racing again.
+Recording only the newcomer is insufficient. It reproduces a two-file test if
+the same two identities return, but a third colliding identity can take the
+unrecorded base id or the recorded alternate id before its owner appears in a
+later walk. Recording both sides and consulting reservations by id makes every
+past decision independent of rebuild order and later arrivals.
 
 `fileid_override` lives in `state.db` because it is the one part of the
 assignment that computation cannot reproduce, and §4.2's rule is that anything
-not reconstructible belongs in the durable half. It is expected to be empty. A
-row appearing in it is worth an operator-visible log line, not because anything
-is wrong but because it is the first evidence that the corpus has reached the
-size where the estimate above stops being abstract.
+not reconstructible belongs in the durable half. It is expected to be empty.
+The first collision writes at least two rows and earns one operator-visible log
+line, not because anything is wrong but because it is the first evidence that
+the corpus has reached the size where the estimate above stops being abstract.
 
 #### 4.5.4 What the id is stable against, and what it is not
 
@@ -584,8 +714,8 @@ size where the estimate above stops being abstract.
 | a restore or a copy that changes inode numbers | **no** |
 | re-registering a share under a different share id | **no** |
 
-The three "no" rows are not a regression: `node_ident` already keys on `dev`, so
-every one of them already invalidates every row in the current tree. The
+The three "no" rows are not a regression: both identity indexes key on `dev`,
+so every one of them already invalidates every row in the current tree. The
 difference is that they are now written down.
 
 #### 4.5.5 The one-time cost at cutover
@@ -617,10 +747,10 @@ that neither says anything at all.
 ```go
 package store
 
-// Open opens both databases under dir, applies pragmas in the order §4.3.2
-// requires, and runs pending migrations. It returns ErrSchemaAhead if either
-// file was written by a newer binary, because a downgrade writing an old shape
-// into a new file loses data silently.
+// Open opens all three databases under dir, applies pragmas in the order
+// §4.3.2 requires, and runs pending migrations. It returns ErrSchemaAhead if a
+// durable or rebuildable file was written by a newer binary, because a
+// downgrade writing an old shape into a new file loses data silently.
 func Open(dir string, opt Options) (*Store, error)
 
 // Cache is the rebuildable half. Every method on it is allowed to answer "I do
@@ -628,7 +758,8 @@ func Open(dir string, opt Options) (*Store, error)
 // a missing row as a missing file.
 func (s *Store) Cache() *cache.DB
 
-// State is the durable half. It is the entire backup instruction.
+// State is the durable data half. Back it up as data; the master key has a
+// separate protected backup lifecycle.
 func (s *Store) State() *state.DB
 
 // Journal is the third file, and nil when it could not be opened: §4.2.3 makes
@@ -662,9 +793,10 @@ type Ident struct {
 func (d *DB) Resolve(id FileID) (SharePath, error)
 
 // AllocateID returns the id for ident, deriving it per §4.5.2 and consulting
-// the override table first. It is the only function that may write an id. tx is
-// the cache's write transaction; an override row is committed to state.db
-// before this returns, in the order §4.5.3 gives and for the reason it gives.
+// overrides by identity and candidate id. It is the only function that may
+// decide an id. tx is the cache's write transaction; when a collision occurs,
+// both the holder and newcomer assignments commit to state.db before this
+// returns, in the order §4.5.3 gives and for the reason it gives.
 //
 // A caller must not cache the result across a share re-registration: the share
 // id is part of the derivation.
@@ -702,7 +834,7 @@ func DeriveID(ident Ident, attempt uint32) FileID
 
 | Phase | Task | Size | Depends on | Owner |
 |---|---|---|---|---|
-| Phase 2a | §4.5: the derivation, `fileid_override`, the allocation transaction, and the rebuild-identity test | S | Phase 0 | heavycaffeiner |
+| Phase 2a | §4.5: the derivation, `fileid_override`, the ordered cross-database allocation writes, and the rebuild-identity test | S | Phase 0 | heavycaffeiner |
 | Phase 2b | `open.go`, `migrate.go`, the pragma order, the pool, the write path | M | Phase 0 | heavycaffeiner |
 | Phase 2c | `cache/`: schema, `node` resolution, `diretag`, the rebuild-on-delete test | M | 2a, 2b | heavycaffeiner |
 | Phase 2d | `state/`: schema and the tables in §4.2.2 | M | 2b | heavycaffeiner |
@@ -717,6 +849,8 @@ asserts the override row is written and that a rebuild reproduces the same
 assignment.
 
 2e can only run once 2c exists, and its outcome is allowed to send 2c back.
+Phase 2's output is not an auth-ready dependency until the Phase 2.5
+corrections to migrations, collision authority and importer semantics pass.
 
 ### 6-2. Dependencies
 

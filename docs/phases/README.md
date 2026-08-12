@@ -35,7 +35,7 @@ dependency table. The short form:
 
 ```
 0 -> 1, 2
-1 -> 4              2 -> 3
+1, 2 -> 2.5 -> 3
 3 -> 4, 5, 11
 4 -> 5, 6, 7, 8, 9
 5 -> 7, 10, 11, 12  6 -> 7, 10, 12
@@ -62,6 +62,7 @@ the strongest verification in the plan.
 | [Phase 0.md](Phase%200.md) | gate and toolchain | 2 |
 | [Phase 1.md](Phase%201.md) | vfs, paths, jail, hardening | 3, 4 |
 | [Phase 2.md](Phase%202.md) | store and schema | 5 |
+| [Phase 2.5.md](Phase%202.5.md) | contract corrections before auth | 0, 1, 2, 3, 5, 6, 8, 15, 17 |
 | [Phase 3.md](Phase%203.md) | auth and ACL | 6 |
 | [Phase 4.md](Phase%204.md) | core domain | 7 |
 | [Phase 5.md](Phase%205.md) | HTTP and API | 8 |

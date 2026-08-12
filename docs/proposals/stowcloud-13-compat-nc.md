@@ -264,10 +264,24 @@ what deletes the `PINNED` bit
 ([`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.2.2). The instance
 identity, used to build `oc:id`, is a `settings` row.
 
-Both are reached through `StatePort` (§4.4.1) rather than by importing the
-store, because G2 forbids that import. The table definitions live with the rest
-of `state.db`'s schema and the statements live in `ncwire`, so the compat layer
-declares what it needs and touches no SQL.
+Active chunk aliases and device-login flows are durable too. They live in
+`state.db` tables whose DDL and statements are in tagged `ncwire`, not in core.
+`ncwire` runs its own numbered `nc_schema` migration through the store's
+serialized write boundary when the feature is enabled. The core schema version
+does not advance for a stripped build, and disabling then re-enabling the tag
+leaves the compat rows available.
+
+All four are reached through `StatePort` (§4.4.1) rather than by importing the
+store, because G2 forbids that import. Favourites and instance identity use the
+generic core schema. The two compat-owned tables stay behind `ncwire`, so the
+core never learns their vocabulary.
+
+The login-flow row never stores an app password. Approval records only the
+authorized local user. The polling request atomically consumes that marker and
+asks `AuthPort` to mint the app password at delivery time, when the plaintext
+can be returned once without ever resting in SQLite. This corrects the Rust
+table's temporary plaintext `app_password` column and prevents an expired or
+abandoned flow from leaving an uncollected live credential.
 
 `oc:fileid` now survives a cache rebuild.
 [`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.5 derives `node.id` from the
@@ -320,18 +334,25 @@ type CorePort interface {
 // nothing in this file is a shape invented for the compat layer's convenience.
 
 // StatePort exists because of the boundary rather than in spite of it. This
-// layer owns two pieces of durable state, favourites and the instance
-// identity, and G2 forbids it from importing internal/store to reach them. So
-// the queries are declared here and implemented in ncwire, which means the
-// only SQL in the tree that knows what a favourite is lives on the core side
-// of the seam, where D14's prepared-statement rule already applies.
+// layer owns favourites, instance identity, chunk aliases and login flows, and
+// G2 forbids it from importing internal/store to reach them. The queries are
+// declared here and implemented in ncwire.
 type StatePort interface {
     IsFavorite(ctx context.Context, u UserID, id Ident) (bool, error)
     SetFavorite(ctx context.Context, u UserID, id Ident, on bool) error
     ListFavorites(ctx context.Context, u UserID) ([]Ident, error)
     InstanceID(ctx context.Context) (string, error)
+    // The alias and flow methods use opaque scalar records declared in ncport.
 }
 ```
+
+Phase 10 extends `migrate --from-rust`. It preserves `nc_instance`, active
+`nc_upload_alias` rows and unexpired `nc_login_flow` rows. For an approved Rust
+flow, it verifies and removes the already-copied app-password row corresponding
+to the temporary plaintext, then stores only an authorization marker so polling
+mints a replacement. An expired flow is reported as expired. A malformed flow
+or one whose copied credential cannot be matched aborts migration rather than
+leaving an orphan credential.
 
 **The interface set is the whole of what the layer may depend on.** Adding a
 method is a deliberate widening of the seam and shows up as a diff to one small
@@ -478,6 +499,7 @@ mount rather than against the native API alone.
 | Phase 10d | `ocs.go`, `capabilities.go`, `login_flow.go`, `shares.go` | L | 10a | heavycaffeiner |
 | Phase 10e | `search.go`, `trash.go`, `favorites.go`, `recent.go` | M | 10b, Phase 8 | heavycaffeiner |
 | Phase 10f | `preview.go`: the thumbnail endpoints the clients call, over `PreviewPort` | S | 10b, Phase 9 | heavycaffeiner |
+| Phase 10g | compat state migrations and Rust-import extension for instance identity, aliases and login flows | S | 10c, 10d | heavycaffeiner |
 
 10a is small and blocks everything, so it lands first even though it produces no
 client-visible behaviour. Landing the gates before the code they govern is the

@@ -4,7 +4,7 @@
 |------------|----------------------------------|
 | Author     | heavycaffeiner(Dong Hyun Kim)    |
 | Created    | 2026-08-10                       |
-| Status     | **Draft** / In Review / Approved |
+| Status     | Implemented                      |
 | Reviewers  |                                  |
 
 ---
@@ -1025,6 +1025,9 @@ A waiver naming a `check` outside its `layer`'s row is exit code 2, which is wha
 waiver from silently covering nothing.
 
 ## 6. Implementation Plan
+
+The phase numbers in this section are local to the design-audit rollout and
+are complete. They are unrelated to the Go backend phases in `docs/phases/`.
 
 ### 6-1. Milestones
 

@@ -151,15 +151,14 @@ place `proof.go` would demonstrate it.
 **Raised by** Phase 2a, building the derivation
 ([`5`](stowcloud-5-store-and-schema.md) §4.5.2).
 
-**What was found.** §4.5.2 specified BLAKE3 and justified it with "already in
-the tree for the upload checksum, so this adds no dependency". That is a fact
-about the Rust tree. In the Go tree BLAKE3 is a module that
-[`0`](stowcloud-0-motivation-and-findings.md) §6-2 admits at **Phase 6**, and
-admits on one ground: a TUS `Upload-Checksum` header names an algorithm a
-client chose, so that one digest cannot be swapped for a stdlib hash.
-[`9`](stowcloud-9-upload.md) §4.3.3 records the same split as correction C1.
-§6-2 of the parent document says this phase takes one dependency, the driver,
-and nothing else.
+**What was found.** The original §4.5.2 specified BLAKE3 and justified it with
+"already in the tree for the upload checksum, so this adds no dependency".
+That is a fact about the Rust tree. The original Go schedule admitted BLAKE3 in
+Phase 6 for a client-selected TUS checksum. The corrected schedule admits it in
+Phase 4 because the directory ETag is already wire-visible and Phase 6 reuses
+the same module. Neither schedule makes BLAKE3 available to Phase 2 without
+pulling a dependency forward. §6-2 of the parent document says this phase takes
+one dependency, the driver, and nothing else.
 
 Nothing outside this server recomputes a `node.id`. The derivation needs a hash
 that distributes and nothing more.
@@ -169,8 +168,8 @@ that distributes and nothing more.
 | # | Hash | Cost |
 |---|---|---|
 | 1 | `crypto/sha256` | standard library, and the derivation is settled at Phase 2 with no dependency |
-| 2 | BLAKE3, pulled forward from Phase 6 | one module three phases early, for a digest no client ever sees |
-| 3 | BLAKE3 later, switching at Phase 6 | every id changes a second time, for every install already running the Go build |
+| 2 | BLAKE3, pulled forward from Phase 4 | one module two phases early, for a digest no client ever sees |
+| 3 | BLAKE3 later, switching at Phase 4 | every id changes a second time, for every install already running the Go build |
 
 **What decides between them.** Whether anything outside this process ever has
 to reproduce the derivation. Nothing does today: the id reaches a client as
@@ -184,5 +183,59 @@ Option 3 is ruled out on its own terms rather than on preference: §4.5's whole
 purpose is that an id survives a rebuild, and changing the hash breaks that for
 every install that already rebuilt once.
 
-**Reopen by** Phase 6, which is where BLAKE3 actually arrives and where the
-cost of option 2 would be zero if the answer had been different.
+**Reopen by** Phase 4, which is where BLAKE3 now arrives for the wire-visible
+directory ETag. Its arrival does not change the answer: switching an existing
+file-id derivation would change every id, so Phase 4 must confirm the split and
+leave the SHA-256 derivation untouched.
+
+---
+
+## Q5. Whether filesystems without durable inode identity remain supported
+
+**Raised by** the full proposal audit before Phase 2.5
+([`5`](stowcloud-5-store-and-schema.md) §4.5 and
+[`15`](stowcloud-15-deployment.md) §4.3).
+
+**What was found.** The deployment proposal allowed FUSE, NFS and CIFS or SMB
+and assigned path-based ids where inode identity was not trustworthy. It also
+admitted squashfs until the first failed write and had no decision for NTFS or
+an unknown filesystem magic. The store proposal defines exactly one id and
+durable-reference scheme, derived from
+`(share, dev, ino, btime_present, btime_ns)`, and promises that a rename
+preserves it. Phase 1
+implemented `FsType.ForcesPathIDs`, but Phase 2 has no path identity to pass to
+the derivation and `state.db` has no path-target variant for durable properties,
+locks, favourites and share links.
+
+A registration probe cannot prove identity stability across the event that
+matters: a process restart, remote remount or server-side filesystem change.
+Adding a path variant would also make a rename change `oc:fileid` and detach
+durable metadata unless every external rename were observed and rewritten
+atomically, which the watcher explicitly does not promise.
+
+**Options.**
+
+| # | Policy | Cost |
+|---|---|---|
+| 1 | Admit only birth-time-capable ext4, btrfs, XFS, ZFS, f2fs and warned tmpfs | drops storage backends and filesystem instances the Rust build admitted, but keeps one truthful identity and write contract and follows S4 |
+| 2 | Restore path-based ids and path-target durable rows | retains admission, but ids change on rename and external renames can detach durable state |
+| 3 | Use reported inode identity with a warning | retains admission and the schema, but can silently change ids after a remount, which is the delayed failure S4 forbids |
+
+**What decides between them.** Whether compatibility with those storage classes
+outweighs stable sync ids and durable metadata across external changes. A fourth
+option needs a filesystem-specific persistent handle that can be reopened after
+a restart; none is available through the current `statx` contract.
+
+**Taken for now: option 1.** The surrounding documents choose refusal whenever
+a filesystem cannot support the identity and write contracts, and the Go store
+has intentionally removed the cache pinning that made a second identity scheme
+survivable. Phase 2.5 removes the unused `ForcesPathIDs` promise and makes the
+declaration fail closed for squashfs, NTFS and unknown values too, so no later
+phase mistakes absence from a blacklist for support. Phase 11 additionally
+checks `STATX_BTIME` on each admitted root or nested mount, because a familiar
+filesystem magic alone does not prevent inode reuse from impersonating a
+replacement.
+
+**Reopen by** Phase 11, where the filesystem gate becomes an operator-visible
+registration decision and the compatibility cost can be evaluated on actual
+deployments.

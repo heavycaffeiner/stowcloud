@@ -118,6 +118,11 @@ The compat group is captured rather than written, by proxying a real desktop
 client session against the Rust build and recording it. A guess about what a
 client sends is exactly the thing this phase exists to stop trusting.
 
+Before the response differ, open every Rust source database and compare its
+non-`sqlite_%` `sqlite_schema` table list with the importer's checked disposition inventory.
+Every table must be copied, transformed, rebuildable, expired, or deliberately
+discarded with a reason. An unknown or unclassified table blocks cutover.
+
 #### 4.3.2 What is allowed to differ
 
 Everything else is a failure. Each entry needs a reason, and the list being
@@ -126,8 +131,9 @@ short is the point:
 | Field | Why |
 |---|---|
 | `Date` | wall clock |
-| `Sc-Trace` and the envelope's `trace` | a per-request id |
-| `ETag` where the algorithm changed | it did not; the hash is unchanged (the index, C1), so an ETag difference here is a real failure |
+| `Sc-Trace` | a per-request id; there is no duplicate body field |
+| Directory `ETag` | the hash is unchanged (the index, C1), so a difference is a failure |
+| File `ETag` | the token stays the same but the Go response adds `W/` because metadata cannot support a strong validator; no other token change is allowed |
 | `Server` | if it is sent at all |
 | Session cookie values | new tokens |
 | JSON key order | Go's `encoding/json` orders struct fields by declaration; the comparison is structural, not textual |
@@ -220,15 +226,28 @@ One commit, and the order inside it matters only in that it should be readable:
 5. Update `README.md` and `README.ko.md`'s build instructions, and remove the
    note they carry saying the proposals describe a rewrite rather than the
    shipping code, because at this commit it stops being true. Record the
-   one operator-visible consequence of the cutover in the release notes: every
+   operator-visible compatibility changes in the release notes. Every
    `oc:fileid` changes once, so every attached sync client performs a full
    reconciliation on first contact with the new binary. It is a one-time cost
    and it buys the opposite property afterwards, since from then on a cache
    rebuild costs nothing to a client
-   ([`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.5.5).
-6. Move this directory's documents from `Draft` to `Implemented`, and rewrite each
-   one's assumptions into statements, because at that point they describe code
-   that exists and the directory's own convention applies again.
+   ([`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.5.5). The Go filesystem
+   gate also refuses network, FUSE, overlay, read-only, unknown and
+   birth-time-less filesystems the Rust build may have admitted. Run the gate
+   over every configured root and mounted descendant before stopping Rust, and
+   block cutover on any refusal. File ETags gain the standards-correct `W/`
+   marker, and native REST clients must make an overwrite after 412 an explicit
+   unconditional retry.
+6. Move the remaining Go backend documents in this directory from `Draft` to
+   `Implemented`, and rewrite each one's assumptions into statements, because
+   at that point they describe code that exists and the directory's own
+   convention applies again. Already implemented and superseded documents keep
+   their existing statuses.
+
+The frontend proposal is already `Implemented`, so it does not take the status
+transition in step 6. Its embedding statements still need the cutover edit:
+replace `rust-embed` and Rust-binary references with `go:embed` and the Go
+binary.
 
 Step 6 is the one that is easy to skip and is the reason the index says
 these documents invert the house rule "by necessity". The necessity ends here.
