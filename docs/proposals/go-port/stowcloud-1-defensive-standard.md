@@ -22,8 +22,10 @@ The Rust tree's safety came from three places: the borrow checker, `Result`
 being `#[must_use]`, and `Drop`. Go has none of them. Nothing in Go stops an
 ignored error, an unclosed descriptor, a nil map write, or a goroutine that
 outlives its request. The compensation has to be mechanical, because the
-alternative is remembering, and `../stowcloud-0-findings.md` is what remembering
-produced over 99,614 lines of a language that was helping.
+alternative is remembering, and
+[`stowcloud-0-motivation-and-findings.md`](stowcloud-0-motivation-and-findings.md)
+§4.3 is what remembering produced over 99,614 lines of a language that was
+helping.
 
 The rules below are chosen against that list rather than from a style guide.
 Every finding in document 0 maps to one, and every rule that maps to no finding
@@ -240,6 +242,16 @@ Never a `string`, because a Go string is immutable and cannot be zeroed at all.
 Gate: a `go vet` analyser that rejects `Secret` reaching a formatting verb other
 than through its own `String`.
 
+**The residual risk, stated rather than dressed up.** `zeroize` has no Go
+equivalent. A garbage collector may copy a value before anything zeroes it, so
+`Destroy` clears the buffer this code holds and cannot clear a copy the runtime
+made. What is actually available is the three things above: never a `string`, a
+redacting formatter so a secret cannot reach a log by accident, and an explicit
+zero when the owner is done. The gap that remains is a copy surviving in a dead
+heap object, and it is accepted and recorded here rather than claimed closed.
+The master key is where this matters most, and it is held for the process
+lifetime either way.
+
 **D13. Every server timeout set.** Go's `http.Server` zero values mean no limit,
 so an unset `ReadHeaderTimeout` is a slowloris. `ReadHeaderTimeout`,
 `ReadTimeout`, `WriteTimeout`, `IdleTimeout` and `MaxHeaderBytes` are set
@@ -345,7 +357,7 @@ the hand-written one is four lines and is preferred.
 
 ## 7. References
 
-- [`stowcloud-0-findings.md`](stowcloud-0-findings.md): every rule here that
+- [`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §4.3: every rule here that
   has a finding number attached.
 - [`stowcloud-2-gate-and-toolchain.md`](stowcloud-2-gate-and-toolchain.md):
   where the enforcement is actually configured.

@@ -47,9 +47,9 @@ grep can be run over it at all.
 - [ ] Chunked upload v2 over the name-ordered spool mode.
 - [ ] OCS: capabilities, shares, the login flow, users.
 - [ ] The mobile surfaces: search, favourites, trashbin, the recency query.
-- [ ] The fileid decision from
-      [`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.5 written down where
-      an operator will find it.
+- [ ] `oc:fileid` stable across a cache rebuild, per
+      [`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.5, and the one-time
+      change at cutover written down where an operator will find it.
 
 ### 3.2 Non-Goals
 
@@ -126,10 +126,23 @@ what deletes the `PINNED` bit
 ([`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.2.2). The instance
 identity, used to build `oc:id`, is a `settings` row.
 
-Whether `oc:fileid` survives a cache rebuild is §4.5 of that document and is
-settled at Phase 2, before this phase writes a line. Whatever the answer is, it
-is written into the operator documentation here, because at present neither
-document says anything and the current behaviour is that every id changes.
+`oc:fileid` now survives a cache rebuild.
+[`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.5 derives `node.id` from the
+file's identity instead of letting SQLite mint a rowid, so deleting the cache
+costs a rebuild and not a full client reconciliation. That is a change in
+behaviour from the current tree, where every id is re-minted, and it is the
+reason principle 1 ("the database is a cache you can delete") is true for a
+sync client here and is not true today.
+
+Two consequences this layer owns:
+
+- **The one-time change at cutover.** The Rust build's ids were rowids and the
+  Go build's are derived, so every `oc:fileid` changes once when the binary is
+  replaced, and every attached client performs a full reconciliation. Stated in
+  the release notes and in the operator documentation, not discovered.
+- **`oc:id` follows.** It is the fileid plus the instance identity, so it is
+  stable on the same terms and changes on the same occasions
+  ([`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.5.4 lists them).
 
 ### 4.4 Core Logic
 

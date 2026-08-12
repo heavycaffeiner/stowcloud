@@ -13,9 +13,10 @@
 
 Two SQLite databases split by whether their contents can be regenerated from the
 filesystem, a real migration runner, and the pure-Go driver decision with the
-measurement that would reverse it. One open question is raised rather than
-answered: whether a node id has to survive a cache rebuild, because it is
-`oc:fileid` on the wire.
+measurement that would reverse it. Node ids stop being rowids and become a
+derivation from the file's identity, so that deleting the cache costs a rebuild
+and not a full reconciliation for every attached sync client, which is what it
+costs today.
 
 ## 2. Background & Motivation
 
@@ -57,7 +58,9 @@ Three further problems come with it:
 - [ ] The pragma set applied in the order that does not deadlock, once, with the
       reason attached.
 - [ ] A one-shot migration from the Rust-era files.
-- [ ] The fileid question settled before a schema is written.
+- [ ] Node ids derived deterministically from a file's identity, so a deleted
+      cache rebuilds to the same ids, with the collision case handled durably
+      and never by conflating two files.
 
 ### 3.2 Non-Goals
 
@@ -139,6 +142,12 @@ a subtree fan-out, and it is the single most consequential thing in this schema.
 
 `node.flags` keeps its `IS_DIR` bit and loses `PINNED` (§4.2.2).
 
+**`node.id` is supplied, not assigned.** The column stays
+`INTEGER PRIMARY KEY`, so it is still SQLite's rowid, but the insert provides
+the value instead of letting SQLite pick the next one. The value is derived from
+the file's identity by §4.5, which is what makes a rebuilt cache produce the
+same ids as the one it replaced.
+
 #### 4.2.2 `state.db`
 
 Everything the filesystem cannot regenerate:
@@ -155,6 +164,7 @@ Everything the filesystem cannot regenerate:
 | `upload_session`, `upload_interval` | `sc-upload` |
 | `settings` | `sc-server` |
 | `audit` | `sc-auth` |
+| `fileid_override` | new; §4.5 |
 
 `dav_prop`, `dav_lock` and `favorite` are the ones that move, and moving them is
 what deletes the `PINNED` bit. Today they key by `fileid`, which only `cache.db`
@@ -267,40 +277,137 @@ is removed from the tree one release after cutover.
 The metadata cache is not migrated. It regenerates, which is what it is for, and
 that is the whole argument for the split in §4.2.
 
-### 4.5 The open question: is a node id allowed to change?
+### 4.5 Node ids are derived, not assigned
 
-**Raised, not answered.** This is contradiction C4 from the folder README, and
-Phase 2 must settle it before it writes a line of schema.
+**Decided.** `node.id` is derived from the file's identity, so a deleted cache
+rebuilds to the same ids.
+
+#### 4.5.1 Why it has to be
 
 `node.id` is handed to sync clients as `oc:fileid`
 (`crates/sc-compat-nc/src/props.rs:282`) and, with the instance id, as `oc:id`.
-Today it is a SQLite `INTEGER PRIMARY KEY`, which is a rowid: minted in
-insertion order, and re-minted from scratch when `cache.db` is deleted.
+Today it is a rowid: minted in insertion order, and re-minted from scratch when
+the cache is deleted.
 
 So "delete the cache and it rebuilds" is true for this server and false for
-every sync client attached to it. After a rebuild, every file has a new fileid,
-and a Nextcloud client's reconciliation of that is at best a full rescan and at
-worst a re-download of everything it holds.
+every sync client attached to it. After a rebuild every file has a new fileid,
+and a client's reconciliation of that is at best a full rescan and at worst a
+re-download of everything it holds. Principle 1 is currently conditional in a
+way no document admits, and deriving the id is what makes it unconditional.
 
-Two candidate answers:
+#### 4.5.2 The derivation
 
-1. **Accept it, and say so.** A cache rebuild becomes an operator action with a
-   documented consequence, not a free one. Cheapest, and it makes principle 1
-   conditional in a way the documentation currently does not admit.
-2. **Derive the id deterministically** from `(share, dev, ino, btime_ns)`, so a
-   rebuild produces the same ids. This makes the id stable across a rebuild but
-   not across a filesystem restore that changes inode numbers, and it needs a
-   64-bit derivation with a collision story, because `oc:fileid` is an integer
-   and a hash collision here is two files sharing an identity.
+```
+key = "stowcloud/fileid/v1"
+     || u64be(share) || u64be(dev) || u64be(ino)
+     || u8(btime_present) || u64be(btime_ns_or_zero)
+     || u32be(attempt)
 
-What decides between them is evidence, not preference: what a current Nextcloud
-client actually does when a file's id changes but its path, size, mtime and
-ETag do not. `crates/sc-server/tests/compat_fileid_uniqueness.rs` exists and is
-the place that question is already partly answered.
+id  = 1 + (be64(BLAKE3(key)[0:8]) & (2^63 - 1)) % (2^63 - 1)
+```
 
-Whichever is chosen, it is written into
-[`stowcloud-13-compat-nc.md`](stowcloud-13-compat-nc.md) and into the operator
-documentation, because the current situation is that neither says anything.
+Four properties, each chosen rather than inherited:
+
+- **The identity tuple is `(share, dev, ino, btime_ns)`**, the same one
+  `node_ident` already keys on. `../stowcloud-2-core-vfs.md` §4.2 records why
+  all four are needed: `dev` and `ino` alone are not enough on a backend that
+  cannot distinguish two directories, and `btime_ns` alone is not either, since
+  two directories can share a creation tick or report none.
+- **A present and an absent btime are domain-separated by the flag byte**, so a
+  file with `btime_ns = 0` and a file with no btime at all do not derive the
+  same id.
+- **63 bits, and never zero.** `oc:fileid` is consumed as a signed 64-bit
+  integer, so an id with the top bit set would reach some clients as negative.
+  Zero is the "no id" sentinel the property emitter already uses.
+- **`attempt` exists for §4.5.3** and is zero in every normal case.
+
+BLAKE3 is already in the tree for the upload checksum
+([`stowcloud-9`](stowcloud-9-upload.md) §4.3.3), so this adds no dependency.
+
+#### 4.5.3 The collision case, which is not theoretical
+
+Sixty-three bits gives a birthday collision at roughly 3e9 files. At ten million
+files the probability is about 5e-6 and at a hundred million about 5e-4. Small,
+and **not** small enough to wave away, because of what a collision does here.
+
+`../stowcloud-2-core-vfs.md` §4.2 records the incident: the portable backend
+once returned a hardcoded `(0, 0)` for `dev`/`ino`, so a share root and one of
+its own subdirectories reported the same fileid over WebDAV. A sync client keys
+its journal on that id, so to the client two different resources **were** the
+same file. A hash collision reproduces that failure exactly, and it would be
+persistent rather than transient.
+
+So the derivation is a proposal and the table is the authority:
+
+```sql
+CREATE TABLE fileid_override (
+  share    INTEGER NOT NULL,
+  dev      INTEGER NOT NULL,
+  ino      INTEGER NOT NULL,
+  btime_ns INTEGER,
+  id       INTEGER NOT NULL UNIQUE,
+  PRIMARY KEY (share, dev, ino, btime_ns)
+) WITHOUT ROWID;
+```
+
+Allocation, in one transaction:
+
+1. Look up `fileid_override` for the identity. A hit is the answer, always, and
+   it is consulted first precisely so that a past decision is never revisited.
+2. Otherwise derive with `attempt = 0`. If the id is free in `node`, or already
+   held by this same identity, take it.
+3. If it is held by a **different** identity, increment `attempt` and derive
+   again until an id is free, then write `(identity, id)` into
+   `fileid_override` before returning it.
+
+Step 3's outcome depends on which of the two colliding files was seen first,
+which is insertion order, which a rebuild does not reproduce. That is exactly
+why the result is recorded: the order decides once, the row makes it permanent,
+and every later rebuild reads the row instead of racing again.
+
+`fileid_override` lives in `state.db` because it is the one part of the
+assignment that computation cannot reproduce, and §4.2's rule is that anything
+not reconstructible belongs in the durable half. It is expected to be empty. A
+row appearing in it is worth an operator-visible log line, not because anything
+is wrong but because it is the first evidence that the corpus has reached the
+size where the estimate above stops being abstract.
+
+#### 4.5.4 What the id is stable against, and what it is not
+
+| Event | Id survives |
+|---|---|
+| deleting `cache.db` and rebuilding | yes, and that is the point |
+| renaming or moving a file within a share | yes; identity is not the path |
+| restarting, upgrading, migrating the schema | yes |
+| the filesystem's device number changing (some dm and LVM setups renumber across reboots) | **no** |
+| a restore or a copy that changes inode numbers | **no** |
+| re-registering a share under a different share id | **no** |
+
+The three "no" rows are not a regression: `node_ident` already keys on `dev`, so
+every one of them already invalidates every row in the current tree. The
+difference is that they are now written down.
+
+#### 4.5.5 The one-time cost at cutover
+
+The Rust build assigns rowids and the Go build derives, so **every fileid
+changes once, at cutover**, and every attached sync client performs a full
+reconciliation. That is stated here and repeated in
+[`stowcloud-16`](stowcloud-16-parity-and-cutover.md) §4.4 rather than
+discovered by whoever runs it.
+
+Carrying the old assignments across is possible and is deliberately not built:
+`stowcloud migrate --from-rust` could read the old `node` table and write every
+`(identity, id)` into `fileid_override`, which would preserve every id exactly.
+The cost is that the override table becomes large and permanent for that
+install, which defeats the reason the derivation exists. The mechanism is
+already in place if a real deployment turns out to need it; adding the import is
+a select and an insert loop in a subcommand that already opens both databases.
+
+#### 4.5.6 Where else this is written down
+
+[`stowcloud-13-compat-nc.md`](stowcloud-13-compat-nc.md) §4.3 for the client
+consequence, and the operator documentation, because the current situation is
+that neither says anything at all.
 
 ## 5. API Design
 
@@ -343,6 +450,20 @@ type Ident struct {
 // Resolve walks the parent chain to a virtual path. There is no path column
 // and there will not be one: a directory rename is one UPDATE because of it.
 func (d *DB) Resolve(id FileID) (SharePath, error)
+
+// AllocateID returns the id for ident, deriving it per §4.5.2 and consulting
+// the override table first. It is the only function that may write an id, and
+// it runs in one transaction so that a derived id and the override row that
+// records a collision cannot disagree.
+//
+// A caller must not cache the result across a share re-registration: the share
+// id is part of the derivation.
+func (d *DB) AllocateID(tx *sql.Tx, ident Ident) (FileID, error)
+
+// DeriveID is the pure half of AllocateID: no I/O, no uniqueness check. It is
+// exported so the rebuild-identity test can assert the derivation directly
+// rather than through the table.
+func DeriveID(ident Ident, attempt uint32) FileID
 ```
 
 ### 5-2. Error Handling
@@ -360,15 +481,21 @@ func (d *DB) Resolve(id FileID) (SharePath, error)
 
 | Phase | Task | Size | Depends on | Owner |
 |---|---|---|---|---|
-| Phase 2a | §4.5 settled, with the evidence and the answer written into two documents | S | none | heavycaffeiner |
+| Phase 2a | §4.5: the derivation, `fileid_override`, the allocation transaction, and the rebuild-identity test | S | Phase 0 | heavycaffeiner |
 | Phase 2b | `open.go`, `migrate.go`, the pragma order, the pool, the write path | M | Phase 0 | heavycaffeiner |
 | Phase 2c | `cache/`: schema, `node` resolution, `diretag`, the rebuild-on-delete test | M | 2a, 2b | heavycaffeiner |
 | Phase 2d | `state/`: schema and the tables in §4.2.2 | M | 2b | heavycaffeiner |
 | Phase 2e | The driver measurement against §4.3.1's threshold, in the Linux VM | S | 2c | heavycaffeiner |
 | Phase 2f | `stowcloud migrate --from-rust` | S | 2d | heavycaffeiner |
 
-2a blocks 2c and nothing else. 2e can only run once 2c exists, and its outcome
-is allowed to send 2c back.
+2a blocks 2c and nothing else. Its test is the one that matters most in this
+phase: populate a cache from a tree, record every id, delete the file, rebuild
+from the same tree in a different walk order, and assert every id is identical.
+A second test forces a collision by deriving with a truncated hash width, and
+asserts the override row is written and that a rebuild reproduces the same
+assignment.
+
+2e can only run once 2c exists, and its outcome is allowed to send 2c back.
 
 ### 6-2. Dependencies
 
@@ -383,8 +510,11 @@ is allowed to send 2c back.
 - `crates/sc-meta/src/lib.rs`: the schema this carries over, the `PINNED` bit
   this deletes, and the `busy_timeout` ordering comment quoted in §4.3.2.
 - `crates/sc-compat-nc/src/props.rs:282`: `oc:fileid`, the reason §4.5 exists.
-- `crates/sc-server/tests/compat_fileid_uniqueness.rs`: where the fileid
-  question is already partly answered.
+- `../stowcloud-2-core-vfs.md` §4.2: why the identity tuple has four fields, and
+  the incident where a share root and its own subdirectory reported the same
+  fileid, which is what §4.5.3 refuses to reproduce.
+- `crates/sc-server/tests/compat_fileid_uniqueness.rs`: the existing uniqueness
+  test, which §4.5.3's collision test extends rather than replaces.
 - `docs/proposals/stowcloud-11-footprint.md`: the workload §4.3.1 measures
   against, and the two findings that shaped this schema.
 - `docs/proposals/stowcloud-2-core-vfs.md`: directory ETags and the aggregate.

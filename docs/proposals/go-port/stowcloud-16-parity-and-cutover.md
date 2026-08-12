@@ -117,7 +117,7 @@ short is the point:
 | `Server` | if it is sent at all |
 | Session cookie values | new tokens |
 | JSON key order | Go's `encoding/json` orders struct fields by declaration; the comparison is structural, not textual |
-| `oc:fileid` | only if [`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.5 chose the non-stable answer, in which case it is recorded here and in the operator documentation |
+| `oc:fileid` and `oc:id` | expected to differ, once. The Rust build's ids are rowids and the Go build derives them from the file's identity ([`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.5). The differ asserts only that the Go build's ids are **self-consistent**: the same identity yields the same id everywhere it appears in the corpus, and no two identities share one |
 
 Response header order is compared as a set, not a sequence. Body comparison is
 structural for JSON and canonicalised for XML: namespace prefixes may differ,
@@ -188,8 +188,15 @@ One commit, and the order inside it matters only in that it should be readable:
    becomes the package layout, and §4.2's backend row stops saying Rust was
    chosen over "a GC'd runtime, where the syscall contract is someone else's".
    The replacement row states what actually changed, which is the three things
-   in `../stowcloud-22-go-backend.md` §2.3 and not the syscall contract.
-5. Update `README.md` and `README.ko.md`'s build instructions.
+   in [`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §2.3 and not the
+   syscall contract.
+5. Update `README.md` and `README.ko.md`'s build instructions, and record the
+   one operator-visible consequence of the cutover in the release notes: every
+   `oc:fileid` changes once, so every attached sync client performs a full
+   reconciliation on first contact with the new binary. It is a one-time cost
+   and it buys the opposite property afterwards, since from then on a cache
+   rebuild costs nothing to a client
+   ([`stowcloud-5`](stowcloud-5-store-and-schema.md) §4.5.5).
 6. Move this folder's documents from `Draft` to `Implemented`, and rewrite each
    one's assumptions into statements, because at that point they describe code
    that exists and the directory's own convention applies again.

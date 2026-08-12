@@ -377,6 +377,6 @@ Both are assumption A1 and A2's subject matter. Nothing else.
   disguising a control file cost.
 - `docs/proposals/stowcloud-2-core-vfs.md`: `SafePath`, the syscall contract,
   the virtual root.
-- [`stowcloud-0-findings.md`](stowcloud-0-findings.md): F4, F5, F6, F7, F12.
+- [`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §4.3: F4, F5, F6, F7, F12.
 - `openat2(2)`, `statx(2)`, `renameat2(2)`, `copy_file_range(2)`,
   `getdents64(2)`, `inotify(7)`.

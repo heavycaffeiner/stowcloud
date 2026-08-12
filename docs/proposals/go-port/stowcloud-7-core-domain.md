@@ -280,6 +280,6 @@ standard library.
   the share API's path vocabularies and the subpath a link had no way to name.
 - `docs/proposals/stowcloud-16-correctness-sweep.md`: the three vocabularies
   D10 turns into three types.
-- [`stowcloud-0-findings.md`](stowcloud-0-findings.md): F11.
+- [`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §4.3: F11.
 - `crates/sc-core/src/ops.rs`, `aggregate.rs`, `links.rs`.
 - RFC 9110 §8.8 on weak validators, which §4.3.2's flag exists to use.

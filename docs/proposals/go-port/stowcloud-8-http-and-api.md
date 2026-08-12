@@ -321,4 +321,4 @@ Everything else is standard library: `crypto/tls`, `crypto/x509`, `net/http`,
   reasoning for each.
 - `scripts/verify.sh:173`: the bind-site gate, and why a test could not catch
   what it catches.
-- [`stowcloud-0-findings.md`](stowcloud-0-findings.md): F8, F9.
+- [`stowcloud-0`](stowcloud-0-motivation-and-findings.md) §4.3: F8, F9.

@@ -109,8 +109,8 @@ opinions.
 `smbpasswd`-format entries written from the decrypted NT hash. The decryption
 happens at the moment of writing and the plaintext hash is held in a
 `secret.Secret` (D12) that is zeroed immediately after, which is the best
-available given the residual risk recorded in `../stowcloud-22-go-backend.md`
-§4.3.8.
+available given the residual risk recorded in
+[`stowcloud-1`](stowcloud-1-defensive-standard.md) D12.
 
 The file is written through the durable helper: correct mode before publish, and
 the mode is `0600` because it is a credential store.
