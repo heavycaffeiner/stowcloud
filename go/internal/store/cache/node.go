@@ -30,7 +30,7 @@ func (d *DB) Upsert(
 		id, curParent, flags int64
 		curName              string
 	)
-	err := tx.QueryRowContext(ctx, sqlNodeByIdent,
+	err := tx.StmtContext(ctx, d.st.nodeByIdent).QueryRowContext(ctx,
 		int64(share), toSQL(ident.Dev), toSQL(ident.Ino), btimeArg(ident),
 	).Scan(&id, &curParent, &curName, &flags)
 
@@ -44,11 +44,12 @@ func (d *DB) Upsert(
 		if curParent != int64(parent) || curName != name || want != flags {
 			// The filesystem is the source of truth and this is the cache
 			// catching up with a rename or a write that happened out of band.
-			_, err = tx.ExecContext(ctx, sqlMoveNode, int64(parent), name, size, mtime, want, id)
+			_, err = tx.StmtContext(ctx, d.st.moveNode).ExecContext(ctx,
+				int64(parent), name, size, mtime, want, id)
 		} else {
 			// Size and mtime are here to spare a stat per entry on a listing,
 			// so they are refreshed even when nothing about identity moved.
-			_, err = tx.ExecContext(ctx, sqlTouchNode, size, mtime, id)
+			_, err = tx.StmtContext(ctx, d.st.touchNode).ExecContext(ctx, size, mtime, id)
 		}
 		if err != nil {
 			return 0, fmt.Errorf("refreshing node %d: %w", id, err)
@@ -70,7 +71,7 @@ func (d *DB) Upsert(
 		if st.Kind.IsDir() {
 			flags = flagIsDir
 		}
-		if _, ierr := tx.ExecContext(ctx, sqlInsertNode,
+		if _, ierr := tx.StmtContext(ctx, d.st.insertNode).ExecContext(ctx,
 			int64(newID), int64(share), int64(parent), name,
 			toSQL(ident.Dev), toSQL(ident.Ino), btimeArg(ident),
 			flags, toSQL(st.Size), st.MtimeNs,
@@ -90,7 +91,7 @@ func (d *DB) Upsert(
 func (d *DB) Lookup(ctx context.Context, share vfs.ShareID, st vfs.Stat) (FileID, bool, error) {
 	ident := IdentOf(share, st)
 	var id int64
-	err := d.f.SQL().QueryRowContext(ctx, sqlNodeIDByIdent,
+	err := d.st.nodeIDByIdent.QueryRowContext(ctx,
 		int64(share), toSQL(ident.Dev), toSQL(ident.Ino), btimeArg(ident)).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil

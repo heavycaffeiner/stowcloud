@@ -21,6 +21,18 @@ import (
 
 // LookupFileID reports the recorded id for ident, if one was ever recorded.
 func (d *DB) LookupFileID(ctx context.Context, ident cache.Ident) (cache.FileID, bool, error) {
+	n := d.overrides.Load()
+	if n < 0 {
+		var err error
+		if n, err = d.CountFileIDOverrides(ctx); err != nil {
+			return 0, false, err
+		}
+		d.overrides.Store(n)
+	}
+	if n == 0 {
+		return 0, false, nil
+	}
+
 	present, btime := btimeColumns(ident)
 	var id int64
 	err := d.f.SQL().QueryRowContext(ctx, sqlReadFileIDOverride,
@@ -39,14 +51,16 @@ func (d *DB) LookupFileID(ctx context.Context, ident cache.Ident) (cache.FileID,
 // of the node row that uses the id.
 func (d *DB) RecordFileID(ctx context.Context, ident cache.Ident, id cache.FileID) error {
 	present, btime := btimeColumns(ident)
-	return d.Write(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, sqlWriteFileIDOverride,
+	err := d.Write(ctx, func(tx *sql.Tx) error {
+		_, werr := tx.ExecContext(ctx, sqlWriteFileIDOverride,
 			int64(ident.Share), toSQL(ident.Dev), toSQL(ident.Ino), present, btime, int64(id))
-		if err != nil {
-			return fmt.Errorf("writing a fileid override: %w", err)
+		if werr != nil {
+			return fmt.Errorf("writing a fileid override: %w", werr)
 		}
 		return nil
 	})
+	d.overrides.Store(-1)
+	return err
 }
 
 // CountFileIDOverrides is how many collisions this install has recorded. It is

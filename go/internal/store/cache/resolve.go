@@ -48,8 +48,7 @@ func (d *DB) Resolve(ctx context.Context, id FileID) (vfs.ShareID, vfs.SharePath
 			rowShare, parent int64
 			name             string
 		)
-		err := d.f.SQL().QueryRowContext(ctx, sqlNodeRowByID, int64(cur)).
-			Scan(&rowShare, &parent, &name)
+		err := d.st.nodeRowByID.QueryRowContext(ctx, int64(cur)).Scan(&rowShare, &parent, &name)
 		if errors.Is(err, sql.ErrNoRows) {
 			return 0, vfs.SharePath{}, fmt.Errorf("resolving node %d: %w", id, ErrNoNode)
 		}
@@ -86,7 +85,7 @@ func (d *DB) Resolve(ctx context.Context, id FileID) (vfs.ShareID, vfs.SharePath
 // grow the file, and leaving the id pointing at the old path would be worse
 // than a slightly larger database.
 func (d *DB) Rename(ctx context.Context, tx *sql.Tx, id, newParent FileID, newName string) error {
-	res, err := tx.ExecContext(ctx, sqlRenameNode, int64(newParent), newName, int64(id))
+	res, err := tx.StmtContext(ctx, d.st.renameNode).ExecContext(ctx, int64(newParent), newName, int64(id))
 	if err != nil {
 		return fmt.Errorf("renaming node %d: %w", id, err)
 	}

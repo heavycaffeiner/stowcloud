@@ -326,6 +326,56 @@ criteria are set here rather than argued about later:
   pattern), and SQLite stays for `state.db`, where the write rate is a handful
   of rows per login.
 
+#### 4.3.1.1 The measurement, taken at Phase 2
+
+**Verdict: the driver stands.** Both halves of the threshold pass, and the
+numbers are below with the one thing that could not be measured named rather
+than glossed.
+
+The workload is `internal/store/cache`'s `TestDriverMeasurement` and
+`crates/sc-meta/tests/measure.rs`, which do the same three things: a cold walk
+allocating an id per file under a directory eight deep, the same walk with a
+walker's batching, and steady-state invalidation of that eight-deep chain with
+the directory's aggregate stored again. Each is one transaction per file,
+because that is what the implementation being compared against does.
+
+| Where | Rows | Cold populate | Batched | Invalidation |
+|---|---|---|---|---|
+| Guest, Linux 6.12, 4 vCPU, Go | 2,000,000 | 124.87 s (16,017/s) | 45.40 s (44,050/s) | 33,403/s |
+| Host, Windows, Go | 2,000,000 | 335.74 s (5,957/s) | 119.50 s (16,737/s) | 18,718/s |
+| Host, Windows, Rust | 2,000,000 | 115.11 s (17,375/s) | not available | 12,070/s |
+| Host, Windows, Go | 200,000 | 15.94 s (12,543/s) | 4.73 s (42,277/s) | 20,869/s |
+| Host, Windows, Rust | 200,000 | 7.40 s (27,012/s) | not available | 14,973/s |
+
+**Against the three-times threshold: 2.92x at two million rows and 2.15x at two
+hundred thousand**, both on the host, where the two implementations can be run
+side by side.
+
+**Against "keeps up with the walk feeding it": 33,403 invalidations a second
+against a walk feeding 16,017**, in the guest. It keeps up with margin, and the
+implementation being replaced is the slower of the two on that half.
+
+Two things this did not measure, said plainly rather than left to be assumed:
+
+- **The comparison is not in the guest.** Running the Rust half there needs a
+  musl cross build, and the toolchain for that (`zig`) is not on the box the
+  port is being built on. So the ratio comes from the host and the absolute
+  numbers from the guest. The host is the pessimistic side of that split: the
+  same Go binary walks the same two million files in 124.87 s in the guest and
+  335.74 s on the host, so the ratio measured there is an upper bound rather
+  than a flattering one.
+- **The disk is not rotational.** The guest's volume is a virtual disk on the
+  host's SSD. Rotational storage would slow both implementations, and the
+  cold-populate ratio is what the threshold is written in.
+
+Two changes came out of taking the measurement rather than out of a preference,
+and both are in the commit that records it. The override table is consulted for
+every id allocated, so an empty one is now answered from a counter loaded once
+instead of a query against a second database per file. And every statement in
+`cache/` is prepared once rather than compiled on each call, which is what D14
+asked for in the first place; between them the cold walk went from 3.67x to
+2.15x on the same host and the same rows.
+
 #### 4.3.2 Pragmas
 
 Applied on **every** pooled connection, in this order:

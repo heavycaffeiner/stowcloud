@@ -80,12 +80,11 @@ func Open(dir string, opt Options) (*Store, error) {
 		return nil, errors.Join(err, stateFile.Close())
 	}
 
-	s := &Store{
-		cacheFile: cacheFile,
-		stateFile: stateFile,
-		cache:     cache.New(cacheFile, st),
-		state:     st,
+	c, err := cache.New(ctx, cacheFile, st)
+	if err != nil {
+		return nil, errors.Join(err, cacheFile.Close(), stateFile.Close())
 	}
+	s := &Store{cacheFile: cacheFile, stateFile: stateFile, cache: c, state: st}
 
 	journalFile, err := dbfile.Open(ctx, journal.Spec(filepath.Join(dir, JournalFile)))
 	if err != nil {

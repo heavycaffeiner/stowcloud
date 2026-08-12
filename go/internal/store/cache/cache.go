@@ -98,6 +98,8 @@ type DB struct {
 	// database this package hands out. It is a field so that the collision
 	// path has a test; see derive.
 	bits uint
+
+	st *stmts
 }
 
 // Spec is this database's file. It is rebuildable, which is what lets a
@@ -106,9 +108,16 @@ func Spec(path string) dbfile.Spec {
 	return dbfile.Spec{Path: path, Migrations: migrations(), Rebuildable: true}
 }
 
-// New wraps an open file. ov is the override table, which lives in the durable
-// half and is passed in rather than reached for.
-func New(f *dbfile.DB, ov Overrides) *DB { return &DB{f: f, ov: ov, bits: idBits} }
+// New wraps an open file and prepares every statement on it. ov is the
+// override table, which lives in the durable half and is passed in rather than
+// reached for.
+func New(ctx context.Context, f *dbfile.DB, ov Overrides) (*DB, error) {
+	st, err := prepare(ctx, f.SQL())
+	if err != nil {
+		return nil, err
+	}
+	return &DB{f: f, ov: ov, bits: idBits, st: st}, nil
+}
 
 // Write runs fn in this database's single serialised write path.
 func (d *DB) Write(ctx context.Context, fn func(*sql.Tx) error) error {

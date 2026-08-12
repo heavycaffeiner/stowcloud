@@ -36,8 +36,7 @@ func (d *DB) DirEtag(ctx context.Context, share vfs.ShareID, id FileID) (Aggrega
 		gen, valid    int64
 		etag          string
 	)
-	err = d.f.SQL().QueryRowContext(ctx, sqlReadDiretag, int64(share), int64(id)).
-		Scan(&etag, &rsize, &rcount, &gen, &valid)
+	err = d.st.readDiretag.QueryRowContext(ctx, int64(share), int64(id)).Scan(&etag, &rsize, &rcount, &gen, &valid)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Aggregate{}, false, nil
 	}
@@ -61,7 +60,7 @@ func (d *DB) DirEtag(ctx context.Context, share vfs.ShareID, id FileID) (Aggrega
 func (d *DB) PutDirEtag(
 	ctx context.Context, tx *sql.Tx, share vfs.ShareID, id FileID, agg Aggregate, gen uint64,
 ) error {
-	_, err := tx.ExecContext(ctx, sqlPutDiretag,
+	_, err := tx.StmtContext(ctx, d.st.putDiretag).ExecContext(ctx,
 		int64(share), int64(id), agg.Etag, toSQL(agg.RSize), toSQL(agg.RCount), toSQL(gen))
 	if err != nil {
 		return fmt.Errorf("storing the aggregate for node %d: %w", id, err)
@@ -77,7 +76,7 @@ func (d *DB) PutDirEtag(
 // Not gated, for the same reason PutDirEtag is not.
 func (d *DB) MarkDirty(ctx context.Context, tx *sql.Tx, share vfs.ShareID, chain []FileID) error {
 	for _, id := range chain {
-		if _, err := tx.ExecContext(ctx, sqlDirtyDiretag, int64(share), int64(id)); err != nil {
+		if _, err := tx.StmtContext(ctx, d.st.dirtyDiretag).ExecContext(ctx, int64(share), int64(id)); err != nil {
 			return fmt.Errorf("invalidating the aggregate for node %d: %w", id, err)
 		}
 	}
@@ -88,11 +87,11 @@ func (d *DB) MarkDirty(ctx context.Context, tx *sql.Tx, share vfs.ShareID, chain
 // touching a row: each one carries the generation it was computed against, so
 // moving the counter reads as invalid everywhere at once.
 func (d *DB) BumpShareGen(ctx context.Context, tx *sql.Tx, share vfs.ShareID) (uint64, error) {
-	if _, err := tx.ExecContext(ctx, sqlBumpShareGen, int64(share)); err != nil {
+	if _, err := tx.StmtContext(ctx, d.st.bumpShareGen).ExecContext(ctx, int64(share)); err != nil {
 		return 0, fmt.Errorf("bumping the generation of share %d: %w", share, err)
 	}
 	var gen int64
-	if err := tx.QueryRowContext(ctx, sqlReadShareGen, int64(share)).Scan(&gen); err != nil {
+	if err := tx.StmtContext(ctx, d.st.readShareGen).QueryRowContext(ctx, int64(share)).Scan(&gen); err != nil {
 		return 0, fmt.Errorf("reading the generation of share %d: %w", share, err)
 	}
 	return fromSQL(gen), nil
@@ -102,7 +101,7 @@ func (d *DB) BumpShareGen(ctx context.Context, tx *sql.Tx, share vfs.ShareID) (u
 // never been invalidated.
 func (d *DB) ShareGen(ctx context.Context, share vfs.ShareID) (uint64, error) {
 	var gen int64
-	err := d.f.SQL().QueryRowContext(ctx, sqlReadShareGen, int64(share)).Scan(&gen)
+	err := d.st.readShareGen.QueryRowContext(ctx, int64(share)).Scan(&gen)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}

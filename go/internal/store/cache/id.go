@@ -103,7 +103,7 @@ func (d *DB) AllocateID(ctx context.Context, tx *sql.Tx, ident Ident) (FileID, e
 
 	for attempt := uint32(0); attempt <= maxAttempts; attempt++ {
 		id := derive(ident, attempt, d.bits)
-		holder, held, err := identOf(ctx, tx, id)
+		holder, held, err := d.identOf(ctx, tx, id)
 		if err != nil {
 			return 0, err
 		}
@@ -132,12 +132,13 @@ func (d *DB) AllocateID(ctx context.Context, tx *sql.Tx, ident Ident) (FileID, e
 }
 
 // identOf reports which identity holds id, if any.
-func identOf(ctx context.Context, tx *sql.Tx, id FileID) (Ident, bool, error) {
+func (d *DB) identOf(ctx context.Context, tx *sql.Tx, id FileID) (Ident, bool, error) {
 	var (
 		share, dev, ino int64
 		btime           *int64
 	)
-	err := tx.QueryRowContext(ctx, sqlNodeIdentByID, int64(id)).Scan(&share, &dev, &ino, &btime)
+	err := tx.StmtContext(ctx, d.st.nodeIdentByID).QueryRowContext(ctx, int64(id)).
+		Scan(&share, &dev, &ino, &btime)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Ident{}, false, nil
 	}

@@ -49,9 +49,12 @@ func openPair(t *testing.T, dir string, bits uint) *pair {
 	}
 
 	st := state.New(sf)
-	c := cache.New(cf, st)
+	c, err := cache.New(ctx, cf, st)
 	if bits != 0 {
-		c = cache.NewNarrow(cf, st, bits)
+		c, err = cache.NewNarrow(ctx, cf, st, bits)
+	}
+	if err != nil {
+		t.Fatalf("preparing the cache: %v", err)
 	}
 	p := &pair{dir: dir, cf: cf, sf: sf, cache: c, state: st}
 	t.Cleanup(func() { p.close(t) })
