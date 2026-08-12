@@ -2,19 +2,66 @@ package cache
 
 import "github.com/heavycaffeiner/stowcloud/go/internal/store/dbfile"
 
-// The schema, carried over from the tree this replaces because the shape is
-// right, with two changes: node.id is supplied on insert rather than assigned,
-// and identity is two partial indexes rather than one.
+// The schema as it first shipped, carried over from the tree this replaces
+// because the shape is right, with one change: node.id is supplied on insert
+// rather than assigned.
 //
-// Two, because SQLite holds every NULL distinct in a unique index, so a single
-// index over (share, dev, ino, btime_ns) would let the same file appear twice
-// on a filesystem that reports no birth time. Splitting it on whether the
-// column is NULL is what makes the constraint mean what it says.
+// Its single node_ident index is wrong and is left alone. A position in the
+// list is a durable version, so a step that has shipped is not edited: the
+// correction is migration 2 below, and editing this one would teach the next
+// maintainer that an applied migration is something they may rewrite.
 //
-// No path column, and no index besides those two. Path resolution walks the
-// parent chain, and that is what makes renaming a directory one row update
+// No path column, and no index besides the identity ones. Path resolution walks
+// the parent chain, and that is what makes renaming a directory one row update
 // instead of a fan-out across its whole subtree.
 const schemaV1 = `
+CREATE TABLE node (
+  id       INTEGER PRIMARY KEY,
+  share    INTEGER NOT NULL,
+  parent   INTEGER NOT NULL,
+  name     TEXT    NOT NULL,
+  dev      INTEGER NOT NULL,
+  ino      INTEGER NOT NULL,
+  btime_ns INTEGER,
+  flags    INTEGER NOT NULL,
+  size     INTEGER,
+  mtime_ns INTEGER
+);
+CREATE UNIQUE INDEX node_ident ON node(share, dev, ino, btime_ns);
+
+CREATE TABLE diretag (
+  share  INTEGER NOT NULL,
+  fileid INTEGER NOT NULL,
+  etag   TEXT    NOT NULL,
+  rsize  INTEGER NOT NULL,
+  rcount INTEGER NOT NULL,
+  gen    INTEGER NOT NULL,
+  valid  INTEGER NOT NULL,
+  PRIMARY KEY (share, fileid)
+) WITHOUT ROWID;
+
+CREATE TABLE share_gen (
+  share INTEGER PRIMARY KEY,
+  gen   INTEGER NOT NULL
+) WITHOUT ROWID;
+`
+
+// Identity is two partial indexes rather than one, because SQLite holds every
+// NULL distinct in a unique index: version 1's single index over
+// (share, dev, ino, btime_ns) lets the same file appear twice on a filesystem
+// that reports no birth time. Splitting it on whether the column is NULL is
+// what makes the constraint mean what it says.
+//
+// It throws the rows away rather than repairing them. A version 1 database may
+// already hold duplicate no-btime identities and there is no principled one to
+// keep; this file is rebuildable from the tree, which is the whole reason it is
+// a separate database, so discarding is the cheaper of the two mistakes.
+const schemaV2 = `
+DROP INDEX IF EXISTS node_ident;
+DROP TABLE IF EXISTS node;
+DROP TABLE IF EXISTS diretag;
+DROP TABLE IF EXISTS share_gen;
+
 CREATE TABLE node (
   id       INTEGER PRIMARY KEY,
   share    INTEGER NOT NULL,
@@ -55,6 +102,7 @@ CREATE TABLE share_gen (
 func migrations() []dbfile.Migration {
 	return []dbfile.Migration{
 		{Name: "1: node, diretag and share_gen", SQL: schemaV1},
+		{Name: "2: the two partial identity indexes", SQL: schemaV2, Discard: true},
 	}
 }
 

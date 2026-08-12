@@ -23,3 +23,10 @@ func NewNarrow(ctx context.Context, f *dbfile.DB, ov Overrides, bits uint) (*DB,
 func DeriveNarrow(ident Ident, attempt uint32, bits uint) FileID {
 	return derive(ident, attempt, bits)
 }
+
+// SpecV1 stops at the first migration, so a test can build the shape that
+// actually shipped and prove migration 2 finds and discards it. Nothing outside
+// this package's tests may open a database at a version behind the binary.
+func SpecV1(path string) dbfile.Spec {
+	return dbfile.Spec{Path: path, Migrations: migrations()[:1], Rebuildable: true}
+}
