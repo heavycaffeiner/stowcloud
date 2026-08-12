@@ -827,12 +827,31 @@ impl ports::SharePort for NcShares {
         if scope == ports::GranteeScope::Off {
             return Ok(Vec::new());
         }
-        // `SameGroup` cannot be honoured — `sc-auth` has no group table — and
-        // silently widening it to `All` would turn this into the account
-        // enumeration oracle the setting exists to prevent. Refuse instead.
-        if scope == ports::GranteeScope::SameGroup {
-            return Ok(Vec::new());
-        }
+
+        // `SameGroup` is the default, and it used to answer an empty list
+        // whatever was searched for, because when this was written `sc-auth`
+        // had no groups to compare. It has since, so the setting means what it
+        // says instead of meaning "off": a caller finds the accounts they
+        // already share a group with, and nobody else. On a deployment with no
+        // groups at all that is still nobody, which is the honest answer to
+        // "who do I demonstrably already work with" rather than a silent
+        // widening to every account on the server.
+        let same_group_only = scope == ports::GranteeScope::SameGroup;
+        let visible: Option<std::collections::HashSet<UserId>> = if same_group_only {
+            let memberships = self.auth.list_memberships_all().map_err(port_io)?;
+            let mine: std::collections::HashSet<_> =
+                memberships.get(&user).cloned().unwrap_or_default().into_iter().collect();
+            Some(
+                memberships
+                    .iter()
+                    .filter(|(_, groups)| groups.iter().any(|g| mine.contains(g)))
+                    .map(|(u, _)| *u)
+                    .collect(),
+            )
+        } else {
+            None
+        };
+
         let needle = query.to_lowercase();
         Ok(self
             .auth
@@ -840,6 +859,7 @@ impl ports::SharePort for NcShares {
             .map_err(port_io)?
             .into_iter()
             .filter(|u| !u.disabled && u.id != user && u.name.to_lowercase().contains(&needle))
+            .filter(|u| visible.as_ref().is_none_or(|v| v.contains(&u.id)))
             .map(|u| ports::GranteeCandidate {
                 kind: ports::GranteeKind::User,
                 exact: u.name.eq_ignore_ascii_case(query),

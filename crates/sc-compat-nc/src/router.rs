@@ -44,6 +44,8 @@ pub struct NcState {
 struct OcsCtx {
     version: OcsVersion,
     format: OcsFormat,
+    /// For the log line a refusal leaves behind, and nothing else.
+    path: String,
 }
 
 impl OcsCtx {
@@ -73,7 +75,11 @@ impl OcsCtx {
         if let Err(e) = require_ocs_api_request(headers) {
             return Err(Ocs::err(version, format, e).into_response());
         }
-        Ok(Self { version, format })
+        Ok(Self {
+            version,
+            format,
+            path: uri.path().to_string(),
+        })
     }
 
     fn ok(&self, data: Val) -> Response {
@@ -83,7 +89,22 @@ impl OcsCtx {
     fn result(&self, r: Result<Val, OcsError>) -> Response {
         match r {
             Ok(d) => self.ok(d),
-            Err(e) => Ocs::err(self.version, self.format, e).into_response(),
+            Err(e) => {
+                // The only record that this answer was a refusal. A client
+                // reports it as one sentence of its own ("Unable to fetch
+                // sharees"), which names neither the endpoint nor the reason,
+                // and nothing here used to say either — so a working
+                // deployment and one refusing every OCS call looked the same
+                // from the server side.
+                tracing::warn!(
+                    target: "compat",
+                    path = %self.path,
+                    code = e.code,
+                    detail = %e.message,
+                    "ocs request refused"
+                );
+                Ocs::err(self.version, self.format, e).into_response()
+            }
         }
     }
 }
