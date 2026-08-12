@@ -94,7 +94,7 @@ func TestOverrideOutranksTheDerivation(t *testing.T) {
 	if cache.DeriveID(ident, 0) == forced {
 		t.Fatal("the derivation happens to agree with the forced id, which makes this test prove nothing")
 	}
-	if err := p.state.RecordFileID(ctx, ident, forced); err != nil {
+	if err := p.state.RecordFileIDs(ctx, cache.Assignment{Ident: ident, ID: forced}); err != nil {
 		t.Fatalf("recording an override: %v", err)
 	}
 
@@ -123,10 +123,10 @@ func TestOverrideKeepsAbsentAndZeroBirthTimeApart(t *testing.T) {
 	absent := cache.Ident{Share: testShare, Dev: 5, Ino: 5}
 	present := cache.Ident{Share: testShare, Dev: 5, Ino: 5, Btime: &zero}
 
-	if err := p.state.RecordFileID(ctx, absent, 111); err != nil {
+	if err := p.state.RecordFileIDs(ctx, cache.Assignment{Ident: absent, ID: 111}); err != nil {
 		t.Fatalf("recording the absent one: %v", err)
 	}
-	if err := p.state.RecordFileID(ctx, present, 222); err != nil {
+	if err := p.state.RecordFileIDs(ctx, cache.Assignment{Ident: present, ID: 222}); err != nil {
 		t.Fatalf("recording the zero one: %v", err)
 	}
 

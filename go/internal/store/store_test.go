@@ -129,7 +129,7 @@ func TestDeletingTheCacheAndRestartingLosesNothing(t *testing.T) {
 	// One row in each of the other two files, so that "no loss" means more
 	// than the ids coming back.
 	pinned := cache.Ident{Share: testShare, Dev: 0x901, Ino: 777}
-	if err := s.State().RecordFileID(ctx, pinned, 4242); err != nil {
+	if err := s.State().RecordFileIDs(ctx, cache.Assignment{Ident: pinned, ID: 4242}); err != nil {
 		t.Fatalf("recording an override: %v", err)
 	}
 	if err := s.Journal().Record(ctx, journal.Event{

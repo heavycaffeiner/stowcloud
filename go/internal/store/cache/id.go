@@ -81,12 +81,17 @@ func derive(ident Ident, attempt uint32, bits uint) FileID {
 // AllocateID returns the id for ident, deriving it and consulting the override
 // table first. It is the only function that may decide an id.
 //
-// tx is the cache's write transaction. An override row, where a collision
-// forces one, is committed to the durable half before this returns and
-// therefore before the node row that uses the id: a crash between the two
-// leaves an override with no node, which is the state every rebuild starts
-// from anyway. The other order leaves a node holding an id nothing recorded,
-// and the next rebuild races the collision again.
+// A candidate is free only when neither a different node nor a different
+// override identity holds it. The second half is what makes a reservation
+// outlive the cache: after the file is deleted its owner may not have been
+// walked yet, and an id no node currently holds is still spoken for.
+//
+// tx is the cache's write transaction. The override rows a collision forces are
+// committed to the durable half before this returns and therefore before the
+// node row that uses the id: a crash between the two leaves reservations with no
+// nodes, which is the state every rebuild starts from anyway. The other order
+// leaves a node holding an id nothing recorded, and the next rebuild races the
+// collision again.
 //
 // A caller must not cache the result across a share re-registration: the share
 // id is part of the derivation.
@@ -101,19 +106,28 @@ func (d *DB) AllocateID(ctx context.Context, tx *sql.Tx, ident Ident) (FileID, e
 		return id, nil
 	}
 
+	// The identity that holds the base candidate, where one does. Its id is an
+	// insertion-order decision too once a collision exists, so it is written
+	// down beside the newcomer's rather than left to be derived again.
+	var base []Assignment
+
 	for attempt := uint32(0); attempt <= maxAttempts; attempt++ {
 		id := derive(ident, attempt, d.bits)
-		holder, held, err := d.identOf(ctx, tx, id)
+		free, holder, err := d.available(ctx, tx, id, ident)
 		if err != nil {
 			return 0, err
 		}
-		if held && !holder.Equal(ident) {
+		if !free {
+			if attempt == 0 && holder != nil {
+				base = []Assignment{{Ident: *holder, ID: id}}
+			}
 			continue
 		}
 		if attempt == 0 {
 			return id, nil
 		}
-		if err := d.ov.RecordFileID(ctx, ident, id); err != nil {
+		if err := d.ov.RecordFileIDs(ctx,
+			append(base, Assignment{Ident: ident, ID: id})...); err != nil {
 			return 0, fmt.Errorf("recording the id override: %w", err)
 		}
 		// Worth an operator's attention not because anything is wrong but
@@ -129,6 +143,30 @@ func (d *DB) AllocateID(ctx context.Context, tx *sql.Tx, ident Ident) (FileID, e
 	}
 	return 0, fmt.Errorf("no free id for (share %d, dev %d, ino %d) after %d attempts",
 		ident.Share, ident.Dev, ident.Ino, maxAttempts)
+}
+
+// available reports whether want is free for ident, and who took it otherwise.
+//
+// The returned holder is a node holding the id with nothing durable recorded
+// about it, which is the one case the caller has to write down. A reservation
+// is already durable, so it comes back as occupied with no holder.
+func (d *DB) available(ctx context.Context, tx *sql.Tx, want FileID, ident Ident) (bool, *Ident, error) {
+	owner, reserved, err := d.ov.LookupFileIDOwner(ctx, want)
+	if err != nil {
+		return false, nil, fmt.Errorf("reading the owner of id %d: %w", want, err)
+	}
+	if reserved {
+		return owner.Equal(ident), nil, nil
+	}
+
+	holder, held, err := d.identOf(ctx, tx, want)
+	if err != nil {
+		return false, nil, err
+	}
+	if !held || holder.Equal(ident) {
+		return true, nil, nil
+	}
+	return false, &holder, nil
 }
 
 // identOf reports which identity holds id, if any.

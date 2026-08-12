@@ -72,6 +72,13 @@ func (i Ident) key() identKey {
 	return k
 }
 
+// Assignment is one identity and the id it holds, which is what a collision
+// makes durable.
+type Assignment struct {
+	Ident Ident
+	ID    FileID
+}
+
 // Overrides is the durable record of which of two colliding files took the
 // derived id. It is consulted before anything is derived and it is the
 // authority, because the answer depends on insertion order and a rebuild does
@@ -84,9 +91,15 @@ type Overrides interface {
 	// recorded.
 	LookupFileID(ctx context.Context, ident Ident) (FileID, bool, error)
 
-	// RecordFileID writes the decision. It commits before the node row that
-	// uses the id does.
-	RecordFileID(ctx context.Context, ident Ident, id FileID) error
+	// LookupFileIDOwner reports which identity reserved id, if any. A
+	// reservation holds whether or not the owner's node row exists, which is
+	// what makes it survive a deleted cache: after a rebuild the owner may not
+	// have been walked yet.
+	LookupFileIDOwner(ctx context.Context, id FileID) (Ident, bool, error)
+
+	// RecordFileIDs writes every assignment in one transaction. It commits
+	// before the node row that uses any of the ids does.
+	RecordFileIDs(ctx context.Context, assignments ...Assignment) error
 }
 
 // DB is the cache.

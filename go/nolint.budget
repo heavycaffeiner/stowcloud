@@ -18,4 +18,7 @@
 # Four are gosec reading an identifier rather than a value: a constant named
 # after the app_password or totp_secret table holds a SQL statement, not a
 # credential. The tenth is the import closing databases it only ever read.
-23
+#
+# Phase 2.5 added one, the other direction of the same signed-integer crossing:
+# reading a stored device or inode number back out of the override table.
+24
