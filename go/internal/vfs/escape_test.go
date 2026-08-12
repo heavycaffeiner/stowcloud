@@ -174,8 +174,8 @@ func TestEscapeThroughAMagicLink(t *testing.T) {
 	policy.Symlink = SymlinkFollow
 	r := share(t, "/proc/self", policy)
 
-	if _, err := r.OpenRead(mustParse(t, "fd/"+name), IntentRead); !errors.Is(err, ErrSymlinkDenied) {
-		t.Fatalf("opening a magic link = %v, want ErrSymlinkDenied from ELOOP", err)
+	if _, oerr := r.OpenRead(mustParse(t, "fd/"+name), IntentRead); !errors.Is(oerr, ErrSymlinkDenied) {
+		t.Fatalf("opening a magic link = %v, want ErrSymlinkDenied from ELOOP", oerr)
 	}
 
 	parent, err := r.resolveDir([]string{"fd"})
