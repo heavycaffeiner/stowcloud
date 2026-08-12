@@ -24,6 +24,14 @@ type Migration struct {
 	// runner refuses it unless the file is rebuildable, which the cache is and
 	// nothing else is.
 	Discard bool
+
+	// Precondition runs inside the step's own transaction, before its SQL. It
+	// is for a step whose refusal a constraint can express but not explain: a
+	// CHECK that rejects a row says which constraint failed and not which row,
+	// and an operator holding a durable database needs the row.
+	//
+	// Nil for every step whose SQL is the whole of it.
+	Precondition func(context.Context, *sql.Tx) error
 }
 
 // migrate brings the database up to the last version in the list, one
@@ -51,6 +59,11 @@ func migrate(ctx context.Context, d *DB, spec Spec) error {
 		}
 		version := i + 1
 		if err := d.Write(ctx, func(tx *sql.Tx) error {
+			if m.Precondition != nil {
+				if err := m.Precondition(ctx, tx); err != nil {
+					return err
+				}
+			}
 			if _, err := tx.ExecContext(ctx, m.SQL); err != nil {
 				return err
 			}

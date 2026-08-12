@@ -6,9 +6,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/fromrust"
@@ -16,6 +19,12 @@ import (
 
 	_ "modernc.org/sqlite" // the driver the fixtures are written with
 )
+
+// nowNs is what the fixtures are dated against, so "expired" and "active" are
+// facts about the data rather than about when the suite runs.
+const nowNs int64 = 1_700_000_000_000_000_000
+
+func testClock() clock.Clock { return clock.Fixed(time.Unix(0, nowNs)) }
 
 // mkdb writes one of the databases the Rust build kept, with only the columns
 // this import reads.
@@ -128,6 +137,18 @@ func rustDir(t *testing.T) string {
 		`CREATE TABLE settings_overrides (id INTEGER PRIMARY KEY, json TEXT)`,
 		`INSERT INTO settings_overrides VALUES (1, '{"a":1}')`,
 	)
+
+	// One lock a client is still holding and one that lapsed. expires_ns is
+	// text in this schema, which is why the import parses it.
+	mkdb(t, filepath.Join(dir, "dav-locks.db"),
+		`CREATE TABLE dav_lock (token TEXT PRIMARY KEY, fileid INTEGER NOT NULL, share INTEGER NOT NULL,
+		   path TEXT NOT NULL, principal INTEGER NOT NULL, owner TEXT NOT NULL, depth INTEGER NOT NULL,
+		   scope INTEGER NOT NULL, expires_ns TEXT NOT NULL, timeout_s INTEGER NOT NULL)`,
+		`INSERT INTO dav_lock VALUES ('held', 5, 7, 'docs/a.txt', 1, 'alice', 0, 0,
+		   '`+strconv.FormatInt(nowNs+60_000_000_000, 10)+`', 60)`,
+		`INSERT INTO dav_lock VALUES ('lapsed', 6, 7, 'docs/b.txt', 1, 'alice', 0, 0,
+		   '`+strconv.FormatInt(nowNs-1, 10)+`', 60)`,
+	)
 	return dir
 }
 
@@ -157,7 +178,7 @@ func count(t *testing.T, d *state.DB, query string, args ...any) int {
 
 func TestImportCarriesTheDurableHalf(t *testing.T) {
 	dir := rustDir(t)
-	rep, err := fromrust.Import(context.Background(), dir)
+	rep, err := fromrust.Import(context.Background(), dir, testClock())
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
@@ -183,14 +204,105 @@ func TestImportCarriesTheDurableHalf(t *testing.T) {
 		{"upload intervals", `SELECT count(*) FROM upload_interval`, 2},
 		{"dead properties", `SELECT count(*) FROM dav_prop`, 2},
 		{"favorites", `SELECT count(*) FROM favorite`, 1},
+		{"webdav locks", `SELECT count(*) FROM dav_lock`, 1},
 	} {
 		if got := count(t, d, tc.query); got != tc.want {
 			t.Errorf("%s: %d, want %d", tc.what, got, tc.want)
 		}
 	}
 
-	if rep.Copied["user"] != 2 || rep.Dropped["session"] != 1 {
-		t.Errorf("the report says %+v and %+v", rep.Copied, rep.Dropped)
+	if rep.Copied["user"] != 2 {
+		t.Errorf("the report says %+v", rep.Copied)
+	}
+}
+
+// A drop is a data-loss boundary, so the report says which table lost rows and
+// why. The fixture drops rows for four different reasons and the previous
+// report called every one of them an unknown account.
+func TestTheReportNamesTheRealReason(t *testing.T) {
+	dir := rustDir(t)
+	rep, err := fromrust.Import(context.Background(), dir, testClock())
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	for _, want := range []fromrust.Drop{
+		{Table: "session", Reason: fromrust.ReasonUnknownUser},
+		{Table: "membership", Reason: fromrust.ReasonUnknownUser},
+		{Table: "grant", Reason: fromrust.ReasonUnknownUser},
+		{Table: "dav_prop", Reason: fromrust.ReasonMissingNode},
+		{Table: "favorite", Reason: fromrust.ReasonMissingNode},
+		{Table: "favorite", Reason: fromrust.ReasonUnknownUser},
+		{Table: "upload_session", Reason: fromrust.ReasonUnknownUser},
+		{Table: "dav_lock", Reason: fromrust.ReasonExpired},
+	} {
+		if rep.Dropped[want] != 1 {
+			t.Errorf("%s / %q: %d rows, want 1", want.Table, want.Reason, rep.Dropped[want])
+		}
+	}
+
+	var out strings.Builder
+	if werr := rep.Write(&out); werr != nil {
+		t.Fatalf("writing the report: %v", werr)
+	}
+	if strings.Contains(out.String(), "WebDAV locks, which expire") {
+		t.Error("the report still claims locks are not imported")
+	}
+	for _, phrase := range []string{
+		"the metadata cache holds no row",
+		"they had already expired",
+	} {
+		if !strings.Contains(out.String(), phrase) {
+			t.Errorf("the report does not say %q:\n%s", phrase, out.String())
+		}
+	}
+}
+
+// A lock the client still holds survives the cutover, keyed by the file's
+// identity rather than by the node id the old row named.
+func TestImportKeepsAnActiveLock(t *testing.T) {
+	ctx := context.Background()
+	dir := rustDir(t)
+	if _, err := fromrust.Import(ctx, dir, testClock()); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	d := openState(t, dir)
+
+	var (
+		token, path              string
+		dev, ino, present, btime int64
+		expires                  int64
+	)
+	if err := d.SQL().QueryRowContext(ctx,
+		`SELECT token, path, dev, ino, btime_present, btime_ns, expires_ns FROM dav_lock`).
+		Scan(&token, &path, &dev, &ino, &present, &btime, &expires); err != nil {
+		t.Fatalf("reading the lock: %v", err)
+	}
+	if token != "held" || path != "docs/a.txt" {
+		t.Errorf("the surviving lock is %s on %s", token, path)
+	}
+	if dev != 2 || ino != 3 || present != 1 || btime != 4 {
+		t.Errorf("the lock points at (%d, %d, %d, %d)", dev, ino, present, btime)
+	}
+	if expires != nowNs+60_000_000_000 {
+		t.Errorf("the expiry came across as %d", expires)
+	}
+}
+
+// An active lock whose file the cache cannot resolve stops the import. Dropping
+// it would open the write window the lock exists to close, at the one moment
+// nobody is watching for it.
+func TestImportRefusesAnUnresolvableActiveLock(t *testing.T) {
+	dir := rustDir(t)
+	mkdb(t, filepath.Join(dir, "dav-locks.db"),
+		`UPDATE dav_lock SET fileid = 404 WHERE token = 'held'`)
+
+	_, err := fromrust.Import(context.Background(), dir, testClock())
+	if err == nil {
+		t.Fatal("an active lock with no resolvable file was imported")
+	}
+	if !strings.Contains(err.Error(), "held") {
+		t.Errorf("the refusal does not name the lock: %v", err)
 	}
 }
 
@@ -199,7 +311,7 @@ func TestImportCarriesTheDurableHalf(t *testing.T) {
 // key's own rotation and not an import's business.
 func TestImportLiftsTheTotpSecretOutOfTheUserRow(t *testing.T) {
 	dir := rustDir(t)
-	if _, err := fromrust.Import(context.Background(), dir); err != nil {
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 	d := openState(t, dir)
@@ -221,7 +333,7 @@ func TestImportLiftsTheTotpSecretOutOfTheUserRow(t *testing.T) {
 // and one whose account is gone does not come across at all.
 func TestImportSplitsTheGrantPrincipal(t *testing.T) {
 	dir := rustDir(t)
-	if _, err := fromrust.Import(context.Background(), dir); err != nil {
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 	d := openState(t, dir)
@@ -239,7 +351,7 @@ func TestImportSplitsTheGrantPrincipal(t *testing.T) {
 func TestImportTranslatesNodeIDsIntoIdentities(t *testing.T) {
 	ctx := context.Background()
 	dir := rustDir(t)
-	if _, err := fromrust.Import(ctx, dir); err != nil {
+	if _, err := fromrust.Import(ctx, dir, testClock()); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 	d := openState(t, dir)
@@ -279,11 +391,76 @@ func TestImportTranslatesNodeIDsIntoIdentities(t *testing.T) {
 	}
 }
 
+// A Rust link with no file id is a link on the share root, and it is the one
+// legitimate path-only representation. It must not be fabricated into a tuple.
+func TestImportKeepsAPathOnlyLinkPathOnly(t *testing.T) {
+	ctx := context.Background()
+	dir := rustDir(t)
+	mkdb(t, filepath.Join(dir, "links.db"),
+		`INSERT INTO share_link VALUES (2, X'ee', X'ff', 7, '', NULL, 1, 1, NULL, NULL,
+		   NULL, 0, NULL, NULL, 0)`)
+
+	if _, err := fromrust.Import(ctx, dir, testClock()); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	d := openState(t, dir)
+
+	var dev, ino, present, btime, keyVer *int64
+	if err := d.SQL().QueryRowContext(ctx,
+		`SELECT dev, ino, btime_present, btime_ns, token_key_ver FROM share_link WHERE id = 2`).
+		Scan(&dev, &ino, &present, &btime, &keyVer); err != nil {
+		t.Fatalf("reading the link: %v", err)
+	}
+	if dev != nil || ino != nil || present != nil || btime != nil {
+		t.Error("a link with no file id came across carrying an identity")
+	}
+	// The ciphertext the Rust build sealed has no version in its AAD, and zero
+	// is the name for that state rather than an absent column.
+	if keyVer == nil || *keyVer != 0 {
+		t.Errorf("token_key_ver is %v, want 0 beside the ciphertext", keyVer)
+	}
+}
+
+// A link that names a file the cache cannot resolve stops the import. Making it
+// path-only would hand public access to whatever is created at that path next,
+// under a token somebody already has.
+func TestImportRefusesAnUnresolvableLinkTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		setup string
+		says  string
+	}{
+		{
+			"a node that is gone",
+			`UPDATE share_link SET fileid = 404 WHERE id = 1`,
+			"404",
+		},
+		{
+			"a node with no birth time",
+			`UPDATE share_link SET fileid = 6 WHERE id = 1`,
+			"birth time",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := rustDir(t)
+			mkdb(t, filepath.Join(dir, "links.db"), tc.setup)
+
+			_, err := fromrust.Import(context.Background(), dir, testClock())
+			if err == nil {
+				t.Fatal("the link was imported")
+			}
+			if !strings.Contains(err.Error(), tc.says) {
+				t.Errorf("the refusal does not say %q: %v", tc.says, err)
+			}
+		})
+	}
+}
+
 // An in-flight upload keeps what has arrived, as rows rather than as a blob.
 func TestImportUnpacksTheIntervalSet(t *testing.T) {
 	ctx := context.Background()
 	dir := rustDir(t)
-	if _, err := fromrust.Import(ctx, dir); err != nil {
+	if _, err := fromrust.Import(ctx, dir, testClock()); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 	d := openState(t, dir)
@@ -323,7 +500,7 @@ func TestImportLeavesTheOldFilesAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading auth.db: %v", err)
 	}
-	if _, ierr := fromrust.Import(context.Background(), dir); ierr != nil {
+	if _, ierr := fromrust.Import(context.Background(), dir, testClock()); ierr != nil {
 		t.Fatalf("Import: %v", ierr)
 	}
 	after, err := os.ReadFile(filepath.Join(dir, "auth.db"))
@@ -344,10 +521,10 @@ func TestImportLeavesTheOldFilesAlone(t *testing.T) {
 // one is far more likely to be a mistake than an intention.
 func TestImportRefusesAnExistingState(t *testing.T) {
 	dir := rustDir(t)
-	if _, err := fromrust.Import(context.Background(), dir); err != nil {
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); err != nil {
 		t.Fatalf("the first import: %v", err)
 	}
-	if _, err := fromrust.Import(context.Background(), dir); !errors.Is(err, fromrust.ErrStateExists) {
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); !errors.Is(err, fromrust.ErrStateExists) {
 		t.Fatalf("the second import returned %v, want ErrStateExists", err)
 	}
 }
@@ -355,7 +532,7 @@ func TestImportRefusesAnExistingState(t *testing.T) {
 // A directory that is not one of ours says so, rather than writing an empty
 // state.db and reporting success.
 func TestImportRefusesADirectoryWithNoAuthDatabase(t *testing.T) {
-	if _, err := fromrust.Import(context.Background(), t.TempDir()); err == nil {
+	if _, err := fromrust.Import(context.Background(), t.TempDir(), testClock()); err == nil {
 		t.Fatal("an empty directory was imported")
 	}
 }
@@ -373,7 +550,7 @@ func TestAFailedImportLeavesNothingAndIsRetryable(t *testing.T) {
 	mkdb(t, filepath.Join(dir, "acl.db"),
 		`INSERT INTO grant_ VALUES (4, 7, 1, 7, '', 1, 0, 1, NULL, 0)`)
 
-	if _, err := fromrust.Import(ctx, dir); err == nil {
+	if _, err := fromrust.Import(ctx, dir, testClock()); err == nil {
 		t.Fatal("a row the import cannot read was imported anyway")
 	}
 	entries, err := os.ReadDir(dir)
@@ -389,7 +566,7 @@ func TestAFailedImportLeavesNothingAndIsRetryable(t *testing.T) {
 	// With the bad row gone the same directory imports, which is what
 	// "retryable" means.
 	mkdb(t, filepath.Join(dir, "acl.db"), `DELETE FROM grant_ WHERE id = 4`)
-	if _, err := fromrust.Import(ctx, dir); err != nil {
+	if _, err := fromrust.Import(ctx, dir, testClock()); err != nil {
 		t.Fatalf("the retry failed: %v", err)
 	}
 	d := openState(t, dir)
@@ -403,7 +580,7 @@ func TestAFailedImportLeavesNothingAndIsRetryable(t *testing.T) {
 // sidecar the rename does not carry.
 func TestTheImportPublishesOneFile(t *testing.T) {
 	dir := rustDir(t)
-	if _, err := fromrust.Import(context.Background(), dir); err != nil {
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); err != nil {
 		t.Fatalf("Import: %v", err)
 	}
 	entries, err := os.ReadDir(dir)

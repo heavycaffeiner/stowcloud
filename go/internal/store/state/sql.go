@@ -2,16 +2,19 @@ package state
 
 import "github.com/heavycaffeiner/stowcloud/go/internal/store/dbfile"
 
-// The schema. Every table here holds something the filesystem cannot
-// regenerate, which is what makes this file the whole of the backup
-// instruction.
+// The schema as it first shipped. Every table here holds something the
+// filesystem cannot regenerate, which is what makes this file the data backup.
 //
-// Four tables key by the identity tuple rather than by a node id: dead
-// properties, locks, favorites and the target of a share link. Keying by an id
-// only the cache mints is what forced the cache to carry a pin saying "do not
-// reap this, something durable points at it". An identity is a fact about the
-// file, so deleting the cache now costs a lookup rather than leaving a row
-// pointing at nothing.
+// Three tables key by the identity tuple rather than by a node id: dead
+// properties, locks and favorites. Keying by an id only the cache mints is what
+// forced the cache to carry a pin saying "do not reap this, something durable
+// points at it". An identity is a fact about the file, so deleting the cache now
+// costs a lookup rather than leaving a row pointing at nothing.
+//
+// A share link is the fourth durable row that names a file and the one with a
+// different contract: it keeps a path and an optional identity, and it does not
+// follow a rename. Migration 2 below is what makes that representation coherent;
+// the identity columns here admit combinations that cannot be told apart.
 //
 // The birth time is two columns rather than the one node carries, and the
 // difference is SQLite's rather than a choice: a WITHOUT ROWID table enforces
@@ -247,12 +250,84 @@ CREATE TABLE fileid_override (
 ) WITHOUT ROWID;
 `
 
+// Migration 2 gives a share link one coherent target representation and pairs
+// the encrypted token with the key version that sealed it.
+//
+// Version 1 made all four identity columns nullable and constrained no
+// combination of them, so "path only", "path plus identity" and "the importer
+// could not work it out" were the same shape on disk. A link is the one durable
+// row that must not follow a rename: it stats the stored path and requires the
+// stored identity to match, and a link that cannot tell the original inode from
+// one reused after a delete cannot keep that contract. So there are two
+// representations and no third.
+//
+// (dev, ino) not both zero, and btime_present pinned to 1, are what refuse the
+// tuple the Phase 2 importer fabricated. A birth time is what distinguishes the
+// original file from a replacement at the same inode number.
+//
+// This one preserves rows. Unlike the cache there is nothing to rebuild it
+// from, so a row it cannot represent stops the migration rather than being
+// dropped or weakened; the precondition is what names which row.
+const schemaV2 = `
+CREATE TABLE share_link_next (
+  id            INTEGER PRIMARY KEY,
+  token_hash    BLOB NOT NULL UNIQUE,
+  token_enc     BLOB,
+  token_key_ver INTEGER,
+  share         INTEGER NOT NULL,
+  path          TEXT NOT NULL,
+  dev           INTEGER,
+  ino           INTEGER,
+  btime_present INTEGER,
+  btime_ns      INTEGER,
+  owner         INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  perms         INTEGER NOT NULL,
+  password_hash TEXT,
+  expires_ns    INTEGER,
+  max_downloads INTEGER,
+  downloads     INTEGER NOT NULL DEFAULT 0,
+  label         TEXT,
+  note          TEXT,
+  created_ns    INTEGER NOT NULL,
+  CHECK (
+    (dev IS NULL AND ino IS NULL AND btime_present IS NULL AND btime_ns IS NULL)
+    OR (dev IS NOT NULL AND ino IS NOT NULL AND btime_ns IS NOT NULL
+        AND btime_present = 1 AND NOT (dev = 0 AND ino = 0))
+  ),
+  CHECK (
+    (token_enc IS NULL AND token_key_ver IS NULL)
+    OR (token_enc IS NOT NULL AND token_key_ver IS NOT NULL AND token_key_ver >= 0)
+  )
+);
+
+INSERT INTO share_link_next(id, token_hash, token_enc, token_key_ver, share, path,
+                            dev, ino, btime_present, btime_ns,
+                            owner, perms, password_hash, expires_ns, max_downloads,
+                            downloads, label, note, created_ns)
+SELECT id, token_hash, token_enc,
+       CASE WHEN token_enc IS NULL THEN NULL ELSE 0 END,
+       share, path, dev, ino, btime_present, btime_ns,
+       owner, perms, password_hash, expires_ns, max_downloads,
+       downloads, label, note, created_ns
+FROM share_link;
+
+DROP TABLE share_link;
+ALTER TABLE share_link_next RENAME TO share_link;
+CREATE INDEX share_link_owner ON share_link(owner);
+CREATE INDEX share_link_target ON share_link(share, path);
+`
+
 // migrations is a function rather than a package-level slice so the list
 // cannot be reassigned. Position is version, so a step that has shipped is
 // never edited, renumbered or reordered.
 func migrations() []dbfile.Migration {
 	return []dbfile.Migration{
 		{Name: "1: fileid_override", SQL: schemaV1},
+		{
+			Name:         "2: one share-link target representation",
+			SQL:          schemaV2,
+			Precondition: checkShareLinkTargets,
+		},
 	}
 }
 
@@ -270,4 +345,6 @@ INSERT INTO fileid_override(share, dev, ino, btime_present, btime_ns, id)
 VALUES (?, ?, ?, ?, ?, ?)`
 
 	sqlCountFileIDOverrides = `SELECT count(*) FROM fileid_override`
+
+	sqlReadShareLinkTargets = `SELECT id, dev, ino, btime_present, btime_ns FROM share_link`
 )

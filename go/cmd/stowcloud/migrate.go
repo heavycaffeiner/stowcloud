@@ -5,6 +5,7 @@ import (
 	"io"
 	"path/filepath"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/fromrust"
 )
@@ -23,7 +24,7 @@ func runMigrate(args []string, w io.Writer) int {
 	}
 
 	dir := args[1]
-	rep, err := fromrust.Import(context.Background(), dir)
+	rep, err := fromrust.Import(context.Background(), dir, clock.System())
 	if err != nil {
 		say(w, "stowcloud %s: migrate: %v\n", version, err)
 		return exitConfig

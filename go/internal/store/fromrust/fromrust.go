@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/state"
@@ -33,45 +34,71 @@ const (
 	settingsFile = "settings.db"
 	metaFile     = "meta.db"
 	compatFile   = "compat-nc.db"
+	locksFile    = "dav-locks.db"
 
 	// stagedSuffix names the database being built, beside the name it takes.
 	stagedSuffix = ".importing"
+
+	// legacyTokenKeyVersion marks a Rust share-link ciphertext, whose AAD
+	// carried no version at all. Phase 3 re-seals it under a positive one.
+	legacyTokenKeyVersion = 0
 )
 
 // ErrStateExists is a data directory that has already been migrated, or one
 // the Go build has already run against. Either way this is not a merge.
 var ErrStateExists = errors.New("state.db already exists")
 
+// Reason is why a row did not come across. Every drop site names one: this
+// report is the operator's only account of what a one-way migration lost, and a
+// single count with one sentence attached to it says "unknown account" over a
+// row that was discarded for something else entirely.
+type Reason string
+
+const (
+	ReasonUnknownUser  Reason = "the account they belonged to no longer exists"
+	ReasonUnknownGroup Reason = "the group they belonged to no longer exists"
+	ReasonMissingNode  Reason = "the metadata cache holds no row for the file they named"
+	ReasonExpired      Reason = "they had already expired"
+	ReasonCorruptRange Reason = "their received-range set would not decode"
+)
+
+// Drop is one table and one reason, which is the granularity the report has to
+// have to be worth reading.
+type Drop struct {
+	Table  string
+	Reason Reason
+}
+
 // Report is what was carried across, per destination table, and what was
-// dropped on the way.
+// dropped on the way with why.
 type Report struct {
 	Copied  map[string]int
-	Dropped map[string]int
+	Dropped map[Drop]int
 }
 
 func newReport() *Report {
-	return &Report{Copied: map[string]int{}, Dropped: map[string]int{}}
+	return &Report{Copied: map[string]int{}, Dropped: map[Drop]int{}}
 }
 
 // Write prints the report in the order an operator reads it: what arrived,
-// then what did not, then what was never going to.
+// then what did not and why, then what was never going to.
 func (r *Report) Write(w io.Writer) error {
 	for _, name := range sortedKeys(r.Copied) {
 		if _, err := fmt.Fprintf(w, "  %-16s %d rows\n", name, r.Copied[name]); err != nil {
 			return err
 		}
 	}
-	for _, name := range sortedKeys(r.Dropped) {
-		if _, err := fmt.Fprintf(w,
-			"  %-16s %d rows dropped: they referred to an account that no longer exists\n",
-			name, r.Dropped[name]); err != nil {
+	for _, d := range sortedDrops(r.Dropped) {
+		if _, err := fmt.Fprintf(w, "  %-16s %d rows dropped: %s\n",
+			d.Table, r.Dropped[d], d.Reason); err != nil {
 			return err
 		}
 	}
 	_, err := fmt.Fprint(w,
 		"\nNot imported, by design:\n"+
 			"  the metadata cache, which rebuilds from the tree on demand\n"+
-			"  WebDAV locks, which expire in minutes and are retaken by the client\n"+
+			"\nRetained in place, not copied:\n"+
+			"  journal.db, which this binary adopts as it stands\n"+
 			"\nEvery file id changes once at this cutover, so every attached sync\n"+
 			"client performs one full reconciliation.\n")
 	return err
@@ -85,7 +112,7 @@ func (r *Report) Write(w io.Writer) error {
 // and can simply be run again, which matters because the alternative is an
 // operator staring at a state.db that exists, is incomplete, and blocks the
 // retry that would fix it.
-func Import(ctx context.Context, dir string) (*Report, error) {
+func Import(ctx context.Context, dir string, clk clock.Clock) (*Report, error) {
 	target := filepath.Join(dir, store.StateFile)
 	if _, err := os.Stat(target); err == nil {
 		return nil, fmt.Errorf("%w in %s: this import does not merge", ErrStateExists, dir)
@@ -106,7 +133,7 @@ func Import(ctx context.Context, dir string) (*Report, error) {
 		return nil, derr
 	}
 
-	rep, err := build(ctx, staged, src)
+	rep, err := build(ctx, staged, src, clk)
 	if err != nil {
 		return nil, errors.Join(err, discardStaged(staged))
 	}
@@ -119,13 +146,13 @@ func Import(ctx context.Context, dir string) (*Report, error) {
 // build writes the staged database and closes it, which checkpoints the
 // write-ahead log back into the file so that the one rename that follows
 // carries the whole of it.
-func build(ctx context.Context, staged string, src *sources) (*Report, error) {
+func build(ctx context.Context, staged string, src *sources, clk clock.Clock) (*Report, error) {
 	out, err := dbfile.Open(ctx, state.Spec(staged))
 	if err != nil {
 		return nil, err
 	}
 	rep := newReport()
-	if err := out.Write(ctx, func(tx *sql.Tx) error { return src.into(ctx, tx, rep) }); err != nil {
+	if err := out.Write(ctx, func(tx *sql.Tx) error { return src.into(ctx, tx, rep, clk) }); err != nil {
 		return nil, errors.Join(err, out.Close())
 	}
 	if err := out.Close(); err != nil {
@@ -158,6 +185,7 @@ type sources struct {
 	settings *sql.DB
 	meta     *sql.DB
 	compat   *sql.DB
+	locks    *sql.DB
 }
 
 func openSources(dir string) (*sources, error) {
@@ -173,6 +201,7 @@ func openSources(dir string) (*sources, error) {
 		{settingsFile, &s.settings},
 		{metaFile, &s.meta},
 		{compatFile, &s.compat},
+		{locksFile, &s.locks},
 	} {
 		db, err := openReadOnly(filepath.Join(dir, spec.name))
 		if err != nil {
@@ -209,7 +238,9 @@ func openReadOnly(path string) (*sql.DB, error) {
 }
 
 func (s *sources) close() {
-	for _, db := range []*sql.DB{s.auth, s.acl, s.links, s.upload, s.settings, s.meta, s.compat} {
+	for _, db := range []*sql.DB{
+		s.auth, s.acl, s.links, s.upload, s.settings, s.meta, s.compat, s.locks,
+	} {
 		if db != nil {
 			_ = db.Close() //nolint:errcheck // every one of these is query-only, so a failed close loses nothing.
 		}

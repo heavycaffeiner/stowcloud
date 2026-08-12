@@ -80,11 +80,21 @@ SELECT id, token_hash, token_enc, share, path, fileid, owner, perms, password_ha
        expires_ns, max_downloads, downloads, label, note, created_ns
 FROM share_link`
 	insShareLink = `
-INSERT INTO share_link(id, token_hash, token_enc, share, path,
+INSERT INTO share_link(id, token_hash, token_enc, token_key_ver, share, path,
                        dev, ino, btime_present, btime_ns,
                        owner, perms, password_hash, expires_ns, max_downloads, downloads,
                        label, note, created_ns)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	// expires_ns is TEXT in the old schema and INTEGER here, so it is parsed
+	// rather than carried.
+	selDavLock = `
+SELECT token, fileid, share, path, principal, owner, depth, scope, expires_ns, timeout_s
+FROM dav_lock`
+	insDavLock = `
+INSERT INTO dav_lock(token, share, dev, ino, btime_present, btime_ns,
+                     path, principal, owner, depth, scope, expires_ns, timeout_s)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	selSettings = `SELECT id, json FROM settings_overrides`
 	insSettings = `INSERT INTO settings(id, json) VALUES (?, ?)`
