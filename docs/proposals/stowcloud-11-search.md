@@ -125,6 +125,23 @@ bytes. Where a byte-identical write is impossible for a defensible reason (a map
 iteration order reaching the output, say), the fix is to make the writer's order
 explicit, not to weaken the check.
 
+**The generator exists**, at `crates/sc-search/examples/golden.rs`, and the
+fixtures are committed with a `README.md` describing each format. It is an
+example rather than a test because it writes into the repository, it reads only
+the crate's public API, and it changes nothing in `sc-search`: a golden file
+records what the implementation does, so an implementation bent to make
+generation easier records the bend instead. Two consecutive runs produce
+byte-identical output.
+
+**One byte-identity claim does not survive, and it is not an ordering
+difference.** The block payloads are zstd frames, and zstd's format specifies
+what a decoder accepts rather than what an encoder emits, so two independent
+encoders agreeing byte for byte would be a coincidence rather than a property.
+The header, the block directory, the trigram dictionary and the posting lists
+are the format's own bytes and are compared exactly; the payloads are compared
+through what they decompress to. `OPEN-QUESTIONS.md` Q2 carries the options and
+what would reopen it.
+
 This is worth the setup cost because it converts "does the Go search work" from
 a judgement into a diff.
 

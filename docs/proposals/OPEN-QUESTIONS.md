@@ -54,3 +54,51 @@ measure, and which owes the numbers either way.
 **What is not in question.** The decode side. Still WebP reads in all three
 shapes it ships in; animated WebP does not, and that reduction is recorded in
 [`12`](stowcloud-12-preview.md) §3.1 rather than left to be discovered.
+
+---
+
+## Q2. What "byte-identical `base.idx`" can mean across two zstd encoders
+
+**Raised by** milestone 8a, building the golden fixtures
+([`11`](stowcloud-11-search.md) §4.3.1).
+
+**What was found.** §4.3.1 asks that the Go implementation, writing `base.idx`
+from the same corpus, produce the same bytes, and says that where a
+byte-identical write is impossible the fix is to make the writer's order
+explicit rather than to weaken the check. That instruction is the right one for
+every difference it anticipated, and there is one it does not reach: the block
+payloads are zstd frames. The Rust side produces them with the `zstd` crate at
+level 6; the Go side will produce them with `klauspost/compress`.
+
+zstd's format specifies what a decoder must accept, not what an encoder must
+emit. Block splitting, match finding and entropy table selection are all the
+encoder's to choose, and libzstd's numeric levels have no defined counterpart
+in another implementation. Two independent encoders agreeing byte for byte
+would be a coincidence, and one that any version bump on either side would end.
+No ordering fix reaches this, because it is not an ordering difference.
+
+**Options.**
+
+| # | The check becomes | Cost |
+|---|---|---|
+| 1 | byte-identical for the header, the block directory, the dictionary and the postings; identical after decompression for the block payloads | the compressed bytes go unchecked, so a difference in compression ratio is invisible to the fixture |
+| 2 | byte-identical everywhere, with the block payloads stored uncompressed | gives up the reason the index is small, which is three quarters of the design |
+| 3 | byte-identical everywhere, with a cgo zstd on the Go side | contradicts `CGO_ENABLED=0`, which is the whole static-binary story |
+| 4 | behavioural only: same corpus in, same query answers out | this is what the golden-file strategy exists to be stronger than |
+
+**What decides between it and option 2.** Only the measured size difference, and
+only if it turns out that the pure-Go encoder's ratio on filename corpora is far
+enough off libzstd's to matter against the 4 GB metadata budget. That is a
+Phase 8c measurement and it is a different question from this one.
+
+**Taken for now: option 1.** The bytes a format defines are checked exactly; the
+bytes an encoder chooses are checked through what they decode to. That keeps
+every claim §4.3.1 makes about ordering, layout, dictionary construction and
+posting encoding, which is where the seven hand-written algorithms live, and
+gives up only the claim that two compressors agree. The block directory records
+each block's uncompressed length, so a payload that decompresses to the wrong
+size is still caught by the format's own check.
+
+**Reopen by** Phase 8c, which writes `base.idx` in Go and is where the
+comparison is actually run.
+
