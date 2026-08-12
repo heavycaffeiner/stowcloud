@@ -30,9 +30,12 @@ func (d *DB) Upsert(
 		id, curParent, flags int64
 		curName              string
 	)
-	err := tx.StmtContext(ctx, d.st.nodeByIdent).QueryRowContext(ctx,
-		int64(share), toSQL(ident.Dev), toSQL(ident.Ino), btimeArg(ident),
-	).Scan(&id, &curParent, &curName, &flags)
+	lookup, args := d.st.nodeByIdent, identArgs(ident)
+	if ident.Btime == nil {
+		lookup = d.st.nodeByIdentNoBtime
+	}
+	err := tx.StmtContext(ctx, lookup).QueryRowContext(ctx, args...).
+		Scan(&id, &curParent, &curName, &flags)
 
 	switch {
 	case err == nil:
@@ -90,9 +93,12 @@ func (d *DB) Upsert(
 // giving it one.
 func (d *DB) Lookup(ctx context.Context, share vfs.ShareID, st vfs.Stat) (FileID, bool, error) {
 	ident := IdentOf(share, st)
+	lookup := d.st.nodeIDByIdent
+	if ident.Btime == nil {
+		lookup = d.st.nodeIDByIdentNoBtime
+	}
 	var id int64
-	err := d.st.nodeIDByIdent.QueryRowContext(ctx,
-		int64(share), toSQL(ident.Dev), toSQL(ident.Ino), btimeArg(ident)).Scan(&id)
+	err := lookup.QueryRowContext(ctx, identArgs(ident)...).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}

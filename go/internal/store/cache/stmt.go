@@ -15,8 +15,11 @@ import (
 // statement every time one arrives as text. The pool closes them when it
 // closes.
 type stmts struct {
-	nodeByIdent   *sql.Stmt
-	nodeIDByIdent *sql.Stmt
+	nodeByIdent          *sql.Stmt
+	nodeByIdentNoBtime   *sql.Stmt
+	nodeIDByIdent        *sql.Stmt
+	nodeIDByIdentNoBtime *sql.Stmt
+
 	nodeIdentByID *sql.Stmt
 	nodeRowByID   *sql.Stmt
 	insertNode    *sql.Stmt
@@ -37,7 +40,9 @@ func prepare(ctx context.Context, db *sql.DB) (*stmts, error) {
 		text string
 	}{
 		{&s.nodeByIdent, sqlNodeByIdent},
+		{&s.nodeByIdentNoBtime, sqlNodeByIdentNoBtime},
 		{&s.nodeIDByIdent, sqlNodeIDByIdent},
+		{&s.nodeIDByIdentNoBtime, sqlNodeIDByIdentNoBtime},
 		{&s.nodeIdentByID, sqlNodeIdentByID},
 		{&s.nodeRowByID, sqlNodeRowByID},
 		{&s.insertNode, sqlInsertNode},
@@ -62,7 +67,8 @@ func prepare(ctx context.Context, db *sql.DB) (*stmts, error) {
 func (s *stmts) close() error {
 	var err error
 	for _, st := range []*sql.Stmt{
-		s.nodeByIdent, s.nodeIDByIdent, s.nodeIdentByID, s.nodeRowByID,
+		s.nodeByIdent, s.nodeByIdentNoBtime, s.nodeIDByIdent, s.nodeIDByIdentNoBtime,
+		s.nodeIdentByID, s.nodeRowByID,
 		s.insertNode, s.moveNode, s.touchNode, s.renameNode,
 		s.readDiretag, s.putDiretag, s.dirtyDiretag, s.bumpShareGen, s.readShareGen,
 	} {

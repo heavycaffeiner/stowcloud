@@ -131,10 +131,21 @@ func (d *DB) SQL() *sql.DB { return d.f.SQL() }
 func (d *DB) File() *dbfile.DB { return d.f }
 
 // btimeArg binds a birth time, or SQL NULL where the filesystem carries none.
-// A column read back with "IS ?" matches either.
 func btimeArg(i Ident) any {
 	if i.Btime == nil {
 		return nil
 	}
 	return *i.Btime
+}
+
+// identArgs binds an identity for a lookup. The birth time is left off
+// entirely where there is none, because the statement for that case names the
+// column as IS NULL rather than taking it as a parameter: a bound parameter
+// the planner cannot prove is non-NULL matches neither partial index.
+func identArgs(i Ident) []any {
+	args := []any{int64(i.Share), toSQL(i.Dev), toSQL(i.Ino)}
+	if i.Btime != nil {
+		args = append(args, *i.Btime)
+	}
+	return args
 }

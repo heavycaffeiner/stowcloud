@@ -3,9 +3,15 @@ package cache
 import "github.com/heavycaffeiner/stowcloud/go/internal/store/dbfile"
 
 // The schema, carried over from the tree this replaces because the shape is
-// right, with one change: node.id is supplied on insert rather than assigned.
+// right, with two changes: node.id is supplied on insert rather than assigned,
+// and identity is two partial indexes rather than one.
 //
-// No path column, and no index besides node_ident. Path resolution walks the
+// Two, because SQLite holds every NULL distinct in a unique index, so a single
+// index over (share, dev, ino, btime_ns) would let the same file appear twice
+// on a filesystem that reports no birth time. Splitting it on whether the
+// column is NULL is what makes the constraint mean what it says.
+//
+// No path column, and no index besides those two. Path resolution walks the
 // parent chain, and that is what makes renaming a directory one row update
 // instead of a fan-out across its whole subtree.
 const schemaV1 = `
@@ -21,7 +27,10 @@ CREATE TABLE node (
   size     INTEGER,
   mtime_ns INTEGER
 );
-CREATE UNIQUE INDEX node_ident ON node(share, dev, ino, btime_ns);
+CREATE UNIQUE INDEX node_ident_with_btime
+  ON node(share, dev, ino, btime_ns) WHERE btime_ns IS NOT NULL;
+CREATE UNIQUE INDEX node_ident_without_btime
+  ON node(share, dev, ino) WHERE btime_ns IS NULL;
 
 CREATE TABLE diretag (
   share  INTEGER NOT NULL,
@@ -51,13 +60,26 @@ func migrations() []dbfile.Migration {
 
 // Every statement, as a constant. Nothing here is assembled from parts.
 const (
+	// A lookup comes in two shapes for the same reason the index does. The
+	// planner cannot prove a bound parameter is not NULL, so "btime_ns IS ?"
+	// matches neither partial index and reads the whole table: on a cold walk
+	// of a million files that is the difference between an index seek and a
+	// scan, per file.
 	sqlNodeByIdent = `
 SELECT id, parent, name, flags FROM node
-WHERE share = ? AND dev = ? AND ino = ? AND btime_ns IS ?`
+WHERE share = ? AND dev = ? AND ino = ? AND btime_ns = ?`
+
+	sqlNodeByIdentNoBtime = `
+SELECT id, parent, name, flags FROM node
+WHERE share = ? AND dev = ? AND ino = ? AND btime_ns IS NULL`
 
 	sqlNodeIDByIdent = `
 SELECT id FROM node
-WHERE share = ? AND dev = ? AND ino = ? AND btime_ns IS ?`
+WHERE share = ? AND dev = ? AND ino = ? AND btime_ns = ?`
+
+	sqlNodeIDByIdentNoBtime = `
+SELECT id FROM node
+WHERE share = ? AND dev = ? AND ino = ? AND btime_ns IS NULL`
 
 	sqlNodeIdentByID = `SELECT share, dev, ino, btime_ns FROM node WHERE id = ?`
 
