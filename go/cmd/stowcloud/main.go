@@ -80,6 +80,13 @@ func run(args []string, stderr io.Writer) int {
 	}
 
 	cmd := commands[i]
+	if cmd.name == "caps" {
+		// The one command Phase 1 implements, because the phase's claim is that
+		// the kernel confines a share and this is what executes that claim
+		// against the container an operator actually deployed.
+		return printCaps(stderr)
+	}
+
 	spoken := cmd.name
 	if len(cmd.verbs) > 0 {
 		if len(args) < 2 || !slices.Contains(cmd.verbs, args[1]) {

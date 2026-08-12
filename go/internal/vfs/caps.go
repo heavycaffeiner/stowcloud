@@ -1,0 +1,197 @@
+//go:build linux
+
+package vfs
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+
+	"golang.org/x/sys/unix"
+)
+
+// Support is what a probe found, and the distinction it exists for is between
+// the last two: a syscall an old kernel does not have and one a seccomp profile
+// refused look identical from a failed call and need different answers from an
+// operator. Docker's default profile blocking openat2 is not the same problem
+// as a kernel below 5.6.
+type Support uint8
+
+const (
+	SupportUnknown Support = iota
+	// SupportPresent means the kernel has the call. It does not mean every use
+	// of it will succeed.
+	SupportPresent
+	// SupportMissing is ENOSYS: this kernel does not implement it.
+	SupportMissing
+	// SupportBlocked is EPERM or EACCES: it exists and a policy refused it.
+	SupportBlocked
+)
+
+func (s Support) String() string {
+	switch s {
+	case SupportPresent:
+		return "present"
+	case SupportMissing:
+		return "missing (this kernel does not implement it)"
+	case SupportBlocked:
+		return "blocked (the kernel has it and a policy refused it)"
+	}
+	return "unknown"
+}
+
+// Caps is one runtime probe of the syscalls this package's guarantees rest on.
+// Run once at startup; nothing here has a side effect on the filesystem.
+type Caps struct {
+	Kernel        string
+	Openat2       Support
+	StatxBtime    Support
+	Renameat2     Support
+	CopyFileRange Support
+	CloseRange    Support
+	Inotify       Support
+	Seccomp       Support
+}
+
+// Probe runs every check. Each one is chosen so that it cannot create, modify
+// or remove anything: the calls are made against invalid arguments or names
+// that do not exist, and the errno is the answer.
+func Probe() Caps {
+	return Caps{
+		Kernel:        kernelRelease(),
+		Openat2:       probeOpenat2(),
+		StatxBtime:    probeStatxBtime(),
+		Renameat2:     probeRenameat2(),
+		CopyFileRange: probeCopyFileRange(),
+		CloseRange:    probeCloseRange(),
+		Inotify:       probeInotify(),
+		Seccomp:       probeSeccomp(),
+	}
+}
+
+func (c Caps) String() string {
+	rows := []struct {
+		name string
+		s    Support
+	}{
+		{"openat2", c.Openat2},
+		{"statx btime", c.StatxBtime},
+		{"renameat2", c.Renameat2},
+		{"copy_file_range", c.CopyFileRange},
+		{"close_range", c.CloseRange},
+		{"inotify", c.Inotify},
+		{"seccomp", c.Seccomp},
+	}
+	lines := make([]string, 0, len(rows)+1)
+	lines = append(lines, fmt.Sprintf("%-15s %s", "kernel", c.Kernel))
+	for _, row := range rows {
+		lines = append(lines, fmt.Sprintf("%-15s %s", row.name, row.s))
+	}
+	return strings.Join(lines, "\n") + "\n"
+}
+
+// classify is the whole point of this file: ENOSYS is absence, EPERM and EACCES
+// are a policy, and anything else means the call reached the kernel and got a
+// real answer, which is what "present" means here.
+func classify(err error) Support {
+	switch {
+	case err == nil:
+		return SupportPresent
+	case errors.Is(err, unix.ENOSYS):
+		return SupportMissing
+	case errors.Is(err, unix.EPERM), errors.Is(err, unix.EACCES):
+		return SupportBlocked
+	}
+	return SupportPresent
+}
+
+func kernelRelease() string {
+	var u unix.Utsname
+	if err := unix.Uname(&u); err != nil {
+		return "unknown"
+	}
+	return string(bytes.TrimRight(u.Release[:], "\x00"))
+}
+
+func probeOpenat2() Support {
+	how := unix.OpenHow{
+		Flags:   unix.O_PATH | unix.O_DIRECTORY | unix.O_CLOEXEC,
+		Resolve: unix.RESOLVE_NO_MAGICLINKS,
+	}
+	fd, err := unix.Openat2(unix.AT_FDCWD, ".", &how)
+	if err == nil {
+		closeQuiet(fd)
+	}
+	return classify(err)
+}
+
+// probeStatxBtime answers about the filesystem under the working directory as
+// much as about the kernel, which is the honest answer: btime is a per-
+// filesystem fact and a share on a mount that has none needs to know.
+func probeStatxBtime() Support {
+	var stx unix.Statx_t
+	if err := unix.Statx(unix.AT_FDCWD, ".", 0, unix.STATX_BTIME, &stx); err != nil {
+		return classify(err)
+	}
+	if stx.Mask&unix.STATX_BTIME == 0 {
+		return SupportMissing
+	}
+	return SupportPresent
+}
+
+// probeRenameat2 aims at a name that does not exist, so the expected outcome is
+// ENOENT, meaning the syscall is there and had nothing to rename.
+func probeRenameat2() Support {
+	const absent = ".sc-cap-probe-absent"
+	err := unix.Renameat2(unix.AT_FDCWD, absent, unix.AT_FDCWD, absent+"-2", unix.RENAME_NOREPLACE)
+	if errors.Is(err, unix.EINVAL) {
+		// A filesystem that does not implement the flags reports EINVAL, which
+		// is the same practical answer as absence for the caller that would
+		// have used them.
+		return SupportMissing
+	}
+	return classify(err)
+}
+
+// probeCopyFileRange uses two invalid descriptors, so a kernel that has the
+// call answers EBADF and one that does not answers ENOSYS. Nothing is copied.
+func probeCopyFileRange() Support {
+	_, err := unix.CopyFileRange(-1, nil, -1, nil, 0, 0)
+	return classify(err)
+}
+
+// probeCloseRange asks for a range that cannot be valid, first past last, so a
+// kernel that has the call answers EINVAL. Nothing is closed.
+func probeCloseRange() Support {
+	err := unix.CloseRange(1, 0, 0)
+	return classify(err)
+}
+
+func probeInotify() Support {
+	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
+	if err == nil {
+		closeQuiet(fd)
+	}
+	return classify(err)
+}
+
+// probeSeccomp passes a null program pointer, so a kernel that supports the
+// operation and the flag answers EFAULT before installing anything.
+func probeSeccomp() Support {
+	_, _, errno := unix.Syscall(unix.SYS_SECCOMP,
+		uintptr(unix.SECCOMP_SET_MODE_FILTER), uintptr(unix.SECCOMP_FILTER_FLAG_TSYNC), 0)
+	switch errno {
+	case 0, unix.EFAULT:
+		return SupportPresent
+	}
+	return classify(errno)
+}
+
+// closeQuiet is for a descriptor a probe opened only to prove it could.
+func closeQuiet(fd int) {
+	if err := unix.Close(fd); err != nil {
+		slog.Warn("closing a probe descriptor failed", slog.Any("error", err))
+	}
+}
