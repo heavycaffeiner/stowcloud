@@ -209,13 +209,27 @@ Everything the filesystem cannot regenerate:
 | `audit` | `sc-auth` |
 | `fileid_override` | new; §4.5 |
 
-`dav_prop`, `dav_lock` and `favorite` are the ones that move, and moving them is
-what deletes the `PINNED` bit. Today they key by `fileid`, which only `cache.db`
-mints, so a durable row points into a rebuildable store and the store has to be
-told not to reap it. In `state.db` they key by the identity tuple
-`(share, dev, ino, btime_ns)`, which is a fact about the file rather than about
-the cache. Deleting `cache.db` then costs a lookup, not a dangling row, and
-nothing has to be pinned.
+`dav_prop`, `dav_lock`, `favorite` and `share_link`'s target are the ones that
+move, and moving them is what deletes the `PINNED` bit. Today they key by
+`fileid`, which only `cache.db` mints, so a durable row points into a
+rebuildable store and the store has to be told not to reap it. In `state.db`
+they key by the identity tuple `(share, dev, ino, btime_ns)`, which is a fact
+about the file rather than about the cache. Deleting `cache.db` then costs a
+lookup, not a dangling row, and nothing has to be pinned.
+
+`share_link` is the fourth because the current tree gives it a `fileid` column
+for the same purpose, so that a link survives a rename, and that column is the
+same dangling reference as the other three.
+
+**A grant's principal is two nullable columns and a `CHECK`, not a kind and an
+id.** §4.3.2 wants a grant to carry a foreign key to the user it belongs to, and
+a polymorphic reference cannot carry one; the failure it is there for, a grant
+outliving the account it was made for, is exactly the one nothing currently
+catches.
+
+The list is what this phase builds and not what the product ends with. A table
+whose only caller is a later phase, `key_version` and the TOTP replay set among
+them, arrives with that phase as a migration, which is what the runner is for.
 
 #### 4.2.3 `journal.db`, and why it is neither of the other two
 
