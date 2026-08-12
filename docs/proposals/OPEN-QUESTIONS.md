@@ -239,3 +239,37 @@ replacement.
 **Reopen by** Phase 11, where the filesystem gate becomes an operator-visible
 registration decision and the compatibility cost can be evaluated on actual
 deployments.
+
+---
+
+## Q6. The Argon2 gate's permit count
+
+**Raised by** Phase 3, crossing the auth design against itself
+([`6`](stowcloud-6-auth-and-acl.md) §2.0, §4.3.1 and S10).
+
+**What was found.** §2.0 and S10 state the concurrency cap as four, on the
+reasoning that 48 MiB × 4 is 192 MiB of the container's budget, and the Rust
+gate's own module comment says the same. §4.3.1 described the buffered channel
+as "of size `argon2_parallelism`", which is `p = 1` in the chosen parameter set.
+Those are different numbers, and they are not the same product: a gate of one
+turndown would serialise logins while still claiming to bound memory at 192 MiB.
+
+**Options.**
+
+| # | Gate size | Cost |
+|---|---|---|
+| 1 | four, as §2.0 and S10 say | matches the documented memory budget and the Rust behaviour |
+| 2 | `argon2_parallelism` (one) | serialises logins far below the memory budget the design set |
+
+**What decides between them.** The whole subsystem's premise in §2.0 is "how
+few times must the KDF run", and the memory bound is the product of the gate
+size and the per-hash cost. A gate of one contradicts the stated 192 MiB
+budget and every document that names four.
+
+**Taken for now: option 1.** The implementation uses a gate of four, and the
+contradictory §4.3.1 sentence is corrected in the proposal to say four. A
+future proposal that raises the memory cost must still raise the product, not
+the number.
+
+**Reopen by** no phase; the decision is settled by the documents that already
+name four.

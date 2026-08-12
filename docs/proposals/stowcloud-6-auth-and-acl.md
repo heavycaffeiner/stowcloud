@@ -169,7 +169,8 @@ func (s *Service) Hash(ctx context.Context, pw secret.Secret) (Encoded, error)
 ```
 
 `golang.org/x/crypto/argon2`'s `IDKey` is the primitive. The gate is a buffered
-channel of size `argon2_parallelism`, acquired with the request's context so a
+channel of size **four** (the concurrency cap §2.0 and S10 set, which is what
+produces 48 MiB × 4 = 192 MiB), acquired with the request's context so a
 client that gives up stops waiting. Every path that hashes or verifies goes
 through it, including account creation, password change and TOTP enrolment,
 which is the bug the current tree's test asserts against.
