@@ -323,6 +323,33 @@ func (c *Core) LinkPublic(ctx context.Context, token string) (Link, Entry, error
 	return l, entry, nil
 }
 
+// LinkStream opens a link's target for ranged reading under the same liveness
+// rules as LinkPublic: expired, exhausted or repinned-to-another-identity
+// links answer gone. It exists for the public download path, which has no
+// user session to resolve the link through.
+func (c *Core) LinkStream(ctx context.Context, link Link, range_ *[2]uint64) (FidEntry, *Stream, error) {
+	now := c.clk.Nanos()
+	if link.IsExpired(now) || link.IsExhausted() {
+		return FidEntry{}, nil, ErrLinkExpired
+	}
+	root, ok := c.ShareRoot(link.Share)
+	if !ok {
+		return FidEntry{}, nil, ErrLinkExpired
+	}
+	p, perr := link.Path.Safe()
+	if perr != nil {
+		return FidEntry{}, nil, ErrLinkExpired
+	}
+	st, serr := root.Stat(p)
+	if serr != nil {
+		return FidEntry{}, nil, ErrLinkExpired
+	}
+	if link.Dev() != nil && !sameIdent(st, link) {
+		return FidEntry{}, nil, ErrLinkExpired
+	}
+	return c.OpenStream(ctx, Resolved{share: link.Share, root: root, path: p, perms: link.Perms}, range_)
+}
+
 // Dev reports a non-nil identity the link pins, for the cross-check.
 func (l Link) Dev() *int64 { return l.dev }
 

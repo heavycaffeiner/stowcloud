@@ -6,16 +6,16 @@ package auth
 // bound.
 const (
 	sqlReadUserByName = `
-SELECT id, name, display, pw_hash, disabled, smb_enabled
+SELECT id, name, display, pw_hash, disabled, smb_enabled, role
 FROM user WHERE name = ?`
 
 	sqlReadUserByID = `
-SELECT id, name, display, pw_hash, disabled, smb_enabled
+SELECT id, name, display, pw_hash, disabled, smb_enabled, role
 FROM user WHERE id = ?`
 
 	sqlInsertUser = `
-INSERT INTO user(name, display, pw_hash, disabled, smb_enabled, created_ns)
-VALUES (?, ?, ?, 0, ?, ?)`
+INSERT INTO user(name, display, pw_hash, disabled, role, smb_enabled, created_ns)
+VALUES (?, ?, ?, 0, ?, 1, ?)`
 
 	sqlUpdatePassword = `UPDATE user SET pw_hash = ? WHERE id = ?` //nolint:gosec // G101 reads the identifier: this is a statement, not a credential.
 
@@ -110,4 +110,16 @@ FROM share_link WHERE token_enc IS NOT NULL`
 	sqlInsertAudit = `
 INSERT INTO audit(ts_ns, actor, event, target, ip, ua, result, detail)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+
+	sqlCountUsers = `SELECT COUNT(*) FROM user` //nolint:gosec // identifier, not a value.
+
+	sqlHasAdmin = `SELECT COUNT(*) FROM user WHERE role = 1`
+
+	sqlListSessions = `
+SELECT id_hash, created_ns, last_seen_ns, absolute_expiry_ns, ip_first, ua_first, amr
+FROM session WHERE user = ? ORDER BY last_seen_ns DESC`
+
+	sqlDeleteUserSession = `DELETE FROM session WHERE user = ? AND id_hash = ?` //nolint:gosec // identifier, not a value.
+
+	sqlListAppPasswords = `SELECT id, name, scope_perms, scope_shares, created_ns, expires_ns, last_used_ns FROM app_password WHERE user = ? ORDER BY created_ns DESC` //nolint:gosec // G101 reads the identifier: a statement, not a credential.
 )
