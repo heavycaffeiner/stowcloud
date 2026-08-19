@@ -75,6 +75,15 @@ SELECT session, share, dest FROM upload_alias WHERE user = ? AND tid = ?`
 
 	sqlDeleteUploadAliasesForSession = `DELETE FROM upload_alias WHERE session = ?`
 
+	// The set is added to and never deleted from: a directory that held one
+	// part file will hold another, and forgetting it is how the sweep loses
+	// the orphan it exists to find.
+	sqlTouchUploadDir = `
+INSERT INTO upload_touched_dir(share, dir) VALUES (?, ?)
+ON CONFLICT(share, dir) DO NOTHING`
+
+	sqlListUploadTouchedDirs = `SELECT share, dir FROM upload_touched_dir`
+
 	sqlReadChunkSettings = `SELECT chunk_min, chunk_default FROM upload_chunk_settings WHERE id = 1`
 
 	sqlWriteChunkSettings = `

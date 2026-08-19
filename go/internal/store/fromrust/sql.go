@@ -127,6 +127,28 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, coalesce(?, X''), ?, ?, ?, ?, ?, ?, 
 
 	insUploadInterval = `INSERT INTO upload_interval(session, lo, hi) VALUES (?, ?, ?)`
 
+	// An alias is what makes a named chunk collection resumable after the
+	// cutover: without it the transfer id the client is still using means
+	// nothing to the new binary, and an upload part way through a large file
+	// starts again.
+	selUploadAlias = `SELECT tid, user, session, share, dest, created_ns FROM upload_alias`
+	insUploadAlias = `
+INSERT INTO upload_alias(tid, user, session, share, dest, created_ns)
+VALUES (?, ?, ?, ?, ?, ?)`
+
+	// The chunk floor and default an admin stored. The row's presence is the
+	// fact being carried, not just the numbers: it is what tells the settings
+	// screen an admin chose these rather than the config file supplying them.
+	selUploadChunkSettings = `SELECT chunk_min, chunk_default FROM upload_chunk_settings WHERE id = 1`
+	insUploadChunkSettings = `
+INSERT INTO upload_chunk_settings(id, chunk_min, chunk_default) VALUES (1, ?, ?)`
+
+	// The directories part files were created in. They come across so the
+	// first sweep after the cutover can still find an orphan the old build
+	// left behind.
+	selUploadTouchedDirs = `SELECT share, dir FROM upload_touched_dirs`
+	insUploadTouchedDir  = `INSERT INTO upload_touched_dir(share, dir) VALUES (?, ?)`
+
 	selNodeIdent = `SELECT share, dev, ino, btime_ns FROM node WHERE id = ?`
 
 	selDavProp = `SELECT fileid, ns, name, value FROM dav_prop`

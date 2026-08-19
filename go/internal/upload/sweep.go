@@ -53,10 +53,15 @@ func (e *Engine) Sweep(ctx context.Context) (SweepReport, error) {
 		}
 	}
 
-	// Side two: the directories any live session has a part file in, plus the
-	// ones the expired rows named. A sweep that walked whole shares would read
-	// a 12 TB tree to find a handful of control files.
-	dirs := e.touchedDirs(live, expired)
+	// Side two: the directories a part file has ever been created in. A sweep
+	// that walked whole shares would read a 12 TB tree to find a handful of
+	// control files, and one that walked only the live sessions' directories
+	// could not see the orphan it exists for: an orphan is a part file whose
+	// session row is already gone.
+	dirs, err := e.touchedDirs(ctx)
+	if err != nil {
+		return rep, err
+	}
 	for key, dir := range dirs {
 		parts, spools := e.sweepDir(key.share, dir, live, now)
 		rep.OrphanParts += parts
@@ -72,29 +77,29 @@ type shareDir struct {
 	dir   string
 }
 
-// touchedDirs is the set of directories the sweep has any reason to look in:
-// the parent of every session's destination, live or expired.
-//
-// It is derived from the rows rather than from a table of its own. A stored
-// touched-directory list is bookkeeping that can drift from the sessions it
-// describes, and the sessions are the thing that is actually authoritative.
-func (e *Engine) touchedDirs(sets ...[]state.UploadSession) map[shareDir]vfs.SafePath {
-	out := map[shareDir]vfs.SafePath{}
-	for _, set := range sets {
-		for _, sess := range set {
-			dest, err := vfs.ParseSafePath(sess.Dest)
-			if err != nil {
-				continue
-			}
-			share, ok := shareIDOf(sess.Share)
-			if !ok {
-				continue
-			}
-			dir := dest.Parent()
-			out[shareDir{share: share, dir: dir.String()}] = dir
-		}
+// touchedDirs is every directory a part file has been created in, which is the
+// only set that still names the place an orphan is.
+func (e *Engine) touchedDirs(ctx context.Context) (map[shareDir]vfs.SafePath, error) {
+	rows, err := e.state.ListUploadTouchedDirs(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return out
+	out := make(map[shareDir]vfs.SafePath, len(rows))
+	for _, t := range rows {
+		share, ok := shareIDOf(t.Share)
+		if !ok {
+			continue
+		}
+		dir, perr := vfs.ParseSafePath(t.Dir)
+		if perr != nil {
+			// A stored path that will not parse names nothing this can open.
+			// It is skipped rather than failing the sweep, which still has
+			// every other directory to get through.
+			continue
+		}
+		out[shareDir{share: share, dir: t.Dir}] = dir
+	}
+	return out, nil
 }
 
 // collectExpired removes an expired session's part file, its spool directory

@@ -321,6 +321,10 @@ func (s *sources) copyUploads(ctx context.Context, tx *sql.Tx, rep *Report, user
 	if s.upload == nil {
 		return nil
 	}
+	// The sessions that actually came across, so an alias naming one that did
+	// not is dropped rather than becoming a transfer id that resolves to a
+	// session id no row holds.
+	sessions := map[string]bool{}
 	rows, err := s.upload.QueryContext(ctx, selUploadSession)
 	if err != nil {
 		return fmt.Errorf("importing upload_session: %w", err)
@@ -345,6 +349,9 @@ func (s *sources) copyUploads(ctx context.Context, tx *sql.Tx, rep *Report, user
 			return fmt.Errorf("importing upload_session: %w", err)
 		}
 		kept++
+		if id, ok := session.([]byte); ok {
+			sessions[string(id)] = true
+		}
 
 		blob, isBlob := vals[cols-1].([]byte)
 		runs, derr := decodeIntervals(blob)
@@ -368,6 +375,88 @@ func (s *sources) copyUploads(ctx context.Context, tx *sql.Tx, rep *Report, user
 	}
 	record(rep, "upload_session", kept, map[Reason]int{ReasonUnknownUser: dropped})
 	record(rep, "upload_interval", intervals, map[Reason]int{ReasonCorruptRange: corrupt})
+
+	if err := s.copyUploadAliases(ctx, tx, rep, users, sessions); err != nil {
+		return err
+	}
+	if err := s.copyChunkSettings(ctx, tx, rep); err != nil {
+		return err
+	}
+	return s.copyTouchedDirs(ctx, tx, rep)
+}
+
+// copyUploadAliases carries the transfer-id bindings, which is what makes a
+// named chunk collection resumable after the cutover: the client keeps using
+// the id it chose, and without the binding that id means nothing to the new
+// binary.
+//
+// An alias whose session did not come across is dropped. Keeping it would
+// leave a transfer id resolving to a session id no row holds, which is a
+// lookup that fails later and more confusingly than one that fails now.
+func (s *sources) copyUploadAliases(
+	ctx context.Context, tx *sql.Tx, rep *Report, users map[int64]bool, sessions map[string]bool,
+) error {
+	// A deployment older than the alias table has no such table, which is a
+	// fact about when it was installed rather than an error.
+	ok, err := hasTable(ctx, s.upload, "upload_alias")
+	if err != nil || !ok {
+		return err
+	}
+	kept, drops, err := copyRows(ctx, tx, s.upload, selUploadAlias, insUploadAlias, 6,
+		func(v []any) ([]any, Reason, error) {
+			if !known(users, v[1]) {
+				return nil, ReasonUnknownUser, nil
+			}
+			id, ok := v[2].([]byte)
+			if !ok || !sessions[string(id)] {
+				return nil, ReasonMissingSession, nil
+			}
+			return v, keep, nil
+		})
+	if err != nil {
+		return fmt.Errorf("importing upload_alias: %w", err)
+	}
+	record(rep, "upload_alias", kept, drops)
+	return nil
+}
+
+// copyChunkSettings carries the admin-stored chunk floor and default.
+//
+// What is being carried is the row's existence as much as the two numbers:
+// absence is what tells the settings screen the values came from the config
+// file, and fabricating a row would report an admin decision nobody made.
+func (s *sources) copyChunkSettings(ctx context.Context, tx *sql.Tx, rep *Report) error {
+	ok, terr := hasTable(ctx, s.upload, "upload_chunk_settings")
+	if terr != nil || !ok {
+		return terr
+	}
+	var chunkMin, chunkDefault int64
+	err := s.upload.QueryRowContext(ctx, selUploadChunkSettings).Scan(&chunkMin, &chunkDefault)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("importing upload_chunk_settings: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, insUploadChunkSettings, chunkMin, chunkDefault); err != nil {
+		return fmt.Errorf("importing upload_chunk_settings: %w", err)
+	}
+	record(rep, "upload_chunk_settings", 1, nil)
+	return nil
+}
+
+// copyTouchedDirs carries the directories part files were created in, so the
+// first sweep after the cutover can still find an orphan the old build left.
+func (s *sources) copyTouchedDirs(ctx context.Context, tx *sql.Tx, rep *Report) error {
+	ok, terr := hasTable(ctx, s.upload, "upload_touched_dirs")
+	if terr != nil || !ok {
+		return terr
+	}
+	kept, drops, err := copyRows(ctx, tx, s.upload, selUploadTouchedDirs, insUploadTouchedDir, 2, nil)
+	if err != nil {
+		return fmt.Errorf("importing upload_touched_dirs: %w", err)
+	}
+	record(rep, "upload_touched_dir", kept, drops)
 	return nil
 }
 

@@ -64,12 +64,13 @@ var ErrStateExists = errors.New("state.db already exists")
 type Reason string
 
 const (
-	ReasonUnknownUser  Reason = "the account they belonged to no longer exists"
-	ReasonUnknownGroup Reason = "the group they belonged to no longer exists"
-	ReasonMissingNode  Reason = "the metadata cache holds no row for the file they named"
-	ReasonExpired      Reason = "they had already expired"
-	ReasonCorruptRange Reason = "their received-range set would not decode"
-	ReasonStaleFactor  Reason = "a TOTP replay step outside the live window"
+	ReasonUnknownUser    Reason = "the account they belonged to no longer exists"
+	ReasonUnknownGroup   Reason = "the group they belonged to no longer exists"
+	ReasonMissingNode    Reason = "the metadata cache holds no row for the file they named"
+	ReasonExpired        Reason = "they had already expired"
+	ReasonCorruptRange   Reason = "their received-range set would not decode"
+	ReasonMissingSession Reason = "the upload session they addressed did not come across"
+	ReasonStaleFactor    Reason = "a TOTP replay step outside the live window"
 )
 
 // Drop is one table and one reason, which is the granularity the report has to

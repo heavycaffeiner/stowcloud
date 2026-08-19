@@ -132,6 +132,22 @@ func rustDir(t *testing.T) string {
 		   X'02000A0A0A', 1, 30, X'', NULL, 'f.bin', NULL, NULL, NULL, NULL, NULL, 0, 0, 0)`,
 		`INSERT INTO upload_sessions VALUES (X'bb', 99, 7, 'd', 'p', NULL, 0, 100, 1024, 0,
 		   X'', 1, 0, X'', NULL, 'g.bin', NULL, NULL, NULL, NULL, NULL, 0, 0, 0)`,
+		// One alias on the session that survives, one on the session whose
+		// account does not, and one naming a session that was never there.
+		`CREATE TABLE upload_alias (tid TEXT NOT NULL, user INTEGER NOT NULL, session BLOB NOT NULL,
+		   share INTEGER NOT NULL, dest TEXT NOT NULL, created_ns INTEGER NOT NULL,
+		   PRIMARY KEY (user, tid))`,
+		`INSERT INTO upload_alias VALUES ('live', 1, X'aa', 7, 'd', 0)`,
+		`INSERT INTO upload_alias VALUES ('orphaned-account', 99, X'bb', 7, 'd', 0)`,
+		`INSERT INTO upload_alias VALUES ('orphaned-session', 1, X'cc', 7, 'd', 0)`,
+		// An admin wrote these, which is what the row's presence means.
+		`CREATE TABLE upload_chunk_settings (id INTEGER PRIMARY KEY CHECK (id = 1),
+		   chunk_min INTEGER NOT NULL, chunk_default INTEGER NOT NULL)`,
+		`INSERT INTO upload_chunk_settings VALUES (1, 8388608, 16777216)`,
+		// Where the sweep looks for a part file whose session row is gone.
+		`CREATE TABLE upload_touched_dirs (share INTEGER NOT NULL, dir TEXT NOT NULL,
+		   PRIMARY KEY (share, dir))`,
+		`INSERT INTO upload_touched_dirs VALUES (7, 'docs'), (7, 'photos')`,
 	)
 
 	mkdb(t, filepath.Join(dir, "settings.db"),
@@ -232,6 +248,10 @@ func TestImportCarriesTheDurableHalf(t *testing.T) {
 		{"settings", `SELECT count(*) FROM settings`, 1},
 		{"upload sessions", `SELECT count(*) FROM upload_session`, 1},
 		{"upload intervals", `SELECT count(*) FROM upload_interval`, 2},
+		// Only the alias whose account and session both came across.
+		{"upload aliases", `SELECT count(*) FROM upload_alias`, 1},
+		{"upload chunk settings", `SELECT count(*) FROM upload_chunk_settings`, 1},
+		{"upload touched dirs", `SELECT count(*) FROM upload_touched_dir`, 2},
 		{"dead properties", `SELECT count(*) FROM dav_prop`, 2},
 		{"favorites", `SELECT count(*) FROM favorite`, 1},
 		{"webdav locks", `SELECT count(*) FROM dav_lock`, 1},
@@ -269,6 +289,8 @@ func TestTheReportNamesTheRealReason(t *testing.T) {
 		{Table: "favorite", Reason: fromrust.ReasonMissingNode},
 		{Table: "favorite", Reason: fromrust.ReasonUnknownUser},
 		{Table: "upload_session", Reason: fromrust.ReasonUnknownUser},
+		{Table: "upload_alias", Reason: fromrust.ReasonUnknownUser},
+		{Table: "upload_alias", Reason: fromrust.ReasonMissingSession},
 		{Table: "dav_lock", Reason: fromrust.ReasonExpired},
 	} {
 		if rep.Dropped[want] != 1 {

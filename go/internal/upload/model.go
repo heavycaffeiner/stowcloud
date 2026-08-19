@@ -253,13 +253,18 @@ func partPath(dest vfs.SafePath, name string) (vfs.SafePath, error) {
 // chunkFileName is the name one spooled chunk takes inside the spool
 // directory. Hex of the ordinal, fixed width, so the on-disk order and the
 // numeric order are the same and a listing needs no parsing to be sorted.
+//
+// It carries the control prefix even though the spool directory it sits in
+// already does. The prefix is what every listing filters on, so a chunk that
+// outlived its directory being removed is still unlistable rather than
+// depending on where it happens to be.
 func chunkFileName(n uint32) string {
 	var b [4]byte
 	b[0] = byte(n >> 24)
 	b[1] = byte(n >> 16)
 	b[2] = byte(n >> 8)
 	b[3] = byte(n)
-	return hex.EncodeToString(b[:])
+	return ".scpart-" + hex.EncodeToString(b[:])
 }
 
 // ErrUnknownAlgo is a checksum algorithm this server does not offer.

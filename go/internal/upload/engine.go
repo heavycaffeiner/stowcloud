@@ -188,6 +188,14 @@ func (e *Engine) Create(ctx context.Context, r core.Resolved, spec SessionSpec) 
 		// is an orphan the sweep would have to clean up, so it goes now.
 		return Session{}, errors.Join(err, e.discardPart(r.Root(), part, f))
 	}
+	// The directory is recorded before the first byte arrives, and it outlives
+	// the session. An orphan is a part file whose row is gone, so the rows
+	// cannot be what tells the sweep where to look. A failure here costs the
+	// sweep its record and not the upload.
+	if terr := e.state.TouchUploadDir(ctx, int64(r.Share()), dest.Parent().String()); terr != nil {
+		e.log.Warn("could not record the directory an upload writes into; the sweep may miss an orphan there",
+			slog.String("dir", dest.Parent().String()), slog.Any("error", terr))
+	}
 
 	e.putHandle(id, f)
 	return e.session(&row{sess: sess, set: NewIntervalSet()})
@@ -360,6 +368,11 @@ func (e *Engine) PatchAt(
 // A zero-length write with no error is a failure rather than a retry: pwrite
 // returning zero means the file cannot take the bytes, and looping on it spins
 // forever.
+//
+// r is nil for a write that no session rule applies to, which is a spooled
+// chunk: it is measured against the assembled file rather than against its own
+// offset, and a name-ordered client does not choose the offsets the floor and
+// the declared length are about.
 func (e *Engine) writeBody(
 	f *vfs.File, off uint64, body io.Reader, r *row, sum *Checksum,
 ) (uint64, []byte, error) {
@@ -454,6 +467,9 @@ func (e *Engine) validateOffset(r *row, off uint64) error {
 // checkWithinDeclared refuses a body that runs past the length the session
 // declared.
 func (e *Engine) checkWithinDeclared(r *row, off, written uint64) error {
+	if r == nil {
+		return nil
+	}
 	total, ok := r.totalLen()
 	if !ok {
 		return nil
@@ -476,7 +492,7 @@ func (e *Engine) checkWithinDeclared(r *row, off, written uint64) error {
 // at creation rather than the live one, so an admin's write does not
 // retroactively refuse a chunk that was legal when it was sent.
 func (e *Engine) checkChunkFloor(r *row, off, n uint64) error {
-	if n == 0 {
+	if r == nil || n == 0 {
 		return nil
 	}
 	floor, err := num.Narrow[uint64](r.sess.ChunkMinAtCreation)

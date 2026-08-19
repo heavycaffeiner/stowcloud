@@ -393,9 +393,18 @@ CREATE TABLE operation_result (
 ) WITHOUT ROWID;
 `
 
-// migration 5 lands the two upload tables the engine needs beside the session
-// rows migration 1 already created: the transfer-id alias, and the persisted
-// chunk floor and default.
+// migration 5 lands the three upload tables the engine needs beside the
+// session rows migration 1 already created: the transfer-id alias, the
+// persisted chunk floor and default, and the set of directories a part file
+// has ever been created in.
+//
+// The touched-directory set outlives the sessions that added to it, and that
+// is the point of it being a table rather than a query over the sessions. The
+// orphan the sweep exists for is a part file whose session row is gone, so the
+// rows cannot be what says where to look; without this the sweep can only find
+// debt it already had a record of, which is the half that was never the
+// problem. It is never deleted from, because a directory that held one part
+// file will hold another.
 //
 // The alias is what makes a named chunk collection resumable after a restart.
 // Its primary key is scoped by the account, and that is the whole of its
@@ -426,6 +435,12 @@ CREATE TABLE upload_chunk_settings (
   chunk_min     INTEGER NOT NULL,
   chunk_default INTEGER NOT NULL
 );
+
+CREATE TABLE upload_touched_dir (
+  share INTEGER NOT NULL,
+  dir   TEXT NOT NULL,
+  PRIMARY KEY (share, dir)
+) WITHOUT ROWID;
 
 ALTER TABLE upload_session ADD COLUMN chunk_min_at_creation INTEGER NOT NULL DEFAULT 0;
 `

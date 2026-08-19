@@ -56,7 +56,7 @@ func TestEveryDurableTableExists(t *testing.T) {
 		"session", "settings", "share_definition", "share_identity_override",
 		"share_link", "share_trash_override", "totp_secret", "totp_used",
 		"upload_alias", "upload_chunk_settings", "upload_interval", "upload_session",
-		"user", "user_smb_secret",
+		"upload_touched_dir", "user", "user_smb_secret",
 	}
 	rows, err := d.SQL().QueryContext(ctx,
 		`SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`)

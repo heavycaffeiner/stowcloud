@@ -298,6 +298,46 @@ func (d *DB) UnbindUploadAlias(ctx context.Context, tid string, user int64) erro
 	})
 }
 
+// TouchedDir is one directory a part file has been created in.
+type TouchedDir struct {
+	Share int64
+	Dir   string
+}
+
+// TouchUploadDir records a directory a part file was created in, so the sweep
+// knows where to look for one whose session row is gone.
+//
+// A failure is the caller's to decide about rather than this package's: the
+// upload it belongs to is fine, and what has been lost is the sweep's record
+// of where to look later.
+func (d *DB) TouchUploadDir(ctx context.Context, share int64, dir string) error {
+	if err := d.f.EnsureWritable(); err != nil {
+		return err
+	}
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, sqlTouchUploadDir, share, dir)
+		return err
+	})
+}
+
+// ListUploadTouchedDirs is every directory a part file has ever been created
+// in.
+func (d *DB) ListUploadTouchedDirs(ctx context.Context) (out []TouchedDir, err error) {
+	rows, err := d.f.SQL().QueryContext(ctx, sqlListUploadTouchedDirs)
+	if err != nil {
+		return nil, fmt.Errorf("listing the directories uploads have touched: %w", err)
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	for rows.Next() {
+		var t TouchedDir
+		if serr := rows.Scan(&t.Share, &t.Dir); serr != nil {
+			return nil, fmt.Errorf("listing the directories uploads have touched: %w", serr)
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
 // ChunkSettings is the persisted floor and default, and whether a row exists
 // at all. The flag is what separates "an admin stored this" from "it fell back
 // to the config file": without it both are the same pair of integers and the

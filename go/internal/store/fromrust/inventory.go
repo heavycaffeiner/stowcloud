@@ -79,10 +79,9 @@ func inventory() map[string]map[string]disposition {
 		linksFile: {"share_link": {how: copied}},
 		uploadFile: {
 			"upload_sessions":       {how: copied},
-			"upload_alias":          {how: deferred, phase: 6},
-			"upload_chunk_settings": {how: deferred, phase: 6},
-			"upload_touched_dirs": {how: rebuildable,
-				why: "the next aggregate sweep finds the same directories"},
+			"upload_alias":          {how: copied},
+			"upload_chunk_settings": {how: copied},
+			"upload_touched_dirs":   {how: copied},
 		},
 		settingsFile: {"settings_overrides": {how: copied}},
 		metaFile: {
