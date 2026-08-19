@@ -33,8 +33,10 @@ func RequestID(next http.Handler) http.Handler {
 // AuditSink and the handlers that log a line of their own use it so the line
 // correlates with the Sc-Trace header the client sees.
 func TraceFrom(ctx context.Context) string {
-	id, _ := ctx.Value(reqIDKey{}).(string)
-	return id
+	if id, ok := ctx.Value(reqIDKey{}).(string); ok {
+		return id
+	}
+	return ""
 }
 
 // newV4 builds a UUID v4 from crypto/rand by hand. The dependency the plan

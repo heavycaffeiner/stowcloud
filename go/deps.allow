@@ -30,3 +30,13 @@ modernc.org/sqlite
 # aggregate; Phase 6 reuses it for the client-selected upload checksum, which
 # is why it is one entry here and one direct dependency rather than two.
 lukechampine.com/blake3
+
+# sc.toml, the one config file the product reads. It enters the module graph
+# with Phase 5, which is the phase that parses it.
+github.com/BurntSushi/toml
+
+# The change channel for /api/events. The dependency decision was reopened
+# because the protocol carries client frames (sub/unsub), so a hand-rolled
+# frame layer would re-implement control-frame handling, close codes and
+# fragmentation that a maintained module already owns.
+github.com/gorilla/websocket

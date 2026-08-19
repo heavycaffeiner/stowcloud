@@ -69,7 +69,7 @@ func DeriveCSRFToken(key []byte, sessionToken string) string {
 func deriveCSRFToken(key []byte, sessionToken string) string {
 	sh := sha256.Sum256([]byte(sessionToken))
 	m := hmac.New(sha256.New, key)
-	m.Write(sh[:])
+	m.Write(sh[:]) //nolint:errcheck // hmac.Hash.Write never fails.
 	return hex.EncodeToString(m.Sum(nil))
 }
 

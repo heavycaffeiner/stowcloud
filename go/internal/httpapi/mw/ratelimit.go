@@ -88,6 +88,20 @@ func (l *RateLimiter) Set(rate float64, burst int) {
 	l.capacity = float64(burst)
 }
 
+// Rate reports the current refill rate, for the settings read path.
+func (l *RateLimiter) Rate() float64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.refill
+}
+
+// Burst reports the current burst capacity, for the settings read path.
+func (l *RateLimiter) Burst() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return int(l.capacity)
+}
+
 func minF(a, b float64) float64 {
 	if a < b {
 		return a

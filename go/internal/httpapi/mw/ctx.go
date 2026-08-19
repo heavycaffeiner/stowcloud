@@ -24,8 +24,10 @@ func withOrigin(ctx context.Context, o Origin) context.Context {
 
 // OriginFrom reads the host classification HostGuard made.
 func OriginFrom(ctx context.Context) Origin {
-	o, _ := ctx.Value(originKey{}).(Origin)
-	return o
+	if o, ok := ctx.Value(originKey{}).(Origin); ok {
+		return o
+	}
+	return OriginApp
 }
 
 type principalKey struct{}
@@ -34,9 +36,9 @@ func withPrincipal(ctx context.Context, p auth.Principal) context.Context {
 	return context.WithValue(ctx, principalKey{}, p)
 }
 
-// PrincipalFrom reads the authenticated caller. The zero value is absent,
-// which the handlers distinguish from a real account because a real account
-// id is never zero.
+// PrincipalFrom reads the authenticated caller. A false second return means
+// no principal, which the handlers distinguish from a real account because a
+// real account id is never zero.
 func PrincipalFrom(ctx context.Context) (auth.Principal, bool) {
 	p, ok := ctx.Value(principalKey{}).(auth.Principal)
 	return p, ok

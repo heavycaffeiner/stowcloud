@@ -1,6 +1,7 @@
 package mw
 
 import (
+	"encoding/hex"
 	"net/http"
 	"strings"
 
@@ -56,9 +57,17 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool) func(http.
 				return
 			}
 
-			// Cookie session for the browser.
+			// Cookie session for the browser. The token travels as hex so it
+			// is printable; the lookup hashes the decoded bytes, which is what
+			// CreateSession hashed.
 			if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" {
-				principal, lerr := svc.LookupSession(r.Context(), secret.New([]byte(c.Value)))
+				raw, derr := hex.DecodeString(c.Value)
+				if derr != nil {
+					apierr.Write(w, http.StatusUnauthorized,
+						apierr.NewError(apierr.CodeAuthInvalid, "authentication required", ""))
+					return
+				}
+				principal, lerr := svc.LookupSession(r.Context(), secret.New(raw))
 				if lerr == nil {
 					ctx := withPrincipal(r.Context(), principal)
 					next.ServeHTTP(w, r.WithContext(ctx))

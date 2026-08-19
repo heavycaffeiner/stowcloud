@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
 )
 
 // The client address every step below reads comes from one decision in this
@@ -15,10 +16,38 @@ import (
 // the proposal are each stated where they are implemented.
 type clientKey struct{}
 
-// unknownClient is the address of an unattributable request. 0.0.0.0 is
+// unknownClientAddr is the address of an unattributable request. 0.0.0.0 is
 // unroutable, so it cannot collide with a real client's address, and it is
 // the shared rate-limit bucket for everything that has no determinable source.
-var unknownClient = netip.AddrFrom4([4]byte{0, 0, 0, 0})
+func unknownClientAddr() netip.Addr { return netip.AddrFrom4([4]byte{0, 0, 0, 0}) }
+
+// TrustedSet is the live trust boundary. The middleware reads it per request
+// and the settings surface writes it, so an administrator's patch to the
+// trusted-proxy ranges applies to the next request without a restart.
+type TrustedSet struct {
+	mu       sync.RWMutex
+	prefixes []netip.Prefix
+}
+
+// NewTrustedSet builds the holder from boot configuration.
+func NewTrustedSet(prefixes []netip.Prefix) *TrustedSet {
+	return &TrustedSet{prefixes: prefixes}
+}
+
+// Get returns the current ranges.
+func (t *TrustedSet) Get() []netip.Prefix {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return append([]netip.Prefix(nil), t.prefixes...)
+}
+
+// Set replaces the ranges. Only the settings surface calls it, after
+// validation and persistence.
+func (t *TrustedSet) Set(prefixes []netip.Prefix) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.prefixes = prefixes
+}
 
 // trusted is the parsed trust boundary. Ranges come from configuration and
 // never from a request: an operator who configured 0.0.0.0/0 has already made
@@ -48,11 +77,10 @@ func (t *trusted) isTrusted(a netip.Addr) bool {
 //   - A peer inside a trusted range is a proxy, and the client is read from
 //     CF-Connecting-IP (the edge sets it, never appends, so there is no list)
 //     or from X-Forwarded-For, or the peer itself.
-func TrustedProxy(prefixes []netip.Prefix) func(http.Handler) http.Handler {
-	t := &trusted{prefixes: prefixes}
+func TrustedProxy(set *TrustedSet) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			addr := resolveClient(t, r.RemoteAddr,
+			addr := resolveClient(&trusted{prefixes: set.Get()}, r.RemoteAddr,
 				r.Header.Get("CF-Connecting-IP"), r.Header.Get("X-Forwarded-For"))
 			ctx := context.WithValue(r.Context(), clientKey{}, addr)
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -63,8 +91,10 @@ func TrustedProxy(prefixes []netip.Prefix) func(http.Handler) http.Handler {
 // ClientFrom reads the address TrustedProxy resolved. It is netip.Addr so the
 // rate limiter keys on a canonical form rather than a string a client wrote.
 func ClientFrom(ctx context.Context) netip.Addr {
-	a, _ := ctx.Value(clientKey{}).(netip.Addr)
-	return a
+	if a, ok := ctx.Value(clientKey{}).(netip.Addr); ok {
+		return a
+	}
+	return unknownClientAddr()
 }
 
 func resolveClient(t *trusted, peer, cf, xff string) netip.Addr {
@@ -72,7 +102,7 @@ func resolveClient(t *trusted, peer, cf, xff string) netip.Addr {
 	if !peerAddr.IsValid() {
 		// No peer at all. 0.0.0.0 is its own rate-limit bucket, shared with
 		// nothing, and is never treated as a trusted proxy.
-		return unknownClient
+		return unknownClientAddr()
 	}
 	if !t.isTrusted(peerAddr) {
 		// The peer is a client, not a proxy. Everything in the forwarding

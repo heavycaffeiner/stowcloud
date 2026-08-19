@@ -20,10 +20,16 @@ import (
 type Access uint8
 
 const (
+	// AccessUnset is the zero value, which is also "no requirement declared".
+	// Validation refuses it: a route added without a requirement is a startup
+	// error, not a runtime default, which is what makes the scope layer a
+	// layer rather than something each handler remembers.
+	AccessUnset Access = iota
+
 	// AccessSelfAdmin is a self-service or administrative route. Sessions
 	// only: an app password never reaches it, scoped or not, because the
 	// admin surface is not a filesystem capability.
-	AccessSelfAdmin Access = iota
+	AccessSelfAdmin
 
 	// AccessAny is bookkeeping any authenticated caller may reach regardless
 	// of scope: job status, logout, the event channel.
@@ -106,6 +112,9 @@ func Validate(table []Route) error {
 	for _, rt := range table {
 		if rt.Method == "" || rt.Pattern == "" {
 			return fmt.Errorf("a route with an empty method or pattern")
+		}
+		if rt.Req.Access == AccessUnset {
+			return fmt.Errorf("route %s %s declares no requirement; a route with no scope is refused at startup", rt.Method, rt.Pattern)
 		}
 		if rt.Req.Access > AccessPerms {
 			return fmt.Errorf("route %s %s declares an unknown access kind", rt.Method, rt.Pattern)

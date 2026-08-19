@@ -47,5 +47,14 @@
 # clamped to the signed range on the line above the cast. One is the job
 # importer folding a uuid into a 63-bit id, masked before the conversion so the
 # value is proven in range beside the cast.
-67
+#
+# Phase 5 added seven. Four are gosec reading an identifier or a variable
+# rather than a value: the setup code constant whose name contains "token",
+# the app-password listing statement whose table name contains "password",
+# the config file whose path is the operator's own argument, and the
+# healthcheck's certificate path and dial target, both built from that same
+# operator config. Two are the config read and the healthcheck's HTTP client,
+# same shape. One is hmac.Hash.Write, which never fails and has no error path
+# to act on.
+93
 

@@ -77,7 +77,7 @@ func TestNoPeerIsTheSharedBucket(t *testing.T) {
 	// what the configuration says: with 0.0.0.0/0 trusted, every header hop
 	// parses as trusted, so without this rule the request would pick its own
 	// address out of the headers.
-	if got != unknownClient {
+	if got != unknownClientAddr() {
 		t.Fatalf("client = %v, want 0.0.0.0", got)
 	}
 }

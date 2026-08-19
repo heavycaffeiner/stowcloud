@@ -6,7 +6,6 @@ package httpapi
 
 import (
 	"log/slog"
-	"net/netip"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
@@ -25,11 +24,11 @@ type State struct {
 	Auth  *auth.Service
 	Core  *core.Core
 
-	// Trusted is the proxy boundary, and Origins is the declared host list.
-	// Both come from configuration and never from a request.
-	Trusted      []netip.Prefix
-	AppHosts     []string
-	ContentHosts []string
+	// Trusted is the proxy boundary, and Hosts is the declared origin list.
+	// Both are live holders: configuration at boot, and the settings surface
+	// moves them within their bounds at runtime.
+	Trusted *mw.TrustedSet
+	Hosts   *mw.HostSet
 
 	// Limits holds the admin-mutable bounds; a D5 constant is the compiled-in
 	// default and the outer bound, and this is what an administrator moves

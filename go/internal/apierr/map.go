@@ -27,7 +27,7 @@ const (
 	CodeRateLimited       Code = "rate.limited"
 	CodeLimitExceeded     Code = "fs.limit_exceeded"
 	CodeSetupCompleted    Code = "setup.completed"
-	CodeSetupTokenExpired Code = "setup.token_expired"
+	CodeSetupTokenExpired Code = "setup.token_expired" //nolint:gosec // G101 reads the identifier: a code value, not a credential.
 	CodeSetupInvalidToken Code = "setup.invalid_token"
 	CodeSetupInvalidUser  Code = "setup.invalid_username"
 	CodeSetupWeakPassword Code = "setup.weak_password"
@@ -67,6 +67,15 @@ const (
 func Map(err error) (int, *Error) {
 	if err == nil {
 		return http.StatusOK, nil
+	}
+
+	// A refusal this surface produced itself, for a malformed or invalid
+	// request. It names its own status, code and catalogue key, and it flows
+	// through this function like every other error so that a status is still
+	// chosen in one place.
+	var req *RequestError
+	if errors.As(err, &req) {
+		return req.Status, NewError(req.Code, req.Message, req.Key, req.Args...)
 	}
 
 	switch {
@@ -140,3 +149,38 @@ func notFound() *Error {
 // know before the core runs that the caller may not learn the truth: a path
 // outside every grant and a path that does not exist are the same answer.
 func MapNotFound() *Error { return notFound() }
+
+// RequestError is a refusal the surface itself produces: a malformed request,
+// or syntactically valid input that fails a named field or domain constraint.
+// It carries its own status, code and catalogue key, and Map renders it like
+// any other error, so the rule that one function names a status holds for the
+// surface's own refusals too.
+type RequestError struct {
+	Status  int
+	Code    Code
+	Message Message
+	Key     MessageKey
+	Args    []Arg
+}
+
+func (e *RequestError) Error() string { return string(e.Code) + ": " + string(e.Message) }
+
+// BadRequest builds a 400 for a malformed request. field names the part of
+// the request that was wrong; the offending value is never echoed.
+func BadRequest(key MessageKey, field string) *RequestError {
+	return &RequestError{
+		Status: http.StatusBadRequest, Code: CodeInvalidRequest,
+		Message: msgInvalidRequest, Key: key,
+		Args: []Arg{{Name: "field", Value: field}},
+	}
+}
+
+// Unprocessable builds a 422 for input that parses but fails a named field or
+// domain constraint.
+func Unprocessable(key MessageKey, field string) *RequestError {
+	return &RequestError{
+		Status: http.StatusUnprocessableEntity, Code: CodeInvalidRequest,
+		Message: msgInvalidRequest, Key: key,
+		Args: []Arg{{Name: "field", Value: field}},
+	}
+}
