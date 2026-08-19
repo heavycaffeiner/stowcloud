@@ -165,7 +165,18 @@ reimplemented casually, so they are restated as testable statements:
 
 Hop parsing accepts the four shapes proxies actually emit: `1.2.3.4`,
 `1.2.3.4:51234`, `[2001:db8::1]`, `[2001:db8::1]:443`. A fuzz target covers it
-(D16).
+(D16). A bare unbracketed IPv6 address also parses, because the reference
+implementation's first attempt reads it as an address and a whitelist that
+refused it would only reimplement the reference's second attempt less
+reliably.
+
+One more check the reference implements and this list does not name: the walk
+is only entered when the **peer itself is in the trusted set**. Forwarding
+headers from an untrusted source are attacker-supplied strings and are
+discarded without being parsed, so a direct attacker cannot name their own
+address. After the peer check, `CF-Connecting-IP` is read first when it
+parses, because the edge sets that header rather than appends, and there is no
+list to disambiguate.
 
 **3. HostGuard** compares the request's host against a declared origin list.
 The list is configuration, never inference: one server is reached under a LAN
@@ -376,19 +387,29 @@ token is emitted as weak rather than falsely strong.
 ```go
 package route
 
-// Route is one entry in the table. Scope is required, not optional: a route
+// Requirement is what a route demands of the credential that reaches it.
+// Access is a three-way split that auth.Scope cannot express: an app
+// password's scope is a filesystem-capability mask, and no combination of
+// filesystem bits means "and also administer the account", so the
+// self-service and admin surface is a kind of its own.
+type Requirement struct {
+    Access Access  // AccessSelfAdmin, AccessAny, or AccessPerms
+    Perms  acl.Perms // the bits AccessPerms demands, in acl terms
+}
+
+// Route is one entry in the table. Req is required, not optional: a route
 // that declares none is refused at startup, which is what makes step 9 a layer
-// rather than something each handler remembers.
+// rather than something each handler remembers. The AccessUnset zero value is
+// exactly that refusal.
 type Route struct {
     Method  string
     Pattern string
-    Scope   auth.Scope
-    Perms   acl.Perms
+    Req     Requirement
     Handler http.HandlerFunc
 }
 
-// Table is validated at startup: every route has a scope, no two routes have
-// the same method and pattern, and every pattern parses.
+// Table is validated at startup: every route declares a requirement, no two
+// routes share a method and pattern, and every pattern parses.
 func Table(s *State) []Route
 ```
 
@@ -445,15 +466,17 @@ func Map(err error) (int, *Error)
 | Module | Used for |
 |---|---|
 | `github.com/BurntSushi/toml` | `sc.toml`, parsed in `internal/server/config.go`. This phase is where it enters the module graph, which is why it is listed here rather than left implicit in [`0`](stowcloud-0-motivation-and-findings.md) §6-2's table |
+| `github.com/gorilla/websocket` | the `/api/events` change channel. The dependency decision §4.3.5 reopened settled on a maintained module: the protocol carries client frames, so a hand-rolled frame layer would re-implement control-frame handling, close codes and fragmentation it already owns |
 | a routing library, **only if needed** | path parameters |
 
 Go 1.22 gave `net/http.ServeMux` method and wildcard patterns, which covers this
 surface, and Phase 5a's first task is confirming that against the real route
-list rather than adding a router by reflex. If it does not cover it, one small
-router is added and named in this table and in
-[`0`](stowcloud-0-motivation-and-findings.md) §6-2; a framework is not. The
-conditional entry is the honest shape: a dependency this document has not
-committed to should not appear in a list that reads as committed.
+list rather than adding a router by reflex. The confirmation is recorded here:
+`ServeMux` covers every route on the table, so no routing library is added. If
+it had not covered one, a small router would have been added and named here and
+in [`0`](stowcloud-0-motivation-and-findings.md) §6-2; a framework never would
+be. The conditional entry is the honest shape: a dependency this document has
+not committed to should not appear in a list that reads as committed.
 
 Everything else is standard library: `crypto/tls`, `crypto/x509`, `net/http`,
 `encoding/json`, `embed`, `log/slog`.

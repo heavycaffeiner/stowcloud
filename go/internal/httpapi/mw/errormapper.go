@@ -1,7 +1,9 @@
 package mw
 
 import (
+	"bufio"
 	"context"
+	"net"
 	"net/http"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
@@ -73,4 +75,23 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 		r.status = http.StatusOK
 	}
 	return r.ResponseWriter.Write(b)
+}
+
+// Hijack passes the connection through to the WebSocket upgrader. The change
+// channel sits inside this chain, so the recorder has to be a transparent
+// link in the hijack path or an upgraded socket never reaches the handler.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	h, ok := r.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, http.ErrNotSupported
+	}
+	return h.Hijack()
+}
+
+// Flush passes the flush through; a response that must reach a slow client
+// without buffering cannot be blocked by the recorder.
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
