@@ -57,6 +57,44 @@ const (
 	DavLocksPerUser = 256
 )
 
+// Upload bounds.
+const (
+	// UploadIntervalRuns caps the disjoint received ranges one session may
+	// hold. A sequential upload reaches one and a parallel one a handful;
+	// only a client fragmenting on purpose approaches this, and at that point
+	// the insert is refused rather than letting the set grow without end.
+	UploadIntervalRuns = 4096
+
+	// UploadReservedBytesPerUser bounds the declared length of everything one
+	// account has in flight. A declared length reserves a sparse part file, so
+	// without this an account can promise the disk away without writing a
+	// byte. Refuses with 429.
+	UploadReservedBytesPerUser = 100 << 30
+
+	// UploadFreeSpaceMargin is what a session's declared length must leave
+	// behind on the destination filesystem. Refuses with 507.
+	UploadFreeSpaceMargin = 2 << 30
+
+	// UploadSpooledNames caps the out-of-order chunk names one name-ordered
+	// session may hold before its predecessor arrives.
+	UploadSpooledNames = 4096
+)
+
+// UploadSessionTTL is how long a session survives without a write. The sweep
+// takes the part file after it, so it is also the grace period an orphan is
+// measured against.
+const UploadSessionTTL = 24 * time.Hour
+
+// The chunk floor and default. The floor is the hard one: neither the config
+// file nor an administrator may set a live minimum below it, which is what
+// keeps a misconfiguration from turning every upload into a per-byte request.
+// The other two are seeds the config file and then an admin override replace.
+const (
+	UploadChunkFloor       = 5 << 20
+	UploadChunkMinDefault  = 5 << 20
+	UploadChunkSizeDefault = 10 << 20
+)
+
 // Search bounds. The storage-dependent pairs are two constants rather than one
 // parameter, because a caller that picks the number is a caller that can widen
 // it.
