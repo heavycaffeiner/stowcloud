@@ -89,17 +89,6 @@ func (c *Core) AttachQuotaSink(sink QuotaSink) error {
 	return nil
 }
 
-// checkQuota consults the ledger before a write that grows the user's use.
-func (c *Core) checkQuota(ctx context.Context, user UserID, additional uint64) error {
-	if c.quota == nil || additional == 0 {
-		return nil
-	}
-	if err := c.quota.Reserve(ctx, user, additional); err != nil {
-		return errf(ErrQuotaExceeded, "reserve %d bytes", additional)
-	}
-	return nil
-}
-
 // chargeQuota settles a delta against the ledger after the filesystem change
 // it belongs to has committed. Negative is a freed delete.
 func (c *Core) chargeQuota(ctx context.Context, user UserID, delta int64) {
@@ -111,10 +100,6 @@ func (c *Core) chargeQuota(ctx context.Context, user UserID, delta int64) {
 			"error", err)
 	}
 }
-
-// quotaChecker is nil-safe access to the sink, for the delete path that only
-// credits freed bytes.
-func (c *Core) freeChecker() QuotaSink { return c.quota }
 
 // NewSQLQuota returns a quota ledger over the user rows. It needs the durable
 // database's serialised write path, which is state.DB.

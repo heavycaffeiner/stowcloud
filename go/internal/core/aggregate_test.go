@@ -5,10 +5,10 @@ package core
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
+	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
@@ -36,6 +36,18 @@ func TestFileETagIsDeterministicAndWeak(t *testing.T) {
 	if e1 == e3 {
 		t.Fatalf("a ctime change must change the token (F11's case)")
 	}
+}
+
+// grantWrite adds write and create on the whole docs share for user 42 and
+// reloads the evaluator, for the tests that exercise a write path against the
+// read-only testCore grant.
+func grantWrite(t *testing.T, c *Core, s *store.Store) error {
+	t.Helper()
+	g := acl.Grant{User: 42, Share: 1, Subpath: acl.NewPath(), Allow: acl.Read | acl.Write | acl.Create, Inherit: true, Label: "docs"}
+	if err := insertGrant(s, g, 1); err != nil {
+		return err
+	}
+	return c.acl.LoadFromState(ctx(), s.State().SQL())
 }
 
 func TestFileETagIsNotStrongEnoughToHashContent(t *testing.T) {
@@ -83,12 +95,20 @@ func TestWeakIfMatchIsRefused(t *testing.T) {
 
 // TestCreateFileWeakPreconditionIsRefused exercises the full operation path.
 func TestCreateFileWeakPreconditionIsRefused(t *testing.T) {
-	c, _, _ := testCore(t)
+	c, s, _ := testCore(t)
+	// CreateFile needs write and create, which the shared testCore grant
+	// deliberately does not carry; this test adds them on top.
+	if err := grantWrite(t, c, s); err != nil {
+		t.Fatalf("granting write: %v", err)
+	}
 	r, err := resolve(t, c, "docs/a.txt", reqWrite)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	st, _ := r.root.Stat(r.path)
+	st, serr := r.root.Stat(r.path)
+	if serr != nil {
+		t.Fatalf("stat: %v", serr)
+	}
 	cur, _ := FileETag(st)
 	im := Token(cur)
 
@@ -99,9 +119,6 @@ func TestCreateFileWeakPreconditionIsRefused(t *testing.T) {
 	if !errors.Is(derr, ErrPrecondition) {
 		t.Fatalf("CreateFile with a weak If-Match = %v, want ErrPrecondition", derr)
 	}
-	// The file is untouched.
-	body, _ := os.ReadFile(filepath.Join(t.TempDir(), "unused"))
-	_ = body
 
 	// Unconditional retry succeeds.
 	_, uerr := c.CreateFile(ctx(), r, vfs.DurableOpts{Mode: 0o664}, nil, func(f *vfs.File) error {

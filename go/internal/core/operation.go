@@ -78,10 +78,10 @@ func (c *Core) StartCopy(ctx context.Context, owner UserID, from, to Resolved) (
 	task.Go(ctx, "core: long copy", func() {
 		now := c.clk.Nanos()
 		if cerr := c.copyRecursive(ctx, from, to, vfs.Stat{}); cerr != nil {
-			_ = c.state.FinishOp(ctx, id, state.OpFailed, 0, cerr.Error(), now, nil)
+			_ = c.state.FinishOp(ctx, id, state.OpFailed, 0, cerr.Error(), now, nil) //nolint:errcheck // the failure is already the answer; the row is best-effort.
 			return
 		}
-		_ = c.state.FinishOp(ctx, id, state.OpDone, 1, "", now, nil)
+		_ = c.state.FinishOp(ctx, id, state.OpDone, 1, "", now, nil) //nolint:errcheck // the row is best-effort beside the copy's own result.
 	})
 	return id, nil
 }

@@ -113,8 +113,8 @@ func (c *Core) CreateLink(ctx context.Context, r Resolved, spec LinkSpec) (Link,
 	// distinguish the original inode from one reused after a delete.
 	var dev, ino, present, btime any
 	if !r.path.IsRoot() && st.BtimeNs != nil {
-		dev = int64(st.Dev)
-		ino = int64(st.Ino)
+		dev = int64(st.Dev) //nolint:gosec // G115 reads the conversion: a device number crosses into signed storage as its bit pattern and comes back unchanged.
+		ino = int64(st.Ino) //nolint:gosec // G115 reads the conversion: an inode number crosses into signed storage as its bit pattern and comes back unchanged.
 		present, btime = int64(1), *st.BtimeNs
 	}
 
@@ -182,7 +182,7 @@ func (c *Core) ListLinks(ctx context.Context, owner UserID, at *Resolved) ([]Lin
 	if err != nil {
 		return nil, fmt.Errorf("listing share links: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
+	defer func() { _ = rows.Close() }() //nolint:errcheck // the rows are fully read and the set is owned here.
 	var out []Link
 	for rows.Next() {
 		l, serr := c.scanLink(rows)
@@ -462,6 +462,6 @@ func sameIdent(st vfs.Stat, l Link) bool {
 	if l.dev == nil || l.ino == nil || l.btime == nil {
 		return false
 	}
-	return st.Dev == uint64(*l.dev) && st.Ino == uint64(*l.ino) &&
+	return st.Dev == uint64(*l.dev) && st.Ino == uint64(*l.ino) && //nolint:gosec // G115 reads the conversions: the values are the bit patterns stored by the crossing above.
 		st.BtimeNs != nil && *st.BtimeNs == *l.btime
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -52,17 +53,28 @@ func testCore(t *testing.T) (*Core, *store.Store, ShareID) {
 	if err := os.WriteFile(filepath.Join(host, "docs", "a.txt"), []byte("hello"), 0o664); err != nil {
 		t.Fatalf("write a.txt: %v", err)
 	}
+	// The share root is the directory the test data lives in, and the grant
+	// projects the whole root under the share's own name: the label a client
+	// path matches is the name the share registered under.
 	if err := c.RegisterShare(context.Background(), ShareDef{
 		ID:     1,
 		Name:   "docs",
-		Host:   host,
+		Host:   filepath.Join(host, "docs"),
 		Policy: vfs.DefaultSharePolicy(),
 	}); err != nil {
 		t.Fatalf("RegisterShare: %v", err)
 	}
 
-	// One grant: user 42 has READ on the whole share root.
-	g := acl.Grant{User: 42, Share: 1, Subpath: acl.NewPath(), Allow: acl.Read, Inherit: true}
+	// A grant references an account, and the table enforces it: create the
+	// account the test grants to, exactly as the product would have one.
+	if err := insertTestUser(s, 42); err != nil {
+		t.Fatalf("creating the test user: %v", err)
+	}
+
+	// One grant: user 42 has READ on the whole share root, projected under the
+	// share's own name. The label is what Resolve matches a client path
+	// against, so it has to be the name the share registered under.
+	g := acl.Grant{User: 42, Share: 1, Subpath: acl.NewPath(), Allow: acl.Read, Inherit: true, Label: "docs"}
 	// The evaluator is empty until we persist the grant. Persist it directly.
 	if err := insertGrant(s, g, 1); err != nil {
 		t.Fatalf("inserting the grant: %v", err)
@@ -72,6 +84,22 @@ func testCore(t *testing.T) (*Core, *store.Store, ShareID) {
 	}
 	return c, s, 1
 }
+
+// insertTestUser creates the minimal account row a grant can reference. The
+// grant table's foreign key is load-bearing, not decorative: a grant without
+// an account is a grant that can never be evaluated, so the tests create the
+// account they grant to.
+func insertTestUser(s *store.Store, id int64) error {
+	return s.State().Write(ctx(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx(), testUserInsertStmt, id, "user"+strconv.FormatInt(id, 10))
+		return err
+	})
+}
+
+// testUserInsertStmt is the minimal account row: every other column has a
+// schema default, and a test account has no password to store.
+const testUserInsertStmt = `
+INSERT INTO user(id, name, pw_hash, created_ns) VALUES (?, ?, 'x', 0)`
 
 func ctx() context.Context { return context.Background() }
 
@@ -108,7 +136,7 @@ func TestOutsideGrantAndMissingAreIndistinguishable(t *testing.T) {
 		{
 			"a label outside every grant",
 			func() error {
-				v, _ := vfs.ParseVpath("nonexistent")
+				v := mustVpath(t, "nonexistent")
 				_, err := c.Resolve(UserID(42), v, acl.Read)
 				return err
 			},
@@ -116,7 +144,7 @@ func TestOutsideGrantAndMissingAreIndistinguishable(t *testing.T) {
 		{
 			"a label the user cannot read",
 			func() error {
-				v, _ := vfs.ParseVpath("noread")
+				v := mustVpath(t, "noread")
 				_, err := c.Resolve(UserID(42), v, acl.Read)
 				return err
 			},
@@ -154,7 +182,7 @@ func TestOutsideGrantAndMissingAreIndistinguishable(t *testing.T) {
 func TestResolveDeniesWithinAReadableShare(t *testing.T) {
 	c, _, _ := testCore(t)
 
-	v, _ := vfs.ParseVpath("docs/a.txt")
+	v := mustVpath(t, "docs/a.txt")
 	_, err := c.Resolve(UserID(42), v, acl.Write)
 	if !errors.Is(err, ErrDenied) {
 		t.Fatalf("Resolve(write) = %v, want ErrDenied (the caller knows the share exists)", err)
@@ -166,7 +194,7 @@ func TestResolveDeniesWithinAReadableShare(t *testing.T) {
 // build a Resolved literal, because the fields are unexported.
 func TestResolvedCanOnlyBeObtainedThroughResolve(t *testing.T) {
 	c, _, _ := testCore(t)
-	v, _ := vfs.ParseVpath("docs/a.txt")
+	v := mustVpath(t, "docs/a.txt")
 	r, err := c.Resolve(UserID(42), v, acl.Read)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
@@ -181,14 +209,20 @@ var _ = errors.Is
 // resolve is a test convenience over the single gate.
 func resolve(t *testing.T, c *Core, p string, need acl.Perms) (Resolved, error) {
 	t.Helper()
+	return c.Resolve(UserID(42), mustVpath(t, p), need)
+}
+
+// mustVpath parses a test literal, which is a fixed constant the test wrote.
+func mustVpath(t *testing.T, p string) vfs.Vpath {
+	t.Helper()
 	v, perr := vfs.ParseVpath(p)
 	if perr != nil {
 		t.Fatalf("ParseVpath(%q): %v", p, perr)
 	}
-	return c.Resolve(UserID(42), v, need)
+	return v
 }
 
-var (
+const (
 	reqRead  = acl.Read
 	reqWrite = acl.Write
 )

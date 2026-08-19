@@ -20,8 +20,7 @@ type Aggregate = cache.Aggregate
 
 // aggGuard is the single-flight state for one directory's rollup.
 type aggGuard struct {
-	mu   sync.Mutex
-	done bool
+	mu sync.Mutex
 }
 
 // Aggregate returns the recursive rollup for a directory: its ETag, and the
@@ -59,7 +58,7 @@ func (c *Core) ensureFileIDChain(
 		// inserted for it; its rollup is still cached, keyed by the sentinel.
 		return cache.RootID, nil
 	}
-	var curID cache.FileID = cache.RootID
+	curID := cache.RootID
 	curPath := vfs.RootPath()
 	for _, comp := range p.Components() {
 		var jerr error
@@ -182,8 +181,8 @@ func (c *Core) computeAggregate(
 			childEtag, _ = FileETag(st)
 			size, count = st.Size, 1
 		}
-		hasher.Write([]byte(name))
-		hasher.Write([]byte(childEtag))
+		hasher.Write([]byte(name))      //nolint:errcheck // hash.Hash.Write never fails.
+		hasher.Write([]byte(childEtag)) //nolint:errcheck // hash.Hash.Write never fails.
 		rsize += size
 		rcount += count
 	}

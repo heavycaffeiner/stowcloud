@@ -51,8 +51,8 @@ func (c *Core) trashMove(ctx context.Context, r Resolved, st vfs.Stat) error {
 		return err
 	}
 	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Errorf("naming a trash entry: %w", err)
+	if _, rerr := rand.Read(b[:]); rerr != nil {
+		return fmt.Errorf("naming a trash entry: %w", rerr)
 	}
 	id := hexLower(b[:])
 	encoded := encodeOrigPath(r.path)

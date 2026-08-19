@@ -66,12 +66,19 @@ func TestExistenceRuleOverHTTP(t *testing.T) {
 	if mderr := os.MkdirAll(host+"/docs", 0o775); mderr != nil {
 		t.Fatalf("mkdir: %v", mderr)
 	}
+	if werr := os.WriteFile(host+"/docs/a.txt", []byte("hello"), 0o664); werr != nil {
+		t.Fatalf("write a.txt: %v", werr)
+	}
+	// The share root is the directory the data lives in; the grant projects
+	// it under the share's own name, which is the label a client path
+	// matches. Without the label the whole resolution is dead, and a test
+	// that fails open on it proves nothing.
 	if rerr := coreSvc.RegisterShare(context.Background(), core.ShareDef{
-		ID: 1, Name: "docs", Host: host, Policy: vfs.DefaultSharePolicy(),
+		ID: 1, Name: "docs", Host: host + "/docs", Policy: vfs.DefaultSharePolicy(),
 	}); rerr != nil {
 		t.Fatalf("RegisterShare: %v", rerr)
 	}
-	g := acl.Grant{User: 1, Share: 1, Subpath: acl.NewPath(), Allow: acl.Read | acl.Create | acl.Write | acl.Delete, Inherit: true}
+	g := acl.Grant{User: 1, Share: 1, Subpath: acl.NewPath(), Allow: acl.Read | acl.Create | acl.Write | acl.Delete, Inherit: true, Label: "docs"}
 	if gerr := insertGrant(st, g, 1); gerr != nil {
 		t.Fatalf("insertGrant: %v", gerr)
 	}
@@ -124,6 +131,16 @@ func TestExistenceRuleOverHTTP(t *testing.T) {
 	if !bytes.Equal(missing.Body.Bytes(), outside.Body.Bytes()) {
 		t.Fatalf("a missing path and a path outside a grant are distinguishable:\nmissing: %s\noutside: %s",
 			missing.Body.String(), outside.Body.String())
+	}
+
+	// The grant must actually resolve, or both cases above fail for the same
+	// wrong reason: a listing of the granted share answers 200 with the file.
+	ok := do("docs")
+	if ok.Code != http.StatusOK {
+		t.Fatalf("listing the granted share = %d, want 200 (the grant must resolve)", ok.Code)
+	}
+	if !bytes.Contains(ok.Body.Bytes(), []byte("a.txt")) {
+		t.Fatalf("the listing does not contain the file: %s", ok.Body.String())
 	}
 }
 

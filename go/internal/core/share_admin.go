@@ -80,15 +80,17 @@ func (c *Core) CreateShare(ctx context.Context, spec ShareSpec) (Share, error) {
 	}
 	// The dynamic-share base is added to the fresh rowid, which is a small
 	// positive number; a rowid that overflows the id space is corruption.
-	combined, nerr := num.Narrow[uint64](dynamicShareIDBase + rowid)
+	// The id is uint32, so the narrow check must prove the uint32 range, not
+	// just the uint64 one, or a rowid near the top of the space truncates.
+	combined, nerr := num.Narrow[uint32](dynamicShareIDBase + rowid)
 	if nerr != nil {
-		_ = c.state.DeleteShare(ctx, rowid)
+		_ = c.state.DeleteShare(ctx, rowid) //nolint:errcheck // the overflow is the answer; the rollback is best-effort.
 		return Share{}, fmt.Errorf("a share row id overflowed the id space: %w", nerr)
 	}
 	id := ShareID(combined)
 	trash, _, terr := c.state.TrashOverrideFor(ctx, int64(id))
 	if terr != nil {
-		_ = c.state.DeleteShare(ctx, rowid)
+		_ = c.state.DeleteShare(ctx, rowid) //nolint:errcheck // the override error is the answer; the rollback is best-effort.
 		return Share{}, terr
 	}
 	created := Share{
@@ -102,7 +104,7 @@ func (c *Core) CreateShare(ctx context.Context, spec ShareSpec) (Share, error) {
 		// The durability write committed; a registration that then failed
 		// leaves a row with no live share, so it is rolled back like the
 		// reference does.
-		_ = c.state.DeleteShare(ctx, rowid)
+		_ = c.state.DeleteShare(ctx, rowid) //nolint:errcheck // the registration failure is the answer; the rollback is best-effort.
 		return Share{}, fmt.Errorf("share rejected: %w", err)
 	}
 	return created, nil

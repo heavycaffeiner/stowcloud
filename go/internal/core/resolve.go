@@ -145,8 +145,15 @@ func (c *Core) shareEntry(id ShareID) (*shareEntry, bool) {
 // disk can be named.
 func (c *Core) joinSubpath(def ShareDef, subpath acl.Path, rest vfs.SharePath) (vfs.SafePath, error) {
 	full := vfs.RootPath()
+	// The grant subpath is trusted configuration, but a reserved or invalid
+	// component in it is a corrupt grant, not a path to silently truncate:
+	// a grant that cannot name its own scope must refuse the resolution.
 	for _, comp := range subpath.Components() {
-		full, _ = full.JoinExisting(comp)
+		var jerr error
+		full, jerr = full.JoinExisting(comp)
+		if jerr != nil {
+			return vfs.SafePath{}, jerr
+		}
 	}
 	if rest.IsRoot() {
 		return full, nil

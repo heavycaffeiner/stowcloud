@@ -32,12 +32,12 @@ func (s *Stream) Read(p []byte) (int, error) {
 		return 0, io.EOF
 	}
 	remaining := s.end - s.pos
-	cap := int(min64(remaining, uint64(len(p))))
+	cap := int(min64(remaining, uint64(len(p)))) //nolint:gosec // G115 reads the conversion: the value is clamped by len(p), which is already int.
 	cap = min(cap, streamChunk)
 	if cap == 0 {
 		return 0, nil
 	}
-	n, err := s.f.ReadAt(p[:cap], int64(s.pos))
+	n, err := s.f.ReadAt(p[:cap], int64(s.pos)) //nolint:gosec // G115 reads the conversion: the offset is the file's own size, which the descriptor addressed at open.
 	if n == 0 {
 		// The file shrank out from under us (a concurrent write) before the
 		// end of the range. A short read is still an honest stream: io.EOF is
@@ -45,7 +45,7 @@ func (s *Stream) Read(p []byte) (int, error) {
 		s.end = s.pos
 		return 0, io.EOF
 	}
-	s.pos += uint64(n)
+	s.pos += uint64(n) //nolint:gosec // G115 reads the conversion: ReadAt returns a non-negative int.
 	if err != nil && !errors.Is(err, io.EOF) {
 		return n, err
 	}
@@ -82,11 +82,11 @@ func (c *Core) OpenStream(ctx context.Context, r Resolved, range_ *[2]uint64) (F
 	}
 	st, serr := f.Stat()
 	if serr != nil {
-		_ = f.Close()
+		_ = f.Close() //nolint:errcheck // the stat failure is the answer; the descriptor is going away.
 		return FidEntry{}, nil, mapVFSErr(serr)
 	}
 	if st.Kind.IsDir() {
-		_ = f.Close()
+		_ = f.Close() //nolint:errcheck // the denial is the answer; the descriptor is going away.
 		return FidEntry{}, nil, errf(ErrDenied, "stream a directory")
 	}
 	etag, weak := FileETag(st)
@@ -151,16 +151,16 @@ func (c *Core) OpenSeekable(ctx context.Context, r Resolved) (FidEntry, io.ReadS
 	}
 	st, serr := f.Stat()
 	if serr != nil {
-		_ = f.Close()
+		_ = f.Close() //nolint:errcheck // the stat failure is the answer; the descriptor is going away.
 		return FidEntry{}, nil, mapVFSErr(serr)
 	}
 	if st.Kind.IsDir() {
-		_ = f.Close()
+		_ = f.Close() //nolint:errcheck // the denial is the answer; the descriptor is going away.
 		return FidEntry{}, nil, errf(ErrDenied, "stream a directory")
 	}
 	etag, weak := FileETag(st)
 	return FidEntry{Name: r.path.Name(), Size: st.Size, MTime: st.MtimeNs, ETag: etag, ETagWeak: weak},
-		&openSeekable{f: f, len: int64(st.Size)}, nil
+		&openSeekable{f: f, len: int64(st.Size)}, nil //nolint:gosec // G115 reads the conversion: the seekable's length is the file's own size, which the descriptor addressed at open.
 }
 
 func min64(a, b uint64) uint64 {

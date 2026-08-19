@@ -56,5 +56,13 @@
 # operator config. Two are the config read and the healthcheck's HTTP client,
 # same shape. One is hmac.Hash.Write, which never fails and has no error path
 # to act on.
-93
+#
+# The core audit added nineteen, all the same families the phases before
+# already named: hash and hmac writers that never fail, rows.Close on a fully
+# read set, the device and inode numbers that cross into signed SQLite storage
+# as their bit pattern and come back unchanged, the stream offsets that are
+# bounded by the descriptor's own size, the rollback and close paths whose
+# primary error is the answer, and the share-id widening whose narrow check
+# sits on the line above.
+112
 
