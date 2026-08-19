@@ -57,9 +57,10 @@ Depends on Phase 4. Blocks Phases 7, 10 and 12. Independent of Phases 8 and 9.
 - **The chunk floor distinguishes "an admin set this" from "it fell back to the
   config file".** Collapsing them loses what the settings screen has to report.
 - **Extend the Rust importer with upload aliases and chunk settings.** An alias
-  is what makes a named chunk collection resumable after cutover. Touched-dir
-  debt is not copied because the metadata cache itself is rebuilt, and the
-  disposition report says so explicitly.
+  is what makes a named chunk collection resumable after cutover. The touched
+  directories come across as well: that table is the orphan sweep's record of
+  where a part file may be, not cache-invalidation debt, and an orphan is by
+  definition one whose session row is already gone.
 - The part file's handle is the one holder of `IntentReadWrite` in the tree.
 
 ## Done when
@@ -69,5 +70,5 @@ Depends on Phase 4. Blocks Phases 7, 10 and 12. Independent of Phases 8 and 9.
 - A finalize with a deliberately wrong whole-file digest fails and leaves the
   session resumable with the part file intact.
 - A chunk failing its checksum leaves the interval set untouched.
-- The Rust importer preserves active upload aliases and chunk-setting intent;
-  its report classifies touched-directory debt as rebuildable.
+- The Rust importer preserves active upload aliases, chunk-setting intent and
+  the touched-directory set the orphan sweep reads.

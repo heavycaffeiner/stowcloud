@@ -117,10 +117,19 @@ set is not a corrupt one.
 This phase adds the active `upload_alias` rows that let `/dav-uploads/{tid}`
 find an existing session after restart, and extends the Rust importer to copy
 them. It also maps `upload_chunk_settings` into the typed settings
-representation. `upload_touched_dirs` is the explicit exception: the metadata
-cache is not imported, so there is no old aggregate left for that invalidation
-debt to invalidate. The migration report names it rebuildable rather than
-silently ignoring it.
+representation, where the row's presence is carried as well as its two numbers:
+absence is what distinguishes "it fell back to the config file" from "an admin
+stored this".
+
+`upload_touched_dirs` is copied too, and an earlier revision of this section
+had that wrong. It described the table as cache-invalidation debt made
+meaningless by the cache not being imported. It is not: `engine.rs:874` reads
+it in `sweep_orphans` and nothing else reads it at all, so it is the record of
+where a part file may be, not of what needs recomputing. The orphan the sweep
+exists for is a part file whose session row is already gone, so the session
+rows cannot be what says where to look. Dropping the table at cutover would
+leave every orphan the old build had already lost track of unreachable for
+good, and those are precisely the ones a crash left behind.
 
 ### 4.3 Core Logic
 
