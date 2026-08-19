@@ -85,7 +85,7 @@ func New(s *store.Store, opt Options) (*Core, error) {
 	if clk == nil {
 		clk = clock.System()
 	}
-	return &Core{
+	c := &Core{
 		cache:   s.Cache(),
 		state:   s.State(),
 		journal: s.Journal(),
@@ -93,7 +93,14 @@ func New(s *store.Store, opt Options) (*Core, error) {
 		clk:     clk,
 		logger:  slog.Default(),
 		shares:  map[ShareID]*shareEntry{},
-	}, nil
+	}
+	// The ACL gate is the whole permission story, and it is loaded from the
+	// durable grants at boot: a core that does not know its own grants is a
+	// core that has silently denied everything since it started.
+	if err := c.acl.LoadFromState(context.Background(), c.state.SQL()); err != nil {
+		return nil, fmt.Errorf("loading grants: %w", err)
+	}
+	return c, nil
 }
 
 // ShareID aliases the VFS share id, which is the only id scheme this package

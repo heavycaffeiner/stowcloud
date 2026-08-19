@@ -31,6 +31,10 @@ type Deps struct {
 	// chain reads the same instance.
 	Limiter *mw.RateLimiter
 
+	// CSRFKey derives the token the session response hands the client, which
+	// is the same key the CSRF middleware checks against.
+	CSRFKey []byte
+
 	// Trusted and Hosts are here for the network-settings surface, which
 	// moves them within their bounds. The chain reads the same instances.
 	Trusted *mw.TrustedSet

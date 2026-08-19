@@ -100,7 +100,7 @@ func TestExistenceRuleOverHTTP(t *testing.T) {
 	deps := handler.Deps{
 		Core: coreSvc, Auth: svc, Clock: clk, Log: log,
 		Limiter: state.Limiter, Trusted: state.Trusted, Hosts: state.Hosts,
-		WatchCap: func() int { return 4096 },
+		CSRFKey: make([]byte, 32), WatchCap: func() int { return 4096 },
 	}
 	gate, err := NewSetupGate(context.Background(), svc, clk, dir)
 	if err != nil {

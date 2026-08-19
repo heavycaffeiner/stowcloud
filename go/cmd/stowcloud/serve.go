@@ -69,6 +69,12 @@ func runServe(args []string, stderr io.Writer) int {
 		say(stderr, "stowcloud %s: serve: the core domain: %v\n", version, cerr)
 		return exitConfig
 	}
+	// Admin-created shares live in the state database; a restart must re-open
+	// them under the same ids the running process used.
+	if rerr := coreSvc.ReloadPersistedShares(ctx); rerr != nil {
+		say(stderr, "stowcloud %s: serve: reloading persisted shares: %v\n", version, rerr)
+		return exitConfig
+	}
 
 	setupGate, gerr := server.NewSetupGate(ctx, authSvc, clk, cfg.DataDir)
 	if gerr != nil {

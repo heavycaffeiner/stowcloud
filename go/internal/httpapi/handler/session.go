@@ -80,6 +80,10 @@ type sessionResponse struct {
 		Display string `json:"display,omitempty"`
 		Admin   bool   `json:"admin"`
 	} `json:"user"`
+	// CSRF is the token the client sends back on state-changing requests. It
+	// derives from the presenting session, and the login screen needs it
+	// before the first write it makes.
+	CSRF string `json:"csrf,omitempty"`
 }
 
 func Session(d Deps) http.HandlerFunc {
@@ -100,6 +104,9 @@ func Session(d Deps) http.HandlerFunc {
 			resp.User.Display = p.Display
 		}
 		resp.User.Admin = admin
+		if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" {
+			resp.CSRF = mw.DeriveCSRFToken(d.CSRFKey, c.Value)
+		}
 		return writeJSON(w, http.StatusOK, resp)
 	})
 }

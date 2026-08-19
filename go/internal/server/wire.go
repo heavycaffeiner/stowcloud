@@ -70,6 +70,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		Limiter:  state.Limiter,
 		Trusted:  state.Trusted,
 		Hosts:    state.Hosts,
+		CSRFKey:  state.CSRFKey,
 		WatchCap: func() int { return watchHotSetCap },
 	}
 

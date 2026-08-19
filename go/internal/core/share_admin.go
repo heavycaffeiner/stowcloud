@@ -201,3 +201,30 @@ func (c *Core) shareDefByName(name string) (*ShareDef, error) {
 }
 
 var _ = errors.Is
+
+// ReloadPersistedShares re-registers every admin-created share at startup,
+// computing the same combined id CreateShare minted. A restart must land on
+// the same ids the running process used, because the cache, the grants and
+// the links all reference them.
+func (c *Core) ReloadPersistedShares(ctx context.Context) error {
+	rows, err := c.state.ListShares(ctx)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		combined, nerr := num.Narrow[uint32](dynamicShareIDBase + row.ID)
+		if nerr != nil {
+			return fmt.Errorf("a persisted share row id overflowed the id space: %w", nerr)
+		}
+		def := ShareDef{
+			ID:     ShareID(combined),
+			Name:   row.Name,
+			Host:   row.Host,
+			Policy: vfs.DefaultSharePolicy(),
+		}
+		if err := c.RegisterShare(ctx, def); err != nil {
+			return fmt.Errorf("reloading share %q: %w", row.Name, err)
+		}
+	}
+	return nil
+}
