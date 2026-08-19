@@ -20,6 +20,7 @@ package apierr
 
 import (
 	"encoding/json"
+	"net/http"
 	"strings"
 )
 
@@ -118,4 +119,17 @@ func (e *Error) MarshalJSON() ([]byte, error) {
 		w.Detail = map[string]any{"reason_key": string(e.Key), "reason_params": params}
 	}
 	return json.Marshal(envelope{Error: w})
+}
+
+// Write renders a refusal as the envelope. It is the one place this package
+// talks to an http.ResponseWriter, so the Content-Type and the single-error
+// shape cannot drift between callers.
+func Write(w http.ResponseWriter, status int, err *Error) {
+	if err == nil {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	enc := json.NewEncoder(w)
+	_ = enc.Encode(err) //nolint:errcheck // a client that stopped reading cannot be told anything.
 }
