@@ -135,14 +135,18 @@ func (e *Engine) spoolChunk(root *vfs.ShareRoot, r *row, name uint32, body io.Re
 
 	f, err := root.CreatePart(file)
 	if errors.Is(err, vfs.ErrExists) {
-		f, err = root.OpenRead(file, vfs.IntentReadWrite)
-		if err != nil {
-			return mapVFSErr(err)
+		// The client re-sent a chunk name it already sent, which is a retry
+		// after a lost response. The old file is removed and made again rather
+		// than reopened for writing: reopening would be a second writable
+		// descriptor on a read path, and the part-file handle is the only one
+		// of those in the tree. Unlinking first also means a partial write
+		// from the abandoned attempt cannot survive underneath a shorter one.
+		if uerr := root.Unlink(file); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
+			return mapVFSErr(uerr)
 		}
-		if terr := f.Truncate(0); terr != nil {
-			return errors.Join(mapVFSErr(terr), f.Close())
-		}
-	} else if err != nil {
+		f, err = root.CreatePart(file)
+	}
+	if err != nil {
 		return mapVFSErr(err)
 	}
 	defer func() {

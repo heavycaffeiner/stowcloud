@@ -41,8 +41,8 @@ func (e *Engine) BindAlias(ctx context.Context, tid string, user core.UserID, id
 	if err != nil {
 		return err
 	}
-	if err := requireOwner(r, user); err != nil {
-		return err
+	if oerr := requireOwner(r, user); oerr != nil {
+		return oerr
 	}
 	bound, err := e.state.BindUploadAlias(ctx, tid, int64(user), state.UploadAlias{
 		Session: id.Bytes(),

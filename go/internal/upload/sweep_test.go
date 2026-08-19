@@ -75,8 +75,8 @@ func TestTheSweepTakesAnOrphanedPartFileOnlyOnceItIsOldEnough(t *testing.T) {
 	// Age it past the grace period and the same sweep takes it.
 	part := f.partFileName(t)
 	old := time.Unix(0, f.engine.clk.Nanos()-int64(limits.UploadSessionTTL)-int64(time.Hour))
-	if err := os.Chtimes(filepath.Join(f.host, part), old, old); err != nil {
-		t.Fatalf("ageing the part file: %v", err)
+	if cerr := os.Chtimes(filepath.Join(f.host, part), old, old); cerr != nil {
+		t.Fatalf("ageing the part file: %v", cerr)
 	}
 	rep, err = f.engine.Sweep(ctx)
 	if err != nil {

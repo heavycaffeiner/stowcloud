@@ -2,12 +2,41 @@ package upload
 
 import (
 	"errors"
-	"math/rand/v2" //nolint:gosec // G404 reads the import: this shuffles a test's own range list, and D9 is about tokens.
 	"slices"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 )
+
+// randomness here is a small deterministic generator rather than math/rand,
+// which D9 refuses tree-wide, and rather than crypto/rand, which would make
+// a failing case impossible to reproduce from the output. A property test
+// wants the same sequence on every run: a failure nobody can rerun is a
+// failure nobody can fix.
+type seeded struct{ state uint64 }
+
+func newSeeded(seed uint64) *seeded { return &seeded{state: seed | 1} }
+
+// next is xorshift64*, which is four lines and distributes well enough to
+// build test inputs from.
+func (r *seeded) next() uint64 {
+	r.state ^= r.state >> 12
+	r.state ^= r.state << 25
+	r.state ^= r.state >> 27
+	return r.state * 2685821657736338717
+}
+
+// intn takes and returns a uint64, so nothing in the callers has to convert
+// between a signed count and an unsigned byte offset to build a range.
+func (r *seeded) intn(n uint64) uint64 { return r.next() % n }
+
+// shuffle works in uint64 throughout, so the index never crosses between a
+// signed and an unsigned width. The caller's slice length is what bounds it.
+func (r *seeded) shuffle(n uint64, swap func(i, j uint64)) {
+	for i := n; i > 1; i-- {
+		swap(i-1, r.intn(i))
+	}
+}
 
 // The two properties the phase brief names, plus the refusals either side of
 // them. The set is the foundation everything else in this package stands on:
@@ -46,19 +75,19 @@ func TestInsertMergesTouchingAndOverlapping(t *testing.T) {
 // disagreed with itself depending on the order chunks arrived in would report
 // a different resumable offset to two clients that sent the same bytes.
 func TestPropertyInsertionOrderDoesNotMatter(t *testing.T) {
-	rng := rand.New(rand.NewPCG(1, 2)) //nolint:gosec // as the import comment says.
+	rng := newSeeded(0x5DEECE66D)
 	for trial := 0; trial < 200; trial++ {
-		n := 1 + rng.IntN(40)
+		n := 1 + rng.intn(40)
 		ranges := make([]Range, 0, n)
-		for i := 0; i < n; i++ {
-			lo := uint64(rng.IntN(2000))
-			ranges = append(ranges, Range{Lo: lo, Hi: lo + 1 + uint64(rng.IntN(50))})
+		for i := uint64(0); i < n; i++ {
+			lo := rng.intn(2000)
+			ranges = append(ranges, Range{Lo: lo, Hi: lo + 1 + rng.intn(50)})
 		}
 
 		want := buildSet(t, ranges).Runs()
 		for shuffle := 0; shuffle < 4; shuffle++ {
 			other := slices.Clone(ranges)
-			rng.Shuffle(len(other), func(i, j int) { other[i], other[j] = other[j], other[i] })
+			rng.shuffle(uint64(len(other)), func(i, j uint64) { other[i], other[j] = other[j], other[i] })
 			if got := buildSet(t, other).Runs(); !slices.Equal(got, want) {
 				t.Fatalf("a reordering converged elsewhere:\n got %v\nwant %v", got, want)
 			}
@@ -70,15 +99,15 @@ func TestPropertyInsertionOrderDoesNotMatter(t *testing.T) {
 // that does not names what is missing. Completeness is what finalize gates on,
 // so a set that says yes over a hole publishes a corrupt file.
 func TestPropertyCompleteCoversEveryByte(t *testing.T) {
-	rng := rand.New(rand.NewPCG(3, 4)) //nolint:gosec // as the import comment says.
+	rng := newSeeded(0x1234ABCD)
 	for trial := 0; trial < 200; trial++ {
-		length := uint64(1 + rng.IntN(500))
+		length := 1 + rng.intn(500)
 		s := NewIntervalSet()
 		// Chop [0, length) into pieces and insert them in a random order, so
 		// completeness arrives from every direction rather than left to right.
 		var cuts []uint64
 		for at := uint64(0); at < length; {
-			at += 1 + uint64(rng.IntN(30))
+			at += 1 + rng.intn(30)
 			cuts = append(cuts, min64(at, length))
 		}
 		pieces := make([]Range, 0, len(cuts))
@@ -87,7 +116,7 @@ func TestPropertyCompleteCoversEveryByte(t *testing.T) {
 			pieces = append(pieces, Range{Lo: prev, Hi: c})
 			prev = c
 		}
-		rng.Shuffle(len(pieces), func(i, j int) { pieces[i], pieces[j] = pieces[j], pieces[i] })
+		rng.shuffle(uint64(len(pieces)), func(i, j uint64) { pieces[i], pieces[j] = pieces[j], pieces[i] })
 
 		for i, p := range pieces {
 			if err := s.Insert(p.Lo, p.Hi); err != nil {

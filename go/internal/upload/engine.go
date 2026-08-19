@@ -310,17 +310,17 @@ func (e *Engine) PatchAt(
 	if err != nil {
 		return 0, err
 	}
-	if err := requireOwner(r, user); err != nil {
-		return 0, err
+	if oerr := requireOwner(r, user); oerr != nil {
+		return 0, oerr
 	}
-	if err := e.requireReceiving(r); err != nil {
-		return 0, err
+	if serr := e.requireReceiving(r); serr != nil {
+		return 0, serr
 	}
 	if r.mode() != SpoolOffsetAddressed {
 		return 0, fmt.Errorf("%w: this session is name-ordered", ErrBadRequest)
 	}
-	if err := e.validateOffset(r, off); err != nil {
-		return 0, err
+	if verr := e.validateOffset(r, off); verr != nil {
+		return 0, verr
 	}
 
 	part, err := e.partPathOf(r)

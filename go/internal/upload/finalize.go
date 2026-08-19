@@ -35,11 +35,11 @@ func (e *Engine) finalize(ctx context.Context, r core.Resolved, id SessionID) (c
 	if err != nil {
 		return core.Entry{}, err
 	}
-	if err := requireOwner(row, r.User()); err != nil {
-		return core.Entry{}, err
+	if oerr := requireOwner(row, r.User()); oerr != nil {
+		return core.Entry{}, oerr
 	}
-	if err := r.Require(acl.Write | acl.Create); err != nil {
-		return core.Entry{}, err
+	if perr := r.Require(acl.Write | acl.Create); perr != nil {
+		return core.Entry{}, perr
 	}
 	dest, err := row.dest()
 	if err != nil {
@@ -201,15 +201,15 @@ func (e *Engine) Assemble(
 	if err != nil {
 		return core.Entry{}, err
 	}
-	if err := requireOwner(row, r.User()); err != nil {
-		return core.Entry{}, err
+	if oerr := requireOwner(row, r.User()); oerr != nil {
+		return core.Entry{}, oerr
 	}
 	if row.mode() != SpoolNameOrdered {
 		return core.Entry{}, fmt.Errorf("%w: this session is offset-addressed", ErrBadRequest)
 	}
 
-	if err := e.drainSpool(ctx, r.Root(), row, true); err != nil {
-		return core.Entry{}, err
+	if derr := e.drainSpool(ctx, r.Root(), row, true); derr != nil {
+		return core.Entry{}, derr
 	}
 
 	head, herr := num.Narrow[uint64](row.sess.WriteHead)
@@ -233,11 +233,11 @@ func (e *Engine) Assemble(
 		row.sess.MtimeNs = mtimeNs
 	}
 	row.set = FullIntervalSet(total)
-	if err := e.save(ctx, row); err != nil {
-		return core.Entry{}, err
+	if serr := e.save(ctx, row); serr != nil {
+		return core.Entry{}, serr
 	}
-	if err := e.commitRange(ctx, row); err != nil {
-		return core.Entry{}, err
+	if cerr := e.commitRange(ctx, row); cerr != nil {
+		return core.Entry{}, cerr
 	}
 
 	entry, err := e.finalize(ctx, r, id)

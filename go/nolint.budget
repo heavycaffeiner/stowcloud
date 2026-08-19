@@ -64,5 +64,15 @@
 # bounded by the descriptor's own size, the rollback and close paths whose
 # primary error is the answer, and the share-id widening whose narrow check
 # sits on the line above.
-112
+#
+# Phase 6 added seven. Three are hash.Hash.Write, which the interface documents
+# as never failing and which therefore has no error path to act on. Three are
+# gosec reading a conversion whose range check is on the line above or in the
+# constant it came from: the two chunk settings, both bounded by the compiled-in
+# floor, and the share-id widening the sweep does behind its own bound. The
+# seventh is the free-space probe, where a statfs that could not run is a fact
+# about the filesystem rather than a reason to refuse an upload. The eighth is
+# a test fixture writing mode 640, which is the file another program wrote that
+# the replacement has to keep the mode of.
+120
 

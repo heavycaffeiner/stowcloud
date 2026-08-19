@@ -61,31 +61,31 @@ func newFixture(t *testing.T) *fixture {
 	}
 
 	host := filepath.Join(t.TempDir(), "share")
-	if err := os.MkdirAll(host, 0o775); err != nil {
-		t.Fatalf("creating the share: %v", err)
+	if merr := os.MkdirAll(host, 0o775); merr != nil {
+		t.Fatalf("creating the share: %v", merr)
 	}
-	if err := c.RegisterShare(context.Background(), core.ShareDef{
+	if rerr := c.RegisterShare(context.Background(), core.ShareDef{
 		ID: 1, Name: "docs", Host: host, Policy: vfs.DefaultSharePolicy(),
-	}); err != nil {
-		t.Fatalf("RegisterShare: %v", err)
+	}); rerr != nil {
+		t.Fatalf("RegisterShare: %v", rerr)
 	}
 
-	if err := s.State().Write(context.Background(), func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(context.Background(),
+	if serr := s.State().Write(context.Background(), func(tx *sql.Tx) error {
+		if _, uerr := tx.ExecContext(context.Background(),
 			`INSERT INTO user(id, name, pw_hash, created_ns) VALUES (?, 'tester', 'x', 0)`,
-			int64(testUser)); err != nil {
-			return err
+			int64(testUser)); uerr != nil {
+			return uerr
 		}
-		_, err := tx.ExecContext(context.Background(),
+		_, gerr := tx.ExecContext(context.Background(),
 			`INSERT INTO "grant"(user, share, subpath, allow, deny, inherit, label, created_ns)
 			 VALUES (?, 1, '', ?, 0, 1, 'docs', 0)`,
 			int64(testUser), int64(acl.Read|acl.Write|acl.Create|acl.Delete|acl.Download))
-		return err
-	}); err != nil {
-		t.Fatalf("seeding the account and its grant: %v", err)
+		return gerr
+	}); serr != nil {
+		t.Fatalf("seeding the account and its grant: %v", serr)
 	}
-	if err := ev.LoadFromState(context.Background(), s.State().SQL()); err != nil {
-		t.Fatalf("loading grants: %v", err)
+	if lerr := ev.LoadFromState(context.Background(), s.State().SQL()); lerr != nil {
+		t.Fatalf("loading grants: %v", lerr)
 	}
 
 	// The config seeds are passed as the product would pass them. They are
@@ -162,8 +162,8 @@ func TestOffsetAddressedUploadPublishesExactly(t *testing.T) {
 		t.Fatalf("offset after the write = %d, want %d", off, len(body))
 	}
 
-	if _, err := f.engine.Finalize(ctx, f.resolve(t, "file.bin"), s.ID); err != nil {
-		t.Fatalf("Finalize: %v", err)
+	if _, ferr := f.engine.Finalize(ctx, f.resolve(t, "file.bin"), s.ID); ferr != nil {
+		t.Fatalf("Finalize: %v", ferr)
 	}
 
 	got, err := os.ReadFile(filepath.Join(f.host, "file.bin"))
@@ -455,12 +455,11 @@ func TestPublishingOverAnExistingFileKeepsItsMode(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	// A file another program wrote, with a mode this server did not choose.
+	// The mode is the point of the test: it is what the neighbours sharing the
+	// directory read the file through, and it has to survive being replaced.
 	existing := filepath.Join(f.host, "file.bin")
-	if err := os.WriteFile(existing, []byte("old"), 0o640); err != nil {
+	if err := os.WriteFile(existing, []byte("old"), 0o640); err != nil { //nolint:gosec // G306 reads the mode: a fixture standing in for a file another program wrote.
 		t.Fatalf("writing the existing file: %v", err)
-	}
-	if err := os.Chmod(existing, 0o640); err != nil {
-		t.Fatalf("chmod: %v", err)
 	}
 
 	s := f.create(t, "file.bin", 3, SessionSpec{})
