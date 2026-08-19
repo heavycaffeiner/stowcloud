@@ -74,5 +74,8 @@
 # about the filesystem rather than a reason to refuse an upload. The eighth is
 # a test fixture writing mode 640, which is the file another program wrote that
 # the replacement has to keep the mode of.
-120
+#
+# Phase 7 added one: xml.EscapeText writing into a bytes.Buffer, whose Write is
+# documented never to fail, so there is no error path to act on.
+121
 

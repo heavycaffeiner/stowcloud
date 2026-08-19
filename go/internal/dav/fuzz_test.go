@@ -134,7 +134,7 @@ func FuzzParseReport(f *testing.F) {
 // are fuzzed for the one property that matters: an href never carries a
 // character that could close an element or start a new one.
 func FuzzEscapeHref(f *testing.F) {
-	for _, s := range []string{"/a&b", "/a<b", "/문서.txt", "/a b/c", "", "/", "//", "/%00"} {
+	for _, s := range []string{"/a&b", "/a<b", "/λε.txt", "/a b/c", "", "/", "//", "/%00"} {
 		f.Add(s)
 	}
 	f.Fuzz(func(t *testing.T, path string) {

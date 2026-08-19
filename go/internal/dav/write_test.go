@@ -183,7 +183,7 @@ func TestIsValidXMLNameRefusesWhatWouldBreakADocument(t *testing.T) {
 		"x:y",             // a colon would carry its own prefix binding
 		"xml", "XmlThing", // reserved by the spec in any case
 		strings.Repeat("a", 257),
-		"파일", // outside ASCII: no property here needs it
+		"λε", // outside ASCII: no property here needs it
 	} {
 		if isValidXMLName(bad) {
 			t.Errorf("isValidXMLName(%q) = true, want false", bad)

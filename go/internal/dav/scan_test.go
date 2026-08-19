@@ -387,7 +387,7 @@ func TestHrefEncodingCoversTheCharactersThatBreakXML(t *testing.T) {
 
 func TestNonASCIIIsPercentEncodedPerByte(t *testing.T) {
 	// RFC 3986 encodes the UTF-8 bytes, not the rune.
-	if got := EscapeHref("/문서.txt"); got != "/%EB%AC%B8%EC%84%9C.txt" {
+	if got := EscapeHref("/λε.txt"); got != "/%CE%BB%CE%B5.txt" {
 		t.Fatalf("EscapeHref = %q, want each UTF-8 byte encoded", got)
 	}
 }
