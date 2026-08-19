@@ -48,15 +48,6 @@ func Sum(a Algo, data []byte) []byte {
 	return h.Sum(nil)
 }
 
-// MatchChunk reports whether data hashes to the checksum the client sent.
-//
-// Constant-time comparison, though neither digest is a secret: one comparison
-// style for both algorithms is simpler than arguing that one of them does not
-// need it, and the input is client-supplied either way.
-func MatchChunk(sum Checksum, data []byte) bool {
-	return subtle.ConstantTimeCompare(Sum(sum.Algo, data), sum.Digest) == 1
-}
-
 // hasherFunc is a running digest over a chunk that is never fully in memory.
 // The engine streams a body into pwrite and feeds the same slices through
 // here, so a per-chunk checksum costs a hasher rather than a copy of the
@@ -75,22 +66,6 @@ func (f *hasherFunc) Sum() []byte { return f.h.Sum(nil) }
 // secret, but one comparison style for both algorithms is simpler than
 // arguing which one needs it.
 func constantTimeEqual(a, b []byte) bool { return subtle.ConstantTimeCompare(a, b) == 1 }
-
-// VerifyChunk is MatchChunk as a refusal, so a caller does not have to build
-// the error at every call site.
-func VerifyChunk(sum *Checksum, data []byte) error {
-	if sum == nil {
-		return nil
-	}
-	if err := checkDigestLen(sum.Algo, len(sum.Digest)); err != nil {
-		return err
-	}
-	if !MatchChunk(*sum, data) {
-		return fmt.Errorf("%w: the %s digest does not match the %d bytes received",
-			ErrChecksum, sum.Algo, len(data))
-	}
-	return nil
-}
 
 // VerifyWholeFile streams length bytes of f from zero and compares the digest
 // against what the caller expected.
