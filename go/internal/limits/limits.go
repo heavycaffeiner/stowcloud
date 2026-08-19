@@ -128,6 +128,34 @@ const WorkerWireMessage = 8 << 10
 // preset from the decoder's own memory behaviour rather than fixed, so it
 // lives with the preview decode limits.
 
+// WebDAV bounds. Every one of these is counted against a body a stranger sent,
+// inside the scanner loop rather than after a document is built: a bound
+// checked after the fact is a bound the allocation already went past.
+const (
+	// DavElements caps the elements in one request body. Refuses with 400.
+	DavElements = 10_000
+
+	// DavDepth caps element nesting. The scanner counts it rather than
+	// trusting the parser's own recursion to run out first.
+	DavDepth = 64
+
+	// DavNameLength caps an element's local name in bytes. A name is a map key
+	// and a response field, so an unbounded one is memory a client chooses.
+	DavNameLength = 256
+
+	// DavTextBytes caps the text accumulated for one property value. Text
+	// arrives in fragments and is joined, so the join is what needs the bound.
+	DavTextBytes = 64 << 10
+
+	// DavPropsPerResource bounds the dead properties one resource may carry.
+	DavPropsPerResource = 256
+
+	// DavInfinityEntries is the collection size above which Depth: infinity is
+	// refused with 507 instead of attempted. The honest refusal beats the one
+	// that arrives after ten minutes.
+	DavInfinityEntries = 100_000
+)
+
 // ErrTooLarge is what every bound in this package refuses with.
 var ErrTooLarge = errors.New("limit exceeded")
 

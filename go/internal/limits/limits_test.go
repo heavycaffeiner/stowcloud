@@ -28,3 +28,57 @@ func TestExceedNamesTheLimit(t *testing.T) {
 		t.Fatalf("Error() = %q, want the limit named", err.Error())
 	}
 }
+
+// D5 asks each bound to be a named constant with a test proving what it is.
+// These are the values themselves: a bound that silently changes is a bound
+// nobody agreed to, and the tests that prove a bound is what refuses live with
+// the code that enforces it.
+
+func TestTheWebDavBoundsAreWhatWasAgreed(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		got  int
+		want int
+	}{
+		{"DavElements", DavElements, 10_000},
+		{"DavDepth", DavDepth, 64},
+		{"DavNameLength", DavNameLength, 256},
+		{"DavTextBytes", DavTextBytes, 64 << 10},
+		{"DavLocksPerUser", DavLocksPerUser, 256},
+		{"DavPropsPerResource", DavPropsPerResource, 256},
+		{"DavInfinityEntries", DavInfinityEntries, 100_000},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s = %d, want %d", tc.name, tc.got, tc.want)
+		}
+	}
+}
+
+func TestTheUploadBoundsAreWhatWasAgreed(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		got  int64
+		want int64
+	}{
+		{"UploadIntervalRuns", UploadIntervalRuns, 4096},
+		{"UploadSpooledNames", UploadSpooledNames, 4096},
+		{"UploadChunkFloor", UploadChunkFloor, 5 << 20},
+		{"UploadReservedBytesPerUser", UploadReservedBytesPerUser, 100 << 30},
+		{"UploadFreeSpaceMargin", UploadFreeSpaceMargin, 2 << 30},
+		{"UploadsInFlightPerUser", UploadsInFlightPerUser, 32},
+		{"UploadSessionsPerUser", UploadSessionsPerUser, 256},
+	} {
+		if tc.got != tc.want {
+			t.Errorf("%s = %d, want %d", tc.name, tc.got, tc.want)
+		}
+	}
+}
+
+// The XML body cap is smaller than the general one. An XML body is parsed
+// rather than streamed to disk, so it is the more expensive byte.
+func TestTheXMLBodyCapIsTighterThanTheGeneralOne(t *testing.T) {
+	if RequestBodyXML >= RequestBody {
+		t.Fatalf("RequestBodyXML = %d is not tighter than RequestBody = %d",
+			RequestBodyXML, RequestBody)
+	}
+}
