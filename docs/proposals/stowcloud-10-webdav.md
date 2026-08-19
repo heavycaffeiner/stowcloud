@@ -280,7 +280,7 @@ func (h *Handler) ServeMethod(w http.ResponseWriter, r *http.Request, res core.R
 | Phase 7c | `propfind.go`, `props.go`, the streaming path, the decorator hook | L | 7b, Phase 4 | heavycaffeiner |
 | Phase 7d | `proppatch.go` and dead-property storage | M | 7c, Phase 2 | heavycaffeiner |
 | Phase 7e | `lock.go`, the `If` parser and its fuzz target | M | 7c | heavycaffeiner |
-| Phase 7f | `method.go`, `uploads.go` | M | 7c, Phase 6 | heavycaffeiner |
+| Phase 7f | `search.go`, `method.go`, `uploads.go` | M | 7c, Phase 6 | heavycaffeiner |
 
 7a and 7b can start before Phase 4 lands.
 
