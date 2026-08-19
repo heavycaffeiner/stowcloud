@@ -164,6 +164,85 @@ func (r *ShareRoot) WriteDurable(p SafePath, opt DurableOpts, write func(*File) 
 	return done, nil
 }
 
+// PublishPart renames an already-complete control file onto its destination,
+// restoring the replaced entry's mode and ownership first and syncing the
+// parent directory after.
+//
+// It is WriteDurable's second half without the first. The upload engine has
+// been writing into the part file for possibly hours and has already synced
+// it, so there is nothing to stage: staging would mean copying a complete file
+// beside itself. Everything after the content is identical and is here rather
+// than in the caller for the same reason WriteDurable's is: this package owns
+// the rename, and the mode transplant is the step whose omission silently
+// strips the access every other service sharing the directory had.
+//
+// Both paths are taken relative to the same parent, which is what makes the
+// rename atomic, and the caller is refused rather than trusted on that.
+func (r *ShareRoot) PublishPart(part, dest SafePath, replacing bool) (Durable, error) {
+	var done Durable
+	if part.IsRoot() || dest.IsRoot() {
+		return done, fmt.Errorf("publish a part file: %w", ErrDenied)
+	}
+	if !part.Parent().Equal(dest.Parent()) {
+		return done, fmt.Errorf("publish a part file across directories: %w", ErrDenied)
+	}
+
+	dir, err := r.openLeaf(dest.Parent(), unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC)
+	if err != nil {
+		return done, err
+	}
+	defer closeAfter(dir, "publish parent")
+
+	prior, priorName, found, err := r.priorOf(dir, dest.Name())
+	if err != nil {
+		return done, err
+	}
+	if found && !replacing {
+		return done, fmt.Errorf("publish a part file: %w", ErrExists)
+	}
+
+	name := normalizeNewName(dest.Name())
+	flags := uint(unix.RENAME_NOREPLACE)
+	if found {
+		// The replaced file's mode and ownership are transplanted onto the
+		// part file before it takes the name, through a descriptor rather than
+		// by path: a second lookup is a window in which the name is something
+		// else. Without this an atomic replace strips whatever access the
+		// other services sharing the directory had a moment earlier.
+		f, oerr := openat2(dir, part.Name(),
+			unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0, resolveFlags(r.policy))
+		if oerr != nil {
+			return done, mapErrno("reopen the part file", oerr)
+		}
+		handle := &File{f: f}
+		merr := handle.SetMode(prior.Mode & 0o7777)
+		if merr == nil {
+			// Ownership is best-effort and reported: EPERM here is the ordinary
+			// answer for an unprivileged process, and failing a complete upload
+			// over it would discard content that is otherwise fine.
+			done.OwnerRestore = handle.SetOwner(Owner{UID: prior.UID, GID: prior.GID})
+		}
+		closeAfter(f, "part file metadata transplant")
+		if merr != nil {
+			return done, merr
+		}
+		done.Replaced = true
+		name = priorName
+		flags = 0
+	}
+
+	if err := renameat(dir, part.Name(), dir, name, flags); err != nil {
+		return done, mapErrno("publish", err)
+	}
+	// The caller synced the file's contents. This is what makes the name
+	// durable: without it a power cut can leave a complete upload under the
+	// part name, which nothing will look for.
+	if err := syncDirFd(dir); err != nil {
+		return done, err
+	}
+	return done, nil
+}
+
 // priorOf stats the destination through the parent descriptor and reports the
 // spelling the filesystem actually has, so the publish lands on the entry being
 // replaced rather than beside it.

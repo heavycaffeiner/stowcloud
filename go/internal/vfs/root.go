@@ -183,6 +183,58 @@ func (r *ShareRoot) OpenRead(p SafePath, intent AccessIntent) (*File, error) {
 	return &File{f: f}, nil
 }
 
+// CreatePart creates a control file under the reserved prefix and returns it
+// open for reading and writing.
+//
+// It is the upload engine's part file and nothing else. The handle is O_RDWR
+// by construction rather than through the access intent, for the same reason
+// the durable-write helper's staging file is: a file this server just created
+// is writable because it made it, not because a caller asked for privilege on
+// a path that already existed.
+//
+// O_EXCL, so a collision is the kernel's refusal rather than a clobber, and
+// the mode is applied with fchmod because O_CREAT filters it through umask.
+// The name has to come from JoinControl, which is the only call permitted to
+// produce the reserved prefix; a name without it is refused here rather than
+// quietly creating something a listing would show.
+func (r *ShareRoot) CreatePart(p SafePath) (*File, error) {
+	if p.IsRoot() {
+		return nil, fmt.Errorf("create a part file: %w", ErrDenied)
+	}
+	if !IsReservedName(p.Name()) {
+		return nil, &NameError{Component: p.Name(),
+			Reason: "a part file has to carry a control prefix or a listing would show it",
+			Err:    ErrInvalidName}
+	}
+	parentComps, leaf := splitLeaf(p.comps)
+	parent, err := r.resolveDir(parentComps)
+	if err != nil {
+		return nil, err
+	}
+	defer closeAfter(parent, "part file parent")
+
+	f, err := openat2(parent, leaf,
+		unix.O_CREAT|unix.O_EXCL|unix.O_RDWR|unix.O_NOFOLLOW|unix.O_CLOEXEC,
+		uint64(r.policy.ModeFile), resolveFlags(r.policy))
+	if err != nil {
+		return nil, mapErrno("create a part file", err)
+	}
+	handle := &File{f: f}
+
+	// The exact configured mode regardless of umask, and the result is
+	// checked: the published file inherits this one when there is nothing at
+	// the destination to transplant from.
+	if cerr := handle.SetMode(r.policy.ModeFile); cerr != nil {
+		return nil, errors.Join(cerr, handle.Close())
+	}
+	if o := r.policy.Chown; o != nil {
+		if cerr := handle.SetOwner(*o); cerr != nil {
+			return nil, errors.Join(cerr, handle.Close())
+		}
+	}
+	return handle, nil
+}
+
 // Mkdir creates p with the share's configured directory mode, applied verbatim
 // rather than through umask, and applies the configured ownership.
 //

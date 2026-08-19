@@ -393,6 +393,43 @@ CREATE TABLE operation_result (
 ) WITHOUT ROWID;
 `
 
+// migration 5 lands the two upload tables the engine needs beside the session
+// rows migration 1 already created: the transfer-id alias, and the persisted
+// chunk floor and default.
+//
+// The alias is what makes a named chunk collection resumable after a restart.
+// Its primary key is scoped by the account, and that is the whole of its
+// security: the transfer id is chosen by the client, so it is guessable and
+// collidable and can never be a session key on its own. A tid belonging to
+// another account has to read as "not found", identically to one that never
+// existed, or the lookup is an existence oracle.
+//
+// The chunk settings are a single row by the same convention as the settings
+// table, and the row's absence is the fact that matters: it is what tells the
+// settings screen "this fell back to the config file" rather than "an admin
+// stored these numbers". Collapsing the two makes both the same pair of
+// integers and the screen has nothing left to report.
+const schemaV5 = `
+CREATE TABLE upload_alias (
+  tid        TEXT NOT NULL,
+  user       INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  session    BLOB NOT NULL REFERENCES upload_session(id) ON DELETE CASCADE,
+  share      INTEGER NOT NULL,
+  dest       TEXT NOT NULL,
+  created_ns INTEGER NOT NULL,
+  PRIMARY KEY (user, tid)
+) WITHOUT ROWID;
+CREATE INDEX upload_alias_session ON upload_alias(session);
+
+CREATE TABLE upload_chunk_settings (
+  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  chunk_min     INTEGER NOT NULL,
+  chunk_default INTEGER NOT NULL
+);
+
+ALTER TABLE upload_session ADD COLUMN chunk_min_at_creation INTEGER NOT NULL DEFAULT 0;
+`
+
 // migrations is a function rather than a package-level slice so the list
 // cannot be reassigned. Position is version, so a step that has shipped is
 // never edited, renumbered or reordered.
@@ -406,6 +443,7 @@ func migrations() []dbfile.Migration {
 		},
 		{Name: "3: the durable auth state", SQL: schemaV3},
 		{Name: "4: the share registry and operation store", SQL: schemaV4},
+		{Name: "5: upload aliases and the persisted chunk settings", SQL: schemaV5},
 	}
 }
 
