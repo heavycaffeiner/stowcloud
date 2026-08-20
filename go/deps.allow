@@ -35,6 +35,12 @@ lukechampine.com/blake3
 # with Phase 5, which is the phase that parses it.
 github.com/BurntSushi/toml
 
+# BMP, TIFF and WebP decoding for the preview worker. The standard library
+# covers JPEG, PNG and GIF; these three are what x/image adds, and all of them
+# are pure Go, which is what keeps the decoders out of a C library and
+# CGO_ENABLED=0 with nothing to fall back to. Arrived with Phase 9.
+golang.org/x/image
+
 # zstd for the search index's block compression. Pure Go, so CGO_ENABLED=0 has
 # nothing to fall back to, and the format is what the two implementations agree
 # on rather than the encoder's exact output. It enters the graph with Phase 8;

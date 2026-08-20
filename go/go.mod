@@ -9,6 +9,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/klauspost/compress v1.19.2
 	golang.org/x/crypto v0.55.0
+	golang.org/x/image v0.45.0
 	golang.org/x/text v0.41.0
 	lukechampine.com/blake3 v1.4.1
 	modernc.org/sqlite v1.44.3
