@@ -82,14 +82,22 @@ specification says 409. The distinction is real to a client: 404 says the target
 is absent and 409 says the parent is, and a client that creates parents on
 demand branches on exactly that.
 
-## The Rust baseline is not recorded
+## The Rust baseline is not recorded yet
 
-The comparison run against the Rust build could not be made. Its login endpoint
-refused a password its own database accepts, so no app password could be minted
-to authenticate the suite with, and the suite cannot run unauthenticated.
+An earlier version of this document said the Rust build refused a password its
+own database accepts. That was wrong, and the correction matters more than the
+original claim.
 
-That is worth stating plainly rather than leaving as an empty column: the
-per-suite numbers above are this implementation measured against the
-specification, not against the implementation it replaces. A test that the Rust
-build also fails would be a known gap rather than a port defect, and without its
-baseline that distinction cannot be drawn for any of the ten failures above.
+Its login is `POST /api/auth/login`. The probe used `POST /api/auth/password`,
+which is the change-password endpoint, and it refused correctly. There was no
+defect to report.
+
+Chasing it found a real one on the other side: the Go build mounts login on the
+change-password path, and 39 of the 58 paths the frontend calls do not exist on
+it at all. That is recorded as Q9 in `OPEN-QUESTIONS.md` and it blocks cutover.
+
+So the per-suite numbers above are this implementation measured against the
+specification, not against the implementation it replaces. A test the Rust build
+also fails is a known gap rather than a port defect, and that distinction still
+cannot be drawn for any of the ten failures above. The baseline is now
+obtainable, since the credential path works; it has not been run.

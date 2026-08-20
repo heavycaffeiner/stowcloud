@@ -376,6 +376,16 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # OS because `go run` has to execute what it built, and each one is pointed
   # at the shipping target from the inside.
   run "vetgo (D7: one goroutine spawn)"        ingo_host go run ./tools/vetgo ./cmd ./internal
+  # The client and the route table are two halves of one contract, and nothing
+  # else here checks that they agree. A route the frontend calls and the server
+  # does not mount is a screen that cannot work, and it was invisible to every
+  # other check in this tree: that is how login ended up mounted on the
+  # change-password path with the whole suite green.
+  run "routecheck (the client's paths are mounted)" \
+      ingo_host go run ./tools/routecheck \
+        -client ../web/src/lib/api/http.ts \
+        -routes internal/server/routes.go \
+        -allow routes.allow
   run "vetsecret (D12: no secret to a verb)"   ingo_host go run ./tools/vetsecret ./...
   run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./internal ./tools
 

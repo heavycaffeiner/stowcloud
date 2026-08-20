@@ -367,3 +367,69 @@ not shipped anything. Every future subsystem phase should end at a mounted
 route with a request reaching it, not at a package boundary.
 
 **Reopen by** Phase 13, which mounts them or reports what it could not.
+
+---
+
+## Q9. The HTTP surface is a third of the one the clients call
+
+**Raised by** Phase 13, after the conformance run, chasing what looked like a
+defect in the Rust build's login.
+
+**What was found.** There was no defect in the Rust build. Its login is
+`POST /api/auth/login`; the probe used `POST /api/auth/password`, which is the
+change-password endpoint, and it correctly refused. The conformance document's
+claim that the Rust baseline could not be measured was wrong and is corrected.
+
+What the mistake uncovered is larger. The Go build mounts login on
+`/api/auth/password`, so the two surfaces disagree on the one route every
+session begins with, and the frontend calls `/api/auth/login`. Nobody can sign
+in to the Go build from the shipped interface.
+
+Counting properly: the Rust build mounts 66 routes under `/api`, the Go build
+35. Of the 58 concrete paths the frontend's own client calls, **39 do not exist
+on the Go server**. By area:
+
+| Area | Missing |
+|---|---|
+| admin server-settings sections | 11 |
+| TOTP enrolment and recovery | 4 |
+| admin users, groups, grants | 8 |
+| search index build and settings | 3 |
+| SMB and OIDC self-service | 4 |
+| login and the second factor | 2 |
+| jobs, shares, archive, storage, app-password wipe | 7 |
+
+The subsystems behind them are not missing. `internal/search`,
+`internal/smb`, `internal/oidc` and `internal/acl` all build, and their tests
+pass. What is missing is the route that reaches them, which is Q8 again and at a
+scale that makes Q8's "three subsystems" an undercount.
+
+**Why every phase was green.** Each phase tested its package. No phase tested
+that a request arrives. The gate greps the route table for scope requirements
+and validates what is in it; it never compares that table against the client
+that has to use it, so a route the frontend needs and the server lacks is
+invisible to every check in the tree.
+
+**Options.**
+
+| # | Approach | Cost |
+|---|---|---|
+| 1 | Build the 39 routes now, in Phase 13 | the largest body of untested work in the port lands in the phase whose job is to compare, not to write |
+| 2 | Reopen the owning phases, one route group each | honest attribution, and it reopens five closed phases |
+| 3 | Ship the subset and record the rest | a file server that cannot authenticate from its own interface is not a subset |
+
+**What decides between them.** Whether Phase 13 is allowed to write product
+code. Its own ground rule says nothing found there is fixed there, because a fix
+made in the cutover phase has no test of its own.
+
+**Taken for now: option 2**, with the login path as the exception. The route
+table and the client are two halves of one contract and the tree has no check
+that they agree, so the first thing to build is that check: a gate that reads
+the frontend's client and the server's table and fails on a path the client
+calls and the server does not mount. Then each phase gets its own routes back
+with that gate telling it when it is done.
+
+Cutover is blocked until that gate is green. Deleting `crates/` while the
+replacement cannot serve a login is not a cutover.
+
+**Reopen by** the gate landing, then Phases 3, 5, 8, 11 in turn.

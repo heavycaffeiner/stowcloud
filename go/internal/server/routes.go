@@ -47,7 +47,10 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		{Method: "DELETE", Pattern: "/api/uploads/{id}", Req: req(acl.Write), Handler: handler.UploadsDelete(d)},
 
 		// Sessions and credentials.
-		{Method: "POST", Pattern: "/api/auth/password", Req: any, Handler: handler.Login(d)},
+		// Signing in. It was mounted on the change-password path, which is a
+		// different endpoint the client also calls, so the shipped interface
+		// could not sign in at all while every test here stayed green.
+		{Method: "POST", Pattern: "/api/auth/login", Req: any, Handler: handler.Login(d)},
 		{Method: "GET", Pattern: "/api/auth/session", Req: selfAdmin, Handler: handler.Session(d)},
 		{Method: "POST", Pattern: "/api/auth/logout", Req: any, Handler: handler.Logout(d)},
 		{Method: "GET", Pattern: "/api/auth/app-passwords", Req: selfAdmin, Handler: handler.AppPasswords(d)},

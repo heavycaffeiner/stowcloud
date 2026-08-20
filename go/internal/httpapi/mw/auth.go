@@ -129,7 +129,10 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool) func(http.
 // nowhere else.
 func PublicPaths(method, path string) bool {
 	switch path {
-	case "/api/auth/password", "/api/auth/oidc/start", "/api/auth/oidc/callback", "/api/setup":
+	// Signing in needs no credential by definition. Changing a password does,
+	// so it is deliberately not here: it verifies the current one.
+	case "/api/auth/login", "/api/auth/login/totp",
+		"/api/auth/oidc/start", "/api/auth/oidc/callback", "/api/setup":
 		return true
 	case "/api/uploads":
 		// The discovery request only. Everything else on this mount is a
