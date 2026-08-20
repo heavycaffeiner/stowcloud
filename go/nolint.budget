@@ -118,5 +118,7 @@
 #
 # Milestone 10a added one: the compat wiring narrowing a stored share id, where
 # a value that no longer fits one is a corrupt row rather than a truncation.
-171
+# Milestone 10d added two, both the OCS writer answering a client after the
+# status is already sent, where a short write has no second channel.
+173
 
