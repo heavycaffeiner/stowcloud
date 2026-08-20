@@ -86,5 +86,8 @@
 # for concurrent use, so it is shared rather than rebuilt per name. Milestone 8c
 # added two more of the same shape: the zstd encoder and decoder, both
 # documented safe for concurrent use, built once rather than per block.
-129
+# Milestone 8d added five: four gosec file-inclusion warnings on segment paths
+# this package builds from the operator's own index directory and a fixed name,
+# and one on a test writing into its own TempDir.
+134
 
