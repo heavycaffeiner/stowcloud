@@ -150,6 +150,15 @@ const (
 	// DavPropsPerResource bounds the dead properties one resource may carry.
 	DavPropsPerResource = 256
 
+	// DavIfLists caps the parenthesised lists in one If header, and
+	// DavIfConditions the terms inside one list. Both are attacker-chosen
+	// counts in a header, so both are bounded rather than trusted.
+	DavIfLists      = 256
+	DavIfConditions = 256
+
+	// DavIfTokenLength caps one coded URL or entity tag inside an If header.
+	DavIfTokenLength = 2048
+
 	// DavInfinityEntries is the collection size above which Depth: infinity is
 	// refused with 507 instead of attempted. The honest refusal beats the one
 	// that arrives after ten minutes.

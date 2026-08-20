@@ -35,6 +35,16 @@ var (
 	ErrTooManyElements = errors.New("dav: too many elements")
 	ErrTooDeep         = errors.New("dav: nesting too deep")
 	ErrBadXML          = errors.New("dav: malformed request body")
+
+	// ErrBadRequest is a header or a value this package could not parse. It is
+	// separate from ErrBadXML because it never came from a body.
+	ErrBadRequest = errors.New("dav: malformed request")
+
+	// ErrLocked is a resource held by a token the request did not submit.
+	ErrLocked = errors.New("dav: the resource is locked")
+
+	// ErrPreconditionFailed is an If header that parsed and did not hold.
+	ErrPreconditionFailed = errors.New("dav: a precondition failed")
 )
 
 // Name is a namespace-resolved element name. Space is the URI and is never a

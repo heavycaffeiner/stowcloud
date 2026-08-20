@@ -419,6 +419,18 @@ func (p SafePath) HasPrefix(other SafePath) bool {
 // Equal compares component-wise.
 func (p SafePath) Equal(other SafePath) bool { return slices.Equal(p.comps, other.comps) }
 
+// Under reports whether p is at or beneath other.
+//
+// This is a component-wise comparison rather than a string prefix test, so
+// "ab" is not under "a" and a caller cannot descend into a sibling by naming
+// one whose path happens to start with the same bytes.
+func (p SafePath) Under(other SafePath) bool {
+	if len(p.comps) < len(other.comps) {
+		return false
+	}
+	return slices.Equal(p.comps[:len(other.comps)], other.comps)
+}
+
 // String is "a/b/c". Never a leading slash; the root is "".
 func (p SafePath) String() string { return strings.Join(p.comps, "/") }
 

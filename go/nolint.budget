@@ -75,7 +75,11 @@
 # a test fixture writing mode 640, which is the file another program wrote that
 # the replacement has to keep the mode of.
 #
-# Phase 7 added one: xml.EscapeText writing into a bytes.Buffer, whose Write is
-# documented never to fail, so there is no error path to act on.
-121
+# Phase 7 added six. One is xml.EscapeText writing into a bytes.Buffer, whose
+# Write is documented never to fail. Three are the close-and-rows family the
+# phases before already named: a multistatus close whose earlier write error is
+# the real answer, and two rows.Close on fully read sets. Two are the device
+# and inode numbers crossing into signed SQLite storage as their bit pattern,
+# the same conversion the cache already does for the same reason.
+126
 

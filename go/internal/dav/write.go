@@ -320,6 +320,26 @@ func sortedKeys(m map[string]string) []string {
 	return out
 }
 
+// writePropDocument writes a bare DAV:prop document, which is what LOCK
+// answers with. It shares the escaping and the name validation with the
+// multistatus writer rather than repeating them.
+func writePropDocument(w io.Writer, props ...Prop) error {
+	m := &Multistatus{
+		w:        bufio.NewWriterSize(w, 4<<10),
+		prefixes: map[string]string{NSDav: davPrefix},
+	}
+	m.print(`<?xml version="1.0" encoding="utf-8"?>` + "\n")
+	m.print("<" + davPrefix + `:prop xmlns:` + davPrefix + `="` + NSDav + `">`)
+	for _, p := range props {
+		m.writeProp(p)
+	}
+	m.print("</" + davPrefix + ":prop>\n")
+	if m.err != nil {
+		return m.err
+	}
+	return m.w.Flush()
+}
+
 // WriteError renders a single-resource error body for the cases where a bare
 // status is not enough, such as a lock conflict naming the holder.
 func WriteError(w http.ResponseWriter, code int, cond Name, desc string) error {
