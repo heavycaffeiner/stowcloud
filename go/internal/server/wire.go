@@ -36,6 +36,11 @@ type Options struct {
 	// command wires them so /api/events upgrades real sockets.
 	Watch *watch.Watcher
 	WS    *ws.Hub
+
+	// Health carries what the running server has to report as degraded. A nil
+	// one is an empty one, so a test assembly reports ok rather than crashing
+	// on a surface it never asked for.
+	Health *handler.HealthState
 }
 
 // New assembles the whole HTTP surface: the state, the route table, the
@@ -62,6 +67,11 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		Limiter: mw.NewRateLimiter(cfg.RatePerSec, cfg.RateBurst, clk),
 	}
 
+	health := opt.Health
+	if health == nil {
+		health = handler.NewHealthState()
+	}
+
 	deps := handler.Deps{
 		Core:     opt.Core,
 		Auth:     opt.Auth,
@@ -72,6 +82,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		Hosts:    state.Hosts,
 		CSRFKey:  state.CSRFKey,
 		WatchCap: func() int { return watchHotSetCap },
+		Health:   health,
 	}
 
 	table := routes(deps, setup)

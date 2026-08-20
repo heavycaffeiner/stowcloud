@@ -46,6 +46,11 @@ type Deps struct {
 
 	// Events upgrades the change-channel socket for an authenticated user.
 	Events EventsHandler
+
+	// Health carries the degradations the running server has. It is a value
+	// the server owns rather than package state, because a status every caller
+	// can reach into is a status any of them can rewrite.
+	Health *HealthState
 }
 
 // Wrap converts a handler function into the route-table form. The error it

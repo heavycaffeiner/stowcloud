@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
 )
 
 // Config is the typed configuration every other package accepts. The TOML
@@ -29,6 +31,10 @@ type Config struct {
 	// AppHost is the host the login screen and the API are reached under, the
 	// first entry of AppHosts, used by the healthcheck's TLS verification.
 	AppHost string
+
+	// Hardening is what the operator asked of the sandbox. The shipped default
+	// refuses to start when a layer cannot be applied.
+	Hardening jail.Policy
 }
 
 // raw is the TOML shape, parsed then validated. The field names are the
@@ -47,6 +53,9 @@ type raw struct {
 		PerSec float64 `toml:"per_sec"`
 		Burst  int     `toml:"burst"`
 	} `toml:"rate"`
+	Security struct {
+		Hardening string `toml:"hardening"`
+	} `toml:"security"`
 }
 
 // defaults are the compiled-in values a missing key inherits. A D5 constant
@@ -107,6 +116,19 @@ func Validate(r raw) (*Config, error) {
 	}
 	if cfg.RatePerSec > 10_000 || cfg.RateBurst > 10_000 {
 		return nil, fmt.Errorf("rate: a value over 10000 is beyond the compiled-in outer bound")
+	}
+
+	// An absent value takes the shipped default rather than the zero one by
+	// accident. They happen to be the same policy, and relying on that would
+	// make renumbering the constants a silent downgrade of every deployment
+	// that never set the key.
+	cfg.Hardening = jail.Required
+	if r.Security.Hardening != "" {
+		pol, perr := jail.ParsePolicy(r.Security.Hardening)
+		if perr != nil {
+			return nil, fmt.Errorf("security.hardening: %w", perr)
+		}
+		cfg.Hardening = pol
 	}
 	return cfg, nil
 }

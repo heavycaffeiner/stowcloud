@@ -27,6 +27,10 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 	any := route.Requirement{Access: route.AccessAny}
 
 	return []route.Route{
+		// The health surface, reachable with no credential: one that needs a
+		// credential is one the container runtime cannot use.
+		{Method: "GET", Pattern: "/api/health", Req: any, Handler: handler.Health(d.Health)},
+
 		// First-run bootstrap, reachable with no credential.
 		{Method: "GET", Pattern: "/api/setup", Req: any, Handler: handler.SetupState(d, setup)},
 		{Method: "POST", Pattern: "/api/setup", Req: any, Handler: handler.SetupComplete(d, setup)},

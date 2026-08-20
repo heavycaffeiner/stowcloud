@@ -153,9 +153,15 @@ type SharePatch struct {
 // id that is already registered replaces the live root, which is what a restart
 // does when persisted shares are reloaded.
 func (c *Core) RegisterShare(ctx context.Context, def ShareDef) error {
-	root, err := vfs.OpenShareRoot(def.ID, def.Host, def.Policy)
+	// The filesystem gate runs here, so a share this design cannot hold its
+	// contracts on is refused at registration rather than at the first
+	// operation that cannot keep them.
+	root, adm, err := vfs.RegisterShareRoot(def.ID, def.Host, def.Policy)
 	if err != nil {
 		return err
+	}
+	if adm.Warn != "" {
+		c.logger.Warn("share admitted with a caveat", "share", def.Name, "warning", adm.Warn)
 	}
 	c.sharesMu.Lock()
 	defer c.sharesMu.Unlock()

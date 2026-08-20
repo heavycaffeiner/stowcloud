@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -16,10 +17,31 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
+	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/handler"
+	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
 	"github.com/heavycaffeiner/stowcloud/go/internal/server"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 	"github.com/heavycaffeiner/stowcloud/go/internal/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
+
+// jailSpec is the domain the server runs under: the data directory it owns,
+// and every share it serves. Nothing else is reachable.
+//
+// Execute is left unhandled because the sandbox becomes process-wide through an
+// exec, and a domain that denied it would deny that. Removing the syscall
+// entirely is the filter's job in the step after, which denies it harder.
+func jailSpec(cfg *server.Config, shares []core.ShareDef) jail.Spec {
+	spec := jail.Spec{ExceptExec: true}
+	spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: cfg.DataDir})
+	// Every share is granted by its host path. A domain built from the data
+	// directory alone would deny every share the server exists to serve, which
+	// is a sandbox that only works on a deployment with no shares.
+	for _, sh := range shares {
+		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: sh.Host})
+	}
+	return spec
+}
 
 // runServe starts the server: config, store, master key, core domain, the
 // setup gate, the listener, and a graceful shutdown on SIGINT or SIGTERM.
@@ -40,6 +62,15 @@ func runServe(args []string, stderr io.Writer) int {
 	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	clk := clock.System()
 	ctx := context.Background()
+
+	// The atomic path resolver is checked before anything is opened. It is a
+	// refusal under every hardening policy, the one that turns hardening off
+	// included, because that policy means a weaker sandbox is accepted and not
+	// that a path resolver which can be raced is.
+	if rerr := vfs.RequireResolver(vfs.Probe()); rerr != nil {
+		say(stderr, "stowcloud %s: serve: %v\n", version, rerr)
+		return exitConfig
+	}
 
 	cfg, err := server.Load(configPath)
 	if err != nil {
@@ -71,7 +102,8 @@ func runServe(args []string, stderr io.Writer) int {
 	}
 	// Admin-created shares live in the state database; a restart must re-open
 	// them under the same ids the running process used.
-	if rerr := coreSvc.ReloadPersistedShares(ctx); rerr != nil {
+	rejectedShares, rerr := coreSvc.ReloadPersistedShares(ctx)
+	if rerr != nil {
 		say(stderr, "stowcloud %s: serve: reloading persisted shares: %v\n", version, rerr)
 		return exitConfig
 	}
@@ -88,6 +120,27 @@ func runServe(args []string, stderr io.Writer) int {
 		}
 	}
 
+	// The sandbox goes on before the listener is bound, so nothing is served
+	// from a process that has not been confined. Under the shipped policy a
+	// layer that could not be applied is a refusal; under the others it is a
+	// degradation the health surface names, because a server missing a layer
+	// otherwise looks exactly like one that has them all.
+	health := handler.NewHealthState()
+	for _, rej := range rejectedShares {
+		health.Degrade(handler.ReasonShareRejected, rej.Name+": "+rej.Err.Error())
+	}
+	jailStatus, jerr := jail.Apply(cfg.Hardening, jailSpec(cfg, coreSvc.Shares()))
+	if jerr != nil {
+		return jail.Refuse(stderr, jailStatus)
+	}
+	for _, step := range jailStatus.Steps {
+		if !step.Applied {
+			health.Degrade(handler.ReasonHardeningPartial,
+				fmt.Sprintf("%s was not applied: %v", step.Name, step.Err))
+		}
+	}
+	log.Info("hardening", "status", jailStatus.String())
+
 	watcher, hub, werr := server.StartWatch(ctx, coreSvc, clk, log)
 	if werr != nil {
 		say(stderr, "stowcloud %s: serve: the watcher: %v\n", version, werr)
@@ -97,7 +150,7 @@ func runServe(args []string, stderr io.Writer) int {
 		_ = watcher.Close() //nolint:errcheck // shutdown is closing everything anyway.
 	}()
 
-	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub}, setupGate)
+	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health}, setupGate)
 	if nerr != nil {
 		say(stderr, "stowcloud %s: serve: %v\n", version, nerr)
 		return exitConfig

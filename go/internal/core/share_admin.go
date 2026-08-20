@@ -206,15 +206,15 @@ var _ = errors.Is
 // computing the same combined id CreateShare minted. A restart must land on
 // the same ids the running process used, because the cache, the grants and
 // the links all reference them.
-func (c *Core) ReloadPersistedShares(ctx context.Context) error {
+func (c *Core) ReloadPersistedShares(ctx context.Context) (rejected []RejectedShare, err error) {
 	rows, err := c.state.ListShares(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, row := range rows {
 		combined, nerr := num.Narrow[uint32](dynamicShareIDBase + row.ID)
 		if nerr != nil {
-			return fmt.Errorf("a persisted share row id overflowed the id space: %w", nerr)
+			return nil, fmt.Errorf("a persisted share row id overflowed the id space: %w", nerr)
 		}
 		def := ShareDef{
 			ID:     ShareID(combined),
@@ -222,9 +222,23 @@ func (c *Core) ReloadPersistedShares(ctx context.Context) error {
 			Host:   row.Host,
 			Policy: vfs.DefaultSharePolicy(),
 		}
-		if err := c.RegisterShare(ctx, def); err != nil {
-			return fmt.Errorf("reloading share %q: %w", row.Name, err)
+		if rerr := c.RegisterShare(ctx, def); rerr != nil {
+			// One share this server cannot serve is not an outage of every
+			// other share. It is left unregistered and reported, so the
+			// deployment starts, the rest of it works, and the health surface
+			// says which one is missing and why.
+			rejected = append(rejected, RejectedShare{Name: row.Name, Err: rerr})
+			c.logger.Error("a share was refused and is not being served",
+				"share", row.Name, "error", rerr)
+			continue
 		}
 	}
-	return nil
+	return rejected, nil
+}
+
+// RejectedShare is a share that could not be registered, named so the health
+// surface can say which one rather than only that one is missing.
+type RejectedShare struct {
+	Name string
+	Err  error
 }
