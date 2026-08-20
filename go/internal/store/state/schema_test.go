@@ -50,7 +50,8 @@ func TestEveryDurableTableExists(t *testing.T) {
 	d := open(t)
 
 	want := []string{
-		"app_password", "audit", "compat_kv", "dav_lock", "dav_prop", "favorite",
+		"app_password", "audit", "compat_kv", "compat_login_flow",
+		"compat_upload_alias", "dav_lock", "dav_prop", "favorite",
 		"fileid_override", "grant", "group", "key_version", "membership",
 		"oidc_link", "operation", "operation_result", "recovery_code",
 		"session", "settings", "share_definition", "share_identity_override",

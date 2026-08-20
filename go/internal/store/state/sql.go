@@ -480,6 +480,29 @@ CREATE TABLE compat_kv (
 ) WITHOUT ROWID;
 
 ALTER TABLE favorite ADD COLUMN path TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE compat_login_flow (
+  poll_digest    BLOB PRIMARY KEY,
+  login_digest   BLOB NOT NULL,
+  created_ns     INTEGER NOT NULL,
+  -- Set once a human has approved, and the whole of what approval stores. No
+  -- credential rests here: the polling request mints one at delivery, so an
+  -- abandoned flow leaves nothing live behind.
+  approved_user  INTEGER,
+  approved_login TEXT NOT NULL DEFAULT '',
+  last_poll_ns   INTEGER NOT NULL DEFAULT 0
+) WITHOUT ROWID;
+CREATE UNIQUE INDEX compat_login_flow_login ON compat_login_flow(login_digest);
+
+CREATE TABLE compat_upload_alias (
+  user    INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  -- The transfer id is client-chosen and is never a session key: it is
+  -- guessable and collidable, so it is scoped by user and resolves through
+  -- here rather than naming a session directly.
+  tid     TEXT NOT NULL,
+  session BLOB NOT NULL,
+  PRIMARY KEY (user, tid)
+) WITHOUT ROWID;
 `
 
 // Every statement, as a constant. Nothing here is assembled from parts.

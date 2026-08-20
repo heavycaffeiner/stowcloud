@@ -122,5 +122,8 @@
 # status is already sent, where a short write has no second channel. Milestones
 # 10b and 10d added four more: the router answering after its status is sent,
 # and three test type assertions whose shape the decode above them proved.
-179
+# Milestone 10g added three: a rows.Close on a fully read set, and two gosec
+# readings of a statement that names a credential column rather than holding
+# one.
+182
 

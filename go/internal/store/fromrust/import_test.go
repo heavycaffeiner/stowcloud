@@ -182,48 +182,6 @@ func TestAnUnknownTableBlocksTheImport(t *testing.T) {
 	}
 }
 
-// Durable state a later phase owns is refused while it holds rows, and the
-// refusal names the phase that adds its destination.
-func TestDeferredTablesRefuseOnlyWhenTheyHoldRows(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		file  string
-		setup []string
-		rows  bool
-		phase string
-	}{
-		{
-			"the compat instance identity", "compat-nc.db",
-			[]string{
-				`CREATE TABLE nc_instance (id INTEGER PRIMARY KEY, instance TEXT)`,
-				`INSERT INTO nc_instance VALUES (1, 'abc')`,
-			},
-			true, "Phase 10",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := rustDir(t)
-			mkdb(t, filepath.Join(dir, tc.file), tc.setup...)
-
-			_, err := fromrust.Import(context.Background(), dir, testClock())
-			if !tc.rows {
-				if err != nil {
-					t.Fatalf("an empty deferred table blocked the import: %v", err)
-				}
-				return
-			}
-			if !errors.Is(err, fromrust.ErrDeferredTableHasRows) {
-				t.Fatalf("Import returned %v, want ErrDeferredTableHasRows", err)
-			}
-			if !strings.Contains(err.Error(), tc.phase) {
-				t.Errorf("the refusal does not name %s: %v", tc.phase, err)
-			}
-		})
-	}
-}
-
-// A short-lived table is discarded on purpose, and the report says so rather
-// than leaving the rows unaccounted for.
 func TestDiscardedTablesAreReportedWithTheirReason(t *testing.T) {
 	dir := rustDir(t)
 	mkdb(t, filepath.Join(dir, "auth.db"),

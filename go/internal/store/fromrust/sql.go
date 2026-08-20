@@ -113,6 +113,29 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	// absence has to stay absence so the configured default still wins.
 	selIndexSettings = `SELECT name_enabled FROM index_settings WHERE id = 1`
 
+	// The compat layer's durable rows.
+	selNcInstance = `SELECT instance FROM nc_instance WHERE id = 1`
+	insCompatKV   = `INSERT INTO compat_kv(key, value) VALUES (?, ?)
+	                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+
+	// The alias rows, which name an in-flight upload by a client-chosen id.
+	selNcUploadAlias     = `SELECT user, tid, session FROM nc_upload_alias`
+	insCompatUploadAlias = `INSERT INTO compat_upload_alias(user, tid, session) VALUES (?, ?, ?)`
+
+	// The login flows. Only the digests and the approval marker come across:
+	// the plaintext column the old table carried is deliberately not read.
+	selNcLoginFlow = `SELECT poll_digest, login_digest, created_ns, approved_user,
+	                         approved_login, app_password
+	                    FROM nc_login_flow`
+	insNcLoginFlow = `INSERT INTO compat_login_flow(poll_digest, login_digest, created_ns,
+	                                                approved_user, approved_login, last_poll_ns)
+	                  VALUES (?, ?, ?, ?, ?, 0)`
+
+	// The credential an approved flow already minted, revoked before the flow
+	// is translated so no orphan is left behind.
+	//nolint:gosec // G101: a statement naming a column, not a credential.
+	delAppPasswordByHash = `DELETE FROM app_password WHERE token_hash = ?`
+
 	// The settings row this import may have just written, read back so the
 	// index override merges into it rather than replacing it.
 	selSettingsRow = `SELECT json FROM settings WHERE id = 1`

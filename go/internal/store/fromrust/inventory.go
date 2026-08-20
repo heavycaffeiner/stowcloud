@@ -103,9 +103,9 @@ func inventory() map[string]map[string]disposition {
 		indexFile: {"index_settings": {how: transformed}},
 		compatFile: {
 			"nc_favorite":     {how: copied},
-			"nc_instance":     {how: deferred, phase: 10},
-			"nc_login_flow":   {how: deferred, phase: 10},
-			"nc_upload_alias": {how: deferred, phase: 10},
+			"nc_instance":     {how: transformed},
+			"nc_login_flow":   {how: transformed},
+			"nc_upload_alias": {how: copied},
 		},
 		journalFile: {"write_event": {how: retained}},
 	}

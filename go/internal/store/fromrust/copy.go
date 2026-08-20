@@ -2,6 +2,7 @@ package fromrust
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -88,6 +89,9 @@ func (s *sources) into(ctx context.Context, tx *sql.Tx, rep *Report, clk clock.C
 		return err
 	}
 	if err := s.copyIndexSettings(ctx, tx, rep); err != nil {
+		return err
+	}
+	if err := s.copyCompat(ctx, tx, rep, users, clk); err != nil {
 		return err
 	}
 	return s.copyJobs(ctx, tx, rep, users)
@@ -745,5 +749,221 @@ func (s *sources) copyIndexSettings(ctx context.Context, tx *sql.Tx, rep *Report
 		return fmt.Errorf("importing index_settings: %w", eerr)
 	}
 	record(rep, "index_settings", 1, nil)
+	return nil
+}
+
+// copyCompat carries what the compatibility layer owns durably.
+//
+// Three things, and each for a different reason. The instance identity, so a
+// client that saw one identity does not treat this as a different server and
+// re-sync everything it holds. The active upload aliases, so an in-flight
+// chunked upload survives the cutover rather than restarting. And the
+// unexpired login flows, which are the delicate one.
+func (s *sources) copyCompat(ctx context.Context, tx *sql.Tx, rep *Report, users map[int64]bool, clk clock.Clock) error {
+	if s.compat == nil {
+		return nil
+	}
+	if err := s.copyInstanceID(ctx, tx, rep); err != nil {
+		return err
+	}
+	if err := s.copyCompatAliases(ctx, tx, rep, users); err != nil {
+		return err
+	}
+	return s.copyLoginFlows(ctx, tx, rep, users, clk)
+}
+
+// copyInstanceID preserves the identity this deployment presents.
+//
+// Minted once and never regenerated, because a client that saw one identity
+// and then another treats the server as a different server.
+func (s *sources) copyInstanceID(ctx context.Context, tx *sql.Tx, rep *Report) error {
+	ok, terr := hasTable(ctx, s.compat, "nc_instance")
+	if terr != nil || !ok {
+		return terr
+	}
+	var id string
+	err := s.compat.QueryRowContext(ctx, selNcInstance).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("importing nc_instance: %w", err)
+	}
+	if id == "" {
+		return nil
+	}
+	if _, eerr := tx.ExecContext(ctx, insCompatKV, "instance_id", id); eerr != nil {
+		return fmt.Errorf("importing nc_instance: %w", eerr)
+	}
+	record(rep, "compat_kv", 1, nil)
+	return nil
+}
+
+// copyCompatAliases carries the client-chosen names of in-flight uploads.
+//
+// An alias whose user or session did not survive is dropped rather than
+// carried: it would resolve to a session no row holds, which is a transfer the
+// client believes it can resume and cannot.
+func (s *sources) copyCompatAliases(
+	ctx context.Context, tx *sql.Tx, rep *Report, users map[int64]bool,
+) error {
+	ok, terr := hasTable(ctx, s.compat, "nc_upload_alias")
+	if terr != nil || !ok {
+		return terr
+	}
+	sessions, serr := survivingSessions(ctx, tx)
+	if serr != nil {
+		return serr
+	}
+
+	kept, drops, err := copyRows(ctx, tx, s.compat, selNcUploadAlias, insCompatUploadAlias, 3,
+		func(v []any) ([]any, Reason, error) {
+			if !known(users, v[0]) {
+				return nil, ReasonUnknownUser, nil
+			}
+			id, ok := v[2].([]byte)
+			if !ok || !sessions[string(id)] {
+				return nil, ReasonMissingSession, nil
+			}
+			return v, keep, nil
+		})
+	if err != nil {
+		return fmt.Errorf("importing nc_upload_alias: %w", err)
+	}
+	record(rep, "compat_upload_alias", kept, drops)
+	return nil
+}
+
+// survivingSessions is the set of upload sessions this import already wrote,
+// so an alias naming one that did not come across is dropped rather than left
+// pointing at nothing.
+func survivingSessions(ctx context.Context, tx *sql.Tx) (map[string]bool, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM upload_session`)
+	if err != nil {
+		return nil, fmt.Errorf("reading the imported upload sessions: %w", err)
+	}
+	defer func() {
+		_ = rows.Close() //nolint:errcheck // the scan error below is the answer.
+	}()
+
+	out := map[string]bool{}
+	for rows.Next() {
+		var id []byte
+		if serr := rows.Scan(&id); serr != nil {
+			return nil, fmt.Errorf("reading the imported upload sessions: %w", serr)
+		}
+		out[string(id)] = true
+	}
+	return out, rows.Err()
+}
+
+// copyLoginFlows carries the unexpired device-login flows.
+//
+// This is the delicate one, and it is where the import corrects a defect in
+// the shape it reads rather than reproducing it. The old table carried a
+// temporary plaintext app password between approval and collection, so an
+// approved flow nobody collected left a live credential nobody knew about.
+//
+// So for an approved flow the already-copied credential is revoked before the
+// flow is translated, and only the authorization marker comes across: polling
+// mints a replacement at delivery. An expired flow is a reasoned drop. A
+// malformed one, or an approved one whose credential cannot be matched, stops
+// the migration rather than leaving an orphan credential behind.
+func (s *sources) copyLoginFlows(
+	ctx context.Context, tx *sql.Tx, rep *Report, users map[int64]bool, clk clock.Clock,
+) error {
+	ok, terr := hasTable(ctx, s.compat, "nc_login_flow")
+	if terr != nil || !ok {
+		return terr
+	}
+
+	rows, err := s.compat.QueryContext(ctx, selNcLoginFlow)
+	if err != nil {
+		return fmt.Errorf("importing nc_login_flow: %w", err)
+	}
+	defer func() {
+		_ = rows.Close() //nolint:errcheck // the scan error below is the answer.
+	}()
+
+	const flowTTLNs = int64(20 * 60 * 1_000_000_000)
+	now := clk.Nanos()
+	kept := 0
+	drops := map[Reason]int{}
+
+	for rows.Next() {
+		var (
+			pollDigest, loginDigest []byte
+			createdNs               int64
+			approvedUser            sql.NullInt64
+			approvedLogin           sql.NullString
+			appPassword             sql.NullString
+		)
+		if serr := rows.Scan(&pollDigest, &loginDigest, &createdNs,
+			&approvedUser, &approvedLogin, &appPassword); serr != nil {
+			return fmt.Errorf("importing nc_login_flow: %w", serr)
+		}
+
+		// A row with no digests cannot be looked up by either token, so it is
+		// unusable rather than merely odd. Refusing beats writing a row that
+		// can only ever be swept.
+		if len(pollDigest) == 0 || len(loginDigest) == 0 {
+			return fmt.Errorf("importing nc_login_flow: a flow with no token digests")
+		}
+
+		if now-createdNs >= flowTTLNs {
+			drops[ReasonExpired]++
+			continue
+		}
+		if approvedUser.Valid && !users[approvedUser.Int64] {
+			drops[ReasonUnknownUser]++
+			continue
+		}
+
+		// An approved flow's already-minted credential is revoked here, so the
+		// cutover leaves none behind. Failing to match one is a refusal: the
+		// alternative is a live credential nobody can account for.
+		if approvedUser.Valid && appPassword.Valid && appPassword.String != "" {
+			if rerr := revokeCopiedCredential(ctx, tx, appPassword.String); rerr != nil {
+				return rerr
+			}
+		}
+
+		var user any
+		if approvedUser.Valid {
+			user = approvedUser.Int64
+		}
+		if _, ierr := tx.ExecContext(ctx, insNcLoginFlow,
+			pollDigest, loginDigest, createdNs, user, approvedLogin.String); ierr != nil {
+			return fmt.Errorf("importing nc_login_flow: %w", ierr)
+		}
+		kept++
+	}
+	if rerr := rows.Err(); rerr != nil {
+		return fmt.Errorf("importing nc_login_flow: %w", rerr)
+	}
+
+	record(rep, "compat_login_flow", kept, drops)
+	return nil
+}
+
+// revokeCopiedCredential removes the app password an approved flow already
+// minted, so no orphan is left behind by the shape correction.
+func revokeCopiedCredential(ctx context.Context, tx *sql.Tx, plaintext string) error {
+	sum := sha256.Sum256([]byte(plaintext))
+	res, err := tx.ExecContext(ctx, delAppPasswordByHash, sum[:])
+	if err != nil {
+		return fmt.Errorf("importing nc_login_flow: revoking a copied credential: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("importing nc_login_flow: revoking a copied credential: %w", err)
+	}
+	if n == 0 {
+		// The credential this flow says it minted is not in the imported set.
+		// Continuing would leave a flow whose password nobody can revoke, so
+		// the migration stops and says which one.
+		return fmt.Errorf("importing nc_login_flow: an approved flow's credential " +
+			"is not among the imported app passwords, so it cannot be revoked")
+	}
 	return nil
 }

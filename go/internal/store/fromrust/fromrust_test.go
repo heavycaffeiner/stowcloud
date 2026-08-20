@@ -3,7 +3,9 @@ package fromrust_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -745,5 +747,226 @@ func TestNoIndexRowLeavesTheSettingsUntouched(t *testing.T) {
 	// And what the settings copy already wrote is untouched.
 	if got["a"] != float64(1) {
 		t.Fatalf("the imported settings were disturbed: %s", raw)
+	}
+}
+
+// The compat layer's durable rows.
+
+// mkdbAppend runs more statements against a database that already exists,
+// which is how a test adds a row to one rustDir already wrote.
+func mkdbAppend(t *testing.T, path string, stmts ...string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("opening %s: %v", filepath.Base(path), err)
+	}
+	defer func() {
+		if cerr := db.Close(); cerr != nil {
+			t.Errorf("closing %s: %v", filepath.Base(path), cerr)
+		}
+	}()
+	for _, stmt := range stmts {
+		if _, eerr := db.Exec(stmt); eerr != nil {
+			t.Fatalf("%s: %v\n%s", filepath.Base(path), eerr, stmt)
+		}
+	}
+}
+
+// compatDir is a data directory carrying the compat tables, on top of the
+// awkward rows rustDir already has.
+func compatDir(t *testing.T, extra ...string) string {
+	t.Helper()
+	dir := rustDir(t)
+	stmts := append([]string{
+		`CREATE TABLE nc_instance (id INTEGER PRIMARY KEY, instance TEXT)`,
+		`INSERT INTO nc_instance VALUES (1, 'inst-abc')`,
+		`CREATE TABLE nc_upload_alias (user INTEGER, tid TEXT, session BLOB)`,
+		`CREATE TABLE nc_login_flow (poll_digest BLOB, login_digest BLOB, created_ns INTEGER,
+		   approved_user INTEGER, approved_login TEXT, app_password TEXT)`,
+	}, extra...)
+	mkdb(t, filepath.Join(dir, "compat-nc.db"), stmts...)
+	return dir
+}
+
+// A client that saw one identity and then another treats the server as a
+// different server and re-syncs everything it holds.
+func TestTheInstanceIdentitySurvivesTheImport(t *testing.T) {
+	dir := compatDir(t)
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	st := openState(t, dir)
+
+	var got string
+	if err := st.SQL().QueryRow(
+		`SELECT value FROM compat_kv WHERE key = 'instance_id'`).Scan(&got); err != nil {
+		t.Fatalf("reading the instance id: %v", err)
+	}
+	if got != "inst-abc" {
+		t.Fatalf("the instance id is %q, want the one the old build presented", got)
+	}
+}
+
+// An alias naming a session that did not come across would resolve to nothing,
+// which is a transfer the client believes it can resume and cannot.
+func TestAnAliasWithoutItsSessionIsDropped(t *testing.T) {
+	dir := compatDir(t,
+		`INSERT INTO nc_upload_alias VALUES (1, 'live', X'aa')`,
+		`INSERT INTO nc_upload_alias VALUES (1, 'gone', X'ffff')`,
+		`INSERT INTO nc_upload_alias VALUES (99, 'nouser', X'aa')`,
+	)
+	rep, err := fromrust.Import(context.Background(), dir, testClock())
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	st := openState(t, dir)
+
+	var tids []string
+	rows, qerr := st.SQL().Query(`SELECT tid FROM compat_upload_alias ORDER BY tid`)
+	if qerr != nil {
+		t.Fatalf("reading the aliases: %v", qerr)
+	}
+	defer func() {
+		if cerr := rows.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+	for rows.Next() {
+		var tid string
+		if serr := rows.Scan(&tid); serr != nil {
+			t.Fatalf("scanning: %v", serr)
+		}
+		tids = append(tids, tid)
+	}
+	if len(tids) != 1 || tids[0] != "live" {
+		t.Fatalf("got %v, want only the alias whose session survived", tids)
+	}
+	if rep.Dropped[fromrust.Drop{Table: "compat_upload_alias",
+		Reason: fromrust.ReasonMissingSession}] != 1 {
+		t.Fatalf("the dropped alias was not reported: %v", rep.Dropped)
+	}
+	if rep.Dropped[fromrust.Drop{Table: "compat_upload_alias",
+		Reason: fromrust.ReasonUnknownUser}] != 1 {
+		t.Fatalf("the alias for a missing user was not reported: %v", rep.Dropped)
+	}
+}
+
+// The delicate one. The old table carried a plaintext app password between
+// approval and collection, so an approved flow nobody collected left a live
+// credential nobody knew about. The import revokes it and keeps only the
+// authorization marker.
+func TestAnApprovedFlowsCredentialIsRevokedAndNotCarried(t *testing.T) {
+	// The app password row rustDir seeds hashes this plaintext.
+	const plaintext = "the-old-app-password"
+	sum := sha256.Sum256([]byte(plaintext))
+
+	dir := rustDir(t)
+	mkdb(t, filepath.Join(dir, "compat-nc.db"),
+		`CREATE TABLE nc_instance (id INTEGER PRIMARY KEY, instance TEXT)`,
+		`CREATE TABLE nc_upload_alias (user INTEGER, tid TEXT, session BLOB)`,
+		`CREATE TABLE nc_login_flow (poll_digest BLOB, login_digest BLOB, created_ns INTEGER,
+		   approved_user INTEGER, approved_login TEXT, app_password TEXT)`,
+		`INSERT INTO nc_login_flow VALUES (X'01', X'02', `+strconv.FormatInt(nowNs, 10)+`,
+		   1, 'alice', '`+plaintext+`')`,
+	)
+	// The credential that flow minted, as the auth import will have copied it.
+	mkdbAppend(t, filepath.Join(dir, "auth.db"),
+		`INSERT INTO app_password VALUES (2, X'`+hex.EncodeToString(sum[:])+`', 1, 'flow',
+		   65535, NULL, 0, NULL, NULL, NULL, NULL, 0)`)
+
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	st := openState(t, dir)
+
+	// The credential is gone, so the cutover leaves no orphan.
+	var live int
+	if err := st.SQL().QueryRow(`SELECT count(*) FROM app_password WHERE token_hash = ?`,
+		sum[:]).Scan(&live); err != nil {
+		t.Fatalf("counting: %v", err)
+	}
+	if live != 0 {
+		t.Fatal("the approved flow's credential survived the import, so it is an orphan")
+	}
+
+	// And the flow came across carrying only the marker.
+	var user int64
+	var login string
+	if err := st.SQL().QueryRow(
+		`SELECT approved_user, approved_login FROM compat_login_flow`).Scan(&user, &login); err != nil {
+		t.Fatalf("reading the flow: %v", err)
+	}
+	if user != 1 || login != "alice" {
+		t.Fatalf("the flow records %d/%q", user, login)
+	}
+}
+
+// An approved flow whose credential cannot be matched stops the migration
+// rather than leaving one nobody can account for.
+func TestAnUnmatchedFlowCredentialRefusesTheMigration(t *testing.T) {
+	dir := compatDir(t,
+		`INSERT INTO nc_login_flow VALUES (X'01', X'02', `+strconv.FormatInt(nowNs, 10)+`,
+		   1, 'alice', 'a-password-no-row-hashes')`,
+	)
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); err == nil {
+		t.Fatal("an unmatched credential was accepted, leaving an orphan behind")
+	}
+}
+
+// An expired flow is a reasoned drop rather than a refusal.
+func TestAnExpiredFlowIsDroppedWithAReason(t *testing.T) {
+	old := nowNs - int64(time.Hour)
+	dir := compatDir(t,
+		`INSERT INTO nc_login_flow VALUES (X'01', X'02', `+strconv.FormatInt(old, 10)+`,
+		   NULL, '', NULL)`,
+	)
+	rep, err := fromrust.Import(context.Background(), dir, testClock())
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if rep.Dropped[fromrust.Drop{Table: "compat_login_flow",
+		Reason: fromrust.ReasonExpired}] != 1 {
+		t.Fatalf("the expired flow was not reported as one: %v", rep.Dropped)
+	}
+
+	st := openState(t, dir)
+	var n int
+	if qerr := st.SQL().QueryRow(`SELECT count(*) FROM compat_login_flow`).Scan(&n); qerr != nil {
+		t.Fatalf("counting: %v", qerr)
+	}
+	if n != 0 {
+		t.Fatalf("%d expired flows came across", n)
+	}
+}
+
+// A flow with no token digests cannot be looked up by either token, so it is
+// unusable rather than merely odd.
+func TestAFlowWithoutDigestsRefusesTheMigration(t *testing.T) {
+	dir := compatDir(t,
+		`INSERT INTO nc_login_flow VALUES (X'', X'', `+strconv.FormatInt(nowNs, 10)+`,
+		   NULL, '', NULL)`,
+	)
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); err == nil {
+		t.Fatal("a flow with no digests was accepted")
+	}
+}
+
+// An unapproved flow comes across as it is: the client can still finish it.
+func TestAnUnapprovedFlowSurvives(t *testing.T) {
+	dir := compatDir(t,
+		`INSERT INTO nc_login_flow VALUES (X'01', X'02', `+strconv.FormatInt(nowNs, 10)+`,
+		   NULL, '', NULL)`,
+	)
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	st := openState(t, dir)
+
+	var approved sql.NullInt64
+	if err := st.SQL().QueryRow(`SELECT approved_user FROM compat_login_flow`).Scan(&approved); err != nil {
+		t.Fatalf("reading the flow: %v", err)
+	}
+	if approved.Valid {
+		t.Fatalf("an unapproved flow came across approved for %d", approved.Int64)
 	}
 }
