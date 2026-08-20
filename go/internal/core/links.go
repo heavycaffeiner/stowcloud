@@ -292,7 +292,10 @@ func (c *Core) LinkPublic(ctx context.Context, token string) (Link, Entry, error
 		return Link{}, Entry{}, err
 	}
 	if !ok {
-		return Link{}, Entry{}, ErrLinkExpired
+		// A token that names nothing is absent, not gone. Reporting it as
+		// gone asserts it once existed, which lets a stranger sort guesses
+		// into ones that were real links and ones that never were.
+		return Link{}, Entry{}, ErrNotFound
 	}
 	now := c.clk.Nanos()
 	if l.IsExpired(now) || l.IsExhausted() {

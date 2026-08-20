@@ -321,3 +321,49 @@ discovering it.
 
 **Reopen by** Phase 13, which either mounts it or reports it as a gap it could
 not close.
+
+---
+
+## Q8. Which phase mounts the WebDAV and compat surfaces
+
+**Raised by** Phase 13b, running the response differ against both builds.
+
+**What was found.** The differ's WebDAV group produced an unauthenticated
+refusal from both servers, but the Go build's came from the route table having
+no `/dav` pattern at all rather than from the WebDAV handler. `internal/dav` is
+complete: the scanner, the multistatus writer, locks, the `If` header,
+`PROPFIND`, `PROPPATCH`, `SEARCH`, `REPORT`, the content methods and the upload
+collection all exist and are tested. What does not exist is the mount: the
+handler's entry points take an already-resolved path, and nothing resolves a
+`/dav/...` URL and dispatches to them.
+
+The compat layer is in the same state, and was already known to be: its
+handlers and its route descriptions exist, and only the OCS router is
+registered. Phase 10 recorded that as incomplete.
+
+This is the same shape as Q7. A phase built a subsystem, its milestone list
+ended at the subsystem, and the surface that exposes it belongs to no phase.
+Three of them now: uploads, WebDAV, and the compat mounts.
+
+**Options.**
+
+| # | Owner | Cost |
+|---|---|---|
+| 1 | Phase 13 mounts all three as cutover work | the differ is the first thing to exercise them, which is late for protocols with locking and conditional requests |
+| 2 | Reopen Phases 7 and 10 | both are closed, and reopening a closed phase to record work that never started makes "done" mean less |
+| 3 | Ship without them and record the gap | the product is a file server whose file protocols are unreachable, which is not a gap but an absence |
+
+**What decides between them.** Whether a phase owning a package also owns the
+route that reaches it. Nothing in the phase documents says either way, which is
+how three subsystems ended up in this state rather than one.
+
+**Taken for now: option 1**, matching Q7. Phase 13 cannot compare what is not
+mounted, so it is blocked either way, and the alternative reopens two closed
+phases.
+
+**The general lesson is worth stating separately**, because it is what produced
+all three: a phase that ends when its package compiles and its tests pass has
+not shipped anything. Every future subsystem phase should end at a mounted
+route with a request reaching it, not at a package boundary.
+
+**Reopen by** Phase 13, which mounts them or reports what it could not.

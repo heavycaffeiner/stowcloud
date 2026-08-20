@@ -11,6 +11,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
+	"github.com/heavycaffeiner/stowcloud/go/internal/dav"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
@@ -98,7 +99,19 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 	}
 	state.SetLookup(route.From(table))
 
+	// The WebDAV mount. The protocol package is handed resolved paths, so the
+	// mount above it is what turns a URL into one: without it the package is
+	// complete and unreachable, which is how it sat until the differ asked.
+	davHandler := dav.New(dav.Options{
+		Core:   opt.Core,
+		State:  opt.Store.State(),
+		Locks:  dav.NewLocks(opt.Store.State(), clk),
+		Logger: log,
+	})
+
 	m := mux(table, compatRoutes(opt.Core, opt.Store.State(), opt.Log))
+	m.Handle(davPrefix+"/", davMount(davHandler, opt.Core))
+	m.Handle(davPrefix, davMount(davHandler, opt.Core))
 	handler := httpapi.Chain(state)(m)
 
 	tlsCfg, err := tlsConfig(cfg, opt)

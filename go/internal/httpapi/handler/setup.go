@@ -64,7 +64,13 @@ type Setup interface {
 // unauthenticated caller may learn about this server's state.
 func SetupState(d Deps, gate Setup) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		return writeJSON(w, http.StatusOK, map[string]bool{"open": gate.IsRequired(r.Context())})
+		// The field is the one the client reads. It was "open" here and
+		// "required" on the wire the frontend was written against, so the
+		// first-run screen never appeared: the client asked whether setup was
+		// required, got an object without that field, read the absence as
+		// false, and sent the person to a sign-in screen for an account that
+		// does not exist yet.
+		return writeJSON(w, http.StatusOK, map[string]bool{"required": gate.IsRequired(r.Context())})
 	})
 }
 

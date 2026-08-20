@@ -137,5 +137,9 @@
 # directory and handing it to its own child, and reading the kernel's magic
 # value back from the mount that test just made, the test binary re-executing
 # itself, and two reads of a test's own temporary directory.
-193
+# Phase 13 added three, all in the response differ: it verifies no certificate
+# because it talks to two self-signed loopback servers, it reads its own corpus
+# directory, and its request carries no context because the client's own
+# timeout is the bound.
+196
 

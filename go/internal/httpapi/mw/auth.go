@@ -44,6 +44,26 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool) func(http.
 				return
 			}
 
+			// Basic, which is the only credential a WebDAV or a sync client can
+			// send. The password is an app password, never the account password:
+			// a protocol that hands the real credential to every request is a
+			// protocol whose credential cannot be revoked on its own.
+			if _, pass, ok := r.BasicAuth(); ok {
+				// The token identifies the account by itself, so the name half is
+				// not read. Comparing it would mean trusting a value the same
+				// request supplied, and a token that verifies already names
+				// whoever it was minted for.
+				principal, scope, err := svc.VerifyAppPassword(r.Context(), pass)
+				if err == nil {
+					ctx := withAppPWScope(withPrincipal(r.Context(), principal), scope)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+				apierr.Write(w, http.StatusUnauthorized,
+					apierr.NewError(apierr.CodeAuthInvalid, "invalid credentials", ""))
+				return
+			}
+
 			// Bearer app password takes priority when present.
 			if tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
 				principal, scope, err := svc.VerifyAppPassword(r.Context(), tok)
@@ -78,8 +98,13 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool) func(http.
 				return
 			}
 
+			// No credential was offered at all, which is a different fact from
+			// one that was offered and did not verify. A client that has never
+			// signed in shows a sign-in screen; one whose credential stopped
+			// working shows that its session ended. Reporting both as invalid
+			// tells the first one its credential was rejected when it sent none.
 			apierr.Write(w, http.StatusUnauthorized,
-				apierr.NewError(apierr.CodeAuthInvalid, "authentication required", ""))
+				apierr.NewError(apierr.CodeAuthRequired, "authentication required", ""))
 		})
 	}
 }
@@ -102,6 +127,13 @@ func PublicPaths(method, path string) bool {
 		// It answers what is degraded and nothing else about the deployment.
 		return method == http.MethodGet
 
+	}
+	if strings.HasPrefix(path, "/dav") {
+		// The WebDAV mount answers its own challenge. A refusal from here
+		// carries no challenge, and a client that is never asked for a
+		// credential never sends one: it reports a failure instead, which
+		// looks like a broken server to whoever is holding it.
+		return true
 	}
 	if strings.HasPrefix(path, "/s/") || strings.HasPrefix(path, "/c/") {
 		// Public share links and the content origin: authorization is the
