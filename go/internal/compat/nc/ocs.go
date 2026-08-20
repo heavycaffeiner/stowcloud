@@ -553,5 +553,8 @@ func (o OCS) Write(w http.ResponseWriter) {
 	// Set unconditionally, mirroring the entry points.
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(o.HTTPStatus())
-	_, _ = w.Write([]byte(body)) //nolint:errcheck // the status is already sent; a short write has no second channel.
+	// The body is this package's own writer output: every string in it went
+	// through the escaper or the JSON encoder on the way in.
+	//nolint:errcheck,gosec // G705: see above; and the status is already sent.
+	_, _ = w.Write([]byte(body))
 }

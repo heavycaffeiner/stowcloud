@@ -28,7 +28,8 @@ func (s stubState) SetFavorite(context.Context, ncport.UserID, ncport.Favorite, 
 func testLayer(t *testing.T) *Layer {
 	t.Helper()
 	return New(Deps{
-		State: stubState{id: "instance01"},
+		State:        stubState{id: "instance01"},
+		Authenticate: func(*http.Request) (Principal, bool) { return Principal{User: 1}, true },
 		Caps: CapsConfig{
 			VersionMajor: 31, VersionMinor: 0, VersionMicro: 4,
 			VersionString:       "31.0.4",
@@ -207,8 +208,9 @@ func TestTheRecordedCrashPathsAnswer404(t *testing.T) {
 func TestAnUnroutedOCSRequestIsRefusedAndLogged(t *testing.T) {
 	warned := 0
 	l := New(Deps{
-		State: stubState{id: "instance01"},
-		Warn:  func(string, ...any) { warned++ },
+		State:        stubState{id: "instance01"},
+		Authenticate: func(*http.Request) (Principal, bool) { return Principal{User: 1}, true },
+		Warn:         func(string, ...any) { warned++ },
 	})
 
 	rec := serve(t, l, "GET", "/ocs/v2.php/apps/nothing/here?format=json")
@@ -222,6 +224,48 @@ func TestAnUnroutedOCSRequestIsRefusedAndLogged(t *testing.T) {
 	doc := body(t, rec)
 	if _, present := doc["ocs"]; !present {
 		t.Fatalf("the refusal is not an envelope: %v", doc)
+	}
+}
+
+// An unauthenticated request to a surface that needs a principal is refused
+// with the sentinel, which is the one code v1 leaks into HTTP.
+func TestAnUnauthenticatedRequestIsRefused(t *testing.T) {
+	l := New(Deps{State: stubState{id: "instance01"}})
+	for _, path := range []string{
+		"/ocs/v2.php/cloud/user",
+		"/ocs/v2.php/search/providers",
+		"/ocs/v2.php/apps/files/api/v1/favorites",
+	} {
+		rec := serve(t, l, "GET", path+"?format=json")
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("%s answered %d with no principal, want 401", path, rec.Code)
+		}
+	}
+
+	// The unauthenticated surfaces still answer, which is what makes a client
+	// able to discover this server before it has credentials.
+	for _, path := range []string{
+		"/ocs/v2.php/cloud/capabilities",
+		"/ocs/v2.php/core/navigation/apps",
+	} {
+		rec := serve(t, l, "GET", path+"?format=json")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s answered %d with no principal, want 200", path, rec.Code)
+		}
+	}
+}
+
+// The captive-portal probe is unauthenticated and empty. Anything else makes
+// the Android client read this as "no internet" and park every upload as
+// pending without ever issuing a request.
+func TestTheCaptivePortalProbeIsEmptyAndUnauthenticated(t *testing.T) {
+	l := New(Deps{State: stubState{id: "instance01"}})
+	rec := serve(t, l, "GET", "/index.php/204")
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("the probe answered %d, want 204", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("the probe answered %d bytes, want none", rec.Body.Len())
 	}
 }
 
@@ -257,5 +301,73 @@ func TestTheFormatParameterReachesTheResponse(t *testing.T) {
 	}
 	if !strings.HasPrefix(xmlRec.Body.String(), "<?xml") {
 		t.Fatalf("the XML form does not start with a declaration:\n%s", xmlRec.Body)
+	}
+}
+
+// A port this build has not wired up must produce a refusal a client can act
+// on, never a panic and never an answer a client would believe. This is what
+// makes an unfinished seam safe to ship behind the tag.
+func TestAnUnwiredPortRefusesRatherThanCrashing(t *testing.T) {
+	// Authenticated, so the request reaches the surface, but every port nil.
+	l := New(Deps{
+		Authenticate: func(*http.Request) (Principal, bool) { return Principal{User: 1}, true },
+	})
+
+	for _, tc := range []struct {
+		method, path string
+	}{
+		{"GET", "/ocs/v2.php/cloud/user"},
+		{"GET", "/ocs/v2.php/cloud/users/alice"},
+		{"GET", "/ocs/v2.php/search/providers/files/search?term=x"},
+		{"GET", "/ocs/v2.php/apps/files/api/v1/recent"},
+		{"GET", "/ocs/v2.php/apps/files/api/v1/favorites"},
+		{"POST", "/ocs/v2.php/apps/dav/api/v1/direct"},
+		{"DELETE", "/ocs/v2.php/core/apppassword"},
+	} {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			sep := "&"
+			if !strings.Contains(tc.path, "?") {
+				sep = "?"
+			}
+			rec := serve(t, l, tc.method, tc.path+sep+"format=json")
+			// Any answer is acceptable except a success carrying data a
+			// client would act on, and except a crash, which the recorder
+			// would never reach.
+			if rec.Code == http.StatusOK {
+				doc := body(t, rec)
+				ocs, ok := doc["ocs"].(map[string]any)
+				if !ok {
+					t.Fatalf("a 200 with no envelope: %s", rec.Body)
+				}
+				meta, ok := ocs["meta"].(map[string]any)
+				if !ok {
+					t.Fatalf("a 200 with no meta: %s", rec.Body)
+				}
+				if meta["status"] == "ok" {
+					// The favourites surface answers an empty list with no
+					// store, which is honest: nothing is starred.
+					if !strings.Contains(tc.path, "favorites") {
+						t.Fatalf("an unwired port answered success: %s", rec.Body)
+					}
+				}
+			}
+		})
+	}
+}
+
+// The login flow's routes are absent rather than broken when it is not wired.
+func TestTheLoginFlowRoutesRefuseWhenUnwired(t *testing.T) {
+	l := New(Deps{
+		Authenticate: func(*http.Request) (Principal, bool) { return Principal{User: 1}, true },
+	})
+	for _, p := range []string{
+		"/index.php/login/v2",
+		"/index.php/login/v2/poll",
+		"/index.php/login/v2/grant",
+	} {
+		rec := serve(t, l, "POST", p)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s answered %d with no flow, want 404", p, rec.Code)
+		}
 	}
 }

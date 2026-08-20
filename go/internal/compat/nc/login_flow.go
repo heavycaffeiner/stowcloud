@@ -10,7 +10,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/compat/ncport"
 )
 
 // Login flow v2, the standard login path for current desktop and mobile
@@ -301,4 +304,100 @@ func (r PollResult) PollJSON() Val {
 		F("loginName", VStr(r.LoginName)),
 		F("appPassword", VStr(r.AppPassword)),
 	)
+}
+
+// The login-flow handlers.
+//
+// These write bare JSON rather than an OCS envelope: the flow predates the
+// envelope and clients parse it directly.
+
+// loginBegin starts a flow.
+func (l *Layer) loginBegin(w http.ResponseWriter, r *http.Request) {
+	if l.deps.Flow == nil {
+		http.NotFound(w, r)
+		return
+	}
+	tokens, err := l.deps.Flow.Begin(r.Context())
+	if err != nil {
+		l.warn("a login flow could not be started", "error", err)
+		http.Error(w, "the login flow could not be started", http.StatusInternalServerError)
+		return
+	}
+	writeBareJSON(w, tokens.BeginJSON())
+}
+
+// loginPoll delivers the credential once a human has approved.
+//
+// A pending flow answers 404, which is what the client polls against: it is
+// not an error, it is the answer that means "not yet".
+func (l *Layer) loginPoll(w http.ResponseWriter, r *http.Request) {
+	if l.deps.Flow == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "a malformed request", http.StatusBadRequest)
+		return
+	}
+
+	res, err := l.deps.Flow.Poll(r.Context(), r.PostFormValue("token"))
+	switch {
+	case err == nil:
+		writeBareJSON(w, res.PollJSON())
+	case errors.Is(err, ErrFlowRateLimited):
+		w.WriteHeader(http.StatusTooManyRequests)
+	case errors.Is(err, ErrFlowPending), errors.Is(err, ErrFlowUnknown):
+		// One answer for pending, unknown, expired and already-taken. Telling
+		// them apart tells a prober which tokens exist, and the client treats
+		// all of them as "keep waiting" anyway.
+		http.NotFound(w, r)
+	default:
+		l.warn("a login poll failed", "error", err)
+		http.Error(w, "the poll failed", http.StatusInternalServerError)
+	}
+}
+
+// loginGrant records a human's consent.
+//
+// POST only, and the caller has already established a logged-in principal and
+// a valid CSRF token by the time this runs. That is the whole ballgame: if a
+// GET could approve, then merely visiting an attacker's page while logged in
+// would mint an app password and hand it to the attacker's waiting poller,
+// which is a full account takeover from a drive-by image tag.
+func (l *Layer) loginGrant(w http.ResponseWriter, r *http.Request) {
+	if l.deps.Flow == nil {
+		http.NotFound(w, r)
+		return
+	}
+	who, ok := l.authenticate(r)
+	if !ok {
+		http.Error(w, "sign in first", http.StatusUnauthorized)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "a malformed request", http.StatusBadRequest)
+		return
+	}
+
+	login := ""
+	if l.deps.Accounts != nil {
+		if info, ierr := l.deps.Accounts.UserInfo(r.Context(), ncport.UserID(who.User)); ierr == nil {
+			login = info.LoginName
+		}
+	}
+
+	err := l.deps.Flow.Approve(r.Context(), r.PostFormValue("token"), int64(who.User), login)
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusOK)
+	case errors.Is(err, ErrFlowAlreadyApproved):
+		// A flow can never mint more than one credential, so a second approval
+		// is refused rather than replacing the first.
+		http.Error(w, "this flow is already approved", http.StatusConflict)
+	case errors.Is(err, ErrFlowUnknown):
+		http.NotFound(w, r)
+	default:
+		l.warn("a login approval failed", "error", err)
+		http.Error(w, "the approval failed", http.StatusInternalServerError)
+	}
 }

@@ -38,6 +38,20 @@ func Build(c *core.Core, st *state.DB, log *slog.Logger) *nc.Layer {
 		State: statePort{db: st},
 		Caps:  defaultCaps(),
 		Warn:  func(msg string, args ...any) { log.Warn(msg, args...) },
+
+		// The ports below stay nil until the core exposes what they need.
+		// A nil port is not a silent gap: every surface behind one answers a
+		// refusal a client can act on, and the tests hold that. Wiring a
+		// half-built port would be worse, because the surface would answer
+		// something a client would believe.
+		//
+		//   Accounts: the core has no account-info or quota reader yet.
+		//   Search:   the search service has no per-user entry query yet.
+		//   Preview:  the signing seam is Phase 9's and is not mounted yet.
+		//   Direct:   depends on Preview.
+		//   Flow:     needs an app-password minter from the auth package.
+		//   Authenticate: the server's chain resolves a principal, and the
+		//                 compat mounts are not yet inside it.
 	})
 }
 
