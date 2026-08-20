@@ -91,11 +91,17 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 // mux builds the ServeMux from the table. Go 1.22's method and wildcard
 // patterns cover every route on this surface, which was the confirmation
 // step 5a's first task; no router module is needed.
-func mux(table []route.Route) *http.ServeMux {
+func mux(table []route.Route, compat []compatMount) *http.ServeMux {
 	m := http.NewServeMux()
 	for _, rt := range table {
 		m.Handle(rt.Method+" "+rt.Pattern, rt.Handler)
 	}
+	// The compatibility mounts, which are empty in a build without the tag.
+	// Called unconditionally so the tag stays one file's concern.
+	for _, cm := range compat {
+		m.Handle(cm.Method+" "+cm.Pattern, cm.Handler)
+	}
+
 	// The frontend goes on the bare root, which every API route out-specifies,
 	// so it catches only what the table did not claim. A build carrying no
 	// bundle leaves the pattern unmounted rather than serving a 404 page that

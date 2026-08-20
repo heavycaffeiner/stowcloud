@@ -33,6 +33,9 @@ type Handler struct {
 	// uploads backs the /dav-uploads collection. Nil when the engine is not
 	// wired up, and then the collection does not exist.
 	uploads UploadCollection
+	// uploadHeaders names the headers the upload collection reads. Empty in a
+	// build with no compat layer, which is what leaves the collection off.
+	uploadHeaders UploadHeaders
 	// infinityEntries is the collection size above which Depth: infinity is
 	// refused. It is a field rather than a direct read of the constant so a
 	// test can prove which check refuses without building a directory of a
@@ -49,6 +52,9 @@ type Options struct {
 	Logger  *slog.Logger
 	Sources []PropSource
 	Uploads UploadCollection
+	// UploadHeaders names the headers /dav-uploads reads. The compat layer
+	// supplies them; this package never learns a vendor's vocabulary.
+	UploadHeaders UploadHeaders
 	// InfinityEntries overrides the Depth: infinity ceiling. Zero takes the
 	// package bound, and a value above it is clamped: a caller cannot raise a
 	// D5 bound, only lower it.
@@ -68,7 +74,7 @@ func New(o Options) *Handler {
 	return &Handler{
 		core: o.Core, state: o.State, locks: o.Locks,
 		limits: o.Limits.withDefaults(), log: log,
-		sources: o.Sources, uploads: o.Uploads,
+		sources: o.Sources, uploads: o.Uploads, uploadHeaders: o.UploadHeaders,
 		infinityEntries: infinity,
 	}
 }

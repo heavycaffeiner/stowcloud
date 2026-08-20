@@ -100,15 +100,15 @@ func TestANotFoundNameIsEmittedEmptyUnderA404Propstat(t *testing.T) {
 // declared carries its own declaration, because a dead property can be in a
 // namespace nobody announced.
 func TestAVendorNamespaceUsesItsRootPrefix(t *testing.T) {
-	const ns = "http://owncloud.org/ns"
-	doc := write(t, map[string]string{ns: "oc"}, Response{
+	const ns = "urn:example:vendor"
+	doc := write(t, map[string]string{ns: "v"}, Response{
 		Href:  "/dav/a",
-		Found: []Prop{{Name: Name{Space: ns, Local: "favorite"}, Value: "1"}},
+		Found: []Prop{{Name: Name{Space: ns, Local: "starred"}, Value: "1"}},
 	})
-	if !strings.Contains(doc, `xmlns:oc="`+ns+`"`) {
+	if !strings.Contains(doc, `xmlns:v="`+ns+`"`) {
 		t.Fatalf("the vendor prefix is not declared on the root\n%s", doc)
 	}
-	if !strings.Contains(doc, "<oc:favorite>1</oc:favorite>") {
+	if !strings.Contains(doc, "<v:starred>1</v:starred>") {
 		t.Fatalf("the property does not use the root prefix\n%s", doc)
 	}
 }
@@ -189,7 +189,7 @@ func TestIsValidXMLNameRefusesWhatWouldBreakADocument(t *testing.T) {
 			t.Errorf("isValidXMLName(%q) = true, want false", bad)
 		}
 	}
-	for _, good := range []string{"a", "getetag", "favorite", "a-b", "a.b", "a_b", "a1", "_x"} {
+	for _, good := range []string{"a", "getetag", "starred", "a-b", "a.b", "a_b", "a1", "_x"} {
 		if !isValidXMLName(good) {
 			t.Errorf("isValidXMLName(%q) = false, want true", good)
 		}
@@ -288,9 +288,9 @@ func TestWriteErrorEmitsAPreconditionElement(t *testing.T) {
 // golden comparison is possible at all.
 func TestTheRootDeclarationsAreDeterministic(t *testing.T) {
 	extra := map[string]string{
-		"http://owncloud.org/ns":  "oc",
-		"http://nextcloud.org/ns": "nc",
-		"urn:zzz":                 "z",
+		"urn:example:vendor": "v",
+		"urn:example:other":  "o",
+		"urn:zzz":            "z",
 	}
 	first := write(t, extra, Response{Href: "/dav/a"})
 	for i := 0; i < 20; i++ {

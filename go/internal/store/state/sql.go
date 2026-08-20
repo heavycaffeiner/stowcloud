@@ -459,8 +459,28 @@ func migrations() []dbfile.Migration {
 		{Name: "3: the durable auth state", SQL: schemaV3},
 		{Name: "4: the share registry and operation store", SQL: schemaV4},
 		{Name: "5: upload aliases and the persisted chunk settings", SQL: schemaV5},
+		{Name: "6: the compat layer's durable rows", SQL: schemaV6},
 	}
 }
+
+// migration 6 lands what the compatibility layer owns durably.
+//
+// Two things, and both are durable for the same reason: a client that saw one
+// answer and then a different one treats the server as a different server.
+//
+// The instance identity is minted once and never regenerated. The favourite
+// gains a path column, because a client asks for a list of starred files and
+// wants their paths; the identity tuple stays the key, so a star follows the
+// file through a rename and the path is what was last seen rather than what
+// identifies the row.
+const schemaV6 = `
+CREATE TABLE compat_kv (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+) WITHOUT ROWID;
+
+ALTER TABLE favorite ADD COLUMN path TEXT NOT NULL DEFAULT '';
+`
 
 // Every statement, as a constant. Nothing here is assembled from parts.
 const (

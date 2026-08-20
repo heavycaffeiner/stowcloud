@@ -273,10 +273,10 @@ func ParseReport(body []byte, lim Limits) (ReportBody, error) {
 				continue
 			}
 			// Outside DAV:prop, a leaf is a filter term. An empty one still
-			// counts: <oc:favorite/> is a filter on presence.
+			// counts: <v:starred/> is a filter on presence.
 			//
 			// Only an element with no element children is a leaf. A container
-			// such as <oc:filter-rules> is descended into, because capturing it
+			// such as <v:filter-rules> is descended into, because capturing it
 			// would swallow the filters inside it and report the concatenation
 			// of their text under the container's own name.
 			if !inProp && !capturing {

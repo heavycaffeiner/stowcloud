@@ -104,8 +104,8 @@ func FuzzParsePropPatch(f *testing.F) {
 
 func FuzzParseReport(f *testing.F) {
 	seeds := []string{
-		`<oc:filter-files xmlns:oc="u:"><D:prop xmlns:D="DAV:"><D:getetag/></D:prop></oc:filter-files>`,
-		`<oc:filter-files xmlns:oc="u:"><oc:filter-rules><oc:favorite>1</oc:favorite></oc:filter-rules></oc:filter-files>`,
+		`<v:filter-files xmlns:v="u:"><D:prop xmlns:D="DAV:"><D:getetag/></D:prop></v:filter-files>`,
+		`<v:filter-files xmlns:v="u:"><v:filter-rules><v:starred>1</v:starred></v:filter-rules></v:filter-files>`,
 		`<x/>`,
 	}
 	for _, s := range seeds {

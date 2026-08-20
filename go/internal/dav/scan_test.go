@@ -258,7 +258,7 @@ func TestPropnameWinsOverAllprop(t *testing.T) {
 func TestANamedPropfindKeepsDocumentOrderAndDropsDuplicates(t *testing.T) {
 	body := `<D:propfind xmlns:D="DAV:"><D:prop>` +
 		`<D:getetag/><D:getcontentlength/><D:getetag/>` +
-		`<oc:favorite xmlns:oc="http://owncloud.org/ns"/>` +
+		`<v:starred xmlns:v="urn:example:vendor"/>` +
 		`</D:prop></D:propfind>`
 	got, err := ParsePropFind([]byte(body), Limits{})
 	if err != nil {
@@ -267,7 +267,7 @@ func TestANamedPropfindKeepsDocumentOrderAndDropsDuplicates(t *testing.T) {
 	want := []Name{
 		DavName("getetag"),
 		DavName("getcontentlength"),
-		{Space: "http://owncloud.org/ns", Local: "favorite"},
+		{Space: "urn:example:vendor", Local: "starred"},
 	}
 	if len(got.Props) != len(want) {
 		t.Fatalf("props = %v, want %v", got.Props, want)
@@ -327,31 +327,31 @@ func TestAnEmptySetElementIsASetOfEmpty(t *testing.T) {
 // REPORT: the root is read, DAV:prop is understood, and every other leaf is
 // carried verbatim without this package learning what it means.
 func TestAReportCollectsVendorFiltersVerbatim(t *testing.T) {
-	body := `<oc:filter-files xmlns:oc="http://owncloud.org/ns" xmlns:D="DAV:">` +
-		`<D:prop><D:getetag/><oc:fileid/></D:prop>` +
-		`<oc:filter-rules><oc:favorite>1</oc:favorite></oc:filter-rules>` +
-		`</oc:filter-files>`
+	body := `<v:filter-files xmlns:v="urn:example:vendor" xmlns:D="DAV:">` +
+		`<D:prop><D:getetag/><v:fileid/></D:prop>` +
+		`<v:filter-rules><v:starred>1</v:starred></v:filter-rules>` +
+		`</v:filter-files>`
 	got, err := ParseReport([]byte(body), Limits{})
 	if err != nil {
 		t.Fatalf("ParseReport: %v", err)
 	}
-	if got.Root.Local != "filter-files" || got.Root.Space != "http://owncloud.org/ns" {
+	if got.Root.Local != "filter-files" || got.Root.Space != "urn:example:vendor" {
 		t.Fatalf("root = %v, want the vendor filter-files", got.Root)
 	}
 	if len(got.Props) != 2 || !got.Props[0].IsDav("getetag") || got.Props[1].Local != "fileid" {
 		t.Fatalf("props = %v, want getetag and fileid", got.Props)
 	}
-	var favorite *Leaf
+	var starred *Leaf
 	for i := range got.Leaves {
-		if got.Leaves[i].Name.Local == "favorite" {
-			favorite = &got.Leaves[i]
+		if got.Leaves[i].Name.Local == "starred" {
+			starred = &got.Leaves[i]
 		}
 	}
-	if favorite == nil || favorite.Value != "1" {
-		t.Fatalf("leaves = %+v, want the favorite filter carried verbatim", got.Leaves)
+	if starred == nil || starred.Value != "1" {
+		t.Fatalf("leaves = %+v, want the starred filter carried verbatim", got.Leaves)
 	}
-	if favorite.Name.Space != "http://owncloud.org/ns" {
-		t.Fatalf("the filter lost its namespace: %v", favorite.Name)
+	if starred.Name.Space != "urn:example:vendor" {
+		t.Fatalf("the filter lost its namespace: %v", starred.Name)
 	}
 }
 

@@ -78,12 +78,24 @@ func (f *fakeUploads) Chunks(context.Context, string, core.UserID) ([]uint32, er
 	return out, nil
 }
 
+// testUploadHeaders stands in for what the compat layer supplies. The names
+// are this test's own, which is the point: the package reads whatever it is
+// given and knows no vendor's vocabulary.
+func testUploadHeaders() UploadHeaders {
+	return UploadHeaders{
+		TotalLength: "X-Vendor-Total-Length",
+		MTime:       "X-Vendor-Mtime",
+		ETag:        "X-Vendor-ETag",
+	}
+}
+
 func withUploads(t *testing.T, up UploadCollection) *fixture {
 	t.Helper()
 	f := newFixture(t)
 	f.h = New(Options{
 		Core: f.core, State: f.store.State(),
 		Locks: NewLocks(f.store.State(), f.clk), Uploads: up,
+		UploadHeaders: testUploadHeaders(),
 	})
 	return f
 }
@@ -169,7 +181,7 @@ func TestMoveAssemblesWithTheDeclaredLength(t *testing.T) {
 	up := newFakeUploads()
 	f := withUploads(t, up)
 
-	rec := f.upload(t, "MOVE", "sess", "", http.Header{"OC-Total-Length": {"6"}})
+	rec := f.upload(t, "MOVE", "sess", "", http.Header{"X-Vendor-Total-Length": {"6"}})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("MOVE returned %d, want 201\n%s", rec.Code, rec.Body)
 	}

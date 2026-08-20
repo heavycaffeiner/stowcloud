@@ -15,6 +15,8 @@ package core
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -239,4 +241,18 @@ func (c *Core) warn(msg string, key string, val any) {
 // errf wraps a sentinel with context.
 func errf(wrap error, format string, args ...any) error {
 	return fmt.Errorf(format+": %w", append(args, wrap)...)
+}
+
+// NewInstanceID mints the identity a deployment presents to clients.
+//
+// It lives in the core rather than in whichever layer first needs one, because
+// it is a property of this deployment and not of a protocol. Minted once and
+// never regenerated: a client that saw one identity and then another treats
+// the server as a different server and re-syncs everything it holds.
+func NewInstanceID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("core: minting an instance id: %w", err)
+	}
+	return hex.EncodeToString(b[:]), nil
 }

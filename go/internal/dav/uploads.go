@@ -41,6 +41,31 @@ type UploadCollection interface {
 	Chunks(ctx context.Context, id string, user core.UserID) ([]uint32, error)
 }
 
+// UploadHeaders names the request headers this collection reads.
+//
+// They are injected rather than written here, and that is the isolation rule
+// holding at the protocol surface: a vendor's header names are that vendor's
+// vocabulary, and a package that hardcoded them would have learned it. The
+// compat layer supplies the names its clients send; this package knows only
+// that a declared length and a modification time arrive somehow.
+type UploadHeaders struct {
+	// TotalLength carries the assembled size the client declares.
+	TotalLength string
+	// MTime carries the modification time to stamp on the published file, in
+	// whole seconds.
+	MTime string
+	// ETag is the response header the assembled entry's validator is echoed
+	// in, beside the standard one.
+	ETag string
+}
+
+// complete reports whether every name is set. A partially configured set is
+// refused rather than half-honoured: reading one header and ignoring another
+// because nobody named it is how a client's declared length silently vanishes.
+func (u UploadHeaders) complete() bool {
+	return u.TotalLength != "" && u.MTime != "" && u.ETag != ""
+}
+
 // UploadPath is a parsed request against the upload collection.
 type UploadPath struct {
 	// Session is the collection's own name.
@@ -105,7 +130,9 @@ func ParseUploadPath(p string) (UploadPath, error) {
 // carries the permission check. The collection itself is not a real directory
 // and has no path of its own on disk.
 func (h *Handler) ServeUpload(w http.ResponseWriter, r *http.Request, res core.Resolved, up UploadPath) {
-	if h.uploads == nil {
+	// No engine, or no names for the headers this collection reads: either way
+	// the collection does not exist in this build.
+	if h.uploads == nil || !h.uploadHeaders.complete() {
 		h.methodNotAllowed(w, r, res)
 		return
 	}
@@ -139,7 +166,7 @@ func (h *Handler) uploadOpen(w http.ResponseWriter, r *http.Request, res core.Re
 		return
 	}
 	var total *uint64
-	if v := r.Header.Get("OC-Total-Length"); v != "" {
+	if v := r.Header.Get(h.uploadHeaders.TotalLength); v != "" {
 		n, err := strconv.ParseUint(v, 10, 64)
 		if err != nil {
 			h.fail(w, r, ErrBadRequest)
@@ -181,13 +208,13 @@ func (h *Handler) uploadAssemble(w http.ResponseWriter, r *http.Request, res cor
 		return
 	}
 
-	total, err := strconv.ParseUint(r.Header.Get("OC-Total-Length"), 10, 64)
+	total, err := strconv.ParseUint(r.Header.Get(h.uploadHeaders.TotalLength), 10, 64)
 	if err != nil {
 		h.fail(w, r, ErrBadRequest)
 		return
 	}
 	var mtime *int64
-	if v := r.Header.Get("X-OC-Mtime"); v != "" {
+	if v := r.Header.Get(h.uploadHeaders.MTime); v != "" {
 		secs, perr := strconv.ParseInt(v, 10, 64)
 		if perr != nil {
 			h.fail(w, r, ErrBadRequest)
@@ -208,7 +235,7 @@ func (h *Handler) uploadAssemble(w http.ResponseWriter, r *http.Request, res cor
 		return
 	}
 	w.Header().Set("ETag", etagHeader(e))
-	w.Header().Set("OC-ETag", etagHeader(e))
+	w.Header().Set(h.uploadHeaders.ETag, etagHeader(e))
 	w.WriteHeader(http.StatusCreated)
 }
 

@@ -19,7 +19,7 @@ import (
 // vocabulary through without interpreting it, and that a filter it cannot
 // apply is refused rather than dropped.
 
-const vendorNS = "http://owncloud.org/ns"
+const vendorNS = "urn:example:vendor"
 
 type fakeSource struct {
 	// gotLeaves records what the parser handed over, which is the whole point
@@ -35,7 +35,7 @@ func (f *fakeSource) Namespaces() []string { return []string{vendorNS} }
 func (f *fakeSource) Props(_ PropCtx, e core.Entry, want []Name) []Prop {
 	var out []Prop
 	for _, n := range want {
-		if n.Space == vendorNS && n.Local == "favorite" {
+		if n.Space == vendorNS && n.Local == "starred" {
 			out = append(out, Prop{Name: n, Value: "1"})
 		}
 	}
@@ -58,16 +58,16 @@ func withSource(t *testing.T, src PropSource) *fixture {
 }
 
 // The filter reaches the source with its namespace and value intact. This
-// package never learns what "favorite" means.
+// package never learns what "starred" means.
 func TestAReportHandsTheFilterToTheClaimingSourceVerbatim(t *testing.T) {
 	src := &fakeSource{}
 	f := withSource(t, src)
 	f.write(t, "a.txt", "hello")
 
-	body := `<oc:filter-files xmlns:oc="` + vendorNS + `" xmlns:D="DAV:">` +
-		`<D:prop><D:getetag/><oc:fileid/></D:prop>` +
-		`<oc:filter-rules><oc:favorite>1</oc:favorite></oc:filter-rules>` +
-		`</oc:filter-files>`
+	body := `<v:filter-files xmlns:v="` + vendorNS + `" xmlns:D="DAV:">` +
+		`<D:prop><D:getetag/><v:fileid/></D:prop>` +
+		`<v:filter-rules><v:starred>1</v:starred></v:filter-rules>` +
+		`</v:filter-files>`
 	rec := f.do(t, "REPORT", "/", body, nil)
 	if rec.Code != http.StatusMultiStatus {
 		t.Fatalf("status = %d, want 207\n%s", rec.Code, rec.Body)
@@ -75,7 +75,7 @@ func TestAReportHandsTheFilterToTheClaimingSourceVerbatim(t *testing.T) {
 
 	var fav *Leaf
 	for i := range src.gotLeaves {
-		if src.gotLeaves[i].Name.Local == "favorite" {
+		if src.gotLeaves[i].Name.Local == "starred" {
 			fav = &src.gotLeaves[i]
 		}
 	}
@@ -98,7 +98,7 @@ func TestASourceRefusingAFilterFailsTheRequest(t *testing.T) {
 	f := withSource(t, src)
 	f.write(t, "a.txt", "hello")
 
-	body := `<oc:filter-files xmlns:oc="` + vendorNS + `"><oc:mystery>x</oc:mystery></oc:filter-files>`
+	body := `<v:filter-files xmlns:v="` + vendorNS + `"><v:mystery>x</v:mystery></v:filter-files>`
 	rec := f.do(t, "REPORT", "/", body, nil)
 	if rec.Code == http.StatusMultiStatus {
 		t.Fatalf("a refused filter still produced a result document\n%s", rec.Body)
@@ -142,7 +142,7 @@ func TestASearchBodyGetsTheSameCapsAsAPropfind(t *testing.T) {
 	f := withSource(t, src)
 	f.write(t, "a.txt", "hello")
 
-	body := `<!DOCTYPE x><oc:searchrequest xmlns:oc="` + vendorNS + `"/>`
+	body := `<!DOCTYPE x><v:searchrequest xmlns:v="` + vendorNS + `"/>`
 	rec := f.do(t, "SEARCH", "/", body, nil)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: a SEARCH body with a DTD", rec.Code)
@@ -156,11 +156,11 @@ func TestAVendorPropertyReachesAPropfindThroughTheSource(t *testing.T) {
 	f := withSource(t, src)
 	f.write(t, "a.txt", "hello")
 
-	body := `<D:propfind xmlns:D="DAV:" xmlns:oc="` + vendorNS + `"><D:prop>` +
-		`<oc:favorite/><D:getcontentlength/></D:prop></D:propfind>`
+	body := `<D:propfind xmlns:D="DAV:" xmlns:v="` + vendorNS + `"><D:prop>` +
+		`<v:starred/><D:getcontentlength/></D:prop></D:propfind>`
 	rec := f.do(t, "PROPFIND", "/a.txt", body, http.Header{"Depth": {"0"}})
 	doc := rec.Body.String()
-	if !strings.Contains(doc, "favorite") {
+	if !strings.Contains(doc, "starred") {
 		t.Fatalf("the vendor property never reached the response\n%s", doc)
 	}
 	if !strings.Contains(doc, "<D:getcontentlength>5</D:getcontentlength>") {
@@ -168,7 +168,7 @@ func TestAVendorPropertyReachesAPropfindThroughTheSource(t *testing.T) {
 	}
 	// It was answered, so it must not also be reported missing. When there is
 	// no 404 propstat at all the property cannot be in one.
-	if i := strings.Index(doc, "404"); i >= 0 && strings.Contains(doc[i:], "favorite") {
+	if i := strings.Index(doc, "404"); i >= 0 && strings.Contains(doc[i:], "starred") {
 		t.Fatalf("a property the source answered is also in the 404 set\n%s", doc)
 	}
 }
@@ -202,10 +202,10 @@ func TestAFavouritesReportProducesADocumentAClientAccepts(t *testing.T) {
 	f := withSource(t, src)
 	f.write(t, "starred.txt", "x")
 
-	body := `<oc:filter-files xmlns:oc="` + vendorNS + `" xmlns:D="DAV:">` +
-		`<D:prop><D:getetag/><oc:favorite/></D:prop>` +
-		`<oc:filter-rules><oc:favorite>1</oc:favorite></oc:filter-rules>` +
-		`</oc:filter-files>`
+	body := `<v:filter-files xmlns:v="` + vendorNS + `" xmlns:D="DAV:">` +
+		`<D:prop><D:getetag/><v:starred/></D:prop>` +
+		`<v:filter-rules><v:starred>1</v:starred></v:filter-rules>` +
+		`</v:filter-files>`
 	rec := f.do(t, "REPORT", "/", body, nil)
 	if rec.Code != http.StatusMultiStatus {
 		t.Fatalf("status = %d, want 207\n%s", rec.Code, rec.Body)
@@ -227,7 +227,7 @@ func TestAFavouritesReportProducesADocumentAClientAccepts(t *testing.T) {
 	if !strings.Contains(doc, "also%20starred.txt") {
 		t.Fatalf("a name needing encoding was not encoded\n%s", doc)
 	}
-	if !strings.Contains(doc, "favorite") {
+	if !strings.Contains(doc, "starred") {
 		t.Fatalf("the vendor property is missing from the report\n%s", doc)
 	}
 }

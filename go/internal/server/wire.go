@@ -80,7 +80,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 	}
 	state.SetLookup(route.From(table))
 
-	m := mux(table)
+	m := mux(table, compatRoutes(opt.Core, opt.Store.State()))
 	handler := httpapi.Chain(state)(m)
 
 	tlsCfg, err := tlsConfig(cfg, opt)

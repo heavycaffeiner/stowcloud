@@ -115,5 +115,8 @@
 # the jail proof reaching the kernel directly: a raw openat needs AT_FDCWD as
 # its bit pattern and a NUL-terminated path, because a probe that went through
 # the standard library might not issue the syscall the filter is meant to stop.
-170
+#
+# Milestone 10a added one: the compat wiring narrowing a stored share id, where
+# a value that no longer fits one is a corrupt row rather than a truncation.
+171
 

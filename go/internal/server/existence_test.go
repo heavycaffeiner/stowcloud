@@ -111,7 +111,7 @@ func TestExistenceRuleOverHTTP(t *testing.T) {
 		t.Fatalf("route.Validate: %v", err)
 	}
 	state.SetLookup(route.From(table))
-	full := httpapi.Chain(state)(mux(table))
+	full := httpapi.Chain(state)(mux(table, nil))
 
 	do := func(path string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest("GET", "/api/fs/list?path="+path, nil)
