@@ -18,6 +18,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/compat/nc"
 	"github.com/heavycaffeiner/stowcloud/go/internal/compat/ncport"
@@ -28,11 +29,49 @@ import (
 )
 
 // Build assembles the layer from the server's own pieces.
-func Build(c *core.Core, st *state.DB) *nc.Layer {
+func Build(c *core.Core, st *state.DB, log *slog.Logger) *nc.Layer {
+	if log == nil {
+		log = slog.Default()
+	}
 	return nc.New(nc.Deps{
 		FS:    fsPort{core: c},
 		State: statePort{db: st},
+		Caps:  defaultCaps(),
+		Warn:  func(msg string, args ...any) { log.Warn(msg, args...) },
 	})
+}
+
+// defaultCaps is what the capabilities document reports.
+//
+// The two file-name lists have to match what the path layer actually refuses.
+// Advertising a name as legal and then refusing the write makes the client
+// retry the same file forever and the sync never converges, so they are read
+// from the path layer rather than written out here.
+func defaultCaps() nc.CapsConfig {
+	return nc.CapsConfig{
+		VersionMajor:  31,
+		VersionMinor:  0,
+		VersionMicro:  4,
+		VersionString: "31.0.4",
+		Edition:       "",
+
+		PollIntervalSeconds: 60,
+
+		// Advisory only: nothing server-side enforces a chunk ceiling, and an
+		// oversized chunk is accepted normally. This says what an intermediary
+		// is unlikely to reject, and it is the desktop client's own default.
+		ChunkSizeAdvisory:     10 << 20,
+		ChunkParallelAdvisory: 5,
+
+		ShareeMinSearch: 3,
+
+		BlacklistedFiles:            vfs.RefusedNames(),
+		ForbiddenFilenameCharacters: vfs.RefusedNameCharacters(),
+
+		ThemingName:  "Stowcloud",
+		ThemingColor: "#0082c9",
+		CanonicalURL: "",
+	}
 }
 
 // fsPort satisfies the layer's file operations from the core.

@@ -298,3 +298,29 @@ func TestIsReservedName(t *testing.T) {
 		}
 	}
 }
+
+// The advertised rules have to be the enforced ones. A name advertised as
+// legal and then refused makes a sync client retry the same file forever and
+// the sync never converges, so these assert the lists against the validator
+// rather than against a second copy of the table.
+func TestEveryRefusedNameIsActuallyRefused(t *testing.T) {
+	for _, name := range RefusedNames() {
+		if _, err := RootPath().Join(name); err == nil {
+			t.Errorf("%q is advertised as refused and is accepted", name)
+		}
+		// And in the lowercase spelling a client is as likely to send.
+		lower := strings.ToLower(name)
+		if _, err := RootPath().Join(lower); err == nil {
+			t.Errorf("%q is advertised as refused and is accepted", lower)
+		}
+	}
+}
+
+func TestEveryRefusedCharacterIsActuallyRefused(t *testing.T) {
+	for _, c := range RefusedNameCharacters() {
+		name := "a" + c + "b"
+		if _, err := RootPath().Join(name); err == nil {
+			t.Errorf("%q contains %q, which is advertised as refused, and is accepted", name, c)
+		}
+	}
+}

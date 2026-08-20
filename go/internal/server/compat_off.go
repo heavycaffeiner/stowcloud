@@ -3,6 +3,7 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
@@ -14,7 +15,7 @@ import (
 // The no-op sibling exists so the assembly calls this unconditionally: a build
 // tag that changes whether a function exists pushes the tag into every caller,
 // which is how a tag stops being one file's concern.
-func compatRoutes(*core.Core, *state.DB) []compatMount { return nil }
+func compatRoutes(*core.Core, *state.DB, *slog.Logger) []compatMount { return nil }
 
 // compatMount is one route the layer owns. It is declared in both files so the
 // assembly's type does not depend on the tag either.

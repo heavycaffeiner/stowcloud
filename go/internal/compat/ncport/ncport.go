@@ -44,6 +44,7 @@ const (
 	Delete   = acl.Delete
 	Rename   = acl.Rename
 	Move     = acl.Move
+	Share    = acl.Share
 	Download = acl.Download
 )
 

@@ -25,15 +25,28 @@ import (
 type Deps struct {
 	FS    ncport.FS
 	State ncport.StatePort
+	// Caps is what the capabilities document is built from.
+	Caps CapsConfig
+	// Warn reports a refusal produced before any handler runs, which this
+	// layer logs because the case existed once and was invisible.
+	Warn func(msg string, args ...any)
 }
 
 // Layer is the compatibility surface.
 type Layer struct {
 	deps Deps
+	caps CapsConfig
+	warn func(msg string, args ...any)
 }
 
 // New builds the layer.
-func New(d Deps) *Layer { return &Layer{deps: d} }
+func New(d Deps) *Layer {
+	warn := d.Warn
+	if warn == nil {
+		warn = func(string, ...any) {}
+	}
+	return &Layer{deps: d, caps: d.Caps, warn: warn}
+}
 
 // InstanceID is the identity this deployment presents to a client.
 //

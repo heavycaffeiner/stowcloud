@@ -14,10 +14,3 @@ type Mount struct {
 	Pattern string
 	Handler http.Handler
 }
-
-// Mounts is every route the layer owns.
-//
-// Empty until the handlers land. The seam and its gates come first
-// deliberately: a boundary added after the code it governs is a refactor, and
-// this one has been argued for in this codebase once already.
-func (l *Layer) Mounts() []Mount { return nil }

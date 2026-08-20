@@ -3,6 +3,7 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/compat/ncwire"
@@ -16,8 +17,8 @@ import (
 // one tagged file with a no-op sibling. A build without the tag does not
 // compile the layer at all, which is stronger than a flag that still
 // typechecks: an error in there cannot hide behind the flag being off.
-func compatRoutes(c *core.Core, st *state.DB) []compatMount {
-	layer := ncwire.Build(c, st)
+func compatRoutes(c *core.Core, st *state.DB, log *slog.Logger) []compatMount {
+	layer := ncwire.Build(c, st, log)
 	out := make([]compatMount, 0)
 	for _, m := range layer.Mounts() {
 		out = append(out, compatMount{Method: m.Method, Pattern: m.Pattern, Handler: m.Handler})

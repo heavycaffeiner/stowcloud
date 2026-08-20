@@ -436,3 +436,28 @@ func (p SafePath) String() string { return strings.Join(p.comps, "/") }
 
 // Share is the crossing back into the core's vocabulary.
 func (p SafePath) Share() SharePath { return SharePath{s: p.String()} }
+
+// RefusedNames is every whole name a created component may not be.
+//
+// It exists so a protocol that advertises the rules to a client advertises the
+// ones this actually enforces. A name advertised as legal and then refused
+// makes a sync client retry the same file forever and the sync never
+// converges, so the list is derived from the table rather than written twice.
+func RefusedNames() []string { return windowsReserved() }
+
+// RefusedNameCharacters is every character a created component may not
+// contain, for the same reason.
+//
+// It is deliberately shorter than the list a Windows-hosted server would
+// publish. This one refuses the separator, the alternate-data-stream colon and
+// the control range, and it accepts the rest: a name containing an asterisk or
+// a question mark is a perfectly ordinary name on the filesystems this runs
+// on, and advertising it as refused would make a client rename a file the
+// server would have taken.
+//
+// The control characters are not listed individually. A client renders this to
+// a user, and thirty-odd unprintable entries help nobody; they are refused by
+// the table regardless.
+func RefusedNameCharacters() []string {
+	return []string{"/", ":"}
+}
