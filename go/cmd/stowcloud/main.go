@@ -101,6 +101,9 @@ func run(args []string, stderr io.Writer) int {
 	if cmd.name == "setup" {
 		return runSetup(args[1:], stderr)
 	}
+	if cmd.name == "preview-worker" {
+		return runPreviewWorker(args[1:], stderr)
+	}
 	if len(args) > 1 && cmd.name == "masterkey" && args[1] == "rotate" {
 		// Phase 3's command: re-seal every ciphertext under a new key and swap
 		// the ring file. It is a CLI and never an HTTP route, because a master

@@ -96,5 +96,12 @@
 # carried a forbidigo exception. The frontend now builds into the embedding
 # package and a build without one leaves the route unmounted, so there is
 # nothing to panic about.
-134
+#
+# Milestones 9c and 9d added twenty-one, and all but two are the same two
+# families the phases before already named: a close whose error has no reader,
+# on job descriptors and on a control socket that is what just failed, and a
+# process kill or wait where the process being already gone is the case being
+# handled. The two others are gosec reading a subprocess launch: the pool execs
+# this binary's own path, and a test builds a helper from constant arguments.
+155
 
