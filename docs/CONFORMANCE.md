@@ -25,21 +25,63 @@ against the default bound is measuring the limiter.
 
 ## Result, 2026-08-21
 
-| Suite | Passed | Total |
+Both builds, same host, same share, same suite.
+
+| Suite | Go | Rust |
 |---|---|---|
-| basic | 16 | 16 |
-| copymove | 8 | 13 |
-| props | 29 | 30 |
-| locks | 29 | 33 |
-| http | 4 | 4 |
-| **total** | **86** | **96** |
+| basic | 16 / 16 | 16 / 16 |
+| copymove | 8 / 13 | 7 / 13 |
+| props | 29 / 30 | 28 / 30 |
+| locks | 29 / 33 | 40 / 41 |
+| http | 4 / 4 | 4 / 4 |
+| **total** | **86 / 96** | **95 / 103** |
 
-## What fails, and what each one is
+The lock suite runs more tests against the Rust build because the suite stops
+early on a failure in that group, so the two totals are not directly
+comparable. What is comparable is which named tests fail, below.
 
-None of these is a regression, because there is nothing to regress from. Each
-is a gap in this implementation, recorded here rather than fixed, because a fix
-made during a parity run has no test of its own: each belongs to the phase that
-owns the subsystem.
+## What fails, and which of those are port defects
+
+With both baselines, the distinction the phase document asks for can be drawn.
+A test both builds fail is a known gap carried over rather than something this
+port broke. A test only the Go build fails is a port defect.
+
+Nothing below is fixed here. A fix made during a parity run has no test of its
+own, so each belongs to the phase that owns the subsystem.
+
+### Both builds fail: five carried-over gaps
+
+`copy_coll`, `copy_overwrite`, `copy_shallow`, `move`, `move_coll`.
+
+All five are collection-to-collection copy and move with an existing
+destination. The Rust build fails them too, so this is a gap in the product
+rather than in the port. The Go build additionally answers 500 on two of them
+where the Rust build answers a refusal, and a server error is worse than a
+wrong status: that part is the port's.
+
+### Only the Go build fails: five port defects
+
+`propfind_invalid2`, `cond_put`, `complex_cond_put`, `lock_shared`,
+`unmapped_lock`.
+
+- **`propfind_invalid2`** answers 207 to a body with an invalid namespace
+  declaration where 400 is correct. The Rust build refuses it. The scanner
+  accepts a document it should reject.
+- **`cond_put` and `complex_cond_put`** answer 412 where the condition should
+  pass. The `If` header evaluation is stricter than the specification in a case
+  this tree's own tests do not cover.
+- **`lock_shared`** answers 400 to a shared lock request, which reads as the
+  scope not being accepted at all.
+- **`unmapped_lock`** answers 404 where a lock on an unmapped URL should create
+  a locked empty resource.
+
+Phase 7 owns all five.
+
+### Only the Rust build fails: four the port fixed
+
+`copy`, `copy_simple`, `propget`, `propmove`. The Rust build emits a document
+the suite cannot parse (`invalid namespace declaration`) and answers 502 on a
+property-carrying move. The Go build passes all four.
 
 ### copymove, five failures
 
@@ -82,22 +124,18 @@ specification says 409. The distinction is real to a client: 404 says the target
 is absent and 409 says the parent is, and a client that creates parents on
 demand branches on exactly that.
 
-## The Rust baseline is not recorded yet
+## A correction worth keeping
 
 An earlier version of this document said the Rust build refused a password its
-own database accepts. That was wrong, and the correction matters more than the
-original claim.
+own database accepts, and that its baseline therefore could not be measured.
+That was wrong.
 
 Its login is `POST /api/auth/login`. The probe used `POST /api/auth/password`,
 which is the change-password endpoint, and it refused correctly. There was no
-defect to report.
+defect to report, and the missing column above was the measurement's fault
+rather than the subject's.
 
-Chasing it found a real one on the other side: the Go build mounts login on the
-change-password path, and 39 of the 58 paths the frontend calls do not exist on
-it at all. That is recorded as Q9 in `OPEN-QUESTIONS.md` and it blocks cutover.
-
-So the per-suite numbers above are this implementation measured against the
-specification, not against the implementation it replaces. A test the Rust build
-also fails is a known gap rather than a port defect, and that distinction still
-cannot be drawn for any of the ten failures above. The baseline is now
-obtainable, since the credential path works; it has not been run.
+Chasing it found a real defect on the other side: the Go build mounted login on
+the change-password path, so the shipped interface could not sign in, and 41 of
+the paths its own client calls are not mounted at all. That is Q9 in
+`OPEN-QUESTIONS.md`, and it is what blocks cutover.
