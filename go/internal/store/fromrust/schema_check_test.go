@@ -53,6 +53,12 @@ func rustSchema() map[string]map[string][]string {
 			"user":            {"id", "name", "display", "pw_hash", "totp_secret", "disabled", "quota_bytes", "usage_bytes", "created_ns", "smb_opt_out", "smb_enabled", "role"},
 			"user_smb_secret": {"user", "nt_hash_ct", "key_ver", "source", "updated_ns"},
 		},
+		"compat-nc.db": {
+			"nc_favorite":     {"user", "fileid"},
+			"nc_instance":     {"k", "v"},
+			"nc_login_flow":   {"poll_hash", "flow_hash", "client_name", "client_ip", "created_ns", "expires_ns", "last_poll_ns", "login_name", "app_password"},
+			"nc_upload_alias": {"tid", "user", "session", "share", "dest", "created_ns"},
+		},
 		"dav-locks.db": {
 			"dav_lock": {"token", "fileid", "share", "path", "principal", "owner", "depth", "scope", "expires_ns", "timeout_s"},
 		},

@@ -1,0 +1,214 @@
+{
+  "group": "dav",
+  "note": "Every method at every depth, plus the hostile bodies. The XML bodies are here verbatim because a body generated at run time is a body that is not the same one next run.",
+  "requests": [
+    {
+      "name": "propfind, depth 0, allprop",
+      "method": "PROPFIND",
+      "path": "/dav/docs",
+      "auth": "session",
+      "headers": { "Depth": "0", "Content-Type": "application/xml" },
+      "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><D:propfind xmlns:D=\"DAV:\"><D:allprop/></D:propfind>"
+    },
+    {
+      "name": "propfind, depth 1",
+      "method": "PROPFIND",
+      "path": "/dav/docs",
+      "auth": "session",
+      "headers": { "Depth": "1", "Content-Type": "application/xml" },
+      "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><D:propfind xmlns:D=\"DAV:\"><D:allprop/></D:propfind>"
+    },
+    {
+      "name": "propfind, depth infinity",
+      "method": "PROPFIND",
+      "path": "/dav/docs",
+      "auth": "session",
+      "headers": { "Depth": "infinity", "Content-Type": "application/xml" },
+      "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><D:propfind xmlns:D=\"DAV:\"><D:allprop/></D:propfind>"
+    },
+    {
+      "name": "propfind, propname",
+      "method": "PROPFIND",
+      "path": "/dav/docs",
+      "auth": "session",
+      "headers": { "Depth": "0", "Content-Type": "application/xml" },
+      "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><D:propfind xmlns:D=\"DAV:\"><D:propname/></D:propfind>"
+    },
+    {
+      "name": "propfind, a named set",
+      "method": "PROPFIND",
+      "path": "/dav/docs/a.txt",
+      "auth": "session",
+      "headers": { "Depth": "0", "Content-Type": "application/xml" },
+      "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><D:propfind xmlns:D=\"DAV:\"><D:prop><D:getetag/><D:getcontentlength/><D:resourcetype/></D:prop></D:propfind>"
+    },
+    {
+      "name": "propfind, a property nobody defines",
+      "method": "PROPFIND",
+      "path": "/dav/docs/a.txt",
+      "auth": "session",
+      "headers": { "Depth": "0", "Content-Type": "application/xml" },
+      "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><D:propfind xmlns:D=\"DAV:\"><D:prop xmlns:X=\"http://example.invalid/\"><X:nothing/></D:prop></D:propfind>"
+    },
+    {
+      "name": "propfind, an empty body",
+      "method": "PROPFIND",
+      "path": "/dav/docs",
+      "auth": "session",
+      "headers": { "Depth": "0" },
+      "body": ""
+    },
+    {
+      "name": "propfind, a body that is not XML",
+      "method": "PROPFIND",
+      "path": "/dav/docs",
+      "auth": "session",
+      "headers": { "Depth": "0", "Content-Type": "application/xml" },
+      "body": "this is not xml at all"
+    },
+    {
+      "name": "propfind, an entity declaration",
+      "method": "PROPFIND",
+      "path": "/dav/docs",
+      "auth": "session",
+      "headers": { "Depth": "0", "Content-Type": "application/xml" },
+      "body": "<?xml version=\"1.0\"?><!DOCTYPE p [<!ENTITY x SYSTEM \"file:///etc/passwd\">]><D:propfind xmlns:D=\"DAV:\"><D:prop><D:displayname>&x;</D:displayname></D:prop></D:propfind>"
+    },
+    {
+      "name": "propfind, deeply nested",
+      "method": "PROPFIND",
+      "path": "/dav/docs",
+      "auth": "session",
+      "headers": { "Depth": "0", "Content-Type": "application/xml" },
+      "body": "@@DEEP_XML@@"
+    },
+    {
+      "name": "propfind, a path that does not exist",
+      "method": "PROPFIND",
+      "path": "/dav/docs/no-such-file",
+      "auth": "session",
+      "headers": { "Depth": "0", "Content-Type": "application/xml" },
+      "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><D:propfind xmlns:D=\"DAV:\"><D:allprop/></D:propfind>"
+    },
+    {
+      "name": "proppatch, set and remove",
+      "method": "PROPPATCH",
+      "path": "/dav/docs/a.txt",
+      "auth": "session",
+      "headers": { "Content-Type": "application/xml" },
+      "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><D:propertyupdate xmlns:D=\"DAV:\" xmlns:X=\"http://example.invalid/\"><D:set><D:prop><X:note>hello</X:note></D:prop></D:set><D:remove><D:prop><X:gone/></D:prop></D:remove></D:propertyupdate>"
+    },
+    {
+      "name": "proppatch, a protected property",
+      "method": "PROPPATCH",
+      "path": "/dav/docs/a.txt",
+      "auth": "session",
+      "headers": { "Content-Type": "application/xml" },
+      "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><D:propertyupdate xmlns:D=\"DAV:\"><D:set><D:prop><D:getetag>forged</D:getetag></D:prop></D:set></D:propertyupdate>"
+    },
+    {
+      "name": "options on a collection",
+      "method": "OPTIONS",
+      "path": "/dav/docs",
+      "auth": "session"
+    },
+    {
+      "name": "head a file",
+      "method": "HEAD",
+      "path": "/dav/docs/a.txt",
+      "auth": "session"
+    },
+    {
+      "name": "get a file",
+      "method": "GET",
+      "path": "/dav/docs/a.txt",
+      "auth": "session"
+    },
+    {
+      "name": "get a range",
+      "method": "GET",
+      "path": "/dav/docs/a.txt",
+      "auth": "session",
+      "headers": { "Range": "bytes=0-3" }
+    },
+    {
+      "name": "get an unsatisfiable range",
+      "method": "GET",
+      "path": "/dav/docs/a.txt",
+      "auth": "session",
+      "headers": { "Range": "bytes=99999-" }
+    },
+    {
+      "name": "lock a file",
+      "method": "LOCK",
+      "path": "/dav/docs/a.txt",
+      "auth": "session",
+      "headers": { "Timeout": "Second-600", "Content-Type": "application/xml" },
+      "body": "<?xml version=\"1.0\" encoding=\"utf-8\"?><D:lockinfo xmlns:D=\"DAV:\"><D:lockscope><D:exclusive/></D:lockscope><D:locktype><D:write/></D:locktype><D:owner><D:href>the differ</D:href></D:owner></D:lockinfo>"
+    },
+    {
+      "name": "unlock with a token nobody holds",
+      "method": "UNLOCK",
+      "path": "/dav/docs/a.txt",
+      "auth": "session",
+      "headers": { "Lock-Token": "<urn:uuid:00000000-0000-0000-0000-000000000000>" }
+    },
+    {
+      "name": "mkcol",
+      "method": "MKCOL",
+      "path": "/dav/docs/made-by-the-differ",
+      "auth": "session"
+    },
+    {
+      "name": "mkcol where something already is",
+      "method": "MKCOL",
+      "path": "/dav/docs/sub",
+      "auth": "session"
+    },
+    {
+      "name": "mkcol with a body, which the method does not take",
+      "method": "MKCOL",
+      "path": "/dav/docs/with-a-body",
+      "auth": "session",
+      "headers": { "Content-Type": "application/xml" },
+      "body": "<?xml version=\"1.0\"?><D:mkcol xmlns:D=\"DAV:\"/>"
+    },
+    {
+      "name": "copy onto a name that is free",
+      "method": "COPY",
+      "path": "/dav/docs/a.txt",
+      "auth": "session",
+      "headers": { "Destination": "/dav/docs/a-copy.txt", "Overwrite": "F" }
+    },
+    {
+      "name": "copy onto a name that is taken, without overwrite",
+      "method": "COPY",
+      "path": "/dav/docs/a.txt",
+      "auth": "session",
+      "headers": { "Destination": "/dav/docs/b.txt", "Overwrite": "F" }
+    },
+    {
+      "name": "move outside the share",
+      "method": "MOVE",
+      "path": "/dav/docs/a.txt",
+      "auth": "session",
+      "headers": { "Destination": "/dav/../elsewhere/a.txt" }
+    },
+    {
+      "name": "an if header naming a token nobody holds",
+      "method": "PUT",
+      "path": "/dav/docs/guarded.txt",
+      "auth": "session",
+      "headers": { "If": "(<urn:uuid:00000000-0000-0000-0000-000000000000>)" },
+      "body": "guarded"
+    },
+    {
+      "name": "an if header with an unclosed list",
+      "method": "PUT",
+      "path": "/dav/docs/guarded.txt",
+      "auth": "session",
+      "headers": { "If": "(<urn:uuid:0000" },
+      "body": "guarded"
+    }
+  ]
+}

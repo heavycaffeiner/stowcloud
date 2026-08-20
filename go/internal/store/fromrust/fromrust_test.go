@@ -778,11 +778,15 @@ func compatDir(t *testing.T, extra ...string) string {
 	t.Helper()
 	dir := rustDir(t)
 	stmts := append([]string{
-		`CREATE TABLE nc_instance (id INTEGER PRIMARY KEY, instance TEXT)`,
-		`INSERT INTO nc_instance VALUES (1, 'inst-abc')`,
-		`CREATE TABLE nc_upload_alias (user INTEGER, tid TEXT, session BLOB)`,
-		`CREATE TABLE nc_login_flow (poll_digest BLOB, login_digest BLOB, created_ns INTEGER,
-		   approved_user INTEGER, approved_login TEXT, app_password TEXT)`,
+		`CREATE TABLE nc_instance (k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
+		`INSERT INTO nc_instance VALUES ('instanceid', 'inst-abc')`,
+		`CREATE TABLE nc_upload_alias (tid TEXT NOT NULL, user INTEGER NOT NULL,
+		   session TEXT NOT NULL, share INTEGER NOT NULL DEFAULT 0,
+		   dest TEXT NOT NULL DEFAULT '', created_ns INTEGER NOT NULL)`,
+		`CREATE TABLE nc_login_flow (poll_hash BLOB PRIMARY KEY, flow_hash BLOB NOT NULL,
+		   client_name TEXT NOT NULL DEFAULT '', client_ip TEXT NOT NULL DEFAULT '',
+		   created_ns INTEGER NOT NULL, expires_ns INTEGER NOT NULL DEFAULT 0,
+		   last_poll_ns INTEGER NOT NULL DEFAULT 0, login_name TEXT, app_password TEXT)`,
 	}, extra...)
 	mkdb(t, filepath.Join(dir, "compat-nc.db"), stmts...)
 	return dir
@@ -811,9 +815,9 @@ func TestTheInstanceIdentitySurvivesTheImport(t *testing.T) {
 // which is a transfer the client believes it can resume and cannot.
 func TestAnAliasWithoutItsSessionIsDropped(t *testing.T) {
 	dir := compatDir(t,
-		`INSERT INTO nc_upload_alias VALUES (1, 'live', X'aa')`,
-		`INSERT INTO nc_upload_alias VALUES (1, 'gone', X'ffff')`,
-		`INSERT INTO nc_upload_alias VALUES (99, 'nouser', X'aa')`,
+		`INSERT INTO nc_upload_alias VALUES ('live', 1, 'qg', 0, '', 0)`,
+		`INSERT INTO nc_upload_alias VALUES ('gone', 1, '__8', 0, '', 0)`,
+		`INSERT INTO nc_upload_alias VALUES ('nouser', 99, 'qg', 0, '', 0)`,
 	)
 	rep, err := fromrust.Import(context.Background(), dir, testClock())
 	if err != nil {
@@ -862,12 +866,16 @@ func TestAnApprovedFlowsCredentialIsRevokedAndNotCarried(t *testing.T) {
 
 	dir := rustDir(t)
 	mkdb(t, filepath.Join(dir, "compat-nc.db"),
-		`CREATE TABLE nc_instance (id INTEGER PRIMARY KEY, instance TEXT)`,
-		`CREATE TABLE nc_upload_alias (user INTEGER, tid TEXT, session BLOB)`,
-		`CREATE TABLE nc_login_flow (poll_digest BLOB, login_digest BLOB, created_ns INTEGER,
-		   approved_user INTEGER, approved_login TEXT, app_password TEXT)`,
-		`INSERT INTO nc_login_flow VALUES (X'01', X'02', `+strconv.FormatInt(nowNs, 10)+`,
-		   1, 'alice', '`+plaintext+`')`,
+		`CREATE TABLE nc_instance (k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
+		`CREATE TABLE nc_upload_alias (tid TEXT NOT NULL, user INTEGER NOT NULL,
+		   session TEXT NOT NULL, share INTEGER NOT NULL DEFAULT 0,
+		   dest TEXT NOT NULL DEFAULT '', created_ns INTEGER NOT NULL)`,
+		`CREATE TABLE nc_login_flow (poll_hash BLOB PRIMARY KEY, flow_hash BLOB NOT NULL,
+		   client_name TEXT NOT NULL DEFAULT '', client_ip TEXT NOT NULL DEFAULT '',
+		   created_ns INTEGER NOT NULL, expires_ns INTEGER NOT NULL DEFAULT 0,
+		   last_poll_ns INTEGER NOT NULL DEFAULT 0, login_name TEXT, app_password TEXT)`,
+		`INSERT INTO nc_login_flow VALUES (X'01', X'02', 'client', '127.0.0.1', `+strconv.FormatInt(nowNs, 10)+`,
+		   0, 0, 'alice', '`+plaintext+`')`,
 	)
 	// The credential that flow minted, as the auth import will have copied it.
 	mkdbAppend(t, filepath.Join(dir, "auth.db"),
@@ -905,8 +913,8 @@ func TestAnApprovedFlowsCredentialIsRevokedAndNotCarried(t *testing.T) {
 // rather than leaving one nobody can account for.
 func TestAnUnmatchedFlowCredentialRefusesTheMigration(t *testing.T) {
 	dir := compatDir(t,
-		`INSERT INTO nc_login_flow VALUES (X'01', X'02', `+strconv.FormatInt(nowNs, 10)+`,
-		   1, 'alice', 'a-password-no-row-hashes')`,
+		`INSERT INTO nc_login_flow VALUES (X'01', X'02', 'client', '127.0.0.1', `+strconv.FormatInt(nowNs, 10)+`,
+		   0, 0, 'alice', 'a-password-no-row-hashes')`,
 	)
 	if _, err := fromrust.Import(context.Background(), dir, testClock()); err == nil {
 		t.Fatal("an unmatched credential was accepted, leaving an orphan behind")
@@ -917,8 +925,8 @@ func TestAnUnmatchedFlowCredentialRefusesTheMigration(t *testing.T) {
 func TestAnExpiredFlowIsDroppedWithAReason(t *testing.T) {
 	old := nowNs - int64(time.Hour)
 	dir := compatDir(t,
-		`INSERT INTO nc_login_flow VALUES (X'01', X'02', `+strconv.FormatInt(old, 10)+`,
-		   NULL, '', NULL)`,
+		`INSERT INTO nc_login_flow VALUES (X'01', X'02', 'client', '127.0.0.1', `+strconv.FormatInt(old, 10)+`,
+		   0, 0, NULL, NULL)`,
 	)
 	rep, err := fromrust.Import(context.Background(), dir, testClock())
 	if err != nil {
@@ -943,8 +951,8 @@ func TestAnExpiredFlowIsDroppedWithAReason(t *testing.T) {
 // unusable rather than merely odd.
 func TestAFlowWithoutDigestsRefusesTheMigration(t *testing.T) {
 	dir := compatDir(t,
-		`INSERT INTO nc_login_flow VALUES (X'', X'', `+strconv.FormatInt(nowNs, 10)+`,
-		   NULL, '', NULL)`,
+		`INSERT INTO nc_login_flow VALUES (X'', X'', 'client', '127.0.0.1', `+strconv.FormatInt(nowNs, 10)+`,
+		   0, 0, NULL, NULL)`,
 	)
 	if _, err := fromrust.Import(context.Background(), dir, testClock()); err == nil {
 		t.Fatal("a flow with no digests was accepted")
@@ -954,8 +962,8 @@ func TestAFlowWithoutDigestsRefusesTheMigration(t *testing.T) {
 // An unapproved flow comes across as it is: the client can still finish it.
 func TestAnUnapprovedFlowSurvives(t *testing.T) {
 	dir := compatDir(t,
-		`INSERT INTO nc_login_flow VALUES (X'01', X'02', `+strconv.FormatInt(nowNs, 10)+`,
-		   NULL, '', NULL)`,
+		`INSERT INTO nc_login_flow VALUES (X'01', X'02', 'client', '127.0.0.1', `+strconv.FormatInt(nowNs, 10)+`,
+		   0, 0, NULL, NULL)`,
 	)
 	if _, err := fromrust.Import(context.Background(), dir, testClock()); err != nil {
 		t.Fatalf("Import: %v", err)

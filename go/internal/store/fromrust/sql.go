@@ -113,8 +113,14 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	// absence has to stay absence so the configured default still wins.
 	selIndexSettings = `SELECT name_enabled FROM index_settings WHERE id = 1`
 
+	// ncInstanceIDKey is the key the old key-value table stores the identity
+	// under.
+	ncInstanceIDKey = "instanceid"
+
 	// The compat layer's durable rows.
-	selNcInstance = `SELECT instance FROM nc_instance WHERE id = 1`
+	// The old table is a key-value pair, not a single-row record, and the id
+	// lives under one known key.
+	selNcInstance = `SELECT v FROM nc_instance WHERE k = ?`
 	insCompatKV   = `INSERT INTO compat_kv(key, value) VALUES (?, ?)
 	                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`
 
@@ -124,8 +130,10 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	// The login flows. Only the digests and the approval marker come across:
 	// the plaintext column the old table carried is deliberately not read.
-	selNcLoginFlow = `SELECT poll_digest, login_digest, created_ns, approved_user,
-	                         approved_login, app_password
+	// The old table keys a flow by two digests and records the approval as a
+	// login name rather than a user id, so the importer resolves the name to
+	// an account rather than reading an id that is not there.
+	selNcLoginFlow = `SELECT poll_hash, flow_hash, created_ns, login_name, app_password
 	                    FROM nc_login_flow`
 	insNcLoginFlow = `INSERT INTO compat_login_flow(poll_digest, login_digest, created_ns,
 	                                                approved_user, approved_login, last_poll_ns)

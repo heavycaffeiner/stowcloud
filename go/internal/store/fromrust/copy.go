@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,7 +26,7 @@ const keep Reason = ""
 // than aborting the import: a dangling reference in the old files is a fact
 // about them, not a reason to refuse an operator their data.
 func (s *sources) into(ctx context.Context, tx *sql.Tx, rep *Report, clk clock.Clock) error {
-	users, err := s.copyUsers(ctx, tx, rep)
+	users, userByName, err := s.copyUsers(ctx, tx, rep)
 	if err != nil {
 		return err
 	}
@@ -91,7 +92,7 @@ func (s *sources) into(ctx context.Context, tx *sql.Tx, rep *Report, clk clock.C
 	if err := s.copyIndexSettings(ctx, tx, rep); err != nil {
 		return err
 	}
-	if err := s.copyCompat(ctx, tx, rep, users, clk); err != nil {
+	if err := s.copyCompat(ctx, tx, rep, users, userByName, clk); err != nil {
 		return err
 	}
 	return s.copyJobs(ctx, tx, rep, users)
@@ -106,8 +107,11 @@ func record(rep *Report, table string, kept int, drops map[Reason]int) {
 
 // copyUsers carries the accounts and lifts the TOTP secret out of the user row
 // into the table that now holds it.
-func (s *sources) copyUsers(ctx context.Context, tx *sql.Tx, rep *Report) (map[int64]bool, error) {
+func (s *sources) copyUsers(ctx context.Context, tx *sql.Tx, rep *Report) (map[int64]bool, map[string]int64, error) {
 	users := map[int64]bool{}
+	// The account names, because the compat login flows record an approval by
+	// name and everything downstream keys on the id.
+	byName := map[string]int64{}
 	kept, _, err := copyRows(ctx, tx, s.auth, selUser, insUser, 11,
 		func(v []any) ([]any, Reason, error) {
 			id, ok := asInt(v[0])
@@ -115,10 +119,13 @@ func (s *sources) copyUsers(ctx context.Context, tx *sql.Tx, rep *Report) (map[i
 				return nil, keep, errors.New("a user row carries a non-integer id")
 			}
 			users[id] = true
+			if name, nok := v[1].(string); nok {
+				byName[name] = id
+			}
 			return v, keep, nil
 		})
 	if err != nil {
-		return nil, fmt.Errorf("importing user: %w", err)
+		return nil, nil, fmt.Errorf("importing user: %w", err)
 	}
 	record(rep, "user", kept, nil)
 
@@ -130,13 +137,13 @@ func (s *sources) copyUsers(ctx context.Context, tx *sql.Tx, rep *Report) (map[i
 	keyVer := int64(1)
 	hasKV, kerr := hasTable(ctx, s.auth, "key_version")
 	if kerr != nil {
-		return nil, fmt.Errorf("looking for the key_version table: %w", kerr)
+		return nil, nil, fmt.Errorf("looking for the key_version table: %w", kerr)
 	}
 	if hasKV {
 		if kerr := s.auth.QueryRowContext(ctx, selKeyVersion).Scan(&keyVer); errors.Is(kerr, sql.ErrNoRows) {
-			return nil, errors.New("the declared key_version table is empty, which is corruption")
+			return nil, nil, errors.New("the declared key_version table is empty, which is corruption")
 		} else if kerr != nil {
-			return nil, fmt.Errorf("reading the key version: %w", kerr)
+			return nil, nil, fmt.Errorf("reading the key version: %w", kerr)
 		}
 	}
 	secrets, _, err := copyRows(ctx, tx, s.auth, selTotpSecret, insTotpSecret, 3,
@@ -144,10 +151,10 @@ func (s *sources) copyUsers(ctx context.Context, tx *sql.Tx, rep *Report) (map[i
 			return []any{v[0], v[1], keyVer, v[2]}, keep, nil
 		})
 	if err != nil {
-		return nil, fmt.Errorf("importing totp_secret: %w", err)
+		return nil, nil, fmt.Errorf("importing totp_secret: %w", err)
 	}
 	record(rep, "totp_secret", secrets, nil)
-	return users, nil
+	return users, byName, nil
 }
 
 func (s *sources) copyGroups(ctx context.Context, tx *sql.Tx, rep *Report) (map[int64]bool, error) {
@@ -415,11 +422,14 @@ func (s *sources) copyUploadAliases(
 			if !known(users, v[1]) {
 				return nil, ReasonUnknownUser, nil
 			}
-			id, ok := v[2].([]byte)
-			if !ok || !sessions[string(id)] {
+			// The old table stores the session handle in its transport form
+			// rather than as raw bytes, so it is decoded before being
+			// compared against the sessions this import actually wrote.
+			raw, ok := asSessionBytes(v[2])
+			if !ok || !sessions[string(raw)] {
 				return nil, ReasonMissingSession, nil
 			}
-			return v, keep, nil
+			return []any{v[0], v[1], raw, v[3], v[4], v[5]}, keep, nil
 		})
 	if err != nil {
 		return fmt.Errorf("importing upload_alias: %w", err)
@@ -759,7 +769,10 @@ func (s *sources) copyIndexSettings(ctx context.Context, tx *sql.Tx, rep *Report
 // re-sync everything it holds. The active upload aliases, so an in-flight
 // chunked upload survives the cutover rather than restarting. And the
 // unexpired login flows, which are the delicate one.
-func (s *sources) copyCompat(ctx context.Context, tx *sql.Tx, rep *Report, users map[int64]bool, clk clock.Clock) error {
+func (s *sources) copyCompat(
+	ctx context.Context, tx *sql.Tx, rep *Report, users map[int64]bool,
+	userByName map[string]int64, clk clock.Clock,
+) error {
 	if s.compat == nil {
 		return nil
 	}
@@ -769,7 +782,7 @@ func (s *sources) copyCompat(ctx context.Context, tx *sql.Tx, rep *Report, users
 	if err := s.copyCompatAliases(ctx, tx, rep, users); err != nil {
 		return err
 	}
-	return s.copyLoginFlows(ctx, tx, rep, users, clk)
+	return s.copyLoginFlows(ctx, tx, rep, users, userByName, clk)
 }
 
 // copyInstanceID preserves the identity this deployment presents.
@@ -782,7 +795,7 @@ func (s *sources) copyInstanceID(ctx context.Context, tx *sql.Tx, rep *Report) e
 		return terr
 	}
 	var id string
-	err := s.compat.QueryRowContext(ctx, selNcInstance).Scan(&id)
+	err := s.compat.QueryRowContext(ctx, selNcInstance, ncInstanceIDKey).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -821,17 +834,38 @@ func (s *sources) copyCompatAliases(
 			if !known(users, v[0]) {
 				return nil, ReasonUnknownUser, nil
 			}
-			id, ok := v[2].([]byte)
-			if !ok || !sessions[string(id)] {
+			// The old table stores the session handle in its transport form
+			// rather than as raw bytes, so it is decoded before being
+			// compared against the sessions this import actually wrote.
+			raw, ok := asSessionBytes(v[2])
+			if !ok || !sessions[string(raw)] {
 				return nil, ReasonMissingSession, nil
 			}
-			return v, keep, nil
+			return []any{v[0], v[1], raw}, keep, nil
 		})
 	if err != nil {
 		return fmt.Errorf("importing nc_upload_alias: %w", err)
 	}
 	record(rep, "compat_upload_alias", kept, drops)
 	return nil
+}
+
+// asSessionBytes decodes an upload session handle from the form the old table
+// stored it in. A value that does not decode names no session at all, which is
+// the same outcome as one naming a session that did not survive.
+func asSessionBytes(v any) ([]byte, bool) {
+	switch t := v.(type) {
+	case []byte:
+		// Already raw, which is what an older database holds.
+		return t, true
+	case string:
+		raw, err := base64.RawURLEncoding.DecodeString(t)
+		if err != nil {
+			return nil, false
+		}
+		return raw, true
+	}
+	return nil, false
 }
 
 // survivingSessions is the set of upload sessions this import already wrote,
@@ -870,7 +904,8 @@ func survivingSessions(ctx context.Context, tx *sql.Tx) (map[string]bool, error)
 // malformed one, or an approved one whose credential cannot be matched, stops
 // the migration rather than leaving an orphan credential behind.
 func (s *sources) copyLoginFlows(
-	ctx context.Context, tx *sql.Tx, rep *Report, users map[int64]bool, clk clock.Clock,
+	ctx context.Context, tx *sql.Tx, rep *Report, users map[int64]bool,
+	userByName map[string]int64, clk clock.Clock,
 ) error {
 	ok, terr := hasTable(ctx, s.compat, "nc_login_flow")
 	if terr != nil || !ok {
@@ -894,13 +929,25 @@ func (s *sources) copyLoginFlows(
 		var (
 			pollDigest, loginDigest []byte
 			createdNs               int64
-			approvedUser            sql.NullInt64
 			approvedLogin           sql.NullString
 			appPassword             sql.NullString
 		)
 		if serr := rows.Scan(&pollDigest, &loginDigest, &createdNs,
-			&approvedUser, &approvedLogin, &appPassword); serr != nil {
+			&approvedLogin, &appPassword); serr != nil {
 			return fmt.Errorf("importing nc_login_flow: %w", serr)
+		}
+		// The old table records the approval by login name. The account it
+		// names is looked up here, because everything downstream keys on the
+		// id, and a name that no longer resolves is an approval for an account
+		// that is gone.
+		var approvedUser sql.NullInt64
+		if approvedLogin.Valid && approvedLogin.String != "" {
+			id, found := userByName[approvedLogin.String]
+			if !found {
+				drops[ReasonUnknownUser]++
+				continue
+			}
+			approvedUser = sql.NullInt64{Int64: id, Valid: true}
 		}
 
 		// A row with no digests cannot be looked up by either token, so it is
