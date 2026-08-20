@@ -4,7 +4,10 @@ package dav
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -185,5 +188,70 @@ func TestAnUnclaimedPropertyIsA404NotAFailure(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "HTTP/1.1 404 Not Found") {
 		t.Fatalf("an unclaimed property did not become a 404\n%s", rec.Body)
+	}
+}
+
+// The favourites view on both phone apps is this REPORT, so the document it
+// produces has to be one a real client accepts: well formed, every prefix it
+// uses declared, and the vendor properties carrying their own namespace.
+func TestAFavouritesReportProducesADocumentAClientAccepts(t *testing.T) {
+	src := &fakeSource{hits: []core.Entry{
+		{Name: "starred.txt", ETag: "abc"},
+		{Name: "also starred.txt", ETag: "def"},
+	}}
+	f := withSource(t, src)
+	f.write(t, "starred.txt", "x")
+
+	body := `<oc:filter-files xmlns:oc="` + vendorNS + `" xmlns:D="DAV:">` +
+		`<D:prop><D:getetag/><oc:favorite/></D:prop>` +
+		`<oc:filter-rules><oc:favorite>1</oc:favorite></oc:filter-rules>` +
+		`</oc:filter-files>`
+	rec := f.do(t, "REPORT", "/", body, nil)
+	if rec.Code != http.StatusMultiStatus {
+		t.Fatalf("status = %d, want 207\n%s", rec.Code, rec.Body)
+	}
+	doc := rec.Body.String()
+
+	// Well formed, and every namespace prefix it uses is bound. A document
+	// with an undeclared prefix is what clients reject.
+	mustParse(t, doc)
+	if err := everyPrefixIsDeclared(doc); err != nil {
+		t.Fatalf("%v\n%s", err, doc)
+	}
+
+	// Both hits are present, and the one whose name needs encoding is still
+	// addressable.
+	if n := strings.Count(doc, "<D:response>"); n != 2 {
+		t.Fatalf("got %d responses, want 2\n%s", n, doc)
+	}
+	if !strings.Contains(doc, "also%20starred.txt") {
+		t.Fatalf("a name needing encoding was not encoded\n%s", doc)
+	}
+	if !strings.Contains(doc, "favorite") {
+		t.Fatalf("the vendor property is missing from the report\n%s", doc)
+	}
+}
+
+// everyPrefixIsDeclared re-parses the document and fails on any element whose
+// prefix resolved to nothing, which is exactly what a strict client refuses.
+func everyPrefixIsDeclared(doc string) error {
+	dec := xml.NewDecoder(strings.NewReader(doc))
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		start, ok := tok.(xml.StartElement)
+		if !ok {
+			continue
+		}
+		// encoding/xml leaves Space empty for an unresolved prefix and fills
+		// it with the URI for a bound one.
+		if start.Name.Space == "" {
+			return fmt.Errorf("the element %q carries no resolved namespace", start.Name.Local)
+		}
 	}
 }

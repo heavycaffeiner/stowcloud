@@ -5,6 +5,7 @@ package dav
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
@@ -88,8 +89,19 @@ func (h *Handler) runQuery(w http.ResponseWriter, r *http.Request, res core.Reso
 
 	req := PropFind{Mode: PropFindNamed, Props: want}
 	m := NewMultistatus(w, h.namespaces())
+	base := hrefOf(r.URL.Path, true)
 	for _, e := range hits {
-		href := hrefOf(r.URL.Path, true) + string(e.Path.String())
+		// Each hit needs its own href or a client cannot tell two results
+		// apart. The share-relative path is what identifies it; the name is the
+		// fallback for a source that reports only that.
+		rel := strings.TrimPrefix(e.Path.String(), "/")
+		if rel == "" {
+			rel = e.Name
+		}
+		href := base + rel
+		if e.IsDir && !strings.HasSuffix(href, "/") {
+			href += "/"
+		}
 		if werr := h.writeEntry(r.Context(), m, req, res, e, href); werr != nil {
 			h.logger(r).Warn("the query result could not be written", "error", werr)
 			break
