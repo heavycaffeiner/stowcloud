@@ -125,5 +125,9 @@
 # Milestone 10g added three: a rows.Close on a fully read set, and two gosec
 # readings of a statement that names a credential column rather than holding
 # one.
-182
+# Milestone 11b added one: the passdb narrowing a stored key version, where the
+# bound directly above the conversion is what makes it fit. Two more that the
+# first draft had were removed instead, by narrowing the value once rather than
+# converting it at each of three use sites.
+183
 

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base32"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -317,8 +318,12 @@ func readPassdb(t *testing.T, path string) string {
 	return string(b)
 }
 
-// Every one of the six credential-changing paths reaches the SMB passdb sink,
-// and each one changes the file's contents accordingly.
+// Every one of the six credential-changing paths reaches the SMB passdb sink.
+//
+// The property is the file's contents after each one, not the database row.
+// smbd authenticates against the last file published to it, so a revocation
+// that stops at the database leaves the sidecar serving the revoked
+// credential.
 func TestEveryCredentialPathRepublishesThePassdb(t *testing.T) {
 	s, dir := openService(t, nil)
 	ctx := context.Background()
@@ -327,11 +332,15 @@ func TestEveryCredentialPathRepublishesThePassdb(t *testing.T) {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
-	check := func(state string) {
+	// Published or absent, rather than a marker: a marker is a line the import
+	// tool still reads, and the absence is what revokes.
+	check := func(what string, wantPublished bool) {
 		t.Helper()
 		content := readPassdb(t, passdb)
-		if !strings.Contains(content, "alice\t"+state+"\t") {
-			t.Errorf("passdb does not show alice as %q:\n%s", state, content)
+		got := strings.Contains(content, "alice:")
+		if got != wantPublished {
+			t.Errorf("after %s the passdb published=%v, want %v:\n%s",
+				what, got, wantPublished, content)
 		}
 	}
 
@@ -339,31 +348,34 @@ func TestEveryCredentialPathRepublishesThePassdb(t *testing.T) {
 	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw2"))); err != nil {
 		t.Fatalf("SetPassword: %v", err)
 	}
-	check("enabled")
+	check("a password change", true)
 
-	// 2. OIDC link may disable local password login.
+	// 2. An OIDC link closes local password login, so the credential the file
+	// carries is no longer one the account should authenticate with.
 	if err := s.LinkOIDC(ctx, 1); err != nil {
 		t.Fatalf("LinkOIDC: %v", err)
 	}
-	check("disabled")
+	check("an OIDC link", false)
 
-	// 3. OIDC unlink restores it.
+	// 3. Unlinking restores it.
 	if err := s.UnlinkOIDC(ctx, 1); err != nil {
 		t.Fatalf("UnlinkOIDC: %v", err)
 	}
-	check("enabled")
+	check("an OIDC unlink", true)
 
-	// 4. set SMB settings.
+	// 4. The per-account SMB toggle.
 	if err := s.SetSMBAccess(ctx, 1, false); err != nil {
 		t.Fatalf("SetSMBAccess off: %v", err)
 	}
-	check("disabled")
+	check("SMB being turned off", false)
 	if err := s.SetSMBAccess(ctx, 1, true); err != nil {
 		t.Fatalf("SetSMBAccess on: %v", err)
 	}
-	check("enabled")
+	check("SMB being turned on", true)
 
-	// 5. TOTP enrol blocks an account with a second factor.
+	// 5. Enrolling a second factor drops the hash derived from the account
+	// password, because keeping it would let that password go on working over
+	// the older protocol, bypassing the factor just added.
 	secretB32, err := s.GenerateTOTPSecret()
 	if err != nil {
 		t.Fatalf("GenerateTOTPSecret: %v", err)
@@ -371,13 +383,142 @@ func TestEveryCredentialPathRepublishesThePassdb(t *testing.T) {
 	if err := s.EnrollTOTP(ctx, 1, secretB32); err != nil {
 		t.Fatalf("EnrollTOTP: %v", err)
 	}
-	check("disabled")
+	check("a TOTP enrolment", false)
 
-	// 6. TOTP disable unblocks it.
+	// 6. Removing it does not resurrect the dropped credential: the hash is
+	// gone, and only setting a password again mints one.
 	if err := s.DisableTOTP(ctx, 1); err != nil {
 		t.Fatalf("DisableTOTP: %v", err)
 	}
-	check("enabled")
+	check("a TOTP removal", false)
+	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw3"))); err != nil {
+		t.Fatalf("SetPassword after TOTP: %v", err)
+	}
+	check("a password set after TOTP", true)
+}
+
+// The published line is the format the import tool reads, and the two fields
+// that decide whether it works at all are the uid and the disabled LANMAN
+// marker.
+func TestThePassdbLineIsTheFormatSmbdReads(t *testing.T) {
+	s, dir := openService(t, nil)
+	ctx := context.Background()
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw1"))); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw2"))); err != nil {
+		t.Fatalf("SetPassword: %v", err)
+	}
+
+	line := strings.TrimSuffix(readPassdb(t, filepath.Join(dir, "passdb")), "\n")
+	fields := strings.Split(line, ":")
+	// name, uid, lanman, nt, flags, timestamp, and the trailing empty field.
+	if len(fields) != 7 {
+		t.Fatalf("the line has %d fields, want 7: %q", len(fields), line)
+	}
+	if fields[0] != "alice" {
+		t.Errorf("name = %q", fields[0])
+	}
+	// The uid has to be the account's row id offset by the shared base, and
+	// the account file beside this one has to carry the same number: the
+	// import tool resolves a line to an account through it, and imports
+	// nothing at all when it names none.
+	if got, want := fields[1], fmt.Sprint(SMBBaseUid+1); got != want {
+		t.Errorf("uid = %q, want %q", got, want)
+	}
+	// A LANMAN hash present is a credential an attacker breaks offline in
+	// minutes, so the field is always the disabled marker.
+	if fields[2] != strings.Repeat("X", 32) {
+		t.Errorf("the LANMAN field is not disabled: %q", fields[2])
+	}
+	if len(fields[3]) != 32 {
+		t.Errorf("the NT field is %d characters, want 32: %q", len(fields[3]), fields[3])
+	}
+	if strings.ToUpper(fields[3]) != fields[3] {
+		t.Errorf("the NT field is not upper-case hex: %q", fields[3])
+	}
+}
+
+// The account file and the passdb have to name the same uid for the same
+// account, or the import silently keeps nothing.
+func TestTheAccountFileAgreesWithThePassdbOnEveryUid(t *testing.T) {
+	s, dir := openService(t, nil)
+	ctx := context.Background()
+	for i, name := range []string{"alice", "bob", "carol"} {
+		if _, err := s.CreateUser(ctx, name, name, secret.New([]byte("pw1"))); err != nil {
+			t.Fatalf("CreateUser %s: %v", name, err)
+		}
+		// Creating an account only ever adds a hash, so it is not one of the
+		// paths that republishes. A password set is.
+		if err := s.SetPassword(ctx, int64(i+1), secret.New([]byte("pw2"))); err != nil {
+			t.Fatalf("SetPassword %s: %v", name, err)
+		}
+	}
+
+	passwd := filepath.Join(dir, "passwd")
+	if err := s.PublishPasswdEntries(ctx, passwd, 1000); err != nil {
+		t.Fatalf("PublishPasswdEntries: %v", err)
+	}
+
+	uidOf := func(content string, field int) map[string]string {
+		out := map[string]string{}
+		for _, line := range strings.Split(strings.TrimSpace(content), "\n") {
+			if line == "" {
+				continue
+			}
+			f := strings.Split(line, ":")
+			out[f[0]] = f[field]
+		}
+		return out
+	}
+
+	fromPassdb := uidOf(readPassdb(t, filepath.Join(dir, "passdb")), 1)
+	pb, err := os.ReadFile(passwd)
+	if err != nil {
+		t.Fatalf("reading the passwd file: %v", err)
+	}
+	fromPasswd := uidOf(string(pb), 2)
+
+	if len(fromPassdb) != 3 {
+		t.Fatalf("the passdb carries %d accounts, want 3", len(fromPassdb))
+	}
+	for name, uid := range fromPassdb {
+		if fromPasswd[name] != uid {
+			t.Errorf("%s is uid %q in the passdb and %q in the passwd file", name, uid, fromPasswd[name])
+		}
+	}
+	// And every uid is distinct, because the import matches by uid rather than
+	// by name: several names on one uid all import as whichever the reverse
+	// lookup answers with.
+	seen := map[string]string{}
+	for name, uid := range fromPassdb {
+		if other, dup := seen[uid]; dup {
+			t.Errorf("%s and %s share uid %s", name, other, uid)
+		}
+		seen[uid] = name
+	}
+}
+
+// An account with no stored hash is left out rather than written with an empty
+// credential field, which the import would read as a line.
+func TestAnAccountWithNoHashIsNotPublished(t *testing.T) {
+	s, dir := openService(t, nil)
+	ctx := context.Background()
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw1"))); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw2"))); err != nil {
+		t.Fatalf("SetPassword: %v", err)
+	}
+	if _, err := s.st.SQL().ExecContext(ctx, sqlDeleteSMBSecret, 1); err != nil {
+		t.Fatalf("deleting the SMB secret: %v", err)
+	}
+	if err := s.republishPassdb(ctx); err != nil {
+		t.Fatalf("republishPassdb: %v", err)
+	}
+	if got := readPassdb(t, filepath.Join(dir, "passdb")); strings.Contains(got, "alice") {
+		t.Fatalf("an account with no hash was published: %q", got)
+	}
 }
 
 // RFC 6238 SHA-1 test vector, plus the replay guard.
@@ -545,11 +686,17 @@ func TestRotationResealsAndCompacts(t *testing.T) {
 	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw2"))); err != nil {
 		t.Fatalf("SetPassword: %v", err)
 	}
+	// The second factor goes on a second account, because enrolling one drops
+	// the NT hash derived from the account password and this needs one of each
+	// ciphertext to re-seal.
+	if _, err := s.CreateUser(ctx, "bob", "Bob", secret.New([]byte("pw1"))); err != nil {
+		t.Fatalf("CreateUser bob: %v", err)
+	}
 	secretB32, gerr := s.GenerateTOTPSecret()
 	if gerr != nil {
 		t.Fatalf("GenerateTOTPSecret: %v", gerr)
 	}
-	if err := s.EnrollTOTP(ctx, 1, secretB32); err != nil {
+	if err := s.EnrollTOTP(ctx, 2, secretB32); err != nil {
 		t.Fatalf("EnrollTOTP: %v", err)
 	}
 	tokenHash := insertShareLink(t, s, 1)
@@ -586,7 +733,7 @@ func TestRotationResealsAndCompacts(t *testing.T) {
 	if err := s.st.SQL().QueryRowContext(ctx, sqlForEachTOTP).Scan(new(int64), &totp, &totpVer); err != nil {
 		t.Fatalf("reading the TOTP secret: %v", err)
 	}
-	if _, err := openTOTP(newKey, totp, 1, 2); err != nil {
+	if _, err := openTOTP(newKey, totp, 2, 2); err != nil {
 		t.Errorf("the rotated TOTP secret does not open under the new key: %v", err)
 	}
 	var linkCT []byte

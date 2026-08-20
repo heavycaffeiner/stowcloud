@@ -54,8 +54,16 @@ func (s *Service) EnrollTOTP(ctx context.Context, userID int64, secretB32 string
 		return err
 	}
 	err = s.write(ctx, func(tx *sql.Tx) error {
-		_, uerr := tx.ExecContext(ctx, sqlUpsertTOTP, userID, ct, ver, s.now())
-		return uerr
+		if _, uerr := tx.ExecContext(ctx, sqlUpsertTOTP, userID, ct, ver, s.now()); uerr != nil {
+			return uerr
+		}
+		// Turning a second factor on drops the NT hash derived from the
+		// account password. There is no point keeping a credential that can no
+		// longer be used, and leaving it means the account password keeps
+		// working over SMB, which is exactly the factor the user just added
+		// being bypassed by the older protocol.
+		_, derr := tx.ExecContext(ctx, sqlDeleteSMBSecret, userID)
+		return derr
 	})
 	if err != nil {
 		return err

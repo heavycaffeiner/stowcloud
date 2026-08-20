@@ -57,9 +57,11 @@ type Service struct {
 	// restart there is nothing to invalidate.
 	gen atomic.Int64
 
-	mk           *KeyRing
-	passdb       string
-	onMembership func()
+	mk     *KeyRing
+	passdb string
+	// smbTOTPPolicy decides whether an enrolled account is published at all.
+	smbTOTPPolicy TOTPPolicy
+	onMembership  func()
 
 	// ratelimit bounds login attempts per client address.
 	ratelimit *limiter

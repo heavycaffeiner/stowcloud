@@ -2,9 +2,7 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -14,7 +12,9 @@ import (
 
 	"golang.org/x/crypto/md4" //nolint:gosec,staticcheck // MD4 is fixed by the SMB protocol; the value is sealed at rest and only that algorithm matches.
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
+	"github.com/heavycaffeiner/stowcloud/go/internal/smb"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
@@ -23,69 +23,225 @@ import (
 // published, so a revocation that stops at SQLite leaves the sidecar serving
 // the revoked credential. Republishing is a sink every credential-changing
 // path calls, not a step each one remembers.
+//
+// This is the one place in the product where a committed transaction is not
+// yet a completed security decision.
+
+// SMBBaseUid is what an account's row id is offset by to produce the uid its
+// entry carries, in both this file and the account file beside it.
+//
+// The two have to agree. The import tool resolves an entry to an account
+// through this uid, and imports nothing at all when it names none: no error,
+// no log line, a zero exit, an empty database, and every login refused as an
+// unknown user.
+const SMBBaseUid = 30000
+
+// TOTPPolicy decides what an account carrying a second factor may do over SMB.
+//
+// The policy decides what is published, never what is stored, so moving it back
+// restores access without anyone setting a password again.
+type TOTPPolicy uint8
+
+const (
+	// TOTPRequireSeparate is the default. An account under it reaches SMB with
+	// the dedicated password it was told to set.
+	TOTPRequireSeparate TOTPPolicy = iota
+	// TOTPBlock excludes every enrolled account, whatever credential it holds.
+	TOTPBlock
+)
 
 // passdbEnabled reports whether an account is eligible to appear in the SMB
 // passdb: not opted out of SMB, not disabled, and not carrying a second
 // factor the SMB policy blocks.
-func passdbEnabled(smbEnabled, disabled, has2fa bool) bool {
-	return smbEnabled && !disabled && !has2fa
+func passdbEnabled(smbEnabled, disabled, has2fa bool, policy TOTPPolicy) bool {
+	if has2fa && policy == TOTPBlock {
+		return false
+	}
+	return smbEnabled && !disabled
 }
 
 // republishPassdb is the sink. Every credential-changing path calls it, and it
-// re-renders the whole passdb file from state, so a change that stops at one
-// surface (set password, TOTP enrol, a disable) is visible to SMB on the next
-// read. The file is a render, not the record: state.db remains the authority,
-// and Phase 11 owns the exact smbd format. What this phase proves is that
-// every path reaches the render.
+// re-renders the whole file from state, so a change that stops at one surface
+// (a password set, an enrolment, a disable) is visible to SMB on the next read.
+//
+// The file is a render and not the record: the database remains the authority.
+// An account that is not eligible is left out entirely rather than written with
+// a disabled marker, because a marker is a line the import tool still reads and
+// the absence is what actually revokes.
 func (s *Service) republishPassdb(ctx context.Context) (err error) {
 	if s.passdb == "" {
 		return nil
 	}
+
+	key, keyVer := s.mk.Active()
 
 	rows, err := s.st.SQL().QueryContext(ctx, sqlReadPassdb)
 	if err != nil {
 		return fmt.Errorf("reading the SMB accounts: %w", err)
 	}
 	defer func() { err = errors.Join(err, rows.Close()) }()
-	type smbLine struct {
-		name    string
-		enabled bool
-		fp      string
+
+	type entry struct {
+		name string
+		uid  uint32
+		nt   [16]byte
 	}
-	var lines []smbLine
+	var entries []entry
 	for rows.Next() {
 		var (
+			id                   int64
 			name                 string
 			smbEnabled, disabled bool
 			has2fa               bool
-			nt                   []byte
+			ct                   []byte
+			rowKeyVer            sql.NullInt64
 		)
-		if serr := rows.Scan(&name, &smbEnabled, &disabled, &has2fa, &nt); serr != nil {
+		if serr := rows.Scan(&id, &name, &smbEnabled, &disabled, &has2fa, &ct, &rowKeyVer); serr != nil {
 			return serr
 		}
-		fp := ""
-		if nt != nil {
-			sum := sha256.Sum256(nt)
-			fp = hex.EncodeToString(sum[:])
+		if !passdbEnabled(smbEnabled, disabled, has2fa, s.smbTOTPPolicy) || ct == nil {
+			continue
 		}
-		lines = append(lines, smbLine{name: name, enabled: passdbEnabled(smbEnabled, disabled, has2fa), fp: fp})
+
+		// The hash was sealed against the account's own row id and the key
+		// version in force at the time, so both are needed to open it.
+		rowVer, ok := sealVersion(rowKeyVer)
+		if !ok {
+			continue
+		}
+		sealKey := key
+		if rowVer != keyVer {
+			k, held := s.mk.Get(rowVer)
+			if !held {
+				// A hash under a key this ring no longer holds is skipped
+				// rather than failing the republish: one undecryptable row
+				// must not keep every other account's revocation from being
+				// published.
+				continue
+			}
+			sealKey = k
+		}
+		nt, oerr := openNT(sealKey, ct, id, rowVer)
+		if oerr != nil {
+			continue
+		}
+
+		uid, uerr := smbUid(id)
+		if uerr != nil {
+			return uerr
+		}
+		entries = append(entries, entry{name: name, uid: uid, nt: nt})
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
 
-	sort.Slice(lines, func(i, j int) bool { return lines[i].name < lines[j].name })
-	var b strings.Builder
-	for _, l := range lines {
-		state := "disabled"
-		if l.enabled {
-			state = "enabled"
+	sort.Slice(entries, func(i, j int) bool { return entries[i].name < entries[j].name })
+
+	// The timestamp is shared across the file rather than read per line, so
+	// two republishes of unchanged state produce identical bytes within the
+	// same second and a diff shows only real changes.
+	lct := fmt.Sprintf("%08X", clock.System().Now().Unix())
+
+	var b []byte
+	for _, e := range entries {
+		line, lerr := smbpasswdLine(e.name, e.uid, e.nt, lct)
+		if lerr != nil {
+			return lerr
 		}
-		fmt.Fprintf(&b, "%s\t%s\tnt=%s\n", l.name, state, l.fp) //nolint:errcheck // strings.Builder.Write never fails.
+		b = append(b, line...)
 	}
 
 	return vfs.ReplaceFileDurable(s.passdb, 0o600, func(f *os.File) error {
-		_, werr := f.WriteString(b.String())
+		_, werr := f.Write(b)
+		return werr
+	})
+}
+
+// smbUid offsets a row id into the uid the entry carries.
+//
+// A row id that does not fit is a refusal rather than a wrapped number: the
+// wrapped one would collide with another account's uid, and the import would
+// then keep whichever of the two it saw last.
+func smbUid(rowID int64) (uint32, error) {
+	const maxRowID = int64(^uint32(0)) - SMBBaseUid
+	if rowID <= 0 || rowID > maxRowID {
+		return 0, fmt.Errorf("smb: account id %d has no representable uid", rowID)
+	}
+	return SMBBaseUid + uint32(rowID), nil //nolint:gosec // the bound directly above is what makes this fit.
+}
+
+// sealVersion narrows a stored key version. A row whose version is absent or
+// outside the range a version can take is skipped: it cannot be opened, and
+// guessing a version would try the wrong key.
+func sealVersion(v sql.NullInt64) (uint32, bool) {
+	if !v.Valid || v.Int64 < 0 || v.Int64 > int64(^uint32(0)) {
+		return 0, false
+	}
+	return uint32(v.Int64), true //nolint:gosec // the bound directly above is what makes this fit.
+}
+
+// smbpasswdLine renders one entry.
+//
+// The LANMAN field is always the disabled marker: only the modern challenge
+// response is supported, and a LANMAN hash present is a credential an attacker
+// can break offline in minutes.
+func smbpasswdLine(name string, uid uint32, nt [16]byte, lct string) ([]byte, error) {
+	// The format is colon-separated with one record per line and has no escape
+	// at all, so a name carrying either is refused rather than written. The
+	// same check guards the account file this has to agree with.
+	if strings.ContainsAny(name, ":\n\r\x00") {
+		return nil, fmt.Errorf("smb: account name %q cannot be written to the passdb", name)
+	}
+	const lanmanDisabled = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+	return fmt.Appendf(nil, "%s:%d:%s:%X:[U          ]:LCT-%s:\n",
+		name, uid, lanmanDisabled, nt, lct), nil
+}
+
+// PublishPasswdEntries writes the account file that sits beside the passdb.
+//
+// It carries the same uid for the same account, because the import tool
+// matches the two through it. Publishing one without the other is what makes a
+// login fail as an unknown user with nothing logged anywhere.
+func (s *Service) PublishPasswdEntries(ctx context.Context, path string, gid uint32) (err error) {
+	rows, err := s.st.SQL().QueryContext(ctx, sqlReadPassdb)
+	if err != nil {
+		return fmt.Errorf("reading the SMB accounts: %w", err)
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+
+	var users []smb.User
+	for rows.Next() {
+		var (
+			id                   int64
+			name                 string
+			smbEnabled, disabled bool
+			has2fa               bool
+			ct                   []byte
+			rowKeyVer            sql.NullInt64
+		)
+		if serr := rows.Scan(&id, &name, &smbEnabled, &disabled, &has2fa, &ct, &rowKeyVer); serr != nil {
+			return serr
+		}
+		if !passdbEnabled(smbEnabled, disabled, has2fa, s.smbTOTPPolicy) || ct == nil {
+			continue
+		}
+		uid, uerr := smbUid(id)
+		if uerr != nil {
+			return uerr
+		}
+		users = append(users, smb.User{Name: name, Uid: uid})
+	}
+	if rerr := rows.Err(); rerr != nil {
+		return rerr
+	}
+
+	b, err := smb.PasswdEntries(users, gid)
+	if err != nil {
+		return err
+	}
+	return vfs.ReplaceFileDurable(path, 0o644, func(f *os.File) error {
+		_, werr := f.Write(b)
 		return werr
 	})
 }

@@ -53,6 +53,8 @@ ON CONFLICT(user) DO UPDATE SET secret_ct = excluded.secret_ct, key_ver = exclud
 
 	sqlDeleteTOTP = `DELETE FROM totp_secret WHERE user = ?`
 
+	sqlDeleteSMBSecret = `DELETE FROM user_smb_secret WHERE user = ?`
+
 	sqlInsertTotpUsed = `
 INSERT INTO totp_used(user, step, used_ns) VALUES (?, ?, ?)
 ON CONFLICT(user, step) DO NOTHING`
@@ -97,7 +99,7 @@ FROM share_link WHERE token_enc IS NOT NULL`
 
 	sqlClearLink = `UPDATE share_link SET token_enc = NULL, token_key_ver = NULL WHERE id = ?`
 
-	sqlReadPassdb = `SELECT u.name, u.smb_enabled, u.disabled, EXISTS(SELECT 1 FROM totp_secret t WHERE t.user = u.id) AS has2fa, (SELECT s.nt_hash_ct FROM user_smb_secret s WHERE s.user = u.id) AS nt FROM user u WHERE u.smb_opt_out = 0 ORDER BY u.name` //nolint:gosec // G101 reads the identifier: this is a statement, not a credential.
+	sqlReadPassdb = `SELECT u.id, u.name, u.smb_enabled, u.disabled, EXISTS(SELECT 1 FROM totp_secret t WHERE t.user = u.id) AS has2fa, (SELECT s.nt_hash_ct FROM user_smb_secret s WHERE s.user = u.id) AS nt, (SELECT s.key_ver FROM user_smb_secret s WHERE s.user = u.id) AS nt_ver FROM user u WHERE u.smb_opt_out = 0 ORDER BY u.name` //nolint:gosec // G101 reads the identifier: this is a statement, not a credential.
 
 	sqlInsertGroup = `INSERT INTO "group"(id, name) VALUES (?, ?)`
 
