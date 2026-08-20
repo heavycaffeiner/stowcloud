@@ -51,13 +51,13 @@ func TestEveryDegradationIsReportable(t *testing.T) {
 		ReasonPreviewPoolUnavailable,
 		// New in this port. Without it a server running with a sandbox layer
 		// missing looks exactly like one running with all of them.
-		ReasonHardeningPartial,
+		ReasonHardening,
 		ReasonSearchIndexDisabled,
 	}
 
 	state := NewHealthState()
 	for i, kind := range kinds {
-		state.Degrade(kind, "detail-"+string(rune('a'+i)))
+		state.Degrade(kind, "detail_"+string(rune('a'+i)))
 	}
 
 	body := readHealth(t, state)
@@ -97,13 +97,13 @@ func TestEveryDegradationIsReportable(t *testing.T) {
 func TestTheSameDegradationTwiceIsOneReason(t *testing.T) {
 	state := NewHealthState()
 	for range 5 {
-		state.Degrade(ReasonPreviewPoolUnavailable, "no worker started")
+		state.Degrade(ReasonPreviewPoolUnavailable, "no_worker_started")
 	}
 	if got := len(state.Reasons()); got != 1 {
 		t.Fatalf("got %d reasons, want 1", got)
 	}
 	// A different detail under the same kind is a different problem.
-	state.Degrade(ReasonPreviewPoolUnavailable, "every worker died")
+	state.Degrade(ReasonPreviewPoolUnavailable, "every_worker_died")
 	if got := len(state.Reasons()); got != 2 {
 		t.Fatalf("got %d reasons, want 2", got)
 	}
@@ -112,11 +112,11 @@ func TestTheSameDegradationTwiceIsOneReason(t *testing.T) {
 // A status that only ever gets worse stops being read.
 func TestAFixedDegradationClears(t *testing.T) {
 	state := NewHealthState()
-	state.Degrade(ReasonPreviewPoolUnavailable, "no worker started")
+	state.Degrade(ReasonPreviewPoolUnavailable, "no_worker_started")
 	if state.Status() != HealthDegraded {
 		t.Fatal("the state did not degrade")
 	}
-	state.Resolve(ReasonPreviewPoolUnavailable, "no worker started")
+	state.Resolve(ReasonPreviewPoolUnavailable, "no_worker_started")
 	if state.Status() != HealthOK {
 		t.Fatalf("status = %s after the fix, want ok", state.Status())
 	}
@@ -149,7 +149,7 @@ func TestTheReasonsAreStablyOrdered(t *testing.T) {
 // degraded and nothing else about the deployment.
 func TestTheHealthBodyCarriesNothingButTheStatusAndReasons(t *testing.T) {
 	state := NewHealthState()
-	state.Degrade(ReasonShareRejected, "photos is on overlayfs")
+	state.Degrade(ReasonShareRejected, "photos:overlayfs")
 
 	body := readHealth(t, state)
 	if len(body) != 2 {
@@ -171,6 +171,27 @@ func TestTheHealthBodyCarriesNothingButTheStatusAndReasons(t *testing.T) {
 	for _, leak := range []string{"version", "kernel", "hostname", "/srv", "listen"} {
 		if strings.Contains(rendered, leak) {
 			t.Errorf("the body carries %q: %s", leak, rendered)
+		}
+	}
+}
+
+// The reasons carry kinds and tokens rather than sentences, for the same
+// reason every other refusal in this tree does: a sentence is a thing to
+// translate, and a thing whose wording a caller starts matching on.
+func TestTheReasonsAreTokensRatherThanSentences(t *testing.T) {
+	state := NewHealthState()
+	state.Degrade(ReasonHardening, "landlock_unavailable")
+	state.Degrade(ReasonShareRejected, "photos:overlayfs")
+
+	for _, r := range state.Reasons() {
+		for _, field := range []string{r.Kind, r.Detail} {
+			if strings.Contains(field, " ") {
+				t.Errorf("%q reads as a sentence rather than a token", field)
+			}
+			// A trailing stop is the other tell.
+			if strings.HasSuffix(field, ".") {
+				t.Errorf("%q ends in a full stop", field)
+			}
 		}
 	}
 }

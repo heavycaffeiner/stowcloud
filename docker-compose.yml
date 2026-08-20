@@ -1,22 +1,29 @@
-# Reference deployment. `-stable` moves on a release tag, `-nightly` on every
-# commit to master; pin `:core-<sha>` / `:smb-<sha>` for anything that matters.
+# Reference deployment.
 #
 # One-time host setup:
 #
-#   mkdir -p ./data ./secrets ./smbcfg ./shares/photos ./shares/video
-#   chown -R 1000:1000 ./data ./secrets ./smbcfg
+#   mkdir -p ./data ./config ./smbcfg ./shares/photos ./shares/video
+#   chown -R 1000:1000 ./data ./config ./smbcfg
 #   chmod 0775 ./shares/photos ./shares/video
+#   cp deploy/sc.toml.example ./config/sc.toml
 #
-# The image is distroless and runs as uid 1000, so it cannot chown anything
-# itself; a named volume would be created root-owned and the first write fails.
-# Share roots need group-write because Samba checks the NT ACL against the
-# authenticated user's SID under `force user`, so 0755 makes a share read-only.
+# The image has no shell and runs as an unprivileged uid, so it cannot change
+# the ownership of anything itself, and a named volume would be created
+# root-owned with the first write failing. Share roots need group-write: the
+# server applies the share's configured mode explicitly rather than relying on
+# a umask, and a mode with no group bit makes a share read-only to the
+# neighbours that also use the directory.
+#
+# There is no environment configuration. Everything is in the one config file,
+# because a server whose settings come from two places is a server where the
+# answer to "what is it actually running with" is a question rather than a
+# file.
 
 services:
   sc:
     image: ghcr.io/heavycaffeiner/stowcloud:core-stable
     user: "1000:1000"
-    # The gid that owns /shares/* on the host. Adjust to match yours.
+    # The gid that owns ./shares on the host. Adjust to match yours.
     group_add: ["1001"]
     read_only: true
     tmpfs:
@@ -24,92 +31,80 @@ services:
     cap_drop: ["ALL"]
     security_opt:
       - no-new-privileges:true
-      # Docker older than 20.10.10 returns EPERM for openat2/faccessat2:
+      # The runtime's default seccomp profile blocks openat2 on releases older
+      # than 20.10.10. That is a refusal to start rather than a degradation,
+      # under every hardening policy: the only fallback anyone would write
+      # resolves a path one component at a time, which reintroduces the race
+      # the whole design closes. Upgrade the runtime, or supply a profile that
+      # allows it:
       # - seccomp=./deploy/seccomp-openat2.json
     volumes:
-      - ./data:/var/lib/sc
-      # Outside the data dir so a backup of ./data does not carry the key that
-      # decrypts it. Read-write, so the first run can generate it.
-      - ./secrets:/run/sc-secrets
-      # Lowercase `z`, never `Z`: the exclusive label would cut off other
-      # services using the same directories.
+      # The config file is read-only to the server: it is the operator's, and
+      # nothing in the container writes it.
+      - ./config:/etc/stowcloud:ro
+      - ./data:/var/lib/stowcloud
+      # Lowercase z, never uppercase: the exclusive label would cut off the
+      # other services using the same directories, which is the whole reason
+      # these are shared directories rather than a private volume.
       - ./shares/photos:/shares/photos:z
       - ./shares/video:/shares/video:z
-      # sc renders smb.conf/smbpasswd/passwd here and the sidecar reads them.
+      # The server renders the sidecar's configuration here and the sidecar
+      # reads it. Republishing is how a revoked credential stops working over
+      # SMB, so this is a mount rather than a copy made at start.
       - ./smbcfg:/config/smb:z
-      # The sidecar's control socket. sc connects to it after every render and
-      # gets back what actually happened: whether the config was accepted,
-      # which addresses smbd ended up bound to, which share paths do not exist
-      # over there, which accounts have no passdb entry. Without it sc writes
-      # four files and learns nothing, and a change waits for the sidecar's
-      # own poll instead of taking effect now.
-      #
-      # A named volume and not a host directory, unlike every other mount
-      # here. The agent creates the socket as root, so the directory has to be
-      # root-owned, which is exactly what an empty named volume is and what a
-      # host directory made by the operator is not. It also keeps the socket
-      # off the host filesystem: only these two containers can reach it.
+      # The sidecar's control socket. A named volume rather than a host
+      # directory, unlike every other mount here: the agent creates the socket
+      # as root, so the directory has to be root-owned, which is what an empty
+      # named volume is and what an operator-made directory is not. It also
+      # keeps the socket off the host filesystem, so only these two containers
+      # can reach it.
       - sc-smb-control:/run/sc-smb
-    environment:
-      SC_DATA_DIR: /var/lib/sc
-      SC_MASTER_KEY_FILE: /run/sc-secrets/master.key
-      # Cloudflare's CIDRs. Replace with the subnet your own proxy reaches this
-      # container from, not 127.0.0.1: published-port DNAT rewrites the
-      # destination, not the source. Wrong entries fold every client onto the
-      # proxy's address and they share one login rate limit.
-      #
-      # The admin settings screen overrides this variable without saying so.
-      SC_TRUSTED_PROXIES: "173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,104.16.0.0/13,104.24.0.0/14,108.162.192.0/18,131.0.72.0/22,141.101.64.0/18,162.158.0.0/15,172.64.0.0/13,188.114.96.0/20,190.93.240.0/20,197.234.240.0/22,198.41.128.0/17"
-      # Not 127.0.0.1: published-port DNAT targets the bridge interface. HTTPS
-      # only, with a self-signed certificate generated into ./data/tls.
-      #
-      # List this host's LAN address and any name you browse to in `app_hosts`
-      # (data/sc.toml or the admin screen). Private IP literals are admitted
-      # unlisted, but an unlisted name gets 421 and the site does not load.
-      SC_BIND: 0.0.0.0:8443
     ports:
-      # Reachable at `https://<this host>:8443` once you accept the certificate.
-      # A reverse proxy in front of it has to speak https upstream and skip
-      # verification. Bind a specific LAN address to keep the proxy the only
-      # public route.
+      # One socket, and it is TLS, with a certificate generated into ./data on
+      # first run. There is no plaintext listener to publish by mistake.
+      #
+      # A reverse proxy in front of this speaks https upstream and skips
+      # verification of a certificate it has no reason to verify over loopback.
+      # Bind a specific address here to keep the proxy the only route in.
       - "8443:8443"
-    stop_grace_period: 30s # upload draining
-    # The admin restart button exits 75 and expects a supervisor to start it
-    # again; Compose's default of `no` would leave the server stopped.
+    stop_grace_period: 30s # draining uploads
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "/sc-server", "healthcheck"]
+      # The same binary under a different argument, because the image has no
+      # shell to run anything else with. It exits zero for degraded as well as
+      # ok: a degraded server is a configuration state, and restarting it does
+      # not fix one, so mapping it to unhealthy would make the runtime
+      # restart-loop a problem forever without resolving it.
+      test: ["CMD", "/stowcloud", "healthcheck", "/etc/stowcloud/sc.toml"]
       interval: 30s
       timeout: 5s
       start_period: 10s
       retries: 3
 
-  # Needs `smb.enabled = true` in sc's config; otherwise smbd waits on an empty
-  # /config/smb forever. Behind a profile because claiming the host's port 445
-  # is not something to start by accident: `docker compose --profile smb up -d`.
+  # Needs smb.enabled in the config file; otherwise this waits on an empty
+  # directory forever. Behind a profile because claiming the host's SMB port is
+  # not something to start by accident:
+  #
+  #   docker compose --profile smb up -d
   sc-smb:
     profiles: ["smb"]
     image: ghcr.io/heavycaffeiner/stowcloud:smb-stable
     volumes:
       - ./smbcfg:/config/smb:ro,z
-      # The other end of the control socket.
       - sc-smb-control:/run/sc-smb
-      # Every share path sc knows has to exist in *this* container under the
-      # same path, or smbd tells the client the network name is invalid while
-      # everything on the sc side looks right. The agent reports such a path
-      # by name on the settings screen rather than leaving it to be found by
-      # a failing client, but only mounting it here fixes it.
+      # Every share path the server knows has to exist in this container under
+      # the same path, or the client is told the network name is invalid while
+      # everything on the server side looks correct.
       - ./shares/photos:/shares/photos:z
       - ./shares/video:/shares/video:z
     cap_drop: ["ALL"]
-    # `cap_drop: ALL` strips these from root too, and smbd needs them back:
-    #   NET_BIND_SERVICE  bind :445
-    #   SETUID/SETGID     drop to scsvc per connection
-    #   DAC_READ_SEARCH   read the 0600 smbpasswd owned by another uid
+    # Dropping everything strips these from root too, and the daemon needs them
+    # back: to bind its privileged port, to drop to the service account per
+    # connection, and to read the credential file owned by another uid.
     #
-    # NET_ADMIN is absent, which costs the fail2ban bans: it writes iptables
-    # rules, and under `network_mode: host` those are this host's firewall, not
-    # the container's. Add it back if you would rather have the ban.
+    # The capability that would let it write firewall rules is absent, which
+    # costs the automatic bans: under host networking those rules are this
+    # machine's firewall rather than the container's.
     cap_add:
       - NET_BIND_SERVICE
       - SETUID
@@ -117,24 +112,24 @@ services:
       - DAC_READ_SEARCH
     security_opt:
       - no-new-privileges:true
-    # NetBIOS name service is broadcast UDP 137/138, which a bridge does not
-    # carry and published ports do not map, so `\\stowcloud` resolves only on
-    # the host's stack. Three consequences:
+    # Name service is broadcast and does not cross a bridge, so a name resolves
+    # only on the host's own stack. Three consequences:
     #
-    #   * A Samba already on port 445 wins and this container fails to start.
-    #   * The sidecar sees the host's real devices and rewrites `interfaces`
-    #     and `hosts allow` from them, admitting the networks this machine is
-    #     attached to. sc cannot do that from its own namespace.
-    #   * That includes docker0 and every compose bridge. Narrow it by pinning
-    #     `interfaces = ["192.168.1.10"]` under `[smb]` in sc.toml, which also
-    #     turns detection off.
+    #   * Another SMB server already on the port wins and this fails to start.
+    #   * The sidecar sees the host's real devices and rewrites the bind and
+    #     admission lists from them. The server cannot do that from its own
+    #     network namespace, which is why it renders the closed case and lets
+    #     the sidecar expand it.
+    #   * That list includes every container bridge on the machine. Narrow it
+    #     by pinning the addresses in the config file, which also turns
+    #     detection off.
     #
-    # Detection never admits a globally routable address; that needs
-    # `allow_public_bind = true`.
+    # Detection never admits a globally routable address on its own; that needs
+    # the explicit opt-in, which raises a warning that does not go away.
     #
-    # For a bridged sidecar instead, drop this line and publish
-    # `192.168.1.10:445:445`, naming a LAN address and never 0.0.0.0. `\\NAME`
-    # stops working and the address still mounts.
+    # For a bridged sidecar instead, drop this line and publish the port on a
+    # specific LAN address, never on every interface. The name stops working
+    # and the address still mounts.
     network_mode: host
     healthcheck:
       test: ["CMD-SHELL", "smbd -b >/dev/null 2>&1 && pgrep -x smbd >/dev/null"]

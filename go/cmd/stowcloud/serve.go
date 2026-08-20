@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -31,16 +31,45 @@ import (
 // Execute is left unhandled because the sandbox becomes process-wide through an
 // exec, and a domain that denied it would deny that. Removing the syscall
 // entirely is the filter's job in the step after, which denies it harder.
-func jailSpec(cfg *server.Config, shares []core.ShareDef) jail.Spec {
+func jailSpec(cfg *server.Config, configPath string, shareHosts []string) jail.Spec {
 	spec := jail.Spec{ExceptExec: true}
 	spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: cfg.DataDir})
+	// The config file is read again by the image the sandbox re-executes into,
+	// because that image starts from the beginning. A domain that did not grant
+	// it starts, replaces itself, and then cannot read the file it was told to
+	// read, which is a failure that only appears once the sandbox is real.
+	if dir := filepath.Dir(configPath); dir != "" {
+		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dir, Access: jail.ReadOnly})
+	}
 	// Every share is granted by its host path. A domain built from the data
 	// directory alone would deny every share the server exists to serve, which
 	// is a sandbox that only works on a deployment with no shares.
-	for _, sh := range shares {
-		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: sh.Host})
+	for _, host := range shareHosts {
+		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: host})
 	}
 	return spec
+}
+
+// applyJail builds the domain and applies it.
+//
+// The share paths are read straight from the database rather than from the
+// core, because the core cannot be built before the sandbox: doing so is what
+// made everything above the sandbox run twice.
+func applyJail(cfg *server.Config, configPath string, clk clock.Clock) (jail.Status, error) {
+	var hosts []string
+	if st, err := store.Open(cfg.DataDir, store.Options{Clock: clk}); err == nil {
+		rows, lerr := st.State().ListShares(context.Background())
+		if lerr == nil {
+			for _, row := range rows {
+				hosts = append(hosts, row.Host)
+			}
+		}
+		// Closed again immediately: this is only to learn which paths the
+		// domain has to grant, and holding it open across the re-exec would
+		// leave the descriptor in the replaced image.
+		_ = st.Close() //nolint:errcheck // nothing was written, and the open below is the one that matters.
+	}
+	return jail.Apply(cfg.Hardening, jailSpec(cfg, configPath, hosts))
 }
 
 // runServe starts the server: config, store, master key, core domain, the
@@ -77,6 +106,19 @@ func runServe(args []string, stderr io.Writer) int {
 		say(stderr, "stowcloud %s: serve: %v\n", version, err)
 		return exitConfig
 	}
+
+	// The sandbox goes on before anything else is opened.
+	//
+	// It replaces the process image, so everything above this point runs
+	// twice and everything below it runs once. That is why it sits here
+	// rather than just before the listener: with it later, the store was
+	// opened twice, the master key was opened twice, and a first run minted
+	// and printed two setup tokens, only the second of which was the live one.
+	jailStatus, jerr := applyJail(cfg, configPath, clk)
+	if jerr != nil {
+		return jail.Refuse(stderr, jailStatus)
+	}
+	log.Info("hardening", "status", jailStatus.String())
 
 	st, serr := store.Open(cfg.DataDir, store.Options{Clock: clk})
 	if serr != nil {
@@ -120,26 +162,18 @@ func runServe(args []string, stderr io.Writer) int {
 		}
 	}
 
-	// The sandbox goes on before the listener is bound, so nothing is served
-	// from a process that has not been confined. Under the shipped policy a
-	// layer that could not be applied is a refusal; under the others it is a
-	// degradation the health surface names, because a server missing a layer
-	// otherwise looks exactly like one that has them all.
 	health := handler.NewHealthState()
 	for _, rej := range rejectedShares {
-		health.Degrade(handler.ReasonShareRejected, rej.Name+": "+rej.Err.Error())
-	}
-	jailStatus, jerr := jail.Apply(cfg.Hardening, jailSpec(cfg, coreSvc.Shares()))
-	if jerr != nil {
-		return jail.Refuse(stderr, jailStatus)
+		health.Degrade(handler.ReasonShareRejected, rej.Name+":"+rej.Kind)
 	}
 	for _, step := range jailStatus.Steps {
 		if !step.Applied {
-			health.Degrade(handler.ReasonHardeningPartial,
-				fmt.Sprintf("%s was not applied: %v", step.Name, step.Err))
+			// The detail is a token naming the layer, not the errno's
+			// sentence: a caller reads the kind and the layer, and the errno
+			// is in the startup log for whoever is diagnosing it.
+			health.Degrade(handler.ReasonHardening, step.Name+"_unavailable")
 		}
 	}
-	log.Info("hardening", "status", jailStatus.String())
 
 	watcher, hub, werr := server.StartWatch(ctx, coreSvc, clk, log)
 	if werr != nil {

@@ -102,6 +102,11 @@ func fsRights(abi int) uint64 {
 // process-wide.
 const readExecute = unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_EXECUTE
 
+// ReadOnly is a grant that can read files and list directories and nothing
+// else. It is for a path the server reads and must never write, such as the
+// operator's own configuration.
+const ReadOnly = unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_READ_DIR
+
 // restrict builds spec's domain and applies it to the calling thread.
 //
 // The caller must already hold the OS thread. Landlock restricts the calling

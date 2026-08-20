@@ -92,6 +92,12 @@ func PublicPaths(method, path string) bool {
 	switch path {
 	case "/api/auth/password", "/api/auth/oidc/start", "/api/auth/oidc/callback", "/api/setup":
 		return true
+	case "/api/health":
+		// The container runtime probes this and holds no credential, so a
+		// health endpoint behind authentication is one the runtime cannot use.
+		// It answers what is degraded and nothing else about the deployment.
+		return method == http.MethodGet
+
 	}
 	if strings.HasPrefix(path, "/s/") || strings.HasPrefix(path, "/c/") {
 		// Public share links and the content origin: authorization is the

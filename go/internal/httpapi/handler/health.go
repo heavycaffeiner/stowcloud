@@ -36,10 +36,10 @@ const (
 	ReasonDatabaseSizeGuard = "database_size_guard"
 	// ReasonPreviewPoolUnavailable is the preview workers being unusable.
 	ReasonPreviewPoolUnavailable = "preview_pool_unavailable"
-	// ReasonHardeningPartial is a sandbox layer that was asked for and not
-	// applied. New in this port: without it, a server running with a layer
-	// missing looks exactly like one running with all of them.
-	ReasonHardeningPartial = "hardening_partial"
+	// ReasonHardening is a sandbox layer that was asked for and not applied.
+	// New in this port: without it, a server running with a layer missing
+	// looks exactly like one running with all of them.
+	ReasonHardening = "hardening"
 	// ReasonSearchIndexDisabled is a corrupt index that was reported and
 	// switched off rather than being allowed to fail every query.
 	ReasonSearchIndexDisabled = "search_index_disabled"
@@ -51,6 +51,10 @@ type HealthReason struct {
 	Kind string `json:"kind"`
 	// Detail says which share, which layer or which bound, because the kind
 	// alone does not tell an operator where to look.
+	//
+	// It is a token rather than a sentence, for the same reason every other
+	// refusal in this tree is: a sentence is a thing to translate and a thing
+	// whose wording a caller starts matching on.
 	Detail string `json:"detail"`
 }
 

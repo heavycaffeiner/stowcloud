@@ -227,7 +227,9 @@ func (c *Core) ReloadPersistedShares(ctx context.Context) (rejected []RejectedSh
 			// other share. It is left unregistered and reported, so the
 			// deployment starts, the rest of it works, and the health surface
 			// says which one is missing and why.
-			rejected = append(rejected, RejectedShare{Name: row.Name, Err: rerr})
+			rejected = append(rejected, RejectedShare{
+				Name: row.Name, Kind: rejectionKind(rerr), Err: rerr,
+			})
 			c.logger.Error("a share was refused and is not being served",
 				"share", row.Name, "error", rerr)
 			continue
@@ -240,5 +242,25 @@ func (c *Core) ReloadPersistedShares(ctx context.Context) (rejected []RejectedSh
 // surface can say which one rather than only that one is missing.
 type RejectedShare struct {
 	Name string
+	// Kind is a token for the health surface: the filesystem that was refused,
+	// or a word for the class of failure. The health surface carries kinds
+	// rather than sentences, and the sentence is in Err for the log.
+	Kind string
 	Err  error
+}
+
+// rejectionKind reduces a registration failure to the token the health surface
+// carries.
+func rejectionKind(err error) string {
+	var adm *vfs.AdmissionError
+	if errors.As(err, &adm) {
+		return adm.Type.String()
+	}
+	if errors.Is(err, vfs.ErrNotFound) {
+		return "missing"
+	}
+	if errors.Is(err, vfs.ErrDenied) {
+		return "unreadable"
+	}
+	return "unavailable"
 }

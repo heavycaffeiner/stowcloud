@@ -1,0 +1,50 @@
+# The whole configuration. There is no environment override: a server whose
+# settings come from two places is one where "what is it running with" is a
+# question rather than a file.
+
+[server]
+# Where the store, the certificate and the setup token live.
+data_dir = "/var/lib/stowcloud"
+
+# The bind address. Not loopback: a published port targets the container's
+# bridge interface, so a server bound to loopback is unreachable from outside
+# its own network namespace whatever the port mapping says.
+#
+# Whatever address it names, that socket serves TLS and nothing else.
+listen = "0.0.0.0:8443"
+
+[http]
+# Every name this server answers for. A guard that learned its origin from the
+# request it guards is not a guard, so this has no default and an empty list is
+# a refused startup.
+#
+# A name that is not listed gets a refusal rather than the site, so list every
+# name you actually browse to.
+app_hosts = ["stowcloud.example.com"]
+
+# The origin user content is served from. It is separate so that a malicious
+# upload cannot execute in the origin holding the session cookie.
+content_hosts = ["content.stowcloud.example.com"]
+
+# The ranges a forwarded client address is trusted from. Without them every
+# request folds onto the proxy's own address, and the login limiter, the API
+# limiter and the audit log all become useless together in a way that looks
+# like nothing is wrong.
+#
+# These are the proxy's addresses as this container sees them, which is not
+# loopback: a published port rewrites the destination, not the source.
+trusted_proxy_cidrs = []
+
+[rate]
+per_sec = 20
+burst = 100
+
+[security]
+# What is asked of the sandbox. The shipped default refuses to start when a
+# layer cannot be applied; "preferred" reports it as a named degradation on the
+# health endpoint and keeps running; "off" attempts nothing and says so.
+#
+# None of the three affects the path resolver, which is a refusal to start
+# under all of them: "off" means a weaker sandbox is accepted, not a resolver
+# that can be raced.
+hardening = "required"
