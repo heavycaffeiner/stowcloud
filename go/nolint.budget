@@ -109,5 +109,11 @@
 # in preview is the same close-and-kill family, plus one bit-pattern hash of a
 # timestamp in the cache key and two gosec subprocess warnings: the pool execs
 # this binary's own path, and a test builds its helper from constant arguments.
-160
+#
+# Milestones 9g and 9h added ten. Most are a measurement command reporting to a
+# terminal that has no second channel to report a failed write on. The rest are
+# the jail proof reaching the kernel directly: a raw openat needs AT_FDCWD as
+# its bit pattern and a NUL-terminated path, because a probe that went through
+# the standard library might not issue the syscall the filter is meant to stop.
+170
 

@@ -63,6 +63,28 @@ const (
 	// process, which is the designed outcome: a crafted input that kills a
 	// decoder costs one thumbnail.
 	FilterWorker
+
+	// FilterWorkerAudit is the allow-list with the kill replaced by a log
+	// record. It is how the shipped list is measured rather than guessed:
+	// the worker runs under it against a corpus of real images, and the audit
+	// log names every syscall the list is missing.
+	//
+	// It is never shipped. A filter that logs instead of killing is not a
+	// sandbox, and the one caller is the measurement command.
+	FilterWorkerAudit
+
+	// FilterWorkerTrap is the allow-list with the kill replaced by SIGSYS.
+	//
+	// It exists because SECCOMP_RET_LOG writes to the kernel audit log, which
+	// needs root to read: on a machine where auditd owns it, a measurement run
+	// as an ordinary user gets a clean result that means only that it could not
+	// see the records. A trap is delivered to the process itself, so the
+	// measurement records what it observed rather than what it was permitted to
+	// read, and it needs no privilege.
+	//
+	// Never shipped either, for the same reason: a trap a handler swallows is
+	// not a sandbox.
+	FilterWorkerTrap
 )
 
 // archProfileFor is a table rather than a build tag, because an architecture
@@ -107,11 +129,27 @@ func deniedSyscalls() []int {
 // sendmsg are on it because they are how a job and its two descriptors arrive
 // at all.
 //
-// The five entries the Rust worker did not need are scheduler and signal
-// plumbing a Go runtime cannot start without. This list is the estimate the
-// design carries; the shipped one is produced by running the worker under
-// SECCOMP_RET_LOG against a corpus of real images and reading the audit log,
-// which needs a decoder that does not exist yet.
+// This list is measured, not reasoned about. A real worker was driven over a
+// real socket against the committed corpus and traced; the union of its steady
+// state and the decode phase is thirteen calls, and every one of them is here.
+// The remainder are startup and teardown the trace showed before the filter is
+// installed or on the way out, kept because a decode that grows the heap or
+// takes a signal must not be killed for it.
+//
+// Three came from the measurement rather than the estimate, and none would
+// have been guessed:
+//
+//   - fcntl, which os.NewFile issues as F_GETFL on each descriptor a job
+//     arrives with, to learn whether it is readable or writable.
+//   - epoll_pwait and getpid, which the Go runtime's scheduler and its
+//     signal path use even with one thread.
+//
+// clone is deliberately absent and the measurement is what makes that
+// affordable. Every clone the trace showed carried CLONE_THREAD, so it was the
+// runtime adding an OS thread rather than a fork, and running the worker at
+// GOMAXPROCS=1 removes it entirely: the decode phase then needs six calls and
+// creates no threads. A worker that cannot clone cannot fork either, which is
+// the property this list is for.
 func allowedSyscalls() []int {
 	return []int{
 		unix.SYS_READ,
@@ -141,6 +179,11 @@ func allowedSyscalls() []int {
 		unix.SYS_RT_SIGACTION,
 		unix.SYS_GETTID,
 		unix.SYS_TGKILL,
+
+		// Measured, and absent from the estimate. See the note above.
+		unix.SYS_FCNTL,
+		unix.SYS_EPOLL_PWAIT,
+		unix.SYS_GETPID,
 	}
 }
 
@@ -199,6 +242,18 @@ func assembleFor(kind FilterKind, goarch string) ([]unix.SockFilter, error) {
 		list = allowedSyscalls()
 		matched = unix.SECCOMP_RET_ALLOW
 		unmatched = unix.SECCOMP_RET_KILL_PROCESS
+	case FilterWorkerAudit:
+		// The same list, but an unlisted call is logged and then allowed, so
+		// one run finds every missing entry rather than the first.
+		list = allowedSyscalls()
+		matched = unix.SECCOMP_RET_ALLOW
+		unmatched = unix.SECCOMP_RET_LOG
+	case FilterWorkerTrap:
+		// The same list, with an unlisted call raising SIGSYS in the calling
+		// thread. The handler records the number and the run continues.
+		list = allowedSyscalls()
+		matched = unix.SECCOMP_RET_ALLOW
+		unmatched = unix.SECCOMP_RET_TRAP
 	default:
 		return nil, fmt.Errorf("unknown seccomp filter kind %d", kind)
 	}
@@ -305,3 +360,10 @@ func InstallSeccomp(kind FilterKind) error {
 	}
 	return nil
 }
+
+// AllowedSyscalls is the worker's list, for the command that measures it.
+//
+// Exported so the audit run and the list it checks cannot drift apart: a
+// measurement against a copy of the list proves nothing about the one that
+// ships.
+func AllowedSyscalls() []int { return allowedSyscalls() }

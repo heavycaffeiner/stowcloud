@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
@@ -44,6 +45,16 @@ const MaxInputBytes = 256 << 20
 // The jail goes on before the first job and before anything is read, because a
 // decoder bug in the first message is exactly the case it exists for.
 func Run(policy jail.Policy) (jail.Status, error) {
+	// One thread, which is what keeps clone off the allow-list. Measured: at
+	// GOMAXPROCS=1 the decode phase creates no OS threads and needs six
+	// syscalls, and every clone the trace showed otherwise was the runtime
+	// adding a thread rather than a fork. A worker that cannot clone cannot
+	// fork either, which is the property the list is for.
+	//
+	// It costs nothing here: a worker decodes one image at a time by design,
+	// because the pool is what provides the parallelism.
+	runtime.GOMAXPROCS(1)
+
 	st, err := jail.Apply(policy, workerSpec())
 	if err != nil {
 		return st, err
@@ -143,6 +154,17 @@ const (
 // handle runs one job. It never returns an error: a failure is a status on the
 // response, because the worker's job is to answer rather than to die.
 func handle(req preview.Request, in, out *os.File) preview.Response {
+	if req.Kind == preview.JobProbe {
+		// Attempted from inside the finished jail. A probe that is killed
+		// never answers at all: the process is gone and the parent sees the
+		// socket close, which is itself a pass.
+		outcome, detail := RunProbe(Probe(req.Preset))
+		return preview.Response{
+			Status: preview.StatusOK,
+			Width:  uint16(outcome),
+			Err:    detail,
+		}
+	}
 	if req.Kind == preview.JobVideo {
 		// The honest answer, kept over the wire so a client gets a refusal it
 		// can act on rather than a generic failure.

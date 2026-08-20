@@ -59,9 +59,17 @@ const (
 	// JobVideo exists so a client asking for one gets an honest refusal
 	// rather than a generic failure. It is never implemented here.
 	JobVideo JobKind = 2
+	// JobProbe asks the worker to attempt something the jail should prevent,
+	// and report what the kernel said. It exists because a security claim that
+	// cannot be executed is a comment.
+	//
+	// The probe number travels in the preset field, which is otherwise unused
+	// for this kind: adding a field would widen a message every job pays for,
+	// to carry something only the proof sends.
+	JobProbe JobKind = 3
 )
 
-func (k JobKind) valid() bool { return k == JobImage || k == JobVideo }
+func (k JobKind) valid() bool { return k == JobImage || k == JobVideo || k == JobProbe }
 
 func (k JobKind) String() string {
 	switch k {
@@ -69,6 +77,8 @@ func (k JobKind) String() string {
 		return "image"
 	case JobVideo:
 		return "video"
+	case JobProbe:
+		return "probe"
 	}
 	return "unknown"
 }
@@ -177,7 +187,9 @@ func DecodeRequest(b []byte) (Request, error) {
 	if !r.Kind.valid() {
 		return Request{}, fmt.Errorf("%w: job kind %d", ErrProtocol, b[1])
 	}
-	if !r.Preset.valid() {
+	// A probe carries its number where a preset would be, so the preset is
+	// only range-checked for the kinds that use it as one.
+	if r.Kind != JobProbe && !r.Preset.valid() {
 		return Request{}, fmt.Errorf("%w: preset %d", ErrProtocol, b[2])
 	}
 	// An undefined flag bit means the peer is speaking a protocol this build
