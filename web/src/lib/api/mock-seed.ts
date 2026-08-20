@@ -44,6 +44,9 @@ export function benchEntryAt(index: number): Entry {
     size,
     mtime_ns: mtimeNs.toString(),
     etag: h.toString(16),
+    // The real server derives a file's token from metadata, which cannot be
+    // exact, so the mock says the same thing rather than promising more.
+    etag_weak: true,
     perms: { read: true, write: true, create: isDir, delete: true, rename: true, move: true, share: true, download: true },
     // `100_000 +` keeps `/bench`'s ids well clear of `STATIC_SEED`'s
     // low fixed range (see `fileEntry`/`dirEntry` below) and of
@@ -101,6 +104,7 @@ function fileEntry(name: string, size: number, daysAgo: number, extra: Partial<E
     size,
     mtime_ns: mtimeNs.toString(),
     etag: Math.random().toString(16).slice(2, 10),
+    etag_weak: true,
     perms: { read: true, write: true, create: false, delete: true, rename: true, move: true, share: true, download: true },
     id: nextSeedId++,
     ...extra
@@ -115,6 +119,7 @@ function dirEntry(name: string, daysAgo: number, extra: Partial<Entry> = {}): En
     size: 0,
     mtime_ns: mtimeNs.toString(),
     etag: Math.random().toString(16).slice(2, 10),
+    etag_weak: true,
     perms: { read: true, write: true, create: true, delete: true, rename: true, move: true, share: true, download: true },
     id: nextSeedId++,
     ...extra

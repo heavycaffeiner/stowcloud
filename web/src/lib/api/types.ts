@@ -34,9 +34,28 @@ export interface SymlinkInfo {
 export interface Entry {
   name: string
   kind: Kind
+  /**
+   * Bytes. For a directory this is the recursive rollup the server keeps, not
+   * the directory inode's own size, and it is bytes there too: no entry in
+   * this response is ever expressed in blocks.
+   */
   size: number
   mtime_ns: string
   etag: string
+  /**
+   * The change token is advisory rather than exact.
+   *
+   * Linux exposes no inode change version this server can derive an exact
+   * token from, so a file's token comes from metadata that can repeat: two
+   * different contents can carry the same one. A conditional write against a
+   * token like this is refused by the server rather than accepted, because
+   * accepting it would promise a guarantee the token cannot support.
+   *
+   * The consequence for this client is in the edit route: the refusal is
+   * correct, retrying with the same token can never succeed, and only an
+   * explicit choice by the person may retry without the condition.
+   */
+  etag_weak: boolean
   perms: Perms
   /**
    * The stable fileid `POST /api/fs/link` needs as `fid`. **Absent far more
@@ -81,6 +100,8 @@ export interface ListResponse {
   cursor: string | null
   entries: Entry[]
   dir_etag: string
+  /** The same advisory rule as `Entry.etag_weak`, for the directory token. */
+  dir_etag_weak: boolean
   stale?: boolean
 }
 
@@ -563,6 +584,15 @@ export interface ArchiveEntry {
 /** `GET /api/fs/archive/list`. */
 export interface ArchiveListing {
   entries: ArchiveEntry[]
+  /**
+   * The listing stopped at `limit` rather than being refused, so what is here
+   * is the first `limit` entries and not the whole archive. Saying so is the
+   * point: a truncated listing that does not admit it reads as an archive with
+   * fewer files in it.
+   */
+  truncated: boolean
+  /** The bound `truncated` was measured against. */
+  limit: number
   /** Entries the server left out because their names cannot be handed out
    *  safely: a path escape, a raw Windows separator, a symlink, a device
    *  node. Counted rather than fatal, so one odd entry does not hide the
@@ -584,10 +614,38 @@ export interface FolderSize {
 
 export type RecentOp = 'upload' | 'edit' | 'copy' | 'move' | 'restore'
 
+/**
+ * `GET /api/recent` query.
+ *
+ * The window is an instant rather than a number of days. A day count has to be
+ * resolved against somebody's clock, and the two ends of this wire are in
+ * different time zones as often as not, so "the last 7 days" meant two
+ * different windows depending on which side did the arithmetic.
+ */
+export interface RecentQuery {
+  /**
+   * The oldest write to return, as an ISO-8601 instant with an offset. The
+   * server compares it against a stored instant; neither side converts to a
+   * local calendar date on the way.
+   */
+  since?: string
+  limit?: number
+  scope?: string
+}
+
 export interface RecentHit {
   /** Navigable virtual path, `{label}/{rest}`. */
   vpath: string
   share: string
+  /**
+   * The path within the share, sent explicitly rather than left for this
+   * client to cut out of `vpath`.
+   *
+   * Splitting on the first separator is wrong the moment a share label
+   * contains one, and the client cannot tell which separators are part of the
+   * label. One vocabulary, decided by the side that knows.
+   */
+  subpath: string
   name: string
   size: number
   /** Nanoseconds as a string, same rule as `Entry.mtime_ns`. */
@@ -774,9 +832,31 @@ export type SettingsSource = 'builtin_default' | 'config_file' | 'admin_override
  *  safely change is still listed, never hidden; `readonly_reason_key` is then
  *  a catalogue key (`api/error-text.ts`'s allowlist), not display text — the
  *  server has no idea which language the reader picked. */
+/**
+ * The declared range of a settable field, discriminated by the kind of value
+ * it holds.
+ *
+ * The bound is sent rather than compiled into this screen. Every bound is a
+ * named constant on the server and a patch outside one is refused naming the
+ * field, so a client carrying its own copy of the number is a client that
+ * disagrees with the server the first time one of them moves.
+ */
+export type SettingRange =
+  | { kind: 'int'; min: number; max: number }
+  | { kind: 'float'; min: number; max: number }
+  | { kind: 'duration_ms'; min: number; max: number }
+  | { kind: 'bool' }
+  | { kind: 'string'; max_len?: number }
+  | { kind: 'string_list'; max_items?: number }
+
 export interface SettingsField {
   key: string
   value: unknown
+  /**
+   * What this field will accept. Absent for a field with no declared range,
+   * which the screen renders without a validator rather than inventing one.
+   */
+  range?: SettingRange
   source: SettingsSource
   /** A static property of the field, not a statement about this value. What
    *  the process is actually on is `running_value`. */

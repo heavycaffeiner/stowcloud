@@ -273,3 +273,51 @@ the number.
 
 **Reopen by** no phase; the decision is settled by the documents that already
 name four.
+
+---
+
+## Q7. Which phase owns the resumable-upload HTTP surface
+
+**Raised by** Phase 12c, confirming what the frontend's upload path talks to.
+
+**What was found.** `web/src/lib/upload/transport.ts` speaks a resumable-upload
+protocol to `/api/uploads` and `/api/uploads/{id}`: a create, a chunk append, a
+head to learn the current offset, and a delete, exchanging `Upload-Offset`,
+`Upload-Length`, `Tus-Resumable` and this server's own `Sc-Chunk-Size`. The
+Rust tree mounts exactly those routes, deliberately outside the size-limited
+router.
+
+The Go tree has the engine and no routes. Phase 6 built the session store, the
+interval set, the spool, verification and the sweep, and its milestone list
+stops there. Phase 5 owns the HTTP surface and its milestone list does not name
+uploads. Phase 7 owns the WebDAV upload collection, which is a different
+protocol on a different path. So nothing between Phase 5 and Phase 12 owns
+mounting the surface the frontend already speaks to, and no document says it
+was dropped.
+
+The frontend cannot be adapted around this. A client cannot upload against
+routes that do not exist, and changing the client to speak something else would
+be inventing a protocol rather than porting one.
+
+**Options.**
+
+| # | Owner | Cost |
+|---|---|---|
+| 1 | Phase 13 absorbs it as cutover work | the differ and the conformance run are the first things to exercise it, which is late for a surface with resumption and offset semantics |
+| 2 | A Phase 6g milestone, retrospectively | Phase 6 is complete and reopening it makes "a phase is done" mean less |
+| 3 | A Phase 5 milestone, retrospectively | same objection, and Phase 5 has no upload vocabulary to build on |
+
+**What decides between them.** Whether the surface is HTTP work that belongs
+with the rest of the HTTP surface, or cutover work. The engine's contracts, the
+ordering rule and the crash windows are Phase 6's and are already proved; what
+is missing is the mapping from protocol to engine, which is the same kind of
+work Phase 5 and Phase 7 did for their own surfaces.
+
+**Taken for now: option 1.** Phase 13 cannot pass its conformance run without
+this surface, so it is blocked on it either way, and the alternatives reopen a
+closed phase to record work that has not started. Phase 13 mounts it before the
+differ runs, so the differ is what exercises it rather than a real client
+discovering it.
+
+**Reopen by** Phase 13, which either mounts it or reports it as a gap it could
+not close.

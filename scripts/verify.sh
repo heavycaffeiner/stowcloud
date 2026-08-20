@@ -518,6 +518,14 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # cannot name a path outside it, and refuses a symlink that points out.
   if [ -f go/internal/httpapi/spa/build/index.html ]; then
     run "go build -tags embed_ui" ingo go build -tags embed_ui ./...
+    # And the served bundle is the one that was built, which is the property
+    # the dependency edge exists for. It needs node, so it only runs where the
+    # frontend can be rebuilt.
+    if command -v npm >/dev/null 2>&1; then
+      run "the embedded bundle is the built one" bash scripts/embed-check.sh
+    else
+      skipped "the embedded bundle is the built one" "no npm" "${VERIFY_REQUIRE_UI:-0}"
+    fi
   else
     skipped "go build -tags embed_ui" "no built frontend; run: cd web && npm run build" \
             "${VERIFY_REQUIRE_UI:-0}"

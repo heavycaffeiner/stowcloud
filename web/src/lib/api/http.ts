@@ -42,6 +42,7 @@ import {
   type FolderSize,
   type ReadFileResponse,
   type RecentHit,
+  type RecentQuery,
   type SearchSettingsReq,
   type SessionInfo,
   type SettingsSnapshot,
@@ -234,10 +235,12 @@ async function folderSize(path: string): Promise<FolderSize> {
  * `GET /api/recent` — every file this account wrote through this server inside
  * the window, newest first. Exact: there is no walk to truncate.
  */
-async function recentList(
-  opts: { limit?: number; sinceDays?: number; scope?: string } = {}
-): Promise<{ hits: RecentHit[] }> {
-  return request(`/recent${qs({ limit: opts.limit, since_days: opts.sinceDays, scope: opts.scope })}`)
+async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }> {
+  // An instant, not a day count. A day count has to be resolved against
+  // somebody's clock, and the two ends of this wire are in different time
+  // zones often enough that the same request meant two different windows
+  // depending on which side did the arithmetic.
+  return request(`/recent${qs({ limit: opts.limit, since: opts.since, scope: opts.scope })}`)
 }
 
 // ── long-running jobs ──
@@ -313,12 +316,20 @@ async function readFile(path: string): Promise<ReadFileResponse> {
   return request(`/fs/read${qs({ path })}`)
 }
 
-/** `PUT /api/fs/write`. `ifMatch` undefined means "create, or overwrite
- *  unconditionally" server-side only when the file doesn't exist yet — if it
- *  does exist, the server demands a match and answers `412 fs.precondition`
- *  with the current etag (`CoreError::Precondition`, `crates/sc-core/src/ops.rs`
- *  `write_text`). The editor always has an etag once a file has been opened,
- *  so in practice this is only ever called without one for a brand-new file. */
+/**
+ * `PUT /api/fs/write`.
+ *
+ * Omitting `ifMatch` writes without a condition. Two callers do it, and both
+ * on purpose: a brand-new file has no version to condition on, and the
+ * editor's overwrite action deliberately drops the condition after a refusal.
+ *
+ * That second one matters. This server derives a file's change token from
+ * metadata, which cannot be exact, and it refuses a conditional write against
+ * an inexact token rather than accepting one it cannot honour. Retrying with
+ * either the original token or the one the refusal returned is refused again,
+ * every time, so the only way past it is a request that asks for no condition
+ * at all, made because somebody chose to.
+ */
 async function writeFile(path: string, content: string, ifMatch?: string): Promise<Entry> {
   return request('/fs/write', {
     method: 'PUT',
@@ -806,7 +817,10 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
       kind: raw.is_dir ? 'dir' : 'file',
       size: raw.size ?? 0,
       mtime_ns: raw.mtime_ns ?? '0',
+      // A search hit carries no change token, so there is nothing to be exact
+      // about and nothing here may be used for a conditional write.
       etag: '',
+      etag_weak: true,
       perms: { read: true, write: false, create: false, delete: false, rename: false, move: false, share: false, download: false },
       // No numeric fid in the wire shape (see this file's header comment on
       // `RawSearchHit`) — left `undefined` rather than guessed, same as a

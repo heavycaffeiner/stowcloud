@@ -284,7 +284,8 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
         dirs: fresh.dirs,
         cursor: encodeCursor(freshOffset + page.length, fresh.entries.length),
         entries: page,
-        dir_etag: fresh.dirEtag,
+        dir_etag_weak: true,
+      dir_etag: fresh.dirEtag,
         stale: true
       }
     }
@@ -299,7 +300,8 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
         dirs: session.dirs,
         cursor: encodeCursor(offset + page.length, session.entries.length),
         entries: page,
-        dir_etag: session.dirEtag
+        dir_etag_weak: true,
+      dir_etag: session.dirEtag
       }
     }
     if (!opts.cursor) {
@@ -313,6 +315,7 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
       dirs: session.dirs,
       cursor: encodeCursor(offset + page.length, session.entries.length),
       entries: page,
+      dir_etag_weak: true,
       dir_etag: session.dirEtag
     }
   }
@@ -333,7 +336,8 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
     dirs: session.dirs,
     cursor: encodeCursor(startOffset + page.length, session.entries.length),
     entries: page,
-    dir_etag: session.dirEtag
+    dir_etag_weak: true,
+      dir_etag: session.dirEtag
   }
 }
 
@@ -362,6 +366,7 @@ async function mkdir(path: string): Promise<Entry> {
     size: 0,
     mtime_ns: (BigInt(Date.now()) * 1_000_000n).toString(),
     etag: randomId('e'),
+    etag_weak: true,
     perms: defaultPerms(),
     id: newMockFileId()
   }
@@ -692,6 +697,8 @@ async function archiveList(path: string): Promise<ArchiveListing> {
   // an archive costs follows its entry count and not its bytes. The rejection
   // that remains is the entry-count cap, which this tree never reaches.
   return {
+    truncated: false,
+    limit: 10_000,
     entries: [
       { name: 'docs/', size: 0, kind: 'dir' },
       { name: 'docs/readme.txt', size: 1_842, kind: 'file' },
@@ -754,9 +761,13 @@ async function recentList(
         walk(full)
       } else if (BigInt(child.mtime_ns) >= cutoff) {
         const vpath = full.replace(/^\//, '')
+        const label = vpath.split('/')[0] ?? ''
         hits.push({
           vpath,
-          share: vpath.split('/')[0] ?? '',
+          share: label,
+          // Sent explicitly, as the server does, rather than left for the
+          // caller to cut back out of the path.
+          subpath: vpath.slice(label.length + 1),
           name: child.name,
           size: child.size,
           mtime_ns: child.mtime_ns,
@@ -822,6 +833,7 @@ async function writeFile(path: string, content: string, ifMatch?: string): Promi
         size: content.length,
         mtime_ns: nowNs,
         etag: randomId('e'),
+        etag_weak: true,
         perms: defaultPerms(),
         id: newMockFileId()
       }

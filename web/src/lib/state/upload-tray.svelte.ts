@@ -67,7 +67,10 @@ export class UploadTrayState {
           kind: 'file',
           size: evt.size,
           mtime_ns: evt.mtimeNs,
+          // A locally minted token for a row this client just created. It is
+          // not the server's, so it is never exact.
           etag: Math.random().toString(16).slice(2),
+          etag_weak: true,
           perms: { read: true, write: true, create: false, delete: true, rename: true, move: true, share: true, download: true },
           // No numeric fid for a freshly-uploaded file — same reason a plain
           // `list`/`stat` doesn't have one (`Entry.id`'s doc comment in
