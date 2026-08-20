@@ -129,6 +129,16 @@ func (h *Handler) ServeMethod(w http.ResponseWriter, r *http.Request, res core.R
 		h.propfind(w, r, res)
 	case "PROPPATCH":
 		h.proppatch(w, r, res)
+	case "GET":
+		h.get(w, r, res, true)
+	case "HEAD":
+		h.get(w, r, res, false)
+	case "PUT":
+		h.put(w, r, res)
+	case "MKCOL":
+		h.mkcol(w, r, res)
+	case "DELETE":
+		h.del(w, r, res)
 	case "LOCK":
 		h.lock(w, r, res)
 	case "UNLOCK":
@@ -223,6 +233,9 @@ func StatusOf(err error) (int, Name) {
 
 	case errors.Is(err, core.ErrExists):
 		return http.StatusMethodNotAllowed, Name{}
+
+	case errors.Is(err, errUnsupportedMedia):
+		return http.StatusUnsupportedMediaType, Name{}
 
 	case errors.Is(err, core.ErrNotEmpty):
 		return http.StatusConflict, Name{}

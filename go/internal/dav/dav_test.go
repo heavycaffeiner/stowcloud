@@ -70,7 +70,8 @@ func newFixture(t *testing.T) *fixture {
 		_, gerr := tx.ExecContext(context.Background(),
 			`INSERT INTO "grant"(user, share, subpath, allow, deny, inherit, label, created_ns)
 			 VALUES (?, 1, '', ?, 0, 1, 'docs', 0)`,
-			int64(testUser), int64(acl.Read|acl.Write|acl.Create|acl.Delete|acl.Download))
+			int64(testUser),
+			int64(acl.Read|acl.Write|acl.Create|acl.Delete|acl.Rename|acl.Move|acl.Download))
 		return gerr
 	}); serr != nil {
 		t.Fatalf("seeding the account and its grant: %v", serr)
@@ -565,5 +566,247 @@ func TestAPathOutsideEveryGrantIsNotFound(t *testing.T) {
 		t.Fatal("a path outside every grant resolved")
 	} else if code, _ := StatusOf(err); code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404 for a path outside every grant", code)
+	}
+}
+
+// The content methods. Each is a shell over the core, so what is proved here
+// is the WebDAV framing rather than the filesystem behaviour.
+
+func TestPutCreatesThenUpdates(t *testing.T) {
+	f := newFixture(t)
+
+	rec := f.do(t, "PUT", "/new.txt", "hello", nil)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("a first PUT returned %d, want 201\n%s", rec.Code, rec.Body)
+	}
+	got, err := os.ReadFile(filepath.Join(f.host, "new.txt"))
+	if err != nil || string(got) != "hello" {
+		t.Fatalf("the file is %q, %v", got, err)
+	}
+
+	// A PUT onto an existing file is 204, not 201: nothing was created.
+	rec = f.do(t, "PUT", "/new.txt", "goodbye", nil)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("a second PUT returned %d, want 204", rec.Code)
+	}
+	got, err = os.ReadFile(filepath.Join(f.host, "new.txt"))
+	if err != nil || string(got) != "goodbye" {
+		t.Fatalf("the file is %q, %v", got, err)
+	}
+}
+
+func TestGetReturnsTheBodyAndHeadReturnsOnlyHeaders(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "a.txt", "hello")
+
+	rec := f.do(t, "GET", "/a.txt", "", nil)
+	if rec.Code != http.StatusOK || rec.Body.String() != "hello" {
+		t.Fatalf("GET = %d %q", rec.Code, rec.Body)
+	}
+	if rec.Header().Get("ETag") == "" {
+		t.Fatal("GET returned no validator, so a client cannot revalidate")
+	}
+
+	rec = f.do(t, "HEAD", "/a.txt", "", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("HEAD = %d", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("HEAD returned a body of %d bytes", rec.Body.Len())
+	}
+	if rec.Header().Get("Content-Length") != "5" {
+		t.Fatalf("HEAD Content-Length = %q, want 5", rec.Header().Get("Content-Length"))
+	}
+}
+
+// The validator a GET returns is the one a PROPFIND reports. A client compares
+// them, so a mismatch is a sync loop.
+func TestTheGetAndPropfindValidatorsAgree(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "a.txt", "hello")
+
+	fromGet := f.do(t, "GET", "/a.txt", "", nil).Header().Get("ETag")
+	doc := f.do(t, "PROPFIND", "/a.txt", "", http.Header{"Depth": {"0"}}).Body.String()
+
+	if fromGet == "" || !strings.Contains(doc, EscapeText(fromGet)) {
+		t.Fatalf("GET returned %q which is not in the PROPFIND document\n%s", fromGet, doc)
+	}
+}
+
+func TestIfNoneMatchAnswers304(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "a.txt", "hello")
+
+	tag := f.do(t, "GET", "/a.txt", "", nil).Header().Get("ETag")
+	rec := f.do(t, "GET", "/a.txt", "", http.Header{"If-None-Match": {tag}})
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("status = %d, want 304", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatal("a 304 carried a body")
+	}
+}
+
+func TestMkcolCreatesACollectionAndRefusesABody(t *testing.T) {
+	f := newFixture(t)
+
+	if rec := f.do(t, "MKCOL", "/sub", "", nil); rec.Code != http.StatusCreated {
+		t.Fatalf("MKCOL returned %d, want 201", rec.Code)
+	}
+	if st, err := os.Stat(filepath.Join(f.host, "sub")); err != nil || !st.IsDir() {
+		t.Fatalf("the collection was not created: %v", err)
+	}
+
+	// No body format is defined for MKCOL, so honouring one would be inventing
+	// semantics.
+	rec := f.do(t, "MKCOL", "/other", "<x/>", nil)
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("MKCOL with a body returned %d, want 415", rec.Code)
+	}
+}
+
+func TestDeleteRemovesTheResourceAndItsProperties(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "a.txt", "hello")
+
+	set := `<D:propertyupdate xmlns:D="DAV:"><D:set><D:prop>` +
+		`<colour xmlns="urn:test">red</colour></D:prop></D:set></D:propertyupdate>`
+	if rec := f.do(t, "PROPPATCH", "/a.txt", set, nil); rec.Code != http.StatusMultiStatus {
+		t.Fatalf("the set failed: %d", rec.Code)
+	}
+
+	if rec := f.do(t, "DELETE", "/a.txt", "", nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE returned %d, want 204", rec.Code)
+	}
+
+	// The properties must not outlive the resource and reattach to whatever
+	// next occupies the inode.
+	f.write(t, "a.txt", "different")
+	ask := `<D:propfind xmlns:D="DAV:"><D:prop><colour xmlns="urn:test"/></D:prop></D:propfind>`
+	rec := f.do(t, "PROPFIND", "/a.txt", ask, http.Header{"Depth": {"0"}})
+	if strings.Contains(rec.Body.String(), "red") {
+		t.Fatalf("a deleted resource's property came back on a new file\n%s", rec.Body)
+	}
+}
+
+// A locked resource refuses a PUT without the token, which is the point of
+// holding one.
+func TestAPutIntoALockedResourceIsRefusedWithoutTheToken(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "a.txt", "hello")
+	lockBody := `<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope>` +
+		`<D:locktype><D:write/></D:locktype></D:lockinfo>`
+	rec := f.do(t, "LOCK", "/a.txt", lockBody, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the lock failed: %d", rec.Code)
+	}
+	token := strings.Trim(rec.Header().Get("Lock-Token"), "<>")
+
+	if rec := f.do(t, "PUT", "/a.txt", "sneaky", nil); rec.Code != http.StatusLocked {
+		t.Fatalf("a PUT with no token returned %d, want 423", rec.Code)
+	}
+	got, rerr := os.ReadFile(filepath.Join(f.host, "a.txt"))
+	if rerr != nil || string(got) != "hello" {
+		t.Fatalf("the refused PUT still wrote: %q, %v", got, rerr)
+	}
+
+	with := http.Header{"If": {"(<" + token + ">)"}}
+	if rec := f.do(t, "PUT", "/a.txt", "allowed", with); rec.Code != http.StatusNoContent {
+		t.Fatalf("a PUT with the token returned %d, want 204", rec.Code)
+	}
+}
+
+// A GET of a collection has no defined body, so it is refused rather than
+// answered with an invented index.
+func TestGetOnACollectionIsNotAllowed(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "sub/x.txt", "x")
+	if rec := f.do(t, "GET", "/sub", "", nil); rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want 405", rec.Code)
+	}
+}
+
+func TestParseOverwriteDefaultsToTrue(t *testing.T) {
+	if !ParseOverwrite("") || !ParseOverwrite("T") || !ParseOverwrite("t") {
+		t.Fatal("Overwrite did not default to true")
+	}
+	if ParseOverwrite("F") || ParseOverwrite("f") || ParseOverwrite(" F ") {
+		t.Fatal("Overwrite: F was not honoured")
+	}
+}
+
+// COPY and MOVE take their destination from a header the router resolves, so
+// they are driven directly rather than through ServeMethod.
+
+func (f *fixture) transfer(t *testing.T, method, from, to string, overwrite bool) *httptest.ResponseRecorder {
+	t.Helper()
+	r := httptest.NewRequest(method, "/dav/docs"+from, nil)
+	r.Header.Set("Destination", "/dav/docs"+to)
+	rec := httptest.NewRecorder()
+	target := MoveTarget{Resolved: f.resolve(t, to), Overwrite: overwrite}
+	if method == "COPY" {
+		f.h.ServeCopy(rec, r, f.resolve(t, from), target)
+	} else {
+		f.h.ServeMove(rec, r, f.resolve(t, from), target)
+	}
+	return rec
+}
+
+func TestMoveRelocatesTheFile(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "a.txt", "hello")
+
+	if rec := f.transfer(t, "MOVE", "/a.txt", "/b.txt", true); rec.Code != http.StatusCreated {
+		t.Fatalf("MOVE returned %d, want 201\n%s", rec.Code, rec.Body)
+	}
+	if _, err := os.Stat(filepath.Join(f.host, "a.txt")); err == nil {
+		t.Fatal("the source survived a MOVE")
+	}
+	got, err := os.ReadFile(filepath.Join(f.host, "b.txt"))
+	if err != nil || string(got) != "hello" {
+		t.Fatalf("the destination is %q, %v", got, err)
+	}
+}
+
+func TestCopyLeavesTheSourceInPlace(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "a.txt", "hello")
+
+	if rec := f.transfer(t, "COPY", "/a.txt", "/b.txt", true); rec.Code != http.StatusCreated {
+		t.Fatalf("COPY returned %d, want 201\n%s", rec.Code, rec.Body)
+	}
+	for _, name := range []string{"a.txt", "b.txt"} {
+		got, err := os.ReadFile(filepath.Join(f.host, name))
+		if err != nil || string(got) != "hello" {
+			t.Fatalf("%s is %q, %v", name, got, err)
+		}
+	}
+}
+
+// Overwrite: F is what stops a MOVE from destroying the destination.
+func TestOverwriteFalseRefusesAnExistingDestination(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "a.txt", "source")
+	f.write(t, "b.txt", "destination")
+
+	rec := f.transfer(t, "MOVE", "/a.txt", "/b.txt", false)
+	if rec.Code != http.StatusPreconditionFailed {
+		t.Fatalf("status = %d, want 412", rec.Code)
+	}
+	got, rerr := os.ReadFile(filepath.Join(f.host, "b.txt"))
+	if rerr != nil || string(got) != "destination" {
+		t.Fatalf("the destination was overwritten anyway: %q, %v", got, rerr)
+	}
+}
+
+// A recursive copy is a background operation, because a large tree cannot be
+// copied inside a request.
+func TestCopyingACollectionIsAccepted(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "sub/x.txt", "x")
+
+	rec := f.transfer(t, "COPY", "/sub", "/sub2", true)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want 202 for a recursive copy\n%s", rec.Code, rec.Body)
 	}
 }
