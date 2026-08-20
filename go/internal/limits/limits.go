@@ -174,6 +174,55 @@ const (
 	DavInfinityEntries = 100_000
 )
 
+// OIDC bounds. Every one of these is counted against what an identity provider
+// sent, which is a party this server trusts to authenticate and does not trust
+// to be well behaved.
+const (
+	// OIDCResponseBytes is the ceiling on one response body, counted while the
+	// body arrives rather than after it is buffered: the point is to bound what
+	// is allocated, and a bound checked at the end has already allocated.
+	// A discovery document is a couple of kilobytes and a key set with a dozen
+	// keys is under ten, so this leaves three orders of magnitude of headroom.
+	OIDCResponseBytes = 256 << 10
+
+	// OIDCRequestTimeout is the ceiling on one outbound request, connect and
+	// handshake included. Every caller sits inside a redirect a person is
+	// waiting on, so the useful ceiling is shorter than their patience rather
+	// than long enough for any provider.
+	OIDCRequestTimeout = 10 * time.Second
+
+	// OIDCConnectTimeout bounds the connect alone, so a provider that accepts
+	// a connection and then stalls is not indistinguishable from one that never
+	// answers.
+	OIDCConnectTimeout = 5 * time.Second
+
+	// OIDCJWKSKeys bounds the keys one key set may carry. Each is parsed into a
+	// public key, so an unbounded set is work and memory the provider chooses.
+	OIDCJWKSKeys = 32
+
+	// OIDCTokenBytes bounds one compact token. It arrives inside a response
+	// already bounded above, but it is also decoded and parsed, so it carries
+	// its own.
+	OIDCTokenBytes = 16 << 10
+
+	// OIDCClockSkew is how far outside its own validity window a token may sit
+	// and still be accepted, which covers ordinary clock drift between two
+	// machines and nothing more.
+	OIDCClockSkew = 2 * time.Minute
+
+	// OIDCDiscoveryTTL bounds how long a discovery document is reused. A
+	// document cached without a bound is a provider's key rotation this server
+	// never notices.
+	OIDCDiscoveryTTL = time.Hour
+
+	// OIDCJWKSTTL is the same bound for the key set.
+	OIDCJWKSTTL = time.Hour
+
+	// OIDCFlowTTL is how long an authorization attempt may stay open. It is the
+	// window in which a stolen state value is worth anything.
+	OIDCFlowTTL = 10 * time.Minute
+)
+
 // ErrTooLarge is what every bound in this package refuses with.
 var ErrTooLarge = errors.New("limit exceeded")
 

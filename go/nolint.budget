@@ -129,5 +129,9 @@
 # bound directly above the conversion is what makes it fit. Two more that the
 # first draft had were removed instead, by narrowing the value once rather than
 # converting it at each of three use sites.
-183
+# Milestone 11c added three: reading the operator's own certificate path, the
+# only way to ask whether a system certificate pool is empty, and a test key
+# that is deliberately undersized so the refusal can be proved, plus a test
+# hash write that cannot fail.
+187
 
