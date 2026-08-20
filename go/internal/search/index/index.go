@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/search"
+	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
 // The trigram name index, off by default.
@@ -488,15 +489,16 @@ func (ix *NameIndex) Merge(ctx context.Context, gate func() bool) error {
 		return nil
 	}
 
-	// The new base is published by an atomic rename, so a crash here leaves
-	// the old one intact rather than a half-written index.
+	// The new base is staged and published by an atomic rename with the parent
+	// directory synced, so a crash here leaves the old segment intact rather
+	// than a half-written index. The rename lives in the VFS because that is
+	// the one place allowed to do one.
 	basePath := filepath.Join(ix.dir, "base.idx")
-	tmp := basePath + ".building"
-	if werr := os.WriteFile(tmp, buf, 0o600); werr != nil {
-		return fmt.Errorf("index: writing the new base: %w", werr)
-	}
-	if rerr := os.Rename(tmp, basePath); rerr != nil {
-		return errors.Join(fmt.Errorf("index: publishing the new base: %w", rerr), os.Remove(tmp))
+	if werr := vfs.ReplaceFileDurable(basePath, 0o600, func(f *os.File) error {
+		_, err := f.Write(buf)
+		return err
+	}); werr != nil {
+		return fmt.Errorf("index: publishing the new base: %w", werr)
 	}
 
 	// The segments the new base absorbed are only removed after it is in

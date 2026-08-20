@@ -161,15 +161,23 @@ func TestAQueryOverInvisibleEntriesIsNotSlower(t *testing.T) {
 	root, _ := newRoot(t, files)
 
 	deny := func(vfs.SafePath, bool) bool { return false }
+	// testing.Benchmark rather than a wall-clock subtraction: it uses the
+	// monotonic timer, which is what a duration wants, and D8 keeps time.Now
+	// inside internal/clock.
 	run := func(needle string) time.Duration {
-		start := time.Now()
-		for i := 0; i < 5; i++ {
-			if _, err := Walk(context.Background(), []Source{{Share: 1, Root: root, Allow: deny}},
-				WalkOptions{Needle: FoldString(needle), Threads: 1}); err != nil {
-				t.Fatalf("Walk: %v", err)
+		res := testing.Benchmark(func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				if _, err := Walk(context.Background(),
+					[]Source{{Share: 1, Root: root, Allow: deny}},
+					WalkOptions{Needle: FoldString(needle), Threads: 1}); err != nil {
+					b.Fatalf("Walk: %v", err)
+				}
 			}
+		})
+		if res.N == 0 {
+			t.Fatal("the walk never ran")
 		}
-		return time.Since(start)
+		return time.Duration(res.NsPerOp())
 	}
 
 	// "report" would match all four hundred; "zzzznomatch" matches none. With
