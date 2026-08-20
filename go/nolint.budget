@@ -88,6 +88,8 @@
 # documented safe for concurrent use, built once rather than per block.
 # Milestone 8d added five: four gosec file-inclusion warnings on segment paths
 # this package builds from the operator's own index directory and a fixed name,
-# and one on a test writing into its own TempDir.
-134
+# and one on a test writing into its own TempDir. Milestone 8e added one: a
+# test restoring a directory's execute bit so cleanup can descend into it,
+# which gosec reads as a file mode.
+135
 

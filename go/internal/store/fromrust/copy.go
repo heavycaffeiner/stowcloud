@@ -3,6 +3,7 @@ package fromrust
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -84,6 +85,9 @@ func (s *sources) into(ctx context.Context, tx *sql.Tx, rep *Report, clk clock.C
 		return err
 	}
 	if err := s.copyShares(ctx, tx, rep); err != nil {
+		return err
+	}
+	if err := s.copyIndexSettings(ctx, tx, rep); err != nil {
 		return err
 	}
 	return s.copyJobs(ctx, tx, rep, users)
@@ -682,3 +686,64 @@ func sortedDrops(m map[Drop]int) []Drop {
 //
 //nolint:gosec // the reinterpretation is the point; see above.
 func toSQL(v uint64) int64 { return int64(v) }
+
+// copyIndexSettings merges the administrator's index override into the unified
+// settings row.
+//
+// The index payload itself is a rebuildable cache and is not copied: the new
+// build crawls and writes its own segments. This one value cannot be
+// reconstructed from the filesystem or from the config file, because it is a
+// decision somebody made.
+//
+// The merge decodes to a generic map rather than a typed struct, so a section
+// the old build wrote that this one does not know about survives the round
+// trip. A typed decode would silently drop it.
+func (s *sources) copyIndexSettings(ctx context.Context, tx *sql.Tx, rep *Report) error {
+	if s.index == nil {
+		return nil
+	}
+	ok, terr := hasTable(ctx, s.index, "index_settings")
+	if terr != nil || !ok {
+		return terr
+	}
+
+	var nameEnabled int64
+	err := s.index.QueryRowContext(ctx, selIndexSettings).Scan(&nameEnabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		// No row means no administrator ever set it, and fabricating one would
+		// report a decision nobody made.
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("importing index_settings: %w", err)
+	}
+
+	// Whatever the settings copy already wrote, so this adds a key rather than
+	// replacing the document.
+	merged := map[string]any{}
+	var existing string
+	switch rerr := tx.QueryRowContext(ctx, selSettingsRow).Scan(&existing); {
+	case rerr == nil:
+		if existing != "" {
+			if jerr := json.Unmarshal([]byte(existing), &merged); jerr != nil {
+				return fmt.Errorf("importing index_settings: the settings row is not an object: %w", jerr)
+			}
+		}
+	case errors.Is(rerr, sql.ErrNoRows):
+		// No settings row yet; this creates one carrying only the override.
+	default:
+		return fmt.Errorf("importing index_settings: %w", rerr)
+	}
+
+	merged["search"] = map[string]any{"name_index_enabled": nameEnabled != 0}
+
+	encoded, jerr := json.Marshal(merged)
+	if jerr != nil {
+		return fmt.Errorf("importing index_settings: %w", jerr)
+	}
+	if _, eerr := tx.ExecContext(ctx, upsSettingsRow, string(encoded)); eerr != nil {
+		return fmt.Errorf("importing index_settings: %w", eerr)
+	}
+	record(rep, "index_settings", 1, nil)
+	return nil
+}

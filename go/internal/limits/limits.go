@@ -110,6 +110,15 @@ const (
 	// a partial result, flagged in the response.
 	SearchWalkDeadlineSSD        = 3 * time.Second
 	SearchWalkDeadlineRotational = 8 * time.Second
+
+	// SearchWalkDepth stops a walk descending forever. The path layer already
+	// refuses a symlink out of a share, so this bounds a genuinely deep tree
+	// rather than a loop.
+	SearchWalkDepth = 64
+
+	// SearchQueryBytes caps a query string. It is folded and split into
+	// trigrams, so an unbounded one is work a client chooses.
+	SearchQueryBytes = 1 << 10
 )
 
 // JournalRowsPerAccount is enforced by deleting the oldest rows inside the

@@ -100,7 +100,7 @@ func inventory() map[string]map[string]disposition {
 			"jobs":        {how: transformed},
 			"job_results": {how: transformed},
 		},
-		indexFile: {"index_settings": {how: deferred, phase: 8}},
+		indexFile: {"index_settings": {how: transformed}},
 		compatFile: {
 			"nc_favorite":     {how: copied},
 			"nc_instance":     {how: deferred, phase: 10},

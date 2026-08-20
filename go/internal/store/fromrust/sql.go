@@ -109,6 +109,16 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	selSettings = `SELECT id, json FROM settings_overrides`
 	insSettings = `INSERT INTO settings(id, json) VALUES (?, ?)`
 
+	// The administrator's index override. Presence of the row is the override:
+	// absence has to stay absence so the configured default still wins.
+	selIndexSettings = `SELECT name_enabled FROM index_settings WHERE id = 1`
+
+	// The settings row this import may have just written, read back so the
+	// index override merges into it rather than replacing it.
+	selSettingsRow = `SELECT json FROM settings WHERE id = 1`
+	upsSettingsRow = `INSERT INTO settings(id, json) VALUES (1, ?)
+	                  ON CONFLICT(id) DO UPDATE SET json = excluded.json`
+
 	// The interval blob is selected last, because the destination holds it as
 	// a table of its own rather than as a column. spooled_names is coalesced
 	// because a zero-length blob comes back from the driver as nothing at all,

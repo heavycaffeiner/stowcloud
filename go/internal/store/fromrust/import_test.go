@@ -193,14 +193,6 @@ func TestDeferredTablesRefuseOnlyWhenTheyHoldRows(t *testing.T) {
 		phase string
 	}{
 		{
-			"the persisted name-index switch", "index.db",
-			[]string{
-				`CREATE TABLE index_settings (id INTEGER PRIMARY KEY, name_index INTEGER)`,
-				`INSERT INTO index_settings VALUES (1, 1)`,
-			},
-			true, "Phase 8",
-		},
-		{
 			"the compat instance identity", "compat-nc.db",
 			[]string{
 				`CREATE TABLE nc_instance (id INTEGER PRIMARY KEY, instance TEXT)`,

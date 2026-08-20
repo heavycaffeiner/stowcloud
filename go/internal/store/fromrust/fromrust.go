@@ -290,6 +290,7 @@ type sources struct {
 	locks    *sql.DB
 	shares   *sql.DB
 	jobs     *sql.DB
+	index    *sql.DB
 }
 
 func openSources(dir string) (*sources, error) {
@@ -314,6 +315,7 @@ func openSources(dir string) (*sources, error) {
 	s.locks = s.byName(locksFile)
 	s.shares = s.byName(sharesFile)
 	s.jobs = s.byName(jobsFile)
+	s.index = s.byName(indexFile)
 
 	if s.auth == nil {
 		s.close()

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -152,7 +153,7 @@ func rustDir(t *testing.T) string {
 
 	mkdb(t, filepath.Join(dir, "settings.db"),
 		`CREATE TABLE settings_overrides (id INTEGER PRIMARY KEY, json TEXT)`,
-		`INSERT INTO settings_overrides VALUES (1, '{"a":1}')`,
+		`INSERT INTO settings_overrides VALUES (1, '{"a":1,"nested":{"b":2}}')`,
 	)
 
 	// One lock a client is still holding and one that lapsed. expires_ns is
@@ -652,5 +653,97 @@ func TestTheImportPublishesOneFile(t *testing.T) {
 	}
 	if len(stateFiles) != 1 || stateFiles[0] != store.StateFile {
 		t.Errorf("the import left %v, want just %s", stateFiles, store.StateFile)
+	}
+}
+
+// The administrator's index switch is not a cache. The index payload is
+// rebuilt, but this one value cannot be reconstructed from the filesystem or
+// from the config file, because it is a decision somebody made.
+func TestTheIndexOverrideIsImportedIntoTheSettingsRow(t *testing.T) {
+	dir := rustDir(t)
+	mkdb(t, filepath.Join(dir, "index.db"),
+		`CREATE TABLE index_settings (id INTEGER PRIMARY KEY CHECK (id = 1), name_enabled INTEGER NOT NULL)`,
+		`INSERT INTO index_settings VALUES (1, 1)`)
+
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	st := openState(t, dir)
+	var raw string
+	if err := st.SQL().QueryRow(`SELECT json FROM settings WHERE id = 1`).Scan(&raw); err != nil {
+		t.Fatalf("reading the settings row: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("the settings row is not an object: %v", err)
+	}
+	section, ok := got["search"].(map[string]any)
+	if !ok {
+		t.Fatalf("the settings row carries no search section: %s", raw)
+	}
+	if section["name_index_enabled"] != true {
+		t.Fatalf("the override did not come across: %s", raw)
+	}
+}
+
+// The merge must not drop a section this build has never heard of. A typed
+// round trip would silently lose one, and the settings the old build wrote
+// would quietly revert.
+func TestTheIndexOverrideMergePreservesUnknownKeys(t *testing.T) {
+	dir := rustDir(t)
+	mkdb(t, filepath.Join(dir, "index.db"),
+		`CREATE TABLE index_settings (id INTEGER PRIMARY KEY CHECK (id = 1), name_enabled INTEGER NOT NULL)`,
+		`INSERT INTO index_settings VALUES (1, 0)`)
+
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	st := openState(t, dir)
+	var raw string
+	if err := st.SQL().QueryRow(`SELECT json FROM settings WHERE id = 1`).Scan(&raw); err != nil {
+		t.Fatalf("reading the settings row: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("the settings row is not an object: %v", err)
+	}
+	if got["a"] != float64(1) {
+		t.Fatalf("a top-level key the old build wrote was dropped: %s", raw)
+	}
+	nested, ok := got["nested"].(map[string]any)
+	if !ok || nested["b"] != float64(2) {
+		t.Fatalf("a nested section was dropped: %s", raw)
+	}
+	section, ok := got["search"].(map[string]any)
+	if !ok || section["name_index_enabled"] != false {
+		t.Fatalf("the override did not come across as false: %s", raw)
+	}
+}
+
+// Absence has to stay absence, so the configured default still wins. A
+// fabricated row would report an administrator decision nobody made.
+func TestNoIndexRowLeavesTheSettingsUntouched(t *testing.T) {
+	dir := rustDir(t)
+	mkdb(t, filepath.Join(dir, "index.db"),
+		`CREATE TABLE index_settings (id INTEGER PRIMARY KEY CHECK (id = 1), name_enabled INTEGER NOT NULL)`)
+
+	if _, err := fromrust.Import(context.Background(), dir, testClock()); err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	st := openState(t, dir)
+	var raw string
+	if err := st.SQL().QueryRow(`SELECT json FROM settings WHERE id = 1`).Scan(&raw); err != nil {
+		t.Fatalf("reading the settings row: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatalf("the settings row is not an object: %v", err)
+	}
+	if _, present := got["search"]; present {
+		t.Fatalf("an empty index_settings still wrote a search section: %s", raw)
+	}
+	// And what the settings copy already wrote is untouched.
+	if got["a"] != float64(1) {
+		t.Fatalf("the imported settings were disturbed: %s", raw)
 	}
 }
