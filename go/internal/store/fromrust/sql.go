@@ -197,7 +197,7 @@ INSERT INTO favorite(user, share, dev, ino, btime_present, btime_ns) VALUES (?, 
 	// DYNAMIC_SHARE_ID_BASE was added to, so the id is carried as-is: grants
 	// and API payloads already refer to the external id, and the destination
 	// keeps the same arithmetic.
-	selShare = `SELECT id, name, host_path, created_at FROM share_`
+	selShare = `SELECT id, name, host_path, created_ns FROM share_`
 	insShare = `
 INSERT INTO share_definition(id, name, host_path, created_ns) VALUES (?, ?, ?, ?)`
 

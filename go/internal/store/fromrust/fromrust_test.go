@@ -177,7 +177,7 @@ func rustDir(t *testing.T) string {
 	// it is dropped with a reason.
 	mkdb(t, filepath.Join(dir, "shares.db"),
 		`CREATE TABLE share_ (id INTEGER PRIMARY KEY, name TEXT NOT NULL, host_path TEXT NOT NULL,
-		   created_at INTEGER NOT NULL)`,
+		   created_ns INTEGER NOT NULL)`,
 		`INSERT INTO share_ VALUES (7, 'photos', '/srv/photos', 100)`,
 		`CREATE TABLE share_identity_override (share_id INTEGER PRIMARY KEY, name TEXT NOT NULL,
 		   host_path TEXT NOT NULL)`,
