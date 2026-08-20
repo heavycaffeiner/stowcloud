@@ -81,5 +81,8 @@
 # the real answer, and two rows.Close on fully read sets. Two are the device
 # and inode numbers crossing into signed SQLite storage as their bit pattern,
 # the same conversion the cache already does for the same reason.
-126
+#
+# Phase 8 added one: the folding Caser, which is immutable and documented safe
+# for concurrent use, so it is shared rather than rebuilt per name.
+127
 
