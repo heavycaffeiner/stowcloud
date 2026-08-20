@@ -33,7 +33,7 @@ const (
 
 // Mounts is every route the layer owns.
 func (l *Layer) Mounts() []Mount {
-	return []Mount{
+	mounts := []Mount{
 		// Unauthenticated discovery, which is what a client fetches before it
 		// knows anything else about this server.
 		{Method: "GET", Pattern: MountStatus, Handler: http.HandlerFunc(l.status)},
@@ -63,6 +63,9 @@ func (l *Layer) Mounts() []Mount {
 		{Method: "POST", Pattern: MountLoginPoll, Handler: http.HandlerFunc(l.loginPoll)},
 		{Method: "POST", Pattern: MountLoginGrant, Handler: http.HandlerFunc(l.loginGrant)},
 	}
+	// The thumbnail routes, which redirect to the content origin rather than
+	// serving any bytes from this one.
+	return append(mounts, l.previewMounts()...)
 }
 
 // status answers the pre-login probe.

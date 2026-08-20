@@ -13,6 +13,7 @@ package nc
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/compat/ncport"
@@ -30,6 +31,11 @@ type Deps struct {
 	Search   ncport.SearchPort
 	Preview  ncport.PreviewPort
 	Direct   DirectPort
+	Trash    TrashPort
+	// WriteTrash renders the trash listing. The multistatus writer belongs to
+	// the WebDAV package, which this may not import, so the assembly supplies
+	// one rather than this growing a second XML writer.
+	WriteTrash func(w http.ResponseWriter, r *http.Request, entries []TrashEntry)
 	// FileID resolves an entry's stable id, which several surfaces report.
 	FileID func(e ncport.Entry) (FileID, bool)
 	// Authenticate resolves a request to a principal. Supplied rather than
