@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -520,5 +521,49 @@ func TestSearchAndReportAreNotAdvertisedWithoutASource(t *testing.T) {
 	}
 	if rec := f.do(t, "REPORT", "/a.txt", `<x/>`, nil); rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("REPORT returned %d with no source, want 405", rec.Code)
+	}
+}
+
+// Depth: infinity over a large collection is refused rather than attempted.
+// The bound is lowered for the test because the real one is a hundred thousand
+// entries and the point is which check refuses, not how long it takes to hit.
+func TestDepthInfinityOverALargeCollectionIsRefused(t *testing.T) {
+	f := newFixture(t)
+	for i := 0; i < 8; i++ {
+		f.write(t, "f"+strconv.Itoa(i)+".txt", "x")
+	}
+
+	// A handler whose infinity bound is smaller than the directory.
+	f.h = New(Options{
+		Core: f.core, State: f.store.State(),
+		Locks:           NewLocks(f.store.State(), f.clk),
+		InfinityEntries: 4,
+	})
+
+	rec := f.do(t, "PROPFIND", "/", "", http.Header{"Depth": {"infinity"}})
+	if rec.Code != http.StatusInsufficientStorage {
+		t.Fatalf("status = %d, want 507\n%s", rec.Code, rec.Body)
+	}
+
+	// Depth 1 over the same directory is unaffected: the refusal is about the
+	// recursive walk, not about the directory being large.
+	if rec := f.do(t, "PROPFIND", "/", "", http.Header{"Depth": {"1"}}); rec.Code != http.StatusMultiStatus {
+		t.Fatalf("depth 1 returned %d, want 207", rec.Code)
+	}
+}
+
+// A path outside every grant is a 404 here too. WebDAV's status vocabulary
+// makes 403 feel natural and it is wrong: a 403 tells a stranger the path
+// exists.
+func TestAPathOutsideEveryGrantIsNotFound(t *testing.T) {
+	f := newFixture(t)
+	vp, err := vfs.ParseVpath("nosuchshare/secret.txt")
+	if err != nil {
+		t.Fatalf("ParseVpath: %v", err)
+	}
+	if _, err := f.core.Resolve(testUser, vp, acl.Read); err == nil {
+		t.Fatal("a path outside every grant resolved")
+	} else if code, _ := StatusOf(err); code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for a path outside every grant", code)
 	}
 }

@@ -177,9 +177,9 @@ func (h *Handler) refuseHugeInfinity(ctx context.Context, res core.Resolved) err
 	if err != nil {
 		return err
 	}
-	if page.Total > limits.DavInfinityEntries {
+	if page.Total > h.infinityEntries {
 		return limits.Exceed("dav depth-infinity entries",
-			limits.DavInfinityEntries, int64(page.Total))
+			int64(h.infinityEntries), int64(page.Total))
 	}
 	return nil
 }

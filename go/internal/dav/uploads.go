@@ -57,7 +57,10 @@ type UploadPath struct {
 // refused rather than coerced: a name that parsed loosely would assemble in an
 // order the client did not intend, and the ordering is the whole contract.
 func ParseUploadPath(p string) (UploadPath, error) {
-	p = strings.Trim(p, "/")
+	// Only a leading slash is stripped. A trailing one means the request named
+	// a member and left the name off, which is not the collection: treating it
+	// as one would turn a malformed PUT into a MKCOL of a session that exists.
+	p = strings.TrimPrefix(p, "/")
 	if p == "" {
 		return UploadPath{}, ErrNotFound
 	}
@@ -74,7 +77,13 @@ func ParseUploadPath(p string) (UploadPath, error) {
 	}
 
 	name := parts[1]
-	if name == "" || len(name) > 20 {
+	if name == "" || len(name) > 10 {
+		return UploadPath{}, ErrBadRequest
+	}
+	// A zero-padded name would parse to the same number as its bare form, and
+	// the second one written would silently replace the first. One name per
+	// chunk means the canonical spelling only.
+	if len(name) > 1 && name[0] == '0' {
 		return UploadPath{}, ErrBadRequest
 	}
 	for i := 0; i < len(name); i++ {
