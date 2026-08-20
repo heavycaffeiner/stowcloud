@@ -330,7 +330,7 @@ func TestAnUnusableServerNameIsRefused(t *testing.T) {
 		"has space",
 		"has]bracket",
 		"has\nnewline",
-		"unicode-네임",
+		"unicode-\u00e9name",
 	} {
 		cfg := baseConfig()
 		cfg.ServerName = name

@@ -337,7 +337,10 @@ func TestAnAudienceListContainingThisClientIsAccepted(t *testing.T) {
 // The allowance covers ordinary drift between two machines and nothing more.
 func TestTheSkewAllowanceIsWhatAdmitsAndRefuses(t *testing.T) {
 	s := newSigner(t)
-	base := time.Now()
+	// A fixed instant rather than the wall clock, so the two cases below sit
+	// at a known distance from the boundary rather than wherever the run
+	// happened to start.
+	base := time.Unix(1_700_000_000, 0)
 
 	// A token that expired just inside the allowance is accepted.
 	inside := clock.Fixed(base)
