@@ -85,3 +85,22 @@ func (c *Core) StartCopy(ctx context.Context, owner UserID, from, to Resolved) (
 	})
 	return id, nil
 }
+
+// ListOperations returns one account's operations, newest first.
+//
+// Scoped to the caller for the same reason a single one is: an operation list
+// that showed somebody else's would name their paths.
+func (c *Core) ListOperations(ctx context.Context, owner UserID, limit int) ([]Operation, error) {
+	ops, err := c.state.ListOps(ctx, int64(owner), limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Operation, 0, len(ops))
+	for _, op := range ops {
+		// The per-item results are deliberately not read here. They are
+		// bounded per operation and a listing would multiply that by the page,
+		// and the screen this feeds shows progress rather than outcomes.
+		out = append(out, Operation{ID: OperationID(op.ID), Kind: op.Kind, State: op.State})
+	}
+	return out, nil
+}

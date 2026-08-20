@@ -53,9 +53,35 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		{Method: "POST", Pattern: "/api/auth/login", Req: any, Handler: handler.Login(d)},
 		{Method: "GET", Pattern: "/api/auth/session", Req: selfAdmin, Handler: handler.Session(d)},
 		{Method: "POST", Pattern: "/api/auth/logout", Req: any, Handler: handler.Logout(d)},
+		{Method: "POST", Pattern: "/api/auth/password", Req: selfAdmin, Handler: handler.ChangePassword(d)},
+
+		// The second factor. Every one of these re-confirms the account
+		// password: a live session is what somebody at an unlocked screen
+		// already has, and these outlive the session that created them.
+		// The code screen, which is the second request of one sign-in. It needs
+		// no credential: the challenge it carries is what proves the password
+		// step already happened.
+		{Method: "POST", Pattern: "/api/auth/login/totp", Req: any, Handler: handler.LoginTOTP(d)},
+
+		{Method: "POST", Pattern: "/api/auth/totp/setup", Req: selfAdmin, Handler: handler.TOTPSetup(d)},
+		{Method: "POST", Pattern: "/api/auth/totp/enroll", Req: selfAdmin, Handler: handler.TOTPEnroll(d)},
+		{Method: "POST", Pattern: "/api/auth/totp/disable", Req: selfAdmin, Handler: handler.TOTPDisable(d)},
+		{Method: "GET", Pattern: "/api/auth/totp/recovery-codes", Req: selfAdmin, Handler: handler.RecoveryCodes(d)},
+		{Method: "POST", Pattern: "/api/auth/totp/recovery-codes", Req: selfAdmin, Handler: handler.RecoveryCodes(d)},
+
+		// The file-sharing protocol's own credential and its two toggles.
+		// Linking a provider identity to this account. Link-only: the provider
+		// authenticates and never creates an account here.
+		{Method: "POST", Pattern: "/api/auth/oidc/link/start", Req: selfAdmin, Handler: handler.OIDCLinkStart(d)},
+		{Method: "DELETE", Pattern: "/api/auth/oidc/link", Req: selfAdmin, Handler: handler.OIDCUnlink(d)},
+
+		{Method: "POST", Pattern: "/api/auth/smb", Req: selfAdmin, Handler: handler.SMBSettings(d)},
+		{Method: "POST", Pattern: "/api/auth/smb/password", Req: selfAdmin, Handler: handler.SMBPassword(d)},
+
 		{Method: "GET", Pattern: "/api/auth/app-passwords", Req: selfAdmin, Handler: handler.AppPasswords(d)},
 		{Method: "POST", Pattern: "/api/auth/app-passwords", Req: selfAdmin, Handler: handler.AppPasswords(d)},
 		{Method: "DELETE", Pattern: "/api/auth/app-passwords/{id}", Req: selfAdmin, Handler: handler.AppPasswordDelete(d)},
+		{Method: "POST", Pattern: "/api/auth/app-passwords/{id}/wipe", Req: selfAdmin, Handler: handler.AppPasswordWipe(d)},
 		{Method: "GET", Pattern: "/api/auth/sessions", Req: selfAdmin, Handler: handler.Sessions(d)},
 		{Method: "DELETE", Pattern: "/api/auth/sessions/{id}", Req: selfAdmin, Handler: handler.Sessions(d)},
 
@@ -73,7 +99,19 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		{Method: "GET", Pattern: "/api/fs/link", Req: req(acl.Read), Handler: handler.Links(d)},
 		{Method: "POST", Pattern: "/api/fs/link", Req: req(acl.Read), Handler: handler.Links(d)},
 		{Method: "DELETE", Pattern: "/api/fs/link/{id}", Req: req(acl.Read), Handler: handler.LinkDelete(d)},
+
+		// The same links under the name the client uses for them. The
+		// capability is the share right rather than read: minting a link hands
+		// a file to whoever holds the URL.
+		{Method: "GET", Pattern: "/api/shares", Req: req(acl.Share), Handler: handler.Links(d)},
+		{Method: "POST", Pattern: "/api/shares", Req: req(acl.Share), Handler: handler.Links(d)},
+		{Method: "PATCH", Pattern: "/api/shares/{id}", Req: req(acl.Share), Handler: handler.LinkUpdate(d)},
+		{Method: "DELETE", Pattern: "/api/shares/{id}", Req: req(acl.Share), Handler: handler.LinkDelete(d)},
+
+		// Listing the jobs this account has in flight.
+		{Method: "GET", Pattern: "/api/jobs", Req: any, Handler: handler.Operations(d)},
 		{Method: "GET", Pattern: "/api/fs/archive/list", Req: req(acl.Read), Handler: handler.ArchiveList(d)},
+		{Method: "POST", Pattern: "/api/fs/archive", Req: req(acl.Read | acl.Create), Handler: handler.ArchiveCreate(d)},
 
 		// Trash.
 		{Method: "GET", Pattern: "/api/trash", Req: req(acl.Read), Handler: handler.Trash(d)},
@@ -92,6 +130,45 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		{Method: "GET", Pattern: "/api/recent", Req: req(acl.Read), Handler: handler.Recent(d)},
 
 		// Admin.
+		// Accounts and groups. Sessions only, never an app password: an app
+		// password is a filesystem capability handed to a device, and a device
+		// that can create an administrator can grant itself anything.
+		{Method: "GET", Pattern: "/api/admin/users", Req: selfAdmin, Handler: handler.AdminUsers(d)},
+		{Method: "POST", Pattern: "/api/admin/users", Req: selfAdmin, Handler: handler.AdminUsers(d)},
+		{Method: "PATCH", Pattern: "/api/admin/users/{id}", Req: selfAdmin, Handler: handler.AdminUser(d)},
+		{Method: "DELETE", Pattern: "/api/admin/users/{id}", Req: selfAdmin, Handler: handler.AdminUser(d)},
+		{Method: "GET", Pattern: "/api/admin/users/{id}/oidc", Req: selfAdmin, Handler: handler.AdminUserOIDC(d)},
+		{Method: "PUT", Pattern: "/api/admin/users/{id}/oidc", Req: selfAdmin, Handler: handler.AdminUserOIDC(d)},
+		{Method: "DELETE", Pattern: "/api/admin/users/{id}/oidc", Req: selfAdmin, Handler: handler.AdminUserOIDC(d)},
+		{Method: "GET", Pattern: "/api/admin/groups", Req: selfAdmin, Handler: handler.AdminGroups(d)},
+		{Method: "POST", Pattern: "/api/admin/groups", Req: selfAdmin, Handler: handler.AdminGroups(d)},
+		{Method: "DELETE", Pattern: "/api/admin/groups/{id}", Req: selfAdmin, Handler: handler.AdminGroup(d)},
+		{Method: "POST", Pattern: "/api/admin/groups/{gid}/members", Req: selfAdmin, Handler: handler.AdminGroupMembers(d)},
+		{Method: "DELETE", Pattern: "/api/admin/groups/{gid}/members/{user}", Req: selfAdmin, Handler: handler.AdminGroupMembers(d)},
+
+		// Grants. Every write reloads the evaluator before answering, so a
+		// grant is never live in the database and stale in this process.
+		{Method: "GET", Pattern: "/api/admin/grants", Req: selfAdmin, Handler: handler.AdminGrants(d)},
+		{Method: "POST", Pattern: "/api/admin/grants", Req: selfAdmin, Handler: handler.AdminGrants(d)},
+		{Method: "PATCH", Pattern: "/api/admin/grants/{id}", Req: selfAdmin, Handler: handler.AdminGrant(d)},
+		{Method: "DELETE", Pattern: "/api/admin/grants/{id}", Req: selfAdmin, Handler: handler.AdminGrant(d)},
+
+		// Operational reporting and the settings sections.
+		{Method: "GET", Pattern: "/api/admin/storage", Req: selfAdmin, Handler: handler.AdminStorage(d)},
+		{Method: "GET", Pattern: "/api/admin/audit", Req: selfAdmin, Handler: handler.AdminAudit(d)},
+		{Method: "GET", Pattern: "/api/admin/index/estimate", Req: selfAdmin, Handler: handler.AdminIndexEstimate(d)},
+		{Method: "POST", Pattern: "/api/admin/index/build", Req: selfAdmin, Handler: handler.AdminIndexBuild(d)},
+		{Method: "GET", Pattern: "/api/admin/index/settings", Req: selfAdmin, Handler: handler.AdminIndexSettings(d)},
+		{Method: "PATCH", Pattern: "/api/admin/index/settings", Req: selfAdmin, Handler: handler.AdminIndexSettings(d)},
+		{Method: "PATCH", Pattern: "/api/admin/upload-settings", Req: selfAdmin, Handler: handler.AdminUploadSettings(d)},
+
+		// The settings sections. One handler for all of them: they differ only
+		// in which key they write, and a section nobody recognises is refused
+		// rather than created.
+		{Method: "PATCH", Pattern: "/api/admin/server-settings/{section}", Req: selfAdmin, Handler: handler.AdminServerSettingsSection(d)},
+		{Method: "DELETE", Pattern: "/api/admin/server-settings/{section}", Req: selfAdmin, Handler: handler.AdminServerSettingsSection(d)},
+		{Method: "POST", Pattern: "/api/admin/server-settings/restart", Req: selfAdmin, Handler: handler.AdminServerSettingsRestart(d)},
+
 		{Method: "GET", Pattern: "/api/admin/shares", Req: selfAdmin, Handler: handler.Shares(d)},
 		{Method: "POST", Pattern: "/api/admin/shares", Req: selfAdmin, Handler: handler.Shares(d)},
 		{Method: "PATCH", Pattern: "/api/admin/shares/{id}", Req: selfAdmin, Handler: handler.ShareUpdate(d)},

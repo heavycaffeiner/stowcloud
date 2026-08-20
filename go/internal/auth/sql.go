@@ -74,6 +74,14 @@ INSERT INTO recovery_code(user, code_hash, used_ns) VALUES (?, ?, NULL)`
 
 	sqlDeleteAllRecovery = `DELETE FROM recovery_code WHERE user = ?`
 
+	sqlCountUnusedRecoveryCodes = `SELECT COUNT(*) FROM recovery_code WHERE user = ? AND used_ns IS NULL`
+
+	// The wipe marks the credential and revokes it in one statement: a device
+	// that never reconnects to hear the request must not keep working.
+	sqlRequestWipe = `UPDATE app_password SET wipe_requested = 1, expires_ns = 0 WHERE user = ? AND id = ?`
+
+	sqlClearSMBOptOut = `UPDATE user SET smb_opt_out = 0, smb_enabled = 1 WHERE id = ?`
+
 	sqlConsumeRecoveryCode = `
 UPDATE recovery_code SET used_ns = ?
 WHERE user = ? AND code_hash = ? AND used_ns IS NULL`
@@ -107,6 +115,31 @@ FROM share_link WHERE token_enc IS NOT NULL`
 
 	sqlInsertGroup = `INSERT INTO "group"(id, name) VALUES (?, ?)`
 
+	// The administrator's account listing. The display name is optional and an
+	// imported account carries none, so an absent one reads as empty rather
+	// than failing the scan.
+	sqlListUsers = `
+SELECT id, name, COALESCE(display, ''), disabled, role, smb_enabled, created_ns,
+       quota_bytes, usage_bytes,
+       EXISTS(SELECT 1 FROM totp_secret t WHERE t.user = user.id)
+FROM user ORDER BY id`
+
+	sqlDeleteUser = `DELETE FROM user WHERE id = ?`
+
+	sqlSetQuota = `UPDATE user SET quota_bytes = ? WHERE id = ?`
+
+	sqlListGroups = `SELECT id, name FROM "group" ORDER BY id`
+
+	sqlListMemberships = `SELECT user, "group" FROM membership`
+
+	sqlDeleteGroup = `DELETE FROM "group" WHERE id = ?`
+
+	// Adding twice is not an error: the caller asked for a state and the state
+	// is reached either way.
+	sqlAddMembership = `INSERT OR IGNORE INTO membership(user, "group") VALUES (?, ?)`
+
+	sqlRemoveMembership = `DELETE FROM membership WHERE user = ? AND "group" = ?`
+
 	sqlDeleteMemberships = `DELETE FROM membership WHERE user = ?`
 
 	sqlInsertMembership = `INSERT INTO membership(user, "group") VALUES (?, ?)`
@@ -129,3 +162,8 @@ FROM session WHERE user = ? ORDER BY last_seen_ns DESC`
 
 	sqlListAppPasswords = `SELECT id, name, scope_perms, scope_shares, created_ns, expires_ns, last_used_ns FROM app_password WHERE user = ? ORDER BY created_ns DESC` //nolint:gosec // G101 reads the identifier: a statement, not a credential.
 )
+
+// The audit page, newest first. Bounded by the caller; see AuditPage.
+const sqlReadAuditPage = `
+SELECT rowid, ts_ns, actor, event, target, ip, ua, result
+FROM audit ORDER BY rowid DESC LIMIT ?`

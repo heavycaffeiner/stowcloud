@@ -120,3 +120,26 @@ func opResultStatus(ok bool, reason state.OpResultReason) string {
 	}
 	return "failed"
 }
+
+// Operations answers GET /api/jobs: what this account has in flight.
+func Operations(d Deps) http.HandlerFunc {
+	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
+		uid, cerr := userOf(r)
+		if cerr != nil {
+			return cerr
+		}
+		ops, err := d.Core.ListOperations(r.Context(), uid, jobListLimit)
+		if err != nil {
+			return err
+		}
+		out := make([]operationResponse, 0, len(ops))
+		for _, op := range ops {
+			out = append(out, operationToJSON(op))
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"jobs": out})
+	})
+}
+
+// jobListLimit bounds the listing. The table grows with every batch anyone
+// runs, and the screen shows what is running and what just finished.
+const jobListLimit = 100

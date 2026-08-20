@@ -7,6 +7,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
+	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/route"
 )
 
 // Signing in has to be reachable on the path the client asks for.
@@ -32,11 +33,12 @@ func TestSigningInIsMountedWhereTheClientAsks(t *testing.T) {
 		t.Fatal("POST /api/auth/login is not in the route table, so nobody can sign in")
 	}
 
-	// And it is not on the change-password path, which is a different endpoint
-	// the client also calls and which requires a credential.
+	// And the change-password path is a different endpoint, which the client
+	// also calls. What matters is that the two are not the same handler:
+	// mounting login there is what made signing in impossible.
 	for _, rt := range table {
-		if rt.Pattern == "/api/auth/password" && rt.Method == http.MethodPost {
-			t.Error("login is mounted on the change-password path")
+		if rt.Pattern == "/api/auth/password" && rt.Req.Access == route.AccessAny {
+			t.Error("the change-password path is reachable with no credential, which is what login looked like")
 		}
 	}
 }

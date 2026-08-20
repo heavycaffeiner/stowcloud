@@ -93,6 +93,10 @@ func Map(err error) (int, *Error) {
 		return http.StatusPreconditionFailed, NewError(CodeFsPrecondition, msgPrecondition, "")
 	case errors.Is(err, core.ErrConflict), errors.Is(err, vfs.ErrCrossDevice):
 		return http.StatusConflict, NewError(CodeFsConflict, msgConflict, "")
+	case errors.Is(err, auth.ErrNameTaken):
+		// A name somebody else holds is a conflict the person who typed it can
+		// act on, not a server error.
+		return http.StatusConflict, NewError(CodeFsConflict, "that name is already taken", "admin.name_taken")
 	case errors.Is(err, core.ErrExists), errors.Is(err, vfs.ErrExists):
 		return http.StatusConflict, NewError(CodeFsConflict, msgConflict, "")
 	case errors.Is(err, core.ErrNotEmpty), errors.Is(err, vfs.ErrNotEmpty):

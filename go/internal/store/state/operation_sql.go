@@ -10,6 +10,11 @@ VALUES (?, ?, ?, 0, ?, ?, 0, ?)`
 SELECT id, user, kind, state, progress, total, message, cancellation, created_ns, finished_ns
 FROM operation WHERE id = ?`
 
+	// One account's operations, newest first and bounded. See ListOps.
+	sqlListOps = `
+SELECT id, user, kind, state, progress, total, message, created_ns, finished_ns
+FROM operation WHERE user = ? ORDER BY id DESC LIMIT ?`
+
 	sqlReadOpResults = `
 SELECT operation, idx, path, ok, reason, text
 FROM operation_result WHERE operation = ? ORDER BY idx`

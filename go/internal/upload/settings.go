@@ -128,3 +128,39 @@ func (e *Engine) SetChunkSettings(ctx context.Context, minBytes, defaultBytes ui
 	e.settings.override.Store(true)
 	return nil
 }
+
+// ApplySettings stores an administrator's chunk bounds and makes them live.
+//
+// The compiled-in floor beats an administrator, which is what stops a
+// misconfiguration turning every upload into a request per byte. A nil value
+// leaves that half as it was, so a screen editing one field does not silently
+// reset the other.
+func (e *Engine) ApplySettings(ctx context.Context, minBytes, defaultBytes *uint64) error {
+	curMin, curDefault := e.settings.Snapshot()
+	newMin, newDefault := curMin, curDefault
+	if minBytes != nil {
+		newMin = *minBytes
+	}
+	if defaultBytes != nil {
+		newDefault = *defaultBytes
+	}
+	if newMin < limits.UploadChunkFloor {
+		return fmt.Errorf("%w: the minimum chunk is below the compiled-in floor", ErrBadRequest)
+	}
+	// A default below the minimum is a configuration where every chunk the
+	// server suggests is one it then refuses.
+	if newDefault < newMin {
+		return fmt.Errorf("%w: the default chunk is below the minimum", ErrBadRequest)
+	}
+	storedMin, minErr := num.Narrow[int64](newMin)
+	storedDefault, defErr := num.Narrow[int64](newDefault)
+	if minErr != nil || defErr != nil {
+		return fmt.Errorf("%w: a chunk bound is too large to store", ErrBadRequest)
+	}
+	if err := e.state.WriteChunkSettings(ctx, storedMin, storedDefault); err != nil {
+		return err
+	}
+	e.settings.store(newMin, newDefault)
+	e.settings.override.Store(true)
+	return nil
+}

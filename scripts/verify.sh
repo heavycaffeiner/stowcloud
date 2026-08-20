@@ -572,6 +572,11 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     # frontend can be rebuilt.
     if command -v npm >/dev/null 2>&1; then
       run "the embedded bundle is the built one" bash scripts/embed-check.sh
+      # A real browser against the shipped interface. It is the only check here
+      # that asks whether a request arrives rather than whether a function is
+      # correct, which is the distinction that let login sit on the wrong path
+      # with the whole suite green.
+      run "the interface signs in and reaches its surfaces" bash scripts/e2e.sh
     else
       skipped "the embedded bundle is the built one" "no npm" "${VERIFY_REQUIRE_UI:-0}"
     fi

@@ -144,5 +144,7 @@
 # Phase 13 added three more in the no-Landlock proof: the test binary
 # re-executing itself, a filter length bounded on the line above the
 # conversion, and the address the kernel takes a filter by.
-199
+# Phase 13's route work added three: two hash writes that cannot fail in the
+# sign-in challenge, and one in the settings document reader.
+202
 

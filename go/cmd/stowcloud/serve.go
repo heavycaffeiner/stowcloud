@@ -168,7 +168,15 @@ func runServe(args []string, stderr io.Writer) int {
 		return exitConfig
 	}
 
-	coreSvc, cerr := core.New(st, core.Options{ACL: acl.NewEvaluator(), Clock: clk})
+	// The evaluator is held rather than created inline, because the admin
+	// screens edit the grants it answers from and it has to be reloaded when
+	// they do. Created inline it could only ever be loaded once, at startup.
+	evaluator := acl.NewEvaluator()
+	if lerr := evaluator.LoadFromState(ctx, st.State().SQL()); lerr != nil {
+		say(stderr, "stowcloud %s: serve: loading the grants: %v\n", version, lerr)
+		return exitConfig
+	}
+	coreSvc, cerr := core.New(st, core.Options{ACL: evaluator, Clock: clk})
 	if cerr != nil {
 		say(stderr, "stowcloud %s: serve: the core domain: %v\n", version, cerr)
 		return exitConfig
@@ -225,7 +233,9 @@ func runServe(args []string, stderr io.Writer) int {
 		_ = watcher.Close() //nolint:errcheck // shutdown is closing everything anyway.
 	}()
 
-	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health, Uploads: uploads}, setupGate)
+	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health, Uploads: uploads,
+		ReloadACL: func(c context.Context) error { return evaluator.LoadFromState(c, st.State().SQL()) },
+	}, setupGate)
 	if nerr != nil {
 		say(stderr, "stowcloud %s: serve: %v\n", version, nerr)
 		return exitConfig

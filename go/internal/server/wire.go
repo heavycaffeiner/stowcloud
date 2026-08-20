@@ -48,6 +48,11 @@ type Options struct {
 	// answering that it is unavailable rather than minting sessions nothing
 	// backs.
 	Uploads *upload.Engine
+
+	// ReloadACL rebuilds the permission evaluator from the stored grants,
+	// which is what makes an edit on the admin screen take effect without a
+	// restart. A nil one leaves the grants as they were loaded.
+	ReloadACL func(ctx context.Context) error
 }
 
 // New assembles the whole HTTP surface: the state, the route table, the
@@ -91,6 +96,13 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		WatchCap: func() int { return watchHotSetCap },
 		Health:   health,
 		Uploads:  opt.Uploads,
+		State:    opt.Store.State(),
+		ReloadACL: func(ctx context.Context) error {
+			if opt.ReloadACL == nil {
+				return nil
+			}
+			return opt.ReloadACL(ctx)
+		},
 	}
 
 	table := routes(deps, setup)

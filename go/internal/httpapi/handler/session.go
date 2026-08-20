@@ -53,19 +53,18 @@ func Login(d Deps) http.HandlerFunc {
 			AMR:      1,
 		}, 0)
 		if err != nil {
+			// An account with a second factor is not a refusal: the password
+			// was right and the code screen is next. Reporting it as a failure
+			// is what leaves a client with no way to ask for the code.
+			if c, ok := secondFactorChallenge(d, r, req.Username, err); ok {
+				return writeJSON(w, http.StatusOK, c)
+			}
 			return err
 		}
 		resp := loginResponse{Status: "ok"}
 		resp.User.ID = sess.UserID
 		resp.User.Name = req.Username
-		http.SetCookie(w, &http.Cookie{
-			Name:     SessionCookie,
-			Value:    hex.EncodeToString(sess.Token.Reveal()),
-			Path:     "/",
-			Secure:   true,
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-		})
+		setSessionCookie(w, sess)
 		return writeJSON(w, http.StatusOK, resp)
 	})
 }

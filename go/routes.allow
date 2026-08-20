@@ -1,69 +1,11 @@
 # Paths the frontend's client calls that the server does not mount.
 #
-# This file is a debt ledger, not a design. Every line is a screen in the
-# shipped interface that cannot work, and the list exists so the gate can be
-# green while the debt stays visible and countable instead of being discovered
-# one screen at a time.
+# Empty, and it has to stay that way: a line here is a screen in the shipped
+# interface that cannot work. The check that reads this file is what turns the
+# client and the route table into one contract, and it found 41 unmounted
+# paths the first time it ran, including signing in.
 #
-# The subsystems behind most of these are built and their tests pass. What is
-# missing is the route that reaches them, which is Q8 and Q9 in
-# docs/proposals/OPEN-QUESTIONS.md.
-#
-# The rule for this file: a line comes out when the route is mounted. A line
-# goes in only with a recorded reason that the server genuinely need not serve
-# it. Nothing here has such a reason yet, which is why every line below is
-# grouped by the phase that owns it rather than excused.
-#
-# Cutover is blocked while this file is non-empty.
-
-# --- Phase 3 (auth): sign-in itself, the second factor, credential admin.
-# Signing in is now mounted where the client asks. What remains here is the
-# rest of the account surface, including changing a password: the client calls
-# it and the Go build has no handler for it at all.
-/api/auth/app-passwords/{}/wipe
-/api/auth/password
-/api/auth/login/totp
-/api/auth/oidc/link
-/api/auth/oidc/link/start
-/api/auth/smb
-/api/auth/smb/password
-/api/auth/totp/disable
-/api/auth/totp/enroll
-/api/auth/totp/recovery-codes
-/api/auth/totp/setup
-
-# --- Phase 5 (HTTP surface): the admin screens, jobs, shares, archive.
-/api/admin/audit
-/api/admin/grants
-/api/admin/grants/{}
-/api/admin/groups
-/api/admin/groups/{}
-/api/admin/groups/{}/members
-/api/admin/groups/{}/members/{}
-/api/admin/server-settings/{}
-/api/admin/server-settings/archive
-/api/admin/server-settings/db
-/api/admin/server-settings/homes
-/api/admin/server-settings/oidc
-/api/admin/server-settings/paths
-/api/admin/server-settings/restart
-/api/admin/server-settings/search
-/api/admin/server-settings/smb
-/api/admin/server-settings/symlink-policy
-/api/admin/server-settings/watch
-/api/admin/storage
-/api/admin/upload-settings
-/api/admin/users
-/api/admin/users/{}
-/api/admin/users/{}/oidc
-/api/fs/archive
-/api/jobs
-/api/shares
-/api/shares/{}
-
-# --- Phase 8 (search): the index build, its estimate and its settings.
-/api/admin/index/build
-/api/admin/index/estimate
-/api/admin/index/settings
-
-# --- anything not yet attributed.
+# A line goes in only with a recorded reason that the server genuinely need not
+# serve it. "Not built yet" is not such a reason: a route whose subsystem is
+# missing is mounted and answers that it is not implemented, so the client gets
+# a status it can act on rather than a connection to a path that is not there.

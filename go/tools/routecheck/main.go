@@ -45,7 +45,7 @@ func main() {
 
 	var missing []string
 	for _, p := range called {
-		if mounted[p] || allowed[p] {
+		if mounted[p] || allowed[p] || matchesWildcard(p, mounted) {
 			continue
 		}
 		missing = append(missing, p)
@@ -107,6 +107,35 @@ func mountedPaths(src string) map[string]bool {
 		out[normalise(m[1])] = true
 	}
 	return out
+}
+
+// matchesWildcard reports whether a concrete path is covered by a mounted
+// pattern with a wildcard segment.
+//
+// The server mounts one route for a family of names, such as every settings
+// section, and the client names each one. Comparing the two literally would
+// report a mounted route as missing, and adding each name to the ledger would
+// hide the ones that really are.
+func matchesWildcard(path string, mounted map[string]bool) bool {
+	want := strings.Split(path, "/")
+	for pattern := range mounted {
+		have := strings.Split(pattern, "/")
+		if len(have) != len(want) {
+			continue
+		}
+		ok := true
+		for i := range have {
+			if have[i] == "{}" || have[i] == want[i] {
+				continue
+			}
+			ok = false
+			break
+		}
+		if ok {
+			return true
+		}
+	}
+	return false
 }
 
 // normalise reduces a path to the shape both sides can be compared on: one

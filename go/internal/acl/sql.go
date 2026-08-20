@@ -9,4 +9,14 @@ SELECT id, user, "group", share, subpath, allow, deny, inherit, label
 FROM "grant"`
 
 	sqlReadMemberships = `SELECT user, "group" FROM membership`
+
+	sqlInsertGrant = `
+INSERT INTO "grant"(user, "group", share, subpath, allow, deny, inherit, label, created_ns)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	// Who a grant is for and which share it covers are not updatable: they
+	// identify it. See UpdateGrant.
+	sqlUpdateGrant = `UPDATE "grant" SET allow = ?, deny = ?, inherit = ? WHERE id = ?`
+
+	sqlDeleteGrant = `DELETE FROM "grant" WHERE id = ?`
 )

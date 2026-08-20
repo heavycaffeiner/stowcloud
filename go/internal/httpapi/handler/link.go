@@ -192,3 +192,18 @@ func sanitizeFilename(name string) string {
 	}
 	return string(out)
 }
+
+// LinkUpdate answers PATCH /api/shares/{id}.
+//
+// The core has no update for a link: it can mint one and delete one, and
+// changing a live link's expiry or password is a write nothing implements.
+// Answering honestly beats accepting the request and reporting a change that
+// did not happen, which is what a client would show the person who made it.
+func LinkUpdate(d Deps) http.HandlerFunc {
+	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
+		if _, cerr := userOf(r); cerr != nil {
+			return cerr
+		}
+		return notImplemented("shares.update_unavailable")
+	})
+}

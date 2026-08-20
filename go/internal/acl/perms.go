@@ -84,3 +84,35 @@ func nameOf(bit Perms) string {
 		return "?"
 	}
 }
+
+// PermByName is the inverse of nameOf, for the admin surface, which receives
+// permission names from a client rather than bits.
+//
+// An unknown name is refused rather than ignored, because ignoring one stores
+// a grant missing a permission somebody asked for, and the screen then shows
+// what they wrote while the server holds something weaker.
+func PermByName(name string) (Perms, bool) {
+	for _, bit := range orderedBits() {
+		if nameOf(bit) == name {
+			return bit, true
+		}
+	}
+	return 0, false
+}
+
+// NamedPerm pairs a bit with its name, in the fixed order, so a rendering of a
+// set is the same every time.
+type NamedPerm struct {
+	Name string
+	Perm Perms
+}
+
+// NamedPerms is every bit with its name, in that order.
+func NamedPerms() []NamedPerm {
+	bits := orderedBits()
+	out := make([]NamedPerm, 0, len(bits))
+	for _, bit := range bits {
+		out = append(out, NamedPerm{Name: nameOf(bit), Perm: bit})
+	}
+	return out
+}

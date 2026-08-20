@@ -214,3 +214,29 @@ func textArg(s string) any {
 	}
 	return s
 }
+
+// ListOps returns one account's operations, newest first and bounded.
+//
+// Bounded because the table grows with every batch anyone runs, and a listing
+// that returns all of it is one that gets slower for as long as the deployment
+// lives. The screen shows what is running and what just finished.
+func (d *DB) ListOps(ctx context.Context, user int64, limit int) (out []Op, err error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := d.SQL().QueryContext(ctx, sqlListOps, user, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+
+	for rows.Next() {
+		var op Op
+		if serr := rows.Scan(&op.ID, &op.User, &op.Kind, &op.State,
+			&op.Progress, &op.Total, &op.Message, &op.CreatedNs, &op.FinishedNs); serr != nil {
+			return nil, serr
+		}
+		out = append(out, op)
+	}
+	return out, rows.Err()
+}

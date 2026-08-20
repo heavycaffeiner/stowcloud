@@ -40,6 +40,9 @@ func (s *Service) CreateGroup(ctx context.Context, name string) (int64, error) {
 	var id int64
 	err := s.write(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, sqlInsertGroup, nil, name)
+		if err != nil && isUniqueViolation(err) {
+			return ErrNameTaken
+		}
 		if err != nil {
 			return err
 		}

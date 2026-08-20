@@ -4,6 +4,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -15,6 +16,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/store/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/upload"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
@@ -48,6 +51,28 @@ type Deps struct {
 	// Events upgrades the change-channel socket for an authenticated user.
 	Events EventsHandler
 
+	// State is the durable store, for the surfaces that read a table the core
+	// does not own: the grant rows the admin screen edits.
+	State *state.DB
+
+	// ReloadACL rebuilds the permission evaluator from the stored grants. A
+	// grant live in the database and stale in the process serving requests is
+	// a permission decision that depends on which half was asked.
+	ReloadACL func(ctx context.Context) error
+
+	// ActiveWork reports what a restart would interrupt. A nil one reports
+	// nothing in flight, which is what a build with no job machinery has.
+	ActiveWork func() ActiveWork
+
+	// RequestRestart asks the process to exit so a supervisor starts it again.
+	// A nil one makes the restart surface refuse rather than pretend.
+	RequestRestart func()
+
+	// OIDC is the single-sign-on client. A nil one leaves the link surfaces
+	// answering that the provider is not configured, which is what a
+	// deployment without one has.
+	OIDC *oidc.Client
+
 	// Uploads is the resumable-upload engine. A nil one leaves the surface
 	// unmounted rather than answering with a session nothing backs.
 	Uploads *upload.Engine
@@ -56,6 +81,12 @@ type Deps struct {
 	// the server owns rather than package state, because a status every caller
 	// can reach into is a status any of them can rewrite.
 	Health *HealthState
+}
+
+// ActiveWork is what a restart would interrupt.
+type ActiveWork struct {
+	Uploads int
+	Jobs    int
 }
 
 // Wrap converts a handler function into the route-table form. The error it
