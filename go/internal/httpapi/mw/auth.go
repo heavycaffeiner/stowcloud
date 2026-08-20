@@ -36,6 +36,12 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool) func(http.
 				next.ServeHTTP(w, r)
 				return
 			}
+			// The WebDAV mount answers its own refusal, with the challenge a
+			// client needs in order to know to send anything. So a credential
+			// is still read here, and only the refusal is left to the mount:
+			// treating the whole prefix as public skipped the reading too, and
+			// then no credential ever arrived.
+			challenges := strings.HasPrefix(path, "/dav")
 			// OPTIONS never 401s: a browser strips credentials from a
 			// preflight by design, and the client needs the capability
 			// headers back to decide how to send the real request.
@@ -57,6 +63,10 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool) func(http.
 				if err == nil {
 					ctx := withAppPWScope(withPrincipal(r.Context(), principal), scope)
 					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+				if challenges {
+					next.ServeHTTP(w, r)
 					return
 				}
 				apierr.Write(w, http.StatusUnauthorized,
@@ -98,6 +108,10 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool) func(http.
 				return
 			}
 
+			if challenges {
+				next.ServeHTTP(w, r)
+				return
+			}
 			// No credential was offered at all, which is a different fact from
 			// one that was offered and did not verify. A client that has never
 			// signed in shows a sign-in screen; one whose credential stopped
@@ -128,13 +142,6 @@ func PublicPaths(method, path string) bool {
 		return method == http.MethodGet
 
 	}
-	if strings.HasPrefix(path, "/dav") {
-		// The WebDAV mount answers its own challenge. A refusal from here
-		// carries no challenge, and a client that is never asked for a
-		// credential never sends one: it reports a failure instead, which
-		// looks like a broken server to whoever is holding it.
-		return true
-	}
 	if strings.HasPrefix(path, "/s/") || strings.HasPrefix(path, "/c/") {
 		// Public share links and the content origin: authorization is the
 		// token in the URL, never a user session.
@@ -143,7 +150,13 @@ func PublicPaths(method, path string) bool {
 	if (method == http.MethodGet || method == http.MethodHead) && !strings.HasPrefix(path, "/api/") {
 		// The embedded SPA: hashed, immutable, public assets. The API is
 		// exactly what a reserved /api/ prefix names, and it is not public.
-		return true
+		//
+		// The file protocol is not under that prefix and its reads are
+		// emphatically not public. Without this exclusion a read of any file
+		// on the server was treated as a static asset and reached the mount
+		// with no credential attached, so writing a file worked and reading
+		// the same file back was refused.
+		return !strings.HasPrefix(path, "/dav")
 	}
 	return false
 }

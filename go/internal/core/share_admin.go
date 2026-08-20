@@ -228,7 +228,7 @@ func (c *Core) ReloadPersistedShares(ctx context.Context) (rejected []RejectedSh
 			// deployment starts, the rest of it works, and the health surface
 			// says which one is missing and why.
 			rejected = append(rejected, RejectedShare{
-				Name: row.Name, Kind: rejectionKind(rerr), Err: rerr,
+				Name: row.Name, Kind: RejectionKind(rerr), Err: rerr,
 			})
 			c.logger.Error("a share was refused and is not being served",
 				"share", row.Name, "error", rerr)
@@ -249,9 +249,9 @@ type RejectedShare struct {
 	Err  error
 }
 
-// rejectionKind reduces a registration failure to the token the health surface
-// carries.
-func rejectionKind(err error) string {
+// RejectionKind reduces a registration failure to the token the health surface
+// carries. Exported because the assembly registers shares too.
+func RejectionKind(err error) string {
 	var adm *vfs.AdmissionError
 	if errors.As(err, &adm) {
 		return adm.Type.String()

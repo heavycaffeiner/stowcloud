@@ -107,7 +107,13 @@ func inventory() map[string]map[string]disposition {
 			"nc_login_flow":   {how: transformed},
 			"nc_upload_alias": {how: copied},
 		},
-		journalFile: {"write_event": {how: retained}},
+		journalFile: {
+			"write_event": {how: retained},
+			// This build's own migration bookkeeping, which appears in the
+			// file once this binary has opened it. Retained with the file it
+			// belongs to rather than copied anywhere.
+			"schema_version": {how: retained},
+		},
 	}
 }
 

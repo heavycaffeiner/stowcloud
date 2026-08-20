@@ -73,6 +73,36 @@ func applyJail(cfg *server.Config, configPath string, clk clock.Clock) (jail.Sta
 	return jail.Apply(cfg.Hardening, jailSpec(cfg, configPath, hosts))
 }
 
+// registerConfigShares opens every folder the config file names.
+//
+// A folder that cannot be served is reported and skipped rather than stopping
+// the server: one bad entry is not a reason for the other folders to be
+// unreachable, and the health surface names which one is missing and why.
+func registerConfigShares(
+	ctx context.Context, c *core.Core, cfg *server.Config, log *slog.Logger,
+) []core.RejectedShare {
+	var rejected []core.RejectedShare
+	for i, sh := range cfg.Shares {
+		def := core.ShareDef{
+			ID:               core.ShareID(i + 1),
+			Name:             sh.Name,
+			Host:             sh.Host,
+			Policy:           vfs.DefaultSharePolicy(),
+			SharedExternally: sh.SharedExternally,
+		}
+		if err := c.RegisterShare(ctx, def); err != nil {
+			log.Error("a configured share was refused and is not being served",
+				"share", sh.Name, "path", sh.Host, "error", err)
+			rejected = append(rejected, core.RejectedShare{
+				Name: sh.Name, Kind: core.RejectionKind(err), Err: err,
+			})
+			continue
+		}
+		log.Info("serving share", "name", sh.Name, "path", sh.Host)
+	}
+	return rejected
+}
+
 // runServe starts the server: config, store, master key, core domain, the
 // setup gate, the listener, and a graceful shutdown on SIGINT or SIGTERM.
 func runServe(args []string, stderr io.Writer) int {
@@ -150,6 +180,10 @@ func runServe(args []string, stderr io.Writer) int {
 		say(stderr, "stowcloud %s: serve: reloading persisted shares: %v\n", version, rerr)
 		return exitConfig
 	}
+	// The shares the operator named in the config file. Their ids are low and
+	// fixed by position, below the range an admin-created share takes, so the
+	// two cannot collide and a config share keeps its id across a restart.
+	rejectedShares = append(rejectedShares, registerConfigShares(ctx, coreSvc, cfg, log)...)
 
 	setupGate, gerr := server.NewSetupGate(ctx, authSvc, clk, cfg.DataDir)
 	if gerr != nil {

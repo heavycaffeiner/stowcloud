@@ -5,12 +5,16 @@ package auth
 // injection waiting for an input (D14), and the only value that ever varies is
 // bound.
 const (
+	// The display name is optional and an imported account can carry none, so
+	// an absent one reads as the empty string rather than failing the scan.
+	// It failed the scan: a migrated account could not log in at all, and the
+	// refusal was a server error rather than anything a person could act on.
 	sqlReadUserByName = `
-SELECT id, name, display, pw_hash, disabled, smb_enabled, role
+SELECT id, name, COALESCE(display, ''), pw_hash, disabled, smb_enabled, role
 FROM user WHERE name = ?`
 
 	sqlReadUserByID = `
-SELECT id, name, display, pw_hash, disabled, smb_enabled, role
+SELECT id, name, COALESCE(display, ''), pw_hash, disabled, smb_enabled, role
 FROM user WHERE id = ?`
 
 	sqlInsertUser = `

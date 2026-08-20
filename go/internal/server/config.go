@@ -35,6 +35,22 @@ type Config struct {
 	// Hardening is what the operator asked of the sandbox. The shipped default
 	// refuses to start when a layer cannot be applied.
 	Hardening jail.Policy
+
+	// Shares are the folders this server serves, named by the operator. A
+	// deployment with none starts and has nothing to show, which is what a
+	// first run looks like before anyone has said what to serve.
+	Shares []ShareConfig
+}
+
+// ShareConfig is one configured folder.
+type ShareConfig struct {
+	Name string
+	// Host is the path as this process sees it, which inside a container is
+	// the path the folder is mounted at rather than the path on the machine.
+	Host string
+	// SharedExternally marks a folder another program also writes. Nothing on
+	// a filesystem says so, which is why it is the operator who says it.
+	SharedExternally bool
 }
 
 // raw is the TOML shape, parsed then validated. The field names are the
@@ -56,6 +72,11 @@ type raw struct {
 	Security struct {
 		Hardening string `toml:"hardening"`
 	} `toml:"security"`
+	Shares []struct {
+		Name             string `toml:"name"`
+		HostPath         string `toml:"host_path"`
+		SharedExternally bool   `toml:"shared_externally"`
+	} `toml:"shares"`
 }
 
 // defaults are the compiled-in values a missing key inherits. A D5 constant
@@ -122,6 +143,28 @@ func Validate(r raw) (*Config, error) {
 	// accident. They happen to be the same policy, and relying on that would
 	// make renumbering the constants a silent downgrade of every deployment
 	// that never set the key.
+	seen := map[string]bool{}
+	for i, sh := range r.Shares {
+		if sh.Name == "" {
+			return nil, fmt.Errorf("shares[%d]: a share needs a name", i)
+		}
+		if sh.HostPath == "" {
+			return nil, fmt.Errorf("shares[%d] (%q): a share needs a host_path", i, sh.Name)
+		}
+		if !strings.HasPrefix(sh.HostPath, "/") {
+			return nil, fmt.Errorf("shares[%d] (%q): host_path must be absolute, and inside a container it is the path the folder is mounted at", i, sh.Name)
+		}
+		// Two shares under one name is one name resolving to two folders, and
+		// which one a path meant would depend on registration order.
+		if seen[sh.Name] {
+			return nil, fmt.Errorf("shares[%d]: %q is named twice", i, sh.Name)
+		}
+		seen[sh.Name] = true
+		cfg.Shares = append(cfg.Shares, ShareConfig{
+			Name: sh.Name, Host: sh.HostPath, SharedExternally: sh.SharedExternally,
+		})
+	}
+
 	cfg.Hardening = jail.Required
 	if r.Security.Hardening != "" {
 		pol, perr := jail.ParsePolicy(r.Security.Hardening)
