@@ -35,6 +35,13 @@ lukechampine.com/blake3
 # with Phase 5, which is the phase that parses it.
 github.com/BurntSushi/toml
 
+# zstd for the search index's block compression. Pure Go, so CGO_ENABLED=0 has
+# nothing to fall back to, and the format is what the two implementations agree
+# on rather than the encoder's exact output. It enters the graph with Phase 8;
+# the parent proposal's table lists it against Phase 9, which is the phase that
+# was expected to need it first.
+github.com/klauspost/compress
+
 # The change channel for /api/events. The dependency decision was reopened
 # because the protocol carries client frames (sub/unsub), so a hand-rolled
 # frame layer would re-implement control-frame handling, close codes and

@@ -7,6 +7,7 @@ require golang.org/x/sys v0.47.0
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/klauspost/compress v1.19.2
 	golang.org/x/crypto v0.55.0
 	golang.org/x/text v0.41.0
 	lukechampine.com/blake3 v1.4.1

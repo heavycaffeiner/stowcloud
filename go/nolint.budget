@@ -83,6 +83,8 @@
 # the same conversion the cache already does for the same reason.
 #
 # Phase 8 added one: the folding Caser, which is immutable and documented safe
-# for concurrent use, so it is shared rather than rebuilt per name.
-127
+# for concurrent use, so it is shared rather than rebuilt per name. Milestone 8c
+# added two more of the same shape: the zstd encoder and decoder, both
+# documented safe for concurrent use, built once rather than per block.
+129
 
