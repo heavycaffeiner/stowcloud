@@ -35,6 +35,16 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		{Method: "GET", Pattern: "/api/setup", Req: any, Handler: handler.SetupState(d, setup)},
 		{Method: "POST", Pattern: "/api/setup", Req: any, Handler: handler.SetupComplete(d, setup)},
 
+		// The resumable upload surface. The discovery request is public
+		// because it is how a client learns which version to speak, and it
+		// says nothing about the deployment.
+		{Method: "OPTIONS", Pattern: "/api/uploads", Req: any, Handler: handler.UploadsOptions()},
+		{Method: "OPTIONS", Pattern: "/api/uploads/{id}", Req: any, Handler: handler.UploadsOptions()},
+		{Method: "POST", Pattern: "/api/uploads", Req: req(acl.Write | acl.Create), Handler: handler.UploadsCreate(d)},
+		{Method: "HEAD", Pattern: "/api/uploads/{id}", Req: req(acl.Write), Handler: handler.UploadsHead(d)},
+		{Method: "PATCH", Pattern: "/api/uploads/{id}", Req: req(acl.Write), Handler: handler.UploadsPatch(d)},
+		{Method: "DELETE", Pattern: "/api/uploads/{id}", Req: req(acl.Write), Handler: handler.UploadsDelete(d)},
+
 		// Sessions and credentials.
 		{Method: "POST", Pattern: "/api/auth/password", Req: any, Handler: handler.Login(d)},
 		{Method: "GET", Pattern: "/api/auth/session", Req: selfAdmin, Handler: handler.Session(d)},

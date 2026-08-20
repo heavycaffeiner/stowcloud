@@ -22,6 +22,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/server"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 	"github.com/heavycaffeiner/stowcloud/go/internal/task"
+	"github.com/heavycaffeiner/stowcloud/go/internal/upload"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
@@ -175,6 +176,12 @@ func runServe(args []string, stderr io.Writer) int {
 		}
 	}
 
+	uploads, uerr := upload.New(ctx, coreSvc, st.State(), upload.Options{Clock: clk, Logger: log})
+	if uerr != nil {
+		say(stderr, "stowcloud %s: serve: the upload engine: %v\n", version, uerr)
+		return exitConfig
+	}
+
 	watcher, hub, werr := server.StartWatch(ctx, coreSvc, clk, log)
 	if werr != nil {
 		say(stderr, "stowcloud %s: serve: the watcher: %v\n", version, werr)
@@ -184,7 +191,7 @@ func runServe(args []string, stderr io.Writer) int {
 		_ = watcher.Close() //nolint:errcheck // shutdown is closing everything anyway.
 	}()
 
-	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health}, setupGate)
+	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health, Uploads: uploads}, setupGate)
 	if nerr != nil {
 		say(stderr, "stowcloud %s: serve: %v\n", version, nerr)
 		return exitConfig

@@ -17,6 +17,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/route"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/ws"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
+	"github.com/heavycaffeiner/stowcloud/go/internal/upload"
 	"github.com/heavycaffeiner/stowcloud/go/internal/watch"
 )
 
@@ -41,6 +42,11 @@ type Options struct {
 	// one is an empty one, so a test assembly reports ok rather than crashing
 	// on a surface it never asked for.
 	Health *handler.HealthState
+
+	// Uploads is the resumable-upload engine. A nil one leaves the surface
+	// answering that it is unavailable rather than minting sessions nothing
+	// backs.
+	Uploads *upload.Engine
 }
 
 // New assembles the whole HTTP surface: the state, the route table, the
@@ -83,6 +89,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		CSRFKey:  state.CSRFKey,
 		WatchCap: func() int { return watchHotSetCap },
 		Health:   health,
+		Uploads:  opt.Uploads,
 	}
 
 	table := routes(deps, setup)

@@ -92,6 +92,10 @@ func PublicPaths(method, path string) bool {
 	switch path {
 	case "/api/auth/password", "/api/auth/oidc/start", "/api/auth/oidc/callback", "/api/setup":
 		return true
+	case "/api/uploads":
+		// The discovery request only. Everything else on this mount is a
+		// credentialed operation on somebody's files.
+		return method == http.MethodOptions
 	case "/api/health":
 		// The container runtime probes this and holds no credential, so a
 		// health endpoint behind authentication is one the runtime cannot use.

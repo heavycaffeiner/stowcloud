@@ -15,6 +15,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/upload"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
@@ -46,6 +47,10 @@ type Deps struct {
 
 	// Events upgrades the change-channel socket for an authenticated user.
 	Events EventsHandler
+
+	// Uploads is the resumable-upload engine. A nil one leaves the surface
+	// unmounted rather than answering with a session nothing backs.
+	Uploads *upload.Engine
 
 	// Health carries the degradations the running server has. It is a value
 	// the server owns rather than package state, because a status every caller

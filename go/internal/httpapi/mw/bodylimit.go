@@ -2,6 +2,7 @@ package mw
 
 import (
 	"net/http"
+	"strings"
 )
 
 // BodyLimit is step 6. It is http.MaxBytesReader at the route-class bound,
@@ -15,9 +16,23 @@ import (
 // there rather than a layer.
 func BodyLimit(limit int64, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Body != nil {
+		if r.Body != nil && !exemptFromBodyLimit(r.URL.Path) {
 			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// uploadPrefix is the one mount this step does not apply to.
+const uploadPrefix = "/api/uploads"
+
+// exemptFromBodyLimit reports whether a path is the upload mount.
+//
+// A chunk is bounded by the session's declared length and the account's
+// reservation, which the engine enforces against what it has actually
+// received. A ceiling here would refuse exactly the requests this surface
+// exists for, and it would refuse them by closing the connection rather than
+// by answering, which a resuming client reads as a network fault.
+func exemptFromBodyLimit(path string) bool {
+	return path == uploadPrefix || strings.HasPrefix(path, uploadPrefix+"/")
 }
