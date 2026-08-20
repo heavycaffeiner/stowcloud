@@ -133,5 +133,9 @@
 # only way to ask whether a system certificate pool is empty, and a test key
 # that is deliberately undersized so the refusal can be proved, plus a test
 # hash write that cannot fail.
-187
+# Milestone 11e added two: a nested-mount test creating its own temporary
+# directory and handing it to its own child, and reading the kernel's magic
+# value back from the mount that test just made, the test binary re-executing
+# itself, and two reads of a test's own temporary directory.
+193
 

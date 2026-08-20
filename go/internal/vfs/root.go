@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/num"
@@ -24,10 +25,16 @@ const statMask = unix.STATX_BASIC_STATS | unix.STATX_BTIME
 type ShareRoot struct {
 	ID ShareID
 
-	anchor *os.File
-	policy SharePolicy
-	dev    uint64
-	fsType FsType
+	anchor   *os.File
+	policy   SharePolicy
+	dev      uint64
+	fsType   FsType
+	hasBtime bool
+
+	// admitted caches the verdict per device, so a mount below the root is
+	// classified once rather than on every resolution.
+	mu       sync.Mutex
+	admitted map[uint64]struct{}
 }
 
 // OpenShareRoot opens host as an anchor and records the device and filesystem
@@ -65,12 +72,78 @@ func OpenShareRoot(id ShareID, host string, policy SharePolicy) (*ShareRoot, err
 	}
 
 	return &ShareRoot{
-		ID:     id,
-		anchor: anchor,
-		policy: policy,
-		dev:    unix.Mkdev(stx.Dev_major, stx.Dev_minor),
-		fsType: fsType,
+		ID:       id,
+		anchor:   anchor,
+		policy:   policy,
+		dev:      unix.Mkdev(stx.Dev_major, stx.Dev_minor),
+		fsType:   fsType,
+		hasBtime: stx.Mask&unix.STATX_BTIME != 0,
+		admitted: map[uint64]struct{}{},
 	}, nil
+}
+
+// RegisterShareRoot opens host and admits it, or refuses.
+//
+// This is the entry point a share registration uses. The refusal happens here,
+// at registration, rather than at the first operation that cannot hold its
+// contract: a deployment that accepts anything and degrades quietly looks
+// healthy and loses file identity months later, once the sync clients have
+// already written the wrong thing into their journals.
+func RegisterShareRoot(id ShareID, host string, policy SharePolicy) (*ShareRoot, Admission, error) {
+	r, err := OpenShareRoot(id, host, policy)
+	if err != nil {
+		return nil, Admission{}, err
+	}
+	adm, err := AdmitMount(host, r.fsType, r.hasBtime)
+	if err != nil {
+		closeAfter(r.anchor, "refused share root")
+		return nil, Admission{}, err
+	}
+	r.admitted[r.dev] = struct{}{}
+	return r, adm, nil
+}
+
+// admitDevice checks a mount reached below the share root, once per device.
+//
+// A supported root does not bless an unsupported mount below it. Without this,
+// putting a network or user-space filesystem under an admitted root is a
+// trivial way around the whole gate.
+//
+// The result is cached per device because the alternative is a filesystem call
+// on every resolution, and a mount's type does not change while it is mounted.
+func (r *ShareRoot) admitDevice(dir *os.File, dev uint64, path string) error {
+	r.mu.Lock()
+	_, seen := r.admitted[dev]
+	r.mu.Unlock()
+	if seen {
+		return nil
+	}
+
+	var sfs unix.Statfs_t
+	if err := withFdErr(dir, func(fd int) error { return unix.Fstatfs(fd, &sfs) }); err != nil {
+		return mapErrno("statfs "+path, err)
+	}
+	magic, nerr := num.Narrow[uint64](sfs.Type)
+	if nerr != nil {
+		// A magic value that does not fit is one this build cannot name, which
+		// is the fail-closed case rather than a reason to admit it.
+		return &AdmissionError{Path: path, Reason: "the filesystem type could not be read"}
+	}
+
+	var stx unix.Statx_t
+	if err := withFdErr(dir, func(fd int) error {
+		return unix.Statx(fd, "", unix.AT_EMPTY_PATH, statMask, &stx)
+	}); err != nil {
+		return mapErrno("statx "+path, err)
+	}
+
+	if _, err := AdmitMount(path, FsType(magic), stx.Mask&unix.STATX_BTIME != 0); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	r.admitted[dev] = struct{}{}
+	r.mu.Unlock()
+	return nil
 }
 
 // Close releases the anchor. A ShareRoot normally lives for the process, so

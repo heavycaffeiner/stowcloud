@@ -104,6 +104,13 @@ func (r *ShareRoot) resolveDir(comps []string) (*os.File, error) {
 		f, err := openat2(r.anchor, cand,
 			unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0, resolve)
 		if err == nil {
+			// A share whose policy crosses mount boundaries can reach a
+			// filesystem the share root's own verdict says nothing about, so
+			// the mount is classified before anything on it is exposed.
+			if aerr := r.admitResolved(f, cand); aerr != nil {
+				closeAfter(f, "unadmitted mount")
+				return nil, aerr
+			}
 			return f, nil
 		}
 		if isMissing(err) {
@@ -116,6 +123,28 @@ func (r *ShareRoot) resolveDir(comps []string) (*os.File, error) {
 		last = fmt.Errorf("resolve directory: %w", ErrNotFound)
 	}
 	return nil, last
+}
+
+// admitResolved classifies the filesystem a resolved directory sits on, when
+// it is not the one the share root was admitted on.
+//
+// A share that cannot cross a mount boundary needs no check: the kernel already
+// refused the crossing, so the descriptor is on the admitted device.
+func (r *ShareRoot) admitResolved(dir *os.File, path string) error {
+	if !r.policy.CrossMount {
+		return nil
+	}
+	var stx unix.Statx_t
+	if err := withFdErr(dir, func(fd int) error {
+		return unix.Statx(fd, "", unix.AT_EMPTY_PATH, unix.STATX_BASIC_STATS, &stx)
+	}); err != nil {
+		return mapErrno("stat resolved directory", err)
+	}
+	dev := unix.Mkdev(stx.Dev_major, stx.Dev_minor)
+	if dev == r.dev {
+		return nil
+	}
+	return r.admitDevice(dir, dev, path)
 }
 
 // openLeafNamed opens p's last component under the share's resolve flags,
@@ -147,6 +176,12 @@ func (r *ShareRoot) openLeafNamed(p SafePath, flags uint64) (*os.File, string, e
 	for _, cand := range lookupCandidates(leaf) {
 		f, err := openat2(parent, cand, flags, 0, resolve)
 		if err == nil {
+			// The leaf itself can be the mount point, which the parent's own
+			// verdict says nothing about.
+			if aerr := r.admitResolved(f, cand); aerr != nil {
+				closeAfter(f, "unadmitted mount")
+				return nil, "", aerr
+			}
 			return f, cand, nil
 		}
 		if isMissing(err) {
