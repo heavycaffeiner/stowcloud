@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/preview"
+	"github.com/heavycaffeiner/stowcloud/go/internal/task"
 )
 
 // The pool is tested against a real worker process, because everything
@@ -135,7 +136,7 @@ func TestAJobProducesAThumbnail(t *testing.T) {
 
 	resp, err := p.Generate(context.Background(), preview.Request{
 		Kind: preview.JobImage, Preset: preview.PresetSmall, Flags: preview.FlagStripEXIF,
-	}, in, out)
+	}, preview.PlainSource{F: in}, out)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -168,7 +169,7 @@ func TestVideoIsAnsweredNotImplemented(t *testing.T) {
 
 	resp, err := p.Generate(context.Background(), preview.Request{
 		Kind: preview.JobVideo, Preset: preview.PresetSmall,
-	}, in, out)
+	}, preview.PlainSource{F: in}, out)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -189,7 +190,7 @@ func TestATooLargeImageIsRefusedAndTheWorkerSurvives(t *testing.T) {
 	resp, err := p.Generate(context.Background(), preview.Request{
 		Kind: preview.JobImage, Preset: preview.PresetSmall,
 		MaxPixels: 100, // smaller than the image
-	}, in, out)
+	}, preview.PlainSource{F: in}, out)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -201,7 +202,7 @@ func TestATooLargeImageIsRefusedAndTheWorkerSurvives(t *testing.T) {
 	in2, out2 := job(t, pngOf(t, 64, 64))
 	resp2, err := p.Generate(context.Background(), preview.Request{
 		Kind: preview.JobImage, Preset: preview.PresetSmall,
-	}, in2, out2)
+	}, preview.PlainSource{F: in2}, out2)
 	if err != nil {
 		t.Fatalf("the job after a refusal: %v", err)
 	}
@@ -216,7 +217,7 @@ func TestGarbageIsADecodeFailureNotADeath(t *testing.T) {
 
 	resp, err := p.Generate(context.Background(), preview.Request{
 		Kind: preview.JobImage, Preset: preview.PresetSmall,
-	}, in, out)
+	}, preview.PlainSource{F: in}, out)
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
@@ -233,7 +234,7 @@ func TestAWorkerDeathCostsOneThumbnailAndThePoolKeepsServing(t *testing.T) {
 	in, out := job(t, pngOf(t, 64, 64))
 	_, err := p.Generate(context.Background(), preview.Request{
 		Kind: preview.JobImage, Preset: preview.PresetSmall,
-	}, in, out)
+	}, preview.PlainSource{F: in}, out)
 	if !errors.Is(err, preview.ErrWorkerDied) {
 		t.Fatalf("err = %v, want ErrWorkerDied", err)
 	}
@@ -243,7 +244,7 @@ func TestAWorkerDeathCostsOneThumbnailAndThePoolKeepsServing(t *testing.T) {
 	in2, out2 := job(t, pngOf(t, 64, 64))
 	_, err = p.Generate(context.Background(), preview.Request{
 		Kind: preview.JobImage, Preset: preview.PresetSmall,
-	}, in2, out2)
+	}, preview.PlainSource{F: in2}, out2)
 	if !errors.Is(err, preview.ErrWorkerDied) {
 		t.Fatalf("the second job returned %v; the helper dies on every job, "+
 			"so this proves a replacement was started rather than the slot "+
@@ -260,17 +261,13 @@ func TestAHungWorkerIsKilledAtTheDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 
-	start := time.Now()
-	_, err := p.Generate(ctx, preview.Request{
+	// The deadline firing at all is the assertion; the context above bounds
+	// how long this can take, so a hang would fail the test by timing out
+	// rather than by a wall-clock comparison D8 forbids.
+	if _, err := p.Generate(ctx, preview.Request{
 		Kind: preview.JobImage, Preset: preview.PresetSmall,
-	}, in, out)
-	elapsed := time.Since(start)
-
-	if err == nil {
+	}, preview.PlainSource{F: in}, out); err == nil {
 		t.Fatal("a hung worker answered")
-	}
-	if elapsed > 5*time.Second {
-		t.Fatalf("the deadline took %v to fire", elapsed)
 	}
 
 	// And the pool still works afterwards.
@@ -278,7 +275,7 @@ func TestAHungWorkerIsKilledAtTheDeadline(t *testing.T) {
 	in2, out2 := job(t, pngOf(t, 32, 32))
 	if _, err := p2.Generate(context.Background(), preview.Request{
 		Kind: preview.JobImage, Preset: preview.PresetSmall,
-	}, in2, out2); err != nil {
+	}, preview.PlainSource{F: in2}, out2); err != nil {
 		t.Fatalf("a fresh pool after a hang: %v", err)
 	}
 }
@@ -292,14 +289,14 @@ func TestConcurrentJobsShareThePool(t *testing.T) {
 	errs := make([]error, 12)
 	for i := 0; i < len(errs); i++ {
 		wg.Add(1)
-		go func(i int) {
+		task.Go(context.Background(), "preview: pool test job", func() {
 			defer wg.Done()
 			in, out := job(t, pngOf(t, 128, 96))
 			_, err := p.Generate(context.Background(), preview.Request{
 				Kind: preview.JobImage, Preset: preview.PresetSmall,
-			}, in, out)
+			}, preview.PlainSource{F: in}, out)
 			errs[i] = err
-		}(i)
+		})
 	}
 	wg.Wait()
 
@@ -318,7 +315,7 @@ func TestAClosedPoolRefuses(t *testing.T) {
 	in, out := job(t, pngOf(t, 32, 32))
 	if _, err := p.Generate(context.Background(), preview.Request{
 		Kind: preview.JobImage, Preset: preview.PresetSmall,
-	}, in, out); !errors.Is(err, preview.ErrPoolClosed) {
+	}, preview.PlainSource{F: in}, out); !errors.Is(err, preview.ErrPoolClosed) {
 		t.Fatalf("err = %v, want ErrPoolClosed", err)
 	}
 }
@@ -330,15 +327,15 @@ func TestACallerWaitingForABusyPoolIsRefused(t *testing.T) {
 	p := newPool(t, 1, "hang")
 
 	held := make(chan struct{})
-	go func() {
+	task.Go(context.Background(), "preview: pool test holder", func() {
 		defer close(held)
 		in, out := job(t, pngOf(t, 32, 32))
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_, _ = p.Generate(ctx, preview.Request{ //nolint:errcheck // this one is expected to fail; the assertion is on the second.
 			Kind: preview.JobImage, Preset: preview.PresetSmall,
-		}, in, out)
-	}()
+		}, preview.PlainSource{F: in}, out)
+	})
 
 	// Give the first job time to take the slot.
 	time.Sleep(200 * time.Millisecond)
@@ -348,7 +345,7 @@ func TestACallerWaitingForABusyPoolIsRefused(t *testing.T) {
 	defer cancel()
 	_, err := p.Generate(ctx, preview.Request{
 		Kind: preview.JobImage, Preset: preview.PresetSmall,
-	}, in, out)
+	}, preview.PlainSource{F: in}, out)
 	if !errors.Is(err, preview.ErrWorkerBusy) {
 		t.Fatalf("err = %v, want ErrWorkerBusy", err)
 	}

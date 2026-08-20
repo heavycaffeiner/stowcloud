@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sys/unix"
-
+	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
 // The parent half.
@@ -50,6 +50,9 @@ type PoolOptions struct {
 	// what makes the two halves one binary.
 	Exe  string
 	Args []string
+	// Clock is what the deadline is measured against. Nothing else in this
+	// package reads a wall clock.
+	Clock clock.Clock
 	// Env is the child environment. Nil means an empty one, which is
 	// deliberate: the worker reads no configuration and an inherited
 	// environment is a place to put a path.
@@ -65,6 +68,21 @@ type Pool struct {
 	slots  []*slot
 	free   chan int
 }
+
+// Source is the file a worker decodes.
+//
+// An interface so a share file arrives through the VFS and a plain one (a test
+// fixture, a staged upload) arrives directly, without the pool learning which
+// it has.
+type Source interface {
+	File() *os.File
+}
+
+// PlainSource is an ordinary file.
+type PlainSource struct{ F *os.File }
+
+// File is the descriptor to pass.
+func (p PlainSource) File() *os.File { return p.F }
 
 // slot is one worker's place in the pool. The process inside it is replaced
 // over time; the slot is what persists.
@@ -84,6 +102,9 @@ type slot struct {
 func NewPool(opt PoolOptions) (*Pool, error) {
 	if opt.Workers <= 0 {
 		opt.Workers = 2
+	}
+	if opt.Clock == nil {
+		opt.Clock = clock.System()
 	}
 	if opt.Exe == "" {
 		self, err := os.Executable()
@@ -109,7 +130,7 @@ func NewPool(opt PoolOptions) (*Pool, error) {
 // in and out are descriptors the caller opened. The worker is handed those and
 // never a path, which is what makes a traversal bug in a decoder have nothing
 // to traverse.
-func (p *Pool) Generate(ctx context.Context, req Request, in, out *os.File) (Response, error) {
+func (p *Pool) Generate(ctx context.Context, req Request, in Source, out *os.File) (Response, error) {
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -153,12 +174,10 @@ func (p *Pool) start(s *slot) error {
 	// SOCK_SEQPACKET, so a message is a message: a stream would let a short
 	// read look like a valid short message, which is exactly the ambiguity the
 	// fixed-layout codec exists to avoid.
-	pair, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
+	parent, child, err := vfs.SocketPair()
 	if err != nil {
-		return fmt.Errorf("preview: creating the control socket: %w", err)
+		return err
 	}
-	parent := os.NewFile(uintptr(pair[0]), "worker-control")
-	child := os.NewFile(uintptr(pair[1]), "worker-control-child")
 	defer func() {
 		_ = child.Close() //nolint:errcheck // the child holds its own copy after exec.
 	}()
@@ -196,17 +215,22 @@ func (p *Pool) start(s *slot) error {
 }
 
 // exchange sends one job and reads its answer.
-func (p *Pool) exchange(ctx context.Context, s *slot, req Request, in, out *os.File) (Response, error) {
+func (p *Pool) exchange(ctx context.Context, s *slot, req Request, in Source, out *os.File) (Response, error) {
 	deadline, hasDeadline := ctx.Deadline()
 	if !hasDeadline {
-		deadline = time.Now().Add(defaultJobDeadline)
+		deadline = p.opt.Clock.Now().Add(defaultJobDeadline)
 	}
-	if ms := time.Until(deadline).Milliseconds(); ms > 0 && ms < int64(^uint32(0)) {
+	if ms := deadline.Sub(p.opt.Clock.Now()).Milliseconds(); ms > 0 && ms < int64(^uint32(0)) {
 		req.DeadlineMs = uint32(ms)
 	}
 
-	rights := unix.UnixRights(int(in.Fd()), int(out.Fd()))
-	if err := unix.Sendmsg(int(s.sock.Fd()), req.Encode(), rights, nil, 0); err != nil {
+	// Both descriptors go over as an SCM_RIGHTS message, and neither leaves
+	// its owner as a bare number: the VFS holds each file alive across the
+	// syscall.
+	if s.sock == nil {
+		return Response{}, ErrWorkerDied
+	}
+	if err := vfs.SendMessage(s.sock, req.Encode(), in.File(), out); err != nil {
 		return Response{}, fmt.Errorf("%w: sending the job: %w", ErrWorkerDied, err)
 	}
 

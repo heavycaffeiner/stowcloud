@@ -18,11 +18,10 @@ import (
 	"os"
 	"time"
 
-	"golang.org/x/sys/unix"
-
 	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/preview"
+	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
 // ControlFD is the descriptor the parent passes the control socket on.
@@ -249,20 +248,15 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 // speaking this protocol.
 func recvJob(control *os.File) (preview.Request, *os.File, *os.File, error) {
 	buf := make([]byte, limits.WorkerWireMessage)
-	oob := make([]byte, unix.CmsgSpace(2*4))
-
-	n, oobn, _, _, err := unix.Recvmsg(int(control.Fd()), buf, oob, 0)
+	// Two, because exactly two descriptors arrive with each job. Asking for a
+	// bound larger than the protocol allows would let a peer hand over more.
+	n, files, err := vfs.RecvMessage(control, buf, 2)
 	if err != nil {
 		return preview.Request{}, nil, nil, fmt.Errorf("receiving a job: %w", err)
 	}
 	if n == 0 {
-		return preview.Request{}, nil, nil, io.EOF
-	}
-
-	files, ferr := parseRights(oob[:oobn])
-	if ferr != nil {
 		closeAll(files)
-		return preview.Request{}, nil, nil, ferr
+		return preview.Request{}, nil, nil, io.EOF
 	}
 	if len(files) != 2 {
 		closeAll(files)
@@ -278,35 +272,9 @@ func recvJob(control *os.File) (preview.Request, *os.File, *os.File, error) {
 	return req, files[0], files[1], nil
 }
 
-// parseRights turns the control message into files.
-func parseRights(oob []byte) ([]*os.File, error) {
-	if len(oob) == 0 {
-		return nil, nil
-	}
-	msgs, err := unix.ParseSocketControlMessage(oob)
-	if err != nil {
-		return nil, fmt.Errorf("%w: a malformed control message: %w", preview.ErrProtocol, err)
-	}
-	var out []*os.File
-	for _, m := range msgs {
-		fds, perr := unix.ParseUnixRights(&m)
-		if perr != nil {
-			closeAll(out)
-			return nil, fmt.Errorf("%w: %w", preview.ErrProtocol, perr)
-		}
-		for i, fd := range fds {
-			out = append(out, os.NewFile(uintptr(fd), fmt.Sprintf("job-fd-%d", i)))
-		}
-	}
-	return out, nil
-}
-
 // send writes one response.
 func send(control *os.File, msg []byte) error {
-	if err := unix.Sendmsg(int(control.Fd()), msg, nil, nil, 0); err != nil {
-		return fmt.Errorf("sending a response: %w", err)
-	}
-	return nil
+	return vfs.SendMessage(control, msg)
 }
 
 func closeBoth(in, out *os.File) { closeAll([]*os.File{in, out}) }

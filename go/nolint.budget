@@ -103,5 +103,11 @@
 # process kill or wait where the process being already gone is the case being
 # handled. The two others are gosec reading a subprocess launch: the pool execs
 # this binary's own path, and a test builds a helper from constant arguments.
-155
+#
+# Milestone 9e settled at this count after the socket and rename work moved into
+# internal/vfs, where the keepalive and rename rules already live. What remains
+# in preview is the same close-and-kill family, plus one bit-pattern hash of a
+# timestamp in the cache key and two gosec subprocess warnings: the pool execs
+# this binary's own path, and a test builds its helper from constant arguments.
+160
 

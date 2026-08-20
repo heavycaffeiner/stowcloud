@@ -3,6 +3,7 @@
 package vfs
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -170,4 +171,19 @@ func (r *ShareRoot) openLeaf(p SafePath, flags uint64) (*os.File, error) {
 func splitLeaf(comps []string) ([]string, string) {
 	n := len(comps)
 	return comps[:n-1], comps[n-1]
+}
+
+// keepAlive holds a file until the current call returns, so a descriptor
+// handed to the kernel cannot be closed by a finalizer underneath it.
+func keepAlive(f *os.File) { runtime.KeepAlive(f) }
+
+// rawFd is a descriptor number for a call that needs several at once, such as
+// building an SCM_RIGHTS message. The caller must hold every file alive across
+// the syscall; withFd and withFd2 do that for the one- and two-file cases and
+// keepAliveAll for the rest.
+func rawFd(f *os.File) (int, error) {
+	if f == nil {
+		return 0, errors.New("vfs: a nil file has no descriptor")
+	}
+	return int(f.Fd()), nil
 }

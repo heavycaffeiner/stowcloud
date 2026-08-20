@@ -185,3 +185,31 @@ func bufferedCopyRange(src *File, srcOff uint64, dst *File, dstOff uint64, n uin
 	}
 	return copied, nil
 }
+
+// SendJob passes this file's descriptor and one more to another process over a
+// unix socket, as an SCM_RIGHTS control message alongside msg.
+//
+// It lives here because a descriptor must not leave this package raw: the
+// keepalive rule exists so a file cannot be collected while a syscall still
+// holds its number, and a caller reaching for the raw number to build the
+// control message would be a third site doing that by hand.
+//
+// This is what hands the preview worker its input. The worker is never told a
+// path, so a descriptor the parent opened is the only way it reaches a file.
+func (f *File) SendJob(sock int, msg []byte, out *os.File) error {
+	_, err := withFd2(f.f, out, func(a, b int) (struct{}, error) {
+		rights := unix.UnixRights(a, b)
+		return struct{}{}, unix.Sendmsg(sock, msg, rights, nil, 0)
+	})
+	return err
+}
+
+// OSFile is the underlying file, for the two callers that must pass this
+// descriptor to another process.
+//
+// It returns the *os.File rather than the number, so the descriptor stays
+// owned by something the runtime can see and the keepalive rule still holds at
+// the point it is used. The preview pool is the caller: its worker is never
+// told a path, so a descriptor the parent opened is the only way it reaches a
+// file.
+func (f *File) OSFile() *os.File { return f.f }
