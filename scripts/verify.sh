@@ -103,6 +103,45 @@ grep_gate() {
 
 echo "=== verifying: $LABEL ==="
 echo "    host: $HOST   toolchain: $(rustc -V 2>/dev/null || echo 'rustc NOT FOUND')"
+
+# Link with the toolchain's own linker where it has one.
+#
+# Every test binary here statically links the whole dependency graph, and there
+# are dozens of them, so cargo runs as many links at once as the machine has
+# cores. Measured on this tree, building two crates' test binaries from clean:
+# the system linker peaked at 21.6 GB across those processes and took 3m53s,
+# and the bundled one peaked under 0.1 GB and took 1m06s. On a 30 GB machine
+# the first number is what made this script unusable while it ran, because the
+# machine went to swap and everything else on it stalled.
+#
+# The path is asked for rather than written down: a hardcoded toolchain path is
+# one that is wrong on the next machine. A toolchain without the shim directory
+# just keeps the system linker, which is slower and still correct.
+SC_TRIPLE="$(rustc -vV 2>/dev/null | awk '/^host: /{print $2}')"
+SC_LLD_DIR="$(rustc --print sysroot 2>/dev/null)/lib/rustlib/$SC_TRIPLE/bin/gcc-ld"
+if [ -x "$SC_LLD_DIR/ld.lld" ]; then
+  export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=lld -C link-arg=-B$SC_LLD_DIR"
+  echo "    linker: ld.lld from the toolchain"
+else
+  echo "    linker: the system default (no bundled ld.lld found)"
+fi
+
+# Cargo defaults its job count to the core count, and each job can hold a
+# compiler and a linker at once. On a machine with many cores and comparatively
+# little memory per core that is the difference between a build and a stall, so
+# the count is bounded by memory as well as by cores.
+if [ -z "${CARGO_BUILD_JOBS:-}" ] && command -v nproc >/dev/null 2>&1; then
+  sc_mem_gb=$(awk '/MemTotal/{printf "%d", $2/1048576}' /proc/meminfo 2>/dev/null || echo 0)
+  sc_cores=$(nproc)
+  # Roughly a gigabyte and a half per concurrent job, which is what a compiler
+  # and a linker of the largest crate here need together.
+  sc_by_mem=$(( sc_mem_gb * 2 / 3 ))
+  [ "$sc_by_mem" -lt 1 ] && sc_by_mem=1
+  if [ "$sc_by_mem" -lt "$sc_cores" ]; then
+    export CARGO_BUILD_JOBS="$sc_by_mem"
+    echo "    cargo jobs: $sc_by_mem (of $sc_cores cores, bounded by ${sc_mem_gb}GB of memory)"
+  fi
+fi
 echo
 
 # --- host build/test/lint -------------------------------------------------
