@@ -37,6 +37,11 @@ const MaxDecompressed = 64 << 20
 // ErrCorrupt is a payload that is not what the directory says it is.
 var ErrCorrupt = errors.New("index: a corrupt segment")
 
+// ErrIndexCorrupt is a segment that failed its header or checksum on the way
+// in. The caller disables the index and rebuilds it, and search continues on
+// the walk: a broken cache costs speed, never answers.
+var ErrIndexCorrupt = errors.New("index: the index is corrupt and has been disabled")
+
 // The encoders and decoders are stateless across calls and safe for concurrent
 // use, and building one costs an allocation of window-sized buffers, so they
 // are made once.

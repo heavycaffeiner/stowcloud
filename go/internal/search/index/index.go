@@ -161,10 +161,10 @@ func Open(dir string, cfg Config) (*NameIndex, error) {
 	if buf, err := os.ReadFile(basePath); err == nil { //nolint:gosec // G304: a fixed name under the operator's own index directory.
 		seg, oerr := OpenBase(buf)
 		if oerr != nil {
-			// A corrupt base disables the index rather than failing the query.
-			// Search continues on the walk, which is the cache principle: a
-			// broken cache costs speed, never answers.
-			return nil, oerr
+			// A corrupt base is reported, not fatal. The index is a cache, so
+			// the caller disables it and search continues on the walk: a broken
+			// cache costs speed, never answers.
+			return nil, fmt.Errorf("%w: %s: %w", ErrIndexCorrupt, basePath, oerr)
 		}
 		ix.base = seg
 		ix.baseBytes = int64(len(buf))
