@@ -35,9 +35,9 @@ compat-nc = ["dep:sc-compat-nc"]
 # certificates all leave the binary. The eight routes stay, and answer
 # `oidc.disabled` -- which is exactly what a deployment with no IdP sees.
 oidc = ["dep:sc-oidc", "dep:async-trait"]
-# Embeds the built frontend (`web/build`) into the binary and serves it —
+# Embeds the built frontend (the built frontend) into the binary and serves it —
 # /'s "single static binary".
-# Not in `default`: `web/build` is `.gitignore`d, so a fresh checkout has
+# Not in `default`: the bundle directory is `.gitignore`d, so a fresh checkout has
 # none, and `sc-http`'s `embed-ui` (which this forwards to) embeds that
 # folder's contents at *compile* time via `#[derive(RustEmbed)]` — turning
 # this on by default would break `cargo build` on exactly the checkout this

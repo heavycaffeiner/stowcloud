@@ -9,7 +9,7 @@ description = "Native REST API + WebSocket + middleware stack for the web UI. Ze
 
 [features]
 default = []
-# Embeds the built frontend (web/build) via rust-embed. Off by default so the
+# Embeds the built frontend (the built frontend) via rust-embed. Off by default so the
 # crate builds before the frontend exists.
 embed-ui = ["dep:rust-embed", "dep:mime_guess"]
 # Exposes `testutil` (a real-but-minimal AppState builder) to other crates'

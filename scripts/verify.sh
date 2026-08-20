@@ -9,7 +9,7 @@
 #                           SKIP. CI's Linux job sets this; a fresh clone on a
 #                           laptop should not have to install one to run the
 #                           gate.
-#   VERIFY_REQUIRE_UI=1     a missing web/build is a failure, not a SKIP. Same
+#   VERIFY_REQUIRE_UI=1     a missing frontend build is a failure, not a SKIP. Same
 #                           reasoning: both CI jobs build the frontend first,
 #                           so a SKIP there means the workflow broke, not that
 #                           the checkout is bare.
@@ -187,7 +187,7 @@ if [ -d crates/sc-server ]; then
 fi
 
 # --- embed-ui: the real single-binary build -------------------------------
-# `#[derive(RustEmbed)]` reads `web/build/` during macro expansion, so these
+# `#[derive(RustEmbed)]` reads the bundle during macro expansion, so these
 # features are off by default and this section needs a built frontend
 # (`cd web && npm run build`).
 #
@@ -197,7 +197,7 @@ fi
 # stale UI once — a binary whose embedded SPA predated the routes it served,
 # which looked like a frontend bug for as long as it took to notice the bundle
 # hash had not moved.
-if [ -f web/build/index.html ]; then
+if [ -f go/internal/httpapi/spa/build/index.html ]; then
   cargo clean -p sc-http 2>/dev/null
   run "cargo build -p sc-http --features embed-ui" \
       cargo build --locked -p sc-http --features embed-ui
@@ -213,7 +213,7 @@ if [ -f web/build/index.html ]; then
             "no musl cross toolchain" "${VERIFY_REQUIRE_MUSL:-0}"
   fi
 else
-  why="no web/build; run: cd web && npm run build"
+  why="no built frontend; run: cd web && npm run build"
   for s in "cargo build -p sc-http --features embed-ui" \
            "cargo clippy -p sc-http --features embed-ui (-D warnings)" \
            "cargo build -p sc-server --features embed-ui" \
@@ -506,14 +506,15 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
             "go/internal/compat does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
   fi
 
-  # The single-binary build. `//go:embed` reads web/build with a real
+  # The single-binary build. `//go:embed` reads the bundle with a real
   # dependency edge, so the `cargo clean -p sc-http` hazard has no counterpart
   # here: rebuilding after `npm run build` picks up the new files or fails to
-  # compile.
-  if [ -f web/build/index.html ]; then
+  # compile. The bundle lives inside the embedding package because //go:embed
+  # cannot name a path outside it, and refuses a symlink that points out.
+  if [ -f go/internal/httpapi/spa/build/index.html ]; then
     run "go build -tags embed_ui" ingo go build -tags embed_ui ./...
   else
-    skipped "go build -tags embed_ui" "no web/build; run: cd web && npm run build" \
+    skipped "go build -tags embed_ui" "no built frontend; run: cd web && npm run build" \
             "${VERIFY_REQUIRE_UI:-0}"
   fi
 else

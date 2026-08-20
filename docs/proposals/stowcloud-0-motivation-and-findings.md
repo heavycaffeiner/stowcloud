@@ -561,8 +561,11 @@ language.
 - **The `mimalloc` global allocator.** It exists for musl's allocator, and Go
   does not use libc's. The measurement note in `main.rs` stops applying.
 - **`rust-embed` and the `embed-ui` feature**, with its `cargo clean -p sc-http`
-  hazard. Go's `embed` reads `web/build` with a real dependency edge, so a stale
-  frontend cannot be embedded silently.
+  hazard. Go's `embed` reads the bundle with a real dependency edge, so a stale
+  frontend cannot be embedded silently. It reads it from a directory inside the
+  embedding package, because `//go:embed` refuses a pattern that leaves the
+  package directory and refuses a symlink out of it; the frontend therefore
+  builds into `go/internal/httpapi/spa/build/` rather than into `web/build/`.
 - **The musl cross-compilation apparatus**: `scripts/musl-env.sh`,
   `tools/zigcc-musl.ps1`, the `VERIFY_REQUIRE_MUSL` skip path, and the second
   clippy run under the musl target.

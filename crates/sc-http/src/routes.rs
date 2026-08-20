@@ -9591,10 +9591,10 @@ mod tests {
     }
 }
 
-/// `--features embed-ui`, exercised only when `web/build` has actually been
+/// `--features embed-ui`, exercised only when the frontend has actually been
 /// built — `#[derive(RustEmbed)]` reads that folder at compile time, so
 /// these only compile (and only need to) when both are true. `bash
-/// scripts/verify.sh` runs this gate whenever `web/build/index.html` exists,
+/// scripts/verify.sh` runs this gate whenever the built frontend exists,
 /// and skips it otherwise, so a checkout that hasn't run `cd web && npm run
 /// build` yet never fails here.
 #[cfg(all(test, feature = "embed-ui"))]

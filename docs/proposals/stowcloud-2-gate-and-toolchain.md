@@ -38,7 +38,7 @@ exist to work around problems Go does not have:
 
 - the musl cross-compile probe, and the SKIP path when the toolchain is absent;
 - `cargo clean -p sc-http` before the embed build, because cargo has no
-  dependency edge to `web/build`;
+  dependency edge to the built bundle;
 - the separate host and musl clippy runs, because host clippy never compiles a
   line behind `cfg(target_os = "linux")`;
 - the `--no-default-features` build, which becomes a build tag.

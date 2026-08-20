@@ -6,6 +6,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/route"
+	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/spa"
 )
 
 // routes is the whole table in one place: method, pattern, what the
@@ -94,6 +95,13 @@ func mux(table []route.Route) *http.ServeMux {
 	m := http.NewServeMux()
 	for _, rt := range table {
 		m.Handle(rt.Method+" "+rt.Pattern, rt.Handler)
+	}
+	// The frontend goes on the bare root, which every API route out-specifies,
+	// so it catches only what the table did not claim. A build carrying no
+	// bundle leaves the pattern unmounted rather than serving a 404 page that
+	// looks like a broken frontend.
+	if h, ok := spa.Handler(); ok {
+		m.Handle("GET /", h)
 	}
 	return m
 }

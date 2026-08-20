@@ -3,6 +3,10 @@
 /.vm
 node_modules
 web/.svelte-kit
+# The frontend builds into the embedding Go package: //go:embed cannot name a
+# path outside its own package directory, and refuses a symlink out of one.
+go/internal/httpapi/spa/build/
+# Where it used to build, kept ignored so an old checkout does not commit one.
 web/build
 *.qcow2
 *.log

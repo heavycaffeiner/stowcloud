@@ -101,10 +101,10 @@ pub fn build_router(state: AppState) -> Router {
 
 #[cfg(feature = "embed-ui")]
 pub mod embed {
-    //! Serves the built frontend (`web/build`) when compiled with
+    //! Serves the built frontend (the built frontend) when compiled with
     //! `--features embed-ui`. Off by default — both here and transitively in
     //! `sc-server` — so the crate (and the real binary) builds before the
-    //! frontend exists: `web/build` is `.gitignore`d, so a fresh checkout has
+    //! frontend exists: the bundle directory is `.gitignore`d, so a fresh checkout has
     //! none, and `#[derive(RustEmbed)]` reads this folder at *compile* time.
     //! /
     //!
@@ -130,7 +130,7 @@ pub mod embed {
     use sha2::Digest;
 
     #[derive(RustEmbed)]
-    #[folder = "../../web/build/"]
+    #[folder = "../../go/internal/httpapi/spa/build/"]
     pub struct Assets;
 
     const INDEX: &str = "index.html";

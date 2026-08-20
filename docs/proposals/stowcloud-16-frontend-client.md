@@ -179,12 +179,19 @@ binary with `embed_ui`, serve it, and confirm the bundle hash the browser loads
 is the one just built.
 
 The Rust tree needed `cargo clean -p sc-http` for this, because cargo had no
-dependency edge to `web/build`, and shipping a stale UI happened once: a binary
+dependency edge to the bundle, and shipping a stale UI happened once: a binary
 whose embedded SPA predated the routes it served, which looked like a frontend
 bug for as long as it took to notice the bundle hash had not moved.
 
 `//go:embed` has a real dependency edge, so the failure should be impossible.
 "Should be" is why the check runs anyway, once, in this phase.
+
+**The bundle is built into the embedding package.** `//go:embed` rejects a
+pattern that leaves the package directory (`invalid pattern syntax`) and
+rejects a symlink pointing out of it (`cannot embed irregular file`), so the
+frontend's output directory is `go/internal/httpapi/spa/build/` and not
+`web/build/`. That is what makes the dependency edge exist at all: an embed
+that cannot name the files has no edge to them.
 
 ## 5. API Design
 

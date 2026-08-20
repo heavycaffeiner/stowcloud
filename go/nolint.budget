@@ -91,5 +91,10 @@
 # and one on a test writing into its own TempDir. Milestone 8e added one: a
 # test restoring a directory's execute bit so cleanup can descend into it,
 # which gosec reads as a file mode.
-135
+#
+# Phase 9 removed one: the orphaned static package, whose panic-on-missing-embed
+# carried a forbidigo exception. The frontend now builds into the embedding
+# package and a build without one leaves the route unmounted, so there is
+# nothing to panic about.
+134
 
