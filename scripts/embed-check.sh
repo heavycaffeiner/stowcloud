@@ -64,8 +64,23 @@ SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 sleep 4
 
+# A server that died rather than answered is reported as that, with its own
+# output. Without this the pipeline below produces an empty result and the
+# script exits on it, printing nothing: a startup panic then looks exactly like
+# a bundle mismatch, which cost a debugging session.
+if ! kill -0 "$SERVER" 2>/dev/null; then
+  echo "FAIL: the server exited instead of serving" >&2
+  sed -n '1,40p' "$DIR/log" >&2
+  exit 1
+fi
+
 GOT=$(curl -sk -H "Host: localhost" https://127.0.0.1:18500/ \
-      | grep -o 'app/immutable/entry/app[A-Za-z0-9._-]*\.js' | head -1)
+      | grep -o 'app/immutable/entry/app[A-Za-z0-9._-]*\.js' | head -1 || true)
+if [ -z "$GOT" ]; then
+  echo "FAIL: the server served no bundle reference" >&2
+  sed -n '1,40p' "$DIR/log" >&2
+  exit 1
+fi
 echo "    served bundle: $GOT"
 
 if [ "$WANT" != "$GOT" ]; then

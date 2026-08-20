@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/handler"
@@ -105,7 +106,7 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 // mux builds the ServeMux from the table. Go 1.22's method and wildcard
 // patterns cover every route on this surface, which was the confirmation
 // step 5a's first task; no router module is needed.
-func mux(table []route.Route, compat []compatMount) *http.ServeMux {
+func mux(table []route.Route, compat []compatMount, davs http.Handler) *http.ServeMux {
 	m := http.NewServeMux()
 	for _, rt := range table {
 		m.Handle(rt.Method+" "+rt.Pattern, rt.Handler)
@@ -120,8 +121,48 @@ func mux(table []route.Route, compat []compatMount) *http.ServeMux {
 	// so it catches only what the table did not claim. A build carrying no
 	// bundle leaves the pattern unmounted rather than serving a 404 page that
 	// looks like a broken frontend.
+	//
+	// The WebDAV mount is folded into the same registration rather than
+	// registered beside it. One pattern is a single method on the bare root
+	// and the other is every method on a prefix, and the router refuses that
+	// pair in either order: neither is more specific than the other, so it
+	// panics at startup rather than picking. Dispatching on the prefix here is
+	// what leaves one pattern to register.
+	root := davs
 	if h, ok := spa.Handler(); ok {
-		m.Handle("GET /", h)
+		root = rootHandler(h, davs)
+	}
+	if root != nil {
+		m.Handle("/", root)
 	}
 	return m
+}
+
+// rootHandler sends the WebDAV prefix to the protocol and everything else to
+// the frontend.
+//
+// A request under the prefix that is not WebDAV does not fall through to the
+// frontend: the prefix belongs to the protocol, and handing a WebDAV client an
+// HTML page is how a sync client reports a corrupt server rather than a wrong
+// path.
+func rootHandler(spaHandler, davs http.Handler) http.Handler {
+	if davs == nil {
+		return spaHandler
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.URL.Path
+		if p == davPrefix || strings.HasPrefix(p, davPrefix+"/") {
+			davs.ServeHTTP(w, r)
+			return
+		}
+		// The frontend answers reads only. Anything else on a path it owns is
+		// a method it has no answer for, and saying so beats returning a
+		// document with a success status.
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			w.Header().Set("Allow", "GET, HEAD")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		spaHandler.ServeHTTP(w, r)
+	})
 }

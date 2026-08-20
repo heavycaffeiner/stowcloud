@@ -109,9 +109,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		Logger: log,
 	})
 
-	m := mux(table, compatRoutes(opt.Core, opt.Store.State(), opt.Log))
-	m.Handle(davPrefix+"/", davMount(davHandler, opt.Core))
-	m.Handle(davPrefix, davMount(davHandler, opt.Core))
+	m := mux(table, compatRoutes(opt.Core, opt.Store.State(), opt.Log), davMount(davHandler, opt.Core))
 	handler := httpapi.Chain(state)(m)
 
 	tlsCfg, err := tlsConfig(cfg, opt)

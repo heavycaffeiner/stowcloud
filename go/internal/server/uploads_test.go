@@ -121,7 +121,7 @@ func newUploadFixture(t *testing.T) *uploadFixture {
 
 	token := sessionTokenHex(sess)
 	return &uploadFixture{
-		handler: httpapi.Chain(state)(mux(table, nil)),
+		handler: httpapi.Chain(state)(mux(table, nil, nil)),
 		cookie: &http.Cookie{
 			Name: mw.SessionCookie, Value: token, Path: "/",
 			Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
