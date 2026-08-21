@@ -77,4 +77,7 @@ echo "==> the session, in a browser"
 echo "==> the grant path, in a browser"
 (cd web && node e2e/grant.spec.mjs https://localhost:18900)
 
+echo "==> the surfaces that used to answer 501, in a browser"
+(cd web && node e2e/surfaces.spec.mjs https://localhost:18900)
+
 echo "PASS: the shipped interface signs in and reaches every surface it calls"

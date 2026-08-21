@@ -132,7 +132,13 @@ func PublicPaths(method, path string) bool {
 	// Signing in needs no credential by definition. Changing a password does,
 	// so it is deliberately not here: it verifies the current one.
 	case "/api/auth/login", "/api/auth/login/totp",
-		"/api/auth/oidc/start", "/api/auth/oidc/callback", "/api/setup":
+		// The config too, not only the flow: the login screen asks whether to
+		// draw the button before anyone has signed in, so behind a credential
+		// it is a question nobody who needs the answer can ask. It says
+		// whether a provider exists and what the button reads, and withholds
+		// the issuer and the client id.
+		"/api/auth/oidc/config", "/api/auth/oidc/start", "/api/auth/oidc/callback",
+		"/api/setup":
 		return true
 	case "/api/uploads":
 		// The discovery request only. Everything else on this mount is a
