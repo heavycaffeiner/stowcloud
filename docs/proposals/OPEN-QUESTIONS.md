@@ -479,3 +479,26 @@ rot unnoticed, and a later phase can port it against that gate.
 
 **Reopen by** whichever phase takes the agent, with a milestone that ends at
 the sidecar image running rather than at a package compiling.
+
+**Closed.** The agent is Go: `go/cmd/sc-smb-agent` and `go/internal/smbagent`.
+`Dockerfile.smb` builds it from the same module as the server, and the gate's
+two cargo steps are gone because the ordinary Go steps cover it, which is
+stricter than what it had.
+
+Porting it found that the half on the server's side had never been wired at
+all. `smb.Render` compiled, was tested, and had no caller: no configuration was
+ever written, the credential path was constructed with an empty destination so
+every republish returned immediately, and there was no client for the control
+socket the agent listens on. SMB could not have worked in any deployment.
+
+So Q10 was the smaller half of its own question. The agent was the visible gap,
+because it was a directory of Rust nobody had ported; the invisible one was a
+subsystem on the Go side that compiled and did nothing, which is Q8 and Q9
+again in the place they were hardest to see.
+
+Two things the port changed rather than translated. The daemon is signalled as
+a process group, because killing only the parent leaves the per-connection
+children holding the listening socket and a restart then finds the port taken.
+And the control protocol and the network classification are one definition
+instead of a vendored copy on each side: a shared definition that agrees only
+because both sides were remembered is the kind that stops agreeing.

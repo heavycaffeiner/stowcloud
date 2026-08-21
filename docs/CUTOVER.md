@@ -56,20 +56,33 @@ fixed rather than preserved.
 
 ## What is still Rust
 
-The SMB sidecar agent, in `smb-agent/`. It runs as root beside the Samba daemon
-and applies what the server renders, which the server cannot do itself: it runs
-unprivileged, in a network namespace that cannot see the host's devices.
+Nothing. The SMB sidecar agent was the last of it and is now
+`go/cmd/sc-smb-agent`, built from the same module as the server.
 
-Nothing about deploying it changes. `Dockerfile.smb` builds it and the compose
-file runs it, exactly as before.
+It runs as root beside the Samba daemon and applies what the server renders,
+which the server cannot do itself: it runs unprivileged, in a network namespace
+that cannot see the host's devices. Nothing about deploying it changes,
+`Dockerfile.smb` builds it and the compose file runs it, and the gate's two
+cargo steps are gone because the ordinary Go steps cover it.
+
+Porting it uncovered that the half on the server's side had never been wired.
+`smb.Render` compiled, was tested and had no caller, so no configuration was
+ever written and there was no client for the agent's control socket. SMB could
+not have worked in any deployment. There is a config section, a publisher and
+an apply surface now, and the surface returns the sidecar's own report, because
+everything worth knowing about a change is true in the sidecar's namespace
+rather than this server's.
 
 ## What the port does not do yet
 
-Four surfaces answer that they are not implemented rather than pretending:
-packing an archive, updating a live share link, building the search index, and
-starting a provider link. The routes exist and return a status a client can act
-on, which is why the screens that use them report a clear refusal instead of a
-missing endpoint.
+The four surfaces that answered "not implemented" now do the work: packing an
+archive, updating a live share link, building the search index, and the
+provider link, which needed a whole flow rather than one handler.
+
+Every one of them turned out to be a wire that was never run rather than work
+that was never written, which is the same shape as the forty-one unmounted
+routes and as the SMB renderer above. A package that compiles and has no caller
+is indistinguishable from a package that works, from inside the package.
 
 Ten WebDAV conformance tests fail, five of them shared with the old build.
 `docs/CONFORMANCE.md` has each one, with which are carried over and which are

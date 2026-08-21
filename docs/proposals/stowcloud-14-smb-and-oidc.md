@@ -4,17 +4,25 @@
 |------------|----------------------------------|
 | Author     | heavycaffeiner(Dong Hyun Kim)    |
 | Created    | 2026-08-12                       |
-| Status     | **Implemented, with one exception** |
+| Status     | **Implemented**                  |
 | Reviewers  |                                  |
 
 ---
 
-> **The sidecar agent is not ported.** Everything in this document is
-> implemented in Go except `sc-smb-agent`, the privileged half of SMB
-> publishing, which is still the Rust program it always was and now lives in
-> `smb-agent/`. It was in no phase's milestone list and the cutover kept it
-> rather than shipping a broken feature or writing root-running code in the
-> phase least able to test it. Recorded as Q10 in `OPEN-QUESTIONS.md`.
+> **Implemented, including the sidecar agent.** It is `go/cmd/sc-smb-agent` and
+> `go/internal/smbagent`, built from the same module as the server, so the
+> control protocol and the network classification are one definition rather
+> than a copy on each side.
+>
+> Porting it found that the half described here had no caller: the renderer
+> compiled and was tested, nothing invoked it, and there was no client for the
+> agent's control socket, so SMB could not have worked in any deployment. The
+> publisher and the apply surface were written alongside the port. Q10 in
+> `OPEN-QUESTIONS.md` has the detail.
+>
+> Single sign-on is implemented too, and the same way: the client in this
+> document was complete and had no flow around it. There is a config section,
+> a start, a callback, a link store and a flow store now.
 
 ## 1. Summary
 
@@ -338,6 +346,13 @@ client and no TLS stack at all before OIDC.
 **Non-code dependency**: a real IdP to test against. Keycloak in the Linux VM,
 plus one hosted provider, because discovery documents differ in ways only a real
 one shows.
+
+What was built instead is a provider inside the test suite: discovery, a key
+set, an authorize endpoint that records the nonce it was asked for, and a token
+endpoint that signs one. The real client completes the whole flow against it,
+which is what caught two defects that every unit test on either side passed
+through. It does not replace a real provider for the discovery-document
+differences above; it does replace one for checking that the flow is wired.
 
 ## 7. References
 
