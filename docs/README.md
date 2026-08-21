@@ -47,6 +47,7 @@ it could not.
 | [Footprint](FOOTPRINT.md) | memory and timing against the implementation replaced, and which planned measurements were not made |
 | [The differ](DIFFER.md) | the response comparison, the defects it found, and the differences left standing |
 | [The jail proof](JAIL-PROOF.md) | the sandbox across the policies, including the kernel this host cannot boot |
+| [Risks](RISKS.md) | what is most likely to break next, ranked by cost, with the fix for each and the pattern that produced almost all of them |
 
 [`proposals/OPEN-QUESTIONS.md`](proposals/OPEN-QUESTIONS.md) sits beside them
 and holds what the port surfaced that only the maintainer can settle. Each
