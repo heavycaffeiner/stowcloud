@@ -350,10 +350,19 @@ copyright notices, and the runtime image carries a copy at
 
 ## Status
 
-Every milestone in the architecture document is reachable by a real client.
-Still missing: WebDAV conformance testing in CI, an automated sync-client
-regression suite, and an external security review. Treat it accordingly. It
-has not been audited by anyone outside this repository.
+The backend is Go. [`docs/CUTOVER.md`](docs/CUTOVER.md) is what an operator
+needs before switching, including the one-time reconciliation every attached
+sync client performs.
+
+Measured rather than asserted: [`docs/CONFORMANCE.md`](docs/CONFORMANCE.md) has
+the WebDAV suite against both implementations, with each failure attributed;
+[`docs/FOOTPRINT.md`](docs/FOOTPRINT.md) has the memory and timing numbers, and
+says which planned measurements were not made.
+
+Still missing: an automated sync-client regression suite, a second architecture
+for the sandbox proof, and an external security review. Four surfaces answer
+that they are not implemented and name themselves. Treat it accordingly. It has
+not been audited by anyone outside this repository.
 
 [^tm]: Nextcloud is a registered trademark of Nextcloud GmbH. Stowcloud is not
     affiliated with, endorsed by, or sponsored by Nextcloud GmbH; the name is

@@ -35,6 +35,19 @@ cutover; [17](proposals/stowcloud-17-parity-and-cutover.md) §4.4 is where.
 | [16 - Frontend client](proposals/stowcloud-16-frontend-client.md) | what changes in `web/src/lib/api` and what does not | Phase 12 |
 | [17 - Parity and cutover](proposals/stowcloud-17-parity-and-cutover.md) | the response differ, the conformance run, the footprint remeasurement, the commit that deletes `crates/` | Phase 13 |
 
+## What the port measured
+
+These are results rather than specifications: what the cutover found, and what
+it could not.
+
+| Document | Content |
+|---|---|
+| [Cutover](CUTOVER.md) | what an operator does before switching, and what changes for attached clients |
+| [Conformance](CONFORMANCE.md) | the WebDAV suite against both implementations, each failure attributed to a carried-over gap or to this port |
+| [Footprint](FOOTPRINT.md) | memory and timing against the implementation replaced, and which planned measurements were not made |
+| [The differ](DIFFER.md) | the response comparison, the defects it found, and the differences left standing |
+| [The jail proof](JAIL-PROOF.md) | the sandbox across the policies, including the kernel this host cannot boot |
+
 [`proposals/OPEN-QUESTIONS.md`](proposals/OPEN-QUESTIONS.md) sits beside them
 and holds what the port surfaced that only the maintainer can settle. Each
 entry carries an answer taken in the meantime, so it is a list of decisions
