@@ -149,5 +149,13 @@
 # The archive writer and the link update added eight: six width conversions in
 # the zip format, each bounded on the line above it, one statement naming a
 # credential column, and one hash write that cannot fail.
-210
+# The SMB sidecar agent added thirty-one. Most are the security scanner
+# reading this agent's own configured paths as untrusted input: it edits the
+# system account file and promotes a configuration by design, so the paths it
+# writes are its whole purpose rather than a traversal. The rest are file modes
+# the scanner wants narrower than they can be, since a system account file
+# every name lookup reads cannot be private, and signals to a process that has
+# already exited. One more marks the example configuration test writing into
+# the framework's own temporary directory.
+242
 

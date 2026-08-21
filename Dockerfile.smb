@@ -1,10 +1,9 @@
 # syntax=docker/dockerfile:1.7
 #
-# Builds `sc:smb` — the Samba sidecar (`docs/FEATURES.md` item 150,
-# `docs/DEPLOYMENT.md` §7). Consumes the files `sc-server smb-sync`
-# (`crates/sc-server/src/smb_cmd.rs`) writes to a shared `/config/smb`
-# volume; never touches the sc-core image or its binary. This container is
-# the only place in the whole deployment that runs Samba, or needs it.
+# The Samba sidecar. It consumes the files the server renders into a shared
+# `/config/smb` volume and never touches the server's image or its binary.
+# This container is the only place in the whole deployment that runs Samba,
+# or needs it.
 #
 # alpine, not distroless: same rationale as the previous debian:12-slim
 # base (`smbd`/`testparm`/`pdbedit` are real OS packages, and Samba's own
@@ -35,10 +34,10 @@
 # version label 3.24.1:
 ARG ALPINE_DIGEST=sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
 # Same toolchain image and same reasoning as the core Dockerfile's builder.
-ARG RUST_IMAGE=rust:1.88-slim-bookworm@sha256:38bc5a86d998772d4aec2348656ed21438d20fcdce2795b56ca434cf21430d89
+ARG GO_IMAGE=golang:1.25-bookworm
 
 # ----------------------------------------------------------------------------
-# Stage: builder — `sc-smb-agent`, statically linked against musl.
+# Stage: builder, the agent, statically linked.
 #
 # It replaces `deploy/smb/entrypoint.sh` and `deploy/smb/net-scope.sh`, which
 # used to be COPYed in here. Two reasons, both of which cost a production
@@ -54,30 +53,35 @@ ARG RUST_IMAGE=rust:1.88-slim-bookworm@sha256:38bc5a86d998772d4aec2348656ed21438
 #     a rejected config or a share path missing from *this* container looked
 #     exactly like success from over there. The agent answers on a Unix socket.
 #
-# No C toolchain needed, unlike the core image: this binary links libc, clap,
-# serde and tracing, and nothing that builds a C dependency.
+# No C toolchain needed: the build is static by construction, which is what
+# lets this binary run on a base with no libc of its own.
+#
+# It builds from the same module as the server, so the control protocol and the
+# network classification are one definition rather than two kept in step by
+# their tests. They used to be vendored into a separate program, and a shared
+# definition that only agrees because both sides were remembered is the kind
+# that stops agreeing.
 # ----------------------------------------------------------------------------
-FROM ${RUST_IMAGE} AS builder
+FROM ${GO_IMAGE} AS builder
 ARG TARGETARCH
-RUN case "${TARGETARCH}" in \
-      amd64) echo x86_64-unknown-linux-musl > /rust_target.txt ;; \
-      arm64) echo aarch64-unknown-linux-musl > /rust_target.txt ;; \
-      *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
-    esac
-RUN rustup target add "$(cat /rust_target.txt)"
+WORKDIR /src/go
 
-# The agent is its own package rather than a workspace member. It was one
-# until the server was ported to Go: there is no workspace left, and this is
-# the last Rust program in the tree. The two things it shares with the server,
-# the control protocol and the network classification, are vendored into it
-# under src/shared, and both sides' tests are what keep them in step.
-WORKDIR /src
-COPY smb-agent/agent/ ./
-RUN RUST_TARGET="$(cat /rust_target.txt)" && \
-    cargo build --profile release-dist \
-      --target "${RUST_TARGET}" -p sc-smb-agent && \
-    mkdir -p /out && \
-    cp "target/${RUST_TARGET}/release-dist/sc-smb-agent" /out/sc-smb-agent
+# The module graph is downloaded before the source is copied, so a source-only
+# change does not refetch it.
+COPY go/go.mod go/go.sum ./
+RUN go mod download
+
+COPY go/ ./
+RUN mkdir -p /out && \
+    CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" \
+      go build \
+        -trimpath \
+        -ldflags="-s -w -buildid=" \
+        -o /out/sc-smb-agent ./cmd/sc-smb-agent && \
+    # A binary that turned out dynamic is one the runtime base cannot run, and
+    # finding that out here beats finding it out when the container will not
+    # start.
+    ! ldd /out/sc-smb-agent 2>/dev/null | grep -q "=>"
 
 FROM alpine:3.24@${ALPINE_DIGEST}
 # Per-arch manifest digests, for building a single platform explicitly
@@ -114,13 +118,10 @@ RUN apk add --no-cache \
        fail2ban tini iptables shadow \
     && rm -rf /var/cache/apk/*
 
-# `force user`/`force group = scsvc` in the generated smb.conf
-# (`crates/sc-smb/src/conf.rs`) requires this exact name at this exact
-# uid/gid to exist — `Config::smb_service_uid`/`smb_service_gid` in
-# `crates/sc-server/src/config.rs` both default to 1000. All SMB
-# connections run as this one Unix identity; real per-user access control
-# is `valid users`/`read list`/`write list` in smb.conf, never Unix
-# permissions (module doc, `sc-smb/src/lib.rs`).
+# The rendered configuration forces every connection to this one account, so
+# the name has to exist here at this exact uid and gid. All SMB connections run
+# as this single identity; real per-user access control is the account lists in
+# the rendered configuration, never Unix permissions.
 #
 # `/sbin/nologin`, not `/usr/sbin/nologin`: Alpine ships the login-refusal
 # shell at a different path than Debian (confirmed by an actual run —

@@ -21,6 +21,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
 	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/server"
+	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
+	"github.com/heavycaffeiner/stowcloud/go/internal/smbpublish"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 	"github.com/heavycaffeiner/stowcloud/go/internal/task"
 	"github.com/heavycaffeiner/stowcloud/go/internal/upload"
@@ -163,7 +165,15 @@ func runServe(args []string, stderr io.Writer) int {
 		}
 	}()
 
-	authSvc := auth.New(auth.Config{Store: st.State(), StoreDir: cfg.DataDir, Clock: clk})
+	// The credential file lives beside the rendered configuration, so the
+	// sidecar reads both from one mounted directory. Empty when SMB is off,
+	// which is what stops every credential change re-rendering a file nothing
+	// reads.
+	passdbPath := ""
+	if cfg.SMB.Render.Enabled {
+		passdbPath = filepath.Join(cfg.SMB.ConfigDir, "smbpasswd")
+	}
+	authSvc := auth.New(auth.Config{Store: st.State(), StoreDir: cfg.DataDir, Clock: clk, PassdbPath: passdbPath})
 	masterKey, kerr := authSvc.OpenMasterKey(ctx)
 	if kerr != nil {
 		say(stderr, "stowcloud %s: serve: the master key: %v\n", version, kerr)
@@ -254,8 +264,32 @@ func runServe(args []string, stderr io.Writer) int {
 		_ = watcher.Close() //nolint:errcheck // shutdown is closing everything anyway.
 	}()
 
+	// SMB publishing. The whole render is rebuilt from state on every call
+	// rather than diffed, so a change that stops at one surface is still
+	// visible to the sidecar on the next apply.
+	publishSMB := func(c context.Context) (smbagent.Report, error) {
+		return smbpublish.Publish(c, smbpublish.Deps{
+			Core:      coreSvc,
+			Auth:      authSvc,
+			ConfigDir: cfg.SMB.ConfigDir,
+			Socket:    cfg.SMB.AgentSocket,
+			Grants: func(c context.Context) ([]acl.Grant, error) {
+				return acl.ListGrants(c, st.State().SQL(), acl.GrantFilter{})
+			},
+			Names: func(c context.Context, id int64) (string, error) {
+				return authSvc.NameOf(c, id)
+			},
+		}, cfg.SMB.Render)
+	}
+	if !cfg.SMB.Render.Enabled {
+		// Nothing to publish and nothing to refuse with: the surface says SMB
+		// is not configured rather than pretending an apply happened.
+		publishSMB = nil
+	}
+
 	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health, Uploads: uploads,
-		ReloadACL: func(c context.Context) error { return evaluator.LoadFromState(c, st.State().SQL()) },
+		PublishSMB: publishSMB,
+		ReloadACL:  func(c context.Context) error { return evaluator.LoadFromState(c, st.State().SQL()) },
 	}, setupGate)
 	if nerr != nil {
 		say(stderr, "stowcloud %s: serve: %v\n", version, nerr)

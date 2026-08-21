@@ -42,9 +42,8 @@ name: docker
 # ---------------------------------------------------------------------------
 # arm64 used to be a QEMU cross-build on an amd64 runner, and it cost 48
 # minutes against 5 for the same Dockerfile on amd64: emulating a compiler is
-# roughly a 9x penalty, and this image compiles three times over (the npm
-# bundle, `cargo install cargo-auditable` from source, and the workspace
-# release build). Worse, an emulated image cannot be `--load`ed and run, so
+# roughly a 9x penalty, and this image compiles twice over (the npm bundle and
+# the server itself). Worse, an emulated image cannot be `--load`ed and run, so
 # 48 minutes bought exactly one fact: that arm64 compiles and links.
 #
 # `ubuntu-24.04-arm` is native arm64 hardware, free for public repositories.
@@ -65,9 +64,7 @@ on:
       - "Dockerfile"
       - "Dockerfile.smb"
       - ".dockerignore"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "crates/**"
+      - "go/**"
       - "web/**"
       - "deploy/smb/**"
       - ".github/workflows/docker.yml"

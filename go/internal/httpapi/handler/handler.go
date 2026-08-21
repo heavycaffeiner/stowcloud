@@ -17,6 +17,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/upload"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
@@ -67,6 +68,12 @@ type Deps struct {
 	// RequestRestart asks the process to exit so a supervisor starts it again.
 	// A nil one makes the restart surface refuse rather than pretend.
 	RequestRestart func()
+
+	// PublishSMB re-renders the SMB configuration and asks the sidecar to
+	// apply it, returning what the sidecar says happened. A nil one leaves the
+	// surface answering that SMB is not configured, which is what a deployment
+	// without the sidecar has.
+	PublishSMB func(ctx context.Context) (smbagent.Report, error)
 
 	// OIDC is the single-sign-on client. A nil one leaves the link surfaces
 	// answering that the provider is not configured, which is what a

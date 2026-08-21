@@ -87,6 +87,10 @@ func EnclosingPrivateRange(ip netip.Addr) string {
 // These are functions rather than package variables because a slice at package
 // scope is mutable state any caller can reach into, and this one decides who
 // may reach a share.
+// PrivateCIDRs is the same list, for the sidecar agent, which admits private
+// space wholesale when it can only see a container bridge.
+func PrivateCIDRs() []string { return privateCIDRs() }
+
 func privateCIDRs() []string {
 	return []string{
 		"10.0.0.0/8",

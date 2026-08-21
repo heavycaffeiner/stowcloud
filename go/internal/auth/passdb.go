@@ -60,6 +60,13 @@ func passdbEnabled(smbEnabled, disabled, has2fa bool, policy TOTPPolicy) bool {
 	return smbEnabled && !disabled
 }
 
+// PublishPassdb re-renders the credential file now, for the publisher that
+// pushes a whole SMB configuration rather than reacting to one credential
+// change.
+func (s *Service) PublishPassdb(ctx context.Context) error {
+	return s.republishPassdb(ctx)
+}
+
 // republishPassdb is the sink. Every credential-changing path calls it, and it
 // re-renders the whole file from state, so a change that stops at one surface
 // (a password set, an enrolment, a disable) is visible to SMB on the next read.

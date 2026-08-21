@@ -140,6 +140,7 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		{Method: "GET", Pattern: "/api/admin/users/{id}/oidc", Req: selfAdmin, Handler: handler.AdminUserOIDC(d)},
 		{Method: "PUT", Pattern: "/api/admin/users/{id}/oidc", Req: selfAdmin, Handler: handler.AdminUserOIDC(d)},
 		{Method: "DELETE", Pattern: "/api/admin/users/{id}/oidc", Req: selfAdmin, Handler: handler.AdminUserOIDC(d)},
+		{Method: "POST", Pattern: "/api/admin/smb/apply", Req: selfAdmin, Handler: handler.SMBApply(d)},
 		{Method: "GET", Pattern: "/api/admin/groups", Req: selfAdmin, Handler: handler.AdminGroups(d)},
 		{Method: "POST", Pattern: "/api/admin/groups", Req: selfAdmin, Handler: handler.AdminGroups(d)},
 		{Method: "DELETE", Pattern: "/api/admin/groups/{id}", Req: selfAdmin, Handler: handler.AdminGroup(d)},

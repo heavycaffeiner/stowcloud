@@ -402,22 +402,6 @@ else
 fi
 
 # --- the SMB sidecar agent -------------------------------------------------
-# The last Rust program in the tree, and it ships: the sidecar image builds it
-# and the compose file runs that image. It is the privileged half of SMB
-# publishing, so the server can render as an unprivileged user in a namespace
-# that cannot see the host's devices.
-#
-# It is checked here rather than left to the image build, because a component
-# nothing compiles is a component that rots until somebody deploys it. Why it
-# is still Rust is recorded as Q10 in docs/proposals/OPEN-QUESTIONS.md.
-if command -v cargo >/dev/null 2>&1; then
-  run "the SMB agent builds"     bash -c 'cd smb-agent/agent && cargo build --quiet'
-  run "the SMB agent's tests"    bash -c 'cd smb-agent/agent && cargo test --quiet'
-else
-  skipped "the SMB agent builds"  "no cargo" 0
-  skipped "the SMB agent's tests" "no cargo" 0
-fi
-
 # --- what this run did NOT verify -----------------------------------------
 # Everything above ran against the working tree; CI and the Dockerfile build
 # HEAD. Commit b705bfd staged a caller (`sc-server/src/diagnostics.rs` calling

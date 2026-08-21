@@ -48,3 +48,50 @@ burst = 100
 # under all of them: "off" means a weaker sandbox is accepted, not a resolver
 # that can be raced.
 hardening = "required"
+
+[smb]
+# Whether SMB is published at all. Off by default: SMB starts explicitly.
+#
+# This server renders the configuration and cannot apply it. The daemon runs in
+# the sidecar container, in a network namespace that can see the host's
+# devices, as a user that may edit the system account file. So this writes four
+# files into a directory both containers mount, and asks the sidecar to apply
+# them.
+enabled = false
+
+# The account every SMB connection runs as. Required when SMB is enabled. Real
+# per-user access control is the grants this server holds, which become the
+# per-share account lists; this identity only decides what a connection writes
+# as on disk.
+service_user = "scsvc"
+
+workgroup = "WORKGROUP"
+
+# The name clients can reach this server by, so a share opens under a name
+# rather than an address. Empty means no name at all: the name service stays
+# off and only the address works.
+#
+# A name only resolves when the sidecar shares the LAN's broadcast domain,
+# because name service is broadcast and does not cross a bridge.
+server_name = ""
+
+# Pins exactly which addresses may be bound, overriding the detection the
+# sidecar would otherwise do. Addresses and CIDR blocks only.
+#
+# Empty does not mean "bind everything". It means the closed case: this process
+# runs in a different network namespace from the one that binds, so it renders
+# loopback only and the sidecar expands it from the host's own devices.
+interfaces = []
+
+# Lets a globally routable address be bound. Whether one exists at all is only
+# knowable in the namespace that binds, which is why this is worth stating
+# deliberately: turning it on means SMB is on the internet.
+allow_public_bind = false
+
+# The directory both containers mount, where the rendered files go.
+config_dir = "/config/smb"
+
+# Where the sidecar listens. Empty means no sidecar, which is a bare-metal
+# deployment where something else applies the files: they are still written,
+# and nothing reports back what happened to them.
+agent_socket = "/run/sc-smb/agent.sock"

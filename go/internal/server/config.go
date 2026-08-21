@@ -9,6 +9,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
+	"github.com/heavycaffeiner/stowcloud/go/internal/smb"
 )
 
 // Config is the typed configuration every other package accepts. The TOML
@@ -36,6 +37,10 @@ type Config struct {
 	// refuses to start when a layer cannot be applied.
 	Hardening jail.Policy
 
+	// SMB is what the sidecar publishes, and where to reach it. Off by
+	// default: SMB starts explicitly.
+	SMB SMBConfig
+
 	// Shares are the folders this server serves, named by the operator. A
 	// deployment with none starts and has nothing to show, which is what a
 	// first run looks like before anyone has said what to serve.
@@ -51,6 +56,18 @@ type ShareConfig struct {
 	// SharedExternally marks a folder another program also writes. Nothing on
 	// a filesystem says so, which is why it is the operator who says it.
 	SharedExternally bool
+}
+
+// SMBConfig is the publishing half of the SMB settings, alongside the render
+// settings the smb package owns.
+type SMBConfig struct {
+	Render smb.Config
+	// ConfigDir is the directory both containers mount, where the rendered
+	// files go.
+	ConfigDir string
+	// AgentSocket is where the sidecar listens. Empty means no sidecar, which
+	// is a bare-metal deployment where something else applies the files.
+	AgentSocket string
 }
 
 // raw is the TOML shape, parsed then validated. The field names are the
@@ -72,6 +89,16 @@ type raw struct {
 	Security struct {
 		Hardening string `toml:"hardening"`
 	} `toml:"security"`
+	SMB struct {
+		Enabled         bool     `toml:"enabled"`
+		Workgroup       string   `toml:"workgroup"`
+		ServerName      string   `toml:"server_name"`
+		Interfaces      []string `toml:"interfaces"`
+		ServiceUser     string   `toml:"service_user"`
+		AllowPublicBind bool     `toml:"allow_public_bind"`
+		ConfigDir       string   `toml:"config_dir"`
+		AgentSocket     string   `toml:"agent_socket"`
+	} `toml:"smb"`
 	Shares []struct {
 		Name             string `toml:"name"`
 		HostPath         string `toml:"host_path"`
@@ -82,9 +109,11 @@ type raw struct {
 // defaults are the compiled-in values a missing key inherits. A D5 constant
 // is the outer bound; the default sits within it.
 const (
-	defaultListen     = ":8443"
-	defaultRatePerSec = 20
-	defaultRateBurst  = 100
+	defaultSMBConfigDir = "/config/smb"
+	defaultWorkgroup    = "WORKGROUP"
+	defaultListen       = ":8443"
+	defaultRatePerSec   = 20
+	defaultRateBurst    = 100
 )
 
 // Load reads and validates the config file. An absent file is a startup
@@ -137,6 +166,38 @@ func Validate(r raw) (*Config, error) {
 	}
 	if cfg.RatePerSec > 10_000 || cfg.RateBurst > 10_000 {
 		return nil, fmt.Errorf("rate: a value over 10000 is beyond the compiled-in outer bound")
+	}
+
+	// SMB. Every value that reaches the rendered file is checked by the
+	// renderer, which refuses rather than escapes: that format has no escape
+	// surviving its own continuation and substitution rules. What is checked
+	// here is only what the renderer never sees.
+	cfg.SMB.Render = smb.Config{
+		Enabled:         r.SMB.Enabled,
+		Workgroup:       r.SMB.Workgroup,
+		ServerName:      r.SMB.ServerName,
+		Interfaces:      r.SMB.Interfaces,
+		ServiceUser:     r.SMB.ServiceUser,
+		AllowPublicBind: r.SMB.AllowPublicBind,
+	}
+	if cfg.SMB.Render.Workgroup == "" {
+		cfg.SMB.Render.Workgroup = defaultWorkgroup
+	}
+	cfg.SMB.ConfigDir = r.SMB.ConfigDir
+	if cfg.SMB.ConfigDir == "" {
+		cfg.SMB.ConfigDir = defaultSMBConfigDir
+	}
+	cfg.SMB.AgentSocket = r.SMB.AgentSocket
+	if r.SMB.Enabled {
+		if cfg.SMB.Render.ServiceUser == "" {
+			return nil, fmt.Errorf("smb.service_user: required when SMB is enabled, because every connection runs as one account")
+		}
+		// Rendered now rather than at the first publish, so a configuration
+		// the renderer refuses is a startup refusal naming the key instead of
+		// a settings screen failing later.
+		if _, err := smb.Render(cfg.SMB.Render, nil); err != nil {
+			return nil, fmt.Errorf("smb: %w", err)
+		}
 	}
 
 	// An absent value takes the shipped default rather than the zero one by

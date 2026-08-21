@@ -3,6 +3,7 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -40,24 +41,42 @@ func TestTheShippedExampleConfigLoads(t *testing.T) {
 	}
 }
 
+// parserKeys walks the TOML struct and collects every key it declares.
+func parserKeys(t reflect.Type) map[string]bool {
+	out := map[string]bool{}
+	var walk func(reflect.Type)
+	walk = func(t reflect.Type) {
+		if t.Kind() != reflect.Struct {
+			return
+		}
+		for i := range t.NumField() {
+			f := t.Field(i)
+			if tag := f.Tag.Get("toml"); tag != "" {
+				out[tag] = true
+			}
+			walk(f.Type)
+		}
+	}
+	walk(t)
+	return out
+}
+
 // Every key the example sets is one the parser reads. A key nothing consumes
 // is a setting an operator changes with no effect, which is worse than one
 // that is absent.
 func TestTheExampleSetsNoKeyTheParserIgnores(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Clean(exampleConfigPath))
+	body, err := os.ReadFile(filepath.Clean(exampleConfigPath))
 	if err != nil {
 		t.Fatalf("reading the example: %v", err)
 	}
 
-	// The keys the parser actually declares.
-	known := map[string]bool{
-		"data_dir": true, "listen": true,
-		"app_hosts": true, "content_hosts": true, "trusted_proxy_cidrs": true,
-		"per_sec": true, "burst": true,
-		"hardening": true,
-	}
+	// Read off the parser's own struct rather than listed here. A second list
+	// is a second thing to forget: this test exists because a key nothing
+	// reads is a setting an operator changes with no effect, and a hand-kept
+	// list of known keys has exactly that failure itself.
+	known := parserKeys(reflect.TypeOf(raw{}))
 
-	for i, line := range strings.Split(string(raw), "\n") {
+	for i, line := range strings.Split(string(body), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "[") {
 			continue
@@ -71,5 +90,43 @@ func TestTheExampleSetsNoKeyTheParserIgnores(t *testing.T) {
 		if !known[key] {
 			t.Errorf("line %d sets %q, which the parser does not read", i+1, key)
 		}
+	}
+}
+
+// The example with SMB turned on still parses.
+//
+// It ships turned off, so nothing else here exercises those keys, and a
+// default that only validates while it is off is one an operator finds broken
+// the moment they enable it.
+func TestTheExampleValidatesWithSMBTurnedOn(t *testing.T) {
+	body, err := os.ReadFile(filepath.Clean(exampleConfigPath))
+	if err != nil {
+		t.Fatalf("reading the example: %v", err)
+	}
+
+	on := strings.Replace(string(body), "enabled = false", "enabled = true", 1)
+	if on == string(body) {
+		t.Fatal("the example no longer has an SMB switch to turn on")
+	}
+
+	path := filepath.Join(t.TempDir(), "sc.toml")
+	if werr := os.WriteFile(path, []byte(on), 0o600); werr != nil { //nolint:gosec // G703 traces the temporary directory into a write: it is the test framework's own, not caller data.
+		t.Fatal(werr)
+	}
+
+	cfg, lerr := Load(path)
+	if lerr != nil {
+		t.Fatalf("the example does not validate with SMB on: %v", lerr)
+	}
+	if !cfg.SMB.Render.Enabled {
+		t.Error("SMB parsed as off after being turned on")
+	}
+	if cfg.SMB.Render.ServiceUser == "" {
+		t.Error("no service account, which every connection runs as")
+	}
+	// The closed network case, because this process cannot see the host's
+	// devices. The sidecar expands it in the namespace that can.
+	if len(cfg.SMB.Render.Interfaces) != 0 {
+		t.Errorf("the example pins %v, which turns off the sidecar's detection", cfg.SMB.Render.Interfaces)
 	}
 }

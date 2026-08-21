@@ -17,6 +17,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/route"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/ws"
+	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 	"github.com/heavycaffeiner/stowcloud/go/internal/upload"
 	"github.com/heavycaffeiner/stowcloud/go/internal/watch"
@@ -48,6 +49,11 @@ type Options struct {
 	// answering that it is unavailable rather than minting sessions nothing
 	// backs.
 	Uploads *upload.Engine
+
+	// PublishSMB re-renders the SMB configuration and asks the sidecar to
+	// apply it. A nil one leaves the apply surface refusing rather than
+	// pretending, which is what a deployment with no sidecar has.
+	PublishSMB func(ctx context.Context) (smbagent.Report, error)
 
 	// ReloadACL rebuilds the permission evaluator from the stored grants,
 	// which is what makes an edit on the admin screen take effect without a
@@ -85,18 +91,19 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 	}
 
 	deps := handler.Deps{
-		Core:     opt.Core,
-		Auth:     opt.Auth,
-		Clock:    clk,
-		Log:      log,
-		Limiter:  state.Limiter,
-		Trusted:  state.Trusted,
-		Hosts:    state.Hosts,
-		CSRFKey:  state.CSRFKey,
-		WatchCap: func() int { return watchHotSetCap },
-		Health:   health,
-		Uploads:  opt.Uploads,
-		State:    opt.Store.State(),
+		Core:       opt.Core,
+		Auth:       opt.Auth,
+		Clock:      clk,
+		Log:        log,
+		Limiter:    state.Limiter,
+		Trusted:    state.Trusted,
+		Hosts:      state.Hosts,
+		CSRFKey:    state.CSRFKey,
+		WatchCap:   func() int { return watchHotSetCap },
+		Health:     health,
+		Uploads:    opt.Uploads,
+		State:      opt.Store.State(),
+		PublishSMB: opt.PublishSMB,
 		ReloadACL: func(ctx context.Context) error {
 			if opt.ReloadACL == nil {
 				return nil
