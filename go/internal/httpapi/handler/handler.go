@@ -17,6 +17,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
 	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/upload"
@@ -68,6 +69,16 @@ type Deps struct {
 	// RequestRestart asks the process to exit so a supervisor starts it again.
 	// A nil one makes the restart surface refuse rather than pretend.
 	RequestRestart func()
+
+	// OIDCDisplayName is what the sign-in button says. It is configuration
+	// rather than something the provider tells us, because the login screen
+	// has to draw the button before any provider has been contacted.
+	OIDCDisplayName string
+
+	// Search answers queries and builds the name index. A nil one leaves the
+	// build surface refusing and every query taking the walk, which is the
+	// correct behaviour for a build with no index rather than a degradation.
+	Search *service.Service
 
 	// PublishSMB re-renders the SMB configuration and asks the sidecar to
 	// apply it, returning what the sidecar says happened. A nil one leaves the

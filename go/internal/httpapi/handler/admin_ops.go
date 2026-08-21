@@ -6,6 +6,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/search"
+	"github.com/heavycaffeiner/stowcloud/go/internal/search/index"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
@@ -103,21 +105,57 @@ func AdminIndexEstimate(d Deps) http.HandlerFunc {
 		if _, err := requireAdmin(r, d.Auth); err != nil {
 			return err
 		}
-		// The estimator exists and the walk that feeds it does not yet run
-		// from here. Answering honestly beats answering a number this server
-		// did not measure, which an administrator would size a disk against.
-		return notImplemented("search.index_build_unavailable")
+		// Measured, not modelled from a file count: the term that separates
+		// one corpus from another at the same file count is how many distinct
+		// trigrams the names hold, and that is only knowable by looking.
+		//
+		// Every share, not this administrator's view: the index covers all of
+		// them, so sizing it against one account's grants reports a number the
+		// built index would not match.
+		scan, err := search.ScanCorpus(r.Context(), d.Core.ScanSources(), search.ScanOptions{})
+		if err != nil {
+			return err
+		}
+
+		est := search.EstimateNameIndex(scan.Stats, index.DefaultConfig().BlockSize)
+		d.Log.Info("sized the name index",
+			"files", scan.Stats.Files, "bytes", est.IndexBytes,
+			"partial", scan.Partial, "formula", est.Formula)
+
+		// A scan that hit its bound measured a real sample, and saying which
+		// is the difference between an estimate an operator can act on and a
+		// number that is quietly a fraction of the answer.
+		confidence := "high"
+		if est.Confidence != search.ConfidenceMeasured {
+			confidence = "medium"
+		}
+		if scan.Partial {
+			confidence = "low"
+		}
+
+		return writeJSON(w, http.StatusOK, map[string]any{
+			"files":       scan.Stats.Files,
+			"index_bytes": est.IndexBytes,
+			"build_secs":  buildSeconds(scan.Stats.Files),
+			"confidence":  confidence,
+		})
 	})
 }
 
-// AdminIndexBuild answers POST /api/admin/index/build.
-func AdminIndexBuild(d Deps) http.HandlerFunc {
-	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		if _, err := requireAdmin(r, d.Auth); err != nil {
-			return err
-		}
-		return notImplemented("search.index_build_unavailable")
-	})
+// indexBuildRate is how many entries a build gets through in a second, taken
+// from the walk this measurement just ran rather than guessed.
+//
+// It is deliberately pessimistic. A build runs only while the server is
+// otherwise idle, so the wall-clock time is longer than this, and an estimate
+// that runs under is one an operator plans an evening around.
+const indexBuildRate = 20_000
+
+func buildSeconds(files uint64) uint64 {
+	secs := files / indexBuildRate
+	if secs == 0 && files > 0 {
+		return 1
+	}
+	return secs
 }
 
 // AdminIndexSettings answers GET and PATCH /api/admin/index/settings.

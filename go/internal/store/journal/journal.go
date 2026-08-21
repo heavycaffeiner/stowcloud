@@ -139,13 +139,31 @@ func (d *DB) Record(ctx context.Context, e Event) error {
 // Recent is the account's own last touches, newest first. It is bounded by the
 // same cap the table is, so a caller cannot ask for more than the table holds.
 func (d *DB) Recent(ctx context.Context, account uint32, limit int) (out []Event, err error) {
+	return d.RecentSince(ctx, account, 0, limit)
+}
+
+// RecentSince is the same, bounded to writes at or after an instant.
+//
+// An instant rather than a number of days, decided by the caller: a day count
+// has to be resolved against somebody's clock, and the two ends of this are in
+// different time zones often enough that the same request meant two different
+// windows depending on which side did the arithmetic.
+//
+// A sinceNs of zero is no window, which is what a caller that asked for none
+// means.
+func (d *DB) RecentSince(ctx context.Context, account uint32, sinceNs int64, limit int) (out []Event, err error) {
 	if d == nil {
 		return nil, nil
 	}
 	if limit <= 0 || limit > limits.JournalRowsPerAccount {
 		limit = limits.JournalRowsPerAccount
 	}
-	rows, err := d.f.SQL().QueryContext(ctx, sqlRecentForAccount, int64(account), limit)
+
+	stmt, args := sqlRecentForAccount, []any{int64(account), limit}
+	if sinceNs > 0 {
+		stmt, args = sqlRecentSince, []any{int64(account), sinceNs, limit}
+	}
+	rows, err := d.f.SQL().QueryContext(ctx, stmt, args...)
 	if err != nil {
 		return nil, fmt.Errorf("reading the journal: %w", err)
 	}

@@ -156,6 +156,7 @@
 # the scanner wants narrower than they can be, since a system account file
 # every name lookup reads cannot be private, and signals to a process that has
 # already exited. One more marks the example configuration test writing into
-# the framework's own temporary directory.
-242
+# the framework's own temporary directory, and one more the corpus scan's own
+# bound, which is a positive constant the line above it checks.
+243
 

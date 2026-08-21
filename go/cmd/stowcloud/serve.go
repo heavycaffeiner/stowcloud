@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -19,6 +20,9 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
+	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/search/index"
+	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
 	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/server"
 	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
@@ -264,6 +268,34 @@ func runServe(args []string, stderr io.Writer) int {
 		_ = watcher.Close() //nolint:errcheck // shutdown is closing everything anyway.
 	}()
 
+	// Single sign-on. Nil when none is configured, which leaves the surfaces
+	// answering that this deployment has no provider rather than pretending.
+	var oidcClient *oidc.Client
+	if cfg.OIDC != nil {
+		c, oerr := oidc.New(*cfg.OIDC, clk)
+		if oerr != nil {
+			say(stderr, "stowcloud %s: serve: the identity provider: %v\n", version, oerr)
+			return exitConfig
+		}
+		oidcClient = c
+	}
+
+	// Search. The index is optional and off by default: a query answers from a
+	// walk when there is none, so the escalation is taken deliberately rather
+	// than assumed. What decides is the stored switch, not the config file,
+	// which is what lets an administrator turn it on without a restart.
+	searchSvc := service.New(service.Options{Clock: clk, Storage: service.StorageSSD, CPUs: runtime.NumCPU()})
+	indexOn, ierr := st.State().IndexNameEnabled(ctx)
+	if ierr != nil {
+		say(stderr, "stowcloud %s: serve: the index setting: %v\n", version, ierr)
+		return exitConfig
+	}
+	if indexOn {
+		// A corrupt index is disabled rather than fatal: the walk still
+		// answers, which is the whole reason the index is an escalation.
+		searchSvc.SetIndex(service.OpenIndex(filepath.Join(cfg.DataDir, "index"), index.DefaultConfig(), log))
+	}
+
 	// SMB publishing. The whole render is rebuilt from state on every call
 	// rather than diffed, so a change that stops at one surface is still
 	// visible to the sidecar on the next apply.
@@ -288,6 +320,8 @@ func runServe(args []string, stderr io.Writer) int {
 	}
 
 	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health, Uploads: uploads,
+		Search:     searchSvc,
+		OIDC:       oidcClient,
 		PublishSMB: publishSMB,
 		ReloadACL:  func(c context.Context) error { return evaluator.LoadFromState(c, st.State().SQL()) },
 	}, setupGate)

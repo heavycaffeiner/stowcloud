@@ -100,6 +100,8 @@ func opKindString(k state.OpKind) string {
 		return "delete"
 	case state.OpArchive:
 		return "archive"
+	case state.OpIndexBuild:
+		return "index-build"
 	}
 	return "unknown"
 }

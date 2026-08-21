@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -83,6 +84,37 @@ type sessionResponse struct {
 	// derives from the presenting session, and the login screen needs it
 	// before the first write it makes.
 	CSRF string `json:"csrf,omitempty"`
+	// OIDC is what the settings screen draws the single-sign-on section from.
+	OIDC sessionOIDC `json:"oidc"`
+}
+
+// sessionOIDC is the caller's own link.
+//
+// The hint is a few characters from each end of the identifier, never the whole
+// thing: enough to recognise which identity is attached, which is the only
+// question this screen asks, and not enough to be an identifier somebody can
+// take away with them.
+type sessionOIDC struct {
+	Linked bool `json:"linked"`
+	// Absent rather than empty when nothing is linked: the field being there
+	// with no value reads as a link with a blank subject.
+	SubjectHint string `json:"subject_hint,omitempty"`
+	// A decimal string for the reason every nanosecond field here is: the
+	// value is past what a JSON number survives in a browser.
+	LinkedNs string `json:"linked_ns,omitempty"`
+}
+
+// subjectHint is the first and last few characters of an identifier.
+//
+// A short one is shown whole rather than padded into something that looks
+// longer than it is: it is already no more identifying than its own length
+// allows, and a fake ellipsis would misrepresent what is stored.
+func subjectHint(sub string) string {
+	const edge = 4
+	if len(sub) <= edge*2 {
+		return sub
+	}
+	return sub[:edge] + "..." + sub[len(sub)-edge:]
 }
 
 func Session(d Deps) http.HandlerFunc {
@@ -106,6 +138,22 @@ func Session(d Deps) http.HandlerFunc {
 		if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" {
 			resp.CSRF = mw.DeriveCSRFToken(d.CSRFKey, c.Value)
 		}
+
+		// An account with no link is the ordinary case, not a failure: this
+		// server never creates an account from a provider identity, so most
+		// accounts have none.
+		switch link, lerr := d.Auth.OIDCLinkOf(r.Context(), int64(uid)); {
+		case lerr == nil:
+			resp.OIDC = sessionOIDC{
+				Linked:      true,
+				SubjectHint: subjectHint(link.Subject),
+				LinkedNs:    strconv.FormatInt(link.LinkedNs, 10),
+			}
+		case errors.Is(lerr, auth.ErrNoOIDCLink):
+		default:
+			return lerr
+		}
+
 		return writeJSON(w, http.StatusOK, resp)
 	})
 }

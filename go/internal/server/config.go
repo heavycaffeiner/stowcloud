@@ -9,6 +9,8 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
+	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/smb"
 )
 
@@ -40,6 +42,12 @@ type Config struct {
 	// SMB is what the sidecar publishes, and where to reach it. Off by
 	// default: SMB starts explicitly.
 	SMB SMBConfig
+
+	// OIDC is the single-sign-on client, or nil when none is configured. Link
+	// only: the provider authenticates and never creates an account here.
+	OIDC *oidc.Config
+	// OIDCDisplayName is what the sign-in button says.
+	OIDCDisplayName string
 
 	// Shares are the folders this server serves, named by the operator. A
 	// deployment with none starts and has nothing to show, which is what a
@@ -89,6 +97,16 @@ type raw struct {
 	Security struct {
 		Hardening string `toml:"hardening"`
 	} `toml:"security"`
+	OIDC struct {
+		Enabled               bool     `toml:"enabled"`
+		Issuer                string   `toml:"issuer"`
+		ClientID              string   `toml:"client_id"`
+		ClientSecret          string   `toml:"client_secret"`
+		DisplayName           string   `toml:"display_name"`
+		Scopes                []string `toml:"scopes"`
+		AllowPrivateEndpoints bool     `toml:"allow_private_endpoints"`
+		CACertFile            string   `toml:"ca_cert_file"`
+	} `toml:"oidc"`
 	SMB struct {
 		Enabled         bool     `toml:"enabled"`
 		Workgroup       string   `toml:"workgroup"`
@@ -166,6 +184,26 @@ func Validate(r raw) (*Config, error) {
 	}
 	if cfg.RatePerSec > 10_000 || cfg.RateBurst > 10_000 {
 		return nil, fmt.Errorf("rate: a value over 10000 is beyond the compiled-in outer bound")
+	}
+
+	// Single sign-on. Nil rather than a disabled client, because a client that
+	// exists and refuses is one every caller has to remember to ask about.
+	if r.OIDC.Enabled {
+		if r.OIDC.Issuer == "" || r.OIDC.ClientID == "" {
+			return nil, fmt.Errorf("oidc: issuer and client_id are required when single sign-on is enabled")
+		}
+		cfg.OIDC = &oidc.Config{
+			Issuer:                r.OIDC.Issuer,
+			ClientID:              r.OIDC.ClientID,
+			ClientSecret:          secret.New([]byte(r.OIDC.ClientSecret)),
+			Scopes:                r.OIDC.Scopes,
+			AllowPrivateEndpoints: r.OIDC.AllowPrivateEndpoints,
+			CACertFile:            r.OIDC.CACertFile,
+		}
+		cfg.OIDCDisplayName = r.OIDC.DisplayName
+		if cfg.OIDCDisplayName == "" {
+			cfg.OIDCDisplayName = "Single sign-on"
+		}
 	}
 
 	// SMB. Every value that reaches the rendered file is checked by the

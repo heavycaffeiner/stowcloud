@@ -460,8 +460,33 @@ func migrations() []dbfile.Migration {
 		{Name: "4: the share registry and operation store", SQL: schemaV4},
 		{Name: "5: upload aliases and the persisted chunk settings", SQL: schemaV5},
 		{Name: "6: the compat layer's durable rows", SQL: schemaV6},
+		{Name: "7: the single-sign-on link flow", SQL: schemaV7},
 	}
 }
+
+// schemaV7 holds a link flow between the redirect out and the callback back.
+//
+// Only digests rest here. The state and the binding are handed to the browser,
+// so storing them would mean a read of this table is enough to complete
+// somebody else's link, and what the callback needs to check is equality rather
+// than the value.
+//
+// The verifier is the exception and is stored whole: the exchange has to send
+// it, and its only counterpart is the challenge already published to the
+// provider, so it authenticates nothing on its own.
+const schemaV7 = `
+CREATE TABLE oidc_flow (
+  state_digest    BLOB PRIMARY KEY,
+  user            INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+  nonce_digest    BLOB NOT NULL,
+  binding_digest  BLOB NOT NULL,
+  code_verifier   TEXT NOT NULL,
+  redirect_uri    TEXT NOT NULL,
+  return_to       TEXT NOT NULL DEFAULT '',
+  created_ns      INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE INDEX oidc_flow_created ON oidc_flow(created_ns);
+`
 
 // migration 6 lands what the compatibility layer owns durably.
 //

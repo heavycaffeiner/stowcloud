@@ -43,6 +43,10 @@ const (
 	OpCopy OpKind = iota
 	OpDelete
 	OpArchive
+	// OpIndexBuild walks every share to build the name index. Appended rather
+	// than inserted: these are stored as numbers, so renumbering would change
+	// what an already-written row means.
+	OpIndexBuild
 )
 
 // OpResultReason is the typed reason an item-level result failed, replacing a

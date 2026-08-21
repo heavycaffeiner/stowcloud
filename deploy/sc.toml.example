@@ -95,3 +95,39 @@ config_dir = "/config/smb"
 # deployment where something else applies the files: they are still written,
 # and nothing reports back what happened to them.
 agent_socket = "/run/sc-smb/agent.sock"
+
+[oidc]
+# Single sign-on through an external identity provider. Off by default.
+#
+# Link-only, and that is the position rather than a scope decision: the provider
+# authenticates and never creates an account here, so authority over who has one
+# stays in this server's database. That is what makes disabling an account here
+# total, whatever the provider still says.
+enabled = false
+
+# The provider's issuer URL. Discovery is fetched from it, and everything the
+# flow uses comes from that document rather than from keys here.
+issuer = "https://idp.example.com"
+
+client_id = ""
+client_secret = ""
+
+# What the sign-in button says. The issuer URL and the client id are never sent
+# to an anonymous caller: whether single sign-on exists is all one needs to know
+# to draw the button.
+display_name = "Single sign-on"
+
+# Extra scopes. The one that makes an identity token be issued at all is always
+# requested, because without it the flow completes and returns nothing this
+# server can verify.
+scopes = []
+
+# Allows a provider on this server's own network. Off by default: an address
+# check is what stops a hostile discovery document pointing the back channel,
+# which carries the client secret, at something inside the perimeter.
+allow_private_endpoints = false
+
+# Trust anchors for the back channel, replacing the system's. An empty file is a
+# startup refusal rather than a silent downgrade: a pool that verifies nothing
+# is how an operator ends up turning verification off.
+ca_cert_file = ""

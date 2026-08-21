@@ -116,6 +116,18 @@ const (
 	// rather than a loop.
 	SearchWalkDepth = 64
 
+	// OIDCFlowLifetime bounds how long a link flow may sit between the
+	// redirect out and the callback back. Long enough for a person to sign in
+	// at the provider and answer a prompt, short enough that a state value
+	// lifted from a log is not usable later.
+	OIDCFlowLifetime = 10 * time.Minute
+
+	// CorpusScanEntries bounds the measurement an index estimate runs on.
+	// Reaching it does not refuse: the statistics describe a real sample, and
+	// the answer says it is partial rather than reporting the fraction it saw
+	// as the whole.
+	CorpusScanEntries = 5_000_000
+
 	// SearchQueryBytes caps a query string. It is folded and split into
 	// trigrams, so an unbounded one is work a client chooses.
 	SearchQueryBytes = 1 << 10

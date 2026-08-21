@@ -48,6 +48,13 @@ DELETE FROM write_event WHERE rowid IN (
 SELECT share, path, op, at_ns FROM write_event
 WHERE user = ? ORDER BY at_ns DESC, rowid DESC LIMIT ?`
 
+	// The windowed form is its own statement rather than the one above with a
+	// clause appended, because a statement assembled from parts is the thing
+	// these being constants prevents. A caller with no window takes the first.
+	sqlRecentSince = `
+SELECT share, path, op, at_ns FROM write_event
+WHERE user = ? AND at_ns >= ? ORDER BY at_ns DESC, rowid DESC LIMIT ?`
+
 	// The statements the adoption check reads the file's shape with.
 	// schema_version is left out because it is the migration runner's own
 	// bookkeeping, created before anything looks at the file, and a fresh

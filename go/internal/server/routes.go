@@ -36,6 +36,15 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		{Method: "GET", Pattern: "/api/setup", Req: any, Handler: handler.SetupState(d, setup)},
 		{Method: "POST", Pattern: "/api/setup", Req: any, Handler: handler.SetupComplete(d, setup)},
 
+		// Signing in through a provider. All three are reachable with no
+		// credential by necessity: the login screen asks whether to draw the
+		// button before anyone has signed in, the start is where a person goes
+		// to get one, and the callback is a browser coming back from the
+		// provider carrying nothing of this server's yet.
+		{Method: "GET", Pattern: "/api/auth/oidc/config", Req: any, Handler: handler.OIDCConfig(d)},
+		{Method: "GET", Pattern: "/api/auth/oidc/start", Req: any, Handler: handler.OIDCStart(d)},
+		{Method: "GET", Pattern: "/api/auth/oidc/callback", Req: any, Handler: handler.OIDCCallback(d)},
+
 		// The resumable upload surface. The discovery request is public
 		// because it is how a client learns which version to speak, and it
 		// says nothing about the deployment.

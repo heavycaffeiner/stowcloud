@@ -17,11 +17,25 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/route"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/ws"
+	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
 	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 	"github.com/heavycaffeiner/stowcloud/go/internal/upload"
 	"github.com/heavycaffeiner/stowcloud/go/internal/watch"
 )
+
+// eventsHandler is the change channel's upgrade, or nil when no hub was wired.
+//
+// Nil rather than a handler that fails: a typed nil behind an interface is not
+// nil, so returning the method value of a nil hub would make the surface look
+// present and answer with a panic.
+func eventsHandler(hub *ws.Hub) handler.EventsHandler {
+	if hub == nil {
+		return nil
+	}
+	return hub.Upgrade
+}
 
 // Options is what New needs that the config does not imply: the opened
 // store, the auth service with its master key, the core domain, and the
@@ -49,6 +63,14 @@ type Options struct {
 	// answering that it is unavailable rather than minting sessions nothing
 	// backs.
 	Uploads *upload.Engine
+
+	// OIDC is the single-sign-on client, or nil when none is configured.
+	OIDC *oidc.Client
+
+	// Search answers queries and builds the name index. A nil one leaves every
+	// query taking the walk, which is the correct behaviour for a build with
+	// no index.
+	Search *service.Service
 
 	// PublishSMB re-renders the SMB configuration and asks the sidecar to
 	// apply it. A nil one leaves the apply surface refusing rather than
@@ -91,19 +113,23 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 	}
 
 	deps := handler.Deps{
-		Core:       opt.Core,
-		Auth:       opt.Auth,
-		Clock:      clk,
-		Log:        log,
-		Limiter:    state.Limiter,
-		Trusted:    state.Trusted,
-		Hosts:      state.Hosts,
-		CSRFKey:    state.CSRFKey,
-		WatchCap:   func() int { return watchHotSetCap },
-		Health:     health,
-		Uploads:    opt.Uploads,
-		State:      opt.Store.State(),
-		PublishSMB: opt.PublishSMB,
+		Core:            opt.Core,
+		Auth:            opt.Auth,
+		Clock:           clk,
+		Log:             log,
+		Limiter:         state.Limiter,
+		Trusted:         state.Trusted,
+		Hosts:           state.Hosts,
+		CSRFKey:         state.CSRFKey,
+		WatchCap:        func() int { return watchHotSetCap },
+		Health:          health,
+		Uploads:         opt.Uploads,
+		State:           opt.Store.State(),
+		Search:          opt.Search,
+		OIDC:            opt.OIDC,
+		OIDCDisplayName: cfg.OIDCDisplayName,
+		Events:          eventsHandler(opt.WS),
+		PublishSMB:      opt.PublishSMB,
 		ReloadACL: func(ctx context.Context) error {
 			if opt.ReloadACL == nil {
 				return nil

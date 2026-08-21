@@ -2,6 +2,8 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
@@ -60,12 +62,70 @@ func ArchiveList(d Deps) http.HandlerFunc {
 	})
 }
 
-// Recent answers GET /api/recent. The recency query's backing index arrives
-// with the search phase; this build owns the route and the response shape,
-// and says plainly that the work is not here yet.
+// Recent answers GET /api/recent: every file this account wrote through this
+// server inside the window, newest first.
+//
+// Exact rather than truncated: it reads the write journal, so there is no walk
+// to cut short. Every row is re-checked before it is returned, because the row
+// records that the account wrote the file and not that they may still read it.
 func Recent(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		return &apierr.RequestError{Status: http.StatusNotImplemented,
-			Code: apierr.CodeNotImplemented, Message: "not implemented in this build", Key: "recent.unavailable"}
+		uid, cerr := userOf(r)
+		if cerr != nil {
+			return cerr
+		}
+
+		q := core.RecentQuery{Scope: r.URL.Query().Get("scope")}
+		if v := r.URL.Query().Get("limit"); v != "" {
+			n, perr := strconv.Atoi(v)
+			if perr != nil || n <= 0 {
+				return apierr.BadRequest("recent.limit", "limit")
+			}
+			q.Limit = n
+		}
+		// An instant, not a day count. A day count has to be resolved against
+		// somebody's clock, and the two ends of this are in different time
+		// zones often enough that the same request meant two different windows
+		// depending on which side did the arithmetic.
+		if v := r.URL.Query().Get("since"); v != "" {
+			t, perr := time.Parse(time.RFC3339, v)
+			if perr != nil {
+				return apierr.BadRequest("recent.since", "since")
+			}
+			q.SinceNs = t.UnixNano()
+		}
+
+		hits, err := d.Core.Recent(r.Context(), uid, q)
+		if err != nil {
+			return err
+		}
+
+		type wireHit struct {
+			Vpath   string `json:"vpath"`
+			Share   string `json:"share"`
+			Subpath string `json:"subpath"`
+			Name    string `json:"name"`
+			Size    uint64 `json:"size"`
+			MTimeNs string `json:"mtime_ns"`
+			AtNs    string `json:"at_ns"`
+			Op      string `json:"op"`
+		}
+		out := make([]wireHit, 0, len(hits))
+		for _, h := range hits {
+			out = append(out, wireHit{
+				Vpath:   h.Vpath.String(),
+				Share:   h.Share,
+				Subpath: h.Subpath.String(),
+				Name:    h.Name,
+				Size:    h.Size,
+				// Nanosecond counts go out as strings: they are past the
+				// precision a JSON number survives in a browser, and one that
+				// arrives rounded is a timestamp that sorts wrongly.
+				MTimeNs: strconv.FormatInt(h.MTimeNs, 10),
+				AtNs:    strconv.FormatInt(h.AtNs, 10),
+				Op:      h.Op.String(),
+			})
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"hits": out})
 	})
 }
