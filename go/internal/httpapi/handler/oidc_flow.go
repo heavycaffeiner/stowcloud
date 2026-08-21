@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
 )
 
 // Signing in through a provider, and linking one to an account.
@@ -150,16 +152,12 @@ func OIDCCallback(d Deps) http.HandlerFunc {
 			return oidcFail(w, r, flow.ReturnTo, "oidc.provider_unavailable")
 		}
 
-		// The nonce is checked against what this flow was started with, which
-		// is what ties the token to this flow rather than one an attacker
-		// began. It is passed as empty and checked here because the value
-		// itself is not stored, only its digest.
-		claims, verr := d.OIDC.VerifyIDToken(r.Context(), raw, "")
+		// The flow's own nonce goes to the verifier, which refuses a token
+		// that does not carry it. That is what ties the token to this attempt
+		// rather than to one an attacker started at the same provider.
+		claims, verr := d.OIDC.VerifyIDToken(r.Context(), raw, flow.Nonce)
 		if verr != nil {
 			d.Log.Warn("an identity token did not verify", "error", verr)
-			return oidcFail(w, r, flow.ReturnTo, "oidc.bad_state")
-		}
-		if !auth.CheckOIDCNonce(flow, claims.Nonce) {
 			return oidcFail(w, r, flow.ReturnTo, "oidc.bad_state")
 		}
 
@@ -214,8 +212,13 @@ func oidcCompleteLogin(w http.ResponseWriter, r *http.Request, d Deps, flow auth
 // now: a session that changed in between is a different person finishing
 // somebody else's link.
 func oidcCompleteLink(w http.ResponseWriter, r *http.Request, d Deps, flow auth.OIDCFlow, claims *oidc.Claims) error {
-	uid, cerr := userOf(r)
-	if cerr != nil || int64(uid) != flow.User {
+	// The session is read here rather than taken from the request's principal.
+	// This route is public, because a browser coming back from the provider
+	// carries nothing of this server's yet, and the chain does not attach a
+	// principal on a public path: asking for one would find none and refuse
+	// every link.
+	uid, ok := sessionUserOf(r, d)
+	if !ok || uid != flow.User {
 		return oidcFail(w, r, flow.ReturnTo, "oidc.link_session_changed")
 	}
 
@@ -291,6 +294,28 @@ func redirectLocal(w http.ResponseWriter, r *http.Request, to localTarget, query
 // amrProvider records that a session was established by a provider rather than
 // by a password here.
 const amrProvider = 1
+
+// sessionUserOf reads the account behind the session cookie directly.
+//
+// The flow's routes are public by necessity, so nothing upstream has resolved a
+// credential by the time a callback arrives. Linking still has to know who
+// started it, and that account is the one recorded when the flow began: this
+// only confirms the same person is still signed in here.
+func sessionUserOf(r *http.Request, d Deps) (int64, bool) {
+	c, err := r.Cookie(SessionCookie)
+	if err != nil || c.Value == "" {
+		return 0, false
+	}
+	raw, derr := hex.DecodeString(c.Value)
+	if derr != nil {
+		return 0, false
+	}
+	p, verr := d.Auth.LookupSession(r.Context(), secret.New(raw))
+	if verr != nil || p.Disabled {
+		return 0, false
+	}
+	return p.UserID, true
+}
 
 // oidcRedirectURI is where the provider sends the browser back.
 //

@@ -238,9 +238,15 @@ func TestAFlowInsideItsLifetimeStillWorks(t *testing.T) {
 	}
 }
 
-// The nonce ties the identity token to this flow rather than to one an
-// attacker started.
-func TestTheNonceIsCheckedAgainstTheFlow(t *testing.T) {
+// The nonce survives the round trip, because the token verifier is handed it
+// and refuses a token that does not carry it.
+//
+// It comes back whole rather than as a digest for exactly that reason: the
+// check belongs beside the issuer, the audience and the validity window, and a
+// nonce checked separately is a check that can be forgotten. This started as a
+// digest, which meant the verifier was called with an empty nonce and refused
+// every sign-in.
+func TestTheNonceComesBackWholeForTheVerifier(t *testing.T) {
 	s, _ := openService(t, nil)
 	ctx := context.Background()
 	uid := oidcUser(t, s, "alice")
@@ -253,14 +259,11 @@ func TestTheNonceIsCheckedAgainstTheFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !CheckOIDCNonce(flow, "the-nonce") {
-		t.Error("the flow's own nonce was rejected")
+	if flow.Nonce != "the-nonce" {
+		t.Fatalf("the nonce came back as %q; the verifier refuses a token when it is empty", flow.Nonce)
 	}
-	if CheckOIDCNonce(flow, "another-nonce") {
-		t.Error("a token from a different flow was accepted")
-	}
-	if CheckOIDCNonce(flow, "") {
-		t.Error("a token with no nonce was accepted")
+	if flow.CodeVerifier != "verifier" {
+		t.Errorf("the code verifier came back as %q; the exchange has to send it", flow.CodeVerifier)
 	}
 }
 

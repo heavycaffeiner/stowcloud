@@ -13,14 +13,15 @@ import (
 
 // The state a link flow carries across the round trip to the provider.
 //
-// Only digests rest here. The state and the binding go to the browser, so
+// The state and the binding rest only as digests. Both go to the browser, so
 // storing them whole would mean a read of this table is enough to complete
 // somebody else's link, and what the callback checks is equality rather than
 // the value.
 //
-// The verifier is the exception and is stored whole: the exchange has to send
-// it, and its only counterpart is the challenge already published to the
-// provider, so it authenticates nothing on its own.
+// The nonce and the code verifier are stored whole, because both have to be
+// handed back out: the verifier goes to the provider in the exchange, and the
+// nonce goes to the token verifier, which checks it beside the issuer, the
+// audience and the validity window. Neither authenticates anything on its own.
 
 // ErrNoOIDCFlow means the state names no flow, or names one that expired.
 //
@@ -30,11 +31,11 @@ var ErrNoOIDCFlow = errors.New("auth: no such single-sign-on flow")
 
 const (
 	sqlInsertOIDCFlow = `
-INSERT INTO oidc_flow(state_digest, user, nonce_digest, binding_digest, code_verifier, redirect_uri, return_to, created_ns)
+INSERT INTO oidc_flow(state_digest, user, nonce, binding_digest, code_verifier, redirect_uri, return_to, created_ns)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
 	sqlTakeOIDCFlow = `
-SELECT user, nonce_digest, binding_digest, code_verifier, redirect_uri, return_to
+SELECT user, nonce, binding_digest, code_verifier, redirect_uri, return_to
 FROM oidc_flow WHERE state_digest = ? AND created_ns >= ?`
 
 	sqlDeleteOIDCFlow = `DELETE FROM oidc_flow WHERE state_digest = ?`
@@ -44,8 +45,10 @@ FROM oidc_flow WHERE state_digest = ? AND created_ns >= ?`
 
 // OIDCFlow is one link in progress.
 type OIDCFlow struct {
-	User         int64
-	NonceDigest  []byte
+	User int64
+	// Nonce is handed to the token verifier, which refuses a token that does
+	// not carry it.
+	Nonce        string
 	CodeVerifier string
 	RedirectURI  string
 	ReturnTo     string
@@ -61,7 +64,6 @@ func (s *Service) StartOIDCFlow(ctx context.Context, userID int64, state, nonce,
 	cutoff := now - int64(limits.OIDCFlowLifetime)
 
 	stateD := sha256.Sum256([]byte(state))
-	nonceD := sha256.Sum256([]byte(nonce))
 	bindD := sha256.Sum256([]byte(binding))
 
 	if err := s.write(ctx, func(tx *sql.Tx) error {
@@ -69,7 +71,7 @@ func (s *Service) StartOIDCFlow(ctx context.Context, userID int64, state, nonce,
 			return derr
 		}
 		_, ierr := tx.ExecContext(ctx, sqlInsertOIDCFlow,
-			stateD[:], userID, nonceD[:], bindD[:], verifier, redirectURI, returnTo, now)
+			stateD[:], userID, nonce, bindD[:], verifier, redirectURI, returnTo, now)
 		return ierr
 	}); err != nil {
 		return fmt.Errorf("recording the single-sign-on flow: %w", err)
@@ -93,7 +95,7 @@ func (s *Service) TakeOIDCFlow(ctx context.Context, state, binding string) (OIDC
 		storedBnd []byte
 	)
 	row := s.st.SQL().QueryRowContext(ctx, sqlTakeOIDCFlow, stateD[:], cutoff)
-	switch err := row.Scan(&flow.User, &flow.NonceDigest, &storedBnd,
+	switch err := row.Scan(&flow.User, &flow.Nonce, &storedBnd,
 		&flow.CodeVerifier, &flow.RedirectURI, &flow.ReturnTo); {
 	case errors.Is(err, sql.ErrNoRows):
 		return OIDCFlow{}, ErrNoOIDCFlow
@@ -115,14 +117,4 @@ func (s *Service) TakeOIDCFlow(ctx context.Context, state, binding string) (OIDC
 		return OIDCFlow{}, ErrNoOIDCFlow
 	}
 	return flow, nil
-}
-
-// CheckOIDCNonce reports whether the identity token carries the value this flow
-// was started with.
-//
-// The provider echoes it back, so it is what ties the token to this flow rather
-// than to one an attacker started.
-func CheckOIDCNonce(flow OIDCFlow, nonce string) bool {
-	got := sha256.Sum256([]byte(nonce))
-	return subtle.ConstantTimeCompare(flow.NonceDigest, got[:]) == 1
 }

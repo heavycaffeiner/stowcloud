@@ -466,10 +466,10 @@ func migrations() []dbfile.Migration {
 
 // schemaV7 holds a link flow between the redirect out and the callback back.
 //
-// Only digests rest here. The state and the binding are handed to the browser,
-// so storing them would mean a read of this table is enough to complete
-// somebody else's link, and what the callback needs to check is equality rather
-// than the value.
+// The state and the binding rest only as digests. Both are handed to the
+// browser, so storing them would mean a read of this table is enough to
+// complete somebody else's link, and what the callback checks is equality
+// rather than the value.
 //
 // The verifier is the exception and is stored whole: the exchange has to send
 // it, and its only counterpart is the challenge already published to the
@@ -478,7 +478,14 @@ const schemaV7 = `
 CREATE TABLE oidc_flow (
   state_digest    BLOB PRIMARY KEY,
   user            INTEGER NOT NULL REFERENCES user(id) ON DELETE CASCADE,
-  nonce_digest    BLOB NOT NULL,
+  -- The nonce is stored whole, unlike the two above. It has to be handed to
+  -- the token verifier, which checks it beside the issuer, the audience and
+  -- the validity window: a nonce checked separately is a check that can be
+  -- forgotten, and this one is what ties the token to this attempt.
+  --
+  -- It authenticates nothing on its own. The provider echoes it back in a
+  -- token it signed, so holding the value is not holding a credential.
+  nonce           TEXT NOT NULL,
   binding_digest  BLOB NOT NULL,
   code_verifier   TEXT NOT NULL,
   redirect_uri    TEXT NOT NULL,

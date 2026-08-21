@@ -531,3 +531,26 @@ func FuzzVerifyIDToken(f *testing.F) {
 		t.Fatalf("a fuzzed token verified: %+v", claims)
 	})
 }
+
+// A token verified with an empty nonce is refused, whatever else is right
+// about it.
+//
+// This is the shape of a real defect rather than a hypothetical: the callback
+// stored only a digest of the nonce, so it had no value to pass and called this
+// with an empty string, and every sign-in was refused with a token that was
+// otherwise entirely valid. The flow stores the nonce whole now.
+func TestAnEmptyNonceRefusesAnOtherwiseValidToken(t *testing.T) {
+	clk := clock.System()
+	s := newSigner(t)
+	c := verifyClient(t, clk, []jwk{s.rsaJWK()})
+	raw := s.sign(t, map[string]any{"alg": algRS256, "kid": testKid}, defaultClaims(clk))
+
+	// The same token, which the caller below accepts.
+	if _, err := c.VerifyIDToken(context.Background(), raw, testNonce); err != nil {
+		t.Fatalf("the token is not valid to begin with: %v", err)
+	}
+
+	if _, err := c.VerifyIDToken(context.Background(), raw, ""); err == nil {
+		t.Fatal("a token verified against no nonce was accepted, so any token from any attempt at this provider would pass")
+	}
+}

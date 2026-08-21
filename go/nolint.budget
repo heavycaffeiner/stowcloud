@@ -157,6 +157,9 @@
 # every name lookup reads cannot be private, and signals to a process that has
 # already exited. One more marks the example configuration test writing into
 # the framework's own temporary directory, and one more the corpus scan's own
-# bound, which is a positive constant the line above it checks.
-243
+# bound, which is a positive constant the line above it checks. Two more sit in the
+# single-sign-on flow test: a certificate pool holding only the test provider's
+# own certificate, and that provider redirecting where it was told, which is
+# what a provider does.
+245
 
