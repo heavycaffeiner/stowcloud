@@ -115,6 +115,28 @@ func (c *Core) AttachLinkCrypto(cipher LinkCipher, hash passwordHasher, verify p
 	c.verifyLinkPw = verify
 }
 
+// sealLinkToken routes to the attached cipher, failing closed when none was
+// wired.
+//
+// The nil check is here rather than left to the call site because the failure
+// without it is a panic in the middle of minting: the cipher is attached at
+// startup, so a build that forgets is one where every link creation crashes
+// the request rather than reporting that the feature is not wired.
+func (c *Core) sealLinkToken(token []byte, hash []byte, ver uint32) ([]byte, error) {
+	if c.linkCipher == nil {
+		return nil, errors.New("no link cipher is attached")
+	}
+	return c.linkCipher.Seal(token, hash, ver)
+}
+
+// openLinkToken is the same on the way back.
+func (c *Core) openLinkToken(sealed []byte, hash []byte, ver uint32) ([]byte, error) {
+	if c.linkCipher == nil {
+		return nil, errors.New("no link cipher is attached")
+	}
+	return c.linkCipher.Open(sealed, hash, ver)
+}
+
 // hashLinkPassword routes to the attached hasher, failing closed when none was
 // wired rather than storing what it was handed.
 //
@@ -259,7 +281,7 @@ func (c *Core) scanLink(row scanner) (Link, error) {
 	if tokenEnc != nil && keyVer.Valid && c.linkCipher != nil {
 		kv, kverr := num.Narrow[uint32](keyVer.Int64)
 		if kverr == nil {
-			if tok, oerr := c.linkCipher.Open(tokenEnc, l.TokenHash, kv); oerr == nil {
+			if tok, oerr := c.openLinkToken(tokenEnc, l.TokenHash, kv); oerr == nil {
 				l.Token = newSecret(tok)
 			}
 		}

@@ -140,7 +140,7 @@ func (c *Core) CreateLink(ctx context.Context, r Resolved, spec LinkSpec) (Link,
 	if err != nil {
 		return Link{}, secret.Secret{}, err
 	}
-	sealed, err := c.linkCipher.Seal([]byte(token), th, ver)
+	sealed, err := c.sealLinkToken([]byte(token), th, ver)
 	if err != nil {
 		return Link{}, secret.Secret{}, err
 	}
