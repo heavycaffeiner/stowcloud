@@ -4,10 +4,17 @@
 |------------|----------------------------------|
 | Author     | heavycaffeiner(Dong Hyun Kim)    |
 | Created    | 2026-08-12                       |
-| Status     | **Draft**                        |
+| Status     | **Implemented, with one exception** |
 | Reviewers  |                                  |
 
 ---
+
+> **The sidecar agent is not ported.** Everything in this document is
+> implemented in Go except `sc-smb-agent`, the privileged half of SMB
+> publishing, which is still the Rust program it always was and now lives in
+> `smb-agent/`. It was in no phase's milestone list and the cutover kept it
+> rather than shipping a broken feature or writing root-running code in the
+> phase least able to test it. Recorded as Q10 in `OPEN-QUESTIONS.md`.
 
 ## 1. Summary
 

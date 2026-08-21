@@ -266,23 +266,32 @@ docker compose --profile smb up -d
 설계는
 [Motivation and findings](docs/proposals/stowcloud-0-motivation-and-findings.md),
 실제 운영은 [Deployment](docs/proposals/stowcloud-15-deployment.md)부터
-보세요. 다만 그 문서들이 명세하는 대상에 주의하세요. 백엔드는 Go로 다시
-쓰는 중이고, 프로포절은 지금 이 저장소가 배포하는 Rust 코드가 아니라 그
-재작성을 서술합니다. 문서는 영어입니다.
+보세요. 그 문서들은 이 저장소의 코드를 서술합니다. 문서는 영어입니다.
 
 <details>
 <summary><b>소스에서 빌드하기</b></summary>
 
 ```sh
 cd web && npm ci && npm run build && cd ..          # 프론트엔드가 먼저
-cargo build -p sc-server --release --features embed-ui
+cd go && CGO_ENABLED=0 go build -tags embed_ui ./cmd/stowcloud
 bash scripts/verify.sh                              # CI가 돌리는 검사
 ```
 
 프론트엔드는 바이너리 안으로 컴파일되어 들어가므로 먼저 빌드해야 합니다.
-`embed-ui`가 기본으로 꺼져 있는 이유가 그것입니다. 방금 받은 저장소에는 아직
-`web/build`가 없습니다. 릴리스 이미지는 정적 링크된 musl 빌드이고,
+`embed_ui` 태그가 기본으로 꺼져 있는 이유가 그것입니다. 방금 받은 저장소에는
+아직 넣을 것이 없습니다. 프론트엔드는 그것을 포함하는 패키지 안으로
+빌드됩니다. embed 지시자는 자기 패키지 밖의 경로를 지정할 수 없고, 바로 그
+점이 진짜 의존 관계를 만들어 주므로, 다시 빌드한 프론트엔드는 다음 빌드가
+집어 갑니다.
+
+cgo는 꺼져 있고, 그것이 정적 바이너리의 전부입니다. 꺼져 있으면 동적 로더도
+맞춰야 할 libc도 없으므로 런타임 이미지에 둘 다 필요 없습니다.
 `Dockerfile`이 두 단계를 모두 처리해 줍니다.
+
+SMB 사이드카만 아직 Rust입니다. `smb-agent/` 아래에 있습니다. Samba 데몬 옆에서
+root로 돌면서 서버가 렌더링한 것을 적용합니다. 서버는 권한 없이, 호스트의
+장치를 볼 수 없는 네트워크 네임스페이스에서 돌기 때문에 스스로 할 수 없는
+일입니다. `Dockerfile.smb`가 이것을 빌드합니다.
 
 </details>
 
@@ -302,7 +311,7 @@ GNU Affero General Public License v3.0 이상입니다. [`LICENSE`](LICENSE)를 
 사실상 영구해진다는 점입니다. 바꾸려면 모든 기여자의 동의가 필요하기 때문입니다.
 의도한 교환입니다.
 
-바이너리는 Rust 의존성을 정적 링크하고 빌드된 프론트엔드를 포함하므로 둘 다 함께
+바이너리는 의존성을 정적 링크하고 빌드된 프론트엔드를 포함하므로 둘 다 함께
 배포됩니다. [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)에 그 라이선스와
 저작권 표시가 들어 있고, 실행 이미지 안에도 `/THIRD-PARTY-NOTICES.md`로 같은
 사본이 있습니다.

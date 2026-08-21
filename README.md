@@ -293,23 +293,32 @@ order. Start with
 [Motivation and findings](docs/proposals/stowcloud-0-motivation-and-findings.md)
 for the principles and the design, and
 [Deployment](docs/proposals/stowcloud-15-deployment.md) for running it in
-earnest. Note what those documents specify: the backend is being rewritten in
-Go, and the proposals describe that rewrite rather than the Rust code this
-repository currently ships.
+earnest. Those documents describe the code in this repository.
 
 <details>
 <summary><b>Building from source</b></summary>
 
 ```sh
 cd web && npm ci && npm run build && cd ..          # frontend first
-cargo build -p sc-server --release --features embed-ui
+cd go && CGO_ENABLED=0 go build -tags embed_ui ./cmd/stowcloud
 bash scripts/verify.sh                              # the gate CI runs
 ```
 
-The frontend is compiled into the binary, so it has to be built first.
-`embed-ui` is off by default precisely because a fresh checkout has no
-`web/build` yet. The release image is a statically linked musl build, and
+The frontend is compiled into the binary, so it has to be built first. The
+`embed_ui` tag is off by default because a fresh checkout has nothing to embed
+yet, and the frontend builds into the package that embeds it: the embed
+directive cannot name a path outside its own package, and that is also what
+gives it a real dependency edge, so a rebuilt frontend is picked up by the next
+build.
+
+Cgo is off, which is the whole static-binary story: with it off there is no
+dynamic loader and no libc to match, so the runtime image needs neither.
 `Dockerfile` does both stages for you.
+
+The SMB sidecar is the one part still written in Rust, under `smb-agent/`. It
+runs as root beside the Samba daemon and applies what the server renders, which
+the server cannot do itself: it runs unprivileged, in a network namespace that
+cannot see the host's devices. `Dockerfile.smb` builds it.
 
 </details>
 
@@ -331,8 +340,8 @@ holding a private right to relicense the result. The cost is that the licence
 is now effectively permanent, because changing it would need every
 contributor's agreement. That is the intended trade.
 
-The binary statically links its Rust dependencies and embeds the built
-frontend, so both are redistributed with it.
+The binary statically links its dependencies and embeds the built frontend, so
+both are redistributed with it.
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) carries their licences and
 copyright notices, and the runtime image carries a copy at
 `/THIRD-PARTY-NOTICES.md`.

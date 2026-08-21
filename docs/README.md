@@ -75,10 +75,16 @@ each entry records a premise that looked right and was not.
 
 **These documents cite code and each other, and nothing else.** Implementing a
 phase needs this directory and the repository's source tree, not a second set of
-proposals. A path like `crates/sc-vfs/src/backend/linux.rs` is a citation of the
-codebase and is expected. That rule is why the Rust-era proposals could be
-removed rather than left beside a Go tree as a second specification with nothing
-marking which one was wrong.
+proposals. A path like `go/internal/vfs/open.go` is a citation of the codebase and is
+expected. That rule is why the Rust-era proposals could be removed rather than
+left beside the Go tree as a second specification with nothing marking which
+one was wrong.
+
+A citation of a `crates/...` path is a citation of the implementation this one
+replaced, which the cutover deleted. Those references are kept where they
+record why a decision was made: the reasoning is still the reasoning, and
+rewriting them to point at the Go file would claim the Go file is where the
+finding came from.
 
 **A code comment states its own reason.** No document citations, no ticket ids:
 a reader with only the file in front of them has to be able to use it. The

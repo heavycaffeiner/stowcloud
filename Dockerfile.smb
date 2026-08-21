@@ -66,11 +66,15 @@ RUN case "${TARGETARCH}" in \
     esac
 RUN rustup target add "$(cat /rust_target.txt)"
 
+# The agent is its own package rather than a workspace member. It was one
+# until the server was ported to Go: there is no workspace left, and this is
+# the last Rust program in the tree. The two things it shares with the server,
+# the control protocol and the network classification, are vendored into it
+# under src/shared, and both sides' tests are what keep them in step.
 WORKDIR /src
-COPY Cargo.toml Cargo.lock ./
-COPY crates/ ./crates/
+COPY smb-agent/agent/ ./
 RUN RUST_TARGET="$(cat /rust_target.txt)" && \
-    cargo build --profile release-dist --locked \
+    cargo build --profile release-dist \
       --target "${RUST_TARGET}" -p sc-smb-agent && \
     mkdir -p /out && \
     cp "target/${RUST_TARGET}/release-dist/sc-smb-agent" /out/sc-smb-agent

@@ -433,3 +433,49 @@ Cutover is blocked until that gate is green. Deleting `crates/` while the
 replacement cannot serve a login is not a cutover.
 
 **Reopen by** the gate landing, then Phases 3, 5, 8, 11 in turn.
+
+---
+
+## Q10. The SMB sidecar agent has no Go port
+
+**Raised by** Phase 13g, checking what deleting `crates/` would delete.
+
+**What was found.** Fifteen of the sixteen crates have a Go equivalent, three
+of them under a different name. `sc-smb-agent` does not. It is 2,003 lines and
+it is a shipping component: `Dockerfile.smb` builds it into the sidecar image,
+and the compose file runs that image.
+
+It is the privileged half of SMB publishing. The server renders the
+configuration, the password database and the account file into a shared
+directory as an unprivileged user; the agent picks them up as root, decides the
+network scope from the interfaces it can actually see, validates the result,
+promotes it, imports the password database and signals the daemon. The split
+exists because the server runs in a different network namespace and cannot see
+the host's devices, which is the reason the render is the closed case and the
+agent is what expands it.
+
+Phase 11 scoped `internal/smb` to the render, the bind rule, the escaping and
+the password database. The agent was never in its milestone list, and nothing
+else claimed it. This is Q8 and Q9 one more time: a phase ended at a package
+and the component that uses it belonged to nobody.
+
+**What this means for cutover.** Deleting `crates/` deletes a component that
+ships. Three options, and none of them is "it is already ported".
+
+| # | Approach | Cost |
+|---|---|---|
+| 1 | Keep the Rust agent, delete the rest | the cutover commit stops being "delete the Rust tree" and becomes "delete all but one crate", and the workspace has to keep building for that one |
+| 2 | Port it before cutover | 2,003 lines of privileged, root-running code written in the phase whose job is comparison, with no phase's tests behind it |
+| 3 | Cut over without it, and ship SMB with the agent absent | the sidecar has nothing to promote the rendered files, so SMB stops working entirely rather than degrading |
+
+**Taken for now: option 1.** The Rust agent is kept, in its own directory,
+with its own build. Everything else in `crates/` goes.
+
+That is the honest shape: the port replaced the server, and one privileged
+sidecar written in Rust is still a Rust program. Pretending otherwise means
+either shipping a broken feature or writing root-running code in the phase
+least equipped to test it. The gate keeps a step that builds it, so it cannot
+rot unnoticed, and a later phase can port it against that gate.
+
+**Reopen by** whichever phase takes the agent, with a milestone that ends at
+the sidecar image running rather than at a package compiling.

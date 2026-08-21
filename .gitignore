@@ -1,4 +1,5 @@
-/target
+# The SMB agent is the one Rust program left, and it builds in place.
+smb-agent/agent/target/
 /.ref
 /.vm
 node_modules

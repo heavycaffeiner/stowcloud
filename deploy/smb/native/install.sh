@@ -96,7 +96,7 @@ awk -F: -v u="$SERVICE_USER" '$1 == u { found = 1 } END { exit !found }' /etc/pa
 
 [ -n "$BINARY" ] && [ -x "$BINARY" ] || {
     echo "no sc-smb-agent binary found. Build it first:" >&2
-    echo "  cargo build --release -p sc-smb-agent" >&2
+    echo "  cd smb-agent/agent && cargo build --release" >&2
     echo "or point at one: ./install.sh --binary /path/to/sc-smb-agent" >&2
     exit 1
 }

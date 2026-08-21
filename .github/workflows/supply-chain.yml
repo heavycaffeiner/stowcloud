@@ -1,120 +1,106 @@
 name: supply-chain
 
-# Dependency pinning/audit + SBOM, per the task's "cargo auditable,
-# cargo-sbom, cargo deny — pick, justify, and wire it":
+# Dependency pinning, an advisory check, and an SBOM.
 #
-#   - Pinning already exists: Cargo.lock is committed at the workspace root
-#     and every build in this repo (verify.sh, the Dockerfile) uses
-#     `--locked`, so nothing here re-solves versions.
-#   - `cargo deny check` is the *policy* gate over that lockfile: known
-#     vulnerabilities (advisories, RustSec), license compatibility against
-#     this workspace's AGPL-3.0-or-later (licenses), and banned/wildcard
-#     dependencies (bans) — see deny.toml at the workspace root for the
-#     actual policy and the reasoning for each section.
-#   - `cargo auditable` is the SBOM mechanism, and it's wired into the
-#     Dockerfile itself (not just here): it wraps `cargo build` and embeds
-#     a JSON dependency manifest as a `.rust-audit-info` ELF section in the
-#     output binary, so the SBOM ships *inside* the same artifact that goes
-#     into the distroless image — no separate file to lose, no shell
-#     required inside the container to read it (nothing runs inside the
-#     container at all; the format is documented and readable with
-#     `rust-audit-info` or `cargo audit bin` against the extracted binary
-#     from outside). This job extracts and uploads that same information as
-#     a build artifact via `cargo-cyclonedx` for the more common
-#     off-the-shelf SBOM consumers (Dependency-Track, etc.) that expect a
-#     CycloneDX document rather than a Rust-specific format.
+#   - Pinning already exists: go.sum is committed and every build here runs
+#     with the module cache verified against it, so nothing re-solves versions.
+#   - The advisory check is govulncheck, which the gate already runs on every
+#     push. It is not repeated here: it reports a vulnerability only when a
+#     path in this code actually reaches the vulnerable function, which is a
+#     stronger statement than a version comparison and is why it belongs in the
+#     gate rather than in a separate job that can be ignored.
+#   - The allow-list is the policy gate over the lockfile. Every direct
+#     dependency is listed in go/deps.allow with the reason it is there, and
+#     the gate fails when the module graph and that file disagree. A dependency
+#     nobody justified cannot arrive quietly.
+#
+# What this workflow adds is the artefact: an SBOM in a format the common
+# off-the-shelf consumers read, produced from the same module graph the build
+# uses rather than from a scan of the result.
 
 on:
   push:
     branches: [main, master]
   pull_request:
-  schedule:
-    # Advisory DBs update continuously; a merged PR from last month can
-    # become newly-vulnerable without a single line of this repo changing.
-    - cron: "0 6 * * 1"
   workflow_dispatch:
+  schedule:
+    # Advisories are published after a commit lands, so a check that only runs
+    # on push stops being a check the moment development pauses.
+    - cron: "17 4 * * 1"
 
-# `cargo deny` reads, and `actions/upload-artifact` authenticates with the
-# runner's own artifact token rather than `GITHUB_TOKEN`, so nothing here needs
-# write access to the repository.
 permissions:
   contents: read
 
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
-  # 1.88, the same value verify.yml and the Dockerfile's RUST_IMAGE carry.
-  # This file was left behind at 1.85 when Cargo.toml's `rust-version` was
-  # raised, and every `--locked` step below had been failing ever since:
-  # cargo refuses the resolve outright ("rustc 1.85.0 is not supported by
-  # the following packages") before it compiles anything, so both jobs died
-  # on their first cargo invocation — including the Monday cron.
-  RUST_TOOLCHAIN: "1.88.0"
+  GO_VERSION: "1.26"
 
 jobs:
-  deny-and-audit:
-    name: cargo deny + cargo audit
+  audit:
+    name: govulncheck + the dependency allow-list
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
-        run: |
-          rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal
-          rustup default "${RUST_TOOLCHAIN}"
-
-      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          command: check
-          arguments: --locked
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go/go.sum
 
-      # 0.22.2, and no `--locked` on the audit call itself:
-      #   - 0.21.x cannot parse a CVSS 4.0 `cvss =` field, and the advisory DB
-      #     now carries them (`anchor-lang/RUSTSEC-2026-0146` was the first to
-      #     hit us). It fails at *database load*, before it looks at a single
-      #     one of our crates, so the step was red regardless of this repo.
-      #   - `cargo audit` has no `--locked` flag and rejects it outright
-      #     ("unexpected argument"). It reads `Cargo.lock` by default, which is
-      #     what that flag was reaching for.
-      # 0.22.2 declares `rust-version = 1.88` and so does its locked `time`,
-      # so `RUST_TOOLCHAIN` above being 1.88.0 is what makes this installable
-      # at all — the two fixes are not independent.
-      - name: cargo audit (RustSec advisories against Cargo.lock)
+      # Reachability rather than a version comparison: this reports a
+      # vulnerability when a path in this code reaches the vulnerable function,
+      # so an advisory against a dependency nothing here calls does not become
+      # a red build somebody learns to ignore.
+      - name: govulncheck
         run: |
-          cargo install cargo-audit --version 0.22.2 --locked
-          cargo audit
+          cd go
+          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      # The module graph and the allow-list have to agree. A dependency added
+      # without a recorded reason fails here.
+      - name: The direct dependencies match go/deps.allow
+        run: |
+          cd go
+          go list -m -f '{{if and (not .Main) (not .Indirect)}}{{.Path}}{{end}}' all | grep -v '^$' | sort > /tmp/have
+          grep -vE '^[[:space:]]*(#|$)' deps.allow | sort > /tmp/want
+          diff -u /tmp/want /tmp/have
 
   sbom:
-    name: cargo auditable build + CycloneDX SBOM artifact
+    name: CycloneDX SBOM artifact
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: go/go.sum
+
+      # Built from the module graph rather than scanned out of the binary. The
+      # graph is what the build actually resolved, and a scan of the result can
+      # only report what it recognises.
+      - name: Generate a CycloneDX SBOM
         run: |
-          rustup toolchain install "${RUST_TOOLCHAIN}" --profile minimal
-          rustup default "${RUST_TOOLCHAIN}"
+          cd go
+          go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest \
+            mod -json -output /tmp/sbom.json
 
-      - name: Install cargo-auditable + cargo-cyclonedx
+      # The shipping build is static, so the binary is the whole dependency
+      # set: nothing is resolved at run time that the graph above does not
+      # already name.
+      - name: Confirm the shipping build is static
         run: |
-          cargo install cargo-auditable --version 0.7.5 --locked
-          cargo install cargo-cyclonedx --version 0.5.9 --locked
+          cd go
+          CGO_ENABLED=0 GOOS=linux go build -o /tmp/stowcloud ./cmd/stowcloud
+          file /tmp/stowcloud
+          ! go version -m /tmp/stowcloud | grep -q 'CGO_ENABLED=1'
 
-      # No `web/build` here on purpose: this job audits *dependencies*, not
-      # the shippable artifact, so it doesn't need `--features embed-ui`
-      # (and skipping it means this job never needs Node at all).
-      - name: cargo auditable build (native, no embed-ui — dependency audit only)
-        run: cargo auditable build --locked -p sc-server
-
-      - name: Confirm the SBOM section landed in the binary
-        run: |
-          objcopy --dump-section .rust-audit-info=/dev/stdout target/debug/sc-server 2>/dev/null | head -c 200
-          echo
-          echo "(full section: cargo audit bin target/debug/sc-server, or rust-audit-info dump)"
-
-      - name: Generate a CycloneDX SBOM for the workspace
-        run: cargo cyclonedx --format json --all --describe binaries
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sbom-cyclonedx
-          path: "**/*.cdx.json"
-          retention-days: 90
+          path: /tmp/sbom.json

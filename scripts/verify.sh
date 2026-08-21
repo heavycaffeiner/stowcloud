@@ -1,18 +1,13 @@
 #!/usr/bin/env bash
 # The verification gate. Run from anywhere; it cd's to the repo root.
 #
-#   bash scripts/verify.sh              # whole workspace
-#   bash scripts/verify.sh sc-core ...  # one or more crates
+#   bash scripts/verify.sh
 #
 # Environment:
-#   VERIFY_REQUIRE_MUSL=1   a missing musl cross toolchain is a failure, not a
-#                           SKIP. CI's Linux job sets this; a fresh clone on a
-#                           laptop should not have to install one to run the
-#                           gate.
-#   VERIFY_REQUIRE_UI=1     a missing frontend build is a failure, not a SKIP. Same
-#                           reasoning: both CI jobs build the frontend first,
-#                           so a SKIP there means the workflow broke, not that
-#                           the checkout is bare.
+#   VERIFY_REQUIRE_UI=1     a missing frontend build is a failure, not a SKIP.
+#                           CI builds the frontend first, so a SKIP there means
+#                           the workflow broke rather than that the checkout is
+#                           bare.
 #   VERIFY_REQUIRE_GOTOOLS=1
 #                           a golangci-lint or govulncheck that could not be
 #                           found or installed is a failure, not a SKIP.
@@ -20,21 +15,14 @@
 #                           cgo, which the Windows box has no compiler for, so
 #                           it runs where one exists and CI is where that is.
 #
-# Two rules this script exists to keep, both learned from a red CI:
-#
-#   1. A failing step prints everything it said. The previous version piped
-#      failures through `tail -25`; when 57 tests failed at once, the `failures:`
-#      name list alone overflowed that and not one panic message survived into
-#      the log. Diagnosing it needed a Linux VM and half a day.
-#   2. Every cargo invocation passes `--locked`, because CI and the Dockerfile
-#      do. Without it this script resolves a lockfile CI will refuse, and
-#      dependency drift is invisible here and fatal there.
+# One rule this script exists to keep, learned from a red CI: a failing step
+# prints everything it said. An earlier version piped failures through a tail;
+# when dozens of tests failed at once the name list alone overflowed it and not
+# one message survived into the log, and diagnosing that took a day.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-PKGS=()
-for p in "$@"; do PKGS+=(-p "$p"); done
-LABEL="${*:-workspace}"
+LABEL="the workspace"
 
 case "$(uname -s)" in
   Linux)                HOST=linux ;;
@@ -42,22 +30,6 @@ case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) HOST=windows ;;
   *)                    HOST=$(uname -s) ;;
 esac
-
-MUSL=x86_64-unknown-linux-musl
-
-# Compiler, archiver, linker and the target-specific rustflags for the musl
-# cross build, chosen by host. Everything host-specific lives there, not here
-# and not in a cargo config that would apply to hosts it was never written for.
-# shellcheck source=scripts/musl-env.sh
-. "$(dirname "$0")/musl-env.sh"
-
-# Can this box cross-compile to musl? Reported rather than assumed — an
-# unconditional musl step on a box without the toolchain fails with a linker
-# error that says nothing about the real cause.
-musl_ready() {
-  rustup target list --installed 2>/dev/null | grep -qx "$MUSL" || return 1
-  command -v "$SC_MUSL_PROBE" >/dev/null 2>&1
-}
 
 pass=0; fail=0; skip=0
 failed_names=()
@@ -102,176 +74,15 @@ grep_gate() {
 }
 
 echo "=== verifying: $LABEL ==="
-echo "    host: $HOST   toolchain: $(rustc -V 2>/dev/null || echo 'rustc NOT FOUND')"
+echo "    host: $HOST   go: $(go version 2>/dev/null || echo 'go NOT FOUND')"
 
-# Link with the toolchain's own linker where it has one.
-#
-# Every test binary here statically links the whole dependency graph, and there
-# are dozens of them, so cargo runs as many links at once as the machine has
-# cores. Measured on this tree, building two crates' test binaries from clean:
-# the system linker peaked at 21.6 GB across those processes and took 3m53s,
-# and the bundled one peaked under 0.1 GB and took 1m06s. On a 30 GB machine
-# the first number is what made this script unusable while it ran, because the
-# machine went to swap and everything else on it stalled.
-#
-# The path is asked for rather than written down: a hardcoded toolchain path is
-# one that is wrong on the next machine. A toolchain without the shim directory
-# just keeps the system linker, which is slower and still correct.
-SC_TRIPLE="$(rustc -vV 2>/dev/null | awk '/^host: /{print $2}')"
-SC_LLD_DIR="$(rustc --print sysroot 2>/dev/null)/lib/rustlib/$SC_TRIPLE/bin/gcc-ld"
-if [ -x "$SC_LLD_DIR/ld.lld" ]; then
-  export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-fuse-ld=lld -C link-arg=-B$SC_LLD_DIR"
-  echo "    linker: ld.lld from the toolchain"
-else
-  echo "    linker: the system default (no bundled ld.lld found)"
-fi
-
-# Cargo defaults its job count to the core count, and each job can hold a
-# compiler and a linker at once. On a machine with many cores and comparatively
-# little memory per core that is the difference between a build and a stall, so
-# the count is bounded by memory as well as by cores.
-if [ -z "${CARGO_BUILD_JOBS:-}" ] && command -v nproc >/dev/null 2>&1; then
-  sc_mem_gb=$(awk '/MemTotal/{printf "%d", $2/1048576}' /proc/meminfo 2>/dev/null || echo 0)
-  sc_cores=$(nproc)
-  # Roughly a gigabyte and a half per concurrent job, which is what a compiler
-  # and a linker of the largest crate here need together.
-  sc_by_mem=$(( sc_mem_gb * 2 / 3 ))
-  [ "$sc_by_mem" -lt 1 ] && sc_by_mem=1
-  if [ "$sc_by_mem" -lt "$sc_cores" ]; then
-    export CARGO_BUILD_JOBS="$sc_by_mem"
-    echo "    cargo jobs: $sc_by_mem (of $sc_cores cores, bounded by ${sc_mem_gb}GB of memory)"
-  fi
-fi
 echo
-
-# --- host build/test/lint -------------------------------------------------
-# On Linux this is the only place in the pipeline where the `openat2` backend,
-# the Landlock/seccomp hardening and the preview jail actually *execute*; on
-# Windows it is the `portable` backend instead. Neither substitutes for the
-# other, which is why CI runs this file on both.
-run "cargo build ($HOST)"  cargo build --locked "${PKGS[@]}"
-run "cargo test ($HOST)"   cargo test  --locked "${PKGS[@]}"
-# `--all-targets` is required: it is the only way this gate sees warnings in
-# test code (`#[cfg(test)]` modules, `tests/*.rs`), which a plain `cargo clippy`
-# never compiles.
-run "cargo clippy ($HOST, -D warnings)" \
-    cargo clippy --locked --all-targets "${PKGS[@]}" -- -D warnings
-
-# --- the deployment target ------------------------------------------------
-# Host clippy never compiles a single line behind `cfg(target_os = "linux")`,
-# which is exactly where the security-critical code lives. Both runs matter and
-# neither subsumes the other: some lints are target-local truths — `statfs.f_type`
-# is `u64` on musl and `i64` on glibc, so clippy calls the same widening cast
-# redundant on one target and correct on the next.
-if musl_ready; then
-  run "cargo check ($MUSL)" \
-      cargo check --locked --target "$MUSL" "${PKGS[@]}"
-  run "cargo clippy ($MUSL, -D warnings)" \
-      cargo clippy --locked --all-targets --target "$MUSL" "${PKGS[@]}" -- -D warnings
-else
-  why="$SC_MUSL_PROBE not on PATH, or rustup target $MUSL not installed"
-  skipped "cargo check ($MUSL)"  "$why" "${VERIFY_REQUIRE_MUSL:-0}"
-  skipped "cargo clippy ($MUSL)" "$why" "${VERIFY_REQUIRE_MUSL:-0}"
-fi
-
-# --- compat-layer isolation ------------------------------------------
-# Scans *code*, not comments. A core crate may explain in a comment why a
-# protocol-neutral abstraction exists (e.g. why sc-upload has a name-ordered
-# spool mode); what it may not do is embed compat wire vocabulary in
-# behaviour — header names, route strings, error text.
-CORE_DIRS=$(ls -d crates/sc-{vfs,meta,core,acl,auth,dav,upload,http,watch,search,preview,smb}/src 2>/dev/null)
-NC_HITS=""
-if [ -n "$CORE_DIRS" ]; then
-  NC_HITS=$(grep -rIn -iE '\boc[:_-]|\bocs\b|remote\.php' $CORE_DIRS 2>/dev/null \
-            | grep -vE '^[^:]+:[0-9]+:\s*(//|/\*|\*)')
-fi
-grep_gate "compat isolation: no oc:/ocs/remote.php in core code" "$NC_HITS" \
-  "Compat wire vocabulary belongs in sc-compat-nc, behind the ports traits."
-
-# --- no Korean in server code ---------------------------------------------
-# The server never decides what language a reader wants: a refusal travels as a
-# catalogue key plus its placeholders and the browser renders it
-# (`web/src/lib/api/error-text.ts`). Korean reaching a wire field, a comment or
-# a log line is the shape that gate exists to remove — the settings screen used
-# to print `detail.reason` raw, in Korean, whatever locale you had picked.
-# The frontend has `web/tools/i18n-check.mjs`; this is its counterpart, and the
-# hole it closes is that the server had none.
-#
-# The allowlist is CJK *test data*, not copy: Hangul folding and trigram
-# fixtures, a compat path fixture, and config/OIDC display-name fixtures.
-KO_ALLOW='sc-search/src/(fold|matcher|trigram|index/(base|mod))\.rs|sc-compat-nc/src/dav_paths\.rs|sc-http/src/(content|archive_zip|routes)\.rs|sc-server/src/(config|oidc)\.rs'
-KO_HITS=$(grep -rIn -P '[\x{AC00}-\x{D7A3}]' crates/*/src 2>/dev/null | grep -vE "$KO_ALLOW")
-grep_gate "no Korean in crates/*/src" "$KO_HITS" \
-  "Send a catalogue key, not a sentence; keep comments in English."
-
-# --- the bind site must install ConnectInfo -------------------------------
-# `axum::serve(listener, router)` compiles, runs, serves every request happily,
-# and silently denies the process any knowledge of where requests come from: no
-# peer means no trusted proxy, which means CF-Connecting-IP is thrown away too,
-# and the login brute-force gate, the API rate limiter and the audit log's IP
-# column all collapse onto one address for the entire internet.
-#
-# A grep because the failure is invisible to the test suite: every test builds
-# its own service, so a test can prove `connect_info_service` works but not that
-# `cmd_serve` calls it. Reverting the call site leaves the suite green — checked,
-# not assumed.
-BARE_SERVE=$(grep -rIn 'axum::serve(' crates/sc-server/src 2>/dev/null | grep -v 'connect_info_service')
-grep_gate "bind site installs ConnectInfo" "$BARE_SERVE" \
-  "serve through sc_server::connect_info_service(router)"
-
-# --- the feature-strip build must drop NC entirely ------------------------
-if [ -d crates/sc-server ]; then
-  run "build --no-default-features (NC stripped)" \
-      cargo build --locked -p sc-server --no-default-features
-fi
-
-# --- embed-ui: the real single-binary build -------------------------------
-# `#[derive(RustEmbed)]` reads the bundle during macro expansion, so these
-# features are off by default and this section needs a built frontend
-# (`cd web && npm run build`).
-#
-# `cargo clean -p sc-http` first, and this is not paranoia: cargo has no
-# dependency edge to those files, so re-running `npm run build` and then `cargo
-# build` reuses the *previously embedded* frontend, silently. That shipped a
-# stale UI once — a binary whose embedded SPA predated the routes it served,
-# which looked like a frontend bug for as long as it took to notice the bundle
-# hash had not moved.
-if [ -f go/internal/httpapi/spa/build/index.html ]; then
-  cargo clean -p sc-http 2>/dev/null
-  run "cargo build -p sc-http --features embed-ui" \
-      cargo build --locked -p sc-http --features embed-ui
-  run "cargo clippy -p sc-http --features embed-ui (-D warnings)" \
-      cargo clippy --locked -p sc-http --all-targets --features embed-ui -- -D warnings
-  run "cargo build -p sc-server --features embed-ui" \
-      cargo build --locked -p sc-server --features embed-ui
-  if musl_ready; then
-    run "cargo check -p sc-server --features embed-ui ($MUSL)" \
-        cargo check --locked --target "$MUSL" -p sc-server --features embed-ui
-  else
-    skipped "cargo check -p sc-server --features embed-ui ($MUSL)" \
-            "no musl cross toolchain" "${VERIFY_REQUIRE_MUSL:-0}"
-  fi
-else
-  why="no built frontend; run: cd web && npm run build"
-  for s in "cargo build -p sc-http --features embed-ui" \
-           "cargo clippy -p sc-http --features embed-ui (-D warnings)" \
-           "cargo build -p sc-server --features embed-ui" \
-           "cargo check -p sc-server --features embed-ui ($MUSL)"; do
-    skipped "$s" "$why" "${VERIFY_REQUIRE_UI:-0}"
-  done
-fi
 
 # ==========================================================================
 # The Go half.
 #
-# It keeps the two rules above and adds nothing to them: a failing step prints
-# everything it said, and a step that did not run says so with a name the
-# caller can require. What it does not keep is the shape underneath, because
-# four of the Rust steps work around problems Go does not have — the musl cross
-# probe (Go cross-compiles with no toolchain), the `cargo clean` before the
-# embed build (`//go:embed` is a real dependency edge), the second clippy run
-# under the musl target (`go vet` on GOOS=linux compiles every _linux.go file),
-# and the --no-default-features build (a build tag).
+# A failing step prints everything it said, and a step that did not run says so
+# with a name the caller can require.
 #
 # Everything here builds and vets for GOOS=linux, because that is the only
 # target that ships, and tests for the host's own OS, because a linux test
@@ -561,9 +372,8 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   fi
 
   # The single-binary build. `//go:embed` reads the bundle with a real
-  # dependency edge, so the `cargo clean -p sc-http` hazard has no counterpart
-  # here: rebuilding after `npm run build` picks up the new files or fails to
-  # compile. The bundle lives inside the embedding package because //go:embed
+  # dependency edge: rebuilding after `npm run build` picks up the new files or
+  # fails to compile, so there is no stale-bundle hazard to clean around. The bundle lives inside the embedding package because //go:embed
   # cannot name a path outside it, and refuses a symlink that points out.
   if [ -f go/internal/httpapi/spa/build/index.html ]; then
     run "go build -tags embed_ui" ingo go build -tags embed_ui ./...
@@ -589,6 +399,23 @@ else
   for s in "go build (linux/amd64)" "go vet (linux)" "golangci-lint run" "go test ($HOST)"; do
     skipped "$s" "$why" 0
   done
+fi
+
+# --- the SMB sidecar agent -------------------------------------------------
+# The last Rust program in the tree, and it ships: the sidecar image builds it
+# and the compose file runs that image. It is the privileged half of SMB
+# publishing, so the server can render as an unprivileged user in a namespace
+# that cannot see the host's devices.
+#
+# It is checked here rather than left to the image build, because a component
+# nothing compiles is a component that rots until somebody deploys it. Why it
+# is still Rust is recorded as Q10 in docs/proposals/OPEN-QUESTIONS.md.
+if command -v cargo >/dev/null 2>&1; then
+  run "the SMB agent builds"     bash -c 'cd smb-agent/agent && cargo build --quiet'
+  run "the SMB agent's tests"    bash -c 'cd smb-agent/agent && cargo test --quiet'
+else
+  skipped "the SMB agent builds"  "no cargo" 0
+  skipped "the SMB agent's tests" "no cargo" 0
 fi
 
 # --- what this run did NOT verify -----------------------------------------

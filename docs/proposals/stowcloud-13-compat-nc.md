@@ -4,7 +4,7 @@
 |------------|----------------------------------|
 | Author     | heavycaffeiner(Dong Hyun Kim)    |
 | Created    | 2026-08-12                       |
-| Status     | **Draft**                        |
+| Status     | **Implemented**                  |
 | Reviewers  |                                  |
 
 ---

@@ -1,0 +1,34 @@
+[package]
+name = "sc-smb-agent"
+version = "0.3.2"
+edition = "2021"
+rust-version = "1.88"
+license = "AGPL-3.0-or-later"
+publish = false
+description = "Applies what the server renders for Samba: network scope, configuration validation, the password database, the daemon. Runs beside smbd, not beside the server."
+
+# Its own package rather than a member of a workspace, because there is no
+# workspace left: the server is a Go program. The versions are written out here
+# for the same reason.
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+libc = "0.2"
+parking_lot = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+# The shipping profile. The sidecar runs as root beside smbd, so it is built
+# the same way the server used to be: one codegen unit, fat link-time
+# optimisation, and an abort on panic, because a privileged process unwinding
+# through a signal handler is a state nobody has reasoned about.
+[profile.release-dist]
+inherits = "release"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

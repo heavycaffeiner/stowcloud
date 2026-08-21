@@ -1,16 +1,19 @@
 # Search golden fixtures
 
-What the Rust implementation produces, so that "does the Go search work" is a
-diff rather than a judgement. Every file here is generated:
+What the Rust implementation produced, so that "does the search work" was a
+diff rather than a judgement.
 
-```sh
-cargo run -p sc-search --example golden
-```
+These files are now the specification rather than a comparison. The generator
+was `crates/sc-search/examples/golden.rs`, and the cutover deleted it along
+with the rest of the Rust tree, so there is nothing left to regenerate them
+from: what is committed here is the record of what the implementation being
+replaced produced, and the tests read it as a fixed expectation.
 
-The generator is `crates/sc-search/examples/golden.rs`. It is deterministic:
-two consecutive runs produce byte-identical output, and a difference is a bug
-in the generator rather than something to sort away afterwards. Regenerate and
-commit the result; never hand-edit a file in this directory.
+That is deliberate rather than an oversight. A fixture regenerated from the
+code it checks stops being a check; these were captured from the other
+implementation, and keeping them frozen is what preserves the property. Never
+hand-edit a file in this directory: an edit here is a change to what the search
+is required to produce, and it needs the reasoning that goes with that.
 
 `.gitattributes` marks the whole tree `-text` so git does not normalise line
 endings in it. A fixture git rewrote is a fixture that fails for a reason
