@@ -186,9 +186,41 @@ try {
     smb.status === 503 || smb.status === 200 || smb.status === 502,
     `status ${smb.status} ${JSON.stringify(smb.body).slice(0, 140)}`)
 
+  // ---- the calls that were mounted under a different verb ----
+  //
+  // Each of these answered "method not allowed" from a route that existed,
+  // which is invisible to a check that compares paths and ignores verbs.
+  const groups = await api('GET', '/api/admin/groups')
+  check('groups list', groups.status === 200, `status ${groups.status}`)
+
+  const madeGroup = await api('POST', '/api/admin/groups', { name: `e2e-${Date.now()}` }, csrf)
+  check('a group is created', madeGroup.status === 201 || madeGroup.status === 200,
+    `status ${madeGroup.status}`)
+  const groupID = madeGroup.body?.id
+  if (groupID !== undefined) {
+    const renamed = await api('PATCH', `/api/admin/groups/${groupID}`,
+      { name: `e2e-renamed-${Date.now()}` }, csrf)
+    check('a group is renamed', renamed.status === 200,
+      `status ${renamed.status} ${JSON.stringify(renamed.body).slice(0, 120)}`)
+    check('the rename answers the whole group', Array.isArray(renamed.body?.members),
+      JSON.stringify(renamed.body).slice(0, 120))
+    const deleted = await api('DELETE', `/api/admin/groups/${groupID}`, null, csrf)
+    check('a group is deleted', deleted.status === 204, `status ${deleted.status}`)
+  }
+
+  // Cancelling a job: the client sends DELETE and only POST-to-cancel was
+  // mounted.
+  const cancelled = await api('DELETE', '/api/jobs/999999', null, csrf)
+  check('cancelling a job is not a method error',
+    cancelled.status !== 405, `status ${cancelled.status}`)
+
+  // A finished job's download, which is mounted and honest rather than absent.
+  const jobDownload = await api('GET', '/api/jobs/999999/download')
+  check('a job download is not a method error',
+    jobDownload.status !== 405 && jobDownload.status !== 404,
+    `status ${jobDownload.status}`)
+
   // ---- archives ----
-  // This suite grants its own access rather than relying on another's: the
-  // grant suite revokes what it created, so running after it leaves nothing.
   const shares = await api('GET', '/api/admin/shares')
   const shareList = Array.isArray(shares.body) ? shares.body : (shares.body?.shares ?? [])
   const shareID = shareList[0]?.id
@@ -213,6 +245,40 @@ try {
       `status ${grant.status}`)
     grantID = grant.body?.id
   }
+
+  // ---- the streaming search, which no route served ----
+  //
+  // Granted first: a search returns only what the account may read, so
+  // without a grant an empty result proves nothing about whether it works.
+  const search = await page.evaluate(
+    (base) =>
+      new Promise((resolve) => {
+        const es = new EventSource(`${base}/api/search/stream?q=txt`, { withCredentials: true })
+        const hits = []
+        const done = (v) => {
+          es.close()
+          resolve(v)
+        }
+        es.addEventListener('hit', (ev) => hits.push(JSON.parse(ev.data)))
+        es.addEventListener('done', () => done({ ok: true, hits }))
+        es.onerror = () => done({ ok: false, hits })
+        setTimeout(() => done({ ok: false, hits, timeout: true }), 8000)
+      }),
+    BASE
+  )
+  check('the search stream opens and completes', search.ok === true,
+    JSON.stringify(search).slice(0, 160))
+  // The share holds two .txt files, so a search that returns none is a stream
+  // that works and finds nothing, which is the failure that looks like success.
+  check('the search finds what is there', search.hits?.length > 0,
+    `${search.hits?.length} hits`)
+  if (search.hits?.length) {
+    const hit = search.hits[0]
+    check('a hit carries the share and the path separately',
+      typeof hit.share === 'string' && typeof hit.path === 'string',
+      JSON.stringify(hit))
+  }
+
   if (shareName) {
     const archive = await page.evaluate(
       async ([token, path]) => {

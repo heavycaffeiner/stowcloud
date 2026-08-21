@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
+	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
 	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
 )
@@ -90,7 +92,7 @@ func oidcRedirect(w http.ResponseWriter, r *http.Request, d Deps, userID int64, 
 	http.SetCookie(w, &http.Cookie{
 		Name: oidcBindingCookie, Value: secrets.Binding, Path: "/api/auth/oidc",
 		Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
-		MaxAge: int(oidcFlowSeconds),
+		MaxAge: oidcFlowSeconds,
 	})
 	// The provider's own address, which is not a local one: this is the one
 	// redirect here that leaves, and it goes where discovery said rather than
@@ -99,9 +101,11 @@ func oidcRedirect(w http.ResponseWriter, r *http.Request, d Deps, userID int64, 
 	return nil
 }
 
-// oidcFlowSeconds is the binding cookie's life, matched to the flow's own so
-// neither outlives the other.
-const oidcFlowSeconds = 600
+// oidcFlowSeconds is the binding cookie's life, derived from the flow's own
+// lifetime rather than written out beside it: two numbers that have to agree
+// are two numbers that can stop agreeing, and a cookie outliving its flow is a
+// callback that presents a binding for something already swept.
+const oidcFlowSeconds = int(limits.OIDCFlowLifetime / time.Second)
 
 // OIDCCallback answers GET /api/auth/oidc/callback.
 //

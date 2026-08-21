@@ -3,6 +3,9 @@ package handler
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 )
 
 // Where this server is willing to send a browser.
@@ -122,4 +125,15 @@ func joinQuery(to localTarget, query string) string {
 		sep = "&"
 	}
 	return target + sep + query
+}
+
+// The binding cookie must not outlive the flow it belongs to.
+//
+// A cookie that lives longer presents a binding for a flow already swept,
+// which reads as a tampered callback rather than an expired one, and the
+// person is told to start again for the wrong reason.
+func TestTheBindingCookieMatchesTheFlowsLifetime(t *testing.T) {
+	if got := time.Duration(oidcFlowSeconds) * time.Second; got != limits.OIDCFlowLifetime {
+		t.Fatalf("the cookie lives %v and the flow %v", got, limits.OIDCFlowLifetime)
+	}
 }

@@ -331,14 +331,32 @@ func SMBPassword(d Deps) http.HandlerFunc {
 		if err := reconfirm(r, d, int64(uid), req.CurrentPassword); err != nil {
 			return err
 		}
+
+		// Clearing it, which was mounted nowhere: the client sends this and
+		// got "method not allowed" from a route that exists.
+		if r.Method == http.MethodDelete {
+			revertible, cerr := d.Auth.ClearSMBPassword(r.Context(), int64(uid))
+			if cerr != nil {
+				return cerr
+			}
+			// Whether the account password takes over. It does not for an
+			// account carrying a second factor, linked to a provider, or
+			// opted out, and saying so is the difference between "cleared"
+			// and "SMB no longer works for you".
+			return writeJSON(w, http.StatusOK, map[string]bool{
+				"reverted_to_account_password": revertible,
+			})
+		}
+
 		if req.SMBPassword == "" {
 			return apierr.BadRequest("auth.password_required", "smb_password")
 		}
 		if err := d.Auth.SetSMBPassword(r.Context(), int64(uid), secret.New([]byte(req.SMBPassword))); err != nil {
 			return err
 		}
-		w.WriteHeader(http.StatusNoContent)
-		return nil
+		// Setting one clears the opt-out, so the toggles the screen shows have
+		// moved and it has to know.
+		return writeJSON(w, http.StatusOK, map[string]bool{"smb_toggles_cleared": true})
 	})
 }
 

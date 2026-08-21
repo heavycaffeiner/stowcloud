@@ -52,6 +52,31 @@ func (s *Service) CreateGroup(ctx context.Context, name string) (int64, error) {
 	return id, err
 }
 
+// RenameGroup changes a group's name.
+//
+// Only the name: the id is what every grant and membership references, so a
+// rename moves the label and touches no permission. That is the whole point of
+// grants naming an id rather than a name.
+func (s *Service) RenameGroup(ctx context.Context, id int64, name string) error {
+	return s.write(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, sqlRenameGroup, name, id)
+		if err != nil && isUniqueViolation(err) {
+			return ErrNameTaken
+		}
+		if err != nil {
+			return err
+		}
+		n, aerr := res.RowsAffected()
+		if aerr != nil {
+			return aerr
+		}
+		if n == 0 {
+			return sql.ErrNoRows
+		}
+		return nil
+	})
+}
+
 // GroupIDsOf returns the groups an account belongs to.
 func (s *Service) GroupIDsOf(ctx context.Context, userID int64) (out []int64, err error) {
 	rows, err := s.st.SQL().QueryContext(ctx, sqlMembershipsOfUser, userID)

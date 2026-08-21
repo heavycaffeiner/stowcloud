@@ -46,7 +46,27 @@ func Operation(d Deps) http.HandlerFunc {
 	})
 }
 
-// OperationCancel answers POST /api/jobs/{id}/cancel.
+// OperationDownload answers GET /api/jobs/{id}/download.
+//
+// Mounted and honest rather than absent. A job does not keep its output: an
+// archive is streamed as it is packed, because the server never holds one, so
+// there is nothing here to hand back. A client that asks gets a status it can
+// act on instead of a connection to a path that does not exist.
+func OperationDownload(d Deps) http.HandlerFunc {
+	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
+		if _, cerr := userOf(r); cerr != nil {
+			return cerr
+		}
+		return notImplemented("jobs.download_unavailable")
+	})
+}
+
+// OperationCancel answers POST /api/jobs/{id}/cancel and DELETE
+// /api/jobs/{id}.
+//
+// Two spellings because the client uses the second and this server mounted
+// only the first, so cancelling answered "method not allowed" from a route
+// that exists. One handler, so they cannot drift.
 func OperationCancel(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
 		uid, cerr := userOf(r)

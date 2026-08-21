@@ -160,6 +160,8 @@
 # bound, which is a positive constant the line above it checks. Two more sit in the
 # single-sign-on flow test: a certificate pool holding only the test provider's
 # own certificate, and that provider redirecting where it was told, which is
-# what a provider does.
-245
+# what a provider does. Two more: the route checker reading the client directory
+# it was pointed at, and the search stream writing an event to a response that
+# is already committed.
+247
 

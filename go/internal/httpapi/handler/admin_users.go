@@ -237,6 +237,11 @@ func AdminGroup(d Deps) http.HandlerFunc {
 		if perr != nil {
 			return apierr.BadRequest("admin.bad_group_id", "id")
 		}
+
+		if r.Method == http.MethodPatch {
+			return renameGroup(w, r, d, id)
+		}
+
 		if err := d.Auth.DeleteGroup(r.Context(), id); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return &apierr.RequestError{
@@ -249,6 +254,54 @@ func AdminGroup(d Deps) http.HandlerFunc {
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	})
+}
+
+// renameGroup answers PATCH on one group.
+//
+// Only the name changes. Every grant and membership references the id, so a
+// rename moves the label and no permission with it.
+func renameGroup(w http.ResponseWriter, r *http.Request, d Deps, id int64) error {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		return err
+	}
+	if req.Name == "" {
+		return apierr.BadRequest("admin.group_name", "name")
+	}
+
+	switch err := d.Auth.RenameGroup(r.Context(), id, req.Name); {
+	case errors.Is(err, sql.ErrNoRows):
+		return &apierr.RequestError{
+			Status: http.StatusNotFound, Code: apierr.CodeFsNotFound,
+			Message: "no such group", Key: "admin.group_missing",
+		}
+	case errors.Is(err, auth.ErrNameTaken):
+		return &apierr.RequestError{
+			Status: http.StatusConflict, Code: apierr.CodeFsConflict,
+			Message: "a group already has that name", Key: "admin.group_name_taken",
+		}
+	case err != nil:
+		return err
+	}
+
+	// The whole group is read back rather than assembled from the request, so
+	// what the screen shows is what the database holds.
+	groups, gerr := d.Auth.ListGroups(r.Context())
+	if gerr != nil {
+		return gerr
+	}
+	for _, g := range groups {
+		if g.ID == id {
+			return writeJSON(w, http.StatusOK, adminGroup{ID: g.ID, Name: g.Name, Members: g.Members})
+		}
+	}
+	// Renamed and then gone: another administrator deleted it in between.
+	return &apierr.RequestError{
+		Status: http.StatusNotFound, Code: apierr.CodeFsNotFound,
+		Message: "no such group", Key: "admin.group_missing",
+	}
 }
 
 // AdminGroupMembers answers the membership routes.

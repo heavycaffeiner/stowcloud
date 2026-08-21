@@ -24,13 +24,17 @@ import (
 
 func main() {
 	var (
-		clientPath = flag.String("client", "web/src/lib/api/http.ts", "the frontend's API client")
+		clientDir  = flag.String("client-dir", "web/src/lib/api", "the frontend's API client directory")
 		routesPath = flag.String("routes", "go/internal/server/routes.go", "the server's route table")
 		allowPath  = flag.String("allow", "go/routes.allow", "paths the client may call that the server need not mount")
 	)
 	flag.Parse()
 
-	client, err := os.ReadFile(filepath.Clean(*clientPath))
+	// Every file in the directory, not one named file. The streaming search
+	// and the change channel live in their own modules, so a check pointed at
+	// the main one saw neither: search was mounted nowhere and nothing
+	// reported it.
+	client, err := readClient(*clientDir)
 	if err != nil {
 		fail("reading the client: %v", err)
 	}
@@ -40,15 +44,23 @@ func main() {
 	}
 	allowed := readAllow(*allowPath)
 
-	called := clientPaths(string(client))
+	called := clientPaths(client)
 	mounted := mountedPaths(string(routes))
 
 	var missing []string
-	for _, p := range called {
-		if mounted[p] || allowed[p] || matchesWildcard(p, mounted) {
+	for _, c := range called {
+		if mounted[c] || allowed[c.path] || matchesWildcard(c, mounted) {
 			continue
 		}
-		missing = append(missing, p)
+		// A path mounted under a different verb is the more useful message:
+		// the route exists and refuses, which reads to a client as the screen
+		// being broken rather than the path being absent.
+		if other := verbsFor(c.path, mounted); len(other) > 0 {
+			missing = append(missing, fmt.Sprintf("%s %s (mounted as %s)",
+				c.method, c.path, strings.Join(other, ", ")))
+			continue
+		}
+		missing = append(missing, c.method+" "+c.path)
 	}
 	sort.Strings(missing)
 
@@ -58,13 +70,36 @@ func main() {
 		return
 	}
 
-	say(os.Stderr, "\n%d paths the client calls are not mounted:\n", len(missing))
+	say(os.Stderr, "\n%d calls the client makes are not mounted:\n", len(missing))
 	for _, p := range missing {
 		say(os.Stderr, "  %s\n", p)
 	}
 	say(os.Stderr, "\nA path here is a screen that cannot work. Mount it, or record it in %s\n"+
 		"with the reason it is not needed.\n", *allowPath)
 	os.Exit(1)
+}
+
+// readClient concatenates every TypeScript module in the client directory,
+// tests excluded: a mock's calls are the mock's contract, not this server's.
+func readClient(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	var out []byte
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasSuffix(name, ".ts") || strings.Contains(name, ".test.") {
+			continue
+		}
+		body, rerr := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // G304 reads the variable: the directory is the gate's own argument, never request input.
+		if rerr != nil {
+			return "", rerr
+		}
+		out = append(out, body...)
+		out = append(out, '\n')
+	}
+	return string(out), nil
 }
 
 // clientPaths pulls every API path the client requests.
@@ -74,6 +109,15 @@ func main() {
 // not one call's arguments.
 var (
 	requestCall = regexp.MustCompile("request(?:Blob|Raw)?\\(\\s*[`'\"]([^`'\"]+)")
+	// The three calls that do not go through the client's own helper, and so
+	// were invisible to this check while it looked for that helper alone. The
+	// streaming search was mounted nowhere and nothing reported it, which is
+	// the exact failure this tool exists to catch.
+	//
+	// Each names the base and then the path, so the base is what anchors the
+	// match: a bare fetch to somewhere else is not this server's route table's
+	// business.
+	directCall = regexp.MustCompile("(?:fetch|new EventSource|new WebSocket)\\(\\s*`\\$\\{BASE\\}([^`]*)`")
 	// A template hole can itself contain braces, as a call with an object
 	// argument does, so the match is not "up to the first closing brace":
 	// that leaves the remainder of the call in the path.
@@ -82,29 +126,83 @@ var (
 	// The client builds a query with a helper, which appears as a trailing
 	// hole naming it.
 	queryBuilder = regexp.MustCompile(`\$\{qs\((?:[^{}]|\{[^{}]*\})*\)\}$`)
+	// The verb, which follows the path in the same call. Absent means GET,
+	// which is what both the helper and a bare fetch default to.
+	//
+	// Checked because a path that is mounted under a different verb is a route
+	// that exists and refuses: cancelling a job was mounted as a POST to one
+	// path and called as a DELETE to another, so the client got "method not
+	// allowed" from a comparison that only looked at paths and passed.
+	methodCall = regexp.MustCompile(`method:\s*'([A-Z]+)'`)
 )
 
-func clientPaths(src string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, m := range requestCall.FindAllStringSubmatch(src, -1) {
-		p := normalise(m[1])
-		if p == "" || seen[p] {
-			continue
+// call is one path the client asks for, and how.
+type call struct {
+	method string
+	path   string
+}
+
+func clientPaths(src string) []call {
+	seen := map[call]bool{}
+	var out []call
+	for _, re := range []*regexp.Regexp{requestCall, directCall} {
+		for _, loc := range re.FindAllStringSubmatchIndex(src, -1) {
+			p := normalise(src[loc[2]:loc[3]])
+			// The helper's own body is the one fetch whose path is the
+			// argument every other call already supplied, so it normalises to
+			// a bare placeholder rather than a route.
+			if p == "" || p == "/api{}" {
+				continue
+			}
+			c := call{method: methodOf(src, loc[1]), path: p}
+			if seen[c] {
+				continue
+			}
+			seen[c] = true
+			out = append(out, c)
 		}
-		seen[p] = true
-		out = append(out, p)
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].path != out[j].path {
+			return out[i].path < out[j].path
+		}
+		return out[i].method < out[j].method
+	})
 	return out
 }
 
-// mountedPaths pulls every pattern the route table registers.
-func mountedPaths(src string) map[string]bool {
-	pattern := regexp.MustCompile(`Pattern:\s*"([^"]+)"`)
-	out := map[string]bool{}
-	for _, m := range pattern.FindAllStringSubmatch(src, -1) {
-		out[normalise(m[1])] = true
+// methodOf reads the verb out of the options object that follows a call.
+//
+// Bounded to that call's own arguments rather than a fixed window: a window
+// reads the next function's verb as this one's, which reports a mounted route
+// as missing and buries the real mismatches in noise.
+//
+// The scan stops at the closing parenthesis of the call, tracking depth so an
+// object argument's own braces do not end it early. A call with no options is
+// a GET, which is what both the helper and a bare fetch default to.
+func methodOf(src string, from int) string {
+	depth := 1
+	i := from
+	for ; i < len(src) && depth > 0; i++ {
+		switch src[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+		}
+	}
+	if m := methodCall.FindStringSubmatch(src[from:i]); m != nil {
+		return m[1]
+	}
+	return "GET"
+}
+
+// mountedPaths pulls every method and pattern the route table registers.
+func mountedPaths(src string) map[call]bool {
+	route := regexp.MustCompile(`Method:\s*"([A-Z]+)",\s*Pattern:\s*"([^"]+)"`)
+	out := map[call]bool{}
+	for _, m := range route.FindAllStringSubmatch(src, -1) {
+		out[call{method: m[1], path: normalise(m[2])}] = true
 	}
 	return out
 }
@@ -116,26 +214,40 @@ func mountedPaths(src string) map[string]bool {
 // section, and the client names each one. Comparing the two literally would
 // report a mounted route as missing, and adding each name to the ledger would
 // hide the ones that really are.
-func matchesWildcard(path string, mounted map[string]bool) bool {
-	want := strings.Split(path, "/")
-	for pattern := range mounted {
-		have := strings.Split(pattern, "/")
-		if len(have) != len(want) {
-			continue
-		}
-		ok := true
-		for i := range have {
-			if have[i] == "{}" || have[i] == want[i] {
-				continue
-			}
-			ok = false
-			break
-		}
-		if ok {
+func matchesWildcard(c call, mounted map[call]bool) bool {
+	for m := range mounted {
+		if m.method == c.method && pathMatches(c.path, m.path) {
 			return true
 		}
 	}
 	return false
+}
+
+// verbsFor lists the methods a path is mounted under, for a call whose own
+// method is not among them.
+func verbsFor(path string, mounted map[call]bool) []string {
+	var out []string
+	for m := range mounted {
+		if pathMatches(path, m.path) {
+			out = append(out, m.method)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func pathMatches(path, pattern string) bool {
+	want := strings.Split(path, "/")
+	have := strings.Split(pattern, "/")
+	if len(have) != len(want) {
+		return false
+	}
+	for i := range have {
+		if have[i] != "{}" && have[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // normalise reduces a path to the shape both sides can be compared on: one

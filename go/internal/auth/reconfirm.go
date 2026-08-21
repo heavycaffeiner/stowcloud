@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
 )
@@ -109,6 +110,39 @@ func (s *Service) SetSMBPassword(ctx context.Context, userID int64, pw secret.Se
 	}
 	s.bumpGeneration()
 	return s.republishPassdb(ctx)
+}
+
+// ClearSMBPassword removes a separate SMB password, and reports whether the
+// account password takes over.
+//
+// It does not for an account that is enrolled in a second factor, linked to a
+// provider, or opted out: for those, the separate password was the only thing
+// making SMB work, and clearing it means losing SMB access altogether. The
+// caller says so rather than reporting a success that reads as "nothing
+// changed".
+func (s *Service) ClearSMBPassword(ctx context.Context, userID int64) (revertible bool, err error) {
+	var optOut, has2fa, linked bool
+	row := s.st.SQL().QueryRowContext(ctx, sqlSMBRevertible, userID)
+	if serr := row.Scan(&optOut, &has2fa, &linked); serr != nil {
+		return false, fmt.Errorf("reading the account's SMB state: %w", serr)
+	}
+
+	if werr := s.write(ctx, func(tx *sql.Tx) error {
+		_, derr := tx.ExecContext(ctx, sqlDeleteSMBSecret, userID)
+		return derr
+	}); werr != nil {
+		return false, fmt.Errorf("clearing the SMB password: %w", werr)
+	}
+
+	s.bumpGeneration()
+	// Republished either way: the credential is gone from the database, and a
+	// rendered file still carrying it is a revoked password that still works.
+	if perr := s.republishPassdb(ctx); perr != nil {
+		return false, perr
+	}
+
+	blocked := has2fa && s.smbTOTPPolicy == TOTPBlock
+	return !optOut && !linked && !blocked, nil
 }
 
 // UserIDByName resolves a login name to an account id.

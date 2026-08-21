@@ -95,7 +95,7 @@ func OIDCLinkStart(d Deps) http.HandlerFunc {
 		http.SetCookie(w, &http.Cookie{
 			Name: oidcBindingCookie, Value: secrets.Binding, Path: "/api/auth/oidc",
 			Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
-			MaxAge: int(oidcFlowSeconds),
+			MaxAge: oidcFlowSeconds,
 		})
 		// JSON, not a redirect: this call carries a password and a CSRF header,
 		// so it is a fetch, and the caller navigates itself.

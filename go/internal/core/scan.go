@@ -31,6 +31,25 @@ func (c *Core) ScanSources() []search.Source {
 	return out
 }
 
+// ShareLabel is the name this account navigates a share under, which is the
+// grant's label rather than the share's own name.
+//
+// Empty when the account cannot see the share at all. A caller rendering a hit
+// has already checked that they can, so an empty answer there means the grant
+// went away between the search and the render.
+func (c *Core) ShareLabel(user UserID, share uint32) string {
+	for _, r := range c.acl.Roots(int64(user)) {
+		id, err := num.Narrow[uint32](r.Share)
+		if err != nil {
+			continue
+		}
+		if id == share {
+			return r.Label
+		}
+	}
+	return ""
+}
+
 // UserScanSources is the same, narrowed to what one account may read.
 //
 // The permission check runs per entry rather than per share, because a grant

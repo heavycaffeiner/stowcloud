@@ -192,9 +192,14 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # does not mount is a screen that cannot work, and it was invisible to every
   # other check in this tree: that is how login ended up mounted on the
   # change-password path with the whole suite green.
+  #
+  # The whole client directory and the verb, not one file and the path alone.
+  # Pointed at one file it missed the streaming search, which no route served;
+  # comparing paths alone it missed six calls mounted under a different verb,
+  # each of which answers "method not allowed" from a route that exists.
   run "routecheck (the client's paths are mounted)" \
       ingo_host go run ./tools/routecheck \
-        -client ../web/src/lib/api/http.ts \
+        -client-dir ../web/src/lib/api \
         -routes internal/server/routes.go \
         -allow routes.allow
   run "vetsecret (D12: no secret to a verb)"   ingo_host go run ./tools/vetsecret ./...

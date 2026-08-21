@@ -142,12 +142,15 @@ func AdminIndexEstimate(d Deps) http.HandlerFunc {
 	})
 }
 
-// indexBuildRate is how many entries a build gets through in a second, taken
-// from the walk this measurement just ran rather than guessed.
+// indexBuildRate is how many entries a build is assumed to get through in a
+// second. It is a guess, not a measurement: nothing here has timed a build.
 //
-// It is deliberately pessimistic. A build runs only while the server is
-// otherwise idle, so the wall-clock time is longer than this, and an estimate
-// that runs under is one an operator plans an evening around.
+// Deliberately pessimistic, so the number an operator plans around is longer
+// than the build rather than shorter. It is still a guess, and an estimate
+// derived from one is worth what the guess is worth: a corpus on a slow disk,
+// or one whose names are mostly outside ASCII, will not match it.
+//
+// Replace it with a rate the build itself reports once one has run.
 const indexBuildRate = 20_000
 
 func buildSeconds(files uint64) uint64 {

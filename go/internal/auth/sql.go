@@ -124,6 +124,14 @@ SELECT id, name, COALESCE(display, ''), disabled, role, smb_enabled, created_ns,
        EXISTS(SELECT 1 FROM totp_secret t WHERE t.user = user.id)
 FROM user ORDER BY id`
 
+	// What clearing a separate SMB password has to know: whether the account
+	// password can serve over that protocol afterwards, or whether clearing
+	// means losing SMB access altogether.
+	sqlSMBRevertible = `
+SELECT smb_opt_out, EXISTS(SELECT 1 FROM totp_secret t WHERE t.user = user.id),
+       EXISTS(SELECT 1 FROM oidc_link o WHERE o.user = user.id)
+FROM user WHERE id = ?`
+
 	sqlDeleteUser = `DELETE FROM user WHERE id = ?`
 
 	sqlSetQuota = `UPDATE user SET quota_bytes = ? WHERE id = ?`
@@ -133,6 +141,7 @@ FROM user ORDER BY id`
 	sqlListMemberships = `SELECT user, "group" FROM membership`
 
 	sqlDeleteGroup = `DELETE FROM "group" WHERE id = ?`
+	sqlRenameGroup = `UPDATE "group" SET name = ? WHERE id = ?`
 
 	// Adding twice is not an error: the caller asked for a state and the state
 	// is reached either way.

@@ -86,6 +86,7 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 
 		{Method: "POST", Pattern: "/api/auth/smb", Req: selfAdmin, Handler: handler.SMBSettings(d)},
 		{Method: "POST", Pattern: "/api/auth/smb/password", Req: selfAdmin, Handler: handler.SMBPassword(d)},
+		{Method: "DELETE", Pattern: "/api/auth/smb/password", Req: selfAdmin, Handler: handler.SMBPassword(d)},
 
 		{Method: "GET", Pattern: "/api/auth/app-passwords", Req: selfAdmin, Handler: handler.AppPasswords(d)},
 		{Method: "POST", Pattern: "/api/auth/app-passwords", Req: selfAdmin, Handler: handler.AppPasswords(d)},
@@ -103,7 +104,11 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		{Method: "POST", Pattern: "/api/fs/move", Req: req(acl.Move), Handler: handler.Move(d)},
 		{Method: "POST", Pattern: "/api/fs/copy", Req: req(acl.Read | acl.Create), Handler: handler.Copy(d)},
 		{Method: "POST", Pattern: "/api/fs/delete", Req: req(acl.Delete), Handler: handler.Delete(d)},
+		// Both spellings. The shipped client sends the second, and mounting
+		// only the first made writing a file answer that the method is not
+		// allowed from a route that exists.
 		{Method: "POST", Pattern: "/api/fs/write", Req: req(acl.Write), Handler: handler.Write(d)},
+		{Method: "PUT", Pattern: "/api/fs/write", Req: req(acl.Write), Handler: handler.Write(d)},
 		{Method: "GET", Pattern: "/api/fs/size", Req: req(acl.Read), Handler: handler.Size(d)},
 		{Method: "GET", Pattern: "/api/fs/link", Req: req(acl.Read), Handler: handler.Links(d)},
 		{Method: "POST", Pattern: "/api/fs/link", Req: req(acl.Read), Handler: handler.Links(d)},
@@ -130,9 +135,18 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		// Operations.
 		{Method: "GET", Pattern: "/api/jobs/{id}", Req: any, Handler: handler.Operation(d)},
 		{Method: "POST", Pattern: "/api/jobs/{id}/cancel", Req: any, Handler: handler.OperationCancel(d)},
+		// The spelling the shipped client uses. It was not mounted, so
+		// cancelling a job answered that the method is not allowed.
+		{Method: "DELETE", Pattern: "/api/jobs/{id}", Req: any, Handler: handler.OperationCancel(d)},
+		{Method: "GET", Pattern: "/api/jobs/{id}/download", Req: any, Handler: handler.OperationDownload(d)},
 
 		// The change channel.
 		{Method: "GET", Pattern: "/api/events", Req: any, Handler: handler.Events(d)},
+
+		// Searching, streamed as the hits are found: a walk over a large
+		// share takes long enough that a screen showing nothing until it ends
+		// looks broken.
+		{Method: "GET", Pattern: "/api/search/stream", Req: req(acl.Read), Handler: handler.SearchStream(d)},
 
 		// Recency: the route and the shape are owned here; the backing index
 		// arrives with the search phase.
@@ -152,6 +166,7 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		{Method: "POST", Pattern: "/api/admin/smb/apply", Req: selfAdmin, Handler: handler.SMBApply(d)},
 		{Method: "GET", Pattern: "/api/admin/groups", Req: selfAdmin, Handler: handler.AdminGroups(d)},
 		{Method: "POST", Pattern: "/api/admin/groups", Req: selfAdmin, Handler: handler.AdminGroups(d)},
+		{Method: "PATCH", Pattern: "/api/admin/groups/{id}", Req: selfAdmin, Handler: handler.AdminGroup(d)},
 		{Method: "DELETE", Pattern: "/api/admin/groups/{id}", Req: selfAdmin, Handler: handler.AdminGroup(d)},
 		{Method: "POST", Pattern: "/api/admin/groups/{gid}/members", Req: selfAdmin, Handler: handler.AdminGroupMembers(d)},
 		{Method: "DELETE", Pattern: "/api/admin/groups/{gid}/members/{user}", Req: selfAdmin, Handler: handler.AdminGroupMembers(d)},
