@@ -150,7 +150,12 @@ func push(ctx context.Context, d Deps) (smbagent.Report, error) {
 // an empty account list. An empty list in that format means every account, so
 // rendering one would publish a share this server considers private.
 func shareDefs(ctx context.Context, d Deps) ([]smb.ShareDef, error) {
-	if d.Grants == nil {
+	// Without any one of these there is nothing to render: no grants means no
+	// account may reach a share, no way to name an account means every grant
+	// is attributed to nobody, and no share registry means there is nothing to
+	// attach a list to. Each answers nothing rather than a share with no
+	// account list, which in that format is a share open to everyone.
+	if d.Grants == nil || d.Names == nil || d.Core == nil {
 		return nil, nil
 	}
 	grants, err := d.Grants(ctx)
@@ -171,7 +176,10 @@ func shareDefs(ctx context.Context, d Deps) ([]smb.ShareDef, error) {
 		if g.Subpath.Len() > 0 || g.User == 0 {
 			continue
 		}
-		name, uerr := userName(ctx, d, g.User)
+		// An account whose name cannot be resolved is skipped rather than
+		// rendered with an empty one, which is a name the daemon cannot look
+		// up and a grant that silently does nothing.
+		name, uerr := d.Names(ctx, g.User)
 		if uerr != nil || name == "" {
 			continue
 		}
@@ -219,14 +227,6 @@ func shareDefs(ctx context.Context, d Deps) ([]smb.ShareDef, error) {
 	// unchanged case actually happens.
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
-}
-
-// userName resolves an account id to the name the rendered files use.
-func userName(ctx context.Context, d Deps, id int64) (string, error) {
-	if d.Names == nil {
-		return "", nil
-	}
-	return d.Names(ctx, id)
 }
 
 // policyFile is the two flags the agent reads to decide the network scope.
