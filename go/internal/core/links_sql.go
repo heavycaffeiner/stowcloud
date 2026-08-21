@@ -101,12 +101,30 @@ type LinkCipher interface {
 // one.
 type passwordVerifier func(ctx context.Context, enc, candidate string) (bool, error)
 
-// AttachLinkCrypto wires the master-key cipher and the password path. Both are
-// one call because they are one feature: share links that cannot open their
-// own tokens or check their own passwords are not a partial feature.
-func (c *Core) AttachLinkCrypto(cipher LinkCipher, verify passwordVerifier) {
+// passwordHasher is the other half. A link password has to be hashed before it
+// reaches a row, and the hashing is the auth service's: it owns the parameters,
+// the gate that bounds how many run at once, and the format the verifier reads.
+type passwordHasher func(ctx context.Context, plain string) (string, error)
+
+// AttachLinkCrypto wires the master-key cipher and the password path. They are
+// one call because they are one feature: share links that cannot open their own
+// tokens, hash their own passwords or check them are not a partial feature.
+func (c *Core) AttachLinkCrypto(cipher LinkCipher, hash passwordHasher, verify passwordVerifier) {
 	c.linkCipher = cipher
+	c.hashLinkPw = hash
 	c.verifyLinkPw = verify
+}
+
+// hashLinkPassword routes to the attached hasher, failing closed when none was
+// wired rather than storing what it was handed.
+//
+// Failing closed matters more here than anywhere else on this path: the value
+// is a password, and the fallback nobody notices is writing it down.
+func (c *Core) hashLinkPassword(ctx context.Context, plain string) (string, error) {
+	if c.hashLinkPw == nil {
+		return "", errors.New("no password hasher is attached")
+	}
+	return c.hashLinkPw(ctx, plain)
 }
 
 // verifyLinkPassword routes to the attached verifier, failing closed when
@@ -248,3 +266,16 @@ func (c *Core) scanLink(row scanner) (Link, error) {
 	}
 	return l, nil
 }
+
+// The update statements, one column each. One statement per field rather than
+// a built one: a statement assembled from the fields a patch happens to carry
+// is a statement whose text depends on input, which is what every statement
+// here being a constant exists to prevent.
+const (
+	sqlUpdateLinkPerms    = `UPDATE share_link SET perms = ? WHERE id = ?`
+	sqlUpdateLinkPassword = `UPDATE share_link SET password_hash = ? WHERE id = ?` //nolint:gosec // G101 reads the identifier: this is a statement, not a credential.
+	sqlUpdateLinkExpiry   = `UPDATE share_link SET expires_ns = ? WHERE id = ?`
+	sqlUpdateLinkMaxDown  = `UPDATE share_link SET max_downloads = ? WHERE id = ?`
+	sqlUpdateLinkLabel    = `UPDATE share_link SET label = ? WHERE id = ?`
+	sqlUpdateLinkNote     = `UPDATE share_link SET note = ? WHERE id = ?`
+)

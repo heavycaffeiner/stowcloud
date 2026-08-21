@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
@@ -195,15 +196,73 @@ func sanitizeFilename(name string) string {
 
 // LinkUpdate answers PATCH /api/shares/{id}.
 //
-// The core has no update for a link: it can mint one and delete one, and
-// changing a live link's expiry or password is a write nothing implements.
-// Answering honestly beats accepting the request and reporting a change that
-// did not happen, which is what a client would show the person who made it.
+// Widening the permissions re-checks against what the owner may do now rather
+// than what they could when the link was minted. A grant revoked since then
+// must not be re-widened through an update.
 func LinkUpdate(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		if _, cerr := userOf(r); cerr != nil {
+		uid, cerr := userOf(r)
+		if cerr != nil {
 			return cerr
 		}
-		return notImplemented("shares.update_unavailable")
+		id, perr := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if perr != nil {
+			return apierr.BadRequest("shares.bad_id", "id")
+		}
+
+		// Every field is a pointer, so a field the client left out is left
+		// alone. The two that can also be cleared are pointers to pointers,
+		// because "leave the expiry" and "remove the expiry" are different
+		// requests and one nil cannot say both.
+		var req struct {
+			Perms    *uint16 `json:"perms"`
+			Password *string `json:"password"`
+			Expires  *string `json:"expires_ns"`
+			MaxDown  *int32  `json:"max_downloads"`
+			Label    *string `json:"label"`
+			Note     *string `json:"note"`
+		}
+		raw, rerr := readBody(r)
+		if rerr != nil {
+			return rerr
+		}
+		if uerr := json.Unmarshal(raw, &req); uerr != nil {
+			return apierr.BadRequest("shares.bad_patch", "body")
+		}
+		// Which keys were present at all, which is what tells a clear apart
+		// from an omission.
+		var present map[string]json.RawMessage
+		if uerr := json.Unmarshal(raw, &present); uerr != nil {
+			return apierr.BadRequest("shares.bad_patch", "body")
+		}
+
+		patch := core.LinkPatch{Label: req.Label, Note: req.Note}
+		if req.Perms != nil {
+			p := acl.Perms(*req.Perms)
+			patch.Perms = &p
+		}
+		if _, ok := present["password"]; ok {
+			patch.Password = &req.Password
+		}
+		if _, ok := present["max_downloads"]; ok {
+			patch.MaxDown = &req.MaxDown
+		}
+		if _, ok := present["expires_ns"]; ok {
+			var exp *int64
+			if req.Expires != nil {
+				n, cerr := strconv.ParseInt(*req.Expires, 10, 64)
+				if cerr != nil {
+					return apierr.BadRequest("shares.bad_expiry", "expires_ns")
+				}
+				exp = &n
+			}
+			patch.Expires = &exp
+		}
+
+		link, uerr := d.Core.UpdateLink(r.Context(), uid, id, patch)
+		if uerr != nil {
+			return uerr
+		}
+		return writeJSON(w, http.StatusOK, linkToResponse(d, uid, link))
 	})
 }

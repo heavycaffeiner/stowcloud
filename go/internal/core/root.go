@@ -64,6 +64,7 @@ type Core struct {
 	// attached by the server from the loaded master key. A Core without them
 	// cannot mint or open a token and fails a check rather than passing one.
 	linkCipher   LinkCipher
+	hashLinkPw   passwordHasher
 	verifyLinkPw passwordVerifier
 }
 

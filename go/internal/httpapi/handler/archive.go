@@ -69,18 +69,3 @@ func Recent(d Deps) http.HandlerFunc {
 			Code: apierr.CodeNotImplemented, Message: "not implemented in this build", Key: "recent.unavailable"}
 	})
 }
-
-// ArchiveCreate answers POST /api/fs/archive: pack the named paths.
-//
-// The core walks an archive for reading and has no writer, so packing is not
-// something this build can do. It answers as much rather than accepting the
-// request and returning a job id for work nothing performs, which a client
-// would poll until it gave up.
-func ArchiveCreate(d Deps) http.HandlerFunc {
-	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		if _, cerr := userOf(r); cerr != nil {
-			return cerr
-		}
-		return notImplemented("archive.create_unavailable")
-	})
-}

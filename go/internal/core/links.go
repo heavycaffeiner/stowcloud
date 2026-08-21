@@ -118,6 +118,19 @@ func (c *Core) CreateLink(ctx context.Context, r Resolved, spec LinkSpec) (Link,
 		present, btime = int64(1), *st.BtimeNs
 	}
 
+	// The password is hashed before it reaches the row. It was stored as it
+	// arrived, which the verifier then compared a candidate against as though
+	// it were a hash, so every password-protected link refused its own
+	// password and the plaintext sat in the database.
+	var pwHash *string
+	if spec.Password != nil {
+		h, herr := c.hashLinkPassword(ctx, *spec.Password)
+		if herr != nil {
+			return Link{}, secret.Secret{}, herr
+		}
+		pwHash = &h
+	}
+
 	token, err := mintToken()
 	if err != nil {
 		return Link{}, secret.Secret{}, err
@@ -138,7 +151,7 @@ func (c *Core) CreateLink(ctx context.Context, r Resolved, spec LinkSpec) (Link,
 		res, ierr := tx.ExecContext(ctx, sqlInsertShareLink,
 			th, sealed, ver, int64(r.share), r.path.String(),
 			dev, ino, present, btime, int64(r.user), int64(spec.Perms),
-			passwordArg(spec.Password), expiryArg(spec.Expires), maxDownArg(spec.MaxDown),
+			passwordArg(pwHash), expiryArg(spec.Expires), maxDownArg(spec.MaxDown),
 			stringArg(spec.Label), stringArg(spec.Note), created)
 		if ierr != nil {
 			return ierr
@@ -468,3 +481,118 @@ func sameIdent(st vfs.Stat, l Link) bool {
 	return st.Dev == uint64(*l.dev) && st.Ino == uint64(*l.ino) && //nolint:gosec // G115 reads the conversions: the values are the bit patterns stored by the crossing above.
 		st.BtimeNs != nil && *st.BtimeNs == *l.btime
 }
+
+// LinkPatch is what an update may change. A nil field is left alone, which is
+// what lets a screen edit one thing without resetting the rest.
+//
+// A pointer to a nil value clears: an expiry of nil removes the expiry, and a
+// password of nil removes the password. The two shapes are needed because
+// "leave it" and "remove it" are different requests.
+type LinkPatch struct {
+	Perms    *acl.Perms
+	Password **string
+	Expires  **int64
+	MaxDown  **int32
+	Label    *string
+	Note     *string
+}
+
+// UpdateLink changes a live link.
+//
+// Widening the permissions re-checks against the creator's access as it is
+// now, not as it was when the link was minted. A grant revoked since then must
+// not be re-widened through an update: the link is a delegation of access the
+// creator currently holds, and an update is the moment to ask again.
+func (c *Core) UpdateLink(ctx context.Context, owner UserID, id int64, patch LinkPatch) (Link, error) {
+	link, err := c.GetLink(ctx, owner, id)
+	if err != nil {
+		return Link{}, err
+	}
+
+	if patch.Perms != nil {
+		if patch.Perms.IsEmpty() {
+			return Link{}, errf(ErrDenied, "a share link must grant at least one permission")
+		}
+		vp, verr := c.VpathFor(owner, link.Share, link.Path)
+		if verr != nil {
+			return Link{}, verr
+		}
+		// Resolving asks the evaluator for what this account may do there
+		// right now, which is the whole point of re-checking.
+		r, rerr := c.Resolve(owner, vp, acl.Share)
+		if rerr != nil {
+			return Link{}, rerr
+		}
+		if !r.perms.Has(*patch.Perms) {
+			return Link{}, ErrDenied
+		}
+	}
+	if patch.Expires != nil && *patch.Expires != nil && **patch.Expires <= c.clk.Nanos() {
+		return Link{}, errf(ErrDenied, "expiry is in the past")
+	}
+
+	// The password is hashed here for the same reason it is at creation: what
+	// reaches the row is never the plaintext.
+	var pwArg any = noChange{}
+	if patch.Password != nil {
+		if *patch.Password == nil {
+			pwArg = nil
+		} else {
+			h, herr := c.hashLinkPassword(ctx, **patch.Password)
+			if herr != nil {
+				return Link{}, herr
+			}
+			pwArg = h
+		}
+	}
+
+	err = c.state.Write(ctx, func(tx *sql.Tx) error {
+		if patch.Perms != nil {
+			if _, eerr := tx.ExecContext(ctx, sqlUpdateLinkPerms, int64(*patch.Perms), id); eerr != nil {
+				return eerr
+			}
+		}
+		if _, skip := pwArg.(noChange); !skip {
+			if _, eerr := tx.ExecContext(ctx, sqlUpdateLinkPassword, pwArg, id); eerr != nil {
+				return eerr
+			}
+		}
+		if patch.Expires != nil {
+			var v any
+			if *patch.Expires != nil {
+				v = **patch.Expires
+			}
+			if _, eerr := tx.ExecContext(ctx, sqlUpdateLinkExpiry, v, id); eerr != nil {
+				return eerr
+			}
+		}
+		if patch.MaxDown != nil {
+			var v any
+			if *patch.MaxDown != nil {
+				v = int64(**patch.MaxDown)
+			}
+			if _, eerr := tx.ExecContext(ctx, sqlUpdateLinkMaxDown, v, id); eerr != nil {
+				return eerr
+			}
+		}
+		if patch.Label != nil {
+			if _, eerr := tx.ExecContext(ctx, sqlUpdateLinkLabel, *patch.Label, id); eerr != nil {
+				return eerr
+			}
+		}
+		if patch.Note != nil {
+			if _, eerr := tx.ExecContext(ctx, sqlUpdateLinkNote, *patch.Note, id); eerr != nil {
+				return eerr
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return Link{}, err
+	}
+	return c.GetLink(ctx, owner, id)
+}
+
+// noChange distinguishes "this field was not in the patch" from "this field is
+// being set to nothing", which a plain nil cannot.
+type noChange struct{}

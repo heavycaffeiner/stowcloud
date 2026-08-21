@@ -19,6 +19,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
+	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/server"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 	"github.com/heavycaffeiner/stowcloud/go/internal/task"
@@ -163,7 +164,8 @@ func runServe(args []string, stderr io.Writer) int {
 	}()
 
 	authSvc := auth.New(auth.Config{Store: st.State(), StoreDir: cfg.DataDir, Clock: clk})
-	if _, kerr := authSvc.OpenMasterKey(ctx); kerr != nil {
+	masterKey, kerr := authSvc.OpenMasterKey(ctx)
+	if kerr != nil {
 		say(stderr, "stowcloud %s: serve: the master key: %v\n", version, kerr)
 		return exitConfig
 	}
@@ -181,6 +183,25 @@ func runServe(args []string, stderr io.Writer) int {
 		say(stderr, "stowcloud %s: serve: the core domain: %v\n", version, cerr)
 		return exitConfig
 	}
+	// Share links need the master key to open their own tokens and the auth
+	// service to hash and check their passwords. Nothing called this, so a
+	// password-protected link could not be created and a link URL could not be
+	// listed again: both failed closed, which is the right failure and still a
+	// feature that did not work.
+	// The active key, not the version: the version travels with each row and
+	// the cipher reads it from there, which is what lets a rotation leave
+	// older rows readable.
+	activeKey, _ := masterKey.Active()
+	coreSvc.AttachLinkCrypto(
+		auth.NewLinkCipher(activeKey),
+		func(c context.Context, plain string) (string, error) {
+			return authSvc.Hash(c, secret.New([]byte(plain)))
+		},
+		func(c context.Context, enc, candidate string) (bool, error) {
+			ok, _, verr := authSvc.Verify(c, enc, secret.New([]byte(candidate)))
+			return ok, verr
+		},
+	)
 	// Admin-created shares live in the state database; a restart must re-open
 	// them under the same ids the running process used.
 	rejectedShares, rerr := coreSvc.ReloadPersistedShares(ctx)

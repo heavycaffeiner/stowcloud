@@ -146,5 +146,8 @@
 # conversion, and the address the kernel takes a filter by.
 # Phase 13's route work added three: two hash writes that cannot fail in the
 # sign-in challenge, and one in the settings document reader.
-202
+# The archive writer and the link update added eight: six width conversions in
+# the zip format, each bounded on the line above it, one statement naming a
+# credential column, and one hash write that cannot fail.
+210
 
