@@ -121,18 +121,23 @@ func envOr(key, fallback string) string {
 // The values come from the environment because they are minted per run: a
 // session token written into the corpus is a token that is wrong on every run
 // but the one that produced it.
-func applyAuth(req *http.Request, kind string) {
+func applyAuth(req *http.Request, kind string, cred credential) {
 	switch kind {
 	case "", "none":
 		return
 	case "session", "session-no-origin":
-		token := os.Getenv("SC_DIFFER_SESSION")
-		if token == "" {
+		// The cookie arrives as name=value, per side, because the two
+		// implementations do not agree on the name: one carries the
+		// host-locked prefix and the other does not. One value for both sends
+		// each side something it ignores, and two unauthenticated answers
+		// match.
+		name, value, ok := strings.Cut(cred.Cookie, "=")
+		if !ok || value == "" {
 			return
 		}
-		req.AddCookie(&http.Cookie{Name: "sc_session", Value: token})
-		if csrf := os.Getenv("SC_DIFFER_CSRF"); csrf != "" {
-			req.Header.Set("Sc-Csrf", csrf)
+		req.AddCookie(&http.Cookie{Name: name, Value: value})
+		if cred.CSRF != "" {
+			req.Header.Set("Sc-Csrf", cred.CSRF)
 		}
 		if kind == "session" && req.Header.Get("Origin") == "" {
 			req.Header.Set("Origin", "https://"+req.Host)

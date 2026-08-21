@@ -1,0 +1,172 @@
+{
+  "group": "admin",
+  "note": "The surfaces the administrator screens call. Every one of these was unmounted on the Go build until Phase 13, so this group exists to compare them against the implementation that had them.",
+  "requests": [
+    {
+      "name": "the account list, unauthenticated",
+      "method": "GET",
+      "path": "/api/admin/users",
+      "auth": "none"
+    },
+    {
+      "name": "the account list",
+      "method": "GET",
+      "path": "/api/admin/users",
+      "auth": "session"
+    },
+    {
+      "name": "an account that does not exist",
+      "method": "PATCH",
+      "path": "/api/admin/users/999999",
+      "auth": "session",
+      "headers": { "Content-Type": "application/json" },
+      "body": "{\"disabled\":true}"
+    },
+    {
+      "name": "an account id that is not one",
+      "method": "PATCH",
+      "path": "/api/admin/users/not-a-number",
+      "auth": "session",
+      "headers": { "Content-Type": "application/json" },
+      "body": "{\"disabled\":true}"
+    },
+    {
+      "name": "the group list",
+      "method": "GET",
+      "path": "/api/admin/groups",
+      "auth": "session"
+    },
+    {
+      "name": "a group with no name",
+      "method": "POST",
+      "path": "/api/admin/groups",
+      "auth": "session",
+      "headers": { "Content-Type": "application/json" },
+      "body": "{\"name\":\"\"}"
+    },
+    {
+      "name": "a group that does not exist",
+      "method": "DELETE",
+      "path": "/api/admin/groups/999999",
+      "auth": "session"
+    },
+    {
+      "name": "the grant list",
+      "method": "GET",
+      "path": "/api/admin/grants",
+      "auth": "session"
+    },
+    {
+      "name": "the grant list, narrowed",
+      "method": "GET",
+      "path": "/api/admin/grants?user=1",
+      "auth": "session"
+    },
+    {
+      "name": "a grant naming neither an account nor a group",
+      "method": "POST",
+      "path": "/api/admin/grants",
+      "auth": "session",
+      "headers": { "Content-Type": "application/json" },
+      "body": "{\"share\":1,\"subpath\":\"\",\"allow\":[\"read\"],\"deny\":[],\"inherit\":true}"
+    },
+    {
+      "name": "a grant naming both",
+      "method": "POST",
+      "path": "/api/admin/grants",
+      "auth": "session",
+      "headers": { "Content-Type": "application/json" },
+      "body": "{\"user\":1,\"group\":1,\"share\":1,\"subpath\":\"\",\"allow\":[\"read\"],\"deny\":[],\"inherit\":true}"
+    },
+    {
+      "name": "a grant naming a permission nobody defines",
+      "method": "POST",
+      "path": "/api/admin/grants",
+      "auth": "session",
+      "headers": { "Content-Type": "application/json" },
+      "body": "{\"user\":1,\"share\":1,\"subpath\":\"\",\"allow\":[\"become-root\"],\"deny\":[],\"inherit\":true}"
+    },
+    {
+      "name": "a grant that does not exist",
+      "method": "DELETE",
+      "path": "/api/admin/grants/999999",
+      "auth": "session"
+    },
+    {
+      "name": "the storage report",
+      "method": "GET",
+      "path": "/api/admin/storage",
+      "auth": "session"
+    },
+    {
+      "name": "the audit log",
+      "method": "GET",
+      "path": "/api/admin/audit",
+      "auth": "session"
+    },
+    {
+      "name": "the audit log, bounded",
+      "method": "GET",
+      "path": "/api/admin/audit?limit=5",
+      "auth": "session"
+    },
+    {
+      "name": "the server settings",
+      "method": "GET",
+      "path": "/api/admin/server-settings",
+      "auth": "session"
+    },
+    {
+      "name": "a settings section nobody defines",
+      "method": "DELETE",
+      "path": "/api/admin/server-settings/not-a-section",
+      "auth": "session"
+    },
+    {
+      "name": "the index settings",
+      "method": "GET",
+      "path": "/api/admin/index/settings",
+      "auth": "session"
+    },
+    {
+      "name": "the app passwords",
+      "method": "GET",
+      "path": "/api/auth/app-passwords",
+      "auth": "session"
+    },
+    {
+      "name": "the recovery-code count",
+      "method": "GET",
+      "path": "/api/auth/totp/recovery-codes",
+      "auth": "session"
+    },
+    {
+      "name": "changing a password with the wrong current one",
+      "method": "POST",
+      "path": "/api/auth/password",
+      "auth": "session",
+      "headers": { "Content-Type": "application/json" },
+      "body": "{\"current_password\":\"not-the-password\",\"new_password\":\"whatever-else\",\"revoke_other_sessions\":false}"
+    },
+    {
+      "name": "the second factor with a challenge nobody minted",
+      "method": "POST",
+      "path": "/api/auth/login/totp",
+      "auth": "none",
+      "headers": { "Content-Type": "application/json" },
+      "body": "{\"challenge\":\"AAAA.BBBB\",\"code\":\"000000\"}"
+    },
+    {
+      "name": "the jobs in flight",
+      "method": "GET",
+      "path": "/api/jobs",
+      "auth": "session"
+    },
+    {
+      "name": "the share links",
+      "method": "GET",
+      "path": "/api/shares",
+      "auth": "session"
+    }
+  ]
+}

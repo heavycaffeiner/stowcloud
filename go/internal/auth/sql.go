@@ -164,6 +164,10 @@ FROM session WHERE user = ? ORDER BY last_seen_ns DESC`
 )
 
 // The audit page, newest first. Bounded by the caller; see AuditPage.
+// The three optional columns read as the empty string. They are nullable
+// because a row can be written before an address or an agent is known, and
+// reading one into a plain string turned the whole log into a server error.
 const sqlReadAuditPage = `
-SELECT rowid, ts_ns, actor, event, target, ip, ua, result
+SELECT rowid, ts_ns, actor, event,
+       COALESCE(target, ''), COALESCE(ip, ''), COALESCE(ua, ''), result
 FROM audit ORDER BY rowid DESC LIMIT ?`

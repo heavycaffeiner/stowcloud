@@ -4,6 +4,7 @@ package dav
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -39,7 +40,19 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, res core.Resolved,
 		return
 	}
 
-	entry, stream, err := h.core.OpenStream(r.Context(), res, nil)
+	// A range, if the client asked for one. The header was advertised as
+	// supported and ignored, so a client asking for the tail of a file was
+	// handed the whole file with a success status, which a resuming download
+	// reads as the server restarting the transfer.
+	rng, rerr := parseByteRange(r.Header.Get("Range"), e.Size)
+	if rerr != nil {
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("Content-Range", "bytes */"+strconv.FormatUint(e.Size, 10))
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
+
+	entry, stream, err := h.core.OpenStream(r.Context(), res, rng)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -56,11 +69,16 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request, res core.Resolved,
 	w.Header().Set("Content-Length", strconv.FormatUint(stream.Remaining(), 10))
 	w.Header().Set("Accept-Ranges", "bytes")
 
+	status := http.StatusOK
+	if rng != nil {
+		status = http.StatusPartialContent
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", rng[0], rng[1], e.Size))
+	}
 	if !body {
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(status)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	w.WriteHeader(status)
 	if _, cerr := io.Copy(w, stream); cerr != nil {
 		// The status is already sent, so this cannot become an error response.
 		h.logger(r).Warn("the body could not be completed", "error", cerr)
@@ -347,3 +365,60 @@ func parseValidator(h string) (*core.Token, bool) {
 }
 
 var errUnsupportedMedia = errors.New("dav: a body in a request that defines none")
+
+// parseByteRange reads the one range shape this surface serves.
+//
+// A single range in bytes, with both ends or an open end. Anything else is
+// unsatisfiable rather than approximated: a multi-range response is a
+// different document format, and answering one range to a request for three is
+// a client silently missing two.
+//
+// A nil range with a nil error means the client asked for the whole file.
+func parseByteRange(raw string, size uint64) (*[2]uint64, error) {
+	if raw == "" {
+		return nil, nil
+	}
+	if !strings.HasPrefix(raw, "bytes=") || strings.Contains(raw, ",") {
+		return nil, errUnsatisfiableRange
+	}
+	startS, endS, ok := strings.Cut(strings.TrimPrefix(raw, "bytes="), "-")
+	if !ok {
+		return nil, errUnsatisfiableRange
+	}
+
+	// A suffix range asks for the last n bytes and names no start.
+	if startS == "" {
+		n, err := strconv.ParseUint(endS, 10, 64)
+		if err != nil || n == 0 {
+			return nil, errUnsatisfiableRange
+		}
+		if n > size {
+			n = size
+		}
+		out := [2]uint64{size - n, size - 1}
+		return &out, nil
+	}
+
+	start, err := strconv.ParseUint(startS, 10, 64)
+	if err != nil || start >= size {
+		// A start at or past the end is the case the status exists for.
+		return nil, errUnsatisfiableRange
+	}
+	end := size - 1
+	if endS != "" {
+		end, err = strconv.ParseUint(endS, 10, 64)
+		if err != nil || end < start {
+			return nil, errUnsatisfiableRange
+		}
+		if end >= size {
+			end = size - 1
+		}
+	}
+	out := [2]uint64{start, end}
+	return &out, nil
+}
+
+// errUnsatisfiableRange is a range this surface cannot serve. The caller
+// answers with the status that names it and the file's real size, which is
+// what lets a client ask again correctly.
+var errUnsatisfiableRange = errors.New("dav: unsatisfiable range")

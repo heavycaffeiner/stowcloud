@@ -810,3 +810,65 @@ func TestCopyingACollectionIsAccepted(t *testing.T) {
 		t.Fatalf("status = %d, want 202 for a recursive copy\n%s", rec.Code, rec.Body)
 	}
 }
+
+// A range request has to be answered as a range.
+//
+// The header was advertised as supported and ignored, so a client asking for
+// the tail of a file was handed the whole file with a success status, which a
+// resuming download reads as the server restarting the transfer.
+func TestARangeIsParsedOrRefused(t *testing.T) {
+	const size = 100
+
+	for _, tc := range []struct {
+		raw        string
+		wantStart  uint64
+		wantEnd    uint64
+		wantWhole  bool
+		wantRefuse bool
+	}{
+		{raw: "", wantWhole: true},
+		{raw: "bytes=0-9", wantStart: 0, wantEnd: 9},
+		{raw: "bytes=10-19", wantStart: 10, wantEnd: 19},
+		// An open end runs to the last byte.
+		{raw: "bytes=90-", wantStart: 90, wantEnd: 99},
+		// A suffix range names no start and asks for the last n bytes.
+		{raw: "bytes=-10", wantStart: 90, wantEnd: 99},
+		// A suffix longer than the file is the whole file, not a refusal.
+		{raw: "bytes=-500", wantStart: 0, wantEnd: 99},
+		// An end past the last byte is clamped rather than refused.
+		{raw: "bytes=50-999", wantStart: 50, wantEnd: 99},
+
+		// A start at or past the end is what the refusal exists for.
+		{raw: "bytes=100-", wantRefuse: true},
+		{raw: "bytes=500-600", wantRefuse: true},
+		// Backwards.
+		{raw: "bytes=50-10", wantRefuse: true},
+		// A unit this surface does not serve.
+		{raw: "items=0-9", wantRefuse: true},
+		// Several ranges are a different response format, and answering one of
+		// three is a client silently missing two.
+		{raw: "bytes=0-9,20-29", wantRefuse: true},
+		{raw: "bytes=", wantRefuse: true},
+		{raw: "bytes=-0", wantRefuse: true},
+	} {
+		got, err := parseByteRange(tc.raw, size)
+		switch {
+		case tc.wantRefuse:
+			if err == nil {
+				t.Errorf("%q was accepted as %v, want a refusal", tc.raw, got)
+			}
+		case tc.wantWhole:
+			if err != nil || got != nil {
+				t.Errorf("%q gave %v, %v, want the whole file", tc.raw, got, err)
+			}
+		default:
+			if err != nil {
+				t.Errorf("%q was refused: %v", tc.raw, err)
+				continue
+			}
+			if got == nil || got[0] != tc.wantStart || got[1] != tc.wantEnd {
+				t.Errorf("%q gave %v, want [%d %d]", tc.raw, got, tc.wantStart, tc.wantEnd)
+			}
+		}
+	}
+}

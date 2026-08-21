@@ -73,6 +73,16 @@ func Map(err error) (int, *Error) {
 	// request. It names its own status, code and catalogue key, and it flows
 	// through this function like every other error so that a status is still
 	// chosen in one place.
+	// The body limiter refuses by wrapping the reader, so its refusal arrives
+	// as a read error rather than as one of this package's own. Unmapped it
+	// became a server error: the client was told the server broke when it was
+	// the client that sent too much.
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		return http.StatusRequestEntityTooLarge,
+			NewError(CodeLimitExceeded, msgLimitExceeded, "http.body_too_large")
+	}
+
 	var req *RequestError
 	if errors.As(err, &req) {
 		return req.Status, NewError(req.Code, req.Message, req.Key, req.Args...)

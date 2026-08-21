@@ -53,6 +53,17 @@ func main() {
 		dir     = flag.String("corpus", "corpus", "the corpus directory")
 		host    = flag.String("host", "localhost", "the Host header every request carries")
 		only    = flag.String("group", "", "run one group only")
+		// The credential is per side, because the two implementations do not
+		// agree on the cookie's name and a session minted against one is not
+		// valid on the other. One value for both would send each side
+		// something it ignores, and two unauthenticated answers match.
+		oldCookie = flag.String("old-cookie", "", "reference session, as name=value")
+		newCookie = flag.String("new-cookie", "", "session under test, as name=value")
+		// The token that goes with each session. Without it a state-changing
+		// request is refused by the guard on both sides, which compares two
+		// refusals rather than the two handlers.
+		oldCSRF = flag.String("old-csrf", "", "reference session's request token")
+		newCSRF = flag.String("new-csrf", "", "token for the session under test")
 	)
 	flag.Parse()
 
@@ -85,8 +96,8 @@ func main() {
 	report := &Report{}
 	for _, g := range groups {
 		for _, req := range g.Requests {
-			oldResp, oerr := send(client, *oldBase, *host, req)
-			newResp, nerr := send(client, *newBase, *host, req)
+			oldResp, oerr := send(client, *oldBase, *host, req, credential{*oldCookie, *oldCSRF})
+			newResp, nerr := send(client, *newBase, *host, req, credential{*newCookie, *newCSRF})
 			if oerr != nil || nerr != nil {
 				report.Errors = append(report.Errors, RequestError{
 					Group: g.Group, Name: req.Name,
@@ -168,7 +179,13 @@ type Response struct {
 	Body    []byte
 }
 
-func send(c *http.Client, base, host string, r Request) (*Response, error) {
+// credential is one side's session and the token that goes with it.
+type credential struct {
+	Cookie string
+	CSRF   string
+}
+
+func send(c *http.Client, base, host string, r Request, cred credential) (*Response, error) {
 	var body io.Reader
 	if r.Body != "" {
 		body = strings.NewReader(expand(r.Body))
@@ -184,7 +201,7 @@ func send(c *http.Client, base, host string, r Request) (*Response, error) {
 	for k, v := range r.Headers {
 		req.Header.Set(k, v)
 	}
-	applyAuth(req, r.Auth)
+	applyAuth(req, r.Auth, cred)
 
 	resp, err := c.Do(req)
 	if err != nil {
