@@ -12,8 +12,9 @@ web/build
 *.qcow2
 *.log
 .env
-/.smoke
 /.demo
+# The development server's scratch tree: its data directory, its shares, the
+# binary it builds and its log. scripts/dev.sh makes it.
 /.dev
 # Runtime state the testbed compose stack creates beside its own file.
 /deploy/testbed/data
