@@ -322,6 +322,11 @@ discovering it.
 **Reopen by** Phase 13, which either mounts it or reports it as a gap it could
 not close.
 
+**Closed.** Mounted: six routes under `/api/uploads`, including the two
+`OPTIONS` discovery requests. `routecheck` compares them against the client's
+own transport, which is what caught that the transport lives outside the
+directory the check was reading.
+
 ---
 
 ## Q8. Which phase mounts the WebDAV and compat surfaces
@@ -367,6 +372,14 @@ not shipped anything. Every future subsystem phase should end at a mounted
 route with a request reaching it, not at a package boundary.
 
 **Reopen by** Phase 13, which mounts them or reports what it could not.
+
+**Closed.** Both are mounted: WebDAV under `/dav` through `davmount.go`, and
+the compat surface through `compatRoutes` behind its build tag. The conformance
+run and the differ both reached them, which is what the answer was taken for.
+
+The general lesson above is now enforced rather than remembered: `routecheck`
+fails a build where the client calls a path the server does not mount, so a
+phase that ends at a package boundary fails the gate rather than passing it.
 
 ---
 
@@ -433,6 +446,30 @@ Cutover is blocked until that gate is green. Deleting `crates/` while the
 replacement cannot serve a login is not a cutover.
 
 **Reopen by** the gate landing, then Phases 3, 5, 8, 11 in turn.
+
+**Closed.** All three conditions are met. The gate is
+`go/tools/routecheck`, it runs in `scripts/verify.sh`, and it is green: the
+client calls 95 paths and every one is mounted. The routes were built back into
+the phases that own them rather than into the cutover phase, which is option 2
+as taken.
+
+The gate found more than the 39 it was built for, and each addition came from
+the check being wrong rather than the server:
+
+- Comparing paths alone missed six routes mounted under a verb the client does
+  not send. It compares the verb now.
+- Reading one client module missed the streaming search, which no route served.
+  It reads every module in the directory.
+- Reading one directory missed the resumable upload transport, which lives in a
+  sibling. It walks the tree.
+- Its call pattern did not match `request<T>(...)`, so eleven routes read as
+  uncalled in the reverse direction.
+
+It compares both directions now. A path the client calls and the server does
+not mount fails the gate; a route the server mounts that no client calls is
+reported and recorded in `go/routes.server-only` with the caller it exists for,
+because a sync client and an operator call routes the web interface has no
+screen for.
 
 ---
 

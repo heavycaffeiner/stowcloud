@@ -137,5 +137,7 @@ rather than the subject's.
 
 Chasing it found a real defect on the other side: the Go build mounted login on
 the change-password path, so the shipped interface could not sign in, and 41 of
-the paths its own client calls are not mounted at all. That is Q9 in
-`OPEN-QUESTIONS.md`, and it is what blocks cutover.
+the paths its own client calls were not mounted at all. That is Q9 in
+`proposals/OPEN-QUESTIONS.md`, which is now closed: the routes were built and
+`go/tools/routecheck` is the gate that says so, comparing the client's calls
+against the route table on every run.
