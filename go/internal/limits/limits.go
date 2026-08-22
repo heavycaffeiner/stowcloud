@@ -140,6 +140,27 @@ const JournalRowsPerAccount = 1_000
 // ArchiveEntriesListed truncates rather than refusing, and the response says so.
 const ArchiveEntriesListed = 10_000
 
+// The bounds on what one archive request may pack.
+//
+// ArchiveEntriesListed bounds how many paths a request may name and says
+// nothing about what those paths contain, so one path naming a large tree is
+// an unbounded response. These two bound the walk itself.
+//
+// Neither refuses. The status is committed on the first byte, so the archive
+// ends early and carries an entry saying it was cut: a caller receives a valid
+// archive that says it is short rather than a stream that stops without
+// explanation.
+const (
+	// ArchivePackedEntries bounds how many entries one archive holds,
+	// directories included.
+	ArchivePackedEntries = 200_000
+
+	// ArchivePackedBytes bounds the file bytes one archive copies. It is the
+	// bound that matters for a connection's lifetime: entries are cheap and
+	// bytes are the wait.
+	ArchivePackedBytes = 32 << 30
+)
+
 // WorkerWireMessage is the ceiling on one message on the preview worker's
 // socket. A peer that exceeds it is killed rather than answered: it is the
 // least trusted process in the system.

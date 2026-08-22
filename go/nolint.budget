@@ -163,5 +163,8 @@
 # what a provider does. Two more: the route checker reading the client directory
 # it was pointed at, and the search stream writing an event to a response that
 # is already committed.
-247
+# The repairs from the risk list added one: the index build dividing its own
+# file count by its own elapsed nanoseconds to report the rate it measured,
+# both of which the line above it checks are positive.
+248
 

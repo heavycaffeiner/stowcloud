@@ -15,6 +15,28 @@ import (
 // in the database and not in the process serving requests is a permission
 // decision that depends on which half was asked, and the window is exactly as
 // long as nobody notices.
+//
+// The same applies to the other protocol. A whole-share grant becomes an
+// account list in the SMB configuration, so a write here that stops at this
+// process leaves the daemon serving the previous list: a revocation the admin
+// screen reports as done, and access that is still live.
+
+// grantsChanged reloads the evaluator and republishes SMB.
+//
+// Both, always, and in that order: the evaluator is what this server enforces
+// with and a stale one is wrong now, while the SMB push is a second surface
+// that has to catch up. A publish failure does not fail the request, because
+// the grant is already committed and the web surface is already enforcing it;
+// it is recorded as a degradation instead.
+func grantsChanged(r *http.Request, d Deps) error {
+	if err := d.ReloadACL(r.Context()); err != nil {
+		return err
+	}
+	if d.SMBChanged != nil {
+		d.SMBChanged(r.Context())
+	}
+	return nil
+}
 
 // adminGrant is one grant as the admin screen reads it.
 type adminGrant struct {
@@ -92,7 +114,7 @@ func AdminGrants(d Deps) http.HandlerFunc {
 			}
 			return cerr
 		}
-		if rerr := d.ReloadACL(r.Context()); rerr != nil {
+		if rerr := grantsChanged(r, d); rerr != nil {
 			return rerr
 		}
 		return writeJSON(w, http.StatusCreated, toAdminGrant(g))
@@ -114,7 +136,7 @@ func AdminGrant(d Deps) http.HandlerFunc {
 			if derr := acl.DeleteGrant(r.Context(), d.State.SQL(), id); derr != nil {
 				return grantError(derr)
 			}
-			if rerr := d.ReloadACL(r.Context()); rerr != nil {
+			if rerr := grantsChanged(r, d); rerr != nil {
 				return rerr
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -142,7 +164,7 @@ func AdminGrant(d Deps) http.HandlerFunc {
 		if uerr := acl.UpdateGrant(r.Context(), d.State.SQL(), id, allow, deny, inherit); uerr != nil {
 			return grantError(uerr)
 		}
-		if rerr := d.ReloadACL(r.Context()); rerr != nil {
+		if rerr := grantsChanged(r, d); rerr != nil {
 			return rerr
 		}
 

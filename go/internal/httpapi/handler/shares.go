@@ -12,6 +12,23 @@ import (
 // The admin folder-share surface: create, list, update and delete the shares
 // an administrator owns. Every route here is access-gated to the admin role
 // by the requirement the route table declares; the handlers only do the work.
+//
+// Every write here republishes SMB. A share is a section in that
+// configuration, so adding, renaming, repointing or removing one that stops in
+// this process leaves the daemon serving the previous set: a share deleted
+// here and still reachable there.
+
+// sharesChanged tells SMB the share set moved.
+//
+// A publish failure does not fail the request. The share is already written
+// and this server is already serving the new set; what is behind is the second
+// surface, and that is recorded as a degradation rather than turned into a
+// refusal for a change that already happened.
+func sharesChanged(r *http.Request, d Deps) {
+	if d.SMBChanged != nil {
+		d.SMBChanged(r.Context())
+	}
+}
 
 type shareRequest struct {
 	Name         string `json:"name"`
@@ -69,6 +86,7 @@ func Shares(d Deps) http.HandlerFunc {
 		if err != nil {
 			return err
 		}
+		sharesChanged(r, d)
 		return writeJSON(w, http.StatusCreated, shareResponse{ID: int64(share.ID), Name: share.Name, TrashEnabled: share.TrashEnabled})
 	})
 }
@@ -98,6 +116,7 @@ func ShareUpdate(d Deps) http.HandlerFunc {
 		if err != nil {
 			return err
 		}
+		sharesChanged(r, d)
 		return writeJSON(w, http.StatusOK, shareResponse{ID: int64(share.ID), Name: share.Name, TrashEnabled: share.TrashEnabled})
 	})
 }
@@ -115,6 +134,7 @@ func ShareDelete(d Deps) http.HandlerFunc {
 		if err := d.Core.DeleteShare(r.Context(), shareIDOf(id)); err != nil {
 			return err
 		}
+		sharesChanged(r, d)
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	})

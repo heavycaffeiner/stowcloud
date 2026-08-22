@@ -1,11 +1,8 @@
 # What is likely to break, and what to fix
 
-Written after the work that finished the port: the SMB sidecar agent, the
-surfaces that answered "not implemented", and the route mounting that finishing
-them uncovered.
-
-It is not a summary of that work. It is what a person maintaining this should
-know before something goes wrong, in the order of how much it will cost them.
+Written after the work that finished the port, then revised after the repairs
+that work identified. It is what a person maintaining this should know before
+something goes wrong, in the order of how much it will cost them.
 
 Every entry is a fact checked against the tree rather than a recollection.
 Where something is unverified it says so, because the whole value of a document
@@ -13,8 +10,8 @@ like this is that its uncertainties are marked.
 
 ## The pattern that produced almost every defect
 
-Nine separate failures in this work were the same shape, and it is worth
-naming once rather than nine times.
+Nine separate failures in the work that finished the port were the same shape,
+and it is worth naming once rather than nine times.
 
 **A package that compiles and has no caller is indistinguishable, from inside
 the package, from a package that works.** Its tests pass. Its lint is clean.
@@ -44,178 +41,215 @@ compare two independent descriptions of the same thing: the route table against
 the client, the server against another implementation, the browser against the
 running binary.
 
-## Ranked by what it will cost
+The repairs below were mostly a second instance of the same pattern. `Append`
+and `Tombstone` existed and were tested and nothing called them; `SetIndex` was
+exported for a caller that was never written; the publisher had exactly one
+caller and it was a button.
 
-### 1. Nothing republishes SMB except an administrator pressing a button
+## Repaired
 
-**What is true.** `POST /api/admin/smb/apply` is the only caller of the
-publisher. A grant created or revoked, an account disabled, a share added or
-removed: none of them re-render the SMB configuration or tell the sidecar.
+Each of these was on this list and is not any more. They are kept with what
+made them wrong, because the shape recurs.
 
-**What goes wrong.** An administrator revokes somebody's access and it stays
-live over SMB until somebody happens to apply. Nothing in the interface says
-so. This is the most likely way this codebase produces a security incident,
-because it fails in the permissive direction and silently.
+### SMB publishing is a sink
 
-The credential half is not affected: `republishPassdb` is a sink every
-credential-changing path already calls, so a password change or a disabled
-account does reach the rendered file. It is the **share and grant** half that
-does not.
+**Was**: `POST /api/admin/smb/apply` was the only caller of the publisher. A
+grant created or revoked, an account disabled, a share added or removed: none
+of them re-rendered the configuration or told the sidecar. An administrator
+revoked somebody's access and it stayed live over SMB until somebody happened
+to press apply. It failed in the permissive direction and silently, which is
+the worst pair of properties a revocation path can have.
 
-**The fix.** Call the publisher from the same places `republishPassdb` is
-called from, plus the grant and share write paths. It has to be a sink, for
-exactly the reason that one is: a change that stops at one surface is a change
-that did not happen.
+**Now**: three call sites, and they are sinks rather than steps each path
+remembers.
 
-**Do not** fix this by publishing on a timer. A timer turns a revocation into
-"revoked within N seconds", which is a different promise from the one the admin
-screen implies.
+`internal/auth` gained an optional publisher, set by the command. Every path
+that already rewrote the credential file now also tells the sidecar to import
+it, which matters because smbd does not authenticate against that file: the
+sidecar imports it into the credential database, so a file written with nobody
+told was a revocation that landed whenever something else happened to publish.
 
-### 2. The search index is built once and then goes stale
+The grant and share write paths call it directly, through `grantsChanged` and
+`sharesChanged`. A whole-share grant is an account list in that configuration
+and a share is a section of it, so a write that stopped in this process left
+the daemon serving the previous one.
 
-**What is true.** `POST /api/admin/index/build` walks every share and fills the
-index. Nothing updates it afterwards. The watcher does not append, and nothing
-tombstones a deleted file.
+The server publishes once at startup, because the state can have moved while it
+was not running.
 
-**What goes wrong.** A file created after the build is not in the index, and
-the search never learns that.
+Three properties are load-bearing and each has a test:
 
-The fallback does not help here, and it is worth being exact about why. The
-index falls back to a walk when it *declines* to answer: a query under three
-bytes, or one whose every trigram was pruned. A query it can answer is answered
-from the index alone, and an index missing a file answers without it. There is
-no signal, because from the index's point of view nothing went wrong.
+- **The caller is never failed.** The database write already committed and this
+  server is already enforcing it, so a refusal would report a change that did
+  happen as one that did not. A sidecar that did not answer becomes
+  `smb_stale` on the health endpoint.
+- **The publish is synchronous.** It is the administrator waiting on a
+  revocation reaching the other surface, which is the right person to wait.
+- **The context is detached from the request.** A browser that navigated away
+  mid-publish must not cancel a revocation halfway to the sidecar.
 
-So a stale index returns fewer results with a success status. A person searches
-for a file they created this morning, finds nothing, and concludes it is not
-there. That is a worse failure than an error, because nobody reports it.
+`PublishPassdb` renders and does not call the sink, because the publisher calls
+it: without the split, publishing recurses.
 
-A deleted file is the opposite and is handled: a hit is revalidated by a stat
-before it is returned, so an entry for a file that is gone is dropped.
+### The search index is kept current
 
-**The fix, and it is not just a wire.** `NameIndex.Append` and
-`NameIndex.Tombstone` exist and are tested, but the watcher does not hand over
-what they need. Its events name a *directory* that changed, not the files in
-it, and one event says only that the whole share is stale because events were
-lost. So keeping the index current means re-reading the changed directory and
-diffing it against what the index holds, which is real work rather than a
-connection between two existing pieces.
+**Was**: `POST /api/admin/index/build` filled the index and nothing updated it
+afterwards. A file created after the build was not in the index and the search
+never learned that. This was worse than it sounds because it was silent in both
+directions a person can check: a query the index can answer is answered from
+the index alone, so the result was short with a success status. A person
+searched for a file they created that morning, found nothing, and concluded it
+was not there.
 
-That makes this the one item on this list that is a subsystem rather than a
-missing wire, and it should be scoped as one.
+**Now**: `internal/search/service/update.go`. The watcher's events feed an
+updater that re-reads the named directory and compares it against what the
+index holds, appending and tombstoning only the difference.
 
-**Until then**, either leave the index off, which is the default and makes
-every search a walk that is always current, or rebuild on a schedule and accept
-that a search is complete only as of the last build.
+What it needed was not a wire. The watcher's events name a directory rather
+than the files in it, so the comparison had to be built, and the index could
+not answer "what do you hold for this directory" without reading every entry.
+`BaseSegment.EachUnder` and `NameIndex.ChildrenOf` are that: the segment is in
+tree order, so a directory's subtree is one contiguous run, which makes the
+answer a block-level binary search and a forward scan.
 
-Leaving it off is the better choice until the wire exists. The index is an
-escalation taken when measurement says the walk is not enough, and a walk that
-is slow beats an index that is quietly short.
+Four properties, each tested:
 
-### 3. Turning the index on requires a restart, and the screen does not say so
+- **Only the difference is written.** Re-appending an unchanged listing grows
+  the overlay on every touch of one file, until the merge that collapses it is
+  the only thing the index does.
+- **The queue drops rather than blocks.** Its producer also feeds every
+  connected client's change channel, and an index update must never be what
+  makes a listing go stale in a browser.
+- **A lost-events notification leaves the index alone** and logs. There is
+  nothing to replay, and dropping the index would turn every query into a walk
+  until somebody noticed.
+- **The merge runs on a timer**, not per update. A merge rewrites the base
+  segment.
 
-**What is true.** `serve.go` reads the stored switch once, at startup, and
-attaches the index if it is on. `PATCH /api/admin/index/settings` writes the
-switch and returns `{"name_enabled": true}` with no restart flag.
+The fan-out in `StartWatch` is one goroutine feeding two consumers rather than
+two readers on one channel, which would give each event to exactly one of them.
 
-Every other settings section goes through `applyOutcome`, which reports
-`restart_required` precisely so an administrator is not left wondering. The
-index toggle does not use it.
+**Still true**: the ceiling is unchanged. A build stops at `CorpusScanEntries`
+and a query for what it did not reach falls back to a walk.
 
-**What goes wrong.** An administrator turns the index on, sees success, builds
-it, and searches are still walks. Nothing is broken and nothing says anything.
+### The index switch takes effect without a restart
 
-**The fix.** Either call `Service.SetIndex` from the settings handler, which
-the method exists for and is why it is exported, or return the
-`restart_required` shape the other settings sections use. The first is better;
-the second is honest.
+**Was**: `serve.go` read the stored switch once, at startup.
+`PATCH /api/admin/index/settings` wrote it and returned success. An
+administrator turned the index on, saw a success, built it, and every search
+was still a walk with nothing saying why. `Service.SetIndex` existed and was
+exported for this and was called by nothing.
 
-### 4. The index size and build estimates are guesses presented as numbers
+**Now**: the settings handler applies it in the running process and the
+response carries `restart_required`, which is the shape the other settings
+sections already use. A build that cannot apply it says so rather than
+reporting a plain success.
 
-**What is true.** `EstimateNameIndex` is a real model over a real measured
-corpus: the file count, the name bytes and the distinct-trigram sketch are all
-counted by walking. That part is sound.
+### The build estimate is measured
 
-`indexBuildRate`, however, is a compiled-in constant of 20,000 entries per
-second. Nothing has ever timed a build. The comment now says so; it previously
-claimed the rate came from the walk that had just run, which was false.
+**Was**: `indexBuildRate` was a compiled-in 20,000 entries per second and
+nothing had ever timed a build.
 
-**What goes wrong.** An operator plans around a build time nobody measured. A
-corpus on a slow disk, or one whose names are mostly outside ASCII, will not
-match it.
+**Now**: a completed build records the rate it got, and the estimate uses it.
+The constant remains as the fallback for a deployment where no build has
+finished, and the response carries `build_rate_measured` so an operator knows
+which of the two they were shown.
 
-**The fix.** Have the build report its own rate and store it, then estimate
-from the last real build. Until then the number is a guess and the constant's
-comment says which.
+A build under a second is not recorded: dividing by a fraction of a second
+produces a rate no later build matches.
 
-### 5. The archive stream cannot report a failure that happens partway
+### The archive reports what it could not pack
 
-**What is true.** This is a deliberate design, not an oversight, and it is
-worth understanding before someone "fixes" it.
+**Was**: `_skipped.txt` covered the permission case and nothing covered a read
+that failed partway. A caller got a complete, openable archive missing files,
+with a success status.
 
-An archive streams. The status and headers are committed on the first byte, so
-a failure after that cannot become an error status. The writer is built for
-this: sizes follow the data rather than preceding it, so a file that vanishes
-mid-archive produces a short entry inside a valid archive rather than a corrupt
-one.
+**Now**: both go in `_skipped.txt`. The distinction the handler needed is
+`Writer.Err`: a failed read is one file and the archive goes on, while a failed
+write is the response body gone and everything after it is wasted work. Without
+telling them apart, the first unreadable file dropped every entry after it.
 
-**What goes wrong.** A caller gets a complete, openable archive that is missing
-files, with a success status. The `_skipped.txt` entry covers the permission
-case and nothing covers the vanished-file case.
+The list is bounded at a thousand names, with the rest counted, because it is
+held in memory while the archive streams.
 
-**The fix, if one is wanted.** Add the read failures to `_skipped.txt` the same
-way permission failures are added. The alternative, buffering the archive so a
-failure can be reported, trades a bounded memory cost for an unbounded one and
-should not be taken.
+### The archive is bounded
 
-### 6. `POST /api/fs/archive` has no bound on total bytes
+**Was**: `ArchiveEntriesListed` bounded how many paths a request may name and
+nothing bounded what those paths contain, so one path naming a large tree was
+an unbounded response.
 
-**What is true.** `ArchiveEntriesListed` bounds how many paths a request may
-name. Nothing bounds what those paths contain, so one path naming a large tree
-is an unbounded response.
+**Now**: `ArchivePackedEntries` and `ArchivePackedBytes` in `internal/limits`.
+Neither refuses, because the status is committed on the first byte: the archive
+ends and carries a `_truncated.txt` saying what the bound was and what it holds.
 
-**What goes wrong.** This is a resource question rather than a correctness one:
-one request can occupy a connection for a long time. The account has to be able
-to read what it is archiving, so it is not an amplification an anonymous
-attacker has.
+The listing surface had the same shape and was worse about it: it kept walking
+after reaching its bound, opening a stream per entry it discarded. It now stops
+at the bound it reports.
 
-**The fix.** A byte or entry ceiling on the walk, ending the archive with a
-marker entry saying it was truncated. D5 wants it as a named constant in
-`internal/limits` with a test proving the limit is what refuses.
+### routecheck compares both directions
 
-### 7. Two flow lifetimes and one service group id are compiled in
+**Was**: one-directional. A route the server mounts that no client calls was
+not reported.
 
-**What is true.**
+**Now**: reported, and never fatal. Most such routes are correct, because the
+routes a sync client or an operator calls are not ones the web interface has a
+screen for; `go/routes.server-only` records those with the caller each exists
+for. A check that failed on them is one people learn to silence.
 
-- `limits.OIDCFlowLifetime` is ten minutes. The binding cookie now derives from
-  it rather than repeating it, and a test asserts they match.
-- `smbpublish.serviceGID` is 1000 and must match the group in the sidecar
-  image. Nothing checks the two agree at build time.
+Adding the direction found two defects in the check itself, both of which had
+been hiding real coverage gaps:
 
-**What goes wrong.** The group id is the live one: if the image's group is
-changed and this constant is not, the agent refuses the sync with "no group
-exists for 1000". That is a good failure, loud and specific, and it is the
-agent's own check rather than luck.
+- **It read one directory.** The resumable upload transport lives in a sibling,
+  so four calls were invisible and every upload route read as uncalled. It now
+  walks the tree.
+- **Its pattern did not match a call with a type argument.** The client writes
+  `request<SessionInfo>('/auth/session')`, and eleven routes read as uncalled.
 
-**The fix.** Not urgent. If the group ever becomes configurable, it belongs in
+**Still missing**: the shape check. A route can be mounted, called, and answer
+with a body the client's types do not describe. That probably belongs to the
+end-to-end suite, which already asserts on response fields.
+
+## What is left
+
+### 1. The service group id is compiled in
+
+**What is true.** `smbpublish.serviceGID` is 1000 and must match the group in
+the sidecar image. Nothing checks the two agree at build time.
+
+**What goes wrong.** If the image's group changes and this constant does not,
+the agent refuses the sync with "no group exists for 1000". That is a good
+failure, loud and specific, and it is the agent's own check rather than luck.
+
+**The fix.** Not urgent. If the group ever becomes configurable it belongs in
 the SMB config section beside `service_user`, not in a constant.
 
-### 8. `routecheck` covers what the client calls, not what the server serves
+### 2. Two smbagent tests fail on this machine
 
-**What is true.** The check now reads every module in the client directory and
-compares the verb as well as the path. That closed seven defects in one pass.
+**What is true.** `TestARejectedCandidateKeepsWhatWasAlreadyServing` and
+`TestApplyingTheSameStateTwiceIsUnchangedTheSecondTime` fail here. Both
+predate this work: they fail identically at the commit before it.
 
-It is still one-directional. A route the server mounts that no client calls is
-not reported, and there is no check that a mounted route's response shape
-matches what the client's types expect.
+**What is unverified.** Whether they fail on a machine with Samba's tools
+installed. Both drive `testparm` and the daemon, so the likely cause is the
+environment rather than the code, and nothing has confirmed that.
 
-**What goes wrong.** Dead routes accumulate unnoticed, which is a maintenance
-cost rather than a fault. The shape mismatch is the more interesting gap: a
-route can be mounted, called and wrong.
+**The fix.** Run them where Samba is installed and find out which it is. A test
+that fails everywhere it is run is one people stop reading.
 
-**The fix.** The reverse direction is easy and worth adding. Shape checking is
-harder and probably belongs to the end-to-end suite, which already asserts on
-response fields for the surfaces it covers.
+### 3. A merge cannot run while a query holds the index
+
+**What is true.** `Merge` takes the write lock for the whole rebuild, which
+reads every entry in the base segment and writes a new one.
+
+**What goes wrong.** Queries block for the duration of a merge. On a large
+corpus that is a pause every query pays for, and the updater's timer is what
+decides when.
+
+**What is unverified.** How long a merge takes on a real corpus. Nothing has
+timed one, which is the same gap the build rate had.
+
+**The fix.** Time it first. The measurement decides whether this needs the
+staged-and-renamed shape the base publication already has on the read side.
 
 ## Things that look like problems and are not
 
@@ -225,6 +259,17 @@ Worth recording, because each is a decision someone will otherwise revisit.
   output; an archive is streamed as it is packed, so there is nothing to hand
   back later. The route is mounted and honest rather than absent, so a client
   gets a status it can act on.
+- **The archive stream cannot report a failure that happens partway.** This is
+  the design, not an oversight. The status and headers are committed on the
+  first byte, and the writer is built for it: sizes follow the data, so a file
+  that vanishes mid-archive produces a short entry inside a valid archive. The
+  alternative, buffering so a failure can be reported, trades a bounded memory
+  cost for an unbounded one. What was missing was the report, and that is what
+  `_skipped.txt` and `_truncated.txt` now carry.
+- **The index's stat revalidation stays even though deletions are
+  tombstoned.** The two cover different windows: the tombstone catches a
+  deletion the watcher reported, and the stat catches one that happened between
+  the query and the response, or on a filesystem the watcher cannot see.
 - **The SMB agent refuses to run as anything but root.** It edits the system
   account file and the credential database. Refusing at startup beats a
   permission error three layers down.
@@ -259,9 +304,6 @@ These are unchanged and each has its own document.
 
 ## If you change one thing
 
-Make SMB publishing a sink, the way the credential path already is. It is the
-only entry here that fails in the permissive direction, and it fails silently.
-
-Everything else on this list is a person being told something untrue about the
-state of the system, or a resource cost. That one is somebody keeping access
-after it was taken away.
+Measure a merge. It is the only entry left whose cost is unknown rather than
+understood, and it is now on a path that runs by itself: the updater's timer
+decides when the pause happens, and nobody has ever timed the pause.

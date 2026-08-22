@@ -383,6 +383,65 @@ func (ix *NameIndex) Append(entries []Entry) error {
 	return nil
 }
 
+// ChildrenOf is the paths the index holds directly inside one directory.
+//
+// Direct children only, not the subtree. It is what an incremental update
+// needs: a change notification names a directory, and what has to be compared
+// is that directory's own listing. A subtree answer would make one file
+// appearing at the top of a share cost the whole share.
+//
+// The overlay is applied, so an entry appended since the last merge is present
+// and a tombstoned one is absent, which is what makes two updates in a row
+// agree with each other.
+func (ix *NameIndex) ChildrenOf(share uint32, dir string) ([]string, error) {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+
+	out := map[string]bool{}
+	keep := func(path string, seq uint64) {
+		if !isChildOf(path, dir) {
+			return
+		}
+		if ix.tombstonedLocked(share, path, seq) {
+			return
+		}
+		out[path] = true
+	}
+
+	if ix.base != nil {
+		if err := ix.base.EachUnder(share, dir, func(e Entry) error {
+			keep(e.Path, 0)
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+	}
+	for _, d := range ix.delta {
+		if d.share != share {
+			continue
+		}
+		keep(d.path, d.seq)
+	}
+
+	paths := make([]string, 0, len(out))
+	for p := range out {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+// isChildOf reports whether path names an entry directly inside dir.
+func isChildOf(path, dir string) bool {
+	if dir == "" {
+		return path != "" && !strings.Contains(path, "/")
+	}
+	if len(path) <= len(dir)+1 || path[:len(dir)] != dir || path[len(dir)] != '/' {
+		return false
+	}
+	return !strings.Contains(path[len(dir)+1:], "/")
+}
+
 // Tombstone records deletions. The base segment is never touched.
 func (ix *NameIndex) Tombstone(entries []Entry) error {
 	if len(entries) == 0 {

@@ -10,6 +10,13 @@
 // It found 39 of them, including login: the server mounted it on the
 // change-password path, so nobody could sign in from the shipped interface
 // while every test in the tree was green.
+//
+// It compares in both directions. A path the client calls and the server does
+// not mount is a screen that cannot work, and it fails the check. A route the
+// server mounts that no client calls is reported and does not fail: it is
+// usually correct, because WebDAV clients, sync clients and operators call
+// routes the web interface never does, and a check that failed on it would be
+// a check people learn to silence.
 package main
 
 import (
@@ -24,9 +31,11 @@ import (
 
 func main() {
 	var (
-		clientDir  = flag.String("client-dir", "web/src/lib/api", "the frontend's API client directory")
-		routesPath = flag.String("routes", "go/internal/server/routes.go", "the server's route table")
-		allowPath  = flag.String("allow", "go/routes.allow", "paths the client may call that the server need not mount")
+		clientDir      = flag.String("client-dir", "web/src/lib/api", "the frontend's API client directory")
+		routesPath     = flag.String("routes", "go/internal/server/routes.go", "the server's route table")
+		allowPath      = flag.String("allow", "go/routes.allow", "paths the client may call that the server need not mount")
+		serverOnlyPath = flag.String("server-only", "go/routes.server-only",
+			"routes the server mounts for callers other than the web client")
 	)
 	flag.Parse()
 
@@ -46,6 +55,7 @@ func main() {
 
 	called := clientPaths(client)
 	mounted := mountedPaths(string(routes))
+	serverOnly := readAllow(*serverOnlyPath)
 
 	var missing []string
 	for _, c := range called {
@@ -65,6 +75,21 @@ func main() {
 	sort.Strings(missing)
 
 	say(os.Stdout, "the client calls %d paths; the server mounts %d\n", len(called), len(mounted))
+
+	// The other direction. Reported, never fatal: most of these are correct,
+	// because the routes a sync client or an operator calls are not ones the
+	// web interface has a screen for. What it catches is a route left behind
+	// by a client change, which is a maintenance cost rather than a fault.
+	if unused := unusedRoutes(mounted, called, serverOnly); len(unused) > 0 {
+		say(os.Stdout, "\n%d mounted routes no client module calls:\n", len(unused))
+		for _, p := range unused {
+			say(os.Stdout, "  %s\n", p)
+		}
+		say(os.Stdout, "\nEach is either a route for a caller that is not the web client, "+
+			"which belongs in %s,\nor one the client stopped calling, which belongs deleted.\n",
+			*serverOnlyPath)
+	}
+
 	if len(missing) == 0 {
 		say(os.Stdout, "every path the client calls is mounted\n")
 		return
@@ -79,25 +104,41 @@ func main() {
 	os.Exit(1)
 }
 
-// readClient concatenates every TypeScript module in the client directory,
+// readClient concatenates every TypeScript module under the client directory,
 // tests excluded: a mock's calls are the mock's contract, not this server's.
+//
+// Recursive, and that is load-bearing rather than tidy. The resumable upload
+// transport lives in a sibling directory, so a check that read one directory
+// saw none of its four calls and reported every upload route as one no client
+// makes. The client is not one directory and never was.
 func readClient(dir string) (string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return "", err
-	}
 	var out []byte
-	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".ts") || strings.Contains(name, ".test.") {
-			continue
+	err := filepath.WalkDir(dir, func(path string, e os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		body, rerr := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // G304 reads the variable: the directory is the gate's own argument, never request input.
+		name := e.Name()
+		if e.IsDir() {
+			// Built output and installed packages are not this client's source,
+			// and reading them would compare the server against a dependency.
+			if name == "node_modules" || name == "build" || name == "dist" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(name, ".ts") || strings.Contains(name, ".test.") {
+			return nil
+		}
+		body, rerr := os.ReadFile(path) //nolint:gosec // G304 reads the variable: the directory is the gate's own argument, never request input.
 		if rerr != nil {
-			return "", rerr
+			return rerr
 		}
 		out = append(out, body...)
 		out = append(out, '\n')
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
 	return string(out), nil
 }
@@ -108,7 +149,12 @@ func readClient(dir string) (string, error) {
 // becomes a placeholder here: what is being compared is the shape of the route,
 // not one call's arguments.
 var (
-	requestCall = regexp.MustCompile("request(?:Blob|Raw)?\\(\\s*[`'\"]([^`'\"]+)")
+	// The type argument is optional and has to be allowed for. The client
+	// writes request<SessionInfo>('/auth/session'), and a pattern demanding the
+	// parenthesis right after the name matched none of those: eleven mounted
+	// routes read as uncalled, which is noise in the direction this tool is
+	// least able to afford it.
+	requestCall = regexp.MustCompile("request(?:Blob|Raw)?(?:<[^(]*>)?\\(\\s*[`'\"]([^`'\"]+)")
 	// The three calls that do not go through the client's own helper, and so
 	// were invisible to this check while it looked for that helper alone. The
 	// streaming search was mounted nowhere and nothing reported it, which is
@@ -204,6 +250,32 @@ func mountedPaths(src string) map[call]bool {
 	for _, m := range route.FindAllStringSubmatch(src, -1) {
 		out[call{method: m[1], path: normalise(m[2])}] = true
 	}
+	return out
+}
+
+// unusedRoutes is every mounted route no client call reaches.
+//
+// The wildcard match runs the other way round here: the client names a value
+// where the server names a wildcard, so the mounted pattern is the pattern and
+// the client's path is the concrete one.
+func unusedRoutes(mounted map[call]bool, called []call, allowed map[string]bool) []string {
+	var out []string
+	for m := range mounted {
+		if allowed[m.path] {
+			continue
+		}
+		used := false
+		for _, c := range called {
+			if c.method == m.method && pathMatches(c.path, m.path) {
+				used = true
+				break
+			}
+		}
+		if !used {
+			out = append(out, m.method+" "+m.path)
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 

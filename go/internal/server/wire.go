@@ -21,6 +21,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
 	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
+	"github.com/heavycaffeiner/stowcloud/go/internal/task"
 	"github.com/heavycaffeiner/stowcloud/go/internal/upload"
 	"github.com/heavycaffeiner/stowcloud/go/internal/watch"
 )
@@ -72,6 +73,12 @@ type Options struct {
 	// no index.
 	Search *service.Service
 
+	// ApplyIndexEnabled attaches or detaches the index in the running process,
+	// so the administrator's switch takes effect without a restart. A nil one
+	// leaves the settings surface reporting that a restart is needed, which is
+	// honest rather than a success that changes nothing.
+	ApplyIndexEnabled func(enabled bool) error
+
 	// PublishSMB re-renders the SMB configuration and asks the sidecar to
 	// apply it. A nil one leaves the apply surface refusing rather than
 	// pretending, which is what a deployment with no sidecar has.
@@ -113,23 +120,25 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 	}
 
 	deps := handler.Deps{
-		Core:            opt.Core,
-		Auth:            opt.Auth,
-		Clock:           clk,
-		Log:             log,
-		Limiter:         state.Limiter,
-		Trusted:         state.Trusted,
-		Hosts:           state.Hosts,
-		CSRFKey:         state.CSRFKey,
-		WatchCap:        func() int { return watchHotSetCap },
-		Health:          health,
-		Uploads:         opt.Uploads,
-		State:           opt.Store.State(),
-		Search:          opt.Search,
-		OIDC:            opt.OIDC,
-		OIDCDisplayName: cfg.OIDCDisplayName,
-		Events:          eventsHandler(opt.WS),
-		PublishSMB:      opt.PublishSMB,
+		Core:              opt.Core,
+		Auth:              opt.Auth,
+		Clock:             clk,
+		Log:               log,
+		Limiter:           state.Limiter,
+		Trusted:           state.Trusted,
+		Hosts:             state.Hosts,
+		CSRFKey:           state.CSRFKey,
+		WatchCap:          func() int { return watchHotSetCap },
+		Health:            health,
+		Uploads:           opt.Uploads,
+		State:             opt.Store.State(),
+		Search:            opt.Search,
+		OIDC:              opt.OIDC,
+		OIDCDisplayName:   cfg.OIDCDisplayName,
+		Events:            eventsHandler(opt.WS),
+		PublishSMB:        opt.PublishSMB,
+		SMBChanged:        smbSink(opt.PublishSMB, health, log),
+		ApplyIndexEnabled: opt.ApplyIndexEnabled,
 		ReloadACL: func(ctx context.Context) error {
 			if opt.ReloadACL == nil {
 				return nil
@@ -208,6 +217,63 @@ func tlsConfig(cfg *Config, opt Options) (*tls.Config, error) {
 	}, nil
 }
 
+// smbSink turns the publisher into the form every write path calls.
+//
+// It exists because SMB used to be republished by exactly one thing: an
+// administrator pressing apply. A grant revoked, an account disabled or a
+// share removed reached this server and not the daemon, so access stayed live
+// over SMB until somebody happened to press it. That failed in the permissive
+// direction and said nothing, which is the worst pair of properties a
+// revocation path can have.
+//
+// Three decisions are load-bearing here.
+//
+// The caller is never failed. The database write already committed and this
+// server is already enforcing it, so a refusal would report a change that did
+// happen as one that did not. A sidecar that did not answer is a degradation
+// on the health endpoint instead, which is a thing an operator monitors.
+//
+// The publish is synchronous. It is the caller waiting on a revocation
+// reaching the other surface, which is exactly the wait that should be theirs
+// rather than a background task's, and these are administrator writes rather
+// than a request path.
+//
+// The context is detached from the request. A browser that navigated away
+// mid-publish must not cancel a revocation that is halfway to the sidecar.
+func smbSink(publish func(context.Context) (smbagent.Report, error), health *handler.HealthState, log *slog.Logger) func(context.Context) {
+	if publish == nil {
+		// No sidecar in this deployment. A sink that does nothing is correct
+		// here, and it is the one case where nothing is the right answer.
+		return nil
+	}
+	return func(ctx context.Context) {
+		pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), smbPublishTimeout)
+		defer cancel()
+
+		report, err := publish(pctx)
+		switch {
+		case err != nil:
+			log.Warn("a change did not reach the SMB sidecar", "error", err)
+			health.Degrade(handler.ReasonSMBStale, "publish_failed")
+		case !report.OK:
+			// The files were promoted and something in them is wrong: a share
+			// path that does not exist where the daemon runs, or an account
+			// the import produced no credential for. Both are an operator's to
+			// fix and neither is this request's failure.
+			log.Warn("the SMB sidecar applied a change with a warning", "error", report.Error)
+			health.Degrade(handler.ReasonSMBStale, "applied_with_warnings")
+		default:
+			health.Resolve(handler.ReasonSMBStale, "publish_failed")
+			health.Resolve(handler.ReasonSMBStale, "applied_with_warnings")
+		}
+	}
+}
+
+// smbPublishTimeout bounds one push. It is the agent's own timeout plus room
+// for rendering four files, so this never cuts off a call the agent is still
+// answering.
+const smbPublishTimeout = smbagent.DefaultTimeout + 5*time.Second
+
 // watchHotSetCap is the watcher's hot-set bound, reported by the settings
 // surface. The live watcher gets its value from Phase 1's config; this is the
 // constant the settings surface names.
@@ -217,7 +283,16 @@ const watchHotSetCap = 4096
 // builds the change-channel hub over the same event stream. It is the one
 // place the watch refcount and the WebSocket subscription meet: subscribing
 // pins the directory into the sticky set and unsubscribing releases it.
-func StartWatch(ctx context.Context, coreSvc *core.Core, clk clock.Clock, log *slog.Logger) (*watch.Watcher, *ws.Hub, error) {
+//
+// observe, when set, receives every event alongside the hub. It is how the
+// search index learns what changed: the index used to be filled once and never
+// updated, so a file created after a build was absent from every result the
+// index answered, with nothing saying the result was short.
+//
+// The fan-out is one task rather than two consumers of one channel, because a
+// channel with two readers gives each event to exactly one of them: the hub
+// and the index would each see about half the changes.
+func StartWatch(ctx context.Context, coreSvc *core.Core, clk clock.Clock, log *slog.Logger, observe func(watch.InvalEvent)) (*watch.Watcher, *ws.Hub, error) {
 	events := make(chan watch.InvalEvent, 64)
 	w, err := watch.Start(ctx, watch.Config{}, clk, events)
 	if err != nil {
@@ -226,6 +301,27 @@ func StartWatch(ctx context.Context, coreSvc *core.Core, clk clock.Clock, log *s
 	for _, def := range coreSvc.Shares() {
 		w.AddShare(def.ID, def.Host, true)
 	}
-	hub := ws.NewHub(ctx, coreSvc, w, clk, log, events)
+
+	sink := events
+	if observe != nil {
+		// The hub reads this one and the fan-out below feeds it. observe is
+		// called on the fan-out's own goroutine and must not block, which is
+		// why the updater's own entry point drops rather than waits.
+		forward := make(chan watch.InvalEvent, 64)
+		sink = forward
+		task.Go(ctx, "watch fan-out", func() {
+			defer close(forward)
+			for ev := range events {
+				observe(ev)
+				select {
+				case forward <- ev:
+				case <-ctx.Done():
+					return
+				}
+			}
+		})
+	}
+
+	hub := ws.NewHub(ctx, coreSvc, w, clk, log, sink)
 	return w, hub, nil
 }

@@ -80,11 +80,28 @@ type Deps struct {
 	// correct behaviour for a build with no index rather than a degradation.
 	Search *service.Service
 
+	// ApplyIndexEnabled attaches or detaches the index in the running process,
+	// so the administrator's switch takes effect without a restart. A nil one
+	// leaves the switch stored and not applied, and the settings surface says
+	// so rather than reporting a success that changes nothing.
+	ApplyIndexEnabled func(enabled bool) error
+
 	// PublishSMB re-renders the SMB configuration and asks the sidecar to
 	// apply it, returning what the sidecar says happened. A nil one leaves the
 	// surface answering that SMB is not configured, which is what a deployment
 	// without the sidecar has.
 	PublishSMB func(ctx context.Context) (smbagent.Report, error)
+
+	// SMBChanged is the same publisher as a sink: it reports nothing and
+	// records a failure as a degradation instead. Every write that changes
+	// what SMB should serve calls it.
+	//
+	// It exists separately from PublishSMB because the two have different
+	// callers with different needs. An administrator pressing apply wants the
+	// sidecar's report; a grant being revoked wants the change to reach SMB and
+	// must not fail because the sidecar is down, since the grant is already
+	// committed and the web surface already refuses.
+	SMBChanged func(ctx context.Context)
 
 	// OIDC is the single-sign-on client. A nil one leaves the link surfaces
 	// answering that the provider is not configured, which is what a

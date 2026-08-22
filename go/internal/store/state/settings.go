@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"math"
 	"os"
 )
 
@@ -110,7 +111,58 @@ func (d *DB) IndexNameEnabled(ctx context.Context) (bool, error) {
 
 // SetIndexNameEnabled stores that choice.
 func (d *DB) SetIndexNameEnabled(ctx context.Context, enabled bool) error {
-	return d.MergeSettings(ctx, "search", map[string]any{"name_index_enabled": enabled})
+	all, err := d.Settings(ctx)
+	if err != nil {
+		return err
+	}
+	section, _ := all["search"].(map[string]any)
+	if section == nil {
+		section = map[string]any{}
+	}
+	// Merged into the section rather than replacing it, so storing the switch
+	// does not drop the measured build rate stored beside it.
+	section["name_index_enabled"] = enabled
+	return d.MergeSettings(ctx, "search", section)
+}
+
+// IndexBuildRate is the entries-per-second the last completed build measured,
+// or zero when none has completed on this deployment.
+//
+// Zero rather than a default, because the caller's fallback is a compiled-in
+// guess and it has to be able to say which of the two an operator was shown.
+func (d *DB) IndexBuildRate(ctx context.Context) (uint64, error) {
+	all, err := d.Settings(ctx)
+	if err != nil {
+		return 0, err
+	}
+	section, ok := all["search"].(map[string]any)
+	if !ok {
+		return 0, nil
+	}
+	// JSON carries every number as a float, and a value of any other shape is
+	// read as absent: a stored rate this build cannot make sense of is the same
+	// answer as no build having run.
+	rate, ok := section["build_rate"].(float64)
+	if !ok || rate <= 0 || rate > float64(math.MaxUint64) {
+		return 0, nil
+	}
+	return uint64(rate), nil
+}
+
+// SetIndexBuildRate stores what a completed build measured, so the next
+// estimate is derived from this corpus on this disk rather than from a
+// constant nobody timed.
+func (d *DB) SetIndexBuildRate(ctx context.Context, rate uint64) error {
+	all, err := d.Settings(ctx)
+	if err != nil {
+		return err
+	}
+	section, _ := all["search"].(map[string]any)
+	if section == nil {
+		section = map[string]any{}
+	}
+	section["build_rate"] = rate
+	return d.MergeSettings(ctx, "search", section)
 }
 
 // FileBytes is how much disk this database occupies, which is what the storage

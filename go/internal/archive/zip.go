@@ -166,6 +166,14 @@ func (w *Writer) AddFile(name string, mtimeNs int64, r io.Reader) (uint64, error
 	return total, readErr
 }
 
+// Err is the first write failure, or nil.
+//
+// It exists so a caller can tell the two failures AddFile reports apart. A
+// read that failed leaves a valid archive and the next entry can still be
+// written; a write that failed means the response body is gone and everything
+// after it is wasted work.
+func (w *Writer) Err() error { return w.err }
+
 // AddBytes writes a small entry that is already in memory. It goes through the
 // same header path as a real file rather than a second one.
 func (w *Writer) AddBytes(name string, mtimeNs int64, data []byte) error {

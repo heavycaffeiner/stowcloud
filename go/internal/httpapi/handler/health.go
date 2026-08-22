@@ -32,6 +32,12 @@ const (
 	// ReasonSMBBindFailed is the sidecar configuration failing to render or
 	// the sidecar being unreachable.
 	ReasonSMBBindFailed = "smb_bind_failed"
+	// ReasonSMBStale is a change this server made that did not reach the SMB
+	// sidecar. It is reported rather than failing the write, because the write
+	// itself succeeded and this server enforces it; what is behind is the
+	// second surface. A revoked grant still live over SMB is the case that
+	// makes this worth an operator's attention.
+	ReasonSMBStale = "smb_stale"
 	// ReasonDatabaseSizeGuard is the store's size bound having tripped.
 	ReasonDatabaseSizeGuard = "database_size_guard"
 	// ReasonPreviewPoolUnavailable is the preview workers being unusable.

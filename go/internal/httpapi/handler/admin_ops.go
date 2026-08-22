@@ -117,6 +117,11 @@ func AdminIndexEstimate(d Deps) http.HandlerFunc {
 			return err
 		}
 
+		rate, rerr := d.State.IndexBuildRate(r.Context())
+		if rerr != nil {
+			return rerr
+		}
+
 		est := search.EstimateNameIndex(scan.Stats, index.DefaultConfig().BlockSize)
 		d.Log.Info("sized the name index",
 			"files", scan.Stats.Files, "bytes", est.IndexBytes,
@@ -136,25 +141,35 @@ func AdminIndexEstimate(d Deps) http.HandlerFunc {
 		return writeJSON(w, http.StatusOK, map[string]any{
 			"files":       scan.Stats.Files,
 			"index_bytes": est.IndexBytes,
-			"build_secs":  buildSeconds(scan.Stats.Files),
-			"confidence":  confidence,
+			"build_secs":  buildSeconds(scan.Stats.Files, rate),
+			// Whether the build time above came from a build that ran here or
+			// from the compiled-in guess. An operator planning around a number
+			// has to know which one they were given.
+			"build_rate_measured": rate > 0,
+			"confidence":          confidence,
 		})
 	})
 }
 
-// indexBuildRate is how many entries a build is assumed to get through in a
-// second. It is a guess, not a measurement: nothing here has timed a build.
+// indexBuildRate is the fallback rate, in entries per second, for a deployment
+// where no build has finished yet.
 //
-// Deliberately pessimistic, so the number an operator plans around is longer
-// than the build rather than shorter. It is still a guess, and an estimate
-// derived from one is worth what the guess is worth: a corpus on a slow disk,
-// or one whose names are mostly outside ASCII, will not match it.
-//
-// Replace it with a rate the build itself reports once one has run.
+// A guess, and deliberately a pessimistic one, so the first estimate an
+// operator plans around is longer than the build rather than shorter. Every
+// estimate after the first build uses that build's own measured rate instead.
 const indexBuildRate = 20_000
 
-func buildSeconds(files uint64) uint64 {
-	secs := files / indexBuildRate
+// buildSeconds turns a file count into a build time.
+//
+// measured is the rate the last completed build reported, or zero when none
+// has: the estimate is only as good as its rate, and a corpus on a slow disk
+// or one whose names are mostly outside ASCII does not match the constant.
+func buildSeconds(files, measured uint64) uint64 {
+	rate := measured
+	if rate == 0 {
+		rate = indexBuildRate
+	}
+	secs := files / rate
 	if secs == 0 && files > 0 {
 		return 1
 	}
@@ -186,7 +201,29 @@ func AdminIndexSettings(d Deps) http.HandlerFunc {
 		if err := d.State.SetIndexNameEnabled(r.Context(), *patch.NameEnabled); err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]bool{"name_enabled": *patch.NameEnabled})
+
+		// Stored and applied, in that order. The switch was read once at
+		// startup before this call existed, so an administrator turned the
+		// index on, saw a success, built it, and every search was still a walk
+		// with nothing saying why.
+		//
+		// A build that cannot apply it says so rather than reporting a plain
+		// success: restart_required is the same answer the other settings
+		// sections give, and the screen already knows how to show it.
+		applied := false
+		if d.ApplyIndexEnabled != nil {
+			if aerr := d.ApplyIndexEnabled(*patch.NameEnabled); aerr != nil {
+				// The stored switch is the record and it is written. What
+				// failed is this process picking it up, which a restart does.
+				d.Log.Warn("the index switch was stored but not applied", "error", aerr)
+			} else {
+				applied = true
+			}
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{
+			"name_enabled":     *patch.NameEnabled,
+			"restart_required": !applied,
+		})
 	})
 }
 

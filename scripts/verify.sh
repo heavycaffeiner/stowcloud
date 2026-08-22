@@ -193,15 +193,20 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # other check in this tree: that is how login ended up mounted on the
   # change-password path with the whole suite green.
   #
-  # The whole client directory and the verb, not one file and the path alone.
+  # The whole client tree and the verb, not one file and the path alone.
   # Pointed at one file it missed the streaming search, which no route served;
   # comparing paths alone it missed six calls mounted under a different verb,
   # each of which answers "method not allowed" from a route that exists.
+  #
+  # src/lib rather than src/lib/api: the resumable upload transport is a
+  # sibling directory, so the narrower path saw none of its calls and read
+  # every upload route as one nothing calls.
   run "routecheck (the client's paths are mounted)" \
       ingo_host go run ./tools/routecheck \
-        -client-dir ../web/src/lib/api \
+        -client-dir ../web/src/lib \
         -routes internal/server/routes.go \
-        -allow routes.allow
+        -allow routes.allow \
+        -server-only routes.server-only
   run "vetsecret (D12: no secret to a verb)"   ingo_host go run ./tools/vetsecret ./...
   run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./internal ./tools
 

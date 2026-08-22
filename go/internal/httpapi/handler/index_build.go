@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/state"
@@ -52,6 +53,7 @@ func AdminIndexBuild(d Deps) http.HandlerFunc {
 				return !op.Cancellation
 			}
 
+			startedNs := d.Clock.Nanos()
 			progress, berr := d.Search.Build(ctx, sources, gate, func(p service.BuildProgress) {
 				if perr := d.State.SetOpProgress(ctx, id, p.Files, ""); perr != nil {
 					d.Log.Warn("the index build's progress could not be recorded", "error", perr)
@@ -75,6 +77,20 @@ func AdminIndexBuild(d Deps) http.HandlerFunc {
 			if progress.Partial {
 				message = "the corpus is larger than one build covers; a query beyond it falls back to a walk"
 			}
+			// The rate this build actually got, stored so the next estimate is
+			// derived from this corpus on this disk. The estimate used to come
+			// from a compiled-in constant nobody had ever timed.
+			//
+			// A build too short to time is not recorded: dividing by a fraction
+			// of a second produces a rate no later build will match.
+			elapsedNs := now - startedNs
+			if elapsedNs >= int64(time.Second) && progress.Files > 0 {
+				rate := uint64(progress.Files) * uint64(time.Second) / uint64(elapsedNs) //nolint:gosec // both are positive by the guard directly above.
+				if rerr := d.State.SetIndexBuildRate(ctx, rate); rerr != nil {
+					d.Log.Warn("the index build's rate could not be recorded", "error", rerr)
+				}
+			}
+
 			d.Log.Info("built the name index", "files", progress.Files, "dirs", progress.Dirs, "partial", progress.Partial)
 			if ferr := d.State.FinishOp(ctx, id, state.OpDone, progress.Files, message, now, nil); ferr != nil {
 				d.Log.Warn("the index build's completion could not be recorded", "error", ferr)

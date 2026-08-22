@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"time"
@@ -14,6 +15,10 @@ import (
 // The archive-listing surface. The listing reads the file itself, never the
 // directory, and the cost bound is stated in the response: an archive over
 // the listed-entry ceiling is truncated and says so.
+
+// errListingFull ends the walk at the listed-entry bound. It never reaches the
+// caller: the response says the listing is truncated instead.
+var errListingFull = errors.New("archive: the listing is full")
 
 type archiveEntry struct {
 	Path  string `json:"path"`
@@ -47,15 +52,20 @@ func ArchiveList(d Deps) http.HandlerFunc {
 				defer s.Close() //nolint:errcheck // per-entry handle, released at once.
 			}
 			if len(out.Entries) >= limits.ArchiveEntriesListed {
+				// The walk ends here rather than running to the end of the tree
+				// discarding what it finds. It used to keep going, opening a
+				// stream per entry it then threw away, so a listing of a large
+				// tree cost the whole tree to produce its first ten thousand
+				// names.
 				out.Truncated = true
-				return nil
+				return errListingFull
 			}
 			out.Entries = append(out.Entries, archiveEntry{
 				Path: e.RelPath, IsDir: e.IsDir, Size: e.Size, MTime: e.MTimeNs,
 			})
 			return nil
 		})
-		if err != nil {
+		if err != nil && !errors.Is(err, errListingFull) {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, out)

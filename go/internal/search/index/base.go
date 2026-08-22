@@ -432,6 +432,110 @@ func (s *BaseSegment) Block(id uint32) ([]Entry, error) {
 	return DecodeBlock(raw)
 }
 
+// blockFirst is the first entry of a block, which is the key the block-level
+// binary search compares against.
+//
+// It costs one decompression, so the search below pays log(blocks) of them
+// rather than reading the segment.
+func (s *BaseSegment) blockFirst(id uint32) (Entry, bool) {
+	entries, err := s.Block(id)
+	if err != nil || len(entries) == 0 {
+		return Entry{}, false
+	}
+	return entries[0], true
+}
+
+// entryLess orders two entries the way TreeOrder wrote them: by share, then by
+// path in tree order.
+func entryLess(aShare uint32, aPath string, bShare uint32, bPath string) bool {
+	if aShare != bShare {
+		return aShare < bShare
+	}
+	return TreeCompare(aPath, bPath) < 0
+}
+
+// EachUnder visits the live entries of one directory's subtree.
+//
+// It exists so keeping the index current costs the directory that changed
+// rather than the corpus. The alternative is reading every entry to find the
+// handful under one path, which is what makes an incremental update as
+// expensive as a rebuild.
+//
+// The segment is in tree order and the order maps the separator below every
+// other byte, so a directory's whole subtree is one contiguous run. That is
+// what makes this a block-level binary search followed by a forward scan, and
+// it is the same property block compression already depends on.
+func (s *BaseSegment) EachUnder(share uint32, dir string, fn func(Entry) error) error {
+	if s.BlockCount == 0 {
+		return nil
+	}
+
+	// The lowest block that can hold the run: the last one whose first entry
+	// does not sort past the directory. One before the first that does, because
+	// the run can begin partway through a block.
+	lo, hi := uint32(0), s.BlockCount
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		first, ok := s.blockFirst(mid)
+		if !ok {
+			// An unreadable block cannot be compared, so the search cannot
+			// narrow past it and the scan starts here instead. The index is a
+			// cache: reading less of it is slower, never wrong.
+			hi = mid
+			break
+		}
+		if entryLess(first.Share, first.Path, share, dir) {
+			lo = mid + 1
+			continue
+		}
+		hi = mid
+	}
+	start := hi
+	if start > 0 {
+		start--
+	}
+
+	for id := start; id < s.BlockCount; id++ {
+		entries, err := s.Block(id)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			switch {
+			case e.Share < share:
+				continue
+			case e.Share > share:
+				// Past this share, and shares are ordered.
+				return nil
+			}
+			if under(e.Path, dir) {
+				if ferr := fn(e); ferr != nil {
+					return ferr
+				}
+				continue
+			}
+			if TreeCompare(e.Path, dir) > 0 {
+				// Past the run: the subtree is contiguous, so an entry sorting
+				// above the directory and not under it ends it.
+				return nil
+			}
+		}
+	}
+	return nil
+}
+
+// under reports whether path is dir or lies beneath it. The share root, named
+// by the empty string, holds everything.
+func under(path, dir string) bool {
+	if dir == "" {
+		return true
+	}
+	if path == dir {
+		return true
+	}
+	return len(path) > len(dir) && path[:len(dir)] == dir && path[len(dir)] == '/'
+}
+
 // EachEntry visits every live entry in block order, which the merge path
 // needs. It streams rather than collecting: a base segment holds the whole
 // corpus and materialising it would defeat the point of blocks.

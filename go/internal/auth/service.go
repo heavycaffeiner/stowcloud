@@ -63,6 +63,13 @@ type Service struct {
 	smbTOTPPolicy TOTPPolicy
 	onMembership  func()
 
+	// onSMBChange is the whole-configuration publisher, wired by the layer
+	// that owns it so this package keeps no dependency on it. Nil means the
+	// deployment has no sidecar, and the rendered file is then the only thing
+	// a credential change has to reach.
+	onSMBChangeMu sync.Mutex
+	onSMBChange   func(context.Context)
+
 	// ratelimit bounds login attempts per client address.
 	ratelimit *limiter
 
@@ -92,6 +99,23 @@ func New(cfg Config) *Service {
 		onMembership: cfg.OnMembership,
 		ratelimit:    newLimiter(loginWindow, loginMaxAttempts, clk.Nanos),
 	}
+}
+
+// SetSMBPublisher wires the whole-configuration publisher.
+//
+// It is set after construction because the publisher needs this service: it
+// asks this package for the two credential files, which only it can render
+// because only it can open the sealed hashes.
+func (s *Service) SetSMBPublisher(fn func(context.Context)) {
+	s.onSMBChangeMu.Lock()
+	s.onSMBChange = fn
+	s.onSMBChangeMu.Unlock()
+}
+
+func (s *Service) smbPublisher() func(context.Context) {
+	s.onSMBChangeMu.Lock()
+	defer s.onSMBChangeMu.Unlock()
+	return s.onSMBChange
 }
 
 // Generation is the current auth_generation counter.

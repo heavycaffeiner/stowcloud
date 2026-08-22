@@ -63,19 +63,38 @@ func passdbEnabled(smbEnabled, disabled, has2fa bool, policy TOTPPolicy) bool {
 // PublishPassdb re-renders the credential file now, for the publisher that
 // pushes a whole SMB configuration rather than reacting to one credential
 // change.
+//
+// It renders and stops. Calling the sink here would be the publisher asking
+// this service for the file and this service asking the publisher to publish.
 func (s *Service) PublishPassdb(ctx context.Context) error {
-	return s.republishPassdb(ctx)
+	return s.renderPassdb(ctx)
 }
 
 // republishPassdb is the sink. Every credential-changing path calls it, and it
 // re-renders the whole file from state, so a change that stops at one surface
 // (a password set, an enrolment, a disable) is visible to SMB on the next read.
 //
+// It then asks the whole-configuration publisher to push, because the rendered
+// file is not what smbd authenticates against: the sidecar imports it into the
+// credential database, and a file written with nobody told is a revocation
+// that lands whenever something else happens to publish.
+func (s *Service) republishPassdb(ctx context.Context) error {
+	if err := s.renderPassdb(ctx); err != nil {
+		return err
+	}
+	if publish := s.smbPublisher(); publish != nil {
+		publish(ctx)
+	}
+	return nil
+}
+
+// renderPassdb writes the credential file from what the database holds.
+//
 // The file is a render and not the record: the database remains the authority.
 // An account that is not eligible is left out entirely rather than written with
 // a disabled marker, because a marker is a line the import tool still reads and
 // the absence is what actually revokes.
-func (s *Service) republishPassdb(ctx context.Context) (err error) {
+func (s *Service) renderPassdb(ctx context.Context) (err error) {
 	if s.passdb == "" {
 		return nil
 	}

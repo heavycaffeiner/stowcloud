@@ -182,6 +182,39 @@ func TestAFileThatVanishesMidStreamLeavesAValidArchive(t *testing.T) {
 	}
 }
 
+// Err tells the two failures AddFile reports apart.
+//
+// A read that failed is one file and the archive goes on; a write that failed
+// is the response body gone and everything after it is wasted. The caller
+// cannot distinguish them from the returned error alone, and treating a read
+// failure as fatal drops every entry after the first unreadable file.
+func TestErrSeparatesAFailedReadFromAFailedWrite(t *testing.T) {
+	var buf bytes.Buffer
+	w := NewWriter(&buf)
+
+	if _, err := w.AddFile("vanishes.txt", testMtime, &failingReader{data: []byte("partial")}); err == nil {
+		t.Fatal("the failing read was not reported")
+	}
+	if w.Err() != nil {
+		t.Fatalf("a failed read was recorded as a failed write: %v", w.Err())
+	}
+
+	failing := NewWriter(failingWriter{})
+	if _, err := failing.AddFile("a.txt", testMtime, strings.NewReader("body")); err == nil {
+		t.Fatal("the failing write was not reported")
+	}
+	if failing.Err() == nil {
+		t.Fatal("a failed write left Err nil, so a caller cannot tell it from a failed read")
+	}
+}
+
+// failingWriter is a response body that has gone away.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errWriteFailed }
+
+var errWriteFailed = errors.New("the connection went away")
+
 // A timestamp the format cannot represent is clamped rather than wrapped. A
 // wrapped one is a date an extractor shows.
 func TestATimestampBeforeTheFormatsEpochIsClamped(t *testing.T) {

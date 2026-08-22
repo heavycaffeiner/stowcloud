@@ -21,8 +21,14 @@ import (
 
 func buildFixture(t *testing.T, names []string) (*Service, []search.Source) {
 	t.Helper()
+	return buildFixtureIn(t, t.TempDir(), names)
+}
 
-	dir := t.TempDir()
+// buildFixtureIn is the same with the directory named, for a test that also
+// has to reach the share on disk.
+func buildFixtureIn(t *testing.T, dir string, names []string) (*Service, []search.Source) {
+	t.Helper()
+
 	share := filepath.Join(dir, "share")
 	for _, n := range names {
 		full := filepath.Join(share, n)

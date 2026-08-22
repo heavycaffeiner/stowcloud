@@ -31,6 +31,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/task"
 	"github.com/heavycaffeiner/stowcloud/go/internal/upload"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/internal/watch"
 )
 
 // jailSpec is the domain the server runs under: the data directory it owns,
@@ -259,7 +260,15 @@ func runServe(args []string, stderr io.Writer) int {
 		return exitConfig
 	}
 
-	watcher, hub, werr := server.StartWatch(ctx, coreSvc, clk, log)
+	// The search index's updater, declared before the watcher so the fan-out
+	// can reach it and assigned after the service exists. Nil until then, and
+	// the observer reads it per event rather than capturing it.
+	var indexUpdater *service.Updater
+	watcher, hub, werr := server.StartWatch(ctx, coreSvc, clk, log, func(ev watch.InvalEvent) {
+		if indexUpdater != nil {
+			indexUpdater.Offer(ev)
+		}
+	})
 	if werr != nil {
 		say(stderr, "stowcloud %s: serve: the watcher: %v\n", version, werr)
 		return exitConfig
@@ -296,6 +305,16 @@ func runServe(args []string, stderr io.Writer) int {
 		searchSvc.SetIndex(service.OpenIndex(filepath.Join(cfg.DataDir, "index"), index.DefaultConfig(), log))
 	}
 
+	// What keeps the index current. Without it the index holds whatever the
+	// last build found: a file created afterwards is missing from every result
+	// the index answers, and nothing reports the result as short.
+	//
+	// Started whether or not the index is on right now, because the switch can
+	// be turned on later in this same process and the updater reads the live
+	// index per event.
+	indexUpdater = service.NewUpdater(searchSvc, coreSvc.ScanSources, log)
+	task.Go(ctx, "search index updater", func() { indexUpdater.Run(ctx) })
+
 	// SMB publishing. The whole render is rebuilt from state on every call
 	// rather than diffed, so a change that stops at one surface is still
 	// visible to the sidecar on the next apply.
@@ -319,11 +338,58 @@ func runServe(args []string, stderr io.Writer) int {
 		publishSMB = nil
 	}
 
+	if publishSMB != nil {
+		// The credential paths live in the auth package, which cannot reach the
+		// publisher: the publisher asks it for the two credential files. So the
+		// wire is made here, and every path that already republished the file
+		// now also tells the sidecar to import it. Writing the file and telling
+		// nobody is a revocation that lands whenever something else publishes.
+		authSvc.SetSMBPublisher(func(c context.Context) {
+			if _, perr := publishSMB(c); perr != nil {
+				log.Warn("a credential change did not reach the SMB sidecar", "error", perr)
+				health.Degrade(handler.ReasonSMBStale, "publish_failed")
+				return
+			}
+			health.Resolve(handler.ReasonSMBStale, "publish_failed")
+		})
+
+		// Once at startup, because the state can have moved while this server
+		// was not running: a migration, a hand-edited database, or a grant
+		// changed by a build that had no sink. Without this the daemon serves
+		// whatever it was left with until the next write.
+		if _, perr := publishSMB(ctx); perr != nil {
+			// Not fatal. SMB is one of several surfaces and the others work;
+			// refusing to start would take the whole deployment down for it.
+			log.Warn("the SMB configuration could not be published at startup", "error", perr)
+			health.Degrade(handler.ReasonSMBStale, "publish_failed")
+		}
+	}
+
+	// Turning the index on or off in the running process, which is what stops
+	// the administrator's switch needing a restart it did not mention. The
+	// stored switch stays the record; this is the process catching up to it.
+	applyIndex := func(enabled bool) error {
+		if !enabled {
+			searchSvc.SetIndex(nil)
+			return nil
+		}
+		ix := service.OpenIndex(filepath.Join(cfg.DataDir, "index"), index.DefaultConfig(), log)
+		if ix == nil {
+			// Corrupt or unopenable. It was reported where it was opened; the
+			// switch is refused so the screen says the index is not running
+			// rather than reporting a success that left every query walking.
+			return errors.New("the index could not be opened")
+		}
+		searchSvc.SetIndex(ix)
+		return nil
+	}
+
 	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health, Uploads: uploads,
-		Search:     searchSvc,
-		OIDC:       oidcClient,
-		PublishSMB: publishSMB,
-		ReloadACL:  func(c context.Context) error { return evaluator.LoadFromState(c, st.State().SQL()) },
+		Search:            searchSvc,
+		ApplyIndexEnabled: applyIndex,
+		OIDC:              oidcClient,
+		PublishSMB:        publishSMB,
+		ReloadACL:         func(c context.Context) error { return evaluator.LoadFromState(c, st.State().SQL()) },
 	}, setupGate)
 	if nerr != nil {
 		say(stderr, "stowcloud %s: serve: %v\n", version, nerr)
