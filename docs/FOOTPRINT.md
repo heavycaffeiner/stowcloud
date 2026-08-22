@@ -46,11 +46,33 @@ generated and no sustained write path was exercised. Those two lines are
 therefore not "no regression", they are "not measured", and the difference
 matters because they are exactly the two the expectation named.
 
-## What is not measured here
+## The preview worker pool, measured 2026-08-23
 
-- **The preview worker pool**, which is the regression the expectation predicts
-  most confidently. It needs a decoding workload and the pool wired into a
-  running server.
+The regression the expectation named most confidently, taken against real
+workers decoding a real image. `TestWorkerPoolFootprint` in `internal/preview`.
+
+| Workers | Resident processes | Total | Each |
+|---|---|---|---|
+| 1 | 1 | 10.0 MB | 10.0 MB |
+| 2 | 2 | 20.6 MB | 10.3 MB |
+| 4 | 4 | 38.7 MB | 9.7 MB |
+
+**The prediction holds and the shape is the useful part.** Cost is linear in
+the worker count at about 10 MB each, with no shared page to amortise, which is
+exactly what exec'ing a worker rather than forking one buys and costs. A fork
+would show the second and fourth workers costing far less than the first. The
+sandbox is what the difference pays for.
+
+Read from `/proc/<pid>/status` rather than from inside the process: what
+matters is what the kernel accounts to it, which a runtime statistic does not
+report.
+
+**One thing this measurement found that it was not looking for.** The pool has
+no caller anywhere in the server, so these numbers describe a subsystem that
+never runs in the product as it ships. They are what the sizing needs once it
+does. `RISKS.md` has the finding.
+
+## What is not measured here
 - **The SQLite write path** under sustained writes.
 - **Cold node population time** against the store proposal's threshold.
 - **Steady-state invalidation rate**, which needs the watcher under real churn.

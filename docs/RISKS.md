@@ -272,7 +272,48 @@ end-to-end suite, which already asserts on response fields.
 
 ## What is left
 
-### 1. The service group id is compiled in
+### 1. Nothing generates a thumbnail
+
+The largest gap in the tree, and it is the same shape as the nine that produced
+this document: every part exists, is tested, and has no caller.
+
+**What is true.** `internal/preview` is complete: the pool, the wire protocol,
+the decoders, the EXIF stripper, the cache and the jailed worker, with the jail
+proved against a real kernel. `cmd/stowcloud/previewworker.go` runs a worker.
+Nothing in the server ever constructs a `preview.Pool`: the whole tree outside
+the package has exactly one reference to it, and it is that worker entry point.
+
+The chain is broken at four separate links, each of which alone is enough:
+
+- No route generates or serves a thumbnail.
+- The listing never sets `preview.available`, so the web client's own guard
+  (`entry.preview?.available === true`) is false for every entry and the
+  request is never made.
+- If it were made, the client sends `{fid, disposition: 'inline_thumb', dim}`
+  to `POST /api/fs/link` and the server's `linkRequest` reads `{path, perms,
+  ...}`. The word `inline_thumb` does not appear anywhere in the Go tree.
+- The compat layer's `Preview` port is nil, which its own comment records as
+  "Phase 9's seam, not mounted yet", so the Nextcloud thumbnail routes answer
+  404 by construction.
+
+**What goes wrong.** No image in the product has ever had a thumbnail. The grid
+draws a type icon and looks deliberate, which is why this survived a
+conformance run, a differ run and a browser test: nothing errors, and a grid of
+icons is a plausible design rather than a visibly broken screen.
+
+**Why the checks missed it.** `routecheck` compares paths and verbs, and this
+is neither: the path is mounted and the verb is right. What differs is the body
+shape, which is the gap that document already names as the one it does not
+cover. The client asking for a field the server never sends is invisible to
+every check in this tree.
+
+**The fix.** It is a phase, not a repair: a route, a cache lookup, the pool
+wired into the server, `preview.available` on the listing, and one agreed
+request shape. Phase 9 owns it and its own document lists the milestones. The
+worker pool's cost is now measured rather than assumed, which is what the
+sizing needs: roughly 10 MB resident per worker, linear in the worker count.
+
+### 2. The service group id is compiled in
 
 **What is true.** `smbpublish.serviceGID` is 1000 and must match the group in
 the sidecar image. Nothing checks the two agree at build time.
@@ -284,7 +325,7 @@ failure, loud and specific, and it is the agent's own check rather than luck.
 **The fix.** Not urgent. If the group ever becomes configurable it belongs in
 the SMB config section beside `service_user`, not in a constant.
 
-### 2. Nothing bounds how large the index may grow
+### 3. Nothing bounds how large the index may grow
 
 **What is true.** A build stops at `CorpusScanEntries`, five million. The
 incremental updater has no such bound: it appends what a directory holds.
@@ -370,8 +411,12 @@ which date immediately.
 
 ## If you change one thing
 
-Measure the preview worker pool. It is the last thing in this tree whose cost
-is unknown rather than understood: `FOOTPRINT.md` names it as the regression
-the expectation predicted most confidently, and then did not measure it. Every
-other number that mattered has since been taken, and each time the measurement
-changed what was done rather than confirming it.
+Generate a thumbnail. Every other entry here is a cost that is understood or a
+drift that is bounded; that one is a whole subsystem the product does not have,
+built and tested and wired to nothing.
+
+It is also the clearest instance of the pattern at the top of this document,
+found last and by accident, while measuring the memory of a pool that turns out
+never to run. The measurement was worth taking anyway: it is what the sizing
+needs when the wiring is done. But what it actually found was that the thing
+being measured has no callers, which is what every one of these has been.
