@@ -46,6 +46,12 @@ type Deps struct {
 	// Socket is where the agent listens, or empty for a deployment with no
 	// sidecar, which is a legitimate configuration.
 	Socket string
+	// ServiceGID is the group every rendered account belongs to. It has to
+	// exist in the agent's container, which the agent checks and refuses over.
+	//
+	// Zero takes the caller's default rather than root's group: a value nobody
+	// set must not become the one group no service account may belong to.
+	ServiceGID uint32
 }
 
 // Accounts is the credential half, which lives in the auth package because
@@ -55,9 +61,18 @@ type Accounts interface {
 	PublishPassdb(ctx context.Context) error
 }
 
-// serviceGID is the group every rendered account belongs to. It has to exist
-// in the agent's container, which the agent checks and refuses over.
-const serviceGID = 1000
+// defaultServiceGID is what an unset Deps.ServiceGID means. The server's config
+// layer carries the operator-facing default and its own name for this; this one
+// is the fallback for a caller that set nothing, so a zero never reaches the
+// rendered file as root's group.
+const defaultServiceGID = 1000
+
+func (d Deps) gid() uint32 {
+	if d.ServiceGID == 0 {
+		return defaultServiceGID
+	}
+	return d.ServiceGID
+}
 
 // Publish renders the files and asks the agent to apply them.
 //
@@ -94,7 +109,7 @@ func Publish(ctx context.Context, d Deps, cfg smb.Config) (smbagent.Report, erro
 	// import tool matches them through those rather than by name. Publishing
 	// one without the other is what makes a login fail as an unknown user with
 	// nothing logged anywhere.
-	if err := d.Auth.PublishPasswdEntries(ctx, filepath.Join(d.ConfigDir, "passwd"), serviceGID); err != nil {
+	if err := d.Auth.PublishPasswdEntries(ctx, filepath.Join(d.ConfigDir, "passwd"), d.gid()); err != nil {
 		return smbagent.Report{}, fmt.Errorf("publishing the SMB account file: %w", err)
 	}
 	if err := d.Auth.PublishPassdb(ctx); err != nil {

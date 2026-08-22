@@ -11,6 +11,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
 // LOCK and UNLOCK, and the write guard every mutating method runs.
@@ -38,7 +39,7 @@ func (h *Handler) lock(w http.ResponseWriter, r *http.Request, res core.Resolved
 		return
 	}
 
-	owner, perr := ParseLockInfo(body, h.limits)
+	owner, shared, perr := ParseLockInfo(body, h.limits)
 	if perr != nil {
 		h.fail(w, r, perr)
 		return
@@ -53,10 +54,21 @@ func (h *Handler) lock(w http.ResponseWriter, r *http.Request, res core.Resolved
 		return
 	}
 
+	// A LOCK on a URL that maps to nothing creates an empty resource and locks
+	// it, answering 201. That is RFC 4918's own rule and it is what a client
+	// does to reserve a name before writing it: refusing with 404 makes the
+	// reservation impossible, and a client that locks before every PUT cannot
+	// create a file at all.
+	status := http.StatusOK
 	st, serr := res.Root().Stat(res.Path())
 	if serr != nil {
-		h.fail(w, r, core.ErrNotFound)
-		return
+		created, cerr := h.createLockNull(r, res)
+		if cerr != nil {
+			h.fail(w, r, cerr)
+			return
+		}
+		st = created
+		status = http.StatusCreated
 	}
 	e := h.core.EntryAt(res, st)
 
@@ -67,13 +79,37 @@ func (h *Handler) lock(w http.ResponseWriter, r *http.Request, res core.Resolved
 		Owner:     owner,
 		Depth:     depth,
 		Timeout:   timeout,
+		Shared:    shared,
 	})
 	if lerr != nil {
 		h.fail(w, r, lerr)
 		return
 	}
 
-	h.writeLockResponse(w, r, got, http.StatusOK)
+	h.writeLockResponse(w, r, got, status)
+}
+
+// createLockNull makes the empty resource a lock on an unmapped URL creates.
+//
+// The permission asked for is the one a create needs, not the one a lock on an
+// existing resource needs: this writes to the share, and a caller who may lock
+// what exists may not thereby create what does not.
+func (h *Handler) createLockNull(r *http.Request, res core.Resolved) (vfs.Stat, error) {
+	if err := res.Require(acl.Write | acl.Create); err != nil {
+		return vfs.Stat{}, err
+	}
+	if err := h.guardWrite(r, res, string(res.Path().Share().String())); err != nil {
+		return vfs.Stat{}, err
+	}
+	// The same mode a PUT of a new file takes, for the same reason: a zero mode
+	// produces a file nobody can read, including this process.
+	// No If-Match: the resource does not exist, so there is no validator to
+	// compare and a nil one is what says "create it".
+	if _, err := h.core.CreateFile(r.Context(), res, vfs.DurableOpts{Mode: 0o664}, nil,
+		func(*vfs.File) error { return nil }); err != nil {
+		return vfs.Stat{}, err
+	}
+	return res.Root().Stat(res.Path())
 }
 
 func (h *Handler) refreshLock(w http.ResponseWriter, r *http.Request, res core.Resolved, timeout time.Duration) {

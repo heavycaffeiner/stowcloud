@@ -44,6 +44,10 @@ type ActiveLock struct {
 	Principal core.UserID
 	ExpiresNs int64
 	TimeoutS  int64
+	// Shared is the scope, which lockdiscovery renders: a client that asked
+	// for a shared lock and was told "exclusive" would believe it holds
+	// something nobody else can take.
+	Shared bool
 }
 
 // LockStore is the durable half. It is an interface so the tests can drive the
@@ -66,6 +70,15 @@ func NewLocks(store LockStore, clk clock.Clock) *Locks {
 	return &Locks{store: store, clk: clk}
 }
 
+// The lock scopes RFC 4918 defines, as stored in the scope column.
+const (
+	// ScopeExclusive is one holder. A second lock of either scope is refused.
+	ScopeExclusive int64 = 0
+	// ScopeShared is many holders. Another shared lock is admitted and an
+	// exclusive one is refused, which is the whole of the difference.
+	ScopeShared int64 = 1
+)
+
 // LockRequest is what a LOCK method asks for.
 type LockRequest struct {
 	Ident state.Ident
@@ -77,13 +90,17 @@ type LockRequest struct {
 	Owner     string
 	Depth     int
 	Timeout   time.Duration
+	// Shared asks for a shared lock rather than an exclusive one.
+	Shared bool
 }
 
-// Create takes an exclusive write lock.
+// Create takes a write lock, exclusive or shared.
 //
-// It refuses when the resource, an ancestor of it, or (for a depth-infinity
-// request) anything under it is already locked. That is the whole of what
-// exclusive means here.
+// An exclusive lock refuses when the resource, an ancestor of it, or (for a
+// depth-infinity request) anything under it is already locked by anyone. A
+// shared lock refuses only against an exclusive one: two shared locks on the
+// same resource is what shared means, and it is how two clients cooperate on
+// one file without either being able to lock the other out.
 func (l *Locks) Create(ctx context.Context, req LockRequest) (ActiveLock, error) {
 	now := l.clk.Now().UnixNano()
 	held, err := l.store.DavLocks(ctx, now)
@@ -91,7 +108,17 @@ func (l *Locks) Create(ctx context.Context, req LockRequest) (ActiveLock, error)
 		return ActiveLock{}, err
 	}
 
+	scope := ScopeExclusive
+	if req.Shared {
+		scope = ScopeShared
+	}
+
 	for _, h := range held {
+		// Two shared locks coexist. Every other pairing conflicts, which is
+		// exactly the table RFC 4918 gives.
+		if scope == ScopeShared && h.Scope == ScopeShared {
+			continue
+		}
 		if covers(h, req.Ident.Share, req.Path) {
 			return ActiveLock{}, fmt.Errorf("%w: %s is held", ErrLocked, h.Path)
 		}
@@ -115,7 +142,7 @@ func (l *Locks) Create(ctx context.Context, req LockRequest) (ActiveLock, error)
 		Principal: int64(req.Principal),
 		Owner:     req.Owner,
 		Depth:     int64(req.Depth),
-		Scope:     0, // exclusive; shared locks are not offered
+		Scope:     scope,
 		ExpiresNs: expires,
 		TimeoutS:  int64(timeout.Seconds()),
 	}
@@ -125,6 +152,7 @@ func (l *Locks) Create(ctx context.Context, req LockRequest) (ActiveLock, error)
 	return ActiveLock{
 		Token: token, Path: req.Path, Owner: req.Owner, Depth: req.Depth,
 		Principal: req.Principal, ExpiresNs: expires, TimeoutS: row.TimeoutS,
+		Shared: req.Shared,
 	}, nil
 }
 
@@ -348,9 +376,16 @@ func lockDiscovery(locks []ActiveLock) string {
 		if l.Depth == DepthInfinity {
 			depth = "infinity"
 		}
+		// The scope as it was taken, not a fixed word: a client that asked for
+		// a shared lock and is told "exclusive" believes it holds something
+		// nobody else can take.
+		scope := "exclusive"
+		if l.Shared {
+			scope = "shared"
+		}
 		out += "<" + davPrefix + ":activelock>" +
 			"<" + davPrefix + ":locktype><" + davPrefix + ":write/></" + davPrefix + ":locktype>" +
-			"<" + davPrefix + ":lockscope><" + davPrefix + ":exclusive/></" + davPrefix + ":lockscope>" +
+			"<" + davPrefix + ":lockscope><" + davPrefix + ":" + scope + "/></" + davPrefix + ":lockscope>" +
 			"<" + davPrefix + ":depth>" + depth + "</" + davPrefix + ":depth>"
 		if l.Owner != "" {
 			// Re-serialised from stored text, never the client's markup.
@@ -369,9 +404,9 @@ func lockDiscovery(locks []ActiveLock) string {
 	return out
 }
 
-// ParseLockInfo reads a LOCK body: the owner text, and a refusal for anything
-// this server does not offer.
-func ParseLockInfo(body []byte, lim Limits) (owner string, err error) {
+// ParseLockInfo reads a LOCK body: the owner text, the scope, and a refusal
+// for anything this server does not offer.
+func ParseLockInfo(body []byte, lim Limits) (owner string, shared bool, err error) {
 	sc := newScanner(body, lim)
 	lim = lim.withDefaults()
 
@@ -388,7 +423,7 @@ func ParseLockInfo(body []byte, lim Limits) (owner string, err error) {
 	for {
 		n, serr := sc.startNode()
 		if serr != nil {
-			return "", serr
+			return "", false, serr
 		}
 		if n == nil {
 			break
@@ -397,7 +432,7 @@ func ParseLockInfo(body []byte, lim Limits) (owner string, err error) {
 		case nodeStart:
 			if !sawRoot {
 				if !n.name.IsDav("lockinfo") {
-					return "", fmt.Errorf("%w: the root element is %s, want DAV:lockinfo",
+					return "", false, fmt.Errorf("%w: the root element is %s, want DAV:lockinfo",
 						ErrBadXML, n.name)
 				}
 				sawRoot = true
@@ -434,22 +469,19 @@ func ParseLockInfo(body []byte, lim Limits) (owner string, err error) {
 		case nodeText:
 			if capturing {
 				if aerr := capText.add(n.text); aerr != nil {
-					return "", aerr
+					return "", false, aerr
 				}
 			}
 		}
 	}
 
 	if !sawRoot {
-		return "", fmt.Errorf("%w: the document has no elements", ErrBadXML)
-	}
-	if sawShared {
-		return "", fmt.Errorf("%w: shared locks are not offered", ErrBadRequest)
+		return "", false, fmt.Errorf("%w: the document has no elements", ErrBadXML)
 	}
 	if !sawWrite {
-		return "", fmt.Errorf("%w: only write locks are offered", ErrBadRequest)
+		return "", false, fmt.Errorf("%w: only write locks are offered", ErrBadRequest)
 	}
-	return owner, nil
+	return owner, sawShared, nil
 }
 
 // ParseDepth reads a Depth header. WebDAV's default differs per method, so the

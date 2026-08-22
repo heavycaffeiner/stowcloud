@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/search"
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/index"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
@@ -55,6 +56,13 @@ type Updater struct {
 	log     *slog.Logger
 
 	queue chan watch.InvalEvent
+	// saidFull keeps the ceiling from being logged per event. It is touched
+	// only from Run's own goroutine, which is the one place reconcile runs.
+	saidFull bool
+	// entryCeiling overrides the compiled-in bound. Zero means that bound,
+	// which is what the product runs with; a test sets a small one rather than
+	// building five million entries to reach the real one.
+	entryCeiling uint64
 }
 
 // NewUpdater builds one. sources is read per event rather than captured, so a
@@ -138,6 +146,29 @@ func (u *Updater) apply(ctx context.Context, ev watch.InvalEvent) {
 	}
 }
 
+// full reports whether the index has reached the size a build stops at.
+//
+// The build has always been bounded and this was not, so a corpus that grew
+// past what a build covers kept growing the index and with it the cost of
+// every merge. The two now stop at the same place, which is what makes "the
+// index holds less than the corpus" one condition rather than two.
+//
+// Removals still apply when it is full: refusing those would leave an index
+// that can only grow, which is the opposite of a bound.
+func (u *Updater) full(ix *index.NameIndex) bool {
+	return ix.Stats().Entries >= u.ceiling()
+}
+
+// ceiling is the bound this updater stops adding at. It is the same one the
+// build stops at and the same one Open reads to decide that what it loaded is
+// short of its corpus: three places, one constant.
+func (u *Updater) ceiling() uint64 {
+	if u.entryCeiling > 0 {
+		return u.entryCeiling
+	}
+	return limits.CorpusScanEntries
+}
+
 // reconcile compares one directory's listing against what the index holds for
 // it, and writes only the difference.
 //
@@ -201,17 +232,45 @@ func (u *Updater) reconcile(ctx context.Context, ix *index.NameIndex, src search
 		}
 	}
 
-	if len(added) > 0 {
-		if err := ix.Append(added); err != nil {
-			return err
-		}
-	}
+	// Removals first, and unconditionally. An index at its bound still has to
+	// forget a deleted file: a bound that stops removals is one that can only
+	// grow, and a stale entry is worse than a missing one because the query
+	// path spends a stat on it before dropping it.
 	if len(removed) > 0 {
 		if err := ix.Tombstone(removed); err != nil {
 			return err
 		}
 	}
+	if len(added) > 0 {
+		if u.full(ix) {
+			// The same ceiling a build stops at. The index is marked short of
+			// its corpus, which makes every query decline and take the walk:
+			// an index that answered from what it has would return a result
+			// missing this file with a success status, and nothing would say
+			// the result was short.
+			ix.SetIncomplete(true)
+			u.reportFull()
+			return nil
+		}
+		if err := ix.Append(added); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// reportFull logs the ceiling once rather than per event.
+//
+// A tree past the bound produces an event per change, and a line each would
+// make the condition invisible inside its own noise.
+func (u *Updater) reportFull() {
+	if u.saidFull {
+		return
+	}
+	u.saidFull = true
+	u.log.Warn("the search index has reached its entry ceiling, so new files are not being indexed; "+
+		"searches for them fall back to a walk, which is slower and always current",
+		"ceiling", u.ceiling())
 }
 
 // maybeMerge collapses the overlay when it has outgrown its share of the base.

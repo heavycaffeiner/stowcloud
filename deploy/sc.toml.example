@@ -65,6 +65,19 @@ enabled = false
 # as on disk.
 service_user = "scsvc"
 
+# The numeric group every rendered SMB account is put in. It must be a group
+# that exists in the sidecar's own container, which is what the published
+# account file is read against.
+#
+# The default is 1000, the group `Dockerfile.smb` creates, so a stock container
+# deployment leaves this alone. A bare-metal install that made its service
+# account elsewhere sets its own number here.
+#
+# Getting it wrong is a loud failure rather than a quiet one: the sidecar
+# refuses the whole sync with "no group exists for N" and keeps serving what it
+# already had.
+# service_gid = 1000
+
 workgroup = "WORKGROUP"
 
 # The name clients can reach this server by, so a share opens under a name

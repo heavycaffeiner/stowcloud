@@ -46,6 +46,11 @@ func (s *Service) Build(ctx context.Context, sources []search.Source, gate func(
 		return BuildProgress{}, errors.New("search: no index is open, so there is nothing to build into")
 	}
 
+	// A rebuild starts from whatever the previous one left. If that one
+	// stopped at the ceiling and this one does not, the index is complete
+	// again, and a flag nothing clears would make every query walk forever.
+	ix.SetIncomplete(false)
+
 	var progress BuildProgress
 	batch := make([]index.Entry, 0, buildBatch)
 
@@ -100,10 +105,13 @@ func (s *Service) Build(ctx context.Context, sources []search.Source, gate func(
 					continue
 				}
 				if progress.Files >= limits.CorpusScanEntries {
-					// The bound is reached. What was indexed stays and the
-					// caller is told it is partial, because a query for the
-					// rest falls back to a walk rather than answering wrongly.
+					// The bound is reached. What was indexed stays, and the
+					// index is marked short of its corpus so every query
+					// declines and walks instead: answering from the part of
+					// the tree that was reached returns a result missing the
+					// rest, with a success status and nothing saying so.
 					progress.Partial = true
+					ix.SetIncomplete(true)
 					return progress, flush()
 				}
 

@@ -320,10 +320,11 @@ func runServe(args []string, stderr io.Writer) int {
 	// visible to the sidecar on the next apply.
 	publishSMB := func(c context.Context) (smbagent.Report, error) {
 		return smbpublish.Publish(c, smbpublish.Deps{
-			Core:      coreSvc,
-			Auth:      authSvc,
-			ConfigDir: cfg.SMB.ConfigDir,
-			Socket:    cfg.SMB.AgentSocket,
+			Core:       coreSvc,
+			Auth:       authSvc,
+			ConfigDir:  cfg.SMB.ConfigDir,
+			Socket:     cfg.SMB.AgentSocket,
+			ServiceGID: cfg.SMB.ServiceGID,
 			Grants: func(c context.Context) ([]acl.Grant, error) {
 				return acl.ListGrants(c, st.State().SQL(), acl.GrantFilter{})
 			},

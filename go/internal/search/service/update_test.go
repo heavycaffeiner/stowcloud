@@ -210,6 +210,66 @@ func TestADeletedDirectoryTakesItsEntriesOut(t *testing.T) {
 	}
 }
 
+// The ceiling. A build has always stopped at one and the incremental path did
+// not, so a corpus that grew past what a build covers kept growing the index
+// and with it the cost of every merge.
+func TestTheIndexStopsGrowingAtItsCeiling(t *testing.T) {
+	svc, sources, host := updateFixture(t, []string{"docs/one.txt", "docs/two.txt"})
+	if _, err := svc.Build(context.Background(), sources, nil, nil); err != nil {
+		t.Fatalf("building: %v", err)
+	}
+
+	u := updaterFor(t, svc, sources)
+	// The real bound is five million, which is not a thing to build in a test.
+	u.entryCeiling = 2
+
+	if err := os.WriteFile(filepath.Join(host, "docs", "three.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	u.apply(context.Background(), watch.InvalEvent{Share: 1, Dir: "docs"})
+
+	held, err := svc.index().ChildrenOf(1, "docs")
+	if err != nil {
+		t.Fatalf("ChildrenOf: %v", err)
+	}
+	if len(held) != 2 {
+		t.Fatalf("the index holds %v, want the two it was built with and no more", held)
+	}
+
+	// And the file is still findable, because a query the index cannot answer
+	// falls back to a walk rather than answering short.
+	if got := hits(t, svc, sources, "three"); len(got) != 1 {
+		t.Fatalf("a file past the ceiling is not findable at all: %v", got)
+	}
+}
+
+// A bound that stops removals is one the index can only grow past. A deletion
+// has to apply whether or not the index is full.
+func TestAFullIndexStillForgetsADeletedFile(t *testing.T) {
+	svc, sources, host := updateFixture(t, []string{"docs/one.txt", "docs/two.txt"})
+	if _, err := svc.Build(context.Background(), sources, nil, nil); err != nil {
+		t.Fatalf("building: %v", err)
+	}
+
+	u := updaterFor(t, svc, sources)
+	u.entryCeiling = 1 // already past it
+
+	if err := os.Remove(filepath.Join(host, "docs", "one.txt")); err != nil {
+		t.Fatal(err)
+	}
+	u.apply(context.Background(), watch.InvalEvent{Share: 1, Dir: "docs"})
+
+	held, err := svc.index().ChildrenOf(1, "docs")
+	if err != nil {
+		t.Fatalf("ChildrenOf: %v", err)
+	}
+	for _, p := range held {
+		if p == "docs/one.txt" {
+			t.Fatal("a full index kept an entry for a file that is gone")
+		}
+	}
+}
+
 // The updater reads the live index per event rather than capturing one, so
 // the administrator's switch turning the index on later in the same process
 // does not leave the updater writing into an index nothing queries.

@@ -36,6 +36,15 @@ var (
 	ErrTooDeep         = errors.New("dav: nesting too deep")
 	ErrBadXML          = errors.New("dav: malformed request body")
 
+	// ErrUndeclaredPrefix is a name using a prefix no enclosing element bound.
+	//
+	// It has its own sentinel because encoding/xml does not treat it as an
+	// error at all: an undeclared prefix arrives with Space set to the prefix
+	// itself, so {bar}foo and a properly declared {http://bar/}foo are the same
+	// token. Without this check a namespace-malformed body is accepted and
+	// answered 207, where the specification says 400.
+	ErrUndeclaredPrefix = errors.New("dav: an undeclared namespace prefix")
+
 	// ErrBadRequest is a header or a value this package could not parse. It is
 	// separate from ErrBadXML because it never came from a body.
 	ErrBadRequest = errors.New("dav: malformed request")
@@ -117,6 +126,11 @@ type scanner struct {
 	lim      Limits
 	depth    int
 	elements int
+
+	// declared is the prefixes bound by enclosing elements, innermost last.
+	// One frame per open element, pushed even when it declares nothing, so
+	// unwinding is a truncation rather than a search.
+	declared []map[string]bool
 
 	// encoding/xml has no empty-element token: <a/> arrives as a start
 	// immediately followed by an end. Peeking one token ahead is what lets the
@@ -202,12 +216,19 @@ func (s *scanner) scan() (*node, error) {
 				return nil, limits.Exceed("dav element name",
 					int64(s.lim.NameLength), int64(len(t.Name.Local)))
 			}
+			s.push(t.Attr)
+			if err := s.checkDeclared(t); err != nil {
+				return nil, err
+			}
 			s.depth++
 			return &node{kind: nodeStart, name: Name{Space: t.Name.Space, Local: t.Name.Local}}, nil
 
 		case xml.EndElement:
 			if s.depth > 0 {
 				s.depth--
+			}
+			if len(s.declared) > 0 {
+				s.declared = s.declared[:len(s.declared)-1]
 			}
 			return &node{kind: nodeEnd}, nil
 
@@ -225,6 +246,56 @@ func (s *scanner) scan() (*node, error) {
 			continue
 		}
 	}
+}
+
+// push records the prefixes this element declares.
+//
+// One frame per element whether or not it declares anything, so the end tag
+// pops exactly one and the nesting stays aligned with the depth counter.
+func (s *scanner) push(attrs []xml.Attr) {
+	var frame map[string]bool
+	for _, a := range attrs {
+		// encoding/xml resolves xmlns:p="..." to Space "xmlns", Local "p", and
+		// the default declaration to a bare Local of "xmlns".
+		switch {
+		case a.Name.Space == "xmlns":
+			if frame == nil {
+				frame = map[string]bool{}
+			}
+			frame[a.Name.Local] = true
+		case a.Name.Space == "" && a.Name.Local == "xmlns":
+			if frame == nil {
+				frame = map[string]bool{}
+			}
+			frame[""] = true
+		}
+	}
+	s.declared = append(s.declared, frame)
+}
+
+// checkDeclared refuses a name whose prefix nothing bound.
+//
+// The test is not on the prefix, which the token no longer carries, but on
+// what the decoder produced: a resolved namespace is an absolute URI, and an
+// unresolved prefix comes through as the bare prefix. So a Space that is not a
+// URI and was not declared anywhere above is a prefix the document never bound.
+//
+// The two reserved prefixes are always bound by the specification and are never
+// declared in a document.
+func (s *scanner) checkDeclared(t xml.StartElement) error {
+	space := t.Name.Space
+	if space == "" || strings.Contains(space, ":") || space == "xml" || space == "xmlns" {
+		// No namespace, a resolved URI, or a reserved prefix. A URI is anything
+		// with a scheme separator, which every real namespace has and a bare
+		// prefix does not.
+		return nil
+	}
+	for _, frame := range s.declared {
+		if frame[space] {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: %q", ErrUndeclaredPrefix, space)
 }
 
 // startNode returns the next node, collapsing a start immediately followed by

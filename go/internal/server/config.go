@@ -76,6 +76,14 @@ type SMBConfig struct {
 	// AgentSocket is where the sidecar listens. Empty means no sidecar, which
 	// is a bare-metal deployment where something else applies the files.
 	AgentSocket string
+	// ServiceGID is the group every rendered account belongs to. It has to be
+	// the group the sidecar's own image creates, which the agent checks and
+	// refuses over.
+	//
+	// Configurable rather than compiled in, because a bare-metal install picks
+	// its own service account and the image's number is not a fact about that
+	// machine. The default is the image's.
+	ServiceGID uint32
 }
 
 // raw is the TOML shape, parsed then validated. The field names are the
@@ -113,6 +121,7 @@ type raw struct {
 		ServerName      string   `toml:"server_name"`
 		Interfaces      []string `toml:"interfaces"`
 		ServiceUser     string   `toml:"service_user"`
+		ServiceGID      *uint32  `toml:"service_gid"`
 		AllowPublicBind bool     `toml:"allow_public_bind"`
 		ConfigDir       string   `toml:"config_dir"`
 		AgentSocket     string   `toml:"agent_socket"`
@@ -128,10 +137,15 @@ type raw struct {
 // is the outer bound; the default sits within it.
 const (
 	defaultSMBConfigDir = "/config/smb"
-	defaultWorkgroup    = "WORKGROUP"
-	defaultListen       = ":8443"
-	defaultRatePerSec   = 20
-	defaultRateBurst    = 100
+	// defaultServiceGID is the group Dockerfile.smb creates. The two have to
+	// agree, and the agent says so loudly when they do not: it refuses the sync
+	// with "no group exists for N" rather than syncing accounts nothing can
+	// resolve.
+	defaultServiceGID = 1000
+	defaultWorkgroup  = "WORKGROUP"
+	defaultListen     = ":8443"
+	defaultRatePerSec = 20
+	defaultRateBurst  = 100
 )
 
 // Load reads and validates the config file. An absent file is a startup
@@ -226,6 +240,16 @@ func Validate(r raw) (*Config, error) {
 		cfg.SMB.ConfigDir = defaultSMBConfigDir
 	}
 	cfg.SMB.AgentSocket = r.SMB.AgentSocket
+	cfg.SMB.ServiceGID = defaultServiceGID
+	if r.SMB.ServiceGID != nil {
+		// Zero is root's group. An account file that puts every SMB account in
+		// it is not a configuration anybody means to write, and the agent runs
+		// as root, so it would be applied rather than refused.
+		if *r.SMB.ServiceGID == 0 {
+			return nil, fmt.Errorf("smb.service_gid: 0 is root's group, which no service account may belong to")
+		}
+		cfg.SMB.ServiceGID = *r.SMB.ServiceGID
+	}
 	if r.SMB.Enabled {
 		if cfg.SMB.Render.ServiceUser == "" {
 			return nil, fmt.Errorf("smb.service_user: required when SMB is enabled, because every connection runs as one account")

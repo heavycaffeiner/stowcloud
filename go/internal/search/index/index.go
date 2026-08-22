@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/search"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
@@ -51,6 +52,15 @@ const (
 	// FallbackAllTrigramsPruned means every trigram was dropped by high-df
 	// pruning, so the intersection would be over nothing.
 	FallbackAllTrigramsPruned
+	// FallbackIncomplete means the index is knowingly short of the corpus,
+	// because it reached its entry ceiling. A name it does not hold may still
+	// exist, so the caller has to walk.
+	//
+	// Without it an incomplete index answers every query from what it has, and
+	// a file past the ceiling is absent from a result carrying a success
+	// status. That is the same silent shortness the incremental update path
+	// exists to prevent, arriving by another route.
+	FallbackIncomplete
 )
 
 func (f FallbackReason) String() string {
@@ -59,6 +69,8 @@ func (f FallbackReason) String() string {
 		return "QueryTooShort"
 	case FallbackAllTrigramsPruned:
 		return "AllTrigramsPruned"
+	case FallbackIncomplete:
+		return "Incomplete"
 	}
 	return "-"
 }
@@ -138,6 +150,10 @@ type NameIndex struct {
 	tomb      map[tombKey]uint64
 	tombBytes int64
 	seq       uint64
+	// incomplete marks an index that stopped short of its corpus. Every query
+	// then declines rather than answering from a part of the tree, because the
+	// index cannot tell "no such name" from "a name past where I stopped".
+	incomplete bool
 }
 
 type tombKey struct {
@@ -237,7 +253,26 @@ func Open(dir string, cfg Config) (*NameIndex, error) {
 	}
 
 	ix.seq = maxSeq + 1
+
+	// An index that reached its ceiling is short of its corpus, and that has to
+	// survive a restart: the flag is in memory, so without deriving it here a
+	// reopened index would answer every query from a part of the tree with a
+	// success status. Derived rather than stored, because the count is already
+	// on disk and a second copy is a second thing to keep true.
+	if ix.entryCount() >= limits.CorpusScanEntries {
+		ix.incomplete = true
+	}
 	return ix, nil
+}
+
+// entryCount is the live entry count without taking the lock, for use during
+// Open before the index is shared.
+func (ix *NameIndex) entryCount() uint64 {
+	var base uint64
+	if ix.base != nil {
+		base = ix.base.EntryCount
+	}
+	return base + uint64(len(ix.delta))
 }
 
 // Config is the tuning this index was opened with.
@@ -252,6 +287,12 @@ func (ix *NameIndex) Query(needle []byte, limit int) (Result, error) {
 	folded := search.Fold(needle)
 	if len(folded) < MinTrigramQuery {
 		return Result{Fallback: FallbackQueryTooShort}, nil
+	}
+	if ix.Incomplete() {
+		// Answering from a part of the corpus is the one thing an index must
+		// never do: the caller cannot tell a short result from a complete one,
+		// and the status says success either way.
+		return Result{Fallback: FallbackIncomplete}, nil
 	}
 	tris := search.DistinctTrigrams(folded)
 
@@ -474,6 +515,24 @@ func (ix *NameIndex) Tombstone(entries []Entry) error {
 		}
 	}
 	return nil
+}
+
+// Incomplete reports whether this index stopped short of its corpus.
+func (ix *NameIndex) Incomplete() bool {
+	ix.mu.RLock()
+	defer ix.mu.RUnlock()
+	return ix.incomplete
+}
+
+// SetIncomplete records that the index holds less than the tree it covers,
+// which is what reaching the entry ceiling means.
+//
+// It is the index's own flag rather than the caller's bookkeeping, because
+// every query has to see it and only the index is on that path.
+func (ix *NameIndex) SetIncomplete(v bool) {
+	ix.mu.Lock()
+	ix.incomplete = v
+	ix.mu.Unlock()
 }
 
 // NeedsMerge reports whether the overlay has outgrown its share of the base.

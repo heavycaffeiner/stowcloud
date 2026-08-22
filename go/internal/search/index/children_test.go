@@ -158,6 +158,36 @@ func TestChildrenOfFindsARunThatStartsMidBlock(t *testing.T) {
 	}
 }
 
+// An index that stopped short of its corpus declines every query, because it
+// cannot tell "no such name" from "a name past where I stopped". Answering
+// would return a short result with a success status.
+func TestAnIncompleteIndexDeclinesEveryQuery(t *testing.T) {
+	ix := newIndex(t)
+	if err := ix.Append([]Entry{{Share: 1, Path: "data/report.txt"}}); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+
+	// Complete: it answers, and finds the name it holds.
+	if r := query(t, ix, "report"); r.MustFallBack() || len(r.Hits) != 1 {
+		t.Fatalf("a complete index returned fallback=%v with %d hits", r.Fallback, len(r.Hits))
+	}
+
+	ix.SetIncomplete(true)
+
+	r := query(t, ix, "report")
+	if r.Fallback != FallbackIncomplete {
+		t.Fatalf("an incomplete index returned %v, want Incomplete", r.Fallback)
+	}
+	if !r.MustFallBack() {
+		t.Fatal("the caller was not told to walk")
+	}
+	// And it returns nothing rather than a subset, so a caller that ignored
+	// the reason cannot mistake a part of the corpus for all of it.
+	if len(r.Hits) != 0 {
+		t.Fatalf("an incomplete index returned %d hits alongside its fallback", len(r.Hits))
+	}
+}
+
 // A directory with nothing in it is an empty answer, not the parent's entries.
 // The update tombstones what this returns, so a wrong answer here deletes live
 // files from the index.

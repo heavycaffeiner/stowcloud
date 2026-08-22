@@ -8,7 +8,6 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/task"
-	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
 // Long operations: recursive copy, delete or archive that outlives the request
@@ -71,13 +70,28 @@ func (c *Core) CancelOperation(ctx context.Context, owner UserID, id OperationID
 // The protocol layer calls it, and the work runs on a goroutine this package
 // started through task.Go, which is the only legal spawn in the tree.
 func (c *Core) StartCopy(ctx context.Context, owner UserID, from, to Resolved) (int64, error) {
+	// The source's own stat, not a zero value. copyRecursive branches on it to
+	// decide whether it is walking a tree or copying one file, so handing it an
+	// empty one said "not a directory" about every directory: the copy took the
+	// single-file path, failed on a source that is a directory, and the caller
+	// had already been answered 202. A recursive COPY over WebDAV produced
+	// nothing at all, with a status saying it had started.
+	st, serr := from.root.Stat(from.path)
+	if serr != nil {
+		return 0, mapVFSErr(serr)
+	}
+
 	id, err := c.state.CreateOp(ctx, int64(owner), state.OpCopy, 1, c.clk.Nanos())
 	if err != nil {
 		return 0, err
 	}
+	// The request's context ends when the response is written and this outlives
+	// it by design, so the work takes a detached one: the caller polls the
+	// operation row for the result.
+	ctx = context.WithoutCancel(ctx)
 	task.Go(ctx, "core: long copy", func() {
 		now := c.clk.Nanos()
-		if cerr := c.copyRecursive(ctx, from, to, vfs.Stat{}); cerr != nil {
+		if cerr := c.copyRecursive(ctx, from, to, st); cerr != nil {
 			_ = c.state.FinishOp(ctx, id, state.OpFailed, 0, cerr.Error(), now, nil) //nolint:errcheck // the failure is already the answer; the row is best-effort.
 			return
 		}

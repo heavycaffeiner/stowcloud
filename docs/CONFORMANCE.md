@@ -59,23 +59,62 @@ rather than in the port. The Go build additionally answers 500 on two of them
 where the Rust build answers a refusal, and a server error is worse than a
 wrong status: that part is the port's.
 
-### Only the Go build fails: five port defects
+### Only the Go build failed: five port defects, all fixed
 
 `propfind_invalid2`, `cond_put`, `complex_cond_put`, `lock_shared`,
-`unmapped_lock`.
+`unmapped_lock`. Each is repaired with a test that reproduces the suite's own
+request sequence, taken from litmus 0.18's source rather than from the failure
+name.
 
-- **`propfind_invalid2`** answers 207 to a body with an invalid namespace
-  declaration where 400 is correct. The Rust build refuses it. The scanner
-  accepts a document it should reject.
-- **`cond_put` and `complex_cond_put`** answer 412 where the condition should
-  pass. The `If` header evaluation is stricter than the specification in a case
-  this tree's own tests do not cover.
-- **`lock_shared`** answers 400 to a shared lock request, which reads as the
-  scope not being accepted at all.
-- **`unmapped_lock`** answers 404 where a lock on an unmapped URL should create
-  a locked empty resource.
+- **`propfind_invalid2`** answered 207 to a body using an undeclared namespace
+  prefix, where 400 is correct.
 
-Phase 7 owns all five.
+  `encoding/xml` does not report this at all: an undeclared prefix arrives with
+  `Space` set to the prefix itself, so `{bar}foo` is indistinguishable from a
+  properly declared namespace. The scanner now tracks declarations per element
+  and refuses a name whose prefix nothing bound. A prefix declared on any
+  ancestor is bound, and `xml:` and `xmlns:` need no declaration.
+
+- **`cond_put` and `complex_cond_put`** answered 412 where the condition should
+  pass, and the cause was worse than the tests suggested.
+
+  Every file validator here is weak, because Linux exposes no inode change
+  version, and the `If` evaluation refused any weak tag outright. The suite
+  reads the `ETag` header with a HEAD and echoes it back, so a client sending
+  the exact validator the server had just given it was told its precondition
+  failed. **Guarding a write with `If` was impossible on this build**, which is
+  a good deal larger than two failing conformance tests.
+
+  The comparison now requires the tags to be equal and to agree on strength.
+
+- **`lock_shared`** answered 400, which reads as the scope not being understood.
+
+  Shared locks are implemented rather than refused. The `scope` column already
+  existed and was always written as exclusive. Two shared locks coexist; an
+  exclusive one over a shared lock, or a shared one over an exclusive lock, is
+  refused; and `lockdiscovery` reports the scope that was actually taken rather
+  than the word "exclusive".
+
+- **`unmapped_lock`** answered 404 where RFC 4918 §7.3 creates an empty locked
+  resource and answers 201.
+
+  This is how a client reserves a name before writing it, so the refusal meant
+  a client that locks before every PUT could not create a file at all.
+
+One more defect was found while fixing these, by a test that checked the files
+rather than the status code:
+
+- **A recursive COPY answered 202 and copied nothing.** `StartCopy` began the
+  operation with a zero source stat, which told the walker that every directory
+  was a file, so the copy took the single-file path and failed after the caller
+  had already been told it started. Every collection COPY over WebDAV produced
+  nothing for the whole of the port. The existing test asserted only the 202
+  and passed against it.
+
+Also corrected: **MKCOL with a missing intermediate collection** answered 404
+and now answers 409, which was recorded below as a warning rather than a
+failure. The distinction is what a client branches on to decide whether to
+create the parent.
 
 ### Only the Rust build fails: four the port fixed
 
@@ -83,46 +122,38 @@ Phase 7 owns all five.
 the suite cannot parse (`invalid namespace declaration`) and answers 502 on a
 property-carrying move. The Go build passes all four.
 
-### copymove, five failures
+### The copymove cluster, as measured
 
-- **`copy_overwrite` and `move` answer 500** when the destination is an
+The five both builds failed, in the run above:
+
+- **`copy_overwrite` and `move` answered 500** when the destination is an
   existing collection. A server error is the wrong answer whatever the right
   one is: the operation is refused or it succeeds, and an unhandled failure is
   neither.
-- **`copy_coll` answers 404** where the destination exists and overwrite was
+- **`copy_coll` answered 404** where the destination exists and overwrite was
   asked for.
-- **`move_coll` succeeds** where the suite expects a refusal.
-- **`copy_shallow` answers 405** to a `MKCOL` on a path the suite has already
-  created, which suggests the collection-creation path disagrees with itself
-  about trailing separators.
+- **`move_coll` succeeded** where the suite expects a refusal.
+- **`copy_shallow` answered 405** to a `MKCOL` on a path the suite has already
+  created.
 
-These are one cluster: collection-to-collection copy and move with an existing
-destination. Phase 7 owns it.
+The recursive-copy defect above sits underneath at least the first three:
+`copy_coll` copies a collection and then deletes each member to check it
+arrived, and no member ever arrived. The `MKCOL` status correction touches
+`copy_shallow`. How much of the cluster that leaves is what the re-run measures;
+what remains is Phase 7's.
 
-### props, one failure
+## The re-run this needs
 
-- **`propfind_invalid2` answers 207** to a body with an invalid namespace
-  declaration, where 400 is correct. The scanner accepts a document it should
-  refuse. Phase 7 owns it.
+The fixes above are verified by tests that reproduce each suite case's own
+request sequence, read out of litmus 0.18's source. They are not verified by
+litmus itself: this machine has neither the suite nor the autotools and neon
+headers to build it, and no way to install them.
 
-### locks, four failures
-
-- **`cond_put` and `complex_cond_put` answer 412** where the condition should
-  have passed. The `If` header's evaluation is stricter than the specification
-  in a case the suite exercises and this tree's own tests do not.
-- **`lock_shared` answers 400** to a shared lock request, which reads as the
-  scope not being accepted at all.
-- **`unmapped_lock` answers 404** where a lock on an unmapped URL should create
-  a locked empty resource.
-
-Phase 7 owns all four.
-
-## Two warnings, both the same shape
-
-`MKCOL` with a missing intermediate collection answers 404 where the
-specification says 409. The distinction is real to a client: 404 says the target
-is absent and 409 says the parent is, and a client that creates parents on
-demand branches on exactly that.
+So the table above is the last measured run, and the section on the defects is
+what the tree now does. Re-run the suite on a host that has it, and replace the
+table rather than adding to it. What to expect: five Go-only failures gone, and
+the collection copy and move cluster changed by the recursive-copy fix, which
+is the one repair here that alters behaviour both builds got wrong.
 
 ## A correction worth keeping
 

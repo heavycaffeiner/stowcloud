@@ -5,6 +5,7 @@ package dav
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -345,14 +346,53 @@ func TestALockIsTakenAndReportedBackWithItsToken(t *testing.T) {
 	}
 }
 
-func TestASharedLockIsRefused(t *testing.T) {
+// Shared locks are taken, and what makes them shared is that a second one is
+// admitted where an exclusive one is refused.
+//
+// This build used to answer 400 to the request outright, which reads to a
+// client as the scope not being understood at all.
+func TestASharedLockAdmitsASecondHolderAndStillBlocksAnExclusiveOne(t *testing.T) {
 	f := newFixture(t)
 	f.write(t, "a.txt", "hello")
-	body := `<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:shared/></D:lockscope>` +
+	sharedBody := `<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:shared/></D:lockscope>` +
 		`<D:locktype><D:write/></D:locktype></D:lockinfo>`
-	rec := f.do(t, "LOCK", "/a.txt", body, nil)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400: shared locks are not offered", rec.Code)
+	exclusiveBody := `<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope>` +
+		`<D:locktype><D:write/></D:locktype></D:lockinfo>`
+
+	rec := f.do(t, "LOCK", "/a.txt", sharedBody, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 for a shared lock\n%s", rec.Code, rec.Body)
+	}
+	// The response says which scope was taken. Reporting "exclusive" here
+	// would tell the client it holds something nobody else can take.
+	if !strings.Contains(rec.Body.String(), "shared") {
+		t.Fatalf("the lock was reported as something other than shared\n%s", rec.Body)
+	}
+
+	// A second shared lock is what shared is for.
+	if rec := f.do(t, "LOCK", "/a.txt", sharedBody, nil); rec.Code != http.StatusOK {
+		t.Fatalf("a second shared lock returned %d, want 200", rec.Code)
+	}
+	// An exclusive one over it is not.
+	if rec := f.do(t, "LOCK", "/a.txt", exclusiveBody, nil); rec.Code != http.StatusLocked {
+		t.Fatalf("an exclusive lock over a shared one returned %d, want 423", rec.Code)
+	}
+}
+
+// And the other order: a shared lock cannot be taken over an exclusive one.
+func TestASharedLockIsRefusedOverAnExclusiveOne(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "a.txt", "hello")
+	exclusiveBody := `<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope>` +
+		`<D:locktype><D:write/></D:locktype></D:lockinfo>`
+	sharedBody := `<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:shared/></D:lockscope>` +
+		`<D:locktype><D:write/></D:locktype></D:lockinfo>`
+
+	if rec := f.do(t, "LOCK", "/a.txt", exclusiveBody, nil); rec.Code != http.StatusOK {
+		t.Fatalf("the exclusive lock failed: %d", rec.Code)
+	}
+	if rec := f.do(t, "LOCK", "/a.txt", sharedBody, nil); rec.Code != http.StatusLocked {
+		t.Fatalf("a shared lock over an exclusive one returned %d, want 423", rec.Code)
 	}
 }
 
@@ -395,6 +435,97 @@ func TestAWriteWithoutTheLockTokenIsRefusedAndWithItIsAllowed(t *testing.T) {
 	withToken := http.Header{"If": {"(<" + token + ">)"}}
 	if rec := f.do(t, "PROPPATCH", "/a.txt", patch, withToken); rec.Code != http.StatusMultiStatus {
 		t.Fatalf("a write with the token returned %d, want 207", rec.Code)
+	}
+}
+
+// A PUT guarded by the lock token and the ETag the server itself issued has to
+// succeed. This is the conformance suite's cond_put, reproduced end to end.
+//
+// It failed with 412 on every request. Every file validator on Linux is weak
+// here, because statx exposes no inode change version, and the If evaluation
+// refused any weak tag outright: a client that echoed back the exact ETag it
+// had just been given was told its precondition failed, so guarding a write
+// with If was impossible on this build.
+func TestAPutGuardedByTheServersOwnETagAndLockSucceeds(t *testing.T) {
+	f := newFixture(t)
+	f.write(t, "a.txt", "hello")
+
+	// The ETag exactly as a client reads it, weak marker and all, which is
+	// what the suite does with a HEAD.
+	head := f.do(t, "HEAD", "/a.txt", "", nil)
+	etag := head.Header().Get("ETag")
+	if etag == "" {
+		t.Fatal("no ETag came back, so there is nothing to guard on")
+	}
+
+	lockBody := `<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope>` +
+		`<D:locktype><D:write/></D:locktype></D:lockinfo>`
+	rec := f.do(t, "LOCK", "/a.txt", lockBody, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the lock failed: %d", rec.Code)
+	}
+	token := strings.Trim(rec.Header().Get("Lock-Token"), "<>")
+
+	// The suite's own header shape: (<token> [etag]).
+	guard := http.Header{"If": {"(<" + token + "> [" + etag + "])"}}
+	if rec := f.do(t, "PUT", "/a.txt", "replaced", guard); rec.Code != http.StatusNoContent {
+		t.Fatalf("a PUT guarded by the server's own ETag returned %d, want 204\n%s",
+			rec.Code, rec.Body)
+	}
+
+	// And the guard still guards: a tag that is not the current one fails.
+	stale := http.Header{"If": {"(<" + token + `> [W/"0000000000000000"])`}}
+	if rec := f.do(t, "PUT", "/a.txt", "again", stale); rec.Code != http.StatusPreconditionFailed {
+		t.Fatalf("a PUT guarded by a stale ETag returned %d, want 412", rec.Code)
+	}
+
+	// The suite's complex form: two lists, OR-ed, the second asserting the
+	// client does not hold a token nobody holds. The ETag moved with the write
+	// above, so it is read again.
+	head = f.do(t, "HEAD", "/a.txt", "", nil)
+	etag = head.Header().Get("ETag")
+	complex := http.Header{"If": {
+		"(<" + token + "> [" + etag + "]) (Not <DAV:no-lock> [" + etag + "])",
+	}}
+	if rec := f.do(t, "PUT", "/a.txt", "third", complex); rec.Code != http.StatusNoContent {
+		t.Fatalf("a PUT with the complex conditional returned %d, want 204\n%s",
+			rec.Code, rec.Body)
+	}
+}
+
+// A LOCK on a URL that maps to nothing creates an empty resource and locks it.
+//
+// It is how a client reserves a name before writing it, so answering 404 makes
+// the reservation impossible: a client that locks before every PUT could not
+// create a file at all. This build answered 404 until the conformance run
+// named it.
+func TestLockingAnUnmappedURLCreatesAndLocksIt(t *testing.T) {
+	f := newFixture(t)
+	body := `<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope>` +
+		`<D:locktype><D:write/></D:locktype></D:lockinfo>`
+
+	rec := f.do(t, "LOCK", "/reserved.txt", body, nil)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 for a lock on an unmapped URL\n%s", rec.Code, rec.Body)
+	}
+	if rec.Header().Get("Lock-Token") == "" {
+		t.Fatal("no lock token came back, so the caller holds nothing")
+	}
+
+	// The resource exists now, and it is empty: a reservation, not a file with
+	// content nobody sent.
+	got, err := os.ReadFile(filepath.Join(f.host, "reserved.txt"))
+	if err != nil {
+		t.Fatalf("the locked resource was not created: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("the created resource holds %q, want nothing", got)
+	}
+
+	// And it is genuinely locked: a second lock is refused rather than
+	// creating it again.
+	if rec := f.do(t, "LOCK", "/reserved.txt", body, nil); rec.Code != http.StatusLocked {
+		t.Fatalf("a second lock returned %d, want 423", rec.Code)
 	}
 }
 
@@ -809,6 +940,123 @@ func TestCopyingACollectionIsAccepted(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want 202 for a recursive copy\n%s", rec.Code, rec.Body)
 	}
+
+	// The 202 says the copy started, not that it finished. Returning here
+	// leaves it writing into a directory t.TempDir is about to remove, which
+	// fails the cleanup rather than the assertion and does so only when the
+	// timing happens to land: this test failed roughly one run in six with
+	// "directory not empty" and nothing pointing at the copy.
+	waitFor(t, func() bool {
+		_, err := os.Stat(filepath.Join(f.host, "sub2", "x.txt"))
+		return err == nil
+	})
+}
+
+// A MKCOL whose parent does not exist is 409, not 404.
+//
+// The distinction is real to a client: 404 says the target is absent, which it
+// is meant to be, and 409 says the parent is. A client that creates parents on
+// demand branches on exactly that, and told 404 it has no reason to.
+func TestMkcolWithAMissingParentIsAConflict(t *testing.T) {
+	f := newFixture(t)
+
+	rec := f.do(t, "MKCOL", "/nothere/child", "", nil)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 for a missing intermediate collection", rec.Code)
+	}
+
+	// With the parent there it succeeds, so the conflict is about the parent
+	// rather than about the depth of the path.
+	if rec := f.do(t, "MKCOL", "/nothere", "", nil); rec.Code != http.StatusCreated {
+		t.Fatalf("creating the parent returned %d, want 201", rec.Code)
+	}
+	if rec := f.do(t, "MKCOL", "/nothere/child", "", nil); rec.Code != http.StatusCreated {
+		t.Fatalf("creating the child returned %d, want 201", rec.Code)
+	}
+}
+
+// The collection-copy sequence the conformance suite runs: copy a tree, copy
+// it again elsewhere, refuse a copy onto an existing collection, then allow it
+// with overwrite, and check the members actually arrived.
+//
+// The members are the point. A recursive COPY answered 202 and copied nothing
+// at all, because the operation was started with a zero source stat, which told
+// the walker every directory was a file. A test asserting only the status
+// passed against that for the whole of the port.
+func TestTheCollectionCopySequence(t *testing.T) {
+	f := newFixture(t)
+	for i := range 3 {
+		f.write(t, fmt.Sprintf("ccsrc/foo.%d", i), "x")
+	}
+	f.write(t, "ccsrc/subcoll/deep.txt", "y")
+
+	if rec := f.transfer(t, "COPY", "/ccsrc", "/ccdest", false); rec.Code != http.StatusAccepted {
+		t.Fatalf("the first collection COPY returned %d\n%s", rec.Code, rec.Body)
+	}
+
+	// Every member, not just the first, and waited for as a set: the walk
+	// visits entries in directory order, so any one of them finishing says
+	// nothing about the others. A walk that stops early is the defect this
+	// sequence exists to catch, and waiting on a single file would hide it.
+	members := []string{filepath.Join("subcoll", "deep.txt")}
+	for i := range 3 {
+		members = append(members, fmt.Sprintf("foo.%d", i))
+	}
+	waitFor(t, func() bool {
+		for _, m := range members {
+			if _, err := os.Stat(filepath.Join(f.host, "ccdest", m)); err != nil {
+				return false
+			}
+		}
+		return true
+	})
+
+	// A second copy elsewhere, so there are two collections to copy between.
+	if rec := f.transfer(t, "COPY", "/ccsrc", "/ccdest2", false); rec.Code != http.StatusAccepted {
+		t.Fatalf("the second collection COPY returned %d", rec.Code)
+	}
+	waitFor(t, func() bool {
+		_, err := os.Stat(filepath.Join(f.host, "ccdest2", "foo.0"))
+		return err == nil
+	})
+
+	// Onto an existing collection without overwrite: refused.
+	if rec := f.transfer(t, "COPY", "/ccdest", "/ccdest2", false); rec.Code != http.StatusPreconditionFailed {
+		t.Fatalf("COPY onto an existing collection returned %d, want 412", rec.Code)
+	}
+	// With overwrite: allowed.
+	if rec := f.transfer(t, "COPY", "/ccdest2", "/ccdest", true); rec.Code != http.StatusAccepted {
+		t.Fatalf("COPY with overwrite returned %d, want 202", rec.Code)
+	}
+	// Waited for, like the others. A 202 that is still running when the test
+	// returns is a copy writing into a closed store and a removed directory,
+	// which fails whatever test happens to be running next.
+	waitFor(t, func() bool {
+		_, err := os.Stat(filepath.Join(f.host, "ccdest", "foo.0"))
+		return err == nil
+	})
+}
+
+// waitFor polls until cond holds, or fails the test.
+//
+// A poll rather than a sleep: a sleep long enough to be reliable on a loaded
+// machine is one every run pays for, and a short one is the flake it was
+// supposed to fix.
+//
+// The bound is a number of attempts rather than a wall-clock deadline. Nothing
+// outside internal/clock reads the wall clock in this tree, and a test is not
+// an exception: the rule exists because a machine whose clock has not been set
+// is a machine this product still has to work on.
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	const attempts = 5000
+	for range attempts {
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("the background operation did not finish")
 }
 
 // A range request has to be answered as a range.

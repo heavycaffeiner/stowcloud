@@ -198,10 +198,29 @@ func (h *Handler) mkcol(w http.ResponseWriter, r *http.Request, res core.Resolve
 		return
 	}
 	if _, err := h.core.Mkdir(r.Context(), res); err != nil {
+		// A missing intermediate collection is 409, not 404. The distinction is
+		// real to a client: 404 says the target is absent, which it is meant to
+		// be, and 409 says the parent is. A client that creates parents on
+		// demand branches on exactly that, and told 404 it has no reason to.
+		if errors.Is(err, core.ErrNotFound) && !h.parentExists(res) {
+			h.fail(w, r, core.ErrConflict)
+			return
+		}
 		h.fail(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+}
+
+// parentExists reports whether the collection this one would go inside is
+// there. The share root is always present, so a path one level down has one.
+func (h *Handler) parentExists(res core.Resolved) bool {
+	p := res.Path()
+	if p.IsRoot() || p.Parent().IsRoot() {
+		return true
+	}
+	st, err := res.Root().Stat(p.Parent())
+	return err == nil && st.Kind.IsDir()
 }
 
 func (h *Handler) del(w http.ResponseWriter, r *http.Request, res core.Resolved) {

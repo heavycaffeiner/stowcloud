@@ -217,7 +217,8 @@ func StatusOf(err error) (int, Name) {
 		return http.StatusOK, Name{}
 
 	case errors.Is(err, ErrDTDForbidden), errors.Is(err, ErrPIForbidden),
-		errors.Is(err, ErrBadXML), errors.Is(err, ErrBadRequest):
+		errors.Is(err, ErrBadXML), errors.Is(err, ErrBadRequest),
+		errors.Is(err, ErrUndeclaredPrefix):
 		return http.StatusBadRequest, Name{}
 
 	case errors.Is(err, ErrTooManyElements), errors.Is(err, ErrTooDeep):
@@ -243,7 +244,7 @@ func StatusOf(err error) (int, Name) {
 	case errors.Is(err, errUnsupportedMedia):
 		return http.StatusUnsupportedMediaType, Name{}
 
-	case errors.Is(err, core.ErrNotEmpty):
+	case errors.Is(err, core.ErrNotEmpty), errors.Is(err, core.ErrConflict):
 		return http.StatusConflict, Name{}
 
 	case errors.Is(err, core.ErrNoSpace):

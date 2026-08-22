@@ -189,6 +189,60 @@ held the entry: a deleted file came back.
 `BenchmarkMerge`, `BenchmarkQuery` and `BenchmarkChildrenOf` are checked in, so
 the next person to change this has the numbers rather than the recollection.
 
+### Five conformance defects, and one the suite could not see
+
+**Was**: five tests only the Go build failed. Each is now fixed, and the
+detail is in `CONFORMANCE.md`. Two are worth repeating here because the
+conformance name understated them.
+
+`cond_put` failed because every file validator on Linux is weak, this build
+issues them correctly marked, and the `If` evaluation refused any weak tag
+outright. The suite reads the `ETag` header and echoes it back, so a client
+sending the exact validator the server had just given it was told its
+precondition failed. **Guarding a write with `If` was impossible**, which is a
+lot larger than two failing tests.
+
+`unmapped_lock` failed because a LOCK on a URL that maps to nothing answered
+404. That is how a client reserves a name before writing it, so a client that
+locks before every PUT could not create a file.
+
+**And one the suite reported only as a cluster it could not attribute.** A
+recursive COPY answered 202 and copied nothing: the operation was started with
+a zero source stat, which told the walker every directory was a file. Every
+collection COPY over WebDAV produced nothing for the whole of the port. The
+existing test asserted the 202 and passed against it for the whole of the port
+too, which is the same lesson as the top of this document in a new place: the
+status is not the behaviour.
+
+### The SMB service group is configurable
+
+**Was**: a constant in the publisher, so a bare-metal install whose service
+account lived in another group had no way to say so. The failure was at least
+loud, because the agent refuses a sync naming the group it could not find, but
+the only fix was a rebuild.
+
+**Now**: `smb.service_gid`, defaulting to the group `Dockerfile.smb` creates,
+so a stock container deployment is unchanged. Zero is refused at startup: it is
+root's group, the agent runs as root, and an account file putting every SMB
+account in it would be applied rather than questioned.
+
+### The index has one ceiling rather than two
+
+**Was**: a build stopped at five million entries and the incremental updater
+did not, so a corpus that grew past what a build covers kept growing the index
+and with it the cost of every merge.
+
+**Now**: both stop at the same bound, and reaching it marks the index short of
+its corpus. That mark is the part that matters. An index that stopped early
+used to keep answering queries from the part of the tree it had reached, so a
+file past the ceiling was missing from a result carrying a success status: the
+exact silent shortness the incremental update path was built to prevent,
+arriving by another route. Every query now declines and takes the walk, which
+is slower and always current.
+
+Removals still apply at the ceiling. A bound that stops those is one the index
+can only grow past.
+
 ### The gate's own tools were older than the toolchain
 
 **Was**: `golangci-lint` and `govulncheck` are installed into `go/.tools/bin`
@@ -313,31 +367,20 @@ request shape. Phase 9 owns it and its own document lists the milestones. The
 worker pool's cost is now measured rather than assumed, which is what the
 sizing needs: roughly 10 MB resident per worker, linear in the worker count.
 
-### 2. The service group id is compiled in
+### 2. The WebDAV conformance suite has not been re-run
 
-**What is true.** `smbpublish.serviceGID` is 1000 and must match the group in
-the sidecar image. Nothing checks the two agree at build time.
+**What is true.** The five Go-only failures are fixed, each with a test that
+reproduces the suite's own request sequence read out of litmus 0.18's source.
+`CONFORMANCE.md` has the detail.
 
-**What goes wrong.** If the image's group changes and this constant does not,
-the agent refuses the sync with "no group exists for 1000". That is a good
-failure, loud and specific, and it is the agent's own check rather than luck.
+**What is unverified.** The suite itself. This machine has neither litmus nor
+the autotools and neon headers to build it, and no way to install them, so the
+table in that document is still the last measured run.
 
-**The fix.** Not urgent. If the group ever becomes configurable it belongs in
-the SMB config section beside `service_user`, not in a constant.
-
-### 3. Nothing bounds how large the index may grow
-
-**What is true.** A build stops at `CorpusScanEntries`, five million. The
-incremental updater has no such bound: it appends what a directory holds.
-
-**What goes wrong.** A corpus that grows past what a build covers keeps growing
-the index, and the merge cost above grows with it. It is a slow drift rather
-than a failure, and the numbers say a merge stays under a second per two
-hundred thousand entries, so it has room before it matters.
-
-**The fix.** Bound the updater the way the build is bounded, and report the
-index as partial when it is. Not urgent, and it should be measured against a
-real corpus that actually drifts rather than guessed at.
+**The fix.** Run it on a host that has the suite and replace the table. Two
+things should move: the five Go-only failures, and part of the collection copy
+and move cluster, because the recursive-copy defect found while fixing them
+broke every collection COPY in both directions.
 
 ## Things that look like problems and are not
 
@@ -377,9 +420,10 @@ Worth recording, because each is a decision someone will otherwise revisit.
 
 These are unchanged and each has its own document.
 
-- **Ten WebDAV conformance failures**, five carried over from the previous
-  implementation and five this port's. `CONFORMANCE.md` attributes each. Phase
-  7 owns the Go-only ones.
+- **The WebDAV conformance failures.** The five Go-only ones are fixed, above.
+  Of the five both builds failed, the recursive-copy defect sits underneath at
+  least three and the MKCOL status correction touches a fourth. What remains is
+  what the re-run measures. `CONFORMANCE.md` attributes each.
 - **Twenty status-code differences**, every one a refusal against a different
   refusal, none a success against a failure. `DIFFER.md` has the table. A
   status vocabulary belongs to the phase owning the surface.

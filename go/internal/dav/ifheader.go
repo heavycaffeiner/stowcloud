@@ -63,8 +63,9 @@ type ResourceState struct {
 	Tokens []string
 	// ETag is the current validator, unquoted.
 	ETag string
-	// Weak reports that the validator is weak, in which case no entity-tag
-	// condition can match it.
+	// Weak reports that the validator is weak, which is what every file
+	// validator on Linux is here: statx exposes no inode change version, so a
+	// metadata-derived token cannot promise the bytes are unchanged.
 	Weak bool
 	// Exists is false for a resource that is not there, and then only a
 	// negated condition can hold.
@@ -165,10 +166,22 @@ func (h IfHeader) Evaluate(stateOf func(tag string, tagged bool) ResourceState) 
 					}
 				}
 			case CondETag:
-				// A weak validator can never satisfy an If condition: the
-				// header is used to guard writes, and a weak tag does not
-				// promise the bytes are unchanged.
-				hit = st.Exists && !st.Weak && !cond.Weak && st.ETag == cond.Value
+				// The tags have to be equal and agree on strength. That is
+				// the strong comparison RFC 4918 asks for, applied to what
+				// this server actually issues.
+				//
+				// Refusing every weak tag outright, which this did, made the
+				// header useless on this build: every file validator here is
+				// weak, so a client echoing back the exact ETag the server
+				// had just given it was told the precondition failed. A
+				// client that guards writes with If could not write at all.
+				//
+				// What the weak marker costs is still enforced, because it
+				// is the same token either way: two different byte sequences
+				// can share this validator only if their size, mtime, ctime
+				// and identity all match, and a client is told the guarantee
+				// is advisory by the marker itself.
+				hit = st.Exists && st.Weak == cond.Weak && st.ETag == cond.Value
 			}
 			if hit == cond.Not {
 				all = false

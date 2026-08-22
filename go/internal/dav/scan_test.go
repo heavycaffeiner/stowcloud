@@ -179,9 +179,47 @@ func TestAPrefixBoundElsewhereIsNotDav(t *testing.T) {
 }
 
 func TestAnUndeclaredPrefixIsRefused(t *testing.T) {
+	// On the root, which was already refused before the scanner checked
+	// prefixes at all: an unresolved D: is not DAV:, so the root is wrong.
+	// That is a real refusal and it is not this rule.
 	body := `<D:propfind><D:prop><D:getetag/></D:prop></D:propfind>`
 	if _, err := ParsePropFind([]byte(body), Limits{}); err == nil {
 		t.Fatal("an undeclared prefix was accepted")
+	}
+
+	// On an inner element, which is the case the specification's own suite
+	// exercises and this build used to answer 207 to. The document is
+	// namespace-malformed and the answer is 400, whatever the property means.
+	//
+	// encoding/xml does not report it: an undeclared prefix arrives with Space
+	// set to the prefix itself, so {bar}foo is indistinguishable from a
+	// properly declared namespace unless the declarations are tracked.
+	inner := `<propfind xmlns="DAV:"><prop><bar:foo/></prop></propfind>`
+	if _, err := ParsePropFind([]byte(inner), Limits{}); !errors.Is(err, ErrUndeclaredPrefix) {
+		t.Fatalf("err = %v, want the undeclared prefix refused", err)
+	}
+}
+
+// The declaration does not have to be on the element that uses it: a prefix
+// bound anywhere above is bound here, and refusing that would refuse most real
+// documents, which declare everything on the root.
+func TestAPrefixDeclaredOnAnAncestorIsBound(t *testing.T) {
+	body := `<propfind xmlns="DAV:" xmlns:x="urn:example"><prop><x:thing/></prop></propfind>`
+	got, err := ParsePropFind([]byte(body), Limits{})
+	if err != nil {
+		t.Fatalf("a prefix declared on the root was refused: %v", err)
+	}
+	if len(got.Props) != 1 || got.Props[0].Space != "urn:example" {
+		t.Fatalf("parsed as %+v, want the one urn:example property", got.Props)
+	}
+}
+
+// The two prefixes the specification binds without a declaration. Refusing
+// either would refuse a legal document.
+func TestTheReservedPrefixesNeedNoDeclaration(t *testing.T) {
+	body := `<propfind xmlns="DAV:"><prop><thing xml:lang="en"/></prop></propfind>`
+	if _, err := ParsePropFind([]byte(body), Limits{}); err != nil {
+		t.Fatalf("xml: was refused: %v", err)
 	}
 }
 
