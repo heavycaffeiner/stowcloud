@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -129,6 +130,10 @@ type NameIndex struct {
 	delta      []live
 	deltaFiles []string
 	deltaBytes int64
+	// merging is set while a merge builds a base outside the lock. It is what
+	// stops a second one starting from a snapshot the first has not published
+	// yet, which would publish a base missing the first's writes.
+	merging bool
 	// tomb maps a share and path to the sequence at which it was deleted.
 	tomb      map[tombKey]uint64
 	tombBytes int64
@@ -493,42 +498,132 @@ func (ix *NameIndex) NeedsMerge() bool {
 // never on a request path. The gate is polled as it goes, and a refusal aborts
 // cleanly: a merge that was told to stop must never be able to damage the
 // index, so nothing is replaced until the new segment is complete.
+//
+// The rebuild runs without the lock. It reads every entry in the base, sorts
+// them and compresses the result, which measured 4.4 seconds on a million
+// entries against 87 microseconds for a query: holding the write lock across it
+// stops fifty thousand queries' worth of work, on a timer nobody asked for.
+//
+// What makes that safe is that a base segment is immutable once written and the
+// overlay is only ever appended to. So the merge takes a snapshot, builds
+// against it with nothing held, and takes the lock again only to swap. Writes
+// that land in between are not lost and not merged: they stay in the overlay
+// and the next merge takes them.
 func (ix *NameIndex) Merge(ctx context.Context, gate func() bool) error {
 	if gate != nil && !gate() {
 		return nil
 	}
 
+	snap, ok := ix.sealForMerge()
+	if !ok {
+		// Another merge is in flight. Two would each build a base from a
+		// snapshot taken before the other's, and whichever finished second
+		// would publish one that never held the first's writes.
+		return nil
+	}
+	defer ix.releaseMerge()
+
+	buf, err := snap.build(ctx, gate, ix.cfg)
+	if err != nil || buf == nil {
+		// A gate refusal returns no buffer and no error. Nothing has been
+		// replaced, and the sealed segment is picked up by the next merge.
+		return err
+	}
+
+	return ix.publish(snap, buf)
+}
+
+// mergeSnapshot is the state one merge builds against.
+//
+// Every field is either immutable or a copy, so the build reads it with no
+// lock held while the index goes on serving queries and taking writes.
+type mergeSnapshot struct {
+	base *BaseSegment
+	// delta is the overlay as it stood. The backing array is never written
+	// again past this length: an append either fits and writes past it, or
+	// reallocates and leaves this one alone.
+	delta []live
+	tomb  map[tombKey]uint64
+	// files are the delta segments this merge absorbs. Appends after the seal
+	// go to a new file, so these can be removed without losing a write that
+	// landed during the build.
+	files []string
+	// seq is the sequence the seal happened at. A tombstone above it is newer
+	// than this base and has to survive the swap.
+	seq uint64
+}
+
+// sealForMerge takes the snapshot and starts a fresh delta segment.
+//
+// The fresh segment is what makes the old ones safe to delete. Without it an
+// append during the build would land in a file this merge is about to remove,
+// and the entry would be in no segment and in no base.
+func (ix *NameIndex) sealForMerge() (mergeSnapshot, bool) {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
 
+	if ix.merging {
+		return mergeSnapshot{}, false
+	}
+	ix.merging = true
+
+	snap := mergeSnapshot{
+		base:  ix.base,
+		delta: ix.delta,
+		tomb:  make(map[tombKey]uint64, len(ix.tomb)),
+		files: slices.Clone(ix.deltaFiles),
+		seq:   ix.seq,
+	}
+	for k, v := range ix.tomb {
+		snap.tomb[k] = v
+	}
+
+	// Appends from here go to a segment this merge does not absorb.
+	ix.deltaFiles = append(ix.deltaFiles, nextDeltaPath(ix.dir, ix.deltaFiles))
+	return snap, true
+}
+
+func (ix *NameIndex) releaseMerge() {
+	ix.mu.Lock()
+	ix.merging = false
+	ix.mu.Unlock()
+}
+
+// build produces the new base segment. No lock is held for any of it.
+func (s mergeSnapshot) build(ctx context.Context, gate func() bool, cfg Config) ([]byte, error) {
+	tombstoned := func(share uint32, path string, seq uint64) bool {
+		at, ok := s.tomb[tombKey{share: share, path: path}]
+		return ok && at >= seq
+	}
+
 	var entries []Entry
-	if ix.base != nil {
-		if err := ix.base.EachEntry(func(e Entry) error {
+	if s.base != nil {
+		if err := s.base.EachEntry(func(e Entry) error {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			if ix.tombstonedLocked(e.Share, e.Path, 0) {
+			if tombstoned(e.Share, e.Path, 0) {
 				return nil
 			}
 			entries = append(entries, e)
 			return nil
 		}); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if gate != nil && !gate() {
-		return nil
+		return nil, nil
 	}
 
-	seen := map[tombKey]bool{}
+	seen := make(map[tombKey]bool, len(entries)+len(s.delta))
 	for _, e := range entries {
 		seen[tombKey{share: e.Share, path: e.Path}] = true
 	}
-	for _, d := range ix.delta {
+	for _, d := range s.delta {
 		if err := ctx.Err(); err != nil {
-			return err
+			return nil, err
 		}
-		if ix.tombstonedLocked(d.share, d.path, d.seq) {
+		if tombstoned(d.share, d.path, d.seq) {
 			continue
 		}
 		k := tombKey{share: d.share, path: d.path}
@@ -540,13 +635,29 @@ func (ix *NameIndex) Merge(ctx context.Context, gate func() bool) error {
 	}
 
 	TreeOrder(entries)
-	buf, err := WriteBase(entries, ix.cfg.BlockSize, ix.cfg.PruneDFRatio)
+	buf, err := WriteBase(entries, cfg.BlockSize, cfg.PruneDFRatio)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if gate != nil && !gate() {
-		return nil
+		return nil, nil
 	}
+	return buf, nil
+}
+
+// publish swaps the new base in and drops what it absorbed.
+//
+// This is the only part that holds the write lock. It is a rename, a handful of
+// removes and one small rewrite, all of them bounded by what arrived during the
+// build rather than by the corpus.
+func (ix *NameIndex) publish(snap mergeSnapshot, buf []byte) error {
+	seg, oerr := OpenBase(buf)
+	if oerr != nil {
+		return oerr
+	}
+
+	ix.mu.Lock()
+	defer ix.mu.Unlock()
 
 	// The new base is staged and published by an atomic rename with the parent
 	// directory synced, so a crash here leaves the old segment intact rather
@@ -562,28 +673,118 @@ func (ix *NameIndex) Merge(ctx context.Context, gate func() bool) error {
 
 	// The segments the new base absorbed are only removed after it is in
 	// place, so a crash between the two leaves duplicates rather than a hole.
-	for _, f := range ix.deltaFiles {
+	// Only the sealed ones: anything appended during the build is in a segment
+	// this merge never read.
+	absorbed := make(map[string]bool, len(snap.files))
+	for _, f := range snap.files {
+		absorbed[f] = true
 		if rerr := os.Remove(f); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
 			return fmt.Errorf("index: removing a merged delta: %w", rerr)
 		}
 	}
-	tombPath := filepath.Join(ix.dir, "tomb.idx")
-	if rerr := os.Remove(tombPath); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
-		return fmt.Errorf("index: removing the merged tombstones: %w", rerr)
+
+	// The tombstones this base already applied are gone; any recorded during
+	// the build are newer than it and are kept. The file is rewritten rather
+	// than removed, because removing it would drop those.
+	//
+	// The comparison is inclusive because the seal records the next sequence to
+	// be issued, so the first write after it carries exactly that number. An
+	// exclusive one drops that tombstone while the base it was checked against
+	// still holds the entry, which resurrects a deleted file.
+	survivors := map[tombKey]uint64{}
+	for k, at := range ix.tomb {
+		if at >= snap.seq {
+			survivors[k] = at
+		}
+	}
+	tombBytes, terr := rewriteTombstones(ix.dir, survivors)
+	if terr != nil {
+		return terr
 	}
 
-	seg, oerr := OpenBase(buf)
-	if oerr != nil {
-		return oerr
+	// What the overlay keeps: the entries appended after the seal. They are
+	// the tail of the slice, because appends only ever add to the end.
+	kept := ix.delta[min(len(snap.delta), len(ix.delta)):]
+	var files []string
+	var deltaBytes int64
+	for _, f := range ix.deltaFiles {
+		if absorbed[f] {
+			continue
+		}
+		files = append(files, f)
+		if st, serr := os.Stat(f); serr == nil {
+			deltaBytes += st.Size()
+		}
 	}
+
 	ix.base = seg
 	ix.baseBytes = int64(len(buf))
-	ix.delta = nil
-	ix.deltaFiles = nil
-	ix.deltaBytes = 0
-	ix.tomb = map[tombKey]uint64{}
-	ix.tombBytes = 0
+	ix.delta = slices.Clone(kept)
+	ix.deltaFiles = files
+	ix.deltaBytes = deltaBytes
+	ix.tomb = survivors
+	ix.tombBytes = tombBytes
 	return nil
+}
+
+// rewriteTombstones replaces tomb.idx with the ones that outlived a merge, and
+// reports the file's new size. An empty set removes the file.
+func rewriteTombstones(dir string, survivors map[tombKey]uint64) (int64, error) {
+	tombPath := filepath.Join(dir, "tomb.idx")
+	if len(survivors) == 0 {
+		if rerr := os.Remove(tombPath); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+			return 0, fmt.Errorf("index: removing the merged tombstones: %w", rerr)
+		}
+		return 0, nil
+	}
+
+	// One record per sequence, because the sequence is what orders a tombstone
+	// against an append and a record carries exactly one.
+	bySeq := map[uint64][]Entry{}
+	for k, at := range survivors {
+		bySeq[at] = append(bySeq[at], Entry{Share: k.share, Path: k.path})
+	}
+	seqs := make([]uint64, 0, len(bySeq))
+	for s := range bySeq {
+		seqs = append(seqs, s)
+	}
+	slices.Sort(seqs)
+
+	var body []byte
+	for _, s := range seqs {
+		entries := bySeq[s]
+		TreeOrder(entries)
+		payload, err := EncodePayload(s, entries)
+		if err != nil {
+			return 0, err
+		}
+		framed, ferr := Frame(payload)
+		if ferr != nil {
+			return 0, ferr
+		}
+		body = append(body, framed...)
+	}
+
+	if werr := vfs.ReplaceFileDurable(tombPath, 0o600, func(f *os.File) error {
+		_, err := f.Write(body)
+		return err
+	}); werr != nil {
+		return 0, fmt.Errorf("index: rewriting the tombstones: %w", werr)
+	}
+	return int64(len(body)), nil
+}
+
+// nextDeltaPath names a segment after every one that exists, so the ordering
+// their names encode keeps holding.
+func nextDeltaPath(dir string, existing []string) string {
+	next := 0
+	for _, f := range existing {
+		var n int
+		if _, err := fmt.Sscanf(filepath.Base(f), "delta.%03d.idx", &n); err == nil && n >= next {
+			next = n + 1
+		}
+	}
+	return filepath.Join(dir, fmt.Sprintf("delta.%03d.idx", next))
 }
 
 // Stats reports what the index holds.

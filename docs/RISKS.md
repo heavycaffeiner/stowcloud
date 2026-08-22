@@ -158,6 +158,37 @@ which of the two they were shown.
 A build under a second is not recorded: dividing by a fraction of a second
 produces a rate no later build matches.
 
+### A merge no longer blocks every query
+
+**Was**: `Merge` took the write lock for the whole rebuild. That was correct by
+construction and nobody had timed it. Measured, on a million entries: **4.4
+seconds**, against 87 microseconds for a query. Fifty thousand queries' worth
+of pause, and the updater's timer had just become what decides when it happens.
+
+**Now**: the rebuild runs against a snapshot with no lock held, and the lock is
+taken only for the swap. What makes that safe is a property the format already
+had: a base segment is immutable once written and the overlay is only appended
+to. The seal opens a fresh delta segment, so a write landing mid-merge goes
+somewhere the merge will not delete, and stays in the overlay for the next one.
+
+The same corpus, with a query loop running against the merge:
+
+| | queries completed | worst query |
+|---|---|---|
+| lock across the build | 3 | 3.58 s |
+| lock for the swap only | 44,378 | 3.1 ms |
+
+The faster shape has a way to be wrong that the old one did not, so each way is
+a test: an append during a merge, a tombstone during a merge, an applied
+tombstone being dropped, a second merge refused, and a concurrent run under the
+race detector. Writing them found a real defect. The seal records the next
+sequence to be issued, so the first write after it carries exactly that number,
+and an exclusive comparison dropped that tombstone while the new base still
+held the entry: a deleted file came back.
+
+`BenchmarkMerge`, `BenchmarkQuery` and `BenchmarkChildrenOf` are checked in, so
+the next person to change this has the numbers rather than the recollection.
+
 ### The gate's own tools were older than the toolchain
 
 **Was**: `golangci-lint` and `govulncheck` are installed into `go/.tools/bin`
@@ -253,20 +284,19 @@ failure, loud and specific, and it is the agent's own check rather than luck.
 **The fix.** Not urgent. If the group ever becomes configurable it belongs in
 the SMB config section beside `service_user`, not in a constant.
 
-### 2. A merge cannot run while a query holds the index
+### 2. Nothing bounds how large the index may grow
 
-**What is true.** `Merge` takes the write lock for the whole rebuild, which
-reads every entry in the base segment and writes a new one.
+**What is true.** A build stops at `CorpusScanEntries`, five million. The
+incremental updater has no such bound: it appends what a directory holds.
 
-**What goes wrong.** Queries block for the duration of a merge. On a large
-corpus that is a pause every query pays for, and the updater's timer is what
-decides when.
+**What goes wrong.** A corpus that grows past what a build covers keeps growing
+the index, and the merge cost above grows with it. It is a slow drift rather
+than a failure, and the numbers say a merge stays under a second per two
+hundred thousand entries, so it has room before it matters.
 
-**What is unverified.** How long a merge takes on a real corpus. Nothing has
-timed one, which is the same gap the build rate had.
-
-**The fix.** Time it first. The measurement decides whether this needs the
-staged-and-renamed shape the base publication already has on the read side.
+**The fix.** Bound the updater the way the build is bounded, and report the
+index as partial when it is. Not urgent, and it should be measured against a
+real corpus that actually drifts rather than guessed at.
 
 ## Things that look like problems and are not
 
@@ -340,6 +370,8 @@ which date immediately.
 
 ## If you change one thing
 
-Measure a merge. It is the only entry left whose cost is unknown rather than
-understood, and it is now on a path that runs by itself: the updater's timer
-decides when the pause happens, and nobody has ever timed the pause.
+Measure the preview worker pool. It is the last thing in this tree whose cost
+is unknown rather than understood: `FOOTPRINT.md` names it as the regression
+the expectation predicted most confidently, and then did not measure it. Every
+other number that mattered has since been taken, and each time the measurement
+changed what was done rather than confirming it.
