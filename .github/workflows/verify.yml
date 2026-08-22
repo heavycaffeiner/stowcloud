@@ -44,10 +44,15 @@ env:
   # bundles npm 10.9.8, which cannot `npm ci` a lockfile npm 11 wrote.
   NODE_VERSION: "24"
   # The toolchain CI compiles with, which is not the same statement go/go.mod
-  # makes. That directive is the dependency floor, currently 1.25, set by what
-  # golang.org/x/sys declares; this is a current stable release pinned so a
-  # runner does not change compilers underneath a green run. They move
-  # independently, and only the floor is a compatibility promise.
+  # makes. That directive is the dependency floor, currently 1.25, which is the
+  # highest any dependency declares: x/sys, x/crypto, x/text, x/image and
+  # modernc's sqlite and libc all sit there. This is a current stable release
+  # pinned so a runner does not change compilers underneath a green run. They
+  # move independently, and only the floor is a compatibility promise.
+  #
+  # The Dockerfiles track this value rather than the floor. An image building
+  # with a different compiler from the one the gate ran means the binary that
+  # ships is not the binary that was verified.
   GO_VERSION: "1.26"
 
 jobs:

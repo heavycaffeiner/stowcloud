@@ -95,7 +95,7 @@ echo
 GO_TOOLS="$PWD/go/.tools/bin"
 # Pinned, because a linter that changes its rule set between two runs of this
 # script is a gate that means something different each time.
-GOLANGCI="github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2"
+GOLANGCI="github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.1"
 # Not pinned, and deliberately: its whole job is to know about advisories
 # published after this line was written.
 GOVULN="golang.org/x/vuln/cmd/govulncheck@latest"
@@ -143,13 +143,30 @@ have_cc() { [ -n "$(cc_path)" ]; }
 # it under go/.tools/bin if it is not already there or on PATH. Installing into
 # the checkout rather than GOPATH/bin means a gate run writes nothing outside
 # the repository it was pointed at.
+#
+# A cached binary is reused only when it was built by the toolchain now on
+# PATH. Both of these tools load and type-check source with the go/* packages
+# they were compiled against, so one built by an older release cannot parse a
+# newer standard library: golangci-lint panicked on go1.27's math/rand/v2 and
+# govulncheck refused to load any package at all. Both reported as a gate
+# failure against this tree, and neither had anything to do with this tree.
 go_tool() {
   local name="$1" mod="$2" p
+  local want
+  want=$(go env GOVERSION 2>/dev/null)
   for p in "$GO_TOOLS/$name" "$GO_TOOLS/$name.exe"; do
-    [ -x "$p" ] && { printf '%s' "$p"; return 0; }
+    [ -x "$p" ] || continue
+    if [ -z "$want" ] || go version "$p" 2>/dev/null | grep -qF "$want"; then
+      printf '%s' "$p"; return 0
+    fi
+    # Built by a different toolchain. Removed rather than reported, because a
+    # stale one here is not a thing anybody chose.
+    rm -f "$p"
   done
   p=$(command -v "$name" 2>/dev/null)
-  if [ -n "$p" ]; then printf '%s' "$p"; return 0; fi
+  if [ -n "$p" ] && { [ -z "$want" ] || go version "$p" 2>/dev/null | grep -qF "$want"; }; then
+    printf '%s' "$p"; return 0
+  fi
   ( cd go && env CGO_ENABLED=0 GOBIN="$(native "$GO_TOOLS")" go install "$mod" ) \
     >/dev/null 2>&1 || return 1
   for p in "$GO_TOOLS/$name" "$GO_TOOLS/$name.exe"; do

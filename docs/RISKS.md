@@ -158,6 +158,36 @@ which of the two they were shown.
 A build under a second is not recorded: dividing by a fraction of a second
 produces a rate no later build matches.
 
+### The gate's own tools were older than the toolchain
+
+**Was**: `golangci-lint` and `govulncheck` are installed into `go/.tools/bin`
+and reused if present. Both load and type-check source with the `go/*` packages
+they were compiled against, so a binary built by an older release cannot parse
+a newer standard library. Against go1.27 the linter panicked on `math/rand/v2`
+and govulncheck refused to load any package at all.
+
+Both reported as a gate failure against this tree, and neither had anything to
+do with this tree. That is the worst failure a gate can have: it is red for a
+reason the diff cannot explain, so the way to get work done is to stop reading
+it.
+
+**Now**: a cached tool is reused only when `go version` on the binary matches
+the toolchain on PATH, and rebuilt when it does not. Rebuilding them turned up
+three real findings in this tree that the panicking linter had been hiding: two
+unchecked type assertions and a shadowed error.
+
+### Two smbagent tests named the wrong tool
+
+**Was**: both fail on a machine with Samba's client package and not its server.
+They guard on `testparm`, which the client package carries, and then start the
+daemon, which needs `smbd` from the server package. The failure read as "a
+rejected candidate replaced the configuration that was serving", which is a
+report of a serious agent defect, from a box that simply had no `smbd`.
+
+**Now**: `requireDaemon` names every tool those two drive, so they skip with a
+reason. A test that fails everywhere it runs is one people stop reading, and a
+failure that names the wrong cause is worse than no test.
+
 ### The archive reports what it could not pack
 
 **Was**: `_skipped.txt` covered the permission case and nothing covered a read
@@ -223,20 +253,7 @@ failure, loud and specific, and it is the agent's own check rather than luck.
 **The fix.** Not urgent. If the group ever becomes configurable it belongs in
 the SMB config section beside `service_user`, not in a constant.
 
-### 2. Two smbagent tests fail on this machine
-
-**What is true.** `TestARejectedCandidateKeepsWhatWasAlreadyServing` and
-`TestApplyingTheSameStateTwiceIsUnchangedTheSecondTime` fail here. Both
-predate this work: they fail identically at the commit before it.
-
-**What is unverified.** Whether they fail on a machine with Samba's tools
-installed. Both drive `testparm` and the daemon, so the likely cause is the
-environment rather than the code, and nothing has confirmed that.
-
-**The fix.** Run them where Samba is installed and find out which it is. A test
-that fails everywhere it is run is one people stop reading.
-
-### 3. A merge cannot run while a query holds the index
+### 2. A merge cannot run while a query holds the index
 
 **What is true.** `Merge` takes the write lock for the whole rebuild, which
 reads every entry in the base segment and writes a new one.
@@ -301,6 +318,25 @@ These are unchanged and each has its own document.
   regression.
 - **The jail is unproven on aarch64.** `JAIL-PROOF.md`; it needs a second
   machine.
+
+## Dependencies and the toolchain
+
+Recorded because the reasoning is what a later update needs, not the versions,
+which date immediately.
+
+- **`go/go.mod`'s directive is the floor, not the compiler.** It is 1.25,
+  which is the highest any dependency declares. CI and both Dockerfiles compile
+  with a pinned current release, and those now agree with each other: an image
+  building with a different compiler from the one the gate ran means the binary
+  that ships is not the binary that was verified.
+- **Vite stays on 7.** `vite-plugin-functions-mixins` declares `vite: ^7.2.4`
+  and has no release above 0.4.1. It is not optional: m3-svelte's CSS is
+  written against the `@function`/`@mixin` proposal, so without the plugin
+  every elevation shadow and every type style silently drops out. Vite 8 needs
+  that plugin to move first, or the styles to stop depending on it.
+- **TypeScript stays on 5.** SvelteKit 2.70's peer range is `^5.3.3 || ^6.0.0`.
+- **The one advisory was a lockfile pin, not a version range.** `postcss`
+  already allowed the fixed `nanoid`; the lockfile held an older resolution.
 
 ## If you change one thing
 

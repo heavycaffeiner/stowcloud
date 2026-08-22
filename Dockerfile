@@ -34,7 +34,12 @@
 
 # The toolchain, pinned by digest rather than by tag: a tag is a moving target
 # and this is the one input that decides what the binary is.
-ARG GO_IMAGE=golang:1.25-bookworm
+#
+# The same release CI compiles with, not go/go.mod's directive. That directive
+# is the dependency floor and the two move independently, but the image and CI
+# building with different compilers means the binary an image ships is not the
+# one the gate ran against.
+ARG GO_IMAGE=golang:1.26-bookworm
 
 # node 24, not 22, for the npm major it bundles. The lockfile in web/ was
 # written by npm 11, and npm 10 reads the same file as out of sync and fails on

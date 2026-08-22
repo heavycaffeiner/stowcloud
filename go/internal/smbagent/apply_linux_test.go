@@ -18,9 +18,28 @@ import (
 // close: what it checks is the decision the agent makes and the file it
 // promotes, and both need a validator that answers.
 
+// requireTools skips when the validator is missing, which is all a test needs
+// that only promotes a file.
 func requireTools(t *testing.T) {
 	t.Helper()
-	for _, bin := range []string{"testparm"} {
+	requireBins(t, "testparm")
+}
+
+// requireDaemon skips when the daemon or the credential tool is missing.
+//
+// Separate from requireTools because they are different installations: the
+// client package carries testparm and pdbedit, and the server package carries
+// smbd. A box with the first and not the second passed the tools check and
+// then failed on "smbd: executable file not found", which reads as a defect in
+// the agent rather than as a missing package.
+func requireDaemon(t *testing.T) {
+	t.Helper()
+	requireBins(t, "testparm", "pdbedit", "smbd")
+}
+
+func requireBins(t *testing.T, bins ...string) {
+	t.Helper()
+	for _, bin := range bins {
 		if _, err := exec.LookPath(bin); err != nil {
 			t.Skipf("%s is not installed here; the sidecar image has it", bin)
 		}
@@ -122,8 +141,12 @@ func TestAShareWhosePathIsMissingIsReported(t *testing.T) {
 }
 
 // A rejected candidate leaves the previous configuration running.
+//
+// It needs the daemon: the first apply has to succeed for there to be a
+// previous configuration to keep, and an apply that could not start the daemon
+// promotes nothing.
 func TestARejectedCandidateKeepsWhatWasAlreadyServing(t *testing.T) {
-	requireTools(t)
+	requireDaemon(t)
 	agent, paths := newAgent(t)
 
 	writeRendered(t, paths, t.TempDir())
@@ -169,7 +192,7 @@ func TestAMovedBindLineIsARestartAndAnUnchangedOneIsNeither(t *testing.T) {
 // Applying the same state twice does nothing the second time, so a poll that
 // finds no change does not restart the daemon every couple of seconds.
 func TestApplyingTheSameStateTwiceIsUnchangedTheSecondTime(t *testing.T) {
-	requireTools(t)
+	requireDaemon(t)
 	agent, paths := newAgent(t)
 	writeRendered(t, paths, t.TempDir())
 

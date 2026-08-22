@@ -92,6 +92,22 @@ func (d *DB) ClearSettings(ctx context.Context, section string) error {
 	})
 }
 
+// searchSection is the stored search settings, or an empty document when there
+// are none.
+//
+// The section holds values written by different callers at different times: the
+// administrator's switch and the rate the last build measured. Reading it whole
+// before writing either is what keeps one from dropping the other. A value of
+// the wrong shape is replaced rather than merged into, because nothing can be
+// merged into a document that is not one.
+func searchSection(all map[string]any) map[string]any {
+	section, ok := all["search"].(map[string]any)
+	if !ok || section == nil {
+		return map[string]any{}
+	}
+	return section
+}
+
 // IndexNameEnabled reports whether the name index is on. Absent means off:
 // building one is an act somebody has to choose.
 func (d *DB) IndexNameEnabled(ctx context.Context) (bool, error) {
@@ -115,12 +131,9 @@ func (d *DB) SetIndexNameEnabled(ctx context.Context, enabled bool) error {
 	if err != nil {
 		return err
 	}
-	section, _ := all["search"].(map[string]any)
-	if section == nil {
-		section = map[string]any{}
-	}
 	// Merged into the section rather than replacing it, so storing the switch
 	// does not drop the measured build rate stored beside it.
+	section := searchSection(all)
 	section["name_index_enabled"] = enabled
 	return d.MergeSettings(ctx, "search", section)
 }
@@ -157,10 +170,7 @@ func (d *DB) SetIndexBuildRate(ctx context.Context, rate uint64) error {
 	if err != nil {
 		return err
 	}
-	section, _ := all["search"].(map[string]any)
-	if section == nil {
-		section = map[string]any{}
-	}
+	section := searchSection(all)
 	section["build_rate"] = rate
 	return d.MergeSettings(ctx, "search", section)
 }

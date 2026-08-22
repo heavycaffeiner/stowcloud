@@ -37,8 +37,8 @@ func TestTheIndexSwitchAndTheBuildRateDoNotOverwriteEachOther(t *testing.T) {
 	}
 
 	// And the other order, because the bug is symmetrical.
-	if err := d.SetIndexBuildRate(ctx, 999); err != nil {
-		t.Fatalf("SetIndexBuildRate: %v", err)
+	if serr := d.SetIndexBuildRate(ctx, 999); serr != nil {
+		t.Fatalf("SetIndexBuildRate: %v", serr)
 	}
 	on, err = d.IndexNameEnabled(ctx)
 	if err != nil {
