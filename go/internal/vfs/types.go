@@ -1,5 +1,7 @@
 package vfs
 
+import "fmt"
+
 // ShareID names one configured share. It is an opaque number and nothing in
 // this package derives a path from it.
 type ShareID uint32
@@ -75,6 +77,37 @@ const (
 	// RESOLVE_IN_ROOT.
 	SymlinkFollow
 )
+
+// ParseSymlinkPolicy is the trust boundary for the configured value.
+//
+// A name this build does not implement is a refusal rather than a warning and
+// a fallback: an operator who wrote "within_share" and silently got "deny"
+// believes a share follows symlinks that it does not, and the difference is
+// invisible until somebody's link fails to open.
+func ParseSymlinkPolicy(s string) (SymlinkPolicy, error) {
+	switch s {
+	case "deny":
+		return SymlinkDeny, nil
+	case "within_share":
+		return SymlinkWithinShare, nil
+	case "follow":
+		return SymlinkFollow, nil
+	}
+	return 0, fmt.Errorf(
+		"symlink policy %q is not one this build implements; it is \"deny\", \"within_share\" or \"follow\"", s)
+}
+
+// String is the configured spelling, so a round trip through the config and
+// the settings surface is the same word.
+func (p SymlinkPolicy) String() string {
+	switch p {
+	case SymlinkWithinShare:
+		return "within_share"
+	case SymlinkFollow:
+		return "follow"
+	}
+	return "deny"
+}
 
 // Owner is the uid and gid a share applies to what it creates.
 type Owner struct {

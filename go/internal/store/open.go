@@ -44,6 +44,9 @@ type Options struct {
 
 // Store is the three databases.
 type Store struct {
+	// dir is the data directory, which is the volume the size guard samples.
+	dir string
+
 	cacheFile   *dbfile.DB
 	stateFile   *dbfile.DB
 	journalFile *dbfile.DB
@@ -87,7 +90,7 @@ func Open(dir string, opt Options) (*Store, error) {
 	if err != nil {
 		return nil, errors.Join(err, cacheFile.Close(), stateFile.Close())
 	}
-	s := &Store{cacheFile: cacheFile, stateFile: stateFile, cache: c, state: st}
+	s := &Store{dir: dir, cacheFile: cacheFile, stateFile: stateFile, cache: c, state: st}
 
 	journalFile, err := dbfile.Open(ctx, journal.Spec(filepath.Join(dir, JournalFile)))
 	if err != nil {
@@ -120,4 +123,17 @@ func (s *Store) Close() error {
 		err = errors.Join(err, s.journalFile.Close())
 	}
 	return errors.Join(err, s.cacheFile.Close(), s.stateFile.Close())
+}
+
+// files is every open database, for the operations that move all of them
+// together. journalFile is nil when the journal could not be opened, which is
+// a warning rather than a failure: the server still serves files.
+func (s *Store) files() []*dbfile.DB {
+	out := make([]*dbfile.DB, 0, 3)
+	for _, f := range []*dbfile.DB{s.cacheFile, s.stateFile, s.journalFile} {
+		if f != nil {
+			out = append(out, f)
+		}
+	}
+	return out
 }

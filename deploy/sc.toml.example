@@ -49,6 +49,27 @@ burst = 100
 # that can be raced.
 hardening = "required"
 
+[db]
+# The store's disk bound. Off by default, and that is deliberate rather than an
+# oversight: an instance that stops accepting writes because a cache grew is
+# worse than one that uses more disk than expected. Hardening above fails the
+# other way, and the split is the point: fail closed on a security control,
+# fail open on the user's own data.
+#
+# Turning it on with neither bound below set is a refused startup, because a
+# guard that can never trip reads as protection and is not.
+size_guard = false
+
+# Block writes when the volume holding the data directory has less than this
+# available. A tripped guard refuses the writes that grow a database and keeps
+# serving reads, and the health endpoint reports it.
+# min_free_bytes = 1073741824
+
+# Block writes when the three databases together exceed this. A bound on this
+# server's own footprint, where min_free_bytes is a bound on the volume it
+# shares with everything else.
+# max_bytes = 10737418240
+
 [smb]
 # Whether SMB is published at all. Off by default: SMB starts explicitly.
 #
@@ -70,7 +91,20 @@ service_user = "scsvc"
 # (Each [[shares]] entry below also takes `trash_enabled`, off by default: a
 # deleted file is removed rather than kept, because trash is disk somebody has
 # to reclaim and a server that quietly keeps everything fills up. An
-# administrator can turn it on per share from the settings screen instead.)
+# administrator can turn it on per share from the settings screen instead.
+#
+# And `symlink_policy`, one of:
+#
+#   "deny"          the default: a symlink is visible in a listing and cannot
+#                   be opened or traversed.
+#   "within_share"  follow it as long as the target stays inside this share.
+#                   An absolute target is rebased into the share.
+#   "follow"        follow a relative symlink. An absolute target still fails;
+#                   nothing reaches outside the share under any of the three.
+#
+# A value this build does not implement is a refused startup rather than a
+# warning and a fallback: an operator who wrote a typo and silently got "deny"
+# believes a share follows links that it does not.)
 
 # The numeric group every rendered SMB account is put in. It must be a group
 # that exists in the sidecar's own container, which is what the published

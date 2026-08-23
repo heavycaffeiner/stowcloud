@@ -96,6 +96,23 @@ func (h *HealthState) Resolve(kind, detail string) {
 	delete(h.reasons, kind+"\x00"+detail)
 }
 
+// ResolveKind removes every degradation of one kind, whatever detail each
+// carries.
+//
+// For a condition whose detail names which of several bounds tripped: the
+// size guard reports the free-space floor or the size ceiling, and a caller
+// clearing it knows the condition is over without knowing which one it was.
+// Resolving by the exact detail would leave the other one standing forever.
+func (h *HealthState) ResolveKind(kind string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for k, r := range h.reasons {
+		if r.Kind == kind {
+			delete(h.reasons, k)
+		}
+	}
+}
+
 // Reasons returns the current degradations, in a stable order so two reads of
 // an unchanged state are the same answer.
 func (h *HealthState) Reasons() []HealthReason {

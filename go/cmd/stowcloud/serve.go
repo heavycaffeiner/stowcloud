@@ -169,11 +169,17 @@ func registerConfigShares(
 ) []core.RejectedShare {
 	var rejected []core.RejectedShare
 	for i, sh := range cfg.Shares {
+		// The default is the restrictive policy, and the share's own symlink
+		// setting is applied over it. That setting had a type, three modes and a
+		// resolver that branches on all three, and no way to reach it: every
+		// share got Deny whatever the operator wrote.
+		policy := vfs.DefaultSharePolicy()
+		policy.Symlink = sh.Symlink
 		def := core.ShareDef{
 			ID:               core.ShareID(i + 1),
 			Name:             sh.Name,
 			Host:             sh.Host,
-			Policy:           vfs.DefaultSharePolicy(),
+			Policy:           policy,
 			SharedExternally: sh.SharedExternally,
 			TrashEnabled:     sh.TrashEnabled,
 		}
@@ -502,6 +508,29 @@ func runServe(args []string, stderr io.Writer) int {
 	// index per event.
 	indexUpdater = service.NewUpdater(searchSvc, coreSvc.ScanSources, log)
 	task.Go(ctx, "search index updater", func() { indexUpdater.Run(ctx) })
+
+	// The size guard. dbfile has always been able to refuse a write that grows
+	// a file, and nothing ever sampled the volume to decide it should: the flag
+	// was set only by tests, so the guard could not trip and the health reason
+	// for it could not be reported. Returns immediately when neither bound is
+	// configured, which is the default.
+	if cfg.DBGuard.Enabled() {
+		task.Go(ctx, "store size guard", func() {
+			st.RunGuard(ctx, cfg.DBGuard, func(g store.GuardState) {
+				if g.Blocked {
+					log.Warn("the store size guard tripped; writes are refused and reads continue",
+						"reason", g.Reason,
+						"available_bytes", g.AvailableBytes,
+						"store_bytes", g.StoreBytes)
+					health.Degrade(handler.ReasonDatabaseSizeGuard, g.Reason)
+					return
+				}
+				log.Info("the store size guard cleared; writes are accepted again",
+					"available_bytes", g.AvailableBytes)
+				health.ResolveKind(handler.ReasonDatabaseSizeGuard)
+			})
+		})
+	}
 
 	// What an administrator saved for SMB, over what the config file said.
 	//

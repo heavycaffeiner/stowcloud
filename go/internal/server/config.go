@@ -12,6 +12,8 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
 	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/smb"
+	"github.com/heavycaffeiner/stowcloud/go/internal/store"
+	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
 // Config is the typed configuration every other package accepts. The TOML
@@ -38,6 +40,12 @@ type Config struct {
 	// Hardening is what the operator asked of the sandbox. The shipped default
 	// refuses to start when a layer cannot be applied.
 	Hardening jail.Policy
+
+	// DBGuard bounds the store's disk use. Off unless asked for: an instance
+	// that stops accepting writes because a cache grew is worse than one that
+	// uses more disk than expected, which is the opposite of the stance
+	// hardening takes and deliberately so.
+	DBGuard store.GuardConfig
 
 	// SMB is what the sidecar publishes, and where to reach it. Off by
 	// default: SMB starts explicitly.
@@ -68,6 +76,12 @@ type ShareConfig struct {
 	// Off by default, because trash is disk somebody has to reclaim and a
 	// server that silently keeps everything is a server that fills up.
 	TrashEnabled bool
+	// Symlink is what this share does with a symlink. Per share rather than
+	// global: one folder of curated links and one folder of uploads want
+	// different answers, and the resolver takes it per root already.
+	//
+	// Deny by default, which is the restrictive one.
+	Symlink vfs.SymlinkPolicy
 }
 
 // SMBConfig is the publishing half of the SMB settings, alongside the render
@@ -109,6 +123,11 @@ type raw struct {
 	Security struct {
 		Hardening string `toml:"hardening"`
 	} `toml:"security"`
+	DB struct {
+		SizeGuard    bool    `toml:"size_guard"`
+		MaxBytes     *uint64 `toml:"max_bytes"`
+		MinFreeBytes *uint64 `toml:"min_free_bytes"`
+	} `toml:"db"`
 	OIDC struct {
 		Enabled               bool     `toml:"enabled"`
 		Issuer                string   `toml:"issuer"`
@@ -135,6 +154,7 @@ type raw struct {
 		HostPath         string `toml:"host_path"`
 		SharedExternally bool   `toml:"shared_externally"`
 		TrashEnabled     bool   `toml:"trash_enabled"`
+		SymlinkPolicy    string `toml:"symlink_policy"`
 	} `toml:"shares"`
 }
 
@@ -300,10 +320,38 @@ func Validate(r raw) (*Config, error) {
 			return nil, fmt.Errorf("shares[%d]: %q is named twice", i, sh.Name)
 		}
 		seen[sh.Name] = true
+		// The symlink policy, refused by name rather than defaulted. An
+		// operator who wrote a value this build does not implement believes
+		// the share follows links it does not.
+		policy := vfs.SymlinkDeny
+		if sh.SymlinkPolicy != "" {
+			p, perr := vfs.ParseSymlinkPolicy(sh.SymlinkPolicy)
+			if perr != nil {
+				return nil, fmt.Errorf("shares[%d] (%q): %w", i, sh.Name, perr)
+			}
+			policy = p
+		}
 		cfg.Shares = append(cfg.Shares, ShareConfig{
 			Name: sh.Name, Host: sh.HostPath, SharedExternally: sh.SharedExternally,
-			TrashEnabled: sh.TrashEnabled,
+			TrashEnabled: sh.TrashEnabled, Symlink: policy,
 		})
+	}
+
+	// The size guard. size_guard is the switch; a bound with the switch off is
+	// stored and not applied, which is what lets an operator set the numbers
+	// before turning it on.
+	if r.DB.SizeGuard {
+		if r.DB.MinFreeBytes != nil {
+			cfg.DBGuard.MinFreeBytes = *r.DB.MinFreeBytes
+		}
+		if r.DB.MaxBytes != nil {
+			cfg.DBGuard.MaxBytes = *r.DB.MaxBytes
+		}
+		if !cfg.DBGuard.Enabled() {
+			return nil, fmt.Errorf(
+				"db.size_guard is on and neither db.min_free_bytes nor db.max_bytes is set, " +
+					"so nothing would ever trip it")
+		}
 	}
 
 	cfg.Hardening = jail.Required
