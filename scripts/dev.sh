@@ -134,22 +134,47 @@ BIN="$PWD/$DIR/stowcloud"
 (cd go && CGO_ENABLED=0 go build -tags embed_ui -o "$BIN" ./cmd/stowcloud) \
   || { echo "the build failed" >&2; exit 1; }
 
+# A server already on the port is stopped first, and waited for. Without this
+# the new one loses the bind, exits, and the checks below still passed: the
+# pid file named a process that was gone while the old binary went on serving
+# the old build. What that looks like from outside is a restart that changed
+# nothing, which is a bad thing to have to debug through a browser.
+if [ -f "$DIR/pid" ] && kill -0 "$(cat "$DIR/pid")" 2>/dev/null; then
+  kill "$(cat "$DIR/pid")" 2>/dev/null
+fi
+for _ in $(seq 1 40); do
+  ss -tln 2>/dev/null | grep -q ":$PORT " || break
+  sleep 0.25
+done
+if ss -tln 2>/dev/null | grep -q ":$PORT "; then
+  echo "something is still listening on $PORT:" >&2
+  ss -tlnp 2>/dev/null | grep ":$PORT " >&2
+  exit 1
+fi
+
 echo "==> serving"
-"$BIN" serve "$DIR/sc.toml" > "$DIR/log" 2>&1 &
+# Truncated, so the readiness check below reads this run rather than matching
+# a "listening" line the previous one left behind.
+: > "$DIR/log"
+"$BIN" serve "$DIR/sc.toml" >> "$DIR/log" 2>&1 &
 SERVER=$!
 echo "$SERVER" > "$DIR/pid"
 
-# Give it long enough to bind, open its databases and mint a setup token.
-for _ in $(seq 1 40); do
+# Ready means bound, not merely alive. A process that failed to bind is alive
+# for as long as it takes to print the reason and exit, which a liveness check
+# hits often enough to report a dead server as a running one.
+READY=
+for _ in $(seq 1 60); do
   sleep 0.25
-  kill -0 "$SERVER" 2>/dev/null || break
-  grep -q "listening" "$DIR/log" 2>/dev/null && break
+  if ! kill -0 "$SERVER" 2>/dev/null; then break; fi
+  if grep -q "msg=listening" "$DIR/log" 2>/dev/null; then READY=1; break; fi
 done
 
-if ! kill -0 "$SERVER" 2>/dev/null; then
+if [ -z "$READY" ]; then
   echo
-  echo "the server exited instead of serving:" >&2
+  echo "the server did not start serving:" >&2
   sed -n '1,40p' "$DIR/log" >&2
+  rm -f "$DIR/pid"
   exit 1
 fi
 
