@@ -47,7 +47,7 @@ export interface Transport {
   deleteSession(id: string): Promise<void>
 }
 
-// ── Real transport (talks to the Rust backend once it exists) ──
+// ── Real transport ──
 
 function b64(s: string): string {
   return btoa(unescape(encodeURIComponent(s)))

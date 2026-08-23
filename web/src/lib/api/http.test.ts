@@ -1,6 +1,6 @@
 // web/src/lib/api/http.test.ts — httpApi's job wrappers. Every
 // `fs_move`/`fs_copy`/`fs_delete`/`fs_archive` request always answers
-// `202 { job }` (`crates/sc-http/src/routes.rs`) — there is no synchronous
+// `202 { job }` (`go/internal/httpapi/handler`) — there is no synchronous
 // fallback, so `copy`/`del`/`archive` (http.ts) hand that envelope straight
 // back to the caller rather than polling it internally. `state/job-tray
 // .svelte.ts` (via `state/jobs.ts::pollJob`) is the one that tracks it and

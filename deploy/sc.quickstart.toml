@@ -15,11 +15,11 @@ listen = "0.0.0.0:8443"
 # Every name this server answers to. A request arriving under any other name is
 # refused with 421 rather than served, so add the name you actually browse to.
 #
-# localhost covers `https://localhost:8443` on the machine running this. For a
-# LAN address or a domain, add it here, or add it from the settings screen once
-# you are signed in: that screen checks the change against the host you are
+# These two cover the machine running this, under either spelling. For a LAN
+# address or a domain, add it here, or add it from the settings screen once you
+# are signed in: that screen checks the change against the host you are
 # connected from and refuses a list that would lock you out.
-app_hosts = ["localhost"]
+app_hosts = ["localhost", "127.0.0.1"]
 
 # Where user content is served from, kept separate so an uploaded file cannot
 # execute in the origin that holds the session cookie. Downloads still work

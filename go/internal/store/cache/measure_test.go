@@ -84,19 +84,20 @@ func TestDriverMeasurement(t *testing.T) {
 	}
 	report(t, "steady-state invalidation", events, clk.Since(start))
 
-	// The threshold with a number in it. The comparison is against the
-	// implementation this replaces on the same tree, so the number comes from
-	// running that one first and is passed in rather than guessed at.
-	rust := envRows(t, "SC_MEASURE_RUST_SECONDS")
-	if rust == 0 {
-		t.Log("MEASURE no SC_MEASURE_RUST_SECONDS given, so the 3x threshold is not checked here")
+	// The threshold with a number in it. There is no baseline to measure
+	// against unless one is supplied: a hardcoded second count would be a
+	// statement about the machine that wrote it rather than about this code,
+	// so the comparison only runs when somebody passes a measured figure.
+	baseline := envRows(t, "SC_MEASURE_BASELINE_SECONDS")
+	if baseline == 0 {
+		t.Log("MEASURE no SC_MEASURE_BASELINE_SECONDS given, so the 3x threshold is not checked here")
 		return
 	}
-	limit := float64(rust) * 3
-	t.Logf("MEASURE cold populate %.2fs against %ds, which the threshold caps at %.2fs",
-		perRowElapsed.Seconds(), rust, limit)
+	limit := float64(baseline) * 3
+	t.Logf("MEASURE cold populate %.2fs against a %ds baseline, which the threshold caps at %.2fs",
+		perRowElapsed.Seconds(), baseline, limit)
 	if perRowElapsed.Seconds() > limit {
-		t.Errorf("the cold populate is over three times the implementation this replaces")
+		t.Errorf("the cold populate is over three times the supplied baseline")
 	}
 }
 

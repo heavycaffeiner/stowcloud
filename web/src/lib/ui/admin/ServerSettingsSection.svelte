@@ -1,7 +1,7 @@
 <script lang="ts">
   // Server settings — parity with `sc.toml`: every operator-settable
   // field this deployment has, reachable from this one screen
-  // (`crates/sc-http/src/settings_api.rs::SettingsSnapshot`). Most groups
+  // (`go/internal/httpapi/handler/settings.go`). Most groups
   // apply live; network/db/symlink-policy/homes and SMB's own on/off switch
   // need a restart, handled by the restart section at the bottom.
   //
@@ -9,7 +9,7 @@
   // own `[section] key` shape) — this component groups by an explicit key
   // set per form below, and anything left over (a field this screen doesn't
   // have a dedicated control for, always because it's `readonly_reason_key`'d —
-  // `settings_bridge.rs` never emits an editable field outside these groups)
+  // the server never emits an editable field outside these groups)
   // renders generically at the bottom instead of being silently dropped.
   import { t } from '../../i18n'
   import { api, ApiError } from '../../api/client'
@@ -665,7 +665,7 @@
   }
 
   // ── everything else this screen doesn't have a dedicated control for —
-  // always read-only (`settings_bridge.rs` never leaves an editable field
+  // always read-only (the server never leaves an editable field
   // out of the groups above), shown with its Korean reason rather than
   // hidden. ──
 

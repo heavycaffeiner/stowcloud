@@ -56,8 +56,8 @@ func scan(root string, out io.Writer) (int, error) {
 			return err
 		}
 		// testdata is where CJK belongs: folding tables and trigram
-		// fixtures are data, not copy, and the Rust gate this replaces
-		// carried the same exemption as a path allowlist.
+		// fixtures are data, not copy, and the gate this replaces carried
+		// the same exemption as a path allowlist.
 		if d.IsDir() {
 			if d.Name() == "testdata" {
 				return fs.SkipDir

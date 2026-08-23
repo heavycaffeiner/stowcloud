@@ -14,7 +14,7 @@
 # container needs --privileged and cgroup mounts; section 6 substitutes
 # `systemd-analyze verify` there and runs the real thing under OpenRC.
 #
-# The [global] block comes from real `sc-server smb-sync` output rather than
+# The [global] block comes from real `stowcloud smb-sync` output rather than
 # being hand-written, so a renderer change that breaks the agent's
 # first-line-is-[global] assumption fails this test instead of production.
 #
@@ -35,23 +35,27 @@ while [ $# -gt 0 ]; do
 done
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-[ -f "$TEMPLATE" ] || { echo "no rendered smb.conf at $TEMPLATE (run 'sc-server smb-sync' first, or pass --template)" >&2; exit 1; }
+[ -f "$TEMPLATE" ] || { echo "no rendered smb.conf at $TEMPLATE (run 'stowcloud smb-sync' first, or pass --template)" >&2; exit 1; }
 
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
 # One statically linked binary for all three distros. glibc and musl images
 # share the mount, so a dynamically linked build would fail on Alpine only,
-# which is the least useful place to find out.
-TARGET=x86_64-unknown-linux-musl
+# which is the least useful place to find out. CGO_ENABLED=0 is what makes it
+# static, and it is written out rather than left to the default: go turns cgo
+# on whenever a C compiler is on PATH.
 mkdir -p "$WORK/bin"
-echo "building sc-smb-agent for $TARGET"
-( cd "$REPO" && cargo build --release --locked --target "$TARGET" -p sc-smb-agent ) || {
-    echo "could not build the agent. Add the target first:" >&2
-    echo "  rustup target add $TARGET" >&2
+echo "building sc-smb-agent"
+( cd "$REPO/go" && CGO_ENABLED=0 GOOS=linux go build -o "$WORK/bin/sc-smb-agent" ./cmd/sc-smb-agent ) || {
+    echo "could not build the agent" >&2
     exit 1
 }
-install -m 755 "$REPO/target/$TARGET/release/sc-smb-agent" "$WORK/bin/sc-smb-agent"
+chmod 755 "$WORK/bin/sc-smb-agent"
+if ldd "$WORK/bin/sc-smb-agent" 2>/dev/null | grep -q '=>'; then
+    echo "the agent came out dynamically linked; Alpine would fail on it" >&2
+    exit 1
+fi
 
 # Keep the real [global] verbatim; render_global emits it as the literal
 # first line and stops at the first share section.
@@ -76,7 +80,7 @@ mkdir -p "$WORK/cfg"
 SHARE
 } > "$WORK/cfg/smb.conf"
 
-# Exactly what sc_smb::render_passwd_entries produces: the account's own uid
+# Exactly what the server's passwd renderer produces: the account's own uid
 # (smb.service_uid + its row id, so 1000 + 1 here) on the shared service gid.
 # Not the service uid itself -- that is scsvc's, and the agent now refuses a
 # rendered uid that belongs to an account it does not manage.
@@ -166,13 +170,13 @@ ok "config installed, alice created and marked"
 # under test is the one sc-auth::export_smbpasswd targets.
 printf '%s\n%s\n' "$SC_PASSWORD" "$SC_PASSWORD" | smbpasswd -s -a alice >/dev/null
 # Samba refuses to read an smbpasswd file that is not 0600, and pdbedit -e
-# creates it 0644. sc_smb::write_all already writes 0600, so this only
+# creates it 0644. The renderer already writes 0600, so this only
 # reproduces production's mode rather than working around anything.
 touch "$SC_SMB_CONFIG_DIR/smbpasswd"
 chmod 600 "$SC_SMB_CONFIG_DIR/smbpasswd"
 pdbedit -e "smbpasswd:$SC_SMB_CONFIG_DIR/smbpasswd" >/dev/null
 
-# pdbedit -e writes uid 0 into field 2, where sc_auth::export_smbpasswd writes
+# pdbedit -e writes uid 0 into field 2, where the credential export writes
 # the smb.service_uid (§7.2 shows alice:1000:...). Importing the uid-0 form is
 # a silent no-op -- so check the agent notices, then rewrite the field to the
 # shape production actually renders.
@@ -182,7 +186,7 @@ pdbedit -e "smbpasswd:$SC_SMB_CONFIG_DIR/smbpasswd" >/dev/null
 # and until 2026-08-03 sc-auth wrote a bare row id, which meant this line was
 # quietly repairing a real bug on every run instead of failing on it. The
 # renderer's own output is pinned by
-# `smbpasswd_uids_are_the_base_plus_the_row_id_and_all_distinct` (crates/sc-auth)
+# the smbpasswd uid rule in `go/internal/auth` (base plus row id, all distinct)
 # and by the first-run integration test; keep this script's scope to the agent.
 rm -f /var/lib/samba/private/passdb.tdb
 $AGENT --once 2>&1 | grep -q 'WARNING: no passdb entry for: alice' \

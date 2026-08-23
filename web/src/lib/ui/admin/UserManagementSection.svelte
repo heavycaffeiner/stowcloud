@@ -3,7 +3,7 @@
   // role model (§8, `user.role`). GET/POST /api/admin/users, PATCH/DELETE
   // /api/admin/users/{id}.
   //
-  // Last-admin protection: the server (`sc_auth::AdminGuardError::LastAdmin`)
+  // Last-admin protection: the server (`go/internal/auth/admin.go`)
   // has final say and rejects with 409 `admin.last_admin`. This screen does
   // two things, neither of which replaces the server-side defense: shows
   // that failure clearly, and pre-disables the toggle/delete buttons when
@@ -76,7 +76,7 @@
 
   // Per-user quota: `quota_bytes` is the cap, enforced
   // on upload/copy/write against the running `usage_bytes` ledger
-  // (`sc_core::quota`'s module doc) — a write that would exceed it is
+  // (`go/internal/core/quota.go`) — a write that would exceed it is
   // refused with `507 quota.exceeded`, not just reported to NC clients.
   let quotaTarget = $state<AdminUser | null>(null)
   let quotaInput = $state('')

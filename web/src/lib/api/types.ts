@@ -2,7 +2,7 @@
 
 export type Kind = 'file' | 'dir' | 'symlink' | 'other'
 
-/** `crates/sc-http/src/core_api.rs::perms_to_json` — the wire shape of every
+/** `go/internal/httpapi/handler/fs.go` — the wire shape of every
  *  `perms` object the server emits (an `Entry`'s, a session root's, a share
  *  link's): always exactly these eight keys. The previous version of this
  *  interface had only five (missing `rename`/`move`/`download`) — harmless
@@ -59,16 +59,16 @@ export interface Entry {
   perms: Perms
   /**
    * The stable fileid `POST /api/fs/link` needs as `fid`. **Absent far more
-   * often than not** — `crates/sc-core/src/ops.rs::build_entry` only ever
+   * often than not** — `go/internal/core/ops.go` only ever
    * *looks up* an existing id (`MetaStore::lookup_fileid`, never
-   * `MetaStore::fileid`, the allocating one); `crates/sc-meta/src/node.rs`'s
+   * `MetaStore::fileid`, the allocating one); `go/internal/store/state`
    * own doc comment says a fileid is allocated lazily, only by "consumers
    * that actually need a stable id" (DAV rename tracking, share-link
    * creation) — "a web-UI-only deployment... creates zero rows". A plain
    * `list`/`stat` on a file nobody has ever shared or touched over WebDAV
    * comes back with no `id` at all (confirmed live: `GET /api/fs/stat`
-   * omits the field entirely; `#[serde(skip_serializing_if =
-   * "Option::is_none")]` on the Rust side). The UI has to treat this as a
+   * omits the field entirely rather than sending a null). The UI has to
+   * treat this as a
    * real, common case — not a shape bug to paper over — and tell the user
    * why a download button doesn't work rather than send `fid: undefined`
    * to a handler that requires it.
@@ -236,7 +236,7 @@ export type UploadSettingsResp = UploadSettingsReq
  *  the deployment, from the admin's point of view. Never carries a password
  *  hash, a TOTP secret, or anything from the SMB secret table; the server
  *  structurally cannot serialize those into this shape
- *  (`crates/sc-http/src/routes.rs::AdminUserWire`). */
+ *  (`go/internal/httpapi/handler/admin_users.go`). */
 export interface AdminUser {
   id: number
   name: string
@@ -251,12 +251,12 @@ export interface AdminUser {
    *. */
   quota_bytes: string | null
   /** Running usage ledger, as a string (same 2^53 reason). Not a live
-   *  filesystem recomputation — see `sc_core::quota`'s module doc for how
+   *  filesystem recomputation — see `go/internal/core/quota.go`'s module doc for how
    *  it's charged. */
   usage_bytes: string
 }
 
-/** One of the eight bits `sc_acl::Perms` defines (`sc-core::acl_store::PERM_NAMES`),
+/** One of the eight bits `go/internal/acl` defines (`sc-core::acl_store::PERM_NAMES`),
  *  spelled the way the (forthcoming) admin grant API sends and accepts them —
  *  lowercase, one word, always this exact set of eight. Kept as a union
  *  rather than a bare `string` so a typo in a literal (`"raed"`) is a
@@ -274,7 +274,7 @@ export const ALL_GRANT_PERMS: GrantPermName[] = [
   'download'
 ]
 
-/** A share this deployment has registered (`sc_core::Core::share_defs`) —
+/** A share this deployment has registered (`go/internal/core`) —
  *  used both by the grant-creation screen's picker (which only reads
  *  `id`/`name`) and by the share management screen, which is why `host_path` is here — an admin adding/editing a
  *  folder share has to see and set where it points on the host. This is a
@@ -310,7 +310,7 @@ export interface UpdateShareReq {
   trash_enabled?: boolean
 }
 
-/** Who a grant applies to — `sc_acl::Principal::Group`/`Principal::User`,
+/** Who a grant applies to — `go/internal/acl`/`Principal::User`,
  *  the same union `GrantManagementSection.svelte` renders regardless of
  *  which one is reached from (`UserManagementSection`'s per-user entry point
  *  or `GroupManagementSection`'s per-group one). */
@@ -319,7 +319,7 @@ export interface GrantPrincipal {
   id: number
 }
 
-/** One row of `GET /api/admin/groups` (`crates/sc-http/src/routes.rs::AdminGroupWire`). `members` is a plain id
+/** One row of `GET /api/admin/groups` (`go/internal/httpapi/handler/admin_users.go`). `members` is a plain id
  *  list, not full `AdminUser` rows — the group screen resolves names against
  *  the user list it already loaded, same as `AdminGrant.share` is an id
  *  resolved against `AdminShare[]` rather than embedded. */
@@ -341,7 +341,7 @@ export interface UpdateGroupReq {
   name: string
 }
 
-/** One row of `GET /api/admin/audit` (`crates/sc-http/src/routes.rs::AdminAuditRowWire`). Newest first. `actor`
+/** One row of `GET /api/admin/audit` (`go/internal/auth/audit.go`). Newest first. `actor`
  *  is `null` for a system-attributed row (e.g. an anonymous share-link
  *  action); `actor_name` is a best-effort resolved display name, `null` for
  *  a since-deleted account too. */
@@ -383,7 +383,7 @@ export interface AuditPage {
 
 /** One row of `GET /api/admin/grants` (not yet wired server-side — see
  *  `GrantManagementSection.svelte`'s top comment for the exact contract this
- *  type mirrors, `sc_core::acl_store::GrantRecord` for the Rust shape it
+ *  type mirrors, `go/internal/acl` for the server shape it
  *  comes from). `sc-acl`'s depth-first evaluation
  * is keyed on exactly these fields: which
  *  `share`/`subpath` this rule covers, whether it `inherit`s to
@@ -416,7 +416,7 @@ export interface CreateGrantReq {
 /** `PATCH /api/admin/grants/{id}` body — every field optional, so only what
  *  actually changed needs to be sent. `label: null` explicitly clears it
  *  back to the subpath-basename fallback; omitting the key leaves it alone
- *  (mirrors `sc_core::acl_store::GrantPatch`'s `Option<Option<String>>`). */
+ *  (mirrors `go/internal/acl`'s `Option<Option<String>>`). */
 export interface UpdateGrantReq {
   allow?: GrantPermName[]
   deny?: GrantPermName[]
@@ -519,17 +519,15 @@ export interface AuthUser {
   name: string
 }
 
-/** `POST /api/auth/login` / `POST /api/auth/login/totp` response. Tagged on
- *  `status` to match the server's `#[serde(tag = "status")]` enum exactly
- *  (`crates/sc-http/src/routes.rs::LoginResp`). */
+/** `POST /api/auth/login` / `POST /api/auth/login/totp` response, tagged on
+ *  `status` (`go/internal/httpapi/handler/session.go`). */
 export type LoginResult = { status: 'ok'; user: AuthUser } | { status: 'totp_required'; challenge: string }
 
 export type OnConflict = 'Fail' | 'Rename' | 'Overwrite' | 'Skip'
 
-/** `crates/sc-http/src/core_api.rs::OpResult` — the one per-item result shape
- *  `/fs/delete`, `/fs/move`, `/fs/copy`, `/trash/restore`, and
- *  `/trash/purge` all share (`Json(serde_json::json!({ "results": results }))`
- *  over `Vec<OpResult>` in every one of those handlers). This used to be
+/** `go/internal/httpapi/handler/ops.go` — the one per-item result shape
+ *  `/fs/delete`, `/fs/move`, `/fs/copy`, `/trash/restore` and `/trash/purge`
+ *  all share, sent as `{"results": [...]}`. This used to be
  *  declared as `{ path, status: 'ok' | 'error', error? }` — a shape nothing
  *  on the server has ever sent; the real field is `ok: boolean`, confirmed
  *  live (`{"results":[{"ok":true,"path":"..."}]}` /
@@ -555,8 +553,8 @@ export interface BatchResult {
 
 // ── trash ──
 
-/** One row of `GET /api/trash` (`crates/sc-http/src/core_api.rs::TrashEntry`).
- *  `id` is an opaque string (`"{share}:{uuid}"` — `sc-server/src/bridge.rs`'s
+/** One row of `GET /api/trash` (`go/internal/httpapi/handler/trash.go`).
+ *  `id` is an opaque string (`"{share}:{uuid}"` — `go/internal/httpapi/handler/trash.go`
  *  `trash_list`), never a `FileId`: a trashed item has no live fileid to be
  *  addressed by, so it must be round-tripped verbatim to `/trash/restore`
  *  and `/trash/purge` rather than parsed. */
@@ -660,7 +658,7 @@ export interface RecentHit {
 
 export type LinkDisposition = 'attachment' | 'inline_thumb' | 'stream'
 
-/** `POST /api/fs/link` response (`crates/sc-http/src/routes.rs::fs_link`). */
+/** `POST /api/fs/link` response (`go/internal/httpapi/handler/link.go`). */
 export interface LinkResponse {
   url: string
 }
@@ -668,14 +666,14 @@ export interface LinkResponse {
 // ── share links, owner side ──
 
 /** `POST/PATCH /api/shares[/:id]` request body's `perms` field
- *  (`crates/sc-http/src/core_api.rs::PermsReq`) — every key optional/defaults
+ *  (`go/internal/httpapi/handler/shares.go`) — every key optional/defaults
  *  to `false` server-side, so only the bits actually being granted need to be
  *  sent. Deliberately not reusing `Perms` (whose 8 keys are all required) —
  *  a share link request is a sparse grant, not a full permission snapshot. */
 export type PermsReq = Partial<Perms>
 
 /** One share link as its owner sees it (`GET/POST/PATCH /api/shares[/:id]`,
- *  `crates/sc-http/src/core_api.rs::ShareLinkInfo`). `token`/`url` are only
+ *  `go/internal/httpapi/handler/shares.go`). `token`/`url` are only
  *  ever populated on the response to the `POST` that created it — the
  *  plaintext token is generated once and never persisted, so no later `GET`
  *  can produce it again. */
@@ -693,7 +691,7 @@ export interface ShareLinkInfo {
   url?: string
 }
 
-/** `POST /api/shares` body (`crates/sc-http/src/core_api.rs::ShareLinkCreate`). */
+/** `POST /api/shares` body (`go/internal/httpapi/handler/shares.go`). */
 export interface ShareLinkCreateReq {
   path: string
   perms?: PermsReq
@@ -731,7 +729,7 @@ export interface MoveReq {
 
 /**
  * What `POST /api/fs/move` answers instead of `202 { job }` when `dry_run` is
- * set (`crates/sc-http/src/routes.rs::fs_move`). A move whose source and
+ * set (`go/internal/httpapi/handler/fs.go`). A move whose source and
  * destination sit on different filesystems cannot be a rename — the server
  * falls back to copy-then-delete, which reads and rewrites every byte and
  * bills the copy against quota until the source is gone. That turns an
@@ -750,10 +748,10 @@ export interface MovePreflight {
 
 export type JobState = 'running' | 'done' | 'error' | 'cancelled' | 'interrupted'
 
-/** Wire values of `crates/sc-http/src/state.rs::JobKind::as_str()`. */
+/** Wire values of `go/internal/httpapi/handler/admin_ops.go`. */
 export type JobKindWire = 'copy' | 'move' | 'delete' | 'archive' | 'index_build'
 
-/** `GET /api/jobs/{id}` (`crates/sc-http/src/routes.rs::job_status`,
+/** `GET /api/jobs/{id}` (`go/internal/httpapi/handler/admin_ops.go`,
  *  `JobStatus::done_total_json`). Every `fs_move`/`fs_copy`/`fs_delete`/
  *  `fs_archive` request always answers `202 { "job": "J-…" }` — there is no
  *  synchronous fallback, so this envelope is the *only* shape a caller of
@@ -785,7 +783,7 @@ export interface JobStatus {
   download: boolean
 }
 
-/** `GET /api/jobs` (`crates/sc-http/src/routes.rs::job_list`) — every
+/** `GET /api/jobs` (`go/internal/httpapi/handler/admin_ops.go`) — every
  *  non-terminal job (`running`/`interrupted`) the caller owns. `JobTray`
  *  fetches this once on mount to re-attach across a browser refresh *or* a
  *  server restart (a Docker cutover), since `jobs.db` — not the browser — is
@@ -795,7 +793,7 @@ export interface JobListResponse {
 }
 
 // ── live change notifications (`GET /api/events`,,
-// `crates/sc-http/src/ws.rs::ServerMsg`/`ClientMsg`) — a WebSocket, not SSE,
+// `go/internal/httpapi/ws/ws.go`) — a WebSocket, not SSE,
 // despite `search/stream` above using SSE for a superficially similar
 // "server pushes named events" shape: this one is bidirectional (the client
 // sends `sub`/`unsub`/`ping`), which SSE cannot do. ──
@@ -819,13 +817,13 @@ export interface ReadFileResponse {
   content: string
 }
 
-// ── server settings (`crates/sc-http/src/settings_api.rs`) — the admin
+// ── server settings (`go/internal/httpapi/handler/settings.go`) — the admin
 // screen's parity with every operator-settable `sc.toml` field. One flat
 // field list, keyed with the same dotted path `sc.toml` itself uses, so
 // an operator can cross-reference the two; each field carries where its
 // current value came from and whether changing it needs a restart. ──
 
-/** `SettingsSource` (`settings_api.rs`), `#[serde(rename_all = "snake_case")]`. */
+/** Where a settings value came from (`go/internal/httpapi/handler/settings.go`). */
 export type SettingsSource = 'builtin_default' | 'config_file' | 'admin_override'
 
 /** One row of `GET /api/admin/server-settings`. A field this screen can't
@@ -905,7 +903,7 @@ export interface SettingsCheckResult {
 
 export interface SettingsSnapshot {
   fields: SettingsField[]
-  /** `sc_smb::SmbOrchestrator::public_bind_warning_active()` — the same
+  /** `go/internal/smb` — the same
    *  permanent banner `smb-sync`'s own log line describes. */
   smb_public_bind_warning: boolean
   /** Grants Samba was handed more permissively than they were written here,

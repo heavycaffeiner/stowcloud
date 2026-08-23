@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-// The evaluation algorithm, exactly as the Rust engine specifies it:
+// The evaluation algorithm:
 // depth-first from the deepest matching grant down to the share root;
 // same-depth DENY beats ALLOW; a deeper ALLOW beats a shallower DENY; there
 // is no principal-kind priority, so ties are broken by depth alone; and the

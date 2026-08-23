@@ -1,7 +1,7 @@
 <script lang="ts">
   // Audit log browsing — read-only over
   // `GET /api/admin/audit`, cursor-paginated on `rowid` (newest first).
-  // `crates/sc-auth/src/audit.rs::AuthService::list_audit` is the source;
+  // `go/internal/auth/audit.go` is the source;
   // this screen adds no write path, only filters (actor, event name) and a
   // "Load more" cursor to keep scanning older rows.
   import { api, type AdminUser, type AuditRow } from '../../api/client'

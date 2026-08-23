@@ -416,7 +416,7 @@ func TestTheLimitTruncates(t *testing.T) {
 	}
 }
 
-// The golden overlay: the Rust generator appended five names and tombstoned
+// The golden overlay: the fixture generator appended five names and tombstoned
 // three, two of which are in the base and one of which was appended, because
 // those are different paths on the read side.
 func TestTheGoldenOverlayLoads(t *testing.T) {
@@ -445,7 +445,7 @@ func TestTheGoldenOverlayLoads(t *testing.T) {
 
 // query.tsv is the whole read path end to end: the fold, the trigrams, the
 // intersection, the block scan, the overlay and the ranking, against what the
-// Rust implementation answered for the same corpus.
+// fixture generator answered for the same corpus.
 func TestQueriesAgainstTheGoldenFixture(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"base.idx", "delta.000.idx", "tomb.idx"} {

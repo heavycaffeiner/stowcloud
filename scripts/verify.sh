@@ -193,9 +193,9 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   echo "=== go: $(go version) ==="
   echo
 
-  # Both architectures the image publishes. arm64 is not a formality: the Rust
-  # tree ships an arm64 image whose process seccomp filter is an empty list,
-  # and nothing in its gate compiled that path.
+  # Both architectures the image publishes. arm64 is not a formality: an
+  # earlier build shipped an arm64 image whose process seccomp filter was an
+  # empty list, and nothing in its gate compiled that path.
   run "go build (linux/amd64)" ingo env GOARCH=amd64 go build ./...
   run "go build (linux/arm64)" ingo env GOARCH=arm64 go build ./...
   run "go vet (linux)"         ingo go vet ./...
@@ -346,8 +346,8 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   grep_gate "D14: no built SQL in internal/store" "$SQL_HITS" \
     "Bind parameters. A query built from parts is an injection waiting for input."
 
-  # D19. Closes F8, where two files carried thirteen per cent of the Rust tree
-  # with no seam a reader could navigate by.
+  # D19. Closes F8, where two files carried thirteen per cent of the tree with
+  # no seam a reader could navigate by.
   BIG=$(find go -name '*.go' -not -path '*/testdata/*' \
         -exec awk 'END { if (NR > 1500) printf "%s: %d lines\n", FILENAME, NR }' {} \; 2>/dev/null)
   grep_gate "no Go file over 1,500 lines" "$BIG" \
@@ -431,10 +431,10 @@ fi
 # --- the SMB sidecar agent -------------------------------------------------
 # --- what this run did NOT verify -----------------------------------------
 # Everything above ran against the working tree; CI and the Dockerfile build
-# HEAD. Commit b705bfd staged a caller (`sc-server/src/diagnostics.rs` calling
-# `MetaStore::writes_blocked`) but not the implementation, which sat unstaged;
-# every build from then on failed at HEAD with E0599 while this script stayed
-# green, and the hunt went to musl, LTO and runner disk before the diff.
+# HEAD. A commit once staged a caller but not the implementation it called,
+# which sat unstaged; every build from then on failed at HEAD while this script
+# stayed green, and the hunt went to the toolchain and the runner disk before
+# anybody read the diff.
 DIRTY=$(git status --porcelain 2>/dev/null)
 if [ -n "$DIRTY" ]; then
   echo

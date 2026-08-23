@@ -114,7 +114,7 @@ jobs:
       # indistinguishable from a compile error in a collapsed log.
       - name: Disk
         if: always()
-        run: df -h / && du -sh target 2>/dev/null || true
+        run: df -h / && du -sh go/.tools web/node_modules 2>/dev/null || true
 
   windows:
     name: verify (windows-latest)
@@ -167,4 +167,4 @@ jobs:
       - name: Disk
         if: always()
         shell: bash
-        run: df -h . && du -sh target 2>/dev/null || true
+        run: df -h . && du -sh go/.tools web/node_modules 2>/dev/null || true

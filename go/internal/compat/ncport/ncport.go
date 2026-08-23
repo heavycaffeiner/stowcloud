@@ -9,8 +9,9 @@
 // it to make sure.
 //
 // The types here are aliases, not mirrors. An alias makes strictness cost no
-// conversion code; a mirror is code that exists only to drift, which the Rust
-// layer already learned once when its mirrored core types fell out of step.
+// conversion code; a mirror is code that exists only to drift, and a mirrored
+// set of core types falling out of step with the real ones has cost this
+// project a round of debugging before.
 package ncport
 
 import (

@@ -6,8 +6,8 @@
 //
 // What it is for: every other check in this tree was written by whoever wrote
 // the code it checks. This one compares against an artefact that already
-// exists and was not written for the purpose, which is the Rust build's actual
-// responses.
+// exists and was not written for the purpose: a recorded set of the previous
+// implementation's actual responses.
 package main
 
 import (

@@ -1,8 +1,7 @@
 <script lang="ts">
   // /trash —: list, restore, and permanently purge
   // trashed items. `GET/POST /api/trash[/restore|/purge]`
-  // (`crates/sc-http/src/routes.rs::trash_list/trash_restore/trash_purge`,
-  // `crates/sc-core/src/trash.rs`) existed and worked before this page did —
+  // (`go/internal/httpapi/handler/trash.go`) existed and worked before this page did —
   // grep for "trash" across `web/src/` returned zero files. This is the
   // first thing in the app that ever calls them.
   //
@@ -12,7 +11,7 @@
   // page's More (overflow) menu, `(app)/b/[...path]/+page.svelte`.
   //
   // No virtualization: a trash listing is `<share>/.sctrash`'s flat
-  // `read_dir` (`trash.rs::trash_list`), not the 100k-row directory the
+  // one directory read (`go/internal/httpapi/handler/trash.go`), not the 100k-row directory the
   // browse view has to handle — a plain list is the right tool here.
   import { goto } from '$app/navigation'
   import { api, ApiError, type TrashEntry } from '../../../lib/api/client'

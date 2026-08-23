@@ -31,7 +31,7 @@ var (
 )
 
 // theImporterFix is the operator instruction both refusals carry. The generated
-// state.db is the thing to move aside, because the Rust sources it was built
+// state.db is the thing to move aside, because the sources it was built
 // from were never written to and are still the authority.
 const theImporterFix = "move the generated state.db aside and rerun " +
 	"'stowcloud migrate --from-rust' with this binary, against the untouched Rust databases"

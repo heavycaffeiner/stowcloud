@@ -1,5 +1,5 @@
 // Progress polling for `GET /api/jobs/{id}`. `fs_move`/`fs_copy`/`fs_delete`/`fs_archive` produce a
-// job id once a batch crosses the threshold (`crates/sc-http/src/state.rs`);
+// job id once a batch crosses the threshold (`go/internal/httpapi/handler/admin_ops.go`);
 // `api/http.ts`'s `copy`/`del`/`archive` hand that `{ job }` envelope straight
 // to the caller instead of awaiting it. `state/job-tray.svelte.ts` is that
 // caller — it wraps `pollJob` to show live progress and offer cancellation

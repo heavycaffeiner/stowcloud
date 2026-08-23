@@ -345,7 +345,7 @@ CREATE INDEX totp_used_user ON totp_used(user);
 
 // migration 4 lands the Phase 4 durable tables: the persisted share registry
 // (admin-created shares and the editable properties of config-defined ones,
-// which replace the Rust-era shares.db) and the operation store (the bounded,
+// which replace the older shares.db) and the operation store (the bounded,
 // restart-visible history of long operations, replacing jobs.db). None of it
 // is reconstructible from the filesystem, which is what makes it the data
 // backup: deleting cache.db rebuilds; deleting these rows does not.

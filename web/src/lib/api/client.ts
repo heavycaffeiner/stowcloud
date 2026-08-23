@@ -1,5 +1,5 @@
 // web/src/lib/api/client.ts — the ONE flip switch between the mock backend
-// and the real Rust server. `VITE_API_MOCK=1` lives in `.env.development`,
+// and the real server. `VITE_API_MOCK=1` lives in `.env.development`,
 // which `npm run dev` applies and `npm run build` does not. Nothing else in
 // the app imports mock.ts or http.ts directly.
 import { httpApi } from './http'
@@ -8,7 +8,7 @@ import { mockApi } from './mock'
 export const isMock = import.meta.env.VITE_API_MOCK === '1'
 
 // A production build is what gets baked into the server binary by
-// `#[derive(RustEmbed)]`. A mock one there is not a degraded product, it is a
+// the embedded bundle. A mock one there is not a degraded product, it is a
 // counterfeit: it accepts invented credentials and lists files that do not
 // exist, and the real account is rejected by a server that never heard of it.
 // It shipped exactly once, which is why this is a hard failure at module load

@@ -4,9 +4,6 @@
 #   bash scripts/dev.sh            # start it, print where to go
 #   bash scripts/dev.sh --fresh    # throw the data directory away first
 #
-# It replaces a smoke script that drove the Rust binary this tree no longer
-# has, with a config in a format the Go build does not parse.
-#
 # What it is for: looking at the shipped interface in a real browser, on a
 # phone or another machine, over the tailnet rather than loopback. Everything
 # it does is a development convenience and none of it is how a deployment is

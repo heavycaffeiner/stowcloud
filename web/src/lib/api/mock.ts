@@ -507,7 +507,7 @@ const mockJobs = new Map<string, MockJobRow>()
 function makeMockJob(kind: JobKindWire, total: number, results: BatchItemResult[]): string {
   const id = randomId('job')
   // A single failed item ends the whole job in `error` on the real server
-  // (`spawn_batch_job`'s `all_ok` check, `crates/sc-http/src/routes.rs`). This
+  // (`go/internal/httpapi/handler/ops.go`). This
   // used to be a hardcoded `done`, which made the mock report a rejected
   // conflict as a success: the UI's conflict dialog hangs off `pollJob`
   // rejecting, so against the mock it could never open and the whole
@@ -579,7 +579,7 @@ async function jobDownload(id: string): Promise<Blob> {
   throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } })
 }
 
-// ── trash (mirrors `crates/sc-core/src/trash.rs` closely enough to drive the
+// ── trash (mirrors `go/internal/core/trash` closely enough to drive the
 // UI in dev mode: an id is opaque, restoring back to an occupied name
 // conflicts, purging is permanent) ──
 
@@ -801,7 +801,7 @@ async function readFile(path: string): Promise<{ content: string }> {
   return { content: `${e.name}\n\n(목업 백엔드: 실제 파일 내용이 없어 예시 텍스트를 보여줍니다.)\n` }
 }
 
-/** Mirrors `crates/sc-core/src/ops.rs::write_text`: an existing file demands
+/** Mirrors `go/internal/core/ops.go`: an existing file demands
  *  a matching `if_match`, a not-yet-existing one demands none at all. Either
  *  mismatch is a `412 fs.precondition` carrying the server's current etag,
  *  exactly like the real backend. */
@@ -1376,9 +1376,9 @@ async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSet
   return { chunk_min: req.chunk_min, chunk_default: req.chunk_default }
 }
 
-// ── server settings (`crates/sc-http/src/settings_api.rs`) — mirrors
+// ── server settings (`go/internal/httpapi/handler/settings.go`) — mirrors
 // `http.ts`'s real-server surface, same convention as every other section of
-// this file. Field keys match `settings_bridge.rs`'s dotted `sc.toml`
+// this file. Field keys match `go/internal/runtimecfg`'s dotted `sc.toml`
 // paths exactly, since `ServerSettingsSection.svelte` groups by those literal
 // strings regardless of which backend answered them. ──
 
@@ -1865,7 +1865,7 @@ async function adminBuildIndex(): Promise<{ job: string }> {
 // Mirrors the real server's rules closely enough to drive the admin UI in
 // dev mode: the bootstrapped account is the sole administrator, a name must
 // be unique, a password needs 10 characters, and the last active admin can
-// be neither disabled nor deleted (`sc_auth::AdminGuardError::LastAdmin`).
+// be neither disabled nor deleted (`go/internal/auth/admin.go`).
 
 // Six accounts, not one, and deliberately no two alike. Every conditional the
 // row renders -- the administrator chip, the inactive chip, a quota against no
@@ -1984,16 +1984,15 @@ async function adminDeleteUser(id: number): Promise<void> {
 
 // ── admin: share and grant management (`GET/POST /api/admin/shares`,
 // `PATCH/DELETE /api/admin/shares/{id}`, `GET/POST /api/admin/grants`,
-// `PATCH/DELETE /api/admin/grants/{id}`) ── Mirrors `sc_core::share`/
-// `sc_core::acl_store` closely enough to drive the admin UI in dev mode:
+// `PATCH/DELETE /api/admin/grants/{id}`) ── Mirrors `go/internal/acl` closely enough to drive the admin UI in dev mode:
 // no-access-by-default, a grant needs at least one `allow` or `deny` bit,
 // `subpath`/`share`/`principal` are immutable once created (delete and
-// recreate instead — same rule `sc_core::acl_store::GrantPatch` enforces
+// recreate instead — same rule `go/internal/acl` enforces
 // server-side), and a config-file share (`config_defined: true`) takes an
-// edit but refuses a delete, the same way `sc_core::Core::update_share`/
+// edit but refuses a delete, the same way `go/internal/core`/
 // `delete_share` do.
 // The real endpoints now exist
-// (`crates/sc-http/src/routes.rs::admin_list_shares`/`admin_create_share`/
+// (`go/internal/httpapi/handler/shares.go` (
 // `admin_update_share`/`admin_delete_share`/`admin_list_grants`/
 // `admin_create_grant`/`admin_update_grant`/`admin_delete_grant`); this mock
 // stays in sync with their wire shapes and error codes so
@@ -2002,7 +2001,7 @@ async function adminDeleteUser(id: number): Promise<void> {
 
 // The mock backend models one flat virtual tree (`STATIC_SEED`'s `/` listing),
 // not the real server's per-share roots — there is no mock equivalent of
-// `sc_core::Core::share_defs()` to derive this from. A small fixed list
+// `go/internal/core` to derive this from. A small fixed list
 // matching the top-level folders `STATIC_SEED` already seeds is enough to
 // demo the grant-creation screen's share picker.
 // Both kinds of share are seeded on purpose. A config-file share renders a
@@ -2018,7 +2017,7 @@ let mockShares: AdminShare[] = [
   { id: 1_000_001, name: 'Team', host_path: '/srv/team', config_defined: false, trash_enabled: false },
   { id: 1_000_002, name: 'Archive', host_path: '/srv/archive', config_defined: false, trash_enabled: true }
 ]
-let nextShareId = 1_000_003 // mirrors `sc_core::DYNAMIC_SHARE_ID_BASE`, past the seeded dynamic pair
+let nextShareId = 1_000_003 // mirrors `go/internal/core`'s dynamic share id base, past the seeded dynamic pair
 
 // One grant of each shape the row can take: inherited against path-only, a
 // group principal against a user one, a long label against a bare share name.
@@ -2040,7 +2039,7 @@ async function adminListShares(): Promise<AdminShare[]> {
 /** No real filesystem to check `host_path` against in mock mode, so this
  *  only reproduces the checks that don't need one: empty/duplicate name and
  *  an overlapping `host_path` — the real backend's nonexistent-path/
- *  not-a-directory/unreadable checks (`sc_core::share::validate_host_path`)
+ *  not-a-directory/unreadable checks (`go/internal/core/root.go`)
  *  have no mock equivalent. */
 async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
   await delay(40)
@@ -2062,7 +2061,7 @@ async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
 /** A config-file share takes an edit like any other: the real backend keeps
  *  the new name/path (and the trash toggle) in `shares.db` rather than
  *  `sc.toml` and reapplies them at startup, so nothing is lost on
- *  restart (`sc_core::Core::update_share`). */
+ *  restart (`go/internal/core`). */
 async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<AdminShare> {
   await delay(35)
   const share = mockShares.find((s) => s.id === id)
@@ -2117,9 +2116,9 @@ async function adminCreateGrant(req: CreateGrantReq): Promise<AdminGrant> {
   if (req.allow.length === 0 && req.deny.length === 0) {
     throw new ApiError(422, {
       // Matches the real backend's code for this refusal exactly
-      // (`sc_core::CoreError::InvalidPath` -> `hapi::CoreError::InvalidName`
+      // (`go/internal/core` invalid-path errors
       // -> `ErrorCode::FsInvalidName` -> `"fs.invalid_name"`,
-      // `crates/sc-http/src/core_api.rs`) — this used to say
+      // `go/internal/httpapi/handler`) — this used to say
       // `fs.invalid_path`, a code the server has never actually sent, which
       // nothing caught because the real endpoint didn't exist yet either.
       code: 'fs.invalid_name',
@@ -2179,7 +2178,7 @@ async function adminDeleteGrant(id: number): Promise<void> {
 }
 
 // ── admin: group management ── Mirrors
-// `sc_auth::AuthService`'s group CRUD closely enough to drive the admin UI in
+// `go/internal/auth`'s group CRUD closely enough to drive the admin UI in
 // dev mode: `group_.name` is unique, deleting a group cascades to its
 // memberships (and to the live grants table's own filter, same as deleting a
 // share cascades to `mockGrants` above), and adding/removing a member refuses
@@ -2352,10 +2351,10 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
 }
 
 // ── share links, owner side — mirrors
-// `crates/sc-http/src/core_api.rs::ShareLinkInfo`/`ShareLinkCreate`/
+// `go/internal/httpapi/handler/shares.go` (
 // `ShareLinkPatch` closely enough to drive the manage-links UI in dev mode:
 // a link's `perms` defaults to read+download when the caller doesn't specify
-// any (same default `sc-server/src/bridge.rs::share_link_create` applies),
+// any (same default `go/internal/httpapi/handler/shares.go` applies),
 // the plaintext token/url are only ever present on the create response, and
 // a `PATCH` field left `undefined` is left alone while `null` clears it.
 

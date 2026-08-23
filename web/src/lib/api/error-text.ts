@@ -61,7 +61,7 @@ const SERVER_KEYS = new Set<string>([
   /* i18n */ 'share.config_defined_not_deletable'
 ])
 
-/** `ErrorCode::as_str` (`crates/sc-http/src/error.rs`) → catalogue key. Only
+/** `go/internal/apierr/map.go`'s codes → catalogue key. Only
  *  the codes a per-item batch failure can carry are here; a whole-request
  *  failure is reported by the screen that made the request, in its own
  *  words. `internal` has no dot and so cannot be a catalogue key itself,
@@ -112,7 +112,7 @@ export function serverKeyText(key: string): string {
 }
 
 /** Same, for a per-item batch/job failure — the `{code, message, detail}`
- *  object `OpResult.error` carries (`bridge.rs::http_op_result` renders it
+ *  object `OpResult.error` carries (`go/internal/httpapi/handler/ops.go` renders it
  *  with the identical `AppError::to_wire` the envelope uses). Returns a
  *  catalogue key and its placeholders rather than text, because the job tray
  *  stores this across a render boundary and resolves it at paint time. */

@@ -1,7 +1,7 @@
 <script lang="ts">
   // /edit/[...path] —: CodeMirror behind a dynamic
   // import (see CodeEditor.svelte), backed by `GET /api/fs/read` (size-capped,
-  // `MAX_INLINE_READ` in `crates/sc-server/src/bridge.rs`) and
+  // the inline-read ceiling in `go/internal/httpapi/handler/fs.go`) and
   // `PUT /api/fs/write` with `If-Match`.
   //
   // `If-Match` is the point, not a detail: this page always sends the etag

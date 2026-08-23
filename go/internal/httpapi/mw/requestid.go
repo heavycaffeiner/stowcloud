@@ -1,8 +1,8 @@
 // Package mw is the twelve-step request chain, one file per step. Each step
 // is a plain func(http.Handler) http.Handler so the source order in chain.go
-// is the execution order, which is the whole point of the composition: the
-// axum version this replaces had to wrap in reverse and the reversal note
-// lived in a comment that could drift.
+// is the execution order, which is the whole point of the composition: an
+// order that has to be read backwards is one a comment ends up asserting, and
+// a comment asserting an order can drift out of step with it.
 package mw
 
 import (

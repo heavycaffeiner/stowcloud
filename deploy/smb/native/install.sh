@@ -101,7 +101,7 @@ awk -F: -v u="$SERVICE_USER" '$1 == u { found = 1 } END { exit !found }' /etc/pa
 }
 
 mkdir -p "$CONFIG_DIR" /run/sc-smb
-# sc-server writes here as its own (unprivileged) user and the agent reads it
+# The server writes here as its own (unprivileged) user and the agent reads it
 # as root; smbpasswd inside carries NT hashes, so nothing else may look.
 chmod 700 "$CONFIG_DIR"
 install -m 755 "$BINARY" "$AGENT"
@@ -128,6 +128,6 @@ fi
 
 echo
 echo "Point sc.toml at the same directory and enable SMB from the settings"
-echo "screen (or run 'sc-server smb-sync'):"
+echo "screen (or run 'stowcloud smb-sync'):"
 echo "  [smb]"
 echo "  config_dir = \"$CONFIG_DIR\""

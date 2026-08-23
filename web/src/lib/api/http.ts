@@ -1,5 +1,5 @@
 // web/src/lib/api/http.ts — real HTTP implementation of the same surface as
-// mock.ts. Talks to the Rust backend per. This module is only
+// mock.ts. Talks to the real server. This module is only
 // ever exercised once VITE_API_MOCK is unset/0 — it is untested against a
 // live server here (the backend does not exist yet) but the shape mirrors
 // exactly so swapping the flag is the only integration step.
@@ -185,7 +185,7 @@ async function del(paths: string[], permanent = false): Promise<{ job: string }>
 
 /**
  * `POST /api/fs/link` — mints a signed, cookie-free content-origin URL for a
- * single file's bytes (`crates/sc-http/src/routes.rs::fs_link`). Requires
+ * single file's bytes (`go/internal/httpapi/handler/link.go`). Requires
  * `fid`, i.e. `entry.id` — see that field's doc comment in `types.ts` for why
  * it is frequently `undefined` and what the caller should do then (not call
  * this at all; there is no path-based alternative on this endpoint).
@@ -199,7 +199,7 @@ async function link(fid: number, disposition: LinkDisposition = 'attachment', di
 
 /**
  * `POST /api/fs/archive` — always answers `202 { job }` now (`fs_archive`,
- * `crates/sc-http/src/routes.rs`): every archive request is a durable job
+ * `go/internal/httpapi/handler`): every archive request is a durable job
  * regardless of size, so there is no synchronous zip stream left to branch
  * on here. `state/job-tray.svelte.ts` tracks the job and fetches the bytes
  * with `jobDownload` once it reports `download: true`.
@@ -246,7 +246,7 @@ async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }
 
 // ── long-running jobs ──
 // Every `fs_move`/`fs_copy`/`fs_delete`/`fs_archive` request always answers
-// `202 { job }` (`crates/sc-http/src/routes.rs`) — there is no size/count
+// `202 { job }` (`go/internal/httpapi/handler`) — there is no size/count
 // threshold and no synchronous fallback. `copy`/`del`/`archive` above return
 // that envelope as-is; `state/job-tray.svelte.ts` is the one caller that
 // wraps `state/jobs.ts::pollJob` (REST poll + WS `job` push reconciled) to
@@ -254,7 +254,7 @@ async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }
 
 /** `GET /api/jobs` — every non-terminal job the caller owns. `JobTray` calls
  *  this once on mount to re-attach across a refresh or a server restart
- *  (`crates/sc-http/src/routes.rs::job_list`, `JobStore::list_open`). */
+ *  (`go/internal/httpapi/handler/admin_ops.go`). */
 async function jobList(): Promise<JobListResponse> {
   return request('/jobs')
 }
@@ -589,7 +589,7 @@ async function adminSetIndexSettings(nameEnabled: boolean): Promise<IndexSetting
 }
 
 /** `POST /api/admin/index/build` — always crosses the
- *  job threshold (a build walks the whole share by design, `bridge.rs`'s
+ *  job threshold (a build walks the whole share by design, `go/internal/search`'s
  *  `CrawlThrottle`), so unlike `copy`/`del`/`archive` there is no inline-result
  *  branch here: the server answers `202 { job }` every time. */
 async function adminBuildIndex(): Promise<{ job: string }> {
@@ -603,7 +603,7 @@ async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSet
   return request('/admin/upload-settings', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
-// ── admin: server settings (`crates/sc-http/src/settings_api.rs`) — parity
+// ── admin: server settings (`go/internal/httpapi/handler/settings.go`) — parity
 // with every operator-settable sc.toml field, live-apply where possible,
 // restart-required where not. ──
 

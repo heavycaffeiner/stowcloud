@@ -296,10 +296,11 @@ Cgo is off, which is the whole static-binary story: with it off there is no
 dynamic loader and no libc to match, so the runtime image needs neither.
 `Dockerfile` does both stages for you.
 
-The SMB sidecar is the one part still written in Rust, under `smb-agent/`. It
-runs as root beside the Samba daemon and applies what the server renders, which
-the server cannot do itself: it runs unprivileged, in a network namespace that
-cannot see the host's devices. `Dockerfile.smb` builds it.
+The SMB sidecar is a second binary, `go/cmd/sc-smb-agent`. It runs as root
+beside the Samba daemon and applies what the server renders, which the server
+cannot do itself: it runs unprivileged, in a network namespace that cannot see
+the host's devices. `Dockerfile.smb` builds it, and `smb-agent/` holds the
+deployment material.
 
 </details>
 

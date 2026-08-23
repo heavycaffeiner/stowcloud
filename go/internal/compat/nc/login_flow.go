@@ -52,7 +52,8 @@ import (
 //     host header, so the set of hosts this can name is fixed by configuration
 //     rather than by a request.
 //
-// One thing here is deliberately not the Rust shape. That table carried a
+// One thing here is deliberately not the shape the reference server uses.
+// That table carried a
 // temporary plaintext app password between approval and collection. This
 // stores only a marker naming the authorized user; the polling request
 // consumes the marker and mints the credential at delivery time, so the

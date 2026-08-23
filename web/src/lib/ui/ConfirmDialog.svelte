@@ -4,7 +4,7 @@
   // copy). Used where a client action is irreversible and needs to say so
   // plainly rather than reuse delete's softer wording: trash purge
   // ('s `.sctrash` entries are `unlink`ed for real,
-  // `crates/sc-core/src/trash.rs::trash_purge`) and revoking a share link
+  // `go/internal/core/trash`) and revoking a share link
   // (the token is gone the instant this resolves — nothing recreates the
   // exact same link).
   import { t } from '../i18n'

@@ -36,7 +36,8 @@ var (
 
 // DecodeLimits bounds one decode.
 //
-// The values are re-derived for Go's decoders rather than copied from the Rust
+// The values are derived for Go's decoders rather than carried over from the
+// earlier
 // ones, because the allocation behaviour is not the same and a limit tuned for
 // one is a guess for the other. Measured on this tree's decoders, bytes of
 // heap per source pixel:
@@ -45,7 +46,7 @@ var (
 //	image/jpeg  1.50   (YCbCr 4:2:0)
 //	image/gif   1.00   (paletted, one frame)
 //
-// At 4 bytes per pixel, the Rust default of 100 Mpx would ask for 400 MiB
+// At 4 bytes per pixel, a 100 Mpx ceiling would ask for 400 MiB
 // against a 512 MiB RLIMIT_AS, leaving nothing for the runtime, the scaled
 // output or the encoder. 64 Mpx costs a measured 257 MiB of heap in use for a
 // PNG, which leaves the hard limit as a backstop rather than as the thing that

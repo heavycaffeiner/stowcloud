@@ -200,7 +200,7 @@ func TestTheWorkerListDoesNotCarryWhatTheJailExistsToDeny(t *testing.T) {
 
 // F3, both halves.
 //
-// The Rust tree's process filter was an empty list on anything but x86_64, and
+// An earlier process filter was an empty list on anything but x86_64, and
 // an empty list short-circuited to a warning. The image publishes linux/arm64,
 // so a published image ran with no process-level syscall filter and the only
 // signal was one log line.

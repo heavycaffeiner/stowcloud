@@ -32,7 +32,7 @@ type InstanceLock struct{ f *os.File }
 // LockInstance takes the directory's lock without waiting.
 //
 // Without waiting, because the thing it is protecting against is a running
-// server rather than a moment of contention: the Rust state spans several WAL
+// server rather than a moment of contention: the state spans several WAL
 // databases with no snapshot across them, so an import that read them while a
 // server was writing would combine a user from one instant with the grants from
 // another. Waiting for a server to exit is not something a command should do

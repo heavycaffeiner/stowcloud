@@ -52,8 +52,7 @@ type parsedPHC struct {
 }
 
 // parsePHC decodes a PHC string. A malformed hash is a rejection, not an
-// error, mirroring the Rust verifier's never-panic stance: a corrupt row must
-// fail that login, not the process.
+// error: a corrupt row must fail that login, not the process.
 func parsePHC(s string) (parsedPHC, bool) {
 	fields := strings.Split(s, "$")
 	// ["", "argon2id", "v=19", "m=...,t=...,p=...", salt, key]

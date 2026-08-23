@@ -150,21 +150,48 @@ jobs:
           echo "image architecture: ${got}"
           [ "$got" = "${{ matrix.arch }}" ] || { echo "expected ${{ matrix.arch }}"; exit 1; }
 
-      - name: Prepare a throwaway data/secrets dir owned by uid 1000
+      # The whole configuration, because there is no environment override: a
+      # server whose settings come from two places is one where "what is it
+      # running with" is a question rather than a file.
+      #
+      # The data directory is a host directory so the steps below can read the
+      # generated certificate off it. A real deployment uses a named volume and
+      # needs no preparation at all, which is what the compose smoke test in
+      # this same job proves.
+      - name: Write the configuration and a data directory the image can write
         run: |
-          mkdir -p /tmp/sc-data /tmp/sc-secrets
-          sudo chown -R 1000:1000 /tmp/sc-data /tmp/sc-secrets
+          mkdir -p /tmp/sc-data /tmp/sc-shares/files
+          # The uid the image runs as, which cannot chown anything itself.
+          sudo chown -R 65532:65532 /tmp/sc-data /tmp/sc-shares
+          cat > /tmp/sc.toml <<'TOML'
+          [server]
+          data_dir = "/var/lib/stowcloud"
+          listen = "0.0.0.0:8443"
+
+          [http]
+          app_hosts = ["127.0.0.1", "localhost"]
+          content_hosts = ["content.localhost"]
+
+          [security]
+          # The runner is a virtual machine with whatever kernel the image
+          # ships this month, so a missing layer is reported on the health
+          # endpoint rather than refusing to start. The container runtime's
+          # default seccomp profile is the thing under test here.
+          hardening = "preferred"
+
+          [[shares]]
+          name = "files"
+          host_path = "/shares/files"
+          TOML
 
       - name: Run the container
         run: |
           docker run -d --name sc-smoke \
-            --user 1000:1000 \
             --cap-drop ALL --security-opt no-new-privileges:true \
             --read-only --tmpfs /tmp:size=64m \
-            -v /tmp/sc-data:/var/lib/sc \
-            -v /tmp/sc-secrets:/run/sc-secrets \
-            -e SC_DATA_DIR=/var/lib/sc \
-            -e SC_MASTER_KEY_FILE=/run/sc-secrets/master.key \
+            -v /tmp/sc.toml:/etc/stowcloud/sc.toml:ro \
+            -v /tmp/sc-data:/var/lib/stowcloud \
+            -v /tmp/sc-shares/files:/shares/files \
             -p 127.0.0.1:8443:8443 \
             sc:core-ci
 
@@ -221,10 +248,29 @@ jobs:
           echo "$out"
           echo "$out" | grep -q '"required":true' || { echo "unexpected /api/setup body — a fresh container should report setup required"; exit 1; }
 
-      - name: exec `/sc-server healthcheck` directly (proves it runs with no shell in the image)
+      - name: exec the healthcheck directly (proves it runs with no shell in the image)
         run: |
-          docker exec sc-smoke /sc-server healthcheck
+          docker exec sc-smoke /stowcloud healthcheck /etc/stowcloud/sc.toml
           echo "healthcheck subcommand exited 0"
+
+      # A share that lists is the difference between a server that started and
+      # a server that works. The sandbox is built before the shares are
+      # registered, and a domain that did not grant their paths denies every
+      # listing with the share table and the grants both looking correct.
+      - name: A configured share is reachable through the sandbox
+        run: |
+          cacert=/tmp/sc-data/tls/self-signed.crt
+          token=$(docker logs sc-smoke 2>&1 | grep -oE 'setup token[^:]*: [a-f0-9]+' | tail -1 | awk '{print $NF}')
+          [ -n "$token" ] || { echo "the container printed no setup token"; exit 1; }
+          curl -fsS --cacert "$cacert" -X POST https://127.0.0.1:8443/api/setup \
+            -H 'content-type: application/json' \
+            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\"}" >/dev/null
+          curl -fsS --cacert "$cacert" -c /tmp/jar -X POST https://127.0.0.1:8443/api/auth/login \
+            -H 'content-type: application/json' \
+            -d '{"username":"ci","password":"ci-smoke-password-1"}' >/dev/null
+          out=$(curl -fsS --cacert "$cacert" -b /tmp/jar 'https://127.0.0.1:8443/api/fs/list?path=/files')
+          echo "$out"
+          echo "$out" | grep -q '"dir_etag"' || { echo "the configured share does not list"; exit 1; }
 
       - name: Wait for Docker's own HEALTHCHECK to report healthy
         # Proves the Dockerfile's HEALTHCHECK instruction itself, not just
@@ -299,7 +345,7 @@ jobs:
 
       - name: Prepare a fixture /config/smb (only smb.conf — smbpasswd/passwd are optional, the agent guards both)
         run: |
-          mkdir -p /tmp/sc-smbcfg /tmp/sc-shares/photos
+          mkdir -p /tmp/sc-smbcfg /tmp/sc-shares/files
           cat > /tmp/sc-smbcfg/smb.conf <<'EOF'
           [global]
              workgroup = WORKGROUP
@@ -310,8 +356,8 @@ jobs:
              hosts allow = 127.0.0.0/8 ::1/128
              hosts deny = 0.0.0.0/0
 
-          [photos]
-             path = /shares/photos
+          [files]
+             path = /shares/files
              read only = no
              valid users = alice
           EOF
@@ -328,7 +374,7 @@ jobs:
             --cap-add DAC_READ_SEARCH \
             --security-opt no-new-privileges:true \
             -v /tmp/sc-smbcfg:/config/smb:ro \
-            -v /tmp/sc-shares/photos:/shares/photos \
+            -v /tmp/sc-shares/files:/shares/files \
             -p 127.0.0.1:445:445 \
             sc:smb-ci
 
@@ -348,7 +394,7 @@ jobs:
       - name: Confirm the fixture config was actually promoted (proves testparm validation + injected logging directive)
         run: |
           docker exec sc-smb-smoke cat /etc/samba/smb.conf
-          docker exec sc-smb-smoke grep -q '\[photos\]' /etc/samba/smb.conf
+          docker exec sc-smb-smoke grep -q "\[files\]" /etc/samba/smb.conf
           docker exec sc-smb-smoke grep -q 'log file = /var/log/samba/log.smbd' /etc/samba/smb.conf
 
       - name: The loopback-only baseline was expanded from the container's own interfaces
@@ -446,6 +492,102 @@ jobs:
   #
   # Both images ship as two-architecture manifest lists, built one architecture
   # per matrix leg rather than as a single `platforms: amd64,arm64` build. That
+  # The file a person actually runs. Everything above proves the image; this
+  # proves the four lines in README that tell somebody to type `docker compose
+  # up -d` and expect a working server.
+  #
+  # Deliberately no host-side preparation: no mkdir, no chown, no editing. That
+  # is the claim being tested. It held only after the image started shipping
+  # the directories volumes mount over, owned by the uid it runs as, because an
+  # empty named volume is created root-owned and the server is not root.
+  compose:
+    name: docker compose up, with nothing prepared
+    needs: [build-core]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      # Built here rather than pulled: the point is to test this commit's
+      # compose file against this commit's image, and the published tag is a
+      # previous commit until this run finishes.
+      - name: Build the image the compose file will run
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: stowcloud:core-dev
+          cache-from: type=gha,scope=core-amd64
+
+      - name: docker compose up -d
+        run: |
+          docker compose -f compose.buildver.yml up -d --no-build
+          docker compose -f compose.buildver.yml ps
+
+      - name: The server comes up and reports healthy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsSk https://127.0.0.1:8443/api/health >/dev/null 2>&1; then
+              echo "up after ${i}s"
+              curl -fsSk https://127.0.0.1:8443/api/health
+              exit 0
+            fi
+            sleep 1
+          done
+          docker compose -f compose.buildver.yml logs
+          exit 1
+
+      # A share that lists, an upload that publishes, and the bytes read back.
+      # Each of these was broken at some point while the container still
+      # started and reported healthy, which is why the smoke test goes this far
+      # rather than stopping at a 200 from /api/health.
+      - name: A file uploaded through the API comes back out
+        run: |
+          token=$(docker compose -f compose.buildver.yml logs sc 2>&1 \
+            | grep -oE 'setup token[^:]*: [a-f0-9]+' | tail -1 | awk '{print $NF}')
+          [ -n "$token" ] || { echo "no setup token in the log"; exit 1; }
+          base=https://127.0.0.1:8443
+          curl -fsSk -X POST "$base/api/setup" -H 'content-type: application/json' \
+            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-compose-password-1\"}" >/dev/null
+          curl -fsSk -c /tmp/jar -X POST "$base/api/auth/login" -H 'content-type: application/json' \
+            -d '{"username":"ci","password":"ci-compose-password-1"}' >/dev/null
+          csrf=$(curl -fsSk -b /tmp/jar "$base/api/auth/session" | sed -n 's/.*"csrf":"\([a-f0-9]*\)".*/\1/p')
+          [ -n "$csrf" ] || { echo "no csrf token in the session"; exit 1; }
+
+          printf 'uploaded by ci\n' > /tmp/proof.txt
+          size=$(stat -c%s /tmp/proof.txt)
+          name=$(printf 'proof.txt' | base64 -w0)
+          dest=$(printf '/files' | base64 -w0)
+          loc=$(curl -fsSk -D- -o /dev/null -b /tmp/jar \
+            -H "origin: $base" -H "Sc-Csrf: $csrf" \
+            -H "upload-length: ${size}" \
+            -H "upload-metadata: filename ${name},dest ${dest}" \
+            -X POST "$base/api/uploads" | grep -i '^location:' | tr -d '\r' | awk '{print $2}')
+          [ -n "$loc" ] || { echo "the creation named no session"; exit 1; }
+          curl -fsSk -b /tmp/jar -H "origin: $base" -H "Sc-Csrf: $csrf" \
+            -H 'content-type: application/offset+octet-stream' -H 'upload-offset: 0' \
+            --data-binary @/tmp/proof.txt -X PATCH "${base}${loc}" -o /dev/null
+
+          listed=$(curl -fsSk -b /tmp/jar "$base/api/fs/list?path=/files")
+          echo "$listed"
+          echo "$listed" | grep -q 'proof.txt' \
+            || { echo "the upload never reached the destination"; exit 1; }
+          got=$(curl -fsSk -b /tmp/jar "$base/api/fs/read?path=/files/proof.txt")
+          [ "$got" = "uploaded by ci" ] \
+            || { echo "read back ${got}, want the bytes that were sent"; exit 1; }
+
+      - name: Logs (always, for the record)
+        if: always()
+        run: docker compose -f compose.buildver.yml logs || true
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f compose.buildver.yml down -v || true
+
   # is forced by the per-architecture base digests described in this file's
   # header: one build cannot carry two of them. So each arch is pushed
   # anonymously *by digest* and a final job staples them into the tag people

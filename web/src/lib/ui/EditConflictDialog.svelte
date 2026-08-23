@@ -1,6 +1,6 @@
 <script lang="ts">
   // EditConflictDialog.svelte — `/edit` save conflict (`412 fs.precondition`,
-  // `AppError::precondition` in `crates/sc-http/src/error.rs`). Distinct from
+  // `go/internal/apierr`'s precondition code). Distinct from
   // ConflictDialog.svelte, which is the move/copy/rename "name already
   // exists" prompt (Fail/Rename/Overwrite/Skip) — this is "someone else's
   // write landed between your last load and your save", so the only

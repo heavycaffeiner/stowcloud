@@ -4,10 +4,10 @@
 # Build the frontend, build the binary with the embed tag, serve it, and confirm
 # the bundle the browser is handed is the one just built.
 #
-# The Rust tree needed a clean between the two builds, because the build system
-# had no dependency edge to the bundle, and it shipped a stale interface once: a
-# binary whose embedded pages predated the routes it served, which looked like a
-# frontend bug for as long as it took to notice the bundle hash had not moved.
+# An earlier build system had no dependency edge to the bundle and shipped a
+# stale interface once: a binary whose embedded pages predated the routes it
+# served, which looked like a frontend bug for as long as it took to notice the
+# bundle hash had not moved.
 #
 # Go's embed has a real edge, so this should be impossible. That is why it is
 # checked once rather than never.

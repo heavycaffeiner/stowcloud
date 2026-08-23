@@ -7,7 +7,7 @@
   // any other — the backend keeps the new name/path as an override in
   // `shares.db` and reapplies it at startup, so nothing is reverted. Only
   // *delete* is hidden for it: the config entry would re-declare the share on
-  // the next restart, and `sc_core::Core::delete_share` refuses accordingly.
+  // the next restart, and `go/internal/core` refuses accordingly.
   //
   // This is a distinct, adjacent screen from `GrantManagementSection`: that
   // one decides *who* can see a share (or a subpath of it); this one decides
@@ -45,7 +45,7 @@
 
   load()
 
-  /** `sc_core::Core::create_share`/`update_share` name each refusal with a
+  /** `go/internal/core` name each refusal with a
    *  catalogue key (`share.*`); `describeApiError` renders it. This used to
    *  reverse the server's English sentences back into keys by substring,
    *  which meant a one-word copy edit on the server silently dropped the
