@@ -172,5 +172,11 @@
 # The settings dry run added one: reading an optional string out of a decoded
 # body, where absent and wrong-typed both mean the field was not named and the
 # line below handles that case.
-250
+#
+# Deleting the migration path removed fifteen. Every one belonged to code that
+# read a format the previous build wrote: the importer's SQLite integers
+# carrying device and inode numbers as their bit pattern, its gosec exceptions
+# for statements named after credential tables, and its close of databases it
+# only ever read. They are gone with the readers, not suppressed.
+235
 

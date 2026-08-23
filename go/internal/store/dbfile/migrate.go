@@ -46,11 +46,6 @@ func migrate(ctx context.Context, d *DB, spec Spec) error {
 	if err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrMigrationFailed, name, err)
 	}
-	if have == 0 && spec.Adopt != nil {
-		if have, err = adopt(ctx, d, spec, name); err != nil {
-			return err
-		}
-	}
 	if have > len(spec.Migrations) {
 		return fmt.Errorf("%w: %s is at version %d and this binary knows %d",
 			ErrSchemaAhead, name, have, len(spec.Migrations))
@@ -79,33 +74,6 @@ func migrate(ctx context.Context, d *DB, spec Spec) error {
 		}
 	}
 	return nil
-}
-
-// adopt asks the spec what an unversioned file's shape already amounts to, and
-// records that version without running the steps it stands for.
-//
-// The version is written in a transaction of its own. There is nothing to pair
-// it with: the shape it describes is already on disk, put there by whatever
-// wrote the file.
-func adopt(ctx context.Context, d *DB, spec Spec, name string) (int, error) {
-	version, err := spec.Adopt(ctx, d.sql)
-	if err != nil {
-		return 0, fmt.Errorf("%w: %s: %w", ErrMigrationFailed, name, err)
-	}
-	if version == 0 {
-		return 0, nil
-	}
-	if version > len(spec.Migrations) {
-		return 0, fmt.Errorf("%w: %s: its shape was adopted as version %d and this binary knows %d",
-			ErrMigrationFailed, name, version, len(spec.Migrations))
-	}
-	if err := d.Write(ctx, func(tx *sql.Tx) error {
-		_, werr := tx.ExecContext(ctx, sqlSetVersion, version)
-		return werr
-	}); err != nil {
-		return 0, fmt.Errorf("%w: %s: recording the adopted version: %w", ErrMigrationFailed, name, err)
-	}
-	return version, nil
 }
 
 // readVersion reports the stored version, and zero for a database that has

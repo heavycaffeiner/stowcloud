@@ -14,9 +14,9 @@ import (
 // the request that started it; the operation gets an id, its progress is
 // readable, and a client that refreshes the tab reattaches.
 //
-// A job that was running when the Rust server stopped is imported as
-// interrupted, because no Go task exists to resume it. Completed history,
-// progress and per-item results remain readable.
+// A job that was running when the server stopped is read back as interrupted:
+// nothing resumes it, because the task that owned its progress is gone with
+// the process. Completed history, progress and per-item results stay readable.
 
 // OpState is the terminal or interim machine state of one operation.
 type OpState int8
@@ -30,9 +30,9 @@ const (
 	OpFailed
 	// OpCancelled is one a client cancelled through its own call.
 	OpCancelled
-	// OpInterrupted is an imported run that was not finished when the process
-	// stopped, and no Go task exists to resume. A refreshed client gets an
-	// honest terminal state with its progress and results preserved.
+	// OpInterrupted is a run that was not finished when the process stopped and
+	// that nothing resumes. A refreshed client gets an honest terminal state
+	// with its progress and results preserved.
 	OpInterrupted
 )
 

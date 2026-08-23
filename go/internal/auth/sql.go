@@ -109,8 +109,6 @@ FROM share_link WHERE token_enc IS NOT NULL`
 
 	sqlSealLink = `UPDATE share_link SET token_enc = ?, token_key_ver = ? WHERE id = ?`
 
-	sqlClearLink = `UPDATE share_link SET token_enc = NULL, token_key_ver = NULL WHERE id = ?`
-
 	sqlReadPassdb = `SELECT u.id, u.name, u.smb_enabled, u.disabled, EXISTS(SELECT 1 FROM totp_secret t WHERE t.user = u.id) AS has2fa, (SELECT s.nt_hash_ct FROM user_smb_secret s WHERE s.user = u.id) AS nt, (SELECT s.key_ver FROM user_smb_secret s WHERE s.user = u.id) AS nt_ver FROM user u WHERE u.smb_opt_out = 0 ORDER BY u.name` //nolint:gosec // G101 reads the identifier: this is a statement, not a credential.
 
 	sqlInsertGroup = `INSERT INTO "group"(id, name) VALUES (?, ?)`

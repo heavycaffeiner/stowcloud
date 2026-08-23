@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// The fixtures prove agreement with the Rust implementation. These prove the
+// The fixtures prove agreement with the recorded format. These prove the
 // properties a fixture cannot: what happens on input the generator never
 // produced, and what the arithmetic is supposed to mean.
 

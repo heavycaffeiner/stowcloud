@@ -413,8 +413,6 @@ Worth recording, because each is a decision someone will otherwise revisit.
   more than it buys.
 - **No write timeout on the server.** Downloads and streams need it absent. The
   idle timeout is what bounds a dead connection.
-- **The Go build sends security headers the Rust build did not.** Recorded in
-  `DIFFER.md` as a difference; it is the Go build being stricter.
 
 ## Still open from before this work
 
@@ -424,9 +422,11 @@ These are unchanged and each has its own document.
   Of the five both builds failed, the recursive-copy defect sits underneath at
   least three and the MKCOL status correction touches a fourth. What remains is
   what the re-run measures. `CONFORMANCE.md` attributes each.
-- **Twenty status-code differences**, every one a refusal against a different
-  refusal, none a success against a failure. `DIFFER.md` has the table. A
-  status vocabulary belongs to the phase owning the surface.
+- **Status codes were never unified across the surfaces.** The differences the
+  cutover recorded were every one a refusal against a different refusal, never
+  a success against a failure. The comparison tool and its corpus are gone with
+  the build they compared against, so this is now a design question rather than
+  a measured list: a status vocabulary belongs to the phase owning the surface.
 - **Two unmeasured footprint items**: the preview worker pool and the SQLite
   write path, which are exactly the two the expectation named as likely
   regressions. `FOOTPRINT.md` lists them as not measured rather than as no

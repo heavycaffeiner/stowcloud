@@ -13,7 +13,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/search"
 )
 
-// Milestone 8c's whole claim: reading the Rust-built segment, and re-writing it
+// The claim: reading the committed segment, and re-writing it
 // from the same corpus, produce identical structural bytes and identical
 // decoded payloads.
 //
@@ -209,7 +209,7 @@ func TestRewritingTheSegmentReproducesItsStructuralBytes(t *testing.T) {
 }
 
 // Cross-decoding is the property that survives when byte-identity does not:
-// this build's decoder reads the Rust encoder's frames, and its own frames
+// this build's decoder reads the committed frames, and its own frames
 // decode to the same bytes of the recorded length.
 func TestThisBuildDecodesTheRustEncodersFrames(t *testing.T) {
 	golden := openGoldenBase(t)
@@ -225,7 +225,7 @@ func TestThisBuildDecodesTheRustEncodersFrames(t *testing.T) {
 			t.Fatalf("block %d decoded to nothing", id)
 		}
 		// Re-encoding the same names and decoding again is a round trip
-		// through this build's encoder over the Rust writer's payload.
+		// through this build's encoder over the committed payload.
 		raw := EncodeBlock(entries)
 		comp, cerr := Compress(raw)
 		if cerr != nil {

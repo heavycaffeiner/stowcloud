@@ -12,26 +12,21 @@ import (
 // ring, then runs the decryption check that refuses a wrong key at startup
 // rather than discovering it one failing login at a time.
 //
-// The migration is one state transaction, because it establishes the key
-// version and re-seals every TOTP and recoverable share-link ciphertext into
-// version-bound AAD together. AAD is authenticated, so adding the version to
-// it makes every old ciphertext fail to open; that is exactly the migration's
-// reason for existing, and doing it as one transaction means a failure part
-// way leaves the old shape and the old version, not a half-migrated mix.
+// A database with no key version row has never had one established, which is
+// what a fresh deployment looks like before the first write. Recording the
+// active version is the whole of it: every ciphertext this build writes binds
+// its version into the AAD from the moment it is sealed.
 func (s *Service) startupKeyState(ctx context.Context) error {
-	active, activeVer := s.mk.Active()
+	_, activeVer := s.mk.Active()
 
-	var migrated bool
+	var established bool
 	err := s.write(ctx, func(tx *sql.Tx) error {
 		ver, err := readKeyVer(ctx, tx)
 		if err != nil {
 			return err
 		}
 		if ver == missingKeyVer {
-			if err := s.migrateLegacySeals(ctx, tx, active, activeVer); err != nil {
-				return err
-			}
-			migrated = true
+			established = true
 			if _, err := tx.ExecContext(ctx, sqlWriteKeyVersion, activeVer); err != nil {
 				return fmt.Errorf("recording the key version: %w", err)
 			}
@@ -41,8 +36,8 @@ func (s *Service) startupKeyState(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if migrated {
-		slog.Info("re-sealed the auth state under version-bound AAD",
+	if established {
+		slog.Info("established the auth state key version",
 			slog.Uint64("key_version", uint64(activeVer)))
 	}
 
@@ -83,106 +78,6 @@ func readKeyVer(ctx context.Context, q interface {
 		return 0, fmt.Errorf("reading the key version: %w", err)
 	}
 	return uint32(ver), nil //nolint:gosec // a key version is a small counter made positive by construction.
-}
-
-// migrateLegacySeals re-seals every ciphertext that was sealed before key
-// versions were bound into its AAD. The NT hash already binds its version, so
-// only TOTP secrets and share-link tokens move.
-func (s *Service) migrateLegacySeals(ctx context.Context, tx *sql.Tx, key [keyLen]byte, ver uint32) (err error) {
-	// TOTP. A secret the key cannot open means a second factor is about to be
-	// locked out silently, which is the one case that is fatal.
-	rows, err := tx.QueryContext(ctx, sqlForEachTOTP)
-	if err != nil {
-		return fmt.Errorf("reading TOTP secrets: %w", err)
-	}
-	defer func() { err = errors.Join(err, rows.Close()) }()
-	type totpRow struct {
-		user int64
-		ct   []byte
-	}
-	var totps []totpRow
-	for rows.Next() {
-		var r totpRow
-		if serr := rows.Scan(&r.user, &r.ct); serr != nil {
-			return serr
-		}
-		totps = append(totps, r)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, r := range totps {
-		secret, oerr := openTOTPLegacy(key, r.ct, r.user)
-		if oerr != nil {
-			return fmt.Errorf("migrating the TOTP secret for user %d: %w", r.user, oerr)
-		}
-		resealed, serr := sealTOTP(key, secret, r.user, ver)
-		if serr != nil {
-			return serr
-		}
-		if _, uerr := tx.ExecContext(ctx, sqlUpsertTOTP, r.user, resealed, ver, s.now()); uerr != nil {
-			return uerr
-		}
-	}
-
-	// Share-link owner copies. A version-0 token the current key cannot open
-	// was already broken by a Rust key rotation: it is cleared, its token hash
-	// and public link kept, and the degraded row reported. Anything else that
-	// fails rolls back the whole migration.
-	return s.migrateLegacyLinks(ctx, tx, key, ver)
-}
-
-func (s *Service) migrateLegacyLinks(ctx context.Context, tx *sql.Tx, key [keyLen]byte, ver uint32) (err error) {
-	rows, err := tx.QueryContext(ctx, sqlForEachLink)
-	if err != nil {
-		return fmt.Errorf("reading share-link ciphertexts: %w", err)
-	}
-	defer func() { err = errors.Join(err, rows.Close()) }()
-	var degraded []int64
-	for rows.Next() {
-		var (
-			id        int64
-			tokenHash []byte
-			ct        []byte
-			keyVer    any
-		)
-		if serr := rows.Scan(&id, &tokenHash, &ct, &keyVer); serr != nil {
-			return serr
-		}
-		isZero, hasKV := true, keyVer != nil
-		if v, ok := keyVer.(int64); hasKV && ok && v > 0 {
-			isZero = false
-		}
-		if !isZero {
-			continue // already version-bound
-		}
-		token, oerr := openLinkLegacy(key, ct, tokenHash)
-		if oerr != nil {
-			// The owner's recoverable copy is already gone; its hash still
-			// authenticates a bearer who has the URL. Clear the copy, keep the
-			// link, report the row.
-			degraded = append(degraded, id)
-			if _, cerr := tx.ExecContext(ctx, sqlClearLink, id); cerr != nil {
-				return cerr
-			}
-			continue
-		}
-		resealed, serr := sealLink(key, token, tokenHash, ver)
-		if serr != nil {
-			return serr
-		}
-		if _, uerr := tx.ExecContext(ctx, sqlSealLink, resealed, ver, id); uerr != nil {
-			return uerr
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for _, id := range degraded {
-		slog.Warn("cleared an unrecoverable share-link owner copy",
-			slog.Int64("link", id))
-	}
-	return nil
 }
 
 // alignRing compacts the key ring file to exactly the version the database

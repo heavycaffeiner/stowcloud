@@ -5,12 +5,9 @@ import "github.com/heavycaffeiner/stowcloud/go/internal/store/dbfile"
 // One row per (account, file), holding the last thing that account did to it.
 // No history: this is a listing, not an activity stream.
 //
-// The stored vocabulary is the tree this replaces: the column is "user" and the
-// index is "write_event_by_user", not because those are better names but
-// because this is the one database a Rust install keeps rather than migrates.
-// The Go API calls it an account; the file on disk does not have to change for
-// that. A schema that differed by a column name would make adoption a rewrite
-// of every row for nothing.
+// The column is "user" and the index is "write_event_by_user". The Go API
+// calls it an account; the stored names are what they are and renaming them
+// would rewrite every row for nothing.
 const schemaV1 = `
 CREATE TABLE write_event (
   user   INTEGER NOT NULL,
@@ -54,15 +51,4 @@ WHERE user = ? ORDER BY at_ns DESC, rowid DESC LIMIT ?`
 	sqlRecentSince = `
 SELECT share, path, op, at_ns FROM write_event
 WHERE user = ? AND at_ns >= ? ORDER BY at_ns DESC, rowid DESC LIMIT ?`
-
-	// The statements the adoption check reads the file's shape with.
-	// schema_version is left out because it is the migration runner's own
-	// bookkeeping, created before anything looks at the file, and a fresh
-	// database holding only that is an empty one.
-	sqlUserTables = `
-SELECT name FROM sqlite_schema
-WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_version'`
-	sqlWriteEventCol = `SELECT name, type, "notnull" FROM pragma_table_info('write_event')`
-	sqlWriteEventIdx = `SELECT name, origin FROM pragma_index_list('write_event')`
-	sqlIndexColumns  = `SELECT name FROM pragma_index_info(?) ORDER BY seqno`
 )

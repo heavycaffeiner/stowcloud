@@ -2,7 +2,7 @@
 // delta and tombstone overlay, and the union that answers a query.
 //
 // The on-disk format is fixed. Every structural byte this package writes is
-// compared against a fixture the Rust implementation produced, so a change
+// compared against a committed fixture, so a change
 // here is a change to a format two implementations have to agree on.
 package index
 

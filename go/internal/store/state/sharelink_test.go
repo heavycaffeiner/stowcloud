@@ -97,10 +97,11 @@ func TestMigrationKeepsBothLinkRepresentations(t *testing.T) {
 	}
 }
 
-// The all-zero tuple the Phase 2 importer wrote meant two different things and
-// nothing can now tell them apart, so it stops the migration and names the link
-// rather than being read as either one.
-func TestMigrationRefusesTheAmbiguousIdentity(t *testing.T) {
+// An all-zero tuple claims an identity that names nothing: present is false
+// while the columns are set. Reading it as path-only would point the link at
+// whatever is created there next, so it is refused like any other incoherent
+// row.
+func TestMigrationRefusesTheAllZeroIdentity(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "state.db")
 
@@ -111,13 +112,15 @@ func TestMigrationRefusesTheAmbiguousIdentity(t *testing.T) {
 	})
 
 	_, err := dbfile.Open(ctx, state.Spec(path))
-	if !errors.Is(err, state.ErrLinkTargetAmbiguous) {
-		t.Fatalf("opening returned %v, want ErrLinkTargetAmbiguous", err)
+	if !errors.Is(err, state.ErrLinkTargetMalformed) {
+		t.Fatalf("opening returned %v, want ErrLinkTargetMalformed", err)
 	}
 	if !strings.Contains(err.Error(), "42") {
 		t.Errorf("the refusal does not name the link: %v", err)
 	}
-	if !strings.Contains(err.Error(), "migrate --from-rust") {
+	// The instruction has to be something the operator can act on with this
+	// binary alone: there is no importer to rerun.
+	if !strings.Contains(err.Error(), "backup") {
 		t.Errorf("the refusal does not say how to recover: %v", err)
 	}
 }

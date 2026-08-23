@@ -35,8 +35,9 @@ func CurrentParams() Params {
 // enough that a collision across accounts is a ciphertext-level event.
 const saltLen = 16
 
-// encodePHC renders the standard PHC form the Rust tree writes, so a hash it
-// produced is readable here and a password never needs resetting on migrate.
+// encodePHC renders the standard PHC string form, which is what makes a stored
+// hash self-describing: the parameters it was computed with travel with it, so
+// raising them later still verifies every password already on file.
 func encodePHC(p Params, salt, key []byte) string {
 	return fmt.Sprintf("$argon2id$v=19$m=%d,t=%d,p=%d$%s$%s",
 		p.MemoryKiB, p.Iterations, p.Parallelism,

@@ -416,7 +416,7 @@ func TestTheLimitTruncates(t *testing.T) {
 	}
 }
 
-// The golden overlay: the fixture generator appended five names and tombstoned
+// The golden overlay: the fixture appended five names and tombstoned
 // three, two of which are in the base and one of which was appended, because
 // those are different paths on the read side.
 func TestTheGoldenOverlayLoads(t *testing.T) {

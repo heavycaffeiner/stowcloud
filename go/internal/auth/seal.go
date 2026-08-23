@@ -71,23 +71,19 @@ func aadNT(user int64, keyVer uint32) []byte {
 	return out
 }
 
-func aadTOTP(user int64, keyVer uint32, versioned bool) []byte {
+func aadTOTP(user int64, keyVer uint32) []byte {
 	out := make([]byte, 0, len(bindTOTP)+8+4)
 	out = append(out, bindTOTP...)
 	out = binary.LittleEndian.AppendUint64(out, uint64(user)) //nolint:gosec // userId is an app-generated positive id, never a negative input.
-	if versioned {
-		out = binary.LittleEndian.AppendUint32(out, keyVer)
-	}
+	out = binary.LittleEndian.AppendUint32(out, keyVer)
 	return out
 }
 
-func aadLink(tokenHash []byte, keyVer uint32, versioned bool) []byte {
+func aadLink(tokenHash []byte, keyVer uint32) []byte {
 	out := make([]byte, 0, len(bindShLink)+len(tokenHash)+4)
 	out = append(out, bindShLink...)
 	out = append(out, tokenHash...)
-	if versioned {
-		out = binary.LittleEndian.AppendUint32(out, keyVer)
-	}
+	out = binary.LittleEndian.AppendUint32(out, keyVer)
 	return out
 }
 
@@ -116,31 +112,19 @@ func openNT(key [keyLen]byte, blob []byte, user int64, keyVer uint32) ([16]byte,
 }
 
 func sealTOTP(key [keyLen]byte, secret []byte, user int64, keyVer uint32) ([]byte, error) {
-	return seal(key, secret, aadTOTP(user, keyVer, true))
+	return seal(key, secret, aadTOTP(user, keyVer))
 }
 
 func openTOTP(key [keyLen]byte, blob []byte, user int64, keyVer uint32) ([]byte, error) {
-	return open(key, blob, aadTOTP(user, keyVer, true))
-}
-
-// openTOTPLegacy opens a TOTP secret sealed before key versions were bound
-// into its AAD, which is what an import from the Rust tree produces.
-func openTOTPLegacy(key [keyLen]byte, blob []byte, user int64) ([]byte, error) {
-	return open(key, blob, aadTOTP(user, 0, false))
+	return open(key, blob, aadTOTP(user, keyVer))
 }
 
 func sealLink(key [keyLen]byte, token, tokenHash []byte, keyVer uint32) ([]byte, error) {
-	return seal(key, token, aadLink(tokenHash, keyVer, true))
+	return seal(key, token, aadLink(tokenHash, keyVer))
 }
 
 func openLink(key [keyLen]byte, blob, tokenHash []byte, keyVer uint32) ([]byte, error) {
-	return open(key, blob, aadLink(tokenHash, keyVer, true))
-}
-
-// openLinkLegacy opens a share-link token sealed without a version, which is
-// what the Rust rotation path left behind.
-func openLinkLegacy(key [keyLen]byte, blob, tokenHash []byte) ([]byte, error) {
-	return open(key, blob, aadLink(tokenHash, 0, false))
+	return open(key, blob, aadLink(tokenHash, keyVer))
 }
 
 // LinkCipher is the at-rest cryptography for share-link tokens, exported for

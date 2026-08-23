@@ -1,19 +1,18 @@
 # Search golden fixtures
 
-What the Rust implementation produced, so that "does the search work" was a
-diff rather than a judgement.
+The specification of the on-disk index format. `base.idx` is not a record of
+something historical: `WriteBase` reproduces it byte for byte from
+`corpus.txt`, and the test that checks so is what stops the format moving
+without anybody deciding to move it.
 
-These files are now the specification rather than a comparison. The generator
-was `crates/sc-search/examples/golden.rs`, and the cutover deleted it along
-with the rest of the Rust tree, so there is nothing left to regenerate them
-from: what is committed here is the record of what the implementation being
-replaced produced, and the tests read it as a fixed expectation.
+There is no generator in this tree. These were captured from an earlier
+implementation, and that is what makes them worth keeping: a fixture
+regenerated from the code it checks stops being a check. Nothing here can be
+regenerated, so nothing here can drift into agreeing with a bug.
 
-That is deliberate rather than an oversight. A fixture regenerated from the
-code it checks stops being a check; these were captured from the other
-implementation, and keeping them frozen is what preserves the property. Never
-hand-edit a file in this directory: an edit here is a change to what the search
-is required to produce, and it needs the reasoning that goes with that.
+Never hand-edit a file in this directory. An edit here is a change to what the
+search is required to produce, and it needs the reasoning that goes with that
+plus a matching change to every reader of the format.
 
 `.gitattributes` marks the whole tree `-text` so git does not normalise line
 endings in it. A fixture git rewrote is a fixture that fails for a reason

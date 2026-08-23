@@ -13,10 +13,9 @@ import (
 	"testing"
 )
 
-// The golden fixtures are what turn "does the Go search work" from a judgement
-// into a diff. They are produced by the Rust implementation, whose on-disk
-// format is not changing, so a disagreement here is a bug in this package
-// rather than a difference of opinion.
+// The golden fixtures are the specification of the on-disk format. They were
+// captured from an earlier implementation and there is no generator here, so a
+// disagreement is a bug in this package rather than a fixture that drifted.
 //
 // Every reader is deliberately strict: a fixture line it cannot parse fails
 // the test rather than being skipped, because a silently skipped fixture is a

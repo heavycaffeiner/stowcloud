@@ -15,7 +15,7 @@ import (
 func TestTheSubcommandSet(t *testing.T) {
 	want := []string{
 		"serve", "healthcheck", "preview-worker", "caps", "setup", "gc",
-		"routes", "smb-sync", "index", "masterkey", "migrate",
+		"routes", "smb-sync", "index", "masterkey",
 	}
 	var got []string
 	for _, c := range table() {
