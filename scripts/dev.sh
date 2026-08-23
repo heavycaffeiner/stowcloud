@@ -85,6 +85,43 @@ name = "pictures"
 host_path = "$PWD/$DIR/shares/pictures"
 TOML
 
+# A certificate the tailnet's own CA signed, when tailscale will issue one.
+#
+# The self-signed pair the server mints otherwise is fine in a desktop browser,
+# which asks once and remembers. It is not fine on a phone: Android refuses an
+# untrusted certificate for subresources outright, so the shell loads, every
+# script and stylesheet fails, and what you get is a blank screen with nothing
+# on it saying why. That is worse than a refusal.
+#
+# The server reads data/tls/cert.pem when one is there and self-signs when it
+# is not, so this only has to put the file in place.
+# Asked for on every run, not only when the file is missing. The server
+# self-signs on first start, so after one run there is always a cert.pem there
+# and a check for its absence never fires again: the message would then say the
+# certificate is trusted while the self-signed one is still being served.
+#
+# tailscale writes the pair only when it has one to write, and it is cheap to
+# ask: the daemon caches the certificate and renews it in the background.
+CERT_TRUSTED=
+if [ "$TSNAME" != localhost ]; then
+  mkdir -p "$DIR/data/tls"
+  # Announced before it runs, and bounded. Issuing the first certificate for a
+  # name goes out to the CA and takes around half a minute; refusing takes as
+  # long. Either way it is a silent wait, and a script that prints "removing
+  # .dev" and then says nothing for thirty seconds reads as one that has hung.
+  echo "==> asking tailscale for a certificate (up to 60s the first time)"
+  if timeout 60 tailscale cert --cert-file "$DIR/data/tls/cert.pem" \
+       --key-file "$DIR/data/tls/key.pem" "$TSNAME" >/dev/null 2>&1; then
+    echo "    got one, signed by the tailnet's CA"
+    CERT_TRUSTED=1
+  else
+    # Not fatal: the server mints its own on first start. What that costs on a
+    # phone is in the note at the end.
+    echo "    none; the server will self-sign"
+    rm -f "$DIR/data/tls/cert.pem" "$DIR/data/tls/key.pem"
+  fi
+fi
+
 echo "==> building the frontend"
 if [ -d web/node_modules ]; then
   (cd web && npm run build) >/dev/null || { echo "the frontend build failed" >&2; exit 1; }
@@ -131,7 +168,18 @@ else
   echo "  already set up; sign in with the account made on the first run"
 fi
 echo
-echo "  The certificate is self-signed, so a browser warns once and remembers."
+if [ -n "$CERT_TRUSTED" ]; then
+  echo "  The certificate is the tailnet CA's, so no browser warns."
+else
+  echo "  The certificate is self-signed: tailscale would not issue one without"
+  echo "  root. A desktop browser asks once and remembers. A phone does not: it"
+  echo "  refuses the subresources and draws a blank page with no error on it,"
+  echo "  which is what an empty screen on a phone means here."
+  echo
+  echo "  For a real certificate, once:"
+  echo "    sudo tailscale set --operator=\$USER"
+  echo "  then: bash scripts/dev.sh --fresh"
+fi
 echo
 echo "  log:  $DIR/log"
 echo "  stop: kill \$(cat $DIR/pid)"
