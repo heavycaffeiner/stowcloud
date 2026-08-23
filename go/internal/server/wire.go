@@ -19,6 +19,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/spa"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/ws"
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
 	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
@@ -80,6 +81,11 @@ type Options struct {
 	// honest rather than a success that changes nothing.
 	ApplyIndexEnabled func(enabled bool) error
 
+	// Runtime holds the settings an administrator moves from the interface,
+	// already loaded from the store. A nil one leaves every field reported and
+	// none of them editable.
+	Runtime *runtimecfg.Holder
+
 	// PublishSMB re-renders the SMB configuration and asks the sidecar to
 	// apply it. A nil one leaves the apply surface refusing rather than
 	// pretending, which is what a deployment with no sidecar has.
@@ -135,6 +141,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		Hosts:             state.Hosts,
 		CSRFKey:           state.CSRFKey,
 		WatchCap:          func() int { return watchHotSetCap },
+		Runtime:           opt.Runtime,
 		Health:            health,
 		Uploads:           opt.Uploads,
 		State:             opt.Store.State(),
@@ -152,6 +159,27 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 			}
 			return opt.ReloadACL(ctx)
 		},
+	}
+
+	// What a saved setting reaches. Installed here because this is the layer
+	// that owns the live components: the limiter is built above and the search
+	// service is handed in, and the command that assembles both cannot reach
+	// the first one.
+	//
+	// The watcher's bound is deliberately absent: it is taken when the watcher
+	// starts, so that field reports restart_required rather than being pushed
+	// somewhere it would not take effect.
+	if opt.Runtime != nil {
+		opt.Runtime.OnApply(func(v runtimecfg.Values) {
+			state.Limiter.Set(v.RatePerSec, v.RateBurst)
+			if opt.Search != nil {
+				opt.Search.SetBounds(v.SearchConcurrentSSD, v.SearchDeadlineSSD)
+			}
+		})
+		// Applied once at startup, so the values loaded from the store are in
+		// the components before the first request rather than after the first
+		// save.
+		opt.Runtime.Set(opt.Runtime.Get())
 	}
 
 	table := routes(deps, setup)

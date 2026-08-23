@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
-	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
 )
 
 // The admin settings surface. A D5 constant is the compiled-in default and
@@ -71,7 +71,31 @@ func Settings(d Deps) http.HandlerFunc {
 			return aerr
 		}
 
-		const notInThisBuild = "settings.not_in_this_build"
+		// The live values, which are the config file's plus whatever an
+		// administrator has since saved. Reporting the compiled-in constants
+		// instead is what made the screen show the old number after a save
+		// that had answered "applied".
+		rt := runtimecfg.Defaults()
+		if d.Runtime != nil {
+			rt = d.Runtime.Get()
+		}
+		// A field is editable when there is somewhere to put it. Without a
+		// settings store this build reports and does not change, and says so
+		// rather than offering a control that cannot work.
+		var frozen *string
+		if d.Runtime == nil {
+			frozen = readonly("settings.not_in_this_build")
+		}
+		sourceOf := func(section, key string) string {
+			if d.State == nil {
+				return sourceConfig
+			}
+			if storedHas(r, d, section, key) {
+				return sourceOverride
+			}
+			return sourceConfig
+		}
+
 		fields := []settingsField{
 			// The network boundary, which is the one group this build moves
 			// live: the host lists and the proxy ranges are what the settings
@@ -89,48 +113,54 @@ func Settings(d Deps) http.HandlerFunc {
 				Range: stringListRange(32), Source: sourceConfig,
 			},
 
-			// Reported and not editable here. Each is a real value an operator
-			// may need to see; the ones this build cannot move say so rather
-			// than being left out, because a setting that is absent from the
-			// screen is one nobody can find out the value of.
+			// The bounds an administrator moves. Each carries the live value,
+			// not the compiled-in constant: reporting the constant is what made
+			// a save answer "applied" and the next read show the old number.
 			{
 				Key: "rate.per_sec", Value: d.Limiter.Rate(),
-				Source: sourceConfig, ReadonlyReasonKey: readonly(notInThisBuild),
+				Range:  intRange(runtimecfg.BoundRatePerSec().Min, runtimecfg.BoundRatePerSec().Max),
+				Source: sourceOf("rate", "per_sec"), ReadonlyReasonKey: frozen,
 			},
 			{
 				Key: "rate.burst", Value: d.Limiter.Burst(),
-				Source: sourceConfig, ReadonlyReasonKey: readonly(notInThisBuild),
+				Range:  intRange(runtimecfg.BoundRateBurst().Min, runtimecfg.BoundRateBurst().Max),
+				Source: sourceOf("rate", "burst"), ReadonlyReasonKey: frozen,
 			},
 			{
-				Key: "search.max_concurrent_fast", Value: limits.ConcurrentSearchesSSD,
-				Range: intRange(1, 64), Source: sourceBuiltin,
-				ReadonlyReasonKey: readonly(notInThisBuild),
+				Key: "search.max_concurrent_fast", Value: rt.SearchConcurrentSSD,
+				Range:  intRange(runtimecfg.BoundSearchConcurrent().Min, runtimecfg.BoundSearchConcurrent().Max),
+				Source: sourceOf("search", "max_concurrent_fast"), ReadonlyReasonKey: frozen,
 			},
 			{
-				Key: "search.max_concurrent_slow", Value: limits.ConcurrentSearchesRotational,
-				Range: intRange(1, 64), Source: sourceBuiltin,
-				ReadonlyReasonKey: readonly(notInThisBuild),
+				Key: "search.max_concurrent_slow", Value: rt.SearchConcurrentRot,
+				Range:  intRange(runtimecfg.BoundSearchConcurrent().Min, runtimecfg.BoundSearchConcurrent().Max),
+				Source: sourceOf("search", "max_concurrent_slow"), ReadonlyReasonKey: frozen,
 			},
 			{
-				Key:   "search.walk_deadline_fast_ms",
-				Value: limits.SearchWalkDeadlineSSD.Milliseconds(),
-				Range: intRange(100, 60_000), Source: sourceBuiltin,
-				ReadonlyReasonKey: readonly(notInThisBuild),
+				Key: "search.walk_deadline_fast_ms", Value: rt.SearchDeadlineSSD.Milliseconds(),
+				Range:  intRange(runtimecfg.BoundSearchDeadlineMs().Min, runtimecfg.BoundSearchDeadlineMs().Max),
+				Source: sourceOf("search", "walk_deadline_fast_ms"), ReadonlyReasonKey: frozen,
 			},
 			{
-				Key:   "search.walk_deadline_slow_ms",
-				Value: limits.SearchWalkDeadlineRotational.Milliseconds(),
-				Range: intRange(100, 60_000), Source: sourceBuiltin,
-				ReadonlyReasonKey: readonly(notInThisBuild),
+				Key: "search.walk_deadline_slow_ms", Value: rt.SearchDeadlineRot.Milliseconds(),
+				Range:  intRange(runtimecfg.BoundSearchDeadlineMs().Min, runtimecfg.BoundSearchDeadlineMs().Max),
+				Source: sourceOf("search", "walk_deadline_slow_ms"), ReadonlyReasonKey: frozen,
 			},
 			{
-				Key: "watch.hot_set_max", Value: d.WatchCap(),
-				Range: intRange(64, 65_536), Source: sourceBuiltin,
-				ReadonlyReasonKey: readonly(notInThisBuild),
+				Key: "archive.max_concurrent", Value: rt.ArchiveMaxConcurrent,
+				Range:  intRange(runtimecfg.BoundArchiveEntries().Min, runtimecfg.BoundArchiveEntries().Max),
+				Source: sourceOf("archive", "max_concurrent"), ReadonlyReasonKey: frozen,
 			},
+
+			// The watcher takes its bound when it starts, so a change here is
+			// stored and applies on the next start. Saying so is the point: a
+			// value that reads as live and is not is the thing an administrator
+			// spends an afternoon on.
 			{
-				Key: "archive.max_concurrent", Value: limits.ArchiveEntriesListed,
-				Source: sourceBuiltin, ReadonlyReasonKey: readonly(notInThisBuild),
+				Key: "watch.hot_set_max", Value: rt.WatchHotSetMax,
+				Range:  intRange(runtimecfg.BoundWatchHotSet().Min, runtimecfg.BoundWatchHotSet().Max),
+				Source: sourceOf("watch", "hot_set_max"), RestartRequired: true,
+				ReadonlyReasonKey: frozen,
 			},
 		}
 
@@ -210,4 +240,22 @@ func prefixesToStrings(ps []netip.Prefix) []string {
 		out = append(out, p.String())
 	}
 	return out
+}
+
+// storedHas reports whether an administrator has saved this field, which is
+// what tells an override from the config file's own value on the screen.
+//
+// A read failure answers false: the value shown is still right, and only the
+// label under it is less precise.
+func storedHas(r *http.Request, d Deps, section, key string) bool {
+	all, err := d.State.Settings(r.Context())
+	if err != nil {
+		return false
+	}
+	sec, ok := all[section].(map[string]any)
+	if !ok {
+		return false
+	}
+	_, ok = sec[key]
+	return ok
 }

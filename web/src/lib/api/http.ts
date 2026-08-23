@@ -603,7 +603,7 @@ async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSet
 }
 
 // ── admin: server settings (`crates/sc-http/src/settings_api.rs`) — parity
-// with every operator-settable config.toml field, live-apply where possible,
+// with every operator-settable sc.toml field, live-apply where possible,
 // restart-required where not. ──
 
 async function adminGetServerSettings(): Promise<SettingsSnapshot> {
@@ -657,7 +657,7 @@ async function adminSetPathsSettings(req: PathsSettingsReq): Promise<ApplyOutcom
 }
 
 /** `DELETE /api/admin/server-settings/{section}` — drop this group's stored
- *  override so `config.toml` and the environment decide it again. Answers with
+ *  override so `sc.toml` and the environment decide it again. Answers with
  *  the same `ApplyOutcome` a patch does. An unknown section is `404
  *  settings.unknown_section`, never a silent no-op. */
 async function adminClearServerSettings(section: SettingsSectionId): Promise<ApplyOutcome> {

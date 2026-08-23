@@ -1,11 +1,11 @@
 <script lang="ts">
-  // Server settings — parity with `config.toml`: every operator-settable
+  // Server settings — parity with `sc.toml`: every operator-settable
   // field this deployment has, reachable from this one screen
   // (`crates/sc-http/src/settings_api.rs::SettingsSnapshot`). Most groups
   // apply live; network/db/symlink-policy/homes and SMB's own on/off switch
   // need a restart, handled by the restart section at the bottom.
   //
-  // `snapshot.fields` is one flat, dotted-key list (mirrors `config.toml`'s
+  // `snapshot.fields` is one flat, dotted-key list (mirrors `sc.toml`'s
   // own `[section] key` shape) — this component groups by an explicit key
   // set per form below, and anything left over (a field this screen doesn't
   // have a dedicated control for, always because it's `readonly_reason_key`'d —
@@ -64,7 +64,7 @@
 
   function sourceLabel(src: SettingsField['source']): string {
     if (src === 'admin_override') return t('server.admin_override')
-    if (src === 'config_file') return 'config.toml'
+    if (src === 'config_file') return 'sc.toml'
     return t('server.default')
   }
 
@@ -92,7 +92,7 @@
     return String(v)
   }
 
-  // ── revert one group to config.toml ──
+  // ── revert one group to sc.toml ──
   //
   // Every group is otherwise one-way: a stored override beats the file on
   // every boot, so without this the only way back is deleting `settings.db`,
@@ -121,7 +121,7 @@
     return SECTIONS.find((s) => s.id === id) as Section
   }
 
-  /** Is this group currently overriding `config.toml`? Read off one
+  /** Is this group currently overriding `sc.toml`? Read off one
    *  representative row, since every row in a group shares one source. */
   function isOverridden(id: SettingsSectionId): boolean {
     return field(section(id).sourceKey)?.source === 'admin_override'
@@ -499,7 +499,7 @@
   // list below with the server's own reason attached, and that is deliberate
   // rather than an omission: `oidc.client_secret_file` names a file holding a
   // secret, and an admin override of `oidc.local_password_login` would beat
-  // `config.toml` on every boot, so writing `deny` here and then losing the
+  // `sc.toml` on every boot, so writing `deny` here and then losing the
   // provider would lock out everybody including whoever set it.
   //
   // `oidc.smb_policy` has exactly one accepted value, so there is no control

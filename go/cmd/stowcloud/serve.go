@@ -21,7 +21,9 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
+	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/index"
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
 	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
@@ -97,6 +99,10 @@ func applyJail(cfg *server.Config, configPath string, clk clock.Clock) (jail.Sta
 // absent from the process serving the request is a permission decision that
 // depends on which half was asked, and the first thing this account does is
 // ask.
+// watchHotSetDefault matches watch.Config's own default, which is the value a
+// watcher started with no override takes.
+const watchHotSetDefault = 4096
+
 func grantEveryShare(
 	ctx context.Context, c *core.Core, st *store.Store, ev *acl.Evaluator,
 	uid int64, clk clock.Clock,
@@ -338,6 +344,26 @@ func runServe(args []string, stderr io.Writer) int {
 		oidcClient = c
 	}
 
+	// What an administrator has changed from the interface, over what the
+	// config file said. This is the half that used to be missing: a save was
+	// written to the settings table and nothing read it back, so the screen
+	// reported a change that had taken effect nowhere and did not survive a
+	// restart either.
+	rtcfg := runtimecfg.New(runtimecfg.Values{
+		SearchConcurrentSSD:  limits.ConcurrentSearchesSSD,
+		SearchConcurrentRot:  limits.ConcurrentSearchesRotational,
+		SearchDeadlineSSD:    limits.SearchWalkDeadlineSSD,
+		SearchDeadlineRot:    limits.SearchWalkDeadlineRotational,
+		ArchiveMaxConcurrent: limits.ArchiveEntriesListed,
+		// The watcher's own default. It is not read from watch.Config because
+		// that shape's defaults are unexported and this is the one number the
+		// settings surface reports.
+		WatchHotSetMax: watchHotSetDefault,
+		RatePerSec:     cfg.RatePerSec,
+		RateBurst:      cfg.RateBurst,
+	})
+	rtcfg.Set(runtimecfg.Load(ctx, st.State(), rtcfg.Base(), log))
+
 	// Search. The index is optional and off by default: a query answers from a
 	// walk when there is none, so the escalation is taken deliberately rather
 	// than assumed. What decides is the stored switch, not the config file,
@@ -436,6 +462,7 @@ func runServe(args []string, stderr io.Writer) int {
 
 	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health, Uploads: uploads,
 		Search:            searchSvc,
+		Runtime:           rtcfg,
 		ApplyIndexEnabled: applyIndex,
 		OIDC:              oidcClient,
 		PublishSMB:        publishSMB,

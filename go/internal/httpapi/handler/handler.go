@@ -17,6 +17,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
 	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/state"
@@ -49,6 +50,11 @@ type Deps struct {
 	// WatchCap reports the watcher's hot-set bound; the watcher itself is
 	// Phase 1's package and Phase 5's settings surface only reports the bound.
 	WatchCap func() int
+
+	// Runtime holds the settings an administrator moves from the interface.
+	// A nil one leaves every field reported and none of them editable, which
+	// is what a build with no settings store has.
+	Runtime *runtimecfg.Holder
 
 	// Events upgrades the change-channel socket for an authenticated user.
 	Events EventsHandler

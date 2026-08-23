@@ -1,9 +1,9 @@
 <script lang="ts">
   // Folder share management — adding, renaming and removing shared folders
-  // without editing config.toml or restarting the server.
+  // without editing sc.toml or restarting the server.
   // GET/POST /api/admin/shares, PATCH/DELETE /api/admin/shares/{id}.
   //
-  // A share declared in config.toml (`config_defined`) is editable here like
+  // A share declared in sc.toml (`config_defined`) is editable here like
   // any other — the backend keeps the new name/path as an override in
   // `shares.db` and reapplies it at startup, so nothing is reverted. Only
   // *delete* is hidden for it: the config entry would re-declare the share on

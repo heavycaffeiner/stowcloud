@@ -214,7 +214,7 @@ export interface IndexEstimate {
 
 /** `GET`/`PATCH /api/admin/index/settings` — the
  *  persisted (survives-restart, `index.db`-backed) runtime override for the
- *  off-by-default name index, independent of `config.toml`'s `[index]
+ *  off-by-default name index, independent of `sc.toml`'s `[index]
  *  name_enabled`. */
 export interface IndexSettings {
   name_enabled: boolean
@@ -285,7 +285,7 @@ export interface AdminShare {
   id: number
   name: string
   host_path: string
-  /** `true` for a share declared in `config.toml`. It is still renameable,
+  /** `true` for a share declared in `sc.toml`. It is still renameable,
    *  repointable and trash-toggleable here — the backend keeps those as
    *  overrides in `shares.db` and reapplies them at startup — but it cannot
    *  be deleted, because the config entry would re-declare it on the next
@@ -820,8 +820,8 @@ export interface ReadFileResponse {
 }
 
 // ── server settings (`crates/sc-http/src/settings_api.rs`) — the admin
-// screen's parity with every operator-settable `config.toml` field. One flat
-// field list, keyed with the same dotted path `config.toml` itself uses, so
+// screen's parity with every operator-settable `sc.toml` field. One flat
+// field list, keyed with the same dotted path `sc.toml` itself uses, so
 // an operator can cross-reference the two; each field carries where its
 // current value came from and whether changing it needs a restart. ──
 
@@ -1018,7 +1018,7 @@ export interface WatchSettingsReq {
  *  The other two `oidc.*` settings are not here on purpose.
  *  `oidc.client_secret_file` is the path to a secret, and
  *  `oidc.local_password_login` would be unrecoverable if this screen could
- *  write it: an admin override beats `config.toml` on every boot, so setting
+ *  write it: an admin override beats `sc.toml` on every boot, so setting
  *  it to `deny` here and then losing the IdP would lock everyone out with no
  *  way back in (§4.3.5). The server refuses both fields; this type refuses to
  *  offer them. */

@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
+	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
 )
 
 // The settings sections.
@@ -25,6 +26,10 @@ func settingsSections() []string {
 	return []string{
 		"network", "db", "symlink-policy", "homes", "smb",
 		"search", "archive", "watch", "paths", "oidc",
+		// The request rate bounds. They were absent while the settings
+		// snapshot advertised them as editable, so the screen offered a
+		// control whose save answered "no such section".
+		"rate",
 	}
 }
 
@@ -57,11 +62,73 @@ func AdminServerSettingsSection(d Deps) http.HandlerFunc {
 		if err := decodeJSON(r, &body); err != nil {
 			return err
 		}
+		// Validated before it is stored, and refused naming the field. An
+		// administrator is watching, so a value outside its bound is told to
+		// them rather than quietly clamped into a different one.
+		if verr := checkSection(section, body); verr != nil {
+			return verr
+		}
 		if err := d.State.MergeSettings(r.Context(), section, body); err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, applyOutcome(section, restartRequired(section)))
+		// Stored, then applied. The response says which of the two happened,
+		// because a save that reports "applied" for a value nothing read is
+		// the defect this whole surface had.
+		//
+		// A section this process cannot move while running says so whatever
+		// the reload did: the listener's address and the database's own file
+		// are fixed when they are opened.
+		needsRestart := restartRequired(section) || !reloadRuntime(r, d)
+		return writeJSON(w, http.StatusOK, applyOutcome(section, needsRestart))
 	})
+}
+
+// checkSection validates the fields this build knows how to move.
+//
+// A key it does not recognise is stored without a check rather than refused:
+// the sections belong to the subsystems that read them, and refusing an
+// unknown key here would make this layer the authority on what a section may
+// contain, which is the second definition the comment above warns about.
+func checkSection(section string, body map[string]any) error {
+	bounds := map[string]map[string]runtimecfg.Bound{
+		"search": {
+			"max_concurrent_fast":   runtimecfg.BoundSearchConcurrent(),
+			"max_concurrent_slow":   runtimecfg.BoundSearchConcurrent(),
+			"walk_deadline_fast_ms": runtimecfg.BoundSearchDeadlineMs(),
+			"walk_deadline_slow_ms": runtimecfg.BoundSearchDeadlineMs(),
+		},
+		"archive": {"max_concurrent": runtimecfg.BoundArchiveEntries()},
+		"watch":   {"hot_set_max": runtimecfg.BoundWatchHotSet()},
+		"rate":    {"per_sec": runtimecfg.BoundRatePerSec(), "burst": runtimecfg.BoundRateBurst()},
+	}
+	for key, b := range bounds[section] {
+		raw, ok := body[key]
+		if !ok {
+			continue
+		}
+		n, ok := raw.(float64)
+		if !ok {
+			return apierr.Unprocessable("settings.must_be_at_least_one", key)
+		}
+		if err := runtimecfg.Check(key, int64(n), b); err != nil {
+			return apierr.Unprocessable("settings.must_be_at_least_one", key)
+		}
+	}
+	return nil
+}
+
+// reloadRuntime re-reads the stored settings and pushes them into the running
+// components. It reports whether the change is live.
+//
+// Re-read rather than applied from the patch: the stored document is what a
+// restart would load, so applying it here is what makes the running server and
+// the next start agree.
+func reloadRuntime(r *http.Request, d Deps) bool {
+	if d.Runtime == nil || d.State == nil {
+		return false
+	}
+	d.Runtime.Set(runtimecfg.Load(r.Context(), d.State, d.Runtime.Base(), d.Log))
+	return true
 }
 
 // applyOutcome is what the screen shows after a save: whether the value is

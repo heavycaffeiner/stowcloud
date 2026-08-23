@@ -1376,7 +1376,7 @@ async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSet
 
 // ── server settings (`crates/sc-http/src/settings_api.rs`) — mirrors
 // `http.ts`'s real-server surface, same convention as every other section of
-// this file. Field keys match `settings_bridge.rs`'s dotted `config.toml`
+// this file. Field keys match `settings_bridge.rs`'s dotted `sc.toml`
 // paths exactly, since `ServerSettingsSection.svelte` groups by those literal
 // strings regardless of which backend answered them. ──
 
@@ -1438,7 +1438,7 @@ const mockServerSettings = {
 const mockOverriddenSections = new Set<SettingsSectionId>(['network', 'smb'])
 
 /** What each group falls back to when its override is dropped, standing in
- *  for `config.toml` plus the environment. */
+ *  for `sc.toml` plus the environment. */
 const mockFileSettings = JSON.parse(JSON.stringify(mockServerSettings)) as typeof mockServerSettings
 mockFileSettings.network.public_origins = []
 mockFileSettings.smb.server_name = 'STOWCLOUD'
@@ -1529,7 +1529,7 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       settingsField('oidc.display_name', s.oidc.display_name, true),
       settingsField('oidc.allow_private_endpoints', s.oidc.allow_private_endpoints, true),
       settingsField('oidc.smb_policy', s.oidc.smb_policy, true),
-      // The two `config.toml` owns outright (§6-4). They carry their reason
+      // The two `sc.toml` owns outright (§6-4). They carry their reason
       // here the same way the real bridge writes it, so the screen's
       // read-only list is not empty under the mock.
       {
@@ -2043,7 +2043,7 @@ async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
 
 /** A config-file share takes an edit like any other: the real backend keeps
  *  the new name/path (and the trash toggle) in `shares.db` rather than
- *  `config.toml` and reapplies them at startup, so nothing is lost on
+ *  `sc.toml` and reapplies them at startup, so nothing is lost on
  *  restart (`sc_core::Core::update_share`). */
 async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<AdminShare> {
   await delay(35)

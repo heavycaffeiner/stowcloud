@@ -109,6 +109,16 @@ type Service struct {
 	mu    sync.Mutex
 	ix    *index.NameIndex
 	slots chan struct{}
+
+	// The bounds an administrator moves from the settings screen. They are
+	// held rather than read from the compiled-in limits, because a value the
+	// screen changed has to be the one the next query uses: a setting that is
+	// stored and not read is a screen reporting a change that happened nowhere.
+	//
+	// Zero means the storage class's own default, so a build that never
+	// configures them behaves as it did.
+	concurrency int
+	deadline    time.Duration
 }
 
 // New builds the service.
@@ -120,6 +130,30 @@ func New(o Options) *Service {
 	s := &Service{clk: clk, storage: o.Storage, cpus: o.CPUs, ix: o.Index}
 	s.slots = make(chan struct{}, o.Storage.Concurrency())
 	return s
+}
+
+// SetBounds moves the query bounds, which is what the settings screen's search
+// section does. Zero leaves a field at the storage class's default.
+//
+// The concurrency gate is not resized: it is a buffered channel taken at
+// construction, and replacing it under queries in flight would lose the slots
+// they hold. The new bound applies from the next start, which is what a
+// deployment changing it means by it.
+func (s *Service) SetBounds(concurrency int, deadline time.Duration) {
+	s.mu.Lock()
+	s.concurrency, s.deadline = concurrency, deadline
+	s.mu.Unlock()
+}
+
+// walkDeadline is how long a walk may take, which the administrator may move.
+func (s *Service) walkDeadline() time.Duration {
+	s.mu.Lock()
+	d := s.deadline
+	s.mu.Unlock()
+	if d > 0 {
+		return d
+	}
+	return s.storage.Deadline()
 }
 
 // SetIndex attaches or detaches the index at runtime, which is what the
@@ -222,7 +256,7 @@ func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryO
 func (s *Service) walk(
 	ctx context.Context, sources []search.Source, needle []byte, opt QueryOptions, start time.Time,
 ) (Results, error) {
-	deadline := s.storage.Deadline()
+	deadline := s.walkDeadline()
 	wctx, cancel := context.WithTimeout(ctx, deadline)
 	defer cancel()
 
