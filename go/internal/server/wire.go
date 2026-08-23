@@ -16,6 +16,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/route"
+	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/spa"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/ws"
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
@@ -112,6 +113,11 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		Hosts:   mw.NewHostSet(cfg.AppHosts, cfg.ContentHosts),
 		CSRFKey: csrfKey(),
 		Limiter: mw.NewRateLimiter(cfg.RatePerSec, cfg.RateBurst, clk),
+		// The policy has to admit this bundle's own inline bootstrap, and the
+		// hashes are read from the bundle rather than written down: a constant
+		// is a second copy of what the build already decided, and the two
+		// disagreeing is a blank page whose only symptom is a console line.
+		AppCSP: mw.AppPolicy(spa.InlineScriptHashes()),
 	}
 
 	health := opt.Health

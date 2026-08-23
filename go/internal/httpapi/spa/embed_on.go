@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 // The bundle.
@@ -63,3 +64,16 @@ func handler() (http.Handler, bool) {
 // appDir is where the frontend build puts its hash-named assets, and it
 // matches the app directory the frontend config names.
 const appDir = "app"
+
+// inlineScriptHashes reads the embedded document once and hashes its inline
+// scripts. Once, because the bundle is compiled in and cannot change while the
+// process runs.
+var inlineScriptHashes = sync.OnceValue(func() string {
+	body, err := bundle.ReadFile("build/index.html")
+	if err != nil {
+		// No document, so no inline script to admit. The policy stays as
+		// strict as it was rather than being loosened over a missing file.
+		return ""
+	}
+	return strings.Join(hashesFrom(string(body)), " ")
+})

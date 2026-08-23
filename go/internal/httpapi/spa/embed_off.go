@@ -10,3 +10,7 @@ import "net/http"
 // unconditionally: a build tag that changes a function's existence rather than
 // its behaviour pushes the tag into every caller.
 func handler() (http.Handler, bool) { return nil, false }
+
+// inlineScriptHashes is empty without a bundle: there is no document, so there
+// is no inline script, and the policy has nothing to admit.
+func inlineScriptHashes() string { return "" }

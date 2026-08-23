@@ -50,6 +50,16 @@ const browser = await chromium.launch()
 const context = await browser.newContext({ ignoreHTTPSErrors: true })
 const page = await context.newPage()
 
+// Anything the browser refused to run or fetch. A blocked script is not a
+// failed request and not a bad status: it is a console line and nothing else,
+// so without collecting these a blank page looks like a healthy one.
+const violations = []
+page.on('console', m => {
+  const t = m.text()
+  if (m.type() === 'error' && /Content Security Policy/i.test(t)) violations.push(t)
+})
+page.on('pageerror', e => violations.push('pageerror: ' + e.message))
+
 try {
   console.log('the interface loads')
   const res = await page.goto(BASE, { waitUntil: 'domcontentloaded' })
@@ -57,6 +67,20 @@ try {
   const bundle = await page.evaluate(() => document.documentElement.innerHTML)
   check('the embedded bundle is referenced', bundle.includes('app/immutable/'),
     bundle.includes('app/immutable/') ? '' : bundle.slice(0, 80))
+
+  // The bundle referenced is not the bundle running. Everything below drives
+  // the API with fetch, which no content policy stops, so the whole suite
+  // passed against a server whose policy blocked the framework's inline
+  // bootstrap: every request succeeded and the screen was blank.
+  //
+  // This is the one check that fails when the interface does not start.
+  await page.waitForFunction(() => (document.body?.innerText ?? '').trim().length > 0,
+    null, { timeout: 15000 }).catch(() => {})
+  const rendered = (await page.evaluate(() => (document.body?.innerText ?? '').trim()))
+  check('the interface renders something', rendered.length > 0,
+    rendered.length > 0 ? '' : 'the page is blank; the app never started')
+  check('nothing was blocked by the content policy', violations.length === 0,
+    violations.join(' | '))
 
   console.log('first run')
   const setupState = await api(page, 'GET', '/api/setup')

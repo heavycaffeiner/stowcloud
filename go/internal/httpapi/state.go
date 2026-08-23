@@ -38,6 +38,12 @@ type State struct {
 	// CSRFKey is the key sessions' CSRF tokens derive from.
 	CSRFKey []byte
 
+	// AppCSP is the application origin's Content-Security-Policy, built by the
+	// wiring because it carries a hash for each inline script the frontend
+	// bundle ships and this package sits below the one that embeds it. Empty
+	// takes the policy for a build with no frontend.
+	AppCSP string
+
 	// Limiter is the shared per-client bucket. One instance for the process.
 	Limiter *mw.RateLimiter
 

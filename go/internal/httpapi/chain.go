@@ -26,7 +26,7 @@ func steps() []Step {
 		{Name: "RequestID", Wrap: func(_ *State, h http.Handler) http.Handler { return mw.RequestID(h) }},
 		{Name: "TrustedProxy", Wrap: func(s *State, h http.Handler) http.Handler { return mw.TrustedProxy(s.Trusted)(h) }},
 		{Name: "HostGuard", Wrap: func(s *State, h http.Handler) http.Handler { return mw.HostGuard(s.Hosts)(h) }},
-		{Name: "SecurityHeaders", Wrap: func(_ *State, h http.Handler) http.Handler { return mw.SecurityHeaders(h) }},
+		{Name: "SecurityHeaders", Wrap: func(s *State, h http.Handler) http.Handler { return mw.SecurityHeaders(s.AppCSP)(h) }},
 		{Name: "RateLimit", Wrap: func(s *State, h http.Handler) http.Handler { return mw.RateLimit(s.Limiter)(h) }},
 		{Name: "BodyLimit", Wrap: func(s *State, h http.Handler) http.Handler { return mw.BodyLimit(int64(1<<20), h) }},
 		{Name: "Auth", Wrap: func(s *State, h http.Handler) http.Handler { return mw.Auth(s.Auth, mw.PublicPaths)(h) }},
