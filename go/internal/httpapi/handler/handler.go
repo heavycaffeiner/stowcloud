@@ -57,6 +57,11 @@ type Deps struct {
 	// does not own: the grant rows the admin screen edits.
 	State *state.DB
 
+	// ConfigShares are the share names the config file declares. The admin
+	// screen hides the delete affordance for one, because the next restart
+	// re-declares it and the deletion would look like it silently failed.
+	ConfigShares map[string]bool
+
 	// ReloadACL rebuilds the permission evaluator from the stored grants. A
 	// grant live in the database and stale in the process serving requests is
 	// a permission decision that depends on which half was asked.
@@ -117,6 +122,9 @@ type Deps struct {
 	// can reach into is a status any of them can rewrite.
 	Health *HealthState
 }
+
+// ConfigShare reports whether the config file declares this share.
+func (d Deps) ConfigShare(name string) bool { return d.ConfigShares[name] }
 
 // ActiveWork is what a restart would interrupt.
 type ActiveWork struct {

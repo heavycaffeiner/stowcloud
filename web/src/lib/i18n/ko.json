@@ -584,6 +584,7 @@
   "settings.master_key_target_unreadable": "master_key_file: {path} 를 읽을 수 없습니다: {error}. 현재 키 파일을 먼저 그 위치로 복사하세요.",
   "settings.mount_as_network_drive_file": "파일 탐색기·Finder에서 네트워크 드라이브로 연결합니다. 계정 비밀번호가 SMB 자격 증명으로 함께 쓰입니다.",
   "settings.must_be_at_least_one": "{field}: 1 이상이어야 합니다.",
+  "settings.not_in_this_build": "이 빌드는 값을 보여주기만 하고 이 화면에서 바꾸지 않습니다. config.toml 을 편집한 뒤 재시작하세요.",
   "settings.oidc_redirect_host_not_served": "{value} 는 이 서버가 응답하지 않는 호스트라 로그인 후 돌아올 곳이 없습니다. 앱 호스트에 먼저 추가하세요.",
   "settings.oidc_redirect_uri_must_be_https": "oidc.redirect_uris: 모든 항목이 https:// 로 시작해야 합니다 ({value}). 각 항목은 인증 공급자에 등록한 값과 정확히 같아야 합니다.",
   "settings.oidc_secret_file_missing": "읽을 수 있는 클라이언트 비밀 파일이 없으면 싱글 사인온이 켜지지 않습니다. config.toml 에 oidc.client_secret_file 을 지정하고 재시작한 뒤에 켜세요.",

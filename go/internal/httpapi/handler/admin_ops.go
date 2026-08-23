@@ -29,9 +29,12 @@ func AdminStorage(d Deps) http.HandlerFunc {
 			return err
 		}
 
+		// Labeled, which is the field the client reads. Sent as "name" it was
+		// undefined on every row, and the storage screen waited for a value
+		// that was never going to arrive.
 		type shareUsage struct {
 			Share      int64  `json:"share"`
-			Name       string `json:"name"`
+			Label      string `json:"label"`
 			TotalBytes uint64 `json:"total_bytes"`
 			FreeBytes  uint64 `json:"free_bytes"`
 		}
@@ -46,11 +49,11 @@ func AdminStorage(d Deps) http.HandlerFunc {
 				// A share whose filesystem cannot be measured is reported with
 				// zeroes rather than dropped: a missing row reads as a share
 				// that does not exist.
-				shares = append(shares, shareUsage{Share: int64(sh.ID), Name: sh.Name})
+				shares = append(shares, shareUsage{Share: int64(sh.ID), Label: sh.Name})
 				continue
 			}
 			shares = append(shares, shareUsage{
-				Share: int64(sh.ID), Name: sh.Name,
+				Share: int64(sh.ID), Label: sh.Name,
 				TotalBytes: space.Total, FreeBytes: space.Available,
 			})
 		}

@@ -42,6 +42,7 @@ const SERVER_KEYS = new Set<string>([
   /* i18n */ 'settings.oidc_secret_file_missing',
   /* i18n */ 'settings.unknown_section',
   /* i18n */ 'settings.stale_client',
+  /* i18n */ 'settings.not_in_this_build',
   /* i18n */ 'settings.readonly_secret_file_path',
   /* i18n */ 'settings.readonly_local_password_login',
   /* i18n */ 'settings.readonly_owned_by_index_section',

@@ -37,10 +37,26 @@ type shareRequest struct {
 }
 
 type shareResponse struct {
-	ID             int64  `json:"id"`
-	Name           string `json:"name"`
-	TrashEnabled   bool   `json:"trash_enabled"`
-	SharedExternal bool   `json:"shared_external"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	// HostPath is where the folder lives as this process sees it, which is
+	// what the admin screen shows under the name and what tells two shares
+	// with similar labels apart.
+	HostPath     string `json:"host_path"`
+	TrashEnabled bool   `json:"trash_enabled"`
+	// ConfigDefined marks a share the config file declares. The screen hides
+	// the delete affordance for one, because the next restart re-declares it
+	// and the deletion would look like it silently failed.
+	ConfigDefined  bool `json:"config_defined"`
+	SharedExternal bool `json:"shared_external"`
+}
+
+func shareOf(def core.ShareDef, configDefined bool) shareResponse {
+	return shareResponse{
+		ID: int64(def.ID), Name: def.Name, HostPath: def.Host,
+		TrashEnabled: def.TrashEnabled, ConfigDefined: configDefined,
+		SharedExternal: def.SharedExternally,
+	}
 }
 
 // shareIDOf bounds an admin-named share id to the core's range before it
@@ -66,14 +82,15 @@ func Shares(d Deps) http.HandlerFunc {
 		}
 		if r.Method == http.MethodGet {
 			defs := d.Core.Shares()
+			// A bare array, which is what the client reads. Wrapped in an
+			// object it parsed as no shares at all, so the admin screen showed
+			// an empty list while the same folders browsed correctly one tab
+			// over.
 			out := make([]shareResponse, 0, len(defs))
 			for _, def := range defs {
-				out = append(out, shareResponse{
-					ID: int64(def.ID), Name: def.Name,
-					TrashEnabled: def.TrashEnabled, SharedExternal: def.SharedExternally,
-				})
+				out = append(out, shareOf(def, d.ConfigShare(def.Name)))
 			}
-			return writeJSON(w, http.StatusOK, map[string]any{"shares": out})
+			return writeJSON(w, http.StatusOK, out)
 		}
 		var req shareRequest
 		if err := decodeJSON(r, &req); err != nil {
@@ -87,7 +104,7 @@ func Shares(d Deps) http.HandlerFunc {
 			return err
 		}
 		sharesChanged(r, d)
-		return writeJSON(w, http.StatusCreated, shareResponse{ID: int64(share.ID), Name: share.Name, TrashEnabled: share.TrashEnabled})
+		return writeJSON(w, http.StatusCreated, shareOf(share, false))
 	})
 }
 
@@ -117,7 +134,7 @@ func ShareUpdate(d Deps) http.HandlerFunc {
 			return err
 		}
 		sharesChanged(r, d)
-		return writeJSON(w, http.StatusOK, shareResponse{ID: int64(share.ID), Name: share.Name, TrashEnabled: share.TrashEnabled})
+		return writeJSON(w, http.StatusOK, shareOf(share, d.ConfigShare(share.Name)))
 	})
 }
 

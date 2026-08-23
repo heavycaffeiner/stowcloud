@@ -584,6 +584,7 @@
   "settings.master_key_target_unreadable": "master_key_file: cannot read {path}: {error}. Copy the current key file there first.",
   "settings.mount_as_network_drive_file": "Mount as a network drive in File Explorer or Finder. Your account password doubles as the SMB credential.",
   "settings.must_be_at_least_one": "{field}: must be at least 1.",
+  "settings.not_in_this_build": "This build reports the value and does not change it from this screen. Edit config.toml and restart.",
   "settings.oidc_redirect_host_not_served": "{value} names a host this server does not answer on, so the sign-in would come back to nothing. Add it to the app hosts first.",
   "settings.oidc_redirect_uri_must_be_https": "oidc.redirect_uris: every entry must start with https:// ({value}). Each has to match exactly what is registered with the identity provider.",
   "settings.oidc_secret_file_missing": "Single sign-on cannot start without a readable client secret file. Set oidc.client_secret_file in config.toml and restart before turning this on.",

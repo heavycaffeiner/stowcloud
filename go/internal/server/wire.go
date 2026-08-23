@@ -138,6 +138,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		Health:            health,
 		Uploads:           opt.Uploads,
 		State:             opt.Store.State(),
+		ConfigShares:      configShareNames(cfg),
 		Search:            opt.Search,
 		OIDC:              opt.OIDC,
 		OIDCDisplayName:   cfg.OIDCDisplayName,
@@ -221,6 +222,20 @@ func tlsConfig(cfg *Config, opt Options) (*tls.Config, error) {
 		MinVersion:   tls.VersionTLS12,
 		NextProtos:   []string{"h2", "http/1.1"},
 	}, nil
+}
+
+// configShareNames is the set of shares the config file declares.
+//
+// They can be renamed, repointed and trash-toggled, and they cannot be
+// deleted: the next restart re-declares the entry, so a deletion would look
+// like it silently failed. The admin screen hides that affordance rather than
+// offering an action that undoes itself.
+func configShareNames(cfg *Config) map[string]bool {
+	out := make(map[string]bool, len(cfg.Shares))
+	for _, sh := range cfg.Shares {
+		out[sh.Name] = true
+	}
+	return out
 }
 
 // smbSink turns the publisher into the form every write path calls.
