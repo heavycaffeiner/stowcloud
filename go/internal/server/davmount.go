@@ -115,6 +115,15 @@ func davDestination(c *core.Core, user core.UserID, r *http.Request) (dav.MoveTa
 	if err != nil {
 		return dav.MoveTarget{}, apierr.BadRequest("dav.bad_destination", "Destination")
 	}
+	// A destination on another origin is refused rather than having its host
+	// quietly dropped. The path alone was taken, so COPY to
+	// https://elsewhere.example/dav/docs/x copied to /dav/docs/x here: a
+	// request that names somewhere else was answered as though it named this
+	// server. RFC 4918 9.8.3 makes a destination this server cannot write a
+	// 502.
+	if u.Host != "" && !sameOrigin(u, r) {
+		return dav.MoveTarget{}, apierr.BadGateway("dav.foreign_destination", "Destination")
+	}
 	res, rerr := resolveDavPath(c, user, u.Path, acl.Write|acl.Create)
 	if rerr != nil {
 		return dav.MoveTarget{}, rerr
@@ -123,6 +132,15 @@ func davDestination(c *core.Core, user core.UserID, r *http.Request) (dav.MoveTa
 		Resolved:  res,
 		Overwrite: dav.ParseOverwrite(r.Header.Get("Overwrite")),
 	}, nil
+}
+
+// sameOrigin reports whether an absolute Destination names this server.
+//
+// Host only, and case-insensitively: the scheme is not compared because a
+// reverse proxy terminates TLS and forwards http, so requiring the schemes to
+// match would refuse every move behind one.
+func sameOrigin(u *url.URL, r *http.Request) bool {
+	return strings.EqualFold(u.Host, r.Host)
 }
 
 // davPermFor is what a method needs before the path is even opened.

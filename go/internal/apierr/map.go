@@ -189,6 +189,20 @@ func BadRequest(key MessageKey, field string) *RequestError {
 	}
 }
 
+// BadGateway builds a 502 for a request naming a resource on another server.
+//
+// WebDAV's COPY and MOVE take a Destination that may be an absolute URL, and
+// RFC 4918 9.8.3 makes one this server cannot write a 502 rather than a
+// refusal about the request's own syntax: the request is well formed and names
+// somewhere this server does not speak for.
+func BadGateway(key MessageKey, field string) *RequestError {
+	return &RequestError{
+		Status: http.StatusBadGateway, Code: CodeInvalidRequest,
+		Message: msgInvalidRequest, Key: key,
+		Args: []Arg{{Name: "field", Value: field}},
+	}
+}
+
 // Unprocessable builds a 422 for input that parses but fails a named field or
 // domain constraint.
 func Unprocessable(key MessageKey, field string) *RequestError {

@@ -336,7 +336,7 @@ one of those was.
 
 ## What is left
 
-### 1. Thumbnails are wired, and one path is not
+### 1. The thumbnail pool is unmeasured under load
 
 **What is true.** The chain runs end to end: `GET /api/fs/thumb` serves a
 re-encoded PNG, the listing marks an entry `preview.available` from its
@@ -353,21 +353,6 @@ authority; the flag is a hint.
 **What is unmeasured.** The pool under a real grid. Roughly 10 MB resident per
 worker is measured, and how many workers a directory of a thousand images
 actually keeps busy is not.
-
-### 2. The WebDAV conformance suite has not been re-run
-
-**What is true.** The five Go-only failures are fixed, each with a test that
-reproduces the suite's own request sequence read out of litmus 0.18's source.
-`CONFORMANCE.md` has the detail.
-
-**What is unverified.** The suite itself. This machine has neither litmus nor
-the autotools and neon headers to build it, and no way to install them, so the
-table in that document is still the last measured run.
-
-**The fix.** Run it on a host that has the suite and replace the table. Two
-things should move: the five Go-only failures, and part of the collection copy
-and move cluster, because the recursive-copy defect found while fixing them
-broke every collection COPY in both directions.
 
 ## Things that look like problems and are not
 
@@ -442,14 +427,22 @@ which date immediately.
 
 ## If you change one thing
 
-Run the conformance suite on a host that can. It is the only entry left whose
-answer nobody has: everything else here is a cost that is understood or a drift
-that is bounded, and the table in `CONFORMANCE.md` is a measurement of a build
-that no longer exists.
+Look for the next thing that is built and not called. Every entry at the top of
+this document was that, and the two most recent were found by asking the
+specification what should exist rather than by reading the code: the database
+size guard had its flag, its refusal and its health reason with nothing
+sampling free space, and the symlink policy had three modes and a resolver that
+branched on all three with no way to configure it.
 
-The thumbnails used to hold this place, and how they got here is worth keeping.
-The whole subsystem was built, tested and wired to nothing, and it was found by
-accident while measuring the memory of a pool that turned out never to run. The
-measurement was worth taking: it is what the sizing needed once the wiring was
-done. But what it actually found was that the thing being measured had no
-callers, which is what every entry at the top of this document has been.
+The thumbnails are the clearest instance. The whole subsystem was built, tested
+and wired to nothing, and it was found by accident while measuring the memory
+of a pool that turned out never to run. The measurement was worth taking: it is
+what the sizing needed once the wiring was done. But what it actually found was
+that the thing being measured had no callers.
+
+The checks that find this class compare two independent descriptions of the
+same thing. `routecheck` compares the route table against the client that calls
+it, `contractcheck` compares the response bodies against the fields the client
+reads, and the conformance tests compare the WebDAV surface against the RFC. A
+test that calls a function proves the function works and proves nothing about
+whether anything calls it.

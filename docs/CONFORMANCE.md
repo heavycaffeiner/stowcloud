@@ -1,174 +1,102 @@
-# WebDAV conformance baseline
+# WebDAV conformance
 
-The standard RFC 4918 suite, run against the Go build. This is new coverage
-rather than a regression check: the Rust tree lists WebDAV conformance in CI as
-missing, so there was no prior baseline to compare against.
+RFC 4918 conformance, asserted by tests in this repository rather than by an
+external suite.
 
-## How it was run
+## Why not litmus
 
-The suite is `litmus` 0.13, built from source on the test host. It has no TLS
-support, and this server has no plaintext listener by design, so requests reach
-it through `scripts/tlsproxy.go`. Proxying is the honest way round that: adding
-a plaintext listener to the thing being tested would test something other than
-what ships.
+The first baseline was litmus, and it is not a thing this project can keep
+depending on. It is an autotools program from the 2000s with no TLS support: it
+needed a plaintext proxy standing in front of a server that deliberately has no
+plaintext listener, and it cannot be built at all on a host without neon and
+the autotools to configure it. Reproducing a run took a machine prepared for
+that one purpose.
 
-```sh
-go build -o /tmp/tlsproxy scripts/tlsproxy.go
-/tmp/tlsproxy -listen 127.0.0.1:18802 -target https://127.0.0.1:18702 -host localhost &
-litmus -k http://127.0.0.1:18802/dav/<share>/ <account> <app-password>
-```
+A conformance table nobody can reproduce is a table that stops being true
+without anybody noticing, and this one had already done it: it recorded a
+comparison against a Rust build that no longer exists in this tree.
 
-The rate limit has to be raised for the run. The suite sends several thousand
-requests from one address in a few seconds, and the default bound refuses most
-of them, which reports as a suite failure rather than as what it is. A run
-against the default bound is measuring the limiter.
+## What replaced it
 
-## Result, 2026-08-21
+`go/internal/dav/conformance_test.go`. Each test is named after the RFC section
+it enforces, with the litmus case it stands in for noted where there was one,
+and asserts what the specification requires rather than what any implementation
+happens to do. They run in the ordinary `go test` gate, on every push, with no
+proxy, no external dependency and nothing to prepare.
 
-Both builds, same host, same share, same suite.
+They also assert on the filesystem rather than only on the status code, which
+is what the old baseline could not do and what mattered most: a recursive COPY
+answered 202 and copied nothing for the entire life of the port, and the suite
+scored it a pass because the status was the one it expected.
 
-| Suite | Go | Rust |
-|---|---|---|
-| basic | 16 / 16 | 16 / 16 |
-| copymove | 8 / 13 | 7 / 13 |
-| props | 29 / 30 | 28 / 30 |
-| locks | 29 / 33 | 40 / 41 |
-| http | 4 / 4 | 4 / 4 |
-| **total** | **86 / 96** | **95 / 103** |
+## What the tests found
 
-The lock suite runs more tests against the Rust build because the suite stops
-early on a failure in that group, so the two totals are not directly
-comparable. What is comparable is which named tests fail, below.
+Everything below was fixed with the test that reproduces it. These are the
+cases the old table listed as failing in both builds, so they were carried over
+rather than introduced by the port.
 
-## What fails, and which of those are port defects
+- **COPY of a collection onto an existing collection merged into it.** RFC 4918
+  9.8.4 deletes the destination first. A member the destination had and the
+  source did not survived a copy that was supposed to have replaced it.
 
-With both baselines, the distinction the phase document asks for can be drawn.
-A test both builds fail is a known gap carried over rather than something this
-port broke. A test only the Go build fails is a port defect.
+- **MOVE of a collection onto an existing collection answered 409.** The
+  underlying rename cannot replace a directory that has anything in it: the
+  kernel answers ENOTEMPTY. 9.9.4 deletes the destination first, the same as
+  the copy above.
 
-Nothing below is fixed here. A fix made during a parity run has no test of its
-own, so each belongs to the phase that owns the subsystem.
+- **COPY and MOVE onto themselves were accepted.** A collection copied into its
+  own subtree is a walk that does not terminate: each pass copies what the
+  previous one wrote, and it runs until the disk is full. Both are 403 under
+  9.8.4 and 9.9.4, and the copy answered 202 and the move 204.
 
-### Both builds fail: five carried-over gaps
+- **A Destination naming another server was treated as local.** The header
+  carries an absolute URL as often as a path, and only the path component was
+  read, so a COPY to `https://elsewhere.example/dav/docs/x` copied to
+  `/dav/docs/x` on this server. It is a 502 now, and the host is compared
+  case-insensitively without the scheme, because a reverse proxy terminates TLS
+  and forwards http.
 
-`copy_coll`, `copy_overwrite`, `copy_shallow`, `move`, `move_coll`.
+## What was already fixed, with tests
 
-All five are collection-to-collection copy and move with an existing
-destination. The Rust build fails them too, so this is a gap in the product
-rather than in the port. The Go build additionally answers 500 on two of them
-where the Rust build answers a refusal, and a server error is worse than a
-wrong status: that part is the port's.
-
-### Only the Go build failed: five port defects, all fixed
-
-`propfind_invalid2`, `cond_put`, `complex_cond_put`, `lock_shared`,
-`unmapped_lock`. Each is repaired with a test that reproduces the suite's own
-request sequence, taken from litmus 0.18's source rather than from the failure
-name.
+These were the five the old table attributed to the port, each repaired at the
+time with a test reproducing the request sequence.
 
 - **`propfind_invalid2`** answered 207 to a body using an undeclared namespace
-  prefix, where 400 is correct.
-
-  `encoding/xml` does not report this at all: an undeclared prefix arrives with
-  `Space` set to the prefix itself, so `{bar}foo` is indistinguishable from a
-  properly declared namespace. The scanner now tracks declarations per element
-  and refuses a name whose prefix nothing bound. A prefix declared on any
-  ancestor is bound, and `xml:` and `xmlns:` need no declaration.
+  prefix, where 400 is correct. `encoding/xml` does not report this: an
+  undeclared prefix arrives with `Space` set to the prefix itself, so
+  `{bar}foo` is indistinguishable from a properly declared namespace. The
+  scanner tracks declarations per element and refuses a name whose prefix
+  nothing bound.
 
 - **`cond_put` and `complex_cond_put`** answered 412 where the condition should
-  pass, and the cause was worse than the tests suggested.
+  pass. Every file validator here is weak, because Linux exposes no inode
+  change version, and the `If` evaluation refused any weak tag outright: a
+  client sending back the exact validator the server had just given it was told
+  its precondition failed. **Guarding a write with `If` was impossible on this
+  build**, which is a good deal larger than two failing conformance tests.
 
-  Every file validator here is weak, because Linux exposes no inode change
-  version, and the `If` evaluation refused any weak tag outright. The suite
-  reads the `ETag` header with a HEAD and echoes it back, so a client sending
-  the exact validator the server had just given it was told its precondition
-  failed. **Guarding a write with `If` was impossible on this build**, which is
-  a good deal larger than two failing conformance tests.
-
-  The comparison now requires the tags to be equal and to agree on strength.
-
-- **`lock_shared`** answered 400, which reads as the scope not being understood.
-
-  Shared locks are implemented rather than refused. The `scope` column already
-  existed and was always written as exclusive. Two shared locks coexist; an
-  exclusive one over a shared lock, or a shared one over an exclusive lock, is
-  refused; and `lockdiscovery` reports the scope that was actually taken rather
-  than the word "exclusive".
+- **`lock_shared`** answered 400. Shared locks are implemented rather than
+  refused: two shared locks coexist, an exclusive over a shared or a shared
+  over an exclusive is refused, and `lockdiscovery` reports the scope actually
+  taken.
 
 - **`unmapped_lock`** answered 404 where RFC 4918 §7.3 creates an empty locked
-  resource and answers 201.
-
-  This is how a client reserves a name before writing it, so the refusal meant
-  a client that locks before every PUT could not create a file at all.
-
-One more defect was found while fixing these, by a test that checked the files
-rather than the status code:
+  resource and answers 201. This is how a client reserves a name before writing
+  it, so the refusal meant a client that locks before every PUT could not
+  create a file at all.
 
 - **A recursive COPY answered 202 and copied nothing.** `StartCopy` began the
-  operation with a zero source stat, which told the walker that every directory
-  was a file, so the copy took the single-file path and failed after the caller
-  had already been told it started. Every collection COPY over WebDAV produced
-  nothing for the whole of the port. The existing test asserted only the 202
-  and passed against it.
+  operation with a zero source stat, which told the walker every directory was
+  a file. The existing test asserted only the 202 and passed against it.
 
 Also corrected: **MKCOL with a missing intermediate collection** answered 404
-and now answers 409, which was recorded below as a warning rather than a
-failure. The distinction is what a client branches on to decide whether to
+and now answers 409, which is what a client branches on to decide whether to
 create the parent.
 
-### Only the Rust build fails: four the port fixed
+## Running them
 
-`copy`, `copy_simple`, `propget`, `propmove`. The Rust build emits a document
-the suite cannot parse (`invalid namespace declaration`) and answers 502 on a
-property-carrying move. The Go build passes all four.
+```sh
+cd go && go test ./internal/dav/ -run Conformance
+```
 
-### The copymove cluster, as measured
-
-The five both builds failed, in the run above:
-
-- **`copy_overwrite` and `move` answered 500** when the destination is an
-  existing collection. A server error is the wrong answer whatever the right
-  one is: the operation is refused or it succeeds, and an unhandled failure is
-  neither.
-- **`copy_coll` answered 404** where the destination exists and overwrite was
-  asked for.
-- **`move_coll` succeeded** where the suite expects a refusal.
-- **`copy_shallow` answered 405** to a `MKCOL` on a path the suite has already
-  created.
-
-The recursive-copy defect above sits underneath at least the first three:
-`copy_coll` copies a collection and then deletes each member to check it
-arrived, and no member ever arrived. The `MKCOL` status correction touches
-`copy_shallow`. How much of the cluster that leaves is what the re-run measures;
-what remains is Phase 7's.
-
-## The re-run this needs
-
-The fixes above are verified by tests that reproduce each suite case's own
-request sequence, read out of litmus 0.18's source. They are not verified by
-litmus itself: this machine has neither the suite nor the autotools and neon
-headers to build it, and no way to install them.
-
-So the table above is the last measured run, and the section on the defects is
-what the tree now does. Re-run the suite on a host that has it, and replace the
-table rather than adding to it. What to expect: five Go-only failures gone, and
-the collection copy and move cluster changed by the recursive-copy fix, which
-is the one repair here that alters behaviour both builds got wrong.
-
-## A correction worth keeping
-
-An earlier version of this document said the Rust build refused a password its
-own database accepts, and that its baseline therefore could not be measured.
-That was wrong.
-
-Its login is `POST /api/auth/login`. The probe used `POST /api/auth/password`,
-which is the change-password endpoint, and it refused correctly. There was no
-defect to report, and the missing column above was the measurement's fault
-rather than the subject's.
-
-Chasing it found a real defect on the other side: the Go build mounted login on
-the change-password path, so the shipped interface could not sign in, and 41 of
-the paths its own client calls were not mounted at all. That is Q9 in
-`proposals/OPEN-QUESTIONS.md`, which is now closed: the routes were built and
-`go/tools/routecheck` is the gate that says so, comparing the client's calls
-against the route table on every run.
+They are part of `scripts/verify.sh`, so a push that breaks one fails the gate.

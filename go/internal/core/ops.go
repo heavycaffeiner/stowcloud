@@ -188,6 +188,16 @@ func (c *Core) Move(ctx context.Context, from, to Resolved, opt MoveOpts) (MoveR
 		if err := precondition(opt.IfMatch, dstSt); err != nil {
 			return MoveResult{}, err
 		}
+		// An overwrite replaces the destination, and rename cannot do that when
+		// the destination is a directory with anything in it: the kernel answers
+		// ENOTEMPTY, which surfaced as a conflict on every collection move onto
+		// an existing collection. RFC 4918 9.9.4 deletes it first, which is the
+		// same thing the specification says a copy does.
+		if dstSt.Kind.IsDir() {
+			if err := c.deleteResolved(ctx, to, dstSt, false); err != nil {
+				return MoveResult{}, err
+			}
+		}
 	}
 
 	willCopy := from.share != to.share || to.root.Dev() != srcSt.Dev

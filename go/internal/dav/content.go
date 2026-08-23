@@ -276,7 +276,15 @@ func (h *Handler) ServeCopy(w http.ResponseWriter, r *http.Request, from core.Re
 		h.fail(w, r, err)
 		return
 	}
-	if _, err := to.Resolved.Root().Stat(to.Resolved.Path()); err == nil && !to.Overwrite {
+	// A destination inside the source is a walk that does not terminate: each
+	// pass copies what the previous one wrote. RFC 4918 9.8.4 refuses it, and
+	// this build accepted it and answered 202.
+	if err := refuseSelfDescendant(from, to.Resolved); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	dstSt, dstErr := to.Resolved.Root().Stat(to.Resolved.Path())
+	if dstErr == nil && !to.Overwrite {
 		h.fail(w, r, ErrPreconditionFailed)
 		return
 	}
@@ -285,6 +293,21 @@ func (h *Handler) ServeCopy(w http.ResponseWriter, r *http.Request, from core.Re
 	if serr != nil {
 		h.fail(w, r, core.ErrNotFound)
 		return
+	}
+
+	// An overwriting copy onto an existing collection replaces it, and RFC 4918
+	// 9.8.4 is explicit that the destination is deleted first. Copying into it
+	// instead merges the two, so a member the destination had and the source
+	// does not survived a copy that was supposed to have replaced it.
+	//
+	// Only for a collection destination: a file is replaced by the write
+	// itself, and deleting it first would open a window where neither the old
+	// nor the new one is there.
+	if dstErr == nil && to.Overwrite && dstSt.Kind.IsDir() {
+		if err := h.core.Delete(r.Context(), to.Resolved, true); err != nil {
+			h.fail(w, r, err)
+			return
+		}
 	}
 
 	if st.Kind.IsDir() {
@@ -336,6 +359,12 @@ func (h *Handler) move(w http.ResponseWriter, r *http.Request, res core.Resolved
 		return
 	}
 	if err := h.guardWrite(r, to.Resolved, string(to.Resolved.Path().Share().String())); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	// Same rule as COPY. A move onto itself answered 204 and a move into a
+	// descendant would relocate a tree under itself.
+	if err := refuseSelfDescendant(res, to.Resolved); err != nil {
 		h.fail(w, r, err)
 		return
 	}
@@ -441,3 +470,34 @@ func parseByteRange(raw string, size uint64) (*[2]uint64, error) {
 // answers with the status that names it and the file's real size, which is
 // what lets a client ask again correctly.
 var errUnsatisfiableRange = errors.New("dav: unsatisfiable range")
+
+// refuseSelfDescendant refuses a COPY or MOVE whose destination is the source
+// or sits inside it.
+//
+// RFC 4918 9.8.4 and 9.9.4 both make this 403. Without it a collection copied
+// into its own subtree is a walk that does not terminate: each pass copies
+// what the previous one wrote, and the operation runs until the disk is full.
+// This build accepted both and answered 202 for the copy and 204 for the move.
+//
+// Compared component-wise on the resolved paths, not on the request strings: a
+// destination is only inside the source when every component of the source is
+// a prefix of it, and comparing text would make "/a/bc" look like a child of
+// "/a/b".
+func refuseSelfDescendant(from, to core.Resolved) error {
+	if from.Share() != to.Share() {
+		return nil
+	}
+	src := from.Path().Components()
+	dst := to.Path().Components()
+	if len(dst) < len(src) {
+		return nil
+	}
+	for i, c := range src {
+		if dst[i] != c {
+			return nil
+		}
+	}
+	// Equal length is the destination being the source itself; longer is a
+	// descendant of it.
+	return fmt.Errorf("%w: the destination is inside the source", core.ErrDenied)
+}
