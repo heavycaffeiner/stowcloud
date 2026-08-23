@@ -29,6 +29,12 @@ import (
 // font-src takes data: because the interface inlines its own face. Without it
 // the fallback to default-src refuses it and the page renders in a substitute:
 // a visible defect rather than a blank one, but a defect.
+//
+// worker-src is stated rather than left to fall back. The uploader runs in a
+// Worker, and a worker script is checked against worker-src, then script-src
+// when that is absent: the hash beside 'self' there does not admit it, so the
+// browser refused to start the worker and every upload stopped after creating
+// its session, with the refusal only in the console.
 func AppPolicy(inlineScripts string) string {
 	script := "'self'"
 	if inlineScripts != "" {
@@ -37,6 +43,9 @@ func AppPolicy(inlineScripts string) string {
 	return strings.Join([]string{
 		"default-src 'self'",
 		"script-src " + script,
+		// Same origin only, and no hash: a worker is a whole script file this
+		// build ships, never an inline fragment.
+		"worker-src 'self' blob:",
 		"style-src 'self' 'unsafe-inline'",
 		"img-src 'self' data: blob:",
 		"font-src 'self' data:",

@@ -17,30 +17,88 @@ import (
 // unit; they do not travel as floats because a nanosecond value does not fit
 // a double, and the round-trip guarantee is a browser test, not a Go one.
 type entryJSON struct {
-	Name     string `json:"name"`
-	Path     string `json:"path"`
-	IsDir    bool   `json:"is_dir"`
-	Size     uint64 `json:"size"`
-	MTimeNs  int64  `json:"mtime_ns"`
-	ETag     string `json:"etag"`
-	ETagWeak bool   `json:"etag_weak"`
+	Name string `json:"name"`
+	Path string `json:"path"`
+	// Kind is what the client reads. is_dir is sent alongside it because the
+	// compatibility layer and older callers read that one, and the two are
+	// derived from the same bool so they cannot disagree.
+	Kind  string `json:"kind"`
+	IsDir bool   `json:"is_dir"`
+	Size  uint64 `json:"size"`
+	// A string, because a nanosecond value does not fit a double and JSON has
+	// no other number. Sent as one it came back off the wire rounded to the
+	// nearest few hundred nanoseconds, which is a timestamp that no longer
+	// matches the file it describes. Search and the archive manifest already
+	// sent it this way.
+	MTimeNs  string    `json:"mtime_ns"`
+	ETag     string    `json:"etag"`
+	ETagWeak bool      `json:"etag_weak"`
+	Perms    permsJSON `json:"perms"`
+}
+
+// permsJSON is what the caller may do with this entry, as the eight named
+// booleans the client reads.
+//
+// Sent per entry rather than inferred from the share: a grant can deny below
+// the root it was written at, so two rows of one listing can carry different
+// answers. Without it the interface has to guess, and it guessed by reading a
+// field that was never sent: selecting a row threw on `perms.share` being
+// undefined, which took the selection, the details panel and every action
+// behind them down together.
+type permsJSON struct {
+	Read     bool `json:"read"`
+	Write    bool `json:"write"`
+	Create   bool `json:"create"`
+	Delete   bool `json:"delete"`
+	Rename   bool `json:"rename"`
+	Move     bool `json:"move"`
+	Share    bool `json:"share"`
+	Download bool `json:"download"`
+}
+
+func permsOf(p acl.Perms) permsJSON {
+	return permsJSON{
+		Read:     p.Has(acl.Read),
+		Write:    p.Has(acl.Write),
+		Create:   p.Has(acl.Create),
+		Delete:   p.Has(acl.Delete),
+		Rename:   p.Has(acl.Rename),
+		Move:     p.Has(acl.Move),
+		Share:    p.Has(acl.Share),
+		Download: p.Has(acl.Download),
+	}
 }
 
 func entryOf(e core.Entry, path string) entryJSON {
+	kind := "file"
+	if e.IsDir {
+		kind = "dir"
+	}
 	return entryJSON{
-		Name: e.Name, Path: path, IsDir: e.IsDir,
-		Size: e.Size, MTimeNs: e.MTimeNs, ETag: e.ETag, ETagWeak: e.ETagWeak,
+		Name: e.Name, Path: path, Kind: kind, IsDir: e.IsDir,
+		Size: e.Size, MTimeNs: strconv.FormatInt(e.MTimeNs, 10),
+		ETag: e.ETag, ETagWeak: e.ETagWeak,
+		Perms: permsOf(e.Perms),
 	}
 }
 
 // listResponse is one bounded page plus the accounting a grid needs.
 type listResponse struct {
-	Entries     []entryJSON `json:"entries"`
-	Dirs        int         `json:"dirs"`
-	Total       int         `json:"total"`
-	Next        string      `json:"next,omitempty"`
-	DirETag     string      `json:"dir_etag,omitempty"`
-	DirETagWeak bool        `json:"dir_etag_weak"`
+	Entries []entryJSON `json:"entries"`
+	Dirs    int         `json:"dirs"`
+	Total   int         `json:"total"`
+	// Cursor is where the next page begins, or null at the end. The client
+	// reads this name; it was sent as "next" and omitted when empty, so the
+	// field the client paginates on was always undefined and a directory
+	// larger than one page could not be walked past its first.
+	Cursor *string `json:"cursor"`
+	// Listing is the handle a windowed fetch passes back. This server keeps no
+	// per-listing session and re-walks from the cursor instead, so it is the
+	// path itself: enough for the client to hold and hand back, and it names
+	// what it addresses.
+	Listing     string `json:"listing"`
+	DirETag     string `json:"dir_etag,omitempty"`
+	DirETagWeak bool   `json:"dir_etag_weak"`
 }
 
 // List answers GET /api/fs/list?path=label/rest&cursor=...
@@ -62,12 +120,21 @@ func List(d Deps) http.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		out := listResponse{Dirs: page.Dirs, Total: page.Total, DirETag: page.DirEtag, DirETagWeak: page.DirEtagWeak}
+		out := listResponse{
+			Dirs: page.Dirs, Total: page.Total,
+			Listing:     p.String(),
+			DirETag:     page.DirEtag,
+			DirETagWeak: page.DirEtagWeak,
+		}
+		// Never nil: an empty directory has to encode as [] rather than null,
+		// because the client iterates it without checking.
+		out.Entries = make([]entryJSON, 0, len(page.Entries))
 		for _, e := range page.Entries {
 			out.Entries = append(out.Entries, entryOf(e, vpathString(d, uid, resolved, e.Path)))
 		}
 		if page.Next != "" {
-			out.Next = string(page.Next)
+			next := string(page.Next)
+			out.Cursor = &next
 		}
 		return writeJSON(w, http.StatusOK, out)
 	})
@@ -140,6 +207,13 @@ func Read(d Deps) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/octet-stream")
 		w.Header().Set("Content-Length", strconv.FormatUint(stream.Remaining(), 10))
 		w.Header().Set("ETag", entry.ETag)
+		// ?download=1 asks for it as a file rather than as something to render.
+		// The name is quoted and its quotes and backslashes escaped, and the
+		// RFC 5987 form carries anything outside ASCII: a header built by
+		// pasting a filename in is one a filename can break out of.
+		if r.URL.Query().Get("download") == "1" {
+			w.Header().Set("Content-Disposition", contentDisposition(entry.Name))
+		}
 		if rng != nil {
 			w.WriteHeader(http.StatusPartialContent)
 		}

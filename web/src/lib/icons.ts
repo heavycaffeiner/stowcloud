@@ -16,6 +16,8 @@ import iconCheck from '@ktibow/iconset-material-symbols/check'
 import iconChevronLeft from '@ktibow/iconset-material-symbols/chevron-left'
 import iconChevronRight from '@ktibow/iconset-material-symbols/chevron-right'
 import iconClose from '@ktibow/iconset-material-symbols/close'
+import iconPause from '@ktibow/iconset-material-symbols/pause-outline'
+import iconPlayArrow from '@ktibow/iconset-material-symbols/play-arrow-outline'
 import iconCopy from '@ktibow/iconset-material-symbols/content-copy-outline'
 import iconDelete from '@ktibow/iconset-material-symbols/delete-outline'
 import iconDownload from '@ktibow/iconset-material-symbols/download'
@@ -51,6 +53,8 @@ export {
   iconChevronLeft,
   iconChevronRight,
   iconClose,
+  iconPause,
+  iconPlayArrow,
   iconCopy,
   iconDelete,
   iconDownload,
@@ -85,6 +89,8 @@ export const icons = {
   'chevron-left': iconChevronLeft,
   'chevron-right': iconChevronRight,
   close: iconClose,
+  pause: iconPause,
+  resume: iconPlayArrow,
   copy: iconCopy,
   delete: iconDelete,
   download: iconDownload,

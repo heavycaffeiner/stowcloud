@@ -40,6 +40,9 @@ export function benchEntryAt(index: number): Entry {
 
   return {
     name,
+    // The server addresses an entry by `{label}/rest`, without the leading
+    // slash the browsed path carries.
+    path: `${BENCH_DIR}/${name}`.replace(/^\//, ''),
     kind,
     size,
     mtime_ns: mtimeNs.toString(),
@@ -100,6 +103,7 @@ function fileEntry(name: string, size: number, daysAgo: number, extra: Partial<E
   const mtimeNs = BigInt(Date.now() - daysAgo * 86_400_000) * 1_000_000n
   return {
     name,
+    path: name,
     kind: 'file',
     size,
     mtime_ns: mtimeNs.toString(),
@@ -115,6 +119,7 @@ function dirEntry(name: string, daysAgo: number, extra: Partial<Entry> = {}): En
   const mtimeNs = BigInt(Date.now() - daysAgo * 86_400_000) * 1_000_000n
   return {
     name,
+    path: name,
     kind: 'dir',
     size: 0,
     mtime_ns: mtimeNs.toString(),

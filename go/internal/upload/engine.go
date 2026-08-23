@@ -303,34 +303,50 @@ func (e *Engine) PatchAt(
 	ctx context.Context, root *vfs.ShareRoot, id SessionID, user core.UserID,
 	off uint64, body io.Reader, sum *Checksum,
 ) (uint64, error) {
+	// The lock covers the bookkeeping, not the body.
+	//
+	// A client sends several chunks of one file at once, and each writes at
+	// its own offset through pwrite, so the writes do not need serialising
+	// against each other. Holding the row lock across the body read did
+	// serialise them, and under HTTP/2 that deadlocks rather than queues: the
+	// blocked handlers never read their streams, the connection's flow-control
+	// window fills, and the chunk holding the lock cannot receive the rest of
+	// its own body. Every upload stopped after its first chunk and the browser
+	// eventually gave up.
 	unlock := e.lockRow(id)
-	defer unlock()
-
 	r, err := e.load(ctx, id)
 	if err != nil {
+		unlock()
 		return 0, err
 	}
 	if oerr := requireOwner(r, user); oerr != nil {
+		unlock()
 		return 0, oerr
 	}
 	if serr := e.requireReceiving(r); serr != nil {
+		unlock()
 		return 0, serr
 	}
 	if r.mode() != SpoolOffsetAddressed {
+		unlock()
 		return 0, fmt.Errorf("%w: this session is name-ordered", ErrBadRequest)
 	}
 	if verr := e.validateOffset(r, off); verr != nil {
+		unlock()
 		return 0, verr
 	}
 
 	part, err := e.partPathOf(r)
 	if err != nil {
+		unlock()
 		return 0, err
 	}
 	f, err := e.handleFor(root, id, part)
 	if err != nil {
+		unlock()
 		return 0, err
 	}
+	unlock()
 
 	// The body is written and hashed in one pass. Nothing accumulates the
 	// whole chunk, so a per-chunk checksum costs a hasher and not a copy of
@@ -351,15 +367,26 @@ func (e *Engine) PatchAt(
 		}
 	}
 
+	// Retaken to record what landed. The row is re-read under the lock rather
+	// than reusing the copy from above: another chunk of this same file has
+	// very likely recorded its own range in the meantime, and writing back a
+	// stale set would drop it.
+	relock := e.lockRow(id)
+	defer relock()
+
+	fresh, err := e.load(ctx, id)
+	if err != nil {
+		return 0, err
+	}
 	if n > 0 {
-		if err := r.set.Insert(off, off+n); err != nil {
+		if err := fresh.set.Insert(off, off+n); err != nil {
 			return 0, err
 		}
 	}
-	if err := e.commitRange(ctx, r); err != nil {
+	if err := e.commitRange(ctx, fresh); err != nil {
 		return 0, err
 	}
-	return r.set.ContiguousPrefix(), nil
+	return fresh.set.ContiguousPrefix(), nil
 }
 
 // writeBody streams body into f at off, looping over short writes, and hashes

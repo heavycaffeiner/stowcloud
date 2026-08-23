@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
+	"github.com/heavycaffeiner/stowcloud/go/internal/task"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
@@ -548,3 +550,60 @@ func TestAbortLeavesThePartFileForTheSweep(t *testing.T) {
 		t.Fatalf("the share holds %d entries after an abort, want the part file", len(entries))
 	}
 }
+
+// Chunks of one file upload concurrently, and none blocks another's body.
+//
+// PatchAt used to hold the session's row lock across the body read. Several
+// chunks in flight then serialised on it, which under HTTP/2 is a deadlock and
+// not a queue: the blocked handlers never read their streams, the connection's
+// flow-control window fills, and the chunk holding the lock cannot receive the
+// rest of its own body. Every upload stopped after the first chunk.
+//
+// This proves the property that fixes it: a slow body does not stop another
+// chunk from completing. The reader below blocks until the second chunk says
+// it is done, so the test can only pass if they truly overlap.
+func TestASlowChunkDoesNotBlockAnother(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	const chunk = 4096
+	s := f.create(t, "concurrent.bin", chunk*2, SessionSpec{RandomAccess: true})
+
+	secondDone := make(chan struct{})
+	firstErr := make(chan error, 1)
+
+	// The first chunk's body yields nothing until the second has landed.
+	task.Go(ctx, "slow chunk", func() {
+		slow := io.MultiReader(
+			readerFunc(func(p []byte) (int, error) {
+				<-secondDone
+				return 0, io.EOF
+			}),
+			bytes.NewReader(bytes.Repeat([]byte("a"), chunk)),
+		)
+		_, err := f.engine.PatchAt(ctx, f.root, s.ID, testUser, 0, slow, nil)
+		firstErr <- err
+	})
+
+	// Give the slow one time to take whatever it takes before this starts.
+	time.Sleep(50 * time.Millisecond)
+	if _, err := f.engine.PatchAt(ctx, f.root, s.ID, testUser, chunk,
+		bytes.NewReader(bytes.Repeat([]byte("b"), chunk)), nil); err != nil {
+		close(secondDone)
+		t.Fatalf("the second chunk could not complete while the first was mid-body: %v", err)
+	}
+	close(secondDone)
+
+	select {
+	case err := <-firstErr:
+		if err != nil {
+			t.Fatalf("the first chunk failed: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the first chunk never finished")
+	}
+}
+
+// readerFunc adapts a function into an io.Reader.
+type readerFunc func([]byte) (int, error)
+
+func (f readerFunc) Read(p []byte) (int, error) { return f(p) }

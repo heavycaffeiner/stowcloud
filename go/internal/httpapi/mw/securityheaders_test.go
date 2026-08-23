@@ -108,3 +108,24 @@ func TestTheContentPolicyStaysHarsh(t *testing.T) {
 		t.Fatalf("the content origin admits a script hash:\n%s", got)
 	}
 }
+
+// The uploader runs in a Worker, and the policy has to admit one.
+//
+// A worker script is checked against worker-src, and against script-src only
+// when worker-src is absent. script-src carries the bundle's inline hash, and
+// a hash does not admit a separate script file: the browser refused to start
+// the worker, so every upload created its session and then stopped, with the
+// refusal visible only in the console.
+func TestThePolicyAdmitsTheUploadWorker(t *testing.T) {
+	got := AppPolicy("'sha256-abc'")
+	if !strings.Contains(got, "worker-src") {
+		t.Fatalf("no worker-src, so a worker falls back to script-src and its hash: %s", got)
+	}
+
+	// And what it admits is same-origin, not everything.
+	for _, forbidden := range []string{"worker-src *", "worker-src 'unsafe-inline'"} {
+		if strings.Contains(got, forbidden) {
+			t.Errorf("worker-src is too wide: %s", got)
+		}
+	}
+}

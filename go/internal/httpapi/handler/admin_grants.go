@@ -38,17 +38,32 @@ func grantsChanged(r *http.Request, d Deps) error {
 	return nil
 }
 
+// grantPrincipal is who a grant is written for.
+//
+// One object rather than two optional ids, which is what the screen reads. It
+// was sent as a bare "user" or "group" field, so every row arrived with an
+// undefined principal and the grant list could not say who anything was for.
+type grantPrincipal struct {
+	Kind string `json:"kind"` // "user" or "group"
+	ID   int64  `json:"id"`
+}
+
 // adminGrant is one grant as the admin screen reads it.
 type adminGrant struct {
-	ID      int64    `json:"id"`
-	User    *int64   `json:"user,omitempty"`
-	Group   *int64   `json:"group,omitempty"`
-	Share   int64    `json:"share"`
-	Subpath string   `json:"subpath"`
-	Allow   []string `json:"allow"`
-	Deny    []string `json:"deny"`
-	Inherit bool     `json:"inherit"`
-	Label   string   `json:"label,omitempty"`
+	ID        int64          `json:"id"`
+	Principal grantPrincipal `json:"principal"`
+	// User and Group stay beside it: the compatibility surface and the
+	// query parameters this same handler takes still name them, and both are
+	// derived from the one principal above rather than set separately.
+	User      *int64   `json:"user,omitempty"`
+	Group     *int64   `json:"group,omitempty"`
+	Share     int64    `json:"share"`
+	Subpath   string   `json:"subpath"`
+	Allow     []string `json:"allow"`
+	Deny      []string `json:"deny"`
+	Inherit   bool     `json:"inherit"`
+	Label     *string  `json:"label"`
+	CreatedNs string   `json:"created_ns"`
 }
 
 // AdminGrants answers GET and POST /api/admin/grants.
@@ -215,15 +230,26 @@ func toAdminGrant(g acl.Grant) adminGrant {
 	out := adminGrant{
 		ID: g.ID, Share: g.Share, Subpath: g.Subpath.String(),
 		Allow: permNames(g.Allow), Deny: permNames(g.Deny),
-		Inherit: g.Inherit, Label: g.Label,
+		Inherit: g.Inherit,
+		// Nanoseconds as a string: the value does not fit a double, and the
+		// client declares it as text for that reason.
+		CreatedNs: strconv.FormatInt(g.CreatedNs, 10),
+	}
+	// A label the screen can distinguish from "not set": an empty string is a
+	// label somebody typed nothing into, and null is one nobody set.
+	if g.Label != "" {
+		label := g.Label
+		out.Label = &label
 	}
 	if g.User != 0 {
 		u := g.User
 		out.User = &u
+		out.Principal = grantPrincipal{Kind: "user", ID: u}
 	}
 	if g.Group != 0 {
 		gr := g.Group
 		out.Group = &gr
+		out.Principal = grantPrincipal{Kind: "group", ID: gr}
 	}
 	return out
 }

@@ -48,6 +48,7 @@ import {
   type SettingsSnapshot,
   type SettingsSectionId,
   type SettingsCheckResult,
+  type BatchItemResult,
   type ShareLinkCreateReq,
   type ShareLinkInfo,
   type ShareLinkPatchReq,
@@ -160,7 +161,10 @@ async function mkdir(path: string): Promise<Entry> {
 }
 
 async function rename(path: string, newName: string): Promise<Entry> {
-  return request('/fs/rename', { method: 'POST', body: JSON.stringify({ path, name: newName }) })
+  // `new_name`, which is what the handler decodes. It sent `name`, so every
+  // rename decoded as an empty new name and came back 422 invalid_name with
+  // an empty component: the dialogue closed on nothing.
+  return request('/fs/rename', { method: 'POST', body: JSON.stringify({ path, new_name: newName }) })
 }
 
 async function copy(req: MoveReq): Promise<{ job: string }> {
@@ -177,7 +181,7 @@ async function movePreflight(req: MoveReq): Promise<MovePreflight> {
   return request('/fs/move', { method: 'POST', body: JSON.stringify({ ...req, dry_run: true }) })
 }
 
-async function del(paths: string[], permanent = false): Promise<{ job: string }> {
+async function del(paths: string[], permanent = false): Promise<{ results: BatchItemResult[] }> {
   return request('/fs/delete', { method: 'POST', body: JSON.stringify({ paths, permanent }) })
 }
 
@@ -822,6 +826,7 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
     path: raw.share ? normalizePath(`/${raw.share}/${raw.path}`) : normalizePath(raw.path),
     entry: {
       name: raw.name,
+      path: raw.share ? `${raw.share}/${raw.path}` : raw.path,
       kind: raw.is_dir ? 'dir' : 'file',
       size: raw.size ?? 0,
       mtime_ns: raw.mtime_ns ?? '0',

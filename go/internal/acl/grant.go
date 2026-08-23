@@ -73,4 +73,6 @@ type Grant struct {
 	Deny    Perms
 	Inherit bool
 	Label   string
+	// CreatedNs is when the grant was written, which the admin screen shows.
+	CreatedNs int64
 }

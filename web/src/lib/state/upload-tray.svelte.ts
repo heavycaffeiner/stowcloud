@@ -64,6 +64,9 @@ export class UploadTrayState {
         this.#patch(evt.id, { sent: evt.size, status: 'done' })
         api.registerUploadedEntry(evt.dest, {
           name: evt.name,
+          // The server addresses it without the leading slash the destination
+          // carries; the next listing replaces this row with the real one.
+          path: `${evt.dest}/${evt.name}`.replace(/^\/+/, '').replace(/\/{2,}/g, '/'),
           kind: 'file',
           size: evt.size,
           mtime_ns: evt.mtimeNs,

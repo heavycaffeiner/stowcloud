@@ -364,6 +364,7 @@ async function mkdir(path: string): Promise<Entry> {
   }
   const entry: Entry = {
     name,
+    path: n.replace(/^\//, ''),
     kind: 'dir',
     size: 0,
     mtime_ns: (BigInt(Date.now()) * 1_000_000n).toString(),
@@ -461,7 +462,7 @@ async function movePreflight(_req: MoveReq): Promise<MovePreflight> {
   return { will_copy: false, total_bytes: 0, reason: '' }
 }
 
-async function del(paths: string[], permanent = false): Promise<{ job: string }> {
+async function del(paths: string[], permanent = false): Promise<{ results: BatchItemResult[] }> {
   await delay()
   const results: BatchResult['results'] = []
   for (const p of paths) {
@@ -481,7 +482,10 @@ async function del(paths: string[], permanent = false): Promise<{ job: string }>
     if (!permanent) trashInsert(entry, parent)
     results.push({ path: n, ok: true })
   }
-  return { job: makeMockJob('delete', paths.length, results) }
+  // One result per path, which is what the server answers. This used to wrap
+  // them in a job id, and the caller then polled a job the real server never
+  // created.
+  return { results }
 }
 
 // ── long-running jobs — the real server always answers
@@ -831,6 +835,7 @@ async function writeFile(path: string, content: string, ifMatch?: string): Promi
     ? { ...existing, etag: randomId('e'), size: content.length, mtime_ns: nowNs }
     : {
         name,
+        path: n.replace(/^\//, ''),
         kind: 'file',
         size: content.length,
         mtime_ns: nowNs,

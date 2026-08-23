@@ -5,7 +5,7 @@ package acl
 // an input.
 const (
 	sqlReadGrants = `
-SELECT id, user, "group", share, subpath, allow, deny, inherit, label
+SELECT id, user, "group", share, subpath, allow, deny, inherit, label, created_ns
 FROM "grant"`
 
 	sqlReadMemberships = `SELECT user, "group" FROM membership`

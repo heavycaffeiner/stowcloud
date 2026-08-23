@@ -224,6 +224,12 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
         -routes internal/server/routes.go \
         -allow routes.allow \
         -server-only routes.server-only
+  # routecheck proves the paths exist. This proves the bodies match: the
+  # client read fields the server never sent, and every one of them was found
+  # by a person clicking something that then did nothing.
+  run "contractcheck (the client's fields are sent)" \
+      ingo_host go run ./tools/contractcheck \
+        ../web/src/lib/api/types.ts ./internal/httpapi/handler
   run "vetsecret (D12: no secret to a verb)"   ingo_host go run ./tools/vetsecret ./...
   run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./internal ./tools
 

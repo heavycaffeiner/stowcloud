@@ -250,8 +250,17 @@ func UploadsPatch(d Deps) http.HandlerFunc {
 		// destination never appears, and a client that sent every byte sees a
 		// successful upload of a file that is not in the listing.
 		//
-		// Declared length zero means the client did not say how long it is, so
-		// there is no offset that means "done" and something else has to say so.
+		// next is the contiguous prefix, so this is true only once every byte
+		// below it has landed. Declared length absent means the client never
+		// said how long it is, and no offset can mean "done".
+		//
+		// Several chunks are in flight at once, and the one that completes the
+		// file is whichever fills the last hole, not the last to be sent. Two
+		// can see a complete set together, so the losers of that race are
+		// answered as the success they are: the bytes they carried are on disk
+		// and the file is published. Reporting the second one as an error left
+		// the interface showing a failed upload of a file that had in fact
+		// arrived.
 		if session.TotalLen != nil && next >= *session.TotalLen {
 			// Resolved through the share label the session already belongs to,
 			// so the permission check looks at the path that publishes rather
@@ -264,7 +273,8 @@ func UploadsPatch(d Deps) http.HandlerFunc {
 			if rerr != nil {
 				return rerr
 			}
-			if _, ferr := d.Uploads.Finalize(r.Context(), resolved, id); ferr != nil {
+			if _, ferr := d.Uploads.Finalize(r.Context(), resolved, id); ferr != nil &&
+				!errors.Is(ferr, upload.ErrNotFound) {
 				return tusError(ferr)
 			}
 		}

@@ -178,5 +178,7 @@
 # carrying device and inode numbers as their bit pattern, its gosec exceptions
 # for statements named after credential tables, and its close of databases it
 # only ever read. They are gone with the readers, not suppressed.
-235
+# contractcheck added one: the same diagnostic-writer exemption every tool in
+# this directory carries, for a message that cannot be printed.
+236
 

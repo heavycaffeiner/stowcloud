@@ -16,12 +16,34 @@
   }
 
   let { open, title, onclose, children, actions }: Props = $props()
+
+  // The framework's `open` is bindable, and it writes back to it from the
+  // dialog's own toggle event. Binding a getter that returns the parent's
+  // prop means that write is discarded, and the framework's internal value
+  // then disagrees with ours: it had already recorded "open", so setting the
+  // prop false from the parent produced no change for its effect to act on
+  // and the dialog stayed on screen with its action already carried out.
+  //
+  // Mirroring it and pushing the parent's value in is what keeps the two in
+  // step. The mirror is not a second source of truth: it only ever follows
+  // the prop, and a close the framework initiates is reported upward.
+  let shown = $state(open)
+
+  $effect(() => {
+    shown = open
+  })
 </script>
 
 {#snippet noActions()}{/snippet}
 
 <M3Dialog
-  bind:open={() => open, (v) => !v && onclose?.()}
+  bind:open={
+    () => shown,
+    (v) => {
+      shown = v
+      if (!v) onclose?.()
+    }
+  }
   headline={title}
   buttons={actions ?? noActions}
 >

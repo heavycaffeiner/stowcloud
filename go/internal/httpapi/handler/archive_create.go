@@ -210,8 +210,13 @@ func archiveName(requested string) string {
 // an accented character in it arrives mangled, and the extended spelling is
 // what says the bytes are UTF-8.
 func contentDisposition(name string) string {
+	// Anything outside ASCII becomes an underscore in the plain form and
+	// travels intact in the extended one. The quote, the backslash and the
+	// control characters go too: they are what a name would end the quoted
+	// string with, and a header built by pasting a filename in is a header a
+	// filename can break out of.
 	ascii := strings.Map(func(r rune) rune {
-		if r > 127 {
+		if r > 127 || r < 0x20 || r == '"' || r == '\\' || r == 0x7f {
 			return '_'
 		}
 		return r

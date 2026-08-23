@@ -42,9 +42,10 @@ func readGrants(ctx context.Context, db readDB) (grants []Grant, err error) {
 			inherit     int
 			allow, deny int64
 			label       sql.NullString
+			createdNs   sql.NullInt64
 		)
 		if serr := rows.Scan(&g.ID, &user, &group, &g.Share, &subpath,
-			&allow, &deny, &inherit, &label); serr != nil {
+			&allow, &deny, &inherit, &label, &createdNs); serr != nil {
 			return nil, serr
 		}
 		g.User, g.Group = user.Int64, group.Int64
@@ -55,6 +56,7 @@ func readGrants(ctx context.Context, db readDB) (grants []Grant, err error) {
 		if label.Valid {
 			g.Label = label.String
 		}
+		g.CreatedNs = createdNs.Int64
 		grants = append(grants, g)
 	}
 	return grants, rows.Err()

@@ -174,10 +174,13 @@
             <ProgressLinear value={item.total > 0 ? item.sent / item.total : 0} label={item.name} />
             {#if item.message}<p class="sc-upload-tray__message">{t(item.message, item.messageParams)}</p>{/if}
             <div class="sc-upload-tray__controls">
+              <!-- Pause, resume and cancel were all drawn with the close icon,
+                   so the only way to tell them apart was the accessible name.
+                   Each has its own now. -->
               {#if item.status === 'uploading'}
-                <IconButton label={t('upload.pause')} onclick={() => uploadTray.pause(item.id)}><Icon icon={icons.close} size={16} /></IconButton>
+                <IconButton label={t('upload.pause')} onclick={() => uploadTray.pause(item.id)}><Icon icon={icons.pause} size={16} /></IconButton>
               {:else if item.status === 'paused'}
-                <IconButton label={t('upload.resume')} onclick={() => uploadTray.resume(item.id)}><Icon icon={icons.upload} size={16} /></IconButton>
+                <IconButton label={t('upload.resume')} onclick={() => uploadTray.resume(item.id)}><Icon icon={icons.resume} size={16} /></IconButton>
               {/if}
               {#if item.status === 'done' || item.status === 'canceled'}
                 <IconButton label={t('common.clear')} onclick={() => uploadTray.dismiss(item.id)}><Icon icon={icons.close} size={16} /></IconButton>

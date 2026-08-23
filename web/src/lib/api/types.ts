@@ -33,6 +33,11 @@ export interface SymlinkInfo {
 
 export interface Entry {
   name: string
+  /** The entry's own path, as the server addresses it: `{label}/rest`. Sent
+   *  on every listing row, and what the read and stat endpoints take. The
+   *  type omitted it while the server had always sent it, so the client
+   *  rebuilt paths by joining the browsed directory to the name. */
+  path: string
   kind: Kind
   /**
    * Bytes. For a directory this is the recursive rollup the server keeps, not
