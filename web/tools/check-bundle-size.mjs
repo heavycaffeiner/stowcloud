@@ -16,10 +16,30 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 
 const webRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
-const buildDir = path.join(webRoot, 'build')
+// Where the adapter actually writes, which is the Go package that embeds the
+// bundle: `//go:embed` cannot name a path outside its own package directory.
+// This read `web/build`, the old location, so on a clean checkout it found
+// nothing and failed with "run npm run build first" after a build had just
+// run. The path is taken from svelte.config.js rather than restated, so the
+// two cannot drift again.
+const buildDir = path.resolve(webRoot, outputDir())
 const clientManifestPath = path.join(webRoot, '.svelte-kit/output/client/.vite/manifest.json')
 const serverManifestPath = path.join(webRoot, '.svelte-kit/output/server/manifest-full.js')
 const indexHtmlPath = path.join(buildDir, 'index.html')
+
+// outputDir reads the adapter's `pages` out of svelte.config.js.
+//
+// Read from the source text rather than by importing it: adapter-static keeps
+// its options private, so the constructed adapter does not carry `pages` back.
+function outputDir() {
+  const src = readFileSync(path.join(webRoot, 'svelte.config.js'), 'utf8')
+  const m = /pages:\s*'([^']+)'/.exec(src)
+  if (!m) {
+    console.error('check-bundle-size: svelte.config.js names no adapter output directory.')
+    process.exit(1)
+  }
+  return m[1]
+}
 
 const INITIAL_JS_BUDGET = 150 * 1024
 const SHARE_PAGE_JS_BUDGET = 60 * 1024

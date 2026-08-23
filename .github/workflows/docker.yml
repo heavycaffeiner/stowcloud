@@ -195,16 +195,15 @@ jobs:
             -p 127.0.0.1:8443:8443 \
             sc:core-ci
 
-      # `--cacert`, not `-k`. The certificate the server generated for itself is
-      # on the host side of the data bind mount, so CI can verify against it for
-      # real, and that verification is itself worth having: it proves the
-      # generated certificate is actually valid for the address a client dials,
-      # which `-k` would paper over.
+      # The certificate is generated into `data/tls`, which the server creates
+      # 0700 because the private key is in it. That is the right mode and it
+      # means the host cannot read the certificate beside it, so these dial
+      # with `-k` and the certificate is verified separately below, out of the
+      # container, where it can be read.
       - name: Wait for the server to come up
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS --cacert /tmp/sc-data/tls/self-signed.crt \
-                 https://127.0.0.1:8443/api/health >/dev/null 2>&1; then
+            if curl -fsSk https://127.0.0.1:8443/api/health >/dev/null 2>&1; then
               echo "up after ${i}s"
               exit 0
             fi
@@ -214,39 +213,55 @@ jobs:
           docker logs sc-smoke || true
           exit 1
 
-      - name: Plain HTTP is redirected, never served
-        # The single socket detects the protocol, so plain HTTP gets a 308 to
-        # the same URL over https and nothing else. Both halves are asserted:
-        # the redirect, because a reset connection tells a person who typed the
-        # scheme nothing at all, and the empty body, because the failure this
-        # step has always guarded against is the app being served in the clear.
+      - name: Plain HTTP is refused, never served
+        # The listener is TLS and nothing else, so a plaintext request is
+        # answered with a 400 naming the mistake and no application content at
+        # all. The failure this step guards against is the app being served in
+        # the clear, so what is asserted is the absence of it: any 2xx or 3xx
+        # here would mean something answered a plaintext request.
+        #
+        # An earlier build redirected instead, and this asserted the 308. That
+        # is a friendlier answer and a weaker one; refusing is what this server
+        # does now.
         run: |
-          got=$(curl -sS --max-time 5 -o /dev/null \
-            -w '%{http_code} %{redirect_url} %{size_download}' \
-            http://127.0.0.1:8443/api/health)
-          echo "$got"
-          if [ "$got" != "308 https://127.0.0.1:8443/api/health 0" ]; then
-            echo "expected an empty 308 to the https URL"
+          code=$(curl -sS --max-time 5 -o /tmp/plain.out -w '%{http_code}' \
+            http://127.0.0.1:8443/api/health || true)
+          echo "status: ${code}"
+          cat /tmp/plain.out
+          case "$code" in
+            2*|3*) echo "a plaintext request was answered"; exit 1 ;;
+          esac
+          if grep -qi '<html\|"status"' /tmp/plain.out; then
+            echo "a plaintext request received application content"
             exit 1
           fi
-          echo "plain HTTP redirected with no body, as intended"
+          echo "plain HTTP refused with no application content, as intended"
 
       - name: GET /api/health
         run: |
-          out=$(curl -fsS --cacert /tmp/sc-data/tls/self-signed.crt https://127.0.0.1:8443/api/health)
+          out=$(curl -fsSk https://127.0.0.1:8443/api/health)
           echo "$out"
           echo "$out" | grep -q '"status"' || { echo "unexpected /api/health body"; exit 1; }
 
       - name: GET / serves the SPA document
         run: |
-          out=$(curl -fsS --cacert /tmp/sc-data/tls/self-signed.crt https://127.0.0.1:8443/)
+          out=$(curl -fsSk https://127.0.0.1:8443/)
           echo "$out" | grep -qi '<html' || { echo "/ did not return an HTML document"; echo "$out"; exit 1; }
 
       - name: GET /api/setup proves a fresh deployment can bootstrap
         run: |
-          out=$(curl -fsS --cacert /tmp/sc-data/tls/self-signed.crt https://127.0.0.1:8443/api/setup)
+          out=$(curl -fsSk https://127.0.0.1:8443/api/setup)
           echo "$out"
           echo "$out" | grep -q '"required":true' || { echo "unexpected /api/setup body — a fresh container should report setup required"; exit 1; }
+
+      # What `-k` above gives up, done where the certificate can actually be
+      # read: inside the container, by the binary that generated it. The
+      # healthcheck dials its own listener over TLS and verifies the chain, so
+      # a certificate that is not valid for the address it serves fails here.
+      - name: The generated certificate is valid for the address it serves
+        run: |
+          docker exec sc-smoke /stowcloud healthcheck /etc/stowcloud/sc.toml
+          echo "the server verified its own certificate over a real dial"
 
       - name: exec the healthcheck directly (proves it runs with no shell in the image)
         run: |
@@ -259,16 +274,15 @@ jobs:
       # listing with the share table and the grants both looking correct.
       - name: A configured share is reachable through the sandbox
         run: |
-          cacert=/tmp/sc-data/tls/self-signed.crt
           token=$(docker logs sc-smoke 2>&1 | grep -oE 'setup token[^:]*: [a-f0-9]+' | tail -1 | awk '{print $NF}')
           [ -n "$token" ] || { echo "the container printed no setup token"; exit 1; }
-          curl -fsS --cacert "$cacert" -X POST https://127.0.0.1:8443/api/setup \
+          curl -fsSk -X POST https://127.0.0.1:8443/api/setup \
             -H 'content-type: application/json' \
             -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\"}" >/dev/null
-          curl -fsS --cacert "$cacert" -c /tmp/jar -X POST https://127.0.0.1:8443/api/auth/login \
+          curl -fsSk -c /tmp/jar -X POST https://127.0.0.1:8443/api/auth/login \
             -H 'content-type: application/json' \
             -d '{"username":"ci","password":"ci-smoke-password-1"}' >/dev/null
-          out=$(curl -fsS --cacert "$cacert" -b /tmp/jar 'https://127.0.0.1:8443/api/fs/list?path=/files')
+          out=$(curl -fsSk -b /tmp/jar 'https://127.0.0.1:8443/api/fs/list?path=/files')
           echo "$out"
           echo "$out" | grep -q '"dir_etag"' || { echo "the configured share does not list"; exit 1; }
 
