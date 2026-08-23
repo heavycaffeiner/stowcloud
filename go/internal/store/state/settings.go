@@ -66,32 +66,6 @@ func (d *DB) MergeSettings(ctx context.Context, section string, value any) error
 	})
 }
 
-// ClearSettings removes one section's override, so the value falls back to
-// what the config file or the compiled-in default says.
-func (d *DB) ClearSettings(ctx context.Context, section string) error {
-	return d.Write(ctx, func(tx *sql.Tx) error {
-		var raw string
-		err := tx.QueryRowContext(ctx, sqlReadSettings).Scan(&raw)
-		if errors.Is(err, sql.ErrNoRows) || raw == "" {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		merged := map[string]any{}
-		if jerr := json.Unmarshal([]byte(raw), &merged); jerr != nil {
-			return jerr
-		}
-		delete(merged, section)
-		encoded, jerr := json.Marshal(merged)
-		if jerr != nil {
-			return jerr
-		}
-		_, eerr := tx.ExecContext(ctx, sqlWriteSettings, string(encoded))
-		return eerr
-	})
-}
-
 // searchSection is the stored search settings, or an empty document when there
 // are none.
 //

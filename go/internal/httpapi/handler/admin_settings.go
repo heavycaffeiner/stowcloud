@@ -2,15 +2,11 @@ package handler
 
 import (
 	"net/http"
-	"net/netip"
-	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
-	"github.com/heavycaffeiner/stowcloud/go/internal/smb"
 )
 
 // The settings sections.
@@ -51,13 +47,6 @@ func AdminServerSettingsSection(d Deps) http.HandlerFunc {
 			}
 		}
 
-		if r.Method == http.MethodDelete {
-			if err := d.State.ClearSettings(r.Context(), section); err != nil {
-				return err
-			}
-			return writeJSON(w, http.StatusOK, applyOutcome(section, false))
-		}
-
 		// The body is stored as the section's document. It is decoded into a
 		// map rather than a struct per section, because this layer does not
 		// decide what a section means: the subsystem that reads it does, and a
@@ -66,11 +55,13 @@ func AdminServerSettingsSection(d Deps) http.HandlerFunc {
 		if err := decodeJSON(r, &body); err != nil {
 			return err
 		}
-		// Validated before it is stored, and refused naming the field. An
-		// administrator is watching, so a value outside its bound is told to
-		// them rather than quietly clamped into a different one.
-		if verr := checkSection(section, body); verr != nil {
-			return verr
+		// The same probes the preview runs, so the two cannot disagree about
+		// what is acceptable. Anything blocking refuses the write and comes
+		// back naming the field: an administrator is watching, so a value that
+		// will not work is told to them rather than quietly clamped into a
+		// different one or stored to fail at the next boot.
+		if findings := checkSection(d, r, section, body); blocked(findings) {
+			return settingsRefused(findings)
 		}
 		if err := d.State.MergeSettings(r.Context(), section, body); err != nil {
 			return err
@@ -93,8 +84,12 @@ func AdminServerSettingsSection(d Deps) http.HandlerFunc {
 // the sections belong to the subsystems that read them, and refusing an
 // unknown key here would make this layer the authority on what a section may
 // contain, which is the second definition the comment above warns about.
-func checkSection(section string, body map[string]any) error {
-	bounds := map[string]map[string]runtimecfg.Bound{
+// settingsBounds is the numeric range each field may hold.
+//
+// One table, read by both the preview and the save, so the two cannot drift
+// into disagreeing about what is acceptable.
+func settingsBounds() map[string]map[string]runtimecfg.Bound {
+	return map[string]map[string]runtimecfg.Bound{
 		"search": {
 			"max_concurrent_fast":   runtimecfg.BoundSearchConcurrent(),
 			"max_concurrent_slow":   runtimecfg.BoundSearchConcurrent(),
@@ -112,113 +107,11 @@ func checkSection(section string, body map[string]any) error {
 		// it would be applied rather than questioned.
 		"smb": {"service_gid": runtimecfg.BoundServiceGID()},
 	}
-	for key, b := range bounds[section] {
-		raw, ok := body[key]
-		if !ok {
-			continue
-		}
-		n, ok := raw.(float64)
-		if !ok {
-			return apierr.Unprocessable("settings.must_be_at_least_one", key)
-		}
-		if err := runtimecfg.Check(key, int64(n), b); err != nil {
-			return apierr.Unprocessable("settings.must_be_at_least_one", key)
-		}
-	}
-
-	// The sections whose fields are not numbers. Each is refused here, where
-	// an administrator is watching, and dropped with a warning at boot: a
-	// server must not fail to start over a value saved weeks ago.
-	switch section {
-	case "network":
-		return checkNetwork(body)
-	case "homes":
-		return checkHomes(body)
-	case "smb":
-		return checkSMB(body)
-	}
-	return nil
 }
 
-// checkNetwork validates the host lists and the proxy ranges.
-//
-// This is the trust boundary an authenticated administrator may move, so it is
-// the one worth being careful with: a malformed entry saved here is a guard
-// that admits or refuses the wrong thing on the next start.
-func checkNetwork(body map[string]any) error {
-	for _, key := range []string{"app_hosts", "content_hosts"} {
-		hosts, ok, err := stringList(body, key)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			continue
-		}
-		// An empty list is refused rather than stored: a host guard with no
-		// hosts admits nothing, so saving one locks everybody out of the
-		// server they are saving it from.
-		if len(hosts) == 0 {
-			return apierr.Unprocessable("settings.must_be_at_least_one", key)
-		}
-		if verr := validateHosts(hosts); verr != nil {
-			return verr
-		}
-	}
-	cidrs, ok, err := stringList(body, "trusted_proxies")
-	if err != nil {
-		return err
-	}
-	if ok {
-		for _, c := range cidrs {
-			if _, perr := netip.ParsePrefix(strings.TrimSpace(c)); perr != nil {
-				return apierr.Unprocessable("settings.invalid_cidr", "trusted_proxies")
-			}
-		}
-	}
-	return nil
-}
-
-// checkHomes validates the shared homes root.
-func checkHomes(body map[string]any) error {
-	root, ok := body["root"].(string)
-	if !ok || root == "" {
-		return nil
-	}
-	// Absolute, because the server's working directory is not something an
-	// administrator can see from the screen they are typing into.
-	if !filepath.IsAbs(root) {
-		return apierr.Unprocessable("settings.path_must_be_absolute", "root")
-	}
-	return nil
-}
-
-// checkSMB validates what reaches the rendered configuration.
-//
-// The renderer refuses rather than escapes, because that format has no escape
-// surviving its own continuation rules. Checking here means an administrator
-// is told which field, at the moment they save it, rather than the publisher
-// failing later with the whole configuration in the message.
-func checkSMB(body map[string]any) error {
-	if v, ok := body["totp_policy"].(string); ok &&
-		v != "require_separate" && v != "block" {
-		return apierr.Unprocessable("settings.unknown_totp_policy", "totp_policy")
-	}
-	cfg := smb.Config{Enabled: true, Workgroup: "WORKGROUP", ServiceUser: "scsvc"}
-	if v, ok := body["workgroup"].(string); ok && v != "" {
-		cfg.Workgroup = v
-	}
-	if v, ok := body["server_name"].(string); ok {
-		cfg.ServerName = v
-	}
-	if v, ok := body["service_user"].(string); ok && v != "" {
-		cfg.ServiceUser = v
-	}
-	// Rendered against the real renderer rather than a second copy of its
-	// rules here, which is the only way the two cannot disagree.
-	if _, err := smb.Render(cfg, nil); err != nil {
-		return apierr.Unprocessable("settings.invalid_origin", "workgroup")
-	}
-	return nil
+// knownSection reports whether this build recognises a section name.
+func knownSection(section string) bool {
+	return slices.Contains(settingsSections(), section)
 }
 
 // stringList reads one list field. Present-but-wrong is an error; absent is
@@ -263,8 +156,11 @@ func reloadRuntime(r *http.Request, d Deps) bool {
 // an afternoon on.
 func applyOutcome(section string, needsRestart bool) map[string]any {
 	return map[string]any{
-		"section":          section,
-		"applied":          !needsRestart,
+		"section": section,
+		// The client's own name for it. It read applied_live while this sent
+		// applied, so every save came back undefined and the screen fell back
+		// to treating the change as not live.
+		"applied_live":     !needsRestart,
 		"restart_required": needsRestart,
 	}
 }

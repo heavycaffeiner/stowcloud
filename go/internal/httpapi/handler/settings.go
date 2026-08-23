@@ -231,19 +231,31 @@ func SettingsNetwork(d Deps) http.HandlerFunc {
 			}
 			d.Trusted.Set(parsed)
 		}
+		// The same probes the preview and the generic save run. This route
+		// exists because the network group has live holders to push into, not
+		// because it has different rules, and a second copy of the rules here
+		// is a second place they can disagree.
+		probe := map[string]any{}
+		if req.AppHosts != nil {
+			probe["app_hosts"] = toAnyList(req.AppHosts)
+		}
+		if req.ContentHosts != nil {
+			probe["content_hosts"] = toAnyList(req.ContentHosts)
+		}
+		if req.TrustedProxyCIDRs != nil {
+			probe["trusted_proxies"] = toAnyList(req.TrustedProxyCIDRs)
+		}
+		if findings := checkSection(d, r, "network", probe); blocked(findings) {
+			return settingsRefused(findings)
+		}
+
 		if req.AppHosts != nil || req.ContentHosts != nil {
 			app := d.Hosts.App()
 			content := d.Hosts.Content()
 			if req.AppHosts != nil {
-				if err := validateHosts(req.AppHosts); err != nil {
-					return err
-				}
 				app = req.AppHosts
 			}
 			if req.ContentHosts != nil {
-				if err := validateHosts(req.ContentHosts); err != nil {
-					return err
-				}
 				content = req.ContentHosts
 			}
 			d.Hosts.Set(app, content)
@@ -273,22 +285,14 @@ func SettingsNetwork(d Deps) http.HandlerFunc {
 	})
 }
 
-// validateHosts checks a host list an administrator is saving.
-//
-// An empty list is refused, and that is the important half. A host guard with
-// no hosts admits nothing, so saving one locks every administrator out of the
-// server they are saving it from, including the screen that would undo it. It
-// was accepted, and the next request answered "misdirected request".
-func validateHosts(hosts []string) error {
-	if len(hosts) == 0 {
-		return apierr.Unprocessable("settings.must_be_at_least_one", "app_hosts")
+// toAnyList widens a string list into the shape the probes read, which is the
+// decoded-JSON shape the generic section handler passes them.
+func toAnyList(in []string) []any {
+	out := make([]any, 0, len(in))
+	for _, s := range in {
+		out = append(out, s)
 	}
-	for _, h := range hosts {
-		if h == "" || strings.ContainsAny(h, " /\\") {
-			return apierr.Unprocessable("settings.invalid_host", "app_hosts")
-		}
-	}
-	return nil
+	return out
 }
 
 func prefixesToStrings(ps []netip.Prefix) []string {

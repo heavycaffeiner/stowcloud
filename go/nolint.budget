@@ -169,5 +169,8 @@
 # The runtime settings added one: the SMB service group crossing into the
 # unsigned type the rendered file carries it as, bounded on the line above it
 # so the value cannot be one that does not fit.
-249
+# The settings dry run added one: reading an optional string out of a decoded
+# body, where absent and wrong-typed both mean the field was not named and the
+# line below handles that case.
+250
 

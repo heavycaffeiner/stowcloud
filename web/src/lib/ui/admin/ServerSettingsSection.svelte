@@ -18,6 +18,7 @@
   import type {
     SettingsSnapshot,
     SettingsField,
+    SettingsFinding,
     SettingsSectionId,
     ApplyOutcome,
     SmbSettingsReq,
@@ -92,91 +93,139 @@
     return String(v)
   }
 
-  // ── revert one group to sc.toml ──
+  // ── dry run ──
   //
-  // Every group is otherwise one-way: a stored override beats the file on
-  // every boot, so without this the only way back is deleting `settings.db`,
-  // which discards the other nine groups with it.
-  //
-  // Each button carries its own accessible name naming the group it reverts,
-  // rather than ten copies of "Revert": a screen reader reaching the fourth
-  // one has no other way to tell which.
+  // The screen used to describe what a value must be and let the server find
+  // out later whether it worked. The server can just try it: render the SMB
+  // configuration, write a file into the homes root, check the host list still
+  // contains the host this browser is talking to. Same probes the save runs,
+  // so a clean preview and a refused save cannot both happen.
 
-  type Section = { id: SettingsSectionId; sourceKey: string; name: string }
+  type Section = { id: SettingsSectionId; name: string }
 
   const SECTIONS: Section[] = [
-    { id: 'smb', sourceKey: 'smb.enabled', name: 'SMB' },
-    { id: 'search', sourceKey: 'search.rate_per_minute', name: t('common.search') },
-    { id: 'archive', sourceKey: 'archive.max_concurrent', name: t('server.zip_download') },
-    { id: 'network', sourceKey: 'bind', name: t('server.network') },
-    { id: 'db', sourceKey: 'db.size_guard', name: t('server.database_size_guard') },
-    { id: 'symlink-policy', sourceKey: 'symlink_policy', name: t('server.symlink_policy') },
-    { id: 'homes', sourceKey: 'homes.enabled', name: t('server.home_folders') },
-    { id: 'watch', sourceKey: 'watch.backend', name: t('server.file_watching') },
-    { id: 'oidc', sourceKey: 'oidc.enabled', name: t('settings.single_sign_on') },
-    { id: 'paths', sourceKey: 'data_dir', name: t('server.storage_paths') }
+    { id: 'smb', name: 'SMB' },
+    { id: 'search', name: t('common.search') },
+    { id: 'archive', name: t('server.zip_download') },
+    { id: 'network', name: t('server.network') },
+    { id: 'homes', name: t('server.home_folders') },
+    { id: 'watch', name: t('server.file_watching') },
+    { id: 'rate', name: t('server.requests_per_minute') }
   ]
 
-  function section(id: SettingsSectionId): Section {
-    return SECTIONS.find((s) => s.id === id) as Section
+  function sectionName(id: SettingsSectionId): string {
+    return SECTIONS.find((s) => s.id === id)?.name ?? id
   }
 
-  /** Is this group currently overriding `sc.toml`? Read off one
-   *  representative row, since every row in a group shares one source. */
-  function isOverridden(id: SettingsSectionId): boolean {
-    return field(section(id).sourceKey)?.source === 'admin_override'
-  }
+  /** Findings per section, cleared as soon as the inputs move: a result that
+   *  outlives the values it was computed from is worse than none. */
+  let checks = $state<Partial<Record<SettingsSectionId, SettingsFinding[]>>>({})
+  let checking = $state<SettingsSectionId | null>(null)
+  let checkError = $state<Partial<Record<SettingsSectionId, string>>>({})
 
-  /** The values a revert discards, named rather than left to the admin's
-   *  memory. It cannot name what replaces them: the file's own values are not
-   *  on this screen, and inventing them would be worse than saying so. */
-  function revertPreview(id: SettingsSectionId): string {
-    const rows = snapshot?.fields.filter((f) => sectionIdOf(f.key) === id) ?? []
-    // `ConfirmDialog` renders its message as a single paragraph, so the
-    // separator has to read inline.
-    return rows.map((f) => `${f.key}: ${formatValue(f.value)}`).join(', ')
-  }
-
-  const SECTION_OF_KEY: Record<string, SettingsSectionId> = {
-    bind: 'network',
-    app_hosts: 'network',
-    content_hosts: 'network',
-    allowed_origins: 'network',
-    trusted_proxies: 'network',
-    public_origins: 'network',
-    symlink_policy: 'symlink-policy',
-    data_dir: 'paths',
-    master_key_file: 'paths',
-    'smb.config_dir': 'paths'
-  }
-
-  function sectionIdOf(key: string): SettingsSectionId | undefined {
-    if (SECTION_OF_KEY[key]) return SECTION_OF_KEY[key]
-    const prefix = key.split('.')[0]
-    return SECTIONS.some((s) => s.id === prefix) ? (prefix as SettingsSectionId) : undefined
-  }
-
-  let revertTarget = $state<SettingsSectionId | null>(null)
-  let reverting = $state(false)
-  let revertError = $state<string | null>(null)
-  let revertOutcome = $state<ApplyOutcome | null>(null)
-
-  async function confirmRevert(): Promise<void> {
-    const id = revertTarget
-    revertTarget = null
-    if (!id) return
-    revertError = null
-    revertOutcome = null
-    reverting = true
+  async function runCheck(id: SettingsSectionId, body: unknown): Promise<void> {
+    checking = id
+    checkError = { ...checkError, [id]: undefined }
     try {
-      revertOutcome = await api.adminClearServerSettings(id)
-      await load()
+      const res = await api.adminCheckServerSettings(id, body)
+      checks = { ...checks, [id]: res.findings }
+      checkedFor = { ...checkedFor, [id]: JSON.stringify(body) }
     } catch (err) {
-      revertError = describeApiError(err, t('server.could_not_revert_settings'))
+      checkError = { ...checkError, [id]: describeApiError(err, t('server.could_not_check')) }
     } finally {
-      reverting = false
+      checking = null
     }
   }
+
+  /** The values each result was computed from. A finding that outlives the
+   *  input it describes is worse than no finding, so the panel compares and
+   *  hides itself rather than relying on every input to remember to clear. */
+  let checkedFor = $state<Partial<Record<SettingsSectionId, string>>>({})
+
+  function isCurrent(id: SettingsSectionId, body: () => unknown): boolean {
+    return checkedFor[id] === JSON.stringify(body())
+  }
+
+  // The catalogue renders the sentence; the server sends only the key and its
+  // placeholders. The keys cannot be seen at the call site, so they are named
+  // here for the extractor.
+  /* i18n */ 'settings.check_passed'
+  /* i18n */ 'settings.out_of_range'
+  /* i18n */ 'settings.host_list_empty'
+  /* i18n */ 'settings.would_lock_you_out'
+  /* i18n */ 'settings.proxy_range_is_everything'
+  /* i18n */ 'settings.gid_zero_is_root'
+  /* i18n */ 'settings.smb_render_failed'
+  /* i18n */ 'settings.smb_config_dir_unavailable'
+  /* i18n */ 'settings.dir_will_be_created'
+  /* i18n */ 'settings.dir_is_writable'
+  /* i18n */ 'settings.path_is_not_a_directory'
+  /* i18n */ 'settings.above_kernel_watch_limit'
+  /* i18n */ 'settings.within_kernel_watch_limit'
+  /* i18n */ 'settings.invalid_host'
+  /* i18n */ 'settings.invalid_cidr'
+  /* i18n */ 'settings.path_must_be_absolute'
+  /* i18n */ 'settings.unknown_totp_policy'
+  /* i18n */ 'settings.must_be_at_least_one'
+  function findingText(f: SettingsFinding): string {
+    return t(f.reason_key, f.reason_params ?? {})
+  }
+
+  /** The bodies, built once and used by both the check and the save, so the
+   *  preview cannot be run against a different value than the one that gets
+   *  stored. Numbers are sent as numbers: the server reads them as such, and
+   *  a numeric string would fail its bound check for the wrong reason. */
+  function smbBody(): Record<string, unknown> {
+    return {
+      enabled: smbEnabled,
+      workgroup: smbWorkgroup,
+      server_name: smbServerName,
+      service_user: smbServiceUser,
+      allow_public_bind: smbAllowPublicBind,
+      totp_policy: smbTotpPolicy,
+      service_uid: Number(smbServiceUid),
+      service_gid: Number(smbServiceGid)
+    }
+  }
+
+  function searchBody(): Record<string, unknown> {
+    return {
+      max_concurrent_fast: Number(searchMaxFast),
+      max_concurrent_slow: Number(searchMaxSlow),
+      walk_deadline_fast_ms: Number(searchDeadlineFast),
+      walk_deadline_slow_ms: Number(searchDeadlineSlow),
+      rate_per_minute: Number(searchRate)
+    }
+  }
+
+  function archiveBody(): Record<string, unknown> {
+    return { max_concurrent: Number(archiveMax) }
+  }
+
+  function networkBody(): Record<string, unknown> {
+    return {
+      bind: netBind.trim(),
+      app_hosts: strToArr(netAppHosts),
+      content_hosts: strToArr(netContentHosts),
+      allowed_origins: strToArr(netAllowedOrigins),
+      trusted_proxies: strToArr(netTrustedProxies),
+      public_origins: strToArr(netPublicOrigins)
+    }
+  }
+
+  function homesBody(): Record<string, unknown> {
+    return { enabled: homesEnabled, root: homesRoot.trim() || null }
+  }
+
+  function watchBody(): Record<string, unknown> {
+    return {
+      backend: watchBackend,
+      hot_set_max: Number(watchHotSetMax),
+      full_threshold: Number(watchFullThreshold)
+    }
+  }
+
+
 
   // ── SMB ──
 
@@ -817,16 +866,39 @@
       </div>
     {/if}
 
-    {#snippet revertButton(id: SettingsSectionId)}
-      <!-- The group's name is in the visible label, not an aria-label beside
-           a generic one: ten buttons reading "Revert" give a screen reader no
-           way to tell the fourth from the seventh. -->
-      <Button
-        variant="outlined"
-        disabled={!isOverridden(id) || reverting}
-        onclick={() => (revertTarget = id)}
-      >
-        {t('server.revert_group_to_config', { group: section(id).name })}
+    <!-- What the server learned by trying the change. Rendered under the
+         form it belongs to, with each finding beside the field it names, so a
+         refusal points at the input that caused it rather than at the group. -->
+    {#snippet checkPanel(id: SettingsSectionId, body: () => unknown)}
+      {@const found = isCurrent(id, body) ? checks[id] : undefined}
+      {#if checkError[id]}
+        <p class="sc-admin-section__error" role="alert">{checkError[id]}</p>
+      {:else if found}
+        <ul class="sc-server-settings__findings" role="status">
+          {#each found as f, i (f.reason_key + i)}
+            <li class="sc-server-settings__finding sc-server-settings__finding--{f.level}">
+              <!-- The level is in the text, not only the colour. -->
+              <span class="sc-server-settings__finding-level">
+                {f.level === 'block'
+                  ? t('server.check_blocks')
+                  : f.level === 'warn'
+                    ? t('server.check_warns')
+                    : t('server.check_ok')}
+              </span>
+              {#if f.field}<code>{f.field}</code>{/if}
+              {findingText(f)}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    {/snippet}
+
+    <!-- Try it without saving. Placed beside the save rather than replacing
+         it: an administrator who already knows the value is fine should not
+         have to run a preview to get to the button. -->
+    {#snippet checkButton(id: SettingsSectionId, body: () => unknown)}
+      <Button variant="outlined" disabled={checking !== null} onclick={() => runCheck(id, body())}>
+        {checking === id ? t('server.checking') : t('server.check_without_saving')}
       </Button>
     {/snippet}
 
@@ -835,7 +907,7 @@
          administrator *which* change is waiting, which is the only useful
          part. -->
     {#snippet pendingRows(id: SettingsSectionId)}
-      {@const rows = pendingFields.filter((f) => sectionIdOf(f.key) === id)}
+      {@const rows = pendingFields.filter((f) => f.key.split('.')[0] === id)}
       {#each rows as f (f.key)}
         <p class="sc-server-settings__pending">
           <span class="sc-server-settings__badge">{t('server.pending_restart')}</span>
@@ -849,8 +921,6 @@
         {t('server.saved_changes_awaiting_restart', { count: pendingFields.length })}
       </p>
     {/if}
-    {#if revertError}<p class="sc-admin-section__error" role="alert">{revertError}</p>{/if}
-    {#if revertOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(revertOutcome)}</p>{/if}
 
     <h4 class="sc-admin-section__subhead">SMB</h4>
     <div class="sc-server-settings__form">
@@ -864,8 +934,9 @@
       <TextField label={t('server.service_account_gid')} bind:value={smbServiceGid} />
       <Button variant="filled" onclick={saveSmb} loading={smbSaving}>{t('common.save')}</Button>
       {@render pendingRows('smb')}
-      {@render revertButton('smb')}
+      {@render checkButton('smb', smbBody)}
     </div>
+    {@render checkPanel('smb', smbBody)}
     <p class="sc-admin-section__hint">
       {t('server.only_toggling_enable_smb_needs')}
     </p>
@@ -919,8 +990,9 @@
       <TextField label={t('server.slow_search_timeout_ms')} bind:value={searchDeadlineSlow} />
       <TextField label={t('server.requests_per_minute')} bind:value={searchRate} />
       <Button variant="filled" onclick={saveSearch} loading={searchSaving}>{t('common.save')}</Button>
-      {@render revertButton('search')}
+      {@render checkButton('search', searchBody)}
     </div>
+    {@render checkPanel('search', searchBody)}
     <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
     {#if searchError}<p class="sc-admin-section__error" role="alert">{searchError}</p>{/if}
     {#if searchOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(searchOutcome)}</p>{/if}
@@ -929,8 +1001,9 @@
     <div class="sc-server-settings__form">
       <TextField label={t('server.concurrent_zip_streams')} bind:value={archiveMax} />
       <Button variant="filled" onclick={saveArchive} loading={archiveSaving}>{t('common.save')}</Button>
-      {@render revertButton('archive')}
+      {@render checkButton('archive', archiveBody)}
     </div>
+    {@render checkPanel('archive', archiveBody)}
     <p class="sc-admin-section__hint">{t('server.applies_immediately_no_restart_needed')}</p>
     {#if archiveError}<p class="sc-admin-section__error" role="alert">{archiveError}</p>{/if}
     {#if archiveOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(archiveOutcome)}</p>{/if}
@@ -955,8 +1028,9 @@
       {/if}
       {@render pendingRows('network')}
       <Button variant="filled" onclick={openNetworkSave} loading={netSaving}>{t('common.save')}</Button>
-      {@render revertButton('network')}
+      {@render checkButton('network', networkBody)}
     </div>
+    {@render checkPanel('network', networkBody)}
     <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart_listener')}</p>
     {#if netError}<p class="sc-admin-section__error" role="alert">{netError}</p>{/if}
     {#if netOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(netOutcome)}</p>{/if}
@@ -968,7 +1042,6 @@
       <TextField label={t('server.minimum_free_space_mb')} bind:value={dbMinFreeMb} />
       <Button variant="filled" onclick={saveDb} loading={dbSaving}>{t('common.save')}</Button>
       {@render pendingRows('db')}
-      {@render revertButton('db')}
     </div>
     <p class="sc-admin-section__hint">
       {t('server.takes_effect_after_restart_currently', {
@@ -984,7 +1057,6 @@
       <SelectOutlined label={t('server.policy')} width="100%" options={SYMLINK_OPTIONS} bind:value={symlinkPolicy} />
       <Button variant="filled" onclick={saveSymlinkPolicy} loading={symlinkSaving}>{t('common.save')}</Button>
       {@render pendingRows('symlink-policy')}
-      {@render revertButton('symlink-policy')}
     </div>
     <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart')}</p>
     {#if symlinkError}<p class="sc-admin-section__error" role="alert">{symlinkError}</p>{/if}
@@ -996,8 +1068,9 @@
       <TextField label={t('server.root_path')} bind:value={homesRoot} placeholder="/srv/homes" />
       <Button variant="filled" onclick={saveHomes} loading={homesSaving}>{t('common.save')}</Button>
       {@render pendingRows('homes')}
-      {@render revertButton('homes')}
+      {@render checkButton('homes', homesBody)}
     </div>
+    {@render checkPanel('homes', homesBody)}
     <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart')}</p>
     {#if homesError}<p class="sc-admin-section__error" role="alert">{homesError}</p>{/if}
     {#if homesOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(homesOutcome)}</p>{/if}
@@ -1010,8 +1083,9 @@
       <TextField label={t('server.changes_before_a_full_rescan')} bind:value={watchFullThreshold} />
       <Button variant="filled" onclick={saveWatch} loading={watchSaving}>{t('common.save')}</Button>
       {@render pendingRows('watch')}
-      {@render revertButton('watch')}
+      {@render checkButton('watch', watchBody)}
     </div>
+    {@render checkPanel('watch', watchBody)}
     <p class="sc-admin-section__hint">
       {t('server.takes_effect_after_restart_when')}
     </p>
@@ -1038,7 +1112,6 @@
       />
       <Button variant="filled" onclick={saveOidc} loading={oidcSaving}>{t('common.save')}</Button>
       {@render pendingRows('oidc')}
-      {@render revertButton('oidc')}
     </div>
     <p class="sc-admin-section__hint">
       {t('server.takes_effect_after_restart_redirect')}
@@ -1058,7 +1131,6 @@
       <TextField label={t('server.smb_config_directory')} bind:value={pathsSmbConfigDir} placeholder="/etc/stowcloud/smb" />
       <Button variant="filled" onclick={openPathsConfirm} loading={pathsSaving}>{t('common.save')}</Button>
       {@render pendingRows('paths')}
-      {@render revertButton('paths')}
     </div>
     <p class="sc-admin-section__hint">
       {t('server.takes_effect_after_restart_these')} <strong>{t('server.tell_server_where_you_have')}</strong> {t('server.they_do_not_move_server')}
@@ -1107,15 +1179,6 @@
      the button: removing an origin stops new enrolments on that name (the
      name keeps serving as long as it is in `app_hosts`), and changing the
      first entry changes what an unrecognised `Host` is answered with. -->
-<ConfirmDialog
-  open={revertTarget !== null}
-  title={t('server.revert_group_to_config', { group: revertTarget ? section(revertTarget).name : '' })}
-  message={`${t('server.revert_restores_these_values')}\n\n${revertTarget ? revertPreview(revertTarget) : ''}`}
-  confirmLabel={t('server.revert')}
-  danger
-  onclose={() => (revertTarget = null)}
-  onconfirm={confirmRevert}
-/>
 
 <ConfirmDialog
   open={netOriginsConfirmOpen}
@@ -1248,6 +1311,42 @@
     margin: 0;
     color: var(--m3c-on-surface-variant);
     @apply --m3-body-small;
+  }
+  /* What the dry run found. The level is spelled out in the text beside each
+     item, so the colour is reinforcement rather than the only carrier. */
+  .sc-server-settings__findings {
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 4px;
+  }
+  .sc-server-settings__finding {
+    margin: 0;
+    padding: 8px 12px;
+    border-radius: 4px;
+    border-left: 4px solid var(--m3c-outline);
+    background: var(--m3c-surface-container);
+    color: var(--m3c-on-surface);
+    overflow-wrap: anywhere;
+    @apply --m3-body-small;
+  }
+  .sc-server-settings__finding--block {
+    border-left-color: var(--m3c-error);
+  }
+  .sc-server-settings__finding--warn {
+    border-left-color: var(--m3c-tertiary, var(--m3c-outline));
+  }
+  .sc-server-settings__finding--ok {
+    border-left-color: var(--m3c-primary);
+  }
+  .sc-server-settings__finding-level {
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .sc-server-settings__finding code {
+    font-family: var(--m3-font-mono, ui-monospace, monospace);
+    margin-right: 4px;
   }
   /* A diagnostic from another program: monospace so a path or a directive in
      it reads as the literal string it is, and wrapping so a long testparm

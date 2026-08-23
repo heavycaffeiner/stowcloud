@@ -145,6 +145,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		WatchCap:          func() int { return watchHotSetCap },
 		Runtime:           opt.Runtime,
 		SMBConfigDir:      cfg.SMB.ConfigDir,
+		DataDir:           cfg.DataDir,
 		Health:            health,
 		Uploads:           opt.Uploads,
 		State:             opt.Store.State(),

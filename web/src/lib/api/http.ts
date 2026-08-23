@@ -47,6 +47,7 @@ import {
   type SessionInfo,
   type SettingsSnapshot,
   type SettingsSectionId,
+  type SettingsCheckResult,
   type ShareLinkCreateReq,
   type ShareLinkInfo,
   type ShareLinkPatchReq,
@@ -656,12 +657,19 @@ async function adminSetPathsSettings(req: PathsSettingsReq): Promise<ApplyOutcom
   return request('/admin/server-settings/paths', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
-/** `DELETE /api/admin/server-settings/{section}` — drop this group's stored
- *  override so `sc.toml` and the environment decide it again. Answers with
- *  the same `ApplyOutcome` a patch does. An unknown section is `404
- *  settings.unknown_section`, never a silent no-op. */
-async function adminClearServerSettings(section: SettingsSectionId): Promise<ApplyOutcome> {
-  return request(`/admin/server-settings/${section}`, { method: 'DELETE' })
+/** `POST /api/admin/server-settings/{section}/check` — try the change without
+ *  storing it. The server runs the same probes a save runs: it renders the SMB
+ *  configuration, writes a file into the homes root, and checks the proposed
+ *  host list still contains the host this request arrived on. `ok: false`
+ *  means a save of this body is refused. */
+async function adminCheckServerSettings(
+  section: SettingsSectionId,
+  body: unknown
+): Promise<SettingsCheckResult> {
+  return request(`/admin/server-settings/${section}/check`, {
+    method: 'POST',
+    body: JSON.stringify(body ?? {})
+  })
 }
 
 /** `POST /api/admin/server-settings/restart` — refuses `409 restart.busy`
@@ -915,7 +923,7 @@ export const httpApi = {
   adminSetWatchSettings,
   adminSetOidcSettings,
   adminSetPathsSettings,
-  adminClearServerSettings,
+  adminCheckServerSettings,
   adminRestartServer,
   adminListUsers,
   adminCreateUser,

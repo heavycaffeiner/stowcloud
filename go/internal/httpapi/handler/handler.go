@@ -61,6 +61,11 @@ type Deps struct {
 	// so changing one side of that pair moves only this one.
 	SMBConfigDir string
 
+	// DataDir is where the databases live. Used to resolve the default homes
+	// root when a settings check has to probe a directory the request did not
+	// name.
+	DataDir string
+
 	// Events upgrades the change-channel socket for an authenticated user.
 	Events EventsHandler
 

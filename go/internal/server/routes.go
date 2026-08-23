@@ -191,8 +191,10 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		// in which key they write, and a section nobody recognises is refused
 		// rather than created.
 		{Method: "PATCH", Pattern: "/api/admin/server-settings/{section}", Req: selfAdmin, Handler: handler.AdminServerSettingsSection(d)},
-		{Method: "DELETE", Pattern: "/api/admin/server-settings/{section}", Req: selfAdmin, Handler: handler.AdminServerSettingsSection(d)},
 		{Method: "POST", Pattern: "/api/admin/server-settings/restart", Req: selfAdmin, Handler: handler.AdminServerSettingsRestart(d)},
+		// The dry run. Same probes as the save, storing nothing, so an
+		// administrator can see what a change would do before it does it.
+		{Method: "POST", Pattern: "/api/admin/server-settings/{section}/check", Req: selfAdmin, Handler: handler.AdminServerSettingsCheck(d)},
 
 		{Method: "GET", Pattern: "/api/admin/shares", Req: selfAdmin, Handler: handler.Shares(d)},
 		{Method: "POST", Pattern: "/api/admin/shares", Req: selfAdmin, Handler: handler.Shares(d)},

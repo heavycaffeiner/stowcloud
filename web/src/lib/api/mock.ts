@@ -59,6 +59,8 @@ import {
   type SettingsField,
   type SettingsSnapshot,
   type SettingsSectionId,
+  type SettingsCheckResult,
+  type SettingsFinding,
   type ShareLinkCreateReq,
   type ShareLinkInfo,
   type ShareLinkPatchReq,
@@ -1597,36 +1599,52 @@ async function adminSetSmbSettings(req: SmbSettingsReq): Promise<ApplyOutcome> {
   return { applied_live: !enabledChanged, restart_required: enabledChanged }
 }
 
-/** Reverting drops the group's override and puts the file's values back,
- *  exactly as `DELETE /api/admin/server-settings/{section}` does. */
-async function adminClearServerSettings(section: SettingsSectionId): Promise<ApplyOutcome> {
+/** The groups this process cannot move while running, matching the server. */
+const RESTART_REQUIRED_SECTIONS = new Set<SettingsSectionId>([
+  'db',
+  'paths',
+  'homes',
+  'smb',
+  'watch',
+  'symlink-policy',
+  'oidc'
+])
+
+/** The dry run. Mirrors the server's probes in shape, not in depth: a mock
+ *  has no filesystem to write into, so it answers the checks that are pure
+ *  rules and reports the rest as clean. */
+async function adminCheckServerSettings(
+  section: SettingsSectionId,
+  body: unknown
+): Promise<SettingsCheckResult> {
   await delay(30)
-  if (!(section in MOCK_SECTION_RESTORE)) {
-    throw new ApiError(404, {
-      code: 'fs.not_found',
-      message: 'not found',
-      detail: { reason: `unknown settings section: ${section}`, reason_key: 'settings.unknown_section' }
-    })
+  const b = (body ?? {}) as Record<string, unknown>
+  const findings: SettingsFinding[] = []
+  const hosts = b.app_hosts
+  if (Array.isArray(hosts)) {
+    if (hosts.length === 0) {
+      findings.push({ level: 'block', field: 'app_hosts', reason_key: 'settings.host_list_empty' })
+    } else if (!hosts.includes(location.hostname)) {
+      findings.push({
+        level: 'block',
+        field: 'app_hosts',
+        reason_key: 'settings.would_lock_you_out',
+        reason_params: { host: location.hostname }
+      })
+    }
   }
-  MOCK_SECTION_RESTORE[section]()
-  mockOverriddenSections.delete(section)
-  return section === 'search' || section === 'archive'
-    ? { applied_live: true, restart_required: false }
-    : { applied_live: false, restart_required: true }
+  if (b.service_gid === 0) {
+    findings.push({ level: 'block', field: 'service_gid', reason_key: 'settings.gid_zero_is_root' })
+  }
+  if (findings.length === 0) findings.push({ level: 'ok', reason_key: 'settings.check_passed' })
+  return {
+    section,
+    ok: !findings.some((f) => f.level === 'block'),
+    restart_required: RESTART_REQUIRED_SECTIONS.has(section),
+    findings
+  }
 }
 
-const MOCK_SECTION_RESTORE: Record<SettingsSectionId, () => void> = {
-  network: () => (mockServerSettings.network = { ...mockFileSettings.network }),
-  db: () => (mockServerSettings.db = { ...mockFileSettings.db }),
-  'symlink-policy': () => (mockServerSettings.symlink_policy = mockFileSettings.symlink_policy),
-  homes: () => (mockServerSettings.homes = { ...mockFileSettings.homes }),
-  smb: () => (mockServerSettings.smb = { ...mockFileSettings.smb }),
-  search: () => (mockServerSettings.search = { ...mockFileSettings.search }),
-  archive: () => (mockServerSettings.archive = { ...mockFileSettings.archive }),
-  watch: () => (mockServerSettings.watch = { ...mockFileSettings.watch }),
-  paths: () => (mockServerSettings.paths = { ...mockFileSettings.paths }),
-  oidc: () => (mockServerSettings.oidc = { ...mockFileSettings.oidc })
-}
 
 /** Zero rejects every search from every user the moment it is applied, so the
  *  real bridge refuses it where it is typed and so does this. */
@@ -2539,7 +2557,7 @@ export const mockApi = {
   adminSetWatchSettings,
   adminSetOidcSettings,
   adminSetPathsSettings,
-  adminClearServerSettings,
+  adminCheckServerSettings,
   adminRestartServer,
   adminListUsers,
   adminCreateUser,

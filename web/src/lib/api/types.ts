@@ -868,8 +868,7 @@ export interface SettingsField {
   readonly_reason_key: string | null
 }
 
-/** `DELETE /api/admin/server-settings/{section}` — the ten groups whose
- *  override can be reverted. */
+/** The setting groups this server recognises. */
 export type SettingsSectionId =
   | 'network'
   | 'db'
@@ -881,6 +880,28 @@ export type SettingsSectionId =
   | 'watch'
   | 'paths'
   | 'oidc'
+  | 'rate'
+
+/** One thing the server learned by trying the change rather than describing
+ *  it. `block` refuses the save, `warn` is saved and reported, `ok` is a
+ *  probe that came back clean and is worth showing. */
+export interface SettingsFinding {
+  level: 'block' | 'warn' | 'ok'
+  /** The input to put this beside, absent when it is about the whole group. */
+  field?: string
+  reason_key: string
+  reason_params?: Record<string, string>
+}
+
+/** `POST /api/admin/server-settings/{section}/check` — the dry run. Runs the
+ *  same probes a save runs and stores nothing, so `ok: false` here means a
+ *  save of the same body is refused. */
+export interface SettingsCheckResult {
+  section: SettingsSectionId
+  ok: boolean
+  restart_required: boolean
+  findings: SettingsFinding[]
+}
 
 export interface SettingsSnapshot {
   fields: SettingsField[]
