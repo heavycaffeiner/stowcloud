@@ -99,7 +99,12 @@ func Shares(d Deps) http.HandlerFunc {
 		if req.Name == "" || req.Host == "" {
 			return apierr.BadRequest("admin.share_fields", "name")
 		}
+		actor, aerr := requireAdmin(r, d.Auth)
+		if aerr != nil {
+			return aerr
+		}
 		share, err := d.Core.CreateShare(r.Context(), core.ShareSpec{Name: req.Name, Host: req.Host})
+		record(r, d, actor, "share.create", req.Name, err == nil)
 		if err != nil {
 			return err
 		}
@@ -148,8 +153,14 @@ func ShareDelete(d Deps) http.HandlerFunc {
 		if err != nil {
 			return apierr.BadRequest("admin.share_id", "id")
 		}
-		if err := d.Core.DeleteShare(r.Context(), shareIDOf(id)); err != nil {
-			return err
+		actor, aerr2 := requireAdmin(r, d.Auth)
+		if aerr2 != nil {
+			return aerr2
+		}
+		derr := d.Core.DeleteShare(r.Context(), shareIDOf(id))
+		record(r, d, actor, "share.delete", strconv.FormatInt(id, 10), derr == nil)
+		if derr != nil {
+			return derr
 		}
 		sharesChanged(r, d)
 		w.WriteHeader(http.StatusNoContent)

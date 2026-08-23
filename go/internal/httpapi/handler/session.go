@@ -307,6 +307,11 @@ func searchTierOf(d Deps) string {
 func Logout(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
 		if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" {
+			// The caller before the session is revoked, because afterwards
+			// there is nobody to attribute the row to.
+			if uid, uerr := userOf(r); uerr == nil {
+				record(r, d, int64(uid), "logout", "", true)
+			}
 			_ = d.Auth.RevokeSession(r.Context(), secret.New([]byte(c.Value))) //nolint:errcheck // a session that fails to revoke is expired anyway.
 		}
 		http.SetCookie(w, &http.Cookie{

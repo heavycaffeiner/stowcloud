@@ -60,10 +60,16 @@ func AdminUsers(d Deps) http.HandlerFunc {
 		if req.Name == "" || req.Password == "" {
 			return apierr.BadRequest("admin.user_fields", "name")
 		}
+		actor, aerr := requireAdmin(r, d.Auth)
+		if aerr != nil {
+			return aerr
+		}
 		id, err := d.Auth.CreateUser(r.Context(), req.Name, req.Name, secret.New([]byte(req.Password)))
 		if err != nil {
+			record(r, d, actor, "user.create", req.Name, false)
 			return err
 		}
+		record(r, d, actor, "user.create", req.Name, true)
 		one, err := adminUserByID(r.Context(), d, id)
 		if err != nil {
 			return err
@@ -97,8 +103,10 @@ func AdminUser(d Deps) http.HandlerFunc {
 				}
 			}
 			if derr := d.Auth.DeleteUser(r.Context(), id); derr != nil {
+				record(r, d, actor, "user.delete", strconv.FormatInt(id, 10), false)
 				return derr
 			}
+			record(r, d, actor, "user.delete", strconv.FormatInt(id, 10), true)
 			w.WriteHeader(http.StatusNoContent)
 			return nil
 		}
@@ -121,12 +129,19 @@ func AdminUser(d Deps) http.HandlerFunc {
 					Key:     "admin.cannot_disable_self",
 				}
 			}
+			event := "user.enable"
 			if *patch.Disabled {
-				if aerr := d.Auth.DisableAccount(r.Context(), id); aerr != nil {
-					return aerr
-				}
-			} else if aerr := d.Auth.EnableAccount(r.Context(), id); aerr != nil {
-				return aerr
+				event = "user.disable"
+			}
+			var derr error
+			if *patch.Disabled {
+				derr = d.Auth.DisableAccount(r.Context(), id)
+			} else {
+				derr = d.Auth.EnableAccount(r.Context(), id)
+			}
+			record(r, d, actor, event, strconv.FormatInt(id, 10), derr == nil)
+			if derr != nil {
+				return derr
 			}
 		}
 		if patch.QuotaBytes != nil {

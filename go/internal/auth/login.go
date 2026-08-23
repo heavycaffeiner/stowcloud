@@ -67,6 +67,10 @@ func (s *Service) Login(ctx context.Context, req LoginRequest, sessionTTL time.D
 		if decoy, derr := s.decoyPHC(ctx); derr == nil {
 			s.Verify(ctx, decoy, req.Password) //nolint:errcheck // the answer is discarded by design; only the cost is wanted.
 		}
+		// Recorded with no actor, because there is no account to attribute it
+		// to. The name that was tried goes in the target: somebody guessing at
+		// account names is exactly what this log is read to notice.
+		s.recordFailedLogin(ctx, sql.NullInt64{}, req)
 		return Session{}, ErrCredentials
 	}
 	if err != nil {
@@ -78,6 +82,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest, sessionTTL time.D
 		return Session{}, err
 	}
 	if !ok {
+		s.recordFailedLogin(ctx, sql.NullInt64{Int64: user.id, Valid: true}, req)
 		return Session{}, ErrCredentials
 	}
 
@@ -114,11 +119,31 @@ func (s *Service) Login(ctx context.Context, req LoginRequest, sessionTTL time.D
 	if err != nil {
 		return Session{}, err
 	}
-	if err := s.audit(ctx, sql.NullInt64{Int64: user.id, Valid: true},
-		"login", "", req.IP, req.UA, 1, ""); err != nil {
-		return Session{}, err
+
+	// The session exists from here, so a failure to record it must not be
+	// reported as a failure to sign in. It used to be: the audit write's error
+	// was returned, the caller answered 401, and the person was told their
+	// credentials were wrong while holding a session that worked.
+	//
+	// Losing the row is the lesser harm and it is not silent: it is logged
+	// where an operator sees it, and the login itself is what the caller
+	// asked about.
+	if aerr := s.audit(ctx, sql.NullInt64{Int64: user.id, Valid: true},
+		"login", "", req.IP, req.UA, auditOK, ""); aerr != nil {
+		s.warnf("the login was not recorded in the audit log", aerr)
 	}
 	return sess, nil
+}
+
+// recordFailedLogin writes the refusal.
+//
+// A log with only the successes in it answers the wrong question: what an
+// operator comes to it for is the attempt that should not have been made, and
+// a run of them against one name is the thing worth seeing.
+func (s *Service) recordFailedLogin(ctx context.Context, actor sql.NullInt64, req LoginRequest) {
+	if err := s.audit(ctx, actor, "login", req.Name, req.IP, req.UA, auditFailed, ""); err != nil {
+		s.warnf("a failed login was not recorded in the audit log", err)
+	}
 }
 
 // hasTOTP reports whether an account has a second factor enrolled.

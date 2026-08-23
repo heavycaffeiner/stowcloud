@@ -14,6 +14,7 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 
@@ -38,6 +39,11 @@ type Config struct {
 	// change into the live ACL engine. It is wired by the layer that owns the
 	// engine, keeping auth free of an ACL dependency.
 	OnMembership func()
+
+	// Logger records what this package could not do without failing the thing
+	// the caller asked for. Nil takes the default, so a caller that wires
+	// nothing still gets the line rather than silence.
+	Logger *slog.Logger
 }
 
 // Service is the auth subsystem. It is safe for concurrent use: the gate, the
@@ -73,6 +79,8 @@ type Service struct {
 	// ratelimit bounds login attempts per client address.
 	ratelimit *limiter
 
+	log *slog.Logger
+
 	// decoy is a PHC hash of a random done-once at startup, verified against
 	// for an unknown account so its cost and timing match a real one.
 	decoyOnce sync.Once
@@ -89,6 +97,10 @@ func New(cfg Config) *Service {
 	if clk == nil {
 		clk = clock.System()
 	}
+	log := cfg.Logger
+	if log == nil {
+		log = slog.Default()
+	}
 	return &Service{
 		st:           cfg.Store,
 		dir:          cfg.StoreDir,
@@ -98,7 +110,15 @@ func New(cfg Config) *Service {
 		passdb:       cfg.PassdbPath,
 		onMembership: cfg.OnMembership,
 		ratelimit:    newLimiter(loginWindow, loginMaxAttempts, clk.Nanos),
+		log:          log,
 	}
+}
+
+// warnf records a failure that must not fail the operation that hit it. The
+// pattern is always the same: the thing the caller asked for has happened, and
+// the bookkeeping after it did not.
+func (s *Service) warnf(msg string, err error) {
+	s.log.Warn(msg, "error", err)
 }
 
 // SetSMBPublisher wires the whole-configuration publisher.

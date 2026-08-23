@@ -126,6 +126,20 @@ type Deps struct {
 // ConfigShare reports whether the config file declares this share.
 func (d Deps) ConfigShare(name string) bool { return d.ConfigShares[name] }
 
+// record writes one audit row for an administrator's action.
+//
+// After the write, never instead of it: the change has already happened, so a
+// failure to record it is a hole in the log rather than a reason to tell the
+// caller their change did not land. The account, the address and the agent all
+// come from the request, which is the only place they exist.
+func record(r *http.Request, d Deps, actor int64, event, target string, ok bool) {
+	if d.Auth == nil {
+		return
+	}
+	d.Auth.Record(r.Context(), actor, event, target,
+		mw.ClientFrom(r.Context()).String(), r.UserAgent(), ok)
+}
+
 // ActiveWork is what a restart would interrupt.
 type ActiveWork struct {
 	Uploads int

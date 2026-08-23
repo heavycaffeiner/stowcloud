@@ -178,5 +178,6 @@ FROM session WHERE user = ? ORDER BY last_seen_ns DESC`
 // reading one into a plain string turned the whole log into a server error.
 const sqlReadAuditPage = `
 SELECT rowid, ts_ns, actor, event,
-       COALESCE(target, ''), COALESCE(ip, ''), COALESCE(ua, ''), result
+       COALESCE(target, ''), COALESCE(ip, ''), COALESCE(ua, ''), result,
+       COALESCE(detail, '')
 FROM audit ORDER BY rowid DESC LIMIT ?`

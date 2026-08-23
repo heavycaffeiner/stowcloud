@@ -54,7 +54,8 @@ type adminGrant struct {
 // AdminGrants answers GET and POST /api/admin/grants.
 func AdminGrants(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		if _, err := requireAdmin(r, d.Auth); err != nil {
+		actor, err := requireAdmin(r, d.Auth)
+		if err != nil {
 			return err
 		}
 
@@ -108,6 +109,10 @@ func AdminGrants(d Deps) http.HandlerFunc {
 			Subpath: path, Allow: allow, Deny: deny,
 			Inherit: req.Inherit, Label: req.Label,
 		}, d.Clock.Nanos())
+		// Recorded either way. A grant is who may read what, so an attempt that
+		// was refused is as much a thing an operator reads this log for as one
+		// that succeeded.
+		record(r, d, actor, "grant.create", grantTarget(req.User, req.Group, req.Share), cerr == nil)
 		if cerr != nil {
 			if errors.Is(cerr, acl.ErrNoSuchGrant) {
 				return apierr.BadRequest("admin.grant_principal", "user")
@@ -124,7 +129,8 @@ func AdminGrants(d Deps) http.HandlerFunc {
 // AdminGrant answers PATCH and DELETE /api/admin/grants/{id}.
 func AdminGrant(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		if _, err := requireAdmin(r, d.Auth); err != nil {
+		actor, err := requireAdmin(r, d.Auth)
+		if err != nil {
 			return err
 		}
 		id, perr := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -133,7 +139,10 @@ func AdminGrant(d Deps) http.HandlerFunc {
 		}
 
 		if r.Method == http.MethodDelete {
-			if derr := acl.DeleteGrant(r.Context(), d.State.SQL(), id); derr != nil {
+			derr := acl.DeleteGrant(r.Context(), d.State.SQL(), id)
+			// A revocation is the entry an operator comes to this log for.
+			record(r, d, actor, "grant.delete", strconv.FormatInt(id, 10), derr == nil)
+			if derr != nil {
 				return grantError(derr)
 			}
 			if rerr := grantsChanged(r, d); rerr != nil {
@@ -161,7 +170,9 @@ func AdminGrant(d Deps) http.HandlerFunc {
 		}
 		inherit := patch.Inherit != nil && *patch.Inherit
 
-		if uerr := acl.UpdateGrant(r.Context(), d.State.SQL(), id, allow, deny, inherit); uerr != nil {
+		uerr := acl.UpdateGrant(r.Context(), d.State.SQL(), id, allow, deny, inherit)
+		record(r, d, actor, "grant.update", strconv.FormatInt(id, 10), uerr == nil)
+		if uerr != nil {
 			return grantError(uerr)
 		}
 		if rerr := grantsChanged(r, d); rerr != nil {
@@ -179,6 +190,15 @@ func AdminGrant(d Deps) http.HandlerFunc {
 		}
 		return grantError(acl.ErrNoSuchGrant)
 	})
+}
+
+// grantTarget names what a grant was about, for the log.
+func grantTarget(user, group, share int64) string {
+	who := "group " + strconv.FormatInt(group, 10)
+	if user != 0 {
+		who = "user " + strconv.FormatInt(user, 10)
+	}
+	return who + " on share " + strconv.FormatInt(share, 10)
 }
 
 func grantError(err error) error {
