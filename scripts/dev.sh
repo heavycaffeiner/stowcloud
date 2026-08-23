@@ -192,18 +192,39 @@ fi
 
 TOKEN=$(grep -oE 'setup token \(valid[^)]*\): [a-f0-9]+' "$DIR/log" | tail -1 | awk '{print $NF}')
 
+# Whether the account already exists, asked of the server rather than inferred
+# from the token line: the token is minted at startup and stays in the log
+# after it has been spent, so printing it because it is there is how somebody
+# is handed a token that will answer "setup is already complete".
+# Addressed by the name the server serves, resolved to loopback: the host
+# guard refuses a request that arrives under an address it was not configured
+# for, which is the guard working rather than a fault, and asking by IP gets
+# "misdirected request" instead of an answer.
+SETUP_REQUIRED=$(curl -sk --max-time 5 \
+  --resolve "$TSNAME:$PORT:127.0.0.1" \
+  "https://$TSNAME:$PORT/api/setup" 2>/dev/null)
+
 echo
 echo "  https://$TSNAME:$PORT/"
 [ -n "$TSIP" ] && echo "  https://$TSIP:$PORT/    (the certificate names $TSNAME, so this one warns)"
 echo
-if [ -n "$TOKEN" ]; then
-  echo "  first run: the setup screen wants this token, and it expires in 15 minutes"
-  echo "    $TOKEN"
-  echo
-  echo "  a token that has expired is a restart away: bash scripts/dev.sh"
-else
-  echo "  already set up; sign in with the account made on the first run"
-fi
+case "$SETUP_REQUIRED" in
+  *'"required":true'*)
+    echo "  first run: the setup screen wants this token, and it expires in 15 minutes"
+    echo "    $TOKEN"
+    echo
+    echo "  a token that has expired is a restart away: bash scripts/dev.sh"
+    ;;
+  *'"required":false'*)
+    echo "  already set up; sign in with the account that was created"
+    echo "  to start over: bash scripts/dev.sh --fresh"
+    ;;
+  *)
+    # The server answered something else, or nothing. Saying so beats printing
+    # a token that may already be spent.
+    echo "  the setup state could not be read; check $DIR/log"
+    ;;
+esac
 echo
 if [ -n "$CERT_TRUSTED" ]; then
   echo "  The certificate is the tailnet CA's, so no browser warns."
