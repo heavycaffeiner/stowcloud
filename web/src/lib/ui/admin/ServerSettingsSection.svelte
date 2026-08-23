@@ -63,6 +63,23 @@
     return snapshot?.fields.find((f) => f.key === key)
   }
 
+  // The paths section: everything already open when the process started, so
+  // every one is reported rather than offered.
+  const PATH_KEYS = ['data_dir', 'smb.config_dir', 'bind']
+
+  // What the server says an empty value means, for the two fields where empty
+  // is a setting rather than a gap. Nothing renders when it sent no key.
+  // The keys the server can send that no call site here shows literally:
+  //   /* i18n */ 'settings.empty_trusts_no_proxy'
+  //   /* i18n */ 'settings.empty_disables_netbios_name'
+  //   /* i18n */ 'settings.readonly_bind_address'
+  //   /* i18n */ 'settings.readonly_data_dir'
+  //   /* i18n */ 'settings.readonly_needs_restart_oidc'
+  function emptyNote(key: string): string | null {
+    const f = field(key)
+    return f?.empty_means_key ? t(f.empty_means_key) : null
+  }
+
   function sourceLabel(src: SettingsField['source']): string {
     if (src === 'admin_override') return t('server.admin_override')
     if (src === 'config_file') return 'sc.toml'
@@ -429,62 +446,6 @@
     }
   }
 
-  // ── db (restart-required) ──
-
-  let dbSizeGuard = $state(false)
-  // The wire is bytes; these two fields are MB, like every other size input.
-  // A stored value that is not a whole number of MB is rounded to one on load,
-  // so saving without editing writes the rounded value back — the guards are
-  // coarse thresholds, and a screen that cannot show its own value is worse.
-  let dbMaxMb = $state('')
-  let dbMinFreeMb = $state('')
-  let dbSaving = $state(false)
-  let dbError = $state<string | null>(null)
-  let dbOutcome = $state<ApplyOutcome | null>(null)
-
-  async function saveDb(): Promise<void> {
-    dbError = null
-    dbOutcome = null
-    const maxMb = Number(dbMaxMb)
-    const minFreeMb = Number(dbMinFreeMb)
-    if (!Number.isInteger(maxMb) || maxMb < 0 || !Number.isInteger(minFreeMb) || minFreeMb < 0) {
-      dbError = t('server.every_value_must_integer_0_2')
-      return
-    }
-    const maxBytes = maxMb * BYTES_PER_MB
-    const minFree = minFreeMb * BYTES_PER_MB
-    dbSaving = true
-    try {
-      dbOutcome = await api.adminSetDbSettings({ size_guard: dbSizeGuard, max_bytes: maxBytes, min_free_bytes: minFree })
-      await load()
-    } catch (err) {
-      dbError = describeApiError(err, t('server.could_not_save_database_size'))
-    } finally {
-      dbSaving = false
-    }
-  }
-
-  // ── symlink policy (restart-required) ──
-
-  let symlinkPolicy = $state<'deny' | 'within_share' | 'follow'>('deny')
-  let symlinkSaving = $state(false)
-  let symlinkError = $state<string | null>(null)
-  let symlinkOutcome = $state<ApplyOutcome | null>(null)
-
-  async function saveSymlinkPolicy(): Promise<void> {
-    symlinkError = null
-    symlinkOutcome = null
-    symlinkSaving = true
-    try {
-      symlinkOutcome = await api.adminSetSymlinkPolicySettings({ policy: symlinkPolicy })
-      await load()
-    } catch (err) {
-      symlinkError = describeApiError(err, t('server.could_not_save_symlink_policy'))
-    } finally {
-      symlinkSaving = false
-    }
-  }
-
   // ── homes (restart-required) ──
 
   let homesEnabled = $state(false)
@@ -538,129 +499,6 @@
       watchError = describeApiError(err, t('server.could_not_save_file_watch'))
     } finally {
       watchSaving = false
-    }
-  }
-
-  // ── single sign-on (restart-required, all of it) ──
-  //
-  // The eight rows §6-4 of `docs/proposals/stowcloud-0-oidc-login.md` marks
-  // UI-editable. The other two `oidc.*` settings fall through to the read-only
-  // list below with the server's own reason attached, and that is deliberate
-  // rather than an omission: `oidc.client_secret_file` names a file holding a
-  // secret, and an admin override of `oidc.local_password_login` would beat
-  // `sc.toml` on every boot, so writing `deny` here and then losing the
-  // provider would lock out everybody including whoever set it.
-  //
-  // `oidc.smb_policy` has exactly one accepted value, so there is no control
-  // for it. A select with a single option is a control that cannot be used;
-  // the hint under the form says what the value means instead.
-
-  let oidcEnabled = $state(false)
-  let oidcIssuer = $state('')
-  let oidcClientId = $state('')
-  let oidcRedirectUris = $state('')
-  let oidcScopes = $state('')
-  let oidcDisplayName = $state('')
-  let oidcAllowPrivate = $state(false)
-  let oidcSaving = $state(false)
-  let oidcError = $state<string | null>(null)
-  let oidcOutcome = $state<ApplyOutcome | null>(null)
-
-  async function saveOidc(): Promise<void> {
-    oidcError = null
-    oidcOutcome = null
-    // Pre-checked here as well as server-side, for the two rules the browser
-    // can actually see. The server's answer to a bad redirect URI is not an
-    // error at boot: it keeps single sign-on switched off while the rest of
-    // the server runs normally, so an admin who typed one and pressed Save
-    // would otherwise see "saved" and find out at the next restart.
-    //
-    // The client secret file is deliberately not among them: only the server
-    // can tell whether a path is readable, so that one comes back as
-    // `settings.oidc_secret_file_missing` and renders from the catalogue like
-    // any other server refusal.
-    const redirectUris = strToArr(oidcRedirectUris)
-    if (oidcEnabled) {
-      if (!redirectUris.length || redirectUris.some((u) => !u.startsWith('https://'))) {
-        oidcError = t('server.redirect_uri_must_start_https')
-        return
-      }
-      const hosts = strToArr(netAppHosts).map((h) => h.split(':')[0].toLowerCase())
-      const unserved = redirectUris.filter(
-        (u) => !hosts.includes(authorityOf(u).split(':')[0].toLowerCase())
-      )
-      if (unserved.length) {
-        oidcError = t('server.redirect_host_must_be_in_app_hosts', { value: unserved.join(', ') })
-        return
-      }
-      if (!oidcIssuer.trim() || !oidcClientId.trim()) {
-        oidcError = t('server.enter_issuer_client_id')
-        return
-      }
-    }
-    const req: OidcSettingsReq = {
-      enabled: oidcEnabled,
-      issuer: oidcIssuer.trim(),
-      client_id: oidcClientId.trim(),
-      redirect_uris: redirectUris,
-      scopes: strToArr(oidcScopes),
-      display_name: oidcDisplayName.trim(),
-      allow_private_endpoints: oidcAllowPrivate,
-      smb_policy: 'block'
-    }
-    oidcSaving = true
-    try {
-      oidcOutcome = await api.adminSetOidcSettings(req)
-      await load()
-    } catch (err) {
-      oidcError = describeApiError(err, t('server.could_not_save_single_sign'))
-    } finally {
-      oidcSaving = false
-    }
-  }
-
-  // ── bootstrap paths (restart-required) ──
-  //
-  // The one group where a wrong value costs more than a wrong setting: an
-  // unwritable `data_dir`, or one that doesn't already hold the databases,
-  // means the next start comes up with no accounts at all. The server refuses
-  // those outright (422 with a Korean reason, shown verbatim), so this form's
-  // own job is just to make the admin say yes once before sending — the same
-  // reason the restart button is two-step.
-
-  let pathsDataDir = $state('')
-  let pathsMasterKeyFile = $state('')
-  let pathsSmbConfigDir = $state('')
-  let pathsSaving = $state(false)
-  let pathsError = $state<string | null>(null)
-  let pathsOutcome = $state<ApplyOutcome | null>(null)
-  let pathsConfirmOpen = $state(false)
-
-  function openPathsConfirm(): void {
-    pathsError = null
-    pathsOutcome = null
-    if (!pathsDataDir.trim() || !pathsSmbConfigDir.trim()) {
-      pathsError = t('server.data_directory_smb_config_directory')
-      return
-    }
-    pathsConfirmOpen = true
-  }
-
-  async function savePaths(): Promise<void> {
-    pathsConfirmOpen = false
-    const req: PathsSettingsReq = {
-      data_dir: pathsDataDir.trim(),
-      master_key_file: pathsMasterKeyFile.trim() || null,
-      smb_config_dir: pathsSmbConfigDir.trim()
-    }
-    pathsSaving = true
-    try {
-      pathsOutcome = await api.adminSetPathsSettings(req)
-      await load()
-    } catch (err) {
-      pathsError = describeApiError(err, t('server.could_not_save_path_settings'))
-    } finally {
-      pathsSaving = false
     }
   }
 
@@ -797,11 +635,7 @@
       netPublicOrigins = arrToStr(field('public_origins')?.value)
       netOriginsLoaded = strToArr(netPublicOrigins)
 
-      dbSizeGuard = Boolean(field('db.size_guard')?.value)
-      dbMaxMb = String(bytesToMb(Number(field('db.max_bytes')?.value ?? 0)))
-      dbMinFreeMb = String(bytesToMb(Number(field('db.min_free_bytes')?.value ?? 0)))
 
-      symlinkPolicy = (field('symlink_policy')?.value as 'deny' | 'within_share' | 'follow') ?? 'deny'
 
       homesEnabled = Boolean(field('homes.enabled')?.value)
       homesRoot = String(field('homes.root')?.value ?? '')
@@ -810,17 +644,6 @@
       watchHotSetMax = String(field('watch.hot_set_max')?.value ?? '')
       watchFullThreshold = String(field('watch.full_threshold')?.value ?? '')
 
-      oidcEnabled = Boolean(field('oidc.enabled')?.value)
-      oidcIssuer = String(field('oidc.issuer')?.value ?? '')
-      oidcClientId = String(field('oidc.client_id')?.value ?? '')
-      oidcRedirectUris = arrToStr(field('oidc.redirect_uris')?.value)
-      oidcScopes = arrToStr(field('oidc.scopes')?.value)
-      oidcDisplayName = String(field('oidc.display_name')?.value ?? '')
-      oidcAllowPrivate = Boolean(field('oidc.allow_private_endpoints')?.value)
-
-      pathsDataDir = String(field('data_dir')?.value ?? '')
-      pathsMasterKeyFile = String(field('master_key_file')?.value ?? '')
-      pathsSmbConfigDir = String(field('smb.config_dir')?.value ?? '')
     } catch {
       loadError = t('server.could_not_load_server_settings')
     } finally {
@@ -927,6 +750,9 @@
       <Switch checked={smbEnabled} onchange={(v) => (smbEnabled = v)} label={t('server.enable_smb')} />
       <TextField label={t('server.workgroup')} bind:value={smbWorkgroup} />
       <TextField label={t('server.smb_server_name')} bind:value={smbServerName} />
+      {#if !smbServerName.trim() && emptyNote('smb.server_name')}
+        <p class="sc-server-settings__empty-note">{emptyNote('smb.server_name')}</p>
+      {/if}
       <TextField label={t('server.service_account_name')} bind:value={smbServiceUser} />
       <Switch checked={smbAllowPublicBind} onchange={(v) => (smbAllowPublicBind = v)} label={t('server.allow_access_from_outside_private')} />
       <SelectOutlined label={t('server.smb_access_2fa_users')} width="100%" options={SMB_TOTP_OPTIONS} bind:value={smbTotpPolicy} />
@@ -988,7 +814,6 @@
       <TextField label={t('server.concurrent_slow_searches')} bind:value={searchMaxSlow} />
       <TextField label={t('server.fast_search_timeout_ms')} bind:value={searchDeadlineFast} />
       <TextField label={t('server.slow_search_timeout_ms')} bind:value={searchDeadlineSlow} />
-      <TextField label={t('server.requests_per_minute')} bind:value={searchRate} />
       <Button variant="filled" onclick={saveSearch} loading={searchSaving}>{t('common.save')}</Button>
       {@render checkButton('search', searchBody)}
     </div>
@@ -1014,19 +839,10 @@
       <p class="sc-admin-section__hint">{t('server.bind_https_hint')}</p>
       <TextField label={t('server.app_hosts_comma_separated')} bind:value={netAppHosts} />
       <TextField label={t('server.content_hosts_comma_separated')} bind:value={netContentHosts} />
-      <TextField label={t('server.allowed_origins_cors_comma_separated')} bind:value={netAllowedOrigins} />
       <TextField label={t('server.trusted_proxies_comma_separated')} bind:value={netTrustedProxies} />
-      <TextField label={t('server.public_origins_comma_separated')} bind:value={netPublicOrigins} />
-      <p class="sc-admin-section__hint">{t('server.public_origins_hint')}</p>
-      {#if !strToArr(netPublicOrigins).length}
-        <p class="sc-admin-section__hint">{t('server.no_public_origin_declared')}</p>
+      {#if !netTrustedProxies.trim() && emptyNote('trusted_proxies')}
+        <p class="sc-server-settings__empty-note">{emptyNote('trusted_proxies')}</p>
       {/if}
-      {#if netUnservedOrigins.length}
-        <p class="sc-admin-section__hint">
-          {t('server.public_origin_not_in_app_hosts', { value: netUnservedOrigins.join(', ') })}
-        </p>
-      {/if}
-      {@render pendingRows('network')}
       <Button variant="filled" onclick={openNetworkSave} loading={netSaving}>{t('common.save')}</Button>
       {@render checkButton('network', networkBody)}
     </div>
@@ -1034,46 +850,6 @@
     <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart_listener')}</p>
     {#if netError}<p class="sc-admin-section__error" role="alert">{netError}</p>{/if}
     {#if netOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(netOutcome)}</p>{/if}
-
-    <h4 class="sc-admin-section__subhead">{t('server.database_size_guard')}</h4>
-    <div class="sc-server-settings__form">
-      <Switch checked={dbSizeGuard} onchange={(v) => (dbSizeGuard = v)} label={t('server.enable_size_guard')} />
-      <TextField label={t('server.maximum_size_mb')} bind:value={dbMaxMb} />
-      <TextField label={t('server.minimum_free_space_mb')} bind:value={dbMinFreeMb} />
-      <Button variant="filled" onclick={saveDb} loading={dbSaving}>{t('common.save')}</Button>
-      {@render pendingRows('db')}
-    </div>
-    <p class="sc-admin-section__hint">
-      {t('server.takes_effect_after_restart_currently', {
-        max: formatBytes((Number(dbMaxMb) || 0) * BYTES_PER_MB),
-        free: formatBytes((Number(dbMinFreeMb) || 0) * BYTES_PER_MB)
-      })}
-    </p>
-    {#if dbError}<p class="sc-admin-section__error" role="alert">{dbError}</p>{/if}
-    {#if dbOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(dbOutcome)}</p>{/if}
-
-    <h4 class="sc-admin-section__subhead">{t('server.symlink_policy')}</h4>
-    <div class="sc-server-settings__form">
-      <SelectOutlined label={t('server.policy')} width="100%" options={SYMLINK_OPTIONS} bind:value={symlinkPolicy} />
-      <Button variant="filled" onclick={saveSymlinkPolicy} loading={symlinkSaving}>{t('common.save')}</Button>
-      {@render pendingRows('symlink-policy')}
-    </div>
-    <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart')}</p>
-    {#if symlinkError}<p class="sc-admin-section__error" role="alert">{symlinkError}</p>{/if}
-    {#if symlinkOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(symlinkOutcome)}</p>{/if}
-
-    <h4 class="sc-admin-section__subhead">{t('server.home_folders')}</h4>
-    <div class="sc-server-settings__form">
-      <Switch checked={homesEnabled} onchange={(v) => (homesEnabled = v)} label={t('server.enable_home_folders')} />
-      <TextField label={t('server.root_path')} bind:value={homesRoot} placeholder="/srv/homes" />
-      <Button variant="filled" onclick={saveHomes} loading={homesSaving}>{t('common.save')}</Button>
-      {@render pendingRows('homes')}
-      {@render checkButton('homes', homesBody)}
-    </div>
-    {@render checkPanel('homes', homesBody)}
-    <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart')}</p>
-    {#if homesError}<p class="sc-admin-section__error" role="alert">{homesError}</p>{/if}
-    {#if homesOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(homesOutcome)}</p>{/if}
 
     <h4 class="sc-admin-section__subhead">{t('server.file_watching')}</h4>
     <p class="sc-admin-section__hint">{t('server.what_file_watching_is_for')}</p>
@@ -1093,73 +869,35 @@
     {#if watchOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(watchOutcome)}</p>{/if}
 
     <h4 class="sc-admin-section__subhead">{t('settings.single_sign_on')}</h4>
-    <div class="sc-server-settings__form">
-      <Switch checked={oidcEnabled} onchange={(v) => (oidcEnabled = v)} label={t('server.enable_single_sign')} />
-      <TextField label={t('server.issuer_url')} bind:value={oidcIssuer} placeholder="https://idp.example.com/realms/main" />
-      <TextField label={t('server.client_id')} bind:value={oidcClientId} />
-      <TextField
-        label={t('server.redirect_uris_comma_separated')}
-        bind:value={oidcRedirectUris}
-        placeholder="https://files.example.com/api/auth/oidc/callback"
-      />
-      <p class="sc-admin-section__hint">{t('server.redirect_uris_hint')}</p>
-      <TextField label={t('server.scopes_comma_separated')} bind:value={oidcScopes} placeholder="openid, profile" />
-      <TextField label={t('server.button_name_login_screen')} bind:value={oidcDisplayName} />
-      <Switch
-        checked={oidcAllowPrivate}
-        onchange={(v) => (oidcAllowPrivate = v)}
-        label={t('server.allow_provider_private_network_address')}
-      />
-      <Button variant="filled" onclick={saveOidc} loading={oidcSaving}>{t('common.save')}</Button>
-      {@render pendingRows('oidc')}
-    </div>
-    <p class="sc-admin-section__hint">
-      {t('server.takes_effect_after_restart_redirect')}
-    </p>
+    <dl class="sc-server-settings__other">
+      {#each snapshot.fields.filter((f) => f.key.startsWith('oidc.')) as f (f.key)}
+        <div>
+          <dt>{f.key}</dt>
+          <dd>
+            {formatValue(f.value)}
+            {#if f.readonly_reason_key}
+              <br /><span class="sc-server-settings__reason">{serverKeyText(f.readonly_reason_key)}</span>
+            {/if}
+          </dd>
+        </div>
+      {/each}
+    </dl>
     <p class="sc-admin-section__hint">{t('server.connected_accounts_cannot_use_smb')}</p>
-    {#if oidcError}<p class="sc-admin-section__error" role="alert">{oidcError}</p>{/if}
-    {#if oidcOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(oidcOutcome)}</p>{/if}
 
     <h4 class="sc-admin-section__subhead">{t('server.storage_paths')}</h4>
-    <div class="sc-server-settings__form">
-      <TextField label={t('server.data_directory')} bind:value={pathsDataDir} placeholder="/var/lib/stowcloud" />
-      <TextField
-        label={t('server.master_key_file')}
-        bind:value={pathsMasterKeyFile}
-        placeholder="/var/lib/stowcloud/master.key"
-      />
-      <TextField label={t('server.smb_config_directory')} bind:value={pathsSmbConfigDir} placeholder="/etc/stowcloud/smb" />
-      <Button variant="filled" onclick={openPathsConfirm} loading={pathsSaving}>{t('common.save')}</Button>
-      {@render pendingRows('paths')}
-    </div>
-    <p class="sc-admin-section__hint">
-      {t('server.takes_effect_after_restart_these')} <strong>{t('server.tell_server_where_you_have')}</strong> {t('server.they_do_not_move_server')}
-    </p>
-    {#if pathsError}<p class="sc-admin-section__error" role="alert">{pathsError}</p>{/if}
-    {#if pathsOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(pathsOutcome)}</p>{/if}
-
-    {#if otherFields.length}
-      <h4 class="sc-admin-section__subhead">{t('server.other_edit_config_toml')}</h4>
-      <p class="sc-admin-section__hint">
-        {t('server.items_below_cannot_changed_here')}
-      </p>
-      <dl class="sc-server-settings__other">
-        {#each otherFields as f (f.key)}
-          <div>
-            <dt>{f.key}</dt>
-            <dd>
-              {formatValue(f.value)}
-              <span class="sc-server-settings__source">({sourceLabel(f.source)})</span>
-              {#if f.running_value !== undefined}
-                <br /><span class="sc-server-settings__badge">{t('server.pending_restart')}</span>
-                {t('server.running_value_is', { value: formatValue(f.running_value) })}
-              {/if}
-              {#if f.readonly_reason_key}<br /><span class="sc-server-settings__reason">{serverKeyText(f.readonly_reason_key)}</span>{/if}
-            </dd>
-          </div>
-        {/each}
-      </dl>
-    {/if}
+    <dl class="sc-server-settings__other">
+      {#each snapshot.fields.filter((f) => PATH_KEYS.includes(f.key)) as f (f.key)}
+        <div>
+          <dt>{f.key}</dt>
+          <dd>
+            {formatValue(f.value)}
+            {#if f.readonly_reason_key}
+              <br /><span class="sc-server-settings__reason">{serverKeyText(f.readonly_reason_key)}</span>
+            {/if}
+          </dd>
+        </div>
+      {/each}
+    </dl>
 
     <h4 class="sc-admin-section__subhead">{t('server.restart_server')}</h4>
     <p class="sc-admin-section__hint">
@@ -1193,15 +931,6 @@
   onconfirm={saveNetwork}
 />
 
-<ConfirmDialog
-  open={pathsConfirmOpen}
-  title={t('server.change_storage_paths')}
-  message={t('server.if_data_directory_or_master')}
-  confirmLabel={t('common.save')}
-  danger
-  onclose={() => (pathsConfirmOpen = false)}
-  onconfirm={savePaths}
-/>
 
 <ConfirmDialog
   open={restartConfirmOpen}
@@ -1314,6 +1043,13 @@
   }
   /* What the dry run found. The level is spelled out in the text beside each
      item, so the colour is reinforcement rather than the only carrier. */
+  /* What an empty field means, shown only while it is empty. */
+  .sc-server-settings__empty-note {
+    margin: 0;
+    grid-column: 1 / -1;
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
+  }
   .sc-server-settings__findings {
     margin: 8px 0 0;
     padding: 0;

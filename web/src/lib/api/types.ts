@@ -863,6 +863,11 @@ export interface SettingsField {
    *  process is using, because the change needs a restart that has not
    *  happened. Absent in the ordinary case, and on older servers. */
   running_value?: unknown
+  /** What leaving this field empty does, for the fields where empty is a
+   *  setting rather than a gap: an empty proxy list trusts no proxy, an empty
+   *  NetBIOS name turns the name service off. A catalogue key. Absent on
+   *  every other field, where empty just means unset. */
+  empty_means_key?: string
   readonly_reason_key: string | null
 }
 

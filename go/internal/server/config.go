@@ -148,9 +148,12 @@ const (
 	// resolve.
 	defaultServiceGID = 1000
 	defaultWorkgroup  = "WORKGROUP"
-	defaultListen     = ":8443"
-	defaultRatePerSec = 20
-	defaultRateBurst  = 100
+	// defaultServiceUser is the account Dockerfile.smb creates, the same pairing
+	// as defaultServiceGID above.
+	defaultServiceUser = "scsvc"
+	defaultListen      = ":8443"
+	defaultRatePerSec  = 20
+	defaultRateBurst   = 100
 )
 
 // Load reads and validates the config file. An absent file is a startup
@@ -239,6 +242,15 @@ func Validate(r raw) (*Config, error) {
 	}
 	if cfg.SMB.Render.Workgroup == "" {
 		cfg.SMB.Render.Workgroup = defaultWorkgroup
+	}
+	// The service account every SMB connection runs as. Defaulted rather than
+	// left blank so the settings screen shows the name a deployment would get,
+	// and so turning SMB on from that screen does not also require inventing
+	// one. It is still required when the config file enables SMB itself: a file
+	// that turns it on without naming the account is a file to correct, not one
+	// to quietly complete.
+	if cfg.SMB.Render.ServiceUser == "" && !r.SMB.Enabled {
+		cfg.SMB.Render.ServiceUser = defaultServiceUser
 	}
 	cfg.SMB.ConfigDir = r.SMB.ConfigDir
 	if cfg.SMB.ConfigDir == "" {

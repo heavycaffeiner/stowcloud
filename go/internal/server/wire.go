@@ -146,6 +146,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		Runtime:           opt.Runtime,
 		SMBConfigDir:      cfg.SMB.ConfigDir,
 		DataDir:           cfg.DataDir,
+		Listen:            cfg.Listen,
 		Health:            health,
 		Uploads:           opt.Uploads,
 		State:             opt.Store.State(),

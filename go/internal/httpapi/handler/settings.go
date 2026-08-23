@@ -33,6 +33,14 @@ type settingsField struct {
 	// screen: every bound is a constant here, and a client carrying its own
 	// copy is a client that disagrees with the server about what is legal.
 	Range any `json:"range,omitempty"`
+	// EmptyMeansKey names what leaving this field empty does, for the two
+	// fields where empty is a setting rather than a gap. A catalogue key: the
+	// server does not know which language the reader picked.
+	//
+	// Without it a blank box is indistinguishable from one nobody filled in,
+	// and the obvious repair, defaulting the value, would turn on name
+	// broadcasting or widen a trust boundary that was deliberately closed.
+	EmptyMeansKey *string `json:"empty_means_key,omitempty"`
 	// Source says where the live value came from, which is what the revert
 	// affordance branches on.
 	Source string `json:"source"`
@@ -54,6 +62,10 @@ const (
 // readonly marks a field this build reports and does not let the screen edit,
 // with the reason as a catalogue key.
 func readonly(key string) *string { return &key }
+
+// emptyMeans names what an empty value does, for a field where empty is a
+// choice rather than a gap.
+func emptyMeans(key string) *string { return &key }
 
 func intRange(minimum, maximum int64) map[string]any {
 	return map[string]any{"kind": "int", "min": minimum, "max": maximum}
@@ -111,6 +123,22 @@ func Settings(d Deps) http.HandlerFunc {
 			{
 				Key: "trusted_proxies", Value: prefixesToStrings(d.Trusted.Get()),
 				Range: stringListRange(32), Source: sourceConfig,
+				EmptyMeansKey: emptyMeans("settings.empty_trusts_no_proxy"),
+			},
+			// The listener's address. Reported and not editable: the socket is
+			// bound once at startup, and a screen that let somebody change the
+			// address it is being served over would be offering to cut the
+			// branch it is sitting on.
+			{
+				Key: "bind", Value: d.Listen, Source: sourceConfig,
+				ReadonlyReasonKey: readonly("settings.readonly_bind_address"),
+			},
+			// Where the databases, the certificate and the master key live.
+			// Reported for the same reason and editable nowhere: everything open
+			// was opened relative to it.
+			{
+				Key: "data_dir", Value: d.DataDir, Source: sourceConfig,
+				ReadonlyReasonKey: readonly("settings.readonly_data_dir"),
 			},
 
 			// The bounds an administrator moves. Each carries the live value,
@@ -190,6 +218,7 @@ func Settings(d Deps) http.HandlerFunc {
 			},
 		}
 		fields = append(fields, smbFields(d, rt, sourceOf, frozen)...)
+		fields = append(fields, oidcFields(d)...)
 
 		return writeJSON(w, http.StatusOK, map[string]any{
 			"fields": fields,
@@ -212,8 +241,12 @@ func SettingsNetwork(d Deps) http.HandlerFunc {
 		if _, aerr := requireAdmin(r, d.Auth); aerr != nil {
 			return aerr
 		}
+		// The names the client sends, which are the names the snapshot reports.
+		// This read trusted_proxy_cidrs while the client sent trusted_proxies,
+		// so that field decoded as absent on every save: the screen reported
+		// success and the proxy list never moved.
 		var req struct {
-			TrustedProxyCIDRs []string `json:"trusted_proxy_cidrs,omitempty"`
+			TrustedProxyCIDRs []string `json:"trusted_proxies,omitempty"`
 			AppHosts          []string `json:"app_hosts,omitempty"`
 			ContentHosts      []string `json:"content_hosts,omitempty"`
 		}
@@ -225,7 +258,7 @@ func SettingsNetwork(d Deps) http.HandlerFunc {
 			for _, cidr := range req.TrustedProxyCIDRs {
 				p, err := netip.ParsePrefix(strings.TrimSpace(cidr))
 				if err != nil {
-					return apierr.Unprocessable("settings.invalid_cidr", "trusted_proxy_cidrs")
+					return apierr.Unprocessable("settings.invalid_cidr", "trusted_proxies")
 				}
 				parsed = append(parsed, p)
 			}
@@ -349,6 +382,7 @@ func smbFields(
 		},
 		{
 			Key: "smb.server_name", Value: rt.SMB.ServerName,
+			EmptyMeansKey:   emptyMeans("settings.empty_disables_netbios_name"),
 			Range:           map[string]any{"kind": "string", "max_len": 64},
 			Source:          sourceOf("smb", "server_name"),
 			RestartRequired: true, ReadonlyReasonKey: frozen,
@@ -384,5 +418,44 @@ func smbFields(
 			Key: "smb.config_dir", Value: d.SMBConfigDir, Source: sourceConfig,
 			ReadonlyReasonKey: readonly("settings.readonly_smb_agent_socket"),
 		},
+	}
+}
+
+// oidcFields is single sign-on as the config file settled it.
+//
+// Reported and not editable here, all of it. The client is built once at
+// startup: it fetches the provider's discovery document, pins what it found
+// and holds the certificate pool the back channel uses. Changing an issuer
+// under a live client would leave the two halves describing different
+// providers.
+//
+// The client secret is not among them and never will be. It is read from a
+// file the operator owns, and a settings surface that could show it would be a
+// settings surface that could leak it.
+func oidcFields(d Deps) []settingsField {
+	frozen := readonly("settings.readonly_needs_restart_oidc")
+	if d.OIDC == nil {
+		// Off. The fields are still reported, because a screen that hides the
+		// section until it is configured has nowhere to say it is off.
+		return []settingsField{
+			{Key: "oidc.enabled", Value: false, Range: map[string]any{"kind": "bool"},
+				Source: sourceConfig, RestartRequired: true, ReadonlyReasonKey: frozen},
+		}
+	}
+	issuer, clientID, scopes, allowPrivate := d.OIDC.Settings()
+	return []settingsField{
+		{Key: "oidc.enabled", Value: true, Range: map[string]any{"kind": "bool"},
+			Source: sourceConfig, RestartRequired: true, ReadonlyReasonKey: frozen},
+		{Key: "oidc.issuer", Value: issuer, Source: sourceConfig,
+			RestartRequired: true, ReadonlyReasonKey: frozen},
+		{Key: "oidc.client_id", Value: clientID, Source: sourceConfig,
+			RestartRequired: true, ReadonlyReasonKey: frozen},
+		{Key: "oidc.scopes", Value: scopes, Source: sourceConfig,
+			RestartRequired: true, ReadonlyReasonKey: frozen},
+		{Key: "oidc.display_name", Value: d.OIDCDisplayName, Source: sourceConfig,
+			RestartRequired: true, ReadonlyReasonKey: frozen},
+		{Key: "oidc.allow_private_endpoints", Value: allowPrivate,
+			Range: map[string]any{"kind": "bool"}, Source: sourceConfig,
+			RestartRequired: true, ReadonlyReasonKey: frozen},
 	}
 }

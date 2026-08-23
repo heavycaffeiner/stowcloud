@@ -59,10 +59,12 @@ hardening = "required"
 # them.
 enabled = false
 
-# The account every SMB connection runs as. Required when SMB is enabled. Real
-# per-user access control is the grants this server holds, which become the
-# per-share account lists; this identity only decides what a connection writes
-# as on disk.
+# The account every SMB connection runs as. Required when SMB is enabled here;
+# left out with SMB off it defaults to scsvc, the account Dockerfile.smb
+# creates, so the settings screen shows the name a deployment would get rather
+# than a blank box. Real per-user access control is the grants this server
+# holds, which become the per-share account lists; this identity only decides
+# what a connection writes as on disk.
 service_user = "scsvc"
 
 # (Each [[shares]] entry below also takes `trash_enabled`, off by default: a

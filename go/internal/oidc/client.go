@@ -68,6 +68,13 @@ type Client struct {
 	jwks      jwksCache
 }
 
+// Settings is what the client was configured with, for the surface that
+// reports configuration. The secret is deliberately not among them: it is read
+// from a file the operator owns and never leaves this process.
+func (c *Client) Settings() (issuer, clientID string, scopes []string, allowPrivate bool) {
+	return c.cfg.Issuer, c.cfg.ClientID, append([]string(nil), c.cfg.Scopes...), c.cfg.AllowPrivateEndpoints
+}
+
 // New builds the client, or refuses.
 //
 // The certificate pool is explicit. Taking the system's unconditionally would

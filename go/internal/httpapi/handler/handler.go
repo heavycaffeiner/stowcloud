@@ -63,8 +63,12 @@ type Deps struct {
 
 	// DataDir is where the databases live. Used to resolve the default homes
 	// root when a settings check has to probe a directory the request did not
-	// name.
+	// name, and reported by the settings surface.
 	DataDir string
+
+	// Listen is the address the server bound, reported by the settings surface
+	// and editable nowhere: the socket is bound once at startup.
+	Listen string
 
 	// Events upgrades the change-channel socket for an authenticated user.
 	Events EventsHandler

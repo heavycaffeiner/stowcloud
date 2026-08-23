@@ -220,3 +220,56 @@ func TestSetAppliesToTheLiveComponents(t *testing.T) {
 		t.Fatal("a save moved the config file's own value")
 	}
 }
+
+// Every default this package hands out has to be a value it would also accept.
+//
+// It was not. WatchFullThreshold and the SMB service group were left at the Go
+// zero value, and both bounds start above zero, so the settings screen showed
+// two numbers it would have refused on save.
+func TestEveryDefaultIsInsideItsOwnBound(t *testing.T) {
+	// A representative base, built the way serve.go builds one.
+	v := Values{
+		SearchConcurrentSSD:  4,
+		SearchConcurrentRot:  2,
+		SearchDeadlineSSD:    3000 * time.Millisecond,
+		SearchDeadlineRot:    8000 * time.Millisecond,
+		ArchiveMaxConcurrent: 10_000,
+		WatchHotSetMax:       4096,
+		WatchFullThreshold:   50_000,
+		RatePerSec:           20,
+		RateBurst:            100,
+		SMB:                  SMB{ServiceGID: 1000},
+	}
+
+	for _, c := range []struct {
+		field string
+		value int64
+		bound Bound
+	}{
+		{"search.max_concurrent_fast", int64(v.SearchConcurrentSSD), BoundSearchConcurrent()},
+		{"search.max_concurrent_slow", int64(v.SearchConcurrentRot), BoundSearchConcurrent()},
+		{"search.walk_deadline_fast_ms", v.SearchDeadlineSSD.Milliseconds(), BoundSearchDeadlineMs()},
+		{"search.walk_deadline_slow_ms", v.SearchDeadlineRot.Milliseconds(), BoundSearchDeadlineMs()},
+		{"archive.max_concurrent", int64(v.ArchiveMaxConcurrent), BoundArchiveEntries()},
+		{"watch.hot_set_max", int64(v.WatchHotSetMax), BoundWatchHotSet()},
+		{"watch.full_threshold", int64(v.WatchFullThreshold), BoundWatchFullThreshold()},
+		{"rate.per_sec", int64(v.RatePerSec), BoundRatePerSec()},
+		{"rate.burst", int64(v.RateBurst), BoundRateBurst()},
+		{"smb.service_gid", int64(v.SMB.ServiceGID), BoundServiceGID()},
+	} {
+		if err := Check(c.field, c.value, c.bound); err != nil {
+			t.Errorf("the default for %s is a value this package would refuse: %v", c.field, err)
+		}
+	}
+}
+
+// A zero left where a bound starts above zero is the shape of the defect, so
+// the check above has to actually catch it.
+func TestAZeroDefaultIsCaught(t *testing.T) {
+	if err := Check("watch.full_threshold", 0, BoundWatchFullThreshold()); err == nil {
+		t.Fatal("zero passed a bound whose floor is 64")
+	}
+	if err := Check("smb.service_gid", 0, BoundServiceGID()); err == nil {
+		t.Fatal("zero passed the service group bound, which excludes root's group")
+	}
+}

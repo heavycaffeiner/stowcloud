@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -122,9 +123,16 @@ func applyJail(cfg *server.Config, configPath string, clk clock.Clock) (jail.Sta
 // absent from the process serving the request is a permission decision that
 // depends on which half was asked, and the first thing this account does is
 // ask.
-// watchHotSetDefault matches watch.Config's own default, which is the value a
-// watcher started with no override takes.
-const watchHotSetDefault = 4096
+
+// trustedProxyStrings renders the parsed ranges back for the settings screen,
+// which reports and stores them as text.
+func trustedProxyStrings(ps []netip.Prefix) []string {
+	out := make([]string, 0, len(ps))
+	for _, p := range ps {
+		out = append(out, p.String())
+	}
+	return out
+}
 
 func grantEveryShare(
 	ctx context.Context, c *core.Core, st *store.Store, ev *acl.Evaluator,
@@ -337,18 +345,46 @@ func runServe(args []string, stderr io.Writer) int {
 	// written to the settings table and nothing read it back, so the screen
 	// reported a change that had taken effect nowhere and did not survive a
 	// restart either.
+	watchDefaults := watch.DefaultConfig()
 	rtcfg := runtimecfg.New(runtimecfg.Values{
 		SearchConcurrentSSD:  limits.ConcurrentSearchesSSD,
 		SearchConcurrentRot:  limits.ConcurrentSearchesRotational,
 		SearchDeadlineSSD:    limits.SearchWalkDeadlineSSD,
 		SearchDeadlineRot:    limits.SearchWalkDeadlineRotational,
 		ArchiveMaxConcurrent: limits.ArchiveEntriesListed,
-		// The watcher's own default. It is not read from watch.Config because
-		// that shape's defaults are unexported and this is the one number the
-		// settings surface reports.
-		WatchHotSetMax: watchHotSetDefault,
-		RatePerSec:     cfg.RatePerSec,
-		RateBurst:      cfg.RateBurst,
+		// Taken from the watcher's own defaults rather than restated here. A
+		// second copy of a default is a second thing to keep true, and this one
+		// is what the settings screen reports as the value in force.
+		WatchHotSetMax:     watchDefaults.HotSetMax,
+		WatchFullThreshold: watchDefaults.FullThreshold,
+		RatePerSec:         cfg.RatePerSec,
+		RateBurst:          cfg.RateBurst,
+
+		// The network boundary as the config file settled it, so the screen
+		// shows what the guard is actually using rather than an empty list.
+		AppHosts:     cfg.AppHosts,
+		ContentHosts: cfg.ContentHosts,
+		TrustedProxy: trustedProxyStrings(cfg.TrustedProxy),
+
+		// Homes are off until somebody turns them on, and the root they would
+		// take is named rather than left blank: a switch whose effect is not
+		// visible until it is flipped is one an administrator has to guess at.
+		HomesEnabled: false,
+		HomesRoot:    filepath.Join(cfg.DataDir, "homes"),
+
+		// SMB as the config file settled it, including the defaults Validate
+		// filled in. SMBConfigured stays false: this is the baseline the screen
+		// reports, not a stored override, and marking it configured would make
+		// the boot path fold these values back over themselves.
+		SMB: runtimecfg.SMB{
+			Enabled:         cfg.SMB.Render.Enabled,
+			Workgroup:       cfg.SMB.Render.Workgroup,
+			ServerName:      cfg.SMB.Render.ServerName,
+			ServiceUser:     cfg.SMB.Render.ServiceUser,
+			AllowPublicBind: cfg.SMB.Render.AllowPublicBind,
+			TOTPPolicy:      "require_separate",
+			ServiceGID:      cfg.SMB.ServiceGID,
+		},
 	})
 	rtcfg.Set(runtimecfg.Load(ctx, st.State(), rtcfg.Base(), log))
 
