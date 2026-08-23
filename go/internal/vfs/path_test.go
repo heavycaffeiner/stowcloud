@@ -47,6 +47,62 @@ func TestParseSafePathRejectsTheEscapeTable(t *testing.T) {
 	}
 }
 
+// A virtual path may carry one leading slash, and a share-relative one may not.
+//
+// The two are different boundaries and it matters which is which. A Vpath is
+// the client's addressing form, where "/documents/a.txt" and "documents/a.txt"
+// name the same thing because neither can mean anything but a share label and
+// a path under it. A SafePath is what reaches the filesystem, and there a
+// leading slash is the escape this whole table exists to refuse.
+func TestALeadingSlashIsAVpathSpellingAndNotASafePathOne(t *testing.T) {
+	v, err := ParseVpath("/documents/notes/todo.md")
+	if err != nil {
+		t.Fatalf("a rooted virtual path was refused: %v", err)
+	}
+	if v.String() != "documents/notes/todo.md" {
+		t.Fatalf("the parsed path is %q, want the slash dropped", v)
+	}
+	// The same path without the slash is the same path.
+	bare, err := ParseVpath("documents/notes/todo.md")
+	if err != nil || bare.String() != v.String() {
+		t.Fatalf("the two spellings disagree: %q and %q (%v)", v, bare, err)
+	}
+
+	// "/" is the virtual root, which is how the client spells the empty
+	// string. A client landing on its own home screen sends it.
+	root, err := ParseVpath("/")
+	if err != nil {
+		t.Fatalf("the client's spelling of the root was refused: %v", err)
+	}
+	if !root.IsRoot() {
+		t.Fatalf("%q did not parse to the virtual root", root)
+	}
+
+	// The filesystem-facing parser is unchanged: there a leading slash is an
+	// absolute path and is refused.
+	if _, err := ParseSafePath("/etc/passwd"); !errors.Is(err, ErrInvalidName) {
+		t.Fatalf("ParseSafePath accepted an absolute path: %v", err)
+	}
+}
+
+// Only one slash, and only at the front. Everything the escape table refuses
+// is still refused when a slash is put in front of it.
+func TestALeadingSlashDoesNotAdmitTheEscapeTable(t *testing.T) {
+	for _, in := range []string{
+		"//documents",      // an empty first component
+		"/../etc",          // traversal
+		"/a/../b",          // traversal below the label
+		"/a/",              // a trailing slash
+		"/a\x00b",          // NUL
+		"/.sctrash",        // a reserved name
+		"/a/.scpart-abc/b", // a reserved name deeper down
+	} {
+		if p, err := ParseVpath(in); err == nil {
+			t.Fatalf("ParseVpath(%q) accepted it as %q", in, p)
+		}
+	}
+}
+
 // Normalising is what creates the bypass, so the refusal has to be the answer
 // even where the result would have been harmless.
 func TestDotDotIsRejectedRatherThanResolved(t *testing.T) {

@@ -43,6 +43,10 @@ type SetupGate struct {
 	auth *auth.Service
 	clk  clock.Clock
 	dir  string
+	// grantAll gives the first administrator a grant over every configured
+	// share. Nil for a caller with no core to grant over, which is the setup
+	// CLI: it mints a token and creates nothing.
+	grantAll func(context.Context, int64) error
 
 	issued bool
 	hash   [32]byte
@@ -57,6 +61,22 @@ type SetupGate struct {
 // stowcloud setup CLI each issue exactly once.
 func NewSetupGate(ctx context.Context, svc *auth.Service, clk clock.Clock, dataDir string) (*SetupGate, error) {
 	return &SetupGate{auth: svc, clk: clk, dir: dataDir}, nil
+}
+
+// GrantsFirstAdmin installs what gives the first administrator access to the
+// configured shares.
+//
+// Without it setup produces an administrator who can sign in and see nothing:
+// every share needs a grant, the first run has none, and there is no screen
+// for creating one that does not itself require a share to already be
+// visible. A fresh deployment was a dead end.
+//
+// It is set by the serve path rather than taken by the constructor because
+// the setup CLI has no core: it mints a token and creates no account.
+func (g *SetupGate) GrantsFirstAdmin(fn func(context.Context, int64) error) {
+	g.mu.Lock()
+	g.grantAll = fn
+	g.mu.Unlock()
 }
 
 // required is the durable gate, erring on the side of closed: an account
@@ -148,6 +168,18 @@ func (g *SetupGate) Complete(ctx context.Context, token, username string, pw sec
 	if err != nil {
 		return SetupOutcome{}, err
 	}
+
+	// The grant, and it is not optional: an administrator with none signs in
+	// to an interface with no folder to open and no way to give itself one.
+	// A failure here is reported rather than swallowed, because the account is
+	// already created and the deployment is in exactly the state this exists
+	// to prevent.
+	if g.grantAll != nil {
+		if gerr := g.grantAll(ctx, id); gerr != nil {
+			return SetupOutcome{}, gerr
+		}
+	}
+
 	g.used = true
 	g.removeTokenFile()
 	return SetupOutcome{UserID: id, Username: username}, nil

@@ -41,8 +41,14 @@ func FuzzParseVpath(f *testing.F) {
 		if err != nil {
 			return
 		}
+		// One leading slash is accepted and dropped, and that is the only
+		// difference the parser is allowed to make to its input. The client's
+		// path model is rooted and this one is not, so the two spellings name
+		// the same virtual path; everything below still has to hold of what
+		// comes back.
+		s = strings.TrimPrefix(s, "/")
 		if v.String() != s {
-			t.Fatalf("ParseVpath(%q) repaired its input into %q", s, v)
+			t.Fatalf("ParseVpath repaired its input into %q, beyond dropping one leading slash", v)
 		}
 		if len(s) > limits.PathBytes {
 			t.Fatalf("ParseVpath accepted %d bytes, over the %d byte bound", len(s), limits.PathBytes)

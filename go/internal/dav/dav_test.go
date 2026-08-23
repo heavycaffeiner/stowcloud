@@ -1028,12 +1028,17 @@ func TestTheCollectionCopySequence(t *testing.T) {
 	if rec := f.transfer(t, "COPY", "/ccdest2", "/ccdest", true); rec.Code != http.StatusAccepted {
 		t.Fatalf("COPY with overwrite returned %d, want 202", rec.Code)
 	}
-	// Waited for, like the others. A 202 that is still running when the test
-	// returns is a copy writing into a closed store and a removed directory,
-	// which fails whatever test happens to be running next.
+	// Waited for, like the others, and for every member rather than one: a 202
+	// still running when the test returns is a copy writing into a directory
+	// t.TempDir is removing, which fails the cleanup of whatever test happens
+	// to be running rather than this one.
 	waitFor(t, func() bool {
-		_, err := os.Stat(filepath.Join(f.host, "ccdest", "foo.0"))
-		return err == nil
+		for _, m := range members {
+			if _, err := os.Stat(filepath.Join(f.host, "ccdest", m)); err != nil {
+				return false
+			}
+		}
+		return true
 	})
 }
 

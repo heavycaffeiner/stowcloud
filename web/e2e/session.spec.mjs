@@ -123,12 +123,24 @@ try {
   check('the session carries a token for state-changing requests', csrf.length > 0)
 
   console.log('browsing')
-  // A share this account holds no grant on is not readable, which is the
-  // existence rule rather than a missing route. What a grant unlocks is
-  // grant.spec.mjs, which creates one and watches the listing open.
+  // The first administrator is granted every configured share at setup, so
+  // this account can read the one the fixture serves. Without that a fresh
+  // deployment is a dead end: a share is only reachable through a grant, the
+  // screen that creates grants is behind the interface, and the first run has
+  // none.
   const list = await api(page, 'GET', '/api/fs/list?path=docs')
-  check('an ungranted share is refused as absent', list.status === 404, `status ${list.status}`)
+  check('the first administrator can read the configured share', list.status === 200,
+    `status ${list.status}`)
 
+  // The client's own path spelling is rooted, and it has to be accepted: its
+  // URLs are rooted, so this is what every request the interface makes looks
+  // like. It answered 422 for the whole of the port, which is a server that
+  // cannot list a directory.
+  const rooted = await api(page, 'GET', '/api/fs/list?path=/docs')
+  check('a rooted path is the same path', rooted.status === 200, `status ${rooted.status}`)
+
+  // The existence rule: a path that does not exist and one this account may
+  // not see answer identically, so a stranger cannot probe for what is there.
   const missing = await api(page, 'GET', '/api/fs/list?path=docs/no-such-directory')
   const outside = await api(page, 'GET', '/api/fs/list?path=secret/anything')
   check('a missing path and a forbidden one are indistinguishable',

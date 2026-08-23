@@ -7,9 +7,12 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
+	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
+	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
 )
 
@@ -74,18 +77,71 @@ func Login(d Deps) http.HandlerFunc {
 // none. The login screen's GET /api/setup is the only other unauthenticated
 // read this surface answers.
 type sessionResponse struct {
-	User struct {
-		ID      int64  `json:"id"`
-		Name    string `json:"name"`
-		Display string `json:"display,omitempty"`
-		Admin   bool   `json:"admin"`
-	} `json:"user"`
+	User sessionUser `json:"user"`
+	// Roots is the caller's virtual root: one entry per share they may read.
+	// It is the whole of what the interface has to navigate with, and without
+	// it the browse screen has no folder to open: it falls back to the virtual
+	// root, which no path names, and every listing is refused.
+	//
+	// Always a list, never absent. A client that has to tell "no shares" from
+	// "the field is missing" branches on the difference and one of the two
+	// branches is never tested.
+	Roots []sessionRoot `json:"roots"`
 	// CSRF is the token the client sends back on state-changing requests. It
 	// derives from the presenting session, and the login screen needs it
 	// before the first write it makes.
 	CSRF string `json:"csrf,omitempty"`
+	// Limits are the upload bounds a client plans a transfer against, and
+	// Features what this deployment actually serves.
+	Limits   sessionLimits   `json:"limits"`
+	Features sessionFeatures `json:"features"`
 	// OIDC is what the settings screen draws the single-sign-on section from.
 	OIDC sessionOIDC `json:"oidc"`
+}
+
+// sessionUser is the account as the interface reads it.
+//
+// The field names are the client's contract rather than this package's
+// preference: it reads is_admin, and a server sending admin draws no
+// administrator navigation at all while every admin API call still succeeds.
+// That is the shape of failure a route check cannot see, because the route is
+// mounted and the status is 200.
+type sessionUser struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	IsAdmin     bool   `json:"is_admin"`
+	TOTPEnabled bool   `json:"totp_enabled"`
+	SMBOptOut   bool   `json:"smb_opt_out"`
+	SMBEnabled  bool   `json:"smb_enabled"`
+}
+
+// sessionRoot is one readable share, labeled the way the caller's own grant
+// labels it.
+type sessionRoot struct {
+	Label            string `json:"label"`
+	Perms            uint16 `json:"perms"`
+	ShareKind        string `json:"share_kind"`
+	SharedExternally bool   `json:"shared_externally"`
+	TrashEnabled     bool   `json:"trash_enabled"`
+}
+
+type sessionLimits struct {
+	ChunkSize uint64 `json:"chunk_size"`
+	ChunkMin  uint64 `json:"chunk_min"`
+	// Null rather than zero when there is no cap: zero is a size, and a client
+	// reading it as one refuses every file.
+	MaxFileSize *uint64 `json:"max_file_size"`
+	Parallel    int     `json:"parallel"`
+}
+
+type sessionFeatures struct {
+	WebDAV  bool   `json:"webdav"`
+	SMB     bool   `json:"smb"`
+	Preview bool   `json:"preview"`
+	Trash   bool   `json:"trash"`
+	Shares  bool   `json:"shares"`
+	Search  string `json:"search"`
 }
 
 // sessionOIDC is the caller's own link.
@@ -128,13 +184,31 @@ func Session(d Deps) http.HandlerFunc {
 		if aerr != nil {
 			return aerr
 		}
-		resp := sessionResponse{}
-		resp.User.ID = int64(uid)
-		resp.User.Name = p.Display
-		if p.Display != "" {
-			resp.User.Display = p.Display
+		// The account row, not the principal alone: the principal carries what
+		// the credential path needed, and the interface draws the SMB and
+		// second-factor toggles from the stored account.
+		row, rerr := d.Auth.UserByID(r.Context(), int64(uid))
+		if rerr != nil {
+			return rerr
 		}
-		resp.User.Admin = admin
+
+		resp := sessionResponse{
+			User: sessionUser{
+				ID:          int64(uid),
+				Name:        row.Name,
+				DisplayName: row.Display,
+				IsAdmin:     admin,
+				TOTPEnabled: row.TOTPEnabled,
+				SMBOptOut:   !row.SMBEnabled,
+				SMBEnabled:  row.SMBEnabled,
+			},
+			Roots:    rootsOf(d, uid),
+			Limits:   limitsOf(d),
+			Features: featuresOf(d),
+		}
+		if row.Display == "" {
+			resp.User.DisplayName = p.Display
+		}
 		if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" {
 			resp.CSRF = mw.DeriveCSRFToken(d.CSRFKey, c.Value)
 		}
@@ -156,6 +230,76 @@ func Session(d Deps) http.HandlerFunc {
 
 		return writeJSON(w, http.StatusOK, resp)
 	})
+}
+
+// rootsOf projects the caller's readable shares.
+//
+// Always a list, so a client never has to tell an absent field from an empty
+// one. An account with no grant genuinely has nothing to browse, which is a
+// state an administrator can see and fix rather than one the interface has to
+// guess at.
+func rootsOf(d Deps, uid core.UserID) []sessionRoot {
+	entries := d.Core.Roots(uid)
+	out := make([]sessionRoot, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, sessionRoot{
+			Label:            e.Label,
+			Perms:            uint16(e.Perms),
+			ShareKind:        shareKindOf(e),
+			SharedExternally: e.SharedExternally,
+			TrashEnabled:     e.TrashEnabled,
+		})
+	}
+	return out
+}
+
+// shareKindOf is what the interface labels a root with. A grant that cannot
+// write is read-only whatever the share behind it is, because the label
+// describes what this caller may do rather than how the share was configured.
+func shareKindOf(e acl.RootEntry) string {
+	if !e.Perms.Has(acl.Write) {
+		return "ReadOnly"
+	}
+	return "Normal"
+}
+
+// limitsOf is what a client plans an upload against.
+func limitsOf(d Deps) sessionLimits {
+	out := sessionLimits{
+		ChunkSize: limits.UploadChunkSizeDefault,
+		ChunkMin:  limits.UploadChunkFloor,
+		Parallel:  limits.UploadsInFlightPerUser,
+	}
+	// The engine's live values when there is one: an administrator may have
+	// moved them, and a client told the compiled-in default would size its
+	// chunks against a bound this server no longer applies.
+	if d.Uploads != nil {
+		s := d.Uploads.Settings()
+		out.ChunkSize, out.ChunkMin = s.Default(), s.Min()
+	}
+	return out
+}
+
+// featuresOf is what this deployment actually serves, so the interface draws
+// the surfaces that answer rather than the ones that were compiled in.
+func featuresOf(d Deps) sessionFeatures {
+	return sessionFeatures{
+		WebDAV:  true,
+		SMB:     d.PublishSMB != nil,
+		Preview: false,
+		Trash:   true,
+		Shares:  true,
+		Search:  searchTierOf(d),
+	}
+}
+
+// searchTierOf says which tier answers a query. The walk is always there; the
+// name index is the escalation, and it is off by default.
+func searchTierOf(d Deps) string {
+	if d.Search != nil && d.Search.HasIndex() {
+		return "name"
+	}
+	return "walk"
 }
 
 // Logout revokes the presenting session and clears the cookie. 204, like the

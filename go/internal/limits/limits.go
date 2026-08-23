@@ -137,6 +137,13 @@ const (
 // upsert's own transaction, so the bound holds even if a writer crashes.
 const JournalRowsPerAccount = 1_000
 
+// BatchPaths bounds how many paths one delete, move or copy may name.
+//
+// Each is resolved and acted on inside the request, so an unbounded list is an
+// unbounded request. The bound is generous against what a person selects in a
+// file manager and small against what a script could send.
+const BatchPaths = 1_000
+
 // ArchiveEntriesListed truncates rather than refusing, and the response says so.
 const ArchiveEntriesListed = 10_000
 

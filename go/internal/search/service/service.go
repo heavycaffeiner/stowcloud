@@ -130,6 +130,10 @@ func (s *Service) SetIndex(ix *index.NameIndex) {
 	s.mu.Unlock()
 }
 
+// HasIndex reports whether a name index is attached, which is what decides
+// whether a query is answered from the index or from a walk.
+func (s *Service) HasIndex() bool { return s.index() != nil }
+
 func (s *Service) index() *index.NameIndex {
 	s.mu.Lock()
 	defer s.mu.Unlock()

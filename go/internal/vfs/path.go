@@ -256,9 +256,24 @@ func splitValidated(s string) ([]string, error) {
 // the name bound, a path over the byte bound, more components than the
 // component bound, and any component carrying a reserved prefix.
 //
+// A single leading slash is accepted and stripped. It is not a repair and it
+// weakens nothing: this path is virtual, so "/documents/a.txt" and
+// "documents/a.txt" name the same thing and neither can escape a share. The
+// alternative is worse than it sounds. The client's path model is rooted,
+// because its own URLs are ("/b/documents/notes"), and its virtual root is
+// "/" while this one is the empty string. With the slash refused, every path
+// the interface sent was answered 422 and the product could not list a
+// directory at all.
+//
+// What is still refused is the thing the leading slash could have meant: a
+// host path. "/etc/passwd" parses to the share labeled "etc", which no grant
+// names, so it resolves to not-found like any other unknown label. The
+// traversal table below is what makes that safe, and it is unchanged.
+//
 // The empty string parses to the virtual root, which is the one path naming no
-// share.
+// share. "/" is the same root, spelled the way the client spells it.
 func ParseVpath(s string) (Vpath, error) {
+	s = strings.TrimPrefix(s, "/")
 	if _, err := splitValidated(s); err != nil {
 		return Vpath{}, err
 	}
@@ -281,6 +296,15 @@ func (p Vpath) String() string { return p.s }
 
 // IsRoot reports the virtual root, which names no share.
 func (p Vpath) IsRoot() bool { return p.s == "" }
+
+// Name is the last component: the leaf a transfer keeps when it moves into
+// another directory. Empty at the virtual root, which has no leaf.
+func (p Vpath) Name() string {
+	if i := strings.LastIndexByte(p.s, '/'); i >= 0 {
+		return p.s[i+1:]
+	}
+	return p.s
+}
 
 // Label is the share label. Empty for the virtual root.
 func (p Vpath) Label() string {

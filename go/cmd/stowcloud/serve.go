@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -81,6 +82,45 @@ func applyJail(cfg *server.Config, configPath string, clk clock.Clock) (jail.Sta
 	return jail.Apply(cfg.Hardening, jailSpec(cfg, configPath, hosts))
 }
 
+// grantEveryShare gives one account full access to every registered share.
+//
+// It exists for the first administrator and for nothing else. A share is only
+// reachable through a grant, the admin screen that creates grants is itself
+// behind the interface, and a fresh deployment starts with none: without this
+// the first run produces an account that signs in, sees an empty interface,
+// and has no way to give itself anything.
+//
+// Every bit, because this is the administrator: a first account that could
+// read but not write would be a different dead end.
+//
+// The evaluator is reloaded afterwards. A grant live in the database and
+// absent from the process serving the request is a permission decision that
+// depends on which half was asked, and the first thing this account does is
+// ask.
+func grantEveryShare(
+	ctx context.Context, c *core.Core, st *store.Store, ev *acl.Evaluator,
+	uid int64, clk clock.Clock,
+) error {
+	const all = acl.Read | acl.Write | acl.Create | acl.Delete |
+		acl.Rename | acl.Move | acl.Share | acl.Download
+
+	for _, def := range c.Shares() {
+		if _, err := acl.CreateGrant(ctx, st.State().SQL(), acl.Grant{
+			User:    uid,
+			Share:   int64(def.ID),
+			Allow:   all,
+			Inherit: true,
+			// Labeled with the share's own name, which is what the interface
+			// shows as the folder: an unlabeled grant falls back to a
+			// generated "share-N".
+			Label: def.Name,
+		}, clk.Nanos()); err != nil {
+			return fmt.Errorf("granting %q to the first administrator: %w", def.Name, err)
+		}
+	}
+	return ev.LoadFromState(ctx, st.State().SQL())
+}
+
 // registerConfigShares opens every folder the config file names.
 //
 // A folder that cannot be served is reported and skipped rather than stopping
@@ -97,6 +137,7 @@ func registerConfigShares(
 			Host:             sh.Host,
 			Policy:           vfs.DefaultSharePolicy(),
 			SharedExternally: sh.SharedExternally,
+			TrashEnabled:     sh.TrashEnabled,
 		}
 		if err := c.RegisterShare(ctx, def); err != nil {
 			log.Error("a configured share was refused and is not being served",
@@ -234,6 +275,14 @@ func runServe(args []string, stderr io.Writer) int {
 		say(stderr, "stowcloud %s: serve: the setup gate: %v\n", version, gerr)
 		return exitConfig
 	}
+	// What makes a fresh deployment usable. The first administrator gets a
+	// grant over every configured share, because a share is only reachable
+	// through one and the first run has none: without this, setup produces an
+	// account that signs in to an empty interface with no way to give itself
+	// anything.
+	setupGate.GrantsFirstAdmin(func(c context.Context, uid int64) error {
+		return grantEveryShare(c, coreSvc, st, evaluator, uid, clk)
+	})
 	if setupGate.IsRequired(ctx) {
 		if ierr := setupGate.Issue(os.Stdout); ierr != nil {
 			say(stderr, "stowcloud %s: serve: issuing the setup token: %v\n", version, ierr)

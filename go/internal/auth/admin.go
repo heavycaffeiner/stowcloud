@@ -29,6 +29,24 @@ type UserRow struct {
 	UsageBytes  uint64
 }
 
+// UserByID returns one account.
+//
+// It reads the same row shape ListUsers does rather than a narrower one, so a
+// surface that shows an account is looking at the same fields whether it asked
+// for one or for all of them.
+func (s *Service) UserByID(ctx context.Context, id int64) (UserRow, error) {
+	rows, err := s.ListUsers(ctx)
+	if err != nil {
+		return UserRow{}, err
+	}
+	for _, u := range rows {
+		if u.ID == id {
+			return u, nil
+		}
+	}
+	return UserRow{}, ErrCredentials
+}
+
 // ListUsers returns every account.
 func (s *Service) ListUsers(ctx context.Context) (out []UserRow, err error) {
 	rows, err := s.st.SQL().QueryContext(ctx, sqlListUsers)

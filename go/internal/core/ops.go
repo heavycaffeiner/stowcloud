@@ -103,6 +103,31 @@ func (c *Core) Rename(ctx context.Context, r Resolved, newName string, ifMatch *
 	return c.buildEntry(destResolved, newName, dest), nil
 }
 
+// WouldCopy reports whether moving from into to would have to become a copy,
+// without moving anything.
+//
+// It is what a destination picker asks before it lets somebody commit: a move
+// across a device is a copy and a delete, which takes time proportional to the
+// data and is worth warning about first.
+//
+// A source that cannot be stat'd answers false rather than an error: the move
+// itself reports what is wrong with it, and a preflight that refuses is a
+// picker that cannot open.
+func (c *Core) WouldCopy(from, to Resolved) bool {
+	st, err := from.root.Stat(from.path)
+	if err != nil {
+		return false
+	}
+	return crossesDevice(from, to, st.Dev)
+}
+
+// crossesDevice is the rule the move and its preflight share. Two shares are
+// two trees whatever the filesystem says, and one rename cannot cross a device
+// even within a share.
+func crossesDevice(from, to Resolved, srcDev uint64) bool {
+	return from.share != to.share || to.root.Dev() != srcDev
+}
+
 // MoveOpts carries what a move needs beyond the two ends.
 type MoveOpts struct {
 	// Overwrite replaces the destination. Off means a conflict is returned.

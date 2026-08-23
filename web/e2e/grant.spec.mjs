@@ -58,9 +58,52 @@ try {
   const shareID = shareList[0]?.id
   const shareName = shareList[0]?.name
 
+  // A second account, because the first administrator is granted every share
+  // at setup: a fresh deployment would otherwise have an administrator who
+  // can see nothing and no way to give itself anything. That makes the signed
+  // in account the wrong subject for this test, which is about what a grant
+  // does rather than about what setup did.
+  const member = `grant-probe-${Date.now()}`
+  const madeUser = await api('POST', '/api/admin/users',
+    { name: member, password: 'grant-probe-password' }, csrf)
+  check('a second account is created', madeUser.status === 201,
+    `status ${madeUser.status} ${JSON.stringify(madeUser.body).slice(0, 120)}`)
+  const memberID = madeUser.body?.id
+
+  // Signed in as that account, in its own browser context, so the two
+  // sessions do not share a cookie jar.
+  const memberCtx = await browser.newContext({ ignoreHTTPSErrors: true })
+  const memberPage = await memberCtx.newPage()
+  await memberPage.goto(BASE, { waitUntil: 'domcontentloaded' })
+  const memberApi = async (method, path) =>
+    memberPage.evaluate(
+      async ([m, p]) => {
+        const res = await fetch(p, { method: m })
+        const text = await res.text()
+        let parsed = null
+        try {
+          parsed = text ? JSON.parse(text) : null
+        } catch {
+          parsed = text
+        }
+        return { status: res.status, body: parsed }
+      },
+      [method, path]
+    )
+  await memberPage.evaluate(
+    async ([u, p]) => {
+      await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u, password: p })
+      })
+    },
+    [member, 'grant-probe-password']
+  )
+
   // Without a grant, the share is not readable. That is the existence rule
   // working, not a missing share.
-  const before = await api('GET', `/api/fs/list?path=${shareName}`)
+  const before = await memberApi('GET', `/api/fs/list?path=${shareName}`)
   check('an ungranted share is not readable', before.status === 404, `status ${before.status}`)
 
   // The grant, written through the surface the admin screen uses.
@@ -68,7 +111,7 @@ try {
     'POST',
     '/api/admin/grants',
     {
-      user: session.body?.user?.id,
+      user: memberID,
       share: shareID,
       subpath: '',
       allow: ['read', 'write', 'create', 'delete', 'download'],
@@ -83,7 +126,7 @@ try {
 
   // The point of the whole test: the grant is live in the process answering
   // requests, without a restart.
-  const after = await api('GET', `/api/fs/list?path=${shareName}`)
+  const after = await memberApi('GET', `/api/fs/list?path=${shareName}`)
   check('the granted share lists immediately, with no restart', after.status === 200,
     `status ${after.status}`)
   check('the listing reports whether its change token is exact',
@@ -104,8 +147,9 @@ try {
   // Removing it takes the access away again, also without a restart.
   const removed = await api('DELETE', `/api/admin/grants/${created.body?.id}`, null, csrf)
   check('the grant is removed', removed.status === 204, `status ${removed.status}`)
-  const afterRemoval = await api('GET', `/api/fs/list?path=${shareName}`)
+  const afterRemoval = await memberApi('GET', `/api/fs/list?path=${shareName}`)
   check('access is gone immediately', afterRemoval.status === 404, `status ${afterRemoval.status}`)
+  await memberCtx.close()
 } finally {
   await browser.close()
 }

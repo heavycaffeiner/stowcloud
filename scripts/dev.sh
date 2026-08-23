@@ -36,7 +36,8 @@ fi
 
 mkdir -p "$DIR"/data "$DIR"/shares/documents/notes "$DIR"/shares/pictures
 
-# A share with something in it, so the browse screen has rows to draw.
+# Shares with something in them, so the browse screen has rows to draw and
+# there is something to delete, restore and move around.
 [ -f "$DIR/shares/documents/readme.txt" ] || cat > "$DIR/shares/documents/readme.txt" <<'TXT'
 A file in the development share.
 TXT
@@ -44,6 +45,12 @@ TXT
 # Notes
 
 A second file, one directory down.
+TXT
+[ -f "$DIR/shares/documents/notes/deeper.txt" ] || cat > "$DIR/shares/documents/notes/deeper.txt" <<'TXT'
+A third, for dragging somewhere else.
+TXT
+[ -f "$DIR/shares/pictures/note.txt" ] || cat > "$DIR/shares/pictures/note.txt" <<'TXT'
+The second share is not empty either, so a move between shares has an end.
 TXT
 
 # Written every run: the tailnet name can change, and a stale host list is a
@@ -76,13 +83,18 @@ burst = 500
 # deployment leaves this alone.
 hardening = "off"
 
+# Trash on, which is not the shipped default: a deployment leaves it off
+# because trash is disk somebody has to reclaim. Here it is on so a delete has
+# somewhere to go and the trash screen has something in it.
 [[shares]]
 name = "documents"
 host_path = "$PWD/$DIR/shares/documents"
+trash_enabled = true
 
 [[shares]]
 name = "pictures"
 host_path = "$PWD/$DIR/shares/pictures"
+trash_enabled = true
 TOML
 
 # A certificate the tailnet's own CA signed, when tailscale will issue one.

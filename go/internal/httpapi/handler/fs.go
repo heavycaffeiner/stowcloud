@@ -9,6 +9,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
+	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
@@ -217,26 +218,48 @@ func Delete(d Deps) http.HandlerFunc {
 			return cerr
 		}
 		var req struct {
-			Path      string `json:"path"`
-			Permanent bool   `json:"permanent"`
+			Paths     []string `json:"paths"`
+			Permanent bool     `json:"permanent"`
 		}
 		if derr := decodeJSON(r, &req); derr != nil {
 			return derr
 		}
-		vp, err := vfs.ParseVpath(req.Path)
-		if err != nil {
-			return err
+		if len(req.Paths) == 0 {
+			return apierr.BadRequest("fs.no_paths", "paths")
 		}
-		resolved, err := d.Core.Resolve(uid, vp, acl.Delete)
-		if err != nil {
-			return err
+		if len(req.Paths) > limits.BatchPaths {
+			return limits.Exceed("delete paths", limits.BatchPaths, int64(len(req.Paths)))
 		}
-		if err := d.Core.Delete(r.Context(), resolved, req.Permanent); err != nil {
-			return err
+
+		// Per item rather than all-or-nothing. Deleting five things where one
+		// is already gone should remove the other four, and the caller is told
+		// which one did not go: a whole-batch refusal leaves the client
+		// guessing how much of what it asked for actually happened.
+		results := make([]batchItem, 0, len(req.Paths))
+		for _, raw := range req.Paths {
+			item := batchItem{Path: raw}
+			switch err := deleteOne(r, d, uid, raw, req.Permanent); {
+			case err != nil:
+				item.Error = itemError(err)
+			default:
+				item.OK = true
+			}
+			results = append(results, item)
 		}
-		w.WriteHeader(http.StatusNoContent)
-		return nil
+		return writeJSON(w, http.StatusOK, map[string]any{"results": results})
 	})
+}
+
+func deleteOne(r *http.Request, d Deps, uid core.UserID, raw string, permanent bool) error {
+	vp, err := vfs.ParseVpath(raw)
+	if err != nil {
+		return err
+	}
+	resolved, err := d.Core.Resolve(uid, vp, acl.Delete)
+	if err != nil {
+		return err
+	}
+	return d.Core.Delete(r.Context(), resolved, permanent)
 }
 
 // Rename answers POST /api/fs/rename: the path, the new name within the same
@@ -271,94 +294,170 @@ func Rename(d Deps) http.HandlerFunc {
 	})
 }
 
-// Move answers POST /api/fs/move: from and to paths, an overwrite flag, and
-// an optional validator. The response names the path the entry landed at and
-// warns when the move had to become a copy.
+// transferRequest is what move and copy both take: a set of sources and one
+// destination directory, which is how a person selects in a file manager.
+type transferRequest struct {
+	Paths      []string `json:"paths"`
+	Dest       string   `json:"dest"`
+	OnConflict string   `json:"on_conflict,omitempty"`
+	// DryRun asks what would happen without doing it, which is what the
+	// destination picker calls to warn that a move will become a copy.
+	DryRun bool `json:"dry_run,omitempty"`
+}
+
+// resolveTransfer validates the batch and the destination once.
+func resolveTransfer(d Deps, uid core.UserID, req transferRequest) (core.Resolved, error) {
+	if len(req.Paths) == 0 {
+		return core.Resolved{}, apierr.BadRequest("fs.no_paths", "paths")
+	}
+	if len(req.Paths) > limits.BatchPaths {
+		return core.Resolved{}, limits.Exceed("transfer paths", limits.BatchPaths, int64(len(req.Paths)))
+	}
+	destV, err := vfs.ParseVpath(req.Dest)
+	if err != nil {
+		return core.Resolved{}, err
+	}
+	return d.Core.Resolve(uid, destV, acl.Create)
+}
+
+// Move answers POST /api/fs/move: a set of paths and the directory to move
+// them into. The response reports each one, and says where a move had to
+// become a copy.
 func Move(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
 		uid, cerr := userOf(r)
 		if cerr != nil {
 			return cerr
 		}
-		var req struct {
-			From      string `json:"from"`
-			To        string `json:"to"`
-			Overwrite bool   `json:"overwrite"`
-			IfMatch   string `json:"if_match,omitempty"`
-		}
+		var req transferRequest
 		if derr := decodeJSON(r, &req); derr != nil {
 			return derr
 		}
-		fromV, err := vfs.ParseVpath(req.From)
+		dest, err := resolveTransfer(d, uid, req)
 		if err != nil {
 			return err
 		}
-		toV, err := vfs.ParseVpath(req.To)
-		if err != nil {
-			return err
+
+		results := make([]batchItem, 0, len(req.Paths))
+		for _, raw := range req.Paths {
+			results = append(results, moveOne(r, d, uid, dest, raw, req))
 		}
-		from, err := d.Core.Resolve(uid, fromV, acl.Move)
-		if err != nil {
-			return err
-		}
-		to, err := d.Core.Resolve(uid, toV, acl.Create)
-		if err != nil {
-			return err
-		}
-		res, err := d.Core.Move(r.Context(), from, to, core.MoveOpts{
-			Overwrite: req.Overwrite,
-			IfMatch:   tokenFrom(req.IfMatch),
-		})
-		if err != nil {
-			return err
-		}
-		out, verr := d.Core.VpathFor(uid, to.Share(), res.Created.Share())
-		if verr != nil {
-			return verr
-		}
-		return writeJSON(w, http.StatusOK, map[string]any{
-			"will_copy": res.WillCopy, "path": out.String(),
-		})
+		return writeJSON(w, http.StatusOK, map[string]any{"results": results})
 	})
 }
 
-// Copy answers POST /api/fs/copy: it starts a recursive copy as a background
-// operation and returns its id, which /api/jobs/{id} tracks.
+func moveOne(
+	r *http.Request, d Deps, uid core.UserID, dest core.Resolved, raw string, req transferRequest,
+) batchItem {
+	item := batchItem{Path: raw}
+
+	fromV, err := vfs.ParseVpath(raw)
+	if err != nil {
+		item.Error = itemError(err)
+		return item
+	}
+	from, err := d.Core.Resolve(uid, fromV, acl.Move)
+	if err != nil {
+		item.Error = itemError(err)
+		return item
+	}
+	// The destination is the directory; the target is the name inside it.
+	toV, err := vfs.ParseVpath(joinPath(req.Dest, fromV.Name()))
+	if err != nil {
+		item.Error = itemError(err)
+		return item
+	}
+	to, err := d.Core.Resolve(uid, toV, acl.Create)
+	if err != nil {
+		item.Error = itemError(err)
+		return item
+	}
+
+	// A dry run answers what would happen and changes nothing, which is what
+	// the destination picker asks before it lets somebody commit.
+	if req.DryRun {
+		item.OK = true
+		item.WillCopy = d.Core.WouldCopy(from, to)
+		item.Path = toV.String()
+		return item
+	}
+
+	res, err := d.Core.Move(r.Context(), from, to, core.MoveOpts{
+		Overwrite: req.OnConflict == "overwrite",
+	})
+	if err != nil {
+		item.Error = itemError(err)
+		return item
+	}
+	item.OK = true
+	item.WillCopy = res.WillCopy
+	if out, verr := d.Core.VpathFor(uid, dest.Share(), res.Created.Share()); verr == nil {
+		item.Path = out.String()
+	}
+	return item
+}
+
+// Copy answers POST /api/fs/copy: it starts one background copy per source and
+// returns the ids, which /api/jobs/{id} tracks.
 func Copy(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
 		uid, cerr := userOf(r)
 		if cerr != nil {
 			return cerr
 		}
-		var req struct {
-			From string `json:"from"`
-			To   string `json:"to"`
-		}
+		var req transferRequest
 		if derr := decodeJSON(r, &req); derr != nil {
 			return derr
 		}
-		fromV, err := vfs.ParseVpath(req.From)
-		if err != nil {
+		if _, err := resolveTransfer(d, uid, req); err != nil {
 			return err
 		}
-		toV, err := vfs.ParseVpath(req.To)
-		if err != nil {
-			return err
+
+		var jobs []int64
+		results := make([]batchItem, 0, len(req.Paths))
+		for _, raw := range req.Paths {
+			item := batchItem{Path: raw}
+			id, err := copyOne(r, d, uid, raw, req.Dest)
+			if err != nil {
+				item.Error = itemError(err)
+				results = append(results, item)
+				continue
+			}
+			item.OK = true
+			jobs = append(jobs, id)
+			results = append(results, item)
 		}
-		from, err := d.Core.Resolve(uid, fromV, acl.Read)
-		if err != nil {
-			return err
+
+		out := map[string]any{"results": results}
+		// The client tracks one job for the batch, so the first is what it
+		// polls. Every id is reported as well, because a multi-source copy
+		// genuinely has several and reporting one would lose the rest.
+		if len(jobs) > 0 {
+			out["job"] = strconv.FormatInt(jobs[0], 10)
+			out["jobs"] = jobs
 		}
-		to, err := d.Core.Resolve(uid, toV, acl.Create)
-		if err != nil {
-			return err
-		}
-		id, err := d.Core.StartCopy(r.Context(), uid, from, to)
-		if err != nil {
-			return err
-		}
-		return writeJSON(w, http.StatusAccepted, map[string]any{"job_id": id})
+		return writeJSON(w, http.StatusAccepted, out)
 	})
+}
+
+func copyOne(r *http.Request, d Deps, uid core.UserID, raw, dest string) (int64, error) {
+	fromV, err := vfs.ParseVpath(raw)
+	if err != nil {
+		return 0, err
+	}
+	from, err := d.Core.Resolve(uid, fromV, acl.Read)
+	if err != nil {
+		return 0, err
+	}
+	toV, err := vfs.ParseVpath(joinPath(dest, fromV.Name()))
+	if err != nil {
+		return 0, err
+	}
+	to, err := d.Core.Resolve(uid, toV, acl.Create)
+	if err != nil {
+		return 0, err
+	}
+	return d.Core.StartCopy(r.Context(), uid, from, to)
 }
 
 // Write answers POST /api/fs/write, replacing a file's content atomically.

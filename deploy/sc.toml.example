@@ -65,6 +65,11 @@ enabled = false
 # as on disk.
 service_user = "scsvc"
 
+# (Each [[shares]] entry below also takes `trash_enabled`, off by default: a
+# deleted file is removed rather than kept, because trash is disk somebody has
+# to reclaim and a server that quietly keeps everything fills up. An
+# administrator can turn it on per share from the settings screen instead.)
+
 # The numeric group every rendered SMB account is put in. It must be a group
 # that exists in the sidecar's own container, which is what the published
 # account file is read against.

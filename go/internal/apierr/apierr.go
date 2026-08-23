@@ -96,21 +96,26 @@ func (e *Error) Error() string {
 	return strings.Join(parts, " ")
 }
 
-// envelope and wire are the JSON shape, and they are unexported because the
-// only way to produce one is to marshal an Error.
+// envelope is the JSON shape of a refused request: one error, under one key.
 type envelope struct {
-	Error wire `json:"error"`
+	Error Wire `json:"error"`
 }
 
-type wire struct {
+// Wire is a refusal as a client reads it.
+//
+// Exported for the batch surfaces, where one request carries an outcome per
+// item and a failed item has to say why in the same vocabulary a failed
+// request does. Producing it stays this package's job: a caller assembling the
+// shape by hand is a second error format that drifts from this one.
+type Wire struct {
 	Code    Code           `json:"code"`
 	Message string         `json:"message"`
 	Detail  map[string]any `json:"detail,omitempty"`
 }
 
-// MarshalJSON writes the envelope.
-func (e *Error) MarshalJSON() ([]byte, error) {
-	w := wire{Code: e.Code, Message: string(e.Message)}
+// Wire renders the error as the client-facing shape.
+func (e *Error) Wire() Wire {
+	w := Wire{Code: e.Code, Message: string(e.Message)}
 	if !e.internal && e.Key != "" {
 		params := make(map[string]string, len(e.Args))
 		for _, a := range e.Args {
@@ -118,7 +123,12 @@ func (e *Error) MarshalJSON() ([]byte, error) {
 		}
 		w.Detail = map[string]any{"reason_key": string(e.Key), "reason_params": params}
 	}
-	return json.Marshal(envelope{Error: w})
+	return w
+}
+
+// MarshalJSON writes the envelope.
+func (e *Error) MarshalJSON() ([]byte, error) {
+	return json.Marshal(envelope{Error: e.Wire()})
 }
 
 // Write renders a refusal as the envelope. It is the one place this package

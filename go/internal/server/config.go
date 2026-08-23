@@ -64,6 +64,10 @@ type ShareConfig struct {
 	// SharedExternally marks a folder another program also writes. Nothing on
 	// a filesystem says so, which is why it is the operator who says it.
 	SharedExternally bool
+	// TrashEnabled keeps deleted items in the share rather than removing them.
+	// Off by default, because trash is disk somebody has to reclaim and a
+	// server that silently keeps everything is a server that fills up.
+	TrashEnabled bool
 }
 
 // SMBConfig is the publishing half of the SMB settings, alongside the render
@@ -130,6 +134,7 @@ type raw struct {
 		Name             string `toml:"name"`
 		HostPath         string `toml:"host_path"`
 		SharedExternally bool   `toml:"shared_externally"`
+		TrashEnabled     bool   `toml:"trash_enabled"`
 	} `toml:"shares"`
 }
 
@@ -285,6 +290,7 @@ func Validate(r raw) (*Config, error) {
 		seen[sh.Name] = true
 		cfg.Shares = append(cfg.Shares, ShareConfig{
 			Name: sh.Name, Host: sh.HostPath, SharedExternally: sh.SharedExternally,
+			TrashEnabled: sh.TrashEnabled,
 		})
 	}
 
