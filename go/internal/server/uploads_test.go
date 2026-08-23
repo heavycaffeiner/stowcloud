@@ -231,6 +231,38 @@ func TestAnUploadRoundTrips(t *testing.T) {
 	if got := done.Header().Get("Upload-Offset"); got != strconv.Itoa(len(content)) {
 		t.Fatalf("final offset = %q, want %d", got, len(content))
 	}
+
+	// The part that makes this a round trip rather than a set of accepted
+	// chunks. Every assertion above passed while the bytes stopped at the part
+	// file: the session was never finalized, so the destination never existed
+	// and the listing stayed empty, on every deployment.
+	listed := f.do(t, "GET", "/api/fs/list?path=/docs", nil, nil)
+	if listed.Code != http.StatusOK {
+		t.Fatalf("list = %d, want 200\n%s", listed.Code, listed.Body)
+	}
+	if !strings.Contains(listed.Body.String(), "big.bin") {
+		t.Fatalf("the uploaded file is not in the listing:\n%s", listed.Body)
+	}
+
+	// Checked through stat rather than by reading the bytes back: this
+	// fixture's grant deliberately withholds Download, and widening it to make
+	// an assertion convenient would stop the other tests here from meaning
+	// what they say.
+	stated := f.do(t, "GET", "/api/fs/stat?path=/docs/big.bin", nil, nil)
+	if stated.Code != http.StatusOK {
+		t.Fatalf("stat = %d, want 200\n%s", stated.Code, stated.Body)
+	}
+	if !strings.Contains(stated.Body.String(), strconv.Itoa(len(content))) {
+		t.Errorf("the published file is not %d bytes:\n%s", len(content), stated.Body)
+	}
+
+	// The session is consumed by the publish, so a client that asks again is
+	// told it is gone rather than being handed a resumable offset for a file
+	// that is already on disk.
+	gone := f.do(t, "HEAD", location, nil, map[string]string{"Tus-Resumable": "1.0.0"})
+	if gone.Code != http.StatusNotFound {
+		t.Errorf("head after publish = %d, want 404", gone.Code)
+	}
 }
 
 // A chunk that did not arrive at the resumable offset has its own status, so a

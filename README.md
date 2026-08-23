@@ -70,50 +70,31 @@ git clone https://github.com/heavycaffeiner/stowcloud
 cd stowcloud
 ```
 
-**2. Make the folders it will use.**
-
-```sh
-mkdir -p ./data ./secrets ./smbcfg ./shares/photos ./shares/video
-chown -R 1000:1000 ./data ./secrets ./smbcfg
-```
-
-`data` holds the cache database, `secrets` holds the encryption key, and the
-two under `shares/` stand in for folders of yours. The server runs as user
-`1000` and cannot change ownership itself, so these have to be owned by
-`1000` before it starts. Make all of them: Docker creates a missing one for
-you, owned by root, and then nothing can write to it. Point them at real
-folders later by editing the `volumes:` lines in `docker-compose.yml`.
-
-**3. Start it.**
+**2. Start it.**
 
 ```sh
 docker compose up -d
 ```
 
-This pulls a roughly 30 MB image built and smoke-tested by this repository's
-CI. It runs read-only, as a non-root user, with all Linux capabilities
-dropped, and it serves HTTPS on port 8443, published to your network so you
-can reach it from another machine.
+That is the whole setup. It pulls a roughly 30 MB image built and smoke-tested
+by this repository's CI, runs read-only as a non-root user with every Linux
+capability dropped, and serves HTTPS on port 8443.
 
-**4. Tell it which folders to serve.**
+There are no directories to create and nothing to chown. The files you upload
+live in a named volume, and the image ships the directories it mounts them over
+already owned by the uid it runs as, so a volume inherits an owner that can
+write. To serve a folder you already have instead, replace the `sc-files` line
+under `volumes:` with a bind mount and make sure the directory is readable and
+writable by uid 65532:
 
-Create `data/sc.toml`:
-
-```toml
-[[shares]]
-name = "photos"
-host_path = "/shares/photos"
+```yaml
+      - /srv/my-files:/shares/files:z
 ```
 
-Then `docker compose restart`. Paths here are the paths **inside** the
-container, which is why this says `/shares/photos` and not the host path.
-Without this file the server starts fine and simply has nothing to show, and
-you can add folders from the admin screen later instead.
-
-**5. Create the administrator account.**
+**3. Create the administrator account.**
 
 ```sh
-docker compose logs sc | grep 'Setup token'
+docker compose logs sc | grep 'setup token'
 ```
 
 Open `https://<the machine's address>:8443/setup`, paste that token, and pick a

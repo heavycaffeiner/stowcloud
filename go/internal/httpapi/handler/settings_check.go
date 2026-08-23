@@ -196,15 +196,15 @@ func checkNetworkLive(r *http.Request, body map[string]any) []Finding {
 	return out
 }
 
-// hostAllowed matches a host against a list, honouring the one wildcard form
-// the guard itself accepts.
+// hostAllowed matches a host against a list exactly as the guard does.
+//
+// Case-insensitive equality and nothing else. There is no wildcard form: this
+// used to accept "*" and "*.example.test", which meant a list the guard would
+// reject could pass the check and produce the very lockout the check exists to
+// prevent.
 func hostAllowed(list []string, host string) bool {
 	for _, h := range list {
-		h = strings.ToLower(strings.TrimSpace(h))
-		if h == "*" || h == host {
-			return true
-		}
-		if suffix, ok := strings.CutPrefix(h, "*."); ok && strings.HasSuffix(host, "."+suffix) {
+		if strings.EqualFold(strings.TrimSpace(h), host) {
 			return true
 		}
 	}

@@ -56,17 +56,31 @@ func TestAHostListNamingTheCallerPasses(t *testing.T) {
 	}
 }
 
-// The wildcard form the guard itself accepts has to be accepted here too, or
-// the check refuses a list that would actually have worked.
-func TestAWildcardCoveringTheCallerPasses(t *testing.T) {
+// The guard compares exactly, so a wildcard is not a match and the check must
+// not treat it as one. Accepting it here would pass a list the guard rejects,
+// producing the lockout this check exists to prevent.
+func TestAWildcardDoesNotCountAsTheCallersHost(t *testing.T) {
 	r := httptest.NewRequest("POST", "/", nil)
 	r.Host = "console.example.test"
 
 	got := checkSection(Deps{}, r, "network", map[string]any{
 		"app_hosts": []any{"*.example.test"},
 	})
+	if !blocked(got) {
+		t.Fatalf("a wildcard was accepted as covering the caller: %+v", got)
+	}
+}
+
+// Case is not significant, matching the guard's own comparison.
+func TestTheHostMatchIsCaseInsensitive(t *testing.T) {
+	r := httptest.NewRequest("POST", "/", nil)
+	r.Host = "Console.Example.Test"
+
+	got := checkSection(Deps{}, r, "network", map[string]any{
+		"app_hosts": []any{"console.example.test"},
+	})
 	if blocked(got) {
-		t.Fatalf("a wildcard covering the caller was blocked: %+v", got)
+		t.Fatalf("a case difference was treated as a different host: %+v", got)
 	}
 }
 

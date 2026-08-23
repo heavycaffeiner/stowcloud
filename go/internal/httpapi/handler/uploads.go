@@ -245,6 +245,30 @@ func UploadsPatch(d Deps) http.HandlerFunc {
 			return tusError(werr)
 		}
 
+		// The chunk that completes the upload publishes it. Without this the
+		// bytes reach the part file and stop there: the session stays open, the
+		// destination never appears, and a client that sent every byte sees a
+		// successful upload of a file that is not in the listing.
+		//
+		// Declared length zero means the client did not say how long it is, so
+		// there is no offset that means "done" and something else has to say so.
+		if session.TotalLen != nil && next >= *session.TotalLen {
+			// Resolved through the share label the session already belongs to,
+			// so the permission check looks at the path that publishes rather
+			// than one the request could name.
+			vp, verr := d.Core.VpathFor(uid, session.Share, session.Dest)
+			if verr != nil {
+				return tusError(verr)
+			}
+			resolved, rerr := d.Core.Resolve(uid, vp, acl.Write|acl.Create)
+			if rerr != nil {
+				return rerr
+			}
+			if _, ferr := d.Uploads.Finalize(r.Context(), resolved, id); ferr != nil {
+				return tusError(ferr)
+			}
+		}
+
 		h := w.Header()
 		h.Set(hdrResumable, tusVersion)
 		h.Set(hdrOffset, strconv.FormatUint(next, 10))

@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/server"
 )
 
 // The subcommand set is a contract with the image: Docker's exec-form
@@ -78,5 +80,36 @@ func TestExitCodes(t *testing.T) {
 	}
 	if exitOK != 0 || exitNoAnswer != 1 || exitUsage != 64 || exitConfig != 78 {
 		t.Fatal("the exit codes moved")
+	}
+}
+
+// Every configured share is inside the sandbox.
+//
+// The domain is built before the shares are registered, so on a first run the
+// database holds none and a domain built from it alone grants no share path at
+// all. The kernel then denies every listing while the share table and the
+// grants both look correct, which reads as a permission bug anywhere but where
+// it is. This is what a fresh container deployment does.
+func TestTheJailGrantsEveryConfiguredShare(t *testing.T) {
+	cfg := &server.Config{
+		DataDir: "/var/lib/stowcloud",
+		Shares: []server.ShareConfig{
+			{Name: "files", Host: "/shares/files"},
+			{Name: "media", Host: "/srv/media"},
+		},
+	}
+
+	spec := jailSpec(cfg, "/etc/stowcloud/sc.toml", nil)
+	granted := map[string]bool{}
+	for _, g := range spec.GrantBeneath {
+		granted[g.Path] = true
+	}
+	for _, sh := range cfg.Shares {
+		if !granted[sh.Host] {
+			t.Errorf("share %q at %s is outside the sandbox", sh.Name, sh.Host)
+		}
+	}
+	if !granted[cfg.DataDir] {
+		t.Error("the data directory is outside the sandbox")
 	}
 }

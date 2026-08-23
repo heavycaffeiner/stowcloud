@@ -1,0 +1,92 @@
+# Stowcloud, built from this working tree instead of pulled.
+#
+#   docker compose -f compose.buildver.yml up -d --build
+#
+# Same layout and same hardening as docker-compose.yml; the difference is the
+# `build:` blocks and a separate project name, so this can run beside a
+# released stack without the two fighting over container names or volumes.
+#
+# The setup token is in the log:
+#
+#   docker compose -f compose.buildver.yml logs sc | grep 'setup token'
+
+name: stowcloud-build
+
+services:
+  sc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # The frontend bundle is embedded in the binary, so a change under web/
+    # needs --build rather than a restart.
+    image: stowcloud:core-dev
+    restart: unless-stopped
+
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+    ports:
+      # Loopback only. A development build is not something to publish to the
+      # LAN by accident, and the released file is the one that does that.
+      - "127.0.0.1:8443:8443"
+
+    volumes:
+      - sc-data:/var/lib/stowcloud
+      - ./deploy/sc.quickstart.toml:/etc/stowcloud/sc.toml:ro,z
+      - sc-files:/shares/files
+      - sc-smb-config:/config/smb
+      - sc-smb-control:/run/sc-smb
+
+    stop_grace_period: 30s
+
+    healthcheck:
+      test: [CMD, /stowcloud, healthcheck, /etc/stowcloud/sc.toml]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  sc-smb:
+    build:
+      context: .
+      dockerfile: Dockerfile.smb
+    image: stowcloud:smb-dev
+    profiles: [smb]
+    restart: unless-stopped
+
+    # Bridged rather than host networking, unlike the released file. A
+    # development stack should not claim the host's port 445, and \\NAME
+    # resolution is the only thing given up: the address still mounts.
+    #
+    # Set SC_SMB_BIND_IP to the host address to serve on. It is deliberately
+    # not defaulted to 0.0.0.0: that would put SMB on every interface of the
+    # machine you are developing on.
+    ports:
+      - "${SC_SMB_BIND_IP:-127.0.0.1}:445:445"
+
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, DAC_READ_SEARCH]
+    security_opt:
+      - no-new-privileges:true
+
+    volumes:
+      - sc-smb-config:/config/smb:ro
+      - sc-smb-control:/run/sc-smb
+      - sc-files:/shares/files
+
+    healthcheck:
+      test: [CMD-SHELL, "smbd -b >/dev/null 2>&1 && pgrep -x smbd >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  sc-data:
+  sc-files:
+  sc-smb-config:
+  sc-smb-control:

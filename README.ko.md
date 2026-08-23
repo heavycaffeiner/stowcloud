@@ -68,50 +68,30 @@ git clone https://github.com/heavycaffeiner/stowcloud
 cd stowcloud
 ```
 
-**2. 쓸 폴더를 만듭니다.**
-
-```sh
-mkdir -p ./data ./secrets ./smbcfg ./shares/photos ./shares/video
-chown -R 1000:1000 ./data ./secrets ./smbcfg
-```
-
-`data`에는 캐시 데이터베이스가, `secrets`에는 암호화 키가 들어갑니다.
-`shares/` 아래 둘은 여러분의 폴더를 대신하는 자리입니다. 서버는 uid 1000으로
-돌고 스스로 소유권을 바꾸지 못하므로, 시작 전에 1000 소유로 만들어 두어야
-합니다. 빠뜨리지 말고 전부 만드세요. 없는 폴더는 Docker가 root 소유로 대신
-만들어 버리고, 그러면 아무것도 그 안에 쓰지 못합니다. 나중에
-`docker-compose.yml`의 `volumes:` 줄을 고쳐 실제 폴더를 가리키게 하면 됩니다.
-
-**3. 실행합니다.**
+**2. 실행합니다.**
 
 ```sh
 docker compose up -d
 ```
 
-이 저장소의 CI가 빌드하고 기동 테스트까지 마친 30MB 남짓한 이미지를 받아옵니다.
-컨테이너는 읽기 전용으로, root가 아닌 사용자로, 리눅스 권한을 전부 버린 상태로
-돌고, 8443 포트에서 HTTPS를 제공합니다. 다른 기기에서도 접속할 수 있도록 내부망에
-포트를 엽니다.
+설정은 이게 전부입니다. 이 저장소의 CI가 빌드하고 기동 테스트까지 마친 30MB
+남짓한 이미지를 받아옵니다. 컨테이너는 읽기 전용으로, root가 아닌 사용자로,
+리눅스 권한을 전부 버린 상태로 돌고, 8443 포트에서 HTTPS를 제공합니다.
 
-**4. 어떤 폴더를 서비스할지 알려 줍니다.**
+만들 폴더도, chown 할 것도 없습니다. 업로드한 파일은 named volume에 들어가고,
+이미지가 그 자리의 디렉터리를 실행 uid 소유로 미리 만들어 두기 때문에 volume이
+쓸 수 있는 소유권을 물려받습니다. 이미 가지고 있는 폴더를 서비스하려면
+`volumes:`의 `sc-files` 줄을 bind mount로 바꾸고, 그 디렉터리를 uid 65532가
+읽고 쓸 수 있게 해 두면 됩니다.
 
-`data/sc.toml`을 만듭니다.
-
-```toml
-[[shares]]
-name = "photos"
-host_path = "/shares/photos"
+```yaml
+      - /srv/my-files:/shares/files:z
 ```
 
-그다음 `docker compose restart`. 여기 적는 경로는 호스트 경로가 아니라 **컨테이너
-안쪽** 경로입니다. 그래서 `/shares/photos`라고 씁니다. 이 파일이 없어도 서버는
-정상적으로 뜨고 보여 줄 폴더만 없을 뿐이며, 나중에 관리자 화면에서 추가해도
-됩니다.
-
-**5. 관리자 계정을 만듭니다.**
+**3. 관리자 계정을 만듭니다.**
 
 ```sh
-docker compose logs sc | grep 'Setup token'
+docker compose logs sc | grep 'setup token'
 ```
 
 `https://<서버 주소>:8443/setup`을 열고 그 토큰을 붙여 넣은 다음, 아이디와

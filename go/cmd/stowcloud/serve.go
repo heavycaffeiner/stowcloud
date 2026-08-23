@@ -57,8 +57,24 @@ func jailSpec(cfg *server.Config, configPath string, shareHosts []string) jail.S
 	// Every share is granted by its host path. A domain built from the data
 	// directory alone would deny every share the server exists to serve, which
 	// is a sandbox that only works on a deployment with no shares.
+	//
+	// The config file's shares are granted here as well as the database's. The
+	// domain is built before registration runs, so on a first run the database
+	// is empty and granting only what it holds leaves every configured share
+	// outside the sandbox: the kernel denies each listing while the share table
+	// and the grants both look correct.
+	seen := map[string]bool{}
+	for _, sh := range cfg.Shares {
+		if sh.Host != "" && !seen[sh.Host] {
+			seen[sh.Host] = true
+			spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: sh.Host})
+		}
+	}
 	for _, host := range shareHosts {
-		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: host})
+		if host != "" && !seen[host] {
+			seen[host] = true
+			spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: host})
+		}
 	}
 	return spec
 }
@@ -68,6 +84,12 @@ func jailSpec(cfg *server.Config, configPath string, shareHosts []string) jail.S
 // The share paths are read straight from the database rather than from the
 // core, because the core cannot be built before the sandbox: doing so is what
 // made everything above the sandbox run twice.
+//
+// The config file's shares are added to whatever the database holds, and that
+// is what makes a first run work. Registration happens after the sandbox is
+// already up, so on a fresh deployment the database is empty and a domain
+// built from it alone grants no share at all: every listing answers "permission
+// denied" from the kernel while the grants and the share table look correct.
 func applyJail(cfg *server.Config, configPath string, clk clock.Clock) (jail.Status, error) {
 	var hosts []string
 	if st, err := store.Open(cfg.DataDir, store.Options{Clock: clk}); err == nil {

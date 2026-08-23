@@ -1,45 +1,43 @@
-# Server config for the testbed compose stack. Paths are the container's.
+# Server config for the testbed stack. Every path is the container's.
 
-# HTTPS, like every other deployment: this is the only listener and it always
-# terminates TLS with a self-signed certificate written into `data_dir/tls`
-# on first run (`Config::bind`).
-bind = "0.0.0.0:8443"
-data_dir = "/var/lib/sc"
+[server]
+data_dir = "/var/lib/stowcloud"
+# The container's own address, not loopback: a published port targets the
+# bridge interface, and TLS is the only thing this socket speaks.
+listen = "0.0.0.0:8443"
 
-# Hostnames only: `middleware::host_guard` splits the port off the Host
-# header before comparing, so an entry carrying one can never match. The stack
-# publishes 8443 on the guest's loopback only, so these are the only two
-# literals that ever arrive.
+[http]
+# Host names only. The guard splits the port off the Host header before
+# comparing, so an entry carrying one can never match. The stack publishes on
+# the guest's loopback, so these are the only two literals that arrive.
 app_hosts = ["127.0.0.1", "localhost"]
-# Two `app_hosts` entries is ambiguous, so nothing is derived: without this the
-# compat layer never mounted here at all, and every share link was a guess.
-# The first entry is what an unrecognised `Host` is answered with.
-public_origins = ["https://127.0.0.1:8443", "https://localhost:8443"]
-# `allowed_origins` is deliberately absent. Left empty it is derived from
-# `app_hosts` as `https://{host}` and `https://{host}:{bind port}`, which is
-# exactly right here; the explicit `http://` list this used to carry became
-# wrong the moment the plaintext listener went away, and spelling out a
-# correct one would only be a second copy of something already derived.
+content_hosts = ["content.localhost"]
 
-master_key_file = "/run/sc-secrets/master.key"
+[rate]
+# Well above production's, because the testbed drives the API in bursts and a
+# limiter tripping mid-suite reads as a failure of whatever it was testing.
+per_sec = 200
+burst = 400
 
-[[shares]]
-name = "photos"
-host_path = "/shares/photos"
+[security]
+# The guest kernel has the layers, so this asks for all of them and refuses to
+# start without: a testbed that silently ran unsandboxed would be testing a
+# configuration nobody ships.
+hardening = "required"
 
 [[shares]]
-name = "video"
-host_path = "/shares/video"
+name = "files"
+host_path = "/shares/files"
+trash_enabled = true
 
 [smb]
-# Left off here on purpose: turning SMB on through
-# `PATCH /api/admin/server-settings/smb` is the path a real deployment takes,
-# and it exercises the in-process render plus the push to the agent that a
-# pre-enabled config file would skip.
+# Off on purpose. Turning it on from the settings screen is the path a real
+# deployment takes, and it exercises the render plus the push to the agent
+# that a pre-enabled config file would skip.
 enabled = false
 workgroup = "WORKGROUP"
-config_dir = "/config/smb"
 service_user = "scsvc"
-# Where the sidecar listens for "apply now". The default, written down here
-# because it has to match the volume both services mount it on.
+config_dir = "/config/smb"
+# Where the sidecar listens. Written down because it has to match the volume
+# both services mount it on.
 agent_socket = "/run/sc-smb/agent.sock"

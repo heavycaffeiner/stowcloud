@@ -101,6 +101,17 @@ COPY --from=frontend /src/go/internal/httpapi/spa/build ./internal/httpapi/spa/b
 # The trimmed path and the empty build id are what make the same source produce
 # the same bytes on two machines, so a published binary can be checked against
 # a build of the tag it claims to come from.
+# The directories a fresh deployment mounts volumes over, staged here because
+# the runtime base has no shell to create them with. Copied in owned by the
+# runtime uid: a named volume mounted over an existing directory inherits that
+# directory's ownership, so the server can write to it. An empty volume with
+# nothing underneath is created root-owned instead, and the first write fails.
+#
+# /shares/files is the quickstart's one share. A deployment serving its own
+# directories bind-mounts them and this goes unused.
+RUN mkdir -p /staged/var/lib/stowcloud /staged/shares/files /staged/config/smb && \
+    chown -R 65532:65532 /staged
+
 RUN mkdir -p /out && \
     CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" \
       go build -tags embed_ui \
@@ -131,8 +142,18 @@ COPY --from=builder --chown=nonroot:nonroot /out/stowcloud /stowcloud
 COPY LICENSE /LICENSE
 COPY THIRD-PARTY-NOTICES.md /THIRD-PARTY-NOTICES.md
 
-# The data directory holds the store, the certificate and the setup token. It
-# has to exist and be writable by whatever uid the container actually runs as.
+# The data directory holds the store, the certificate and the setup token.
+#
+# It ships in the image, owned by the runtime uid. A named volume mounted over
+# an existing directory inherits that directory's owner, which is what lets
+# `docker compose up` work with no host-side preparation. A bind mount does not
+# inherit anything, so a host directory still has to be created with the right
+# owner.
+COPY --from=builder --chown=nonroot:nonroot /staged/var/lib/stowcloud /var/lib/stowcloud
+# The default share and the SMB render directory, for the same reason: a volume
+# mounted over either inherits an owner the server can write as.
+COPY --from=builder --chown=nonroot:nonroot /staged/shares/files /shares/files
+COPY --from=builder --chown=nonroot:nonroot /staged/config/smb /config/smb
 VOLUME ["/var/lib/stowcloud"]
 
 # One socket, and it is TLS. There is no plaintext listener anywhere to publish
