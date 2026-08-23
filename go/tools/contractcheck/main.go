@@ -52,6 +52,26 @@ func pairs() []pair {
 	}
 }
 
+// inlinePair is an interface answered by a map literal rather than a struct.
+//
+// Several handlers build their response with map[string]any, so there are no
+// struct tags to read. The keys are matched out of the literal instead, which
+// is how the folder size was caught: it sent size and count where the screen
+// reads bytes and files, so the panel showed an undefined total beside
+// "undefined files".
+type inlinePair struct {
+	iface string
+	// marker is a string that appears in the handler holding the literal, used
+	// to find the right one.
+	marker string
+}
+
+func inlinePairs() []inlinePair {
+	return []inlinePair{
+		{iface: "FolderSize", marker: "agg.RSize"},
+	}
+}
+
 func main() {
 	if len(os.Args) != 3 {
 		say(os.Stderr, "usage: contractcheck <types.ts> <handler-dir>"+"\n")
@@ -99,12 +119,39 @@ func main() {
 			bad += len(missing)
 		}
 	}
+	for _, p := range inlinePairs() {
+		want, ok := requiredFields(string(ts), p.iface)
+		if !ok {
+			say(os.Stdout, "contractcheck: no interface %s in the client types\n", p.iface)
+			bad++
+			continue
+		}
+		have, ok := literalKeys(goSrc, p.marker)
+		if !ok {
+			say(os.Stdout, "contractcheck: no response literal near %s\n", p.marker)
+			bad++
+			continue
+		}
+		var missing []string
+		for _, f := range want {
+			if _, sent := have[f]; !sent {
+				missing = append(missing, f)
+			}
+		}
+		sort.Strings(missing)
+		if len(missing) > 0 {
+			say(os.Stdout, "%s requires %s, and the literal near %s does not send it\n",
+				p.iface, strings.Join(missing, ", "), p.marker)
+			bad += len(missing)
+		}
+	}
+
 	if bad > 0 {
 		say(os.Stdout, "\ncontractcheck: %d field(s) the client reads and the server never sends.\n", bad)
 		say(os.Stdout, "Add the field, or record it in the pair's skip map with the reason."+"\n")
 		os.Exit(1)
 	}
-	say(os.Stdout, "contractcheck: %d contract(s), no drift.\n", len(pairs()))
+	say(os.Stdout, "contractcheck: %d contract(s), no drift.\n", len(pairs())+len(inlinePairs()))
 }
 
 // readGo concatenates every .go file in a directory, which is enough: this
@@ -153,6 +200,34 @@ func requiredFields(ts, iface string) ([]string, bool) {
 	}
 	return out, true
 }
+
+// literalKeys returns the quoted keys of the map literal containing marker.
+//
+// The window is the enclosing writeJSON call, found by walking back to it and
+// forward to the closing brace. Crude, and it only has to read a literal that
+// a handler wrote a few lines wide.
+func literalKeys(src, marker string) (map[string]struct{}, bool) {
+	at := strings.Index(src, marker)
+	if at < 0 {
+		return nil, false
+	}
+	start := strings.LastIndex(src[:at], "writeJSON")
+	if start < 0 {
+		return nil, false
+	}
+	end := strings.Index(src[at:], "})")
+	if end < 0 {
+		return nil, false
+	}
+	window := src[start : at+end]
+	out := map[string]struct{}{}
+	for _, m := range literalKey.FindAllStringSubmatch(window, -1) {
+		out[m[1]] = struct{}{}
+	}
+	return out, true
+}
+
+var literalKey = regexp.MustCompile(`"([a-z_][a-z0-9_]*)":`)
 
 // jsonFields returns the json names one Go struct sends.
 func jsonFields(src, name string) (map[string]struct{}, bool) {

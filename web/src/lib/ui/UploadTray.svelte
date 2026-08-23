@@ -169,6 +169,12 @@
               <span class="sc-upload-tray__meta">
                 {formatBytes(item.sent)} / {formatBytes(item.total)}
                 {#if item.status === 'uploading'} · {formatRate(item.rate)} · {formatEta(item.etaSec)}{/if}
+                <!-- A cancelled row read as a stalled one: it showed the bytes
+                     it had reached and nothing that said it had stopped on
+                     purpose. The state is named now, in text rather than by
+                     the absence of a rate. -->
+                {#if item.status === 'canceled'} · {t('upload.canceled')}{/if}
+                {#if item.status === 'paused'} · {t('upload.paused')}{/if}
               </span>
             </div>
             <ProgressLinear value={item.total > 0 ? item.sent / item.total : 0} label={item.name} />

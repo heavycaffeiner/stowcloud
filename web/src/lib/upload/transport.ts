@@ -38,7 +38,7 @@ export interface CreateSessionParams {
 
 export interface Transport {
   createSession(p: CreateSessionParams): Promise<{ id: string; offset: number }>
-  patchChunk(id: string, offset: number, body: Blob): Promise<{ offset: number }>
+  patchChunk(id: string, offset: number, body: Blob, signal?: AbortSignal): Promise<{ offset: number }>
   /** `chunkSize` is the session's server-fixed chunk size (`Sc-Chunk-Size`,
    * ) — undefined only if the backend predates the
    *  header, in which case the caller falls back to its own remembered
@@ -81,7 +81,7 @@ class HttpTransport implements Transport {
     return { id, offset }
   }
 
-  async patchChunk(id: string, offset: number, body: Blob): Promise<{ offset: number }> {
+  async patchChunk(id: string, offset: number, body: Blob, signal?: AbortSignal): Promise<{ offset: number }> {
     const res = await fetch(`${BASE}/uploads/${id}`, {
       method: 'PATCH',
       credentials: 'include',
@@ -91,7 +91,11 @@ class HttpTransport implements Transport {
         'Upload-Offset': String(offset),
         'Sc-Csrf': csrfToken
       },
-      body
+      body,
+      // Cancel aborts the transfer rather than letting it run to completion
+      // and fail afterwards. Without it a cancelled multi-gigabyte upload
+      // kept sending until every chunk in flight had finished.
+      signal
     })
     if (!res.ok) throw new UploadHttpError(res.status, `patch failed: ${res.status}`)
     return { offset: Number(res.headers.get('Upload-Offset') ?? offset) }
@@ -166,7 +170,7 @@ class MockTransport implements Transport {
     return { id, offset: 0 }
   }
 
-  async patchChunk(id: string, offset: number, body: Blob): Promise<{ offset: number }> {
+  async patchChunk(id: string, offset: number, body: Blob, _signal?: AbortSignal): Promise<{ offset: number }> {
     const s = mockSessions.get(id)
     if (!s) throw new UploadHttpError(404, 'no such mock session')
     // simulate network latency proportional to chunk size (~50 MB/s)

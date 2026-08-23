@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"sync"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
@@ -353,6 +354,14 @@ func (e *Engine) PatchAt(
 	// the chunk.
 	n, digest, werr := e.writeBody(f, off, body, r, sum)
 	if werr != nil {
+		// A cancel closes the part file while chunks of the same session are
+		// still writing, and this is what those writes hit. The session is
+		// gone on purpose, so it is reported as gone: answering 500 made the
+		// client read a deliberate cancellation as a server fault and retry
+		// it, which is what left a cancelled upload saying "retrying".
+		if errors.Is(werr, os.ErrClosed) {
+			return 0, ErrNotFound
+		}
 		return 0, werr
 	}
 

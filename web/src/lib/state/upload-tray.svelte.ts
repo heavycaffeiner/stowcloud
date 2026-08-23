@@ -57,9 +57,18 @@ export class UploadTrayState {
         ]
         this.open = true
         break
-      case 'progress':
-        this.#patch(evt.id, { sent: evt.sent, total: evt.total, rate: evt.rate, etaSec: evt.etaSec, status: 'uploading' })
+      case 'progress': {
+        // A chunk that was already on the wire when pause or cancel was
+        // pressed still reports its progress afterwards. Taking the status
+        // from it would undo what the person just asked for: the row went
+        // back to "uploading" a moment after being paused, so the pause
+        // control never appeared to work. The bytes are still true and are
+        // still recorded.
+        const cur = this.items.find((x) => x.id === evt.id)?.status
+        const status = cur === 'paused' || cur === 'canceled' ? cur : 'uploading'
+        this.#patch(evt.id, { sent: evt.sent, total: evt.total, rate: evt.rate, etaSec: evt.etaSec, status })
         break
+      }
       case 'done': {
         this.#patch(evt.id, { sent: evt.size, status: 'done' })
         api.registerUploadedEntry(evt.dest, {

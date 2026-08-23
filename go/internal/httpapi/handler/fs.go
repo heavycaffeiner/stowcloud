@@ -593,7 +593,13 @@ func Size(d Deps) http.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"size": agg.RSize, "count": agg.RCount})
+		// The names the client reads. It sent "size" and "count", so the panel
+		// rendered an undefined byte total and "undefined files": both fields
+		// were present and both were under the wrong name.
+		return writeJSON(w, http.StatusOK, map[string]any{
+			"bytes": agg.RSize,
+			"files": agg.RCount,
+		})
 	})
 }
 
