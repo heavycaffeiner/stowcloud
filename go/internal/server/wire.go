@@ -6,6 +6,8 @@ import (
 	"crypto/tls"
 	"log/slog"
 	"net/http"
+	"net/netip"
+	"strings"
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
@@ -142,6 +144,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		CSRFKey:           state.CSRFKey,
 		WatchCap:          func() int { return watchHotSetCap },
 		Runtime:           opt.Runtime,
+		SMBConfigDir:      cfg.SMB.ConfigDir,
 		Health:            health,
 		Uploads:           opt.Uploads,
 		State:             opt.Store.State(),
@@ -174,6 +177,24 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 			state.Limiter.Set(v.RatePerSec, v.RateBurst)
 			if opt.Search != nil {
 				opt.Search.SetBounds(v.SearchConcurrentSSD, v.SearchDeadlineSSD)
+			}
+			// The host lists and the proxy ranges are live: the guard reads
+			// them per request, so a saved change takes effect on the next
+			// one rather than the next start. An entry that cannot be parsed
+			// is dropped with a line here and refused at save time, which is
+			// the pair of rules the proxy boundary is meant to have.
+			if len(v.AppHosts) > 0 || len(v.ContentHosts) > 0 {
+				app, content := v.AppHosts, v.ContentHosts
+				if len(app) == 0 {
+					app = state.Hosts.App()
+				}
+				if len(content) == 0 {
+					content = state.Hosts.Content()
+				}
+				state.Hosts.Set(app, content)
+			}
+			if len(v.TrustedProxy) > 0 {
+				state.Trusted.Set(parsePrefixes(v.TrustedProxy, log))
 			}
 		})
 		// Applied once at startup, so the values loaded from the store are in
@@ -250,6 +271,26 @@ func tlsConfig(cfg *Config, opt Options) (*tls.Config, error) {
 		MinVersion:   tls.VersionTLS12,
 		NextProtos:   []string{"h2", "http/1.1"},
 	}, nil
+}
+
+// parsePrefixes turns the stored proxy ranges into prefixes.
+//
+// An entry that cannot be parsed is dropped with a line rather than failing
+// the load: the same value is refused at save time, where an administrator is
+// watching, and refusing it here would make a server unbootable over one saved
+// weeks ago.
+func parsePrefixes(cidrs []string, log *slog.Logger) []netip.Prefix {
+	out := make([]netip.Prefix, 0, len(cidrs))
+	for _, c := range cidrs {
+		p, err := netip.ParsePrefix(strings.TrimSpace(c))
+		if err != nil {
+			log.Warn("a stored trusted-proxy range could not be parsed and was dropped",
+				"range", c, "error", err)
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // configShareNames is the set of shares the config file declares.
@@ -341,9 +382,15 @@ const watchHotSetCap = 4096
 // The fan-out is one task rather than two consumers of one channel, because a
 // channel with two readers gives each event to exactly one of them: the hub
 // and the index would each see about half the changes.
-func StartWatch(ctx context.Context, coreSvc *core.Core, clk clock.Clock, log *slog.Logger, observe func(watch.InvalEvent)) (*watch.Watcher, *ws.Hub, error) {
+func StartWatch(
+	ctx context.Context, coreSvc *core.Core, clk clock.Clock, log *slog.Logger,
+	cfg watch.Config, observe func(watch.InvalEvent),
+) (*watch.Watcher, *ws.Hub, error) {
 	events := make(chan watch.InvalEvent, 64)
-	w, err := watch.Start(ctx, watch.Config{}, clk, events)
+	// The bounds an administrator saved, which the watcher takes once here.
+	// That is why the settings screen reports them as needing a restart rather
+	// than pretending a save moves a watcher already running.
+	w, err := watch.Start(ctx, cfg, clk, events)
 	if err != nil {
 		return nil, nil, err
 	}

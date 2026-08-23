@@ -60,6 +60,16 @@ func passdbEnabled(smbEnabled, disabled, has2fa bool, policy TOTPPolicy) bool {
 	return smbEnabled && !disabled
 }
 
+// SetSMBTOTPPolicy decides what an account carrying a second factor may do
+// over SMB.
+//
+// The policy decides what is published, never what is stored, so moving it
+// back restores access without anybody setting a password again. Set at
+// startup from the stored settings; it is not moved per request.
+func (s *Service) SetSMBTOTPPolicy(p TOTPPolicy) {
+	s.smbTOTPPolicy = p
+}
+
 // PublishPassdb re-renders the credential file now, for the publisher that
 // pushes a whole SMB configuration rather than reacting to one credential
 // change.

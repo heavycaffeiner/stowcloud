@@ -152,7 +152,7 @@ func Settings(d Deps) http.HandlerFunc {
 				Source: sourceOf("archive", "max_concurrent"), ReadonlyReasonKey: frozen,
 			},
 
-			// The watcher takes its bound when it starts, so a change here is
+			// The watcher takes its bounds when it starts, so a change here is
 			// stored and applies on the next start. Saying so is the point: a
 			// value that reads as live and is not is the thing an administrator
 			// spends an afternoon on.
@@ -162,7 +162,34 @@ func Settings(d Deps) http.HandlerFunc {
 				Source: sourceOf("watch", "hot_set_max"), RestartRequired: true,
 				ReadonlyReasonKey: frozen,
 			},
+			{
+				Key: "watch.full_threshold", Value: rt.WatchFullThreshold,
+				Range: intRange(runtimecfg.BoundWatchFullThreshold().Min,
+					runtimecfg.BoundWatchFullThreshold().Max),
+				Source: sourceOf("watch", "full_threshold"), RestartRequired: true,
+				ReadonlyReasonKey: frozen,
+			},
+			// One transport, so the field is reported and not offered: a select
+			// with one option is a control that cannot be used.
+			{
+				Key: "watch.backend", Value: "inotify", Source: sourceBuiltin,
+				ReadonlyReasonKey: readonly("settings.unknown_watch_backend"),
+			},
+
+			// Homes. The switch and the root are read when the share is
+			// registered, which happens once at startup.
+			{
+				Key: "homes.enabled", Value: rt.HomesEnabled,
+				Range: map[string]any{"kind": "bool"}, Source: sourceOf("homes", "enabled"),
+				RestartRequired: true, ReadonlyReasonKey: frozen,
+			},
+			{
+				Key: "homes.root", Value: rt.HomesRoot,
+				Range: map[string]any{"kind": "string"}, Source: sourceOf("homes", "root"),
+				RestartRequired: true, ReadonlyReasonKey: frozen,
+			},
 		}
+		fields = append(fields, smbFields(d, rt, sourceOf, frozen)...)
 
 		return writeJSON(w, http.StatusOK, map[string]any{
 			"fields": fields,
@@ -221,11 +248,41 @@ func SettingsNetwork(d Deps) http.HandlerFunc {
 			}
 			d.Hosts.Set(app, content)
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{"applied": true})
+
+		// Persisted as well as applied. Applying without storing is a boundary
+		// that reverts on the next restart, which is the shape of change an
+		// administrator does not find out about until something stops working.
+		if d.State != nil {
+			stored := map[string]any{}
+			if req.AppHosts != nil {
+				stored["app_hosts"] = req.AppHosts
+			}
+			if req.ContentHosts != nil {
+				stored["content_hosts"] = req.ContentHosts
+			}
+			if req.TrustedProxyCIDRs != nil {
+				stored["trusted_proxies"] = req.TrustedProxyCIDRs
+			}
+			if len(stored) > 0 {
+				if err := d.State.MergeSettings(r.Context(), "network", stored); err != nil {
+					return err
+				}
+			}
+		}
+		return writeJSON(w, http.StatusOK, applyOutcome("network", false))
 	})
 }
 
+// validateHosts checks a host list an administrator is saving.
+//
+// An empty list is refused, and that is the important half. A host guard with
+// no hosts admits nothing, so saving one locks every administrator out of the
+// server they are saving it from, including the screen that would undo it. It
+// was accepted, and the next request answered "misdirected request".
 func validateHosts(hosts []string) error {
+	if len(hosts) == 0 {
+		return apierr.Unprocessable("settings.must_be_at_least_one", "app_hosts")
+	}
 	for _, h := range hosts {
 		if h == "" || strings.ContainsAny(h, " /\\") {
 			return apierr.Unprocessable("settings.invalid_host", "app_hosts")
@@ -258,4 +315,70 @@ func storedHas(r *http.Request, d Deps, section, key string) bool {
 	}
 	_, ok = sec[key]
 	return ok
+}
+
+// smbFields is the sidecar's settings.
+//
+// Reported whether or not SMB is on, because the screen has to be able to turn
+// it on: a section that appears only once the thing is enabled has no control
+// for enabling it. Every field needs a restart, and says so: the publisher and
+// the credential policy are assembled once at startup.
+func smbFields(
+	d Deps, rt runtimecfg.Values,
+	sourceOf func(string, string) string, frozen *string,
+) []settingsField {
+	policy := rt.SMB.TOTPPolicy
+	if policy == "" {
+		policy = "require_separate"
+	}
+	return []settingsField{
+		{
+			Key: "smb.enabled", Value: rt.SMB.Enabled,
+			Range: map[string]any{"kind": "bool"}, Source: sourceOf("smb", "enabled"),
+			RestartRequired: true, ReadonlyReasonKey: frozen,
+		},
+		{
+			Key: "smb.workgroup", Value: rt.SMB.Workgroup,
+			Range:           map[string]any{"kind": "string", "max_len": 64},
+			Source:          sourceOf("smb", "workgroup"),
+			RestartRequired: true, ReadonlyReasonKey: frozen,
+		},
+		{
+			Key: "smb.server_name", Value: rt.SMB.ServerName,
+			Range:           map[string]any{"kind": "string", "max_len": 64},
+			Source:          sourceOf("smb", "server_name"),
+			RestartRequired: true, ReadonlyReasonKey: frozen,
+		},
+		{
+			Key: "smb.service_user", Value: rt.SMB.ServiceUser,
+			Range:           map[string]any{"kind": "string", "max_len": 64},
+			Source:          sourceOf("smb", "service_user"),
+			RestartRequired: true, ReadonlyReasonKey: frozen,
+		},
+		{
+			Key: "smb.allow_public_bind", Value: rt.SMB.AllowPublicBind,
+			Range:           map[string]any{"kind": "bool"},
+			Source:          sourceOf("smb", "allow_public_bind"),
+			RestartRequired: true, ReadonlyReasonKey: frozen,
+		},
+		{
+			Key: "smb.totp_policy", Value: policy,
+			Range:           map[string]any{"kind": "string"},
+			Source:          sourceOf("smb", "totp_policy"),
+			RestartRequired: true, ReadonlyReasonKey: frozen,
+		},
+		{
+			Key: "smb.service_gid", Value: rt.SMB.ServiceGID,
+			Range:           intRange(runtimecfg.BoundServiceGID().Min, runtimecfg.BoundServiceGID().Max),
+			Source:          sourceOf("smb", "service_gid"),
+			RestartRequired: true, ReadonlyReasonKey: frozen,
+		},
+		// The two the screen must not offer. Both are paths the other side of
+		// a container boundary agrees on, so changing one here would move only
+		// this side of the pair.
+		{
+			Key: "smb.config_dir", Value: d.SMBConfigDir, Source: sourceConfig,
+			ReadonlyReasonKey: readonly("settings.readonly_smb_agent_socket"),
+		},
+	}
 }

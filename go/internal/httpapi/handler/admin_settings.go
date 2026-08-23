@@ -2,11 +2,15 @@ package handler
 
 import (
 	"net/http"
+	"net/netip"
+	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/go/internal/smb"
 )
 
 // The settings sections.
@@ -98,8 +102,15 @@ func checkSection(section string, body map[string]any) error {
 			"walk_deadline_slow_ms": runtimecfg.BoundSearchDeadlineMs(),
 		},
 		"archive": {"max_concurrent": runtimecfg.BoundArchiveEntries()},
-		"watch":   {"hot_set_max": runtimecfg.BoundWatchHotSet()},
-		"rate":    {"per_sec": runtimecfg.BoundRatePerSec(), "burst": runtimecfg.BoundRateBurst()},
+		"watch": {
+			"hot_set_max":    runtimecfg.BoundWatchHotSet(),
+			"full_threshold": runtimecfg.BoundWatchFullThreshold(),
+		},
+		"rate": {"per_sec": runtimecfg.BoundRatePerSec(), "burst": runtimecfg.BoundRateBurst()},
+		// Zero is refused rather than read as "unset": it is root's group, the
+		// agent runs as root, and an account file putting every SMB account in
+		// it would be applied rather than questioned.
+		"smb": {"service_gid": runtimecfg.BoundServiceGID()},
 	}
 	for key, b := range bounds[section] {
 		raw, ok := body[key]
@@ -114,7 +125,122 @@ func checkSection(section string, body map[string]any) error {
 			return apierr.Unprocessable("settings.must_be_at_least_one", key)
 		}
 	}
+
+	// The sections whose fields are not numbers. Each is refused here, where
+	// an administrator is watching, and dropped with a warning at boot: a
+	// server must not fail to start over a value saved weeks ago.
+	switch section {
+	case "network":
+		return checkNetwork(body)
+	case "homes":
+		return checkHomes(body)
+	case "smb":
+		return checkSMB(body)
+	}
 	return nil
+}
+
+// checkNetwork validates the host lists and the proxy ranges.
+//
+// This is the trust boundary an authenticated administrator may move, so it is
+// the one worth being careful with: a malformed entry saved here is a guard
+// that admits or refuses the wrong thing on the next start.
+func checkNetwork(body map[string]any) error {
+	for _, key := range []string{"app_hosts", "content_hosts"} {
+		hosts, ok, err := stringList(body, key)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			continue
+		}
+		// An empty list is refused rather than stored: a host guard with no
+		// hosts admits nothing, so saving one locks everybody out of the
+		// server they are saving it from.
+		if len(hosts) == 0 {
+			return apierr.Unprocessable("settings.must_be_at_least_one", key)
+		}
+		if verr := validateHosts(hosts); verr != nil {
+			return verr
+		}
+	}
+	cidrs, ok, err := stringList(body, "trusted_proxies")
+	if err != nil {
+		return err
+	}
+	if ok {
+		for _, c := range cidrs {
+			if _, perr := netip.ParsePrefix(strings.TrimSpace(c)); perr != nil {
+				return apierr.Unprocessable("settings.invalid_cidr", "trusted_proxies")
+			}
+		}
+	}
+	return nil
+}
+
+// checkHomes validates the shared homes root.
+func checkHomes(body map[string]any) error {
+	root, ok := body["root"].(string)
+	if !ok || root == "" {
+		return nil
+	}
+	// Absolute, because the server's working directory is not something an
+	// administrator can see from the screen they are typing into.
+	if !filepath.IsAbs(root) {
+		return apierr.Unprocessable("settings.path_must_be_absolute", "root")
+	}
+	return nil
+}
+
+// checkSMB validates what reaches the rendered configuration.
+//
+// The renderer refuses rather than escapes, because that format has no escape
+// surviving its own continuation rules. Checking here means an administrator
+// is told which field, at the moment they save it, rather than the publisher
+// failing later with the whole configuration in the message.
+func checkSMB(body map[string]any) error {
+	if v, ok := body["totp_policy"].(string); ok &&
+		v != "require_separate" && v != "block" {
+		return apierr.Unprocessable("settings.unknown_totp_policy", "totp_policy")
+	}
+	cfg := smb.Config{Enabled: true, Workgroup: "WORKGROUP", ServiceUser: "scsvc"}
+	if v, ok := body["workgroup"].(string); ok && v != "" {
+		cfg.Workgroup = v
+	}
+	if v, ok := body["server_name"].(string); ok {
+		cfg.ServerName = v
+	}
+	if v, ok := body["service_user"].(string); ok && v != "" {
+		cfg.ServiceUser = v
+	}
+	// Rendered against the real renderer rather than a second copy of its
+	// rules here, which is the only way the two cannot disagree.
+	if _, err := smb.Render(cfg, nil); err != nil {
+		return apierr.Unprocessable("settings.invalid_origin", "workgroup")
+	}
+	return nil
+}
+
+// stringList reads one list field. Present-but-wrong is an error; absent is
+// not, because a patch names the fields it changes.
+func stringList(body map[string]any, key string) ([]string, bool, error) {
+	raw, present := body[key]
+	if !present {
+		return nil, false, nil
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, false, apierr.Unprocessable("settings.must_be_at_least_one", key)
+	}
+	out := make([]string, 0, len(items))
+	for _, v := range items {
+		s, ok := v.(string)
+		if !ok {
+			return nil, false, apierr.Unprocessable("settings.must_be_at_least_one", key)
+		}
+		out = append(out, s)
+	}
+	return out, true, nil
 }
 
 // reloadRuntime re-reads the stored settings and pushes them into the running
@@ -145,11 +271,17 @@ func applyOutcome(section string, needsRestart bool) map[string]any {
 
 // restartRequired names the sections this process cannot move while running.
 //
-// The listener's address and the database's own file are fixed when they are
-// opened, and pretending otherwise would report a change that did not happen.
+// It has to agree with what the snapshot says per field. A section answering
+// "applied" while every field in it is marked restart_required is the same
+// defect as the one this surface started with: a screen told the change is
+// live when it is not.
+//
+// The listener's address, the database's own file, the homes share and the
+// SMB publisher are all assembled once at startup. The watcher takes its
+// bounds when it starts.
 func restartRequired(section string) bool {
 	switch section {
-	case "db", "paths", "homes":
+	case "db", "paths", "homes", "smb", "watch":
 		return true
 	}
 	return false

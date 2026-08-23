@@ -56,6 +56,41 @@ type Values struct {
 	// The request rate bounds, which the limiter holds live.
 	RatePerSec float64
 	RateBurst  int
+
+	// WatchFullThreshold is how many directories may sit dirty before the
+	// watcher invalidates whole shares instead. Taken when the watcher starts,
+	// like the hot-set bound beside it.
+	WatchFullThreshold int
+
+	// The network boundary. Every one of these is read when the listener and
+	// the guards are built, so a change is stored and applies on the next
+	// start: the app and content host lists and the proxy ranges are the
+	// exception, because their holders are live and the guard reads them per
+	// request.
+	AppHosts      []string
+	ContentHosts  []string
+	TrustedProxy  []string
+	HomesEnabled  bool
+	HomesRoot     string
+	SMB           SMB
+	SMBConfigured bool
+}
+
+// SMB is the sidecar's settings as an administrator moves them.
+//
+// Held whole rather than field by field because the render is whole: the
+// publisher takes a configuration and produces four files, so a half-applied
+// change is a configuration nobody wrote.
+type SMB struct {
+	Enabled         bool
+	Workgroup       string
+	ServerName      string
+	ServiceUser     string
+	AllowPublicBind bool
+	// TOTPPolicy is "require_separate" or "block". A string because it is the
+	// client's own vocabulary and the auth package's enum is not.
+	TOTPPolicy string
+	ServiceGID uint32
 }
 
 // Defaults are the compiled-in values, which are also the outer bounds' anchor.
@@ -97,6 +132,16 @@ func BoundArchiveEntries() Bound   { return Bound{Min: 100, Max: 1_000_000} }
 func BoundWatchHotSet() Bound      { return Bound{Min: 64, Max: 1 << 20} }
 func BoundRatePerSec() Bound       { return Bound{Min: 1, Max: 100_000} }
 func BoundRateBurst() Bound        { return Bound{Min: 1, Max: 1_000_000} }
+
+// BoundWatchFullThreshold is where the watcher stops enumerating dirty
+// directories one at a time. It only fires above the hot-set bound, which is
+// why its floor is that bound's floor rather than one.
+func BoundWatchFullThreshold() Bound { return Bound{Min: 64, Max: 10 << 20} }
+
+// BoundServiceGID excludes zero: that is root's group, the agent runs as root,
+// and an account file putting every SMB account in it would be applied rather
+// than questioned.
+func BoundServiceGID() Bound { return Bound{Min: 1, Max: 1<<32 - 1} }
 
 // Holds the live values. Every reader goes through it, so a change reaches
 // every subsystem that asks rather than the ones somebody remembered.
@@ -199,7 +244,79 @@ func Load(ctx context.Context, st Store, base Values, log *slog.Logger) Values {
 	readInt(all, "rate", "burst", BoundRateBurst(), log, func(v int64) {
 		out.RateBurst = int(v)
 	})
+	readInt(all, "watch", "full_threshold", BoundWatchFullThreshold(), log, func(v int64) {
+		out.WatchFullThreshold = int(v)
+	})
+
+	// The network boundary. Stored as lists, and an entry that cannot be
+	// parsed is dropped at boot with a line rather than refusing the start:
+	// the same value is refused at save time, where somebody is watching.
+	readStrings(all, "network", "app_hosts", func(v []string) { out.AppHosts = v })
+	readStrings(all, "network", "content_hosts", func(v []string) { out.ContentHosts = v })
+	readStrings(all, "network", "trusted_proxies", func(v []string) { out.TrustedProxy = v })
+
+	readBool(all, "homes", "enabled", func(v bool) { out.HomesEnabled = v })
+	readString(all, "homes", "root", func(v string) { out.HomesRoot = v })
+
+	// SMB is read whole: a render takes a configuration and produces four
+	// files, so a half-applied change is a configuration nobody wrote.
+	if _, ok := all["smb"].(map[string]any); ok {
+		out.SMBConfigured = true
+		readBool(all, "smb", "enabled", func(v bool) { out.SMB.Enabled = v })
+		readString(all, "smb", "workgroup", func(v string) { out.SMB.Workgroup = v })
+		readString(all, "smb", "server_name", func(v string) { out.SMB.ServerName = v })
+		readString(all, "smb", "service_user", func(v string) { out.SMB.ServiceUser = v })
+		readBool(all, "smb", "allow_public_bind", func(v bool) { out.SMB.AllowPublicBind = v })
+		readString(all, "smb", "totp_policy", func(v string) { out.SMB.TOTPPolicy = v })
+		readInt(all, "smb", "service_gid", BoundServiceGID(), log, func(v int64) {
+			out.SMB.ServiceGID = uint32(v) //nolint:gosec // the bound above is what makes this fit.
+		})
+	}
 	return out
+}
+
+// readStrings pulls one stored list. A member of the wrong shape is dropped
+// rather than taking the list down with it.
+func readStrings(all map[string]any, section, key string, set func([]string)) {
+	sec, ok := all[section].(map[string]any)
+	if !ok {
+		return
+	}
+	raw, ok := sec[key].([]any)
+	if !ok {
+		return
+	}
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s, ok := v.(string); ok && s != "" {
+			out = append(out, s)
+		}
+	}
+	// An empty list is not applied: every one of these is a boundary, and a
+	// stored empty would silently widen or close it depending on which.
+	if len(out) > 0 {
+		set(out)
+	}
+}
+
+func readBool(all map[string]any, section, key string, set func(bool)) {
+	sec, ok := all[section].(map[string]any)
+	if !ok {
+		return
+	}
+	if v, ok := sec[key].(bool); ok {
+		set(v)
+	}
+}
+
+func readString(all map[string]any, section, key string, set func(string)) {
+	sec, ok := all[section].(map[string]any)
+	if !ok {
+		return
+	}
+	if v, ok := sec[key].(string); ok && v != "" {
+		set(v)
+	}
 }
 
 // readInt pulls one stored integer, clamps it and hands it over.

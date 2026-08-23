@@ -128,6 +128,71 @@ func TestCheckRefusesOutsideTheBoundAndAcceptsInside(t *testing.T) {
 	}
 }
 
+// The boot-time sections: what a save has to survive a restart as.
+func TestTheBootTimeSectionsSurvive(t *testing.T) {
+	st := &memStore{doc: map[string]any{
+		"watch": map[string]any{
+			"hot_set_max":    float64(8192),
+			"full_threshold": float64(99999),
+		},
+		"homes": map[string]any{"enabled": true, "root": "/srv/homes"},
+		"smb": map[string]any{
+			"enabled": true, "workgroup": "TESTGRP", "server_name": "testsrv",
+			"service_user": "scsvc", "totp_policy": "block", "service_gid": float64(1500),
+		},
+		"network": map[string]any{
+			"app_hosts":       []any{"one.test", "two.test"},
+			"trusted_proxies": []any{"10.0.0.0/8"},
+		},
+	}}
+
+	got := Load(context.Background(), st, base(), quiet())
+	if got.WatchHotSetMax != 8192 || got.WatchFullThreshold != 99999 {
+		t.Errorf("watch = %d/%d", got.WatchHotSetMax, got.WatchFullThreshold)
+	}
+	if !got.HomesEnabled || got.HomesRoot != "/srv/homes" {
+		t.Errorf("homes = %v %q", got.HomesEnabled, got.HomesRoot)
+	}
+	if !got.SMBConfigured || !got.SMB.Enabled || got.SMB.Workgroup != "TESTGRP" ||
+		got.SMB.TOTPPolicy != "block" || got.SMB.ServiceGID != 1500 {
+		t.Errorf("smb = %+v", got.SMB)
+	}
+	if len(got.AppHosts) != 2 || got.AppHosts[0] != "one.test" {
+		t.Errorf("app hosts = %v", got.AppHosts)
+	}
+	if len(got.TrustedProxy) != 1 {
+		t.Errorf("trusted proxies = %v", got.TrustedProxy)
+	}
+}
+
+// An empty stored host list is never applied.
+//
+// A host guard with no hosts admits nothing, so loading one would leave a
+// server that refuses every request including the one that would fix it. The
+// save path refuses an empty list; this is the second half, for a document
+// that already holds one.
+func TestAnEmptyStoredHostListIsIgnored(t *testing.T) {
+	st := &memStore{doc: map[string]any{
+		"network": map[string]any{"app_hosts": []any{}},
+	}}
+	b := base()
+	b.AppHosts = []string{"configured.test"}
+
+	got := Load(context.Background(), st, b, quiet())
+	if len(got.AppHosts) != 1 || got.AppHosts[0] != "configured.test" {
+		t.Fatalf("an empty stored list replaced the configured hosts: %v", got.AppHosts)
+	}
+}
+
+// A section nobody has saved leaves SMB alone, so the config file's own
+// settings are what publish rather than a zero value.
+func TestAnUnsavedSMBSectionIsNotApplied(t *testing.T) {
+	got := Load(context.Background(), &memStore{}, base(), quiet())
+	if got.SMBConfigured {
+		t.Fatal("an absent smb section reported as configured")
+	}
+}
+
 // Setting values pushes them into the live components. A holder that stores
 // and does not apply is the defect this package exists for, one layer up.
 func TestSetAppliesToTheLiveComponents(t *testing.T) {

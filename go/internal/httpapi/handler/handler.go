@@ -56,6 +56,11 @@ type Deps struct {
 	// is what a build with no settings store has.
 	Runtime *runtimecfg.Holder
 
+	// SMBConfigDir is where the rendered files go, reported by the settings
+	// surface and not editable there: the sidecar mounts the same directory,
+	// so changing one side of that pair moves only this one.
+	SMBConfigDir string
+
 	// Events upgrades the change-channel socket for an authenticated user.
 	Events EventsHandler
 

@@ -28,6 +28,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
 	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/server"
+	"github.com/heavycaffeiner/stowcloud/go/internal/smb"
 	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
 	"github.com/heavycaffeiner/stowcloud/go/internal/smbpublish"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
@@ -309,6 +310,26 @@ func runServe(args []string, stderr io.Writer) int {
 		}
 	}
 
+	// What an administrator has changed from the interface, over what the
+	// config file said. This is the half that used to be missing: a save was
+	// written to the settings table and nothing read it back, so the screen
+	// reported a change that had taken effect nowhere and did not survive a
+	// restart either.
+	rtcfg := runtimecfg.New(runtimecfg.Values{
+		SearchConcurrentSSD:  limits.ConcurrentSearchesSSD,
+		SearchConcurrentRot:  limits.ConcurrentSearchesRotational,
+		SearchDeadlineSSD:    limits.SearchWalkDeadlineSSD,
+		SearchDeadlineRot:    limits.SearchWalkDeadlineRotational,
+		ArchiveMaxConcurrent: limits.ArchiveEntriesListed,
+		// The watcher's own default. It is not read from watch.Config because
+		// that shape's defaults are unexported and this is the one number the
+		// settings surface reports.
+		WatchHotSetMax: watchHotSetDefault,
+		RatePerSec:     cfg.RatePerSec,
+		RateBurst:      cfg.RateBurst,
+	})
+	rtcfg.Set(runtimecfg.Load(ctx, st.State(), rtcfg.Base(), log))
+
 	uploads, uerr := upload.New(ctx, coreSvc, st.State(), upload.Options{Clock: clk, Logger: log})
 	if uerr != nil {
 		say(stderr, "stowcloud %s: serve: the upload engine: %v\n", version, uerr)
@@ -319,7 +340,33 @@ func runServe(args []string, stderr io.Writer) int {
 	// can reach it and assigned after the service exists. Nil until then, and
 	// the observer reads it per event rather than capturing it.
 	var indexUpdater *service.Updater
-	watcher, hub, werr := server.StartWatch(ctx, coreSvc, clk, log, func(ev watch.InvalEvent) {
+	rt := rtcfg.Get()
+
+	// Homes, when an administrator has turned them on. The share is registered
+	// under a reserved id and every account gets a directory under it on first
+	// access, so this is the one switch that changes what a person sees
+	// without anybody writing a grant.
+	//
+	// A failure is a degradation rather than a refusal to start: the other
+	// shares are unaffected, and a server that will not boot because one
+	// directory is unwritable is worse than one that says so.
+	if rt.HomesEnabled {
+		root := rt.HomesRoot
+		if root == "" {
+			root = filepath.Join(cfg.DataDir, "homes")
+		}
+		if herr := coreSvc.EnableHomes(ctx, root); herr != nil {
+			log.Error("homes are turned on and could not be opened", "root", root, "error", herr)
+			health.Degrade(handler.ReasonShareRejected, "homes")
+		} else {
+			log.Info("serving homes", "root", root)
+		}
+	}
+
+	watcher, hub, werr := server.StartWatch(ctx, coreSvc, clk, log, watch.Config{
+		HotSetMax:     rt.WatchHotSetMax,
+		FullThreshold: rt.WatchFullThreshold,
+	}, func(ev watch.InvalEvent) {
 		if indexUpdater != nil {
 			indexUpdater.Offer(ev)
 		}
@@ -343,26 +390,6 @@ func runServe(args []string, stderr io.Writer) int {
 		}
 		oidcClient = c
 	}
-
-	// What an administrator has changed from the interface, over what the
-	// config file said. This is the half that used to be missing: a save was
-	// written to the settings table and nothing read it back, so the screen
-	// reported a change that had taken effect nowhere and did not survive a
-	// restart either.
-	rtcfg := runtimecfg.New(runtimecfg.Values{
-		SearchConcurrentSSD:  limits.ConcurrentSearchesSSD,
-		SearchConcurrentRot:  limits.ConcurrentSearchesRotational,
-		SearchDeadlineSSD:    limits.SearchWalkDeadlineSSD,
-		SearchDeadlineRot:    limits.SearchWalkDeadlineRotational,
-		ArchiveMaxConcurrent: limits.ArchiveEntriesListed,
-		// The watcher's own default. It is not read from watch.Config because
-		// that shape's defaults are unexported and this is the one number the
-		// settings surface reports.
-		WatchHotSetMax: watchHotSetDefault,
-		RatePerSec:     cfg.RatePerSec,
-		RateBurst:      cfg.RateBurst,
-	})
-	rtcfg.Set(runtimecfg.Load(ctx, st.State(), rtcfg.Base(), log))
 
 	// Search. The index is optional and off by default: a query answers from a
 	// walk when there is none, so the escalation is taken deliberately rather
@@ -389,6 +416,42 @@ func runServe(args []string, stderr io.Writer) int {
 	// index per event.
 	indexUpdater = service.NewUpdater(searchSvc, coreSvc.ScanSources, log)
 	task.Go(ctx, "search index updater", func() { indexUpdater.Run(ctx) })
+
+	// What an administrator saved for SMB, over what the config file said.
+	//
+	// Folded in before the publisher is built, so the first publish already
+	// carries it: the render is whole, and a half-applied configuration is one
+	// nobody wrote. The screen reports the enable switch as needing a restart
+	// because that is what this is: the publisher is assembled once, here.
+	smbFromConfig := cfg.SMB.Render
+	if rt.SMBConfigured {
+		cfg.SMB.Render.Enabled = rt.SMB.Enabled
+		if rt.SMB.Workgroup != "" {
+			cfg.SMB.Render.Workgroup = rt.SMB.Workgroup
+		}
+		cfg.SMB.Render.ServerName = rt.SMB.ServerName
+		if rt.SMB.ServiceUser != "" {
+			cfg.SMB.Render.ServiceUser = rt.SMB.ServiceUser
+		}
+		cfg.SMB.Render.AllowPublicBind = rt.SMB.AllowPublicBind
+		if rt.SMB.ServiceGID != 0 {
+			cfg.SMB.ServiceGID = rt.SMB.ServiceGID
+		}
+		// The policy decides what is published, never what is stored, so
+		// moving it back restores access without anybody setting a password
+		// again.
+		if rt.SMB.TOTPPolicy == "block" {
+			authSvc.SetSMBTOTPPolicy(auth.TOTPBlock)
+		}
+		// Rendered now rather than at the first publish, so a stored value the
+		// renderer refuses is a line in the log at startup instead of a
+		// settings screen failing later.
+		if _, rerr := smb.Render(cfg.SMB.Render, nil); rerr != nil {
+			log.Error("the stored SMB settings cannot be rendered; running with the config file's",
+				"error", rerr)
+			cfg.SMB.Render = smbFromConfig
+		}
+	}
 
 	// SMB publishing. The whole render is rebuilt from state on every call
 	// rather than diffed, so a change that stops at one surface is still
