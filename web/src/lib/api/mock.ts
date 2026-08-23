@@ -720,6 +720,12 @@ async function archiveList(path: string): Promise<ArchiveListing> {
 
 /** Walks the seeded tree, so the number the panel shows is the sum of what the
  *  same tree lists. */
+/** No decoder in the mock, so every card falls back to its type icon. A data
+ *  URL of a fake image would make the grid look right and prove nothing. */
+function thumbUrl(_path: string, _dim: number): string {
+  return ''
+}
+
 async function folderSize(path: string): Promise<FolderSize> {
   await delay(200)
   const n = normalizePath(path)
@@ -2511,6 +2517,7 @@ export const mockApi = {
   archive,
   archiveList,
   folderSize,
+  thumbUrl,
   recentList,
   jobList,
   jobStatus,

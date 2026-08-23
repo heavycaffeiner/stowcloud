@@ -393,7 +393,6 @@
   "preview.failed": "파일을 열지 못했습니다.",
   "preview.next": "다음 파일",
   "preview.no_preview": "이 형식은 미리보기를 지원하지 않습니다.",
-  "preview.not_available": "아직 이 파일의 미리보기를 만들 수 없습니다.",
   "preview.previous": "이전 파일",
   "preview.too_large_for_text": "텍스트로 보여주기에는 너무 큽니다. 편집기에서 여세요.",
   "progress.loading": "로딩 중",

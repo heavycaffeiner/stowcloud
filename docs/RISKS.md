@@ -320,52 +320,39 @@ been hiding real coverage gaps:
 - **Its pattern did not match a call with a type argument.** The client writes
   `request<SessionInfo>('/auth/session')`, and eleven routes read as uncalled.
 
-**Still missing**: the shape check. A route can be mounted, called, and answer
-with a body the client's types do not describe. That probably belongs to the
-end-to-end suite, which already asserts on response fields.
+**The shape check now exists.** `tools/contractcheck` compares the fields the
+client declares as required against the JSON tags and map-literal keys the
+handlers actually send, and the gate runs it. It was written after a round of
+defects that were all this one shape: the listing sent no `perms`, so selecting
+a row threw; it sent `next` where the client reads `cursor`, so a directory
+past one page could not be paged; the folder size sent `{size, count}` where
+the panel reads `{bytes, files}`, so it rendered "undefined files". None failed
+a test, because both halves were internally consistent and nothing compared
+them.
+
+It reads names, not types, so it cannot catch a string where a number was
+meant. What it catches is a field that is simply absent, which is what every
+one of those was.
 
 ## What is left
 
-### 1. Nothing generates a thumbnail
+### 1. Thumbnails are wired, and one path is not
 
-The largest gap in the tree, and it is the same shape as the nine that produced
-this document: every part exists, is tested, and has no caller.
+**What is true.** The chain runs end to end: `GET /api/fs/thumb` serves a
+re-encoded PNG, the listing marks an entry `preview.available` from its
+extension, the pool is constructed at startup and the grid renders pictures.
+Verified in a browser against a real image.
 
-**What is true.** `internal/preview` is complete: the pool, the wire protocol,
-the decoders, the EXIF stripper, the cache and the jailed worker, with the jail
-proved against a real kernel. `cmd/stowcloud/previewworker.go` runs a worker.
-Nothing in the server ever constructs a `preview.Pool`: the whole tree outside
-the package has exactly one reference to it, and it is that worker entry point.
+**What is left.** Availability is decided by the file's name rather than its
+content, because deciding it properly means opening every file in a listing to
+sniff its magic bytes, which turns one listing into a read per entry. A file
+named `.jpg` that is not one gets a 415 from the route and the interface keeps
+its type icon, so the cost of being wrong is one request. The route is the
+authority; the flag is a hint.
 
-The chain is broken at four separate links, each of which alone is enough:
-
-- No route generates or serves a thumbnail.
-- The listing never sets `preview.available`, so the web client's own guard
-  (`entry.preview?.available === true`) is false for every entry and the
-  request is never made.
-- If it were made, the client sends `{fid, disposition: 'inline_thumb', dim}`
-  to `POST /api/fs/link` and the server's `linkRequest` reads `{path, perms,
-  ...}`. The word `inline_thumb` does not appear anywhere in the Go tree.
-- The compat layer's `Preview` port is nil, which its own comment records as
-  "Phase 9's seam, not mounted yet", so the Nextcloud thumbnail routes answer
-  404 by construction.
-
-**What goes wrong.** No image in the product has ever had a thumbnail. The grid
-draws a type icon and looks deliberate, which is why this survived a
-conformance run, a differ run and a browser test: nothing errors, and a grid of
-icons is a plausible design rather than a visibly broken screen.
-
-**Why the checks missed it.** `routecheck` compares paths and verbs, and this
-is neither: the path is mounted and the verb is right. What differs is the body
-shape, which is the gap that document already names as the one it does not
-cover. The client asking for a field the server never sends is invisible to
-every check in this tree.
-
-**The fix.** It is a phase, not a repair: a route, a cache lookup, the pool
-wired into the server, `preview.available` on the listing, and one agreed
-request shape. Phase 9 owns it and its own document lists the milestones. The
-worker pool's cost is now measured rather than assumed, which is what the
-sizing needs: roughly 10 MB resident per worker, linear in the worker count.
+**What is unmeasured.** The pool under a real grid. Roughly 10 MB resident per
+worker is measured, and how many workers a directory of a thousand images
+actually keeps busy is not.
 
 ### 2. The WebDAV conformance suite has not been re-run
 
@@ -455,12 +442,14 @@ which date immediately.
 
 ## If you change one thing
 
-Generate a thumbnail. Every other entry here is a cost that is understood or a
-drift that is bounded; that one is a whole subsystem the product does not have,
-built and tested and wired to nothing.
+Run the conformance suite on a host that can. It is the only entry left whose
+answer nobody has: everything else here is a cost that is understood or a drift
+that is bounded, and the table in `CONFORMANCE.md` is a measurement of a build
+that no longer exists.
 
-It is also the clearest instance of the pattern at the top of this document,
-found last and by accident, while measuring the memory of a pool that turns out
-never to run. The measurement was worth taking anyway: it is what the sizing
-needs when the wiring is done. But what it actually found was that the thing
-being measured has no callers, which is what every one of these has been.
+The thumbnails used to hold this place, and how they got here is worth keeping.
+The whole subsystem was built, tested and wired to nothing, and it was found by
+accident while measuring the memory of a pool that turned out never to run. The
+measurement was worth taking: it is what the sizing needed once the wiring was
+done. But what it actually found was that the thing being measured had no
+callers, which is what every entry at the top of this document has been.

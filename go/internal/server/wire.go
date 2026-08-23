@@ -21,6 +21,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/spa"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/ws"
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/preview"
 	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
 	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
@@ -71,6 +72,10 @@ type Options struct {
 
 	// OIDC is the single-sign-on client, or nil when none is configured.
 	OIDC *oidc.Client
+
+	// Preview generates thumbnails. A nil one leaves the listing reporting
+	// that no entry has one, and the route answering 404.
+	Preview *preview.Service
 
 	// Search answers queries and builds the name index. A nil one leaves every
 	// query taking the walk, which is the correct behaviour for a build with
@@ -149,6 +154,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		Listen:            cfg.Listen,
 		Health:            health,
 		Uploads:           opt.Uploads,
+		Preview:           opt.Preview,
 		State:             opt.Store.State(),
 		ConfigShares:      configShareNames(cfg),
 		Search:            opt.Search,

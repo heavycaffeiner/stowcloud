@@ -109,6 +109,10 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		// allowed from a route that exists.
 		{Method: "POST", Pattern: "/api/fs/write", Req: req(acl.Write), Handler: handler.Write(d)},
 		{Method: "PUT", Pattern: "/api/fs/write", Req: req(acl.Write), Handler: handler.Write(d)},
+		// Thumbnails, by path like every other read. The interface used to mint
+		// a signed link per thumbnail, which needed a fileid a listing does not
+		// carry, so the request could never be made.
+		{Method: "GET", Pattern: "/api/fs/thumb", Req: req(acl.Read | acl.Download), Handler: handler.Thumb(d)},
 		{Method: "GET", Pattern: "/api/fs/size", Req: req(acl.Read), Handler: handler.Size(d)},
 		{Method: "GET", Pattern: "/api/fs/link", Req: req(acl.Read), Handler: handler.Links(d)},
 		{Method: "POST", Pattern: "/api/fs/link", Req: req(acl.Read), Handler: handler.Links(d)},

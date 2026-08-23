@@ -295,32 +295,45 @@ func (c *Core) TrashPurge(ctx context.Context, r Resolved, id *string) error {
 		}
 		return mapVFSErr(err)
 	}
+	// A failure to remove one entry is reported rather than skipped. Every
+	// branch below used to `continue`, so a purge that deleted nothing still
+	// answered success: the screen said the item was gone and the next listing
+	// showed it again.
+	var failed error
 	for _, e := range entries {
 		if id != nil && !strings.HasPrefix(e.Name, *id+"-") {
 			continue
 		}
 		entryPath, jerr := trash.JoinExisting(e.Name)
 		if jerr != nil {
+			failed = errors.Join(failed, jerr)
 			continue
 		}
 		st, serr := r.root.Stat(entryPath)
 		if serr != nil {
+			failed = errors.Join(failed, mapVFSErr(serr))
 			continue
 		}
 		var freed uint64
 		if st.Kind.IsDir() {
-			agg, aerr := c.Aggregate(ctx, r.share, entryPath)
-			if aerr != nil {
-				continue
+			// What the quota is credited, and nothing else. The rollup refuses
+			// a path under the trash directory because that name is a control
+			// prefix, which made every directory purge stop here: the entry
+			// stayed on disk and the caller was told it was deleted. Losing the
+			// credit is worth strictly less than losing the delete, so a
+			// refusal here costs the ledger and not the operation.
+			if agg, aerr := c.Aggregate(ctx, r.share, entryPath); aerr == nil {
+				freed = agg.RSize
 			}
-			freed = agg.RSize
 			sub := Resolved{user: r.user, share: r.share, root: r.root, path: entryPath, perms: r.perms}
 			if err := c.deleteRecursive(ctx, sub); err != nil {
+				failed = errors.Join(failed, err)
 				continue
 			}
 		} else {
 			freed = st.Size
 			if err := r.root.Unlink(entryPath); err != nil {
+				failed = errors.Join(failed, mapVFSErr(err))
 				continue
 			}
 		}
@@ -329,7 +342,7 @@ func (c *Core) TrashPurge(ctx context.Context, r Resolved, id *string) error {
 		}
 	}
 	c.markDirty(ctx, r.share, trash)
-	return nil
+	return failed
 }
 
 func hexLower(b []byte) string {

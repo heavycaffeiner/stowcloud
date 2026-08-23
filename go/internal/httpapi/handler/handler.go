@@ -17,6 +17,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/preview"
 	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
 	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
@@ -69,6 +70,12 @@ type Deps struct {
 	// Listen is the address the server bound, reported by the settings surface
 	// and editable nowhere: the socket is bound once at startup.
 	Listen string
+
+	// Preview generates thumbnails. A nil one is a build with no preview
+	// subsystem: the listing then reports every entry as having none and the
+	// route answers 404, rather than the interface asking for something that
+	// cannot arrive.
+	Preview *preview.Service
 
 	// Events upgrades the change-channel socket for an authenticated user.
 	Events EventsHandler

@@ -24,6 +24,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/internal/preview"
 	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/index"
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
@@ -388,6 +389,33 @@ func runServe(args []string, stderr io.Writer) int {
 	})
 	rtcfg.Set(runtimecfg.Load(ctx, st.State(), rtcfg.Base(), log))
 
+	// Thumbnails. The pool, the cache, the decoders and the jailed worker were
+	// all complete and tested, and nothing outside the package had ever
+	// constructed a pool: no image in this product has ever had a thumbnail.
+	//
+	// A failure here is a degradation rather than a refusal to start. The grid
+	// draws type icons without it, which is what it did for the whole life of
+	// the port, and a server that will not boot because it cannot spawn a
+	// decoder is worse than one that serves files without pictures.
+	var previewSvc *preview.Service
+	if pool, perr := preview.NewPool(preview.PoolOptions{Clock: clk}); perr != nil {
+		log.Error("thumbnails are unavailable: the worker pool could not be built", "error", perr)
+		health.Degrade(handler.ReasonPreviewPoolUnavailable, "pool")
+	} else if cache, cerr := preview.NewCache(filepath.Join(cfg.DataDir, "thumbs")); cerr != nil {
+		log.Error("thumbnails are unavailable: the cache could not be opened", "error", cerr)
+		health.Degrade(handler.ReasonPreviewPoolUnavailable, "cache")
+		_ = pool.Close() //nolint:errcheck // the pool is being abandoned.
+	} else {
+		previewSvc = preview.NewService(preview.ServiceOptions{
+			Core: coreSvc, Pool: pool, Cache: cache, Clock: clk,
+		})
+		defer func() {
+			if err := pool.Close(); err != nil {
+				log.Warn("closing the preview pool", "error", err)
+			}
+		}()
+	}
+
 	uploads, uerr := upload.New(ctx, coreSvc, st.State(), upload.Options{Clock: clk, Logger: log})
 	if uerr != nil {
 		say(stderr, "stowcloud %s: serve: the upload engine: %v\n", version, uerr)
@@ -581,7 +609,7 @@ func runServe(args []string, stderr io.Writer) int {
 		return nil
 	}
 
-	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health, Uploads: uploads,
+	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health, Uploads: uploads, Preview: previewSvc,
 		Search:            searchSvc,
 		Runtime:           rtcfg,
 		ApplyIndexEnabled: applyIndex,

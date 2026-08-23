@@ -393,7 +393,6 @@
   "preview.failed": "It could not be opened.",
   "preview.next": "Next file",
   "preview.no_preview": "There is no preview for this kind of file.",
-  "preview.not_available": "A preview is not available for this file yet.",
   "preview.previous": "Previous file",
   "preview.too_large_for_text": "It is too large to show as text here. Open it in the editor instead.",
   "progress.loading": "Loading",

@@ -180,5 +180,8 @@
 # only ever read. They are gone with the readers, not suppressed.
 # contractcheck added one: the same diagnostic-writer exemption every tool in
 # this directory carries, for a message that cannot be printed.
-236
+# Wiring the thumbnails added two, both closes on a path that has already
+# decided its outcome: the thumbnail file once the response is written, and the
+# worker pool being abandoned because its cache could not be opened.
+238
 

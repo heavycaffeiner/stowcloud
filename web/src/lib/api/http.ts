@@ -87,27 +87,36 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...init, method, headers, credentials: 'include' })
   if (res.status === 204) return undefined as T
   const body = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    const errBody = (body as ApiErrorBody).error ?? { code: 'internal', message: res.statusText }
-    const err = new ApiError(res.status, errBody)
-    // Task: "make a 401 mean something" — every call goes through this one
-    // function, so this is the single place a dead/missing session turns
-    // into "show the login screen" instead of an inline error string
-    // bubbling up into whatever list/table happened to be rendering.
-    //
-    // Gated on `code`, not just `status`: `auth.invalid_credentials` is also
-    // a 401, but it means "this specific re-confirmation was wrong" (a bad
-    // *current* password on `/auth/password`, a bad TOTP code on
-    // `/auth/totp/enroll`), not "the session cookie is gone". The settings
-    // screens for those actions (`PasswordSection`/`TotpSection`) need that
-    // error to stay a rejected promise they show inline — bouncing the whole
-    // app to the login screen because someone mistyped their *current*
-    // password while already logged in would be exactly the "silent
-    // failure" this task explicitly rules out.
-    if (res.status === 401 && errBody.code === 'auth.required') noteUnauthorized()
-    throw err
-  }
+  if (!res.ok) throw errorFrom(res, body)
   return body as T
+}
+
+/**
+ * Turns a failed response into the error every caller expects.
+ *
+ * Split out of `request` so the calls that read a body other than JSON, like
+ * the file read, refuse the same way: the same `ApiError`, and the same 401
+ * handling, which is the one place a dead session becomes the login screen.
+ */
+function errorFrom(res: Response, body: unknown): ApiError {
+  const errBody = (body as ApiErrorBody).error ?? { code: 'internal', message: res.statusText }
+  const err = new ApiError(res.status, errBody)
+  // Task: "make a 401 mean something" — every call goes through this one
+  // function, so this is the single place a dead/missing session turns
+  // into "show the login screen" instead of an inline error string
+  // bubbling up into whatever list/table happened to be rendering.
+  //
+  // Gated on `code`, not just `status`: `auth.invalid_credentials` is also
+  // a 401, but it means "this specific re-confirmation was wrong" (a bad
+  // *current* password on `/auth/password`, a bad TOTP code on
+  // `/auth/totp/enroll`), not "the session cookie is gone". The settings
+  // screens for those actions (`PasswordSection`/`TotpSection`) need that
+  // error to stay a rejected promise they show inline — bouncing the whole
+  // app to the login screen because someone mistyped their *current*
+  // password while already logged in would be exactly the "silent
+  // failure" this task explicitly rules out.
+  if (res.status === 401 && errBody.code === 'auth.required') noteUnauthorized()
+  return err
 }
 
 function qs(params: Record<string, string | number | undefined>): string {
@@ -232,6 +241,23 @@ async function archiveList(path: string): Promise<ArchiveListing> {
  * `detail.reason = 'denies_below'` rather than a byte count covering data the
  * caller cannot read.
  */
+/**
+ * `GET /api/fs/thumb` — the URL of a re-encoded thumbnail, by path.
+ *
+ * A URL rather than a fetch: the <img> does the loading, so nothing here holds
+ * the bytes and the browser's own cache applies. Same origin, so the session
+ * cookie rides along; the answer is `private, immutable` and keyed on the
+ * file's identity, mtime and size, so a changed file is a different URL.
+ *
+ * `dim` picks the preset rather than being sent verbatim: the server re-encodes
+ * into fixed boxes, and a caller naming arbitrary pixels would be asking for a
+ * cache entry per layout.
+ */
+function thumbUrl(path: string, dim: number): string {
+  const size = dim <= 256 ? 'small' : dim <= 512 ? 'medium' : 'large'
+  return `${BASE}/fs/thumb${qs({ path, size })}`
+}
+
 async function folderSize(path: string): Promise<FolderSize> {
   return request(`/fs/size${qs({ path })}`)
 }
@@ -317,8 +343,21 @@ async function shareDelete(id: number): Promise<void> {
 
 // ── text editor (`/edit/[...path]`) ──
 
+/**
+ * `GET /api/fs/read` streams the file's own bytes, not a JSON envelope around
+ * them. This went through `request()`, which parses JSON: every text preview
+ * and every open of the editor threw on the first byte of the file, and the
+ * card showed its failure state for a file that had been read perfectly well.
+ *
+ * Decoded as UTF-8 with replacement characters rather than refused, because
+ * the caller is a text view: showing a file with a few replacement marks in it
+ * is more use than refusing to show it at all, and the editor's own save path
+ * is conditional, so nothing here can silently rewrite bytes it misread.
+ */
 async function readFile(path: string): Promise<ReadFileResponse> {
-  return request(`/fs/read${qs({ path })}`)
+  const res = await fetch(`${BASE}/fs/read${qs({ path })}`, { credentials: 'include' })
+  if (!res.ok) throw errorFrom(res, await res.json().catch(() => ({})))
+  return { content: await res.text() }
 }
 
 /**
@@ -905,6 +944,7 @@ export const httpApi = {
   revokeSession,
   archiveList,
   folderSize,
+  thumbUrl,
   recentList,
   updateSmbSettings,
   setSmbPassword,

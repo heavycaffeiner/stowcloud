@@ -34,6 +34,9 @@ type entryJSON struct {
 	ETag     string    `json:"etag"`
 	ETagWeak bool      `json:"etag_weak"`
 	Perms    permsJSON `json:"perms"`
+	// Preview says whether a thumbnail is worth asking for. Absent for a
+	// directory, which never has one.
+	Preview *previewJSON `json:"preview,omitempty"`
 }
 
 // permsJSON is what the caller may do with this entry, as the eight named
@@ -74,12 +77,20 @@ func entryOf(e core.Entry, path string) entryJSON {
 	if e.IsDir {
 		kind = "dir"
 	}
-	return entryJSON{
+	out := entryJSON{
 		Name: e.Name, Path: path, Kind: kind, IsDir: e.IsDir,
 		Size: e.Size, MTimeNs: strconv.FormatInt(e.MTimeNs, 10),
 		ETag: e.ETag, ETagWeak: e.ETagWeak,
 		Perms: permsOf(e.Perms),
 	}
+	// Only for something that could have one. A caller reads this to decide
+	// whether to make the request at all, and it was never sent: the guard on
+	// the other side is `preview?.available === true`, so it was false for
+	// every entry and no thumbnail was ever asked for.
+	if !e.IsDir && thumbnailable(e.Name) {
+		out.Preview = &previewJSON{Available: true}
+	}
+	return out
 }
 
 // listResponse is one bounded page plus the accounting a grid needs.
