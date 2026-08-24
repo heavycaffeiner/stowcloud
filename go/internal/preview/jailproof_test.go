@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -280,16 +281,101 @@ func TestAJailedWorkerSurvivesManyJobs(t *testing.T) {
 		}, preview.PlainSource{F: in}, out)
 		cancel()
 		if gerr != nil {
-			refused := ""
-			if nr := refusedSyscall(exe); nr != "" {
-				refused = "\nthe filter refused: " + nr
-			}
-			t.Fatalf("job %d of 30: %v%s\n"+
+			t.Fatalf("job %d of 30: %v\n"+
 				"the allow-list is missing an entry the runtime reaches only after "+
-				"several jobs; add the refused call to allowedSyscalls", i+1, gerr, refused)
+				"several jobs. What it refused:\n%s",
+				i+1, gerr, nameRefusedSyscall(t, exe))
 		}
 		if resp.Status != preview.StatusOK {
 			t.Fatalf("job %d of 30: status = %v (%s)", i+1, resp.Status, resp.Err)
 		}
 	}
 }
+
+// nameRefusedSyscall runs the same load again under the trap filter and
+// returns the frames naming the syscall the filter refused.
+//
+// The shipped filter kills the process, which prints nothing: a missing entry
+// and a decoder that crashed look identical from the parent. SIGSYS instead of
+// a kill lets the runtime print a stack, and the frame under the raw syscall
+// names the call, so the fix is the line the stack points at rather than a
+// guess at one of three hundred numbers.
+//
+// A second run rather than trapping in the first: a trap the process survives
+// is not a sandbox, and the proof that matters has to be of the shipped one.
+func nameRefusedSyscall(t *testing.T, exe string) string {
+	t.Helper()
+
+	// The worker is driven from a child test process so its stderr can be
+	// read. Started through the pool, it writes to this process's own, which
+	// the framework does not attribute to a failing test.
+	//nolint:gosec // G204: the binary this test just built, with a constant argv.
+	cmd := exec.Command(os.Args[0], "-test.run", "^TestTrapLoadHelper$", "-test.v")
+	cmd.Env = append(os.Environ(), trapHelperEnv+"=1", trapHelperExe+"="+exe)
+	// The error is the expected outcome and carries nothing: the helper fails
+	// because the worker it drives was killed, which is what is being
+	// diagnosed. What is wanted is the output.
+	out, _ := cmd.CombinedOutput() //nolint:errcheck // the child is meant to fail; its output is the answer.
+
+	if frames := sysFrames(string(out)); frames != "" {
+		return frames
+	}
+	return "(the trap run named nothing; the worker may have died another way)"
+}
+
+// sysFrames pulls the frames around a SIGSYS out of a runtime crash dump.
+//
+// The interesting part is small and buried: the report is the whole runtime
+// state, and what identifies the call is the frame under the raw syscall
+// entry, three or four lines in.
+func sysFrames(out string) string {
+	i := strings.Index(out, "SIGSYS")
+	if i < 0 {
+		return ""
+	}
+	lines := strings.Split(out[i:], "\n")
+	if len(lines) > 8 {
+		lines = lines[:8]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// The child that drives a worker under the trap filter. It is a test because
+// the pool and its fixtures live here, and it does nothing unless the parent
+// above asks for it.
+func TestTrapLoadHelper(t *testing.T) {
+	if os.Getenv(trapHelperEnv) != "1" {
+		t.Skip("a helper for the jail proof, run by that test")
+	}
+	pool, err := preview.NewPool(preview.PoolOptions{
+		Workers: 1,
+		Exe:     os.Getenv(trapHelperExe),
+		Args:    []string{"preview-worker"},
+		Env: []string{
+			"HOME=" + os.Getenv("HOME"),
+			"PATH=" + os.Getenv("PATH"),
+			"SC_PREVIEW_TRAP=1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewPool: %v", err)
+	}
+	defer func() { _ = pool.Close() }() //nolint:errcheck // a diagnostic helper; its output is the product.
+
+	for range 30 {
+		in, out := job(t, pngOf(t, 400, 300))
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		_, gerr := pool.Generate(ctx, preview.Request{
+			Kind: preview.JobImage, Preset: preview.PresetSmall, Flags: preview.FlagStripEXIF,
+		}, preview.PlainSource{F: in}, out)
+		cancel()
+		if gerr != nil {
+			return
+		}
+	}
+}
+
+const (
+	trapHelperEnv = "SC_TRAP_HELPER"
+	trapHelperExe = "SC_TRAP_HELPER_EXE"
+)

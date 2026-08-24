@@ -193,9 +193,11 @@
 # died: EOF". The status is read now, so the exception is gone rather than
 # suppressed.
 #
-# Reading a refused syscall out of a core dump added two: gosec reading the
-# signed si_syscall field back at its own width, and the close of a core file
-# the read has already finished with. The alternative was guessing which of
-# three hundred syscalls a filter refused.
-240
+# Naming the syscall a seccomp kill refused added three. A kill prints nothing,
+# so a filter missing an entry and a decoder that crashed look identical; the
+# proof re-runs the load under a filter that traps instead, and the runtime
+# then prints a stack naming the call. The exceptions are the child process
+# that is meant to fail, since its output rather than its status is the answer,
+# and two pool closes on a path that has already reported a failure.
+241
 

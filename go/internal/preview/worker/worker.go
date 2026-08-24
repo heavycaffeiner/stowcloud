@@ -65,7 +65,21 @@ func Run(policy jail.Policy) (jail.Status, error) {
 	// The allow-list filter is the worker's own, and it kills rather than
 	// returning an error: a decoder reaching a syscall it does not need is
 	// already executing something nobody wrote.
-	if serr := jail.InstallSeccomp(jail.FilterWorker); serr != nil {
+	//
+	// SC_PREVIEW_TRAP swaps the kill for SIGSYS, which the runtime reports with
+	// a stack naming the call. A kill prints nothing at all, so a filter
+	// missing an entry looks the same as a decoder that crashed, and finding
+	// which entry meant reading si_syscall out of a core: not available on a
+	// machine that discards cores, which is most CI.
+	//
+	// Diagnostic only. A trap the process survives is not a sandbox, so this is
+	// never set in a deployment; it is read from the environment because the
+	// worker parses no arguments by design.
+	filter := jail.FilterWorker
+	if os.Getenv("SC_PREVIEW_TRAP") == "1" {
+		filter = jail.FilterWorkerTrap
+	}
+	if serr := jail.InstallSeccomp(filter); serr != nil {
 		return st, serr
 	}
 
