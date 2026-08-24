@@ -845,6 +845,20 @@
     {#if netError}<p class="sc-admin-section__error" role="alert">{netError}</p>{/if}
     {#if netOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(netOutcome)}</p>{/if}
 
+    <h4 class="sc-admin-section__subhead">{t('server.home_folders')}</h4>
+    <p class="sc-admin-section__hint">{t('server.home_folders_hint')}</p>
+    <div class="sc-server-settings__form">
+      <Switch checked={homesEnabled} onchange={(v) => (homesEnabled = v)} label={t('server.enable_home_folders')} />
+      <TextField label={t('server.homes_root_path')} bind:value={homesRoot} />
+      <Button variant="filled" onclick={saveHomes} loading={homesSaving}>{t('common.save')}</Button>
+      {@render pendingRows('homes')}
+      {@render checkButton('homes', homesBody)}
+    </div>
+    {@render checkPanel('homes', homesBody)}
+    <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart_when')}</p>
+    {#if homesError}<p class="sc-admin-section__error" role="alert">{homesError}</p>{/if}
+    {#if homesOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(homesOutcome)}</p>{/if}
+
     <h4 class="sc-admin-section__subhead">{t('server.file_watching')}</h4>
     <p class="sc-admin-section__hint">{t('server.what_file_watching_is_for')}</p>
     <div class="sc-server-settings__form">
