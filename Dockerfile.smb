@@ -36,6 +36,14 @@ ARG ALPINE_DIGEST=sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e8
 # Same toolchain image and same reasoning as the core Dockerfile's builder.
 ARG GO_IMAGE=golang:1.26-bookworm
 
+# The service account every SMB connection is forced to, named as the core
+# image names the same pair. The two must agree: the core server renders an
+# account file naming this gid and the agent refuses a sync with "no group
+# exists for N" when nothing here resolves it. go/internal/server/config.go's
+# defaultServiceGID is the third copy of this number.
+ARG PUID=1000
+ARG PGID=1000
+
 # ----------------------------------------------------------------------------
 # Stage: builder, the agent, statically linked.
 #
@@ -127,8 +135,10 @@ RUN apk add --no-cache \
 # shell at a different path than Debian (confirmed by an actual run —
 # useradd only *warns* if given a shell that doesn't exist, it doesn't fail,
 # so this was a silent miss until checked, not a build error).
-RUN groupadd -g 1000 scsvc \
-    && useradd -u 1000 -g 1000 -M -s /sbin/nologin -d /nonexistent scsvc
+ARG PUID
+ARG PGID
+RUN groupadd -g "${PGID}" scsvc \
+    && useradd -u "${PUID}" -g "${PGID}" -M -s /sbin/nologin -d /nonexistent scsvc
 
 COPY --from=builder /out/sc-smb-agent /sc-smb-agent
 COPY deploy/smb/fail2ban-samba.local /etc/fail2ban/jail.d/samba.local

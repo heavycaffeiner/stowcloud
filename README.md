@@ -85,7 +85,7 @@ live in a named volume, and the image ships the directories it mounts them over
 already owned by the uid it runs as, so a volume inherits an owner that can
 write. To serve a folder you already have instead, replace the `sc-files` line
 under `volumes:` with a bind mount and make sure the directory is readable and
-writable by uid 65532:
+writable by uid 1000:
 
 ```yaml
       - /srv/my-files:/shares/files:z
@@ -97,7 +97,7 @@ bind source is owned by root, and the server cannot write to it:
 
 ```sh
 sudo mkdir -p /srv/my-files
-sudo chown -R 65532:65532 /srv/my-files
+sudo chown -R 1000:1000 /srv/my-files
 ```
 
 **3. Create the administrator account.**
@@ -267,7 +267,7 @@ is not writable by the uid the server runs as. SQLite reports a directory it
 cannot create a file in this way, so the message names the file rather than the
 directory. It is a bind mount whose host directory is owned by someone else,
 usually root because the path did not exist when the container first started.
-Create it owned by 65532, as above, or use a named volume.
+Create it owned by 1000, as above, or use a named volume.
 
 **`openat2 ... refused`.** Every path is resolved with `openat2` and there is
 no fallback, because resolving a path one component at a time is the race this

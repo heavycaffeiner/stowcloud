@@ -51,9 +51,10 @@ name: docker
 # executed: every architecture below now runs the same smoke test, so what
 # gets published is what was proven, on the hardware it was proven on.
 #
-# The per-architecture pins stay. `DISTROLESS_DIGEST` and `ALPINE_DIGEST` name
-# *manifest* digests, which are platform-specific unlike a tag, so each leg of
-# the matrix carries its own and one build never has to serve two.
+# The per-architecture pins stay. `ALPINE_DIGEST` names a *manifest* digest,
+# which is platform-specific unlike a tag, so each leg of the matrix carries
+# its own and one build never has to serve two. Both images take the same
+# argument now that the core one is Alpine too.
 
 on:
   push:
@@ -102,17 +103,15 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-latest
-            # gcr.io/distroless/static-debian12:nonroot, amd64. Same value as
-            # the Dockerfile's own default, passed explicitly so both legs read
-            # the same way and neither depends on which arch the default favours.
-            distroless: sha256:7a2bd171a18bdd39a4729600d0dca5f16e779d41156a6908b4f8a9a289e76d92
+            # alpine:3.24.1, amd64 manifest. Same value as the Dockerfile's own
+            # default, passed explicitly so both legs read the same way and
+            # neither depends on which arch the default favours.
+            alpine: sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
           - arch: arm64
             runner: ubuntu-24.04-arm
-            # The arm64 manifest of the same image, verified the same way and
-            # the same day as the amd64 one (registry pull, not registry-API-text
-            # guess; see the Dockerfile header, including the note that an
-            # earlier value here 404'd against the real registry).
-            distroless: sha256:37d3baf4e657ce79c144b69b69f60b8542f366a64fb7a49bd99f5444ef008bb0
+            # The arm64 manifest of the same image, read off the 3.24 index the
+            # same way and the same day as the amd64 one.
+            alpine: sha256:e7a1a92a5bfeee40966aea60f0796b0e7917cc35591542701834f03a68fa3d18
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -125,7 +124,7 @@ jobs:
           file: ./Dockerfile
           platforms: linux/${{ matrix.arch }}
           build-args: |
-            DISTROLESS_DIGEST=${{ matrix.distroless }}
+            ALPINE_DIGEST=${{ matrix.alpine }}
           load: true
           tags: sc:core-ci
           # Keyed by architecture: the two runners build different binaries from
@@ -162,7 +161,9 @@ jobs:
         run: |
           mkdir -p /tmp/sc-data /tmp/sc-shares/files
           # The uid the image runs as, which cannot chown anything itself.
-          sudo chown -R 65532:65532 /tmp/sc-data /tmp/sc-shares
+          # 1000 is also the runner's own uid, so this is a no-op there and is
+          # kept for the deployment where it is not.
+          sudo chown -R 1000:1000 /tmp/sc-data /tmp/sc-shares
           cat > /tmp/sc.toml <<'TOML'
           [server]
           data_dir = "/var/lib/stowcloud"
@@ -288,9 +289,9 @@ jobs:
 
       - name: Wait for Docker's own HEALTHCHECK to report healthy
         # Proves the Dockerfile's HEALTHCHECK instruction itself, not just
-        # the binary in isolation. A distroless image has no shell and no
-        # curl for an exec-form probe to call, so this is the one part that
-        # can only be proven inside a real container.
+        # the binary in isolation. The probe is the exec form calling the
+        # server binary under a different argument, so this is the one part
+        # that can only be proven inside a real container.
         run: |
           for i in $(seq 1 60); do
             status=$(docker inspect --format='{{.State.Health.Status}}' sc-smoke)
@@ -623,10 +624,10 @@ jobs:
         include:
           - arch: amd64
             runner: ubuntu-latest
-            distroless: sha256:7a2bd171a18bdd39a4729600d0dca5f16e779d41156a6908b4f8a9a289e76d92
+            alpine: sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
           - arch: arm64
             runner: ubuntu-24.04-arm
-            distroless: sha256:37d3baf4e657ce79c144b69b69f60b8542f366a64fb7a49bd99f5444ef008bb0
+            alpine: sha256:e7a1a92a5bfeee40966aea60f0796b0e7917cc35591542701834f03a68fa3d18
     permissions:
       contents: read
       packages: write
@@ -647,7 +648,7 @@ jobs:
           file: ./Dockerfile
           platforms: linux/${{ matrix.arch }}
           build-args: |
-            DISTROLESS_DIGEST=${{ matrix.distroless }}
+            ALPINE_DIGEST=${{ matrix.alpine }}
           labels: ${{ env.LABELS }}
           # No tag: `push-by-digest` uploads the manifest under its content
           # address only, so neither arch briefly owns `:core` on its own and

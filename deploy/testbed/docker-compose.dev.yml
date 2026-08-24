@@ -13,7 +13,7 @@
 # first write fails with "unable to open database file".
 #
 #   mkdir -p data shares/files smbcfg
-#   sudo chown -R 65532:65532 data shares smbcfg
+#   sudo chown -R 1000:1000 data shares smbcfg
 
 name: sc-lab
 

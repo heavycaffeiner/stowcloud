@@ -50,8 +50,8 @@ func (e *ResolverError) Error() string {
 			"vfs: openat2 exists on this kernel (%s) and the probe was refused with EACCES, which is a filesystem "+
 				"permission and not a seccomp profile. This server resolves every path with it and has no fallback, "+
 				"because resolving a path one component at a time is the race this design exists to close. "+
-				"The usual cause is running the image as a uid that cannot search its own working directory: this "+
-				"image runs as 65532, so a container started with a different user needs one it can reach. "+
+				"The usual cause is running the image as a uid that cannot search its own working directory, or "+
+				"a mounted directory the running uid cannot reach. "+
 				"Check the user the container runs as", e.Kernel)
 	}
 	return fmt.Sprintf("vfs: openat2 is not usable on this kernel (%s) and this server has no fallback", e.Kernel)

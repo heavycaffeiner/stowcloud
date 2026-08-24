@@ -135,12 +135,12 @@ func kernelRelease() string {
 //
 // The operand has to be one that cannot fail for a reason unrelated to the
 // syscall. "." is not: the working directory is whatever the image or the
-// operator set, and the distroless base this ships on puts it at /home/nonroot,
-// mode 700 and owned by 65532. Running the image under any other uid made this
-// probe return EACCES, which was then reported as a seccomp profile blocking
-// openat2, and no amount of editing the profile fixed it. "/" is searchable by
-// every uid on every system this runs on, so what is left to fail is the
-// syscall itself.
+// operator set, and the base this shipped on put it at a home directory mode
+// 700 and owned by the image's own uid. Running the image under any other uid
+// made this probe return EACCES, which was then reported as a seccomp profile
+// blocking openat2, and no amount of editing the profile fixed it. "/" is
+// searchable by every uid on every system this runs on, so what is left to
+// fail is the syscall itself.
 func probeOpenat2() Support {
 	how := unix.OpenHow{
 		Flags:   unix.O_PATH | unix.O_DIRECTORY | unix.O_CLOEXEC,

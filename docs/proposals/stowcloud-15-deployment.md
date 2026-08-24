@@ -61,10 +61,12 @@ corrections, not accidental drift from the existing deployment contract.
 - [ ] **`chown -R` on a mounted volume.** Many images do it at startup; on a
       directory shared with other services it cuts off their access and is hard
       to reverse. The entrypoint never touches ownership of user data, and the
-      distroless image has no `chown` to do it with even if someone tried.
+      server does not run as a uid that could. This is also why `PUID` is a
+      build argument rather than an environment variable: honouring one at
+      start means exactly this chown, as root, on every boot.
 - [ ] **Running as root and dropping privileges.** The container starts
       unprivileged, which is also why it needs no setuid capability.
-- [ ] **Bundling `ffmpeg`.** It would end the distroless base for a feature
+- [ ] **Bundling `ffmpeg`.** It would multiply the image size for a feature
       that is a non-goal in [`12`](stowcloud-12-preview.md) §3.2.
 - [ ] A plaintext listener, anywhere, for anything. §4.7 gives the reason,
       which is not "TLS is good" but "which port is safe to expose stops being
@@ -78,16 +80,21 @@ corrections, not accidental drift from the existing deployment contract.
 
 | Image | Base | Architectures | Contents |
 |---|---|---|---|
-| core | distroless static | amd64, arm64 | one statically linked Go binary, frontend embedded |
+| core | alpine | amd64, arm64 | one statically linked Go binary, frontend embedded |
 | smb | alpine | amd64, arm64 | `smbd` plus the config-sync loop, a sidecar |
 
-The core image has no shell, no package manager and no `chown`. That is the
-point, and it has three consequences that are easy to lose:
+The core image is one static binary on a base that ships nothing else. Alpine
+rather than a distroless base so both images track one base and one support
+window, and so an operator debugging a container has a shell. The server still
+never runs as a uid that can chown user data, which is the property that
+mattered.
 
-1. **The health check is the same binary re-invoked with a different argv**,
-   because nothing else in the image can run an exec-form probe. This is
-   already the shape the Rust build uses and it generalises to the subcommands
-   in [`2`](stowcloud-2-gate-and-toolchain.md) §5-1.
+Three consequences are easy to lose:
+
+1. **The health check is the same binary re-invoked with a different argv.**
+   Nothing else in the image is a probe, and the binary already answers the
+   question. This generalises to the subcommands in
+   [`2`](stowcloud-2-gate-and-toolchain.md) §5-1.
 2. **The host must pre-create bind-mount directories with the right owner.**
    Docker creates a missing one owned by root, and nothing in the container can
    fix it afterwards. This is documented at the point an operator meets it, in
@@ -129,11 +136,12 @@ security model rests on.
 `EPERM` and `EACCES` are kept apart for the same reason, and folding them
 together was a real defect rather than a hypothetical one. A seccomp filter
 refuses with `EPERM`; a directory the calling uid cannot search refuses with
-`EACCES`. The probe used to open `"."`, and the distroless base sets the
-working directory to `/home/nonroot`, mode 700 owned by 65532, so running the
-image under any other uid produced `EACCES` and a refusal that blamed the
-seccomp profile. Editing the profile could not fix it. The probe now opens
-`"/"`, which every uid can search, and the two errnos report different causes.
+`EACCES`. The probe used to open `"."`, and the base then in use set the
+working directory to a home directory mode 700 owned by the image's own uid, so
+running the image under any other uid produced `EACCES` and a refusal that
+blamed the seccomp profile. Editing the profile could not fix it. The probe now
+opens `"/"`, which every uid can search, and the two errnos report different
+causes.
 
 This is stance S3, and it is the same stance D3 turns into a startup refusal.
 Under `hardening = "required"` both a blocked `openat2` and an unavailable
@@ -232,12 +240,25 @@ promises.
 
 - The container runs as an unprivileged uid from the start, so no setuid
   capability is ever needed and `cap_drop: ALL` costs nothing.
-- **The image runs as 65532 and the working directory is `/`.** The distroless
-  base defaults it to `/home/nonroot`, mode 700 owned by 65532, which an
-  overridden `user:` cannot search. The Dockerfile sets `WORKDIR /` so that
-  overriding the uid fails on the directories the deployment actually mounts,
-  where the cause is legible, rather than on the first path the process
-  resolves.
+- **Both images run as 1000:1000, and the working directory is `/`.** The uid
+  is a build argument, `PUID` and `PGID`, named as the wider self-hosting
+  ecosystem names them. 1000 rather than a service number in the 65000s because
+  the folders a deployment mounts in are somebody's own files, and on a
+  single-admin machine those carry uid 1000: matching it is what lets a bind
+  mount work with no chown at all.
+- **The uid is fixed at build time, not read from the environment at start.**
+  Honouring a `PUID` environment variable means chowning the data directory
+  from inside the container, as root, on every boot. Neither image runs the
+  server as root, so a deployment needing a different uid rebuilds with
+  `--build-arg PUID=`. The core image's directories are owned by the build's
+  uid, so a `user:` that disagrees with it cannot write them.
+- **`WORKDIR /`**, so overriding the uid fails on the directories the
+  deployment actually mounts, where the cause is legible, rather than on the
+  first path the process resolves.
+- The SMB sidecar stays root: `smbd` binds a privileged port and becomes the
+  service account per connection. `PUID`/`PGID` there name `scsvc`, the account
+  every SMB connection is forced to, and it has to agree with the core server's
+  `smb.service_gid` or the agent refuses the sync.
 - A bind mount does not inherit ownership the way a named volume does, so a
   host directory has to be created owned by the runtime uid. A missing bind
   source is created root-owned by the runtime and the first write fails.

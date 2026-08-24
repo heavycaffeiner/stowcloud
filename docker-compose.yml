@@ -31,10 +31,12 @@ services:
       # here.
       - no-new-privileges:true
 
-    # Left at the image's own uid on purpose. The base puts the working
-    # directory at /home/nonroot, mode 700 owned by 65532, so a `user:` set to
-    # anything else lands in a directory it cannot search. Override this only
-    # together with `working_dir: /`.
+    # Left at the image's own uid on purpose. It runs as 1000:1000, which is
+    # the uid a single-admin machine's own files usually carry, so a bind mount
+    # of a folder you already own needs no chown. To run as something else,
+    # build with --build-arg PUID= and PGID= rather than setting `user:` here:
+    # the directories shipped in the image are owned by the build's uid, and a
+    # `user:` that disagrees cannot write the data directory.
 
     ports:
       # TLS, always. There is no plaintext listener to publish by mistake.
@@ -60,7 +62,7 @@ services:
       # created root-owned, and the server does not run as root.
       #
       # To serve a directory you already have, replace this with a bind mount
-      # and make sure it is readable and writable by uid 65532:
+      # and make sure it is readable and writable by uid 1000:
       #
       #   - /srv/my-files:/shares/files:z
       #
@@ -77,9 +79,10 @@ services:
     stop_grace_period: 30s
 
     healthcheck:
-      # The same binary under a different argument, because the image has no
-      # shell to run anything else with. It exits zero for degraded as well as
-      # ok: degraded is a configuration state, and restarting does not fix one.
+      # The same binary under a different argument, so the probe cannot
+      # disagree with the server about its own state. It exits zero for
+      # degraded as well as ok: degraded is a configuration state, and
+      # restarting does not fix one.
       test: [CMD, /stowcloud, healthcheck, /etc/stowcloud/sc.toml]
       interval: 30s
       timeout: 5s

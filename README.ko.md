@@ -81,7 +81,7 @@ docker compose up -d
 만들 폴더도, chown 할 것도 없습니다. 업로드한 파일은 named volume에 들어가고,
 이미지가 그 자리의 디렉터리를 실행 uid 소유로 미리 만들어 두기 때문에 volume이
 쓸 수 있는 소유권을 물려받습니다. 이미 가지고 있는 폴더를 서비스하려면
-`volumes:`의 `sc-files` 줄을 bind mount로 바꾸고, 그 디렉터리를 uid 65532가
+`volumes:`의 `sc-files` 줄을 bind mount로 바꾸고, 그 디렉터리를 uid 1000이
 읽고 쓸 수 있게 해 두면 됩니다.
 
 ```yaml
@@ -94,7 +94,7 @@ volume처럼 소유권을 물려받지 않습니다. 없는 경로를 Docker가 
 
 ```sh
 sudo mkdir -p /srv/my-files
-sudo chown -R 65532:65532 /srv/my-files
+sudo chown -R 1000:1000 /srv/my-files
 ```
 
 **3. 관리자 계정을 만듭니다.**
@@ -240,7 +240,7 @@ docker compose --profile smb up -d
 서버 실행 uid로 쓸 수 없는 상태입니다. SQLite는 파일을 만들 수 없는 디렉터리를
 이런 식으로 보고해서, 메시지는 디렉터리가 아니라 파일 이름을 말합니다. 보통
 컨테이너를 처음 띄울 때 경로가 없어서 Docker가 root 소유로 만들어 버린
-bind mount입니다. 앞서처럼 65532 소유로 만들거나 named volume을 쓰세요.
+bind mount입니다. 앞서처럼 1000 소유로 만들거나 named volume을 쓰세요.
 
 **`openat2 ... refused`.** 모든 경로를 `openat2`로 해석하며 폴백이 없습니다.
 경로를 한 컴포넌트씩 여는 방식이 바로 이 설계가 막으려는 레이스이기 때문입니다.

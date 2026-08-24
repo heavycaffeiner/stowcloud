@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 #
-# One statically linked binary on a base with no shell and no package manager.
+# One statically linked binary on an Alpine base, running as an unprivileged
+# uid the deployment's own files already carry.
 #
 # ============================================================================
 # Why there is no C toolchain in the builder
@@ -49,10 +50,37 @@ ARG GO_IMAGE=golang:1.26-bookworm
 # installed.
 ARG NODE_IMAGE=node:24-alpine
 
-# The runtime base carries no shell, no package manager, and no tool to copy a
-# file with. Its digest is per-architecture, so the CI workflow passes one per
-# platform rather than trying to make a single value serve both.
-ARG DISTROLESS_DIGEST=sha256:7a2bd171a18bdd39a4729600d0dca5f16e779d41156a6908b4f8a9a289e76d92
+# The runtime base. Alpine rather than distroless, and the same 3.24 the SMB
+# sidecar pins, so both images track one base and one support window.
+#
+# The digest is per-architecture, so the CI workflow passes one per platform
+# rather than trying to make a single value serve both. This default is the
+# amd64 manifest, which is what a bare `docker build` on the usual laptop
+# wants; passing the index digest instead yields an image of whichever
+# architecture buildx resolved.
+#   index: sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+#   amd64: sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+#   arm64: sha256:e7a1a92a5bfeee40966aea60f0796b0e7917cc35591542701834f03a68fa3d18
+ARG ALPINE_DIGEST=sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+
+# The uid and gid the server runs as, and the ones the shipped directories are
+# owned by. Named as the wider self-hosting ecosystem names them, because an
+# operator who has set PUID and PGID on another image already knows what these
+# do.
+#
+# 1000 rather than a service number in the 65000s: the folders a deployment
+# mounts in are somebody's own files, and on a single-admin NAS those are
+# almost always uid 1000. Matching it is what lets a bind mount work with no
+# chown at all, and a mismatch here is the most common way a first run fails.
+#
+# They are build arguments rather than environment variables read at start.
+# Changing the uid at run time means chowning the data directory from inside
+# the container, as root, on every boot; this image never runs as root, so a
+# deployment that needs a different uid builds with --build-arg PUID= or sets
+# `user:` in the compose file, and the directories it mounts are its own to
+# own.
+ARG PUID=1000
+ARG PGID=1000
 
 # ----------------------------------------------------------------------------
 # Stage: frontend
@@ -102,15 +130,17 @@ COPY --from=frontend /src/go/internal/httpapi/spa/build ./internal/httpapi/spa/b
 # the same bytes on two machines, so a published binary can be checked against
 # a build of the tag it claims to come from.
 # The directories a fresh deployment mounts volumes over, staged here because
-# the runtime base has no shell to create them with. Copied in owned by the
+# they are owned by the build's uid rather than root. Copied in owned by the
 # runtime uid: a named volume mounted over an existing directory inherits that
 # directory's ownership, so the server can write to it. An empty volume with
 # nothing underneath is created root-owned instead, and the first write fails.
 #
 # /shares/files is the quickstart's one share. A deployment serving its own
 # directories bind-mounts them and this goes unused.
+ARG PUID
+ARG PGID
 RUN mkdir -p /staged/var/lib/stowcloud /staged/shares/files /staged/config/smb && \
-    chown -R 65532:65532 /staged
+    chown -R "${PUID}:${PGID}" /staged
 
 RUN mkdir -p /out && \
     CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" \
@@ -125,22 +155,34 @@ RUN mkdir -p /out && \
 # ----------------------------------------------------------------------------
 # Stage: runtime
 #
-# The nonroot variant, so the image is never root even before the compose file
-# overrides the uid for share ownership. There is no step that changes the
-# ownership of a mounted directory: this base has nothing to run one with, and
-# recursively changing the ownership of a directory somebody else's program
-# also writes is not something a container start should do. The host directory
-# is created with the right owner instead.
+# Never root: the account below owns what the server writes and nothing else.
+# There is no step that changes the ownership of a mounted directory, because
+# recursively chowning a directory somebody else's program also writes is not
+# something a container start should do. The host directory is created with the
+# right owner instead, and the uid is chosen to be the one it already has.
 # ----------------------------------------------------------------------------
-FROM gcr.io/distroless/static-debian12@${DISTROLESS_DIGEST} AS runtime
+FROM alpine:3.24@${ALPINE_DIGEST} AS runtime
+ARG PUID
+ARG PGID
 
-COPY --from=builder --chown=nonroot:nonroot /out/stowcloud /stowcloud
+# The account the server runs as. Alpine ships no uid 1000, so it is created
+# here rather than named: a numeric USER with no passwd entry works, but leaves
+# every `ls -l` inside the container printing a bare number and gives the
+# process no home to resolve.
+#
+# -S makes it a system account with no password and no login shell. -h /
+# because the working directory below is /, and a home this account cannot
+# search is what made the previous base refuse to start under an overridden
+# uid.
+RUN addgroup -g "${PGID}" -S stowcloud \
+    && adduser -u "${PUID}" -G stowcloud -S -H -h / -s /sbin/nologin stowcloud
 
-# The base sets this to /home/nonroot, which is mode 700 owned by 65532, so a
-# container started with a different `user:` cannot search its own working
-# directory. Nothing here needs a writable cwd, and / is searchable by every
-# uid, so an overridden user fails on the directories it actually touches
-# rather than on the first path the process resolves.
+COPY --from=builder --chown=${PUID}:${PGID} /out/stowcloud /stowcloud
+
+# / rather than a home directory. Nothing here needs a writable working
+# directory, and / is searchable by every uid, so a container started with an
+# overridden `user:` fails on the directories it actually touches rather than
+# on the first path the process resolves.
 WORKDIR /
 
 # The permissive licences all require their notice to reach whoever receives a
@@ -156,21 +198,26 @@ COPY THIRD-PARTY-NOTICES.md /THIRD-PARTY-NOTICES.md
 # `docker compose up` work with no host-side preparation. A bind mount does not
 # inherit anything, so a host directory still has to be created with the right
 # owner.
-COPY --from=builder --chown=nonroot:nonroot /staged/var/lib/stowcloud /var/lib/stowcloud
+COPY --from=builder --chown=${PUID}:${PGID} /staged/var/lib/stowcloud /var/lib/stowcloud
 # The default share and the SMB render directory, for the same reason: a volume
 # mounted over either inherits an owner the server can write as.
-COPY --from=builder --chown=nonroot:nonroot /staged/shares/files /shares/files
-COPY --from=builder --chown=nonroot:nonroot /staged/config/smb /config/smb
+COPY --from=builder --chown=${PUID}:${PGID} /staged/shares/files /shares/files
+COPY --from=builder --chown=${PUID}:${PGID} /staged/config/smb /config/smb
 VOLUME ["/var/lib/stowcloud"]
+
+# Dropped from root before the entrypoint, so nothing in this image ever runs
+# privileged. Numeric, because a name resolves through /etc/passwd and a
+# deployment that mounts its own over this one would change who the server is.
+USER ${PUID}:${PGID}
 
 # One socket, and it is TLS. There is no plaintext listener anywhere to publish
 # by mistake, and the certificate is generated into the data directory on first
 # run.
 EXPOSE 8443
 
-# The exec form runs the listed argv directly rather than through a shell,
-# which is what lets a shell-less image have a health check at all: it is this
-# same binary under a different argument.
+# The exec form runs the listed argv directly rather than through a shell: the
+# probe is this same binary under a different argument, so there is nothing to
+# install and nothing that can disagree with the server about its own state.
 #
 # The start period covers first-run key generation and the schema migrations
 # before the first probe counts as a failure. The probe exits zero for degraded
