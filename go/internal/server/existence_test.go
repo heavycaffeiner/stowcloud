@@ -96,7 +96,7 @@ func TestExistenceRuleOverHTTP(t *testing.T) {
 		Auth:    svc,
 		Core:    coreSvc,
 		Trusted: mw.NewTrustedSet([]netip.Prefix{mustPrefix("127.0.0.0/8")}),
-		Hosts:   mw.NewHostSet([]string{"localhost"}, nil),
+		Hosts:   mw.NewHostSet([]string{"localhost"}),
 		CSRFKey: make([]byte, 32),
 		Limiter: mw.NewRateLimiter(1000, 10000, clk),
 	}

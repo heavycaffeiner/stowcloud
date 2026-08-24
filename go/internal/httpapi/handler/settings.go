@@ -120,10 +120,6 @@ func Settings(d Deps) http.HandlerFunc {
 				Range: stringListRange(32), Source: sourceConfig,
 			},
 			{
-				Key: "content_hosts", Value: d.Hosts.Content(),
-				Range: stringListRange(32), Source: sourceConfig,
-			},
-			{
 				Key: "trusted_proxies", Value: prefixesToStrings(d.Trusted.Get()),
 				Range: stringListRange(32), Source: sourceConfig,
 				EmptyMeansKey: emptyMeans("settings.empty_trusts_no_proxy"),
@@ -251,7 +247,6 @@ func SettingsNetwork(d Deps) http.HandlerFunc {
 		var req struct {
 			TrustedProxyCIDRs []string `json:"trusted_proxies,omitempty"`
 			AppHosts          []string `json:"app_hosts,omitempty"`
-			ContentHosts      []string `json:"content_hosts,omitempty"`
 		}
 		if err := decodeJSON(r, &req); err != nil {
 			return err
@@ -275,9 +270,6 @@ func SettingsNetwork(d Deps) http.HandlerFunc {
 		if req.AppHosts != nil {
 			probe["app_hosts"] = toAnyList(req.AppHosts)
 		}
-		if req.ContentHosts != nil {
-			probe["content_hosts"] = toAnyList(req.ContentHosts)
-		}
 		if req.TrustedProxyCIDRs != nil {
 			probe["trusted_proxies"] = toAnyList(req.TrustedProxyCIDRs)
 		}
@@ -285,16 +277,8 @@ func SettingsNetwork(d Deps) http.HandlerFunc {
 			return settingsRefused(findings)
 		}
 
-		if req.AppHosts != nil || req.ContentHosts != nil {
-			app := d.Hosts.App()
-			content := d.Hosts.Content()
-			if req.AppHosts != nil {
-				app = req.AppHosts
-			}
-			if req.ContentHosts != nil {
-				content = req.ContentHosts
-			}
-			d.Hosts.Set(app, content)
+		if req.AppHosts != nil {
+			d.Hosts.Set(req.AppHosts)
 		}
 
 		// Persisted as well as applied. Applying without storing is a boundary
@@ -304,9 +288,6 @@ func SettingsNetwork(d Deps) http.HandlerFunc {
 			stored := map[string]any{}
 			if req.AppHosts != nil {
 				stored["app_hosts"] = req.AppHosts
-			}
-			if req.ContentHosts != nil {
-				stored["content_hosts"] = req.ContentHosts
 			}
 			if req.TrustedProxyCIDRs != nil {
 				stored["trusted_proxies"] = req.TrustedProxyCIDRs

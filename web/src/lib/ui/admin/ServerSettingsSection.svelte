@@ -223,7 +223,6 @@
     return {
       bind: netBind.trim(),
       app_hosts: strToArr(netAppHosts),
-      content_hosts: strToArr(netContentHosts),
       allowed_origins: strToArr(netAllowedOrigins),
       trusted_proxies: strToArr(netTrustedProxies),
       public_origins: strToArr(netPublicOrigins)
@@ -366,7 +365,6 @@
 
   let netBind = $state('')
   let netAppHosts = $state('')
-  let netContentHosts = $state('')
   let netAllowedOrigins = $state('')
   let netTrustedProxies = $state('')
   let netPublicOrigins = $state('')
@@ -430,7 +428,6 @@
     const req: NetworkSettingsReq = {
       bind: netBind.trim(),
       app_hosts: strToArr(netAppHosts),
-      content_hosts: strToArr(netContentHosts),
       allowed_origins: strToArr(netAllowedOrigins),
       trusted_proxies: strToArr(netTrustedProxies),
       public_origins: strToArr(netPublicOrigins)
@@ -510,7 +507,6 @@
   const EDITABLE_KEYS = new Set([
     'bind',
     'app_hosts',
-    'content_hosts',
     'allowed_origins',
     'trusted_proxies',
     'public_origins',
@@ -629,7 +625,6 @@
 
       netBind = String(field('bind')?.value ?? '')
       netAppHosts = arrToStr(field('app_hosts')?.value)
-      netContentHosts = arrToStr(field('content_hosts')?.value)
       netAllowedOrigins = arrToStr(field('allowed_origins')?.value)
       netTrustedProxies = arrToStr(field('trusted_proxies')?.value)
       netPublicOrigins = arrToStr(field('public_origins')?.value)
@@ -838,7 +833,6 @@
       <TextField label={t('server.bind_address_host_port')} bind:value={netBind} />
       <p class="sc-admin-section__hint">{t('server.bind_https_hint')}</p>
       <TextField label={t('server.app_hosts_comma_separated')} bind:value={netAppHosts} />
-      <TextField label={t('server.content_hosts_comma_separated')} bind:value={netContentHosts} />
       <TextField label={t('server.trusted_proxies_comma_separated')} bind:value={netTrustedProxies} />
       {#if !netTrustedProxies.trim() && emptyNote('trusted_proxies')}
         <p class="sc-server-settings__empty-note">{emptyNote('trusted_proxies')}</p>

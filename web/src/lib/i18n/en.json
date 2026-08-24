@@ -452,7 +452,6 @@
   "server.concurrent_slow_searches": "Concurrent slow searches",
   "server.concurrent_zip_streams": "Concurrent zip streams",
   "server.connected_accounts_cannot_use_smb": "A connected account cannot use SMB with its account password. That is not a setting, it is what connecting does.",
-  "server.content_hosts_comma_separated": "Content hosts (comma-separated)",
   "server.could_not_check": "Could not try the settings out",
   "server.could_not_load_server_settings": "Could not load the server settings",
   "server.could_not_save_archive_settings": "Could not save the archive settings",

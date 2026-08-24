@@ -25,12 +25,6 @@ const SessionCookie = "__Host-sc_sid"
 func Auth(svc *auth.Service, isPublic func(method, path string) bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if OriginFrom(r.Context()) == OriginContent {
-				// The content origin carries no session by construction. Its
-				// own capability-URL verification happens in its handler.
-				next.ServeHTTP(w, r)
-				return
-			}
 			path := r.URL.Path
 			if isPublic(r.Method, path) {
 				next.ServeHTTP(w, r)
@@ -151,9 +145,9 @@ func PublicPaths(method, path string) bool {
 		return method == http.MethodGet
 
 	}
-	if strings.HasPrefix(path, "/s/") || strings.HasPrefix(path, "/c/") {
-		// Public share links and the content origin: authorization is the
-		// token in the URL, never a user session.
+	if strings.HasPrefix(path, "/s/") {
+		// Public share links: authorization is the token in the URL, never a
+		// user session.
 		return true
 	}
 	if (method == http.MethodGet || method == http.MethodHead) && !strings.HasPrefix(path, "/api/") {

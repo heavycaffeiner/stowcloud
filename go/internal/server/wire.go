@@ -126,7 +126,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		Auth:    opt.Auth,
 		Core:    opt.Core,
 		Trusted: mw.NewTrustedSet(cfg.TrustedProxy),
-		Hosts:   mw.NewHostSet(cfg.AppHosts, cfg.ContentHosts),
+		Hosts:   mw.NewHostSet(cfg.AppHosts),
 		CSRFKey: csrfKey(),
 		Limiter: mw.NewRateLimiter(cfg.RatePerSec, cfg.RateBurst, clk),
 		// The policy has to admit this bundle's own inline bootstrap, and the
@@ -194,15 +194,8 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 			// one rather than the next start. An entry that cannot be parsed
 			// is dropped with a line here and refused at save time, which is
 			// the pair of rules the proxy boundary is meant to have.
-			if len(v.AppHosts) > 0 || len(v.ContentHosts) > 0 {
-				app, content := v.AppHosts, v.ContentHosts
-				if len(app) == 0 {
-					app = state.Hosts.App()
-				}
-				if len(content) == 0 {
-					content = state.Hosts.Content()
-				}
-				state.Hosts.Set(app, content)
+			if len(v.AppHosts) > 0 {
+				state.Hosts.Set(v.AppHosts)
 			}
 			if len(v.TrustedProxy) > 0 {
 				state.Trusted.Set(parsePrefixes(v.TrustedProxy, log))

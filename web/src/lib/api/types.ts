@@ -1003,7 +1003,6 @@ export interface ArchiveSettingsReq {
 export interface NetworkSettingsReq {
   bind: string
   app_hosts: string[]
-  content_hosts: string[]
   allowed_origins: string[]
   trusted_proxies: string[]
   /** Absolute `http(s)://` origins, first canonical. Refused at save time if

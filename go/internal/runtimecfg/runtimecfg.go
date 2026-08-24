@@ -68,7 +68,6 @@ type Values struct {
 	// exception, because their holders are live and the guard reads them per
 	// request.
 	AppHosts      []string
-	ContentHosts  []string
 	TrustedProxy  []string
 	HomesEnabled  bool
 	HomesRoot     string
@@ -252,7 +251,6 @@ func Load(ctx context.Context, st Store, base Values, log *slog.Logger) Values {
 	// parsed is dropped at boot with a line rather than refusing the start:
 	// the same value is refused at save time, where somebody is watching.
 	readStrings(all, "network", "app_hosts", func(v []string) { out.AppHosts = v })
-	readStrings(all, "network", "content_hosts", func(v []string) { out.ContentHosts = v })
 	readStrings(all, "network", "trusted_proxies", func(v []string) { out.TrustedProxy = v })
 
 	readBool(all, "homes", "enabled", func(v bool) { out.HomesEnabled = v })

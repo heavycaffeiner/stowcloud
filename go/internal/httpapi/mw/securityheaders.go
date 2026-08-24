@@ -76,13 +76,9 @@ func SecurityHeaders(appPolicy string) func(http.Handler) http.Handler {
 			h.Set("Referrer-Policy", "no-referrer")
 			h.Set("Cross-Origin-Resource-Policy", "same-site")
 			h.Set("X-Robots-Tag", "noindex, nofollow")
-			if OriginFrom(r.Context()) == OriginContent {
-				h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
-			} else {
-				h.Set("Content-Security-Policy", appPolicy)
-				h.Set("Cross-Origin-Opener-Policy", "same-origin")
-				h.Set("Permissions-Policy", "geolocation=(), camera=(), microphone=(), interest-cohort=()")
-			}
+			h.Set("Content-Security-Policy", appPolicy)
+			h.Set("Cross-Origin-Opener-Policy", "same-origin")
+			h.Set("Permissions-Policy", "geolocation=(), camera=(), microphone=(), interest-cohort=()")
 			next.ServeHTTP(w, r)
 		})
 	}

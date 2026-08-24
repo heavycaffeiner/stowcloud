@@ -90,25 +90,6 @@ func TestTheApplicationPolicyAdmitsTheInlinedFont(t *testing.T) {
 	}
 }
 
-// The content origin serves bytes a stranger uploaded. Its policy is the
-// harshest one a browser understands, and it must never pick up the
-// application origin's allowances.
-func TestTheContentPolicyStaysHarsh(t *testing.T) {
-	rec := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r = r.WithContext(withOrigin(r.Context(), OriginContent))
-
-	SecurityHeaders(AppPolicy("'sha256-test'"))(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})).ServeHTTP(rec, r)
-
-	got := rec.Header().Get("Content-Security-Policy")
-	if !strings.Contains(got, "default-src 'none'") || !strings.Contains(got, "sandbox") {
-		t.Fatalf("the content origin's policy is %q", got)
-	}
-	if strings.Contains(got, "sha256-") {
-		t.Fatalf("the content origin admits a script hash:\n%s", got)
-	}
-}
-
 // The uploader runs in a Worker, and the policy has to admit one.
 //
 // A worker script is checked against worker-src, and against script-src only

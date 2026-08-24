@@ -1415,7 +1415,6 @@ const mockServerSettings = {
   network: {
     bind: '127.0.0.1:8443',
     app_hosts: ['nas.local'] as string[],
-    content_hosts: [] as string[],
     allowed_origins: [] as string[],
     trusted_proxies: [] as string[],
     public_origins: ['https://nas.local'] as string[]
@@ -1461,7 +1460,6 @@ mockFileSettings.smb.server_name = 'STOWCLOUD'
 const MOCK_SECTION_OF: Record<string, SettingsSectionId> = {
   bind: 'network',
   app_hosts: 'network',
-  content_hosts: 'network',
   allowed_origins: 'network',
   trusted_proxies: 'network',
   public_origins: 'network',
@@ -1498,7 +1496,6 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
     fields: [
       settingsField('bind', s.network.bind, true),
       settingsField('app_hosts', s.network.app_hosts, true),
-      settingsField('content_hosts', s.network.content_hosts, true),
       settingsField('allowed_origins', s.network.allowed_origins, true),
       settingsField('trusted_proxies', s.network.trusted_proxies, true),
       // The one row carrying a pending-restart value, so the badge is

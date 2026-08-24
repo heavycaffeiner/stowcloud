@@ -21,10 +21,6 @@ listen = "0.0.0.0:8443"
 # connected from and refuses a list that would lock you out.
 app_hosts = ["localhost", "127.0.0.1"]
 
-# Where user content is served from, kept separate so an uploaded file cannot
-# execute in the origin that holds the session cookie. Downloads still work
-# when this resolves nowhere; only inline preview of untrusted files needs it.
-content_hosts = ["content.localhost"]
 
 [security]
 # The sandbox this server asks the kernel for. "required" refuses to start when

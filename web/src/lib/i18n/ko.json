@@ -452,7 +452,6 @@
   "server.concurrent_slow_searches": "느린 동시 검색 수",
   "server.concurrent_zip_streams": "동시 압축 스트림 수",
   "server.connected_accounts_cannot_use_smb": "연결된 계정은 계정 비밀번호로 SMB를 쓸 수 없습니다. 설정이 아니라 연결이 하는 일입니다.",
-  "server.content_hosts_comma_separated": "콘텐츠 호스트 (쉼표로 구분)",
   "server.could_not_check": "설정을 시험해 보지 못했습니다",
   "server.could_not_load_server_settings": "서버 설정을 불러오지 못했습니다",
   "server.could_not_save_archive_settings": "압축 설정을 저장하지 못했습니다",

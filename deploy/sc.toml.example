@@ -22,9 +22,6 @@ listen = "0.0.0.0:8443"
 # name you actually browse to.
 app_hosts = ["stowcloud.example.com"]
 
-# The origin user content is served from. It is separate so that a malicious
-# upload cannot execute in the origin holding the session cookie.
-content_hosts = ["content.stowcloud.example.com"]
 
 # The ranges a forwarded client address is trusted from. Without them every
 # request folds onto the proxy's own address, and the login limiter, the API

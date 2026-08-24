@@ -148,7 +148,7 @@ func checkSection(d Deps, r *http.Request, section string, body map[string]any) 
 // "misdirected request" from a server that is otherwise healthy.
 func checkNetworkLive(r *http.Request, body map[string]any) []Finding {
 	var out []Finding
-	for _, key := range []string{"app_hosts", "content_hosts"} {
+	for _, key := range []string{"app_hosts"} {
 		hosts, present, err := stringList(body, key)
 		if err != nil {
 			out = append(out, blocking(key, "settings.must_be_at_least_one", nil))

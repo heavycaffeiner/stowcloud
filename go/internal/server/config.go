@@ -30,7 +30,6 @@ type Config struct {
 	Listen string
 
 	AppHosts     []string
-	ContentHosts []string
 	TrustedProxy []netip.Prefix
 
 	RatePerSec float64
@@ -116,7 +115,6 @@ type raw struct {
 	} `toml:"server"`
 	HTTP struct {
 		AppHosts          []string `toml:"app_hosts"`
-		ContentHosts      []string `toml:"content_hosts"`
 		TrustedProxyCIDRs []string `toml:"trusted_proxy_cidrs"`
 	} `toml:"http"`
 	Rate struct {
@@ -207,7 +205,6 @@ func Validate(r raw) (*Config, error) {
 		cfg.Listen = defaultListen
 	}
 	cfg.AppHosts = r.HTTP.AppHosts
-	cfg.ContentHosts = r.HTTP.ContentHosts
 	if len(cfg.AppHosts) == 0 {
 		return nil, fmt.Errorf("http.app_hosts: at least one host is required, and a guard that learned its origin from the request it guards is not a guard")
 	}

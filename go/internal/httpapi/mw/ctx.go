@@ -7,13 +7,14 @@ import (
 )
 
 // Origin is which host the request arrived on, decided by HostGuard. Content
-// is the no-session origin that serves stored bytes by capability URL; App is
-// the authenticated surface.
+// App is the authenticated surface, and the only origin this server answers
+// for. A second one existed to render uploaded HTML somewhere a session cookie
+// could not reach; nothing ever rendered uploaded bytes, so it was a name to
+// configure and a way to lock the interface out of itself.
 type Origin uint8
 
 const (
 	OriginApp Origin = iota
-	OriginContent
 )
 
 type originKey struct{}

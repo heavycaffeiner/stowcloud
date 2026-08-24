@@ -425,7 +425,6 @@ func runServe(args []string, stderr io.Writer) int {
 		// The network boundary as the config file settled it, so the screen
 		// shows what the guard is actually using rather than an empty list.
 		AppHosts:     cfg.AppHosts,
-		ContentHosts: cfg.ContentHosts,
 		TrustedProxy: trustedProxyStrings(cfg.TrustedProxy),
 
 		// Homes are off until somebody turns them on, and the root they would

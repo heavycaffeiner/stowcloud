@@ -11,7 +11,6 @@ listen = "0.0.0.0:8443"
 # comparing, so an entry carrying one can never match. The stack publishes on
 # the guest's loopback, so these are the only two literals that arrive.
 app_hosts = ["127.0.0.1", "localhost"]
-content_hosts = ["content.localhost"]
 
 [rate]
 # Well above production's, because the testbed drives the API in bursts and a
