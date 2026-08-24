@@ -139,9 +139,14 @@ ARG PGID
 RUN mkdir -p /staged/var/lib/stowcloud /staged/shares/files /staged/config/smb && \
     chown -R "${PUID}:${PGID}" /staged
 
+# embed_ui puts the frontend in the binary. compat_nc compiles the Nextcloud
+# compatibility layer, which is what the sync clients talk to: without it
+# /status.php falls through to the SPA, an app asking for the server version
+# gets HTML, and the failure it reports is "malformed server configuration"
+# rather than anything about a missing route.
 RUN mkdir -p /out && \
     CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" \
-      go build -tags embed_ui \
+      go build -tags "embed_ui compat_nc" \
         -trimpath \
         -ldflags="-s -w -buildid=" \
         -o /out/stowcloud ./cmd/stowcloud && \

@@ -223,7 +223,11 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		Logger: log,
 	})
 
-	m := mux(table, compatRoutes(opt.Core, opt.Store.State(), opt.Log), davMount(davHandler, opt.Core))
+	protocol, davAliases := compatPaths()
+	state.Protocol = protocol
+	m := mux(table,
+		compatRoutes(opt.Core, opt.Store.State(), opt.Auth, originOf(cfg), clk, opt.Log),
+		davMount(davHandler, opt.Core, davAliases), davAliases)
 	handler := httpapi.Chain(state)(m)
 
 	tlsCfg, err := tlsConfig(cfg, opt)
@@ -303,6 +307,20 @@ func parsePrefixes(cidrs []string, log *slog.Logger) []netip.Prefix {
 // deleted: the next restart re-declares the entry, so a deletion would look
 // like it silently failed. The admin screen hides that affordance rather than
 // offering an action that undoes itself.
+// originOf is the base URL the compatibility layer hands to a client.
+//
+// The first declared app host, over https because that is the only listener
+// this server has. It is configuration rather than the request's own Host: a
+// login URL is opened in a browser minutes later and mailed between devices,
+// so the set of names it can carry is fixed by the operator rather than by
+// whoever asked.
+func originOf(cfg *Config) string {
+	if cfg.AppHost == "" {
+		return ""
+	}
+	return "https://" + cfg.AppHost
+}
+
 func configShareNames(cfg *Config) map[string]bool {
 	out := make(map[string]bool, len(cfg.Shares))
 	for _, sh := range cfg.Shares {

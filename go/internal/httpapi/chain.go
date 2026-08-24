@@ -32,7 +32,9 @@ func steps() []Step {
 		{Name: "SecurityHeaders", Wrap: func(s *State, h http.Handler) http.Handler { return mw.SecurityHeaders(s.AppCSP)(h) }},
 		{Name: "RateLimit", Wrap: func(s *State, h http.Handler) http.Handler { return mw.RateLimit(s.Limiter)(h) }},
 		{Name: "BodyLimit", Wrap: func(s *State, h http.Handler) http.Handler { return mw.BodyLimit(int64(1<<20), h) }},
-		{Name: "Auth", Wrap: func(s *State, h http.Handler) http.Handler { return mw.Auth(s.Auth, mw.PublicPaths)(h) }},
+		{Name: "Auth", Wrap: func(s *State, h http.Handler) http.Handler {
+			return mw.Auth(s.Auth, mw.PublicPathsWith(s.Protocol), s.Protocol.FilePrefixes)(h)
+		}},
 		{Name: "CSRF", Wrap: func(s *State, h http.Handler) http.Handler { return mw.CSRF(s.CSRFKey, s.Hosts.App())(h) }},
 		{Name: "ACLScope", Wrap: func(s *State, h http.Handler) http.Handler { return mw.ACLScope(s.ScopeLookup)(h) }},
 		{Name: "AuditSink", Wrap: func(s *State, h http.Handler) http.Handler { return mw.AuditSink(s.Log, s.Clock)(h) }},

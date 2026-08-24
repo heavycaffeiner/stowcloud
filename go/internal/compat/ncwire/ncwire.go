@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
+	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/compat/nc"
 	"github.com/heavycaffeiner/stowcloud/go/internal/compat/ncport"
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
@@ -29,15 +31,30 @@ import (
 )
 
 // Build assembles the layer from the server's own pieces.
-func Build(c *core.Core, st *state.DB, log *slog.Logger) *nc.Layer {
+//
+// authSvc and origin carry the device login. A nil auth service leaves the
+// flow unwired, which is what a build with no account service gets: the three
+// login routes answer 404 rather than half a flow.
+func Build(c *core.Core, st *state.DB, authSvc *auth.Service, origin string, clk clock.Clock, log *slog.Logger) *nc.Layer {
 	if log == nil {
 		log = slog.Default()
+	}
+	if clk == nil {
+		clk = clock.System()
+	}
+	var flow *nc.LoginFlow
+	if authSvc != nil && origin != "" {
+		flow = nc.NewLoginFlow(flowStore{db: st}, authPort{svc: authSvc}, origin, clk.Nanos)
 	}
 	return nc.New(nc.Deps{
 		FS:    fsPort{core: c},
 		State: statePort{db: st},
 		Caps:  defaultCaps(),
-		Warn:  func(msg string, args ...any) { log.Warn(msg, args...) },
+		Flow:  flow,
+		// The chain has already resolved the principal by the time a mount
+		// runs, so this reads it back rather than verifying anything itself.
+		Authenticate: Authenticator,
+		Warn:         func(msg string, args ...any) { log.Warn(msg, args...) },
 
 		// The ports below stay nil until the core exposes what they need.
 		// A nil port is not a silent gap: every surface behind one answers a
@@ -49,9 +66,6 @@ func Build(c *core.Core, st *state.DB, log *slog.Logger) *nc.Layer {
 		//   Search:   the search service has no per-user entry query yet.
 		//   Preview:  the signing seam is Phase 9's and is not mounted yet.
 		//   Direct:   depends on Preview.
-		//   Flow:     needs an app-password minter from the auth package.
-		//   Authenticate: the server's chain resolves a principal, and the
-		//                 compat mounts are not yet inside it.
 	})
 }
 

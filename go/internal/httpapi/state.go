@@ -38,6 +38,10 @@ type State struct {
 	// within it.
 	Limits Runtime
 
+	// Protocol is what another protocol's mount owns, empty in a build that
+	// speaks only this server's own surfaces.
+	Protocol mw.ProtocolPaths
+
 	// CSRFKey is the key sessions' CSRF tokens derive from.
 	CSRFKey []byte
 

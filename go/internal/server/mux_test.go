@@ -43,7 +43,7 @@ func TestTheRootAndTheProtocolMountCoexist(t *testing.T) {
 		Method: "GET", Pattern: "/api/health",
 		Req: route.Requirement{Access: route.AccessAny}, Handler: handler.Health(handler.NewHealthState()),
 	}}
-	m := mux(table, nil, stubHandler("dav"))
+	m := mux(table, nil, stubHandler("dav"), nil)
 	// The frontend is not embedded in a test binary, so the root above is the
 	// protocol alone. What matters is that it registered at all.
 	if m == nil {
@@ -55,7 +55,7 @@ func TestTheRootAndTheProtocolMountCoexist(t *testing.T) {
 // to the frontend: handing a sync client an HTML page is how it reports a
 // corrupt server rather than a wrong path.
 func TestTheProtocolPrefixNeverFallsThroughToTheFrontend(t *testing.T) {
-	root := rootHandler(stubHandler("the frontend"), stubHandler("the protocol"))
+	root := rootHandler(stubHandler("the frontend"), stubHandler("the protocol"), nil)
 
 	for _, path := range []string{"/dav", "/dav/", "/dav/docs", "/dav/docs/a.txt"} {
 		rec := httptest.NewRecorder()
@@ -76,7 +76,7 @@ func TestTheProtocolPrefixNeverFallsThroughToTheFrontend(t *testing.T) {
 // The frontend answers reads only. A write on a path it owns is a method it
 // has no answer for, and saying so beats a document with a success status.
 func TestTheFrontendRefusesAMethodItCannotAnswer(t *testing.T) {
-	root := rootHandler(stubHandler("the frontend"), stubHandler("the protocol"))
+	root := rootHandler(stubHandler("the frontend"), stubHandler("the protocol"), nil)
 
 	for _, method := range []string{"POST", "PUT", "DELETE", "PROPFIND"} {
 		rec := httptest.NewRecorder()
@@ -103,7 +103,7 @@ func TestTheFrontendRefusesAMethodItCannotAnswer(t *testing.T) {
 // With no protocol mount the frontend is the root unchanged, which is what a
 // build assembled without one gets.
 func TestWithNoProtocolMountTheFrontendIsTheRoot(t *testing.T) {
-	root := rootHandler(stubHandler("the frontend"), nil)
+	root := rootHandler(stubHandler("the frontend"), nil, nil)
 	rec := httptest.NewRecorder()
 	root.ServeHTTP(rec, httptest.NewRequest("GET", "/dav/docs", nil))
 	if got := rec.Body.String(); got != "the frontend" {

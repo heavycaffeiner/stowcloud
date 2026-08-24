@@ -26,8 +26,52 @@ import (
 // davPrefix is the mount point. Everything under it is WebDAV.
 const davPrefix = "/dav"
 
+// davAliases are extra mount points that address the same tree, supplied by
+// the compatibility layer when it is built in. They are data rather than
+// constants here because the names belong to another product's protocol, and
+// this package is core: the gate keeps that vocabulary behind the seam.
+//
+// Each entry is a prefix and how many leading segments to drop after it. A
+// sync client addresses a tree by account name, and that segment is dropped
+// rather than checked: this server resolves against the caller's own roots, so
+// a name in the URL cannot widen what the credential already allows.
+// DavAlias is one alternative mount point.
+type DavAlias struct {
+	Prefix string
+	// DropSegments is how many path segments after the prefix name something
+	// other than a file, such as the account the client thinks it is browsing.
+	DropSegments int
+}
+
+// davAlias rewrites an alternative mount point onto this server's own.
+//
+// It returns the path as the resolver below expects it, and false for a URL
+// that is not one of the aliases. Nothing else about the request changes: the
+// method, the body and the credential are the protocol's, and only the prefix
+// was ever different.
+func davAlias(urlPath string, aliases []DavAlias) (string, bool) {
+	for _, a := range aliases {
+		rest, ok := strings.CutPrefix(urlPath, a.Prefix)
+		if !ok {
+			continue
+		}
+		for range a.DropSegments {
+			i := strings.IndexByte(rest, '/')
+			if i < 0 {
+				return davPrefix, true
+			}
+			rest = rest[i+1:]
+		}
+		if rest == "" {
+			return davPrefix, true
+		}
+		return davPrefix + "/" + rest, true
+	}
+	return "", false
+}
+
 // davMount turns a request URL into a resolved path and dispatches it.
-func davMount(h *dav.Handler, c *core.Core) http.Handler {
+func davMount(h *dav.Handler, c *core.Core, aliases []DavAlias) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Discovery answers without a credential, because it is how a client
 		// learns this server speaks the protocol at all, and a client that
@@ -51,7 +95,11 @@ func davMount(h *dav.Handler, c *core.Core) http.Handler {
 		}
 
 		user := core.UserID(p.UserID)
-		res, err := resolveDavPath(c, user, r.URL.Path, davPermFor(r.Method))
+		path := r.URL.Path
+		if rewritten, ok := davAlias(path, aliases); ok {
+			path = rewritten
+		}
+		res, err := resolveDavPath(c, user, path, davPermFor(r.Method))
 		if err != nil {
 			writeDavError(w, err)
 			return

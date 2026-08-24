@@ -220,7 +220,7 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 // mux builds the ServeMux from the table. Go 1.22's method and wildcard
 // patterns cover every route on this surface, which was the confirmation
 // step 5a's first task; no router module is needed.
-func mux(table []route.Route, compat []compatMount, davs http.Handler) *http.ServeMux {
+func mux(table []route.Route, compat []compatMount, davs http.Handler, aliases []DavAlias) *http.ServeMux {
 	m := http.NewServeMux()
 	for _, rt := range table {
 		m.Handle(rt.Method+" "+rt.Pattern, rt.Handler)
@@ -244,7 +244,7 @@ func mux(table []route.Route, compat []compatMount, davs http.Handler) *http.Ser
 	// what leaves one pattern to register.
 	root := davs
 	if h, ok := spa.Handler(); ok {
-		root = rootHandler(h, davs)
+		root = rootHandler(h, davs, aliases)
 	}
 	if root != nil {
 		m.Handle("/", root)
@@ -259,13 +259,21 @@ func mux(table []route.Route, compat []compatMount, davs http.Handler) *http.Ser
 // frontend: the prefix belongs to the protocol, and handing a WebDAV client an
 // HTML page is how a sync client reports a corrupt server rather than a wrong
 // path.
-func rootHandler(spaHandler, davs http.Handler) http.Handler {
+func rootHandler(spaHandler, davs http.Handler, aliases []DavAlias) http.Handler {
 	if davs == nil {
 		return spaHandler
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		if p == davPrefix || strings.HasPrefix(p, davPrefix+"/") {
+			davs.ServeHTTP(w, r)
+			return
+		}
+		// The same tree under the name a sync client mounts. Dispatched here
+		// rather than registered as a pattern for the reason above: these are
+		// every method on a prefix, which the router cannot hold beside the
+		// method-and-path routes the API declares.
+		if _, ok := davAlias(p, aliases); ok {
 			davs.ServeHTTP(w, r)
 			return
 		}

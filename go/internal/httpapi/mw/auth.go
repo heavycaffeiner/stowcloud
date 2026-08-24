@@ -22,7 +22,7 @@ const SessionCookie = "__Host-sc_sid"
 // A credential that fails validation is a 401, and it is the same 401 whether
 // the token was missing, expired or forged: distinguishing them is an oracle
 // an attacker can use to learn which tokens are live.
-func Auth(svc *auth.Service, isPublic func(method, path string) bool) func(http.Handler) http.Handler {
+func Auth(svc *auth.Service, isPublic func(method, path string) bool, filePrefixes []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
@@ -35,7 +35,11 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool) func(http.
 			// is still read here, and only the refusal is left to the mount:
 			// treating the whole prefix as public skipped the reading too, and
 			// then no credential ever arrived.
-			challenges := strings.HasPrefix(path, "/dav")
+			//
+			// An alternative mount point is the same tree under another name
+			// and needs the same treatment: without the challenge a sync
+			// client reports a failure instead of sending its credential.
+			challenges := strings.HasPrefix(path, "/dav") || hasAnyPrefix(path, filePrefixes)
 			// OPTIONS never 401s: a browser strips credentials from a
 			// preflight by design, and the client needs the capability
 			// headers back to decide how to send the real request.
@@ -121,7 +125,51 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool) func(http.
 // through without a credential. It is a function of method and path, and the
 // one place that list lives, so a new public route is a change here and
 // nowhere else.
-func PublicPaths(method, path string) bool {
+func PublicPaths(method, path string) bool { return publicPaths(method, path, ProtocolPaths{}) }
+
+// ProtocolPaths is what another protocol's mount owns, supplied by the layer
+// that speaks it. The names belong to another product's wire vocabulary and
+// this package is core, so they arrive as data rather than as constants here.
+//
+// The zero value is a build with no such layer: every list is empty and every
+// check below answers false, which is the behaviour that build should have.
+type ProtocolPaths struct {
+	// FilePrefixes address the same file tree the native mount does. A request
+	// under one is a file operation: it needs a credential, and it needs the
+	// challenge that asks for one.
+	FilePrefixes []string
+	// PublicReads are read before a client has an account: whether this is a
+	// server it can talk to, and what it calls itself.
+	PublicReads []string
+	// CredentialFlow mints a credential and therefore cannot carry one.
+	// Authorization is the token inside the flow.
+	CredentialFlow []string
+}
+
+// PublicPathsWith is PublicPaths for a build that speaks another protocol.
+func PublicPathsWith(p ProtocolPaths) func(method, path string) bool {
+	return func(method, path string) bool { return publicPaths(method, path, p) }
+}
+
+func hasAnyPrefix(path string, prefixes []string) bool {
+	for _, p := range prefixes {
+		if strings.HasPrefix(path, p) {
+			return true
+		}
+	}
+	return false
+}
+
+func contains(list []string, want string) bool {
+	for _, s := range list {
+		if s == want {
+			return true
+		}
+	}
+	return false
+}
+
+func publicPaths(method, path string, proto ProtocolPaths) bool {
 	switch path {
 	// Signing in needs no credential by definition. Changing a password does,
 	// so it is deliberately not here: it verifies the current one.
@@ -150,6 +198,23 @@ func PublicPaths(method, path string) bool {
 		// user session.
 		return true
 	}
+	// The sync clients' login flow, which mints the credential and therefore
+	// cannot carry one. It is a POST, so the static-asset rule below does not
+	// reach it and every client was refused before it could begin: the app
+	// reports that as a malformed server rather than as a sign-in failure.
+	//
+	// Authorization is the token in the flow itself. Begin hands back a poll
+	// token, poll answers nothing until the browser half completes, and grant
+	// is the browser half, which runs behind a session like any other page.
+	if method == http.MethodPost && contains(proto.CredentialFlow, path) {
+		return true
+	}
+	// The server description a client reads before it has an account: whether
+	// this is a server it can talk to at all, and what it calls itself. Both
+	// are GETs that answer the same to everyone.
+	if method == http.MethodGet && contains(proto.PublicReads, path) {
+		return true
+	}
 	if (method == http.MethodGet || method == http.MethodHead) && !strings.HasPrefix(path, "/api/") {
 		// The embedded SPA: hashed, immutable, public assets. The API is
 		// exactly what a reserved /api/ prefix names, and it is not public.
@@ -159,7 +224,10 @@ func PublicPaths(method, path string) bool {
 		// on the server was treated as a static asset and reached the mount
 		// with no credential attached, so writing a file worked and reading
 		// the same file back was refused.
-		return !strings.HasPrefix(path, "/dav")
+		// An alternative mount point is the same tree under another name, so
+		// it is excluded on the same grounds: a read there is a read of a
+		// file.
+		return !strings.HasPrefix(path, "/dav") && !hasAnyPrefix(path, proto.FilePrefixes)
 	}
 	return false
 }
