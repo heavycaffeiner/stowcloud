@@ -60,6 +60,24 @@ func jailSpec(cfg *server.Config, configPath string, shareHosts []string) jail.S
 	if dir := filepath.Dir(configPath); dir != "" {
 		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dir, Access: jail.ReadOnly})
 	}
+	// Where the server renders smb.conf and the credential file for the
+	// sidecar to read. Left out of the domain, it was the one directory the
+	// server writes that the sandbox denied: the mount was correct, the owner
+	// was correct, the mode was correct, and every publish failed with
+	// "replacing smb.conf: open /config/smb: permission denied" from the
+	// kernel rather than from the filesystem.
+	if cfg.SMB.ConfigDir != "" {
+		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: cfg.SMB.ConfigDir})
+	}
+	// The sidecar's control socket, which the server connects to rather than
+	// creates. Connecting to a unix socket is a filesystem operation, so the
+	// directory holding it has to be in the domain or every push to the
+	// sidecar is refused the same way.
+	if sock := cfg.SMB.AgentSocket; sock != "" {
+		if dir := filepath.Dir(sock); dir != "" && dir != "/" {
+			spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dir})
+		}
+	}
 	// Every share is granted by its host path. A domain built from the data
 	// directory alone would deny every share the server exists to serve, which
 	// is a sandbox that only works on a deployment with no shares.
