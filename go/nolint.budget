@@ -192,5 +192,10 @@
 # killed by a signal and one that exited on its own both read as "the worker
 # died: EOF". The status is read now, so the exception is gone rather than
 # suppressed.
-238
+#
+# Reading a refused syscall out of a core dump added two: gosec reading the
+# signed si_syscall field back at its own width, and the close of a core file
+# the read has already finished with. The alternative was guessing which of
+# three hundred syscalls a filter refused.
+240
 

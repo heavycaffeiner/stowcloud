@@ -236,8 +236,11 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     cd go
     fail=0
     for tags in "" "-tags compat_nc"; do
+      # "?" lines name a package with no tests, and "go: downloading" is the
+      # module cache filling on a clean checkout. Both go to stderr and
+      # neither is a failure.
       out=$(CGO_ENABLED=0 GOOS=windows go test $tags -o /dev/null -c ./... 2>&1 |
-              grep -vE "^\?[[:space:]]")
+              grep -vE "^(\?[[:space:]]|go: downloading )")
       if [ -n "$out" ]; then printf "%s\n" "$out"; fail=1; fi
     done
     exit $fail'

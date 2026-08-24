@@ -256,9 +256,10 @@ func TestTheJailedWorkerStillDecodes(t *testing.T) {
 func TestAJailedWorkerSurvivesManyJobs(t *testing.T) {
 	requireJail(t)
 
+	exe := jailedWorker(t)
 	pool, err := preview.NewPool(preview.PoolOptions{
 		Workers: 1,
-		Exe:     jailedWorker(t),
+		Exe:     exe,
 		Args:    []string{"preview-worker"},
 		Env:     []string{"HOME=" + os.Getenv("HOME"), "PATH=" + os.Getenv("PATH")},
 	})
@@ -279,9 +280,13 @@ func TestAJailedWorkerSurvivesManyJobs(t *testing.T) {
 		}, preview.PlainSource{F: in}, out)
 		cancel()
 		if gerr != nil {
-			t.Fatalf("job %d of 30: %v\n"+
+			refused := ""
+			if nr := refusedSyscall(exe); nr != "" {
+				refused = "\nthe filter refused: " + nr
+			}
+			t.Fatalf("job %d of 30: %v%s\n"+
 				"the allow-list is missing an entry the runtime reaches only after "+
-				"several jobs; the reported signal names which", i+1, gerr)
+				"several jobs; add the refused call to allowedSyscalls", i+1, gerr, refused)
 		}
 		if resp.Status != preview.StatusOK {
 			t.Fatalf("job %d of 30: status = %v (%s)", i+1, resp.Status, resp.Err)
