@@ -298,6 +298,12 @@ export interface AdminShare {
   config_defined: boolean
   /** Off by default for every share. */
   trash_enabled: boolean
+  /** Set only on the response to `POST /api/admin/shares`, and only when the
+   *  server runs under a Landlock domain. The domain is built at startup from
+   *  the shares known then and cannot be widened, so a folder added here is
+   *  registered and granted but answers permission denied until the server
+   *  restarts. Tell the operator; without it the save looks broken. */
+  restart_required?: boolean
 }
 
 /** `POST /api/admin/shares` body. */

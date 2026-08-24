@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/num"
@@ -58,6 +59,12 @@ type shareResponse struct {
 	// and the deletion would look like it silently failed.
 	ConfigDefined  bool `json:"config_defined"`
 	SharedExternal bool `json:"shared_external"`
+	// RestartRequired marks a share that is registered and not yet reachable.
+	// The sandbox's domain is built at startup from the shares known then and
+	// cannot be widened, so a folder added afterwards answers permission
+	// denied until the process restarts. Absent on every other response,
+	// because it is only ever true for the share that was just created.
+	RestartRequired bool `json:"restart_required,omitempty"`
 }
 
 func shareOf(def core.ShareDef, configDefined bool) shareResponse {
@@ -122,9 +129,52 @@ func Shares(d Deps) http.HandlerFunc {
 		if err != nil {
 			return err
 		}
+		if gerr := grantToCreator(r, d, actor, share); gerr != nil {
+			return gerr
+		}
 		sharesChanged(r, d)
-		return writeJSON(w, http.StatusCreated, shareOf(share, false))
+		out := shareOf(share, false)
+		// Said rather than left to be discovered. Under a sandbox the folder is
+		// registered, granted and listed on this screen, and every attempt to
+		// open it answers permission denied, which reads as a broken save
+		// instead of a restart that has not happened yet.
+		out.RestartRequired = d.Sandboxed != nil && d.Sandboxed()
+		return writeJSON(w, http.StatusCreated, out)
 	})
+}
+
+// grantToCreator gives the administrator who added a share full access to it.
+//
+// A share is only reachable through a grant, and creating one wrote no grant
+// at all: the folder appeared on the admin screen, was absent from the file
+// browser, and listing it answered 404. From the outside that reads as a save
+// that did not take.
+//
+// Only the creator, and only this share. Deny-by-default is the model and this
+// does not widen it: every other account still needs a grant an administrator
+// writes. What it fixes is the one case where the person who just named a
+// folder could not open it.
+//
+// The same permission set the first administrator gets, for the same reason: a
+// share you can see and cannot write is a second dead end.
+func grantToCreator(r *http.Request, d Deps, actor int64, share core.ShareDef) error {
+	const all = acl.Read | acl.Write | acl.Create | acl.Delete |
+		acl.Rename | acl.Move | acl.Share | acl.Download
+
+	if _, err := acl.CreateGrant(r.Context(), d.State.SQL(), acl.Grant{
+		User:    actor,
+		Share:   int64(share.ID),
+		Allow:   all,
+		Inherit: true,
+		// The share's own name, which is what the interface draws as the
+		// folder; an unlabeled grant falls back to a generated "share-N".
+		Label: share.Name,
+	}, d.Clock.Nanos()); err != nil {
+		return err
+	}
+	// The evaluator serves requests from its own copy, so a grant only in the
+	// database is one the next listing does not see.
+	return d.ReloadACL(r.Context())
 }
 
 // ShareUpdate answers PATCH /api/admin/shares/{id}.

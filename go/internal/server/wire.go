@@ -101,6 +101,11 @@ type Options struct {
 	// pretending, which is what a deployment with no sidecar has.
 	PublishSMB func(ctx context.Context) (smbagent.Report, error)
 
+	// Sandboxed reports whether a Landlock domain is in force, which decides
+	// whether a share added at run time is reachable before a restart. Nil
+	// reports false.
+	Sandboxed func() bool
+
 	// ReloadACL rebuilds the permission evaluator from the stored grants,
 	// which is what makes an edit on the admin screen take effect without a
 	// restart. A nil one leaves the grants as they were loaded.
@@ -173,6 +178,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 			}
 			return opt.ReloadACL(ctx)
 		},
+		Sandboxed: opt.Sandboxed,
 	}
 
 	// What a saved setting reaches. Installed here because this is the layer

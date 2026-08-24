@@ -139,6 +139,17 @@ func trustedProxyStrings(ps []netip.Prefix) []string {
 	return out
 }
 
+// landlockApplied reports whether the domain is in force, which is what makes
+// a share added at run time unreachable until the process starts again.
+func landlockApplied(st jail.Status) bool {
+	for _, step := range st.Steps {
+		if step.Name == "landlock" {
+			return step.Applied
+		}
+	}
+	return false
+}
+
 func grantEveryShare(
 	ctx context.Context, c *core.Core, st *store.Store, ev *acl.Evaluator,
 	uid int64, clk clock.Clock,
@@ -649,6 +660,10 @@ func runServe(args []string, stderr io.Writer) int {
 		OIDC:              oidcClient,
 		PublishSMB:        publishSMB,
 		ReloadACL:         func(c context.Context) error { return evaluator.LoadFromState(c, st.State().SQL()) },
+		// Whether a share added from the admin screen is reachable before a
+		// restart. The domain is built once, at startup, from the shares known
+		// then, and Landlock has no way to widen one afterwards.
+		Sandboxed: func() bool { return landlockApplied(jailStatus) },
 	}, setupGate)
 	if nerr != nil {
 		say(stderr, "stowcloud %s: serve: %v\n", version, nerr)
