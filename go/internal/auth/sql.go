@@ -130,6 +130,16 @@ SELECT smb_opt_out, EXISTS(SELECT 1 FROM totp_secret t WHERE t.user = user.id),
        EXISTS(SELECT 1 FROM oidc_link o WHERE o.user = user.id)
 FROM user WHERE id = ?`
 
+	// What the settings screen reports about SMB: whether a credential is
+	// stored, whether the account withdrew from the protocol, and whether a
+	// second factor is enrolled. The policy that decides what a second factor
+	// costs is the service's, not this statement's.
+	sqlSMBState = `
+SELECT u.smb_opt_out, u.smb_enabled,
+       EXISTS(SELECT 1 FROM user_smb_secret s WHERE s.user = u.id),
+       EXISTS(SELECT 1 FROM totp_secret t WHERE t.user = u.id)
+FROM user u WHERE u.id = ?`
+
 	sqlDeleteUser = `DELETE FROM user WHERE id = ?`
 
 	sqlSetQuota = `UPDATE user SET quota_bytes = ? WHERE id = ?`

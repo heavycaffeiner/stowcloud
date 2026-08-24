@@ -75,17 +75,33 @@ func (s *Service) createUser(ctx context.Context, name, display string, pw secre
 	if err != nil {
 		return 0, err
 	}
+	active, activeVer := s.mk.Active()
 	var id int64
 	err = s.write(ctx, func(tx *sql.Tx) error {
 		res, ierr := tx.ExecContext(ctx, sqlInsertUser, name, display, hash, role, 1, s.now())
 		if ierr != nil {
 			return ierr
 		}
-		id, err = res.LastInsertId()
-		return err
+		id, ierr = res.LastInsertId()
+		if ierr != nil {
+			return ierr
+		}
+		// The SMB credential is derived here, in the same transaction as the
+		// account. Without it a new account has a password that works
+		// everywhere except the one protocol that cannot re-derive it later:
+		// the NT hash comes from the plaintext, which exists only now, so an
+		// account created without one had no way to reach SMB until it
+		// changed its password. The interface said as much and offered a
+		// separate password as the fix, which made a defect read as a policy.
+		return s.sealAndStoreNT(ctx, tx, id, pw, active, activeVer)
 	})
 	if err != nil {
 		return 0, err
+	}
+	// The published account file is what the sidecar reads, so an account that
+	// exists and is absent from it is one SMB refuses.
+	if perr := s.republishPassdb(ctx); perr != nil {
+		return id, perr
 	}
 	return id, nil
 }

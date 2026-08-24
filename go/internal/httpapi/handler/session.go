@@ -117,6 +117,13 @@ type sessionUser struct {
 	TOTPEnabled bool   `json:"totp_enabled"`
 	SMBOptOut   bool   `json:"smb_opt_out"`
 	SMBEnabled  bool   `json:"smb_enabled"`
+	// What actually works over SMB right now, not which row exists: the
+	// deployment's second-factor policy is folded in server-side, because the
+	// two can disagree and a line the user can only disprove by failing to
+	// connect is worse than none.
+	SMBCredential string `json:"smb_credential,omitempty"`
+	// Present only with "none".
+	SMBUnavailableReason string `json:"smb_unavailable_reason,omitempty"`
 }
 
 // sessionRoot is one readable share, labeled the way the caller's own grant
@@ -195,6 +202,13 @@ func Session(d Deps) http.HandlerFunc {
 			return rerr
 		}
 
+		// What the SMB section reads. A failure here is not a failed session:
+		// the rest of the response is what the interface needs to draw itself,
+		// and one absent line beats an error page.
+		var smb auth.SMBState
+		if st, serr := d.Auth.SMBStateOf(r.Context(), int64(uid)); serr == nil {
+			smb = st
+		}
 		resp := sessionResponse{
 			User: sessionUser{
 				ID:          int64(uid),
@@ -202,8 +216,12 @@ func Session(d Deps) http.HandlerFunc {
 				DisplayName: row.Display,
 				IsAdmin:     admin,
 				TOTPEnabled: row.TOTPEnabled,
-				SMBOptOut:   !row.SMBEnabled,
+				SMBOptOut:   smb.OptOut,
 				SMBEnabled:  row.SMBEnabled,
+				// Empty is a build that could not read the state, which the
+				// client treats as "unknown" rather than as "unavailable".
+				SMBCredential:        string(smb.Credential),
+				SMBUnavailableReason: string(smb.Reason),
 			},
 			Roots:    rootsOf(d, uid),
 			Limits:   limitsOf(d),
