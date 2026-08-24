@@ -16,6 +16,14 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 BUNDLE_DIR=go/internal/httpapi/spa/build
 
+# The binary below is built for the shipping target and then run, so this only
+# works where the host is that target. Elsewhere it built a Linux binary and
+# reported "Exec format error" as a product failure.
+if [ "$(uname -s)" != Linux ]; then
+  echo "SKIP: the server this serves is a Linux binary and this host is not Linux" >&2
+  exit 0
+fi
+
 echo "==> building the frontend"
 (cd web && npm run build >/dev/null)
 

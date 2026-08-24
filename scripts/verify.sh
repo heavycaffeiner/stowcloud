@@ -120,11 +120,18 @@ ingo_host() { ( cd go && env CGO_ENABLED=0 "$@" ); }
 # this shell's is not one: go is a native program and cannot resolve an MSYS
 # path. Finding a compiler here and not handing its directory over is how this
 # step failed with `C compiler "gcc" not found` on a box that has one.
+# The go command's own directory is in that PATH because the replacement is
+# total: `env PATH=...` on Windows leaves the child unable to find go itself,
+# which reported as `env: 'go': No such file or directory` rather than as
+# anything about cgo. The tool being run is resolved by this shell, which still
+# has its own PATH, so it is invoked by the absolute path it resolved to.
 ingo_cgo() {
   if [ "$HOST" = windows ]; then
+    local go_exe; go_exe=$(command -v "$1") || return 127
+    shift
     ( cd go && env CGO_ENABLED=1 \
-        PATH="$(native "$(dirname "$(cc_path)")");$(native "$(dirname "$(command -v go)")")" \
-        "$@" )
+        PATH="$(native "$(dirname "$(cc_path)")");$(native "$(dirname "$(command -v go)")");$PATH" \
+        "$go_exe" "$@" )
   else
     ( cd go && env CGO_ENABLED=1 "$@" )
   fi
@@ -181,8 +188,15 @@ go_tool() {
 native_tool() {
   local exe="$1"; shift
   if [ "$HOST" = windows ]; then
-    ( cd go && env CGO_ENABLED=0 GOOS=linux \
-        PATH="$(native "$(dirname "$(command -v go)")")" "$exe" "$@" )
+    # cd through a native path, not this shell's. A native program reads the
+    # working directory it is given, and handing it /d/a/... left govulncheck
+    # reporting "no go.mod file" from a directory that has one.
+    # The go directory is prepended to the existing PATH rather than replacing
+    # it. A total replacement left golangci-lint unable to run `go env`, since
+    # it shells out and inherits this: it reported "executable file not found
+    # in %PATH%" for go on a machine where go had just run.
+    ( cd "$(native "$PWD/go")" && env CGO_ENABLED=0 GOOS=linux \
+        PATH="$(native "$(dirname "$(command -v go)")");$PATH" "$exe" "$@" )
   else
     ( cd go && env CGO_ENABLED=0 GOOS=linux "$exe" "$@" )
   fi
@@ -442,8 +456,18 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     # The layer's own tests, which the untagged run above cannot see: with no
     # tag those files are not compiled at all, so a build that only checks the
     # stripped tree checks none of this phase's behaviour.
-    run "go test -tags compat_nc"    ingo_host go test -tags compat_nc ./internal/compat/...
-    run "fuzz seed corpus (compat)"  ingo_host go test -tags compat_nc -run '^Fuzz' -count=1 ./internal/compat/...
+    #
+    # Only where the host is the shipping target. This layer is Linux-only,
+    # like everything it wraps, so off Linux the pattern matches no packages
+    # and go reports that as an error: a gate step failing because the code it
+    # names does not exist on this OS says nothing about the code.
+    if [ "$HOST" = linux ]; then
+      run "go test -tags compat_nc"    ingo_host go test -tags compat_nc ./internal/compat/...
+      run "fuzz seed corpus (compat)"  ingo_host go test -tags compat_nc -run '^Fuzz' -count=1 ./internal/compat/...
+    else
+      skipped "go test -tags compat_nc" "the compat layer is Linux only" 0
+      skipped "fuzz seed corpus (compat)" "the compat layer is Linux only" 0
+    fi
   else
     skipped "compat isolation (import graph, seam, text)" \
             "go/internal/compat does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"

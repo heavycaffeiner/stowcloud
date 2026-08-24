@@ -1,3 +1,7 @@
+// Linux only: the file this writes is the system account database, and the
+// permission it has to carry is a Unix mode.
+//go:build linux
+
 package smbagent
 
 import (
