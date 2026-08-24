@@ -97,14 +97,6 @@ type Deps struct {
 	// a permission decision that depends on which half was asked.
 	ReloadACL func(ctx context.Context) error
 
-	// Sandboxed reports whether a Landlock domain is in force. It decides one
-	// thing: whether a share added at run time is reachable before a restart.
-	// The domain is built at startup from the shares known then and cannot be
-	// widened afterwards, so a folder added later resolves to permission
-	// denied until the process starts again. A nil one reports false, which is
-	// the right answer for a build with no sandbox.
-	Sandboxed func() bool
-
 	// ActiveWork reports what a restart would interrupt. A nil one reports
 	// nothing in flight, which is what a build with no job machinery has.
 	ActiveWork func() ActiveWork

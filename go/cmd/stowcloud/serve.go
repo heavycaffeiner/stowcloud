@@ -69,20 +69,53 @@ func jailSpec(cfg *server.Config, configPath string, shareHosts []string) jail.S
 	// is empty and granting only what it holds leaves every configured share
 	// outside the sandbox: the kernel denies each listing while the share table
 	// and the grants both look correct.
+	//
+	// Each share's parent is granted rather than the share itself, and that is
+	// what lets a folder added from the admin screen work without a restart. A
+	// Landlock domain cannot be widened once it is installed, so a share added
+	// later could never be reached: it was registered, granted and listed, and
+	// every attempt to open it answered permission denied. A path_beneath rule
+	// covers what appears under it afterwards, so granting the directory the
+	// shares live in covers the next sibling too.
+	//
+	// This widens the domain by one level and no further. The parent of a share
+	// is the directory an operator mounts their folders into, which is a
+	// deliberate boundary rather than an arbitrary one, and "/" is never
+	// granted: a share directly under it keeps its own narrow rule.
 	seen := map[string]bool{}
-	for _, sh := range cfg.Shares {
-		if sh.Host != "" && !seen[sh.Host] {
-			seen[sh.Host] = true
-			spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: sh.Host})
+	grant := func(host string) {
+		if host == "" {
+			return
 		}
+		path := shareGrantPath(host)
+		if seen[path] {
+			return
+		}
+		seen[path] = true
+		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: path})
+	}
+	for _, sh := range cfg.Shares {
+		grant(sh.Host)
 	}
 	for _, host := range shareHosts {
-		if host != "" && !seen[host] {
-			seen[host] = true
-			spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: host})
-		}
+		grant(host)
 	}
 	return spec
+}
+
+// shareGrantPath is the directory the domain grants for a share.
+//
+// The share's parent, so a sibling added later is inside the domain already
+// and needs no restart. A share whose parent is "/" grants the share itself:
+// granting the root would put the whole filesystem in the domain, which is the
+// one thing this sandbox exists to prevent.
+func shareGrantPath(host string) string {
+	clean := filepath.Clean(host)
+	parent := filepath.Dir(clean)
+	if parent == "/" || parent == "." || parent == clean {
+		return clean
+	}
+	return parent
 }
 
 // applyJail builds the domain and applies it.
@@ -137,17 +170,6 @@ func trustedProxyStrings(ps []netip.Prefix) []string {
 		out = append(out, p.String())
 	}
 	return out
-}
-
-// landlockApplied reports whether the domain is in force, which is what makes
-// a share added at run time unreachable until the process starts again.
-func landlockApplied(st jail.Status) bool {
-	for _, step := range st.Steps {
-		if step.Name == "landlock" {
-			return step.Applied
-		}
-	}
-	return false
 }
 
 func grantEveryShare(
@@ -660,10 +682,6 @@ func runServe(args []string, stderr io.Writer) int {
 		OIDC:              oidcClient,
 		PublishSMB:        publishSMB,
 		ReloadACL:         func(c context.Context) error { return evaluator.LoadFromState(c, st.State().SQL()) },
-		// Whether a share added from the admin screen is reachable before a
-		// restart. The domain is built once, at startup, from the shares known
-		// then, and Landlock has no way to widen one afterwards.
-		Sandboxed: func() bool { return landlockApplied(jailStatus) },
 	}, setupGate)
 	if nerr != nil {
 		say(stderr, "stowcloud %s: serve: %v\n", version, nerr)

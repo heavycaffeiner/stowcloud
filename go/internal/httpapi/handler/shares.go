@@ -4,6 +4,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/num"
+	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
 // The admin folder-share surface: create, list, update and delete the shares
@@ -59,12 +61,6 @@ type shareResponse struct {
 	// and the deletion would look like it silently failed.
 	ConfigDefined  bool `json:"config_defined"`
 	SharedExternal bool `json:"shared_external"`
-	// RestartRequired marks a share that is registered and not yet reachable.
-	// The sandbox's domain is built at startup from the shares known then and
-	// cannot be widened, so a folder added afterwards answers permission
-	// denied until the process restarts. Absent on every other response,
-	// because it is only ever true for the share that was just created.
-	RestartRequired bool `json:"restart_required,omitempty"`
 }
 
 func shareOf(def core.ShareDef, configDefined bool) shareResponse {
@@ -127,20 +123,47 @@ func Shares(d Deps) http.HandlerFunc {
 		share, err := d.Core.CreateShare(r.Context(), core.ShareSpec{Name: req.Name, Host: req.HostPath})
 		record(r, d, actor, "share.create", req.Name, err == nil)
 		if err != nil {
-			return err
+			return shareRefused(err)
 		}
 		if gerr := grantToCreator(r, d, actor, share); gerr != nil {
 			return gerr
 		}
 		sharesChanged(r, d)
-		out := shareOf(share, false)
-		// Said rather than left to be discovered. Under a sandbox the folder is
-		// registered, granted and listed on this screen, and every attempt to
-		// open it answers permission denied, which reads as a broken save
-		// instead of a restart that has not happened yet.
-		out.RestartRequired = d.Sandboxed != nil && d.Sandboxed()
-		return writeJSON(w, http.StatusCreated, out)
+		return writeJSON(w, http.StatusCreated, shareOf(share, false))
 	})
+}
+
+// shareRefused turns a rejected folder into an answer naming what is wrong
+// with it.
+//
+// Registration already opens the directory and checks its filesystem, so the
+// refusal carries the reason; it just arrived as a 500 with "share rejected"
+// wrapped around an errno. The screen asks for a path and the answer to a bad
+// one belongs beside the field, which is what a 422 with the kind in it gives.
+//
+// An error that is not a rejection is returned unchanged: a failed write is
+// not the operator's typo.
+func shareRefused(err error) error {
+	// A name collision is already a 409 with its own message.
+	if errors.Is(err, core.ErrConflict) {
+		return err
+	}
+	// The three shapes a rejected folder takes: it is not there, it cannot be
+	// read, or its filesystem is not one this server will serve. Anything else
+	// is not the operator's typo and keeps its own status.
+	var adm *vfs.AdmissionError
+	if !errors.Is(err, vfs.ErrNotFound) && !errors.Is(err, vfs.ErrDenied) && !errors.As(err, &adm) {
+		return err
+	}
+	return &apierr.RequestError{
+		Status: http.StatusUnprocessableEntity, Code: apierr.CodeInvalidRequest,
+		Message: "the folder cannot be served",
+		Key:     "admin.share_rejected",
+		Args: []apierr.Arg{
+			{Name: "field", Value: "host_path"},
+			{Name: "reason", Value: core.RejectionKind(err)},
+		},
+	}
 }
 
 // grantToCreator gives the administrator who added a share full access to it.

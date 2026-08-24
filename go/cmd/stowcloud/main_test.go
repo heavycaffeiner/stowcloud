@@ -4,6 +4,7 @@
 package main
 
 import (
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -107,12 +108,41 @@ func TestTheJailGrantsEveryConfiguredShare(t *testing.T) {
 	for _, g := range spec.GrantBeneath {
 		granted[g.Path] = true
 	}
+	// Covered rather than named: the rule is on the share's parent, so a share
+	// added later is inside the domain without a restart. A path_beneath rule
+	// covers everything under it, which is what makes that safe to assert this
+	// way.
 	for _, sh := range cfg.Shares {
-		if !granted[sh.Host] {
+		if !granted[sh.Host] && !granted[filepath.Dir(sh.Host)] {
 			t.Errorf("share %q at %s is outside the sandbox", sh.Name, sh.Host)
 		}
 	}
 	if !granted[cfg.DataDir] {
 		t.Error("the data directory is outside the sandbox")
+	}
+	// The root is never granted: that would put the whole filesystem in the
+	// domain and there would be no sandbox left.
+	if granted["/"] {
+		t.Error("the domain grants /, which is the whole filesystem")
+	}
+}
+
+// A share added from the admin screen after startup has to be reachable
+// without a restart, which is only true if the domain already covers where it
+// will live.
+func TestAShareAddedLaterIsInsideTheDomain(t *testing.T) {
+	cfg := &server.Config{
+		DataDir: "/var/lib/stowcloud",
+		Shares:  []server.ShareConfig{{Name: "files", Host: "/shares/files"}},
+	}
+
+	spec := jailSpec(cfg, "/etc/stowcloud/sc.toml", nil)
+	granted := map[string]bool{}
+	for _, g := range spec.GrantBeneath {
+		granted[g.Path] = true
+	}
+	// The sibling an administrator adds next, which the domain never saw.
+	if !granted[filepath.Dir("/shares/extra")] {
+		t.Fatal("a share added beside the configured one is outside the domain, so it would need a restart")
 	}
 }
