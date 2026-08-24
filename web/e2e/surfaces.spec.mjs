@@ -231,7 +231,8 @@ try {
       'POST',
       '/api/admin/grants',
       {
-        user: session.body?.user?.id,
+        // The shape the admin screen sends.
+        principal: { kind: 'user', id: session.body?.user?.id },
         share: shareID,
         subpath: '/',
         allow: ['read', 'download'],

@@ -76,10 +76,14 @@ func permsOf(p acl.Perms) permsJSON {
 }
 
 func entryOf(e core.Entry, path string) entryJSON {
-	kind := "file"
-	if e.IsDir {
-		kind = "dir"
-	}
+	// The kind the filesystem reported, not "dir or else file". A symlink was
+	// reported as a file, so the interface drew one and opening it tried to
+	// read a file that is not there; the client has declared all four kinds
+	// since before this handler was written.
+	//
+	// An entry the directory read could not type, and one lost to a delete
+	// race, both land on "other" rather than being called a file.
+	kind := e.Kind.String()
 	out := entryJSON{
 		Name: e.Name, Path: path, Kind: kind, IsDir: e.IsDir,
 		Size: e.Size, MTimeNs: strconv.FormatInt(e.MTimeNs, 10),
@@ -130,7 +134,15 @@ func List(d Deps) http.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		page, err := d.Core.List(r.Context(), resolved, core.Cursor(r.URL.Query().Get("cursor")))
+		// The order the client asked for. Both were sent on every listing
+		// request and read by nothing, so the sort control in the interface
+		// changed the query string and never the order.
+		q := r.URL.Query()
+		opt := core.ListOptions{
+			Sort: core.ParseSortKey(q.Get("sort")),
+			Desc: q.Get("order") == "desc",
+		}
+		page, err := d.Core.ListSorted(r.Context(), resolved, core.Cursor(q.Get("cursor")), opt)
 		if err != nil {
 			return err
 		}

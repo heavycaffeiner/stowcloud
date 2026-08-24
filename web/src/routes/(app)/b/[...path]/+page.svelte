@@ -20,6 +20,7 @@
   import FileTree from '../../../../lib/ui/FileTree.svelte'
   import { FAB, Icon, MenuItem } from 'm3-svelte'
   import { icons } from '../../../../lib/icons'
+  import type { Order, SortKey } from '../../../../lib/api/client'
   import IconButton from '../../../../lib/ui/IconButton.svelte'
   import Menu from '../../../../lib/ui/Menu.svelte'
   import NewFolderDialog from '../../../../lib/ui/NewFolderDialog.svelte'
@@ -707,6 +708,52 @@
   let overflowMenuEl: HTMLDivElement | undefined = $state()
   let overflowTriggerEl: HTMLElement | null = null
 
+  // The sort menu. Its own anchor rather than a submenu of the overflow one,
+  // because it is a thing people change often enough to want one click away.
+  let sortOpen = $state(false)
+  let sortLeft = $state(0)
+  let sortTop = $state(0)
+  let sortMenuEl: HTMLDivElement | undefined = $state()
+  let sortTriggerEl: HTMLElement | null = null
+
+  const sortKeys: { key: SortKey; label: () => string }[] = [
+    { key: 'name', label: () => t('browse.sort_by_name') },
+    { key: 'size', label: () => t('browse.sort_by_size') },
+    { key: 'mtime', label: () => t('browse.sort_by_modified') },
+    { key: 'kind', label: () => t('browse.sort_by_kind') }
+  ]
+
+  function openSort(e: MouseEvent): void {
+    // Same reasoning as openOverflow: without this the click that opens the
+    // menu reaches Menu's own light-dismiss and closes it in the same tick.
+    e.stopPropagation()
+    const btn = e.currentTarget as HTMLElement
+    sortTriggerEl = btn
+    const rect = btn.getBoundingClientRect()
+    sortLeft = Math.max(8, Math.min(rect.right - 200, window.innerWidth - 208))
+    sortTop = rect.bottom + 4
+    sortOpen = true
+    queueMicrotask(() => sortMenuEl?.querySelector<HTMLButtonElement>('button')?.focus())
+  }
+
+  function closeSort(): void {
+    sortOpen = false
+    sortTriggerEl?.focus()
+    sortTriggerEl = null
+  }
+
+  function sortKeyLabel(key: SortKey): string {
+    return sortKeys.find((s) => s.key === key)?.label() ?? key
+  }
+
+  // Picking the key already in use flips the direction, which is what a file
+  // manager's column header does and what makes one menu enough for both.
+  function chooseSort(key: SortKey): void {
+    const order: Order = browse.sort.key === key && browse.sort.order === 'asc' ? 'desc' : 'asc'
+    browse.resort({ key, order })
+    closeSort()
+  }
+
   function openOverflow(e: MouseEvent): void {
     // Without this, the same click that opens the menu keeps bubbling after
     // Svelte's synchronous DOM flush has already mounted it -- Menu.svelte's
@@ -850,6 +897,14 @@
         >
           <Icon icon={icons.info} />
         </IconButton>
+        <IconButton
+          label={t('browse.sort_by', { key: sortKeyLabel(browse.sort.key) })}
+          selected={sortOpen}
+          expanded={sortOpen}
+          onclick={openSort}
+        >
+          <Icon icon={icons.list} />
+        </IconButton>
         <IconButton label={t('browse.more')} selected={overflowOpen} onclick={openOverflow}><Icon icon={icons['more-vert']} /></IconButton>
         {#if !uiState.compact}
           <Button variant="text" onclick={onUploadFolderClick}>
@@ -920,6 +975,21 @@
   </div>
   {/if}
   </div>
+
+  <Menu open={sortOpen} onclose={closeSort} x={sortLeft} y={sortTop}>
+    <div bind:this={sortMenuEl} role="none">
+      {#each sortKeys as s (s.key)}
+        <MenuItem onclick={() => chooseSort(s.key)}>
+          {browse.sort.key === s.key
+            ? t('browse.sort_selected', {
+                label: s.label(),
+                direction: browse.sort.order === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')
+              })
+            : s.label()}
+        </MenuItem>
+      {/each}
+    </div>
+  </Menu>
 
   <Menu open={overflowOpen} onclose={closeOverflow} x={overflowLeft} y={overflowTop}>
       <div bind:this={overflowMenuEl} role="none" onkeydown={onOverflowKeydown}>

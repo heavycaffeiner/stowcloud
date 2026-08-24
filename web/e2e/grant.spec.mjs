@@ -111,7 +111,10 @@ try {
     'POST',
     '/api/admin/grants',
     {
-      user: memberID,
+      // The shape the admin screen sends. It used to be a bare `user` here,
+      // which the handler read and the screen never sent, so this asserted a
+      // spelling nothing in the interface used.
+      principal: { kind: 'user', id: memberID },
       share: shareID,
       subpath: '',
       allow: ['read', 'write', 'create', 'delete', 'download'],
