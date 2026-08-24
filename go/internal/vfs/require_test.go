@@ -77,7 +77,15 @@ func TestTheProbeDoesNotDependOnTheWorkingDirectory(t *testing.T) {
 	if err := os.Chmod(dir, 0o000); err != nil {
 		t.Skipf("cannot drop the mode on the working directory: %v", err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	// Restored so the temp directory can be removed; a failure here would
+	// otherwise surface as an unrelated cleanup error.
+	t.Cleanup(func() {
+		// Restored so the temp directory can be removed. 0o700 on a directory
+		// is owner-only, which is what it was before the line above.
+		if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // G302 reads this as a file mode; it is a directory, and 0o700 is the restrictive value.
+			t.Errorf("restoring the working directory's mode: %v", err)
+		}
+	})
 
 	if got := Probe().Openat2; got != SupportPresent {
 		t.Fatalf("openat2 probed as %v from an unsearchable working directory, want present", got)

@@ -199,5 +199,8 @@
 # then prints a stack naming the call. The exceptions are the child process
 # that is meant to fail, since its output rather than its status is the answer,
 # and two pool closes on a path that has already reported a failure.
-241
+#
+# 242: the openat2 probe test restores a directory mode in its cleanup, which
+# gosec reads as a file mode and wants at 0o600 or less.
+242
 
