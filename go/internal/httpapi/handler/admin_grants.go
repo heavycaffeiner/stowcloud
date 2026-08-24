@@ -69,6 +69,24 @@ type adminGrant struct {
 	CreatedNs string   `json:"created_ns"`
 }
 
+// principalIDs splits a principal into the account and group ids the store
+// takes, refusing anything that names neither or both.
+//
+// A grant for an account and a group at once is two rules written as one, and
+// which of them applied would depend on how it was read.
+func principalIDs(p grantPrincipal) (user, group int64, err error) {
+	if p.ID <= 0 {
+		return 0, 0, apierr.BadRequest("admin.grant_principal", "principal")
+	}
+	switch p.Kind {
+	case "user":
+		return p.ID, 0, nil
+	case "group":
+		return 0, p.ID, nil
+	}
+	return 0, 0, apierr.BadRequest("admin.grant_principal", "principal")
+}
+
 // AdminGrants answers GET and POST /api/admin/grants.
 func AdminGrants(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
@@ -94,23 +112,26 @@ func AdminGrants(d Deps) http.HandlerFunc {
 			return writeJSON(w, http.StatusOK, out)
 		}
 
+		// principal is the one spelling, which is what the response carries and
+		// what the screen sends. This read a bare "user" or "group", so every
+		// grant the screen wrote arrived with neither set and came back refused:
+		// adding a folder permission failed with no way to tell why from the
+		// interface.
 		var req struct {
-			User    int64    `json:"user"`
-			Group   int64    `json:"group"`
-			Share   int64    `json:"share"`
-			Subpath string   `json:"subpath"`
-			Allow   []string `json:"allow"`
-			Deny    []string `json:"deny"`
-			Inherit bool     `json:"inherit"`
-			Label   string   `json:"label"`
+			Principal grantPrincipal `json:"principal"`
+			Share     int64          `json:"share"`
+			Subpath   string         `json:"subpath"`
+			Allow     []string       `json:"allow"`
+			Deny      []string       `json:"deny"`
+			Inherit   bool           `json:"inherit"`
+			Label     string         `json:"label"`
 		}
 		if err := decodeJSON(r, &req); err != nil {
 			return err
 		}
-		// A grant for both an account and a group is two rules written as one,
-		// and which one applied would depend on how it was read.
-		if (req.User == 0) == (req.Group == 0) {
-			return apierr.BadRequest("admin.grant_principal", "user")
+		user, group, perr := principalIDs(req.Principal)
+		if perr != nil {
+			return perr
 		}
 		allow, aerr := parsePerms(req.Allow)
 		if aerr != nil {
@@ -123,14 +144,14 @@ func AdminGrants(d Deps) http.HandlerFunc {
 		path := acl.ParsePath(req.Subpath)
 
 		g, cerr := acl.CreateGrant(r.Context(), d.State.SQL(), acl.Grant{
-			User: req.User, Group: req.Group, Share: req.Share,
+			User: user, Group: group, Share: req.Share,
 			Subpath: path, Allow: allow, Deny: deny,
 			Inherit: req.Inherit, Label: req.Label,
 		}, d.Clock.Nanos())
 		// Recorded either way. A grant is who may read what, so an attempt that
 		// was refused is as much a thing an operator reads this log for as one
 		// that succeeded.
-		record(r, d, actor, "grant.create", grantTarget(req.User, req.Group, req.Share), cerr == nil)
+		record(r, d, actor, "grant.create", grantTarget(user, group, req.Share), cerr == nil)
 		if cerr != nil {
 			if errors.Is(cerr, acl.ErrNoSuchGrant) {
 				return apierr.BadRequest("admin.grant_principal", "user")

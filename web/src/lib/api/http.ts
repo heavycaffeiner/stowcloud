@@ -746,6 +746,14 @@ async function adminDeleteUser(id: number): Promise<void> {
   await request(`/admin/users/${id}`, { method: 'DELETE' })
 }
 
+/** `PATCH /api/admin/users/{id}` with a password. An administrator resetting an
+ *  account they do not have the current password for, which is the only way
+ *  back in for somebody who forgot theirs: there is no mail to send a reset
+ *  link with. Every session the old password opened is ended server-side. */
+async function adminSetUserPassword(id: number, password: string): Promise<AdminUser> {
+  return request(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify({ password }) })
+}
+
 // ── admin: grant management ──
 // GET /api/admin/shares, GET/POST /api/admin/grants,
 // PATCH/DELETE /api/admin/grants/{id}. The deny-by-default model this
@@ -975,6 +983,7 @@ export const httpApi = {
   adminSetUserDisabled,
   adminSetUserQuota,
   adminDeleteUser,
+  adminSetUserPassword,
   adminGetUserOidc,
   adminLinkUserOidc,
   adminUnlinkUserOidc,

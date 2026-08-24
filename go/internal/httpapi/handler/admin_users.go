@@ -117,6 +117,11 @@ func AdminUser(d Deps) http.HandlerFunc {
 		var patch struct {
 			Disabled   *bool  `json:"disabled"`
 			QuotaBytes *int64 `json:"quota_bytes"`
+			// Password is an administrator resetting an account they do not
+			// have the current password for, which is the only way back in for
+			// somebody who has forgotten theirs: this server has no mail to
+			// send a reset link with.
+			Password *string `json:"password"`
 		}
 		if derr := decodeJSON(r, &patch); derr != nil {
 			return derr
@@ -150,6 +155,26 @@ func AdminUser(d Deps) http.HandlerFunc {
 		if patch.QuotaBytes != nil {
 			if qerr := d.Auth.SetQuota(r.Context(), id, patch.QuotaBytes); qerr != nil {
 				return qerr
+			}
+		}
+		if patch.Password != nil {
+			if *patch.Password == "" {
+				return apierr.BadRequest("auth.password_required", "password")
+			}
+			perr := d.Auth.SetPassword(r.Context(), id, secret.New([]byte(*patch.Password)))
+			record(r, d, actor, "user.password_reset", strconv.FormatInt(id, 10), perr == nil)
+			if perr != nil {
+				return perr
+			}
+			// Every session the old password opened ends. A reset is done
+			// because the password may be known to somebody else, and leaving
+			// their sessions alive would make the reset cosmetic.
+			//
+			// All of them, unlike the self-service change: this is another
+			// account, so none of the sessions being ended is the one making
+			// the request.
+			if _, rerr := d.Auth.RevokeSessionsOf(r.Context(), id); rerr != nil {
+				return rerr
 			}
 		}
 		one, uerr := adminUserByID(r.Context(), d, id)
