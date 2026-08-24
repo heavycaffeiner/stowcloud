@@ -197,6 +197,15 @@ func allowedSyscalls() []int {
 		unix.SYS_EPOLL_CREATE1,
 		unix.SYS_EVENTFD2,
 		unix.SYS_EPOLL_CTL,
+
+		// prctl, which the runtime issues as PR_SET_VMA_ANON_NAME to label its
+		// own mappings so they are identifiable in /proc/pid/maps. It is on by
+		// default from Go 1.26 and happens whenever the heap grows, so a
+		// worker decoding a larger image than the last one is killed for it.
+		//
+		// It grants nothing: PR_SET_VMA only renames a mapping this process
+		// already owns.
+		unix.SYS_PRCTL,
 	}
 }
 
