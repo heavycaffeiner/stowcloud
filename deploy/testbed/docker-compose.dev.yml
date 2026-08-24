@@ -77,7 +77,7 @@ services:
     cap_drop: [ALL]
     # NET_ADMIN beyond the root file's set: this stack exercises the automatic
     # bans, which are firewall rules the sidecar writes in its own namespace.
-    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, NET_ADMIN, DAC_READ_SEARCH]
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, NET_ADMIN, DAC_READ_SEARCH, DAC_OVERRIDE, CHOWN]
     security_opt:
       - no-new-privileges:true
 

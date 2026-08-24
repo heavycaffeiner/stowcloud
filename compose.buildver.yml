@@ -81,7 +81,7 @@ services:
       - "${SC_SMB_BIND_IP:-127.0.0.1}:445:445"
 
     cap_drop: [ALL]
-    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, DAC_READ_SEARCH]
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, DAC_READ_SEARCH, DAC_OVERRIDE, CHOWN]
     security_opt:
       - no-new-privileges:true
 

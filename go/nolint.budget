@@ -202,5 +202,9 @@
 #
 # 242: the openat2 probe test restores a directory mode in its cleanup, which
 # gosec reads as a file mode and wants at 0o600 or less.
-242
+#
+# 244: the SMB control socket's directory and its fallback mode. Both are
+# wider than gosec's default on purpose: the server is a different uid and the
+# channel exists for it to reach.
+244
 

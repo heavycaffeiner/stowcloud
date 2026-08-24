@@ -128,7 +128,16 @@ services:
     # Dropping everything strips these from root too, and smbd needs them back:
     # to bind its privileged port, to become the service account per
     # connection, and to read a credential file owned by another uid.
-    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, DAC_READ_SEARCH]
+    #
+    # DAC_OVERRIDE and CHOWN are for the control socket rather than for Samba.
+    # The socket is created in a directory the server owns, and root without
+    # them can neither write a directory belonging to another uid nor hand the
+    # socket back: the agent falls back to the poll loop and every change takes
+    # up to a minute instead of arriving at once, and the socket it does create
+    # is opened to everything that can reach the directory rather than to the
+    # server alone. A named volume starts root-owned and needs neither; a bind
+    # mount of a host directory needs both.
+    cap_add: [NET_BIND_SERVICE, SETUID, SETGID, DAC_READ_SEARCH, DAC_OVERRIDE, CHOWN]
     security_opt:
       - no-new-privileges:true
 

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/task"
+	"golang.org/x/sys/unix"
 )
 
 // The socket the server pushes to.
@@ -49,9 +50,22 @@ func Serve(ctx context.Context, socket string, agent *Agent, configDir string, l
 		return fmt.Errorf("clearing the old socket: %w", err)
 	}
 
+	// The directory has to admit a new file. A bind mount of a host directory
+	// arrives owned by whoever made it on the host, and this sidecar drops
+	// every capability, so being root buys nothing: creating the socket in a
+	// directory owned by another uid is refused, and the error names the bind
+	// rather than the directory that caused it.
+	//
+	// Taking ownership is safe here in a way it is not for user data: this
+	// directory exists for this socket, nothing else writes it, and the server
+	// on the other side is handed the socket by setSocketOwner below.
+	if err := ensureSocketDir(filepath.Dir(socket)); err != nil {
+		return err
+	}
+
 	ln, err := net.Listen("unix", socket)
 	if err != nil {
-		return fmt.Errorf("binding the control socket: %w", err)
+		return fmt.Errorf("binding the control socket in %s: %w", filepath.Dir(socket), err)
 	}
 	defer ln.Close() //nolint:errcheck // the process is ending, and the socket file is removed by the next start.
 
@@ -131,6 +145,33 @@ func handle(conn net.Conn, agent *Agent, log *slog.Logger) {
 	}
 }
 
+// ensureSocketDir makes the socket's directory one this process can create in.
+//
+// It only acts when the directory is not already writable, and it reports what
+// it could not fix rather than failing the start: the poll loop applies the
+// same changes without the socket, which is what this deployment had before
+// the channel existed.
+func ensureSocketDir(dir string) error {
+	if dir == "" || dir == "." {
+		return nil
+	}
+	// Group-writable: the server writes the socket's directory as another uid
+	// and reaching it is the whole point of the channel.
+	if err := os.MkdirAll(dir, 0o770); err != nil { //nolint:gosec // G301 wants 0750: the server is a different uid and has to create in here.
+		return fmt.Errorf("creating the control socket's directory %s: %w", dir, err)
+	}
+	// unix.Access answers the question the bind is about to ask, rather than
+	// inferring it from the mode bits: a read-only mount and a directory owned
+	// by another uid both look writable in the mode alone.
+	if unix.Access(dir, unix.W_OK) == nil {
+		return nil
+	}
+	if err := os.Chown(dir, os.Geteuid(), os.Getegid()); err != nil {
+		return fmt.Errorf("the control socket's directory %s is not writable by this process and could not be taken over: %w", dir, err)
+	}
+	return nil
+}
+
 // setSocketOwner makes the socket reachable by the server and by nothing else
 // that can be helped.
 //
@@ -148,15 +189,32 @@ func handle(conn net.Conn, agent *Agent, log *slog.Logger) {
 // reach at all, and the vocabulary behind it is two words.
 func setSocketOwner(socket, configDir string, log *slog.Logger) {
 	mode := os.FileMode(0o660)
+	handedOver := false
 
 	if st, err := os.Stat(configDir); err == nil {
 		if sys, ok := st.Sys().(*syscall.Stat_t); ok && int(sys.Uid) != os.Geteuid() {
+			// The mode goes on before the owner does. Once the socket belongs
+			// to somebody else this process can no longer chmod it, so doing
+			// it in the other order left a socket handed over correctly and
+			// still at whatever mode the umask produced.
+			if cerr := os.Chmod(socket, mode); cerr != nil {
+				log.Warn("could not set the control socket's mode", "error", cerr)
+			}
 			if cerr := os.Chown(socket, int(sys.Uid), int(sys.Gid)); cerr != nil {
 				log.Info("cannot hand the control socket to the server's account, so it is opened to anything that can already reach this directory",
 					"uid", sys.Uid, "error", cerr)
-				mode = 0o666
+				// Widened only because the narrow mode is now unreachable for
+				// the one process that has to use it.
+				if cerr := os.Chmod(socket, 0o666); cerr != nil { //nolint:gosec // G302 wants 0600: the socket could not be handed over, so the only alternative is one nothing can use.
+					log.Warn("could not open the control socket's mode", "error", cerr)
+				}
+				return
 			}
+			handedOver = true
 		}
+	}
+	if handedOver {
+		return
 	}
 
 	if err := os.Chmod(socket, mode); err != nil {
