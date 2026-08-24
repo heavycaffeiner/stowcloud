@@ -233,7 +233,7 @@ EXPOSE 8443
 # as well as ok, because a degraded server is a configuration state and
 # restarting it does not fix one.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD ["/stowcloud", "healthcheck", "/etc/stowcloud/sc.toml"]
+  CMD ["/entrypoint.sh", "healthcheck", "/etc/stowcloud/sc.toml"]
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["serve", "/etc/stowcloud/sc.toml"]

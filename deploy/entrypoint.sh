@@ -24,6 +24,15 @@ if [ "$(id -u)" != 0 ]; then
     exec /stowcloud "$@"
 fi
 
+# The health probe, which reads the certificate out of the data directory. That
+# directory is the service account's and is mode 700, and root here has no
+# CAP_DAC_OVERRIDE to read through it with, so the probe has to run as the
+# account rather than as root. Nothing is reconciled and nothing is chowned: a
+# probe runs every interval and must not write.
+if [ "${1:-}" = healthcheck ]; then
+    exec su-exec "$PUID:$PGID" /stowcloud "$@"
+fi
+
 # Root, but possibly without the capabilities that make being root mean
 # anything: `cap_drop: ALL` leaves uid 0 with an empty permitted set, so
 # setgroups and chown both fail. Dropping to the service account is impossible

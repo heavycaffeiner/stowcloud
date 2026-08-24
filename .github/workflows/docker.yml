@@ -263,12 +263,12 @@ jobs:
       # a certificate that is not valid for the address it serves fails here.
       - name: The generated certificate is valid for the address it serves
         run: |
-          docker exec sc-smoke /stowcloud healthcheck /etc/stowcloud/sc.toml
+          docker exec sc-smoke /entrypoint.sh healthcheck /etc/stowcloud/sc.toml
           echo "the server verified its own certificate over a real dial"
 
       - name: exec the healthcheck directly (proves it runs with no shell in the image)
         run: |
-          docker exec sc-smoke /stowcloud healthcheck /etc/stowcloud/sc.toml
+          docker exec sc-smoke /entrypoint.sh healthcheck /etc/stowcloud/sc.toml
           echo "healthcheck subcommand exited 0"
 
       # A share that lists is the difference between a server that started and
