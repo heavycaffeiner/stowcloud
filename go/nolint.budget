@@ -185,5 +185,12 @@
 # worker pool being abandoned because its cache could not be opened.
 # The size guard added one: the kernel's block size crossing into an unsigned
 # multiply, where statfs guarantees it is positive.
-239
+#
+# Reporting how a preview worker ended removed one. The pool waited on the
+# process and discarded the status, on the grounds that every death is the same
+# event to it. True of what it does next, false of what it can say: a worker
+# killed by a signal and one that exited on its own both read as "the worker
+# died: EOF". The status is read now, so the exception is gone rather than
+# suppressed.
+238
 

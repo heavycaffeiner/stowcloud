@@ -27,7 +27,11 @@
   // Mirroring it and pushing the parent's value in is what keeps the two in
   // step. The mirror is not a second source of truth: it only ever follows
   // the prop, and a close the framework initiates is reported upward.
-  let shown = $state(open)
+  // Initialised false rather than from the prop, which the compiler warns
+  // about: reading a prop into $state captures only its first value. The
+  // effect below runs before paint and sets the real one, so a dialog that
+  // starts open still opens.
+  let shown = $state(false)
 
   $effect(() => {
     shown = open

@@ -163,7 +163,9 @@ func (p *Pool) Generate(ctx context.Context, req Request, in Source, out *os.Fil
 		// Any failure on the socket means this worker is finished. Reaping
 		// here rather than on the next job is what keeps a dead process from
 		// being handed a second one.
-		p.reap(s)
+		if cause := p.reap(s); cause != "" {
+			return Response{}, fmt.Errorf("%w (the worker ended: %s)", err, cause)
+		}
 		return Response{}, err
 	}
 	return resp, nil
@@ -264,13 +266,26 @@ func (p *Pool) exchange(ctx context.Context, s *slot, req Request, in Source, ou
 }
 
 // reap kills and waits for a slot's process, leaving the slot empty so the
-// next job starts a replacement.
-func (p *Pool) reap(s *slot) {
+// next job starts a replacement. It returns how the process ended, for the
+// error the caller is already building.
+//
+// The status used to be discarded on the grounds that every death is the same
+// event to the pool. That is true of what the pool does next and false of what
+// it can say: a worker killed by SIGSYS because seccomp refused a syscall and
+// one that exited cleanly both surfaced as "the worker died: EOF", which names
+// no cause and leaves nothing to act on.
+func (p *Pool) reap(s *slot) string {
+	cause := ""
 	if s.proc != nil {
 		_ = s.proc.Kill() //nolint:errcheck // the process may already be gone, which is the case being handled.
-		// Waited for so the child does not become a zombie. The status is not
-		// read: every way a worker dies is the same event to the parent.
-		_, _ = s.proc.Wait() //nolint:errcheck // as above.
+		// Waited for so the child does not become a zombie.
+		st, werr := s.proc.Wait()
+		switch {
+		case werr != nil:
+			cause = "wait: " + werr.Error()
+		case st != nil:
+			cause = st.String()
+		}
 		s.proc = nil
 	}
 	if s.conn != nil {
@@ -281,6 +296,7 @@ func (p *Pool) reap(s *slot) {
 		_ = s.sock.Close() //nolint:errcheck // as above.
 		s.sock = nil
 	}
+	return cause
 }
 
 // Close shuts the pool down.
@@ -295,7 +311,9 @@ func (p *Pool) Close() error {
 
 	for _, s := range p.slots {
 		s.mu.Lock()
-		p.reap(s)
+		// The cause is dropped here: on Close every worker is killed on
+		// purpose, so how it ended says nothing.
+		_ = p.reap(s)
 		s.mu.Unlock()
 	}
 	return nil

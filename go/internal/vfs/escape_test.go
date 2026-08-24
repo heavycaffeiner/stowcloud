@@ -11,6 +11,7 @@
 package vfs
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"os/exec"
@@ -263,6 +264,11 @@ func TestEscapeBySwappingAComponentBetweenCalls(t *testing.T) {
 // mountProofEnv marks the child that runs case 7 inside its own namespaces.
 const mountProofEnv = "SC_MOUNT_PROOF"
 
+// What the child prints when the kernel refuses the mount, for the parent to
+// recognise. A sentinel rather than a matched errno string, because the child
+// communicates over its output.
+const mountProofDenied = "SC_MOUNT_PROOF: the kernel refused the mount"
+
 // Case 7, new work. A path crossing a mount boundary inside the share, with the
 // share opted out of crossing one.
 //
@@ -291,13 +297,20 @@ func TestEscapeAcrossAMountBoundary(t *testing.T) {
 		GidMappings: []syscall.SysProcIDMap{{ContainerID: 0, HostID: os.Getgid(), Size: 1}},
 	}
 	out, err := cmd.CombinedOutput()
+	// The child reports a denied mount by printing this, so it is checked
+	// before the error: a policy that forbids the mount is not a failure of
+	// what is under test. The clone succeeds and the mount inside it does not,
+	// so the outer error is a plain exit status with no errno to match on.
+	if bytes.Contains(out, []byte(mountProofDenied)) {
+		t.Skip("this kernel does not allow mounting inside an unprivileged user namespace, so the boundary cannot be built")
+	}
 	if err == nil {
 		return
 	}
 	if errors.Is(err, unix.EPERM) {
-		// A kernel that forbids an unprivileged user namespace, which some
-		// distributions do by policy. Nothing this test can do reaches around
-		// that, and running it as root is the other way to get the row.
+		// A kernel that forbids an unprivileged user namespace outright, which
+		// some distributions do by policy. Here the clone itself fails, so the
+		// child never runs and prints nothing.
 		t.Skipf("this kernel does not allow an unprivileged user namespace, so the boundary cannot be built: %v", err)
 	}
 	t.Fatalf("the mount-boundary child failed: %v\n%s", err, out)
@@ -310,6 +323,14 @@ func mountBoundaryProof(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	if err := unix.Mount("tmpfs", target, "tmpfs", 0, ""); err != nil {
+		// A user namespace can exist and still not be allowed to mount inside
+		// it: AppArmor on Ubuntu denies it, and GitHub's runners are that. The
+		// parent reads this line and skips, because a boundary that cannot be
+		// built is not the same as one that does not hold.
+		if errors.Is(err, unix.EPERM) || errors.Is(err, unix.EACCES) {
+			t.Log(mountProofDenied)
+			t.SkipNow()
+		}
 		t.Fatalf("mount a filesystem inside the share: %v", err)
 	}
 	t.Cleanup(func() {

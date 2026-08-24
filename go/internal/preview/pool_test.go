@@ -351,3 +351,28 @@ func TestACallerWaitingForABusyPoolIsRefused(t *testing.T) {
 	}
 	<-held
 }
+
+// A dead worker's error names how it ended.
+//
+// The wait status used to be discarded on the grounds that every death is the
+// same event to the pool. That is true of what the pool does next and false of
+// what it can report: a worker killed by SIGSYS because seccomp refused a
+// syscall and one that exited on its own both read as "the worker died: EOF",
+// which names no cause. A CI failure that could not be reproduced locally is
+// what this is for.
+func TestAWorkerDeathReportsHowTheProcessEnded(t *testing.T) {
+	p := newPool(t, 1, "die")
+
+	in, out := job(t, pngOf(t, 64, 64))
+	_, err := p.Generate(context.Background(), preview.Request{
+		Kind: preview.JobImage, Preset: preview.PresetSmall,
+	}, preview.PlainSource{F: in}, out)
+	if err == nil {
+		t.Fatal("the dying worker produced a thumbnail")
+	}
+	// The helper exits 1, and killing an already-exited process leaves that
+	// status intact. What matters is that some cause is named at all.
+	if !strings.Contains(err.Error(), "the worker ended:") {
+		t.Errorf("err = %q, want it to name how the process ended", err)
+	}
+}

@@ -90,6 +90,16 @@ jobs:
           npm run check
           npm run build
 
+      # The end-to-end step drives a real browser, and npm ci does not fetch
+      # one: Playwright downloads it separately, into a cache this runner does
+      # not have. Without this the step failed asking to be run by hand.
+      #
+      # --with-deps because the runner has no shared libraries chromium needs.
+      - name: Install the browser the end-to-end step drives
+        run: |
+          cd web
+          npx playwright install --with-deps chromium
+
       # Enforces the byte budgets DESIGN-FRONTEND.md §8 records. Deliberately
       # no Lighthouse pass (see check-bundle-size.mjs's header): a shared
       # runner's CPU/IO variance would make a frame-timing gate flaky, and
