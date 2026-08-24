@@ -1,3 +1,6 @@
+// Linux only: it names types that are openat2 handles underneath.
+//go:build linux
+
 // Package smbpublish renders the SMB configuration and pushes it to the agent.
 //
 // The server decides what SMB should serve and can do nothing about it: the

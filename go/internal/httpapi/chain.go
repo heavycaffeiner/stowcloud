@@ -1,3 +1,6 @@
+// Linux only: it names types that are openat2 handles underneath.
+//go:build linux
+
 package httpapi
 
 import (

@@ -1,3 +1,6 @@
+// Linux only, like the Core it hangs off.
+//go:build linux
+
 package core
 
 import (

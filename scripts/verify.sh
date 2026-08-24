@@ -200,6 +200,37 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   run "go build (linux/arm64)" ingo env GOARCH=arm64 go build ./...
   run "go vet (linux)"         ingo go vet ./...
 
+  # The gate builds two architectures and one OS, so a package that stops
+  # compiling off Linux reaches CI instead of this script. It happened: files
+  # naming Linux-only types were added to packages without the build tag their
+  # neighbours carry, and the Windows job found it after the push.
+  #
+  # Nothing here ships for Windows. What is checked is that the tags are
+  # consistent, which is a property of this tree rather than of that target.
+  # Packages excluded in full are the expected outcome, not a failure, so only
+  # a real type error fails this.
+  # vet, package by package, rather than a build of ./...: a build resolves
+  # the whole import graph first and stops at the command, which imports
+  # packages that are excluded here in full, so it never reaches the package
+  # that does not compile. vet type-checks each one on its own.
+  #
+  # Matched on the shape of a compiler error, because the excluded-package
+  # paragraphs are the expected outcome and are not failures.
+  # One package at a time, because a single unresolvable import anywhere in
+  # the set aborts the whole run before any package is type-checked, and the
+  # command imports packages that are excluded here in full. Vetting each on
+  # its own means an excluded neighbour costs one skipped package rather than
+  # the entire check.
+  run "the build tags hold off Linux" bash -c '
+    cd go
+    fail=0
+    for p in $(CGO_ENABLED=0 GOOS=windows go list ./... 2>/dev/null); do
+      out=$(CGO_ENABLED=0 GOOS=windows go vet "$p" 2>&1 |
+              grep -E "\.go:[0-9]+:[0-9]+:")
+      if [ -n "$out" ]; then printf "%s\n" "$out"; fail=1; fi
+    done
+    exit $fail'
+
   # The two in-tree analysers and the text scan. They run for the host's own
   # OS because `go run` has to execute what it built, and each one is pointed
   # at the shipping target from the inside.

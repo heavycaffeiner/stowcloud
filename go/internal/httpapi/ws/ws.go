@@ -1,3 +1,6 @@
+// Linux only: it names types that are openat2 handles underneath.
+//go:build linux
+
 // Package ws is the change channel: a WebSocket over which a browser tab stays
 // subscribed to the directories it is looking at.
 //

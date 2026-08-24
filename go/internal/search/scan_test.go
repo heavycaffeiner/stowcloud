@@ -1,3 +1,6 @@
+// Linux only, because what it tests is.
+//go:build linux
+
 package search
 
 import (

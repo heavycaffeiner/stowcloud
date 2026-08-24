@@ -1,3 +1,6 @@
+// Linux only, like the Core it hangs off: a share root is an openat2 handle.
+//go:build linux
+
 package core
 
 import (

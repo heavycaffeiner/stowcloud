@@ -1,3 +1,7 @@
+// Linux only, like the walk it shares a Source with: a source names a
+// *vfs.ShareRoot, which is an openat2 handle and exists on no other platform.
+//go:build linux
+
 package search
 
 import (

@@ -1,3 +1,6 @@
+// Linux only: it names types that are openat2 handles underneath.
+//go:build linux
+
 // Package httpapi is the native REST surface: the twelve-step chain, the
 // route table, and the handlers that answer it. It composes net/http and
 // nothing else; the router is Go 1.22's ServeMux with method and wildcard
