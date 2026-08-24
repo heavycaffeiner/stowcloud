@@ -176,13 +176,18 @@ VOLUME ["/run/sc-smb"]
 
 # `smbd -b` prints the compiled-in paths/options and exits 0 iff the binary
 # itself is sane; it does not need a config file to be valid, which matters
-# because a fresh sidecar can legitimately have no accepted config yet
-# (entrypoint.sh's `sync_once` retry loop) — a probe that required a
-# listening socket would report unhealthy for that entire legitimate
-# startup window. `pgrep` is busybox's own applet here (no separate
-# `procps` package needed — confirmed present in the base image).
+# because a fresh sidecar can legitimately have no accepted config yet — a
+# probe that required a listening socket would report unhealthy for that entire
+# legitimate startup window.
+#
+# The daemon being down is not a failure either. This container now starts with
+# the stack rather than behind a profile, and SMB is off until an administrator
+# turns it on, so a stopped smbd is the expected state for most deployments:
+# requiring the process would report every one of them unhealthy forever. What
+# is checked is that the agent is alive, because that is the part that has to
+# be running for the switch in the interface to do anything.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD smbd -b >/dev/null 2>&1 && pgrep -x smbd >/dev/null
+  CMD smbd -b >/dev/null 2>&1 && pgrep -f /sc-smb-agent >/dev/null
 
 # `--supervise`: there is no service manager in here, so the agent owns the
 # smbd process. That ownership is what lets it *replace* smbd when the

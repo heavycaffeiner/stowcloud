@@ -68,7 +68,6 @@ services:
       context: .
       dockerfile: Dockerfile.smb
     image: stowcloud:smb-dev
-    profiles: [smb]
     restart: unless-stopped
 
     # Bridged rather than host networking, unlike the released file. A
@@ -92,7 +91,7 @@ services:
       - sc-files:/shares/files
 
     healthcheck:
-      test: [CMD-SHELL, "smbd -b >/dev/null 2>&1 && pgrep -x smbd >/dev/null"]
+      test: [CMD-SHELL, "smbd -b >/dev/null 2>&1 && pgrep -f /sc-smb-agent >/dev/null"]
       interval: 30s
       timeout: 5s
       start_period: 15s

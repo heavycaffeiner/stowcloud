@@ -101,16 +101,19 @@ services:
       start_period: 10s
       retries: 3
 
-  # Windows and macOS file sharing. Off unless asked for:
+  # Windows and macOS file sharing. It starts with the stack and sits idle: the
+  # daemon stays stopped until SMB is turned on from the admin screen, and the
+  # agent in here picks that up over the shared socket and starts it without a
+  # `docker compose up`.
   #
-  #   docker compose --profile smb up -d
+  # It used to sit behind a `profiles: [smb]`, which meant turning SMB on in
+  # the interface did nothing until somebody also brought a second container
+  # up from a shell. The switch in the interface is the switch.
   #
-  # It also needs smb.enabled on the admin screen, or in the config file. The
-  # server renders the configuration and this container applies it, which is
-  # why they share two directories.
+  # The server renders the configuration and this container applies it, which
+  # is why they share two directories.
   sc-smb:
     image: ghcr.io/heavycaffeiner/stowcloud:smb-stable
-    profiles: [smb]
     restart: unless-stopped
 
     # Name service is broadcast and does not cross a bridge, so \\NAME only
@@ -138,7 +141,7 @@ services:
       - sc-files:/shares/files
 
     healthcheck:
-      test: [CMD-SHELL, "smbd -b >/dev/null 2>&1 && pgrep -x smbd >/dev/null"]
+      test: [CMD-SHELL, "smbd -b >/dev/null 2>&1 && pgrep -f /sc-smb-agent >/dev/null"]
       interval: 30s
       timeout: 5s
       start_period: 15s

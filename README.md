@@ -243,11 +243,9 @@ Linux is the only supported runtime. The code compiles on other systems, but
 nothing else is a deployment target: the guarantees this project is built on
 are Linux kernel features, and there is no substitute for them elsewhere.
 
-SMB is off by default and starts explicitly:
-
-```sh
-docker compose --profile smb up -d
-```
+SMB is off by default. The sidecar comes up with the stack and sits idle; the
+switch is in the admin screen, and turning it on starts the daemon without
+touching a shell.
 
 The sidecar shares the host's network stack, so port 445 must be free: stop a
 Samba already running there first. Two settings under `[smb]` in `data/sc.toml`
