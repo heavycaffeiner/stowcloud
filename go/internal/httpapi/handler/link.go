@@ -31,9 +31,14 @@ type linkRequest struct {
 	Perms    *permsJSON `json:"perms,omitempty"`
 	Password string     `json:"password,omitempty"`
 	Expires  string     `json:"expires_ns,omitempty"`
-	MaxDown  int32      `json:"max_downloads,omitempty"`
-	Label    string     `json:"label,omitempty"`
-	Note     string     `json:"note,omitempty"`
+	// MaxDown is a pointer because unlimited is -1 and absent is unlimited.
+	// As a plain int32 an omitted field decoded to zero, which the core reads
+	// as a cap of none: every link the dialog created without a download limit
+	// was exhausted before it was handed out, and opening it once answered
+	// gone.
+	MaxDown *int32 `json:"max_downloads,omitempty"`
+	Label   string `json:"label,omitempty"`
+	Note    string `json:"note,omitempty"`
 }
 
 type linkResponse struct {
@@ -63,7 +68,7 @@ func Links(d Deps) http.HandlerFunc {
 			}
 			out := make([]linkResponse, 0, len(links))
 			for _, l := range links {
-				out = append(out, linkToResponse(d, uid, l))
+				out = append(out, linkToResponse(d, uid, l, requestBase(r)))
 			}
 			return writeJSON(w, http.StatusOK, map[string]any{"links": out})
 		}
@@ -80,9 +85,13 @@ func Links(d Deps) http.HandlerFunc {
 			return err
 		}
 		spec := core.LinkSpec{
-			Label:   req.Label,
-			Note:    req.Note,
-			MaxDown: req.MaxDown,
+			Label: req.Label,
+			Note:  req.Note,
+			// Unlimited unless the caller named a cap.
+			MaxDown: -1,
+		}
+		if req.MaxDown != nil {
+			spec.MaxDown = *req.MaxDown
 		}
 		if req.Perms != nil {
 			spec.Perms = permsFrom(*req.Perms)
@@ -101,8 +110,8 @@ func Links(d Deps) http.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		out := linkToResponse(d, uid, link)
-		out.URL = "/s/" + string(token.Reveal())
+		out := linkToResponse(d, uid, link, requestBase(r))
+		out.URL = requestBase(r) + "/s/" + string(token.Reveal())
 		return writeJSON(w, http.StatusCreated, out)
 	})
 }
@@ -126,10 +135,34 @@ func LinkDelete(d Deps) http.HandlerFunc {
 	})
 }
 
-func linkToResponse(d Deps, uid core.UserID, l core.Link) linkResponse {
+// requestBase is the scheme and host this request arrived on.
+//
+// Always https: this server has no plaintext listener, so a link naming http
+// would name a port nothing answers on.
+func requestBase(r *http.Request) string {
+	if r.Host == "" {
+		return ""
+	}
+	return "https://" + r.Host
+}
+
+// linkToResponse renders one link.
+//
+// base is the scheme and host to build the shareable URL from. The URL is
+// absolute because the one thing anybody does with a share link is copy it and
+// send it somewhere else: a path alone only works for somebody who already
+// knows the address, which is the opposite of what the link is for.
+//
+// It is filled for every link the token can be recovered for, not only the one
+// just created. A list that showed no address made an existing link something
+// an operator could see and not hand out.
+func linkToResponse(d Deps, uid core.UserID, l core.Link, base string) linkResponse {
 	out := linkResponse{
 		ID: l.ID, Perms: permsOf(l.Perms), HasPassword: l.HasPassword,
 		MaxDown: l.MaxDown, Downs: l.Downs, Label: l.Label, Note: l.Note,
+	}
+	if l.Token != nil && base != "" {
+		out.URL = base + "/s/" + string(l.Token.Reveal())
 	}
 	if l.Expires != 0 {
 		out.Expires = l.Expires
@@ -282,6 +315,6 @@ func LinkUpdate(d Deps) http.HandlerFunc {
 		if uerr != nil {
 			return uerr
 		}
-		return writeJSON(w, http.StatusOK, linkToResponse(d, uid, link))
+		return writeJSON(w, http.StatusOK, linkToResponse(d, uid, link, requestBase(r)))
 	})
 }
