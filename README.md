@@ -84,21 +84,31 @@ There are no directories to create and nothing to chown. The files you upload
 live in a named volume, and the image ships the directories it mounts them over
 already owned by the uid it runs as, so a volume inherits an owner that can
 write. To serve a folder you already have instead, replace the `sc-files` line
-under `volumes:` with a bind mount and make sure the directory is readable and
-writable by uid 1000:
+under `volumes:` with a bind mount:
 
 ```yaml
       - /srv/my-files:/shares/files:z
 ```
 
-Create it before the first start, because a bind mount does not inherit an
-owner the way a named volume does. A directory Docker creates for a missing
-bind source is owned by root, and the server cannot write to it:
+The server has to be able to read and write it. Rather than changing who owns
+your files, tell the server which uid to be. `PUID` and `PGID` in the compose
+file are the uid and gid it runs as, and the default of 1000 is what a
+single-admin machine's own files usually carry:
 
 ```sh
-sudo mkdir -p /srv/my-files
-sudo chown -R 1000:1000 /srv/my-files
+stat -c '%u:%g' /srv/my-files
 ```
+
+Put that pair in the compose file and the share works with no chown at all:
+
+```yaml
+    environment:
+      PUID: 1000
+      PGID: 1000
+```
+
+Create the directory before the first start either way. A directory Docker
+creates for a missing bind source is owned by root, which no `PUID` matches.
 
 **3. Create the administrator account.**
 
@@ -265,16 +275,21 @@ cause that is one layer away from the real one.
 **`opening the store: ... unable to open database file`.** The data directory
 is not writable by the uid the server runs as. SQLite reports a directory it
 cannot create a file in this way, so the message names the file rather than the
-directory. It is a bind mount whose host directory is owned by someone else,
-usually root because the path did not exist when the container first started.
-Create it owned by 1000, as above, or use a named volume.
+directory. It is usually a bind mount whose host directory is owned by root,
+because the path did not exist when the container first started. Create it, and
+set `PUID`/`PGID` to its owner.
+
+**`PUID/PGID ask for ... but the image was built as ...`.** Changing the uid
+means moving an account in `/etc/passwd`, which `read_only: true` forbids. Drop
+`read_only`, or bake the uid in with
+`--build-arg PUID= --build-arg PGID=` and leave the environment alone.
 
 **`openat2 ... refused`.** Every path is resolved with `openat2` and there is
 no fallback, because resolving a path one component at a time is the race this
 design exists to close. The message distinguishes the three causes: `EPERM` is
 a seccomp profile, so upgrade Docker to 20.10.0 or newer; `EACCES` is a
-filesystem permission, usually a `user:` override the image's directories do
-not admit; `ENOSYS` is a kernel below 5.6.
+filesystem permission, usually a mounted directory the running uid cannot
+reach; `ENOSYS` is a kernel below 5.6.
 
 To see what the kernel actually offers inside the container that is deployed:
 
@@ -305,12 +320,11 @@ them in the list yet.
 
 ## Documentation
 
-[`docs/README.md`](docs/README.md) is the index and opens with a reading
-order. Start with
-[Motivation and findings](docs/proposals/stowcloud-0-motivation-and-findings.md)
-for the principles and the design, and
-[Deployment](docs/proposals/stowcloud-15-deployment.md) for running it in
-earnest. Those documents describe the code in this repository.
+[`docs/README.md`](docs/README.md) is the index. For running it in earnest,
+this page and the compose file carry what an operator needs;
+[`docs/CUTOVER.md`](docs/CUTOVER.md) is what changed for a deployment, and
+[`docs/RISKS.md`](docs/RISKS.md) is what is likely to break. Those documents
+describe the code in this repository.
 
 <details>
 <summary><b>Building from source</b></summary>

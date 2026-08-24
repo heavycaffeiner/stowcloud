@@ -25,8 +25,8 @@ release branches, and fixes are not backported.
 
 ## Scope
 
-Deployment means Linux, in the configuration `docs/DEPLOYMENT.md` describes.
-In scope:
+Deployment means Linux, in the configuration the compose file at the repository
+root describes. In scope:
 
 - Escaping a share root, or reaching a path an account has no grant for
 - Authentication or session flaws — login, TOTP, app passwords, recovery
@@ -44,9 +44,9 @@ Out of scope:
   Windows and macOS are not deployment targets — see `README.md`.
 - Anything that requires administrator access to exploit. An administrator can
   already grant themselves any path.
-- Missing hardening in a deployment that ignores `docs/DEPLOYMENT.md` — no
+- Missing hardening in a deployment that ignores the shipped compose file — no
   reverse proxy, a published port on a public interface, `docker run` without
-  the compose file's `read_only`/`cap_drop`.
+  its `read_only`/`cap_drop`.
 - Denial of service by resource exhaustion from an authenticated account.
 
 ## Not vulnerabilities
@@ -72,5 +72,6 @@ Stated in `README.md` as well, repeated here because it bears on what a report
 is worth: this code has never been reviewed by anyone outside this repository.
 There is no Litmus conformance run in CI and no automated sync-client
 regression suite. The Landlock and seccomp layers depend on kernel
-configuration — `docs/DEPLOYMENT.md` §2 covers what happens when they are
-unavailable, which is a downgrade, not a failure to start.
+configuration. `docs/JAIL-PROOF.md` records what happens when they are
+unavailable, which is a downgrade under the default policy rather than a
+failure to start.

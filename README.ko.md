@@ -81,21 +81,31 @@ docker compose up -d
 만들 폴더도, chown 할 것도 없습니다. 업로드한 파일은 named volume에 들어가고,
 이미지가 그 자리의 디렉터리를 실행 uid 소유로 미리 만들어 두기 때문에 volume이
 쓸 수 있는 소유권을 물려받습니다. 이미 가지고 있는 폴더를 서비스하려면
-`volumes:`의 `sc-files` 줄을 bind mount로 바꾸고, 그 디렉터리를 uid 1000이
-읽고 쓸 수 있게 해 두면 됩니다.
+`volumes:`의 `sc-files` 줄을 bind mount로 바꾸면 됩니다.
 
 ```yaml
       - /srv/my-files:/shares/files:z
 ```
 
-단, 처음 실행하기 전에 디렉터리를 미리 만들어 두세요. bind mount는 named
-volume처럼 소유권을 물려받지 않습니다. 없는 경로를 Docker가 대신 만들면 root
-소유가 되고, 그럼 서버가 쓰지 못해 `state.db`를 열 수 없다며 죽습니다.
+서버가 그 폴더를 읽고 쓸 수 있어야 합니다. 내 파일의 소유권을 바꾸는 대신,
+서버가 어떤 uid로 돌지를 알려주면 됩니다. compose 파일의 `PUID`와 `PGID`가
+그 값이고, 기본값 1000은 관리자 한 명이 쓰는 머신의 파일이 보통 가지는
+값입니다.
 
 ```sh
-sudo mkdir -p /srv/my-files
-sudo chown -R 1000:1000 /srv/my-files
+stat -c '%u:%g' /srv/my-files
 ```
+
+여기서 나온 쌍을 compose에 적어 주면 chown 없이 그대로 동작합니다.
+
+```yaml
+    environment:
+      PUID: 1000
+      PGID: 1000
+```
+
+어느 쪽이든 처음 실행 전에 디렉터리는 미리 만들어 두세요. 없는 경로를 Docker가
+대신 만들면 root 소유가 되는데, 이건 어떤 `PUID`도 맞출 수 없습니다.
 
 **3. 관리자 계정을 만듭니다.**
 
@@ -240,13 +250,18 @@ docker compose --profile smb up -d
 서버 실행 uid로 쓸 수 없는 상태입니다. SQLite는 파일을 만들 수 없는 디렉터리를
 이런 식으로 보고해서, 메시지는 디렉터리가 아니라 파일 이름을 말합니다. 보통
 컨테이너를 처음 띄울 때 경로가 없어서 Docker가 root 소유로 만들어 버린
-bind mount입니다. 앞서처럼 1000 소유로 만들거나 named volume을 쓰세요.
+bind mount입니다. 디렉터리를 만들고 `PUID`/`PGID`를 그 소유자로 맞추세요.
+
+**`PUID/PGID ask for ... but the image was built as ...`.** uid를 바꾸려면
+`/etc/passwd`의 계정을 옥겨야 하는데 `read_only: true`가 이를 막습니다.
+`read_only`를 빼거나, `--build-arg PUID= --build-arg PGID=`로 이미지에 굽어
+넣고 환경변수는 건드리지 마세요.
 
 **`openat2 ... refused`.** 모든 경로를 `openat2`로 해석하며 폴백이 없습니다.
 경로를 한 컴포넌트씩 여는 방식이 바로 이 설계가 막으려는 레이스이기 때문입니다.
 메시지는 세 원인을 구분해서 알려줍니다. `EPERM`은 seccomp 프로파일이니
-Docker를 20.10.0 이상으로 올리고, `EACCES`는 파일시스템 권한이라 대개 이미지
-디렉터리가 허용하지 않는 `user:` 재지정이 원인이며, `ENOSYS`는 커널이 5.6
+Docker를 20.10.0 이상으로 올리고, `EACCES`는 파일시스템 권한이라 대개 실행
+ uid가 닿지 못하는 마운트 디렉터리가 원인이며, `ENOSYS`는 커널이 5.6
 미만인 경우입니다.
 
 실제 배포된 컨테이너 안에서 커널이 무엇을 제공하는지 보려면:
@@ -277,11 +292,11 @@ docker compose exec sc /stowcloud caps
 
 ## 문서
 
-[`docs/README.md`](docs/README.md)가 목차이고 읽는 순서로 시작합니다. 원칙과
-설계는
-[Motivation and findings](docs/proposals/stowcloud-0-motivation-and-findings.md),
-실제 운영은 [Deployment](docs/proposals/stowcloud-15-deployment.md)부터
-보세요. 그 문서들은 이 저장소의 코드를 서술합니다. 문서는 영어입니다.
+[`docs/README.md`](docs/README.md)가 목차입니다. 실제 운영은 이 페이지와
+compose 파일이 필요한 것을 담고 있고, 배포 관점에서 무엇이 바뀜는지는
+[`docs/CUTOVER.md`](docs/CUTOVER.md), 깨질 만한 지점은
+[`docs/RISKS.md`](docs/RISKS.md)를 보세요. 그 문서들은 이 저장소의 코드를
+서술합니다. 문서는 영어입니다.
 
 <details>
 <summary><b>소스에서 빌드하기</b></summary>

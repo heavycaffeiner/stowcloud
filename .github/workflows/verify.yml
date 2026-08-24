@@ -100,10 +100,10 @@ jobs:
           cd web
           npx playwright install --with-deps chromium
 
-      # Enforces the byte budgets DESIGN-FRONTEND.md §8 records. Deliberately
+      # Enforces the frontend byte budgets. Deliberately
       # no Lighthouse pass (see check-bundle-size.mjs's header): a shared
       # runner's CPU/IO variance would make a frame-timing gate flaky, and
-      # FEATURES.md #147 only claims what is actually enforced.
+      # the budget check only claims what is actually enforced.
       - name: Check frontend bundle-size budgets
         run: |
           cd web
