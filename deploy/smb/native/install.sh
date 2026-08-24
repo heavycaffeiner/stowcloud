@@ -34,8 +34,7 @@ AGENT=/usr/local/bin/sc-smb-agent
 if [ -z "$BINARY" ]; then
     for candidate in \
         "$SRC/sc-smb-agent" \
-        "$SRC/../../../target/release/sc-smb-agent" \
-        "$SRC/../../../target/release-dist/sc-smb-agent"
+        "$SRC/../../../go/sc-smb-agent"
     do
         [ -x "$candidate" ] || continue
         BINARY=$candidate
@@ -96,13 +95,13 @@ awk -F: -v u="$SERVICE_USER" '$1 == u { found = 1 } END { exit !found }' /etc/pa
 
 [ -n "$BINARY" ] && [ -x "$BINARY" ] || {
     echo "no sc-smb-agent binary found. Build it first:" >&2
-    echo "  cargo build --release -p sc-smb-agent" >&2
+    echo "  cd go && CGO_ENABLED=0 go build ./cmd/sc-smb-agent" >&2
     echo "or point at one: ./install.sh --binary /path/to/sc-smb-agent" >&2
     exit 1
 }
 
 mkdir -p "$CONFIG_DIR" /run/sc-smb
-# sc-server writes here as its own (unprivileged) user and the agent reads it
+# The server writes here as its own (unprivileged) user and the agent reads it
 # as root; smbpasswd inside carries NT hashes, so nothing else may look.
 chmod 700 "$CONFIG_DIR"
 install -m 755 "$BINARY" "$AGENT"
@@ -129,6 +128,6 @@ fi
 
 echo
 echo "Point sc.toml at the same directory and enable SMB from the settings"
-echo "screen (or run 'sc-server smb-sync'):"
+echo "screen (or run 'stowcloud smb-sync'):"
 echo "  [smb]"
 echo "  config_dir = \"$CONFIG_DIR\""

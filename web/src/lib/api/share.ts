@@ -250,7 +250,7 @@ async function mockDropUpload(file: File): Promise<string> {
  *  No `Sc-Csrf` header, deliberately: `/s/**` is a public path, so
  *  `middleware::auth` returns before inserting `SessionToken` and
  *  `middleware::csrf` only enforces when that extension exists. Sending one
- *  would be cargo cult — and this bundle has no session to read it from
+ *  would be ceremony — and this bundle has no session to read it from
  *  anyway. */
 export function dropUpload(token: string, file: File): Promise<string> {
   if (IS_MOCK) return mockDropUpload(file)

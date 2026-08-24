@@ -59,6 +59,8 @@ import {
   type SettingsField,
   type SettingsSnapshot,
   type SettingsSectionId,
+  type SettingsCheckResult,
+  type SettingsFinding,
   type ShareLinkCreateReq,
   type ShareLinkInfo,
   type ShareLinkPatchReq,
@@ -284,7 +286,8 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
         dirs: fresh.dirs,
         cursor: encodeCursor(freshOffset + page.length, fresh.entries.length),
         entries: page,
-        dir_etag: fresh.dirEtag,
+        dir_etag_weak: true,
+      dir_etag: fresh.dirEtag,
         stale: true
       }
     }
@@ -299,7 +302,8 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
         dirs: session.dirs,
         cursor: encodeCursor(offset + page.length, session.entries.length),
         entries: page,
-        dir_etag: session.dirEtag
+        dir_etag_weak: true,
+      dir_etag: session.dirEtag
       }
     }
     if (!opts.cursor) {
@@ -313,6 +317,7 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
       dirs: session.dirs,
       cursor: encodeCursor(offset + page.length, session.entries.length),
       entries: page,
+      dir_etag_weak: true,
       dir_etag: session.dirEtag
     }
   }
@@ -333,7 +338,8 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
     dirs: session.dirs,
     cursor: encodeCursor(startOffset + page.length, session.entries.length),
     entries: page,
-    dir_etag: session.dirEtag
+    dir_etag_weak: true,
+      dir_etag: session.dirEtag
   }
 }
 
@@ -358,10 +364,12 @@ async function mkdir(path: string): Promise<Entry> {
   }
   const entry: Entry = {
     name,
+    path: n.replace(/^\//, ''),
     kind: 'dir',
     size: 0,
     mtime_ns: (BigInt(Date.now()) * 1_000_000n).toString(),
     etag: randomId('e'),
+    etag_weak: true,
     perms: defaultPerms(),
     id: newMockFileId()
   }
@@ -454,7 +462,7 @@ async function movePreflight(_req: MoveReq): Promise<MovePreflight> {
   return { will_copy: false, total_bytes: 0, reason: '' }
 }
 
-async function del(paths: string[], permanent = false): Promise<{ job: string }> {
+async function del(paths: string[], permanent = false): Promise<{ results: BatchItemResult[] }> {
   await delay()
   const results: BatchResult['results'] = []
   for (const p of paths) {
@@ -474,7 +482,10 @@ async function del(paths: string[], permanent = false): Promise<{ job: string }>
     if (!permanent) trashInsert(entry, parent)
     results.push({ path: n, ok: true })
   }
-  return { job: makeMockJob('delete', paths.length, results) }
+  // One result per path, which is what the server answers. This used to wrap
+  // them in a job id, and the caller then polled a job the real server never
+  // created.
+  return { results }
 }
 
 // ── long-running jobs — the real server always answers
@@ -500,7 +511,7 @@ const mockJobs = new Map<string, MockJobRow>()
 function makeMockJob(kind: JobKindWire, total: number, results: BatchItemResult[]): string {
   const id = randomId('job')
   // A single failed item ends the whole job in `error` on the real server
-  // (`spawn_batch_job`'s `all_ok` check, `crates/sc-http/src/routes.rs`). This
+  // (`go/internal/httpapi/handler/ops.go`). This
   // used to be a hardcoded `done`, which made the mock report a rejected
   // conflict as a success: the UI's conflict dialog hangs off `pollJob`
   // rejecting, so against the mock it could never open and the whole
@@ -572,7 +583,7 @@ async function jobDownload(id: string): Promise<Blob> {
   throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } })
 }
 
-// ── trash (mirrors `crates/sc-core/src/trash.rs` closely enough to drive the
+// ── trash (mirrors `go/internal/core/trash` closely enough to drive the
 // UI in dev mode: an id is opaque, restoring back to an occupied name
 // conflicts, purging is permanent) ──
 
@@ -692,6 +703,8 @@ async function archiveList(path: string): Promise<ArchiveListing> {
   // an archive costs follows its entry count and not its bytes. The rejection
   // that remains is the entry-count cap, which this tree never reaches.
   return {
+    truncated: false,
+    limit: 10_000,
     entries: [
       { name: 'docs/', size: 0, kind: 'dir' },
       { name: 'docs/readme.txt', size: 1_842, kind: 'file' },
@@ -707,6 +720,12 @@ async function archiveList(path: string): Promise<ArchiveListing> {
 
 /** Walks the seeded tree, so the number the panel shows is the sum of what the
  *  same tree lists. */
+/** No decoder in the mock, so every card falls back to its type icon. A data
+ *  URL of a fake image would make the grid look right and prove nothing. */
+function thumbUrl(_path: string, _dim: number): string {
+  return ''
+}
+
 async function folderSize(path: string): Promise<FolderSize> {
   await delay(200)
   const n = normalizePath(path)
@@ -754,9 +773,13 @@ async function recentList(
         walk(full)
       } else if (BigInt(child.mtime_ns) >= cutoff) {
         const vpath = full.replace(/^\//, '')
+        const label = vpath.split('/')[0] ?? ''
         hits.push({
           vpath,
-          share: vpath.split('/')[0] ?? '',
+          share: label,
+          // Sent explicitly, as the server does, rather than left for the
+          // caller to cut back out of the path.
+          subpath: vpath.slice(label.length + 1),
           name: child.name,
           size: child.size,
           mtime_ns: child.mtime_ns,
@@ -788,7 +811,7 @@ async function readFile(path: string): Promise<{ content: string }> {
   return { content: `${e.name}\n\n(목업 백엔드: 실제 파일 내용이 없어 예시 텍스트를 보여줍니다.)\n` }
 }
 
-/** Mirrors `crates/sc-core/src/ops.rs::write_text`: an existing file demands
+/** Mirrors `go/internal/core/ops.go`: an existing file demands
  *  a matching `if_match`, a not-yet-existing one demands none at all. Either
  *  mismatch is a `412 fs.precondition` carrying the server's current etag,
  *  exactly like the real backend. */
@@ -818,10 +841,12 @@ async function writeFile(path: string, content: string, ifMatch?: string): Promi
     ? { ...existing, etag: randomId('e'), size: content.length, mtime_ns: nowNs }
     : {
         name,
+        path: n.replace(/^\//, ''),
         kind: 'file',
         size: content.length,
         mtime_ns: nowNs,
         etag: randomId('e'),
+        etag_weak: true,
         perms: defaultPerms(),
         id: newMockFileId()
       }
@@ -1362,9 +1387,9 @@ async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSet
   return { chunk_min: req.chunk_min, chunk_default: req.chunk_default }
 }
 
-// ── server settings (`crates/sc-http/src/settings_api.rs`) — mirrors
+// ── server settings (`go/internal/httpapi/handler/settings.go`) — mirrors
 // `http.ts`'s real-server surface, same convention as every other section of
-// this file. Field keys match `settings_bridge.rs`'s dotted `config.toml`
+// this file. Field keys match `go/internal/runtimecfg`'s dotted `sc.toml`
 // paths exactly, since `ServerSettingsSection.svelte` groups by those literal
 // strings regardless of which backend answered them. ──
 
@@ -1426,7 +1451,7 @@ const mockServerSettings = {
 const mockOverriddenSections = new Set<SettingsSectionId>(['network', 'smb'])
 
 /** What each group falls back to when its override is dropped, standing in
- *  for `config.toml` plus the environment. */
+ *  for `sc.toml` plus the environment. */
 const mockFileSettings = JSON.parse(JSON.stringify(mockServerSettings)) as typeof mockServerSettings
 mockFileSettings.network.public_origins = []
 mockFileSettings.smb.server_name = 'STOWCLOUD'
@@ -1517,7 +1542,7 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       settingsField('oidc.display_name', s.oidc.display_name, true),
       settingsField('oidc.allow_private_endpoints', s.oidc.allow_private_endpoints, true),
       settingsField('oidc.smb_policy', s.oidc.smb_policy, true),
-      // The two `config.toml` owns outright (§6-4). They carry their reason
+      // The two `sc.toml` owns outright (§6-4). They carry their reason
       // here the same way the real bridge writes it, so the screen's
       // read-only list is not empty under the mock.
       {
@@ -1585,36 +1610,52 @@ async function adminSetSmbSettings(req: SmbSettingsReq): Promise<ApplyOutcome> {
   return { applied_live: !enabledChanged, restart_required: enabledChanged }
 }
 
-/** Reverting drops the group's override and puts the file's values back,
- *  exactly as `DELETE /api/admin/server-settings/{section}` does. */
-async function adminClearServerSettings(section: SettingsSectionId): Promise<ApplyOutcome> {
+/** The groups this process cannot move while running, matching the server. */
+const RESTART_REQUIRED_SECTIONS = new Set<SettingsSectionId>([
+  'db',
+  'paths',
+  'homes',
+  'smb',
+  'watch',
+  'symlink-policy',
+  'oidc'
+])
+
+/** The dry run. Mirrors the server's probes in shape, not in depth: a mock
+ *  has no filesystem to write into, so it answers the checks that are pure
+ *  rules and reports the rest as clean. */
+async function adminCheckServerSettings(
+  section: SettingsSectionId,
+  body: unknown
+): Promise<SettingsCheckResult> {
   await delay(30)
-  if (!(section in MOCK_SECTION_RESTORE)) {
-    throw new ApiError(404, {
-      code: 'fs.not_found',
-      message: 'not found',
-      detail: { reason: `unknown settings section: ${section}`, reason_key: 'settings.unknown_section' }
-    })
+  const b = (body ?? {}) as Record<string, unknown>
+  const findings: SettingsFinding[] = []
+  const hosts = b.app_hosts
+  if (Array.isArray(hosts)) {
+    if (hosts.length === 0) {
+      findings.push({ level: 'block', field: 'app_hosts', reason_key: 'settings.host_list_empty' })
+    } else if (!hosts.includes(location.hostname)) {
+      findings.push({
+        level: 'block',
+        field: 'app_hosts',
+        reason_key: 'settings.would_lock_you_out',
+        reason_params: { host: location.hostname }
+      })
+    }
   }
-  MOCK_SECTION_RESTORE[section]()
-  mockOverriddenSections.delete(section)
-  return section === 'search' || section === 'archive'
-    ? { applied_live: true, restart_required: false }
-    : { applied_live: false, restart_required: true }
+  if (b.service_gid === 0) {
+    findings.push({ level: 'block', field: 'service_gid', reason_key: 'settings.gid_zero_is_root' })
+  }
+  if (findings.length === 0) findings.push({ level: 'ok', reason_key: 'settings.check_passed' })
+  return {
+    section,
+    ok: !findings.some((f) => f.level === 'block'),
+    restart_required: RESTART_REQUIRED_SECTIONS.has(section),
+    findings
+  }
 }
 
-const MOCK_SECTION_RESTORE: Record<SettingsSectionId, () => void> = {
-  network: () => (mockServerSettings.network = { ...mockFileSettings.network }),
-  db: () => (mockServerSettings.db = { ...mockFileSettings.db }),
-  'symlink-policy': () => (mockServerSettings.symlink_policy = mockFileSettings.symlink_policy),
-  homes: () => (mockServerSettings.homes = { ...mockFileSettings.homes }),
-  smb: () => (mockServerSettings.smb = { ...mockFileSettings.smb }),
-  search: () => (mockServerSettings.search = { ...mockFileSettings.search }),
-  archive: () => (mockServerSettings.archive = { ...mockFileSettings.archive }),
-  watch: () => (mockServerSettings.watch = { ...mockFileSettings.watch }),
-  paths: () => (mockServerSettings.paths = { ...mockFileSettings.paths }),
-  oidc: () => (mockServerSettings.oidc = { ...mockFileSettings.oidc })
-}
 
 /** Zero rejects every search from every user the moment it is applied, so the
  *  real bridge refuses it where it is typed and so does this. */
@@ -1835,7 +1876,7 @@ async function adminBuildIndex(): Promise<{ job: string }> {
 // Mirrors the real server's rules closely enough to drive the admin UI in
 // dev mode: the bootstrapped account is the sole administrator, a name must
 // be unique, a password needs 10 characters, and the last active admin can
-// be neither disabled nor deleted (`sc_auth::AdminGuardError::LastAdmin`).
+// be neither disabled nor deleted (`go/internal/auth/admin.go`).
 
 // Six accounts, not one, and deliberately no two alike. Every conditional the
 // row renders -- the administrator chip, the inactive chip, a quota against no
@@ -1954,16 +1995,15 @@ async function adminDeleteUser(id: number): Promise<void> {
 
 // ── admin: share and grant management (`GET/POST /api/admin/shares`,
 // `PATCH/DELETE /api/admin/shares/{id}`, `GET/POST /api/admin/grants`,
-// `PATCH/DELETE /api/admin/grants/{id}`) ── Mirrors `sc_core::share`/
-// `sc_core::acl_store` closely enough to drive the admin UI in dev mode:
+// `PATCH/DELETE /api/admin/grants/{id}`) ── Mirrors `go/internal/acl` closely enough to drive the admin UI in dev mode:
 // no-access-by-default, a grant needs at least one `allow` or `deny` bit,
 // `subpath`/`share`/`principal` are immutable once created (delete and
-// recreate instead — same rule `sc_core::acl_store::GrantPatch` enforces
+// recreate instead — same rule `go/internal/acl` enforces
 // server-side), and a config-file share (`config_defined: true`) takes an
-// edit but refuses a delete, the same way `sc_core::Core::update_share`/
+// edit but refuses a delete, the same way `go/internal/core`/
 // `delete_share` do.
 // The real endpoints now exist
-// (`crates/sc-http/src/routes.rs::admin_list_shares`/`admin_create_share`/
+// (`go/internal/httpapi/handler/shares.go` (
 // `admin_update_share`/`admin_delete_share`/`admin_list_grants`/
 // `admin_create_grant`/`admin_update_grant`/`admin_delete_grant`); this mock
 // stays in sync with their wire shapes and error codes so
@@ -1972,7 +2012,7 @@ async function adminDeleteUser(id: number): Promise<void> {
 
 // The mock backend models one flat virtual tree (`STATIC_SEED`'s `/` listing),
 // not the real server's per-share roots — there is no mock equivalent of
-// `sc_core::Core::share_defs()` to derive this from. A small fixed list
+// `go/internal/core` to derive this from. A small fixed list
 // matching the top-level folders `STATIC_SEED` already seeds is enough to
 // demo the grant-creation screen's share picker.
 // Both kinds of share are seeded on purpose. A config-file share renders a
@@ -1988,7 +2028,7 @@ let mockShares: AdminShare[] = [
   { id: 1_000_001, name: 'Team', host_path: '/srv/team', config_defined: false, trash_enabled: false },
   { id: 1_000_002, name: 'Archive', host_path: '/srv/archive', config_defined: false, trash_enabled: true }
 ]
-let nextShareId = 1_000_003 // mirrors `sc_core::DYNAMIC_SHARE_ID_BASE`, past the seeded dynamic pair
+let nextShareId = 1_000_003 // mirrors `go/internal/core`'s dynamic share id base, past the seeded dynamic pair
 
 // One grant of each shape the row can take: inherited against path-only, a
 // group principal against a user one, a long label against a bare share name.
@@ -2010,7 +2050,7 @@ async function adminListShares(): Promise<AdminShare[]> {
 /** No real filesystem to check `host_path` against in mock mode, so this
  *  only reproduces the checks that don't need one: empty/duplicate name and
  *  an overlapping `host_path` — the real backend's nonexistent-path/
- *  not-a-directory/unreadable checks (`sc_core::share::validate_host_path`)
+ *  not-a-directory/unreadable checks (`go/internal/core/root.go`)
  *  have no mock equivalent. */
 async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
   await delay(40)
@@ -2031,8 +2071,8 @@ async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
 
 /** A config-file share takes an edit like any other: the real backend keeps
  *  the new name/path (and the trash toggle) in `shares.db` rather than
- *  `config.toml` and reapplies them at startup, so nothing is lost on
- *  restart (`sc_core::Core::update_share`). */
+ *  `sc.toml` and reapplies them at startup, so nothing is lost on
+ *  restart (`go/internal/core`). */
 async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<AdminShare> {
   await delay(35)
   const share = mockShares.find((s) => s.id === id)
@@ -2087,9 +2127,9 @@ async function adminCreateGrant(req: CreateGrantReq): Promise<AdminGrant> {
   if (req.allow.length === 0 && req.deny.length === 0) {
     throw new ApiError(422, {
       // Matches the real backend's code for this refusal exactly
-      // (`sc_core::CoreError::InvalidPath` -> `hapi::CoreError::InvalidName`
+      // (`go/internal/core` invalid-path errors
       // -> `ErrorCode::FsInvalidName` -> `"fs.invalid_name"`,
-      // `crates/sc-http/src/core_api.rs`) — this used to say
+      // `go/internal/httpapi/handler`) — this used to say
       // `fs.invalid_path`, a code the server has never actually sent, which
       // nothing caught because the real endpoint didn't exist yet either.
       code: 'fs.invalid_name',
@@ -2149,7 +2189,7 @@ async function adminDeleteGrant(id: number): Promise<void> {
 }
 
 // ── admin: group management ── Mirrors
-// `sc_auth::AuthService`'s group CRUD closely enough to drive the admin UI in
+// `go/internal/auth`'s group CRUD closely enough to drive the admin UI in
 // dev mode: `group_.name` is unique, deleting a group cascades to its
 // memberships (and to the live grants table's own filter, same as deleting a
 // share cascades to `mockGrants` above), and adding/removing a member refuses
@@ -2322,10 +2362,10 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
 }
 
 // ── share links, owner side — mirrors
-// `crates/sc-http/src/core_api.rs::ShareLinkInfo`/`ShareLinkCreate`/
+// `go/internal/httpapi/handler/shares.go` (
 // `ShareLinkPatch` closely enough to drive the manage-links UI in dev mode:
 // a link's `perms` defaults to read+download when the caller doesn't specify
-// any (same default `sc-server/src/bridge.rs::share_link_create` applies),
+// any (same default `go/internal/httpapi/handler/shares.go` applies),
 // the plaintext token/url are only ever present on the create response, and
 // a `PATCH` field left `undefined` is left alone while `null` clears it.
 
@@ -2477,6 +2517,7 @@ export const mockApi = {
   archive,
   archiveList,
   folderSize,
+  thumbUrl,
   recentList,
   jobList,
   jobStatus,
@@ -2527,7 +2568,7 @@ export const mockApi = {
   adminSetWatchSettings,
   adminSetOidcSettings,
   adminSetPathsSettings,
-  adminClearServerSettings,
+  adminCheckServerSettings,
   adminRestartServer,
   adminListUsers,
   adminCreateUser,

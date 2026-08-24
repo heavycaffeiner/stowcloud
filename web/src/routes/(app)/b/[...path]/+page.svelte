@@ -443,22 +443,16 @@
       await downloadAsArchive([entry])
       return
     }
-    if (entry.id === undefined) {
-      // `entry.id` (the fid `/fs/link` requires) is only allocated once
-      // something has forced it -- today, in practice, that's this same
-      // file already having a share link created for it. See `Entry.id`'s
-      // doc comment in `types.ts` for the full story; this is the honest
-      // consequence of it at the point a user actually clicks Download,
-      // not a guess sent to an endpoint that would just 422.
-      snackbarMsg = t('browse.no_download_link_can_made')
-      return
-    }
-    try {
-      const { url } = await api.link(entry.id, 'attachment')
-      triggerUrlDownload(url, entry.name, true)
-    } catch (err) {
-      snackbarMsg = err instanceof ApiError ? err.message : t('browse.could_not_create_download_link')
-    }
+    // Straight from the read endpoint, by path. It used to demand `entry.id`,
+    // the fileid `/fs/link` takes, which the server allocates lazily and a
+    // plain listing therefore never carries: Download refused every file that
+    // had not already been shared, which was every file. Sharing a link is a
+    // separate action with its own button.
+    //
+    // `?download=1` is what makes the server send Content-Disposition, so the
+    // browser saves it instead of rendering it.
+    const url = `/api/fs/read?path=${encodeURIComponent(entry.path)}&download=1`
+    triggerUrlDownload(url, entry.name)
   }
 
   function downloadSelection(): void {
@@ -487,16 +481,17 @@
     const paths = targets.map((e) => joinPath(browse.path, e.name))
     browse.clearSelection()
     try {
-      const { job } = await api.delete(paths)
-      // Every delete is a durable job now -- JobTray
-      // shows progress/cancel. The files aren't actually gone until the job
-      // settles, so the refresh waits for that instead of firing now.
-      jobTray
-        .track(job, 'delete')
-        .catch((err) => {
-          snackbarMsg = err instanceof ApiError ? err.message : t('browse.delete_job_failed')
-        })
-        .finally(() => browse.refresh())
+      // The server answers with one result per path, not a job. This read a
+      // `job` that was never sent and handed `undefined` to the tracker, which
+      // then polled `/api/jobs/undefined` in a loop for a 400 each time.
+      const { results } = await api.delete(paths)
+      const failed = results.filter((r) => !r.ok)
+      if (failed.length > 0) {
+        // The first refusal's own message, because "3 of 5 failed" without
+        // saying why is a sentence nobody can act on.
+        snackbarMsg = failed[0].error?.message ?? t('browse.delete_failed')
+      }
+      browse.refresh()
     } catch (err) {
       snackbarMsg = err instanceof ApiError ? err.message : t('browse.delete_failed')
     }

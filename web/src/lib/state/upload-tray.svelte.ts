@@ -57,17 +57,32 @@ export class UploadTrayState {
         ]
         this.open = true
         break
-      case 'progress':
-        this.#patch(evt.id, { sent: evt.sent, total: evt.total, rate: evt.rate, etaSec: evt.etaSec, status: 'uploading' })
+      case 'progress': {
+        // A chunk that was already on the wire when pause or cancel was
+        // pressed still reports its progress afterwards. Taking the status
+        // from it would undo what the person just asked for: the row went
+        // back to "uploading" a moment after being paused, so the pause
+        // control never appeared to work. The bytes are still true and are
+        // still recorded.
+        const cur = this.items.find((x) => x.id === evt.id)?.status
+        const status = cur === 'paused' || cur === 'canceled' ? cur : 'uploading'
+        this.#patch(evt.id, { sent: evt.sent, total: evt.total, rate: evt.rate, etaSec: evt.etaSec, status })
         break
+      }
       case 'done': {
         this.#patch(evt.id, { sent: evt.size, status: 'done' })
         api.registerUploadedEntry(evt.dest, {
           name: evt.name,
+          // The server addresses it without the leading slash the destination
+          // carries; the next listing replaces this row with the real one.
+          path: `${evt.dest}/${evt.name}`.replace(/^\/+/, '').replace(/\/{2,}/g, '/'),
           kind: 'file',
           size: evt.size,
           mtime_ns: evt.mtimeNs,
+          // A locally minted token for a row this client just created. It is
+          // not the server's, so it is never exact.
           etag: Math.random().toString(16).slice(2),
+          etag_weak: true,
           perms: { read: true, write: true, create: false, delete: true, rename: true, move: true, share: true, download: true },
           // No numeric fid for a freshly-uploaded file — same reason a plain
           // `list`/`stat` doesn't have one (`Entry.id`'s doc comment in

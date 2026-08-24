@@ -4,7 +4,7 @@
 |------------|----------------------------------|
 | Author     | heavycaffeiner(Dong Hyun Kim)    |
 | Created    | 2026-08-10                       |
-| Status     | **Draft** / In Review / Approved |
+| Status     | Implemented                      |
 | Reviewers  |                                  |
 
 ---
@@ -1026,6 +1026,9 @@ waiver from silently covering nothing.
 
 ## 6. Implementation Plan
 
+The phase numbers in this section are local to the design-audit rollout and
+are complete. They are unrelated to the Go backend phases in `docs/phases/`.
+
 ### 6-1. Milestones
 
 Durations are relative effort, not calendar dates. The Depends column is the only ordering
@@ -1118,7 +1121,7 @@ Repository files this proposal builds on or modifies:
   themes.
 - `.github/workflows/verify.yml` and `scripts/verify.sh`, the existing gate this proposal
   deliberately leaves alone.
-- `docs/proposals/stowcloud-3-frontend.md`, the frontend proposal this one extends.
+- `docs/proposals/frontend/stowcloud-0-frontend.md`, the frontend proposal this one extends.
 
 External:
 

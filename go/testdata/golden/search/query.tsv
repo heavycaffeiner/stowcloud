@@ -1,0 +1,21 @@
+# needle_hex	limit	fallback	share:score_bits:path (zero or more)
+6162	20	QueryTooShort
+64617461	20	AllTrigramsPruned
+494d475f30303031	20	-	1:40000000:data/photos/2025/spring/IMG_0001.jpg	1:40000000:data/photos/2026/여름휴가/IMG_0001.jpg
+696d675f303030312e6a7067	20	-	1:40a00000:data/photos/2025/spring/IMG_0001.jpg	1:40a00000:data/photos/2026/여름휴가/IMG_0001.jpg
+5265706f72745f46696e616c5f30302e444f4358	20	-	2:40a00000:data/documents/Report_Final_00.DOCX
+7265706f72742d30	5	-	2:40000000:data/documents/report-001.pdf	2:40000000:data/documents/report-002.pdf	2:40000000:data/documents/report-003.pdf	2:40000000:data/documents/report-004.pdf	2:40000000:data/documents/report-005.pdf
+ed9cb4eab080	8	-	1:00000000:data/photos/2026/여름휴가/IMG_0001.jpg	1:00000000:data/photos/2026/여름휴가/IMG_0002.jpg	1:00000000:data/photos/2026/여름휴가/IMG_0003.jpg	1:00000000:data/photos/2026/여름휴가/IMG_0004.jpg	1:00000000:data/photos/2026/여름휴가/IMG_0005.jpg	1:00000000:data/photos/2026/여름휴가/IMG_0006.jpg	1:00000000:data/photos/2026/여름휴가/IMG_0007.jpg	1:00000000:data/photos/2026/여름휴가/IMG_0008.jpg
+ec97aceba684ed9cb4eab080	4	-	1:00000000:data/photos/2026/여름휴가/IMG_0001.jpg	1:00000000:data/photos/2026/여름휴가/IMG_0002.jpg	1:00000000:data/photos/2026/여름휴가/IMG_0003.jpg	1:00000000:data/photos/2026/여름휴가/IMG_0004.jpg
+ebb3b4eab3a0ec849c	6	-	2:40000000:data/documents/보고서-000.pdf	2:40000000:data/documents/보고서-001.pdf	2:40000000:data/documents/보고서-002.pdf	2:40000000:data/documents/보고서-003.pdf	2:40000000:data/documents/보고서-004.pdf	2:40000000:data/documents/보고서-005.pdf
+e382a2e383abe38390e383a03031	12	-	3:00000000:data/音楽/アルバム01/track01.flac	3:00000000:data/音楽/アルバム01/track02.flac	3:00000000:data/音楽/アルバム01/track03.flac	3:00000000:data/音楽/アルバム01/track04.flac	3:00000000:data/音楽/アルバム01/track05.flac	3:00000000:data/音楽/アルバム01/track06.flac	3:00000000:data/音楽/アルバム01/track07.flac	3:00000000:data/音楽/アルバム01/track08.flac	3:00000000:data/音楽/アルバム01/track09.flac	3:00000000:data/音楽/アルバム01/track10.flac
+e99fb3e6a5bd	4	-	3:00000000:data/音楽/アルバム01/track01.flac	3:00000000:data/音楽/アルバム01/track02.flac	3:00000000:data/音楽/アルバム01/track03.flac	3:00000000:data/音楽/アルバム01/track04.flac
+636166c3a9	10	-	3:40000000:data/unicode/café.txt	3:40000000:data/unicode/café.txt
+63616665cc81	10	-	3:40000000:data/unicode/café.txt	3:40000000:data/unicode/café.txt
+434146c389	10	-	3:40000000:data/unicode/café.txt	3:40000000:data/unicode/café.txt
+2e68696464656e2d30302e636667	5	-	3:40800000:data/settings/.hidden-00.cfg
+7661636174696f6e5f70686f746f	6	-	3:40000000:data/mixed/Vacation_Photo_00.JPG	3:40000000:data/mixed/Vacation_Photo_01.JPG	3:40000000:data/mixed/Vacation_Photo_02.JPG	3:40000000:data/mixed/Vacation_Photo_03.JPG	3:40000000:data/mixed/Vacation_Photo_04.JPG	3:40000000:data/mixed/Vacation_Photo_05.JPG
+494d475f39303030	5	-	1:40000000:data/photos/2026/여름휴가/IMG_9000.jpg
+6e61c3af7665	5	-
+494d475f303030302e6a7067	5	-	1:40a00000:data/photos/2025/spring/IMG_0000.jpg
+7a7a7a7a6e6f74666f756e64	5	-

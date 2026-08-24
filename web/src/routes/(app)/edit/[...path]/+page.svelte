@@ -1,7 +1,7 @@
 <script lang="ts">
   // /edit/[...path] —: CodeMirror behind a dynamic
   // import (see CodeEditor.svelte), backed by `GET /api/fs/read` (size-capped,
-  // `MAX_INLINE_READ` in `crates/sc-server/src/bridge.rs`) and
+  // the inline-read ceiling in `go/internal/httpapi/handler/fs.go`) and
   // `PUT /api/fs/write` with `If-Match`.
   //
   // `If-Match` is the point, not a detail: this page always sends the etag
@@ -38,6 +38,10 @@
   let snackbarMsg = $state<string | null>(null)
   let conflictOpen = $state(false)
   let conflictEtag = $state('')
+  // Whether the token this save was refused against is an advisory one. The
+  // dialog then says the file may have changed rather than asserting it did,
+  // because with an advisory token the refusal does not prove a change.
+  let conflictWeak = $state(false)
 
   const dirty = $derived(content !== originalContent)
   const readOnly = $derived(entry ? !entry.perms.write : true)
@@ -94,6 +98,7 @@
     } catch (err) {
       if (err instanceof ApiError && err.code === 'fs.precondition') {
         conflictEtag = String(err.detail?.current_etag ?? '')
+        conflictWeak = entry?.etag_weak ?? false
         conflictOpen = true
       } else {
         snackbarMsg = err instanceof ApiError ? err.message : t('common.could_not_save')
@@ -103,21 +108,30 @@
     }
   }
 
-  /** EditConflictDialog: keep my edits, overwrite the other writer's change
-   *  using the etag we just learned is current. */
+  /** EditConflictDialog: keep my edits and overwrite the other writer's
+   *  change.
+   *
+   *  Deliberately unconditional. The token this server derives for a file
+   *  comes from metadata and is advisory, and the server refuses a conditional
+   *  write against one rather than pretending otherwise, so sending either the
+   *  original token or the one the refusal returned can never succeed: it
+   *  loops, and whoever clicked overwrite watches the same dialog reappear.
+   *  This is the only request in the editor that omits the condition, and it
+   *  is sent only because somebody asked for it. */
   async function overwriteAfterConflict(): Promise<void> {
     conflictOpen = false
     saving = true
     try {
-      const updated = await api.writeFile(path, content, conflictEtag || undefined)
+      const updated = await api.writeFile(path, content)
       entry = updated
       etag = updated.etag
       originalContent = content
       snackbarMsg = t('editor.overwritten')
     } catch (err) {
-      // A second conflict inside a few hundred ms (a third writer, or the
-      // server rejecting entirely) shows plainly rather than looping the
-      // dialog silently.
+      // A second conflict inside a few hundred milliseconds (a third writer,
+      // or the server refusing outright) shows plainly rather than looping the
+      // dialog silently. It cannot be the advisory-token case any more: the
+      // request above carried no condition at all.
       if (err instanceof ApiError && err.code === 'fs.precondition') {
         conflictEtag = String(err.detail?.current_etag ?? '')
         conflictOpen = true
@@ -183,6 +197,7 @@
 </div>
 
 <EditConflictDialog
+  weak={conflictWeak}
   open={conflictOpen}
   name={fileName}
   onclose={() => (conflictOpen = false)}

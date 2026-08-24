@@ -1,6 +1,6 @@
 // web/src/lib/api/http.test.ts — httpApi's job wrappers. Every
 // `fs_move`/`fs_copy`/`fs_delete`/`fs_archive` request always answers
-// `202 { job }` (`crates/sc-http/src/routes.rs`) — there is no synchronous
+// `202 { job }` (`go/internal/httpapi/handler`) — there is no synchronous
 // fallback, so `copy`/`del`/`archive` (http.ts) hand that envelope straight
 // back to the caller rather than polling it internally. `state/job-tray
 // .svelte.ts` (via `state/jobs.ts::pollJob`) is the one that tracks it and
@@ -115,4 +115,41 @@ describe('httpApi job wrappers', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/jobs')
     expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('/jobs/')
   })
+})
+
+// A conditional write against an inexact change token is refused by the
+// server, correctly. What matters here is what the client does next: retrying
+// with the same token, or with the one the refusal returned, is refused again
+// every time, so the overwrite has to ask for no condition at all.
+describe('writeFile and the advisory change token', () => {
+  function bodyOf(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> {
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    return JSON.parse(String(init.body)) as Record<string, unknown>
+  }
+
+  it('sends the condition when it is given one', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { name: 'a.txt' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await httpApi.writeFile('/s/a.txt', 'hello', 'W/"abc"')
+
+    expect(bodyOf(fetchMock).if_match).toBe('W/"abc"')
+  })
+
+  it('omits the condition entirely when it is not given one', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { name: 'a.txt' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await httpApi.writeFile('/s/a.txt', 'hello')
+
+    // Undefined rather than an empty string: an empty condition is still a
+    // condition, and the server would refuse it.
+    expect(bodyOf(fetchMock).if_match).toBeUndefined()
+    expect(String(init0(fetchMock))).not.toContain('if_match":"')
+  })
+
+  function init0(fetchMock: ReturnType<typeof vi.fn>): string {
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    return String(init.body)
+  }
 })

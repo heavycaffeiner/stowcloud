@@ -51,6 +51,8 @@ interface FileState {
   relativePath?: string
   chunkSize: number
   status: 'uploading' | 'paused' | 'done' | 'error' | 'canceled'
+  /** Aborts every chunk of this file that is still in flight. */
+  abort: AbortController
   sessionId: string
   sentBytes: number
   lastPostAt: number
@@ -168,6 +170,7 @@ async function addFile(item: AddItem): Promise<void> {
     relativePath: item.relativePath,
     chunkSize,
     status: 'uploading',
+    abort: new AbortController(),
     sessionId,
     sentBytes: resumeOffset,
     lastPostAt: 0,
@@ -226,7 +229,7 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
   inflightRequests++
   try {
     const blob = f.file.slice(task.offset, task.offset + task.length)
-    await transport.patchChunk(f.sessionId, task.offset, blob)
+    await transport.patchChunk(f.sessionId, task.offset, blob, f.abort.signal)
     f.sentBytes = Math.min(f.file.size, f.sentBytes + task.length)
     f.retries = 0
     scheduler.complete(task.fileId, task.index)
@@ -235,7 +238,24 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
     if (!done) pump()
   } catch (err) {
     scheduler.complete(task.fileId, task.index)
+
+    // Cancel deletes the session, so every chunk still in flight fails right
+    // after it. Those failures are the cancellation working, not a fault to
+    // recover from: retrying them put the row back to "retrying" and left a
+    // cancelled upload that could not be cancelled again, because the row it
+    // belonged to was already gone from `files`.
+    if (files.get(task.fileId)?.status !== 'uploading') return
+
     const status = err instanceof UploadHttpError ? err.status : 0
+
+    // The session is gone: cancelled here, expired, or swept. Nothing to
+    // resume, so this is terminal rather than retryable.
+    if (status === 404 || status === 410) {
+      f.status = 'error'
+      post({ t: 'error', id: f.id, code: 'upload.failed', message: /* i18n */ 'upload.session_gone' })
+      pump()
+      return
+    }
 
     if (status === 413) {
       const next = shrinkChunkSize(f.chunkSize, serverChunkMin)
@@ -322,6 +342,10 @@ self.addEventListener('message', (ev: MessageEvent<Cmd>) => {
       const f = files.get(cmd.id)
       if (f) {
         f.status = 'canceled'
+        // Stop the chunks already on the wire before the session goes, so a
+        // cancelled upload stops sending rather than running to completion
+        // and failing afterwards.
+        f.abort.abort()
         void transport.deleteSession(f.sessionId).catch(() => {})
         void deleteResumeRecord(resumeKey(f.file.name, f.file.size, f.file.lastModified)).catch(() => {})
         scheduler.removeFile(cmd.id)

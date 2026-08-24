@@ -68,50 +68,30 @@ git clone https://github.com/heavycaffeiner/stowcloud
 cd stowcloud
 ```
 
-**2. 쓸 폴더를 만듭니다.**
-
-```sh
-mkdir -p ./data ./secrets ./smbcfg ./shares/photos ./shares/video
-chown -R 1000:1000 ./data ./secrets ./smbcfg
-```
-
-`data`에는 캐시 데이터베이스가, `secrets`에는 암호화 키가 들어갑니다.
-`shares/` 아래 둘은 여러분의 폴더를 대신하는 자리입니다. 서버는 uid 1000으로
-돌고 스스로 소유권을 바꾸지 못하므로, 시작 전에 1000 소유로 만들어 두어야
-합니다. 빠뜨리지 말고 전부 만드세요. 없는 폴더는 Docker가 root 소유로 대신
-만들어 버리고, 그러면 아무것도 그 안에 쓰지 못합니다. 나중에
-`docker-compose.yml`의 `volumes:` 줄을 고쳐 실제 폴더를 가리키게 하면 됩니다.
-
-**3. 실행합니다.**
+**2. 실행합니다.**
 
 ```sh
 docker compose up -d
 ```
 
-이 저장소의 CI가 빌드하고 기동 테스트까지 마친 30MB 남짓한 이미지를 받아옵니다.
-컨테이너는 읽기 전용으로, root가 아닌 사용자로, 리눅스 권한을 전부 버린 상태로
-돌고, 8443 포트에서 HTTPS를 제공합니다. 다른 기기에서도 접속할 수 있도록 내부망에
-포트를 엽니다.
+설정은 이게 전부입니다. 이 저장소의 CI가 빌드하고 기동 테스트까지 마친 30MB
+남짓한 이미지를 받아옵니다. 컨테이너는 읽기 전용으로, root가 아닌 사용자로,
+리눅스 권한을 전부 버린 상태로 돌고, 8443 포트에서 HTTPS를 제공합니다.
 
-**4. 어떤 폴더를 서비스할지 알려 줍니다.**
+만들 폴더도, chown 할 것도 없습니다. 업로드한 파일은 named volume에 들어가고,
+이미지가 그 자리의 디렉터리를 실행 uid 소유로 미리 만들어 두기 때문에 volume이
+쓸 수 있는 소유권을 물려받습니다. 이미 가지고 있는 폴더를 서비스하려면
+`volumes:`의 `sc-files` 줄을 bind mount로 바꾸고, 그 디렉터리를 uid 65532가
+읽고 쓸 수 있게 해 두면 됩니다.
 
-`data/sc.toml`을 만듭니다.
-
-```toml
-[[shares]]
-name = "photos"
-host_path = "/shares/photos"
+```yaml
+      - /srv/my-files:/shares/files:z
 ```
 
-그다음 `docker compose restart`. 여기 적는 경로는 호스트 경로가 아니라 **컨테이너
-안쪽** 경로입니다. 그래서 `/shares/photos`라고 씁니다. 이 파일이 없어도 서버는
-정상적으로 뜨고 보여 줄 폴더만 없을 뿐이며, 나중에 관리자 화면에서 추가해도
-됩니다.
-
-**5. 관리자 계정을 만듭니다.**
+**3. 관리자 계정을 만듭니다.**
 
 ```sh
-docker compose logs sc | grep 'Setup token'
+docker compose logs sc | grep 'setup token'
 ```
 
 `https://<서버 주소>:8443/setup`을 열고 그 토큰을 붙여 넣은 다음, 아이디와
@@ -262,25 +242,37 @@ docker compose --profile smb up -d
 
 ## 문서
 
-[`docs/README.md`](docs/README.md)가 목차이고 읽는 순서로 시작합니다. 설계와 구조는
-[Architecture](docs/proposals/stowcloud-12-architecture.md), 실제 운영은
-[Deployment](docs/proposals/stowcloud-13-deployment.md)부터 보세요. 모든 하위
-시스템에 문서가 있고, 계획한 내용이 아니라 만들어진 내용을 기준으로 쓰여
-있습니다. 문서는 영어입니다.
+[`docs/README.md`](docs/README.md)가 목차이고 읽는 순서로 시작합니다. 원칙과
+설계는
+[Motivation and findings](docs/proposals/stowcloud-0-motivation-and-findings.md),
+실제 운영은 [Deployment](docs/proposals/stowcloud-15-deployment.md)부터
+보세요. 그 문서들은 이 저장소의 코드를 서술합니다. 문서는 영어입니다.
 
 <details>
 <summary><b>소스에서 빌드하기</b></summary>
 
 ```sh
 cd web && npm ci && npm run build && cd ..          # 프론트엔드가 먼저
-cargo build -p sc-server --release --features embed-ui
+cd go && CGO_ENABLED=0 go build -tags embed_ui ./cmd/stowcloud
 bash scripts/verify.sh                              # CI가 돌리는 검사
 ```
 
 프론트엔드는 바이너리 안으로 컴파일되어 들어가므로 먼저 빌드해야 합니다.
-`embed-ui`가 기본으로 꺼져 있는 이유가 그것입니다. 방금 받은 저장소에는 아직
-`web/build`가 없습니다. 릴리스 이미지는 정적 링크된 musl 빌드이고,
+`embed_ui` 태그가 기본으로 꺼져 있는 이유가 그것입니다. 방금 받은 저장소에는
+아직 넣을 것이 없습니다. 프론트엔드는 그것을 포함하는 패키지 안으로
+빌드됩니다. embed 지시자는 자기 패키지 밖의 경로를 지정할 수 없고, 바로 그
+점이 진짜 의존 관계를 만들어 주므로, 다시 빌드한 프론트엔드는 다음 빌드가
+집어 갑니다.
+
+cgo는 꺼져 있고, 그것이 정적 바이너리의 전부입니다. 꺼져 있으면 동적 로더도
+맞춰야 할 libc도 없으므로 런타임 이미지에 둘 다 필요 없습니다.
 `Dockerfile`이 두 단계를 모두 처리해 줍니다.
+
+SMB 사이드카는 별도 바이너리입니다. `go/cmd/sc-smb-agent`에 있습니다. Samba 데몬
+옆에서 root로 돌면서 서버가 렌더링한 것을 적용합니다. 서버는 권한 없이, 호스트의
+장치를 볼 수 없는 네트워크 네임스페이스에서 돌기 때문에 스스로 할 수 없는
+일입니다. `Dockerfile.smb`가 이것을 빌드하고, `smb-agent/`에는 배포용 자료가
+있습니다.
 
 </details>
 
@@ -300,7 +292,7 @@ GNU Affero General Public License v3.0 이상입니다. [`LICENSE`](LICENSE)를 
 사실상 영구해진다는 점입니다. 바꾸려면 모든 기여자의 동의가 필요하기 때문입니다.
 의도한 교환입니다.
 
-바이너리는 Rust 의존성을 정적 링크하고 빌드된 프론트엔드를 포함하므로 둘 다 함께
+바이너리는 의존성을 정적 링크하고 빌드된 프론트엔드를 포함하므로 둘 다 함께
 배포됩니다. [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)에 그 라이선스와
 저작권 표시가 들어 있고, 실행 이미지 안에도 `/THIRD-PARTY-NOTICES.md`로 같은
 사본이 있습니다.
@@ -309,10 +301,18 @@ GNU Affero General Public License v3.0 이상입니다. [`LICENSE`](LICENSE)를 
 
 ## 현재 상태
 
-아키텍처 문서의 모든 마일스톤은 실제 클라이언트로 도달할 수 있습니다. 아직 없는
-것은 CI에서의 WebDAV 적합성 검사, 동기화 클라이언트 회귀 테스트 자동화, 외부 보안
-검토입니다. 그 점을 감안해서 다루세요. 이 저장소 바깥의 누구도 아직 감사하지
-않았습니다.
+백엔드는 Go입니다. 전환하기 전에 운영자가 알아야 할 것은
+[`docs/CUTOVER.md`](docs/CUTOVER.md)에 있습니다. 붙어 있는 모든 동기화
+클라이언트가 한 번 전체 재조정을 수행하는 것도 포함됩니다.
+
+주장이 아니라 측정한 것: [`docs/CONFORMANCE.md`](docs/CONFORMANCE.md)에 두 구현을
+같은 WebDAV 적합성 검사로 돌린 결과가 실패 항목별 귀속과 함께 있고,
+[`docs/FOOTPRINT.md`](docs/FOOTPRINT.md)에 메모리와 시간 수치가, 그리고 계획했지만
+측정하지 못한 것이 무엇인지 적혀 있습니다.
+
+아직 없는 것: 동기화 클라이언트 회귀 테스트 자동화, 샌드박스 증명을 위한 두 번째
+아키텍처, 외부 보안 검토입니다. 네 개의 표면은 구현되지 않았다고 스스로 밝힙니다.
+그 점을 감안해서 다루세요. 이 저장소 바깥의 누구도 아직 감사하지 않았습니다.
 
 [^tm]: Nextcloud는 Nextcloud GmbH의 등록 상표입니다. Stowcloud는 Nextcloud GmbH와
     제휴, 보증, 후원 관계가 없습니다. 이 이름은 어떤 클라이언트가 호환되는지를

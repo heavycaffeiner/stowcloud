@@ -3,7 +3,7 @@
 //
 // vite.config.ts proxies `^/api`, `^/dav`, `^/c/`, `^/s/`, `^/ocs`,
 // `^/remote.php`, `^/index.php` and `^/status.php` to a separately-running
-// sc-server, so `vite dev` can be pointed at a real backend. The audit runs
+// the server, so `vite dev` can be pointed at a real backend. The audit runs
 // against the in-memory mock (VITE_API_MOCK=1), which answers all of those in
 // the browser, so every one of those hops is dead weight -- and `^/s/`
 // actively breaks the audit: a document request for a share link is proxied

@@ -6,8 +6,8 @@ const config = {
   preprocess: vitePreprocess(),
   kit: {
     adapter: adapter({
-      pages: 'build',
-      assets: 'build',
+      pages: '../go/internal/httpapi/spa/build',
+      assets: '../go/internal/httpapi/spa/build',
       fallback: 'index.html',
       precompress: false,
       strict: true

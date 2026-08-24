@@ -169,15 +169,24 @@
               <span class="sc-upload-tray__meta">
                 {formatBytes(item.sent)} / {formatBytes(item.total)}
                 {#if item.status === 'uploading'} · {formatRate(item.rate)} · {formatEta(item.etaSec)}{/if}
+                <!-- A cancelled row read as a stalled one: it showed the bytes
+                     it had reached and nothing that said it had stopped on
+                     purpose. The state is named now, in text rather than by
+                     the absence of a rate. -->
+                {#if item.status === 'canceled'} · {t('upload.canceled')}{/if}
+                {#if item.status === 'paused'} · {t('upload.paused')}{/if}
               </span>
             </div>
             <ProgressLinear value={item.total > 0 ? item.sent / item.total : 0} label={item.name} />
             {#if item.message}<p class="sc-upload-tray__message">{t(item.message, item.messageParams)}</p>{/if}
             <div class="sc-upload-tray__controls">
+              <!-- Pause, resume and cancel were all drawn with the close icon,
+                   so the only way to tell them apart was the accessible name.
+                   Each has its own now. -->
               {#if item.status === 'uploading'}
-                <IconButton label={t('upload.pause')} onclick={() => uploadTray.pause(item.id)}><Icon icon={icons.close} size={16} /></IconButton>
+                <IconButton label={t('upload.pause')} onclick={() => uploadTray.pause(item.id)}><Icon icon={icons.pause} size={16} /></IconButton>
               {:else if item.status === 'paused'}
-                <IconButton label={t('upload.resume')} onclick={() => uploadTray.resume(item.id)}><Icon icon={icons.upload} size={16} /></IconButton>
+                <IconButton label={t('upload.resume')} onclick={() => uploadTray.resume(item.id)}><Icon icon={icons.resume} size={16} /></IconButton>
               {/if}
               {#if item.status === 'done' || item.status === 'canceled'}
                 <IconButton label={t('common.clear')} onclick={() => uploadTray.dismiss(item.id)}><Icon icon={icons.close} size={16} /></IconButton>

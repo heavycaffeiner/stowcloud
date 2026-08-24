@@ -52,18 +52,16 @@ describe('mockApi', () => {
   })
 
   it('deletes an entry', async () => {
-    const { job } = await mockApi.delete(['/home/Documents/이름변경-test'])
-    const status = await mockApi.jobStatus(job)
-    expect(status.results[0].ok).toBe(true)
+    const { results } = await mockApi.delete(['/home/Documents/이름변경-test'])
+    expect(results[0].ok).toBe(true)
     const res = await mockApi.list('/home/Documents', {})
     expect(res.entries.some((e) => e.name === '이름변경-test')).toBe(false)
   })
 
   it('reports batch errors per-item without failing the whole request', async () => {
-    const { job } = await mockApi.delete(['/home/Documents/no-such-file.txt'])
-    const status = await mockApi.jobStatus(job)
-    expect(status.results[0].ok).toBe(false)
-    expect(status.results[0].error?.code).toBe('fs.not_found')
+    const { results } = await mockApi.delete(['/home/Documents/no-such-file.txt'])
+    expect(results[0].ok).toBe(false)
+    expect(results[0].error?.code).toBe('fs.not_found')
   })
 
   it('bumps the directory etag on mutation so a stale listing session is refreshed', async () => {

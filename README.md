@@ -70,50 +70,31 @@ git clone https://github.com/heavycaffeiner/stowcloud
 cd stowcloud
 ```
 
-**2. Make the folders it will use.**
-
-```sh
-mkdir -p ./data ./secrets ./smbcfg ./shares/photos ./shares/video
-chown -R 1000:1000 ./data ./secrets ./smbcfg
-```
-
-`data` holds the cache database, `secrets` holds the encryption key, and the
-two under `shares/` stand in for folders of yours. The server runs as user
-`1000` and cannot change ownership itself, so these have to be owned by
-`1000` before it starts. Make all of them: Docker creates a missing one for
-you, owned by root, and then nothing can write to it. Point them at real
-folders later by editing the `volumes:` lines in `docker-compose.yml`.
-
-**3. Start it.**
+**2. Start it.**
 
 ```sh
 docker compose up -d
 ```
 
-This pulls a roughly 30 MB image built and smoke-tested by this repository's
-CI. It runs read-only, as a non-root user, with all Linux capabilities
-dropped, and it serves HTTPS on port 8443, published to your network so you
-can reach it from another machine.
+That is the whole setup. It pulls a roughly 30 MB image built and smoke-tested
+by this repository's CI, runs read-only as a non-root user with every Linux
+capability dropped, and serves HTTPS on port 8443.
 
-**4. Tell it which folders to serve.**
+There are no directories to create and nothing to chown. The files you upload
+live in a named volume, and the image ships the directories it mounts them over
+already owned by the uid it runs as, so a volume inherits an owner that can
+write. To serve a folder you already have instead, replace the `sc-files` line
+under `volumes:` with a bind mount and make sure the directory is readable and
+writable by uid 65532:
 
-Create `data/sc.toml`:
-
-```toml
-[[shares]]
-name = "photos"
-host_path = "/shares/photos"
+```yaml
+      - /srv/my-files:/shares/files:z
 ```
 
-Then `docker compose restart`. Paths here are the paths **inside** the
-container, which is why this says `/shares/photos` and not the host path.
-Without this file the server starts fine and simply has nothing to show, and
-you can add folders from the admin screen later instead.
-
-**5. Create the administrator account.**
+**3. Create the administrator account.**
 
 ```sh
-docker compose logs sc | grep 'Setup token'
+docker compose logs sc | grep 'setup token'
 ```
 
 Open `https://<the machine's address>:8443/setup`, paste that token, and pick a
@@ -290,24 +271,36 @@ them in the list yet.
 
 [`docs/README.md`](docs/README.md) is the index and opens with a reading
 order. Start with
-[Architecture](docs/proposals/stowcloud-12-architecture.md) for the design
-and layout, and [Deployment](docs/proposals/stowcloud-13-deployment.md) for
-running it in earnest. Every subsystem has a document written from what was
-built, not from what was planned.
+[Motivation and findings](docs/proposals/stowcloud-0-motivation-and-findings.md)
+for the principles and the design, and
+[Deployment](docs/proposals/stowcloud-15-deployment.md) for running it in
+earnest. Those documents describe the code in this repository.
 
 <details>
 <summary><b>Building from source</b></summary>
 
 ```sh
 cd web && npm ci && npm run build && cd ..          # frontend first
-cargo build -p sc-server --release --features embed-ui
+cd go && CGO_ENABLED=0 go build -tags embed_ui ./cmd/stowcloud
 bash scripts/verify.sh                              # the gate CI runs
 ```
 
-The frontend is compiled into the binary, so it has to be built first.
-`embed-ui` is off by default precisely because a fresh checkout has no
-`web/build` yet. The release image is a statically linked musl build, and
+The frontend is compiled into the binary, so it has to be built first. The
+`embed_ui` tag is off by default because a fresh checkout has nothing to embed
+yet, and the frontend builds into the package that embeds it: the embed
+directive cannot name a path outside its own package, and that is also what
+gives it a real dependency edge, so a rebuilt frontend is picked up by the next
+build.
+
+Cgo is off, which is the whole static-binary story: with it off there is no
+dynamic loader and no libc to match, so the runtime image needs neither.
 `Dockerfile` does both stages for you.
+
+The SMB sidecar is a second binary, `go/cmd/sc-smb-agent`. It runs as root
+beside the Samba daemon and applies what the server renders, which the server
+cannot do itself: it runs unprivileged, in a network namespace that cannot see
+the host's devices. `Dockerfile.smb` builds it, and `smb-agent/` holds the
+deployment material.
 
 </details>
 
@@ -329,8 +322,8 @@ holding a private right to relicense the result. The cost is that the licence
 is now effectively permanent, because changing it would need every
 contributor's agreement. That is the intended trade.
 
-The binary statically links its Rust dependencies and embeds the built
-frontend, so both are redistributed with it.
+The binary statically links its dependencies and embeds the built frontend, so
+both are redistributed with it.
 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) carries their licences and
 copyright notices, and the runtime image carries a copy at
 `/THIRD-PARTY-NOTICES.md`.
@@ -339,10 +332,19 @@ copyright notices, and the runtime image carries a copy at
 
 ## Status
 
-Every milestone in the architecture document is reachable by a real client.
-Still missing: WebDAV conformance testing in CI, an automated sync-client
-regression suite, and an external security review. Treat it accordingly. It
-has not been audited by anyone outside this repository.
+The backend is Go. [`docs/CUTOVER.md`](docs/CUTOVER.md) is what an operator
+needs before switching, including the one-time reconciliation every attached
+sync client performs.
+
+Measured rather than asserted: [`docs/CONFORMANCE.md`](docs/CONFORMANCE.md) has
+the WebDAV suite against both implementations, with each failure attributed;
+[`docs/FOOTPRINT.md`](docs/FOOTPRINT.md) has the memory and timing numbers, and
+says which planned measurements were not made.
+
+Still missing: an automated sync-client regression suite, a second architecture
+for the sandbox proof, and an external security review. Four surfaces answer
+that they are not implemented and name themselves. Treat it accordingly. It has
+not been audited by anyone outside this repository.
 
 [^tm]: Nextcloud is a registered trademark of Nextcloud GmbH. Stowcloud is not
     affiliated with, endorsed by, or sponsored by Nextcloud GmbH; the name is

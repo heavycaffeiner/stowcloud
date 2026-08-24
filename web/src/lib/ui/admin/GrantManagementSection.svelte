@@ -21,7 +21,7 @@
   // checking the same permission in both allow and deny within one rule
   // still saves as-is — the server doesn't normalize it (see the
   // `admin_grants` test `a_bit_present_in_both_allow_and_deny_round_trips_unmodified`
-  // in `crates/sc-http/src/routes.rs`) — but deny wins at evaluation time.
+  // in `go/internal/httpapi/handler`) — but deny wins at evaluation time.
   // The table below shows that state plainly, with a warning, rather than
   // hiding it.
   import { t } from '../../i18n'

@@ -1,0 +1,203 @@
+# D1. The number of //nolint directives in go/. The gate counts them and fails
+# on a mismatch, so an exception being added is a two-line diff rather than one
+# line nobody sees. Raise it deliberately, with the reason on the line the
+# directive sits on.
+#
+# Phase 1 added four. Three are in internal/jail: the kernel takes a struct
+# pointer for landlock_create_ruleset, landlock_add_rule and seccomp, and
+# x/sys/unix carries no wrapper for any of the three. The fourth is the escape
+# proof re-executing its own binary to build a mount boundary in a private
+# namespace, which is the only way that row runs without being root.
+#
+# Phase 2 added ten. Five are the same shape: SQLite has one integer type and
+# it is signed, so a device number, an inode number, a birth time and a byte
+# offset cross into it as their bit pattern and come back unchanged. Narrowing
+# them would refuse values a real filesystem hands out, which is the opposite
+# of what the rule is for.
+#
+# Four are gosec reading an identifier rather than a value: a constant named
+# after the app_password or totp_secret table holds a SQL statement, not a
+# credential. The tenth is the import closing databases it only ever read.
+#
+# Phase 2.5 added two. One is the other direction of the same signed-integer
+# crossing: reading a stored device or inode number back out of the override
+# table. The other is the source-table inventory's row count, the one statement
+# in the tree that names a table rather than binding it, whose name comes from
+# that file's own literal map and is checked against a plain-identifier rule
+# before it is used. Two more are gosec reading a variable where a path is
+# expected: the data directory's lock file, whose name is this package's own
+# constant, and the import's staging database, whose name is its own random hex.
+# Both sit under a directory the caller handed in and neither takes a component
+# from anywhere else. The third of that shape is the development host's copy of
+# the control-file replacement, which the gate's own linter run never compiles
+# because it runs for GOOS=linux.
+#
+# Phase 3 added thirty-four. The auth package's at-rest crypto and its
+# credential-path queries are the bulk of them: the XChaCha20 buffers and the
+# HMAC/hash writers never fail, the identifier-name G101 hits on SQL statements
+# that mention a password or a secret table, the deliberately narrow
+# seed/step/bit-width casts are all proven in range beside the cast, and MD4 and
+# SHA-1 are fixed by the SMB and TOTP protocols, not chosen. The rest are the
+# rows.Close folds that use the errors.Join pattern the store owns first.
+#
+# Phase 4 added four. Two are the file ETag feeding a signed nanosecond
+# timestamp into a hash as its bit pattern, which is what a change token is:
+# reinterpreting a mtime or ctime through a narrowing check would refuse
+# nothing and prove nothing. One is the quota ledger's negated freed size,
+# clamped to the signed range on the line above the cast. One is the job
+# importer folding a uuid into a 63-bit id, masked before the conversion so the
+# value is proven in range beside the cast.
+#
+# Phase 5 added seven. Four are gosec reading an identifier or a variable
+# rather than a value: the setup code constant whose name contains "token",
+# the app-password listing statement whose table name contains "password",
+# the config file whose path is the operator's own argument, and the
+# healthcheck's certificate path and dial target, both built from that same
+# operator config. Two are the config read and the healthcheck's HTTP client,
+# same shape. One is hmac.Hash.Write, which never fails and has no error path
+# to act on.
+#
+# The core audit added nineteen, all the same families the phases before
+# already named: hash and hmac writers that never fail, rows.Close on a fully
+# read set, the device and inode numbers that cross into signed SQLite storage
+# as their bit pattern and come back unchanged, the stream offsets that are
+# bounded by the descriptor's own size, the rollback and close paths whose
+# primary error is the answer, and the share-id widening whose narrow check
+# sits on the line above.
+#
+# Phase 6 added seven. Three are hash.Hash.Write, which the interface documents
+# as never failing and which therefore has no error path to act on. Three are
+# gosec reading a conversion whose range check is on the line above or in the
+# constant it came from: the two chunk settings, both bounded by the compiled-in
+# floor, and the share-id widening the sweep does behind its own bound. The
+# seventh is the free-space probe, where a statfs that could not run is a fact
+# about the filesystem rather than a reason to refuse an upload. The eighth is
+# a test fixture writing mode 640, which is the file another program wrote that
+# the replacement has to keep the mode of.
+#
+# Phase 7 added six. One is xml.EscapeText writing into a bytes.Buffer, whose
+# Write is documented never to fail. Three are the close-and-rows family the
+# phases before already named: a multistatus close whose earlier write error is
+# the real answer, and two rows.Close on fully read sets. Two are the device
+# and inode numbers crossing into signed SQLite storage as their bit pattern,
+# the same conversion the cache already does for the same reason.
+#
+# Phase 8 added one: the folding Caser, which is immutable and documented safe
+# for concurrent use, so it is shared rather than rebuilt per name. Milestone 8c
+# added two more of the same shape: the zstd encoder and decoder, both
+# documented safe for concurrent use, built once rather than per block.
+# Milestone 8d added five: four gosec file-inclusion warnings on segment paths
+# this package builds from the operator's own index directory and a fixed name,
+# and one on a test writing into its own TempDir. Milestone 8e added one: a
+# test restoring a directory's execute bit so cleanup can descend into it,
+# which gosec reads as a file mode.
+#
+# Phase 9 removed one: the orphaned static package, whose panic-on-missing-embed
+# carried a forbidigo exception. The frontend now builds into the embedding
+# package and a build without one leaves the route unmounted, so there is
+# nothing to panic about.
+#
+# Milestones 9c and 9d added twenty-one, and all but two are the same two
+# families the phases before already named: a close whose error has no reader,
+# on job descriptors and on a control socket that is what just failed, and a
+# process kill or wait where the process being already gone is the case being
+# handled. The two others are gosec reading a subprocess launch: the pool execs
+# this binary's own path, and a test builds a helper from constant arguments.
+#
+# Milestone 9e settled at this count after the socket and rename work moved into
+# internal/vfs, where the keepalive and rename rules already live. What remains
+# in preview is the same close-and-kill family, plus one bit-pattern hash of a
+# timestamp in the cache key and two gosec subprocess warnings: the pool execs
+# this binary's own path, and a test builds its helper from constant arguments.
+#
+# Milestones 9g and 9h added ten. Most are a measurement command reporting to a
+# terminal that has no second channel to report a failed write on. The rest are
+# the jail proof reaching the kernel directly: a raw openat needs AT_FDCWD as
+# its bit pattern and a NUL-terminated path, because a probe that went through
+# the standard library might not issue the syscall the filter is meant to stop.
+#
+# Milestone 10a added one: the compat wiring narrowing a stored share id, where
+# a value that no longer fits one is a corrupt row rather than a truncation.
+# Milestone 10d added two, both the OCS writer answering a client after the
+# status is already sent, where a short write has no second channel. Milestones
+# 10b and 10d added four more: the router answering after its status is sent,
+# and three test type assertions whose shape the decode above them proved.
+# Milestone 10g added three: a rows.Close on a fully read set, and two gosec
+# readings of a statement that names a credential column rather than holding
+# one.
+# Milestone 11b added one: the passdb narrowing a stored key version, where the
+# bound directly above the conversion is what makes it fit. Two more that the
+# first draft had were removed instead, by narrowing the value once rather than
+# converting it at each of three use sites.
+# Milestone 11c added three: reading the operator's own certificate path, the
+# only way to ask whether a system certificate pool is empty, and a test key
+# that is deliberately undersized so the refusal can be proved, plus a test
+# hash write that cannot fail.
+# Milestone 11e added two: a nested-mount test creating its own temporary
+# directory and handing it to its own child, and reading the kernel's magic
+# value back from the mount that test just made, the test binary re-executing
+# itself, and two reads of a test's own temporary directory.
+# Phase 13 added three, all in the response differ: it verifies no certificate
+# because it talks to two self-signed loopback servers, it reads its own corpus
+# directory, and its request carries no context because the client's own
+# timeout is the bound.
+# Phase 13 added three more in the no-Landlock proof: the test binary
+# re-executing itself, a filter length bounded on the line above the
+# conversion, and the address the kernel takes a filter by.
+# Phase 13's route work added three: two hash writes that cannot fail in the
+# sign-in challenge, and one in the settings document reader.
+# The archive writer and the link update added eight: six width conversions in
+# the zip format, each bounded on the line above it, one statement naming a
+# credential column, and one hash write that cannot fail.
+# The SMB sidecar agent added thirty-one. Most are the security scanner
+# reading this agent's own configured paths as untrusted input: it edits the
+# system account file and promotes a configuration by design, so the paths it
+# writes are its whole purpose rather than a traversal. The rest are file modes
+# the scanner wants narrower than they can be, since a system account file
+# every name lookup reads cannot be private, and signals to a process that has
+# already exited. One more marks the example configuration test writing into
+# the framework's own temporary directory, and one more the corpus scan's own
+# bound, which is a positive constant the line above it checks. Two more sit in the
+# single-sign-on flow test: a certificate pool holding only the test provider's
+# own certificate, and that provider redirecting where it was told, which is
+# what a provider does. Two more: the route checker reading the client directory
+# it was pointed at, and the search stream writing an event to a response that
+# is already committed.
+# The repairs from the risk list added one: the index build dividing its own
+# file count by its own elapsed nanoseconds to report the rate it measured,
+# both of which the line above it checks are positive.
+# The runtime settings added one: the SMB service group crossing into the
+# unsigned type the rendered file carries it as, bounded on the line above it
+# so the value cannot be one that does not fit.
+# The settings dry run added one: reading an optional string out of a decoded
+# body, where absent and wrong-typed both mean the field was not named and the
+# line below handles that case.
+#
+# Deleting the migration path removed fifteen. Every one belonged to code that
+# read a format the previous build wrote: the importer's SQLite integers
+# carrying device and inode numbers as their bit pattern, its gosec exceptions
+# for statements named after credential tables, and its close of databases it
+# only ever read. They are gone with the readers, not suppressed.
+# contractcheck added one: the same diagnostic-writer exemption every tool in
+# this directory carries, for a message that cannot be printed.
+# Wiring the thumbnails added two, both closes on a path that has already
+# decided its outcome: the thumbnail file once the response is written, and the
+# worker pool being abandoned because its cache could not be opened.
+# The size guard added one: the kernel's block size crossing into an unsigned
+# multiply, where statfs guarantees it is positive.
+#
+# Reporting how a preview worker ended removed one. The pool waited on the
+# process and discarded the status, on the grounds that every death is the same
+# event to it. True of what it does next, false of what it can say: a worker
+# killed by a signal and one that exited on its own both read as "the worker
+# died: EOF". The status is read now, so the exception is gone rather than
+# suppressed.
+#
+# Naming the syscall a seccomp kill refused added three. A kill prints nothing,
+# so a filter missing an entry and a decoder that crashed look identical; the
+# proof re-runs the load under a filter that traps instead, and the runtime
+# then prints a stack naming the call. The exceptions are the child process
+# that is meant to fail, since its output rather than its status is the answer,
+# and two pool closes on a path that has already reported a failure.
+241
+

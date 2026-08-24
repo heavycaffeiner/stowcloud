@@ -1,0 +1,55 @@
+# D18. Every direct module this tree may depend on, one path per line. The gate
+# diffs the module graph against this file, so taking a new dependency is a
+# visible change here rather than a line in go.mod nobody reads.
+#
+# Blank lines and lines starting with # are ignored.
+#
+# The parent proposal's table says why each one is not the standard library.
+# The ones it commits to that have not arrived yet, and the phase that brings
+# each: x/crypto, x/sync, klauspost/compress (9), BurntSushi/toml (5), a
+# pure-Go BLAKE3 (6), x/image (9).
+
+golang.org/x/sys
+
+# Argon2id password hashing, XChaCha20-Poly1305 at rest and MD4 for the SMB NT
+# hash, none of which the standard library provides. Arrived with Phase 3's
+# auth subsystem.
+golang.org/x/crypto
+
+# NFC and NFD candidate spellings, so a name another program wrote in either
+# form is found as it is written. Arrived with Phase 1's path layer.
+golang.org/x/text
+
+# SQLite, translated to Go rather than wrapped, which is what keeps
+# CGO_ENABLED=0 and with it the static binary and the toolchain-free cross
+# build. Arrived with Phase 2's store.
+modernc.org/sqlite
+
+# The directory ETag hash, which is wire-visible so parity keeps it BLAKE3.
+# Pure Go, so CGO_ENABLED=0 has no fallback to disable. Arrived with Phase 4's
+# aggregate; Phase 6 reuses it for the client-selected upload checksum, which
+# is why it is one entry here and one direct dependency rather than two.
+lukechampine.com/blake3
+
+# sc.toml, the one config file the product reads. It enters the module graph
+# with Phase 5, which is the phase that parses it.
+github.com/BurntSushi/toml
+
+# BMP, TIFF and WebP decoding for the preview worker. The standard library
+# covers JPEG, PNG and GIF; these three are what x/image adds, and all of them
+# are pure Go, which is what keeps the decoders out of a C library and
+# CGO_ENABLED=0 with nothing to fall back to. Arrived with Phase 9.
+golang.org/x/image
+
+# zstd for the search index's block compression. Pure Go, so CGO_ENABLED=0 has
+# nothing to fall back to, and the format is what the two implementations agree
+# on rather than the encoder's exact output. It enters the graph with Phase 8;
+# the parent proposal's table lists it against Phase 9, which is the phase that
+# was expected to need it first.
+github.com/klauspost/compress
+
+# The change channel for /api/events. The dependency decision was reopened
+# because the protocol carries client frames (sub/unsub), so a hand-rolled
+# frame layer would re-implement control-frame handling, close codes and
+# fragmentation that a maintained module already owns.
+github.com/gorilla/websocket

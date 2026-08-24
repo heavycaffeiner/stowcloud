@@ -1,0 +1,46 @@
+# Routes the server mounts that the web client does not call.
+#
+# Each is here with the caller it exists for. A route with no caller at all
+# belongs deleted, not listed: this file is for the ones whose caller is
+# something other than the shipped interface.
+#
+# Unlike routes.allow, a line here does not fail the check either way. The
+# reverse direction is reported and never fatal, because the routes a sync
+# client or an operator calls are not ones the web interface has a screen for,
+# and a check that failed on them is one people learn to silence.
+
+# The container runtime's health probe, which has no credential and no screen.
+/api/health
+
+# The change channel. The client opens it as a WebSocket rather than through
+# the request helper, so it is a socket the check cannot see as a call.
+/api/events
+
+# The browser's own navigation, not a call the client makes: signing in through
+# a provider is a redirect out and a redirect back.
+/api/auth/oidc/start
+/api/auth/oidc/callback
+
+# Public share links. A visitor follows the URL; nothing in the interface
+# fetches these.
+/s/{token}
+/s/{token}/download
+
+# The resumable upload protocol's discovery request. A client sends it to learn
+# which version to speak, and this client already knows.
+/api/uploads
+/api/uploads/{id}
+
+# The second spelling of a route the client calls under one verb. Both are
+# mounted because other callers send the other one, and dropping either turns a
+# working request into "method not allowed".
+/api/fs/write
+/api/jobs/{id}/cancel
+/api/fs/link
+/api/fs/link/{id}
+
+# The SMB apply. There is no button for it in the shipped interface, and there
+# does not need to be one now: every write that changes what SMB should serve
+# republishes on its own. It stays mounted as the operator's apply-now, for
+# forcing a push after editing the configuration file by hand.
+/api/admin/smb/apply

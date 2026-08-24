@@ -1,0 +1,11 @@
+# Paths the frontend's client calls that the server does not mount.
+#
+# Empty, and it has to stay that way: a line here is a screen in the shipped
+# interface that cannot work. The check that reads this file is what turns the
+# client and the route table into one contract, and it found 41 unmounted
+# paths the first time it ran, including signing in.
+#
+# A line goes in only with a recorded reason that the server genuinely need not
+# serve it. "Not built yet" is not such a reason: a route whose subsystem is
+# missing is mounted and answers that it is not implemented, so the client gets
+# a status it can act on rather than a connection to a path that is not there.

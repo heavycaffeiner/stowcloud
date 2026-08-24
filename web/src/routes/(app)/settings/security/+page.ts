@@ -6,7 +6,7 @@ import { redirect } from '@sveltejs/kit'
  * A link-mode OIDC callback lands on `/settings/security`, with
  * `?oidc_error=<code>` when it failed
  * (`docs/proposals/stowcloud-0-oidc-login.md` §5-1, and
- * `OidcLanding::Link` in `crates/sc-http/src/routes.rs`). That is a `Location`
+ * `OidcLanding::Link` in `go/internal/httpapi/handler`). That is a `Location`
  * header on a `302`, so it is a real URL a browser navigates to, not something
  * this app can route around. This screen's own address for the same thing is
  * `/settings#security` (the tab lives in the hash), and without this route the

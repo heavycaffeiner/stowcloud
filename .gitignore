@@ -1,14 +1,18 @@
-/target
 /.ref
 /.vm
 node_modules
 web/.svelte-kit
+# The frontend builds into the embedding Go package: //go:embed cannot name a
+# path outside its own package directory, and refuses a symlink out of one.
+go/internal/httpapi/spa/build/
+# Where it used to build, kept ignored so an old checkout does not commit one.
 web/build
 *.qcow2
 *.log
 .env
-/.smoke
 /.demo
+# The development server's scratch tree: its data directory, its shares, the
+# binary it builds and its log. scripts/dev.sh makes it.
 /.dev
 # Runtime state the testbed compose stack creates beside its own file.
 /deploy/testbed/data
@@ -23,3 +27,7 @@ setup-token
 # A broad `git add -A` swept four of these into a commit once.
 .tmp-*
 web/.tmp-*
+
+# Gate tooling and cross-compiled test binaries: build products, not source.
+/go/.tools/
+/go/.testbin/

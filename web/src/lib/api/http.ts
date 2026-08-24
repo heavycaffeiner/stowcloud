@@ -1,5 +1,5 @@
 // web/src/lib/api/http.ts — real HTTP implementation of the same surface as
-// mock.ts. Talks to the Rust backend per. This module is only
+// mock.ts. Talks to the real server. This module is only
 // ever exercised once VITE_API_MOCK is unset/0 — it is untested against a
 // live server here (the backend does not exist yet) but the shape mirrors
 // exactly so swapping the flag is the only integration step.
@@ -42,10 +42,13 @@ import {
   type FolderSize,
   type ReadFileResponse,
   type RecentHit,
+  type RecentQuery,
   type SearchSettingsReq,
   type SessionInfo,
   type SettingsSnapshot,
   type SettingsSectionId,
+  type SettingsCheckResult,
+  type BatchItemResult,
   type ShareLinkCreateReq,
   type ShareLinkInfo,
   type ShareLinkPatchReq,
@@ -84,27 +87,36 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...init, method, headers, credentials: 'include' })
   if (res.status === 204) return undefined as T
   const body = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    const errBody = (body as ApiErrorBody).error ?? { code: 'internal', message: res.statusText }
-    const err = new ApiError(res.status, errBody)
-    // Task: "make a 401 mean something" — every call goes through this one
-    // function, so this is the single place a dead/missing session turns
-    // into "show the login screen" instead of an inline error string
-    // bubbling up into whatever list/table happened to be rendering.
-    //
-    // Gated on `code`, not just `status`: `auth.invalid_credentials` is also
-    // a 401, but it means "this specific re-confirmation was wrong" (a bad
-    // *current* password on `/auth/password`, a bad TOTP code on
-    // `/auth/totp/enroll`), not "the session cookie is gone". The settings
-    // screens for those actions (`PasswordSection`/`TotpSection`) need that
-    // error to stay a rejected promise they show inline — bouncing the whole
-    // app to the login screen because someone mistyped their *current*
-    // password while already logged in would be exactly the "silent
-    // failure" this task explicitly rules out.
-    if (res.status === 401 && errBody.code === 'auth.required') noteUnauthorized()
-    throw err
-  }
+  if (!res.ok) throw errorFrom(res, body)
   return body as T
+}
+
+/**
+ * Turns a failed response into the error every caller expects.
+ *
+ * Split out of `request` so the calls that read a body other than JSON, like
+ * the file read, refuse the same way: the same `ApiError`, and the same 401
+ * handling, which is the one place a dead session becomes the login screen.
+ */
+function errorFrom(res: Response, body: unknown): ApiError {
+  const errBody = (body as ApiErrorBody).error ?? { code: 'internal', message: res.statusText }
+  const err = new ApiError(res.status, errBody)
+  // Task: "make a 401 mean something" — every call goes through this one
+  // function, so this is the single place a dead/missing session turns
+  // into "show the login screen" instead of an inline error string
+  // bubbling up into whatever list/table happened to be rendering.
+  //
+  // Gated on `code`, not just `status`: `auth.invalid_credentials` is also
+  // a 401, but it means "this specific re-confirmation was wrong" (a bad
+  // *current* password on `/auth/password`, a bad TOTP code on
+  // `/auth/totp/enroll`), not "the session cookie is gone". The settings
+  // screens for those actions (`PasswordSection`/`TotpSection`) need that
+  // error to stay a rejected promise they show inline — bouncing the whole
+  // app to the login screen because someone mistyped their *current*
+  // password while already logged in would be exactly the "silent
+  // failure" this task explicitly rules out.
+  if (res.status === 401 && errBody.code === 'auth.required') noteUnauthorized()
+  return err
 }
 
 function qs(params: Record<string, string | number | undefined>): string {
@@ -158,7 +170,10 @@ async function mkdir(path: string): Promise<Entry> {
 }
 
 async function rename(path: string, newName: string): Promise<Entry> {
-  return request('/fs/rename', { method: 'POST', body: JSON.stringify({ path, name: newName }) })
+  // `new_name`, which is what the handler decodes. It sent `name`, so every
+  // rename decoded as an empty new name and came back 422 invalid_name with
+  // an empty component: the dialogue closed on nothing.
+  return request('/fs/rename', { method: 'POST', body: JSON.stringify({ path, new_name: newName }) })
 }
 
 async function copy(req: MoveReq): Promise<{ job: string }> {
@@ -175,7 +190,7 @@ async function movePreflight(req: MoveReq): Promise<MovePreflight> {
   return request('/fs/move', { method: 'POST', body: JSON.stringify({ ...req, dry_run: true }) })
 }
 
-async function del(paths: string[], permanent = false): Promise<{ job: string }> {
+async function del(paths: string[], permanent = false): Promise<{ results: BatchItemResult[] }> {
   return request('/fs/delete', { method: 'POST', body: JSON.stringify({ paths, permanent }) })
 }
 
@@ -183,7 +198,7 @@ async function del(paths: string[], permanent = false): Promise<{ job: string }>
 
 /**
  * `POST /api/fs/link` — mints a signed, cookie-free content-origin URL for a
- * single file's bytes (`crates/sc-http/src/routes.rs::fs_link`). Requires
+ * single file's bytes (`go/internal/httpapi/handler/link.go`). Requires
  * `fid`, i.e. `entry.id` — see that field's doc comment in `types.ts` for why
  * it is frequently `undefined` and what the caller should do then (not call
  * this at all; there is no path-based alternative on this endpoint).
@@ -197,7 +212,7 @@ async function link(fid: number, disposition: LinkDisposition = 'attachment', di
 
 /**
  * `POST /api/fs/archive` — always answers `202 { job }` now (`fs_archive`,
- * `crates/sc-http/src/routes.rs`): every archive request is a durable job
+ * `go/internal/httpapi/handler`): every archive request is a durable job
  * regardless of size, so there is no synchronous zip stream left to branch
  * on here. `state/job-tray.svelte.ts` tracks the job and fetches the bytes
  * with `jobDownload` once it reports `download: true`.
@@ -226,6 +241,23 @@ async function archiveList(path: string): Promise<ArchiveListing> {
  * `detail.reason = 'denies_below'` rather than a byte count covering data the
  * caller cannot read.
  */
+/**
+ * `GET /api/fs/thumb` — the URL of a re-encoded thumbnail, by path.
+ *
+ * A URL rather than a fetch: the <img> does the loading, so nothing here holds
+ * the bytes and the browser's own cache applies. Same origin, so the session
+ * cookie rides along; the answer is `private, immutable` and keyed on the
+ * file's identity, mtime and size, so a changed file is a different URL.
+ *
+ * `dim` picks the preset rather than being sent verbatim: the server re-encodes
+ * into fixed boxes, and a caller naming arbitrary pixels would be asking for a
+ * cache entry per layout.
+ */
+function thumbUrl(path: string, dim: number): string {
+  const size = dim <= 256 ? 'small' : dim <= 512 ? 'medium' : 'large'
+  return `${BASE}/fs/thumb${qs({ path, size })}`
+}
+
 async function folderSize(path: string): Promise<FolderSize> {
   return request(`/fs/size${qs({ path })}`)
 }
@@ -234,15 +266,17 @@ async function folderSize(path: string): Promise<FolderSize> {
  * `GET /api/recent` — every file this account wrote through this server inside
  * the window, newest first. Exact: there is no walk to truncate.
  */
-async function recentList(
-  opts: { limit?: number; sinceDays?: number; scope?: string } = {}
-): Promise<{ hits: RecentHit[] }> {
-  return request(`/recent${qs({ limit: opts.limit, since_days: opts.sinceDays, scope: opts.scope })}`)
+async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }> {
+  // An instant, not a day count. A day count has to be resolved against
+  // somebody's clock, and the two ends of this wire are in different time
+  // zones often enough that the same request meant two different windows
+  // depending on which side did the arithmetic.
+  return request(`/recent${qs({ limit: opts.limit, since: opts.since, scope: opts.scope })}`)
 }
 
 // ── long-running jobs ──
 // Every `fs_move`/`fs_copy`/`fs_delete`/`fs_archive` request always answers
-// `202 { job }` (`crates/sc-http/src/routes.rs`) — there is no size/count
+// `202 { job }` (`go/internal/httpapi/handler`) — there is no size/count
 // threshold and no synchronous fallback. `copy`/`del`/`archive` above return
 // that envelope as-is; `state/job-tray.svelte.ts` is the one caller that
 // wraps `state/jobs.ts::pollJob` (REST poll + WS `job` push reconciled) to
@@ -250,7 +284,7 @@ async function recentList(
 
 /** `GET /api/jobs` — every non-terminal job the caller owns. `JobTray` calls
  *  this once on mount to re-attach across a refresh or a server restart
- *  (`crates/sc-http/src/routes.rs::job_list`, `JobStore::list_open`). */
+ *  (`go/internal/httpapi/handler/admin_ops.go`). */
 async function jobList(): Promise<JobListResponse> {
   return request('/jobs')
 }
@@ -309,16 +343,37 @@ async function shareDelete(id: number): Promise<void> {
 
 // ── text editor (`/edit/[...path]`) ──
 
+/**
+ * `GET /api/fs/read` streams the file's own bytes, not a JSON envelope around
+ * them. This went through `request()`, which parses JSON: every text preview
+ * and every open of the editor threw on the first byte of the file, and the
+ * card showed its failure state for a file that had been read perfectly well.
+ *
+ * Decoded as UTF-8 with replacement characters rather than refused, because
+ * the caller is a text view: showing a file with a few replacement marks in it
+ * is more use than refusing to show it at all, and the editor's own save path
+ * is conditional, so nothing here can silently rewrite bytes it misread.
+ */
 async function readFile(path: string): Promise<ReadFileResponse> {
-  return request(`/fs/read${qs({ path })}`)
+  const res = await fetch(`${BASE}/fs/read${qs({ path })}`, { credentials: 'include' })
+  if (!res.ok) throw errorFrom(res, await res.json().catch(() => ({})))
+  return { content: await res.text() }
 }
 
-/** `PUT /api/fs/write`. `ifMatch` undefined means "create, or overwrite
- *  unconditionally" server-side only when the file doesn't exist yet — if it
- *  does exist, the server demands a match and answers `412 fs.precondition`
- *  with the current etag (`CoreError::Precondition`, `crates/sc-core/src/ops.rs`
- *  `write_text`). The editor always has an etag once a file has been opened,
- *  so in practice this is only ever called without one for a brand-new file. */
+/**
+ * `PUT /api/fs/write`.
+ *
+ * Omitting `ifMatch` writes without a condition. Two callers do it, and both
+ * on purpose: a brand-new file has no version to condition on, and the
+ * editor's overwrite action deliberately drops the condition after a refusal.
+ *
+ * That second one matters. This server derives a file's change token from
+ * metadata, which cannot be exact, and it refuses a conditional write against
+ * an inexact token rather than accepting one it cannot honour. Retrying with
+ * either the original token or the one the refusal returned is refused again,
+ * every time, so the only way past it is a request that asks for no condition
+ * at all, made because somebody chose to.
+ */
 async function writeFile(path: string, content: string, ifMatch?: string): Promise<Entry> {
   return request('/fs/write', {
     method: 'PUT',
@@ -577,7 +632,7 @@ async function adminSetIndexSettings(nameEnabled: boolean): Promise<IndexSetting
 }
 
 /** `POST /api/admin/index/build` — always crosses the
- *  job threshold (a build walks the whole share by design, `bridge.rs`'s
+ *  job threshold (a build walks the whole share by design, `go/internal/search`'s
  *  `CrawlThrottle`), so unlike `copy`/`del`/`archive` there is no inline-result
  *  branch here: the server answers `202 { job }` every time. */
 async function adminBuildIndex(): Promise<{ job: string }> {
@@ -591,8 +646,8 @@ async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSet
   return request('/admin/upload-settings', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
-// ── admin: server settings (`crates/sc-http/src/settings_api.rs`) — parity
-// with every operator-settable config.toml field, live-apply where possible,
+// ── admin: server settings (`go/internal/httpapi/handler/settings.go`) — parity
+// with every operator-settable sc.toml field, live-apply where possible,
 // restart-required where not. ──
 
 async function adminGetServerSettings(): Promise<SettingsSnapshot> {
@@ -645,12 +700,19 @@ async function adminSetPathsSettings(req: PathsSettingsReq): Promise<ApplyOutcom
   return request('/admin/server-settings/paths', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
-/** `DELETE /api/admin/server-settings/{section}` — drop this group's stored
- *  override so `config.toml` and the environment decide it again. Answers with
- *  the same `ApplyOutcome` a patch does. An unknown section is `404
- *  settings.unknown_section`, never a silent no-op. */
-async function adminClearServerSettings(section: SettingsSectionId): Promise<ApplyOutcome> {
-  return request(`/admin/server-settings/${section}`, { method: 'DELETE' })
+/** `POST /api/admin/server-settings/{section}/check` — try the change without
+ *  storing it. The server runs the same probes a save runs: it renders the SMB
+ *  configuration, writes a file into the homes root, and checks the proposed
+ *  host list still contains the host this request arrived on. `ok: false`
+ *  means a save of this body is refused. */
+async function adminCheckServerSettings(
+  section: SettingsSectionId,
+  body: unknown
+): Promise<SettingsCheckResult> {
+  return request(`/admin/server-settings/${section}/check`, {
+    method: 'POST',
+    body: JSON.stringify(body ?? {})
+  })
 }
 
 /** `POST /api/admin/server-settings/restart` — refuses `409 restart.busy`
@@ -803,10 +865,14 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
     path: raw.share ? normalizePath(`/${raw.share}/${raw.path}`) : normalizePath(raw.path),
     entry: {
       name: raw.name,
+      path: raw.share ? `${raw.share}/${raw.path}` : raw.path,
       kind: raw.is_dir ? 'dir' : 'file',
       size: raw.size ?? 0,
       mtime_ns: raw.mtime_ns ?? '0',
+      // A search hit carries no change token, so there is nothing to be exact
+      // about and nothing here may be used for a conditional write.
       etag: '',
+      etag_weak: true,
       perms: { read: true, write: false, create: false, delete: false, rename: false, move: false, share: false, download: false },
       // No numeric fid in the wire shape (see this file's header comment on
       // `RawSearchHit`) — left `undefined` rather than guessed, same as a
@@ -878,6 +944,7 @@ export const httpApi = {
   revokeSession,
   archiveList,
   folderSize,
+  thumbUrl,
   recentList,
   updateSmbSettings,
   setSmbPassword,
@@ -901,7 +968,7 @@ export const httpApi = {
   adminSetWatchSettings,
   adminSetOidcSettings,
   adminSetPathsSettings,
-  adminClearServerSettings,
+  adminCheckServerSettings,
   adminRestartServer,
   adminListUsers,
   adminCreateUser,

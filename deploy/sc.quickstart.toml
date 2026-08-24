@@ -1,0 +1,43 @@
+# The smallest configuration that runs, used by the compose files.
+#
+# Everything else is set from the settings screen once the server is up, and
+# stored beside the data rather than here. This file only has to carry what is
+# needed before there is a screen to use.
+
+[server]
+data_dir = "/var/lib/stowcloud"
+
+# The container's own address. A published port targets the bridge interface,
+# so a server bound to loopback is unreachable whatever the port mapping says.
+listen = "0.0.0.0:8443"
+
+[http]
+# Every name this server answers to. A request arriving under any other name is
+# refused with 421 rather than served, so add the name you actually browse to.
+#
+# These two cover the machine running this, under either spelling. For a LAN
+# address or a domain, add it here, or add it from the settings screen once you
+# are signed in: that screen checks the change against the host you are
+# connected from and refuses a list that would lock you out.
+app_hosts = ["localhost", "127.0.0.1"]
+
+# Where user content is served from, kept separate so an uploaded file cannot
+# execute in the origin that holds the session cookie. Downloads still work
+# when this resolves nowhere; only inline preview of untrusted files needs it.
+content_hosts = ["content.localhost"]
+
+[security]
+# The sandbox this server asks the kernel for. "required" refuses to start when
+# a layer is unavailable, which inside a container usually means the runtime's
+# seccomp profile blocks openat2. "preferred" reports the gap on the health
+# endpoint and keeps running, which is the right default for a first run.
+#
+# This does not weaken the path resolver. That is a refusal to start under
+# every setting.
+hardening = "preferred"
+
+# Folders to serve. The path is where it is mounted inside the container, and
+# the compose file is what puts it there.
+[[shares]]
+name = "files"
+host_path = "/shares/files"

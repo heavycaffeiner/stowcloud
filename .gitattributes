@@ -15,3 +15,8 @@
 # applies to checkin only in effect here, so a Windows working tree keeps
 # whatever its editors write and nobody has to change their tooling.
 * text=auto eol=lf
+
+# The cross-implementation fixtures are compared byte for byte by two
+# implementations in two languages. Anything git does to them on the way in or
+# out is a difference neither implementation caused, so it does none of it.
+go/testdata/golden/** -text

@@ -1,25 +1,24 @@
-# Scanner policy for the three PKCS#8 blobs under `crates/sc-oidc/src/testdata/`.
+# Scanner policy.
 #
-# They are real private keys and they are committed on purpose. `ring` verifies
-# RSA and ECDSA signatures but cannot generate a key pair, so the fake IdP the
-# OIDC tests run against needs key material from somewhere; the alternative is a
-# key-generation dependency in the crate whose whole point is to have as few as
-# possible. `crates/sc-oidc/src/tests/keys.rs` carries the full reasoning, and
-# `#[cfg(test)] mod tests` is the only thing that `include_bytes!`s them — no
-# deployment reads them and nothing outside the test profile links them.
+# There is no allowlist, and that is the point worth writing down: nothing in
+# this tree commits key material. The OIDC tests need RSA and ECDSA keys to
+# sign with, and Go's standard library generates them at test time, so there is
+# no committed blob for a scanner to trip over and no path to exempt.
 #
-# Path allowlist rather than a `.gitleaksignore`: that file matches
-# `commit:file:rule:line` fingerprints, so every entry goes stale the moment a
-# commit is amended or rebased. A path survives that.
+# An earlier revision carried a path allowlist for three committed DER files.
+# Those are gone, and the allowlist went with them rather than being left
+# pointing at paths that no longer exist: an exemption nobody can see the
+# subject of is one that quietly covers whatever is put there next.
 #
-# This governs gitleaks only. GitHub's own secret scanning does not read it —
-# its private-key rules look for the PEM `-----BEGIN` armour and these files are
-# raw DER, so they are unlikely to trip it, but if an alert does appear it has
-# to be dismissed in the repository's Security tab.
+# This governs gitleaks only. GitHub's own secret scanning does not read it.
 
 [extend]
 useDefault = true
 
+# go/deps.allow is prose: one line per dependency and the reason it is there.
+# The generic high-entropy rule reads a comment naming three cipher
+# constructions as a credential. Scoped to the one file, and that file holds no
+# values at all, only module paths and sentences.
 [[allowlists]]
-description = "OIDC test-only signing keys — see crates/sc-oidc/src/tests/keys.rs"
-paths = ['''crates/sc-oidc/src/testdata/.*\.der$''']
+description = "the dependency allow-list is prose, not values"
+paths = ['''^go/deps\.allow$''']

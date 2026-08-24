@@ -1,0 +1,170 @@
+// Linux only: it depends on packages that are Linux only.
+//go:build linux
+
+// Package handler is the REST surface's handlers: one file per resource, and
+// every handler returns an error the ErrorMapper renders rather than choosing
+// a status itself. The only status a handler names is on the success path.
+package handler
+
+import (
+	"net/http"
+	"strconv"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
+	"github.com/heavycaffeiner/stowcloud/go/internal/core"
+	"github.com/heavycaffeiner/stowcloud/go/internal/store/state"
+)
+
+// The operation surface: /api/jobs answers a long operation's status, and
+// /api/jobs/{id}/cancel requests its cancellation. Status and cancel are the
+// only two things a client does with an operation; the work itself is
+// owned by the core.
+
+type operationResponse struct {
+	ID      int64  `json:"id"`
+	Kind    string `json:"kind"`
+	State   string `json:"state"`
+	Results []struct {
+		Path   string `json:"path,omitempty"`
+		Status string `json:"status"`
+	} `json:"results,omitempty"`
+}
+
+// Operation answers GET /api/jobs/{id}.
+func Operation(d Deps) http.HandlerFunc {
+	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
+		uid, cerr := userOf(r)
+		if cerr != nil {
+			return cerr
+		}
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			return apierr.BadRequest("jobs.id", "id")
+		}
+		op, err := d.Core.Operation(r.Context(), uid, core.OperationID(id))
+		if err != nil {
+			return err
+		}
+		return writeJSON(w, http.StatusOK, operationToJSON(op))
+	})
+}
+
+// OperationDownload answers GET /api/jobs/{id}/download.
+//
+// Mounted and honest rather than absent. A job does not keep its output: an
+// archive is streamed as it is packed, because the server never holds one, so
+// there is nothing here to hand back. A client that asks gets a status it can
+// act on instead of a connection to a path that does not exist.
+func OperationDownload(d Deps) http.HandlerFunc {
+	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
+		if _, cerr := userOf(r); cerr != nil {
+			return cerr
+		}
+		return notImplemented("jobs.download_unavailable")
+	})
+}
+
+// OperationCancel answers POST /api/jobs/{id}/cancel and DELETE
+// /api/jobs/{id}.
+//
+// Two spellings because the client uses the second and this server mounted
+// only the first, so cancelling answered "method not allowed" from a route
+// that exists. One handler, so they cannot drift.
+func OperationCancel(d Deps) http.HandlerFunc {
+	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
+		uid, cerr := userOf(r)
+		if cerr != nil {
+			return cerr
+		}
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			return apierr.BadRequest("jobs.id", "id")
+		}
+		if err := d.Core.CancelOperation(r.Context(), uid, core.OperationID(id)); err != nil {
+			return err
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return nil
+	})
+}
+
+func operationToJSON(op core.Operation) operationResponse {
+	out := operationResponse{ID: int64(op.ID), Kind: opKindString(op.Kind), State: opStateString(op.State)}
+	for _, res := range op.Results {
+		out.Results = append(out.Results, struct {
+			Path   string `json:"path,omitempty"`
+			Status string `json:"status"`
+		}{Path: res.Path, Status: opResultStatus(res.OK, res.Reason)})
+	}
+	return out
+}
+
+func opStateString(s state.OpState) string {
+	switch s {
+	case state.OpRunning:
+		return "running"
+	case state.OpDone:
+		return "done"
+	case state.OpFailed:
+		return "failed"
+	case state.OpCancelled:
+		return "cancelled"
+	case state.OpInterrupted:
+		return "interrupted"
+	}
+	return "unknown"
+}
+
+func opKindString(k state.OpKind) string {
+	switch k {
+	case state.OpCopy:
+		return "copy"
+	case state.OpDelete:
+		return "delete"
+	case state.OpArchive:
+		return "archive"
+	case state.OpIndexBuild:
+		return "index-build"
+	}
+	return "unknown"
+}
+
+func opResultStatus(ok bool, reason state.OpResultReason) string {
+	if ok {
+		return "ok"
+	}
+	switch reason {
+	case state.ReasonItemDenied:
+		return "denied"
+	case state.ReasonItemNotFound:
+		return "not_found"
+	case state.ReasonItemConflict:
+		return "conflict"
+	case state.ReasonItemSkipped:
+		return "skipped"
+	}
+	return "failed"
+}
+
+// Operations answers GET /api/jobs: what this account has in flight.
+func Operations(d Deps) http.HandlerFunc {
+	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
+		uid, cerr := userOf(r)
+		if cerr != nil {
+			return cerr
+		}
+		ops, err := d.Core.ListOperations(r.Context(), uid, jobListLimit)
+		if err != nil {
+			return err
+		}
+		out := make([]operationResponse, 0, len(ops))
+		for _, op := range ops {
+			out = append(out, operationToJSON(op))
+		}
+		return writeJSON(w, http.StatusOK, map[string]any{"jobs": out})
+	})
+}
+
+// jobListLimit bounds the listing. The table grows with every batch anyone
+// runs, and the screen shows what is running and what just finished.
+const jobListLimit = 100
