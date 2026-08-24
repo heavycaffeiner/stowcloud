@@ -29,8 +29,9 @@ content_hosts = ["content.localhost"]
 [security]
 # The sandbox this server asks the kernel for. "required" refuses to start when
 # a layer is unavailable, which inside a container usually means the runtime's
-# seccomp profile blocks openat2. "preferred" reports the gap on the health
-# endpoint and keeps running, which is the right default for a first run.
+# seccomp profile blocks Landlock or seccomp itself. "preferred" reports the
+# gap on the health endpoint and keeps running, which is the right default for
+# a first run.
 #
 # This does not weaken the path resolver. That is a refusal to start under
 # every setting.

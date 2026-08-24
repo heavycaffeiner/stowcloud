@@ -126,6 +126,15 @@ needs a profile change. A downgrade to a weaker path-resolution mechanism is
 logged loudly, because it is a real weakening of the guarantee the whole
 security model rests on.
 
+`EPERM` and `EACCES` are kept apart for the same reason, and folding them
+together was a real defect rather than a hypothetical one. A seccomp filter
+refuses with `EPERM`; a directory the calling uid cannot search refuses with
+`EACCES`. The probe used to open `"."`, and the distroless base sets the
+working directory to `/home/nonroot`, mode 700 owned by 65532, so running the
+image under any other uid produced `EACCES` and a refusal that blamed the
+seccomp profile. Editing the profile could not fix it. The probe now opens
+`"/"`, which every uid can search, and the two errnos report different causes.
+
 This is stance S3, and it is the same stance D3 turns into a startup refusal.
 Under `hardening = "required"` both a blocked `openat2` and an unavailable
 Landlock refuse to start; the difference is what happens under `preferred`, and
@@ -223,6 +232,15 @@ promises.
 
 - The container runs as an unprivileged uid from the start, so no setuid
   capability is ever needed and `cap_drop: ALL` costs nothing.
+- **The image runs as 65532 and the working directory is `/`.** The distroless
+  base defaults it to `/home/nonroot`, mode 700 owned by 65532, which an
+  overridden `user:` cannot search. The Dockerfile sets `WORKDIR /` so that
+  overriding the uid fails on the directories the deployment actually mounts,
+  where the cause is legible, rather than on the first path the process
+  resolves.
+- A bind mount does not inherit ownership the way a named volume does, so a
+  host directory has to be created owned by the runtime uid. A missing bind
+  source is created root-owned by the runtime and the first write fails.
 - Groups shared with other services go in `group_add`.
 - **Creation modes are set explicitly per share, never left to umask.** A umask
   can only mask bits, not set them, so it cannot express "group-readable so the
@@ -300,7 +318,7 @@ does (D15).
 | Condition | Effect |
 |---|---|
 | share on any type outside the supported allow-list | registration refused, filesystem named, startup continues without that share |
-| `openat2` blocked by a seccomp profile | refusal to start under every policy including `off`, naming whether the cause was a profile or an old kernel (§4.2) |
+| `openat2` blocked by a seccomp profile | refusal to start under every policy including `off`, naming whether the cause was a profile, a filesystem permission or an old kernel (§4.2) |
 | Landlock or seccomp unavailable | refusal to start under `required`; `degraded` under `preferred` |
 | data directory not writable by the runtime uid | refusal to start, naming the path and the uid |
 | certificate generation fails | refusal to start; there is no plaintext fallback to degrade into |

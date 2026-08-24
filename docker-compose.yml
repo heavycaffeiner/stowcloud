@@ -25,10 +25,16 @@ services:
       - /tmp:size=64m
     cap_drop: [ALL]
     security_opt:
-      # The runtime's default seccomp profile blocks openat2 on releases older
-      # than 20.10.10, which this server needs and will not start without. If
-      # that is your runtime, upgrade it rather than granting anything here.
+      # Docker's default seccomp profile allows openat2 from 20.10.0 on. An
+      # older profile refuses it, and this server resolves every path with it
+      # and will not start without it. Upgrade rather than granting anything
+      # here.
       - no-new-privileges:true
+
+    # Left at the image's own uid on purpose. The base puts the working
+    # directory at /home/nonroot, mode 700 owned by 65532, so a `user:` set to
+    # anything else lands in a directory it cannot search. Override this only
+    # together with `working_dir: /`.
 
     ports:
       # TLS, always. There is no plaintext listener to publish by mistake.

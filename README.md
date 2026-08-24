@@ -91,6 +91,15 @@ writable by uid 65532:
       - /srv/my-files:/shares/files:z
 ```
 
+Create it before the first start, because a bind mount does not inherit an
+owner the way a named volume does. A directory Docker creates for a missing
+bind source is owned by root, and the server cannot write to it:
+
+```sh
+sudo mkdir -p /srv/my-files
+sudo chown -R 65532:65532 /srv/my-files
+```
+
 **3. Create the administrator account.**
 
 ```sh
@@ -215,8 +224,9 @@ the setting says so rather than leaving you to guess.
 
 - **Linux**, kernel 5.6 or newer. 5.13 or newer adds the sandbox used for
   image previews.
-- **Docker** 20.10.10 or newer. Older versions block a system call this
-  depends on and force a weaker security mode.
+- **Docker** 20.10.0 or newer. Its default seccomp profile allows `openat2`
+  from that release on; older profiles refuse it, and this server resolves
+  every path with it and will not start without it.
 - **About 30 MB** for the image, plus a folder for the cache database.
 
 Linux is the only supported runtime. The code compiles on other systems, but
@@ -245,6 +255,32 @@ name is announced by broadcast and a Docker bridge does not carry broadcast.
 The second pins which address smbd listens on. Left empty it binds every private
 range it finds, which on the host's stack includes the Docker bridges, so any
 container on the machine can reach it.
+
+## When it will not start
+
+The server refuses to start rather than running in a state it cannot make
+guarantees about. Two refusals account for most first runs, and both name a
+cause that is one layer away from the real one.
+
+**`opening the store: ... unable to open database file`.** The data directory
+is not writable by the uid the server runs as. SQLite reports a directory it
+cannot create a file in this way, so the message names the file rather than the
+directory. It is a bind mount whose host directory is owned by someone else,
+usually root because the path did not exist when the container first started.
+Create it owned by 65532, as above, or use a named volume.
+
+**`openat2 ... refused`.** Every path is resolved with `openat2` and there is
+no fallback, because resolving a path one component at a time is the race this
+design exists to close. The message distinguishes the three causes: `EPERM` is
+a seccomp profile, so upgrade Docker to 20.10.0 or newer; `EACCES` is a
+filesystem permission, usually a `user:` override the image's directories do
+not admit; `ENOSYS` is a kernel below 5.6.
+
+To see what the kernel actually offers inside the container that is deployed:
+
+```sh
+docker compose exec sc /stowcloud caps
+```
 
 ## How it is built
 

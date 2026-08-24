@@ -8,7 +8,9 @@
 # volumes to avoid needing any host-side setup at all.
 #
 # One-time setup, from this directory. The uid is the one the image runs as,
-# and a bind mount does not inherit ownership the way a named volume does:
+# and a bind mount does not inherit ownership the way a named volume does: a
+# directory compose creates for a missing bind source is root-owned, and the
+# first write fails with "unable to open database file".
 #
 #   mkdir -p data shares/files smbcfg
 #   sudo chown -R 65532:65532 data shares smbcfg
