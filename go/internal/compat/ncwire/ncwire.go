@@ -1,4 +1,4 @@
-//go:build compat_nc
+//go:build linux && compat_nc
 
 // Package ncwire wires the compatibility layer to the rest of the server.
 //

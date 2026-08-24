@@ -1,3 +1,6 @@
+// Linux only, like the command it tests.
+//go:build linux
+
 package main
 
 import (

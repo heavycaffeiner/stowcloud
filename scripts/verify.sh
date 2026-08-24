@@ -221,12 +221,19 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # command imports packages that are excluded here in full. Vetting each on
   # its own means an excluded neighbour costs one skipped package rather than
   # the entire check.
+  # Both tag sets, because the compat build is a separate set of files and
+  # broke the same way independently.
+  #
+  # A test build rather than a vet: what the Windows job runs is go test, and
+  # tagging a package Linux-only without tagging what imports it turns a clean
+  # vet into a "setup failed" there. -run matches nothing, so this compiles
+  # every test binary and executes none.
   run "the build tags hold off Linux" bash -c '
     cd go
     fail=0
-    for p in $(CGO_ENABLED=0 GOOS=windows go list ./... 2>/dev/null); do
-      out=$(CGO_ENABLED=0 GOOS=windows go vet "$p" 2>&1 |
-              grep -E "\.go:[0-9]+:[0-9]+:")
+    for tags in "" "-tags compat_nc"; do
+      out=$(CGO_ENABLED=0 GOOS=windows go test $tags -count=1 -run XXXNONE ./... 2>&1 |
+              grep -vE "^(ok|\?|no test files)")
       if [ -n "$out" ]; then printf "%s\n" "$out"; fail=1; fi
     done
     exit $fail'

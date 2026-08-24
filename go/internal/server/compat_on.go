@@ -1,4 +1,4 @@
-//go:build compat_nc
+//go:build linux && compat_nc
 
 package server
 

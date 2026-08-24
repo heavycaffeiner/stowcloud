@@ -1,4 +1,4 @@
-//go:build compat_nc
+//go:build linux && compat_nc
 
 // Package nc is the compatibility layer that makes existing sync clients work.
 //

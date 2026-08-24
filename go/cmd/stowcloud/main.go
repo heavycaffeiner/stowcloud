@@ -1,3 +1,7 @@
+// The server is Linux only by design: a share root is an openat2 handle and
+// the sandbox is seccomp and Landlock.
+//go:build linux
+
 // Command stowcloud is the whole product. Dispatch is on argv[1] before any
 // flag parsing, so a subcommand costs nothing in the flag set and works in a
 // shell-less image where Docker's exec-form HEALTHCHECK runs an argv directly.

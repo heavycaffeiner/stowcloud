@@ -1,3 +1,7 @@
+// The server is Linux only by design: a share root is an openat2 handle and
+// the sandbox is seccomp and Landlock.
+//go:build linux
+
 package main
 
 import (

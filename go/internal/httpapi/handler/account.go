@@ -1,3 +1,6 @@
+// Linux only: it depends on packages that are Linux only.
+//go:build linux
+
 package handler
 
 import (

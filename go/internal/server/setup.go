@@ -1,3 +1,6 @@
+// Linux only: it depends on packages that are Linux only.
+//go:build linux
+
 // Package server assembles the product: the typed config, the TLS listener,
 // the wiring that binds the chain to the route table, the setup gate, and the
 // shutdown and health surfaces. It is the only package that owns a listener.

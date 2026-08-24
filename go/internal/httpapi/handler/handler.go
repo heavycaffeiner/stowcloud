@@ -1,3 +1,6 @@
+// Linux only: it depends on packages that are Linux only.
+//go:build linux
+
 // Package handler is the REST surface's handlers: one file per resource, and
 // every handler returns an error the ErrorMapper renders rather than choosing
 // a status itself. The only status a handler names is on the success path.
