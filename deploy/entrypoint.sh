@@ -16,6 +16,33 @@ set -eu
 PUID="${PUID:-1000}"
 PGID="${PGID:-1000}"
 
+# Already unprivileged, because the container was started with `user:`. There
+# is nothing to reconcile and nothing to drop: the runtime picked the uid and
+# changing an account needs root. PUID and PGID are ignored rather than
+# half-applied, and the server is exec'd as whoever we are.
+if [ "$(id -u)" != 0 ]; then
+    exec /stowcloud "$@"
+fi
+
+# Root, but possibly without the capabilities that make being root mean
+# anything: `cap_drop: ALL` leaves uid 0 with an empty permitted set, so
+# setgroups and chown both fail. Dropping to the service account is impossible
+# there, and running the server as root instead is not an acceptable fallback.
+#
+# Probed by trying it rather than by parsing /proc/self/status, because the
+# question is whether this kernel will let this process do it, and the answer
+# to that is the syscall's.
+if ! su-exec "$PUID:$PGID" true 2>/dev/null; then
+    echo "stowcloud: this container is root but cannot drop to $PUID:$PGID." >&2
+    echo "  The entrypoint needs CAP_SETUID, CAP_SETGID and CAP_CHOWN to hand the" >&2
+    echo "  data directory over and become the service account. Either add them:" >&2
+    echo "    cap_add: [SETUID, SETGID, CHOWN]" >&2
+    echo "  or start the container as the account directly, which skips all of" >&2
+    echo "  this and ignores PUID/PGID:" >&2
+    echo "    user: \"$PUID:$PGID\"" >&2
+    exit 78
+fi
+
 # Refuse anything that is not a plain number before it reaches usermod, which
 # would otherwise take a name and produce an account nobody asked for.
 case "$PUID$PGID" in

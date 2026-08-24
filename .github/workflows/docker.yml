@@ -188,7 +188,9 @@ jobs:
       - name: Run the container
         run: |
           docker run -d --name sc-smoke \
-            --cap-drop ALL --security-opt no-new-privileges:true \
+            --cap-drop ALL \
+            --cap-add SETUID --cap-add SETGID --cap-add CHOWN \
+            --security-opt no-new-privileges:true \
             --read-only --tmpfs /tmp:size=64m \
             -v /tmp/sc.toml:/etc/stowcloud/sc.toml:ro \
             -v /tmp/sc-data:/var/lib/stowcloud \

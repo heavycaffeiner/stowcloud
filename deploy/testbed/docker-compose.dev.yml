@@ -34,6 +34,14 @@ services:
     tmpfs:
       - /tmp:size=64m
     cap_drop: [ALL]
+    # Handed back so the entrypoint can become the service account: SETUID and
+    # SETGID for the drop itself, CHOWN to hand over the data directory when
+    # PUID names a uid that does not already own it. The server runs without
+    # them; they are spent before it starts.
+    #
+    # Starting the container with `user: "1000:1000"` instead skips all three,
+    # and skips PUID/PGID with them.
+    cap_add: [SETUID, SETGID, CHOWN]
     security_opt:
       - no-new-privileges:true
 
