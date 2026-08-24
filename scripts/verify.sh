@@ -226,14 +226,18 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   #
   # A test build rather than a vet: what the Windows job runs is go test, and
   # tagging a package Linux-only without tagging what imports it turns a clean
-  # vet into a "setup failed" there. -run matches nothing, so this compiles
-  # every test binary and executes none.
+  # vet into a "setup failed" there. Compiling the test binaries is what
+  # surfaces that.
+  #
+  # -o /dev/null, not -run with a pattern that matches nothing: this host is
+  # Linux and the binaries are Windows ones, so running them is an exec format
+  # error for every package. They are built and thrown away.
   run "the build tags hold off Linux" bash -c '
     cd go
     fail=0
     for tags in "" "-tags compat_nc"; do
-      out=$(CGO_ENABLED=0 GOOS=windows go test $tags -count=1 -run XXXNONE ./... 2>&1 |
-              grep -vE "^(ok|\?|no test files)")
+      out=$(CGO_ENABLED=0 GOOS=windows go test $tags -o /dev/null -c ./... 2>&1 |
+              grep -vE "^\?[[:space:]]")
       if [ -n "$out" ]; then printf "%s\n" "$out"; fail=1; fi
     done
     exit $fail'

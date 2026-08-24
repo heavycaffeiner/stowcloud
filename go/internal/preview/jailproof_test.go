@@ -238,3 +238,53 @@ func TestTheJailedWorkerStillDecodes(t *testing.T) {
 		t.Fatal("the jailed worker wrote nothing")
 	}
 }
+
+// Many jobs on one worker, because the kills this catches only appear after
+// several.
+//
+// Every other proof here sends one job and stops, and a worker survives its
+// first job whatever the allow-list is missing: the Go runtime sets up its
+// network poller lazily, on whichever job first parks a goroutine on the
+// socket. That happened somewhere between the third and the tenth, so the
+// suite was green while a jailed worker could not serve a directory of
+// thumbnails. It showed up as a rare CI failure on a machine that scheduled
+// differently, twice in twelve runs, reported as "the worker died: EOF".
+//
+// epoll_create1, eventfd2 and epoll_ctl are what it was missing. The list had
+// epoll_pwait, which is the wait rather than the setup, so the measurement
+// that produced it had captured a poller that was already running.
+func TestAJailedWorkerSurvivesManyJobs(t *testing.T) {
+	requireJail(t)
+
+	pool, err := preview.NewPool(preview.PoolOptions{
+		Workers: 1,
+		Exe:     jailedWorker(t),
+		Args:    []string{"preview-worker"},
+		Env:     []string{"HOME=" + os.Getenv("HOME"), "PATH=" + os.Getenv("PATH")},
+	})
+	if err != nil {
+		t.Fatalf("NewPool: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := pool.Close(); cerr != nil {
+			t.Errorf("closing the pool: %v", cerr)
+		}
+	})
+
+	for i := range 30 {
+		in, out := job(t, pngOf(t, 400, 300))
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		resp, gerr := pool.Generate(ctx, preview.Request{
+			Kind: preview.JobImage, Preset: preview.PresetSmall, Flags: preview.FlagStripEXIF,
+		}, preview.PlainSource{F: in}, out)
+		cancel()
+		if gerr != nil {
+			t.Fatalf("job %d of 30: %v\n"+
+				"the allow-list is missing an entry the runtime reaches only after "+
+				"several jobs; the reported signal names which", i+1, gerr)
+		}
+		if resp.Status != preview.StatusOK {
+			t.Fatalf("job %d of 30: status = %v (%s)", i+1, resp.Status, resp.Err)
+		}
+	}
+}

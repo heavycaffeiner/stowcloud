@@ -143,13 +143,23 @@ func deniedSyscalls() []int {
 //     arrives with, to learn whether it is readable or writable.
 //   - epoll_pwait and getpid, which the Go runtime's scheduler and its
 //     signal path use even with one thread.
+//   - epoll_create1, eventfd2 and epoll_ctl, which are the network poller
+//     being built. The runtime does that lazily, on whichever job first parks
+//     a goroutine on the socket, so a worker survives its first few and then
+//     is killed. The original measurement had epoll_pwait without them, which
+//     is the wait without the setup: it had captured a poller that was already
+//     running before the trace began.
 //
 // clone is deliberately absent and the measurement is what makes that
 // affordable. Every clone the trace showed carried CLONE_THREAD, so it was the
-// runtime adding an OS thread rather than a fork, and running the worker at
-// GOMAXPROCS=1 removes it entirely: the decode phase then needs six calls and
-// creates no threads. A worker that cannot clone cannot fork either, which is
-// the property this list is for.
+// runtime adding an OS thread rather than a fork. A worker that cannot clone
+// cannot fork either, which is the property this list is for.
+//
+// GOMAXPROCS=1 does not mean one OS thread, and an earlier version of this
+// note claimed it did. It bounds goroutines running Go code, not threads: the
+// runtime still has five or so for its own work. What makes clone's absence
+// hold is that none of them is started after the filter is installed, not that
+// they do not exist.
 func allowedSyscalls() []int {
 	return []int{
 		unix.SYS_READ,
@@ -184,6 +194,9 @@ func allowedSyscalls() []int {
 		unix.SYS_FCNTL,
 		unix.SYS_EPOLL_PWAIT,
 		unix.SYS_GETPID,
+		unix.SYS_EPOLL_CREATE1,
+		unix.SYS_EVENTFD2,
+		unix.SYS_EPOLL_CTL,
 	}
 }
 
