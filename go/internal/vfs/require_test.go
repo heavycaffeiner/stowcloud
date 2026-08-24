@@ -4,6 +4,7 @@ package vfs
 
 import (
 	"errors"
+	"os"
 	"strings"
 	"testing"
 )
@@ -40,6 +41,49 @@ func TestTheRefusalDistinguishesBlockedFromMissing(t *testing.T) {
 	}
 }
 
+// EACCES is a directory mode and EPERM is a seccomp filter. Folding them
+// together is what sent an operator to edit a profile that had nothing wrong
+// with it, so the two messages must not agree on the cause.
+func TestADeniedProbeDoesNotBlameSeccomp(t *testing.T) {
+	denied := RequireResolver(Caps{Openat2: SupportDenied, Kernel: "6.1.0"})
+	if !errors.Is(denied, ErrResolverUnavailable) {
+		t.Fatalf("a denied resolver gave %v, want a refusal", denied)
+	}
+	if strings.Contains(denied.Error(), "Allow openat2 in the profile") {
+		t.Errorf("the denied message sends the operator to a seccomp profile: %v", denied)
+	}
+	if !strings.Contains(denied.Error(), "user") {
+		t.Errorf("the denied message does not point at the container user: %v", denied)
+	}
+	blocked := RequireResolver(Caps{Openat2: SupportBlocked, Kernel: "6.1.0"})
+	if denied.Error() == blocked.Error() {
+		t.Fatal("EACCES and EPERM report the same message")
+	}
+}
+
+// The probe must not depend on the working directory. The distroless base sets
+// it to /home/nonroot, mode 700 owned by 65532, so a probe of "." answers
+// EACCES under any other uid and the server refuses to start for a reason that
+// has nothing to do with openat2.
+func TestTheProbeDoesNotDependOnTheWorkingDirectory(t *testing.T) {
+	if Probe().Openat2 != SupportPresent {
+		t.Skip("openat2 is unavailable here for an unrelated reason")
+	}
+	dir := t.TempDir()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	// A working directory this process cannot search. The probe must not care.
+	if err := os.Chmod(dir, 0o000); err != nil {
+		t.Skipf("cannot drop the mode on the working directory: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+
+	if got := Probe().Openat2; got != SupportPresent {
+		t.Fatalf("openat2 probed as %v from an unsearchable working directory, want present", got)
+	}
+}
+
 // An unknown result is a refusal too. A probe that could not answer is not the
 // same as one that answered yes.
 func TestAnUnknownProbeResultIsARefusal(t *testing.T) {
@@ -58,7 +102,7 @@ func TestAPresentResolverStarts(t *testing.T) {
 // why the server does not just do it another way, and the answer is that the
 // other way is the race this design closes.
 func TestTheRefusalSaysThereIsNoFallback(t *testing.T) {
-	for _, s := range []Support{SupportBlocked, SupportMissing} {
+	for _, s := range []Support{SupportBlocked, SupportMissing, SupportDenied} {
 		msg := RequireResolver(Caps{Openat2: s, Kernel: "6.1.0"}).Error()
 		if !strings.Contains(msg, "no fallback") {
 			t.Errorf("the message for %v does not say there is no fallback: %s", s, msg)

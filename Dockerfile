@@ -136,6 +136,13 @@ FROM gcr.io/distroless/static-debian12@${DISTROLESS_DIGEST} AS runtime
 
 COPY --from=builder --chown=nonroot:nonroot /out/stowcloud /stowcloud
 
+# The base sets this to /home/nonroot, which is mode 700 owned by 65532, so a
+# container started with a different `user:` cannot search its own working
+# directory. Nothing here needs a writable cwd, and / is searchable by every
+# uid, so an overridden user fails on the directories it actually touches
+# rather than on the first path the process resolves.
+WORKDIR /
+
 # The permissive licences all require their notice to reach whoever receives a
 # copy of the work, and for most people that copy is this image rather than the
 # repository.

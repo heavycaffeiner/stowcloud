@@ -41,10 +41,18 @@ func (e *ResolverError) Error() string {
 				"Upgrade to a kernel that has it", e.Kernel)
 	case SupportBlocked:
 		return fmt.Sprintf(
-			"vfs: openat2 exists on this kernel (%s) and a sandbox policy refused it, which is usually a container "+
-				"runtime's default seccomp profile. This server resolves every path with it and has no fallback, "+
+			"vfs: openat2 exists on this kernel (%s) and a seccomp filter refused it with EPERM, which is usually a "+
+				"container runtime's default profile. This server resolves every path with it and has no fallback, "+
 				"because resolving a path one component at a time is the race this design exists to close. "+
 				"Allow openat2 in the profile", e.Kernel)
+	case SupportDenied:
+		return fmt.Sprintf(
+			"vfs: openat2 exists on this kernel (%s) and the probe was refused with EACCES, which is a filesystem "+
+				"permission and not a seccomp profile. This server resolves every path with it and has no fallback, "+
+				"because resolving a path one component at a time is the race this design exists to close. "+
+				"The usual cause is running the image as a uid that cannot search its own working directory: this "+
+				"image runs as 65532, so a container started with a different user needs one it can reach. "+
+				"Check the user the container runs as", e.Kernel)
 	}
 	return fmt.Sprintf("vfs: openat2 is not usable on this kernel (%s) and this server has no fallback", e.Kernel)
 }

@@ -26,8 +26,14 @@ const (
 	SupportPresent
 	// SupportMissing is ENOSYS: this kernel does not implement it.
 	SupportMissing
-	// SupportBlocked is EPERM or EACCES: it exists and a policy refused it.
+	// SupportBlocked is EPERM: it exists and a policy refused it, which for a
+	// syscall is a seccomp filter.
 	SupportBlocked
+	// SupportDenied is EACCES: the call reached the kernel and the filesystem
+	// refused the operand. It is kept apart from SupportBlocked because the two
+	// send an operator to opposite places: a seccomp profile and a directory
+	// mode. Reporting a mode as a profile costs an afternoon.
+	SupportDenied
 )
 
 func (s Support) String() string {
@@ -38,6 +44,8 @@ func (s Support) String() string {
 		return "missing (this kernel does not implement it)"
 	case SupportBlocked:
 		return "blocked (the kernel has it and a policy refused it)"
+	case SupportDenied:
+		return "denied (the kernel has it and the filesystem refused the path)"
 	}
 	return "unknown"
 }
@@ -92,17 +100,25 @@ func (c Caps) String() string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// classify is the whole point of this file: ENOSYS is absence, EPERM and EACCES
-// are a policy, and anything else means the call reached the kernel and got a
-// real answer, which is what "present" means here.
+// classify is the whole point of this file: ENOSYS is absence, EPERM is a
+// policy, EACCES is the filesystem refusing the operand, and anything else
+// means the call reached the kernel and got a real answer, which is what
+// "present" means here.
+//
+// EPERM and EACCES were folded together once. They are not the same fact: a
+// seccomp filter returns EPERM, while a directory whose mode does not let this
+// uid search it returns EACCES, and an operator told to edit a seccomp profile
+// because of a directory mode will not find anything wrong with the profile.
 func classify(err error) Support {
 	switch {
 	case err == nil:
 		return SupportPresent
 	case errors.Is(err, unix.ENOSYS):
 		return SupportMissing
-	case errors.Is(err, unix.EPERM), errors.Is(err, unix.EACCES):
+	case errors.Is(err, unix.EPERM):
 		return SupportBlocked
+	case errors.Is(err, unix.EACCES):
+		return SupportDenied
 	}
 	return SupportPresent
 }
@@ -115,12 +131,22 @@ func kernelRelease() string {
 	return string(bytes.TrimRight(u.Release[:], "\x00"))
 }
 
+// probeOpenat2 asks about the root directory rather than the working directory.
+//
+// The operand has to be one that cannot fail for a reason unrelated to the
+// syscall. "." is not: the working directory is whatever the image or the
+// operator set, and the distroless base this ships on puts it at /home/nonroot,
+// mode 700 and owned by 65532. Running the image under any other uid made this
+// probe return EACCES, which was then reported as a seccomp profile blocking
+// openat2, and no amount of editing the profile fixed it. "/" is searchable by
+// every uid on every system this runs on, so what is left to fail is the
+// syscall itself.
 func probeOpenat2() Support {
 	how := unix.OpenHow{
 		Flags:   unix.O_PATH | unix.O_DIRECTORY | unix.O_CLOEXEC,
 		Resolve: unix.RESOLVE_NO_MAGICLINKS,
 	}
-	fd, err := unix.Openat2(unix.AT_FDCWD, ".", &how)
+	fd, err := unix.Openat2(unix.AT_FDCWD, "/", &how)
 	if err == nil {
 		closeQuiet(fd)
 	}
