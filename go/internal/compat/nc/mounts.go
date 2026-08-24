@@ -21,6 +21,10 @@ type Mount struct {
 // that made the request, and a session-authenticated call has none to revoke.
 type Principal struct {
 	User UserIDValue
+	// Login is the account's own name, which the device login records with the
+	// approval and the client stores as the account it signed in as. Empty
+	// where the resolver could not supply one.
+	Login string
 	// CredentialID names the app password this request authenticated with,
 	// and is zero for a browser session.
 	CredentialID int64

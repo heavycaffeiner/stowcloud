@@ -10,6 +10,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/compat/ncwire"
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
+	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store/state"
 )
@@ -20,11 +21,11 @@ import (
 // one tagged file with a no-op sibling. A build without the tag does not
 // compile the layer at all, which is stronger than a flag that still
 // typechecks: an error in there cannot hide behind the flag being off.
-func compatRoutes(c *core.Core, st *state.DB, authSvc *auth.Service, origin string, clk clock.Clock, log *slog.Logger) []compatMount {
+func compatRoutes(c *core.Core, st *state.DB, authSvc *auth.Service, origin string, clk clock.Clock, log *slog.Logger, state *httpapi.State) []compatMount {
 	// The mount points the sync clients use, which address the same tree this
 	// server serves at its own prefix. They live here because the names are
 	// another product's protocol and this is the one file that speaks it.
-	layer := ncwire.Build(c, st, authSvc, origin, clk, log)
+	layer := ncwire.Build(c, st, authSvc, origin, clk, log, writeConsent(state))
 	out := make([]compatMount, 0)
 	for _, m := range layer.Mounts() {
 		out = append(out, compatMount{Method: m.Method, Pattern: m.Pattern, Handler: m.Handler})

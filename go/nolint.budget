@@ -206,5 +206,8 @@
 # 244: the SMB control socket's directory and its fallback mode. Both are
 # wider than gosec's default on purpose: the server is a different uid and the
 # channel exists for it to reach.
-244
+#
+# 245: the device-login consent page's template execution. The headers are
+# already written by then, so a failed body has nowhere to be reported to.
+245
 

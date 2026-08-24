@@ -126,5 +126,8 @@ func Authenticator(r *http.Request) (nc.Principal, bool) {
 	// CredentialID stays zero. The chain resolves which app password a request
 	// carried but does not publish its row id, and the one surface that wants
 	// it is account removal, which is not mounted here.
-	return nc.Principal{User: id}, true
+	//
+	// The account's own name, which is what a client stores as the account it
+	// signed in as rather than whatever label was set for display.
+	return nc.Principal{User: id, Login: p.Login}, true
 }

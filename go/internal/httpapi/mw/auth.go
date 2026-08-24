@@ -27,6 +27,35 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool, filePrefix
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
 			if isPublic(r.Method, path) {
+				// Public means "needs no credential", not "has none". A page
+				// that renders differently for somebody signed in still has to
+				// know, and skipping the read entirely left the device-login
+				// consent page redirecting a logged-in browser back to the
+				// sign-in screen it had just come from.
+				//
+				// Reads only. A public POST that resolved a principal would
+				// pick up the CSRF check below it, and signing in is a POST
+				// from a page that has no token yet: a browser holding an old
+				// session could then never sign in again, which is a worse
+				// failure than the one this fixes.
+				//
+				// A credential that fails to validate is ignored rather than
+				// refused: this path does not require one, so a stale cookie
+				// must not turn a public page into an error.
+				//
+				// The token travels as hex and the lookup hashes the decoded
+				// bytes, which is what CreateSession hashed. Passing the
+				// printable form straight through hashes the wrong thing and
+				// every session reads as invalid.
+				if r.Method == http.MethodGet || r.Method == http.MethodHead {
+					if c, cerr := r.Cookie(SessionCookie); cerr == nil && c.Value != "" {
+						if raw, derr := hex.DecodeString(c.Value); derr == nil {
+							if p, perr := svc.LookupSession(r.Context(), secret.New(raw)); perr == nil {
+								r = r.WithContext(withPrincipal(r.Context(), p))
+							}
+						}
+					}
+				}
 				next.ServeHTTP(w, r)
 				return
 			}

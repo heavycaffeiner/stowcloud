@@ -29,6 +29,11 @@ const (
 	MountLoginBegin   = "/index.php/login/v2"
 	MountLoginPoll    = "/index.php/login/v2/poll"
 	MountLoginGrant   = "/index.php/login/v2/grant"
+	// MountLoginConsent is where Begin points the browser. The token is in the
+	// path because that is the address the client was handed; it names a flow
+	// and authorizes nothing on its own, and the approval below it is a POST
+	// behind a session.
+	MountLoginConsent = "/index.php/login/v2/flow/{token}"
 )
 
 // Mounts is every route the layer owns.
@@ -62,6 +67,10 @@ func (l *Layer) Mounts() []Mount {
 		{Method: "POST", Pattern: MountLoginBegin, Handler: http.HandlerFunc(l.loginBegin)},
 		{Method: "POST", Pattern: MountLoginPoll, Handler: http.HandlerFunc(l.loginPoll)},
 		{Method: "POST", Pattern: MountLoginGrant, Handler: http.HandlerFunc(l.loginGrant)},
+		// The page the client opens in a browser. Begin hands out its address,
+		// so without it the flow sends every client somewhere nothing answers
+		// and the app reports the server as broken.
+		{Method: "GET", Pattern: MountLoginConsent, Handler: http.HandlerFunc(l.loginConsent)},
 	}
 	// The thumbnail routes, which redirect to the content origin rather than
 	// serving any bytes from this one.

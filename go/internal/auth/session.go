@@ -127,5 +127,5 @@ func (s *Service) LookupSession(ctx context.Context, token secret.Secret) (Princ
 		// a later request will refresh.
 		slog.Warn("a session's last-used stamp could not be updated", slog.Any("error", werr))
 	}
-	return Principal{UserID: userID, Display: user.display, Disabled: user.disabled}, nil
+	return Principal{UserID: userID, Login: user.name, Display: user.display, Disabled: user.disabled}, nil
 }

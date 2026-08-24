@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
@@ -35,7 +36,7 @@ import (
 // authSvc and origin carry the device login. A nil auth service leaves the
 // flow unwired, which is what a build with no account service gets: the three
 // login routes answer 404 rather than half a flow.
-func Build(c *core.Core, st *state.DB, authSvc *auth.Service, origin string, clk clock.Clock, log *slog.Logger) *nc.Layer {
+func Build(c *core.Core, st *state.DB, authSvc *auth.Service, origin string, clk clock.Clock, log *slog.Logger, consent func(http.ResponseWriter, *http.Request, string)) *nc.Layer {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -47,10 +48,11 @@ func Build(c *core.Core, st *state.DB, authSvc *auth.Service, origin string, clk
 		flow = nc.NewLoginFlow(flowStore{db: st}, authPort{svc: authSvc}, origin, clk.Nanos)
 	}
 	return nc.New(nc.Deps{
-		FS:    fsPort{core: c},
-		State: statePort{db: st},
-		Caps:  defaultCaps(),
-		Flow:  flow,
+		FS:           fsPort{core: c},
+		State:        statePort{db: st},
+		Caps:         defaultCaps(),
+		Flow:         flow,
+		WriteConsent: consent,
 		// The chain has already resolved the principal by the time a mount
 		// runs, so this reads it back rather than verifying anything itself.
 		Authenticate: Authenticator,

@@ -108,7 +108,7 @@ func (s *Service) VerifyAppPassword(ctx context.Context, token string) (Principa
 	for _, part := range splitShareScope(scopeShares) {
 		scope.Shares = append(scope.Shares, string(part))
 	}
-	principal := Principal{UserID: user, Display: u.display, Disabled: u.disabled}
+	principal := Principal{UserID: user, Login: u.name, Display: u.display, Disabled: u.disabled}
 	s.cache.TokenStore(hash, principal, scope, s.Generation())
 	return principal, scope, nil
 }

@@ -14,7 +14,12 @@ import (
 // keep-alive-less client does not re-run Argon2 or a database lookup on every
 // request.
 type Principal struct {
-	UserID   int64
+	UserID int64
+	// Login is the account's own name, which is what a client stores as the
+	// account it signed in as. Display is the optional label somebody set for
+	// it and is not a substitute: the two differ whenever a display name is
+	// set at all.
+	Login    string
 	Display  string
 	Disabled bool
 }

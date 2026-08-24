@@ -47,6 +47,15 @@ type Deps struct {
 	Revoke func(ctx context.Context, user ncport.UserID, credential int64) error
 	// Flow runs the device login, and is nil where it is not wired up.
 	Flow *LoginFlow
+	// WriteConsent renders the page a device login sends the browser to. The
+	// approval is a POST from that page, so it needs a session and a CSRF
+	// token, and both belong to the server rather than to this layer: a mount
+	// that minted its own would be a second answer to who a request is from.
+	//
+	// Nil leaves the page unmounted, which is the honest state for a build
+	// that cannot render it: the client opens the URL and is told there is
+	// nothing there, rather than being shown a form that cannot submit.
+	WriteConsent func(w http.ResponseWriter, r *http.Request, loginToken string)
 	// Now is the clock. Nothing in this layer reads a wall clock directly.
 	Now func() time.Time
 	// Caps is what the capabilities document is built from.

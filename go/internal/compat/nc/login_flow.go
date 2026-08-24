@@ -347,6 +347,24 @@ func (l *Layer) loginBegin(w http.ResponseWriter, r *http.Request) {
 	writeBareJSON(w, tokens.BeginJSON())
 }
 
+// loginConsent renders the page the client opened in a browser.
+//
+// It shows what is about to be granted and offers one POST-only button. There
+// is deliberately no approval on this GET: a GET that approves is a credential
+// handed out to whoever can make a logged-in browser load an image tag.
+//
+// The token is not checked here. It names a flow rather than authorizing one,
+// the page it produces is the same either way, and the approval below it
+// verifies both the flow and the session: refusing early would tell a stranger
+// which tokens exist.
+func (l *Layer) loginConsent(w http.ResponseWriter, r *http.Request) {
+	if l.deps.Flow == nil || l.deps.WriteConsent == nil {
+		http.NotFound(w, r)
+		return
+	}
+	l.deps.WriteConsent(w, r, r.PathValue("token"))
+}
+
 // requestOrigin is the base URL this request arrived on.
 //
 // The host guard has already refused anything not on the declared list by the
@@ -416,8 +434,12 @@ func (l *Layer) loginGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	login := ""
-	if l.deps.Accounts != nil {
+	// The name the client stores as the account it signed in as. It comes
+	// from the principal the chain already resolved rather than from a second
+	// lookup: the account surface is not mounted here, and a poll that
+	// answered an empty login left the app showing an account with no name.
+	login := who.Login
+	if login == "" && l.deps.Accounts != nil {
 		if info, ierr := l.deps.Accounts.UserInfo(r.Context(), ncport.UserID(who.User)); ierr == nil {
 			login = info.LoginName
 		}

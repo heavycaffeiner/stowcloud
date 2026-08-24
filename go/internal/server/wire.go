@@ -226,7 +226,7 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 	protocol, davAliases := compatPaths()
 	state.Protocol = protocol
 	m := mux(table,
-		compatRoutes(opt.Core, opt.Store.State(), opt.Auth, originOf(cfg), clk, opt.Log),
+		compatRoutes(opt.Core, opt.Store.State(), opt.Auth, originOf(cfg), clk, opt.Log, state),
 		davMount(davHandler, opt.Core, davAliases), davAliases)
 	handler := httpapi.Chain(state)(m)
 
