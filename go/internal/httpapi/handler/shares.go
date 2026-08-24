@@ -33,9 +33,15 @@ func sharesChanged(r *http.Request, d Deps) {
 	}
 }
 
+// shareRequest is the create and patch body.
+//
+// host_path is the one spelling: it is what the response carries, what the
+// config file calls it and what the admin screen sends. This struct alone read
+// "host", so every create from the screen decoded to an empty path and was
+// refused as a malformed request naming the wrong field.
 type shareRequest struct {
 	Name         string `json:"name"`
-	Host         string `json:"host"`
+	HostPath     string `json:"host_path"`
 	TrashEnabled *bool  `json:"trash_enabled,omitempty"`
 }
 
@@ -99,14 +105,19 @@ func Shares(d Deps) http.HandlerFunc {
 		if err := decodeJSON(r, &req); err != nil {
 			return err
 		}
-		if req.Name == "" || req.Host == "" {
+		// The refused field is named as the one that is actually missing. Both
+		// were reported as "name", which pointed at the wrong input.
+		if req.Name == "" {
 			return apierr.BadRequest("admin.share_fields", "name")
+		}
+		if req.HostPath == "" {
+			return apierr.BadRequest("admin.share_fields", "host_path")
 		}
 		actor, aerr := requireAdmin(r, d.Auth)
 		if aerr != nil {
 			return aerr
 		}
-		share, err := d.Core.CreateShare(r.Context(), core.ShareSpec{Name: req.Name, Host: req.Host})
+		share, err := d.Core.CreateShare(r.Context(), core.ShareSpec{Name: req.Name, Host: req.HostPath})
 		record(r, d, actor, "share.create", req.Name, err == nil)
 		if err != nil {
 			return err
@@ -134,8 +145,8 @@ func ShareUpdate(d Deps) http.HandlerFunc {
 		if req.Name != "" {
 			patch.Name = &req.Name
 		}
-		if req.Host != "" {
-			patch.Host = &req.Host
+		if req.HostPath != "" {
+			patch.Host = &req.HostPath
 		}
 		share, err := d.Core.UpdateShare(r.Context(), shareIDOf(id), patch)
 		if err != nil {

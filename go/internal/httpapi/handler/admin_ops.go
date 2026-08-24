@@ -243,9 +243,13 @@ func AdminUploadSettings(d Deps) http.HandlerFunc {
 		if d.Uploads == nil {
 			return notImplemented("upload.unavailable")
 		}
+		// chunk_default is the client's name for it, and the name this route
+		// answers with below. It read chunk_size, so the screen's save decoded
+		// as absent and the default chunk never moved while the response
+		// reported success.
 		var patch struct {
-			ChunkMin  *uint64 `json:"chunk_min"`
-			ChunkSize *uint64 `json:"chunk_size"`
+			ChunkMin     *uint64 `json:"chunk_min"`
+			ChunkDefault *uint64 `json:"chunk_default"`
 		}
 		if err := decodeJSON(r, &patch); err != nil {
 			return err
@@ -255,12 +259,12 @@ func AdminUploadSettings(d Deps) http.HandlerFunc {
 		if patch.ChunkMin != nil && *patch.ChunkMin < limits.UploadChunkFloor {
 			return apierr.BadRequest("admin.chunk_below_floor", "chunk_min")
 		}
-		if err := d.Uploads.ApplySettings(r.Context(), patch.ChunkMin, patch.ChunkSize); err != nil {
+		if err := d.Uploads.ApplySettings(r.Context(), patch.ChunkMin, patch.ChunkDefault); err != nil {
 			return err
 		}
 		s := d.Uploads.Settings()
 		return writeJSON(w, http.StatusOK, map[string]uint64{
-			"chunk_min": s.Min(), "chunk_size": s.Default(),
+			"chunk_min": s.Min(), "chunk_default": s.Default(),
 		})
 	})
 }
