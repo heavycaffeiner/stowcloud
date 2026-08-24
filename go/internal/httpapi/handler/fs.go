@@ -62,6 +62,30 @@ type permsJSON struct {
 	Download bool `json:"download"`
 }
 
+// permsFrom is the reverse of permsOf, for the surfaces that take a permission
+// set from a client rather than reporting one.
+//
+// An absent field is false rather than an error: a client sending only what it
+// wants granted is the common case, and the share dialog sends exactly two of
+// the eight.
+func permsFrom(j permsJSON) acl.Perms {
+	var out acl.Perms
+	for _, m := range []struct {
+		on bool
+		p  acl.Perms
+	}{
+		{j.Read, acl.Read}, {j.Write, acl.Write},
+		{j.Create, acl.Create}, {j.Delete, acl.Delete},
+		{j.Rename, acl.Rename}, {j.Move, acl.Move},
+		{j.Share, acl.Share}, {j.Download, acl.Download},
+	} {
+		if m.on {
+			out |= m.p
+		}
+	}
+	return out
+}
+
 func permsOf(p acl.Perms) permsJSON {
 	return permsJSON{
 		Read:     p.Has(acl.Read),

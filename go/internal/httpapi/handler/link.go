@@ -19,27 +19,34 @@ import (
 // the caller's links, and revoke one. Revocation is permanent and the same
 // link is never recreated.
 
+// linkRequest is the create body.
+//
+// perms is an object and the expiry is expires_ns, which is what the response
+// carries and what the share dialog sends. They were a bit field and "expires"
+// here, so every link the interface tried to create arrived with no
+// permissions and an ignored expiry, and the refusal that produced said only
+// that the request was malformed.
 type linkRequest struct {
-	Path     string `json:"path"`
-	Perms    uint16 `json:"perms,omitempty"`
-	Password string `json:"password,omitempty"`
-	Expires  string `json:"expires,omitempty"`
-	MaxDown  int32  `json:"max_downloads,omitempty"`
-	Label    string `json:"label,omitempty"`
-	Note     string `json:"note,omitempty"`
+	Path     string     `json:"path"`
+	Perms    *permsJSON `json:"perms,omitempty"`
+	Password string     `json:"password,omitempty"`
+	Expires  string     `json:"expires_ns,omitempty"`
+	MaxDown  int32      `json:"max_downloads,omitempty"`
+	Label    string     `json:"label,omitempty"`
+	Note     string     `json:"note,omitempty"`
 }
 
 type linkResponse struct {
-	ID          int64  `json:"id"`
-	URL         string `json:"url,omitempty"`
-	Path        string `json:"path"`
-	Perms       uint16 `json:"perms"`
-	HasPassword bool   `json:"has_password"`
-	Expires     int64  `json:"expires_ns,omitempty"`
-	MaxDown     int32  `json:"max_downloads"`
-	Downs       int32  `json:"downloads"`
-	Label       string `json:"label,omitempty"`
-	Note        string `json:"note,omitempty"`
+	ID          int64     `json:"id"`
+	URL         string    `json:"url,omitempty"`
+	Path        string    `json:"path"`
+	Perms       permsJSON `json:"perms"`
+	HasPassword bool      `json:"has_password"`
+	Expires     int64     `json:"expires_ns,omitempty"`
+	MaxDown     int32     `json:"max_downloads"`
+	Downs       int32     `json:"downloads"`
+	Label       string    `json:"label,omitempty"`
+	Note        string    `json:"note,omitempty"`
 }
 
 // Links answers GET and POST /api/fs/link.
@@ -73,10 +80,19 @@ func Links(d Deps) http.HandlerFunc {
 			return err
 		}
 		spec := core.LinkSpec{
-			Perms:   acl.Perms(req.Perms),
 			Label:   req.Label,
 			Note:    req.Note,
 			MaxDown: req.MaxDown,
+		}
+		if req.Perms != nil {
+			spec.Perms = permsFrom(*req.Perms)
+		}
+		if req.Expires != "" {
+			n, cerr := strconv.ParseInt(req.Expires, 10, 64)
+			if cerr != nil {
+				return apierr.BadRequest("shares.bad_expiry", "expires_ns")
+			}
+			spec.Expires = n
 		}
 		if req.Password != "" {
 			spec.Password = &req.Password
@@ -112,7 +128,7 @@ func LinkDelete(d Deps) http.HandlerFunc {
 
 func linkToResponse(d Deps, uid core.UserID, l core.Link) linkResponse {
 	out := linkResponse{
-		ID: l.ID, Perms: uint16(l.Perms), HasPassword: l.HasPassword,
+		ID: l.ID, Perms: permsOf(l.Perms), HasPassword: l.HasPassword,
 		MaxDown: l.MaxDown, Downs: l.Downs, Label: l.Label, Note: l.Note,
 	}
 	if l.Expires != 0 {
@@ -218,12 +234,12 @@ func LinkUpdate(d Deps) http.HandlerFunc {
 		// because "leave the expiry" and "remove the expiry" are different
 		// requests and one nil cannot say both.
 		var req struct {
-			Perms    *uint16 `json:"perms"`
-			Password *string `json:"password"`
-			Expires  *string `json:"expires_ns"`
-			MaxDown  *int32  `json:"max_downloads"`
-			Label    *string `json:"label"`
-			Note     *string `json:"note"`
+			Perms    *permsJSON `json:"perms"`
+			Password *string    `json:"password"`
+			Expires  *string    `json:"expires_ns"`
+			MaxDown  *int32     `json:"max_downloads"`
+			Label    *string    `json:"label"`
+			Note     *string    `json:"note"`
 		}
 		raw, rerr := readBody(r)
 		if rerr != nil {
@@ -241,7 +257,7 @@ func LinkUpdate(d Deps) http.HandlerFunc {
 
 		patch := core.LinkPatch{Label: req.Label, Note: req.Note}
 		if req.Perms != nil {
-			p := acl.Perms(*req.Perms)
+			p := permsFrom(*req.Perms)
 			patch.Perms = &p
 		}
 		if _, ok := present["password"]; ok {
