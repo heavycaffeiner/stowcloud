@@ -175,7 +175,20 @@ func NewLoginFlow(store FlowStore, auth AuthPort, origin string, now func() int6
 }
 
 // Begin starts a flow and returns what the client needs.
-func (l *LoginFlow) Begin(ctx context.Context) (FlowTokens, error) {
+//
+// origin is the base URL the client reached this server on, empty to use the
+// configured one. A deployment is reached under several names and the client
+// has to be sent back to the one it started from: a login URL naming a
+// different host is one the browser cannot open, and the configured value is
+// only ever the first of the declared names.
+//
+// It is the request's own host, which is safe here because the host guard has
+// already refused anything not on the declared list by the time a handler
+// runs. This is not the guard learning its origin from the request.
+func (l *LoginFlow) Begin(ctx context.Context, origin string) (FlowTokens, error) {
+	if origin == "" {
+		origin = l.origin
+	}
 	pollTok, err := newFlowToken()
 	if err != nil {
 		return FlowTokens{}, err
@@ -197,8 +210,8 @@ func (l *LoginFlow) Begin(ctx context.Context) (FlowTokens, error) {
 	return FlowTokens{
 		PollToken:    pollTok,
 		LoginToken:   loginTok,
-		LoginURL:     l.origin + "/index.php/login/v2/flow/" + loginTok,
-		PollEndpoint: l.origin + "/index.php/login/v2/poll",
+		LoginURL:     origin + "/index.php/login/v2/flow/" + loginTok,
+		PollEndpoint: origin + "/index.php/login/v2/poll",
 	}, nil
 }
 
@@ -236,7 +249,14 @@ type PollResult struct {
 // exists for exactly one response and never rests in the database. The flow is
 // dropped after a successful delivery, which is also what makes the mint
 // single-use: a second poll finds nothing.
-func (l *LoginFlow) Poll(ctx context.Context, pollToken string) (PollResult, error) {
+// origin is the base URL the client reached this server on, empty to use the
+// configured one. It is what the client stores as the server address and uses
+// for every request afterwards, so sending the configured name to a client
+// that arrived under another one points it somewhere it cannot reach.
+func (l *LoginFlow) Poll(ctx context.Context, pollToken, origin string) (PollResult, error) {
+	if origin == "" {
+		origin = l.origin
+	}
 	now := l.now()
 	d := digest(pollToken)
 
@@ -276,7 +296,7 @@ func (l *LoginFlow) Poll(ctx context.Context, pollToken string) (PollResult, err
 	}
 
 	return PollResult{
-		Server:      l.origin,
+		Server:      origin,
 		LoginName:   rec.ApprovedLogin,
 		AppPassword: password,
 	}, nil
@@ -318,13 +338,29 @@ func (l *Layer) loginBegin(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	tokens, err := l.deps.Flow.Begin(r.Context())
+	tokens, err := l.deps.Flow.Begin(r.Context(), requestOrigin(r))
 	if err != nil {
 		l.warn("a login flow could not be started", "error", err)
 		http.Error(w, "the login flow could not be started", http.StatusInternalServerError)
 		return
 	}
 	writeBareJSON(w, tokens.BeginJSON())
+}
+
+// requestOrigin is the base URL this request arrived on.
+//
+// The host guard has already refused anything not on the declared list by the
+// time a handler runs, so this is a name the operator configured rather than
+// one the caller chose. Reading it back is what lets a deployment reached
+// under several names send each client back to its own.
+//
+// Empty when the header is missing, which leaves the configured origin in
+// place rather than building a URL with no host in it.
+func requestOrigin(r *http.Request) string {
+	if r.Host == "" {
+		return ""
+	}
+	return "https://" + r.Host
 }
 
 // loginPoll delivers the credential once a human has approved.
@@ -341,7 +377,7 @@ func (l *Layer) loginPoll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res, err := l.deps.Flow.Poll(r.Context(), r.PostFormValue("token"))
+	res, err := l.deps.Flow.Poll(r.Context(), r.PostFormValue("token"), requestOrigin(r))
 	switch {
 	case err == nil:
 		writeBareJSON(w, res.PollJSON())

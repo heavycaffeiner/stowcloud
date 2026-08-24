@@ -150,7 +150,7 @@ func newFlow(t *testing.T) *flowFixture {
 
 func TestAFlowBeginsWithTwoIndependentTokens(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestTokensAreDistinctAcrossFlows(t *testing.T) {
 	f := newFlow(t)
 	seen := map[string]bool{}
 	for i := 0; i < 32; i++ {
-		tok, err := f.flow.Begin(context.Background())
+		tok, err := f.flow.Begin(context.Background(), "")
 		if err != nil {
 			t.Fatalf("Begin: %v", err)
 		}
@@ -194,7 +194,7 @@ func TestTokensAreDistinctAcrossFlows(t *testing.T) {
 // A leak of the stored rows must not be replayable against a live flow.
 func TestOnlyDigestsAreStored(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
@@ -210,11 +210,11 @@ func TestOnlyDigestsAreStored(t *testing.T) {
 // Polling before anyone has approved is pending, not a credential.
 func TestPollingAnUnapprovedFlowIsPending(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
-	if _, perr := f.flow.Poll(context.Background(), tok.PollToken); !errors.Is(perr, ErrFlowPending) {
+	if _, perr := f.flow.Poll(context.Background(), tok.PollToken, ""); !errors.Is(perr, ErrFlowPending) {
 		t.Fatalf("err = %v, want ErrFlowPending", perr)
 	}
 	if f.auth.minted != 0 {
@@ -225,7 +225,7 @@ func TestPollingAnUnapprovedFlowIsPending(t *testing.T) {
 // The whole point: a human approves, and then the credential is delivered.
 func TestAnApprovedFlowDeliversOnce(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestAnApprovedFlowDeliversOnce(t *testing.T) {
 		t.Fatalf("Approve: %v", aerr)
 	}
 
-	res, perr := f.flow.Poll(context.Background(), tok.PollToken)
+	res, perr := f.flow.Poll(context.Background(), tok.PollToken, "")
 	if perr != nil {
 		t.Fatalf("Poll: %v", perr)
 	}
@@ -250,7 +250,7 @@ func TestAnApprovedFlowDeliversOnce(t *testing.T) {
 // build deliberately differs from the shape it replaces.
 func TestApprovalMintsNothingUntilItIsCollected(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
@@ -283,7 +283,7 @@ func TestApprovalMintsNothingUntilItIsCollected(t *testing.T) {
 // login token cost at most one credential.
 func TestASecondApprovalIsRefused(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestASecondApprovalIsRefused(t *testing.T) {
 		t.Fatalf("a second approval returned %v, want a refusal", aerr)
 	}
 
-	res, perr := f.flow.Poll(context.Background(), tok.PollToken)
+	res, perr := f.flow.Poll(context.Background(), tok.PollToken, "")
 	if perr != nil {
 		t.Fatalf("Poll: %v", perr)
 	}
@@ -310,19 +310,19 @@ func TestASecondApprovalIsRefused(t *testing.T) {
 // credential later.
 func TestASecondPollAfterDeliveryFindsNothing(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
 	if aerr := f.flow.Approve(context.Background(), tok.LoginToken, 42, "alice"); aerr != nil {
 		t.Fatalf("Approve: %v", aerr)
 	}
-	if _, perr := f.flow.Poll(context.Background(), tok.PollToken); perr != nil {
+	if _, perr := f.flow.Poll(context.Background(), tok.PollToken, ""); perr != nil {
 		t.Fatalf("Poll: %v", perr)
 	}
 
 	*f.nowNs += int64(PollInterval) * 2
-	if _, perr := f.flow.Poll(context.Background(), tok.PollToken); !errors.Is(perr, ErrFlowUnknown) {
+	if _, perr := f.flow.Poll(context.Background(), tok.PollToken, ""); !errors.Is(perr, ErrFlowUnknown) {
 		t.Fatalf("a second poll returned %v, want ErrFlowUnknown", perr)
 	}
 	if f.auth.minted != 1 {
@@ -333,14 +333,14 @@ func TestASecondPollAfterDeliveryFindsNothing(t *testing.T) {
 // Knowing the browser token must not let anyone poll.
 func TestTheLoginTokenCannotPoll(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
 	if aerr := f.flow.Approve(context.Background(), tok.LoginToken, 42, "alice"); aerr != nil {
 		t.Fatalf("Approve: %v", aerr)
 	}
-	if _, perr := f.flow.Poll(context.Background(), tok.LoginToken); !errors.Is(perr, ErrFlowUnknown) {
+	if _, perr := f.flow.Poll(context.Background(), tok.LoginToken, ""); !errors.Is(perr, ErrFlowUnknown) {
 		t.Fatalf("the login token polled successfully: %v", perr)
 	}
 	if f.auth.minted != 0 {
@@ -351,7 +351,7 @@ func TestTheLoginTokenCannotPoll(t *testing.T) {
 // And the poll token cannot approve, so a client cannot approve its own flow.
 func TestThePollTokenCannotApprove(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
@@ -364,17 +364,17 @@ func TestThePollTokenCannotApprove(t *testing.T) {
 // telling them apart tells a prober which tokens exist.
 func TestUnknownAndExpiredAreTheSameAnswer(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
 
-	if _, perr := f.flow.Poll(context.Background(), "a-token-nobody-minted"); !errors.Is(perr, ErrFlowUnknown) {
+	if _, perr := f.flow.Poll(context.Background(), "a-token-nobody-minted", ""); !errors.Is(perr, ErrFlowUnknown) {
 		t.Fatalf("an unknown token returned %v", perr)
 	}
 
 	*f.nowNs += int64(FlowTTL) + 1
-	if _, perr := f.flow.Poll(context.Background(), tok.PollToken); !errors.Is(perr, ErrFlowUnknown) {
+	if _, perr := f.flow.Poll(context.Background(), tok.PollToken, ""); !errors.Is(perr, ErrFlowUnknown) {
 		t.Fatalf("an expired token returned %v, want the same answer as unknown", perr)
 	}
 }
@@ -383,7 +383,7 @@ func TestUnknownAndExpiredAreTheSameAnswer(t *testing.T) {
 // a credential long after the user forgot about it.
 func TestAnExpiredFlowCannotBeApproved(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
@@ -396,21 +396,21 @@ func TestAnExpiredFlowCannotBeApproved(t *testing.T) {
 // Unbounded polling is a database scan somebody else pays for.
 func TestPollingIsRateLimited(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
 
-	if _, perr := f.flow.Poll(context.Background(), tok.PollToken); !errors.Is(perr, ErrFlowPending) {
+	if _, perr := f.flow.Poll(context.Background(), tok.PollToken, ""); !errors.Is(perr, ErrFlowPending) {
 		t.Fatalf("the first poll returned %v", perr)
 	}
 	// Immediately again, inside the interval.
-	if _, perr := f.flow.Poll(context.Background(), tok.PollToken); !errors.Is(perr, ErrFlowRateLimited) {
+	if _, perr := f.flow.Poll(context.Background(), tok.PollToken, ""); !errors.Is(perr, ErrFlowRateLimited) {
 		t.Fatalf("a poll inside the interval returned %v, want the limit", perr)
 	}
 	// And once the interval has passed it works again.
 	*f.nowNs += int64(PollInterval) + 1
-	if _, perr := f.flow.Poll(context.Background(), tok.PollToken); !errors.Is(perr, ErrFlowPending) {
+	if _, perr := f.flow.Poll(context.Background(), tok.PollToken, ""); !errors.Is(perr, ErrFlowPending) {
 		t.Fatalf("a poll after the interval returned %v", perr)
 	}
 }
@@ -419,7 +419,7 @@ func TestPollingIsRateLimited(t *testing.T) {
 // by an administrator rather than by whoever sent the request.
 func TestURLsComeFromTheConfiguredOrigin(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestURLsComeFromTheConfiguredOrigin(t *testing.T) {
 
 func TestTheBeginPayloadHasTheShapeTheClientReads(t *testing.T) {
 	f := newFlow(t)
-	tok, err := f.flow.Begin(context.Background())
+	tok, err := f.flow.Begin(context.Background(), "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
