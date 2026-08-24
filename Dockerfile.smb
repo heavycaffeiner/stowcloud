@@ -8,12 +8,11 @@
 # alpine, not distroless: same rationale as the previous debian:12-slim
 # base (`smbd`/`testparm`/`pdbedit` are real OS packages, and Samba's own
 # attack surface — a full SMB3 protocol implementation parsing untrusted
-# network input — is exactly the boundary DEPLOYMENT.md §11.3 draws around
+# network input — is exactly the boundary this deployment draws around
 # `sc-core`'s jail model). Rebased to Alpine 2026-07-30 for image size; every
 # binary this file names (`smbd`, `testparm`, `pdbedit`, `smbcontrol`,
 # `inotifywait`, `fail2ban-server`, `tini`) was confirmed present and working
-# under musl by an actual container run (`docs/DEPLOYMENT.md` §7 verification
-# note), not assumed.
+# under musl by an actual container run, not assumed.
 #
 # 3.24, not 3.20: **v3.20 went end-of-support on 2026-04-01** and dropped to
 # Alpine's "on request" tier, where security fixes happen case-by-case if a
@@ -37,10 +36,14 @@ ARG ALPINE_DIGEST=sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e8
 ARG GO_IMAGE=golang:1.26-bookworm
 
 # The service account every SMB connection is forced to, named as the core
-# image names the same pair. The two must agree: the core server renders an
-# account file naming this gid and the agent refuses a sync with "no group
-# exists for N" when nothing here resolves it. go/internal/server/config.go's
-# defaultServiceGID is the third copy of this number.
+# image names the same pair and settable the same way: the agent reconciles the
+# account against PUID and PGID at start, so the two images can be pointed at
+# one uid without rebuilding either.
+#
+# They must agree. The core server renders an account file naming this gid and
+# the agent refuses a sync with "no group exists for N" when nothing here
+# resolves it. go/internal/server/config.go's defaultServiceGID is the third
+# copy of this number.
 ARG PUID=1000
 ARG PGID=1000
 

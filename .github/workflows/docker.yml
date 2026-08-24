@@ -133,7 +133,7 @@ jobs:
           cache-from: type=gha,scope=core-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=core-${{ matrix.arch }}
 
-      - name: Report image size against the < 30 MB target (DEPLOYMENT.md §1)
+      - name: Report image size against the < 30 MB target
         run: |
           docker image inspect sc:core-ci --format '{{.Size}}' | \
             awk '{printf "sc:core size: %.2f MB\n", $1/1024/1024}'

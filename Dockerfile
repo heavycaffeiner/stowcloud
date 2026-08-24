@@ -71,14 +71,11 @@ ARG ALPINE_DIGEST=sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e8
 # 1000 rather than a service number in the 65000s: the folders a deployment
 # mounts in are somebody's own files, and on a single-admin NAS those are
 # almost always uid 1000. Matching it is what lets a bind mount work with no
-# chown at all, and a mismatch here is the most common way a first run fails.
+# preparation at all.
 #
-# They are build arguments rather than environment variables read at start.
-# Changing the uid at run time means chowning the data directory from inside
-# the container, as root, on every boot; this image never runs as root, so a
-# deployment that needs a different uid builds with --build-arg PUID= or sets
-# `user:` in the compose file, and the directories it mounts are its own to
-# own.
+# These are the build-time default. The entrypoint reads PUID and PGID from the
+# environment at start and moves the account to match, so an operator changes
+# the uid without rebuilding.
 ARG PUID=1000
 ARG PGID=1000
 
@@ -155,15 +152,25 @@ RUN mkdir -p /out && \
 # ----------------------------------------------------------------------------
 # Stage: runtime
 #
-# Never root: the account below owns what the server writes and nothing else.
-# There is no step that changes the ownership of a mounted directory, because
-# recursively chowning a directory somebody else's program also writes is not
-# something a container start should do. The host directory is created with the
-# right owner instead, and the uid is chosen to be the one it already has.
+# The entrypoint starts as root, reconciles the service account with PUID and
+# PGID, and drops to it before exec'ing the server. Nothing after that runs
+# privileged.
+#
+# The chown it does is bounded to the directories this server owns. The shares
+# are never touched: they are the operator's files, usually shared with other
+# services, and a recursive chown on them is not reversible from inside a
+# container.
 # ----------------------------------------------------------------------------
 FROM alpine:3.24@${ALPINE_DIGEST} AS runtime
 ARG PUID
 ARG PGID
+
+# su-exec drops privileges without the process-supervision layer su and sudo
+# bring: it execs, so the server is PID 1 and gets the stop signal directly.
+# 13 KiB, and the only package this image adds; the entrypoint rewrites the two
+# account files itself rather than pulling in shadow for usermod.
+RUN apk add --no-cache su-exec \
+    && rm -rf /var/cache/apk/*
 
 # The account the server runs as. Alpine ships no uid 1000, so it is created
 # here rather than named: a numeric USER with no passwd entry works, but leaves
@@ -178,6 +185,7 @@ RUN addgroup -g "${PGID}" -S stowcloud \
     && adduser -u "${PUID}" -G stowcloud -S -H -h / -s /sbin/nologin stowcloud
 
 COPY --from=builder --chown=${PUID}:${PGID} /out/stowcloud /stowcloud
+COPY --chmod=755 deploy/entrypoint.sh /entrypoint.sh
 
 # / rather than a home directory. Nothing here needs a writable working
 # directory, and / is searchable by every uid, so a container started with an
@@ -205,10 +213,11 @@ COPY --from=builder --chown=${PUID}:${PGID} /staged/shares/files /shares/files
 COPY --from=builder --chown=${PUID}:${PGID} /staged/config/smb /config/smb
 VOLUME ["/var/lib/stowcloud"]
 
-# Dropped from root before the entrypoint, so nothing in this image ever runs
-# privileged. Numeric, because a name resolves through /etc/passwd and a
-# deployment that mounts its own over this one would change who the server is.
-USER ${PUID}:${PGID}
+# No USER: the entrypoint needs root to move the account and hand the data
+# directory over, and drops to PUID:PGID with su-exec before the server starts.
+# A `user:` in a compose file still works and skips the reconciliation, because
+# the entrypoint refuses to chown what it does not own.
+ENV PUID=${PUID} PGID=${PGID}
 
 # One socket, and it is TLS. There is no plaintext listener anywhere to publish
 # by mistake, and the certificate is generated into the data directory on first
@@ -226,5 +235,5 @@ EXPOSE 8443
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD ["/stowcloud", "healthcheck", "/etc/stowcloud/sc.toml"]
 
-ENTRYPOINT ["/stowcloud"]
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["serve", "/etc/stowcloud/sc.toml"]
