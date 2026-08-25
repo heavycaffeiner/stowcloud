@@ -33,7 +33,6 @@ export interface CreateSessionParams {
   dest: string
   relativePath?: string
   mtimeNs?: string
-  ifMatch?: string
 }
 
 export interface Transport {
@@ -61,7 +60,6 @@ class HttpTransport implements Transport {
     ]
     if (p.relativePath) metaParts.push(`relativePath ${b64(p.relativePath)}`)
     if (p.mtimeNs) metaParts.push(`mtime ${b64(p.mtimeNs)}`)
-    if (p.ifMatch) metaParts.push(`ifMatch ${b64(p.ifMatch)}`)
 
     const res = await fetch(`${BASE}/uploads`, {
       method: 'POST',
