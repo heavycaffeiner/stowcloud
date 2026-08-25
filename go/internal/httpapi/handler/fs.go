@@ -141,16 +141,26 @@ type listResponse struct {
 	Listing     string `json:"listing"`
 	DirETag     string `json:"dir_etag,omitempty"`
 	DirETagWeak bool   `json:"dir_etag_weak"`
+	// Stale says the directory changed since the token the client sent with
+	// its window, which makes the offsets it cached no longer name the rows it
+	// thinks they do. Only ever true, and only on a request that named a
+	// token: a client with nothing cached has nothing to invalidate.
+	Stale bool `json:"stale,omitempty"`
 }
 
 // List answers GET /api/fs/list?path=label/rest&cursor=...
+//
+// A windowed fetch names the directory as listing= instead of path= and asks
+// for a slice of it with offset and limit. The two spellings address the same
+// thing: this server keeps no per-listing session, so the handle it hands back
+// is the path itself.
 func List(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
 		uid, cerr := userOf(r)
 		if cerr != nil {
 			return cerr
 		}
-		p, err := pathOf(r)
+		p, err := listingPathOf(r)
 		if err != nil {
 			return err
 		}
@@ -162,11 +172,27 @@ func List(d Deps) http.HandlerFunc {
 		// makes the interface's sort control move the listing rather than only
 		// the query string.
 		q := r.URL.Query()
-		opt := core.ListOptions{
-			Sort: core.ParseSortKey(q.Get("sort")),
-			Desc: q.Get("order") == "desc",
+		limit, lerr := listBound(q.Get("limit"))
+		if lerr != nil {
+			return lerr
 		}
-		page, err := d.Core.ListSorted(r.Context(), resolved, core.Cursor(q.Get("cursor")), opt)
+		opt := core.ListOptions{
+			Sort:  core.ParseSortKey(q.Get("sort")),
+			Desc:  q.Get("order") == "desc",
+			Limit: limit,
+		}
+		// offset is the windowed form of the cursor. Both are an index into the
+		// sorted listing, and offset wins when a request carries it: a window is
+		// a random-access slice and does not walk there one page at a time.
+		cur := core.Cursor(q.Get("cursor"))
+		if raw := q.Get("offset"); raw != "" {
+			off, oerr := listBound(raw)
+			if oerr != nil {
+				return oerr
+			}
+			cur = core.Cursor(strconv.Itoa(off))
+		}
+		page, err := d.Core.ListSorted(r.Context(), resolved, cur, opt)
 		if err != nil {
 			return err
 		}
@@ -182,12 +208,43 @@ func List(d Deps) http.HandlerFunc {
 		for _, e := range page.Entries {
 			out.Entries = append(out.Entries, entryOf(e, vpathString(d, uid, resolved, e.Path)))
 		}
+		// A windowed fetch sends the token it last saw. A different one means
+		// the directory moved under the client's cached indices, so it is told
+		// rather than left to serve rows from the wrong offsets.
+		if seen := q.Get("dir_etag"); seen != "" && seen != page.DirEtag {
+			out.Stale = true
+		}
 		if page.Next != "" {
 			next := string(page.Next)
 			out.Cursor = &next
 		}
 		return writeJSON(w, http.StatusOK, out)
 	})
+}
+
+// listingPathOf reads the directory a listing request names, under either
+// spelling. path= is the ordinary one; listing= is what a windowed fetch hands
+// back, and a request carrying only that one was refused as a malformed path,
+// so every row past the first page stayed a placeholder.
+func listingPathOf(r *http.Request) (vfs.Vpath, error) {
+	if raw := r.URL.Query().Get("listing"); raw != "" && r.URL.Query().Get("path") == "" {
+		return vfs.ParseVpath(raw)
+	}
+	return pathOf(r)
+}
+
+// listBound parses a non-negative count from the query. An unparsable one is
+// refused rather than read as zero, which would silently answer a default page
+// to a caller that asked for a window.
+func listBound(raw string) (int, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 0 {
+		return 0, apierr.BadRequest("fs.bad_window", "limit")
+	}
+	return n, nil
 }
 
 // vpathString renders a share-relative path in the client's label form. The

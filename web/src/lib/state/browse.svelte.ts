@@ -246,6 +246,11 @@ export class BrowseState {
         listing: this.#listing!,
         offset: start,
         limit: end - start,
+        sort: this.sort.key,
+        order: this.sort.order,
+        // The token this window's offsets were computed against. The server
+        // answers `stale` when the directory has moved since.
+        dirEtag: this.dirEtag ?? undefined,
         signal: ac.signal
       })
       if (ac.signal.aborted || gen !== this.#generation) return

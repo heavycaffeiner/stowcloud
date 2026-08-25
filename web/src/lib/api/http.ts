@@ -147,11 +147,23 @@ async function logout(): Promise<void> {
 
 async function list(path: string, opts: ListOpts): Promise<ListResponse> {
   if (opts.listing) {
-    // `offset` takes precedence over `cursor` server-side ('s session already holds the sorted vector, so a random-access
-    // slice by index needs no cursor walk) — used for scroll-driven windowed
-    // fetches instead of chaining `more()` one page at a time.
+    // A scroll-driven window. `offset` takes precedence over `cursor`: both
+    // are an index into the sorted listing, and a window is a random-access
+    // slice rather than a walk from the front.
+    //
+    // `dir_etag` is the token the client last saw. The server compares it and
+    // answers `stale` when the directory moved, which is what tells the
+    // caller its cached offsets no longer name the rows it thinks they do.
     return request(
-      `/fs/list${qs({ listing: opts.listing, cursor: opts.cursor, offset: opts.offset, limit: opts.limit })}`,
+      `/fs/list${qs({
+        listing: opts.listing,
+        cursor: opts.cursor,
+        offset: opts.offset,
+        limit: opts.limit,
+        sort: opts.sort,
+        order: opts.order,
+        dir_etag: opts.dirEtag
+      })}`,
       { signal: opts.signal }
     )
   }
@@ -558,7 +570,10 @@ async function clearSmbPassword(
 async function oidcLinkStart(password: string, returnTo?: string): Promise<{ authorize_url: string }> {
   return request('/auth/oidc/link/start', {
     method: 'POST',
-    body: JSON.stringify(returnTo ? { password, returnTo } : { password })
+    // `return_to`, which is the key the server decodes. It was camelCase here,
+    // so the value never arrived and a finished link flow landed on the root
+    // instead of the screen it started from.
+    body: JSON.stringify(returnTo ? { password, return_to: returnTo } : { password })
   })
 }
 

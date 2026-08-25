@@ -191,59 +191,18 @@ function dirEtagFor(dirPath: string): string {
   return `v${v}-${count}-${deadCount}-${addCount}`
 }
 
-// ── listing sessions ──
-interface ListingSession {
-  id: string
-  path: string
-  sort: SortKey
-  order: Order
-  entries: Entry[]
-  /** Folders come first in `entries`, so this is also where files start. */
-  dirs: number
-  dirEtag: string
-  createdAt: number
-}
+// ── listings ──
+//
+// The server keeps no per-listing session: it re-walks the directory and cuts
+// the slice each time, so the handle it hands back is the path itself and the
+// cursor is a decimal offset into the sorted listing. This mirrors that rather
+// than inventing a session store, because a mock that models a server that
+// does not exist proves nothing about the one that does.
 
-const LISTINGS = new Map<string, ListingSession>()
-const MAX_LISTINGS = 6
-
-function evictOldListings(): void {
-  if (LISTINGS.size <= MAX_LISTINGS) return
-  const oldest = [...LISTINGS.values()].sort((a, b) => a.createdAt - b.createdAt)
-  for (let i = 0; i < LISTINGS.size - MAX_LISTINGS; i++) LISTINGS.delete(oldest[i].id)
-}
-
-function createListingSession(path: string, sort: SortKey, order: Order): ListingSession {
-  const n = normalizePath(path)
-  const entries = resolveDirEntries(n)
+function sortedEntriesOf(path: string, sort: SortKey, order: Order): Entry[] {
+  const entries = resolveDirEntries(normalizePath(path))
   entries.sort((a, b) => compareEntries(a, b, sort, order))
-  const session: ListingSession = {
-    id: randomId('L'),
-    path: n,
-    sort,
-    order,
-    entries,
-    dirs: entries.filter((e) => e.kind === 'dir').length,
-    dirEtag: dirEtagFor(n),
-    createdAt: Date.now()
-  }
-  LISTINGS.set(session.id, session)
-  evictOldListings()
-  return session
-}
-
-function encodeCursor(offset: number, total: number): string | null {
-  if (offset >= total) return null
-  return btoa(JSON.stringify({ i: offset }))
-}
-
-function decodeCursor(cursor: string): number {
-  try {
-    const parsed = JSON.parse(atob(cursor))
-    return typeof parsed.i === 'number' ? parsed.i : 0
-  } catch {
-    return 0
-  }
+  return entries
 }
 
 export interface ListOpts {
@@ -252,93 +211,45 @@ export interface ListOpts {
   listing?: string
   cursor?: string
   /**
-   * Random-access window start within an existing listing session — the
-   * server-side session already holds the fully sorted name vector,
-   * so "start at index N" is just a slice, not a
-   * sequential cursor walk. Used for scroll-driven windowed fetches instead
-   * of chaining `cursor` one page at a time. Takes precedence over `cursor`
-   * when both are present.
+   * Random-access window start. Both this and `cursor` are an index into the
+   * sorted listing; this one takes precedence, because a window is a slice
+   * and not a walk from the front.
    */
   offset?: number
   limit?: number
+  /** The directory token the caller last saw. The server answers `stale` when
+   *  the directory has moved since, which invalidates cached offsets. */
+  dirEtag?: string
   /** Lets the caller cancel a windowed fetch for a range it has scrolled past. */
   signal?: AbortSignal
 }
 
 async function list(path: string, opts: ListOpts): Promise<ListResponse> {
   await delay(30, opts.signal)
-  const limit = opts.limit ?? 200
-
-  if (opts.listing) {
-    const session = LISTINGS.get(opts.listing)
-    if (!session) {
-      throw new ApiError(409, { code: 'fs.listing_expired', message: 'listing session expired' })
-    }
-    const currentEtag = dirEtagFor(session.path)
-    if (currentEtag !== session.dirEtag) {
-      const fresh = createListingSession(session.path, session.sort, session.order)
-      const freshOffset = opts.offset ?? 0
-      const page = fresh.entries.slice(freshOffset, freshOffset + limit)
-      return {
-        listing: fresh.id,
-        total: fresh.entries.length,
-        dirs: fresh.dirs,
-        cursor: encodeCursor(freshOffset + page.length, fresh.entries.length),
-        entries: page,
-        dir_etag_weak: true,
-      dir_etag: fresh.dirEtag,
-        stale: true
-      }
-    }
-    if (opts.offset !== undefined) {
-      // Random-access window:'s listing session already
-      // holds the sorted vector, so any offset is a plain slice.
-      const offset = Math.max(0, opts.offset)
-      const page = session.entries.slice(offset, offset + limit)
-      return {
-        listing: session.id,
-        total: session.entries.length,
-        dirs: session.dirs,
-        cursor: encodeCursor(offset + page.length, session.entries.length),
-        entries: page,
-        dir_etag_weak: true,
-      dir_etag: session.dirEtag
-      }
-    }
-    if (!opts.cursor) {
-      throw new ApiError(409, { code: 'fs.listing_expired', message: 'listing session expired' })
-    }
-    const offset = decodeCursor(opts.cursor)
-    const page = session.entries.slice(offset, offset + limit)
-    return {
-      listing: session.id,
-      total: session.entries.length,
-      dirs: session.dirs,
-      cursor: encodeCursor(offset + page.length, session.entries.length),
-      entries: page,
-      dir_etag_weak: true,
-      dir_etag: session.dirEtag
-    }
-  }
-
-  if (opts.cursor) {
-    // cursor without a listing id: session presumed expired.
-    throw new ApiError(409, { code: 'fs.listing_expired', message: 'listing session expired' })
-  }
-
+  const limit = Math.min(opts.limit ?? 200, 2000)
   const sort = opts.sort ?? 'name'
   const order = opts.order ?? 'asc'
-  const session = createListingSession(path, sort, order)
-  const startOffset = opts.offset ?? 0
-  const page = session.entries.slice(startOffset, startOffset + limit)
+
+  // `listing` names the same directory `path` does, so either is enough.
+  const dir = normalizePath(opts.listing ?? path)
+  const entries = sortedEntriesOf(dir, sort, order)
+  const etag = dirEtagFor(dir)
+
+  // Both are an index into the sorted listing; a window's offset wins.
+  const offset = opts.offset ?? (opts.cursor ? Number(opts.cursor) || 0 : 0)
+  const page = entries.slice(offset, offset + limit)
+  const next = offset + page.length
+
   return {
-    listing: session.id,
-    total: session.entries.length,
-    dirs: session.dirs,
-    cursor: encodeCursor(startOffset + page.length, session.entries.length),
+    listing: dir,
+    total: entries.length,
+    dirs: entries.filter((e) => e.kind === 'dir').length,
+    cursor: next < entries.length ? String(next) : null,
     entries: page,
+    dir_etag: etag,
     dir_etag_weak: true,
-      dir_etag: session.dirEtag
+    // Only ever true, and only when the caller named a token to compare.
+    ...(opts.dirEtag && opts.dirEtag !== etag ? { stale: true } : {})
   }
 }
 
@@ -494,7 +405,6 @@ interface MockJobRow {
   done: number
   total: number
   results: BatchItemResult[]
-  blob?: Blob
 }
 
 const mockJobs = new Map<string, MockJobRow>()
@@ -538,7 +448,6 @@ async function jobStatus(id: string): Promise<JobStatus> {
       results: [],
       attempting: [],
       pending: [],
-      download: false
     }
   }
   const job = mockJobs.get(id)
@@ -553,8 +462,7 @@ async function jobStatus(id: string): Promise<JobStatus> {
       errors: job.results.filter((r) => !r.ok).map((r) => r.error?.message ?? 'internal error'),
       results: job.results,
       attempting: [],
-      pending: [],
-      download: job.blob !== undefined
+      pending: []
     }
   }
   throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } })

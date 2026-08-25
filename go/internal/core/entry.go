@@ -106,12 +106,20 @@ type ListOptions struct {
 	// Desc reverses the order within each group. Directories stay ahead of
 	// files either way.
 	Desc bool
+	// Limit is how many entries to return. Zero means the default page size.
+	// It exists because the interface fetches the window it is about to draw,
+	// which is not always one page.
+	Limit int
 }
 
-// pageSize is how many entries one Page holds. The proposal's example uses
-// two hundred and there is no way to override it through the contracted List
-// signature, so it is a fixed constant here.
+// pageSize is how many entries one Page holds when the caller names no bound
+// of its own.
 const pageSize = 200
+
+// maxPageSize bounds what a caller may ask for. A window the interface scrolls
+// is a few hundred rows; the ceiling is what stops one request from walking a
+// whole directory into memory.
+const maxPageSize = 2000
 
 // List returns one page of a directory.
 //
@@ -126,6 +134,10 @@ func (c *Core) List(ctx context.Context, r Resolved, cur Cursor) (Page, error) {
 // The order is applied across the whole directory before the page is cut, not
 // within the page: sorting a slice of an unsorted listing is an order that
 // changes as somebody scrolls.
+//
+// opt.Limit is how many entries the caller wants back. Zero is the default
+// page, and anything past maxPageSize is clamped rather than refused: a client
+// asking for more than the ceiling wants as much as it can have.
 func (c *Core) ListSorted(ctx context.Context, r Resolved, cur Cursor, opt ListOptions) (Page, error) {
 	if err := r.Require(acl.Read); err != nil {
 		return Page{}, err
@@ -176,7 +188,11 @@ func (c *Core) ListSorted(ctx context.Context, r Resolved, cur Cursor, opt ListO
 		return Page{}, errf(ErrNotFound, "a listing cursor past the end of the directory")
 	}
 
-	end := min(offset+pageSize, len(names))
+	size := pageSize
+	if opt.Limit > 0 {
+		size = min(opt.Limit, maxPageSize)
+	}
+	end := min(offset+size, len(names))
 	entries := make([]Entry, 0, end-offset)
 	for i, name := range names[offset:end] {
 		p, jerr := r.path.JoinExisting(name)

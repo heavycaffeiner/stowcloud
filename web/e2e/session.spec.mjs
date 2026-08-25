@@ -139,6 +139,28 @@ try {
   const rooted = await api(page, 'GET', '/api/fs/list?path=/docs')
   check('a rooted path is the same path', rooted.status === 200, `status ${rooted.status}`)
 
+  // The windowed fetch the virtual scroller makes: it names the directory as
+  // `listing`, not `path`, and asks for a slice by index. It was refused as a
+  // malformed path for the whole of the port, so every row past the first page
+  // stayed a placeholder no matter how far anybody scrolled.
+  const windowed = await api(page, 'GET',
+    `/api/fs/list?listing=${encodeURIComponent(list.body?.listing ?? 'docs')}&offset=0&limit=1`)
+  check('a windowed fetch addresses the listing it was handed',
+    windowed.status === 200, `status ${windowed.status}`)
+  check('the window is the size that was asked for',
+    windowed.body?.entries?.length === 1, `entries=${windowed.body?.entries?.length}`)
+  // The token the client last saw. A matching one is not stale; the response
+  // omits the flag rather than sending false.
+  const fresh = await api(page, 'GET',
+    `/api/fs/list?listing=${encodeURIComponent(list.body?.listing ?? 'docs')}&offset=0&limit=1` +
+    `&dir_etag=${encodeURIComponent(list.body?.dir_etag ?? '')}`)
+  check('an unchanged directory is not reported stale',
+    fresh.status === 200 && !fresh.body?.stale, `stale=${fresh.body?.stale}`)
+  const moved = await api(page, 'GET',
+    `/api/fs/list?listing=${encodeURIComponent(list.body?.listing ?? 'docs')}&offset=0&limit=1&dir_etag=not-the-one`)
+  check('a directory that moved under the window says so',
+    moved.status === 200 && moved.body?.stale === true, `stale=${moved.body?.stale}`)
+
   // The existence rule: a path that does not exist and one this account may
   // not see answer identically, so a stranger cannot probe for what is there.
   const missing = await api(page, 'GET', '/api/fs/list?path=docs/no-such-directory')

@@ -23,8 +23,12 @@ describe('mockApi', () => {
     for (const e of second.entries) expect(firstNames.has(e.name)).toBe(false)
   })
 
-  it('rejects a cursor without a listing id as an expired session', async () => {
-    await expect(mockApi.list('/home/bench', { cursor: 'bogus' })).rejects.toMatchObject({ code: 'fs.listing_expired' })
+  it('reads an unparsable cursor as the first page rather than failing', async () => {
+    // The cursor is a decimal offset into the sorted listing. There is no
+    // session behind it to expire, so a value that is not one starts at the
+    // front instead of refusing a listing the caller can plainly have.
+    const res = await mockApi.list('/home/bench', { cursor: 'bogus' })
+    expect(res.entries.length).toBeGreaterThan(0)
   })
 
   it('sorts by size', async () => {
@@ -64,10 +68,17 @@ describe('mockApi', () => {
     expect(results[0].error?.code).toBe('fs.not_found')
   })
 
-  it('bumps the directory etag on mutation so a stale listing session is refreshed', async () => {
+  it('reports a window as stale when the directory moved under it', async () => {
     const first = await mockApi.list('/home/Documents', { limit: 1 })
     await mockApi.mkdir('/home/Documents/폴더-후속')
-    const second = await mockApi.list('/home/Documents', { listing: first.listing, cursor: first.cursor ?? undefined })
+    // The window sends the token it last saw; a different one now means the
+    // offsets it cached no longer name the rows it thinks they do.
+    const second = await mockApi.list('/home/Documents', {
+      listing: first.listing,
+      offset: 0,
+      limit: 1,
+      dirEtag: first.dir_etag
+    })
     expect(second.stale).toBe(true)
   })
 })
