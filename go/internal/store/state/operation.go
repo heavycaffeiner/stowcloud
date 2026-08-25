@@ -219,16 +219,21 @@ func textArg(s string) any {
 	return s
 }
 
-// ListOps returns one account's operations, newest first and bounded.
+// ListOps returns one account's unfinished operations, newest first and
+// bounded.
+//
+// Unfinished means running or interrupted: the two states a client can still
+// do something about. A finished one is history, and the caller that reads
+// this is re-attaching to what is in flight.
 //
 // Bounded because the table grows with every batch anyone runs, and a listing
 // that returns all of it is one that gets slower for as long as the deployment
-// lives. The screen shows what is running and what just finished.
+// lives.
 func (d *DB) ListOps(ctx context.Context, user int64, limit int) (out []Op, err error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := d.SQL().QueryContext(ctx, sqlListOps, user, limit)
+	rows, err := d.SQL().QueryContext(ctx, sqlListOps, user, int64(OpRunning), int64(OpInterrupted), limit)
 	if err != nil {
 		return nil, err
 	}
