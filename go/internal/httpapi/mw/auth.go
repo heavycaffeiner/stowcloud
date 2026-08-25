@@ -117,11 +117,18 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool, filePrefix
 			// Cookie session for the browser. The token travels as hex so it
 			// is printable; the lookup hashes the decoded bytes, which is what
 			// CreateSession hashed.
+			// A session cookie that no longer resolves is a session that ended,
+			// not a credential somebody typed wrong. It answers auth.required,
+			// like no credential at all, because the browser's response to both
+			// is the same: show the sign-in screen. auth.invalid_credentials is
+			// reserved for a re-confirmation the user just failed, which the
+			// screen that asked has to keep inline.
 			if c, err := r.Cookie(SessionCookie); err == nil && c.Value != "" {
 				raw, derr := hex.DecodeString(c.Value)
 				if derr != nil {
+					clearSessionCookie(w)
 					apierr.Write(w, http.StatusUnauthorized,
-						apierr.NewError(apierr.CodeAuthInvalid, "authentication required", ""))
+						apierr.NewError(apierr.CodeAuthRequired, "authentication required", ""))
 					return
 				}
 				principal, lerr := svc.LookupSession(r.Context(), secret.New(raw))
@@ -130,8 +137,9 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool, filePrefix
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
+				clearSessionCookie(w)
 				apierr.Write(w, http.StatusUnauthorized,
-					apierr.NewError(apierr.CodeAuthInvalid, "authentication required", ""))
+					apierr.NewError(apierr.CodeAuthRequired, "authentication required", ""))
 				return
 			}
 
@@ -148,6 +156,15 @@ func Auth(svc *auth.Service, isPublic func(method, path string) bool, filePrefix
 				apierr.NewError(apierr.CodeAuthRequired, "authentication required", ""))
 		})
 	}
+}
+
+// clearSessionCookie removes a cookie that no longer names a session, so the
+// browser stops presenting it on every subsequent request.
+func clearSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name: SessionCookie, Value: "", Path: "/",
+		Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode, MaxAge: -1,
+	})
 }
 
 // PublicPaths is the predicate every mount composes: what the chain lets

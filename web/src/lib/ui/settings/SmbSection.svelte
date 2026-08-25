@@ -132,7 +132,7 @@
       if (err instanceof ApiError && err.code === 'auth.invalid_credentials') {
         setError = t('common.incorrect_password')
       } else if (err instanceof ApiError && err.code === 'auth.weak_password') {
-        const min = (err.detail as { min_length?: number } | undefined)?.min_length ?? 10
+        const min = err.reasonNumber('min_length') ?? 10
         setError = t('smb.password_too_short', { min })
       } else {
         setError = t('smb.could_not_save_password')

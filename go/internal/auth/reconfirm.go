@@ -98,6 +98,9 @@ func (s *Service) RequestWipe(ctx context.Context, userID, id int64) error {
 // over a protocol whose authentication cannot be made as strong, without the
 // account losing access to it.
 func (s *Service) SetSMBPassword(ctx context.Context, userID int64, pw secret.Secret) error {
+	if pw.Len() < MinPasswordLen {
+		return ErrWeakPassword
+	}
 	active, activeVer := s.mk.Active()
 	err := s.write(ctx, func(tx *sql.Tx) error {
 		if _, uerr := tx.ExecContext(ctx, sqlClearSMBOptOut, userID); uerr != nil {

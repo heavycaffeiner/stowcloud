@@ -126,6 +126,12 @@ func OIDCUnlink(d Deps) http.HandlerFunc {
 		if err := reconfirm(r, d, int64(uid), req.Password); err != nil {
 			return err
 		}
+		// Read before the write, because the write is what makes the answer
+		// untrue.
+		replaced, serr := smbPasswordWillBeReplaced(r.Context(), d, int64(uid))
+		if serr != nil {
+			return serr
+		}
 		if err := d.Auth.UnlinkOIDC(r.Context(), int64(uid)); err != nil {
 			return err
 		}
@@ -134,7 +140,7 @@ func OIDCUnlink(d Deps) http.HandlerFunc {
 		if err := d.Auth.SetPassword(r.Context(), int64(uid), secret.New([]byte(req.Password))); err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]bool{"smb_password_replaced": true})
+		return writeJSON(w, http.StatusOK, map[string]bool{"smb_password_replaced": replaced})
 	})
 }
 
@@ -194,8 +200,6 @@ func AdminUserOIDC(d Deps) http.HandlerFunc {
 				"oidc_sessions_revoked": sessions,
 			})
 		}
-		// Attaching an identity from here is the one thing this route does not
-		// do, and refusing beats a silent success on a write nothing performs.
-		return notImplemented("oidc.admin_link_refused")
+		return apierr.BadRequest("auth.method", "method")
 	})
 }

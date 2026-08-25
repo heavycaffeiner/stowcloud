@@ -31,6 +31,9 @@ const (
 	CodeSetupInvalidToken Code = "setup.invalid_token"
 	CodeSetupInvalidUser  Code = "setup.invalid_username"
 	CodeSetupWeakPassword Code = "setup.weak_password"
+	CodeLastAdmin         Code = "admin.last_admin"
+	CodeInvalidQuota      Code = "admin.invalid_quota"
+	CodeWeakPassword      Code = "auth.weak_password" //nolint:gosec // G101 reads the identifier: a code value, not a credential.
 	CodeNotImplemented    Code = "internal.not_implemented"
 	CodeSubsystemUnavail  Code = "internal.subsystem_unavailable"
 	CodeInvalidRequest    Code = "fs.invalid_request"
@@ -51,6 +54,9 @@ const (
 	msgQuotaExceeded    Message = "quota exceeded"
 	msgRateLimited      Message = "rate limited"
 	msgLimitExceeded    Message = "a configured limit was exceeded"
+	msgLastAdmin        Message = "refusing to remove the last administrator"
+	msgInvalidQuota     Message = "quota must be greater than zero, or absent for unlimited"
+	msgWeakPassword     Message = "password is too short"
 	msgNotImplemented   Message = "not implemented in this build"
 	msgSubsystemUnavail Message = "a named subsystem is unavailable"
 	msgInvalidRequest   Message = "malformed request"
@@ -141,6 +147,15 @@ func Map(err error) (int, *Error) {
 				Arg{Name: "component", Value: n.Component})
 		}
 		return http.StatusUnprocessableEntity, NewError(CodeFsInvalidName, msgInvalidName, "")
+	case errors.Is(err, auth.ErrLastAdmin):
+		// A conflict, not a permission failure: the caller is allowed to do
+		// this, the deployment's state is what refuses it.
+		return http.StatusConflict, NewError(CodeLastAdmin, msgLastAdmin, "admin.last_admin")
+	case errors.Is(err, auth.ErrInvalidQuota):
+		return http.StatusUnprocessableEntity, NewError(CodeInvalidQuota, msgInvalidQuota, "admin.invalid_quota")
+	case errors.Is(err, auth.ErrWeakPassword):
+		return http.StatusUnprocessableEntity, NewError(CodeWeakPassword, msgWeakPassword, "auth.weak_password",
+			Arg{Name: "min_length", Value: fmt.Sprint(auth.MinPasswordLen)})
 	case errors.Is(err, auth.ErrCredentials):
 		return http.StatusUnauthorized, NewError(CodeAuthInvalid, msgAuthInvalid, "")
 	case errors.Is(err, auth.ErrAccountDisabled):

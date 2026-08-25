@@ -23,4 +23,19 @@ var (
 	// ErrRateLimited is the login bucket exhausted, or too many second-factor
 	// attempts.
 	ErrRateLimited = errors.New("too many attempts, try again later")
+
+	// ErrLastAdmin is a write that would leave the deployment with no
+	// administrator anybody can sign in as. Recovering from that state means
+	// editing the database by hand, so the write is refused.
+	ErrLastAdmin = errors.New("that would leave no administrator who can sign in")
+
+	// ErrWeakPassword is a password shorter than MinPasswordLen. It lives in
+	// this package so that every path that stores a password is covered, not
+	// just the ones a browser reaches.
+	ErrWeakPassword = errors.New("the password is too short")
 )
+
+// MinPasswordLen is the floor for any password this service stores. It is the
+// same floor the first-run bootstrap applies, so an account created afterwards
+// cannot be weaker than the first one.
+const MinPasswordLen = 10

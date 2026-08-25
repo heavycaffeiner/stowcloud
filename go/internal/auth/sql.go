@@ -82,6 +82,8 @@ INSERT INTO recovery_code(user, code_hash, used_ns) VALUES (?, ?, NULL)`
 
 	sqlClearSMBOptOut = `UPDATE user SET smb_opt_out = 0, smb_enabled = 1 WHERE id = ?`
 
+	sqlSetSMBOptOut = `UPDATE user SET smb_opt_out = ?, smb_enabled = ? WHERE id = ?`
+
 	sqlConsumeRecoveryCode = `
 UPDATE recovery_code SET used_ns = ?
 WHERE user = ? AND code_hash = ? AND used_ns IS NULL`
@@ -170,6 +172,12 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 	sqlCountUsers = `SELECT COUNT(*) FROM user` //nolint:gosec // identifier, not a value.
 
 	sqlHasAdmin = `SELECT COUNT(*) FROM user WHERE role = 1`
+
+	// The last-admin guard's read. Disabled admins do not count: an account
+	// nobody can sign in as cannot re-enable anything.
+	sqlOtherActiveAdmins = `SELECT COUNT(*) FROM user WHERE role = 1 AND disabled = 0 AND id <> ?`
+
+	sqlIsActiveAdmin = `SELECT COUNT(*) FROM user WHERE role = 1 AND disabled = 0 AND id = ?`
 
 	sqlListSessions = `
 SELECT id_hash, created_ns, last_seen_ns, absolute_expiry_ns, ip_first, ua_first, amr

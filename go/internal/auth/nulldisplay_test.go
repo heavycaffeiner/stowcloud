@@ -18,7 +18,7 @@ func TestAnAccountWithNoDisplayNameCanLogIn(t *testing.T) {
 	s, _ := openService(t, nil)
 	ctx := context.Background()
 
-	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("correct-horse"))); err != nil {
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("correct-horse-battery"))); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	// What an imported row looks like: the name is set and the display name is

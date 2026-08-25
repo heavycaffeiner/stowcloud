@@ -85,6 +85,9 @@ func (s *Service) ListUsers(ctx context.Context) (out []UserRow, err error) {
 // rather than an account nobody can sign into with its grants still standing.
 func (s *Service) DeleteUser(ctx context.Context, userID int64) error {
 	err := s.write(ctx, func(tx *sql.Tx) error {
+		if gerr := guardLastAdmin(ctx, tx, userID); gerr != nil {
+			return gerr
+		}
 		res, eerr := tx.ExecContext(ctx, sqlDeleteUser, userID)
 		if eerr != nil {
 			return eerr
@@ -107,8 +110,16 @@ func (s *Service) DeleteUser(ctx context.Context, userID int64) error {
 	return s.republishPassdb(ctx)
 }
 
+// ErrInvalidQuota is a cap that is not a cap: zero or negative bytes would
+// leave the account unable to write anything, which is what disabling it is
+// for. Unlimited is expressed as a nil cap, not as zero.
+var ErrInvalidQuota = errors.New("a quota must be greater than zero, or absent for unlimited")
+
 // SetQuota sets or clears an account's storage cap. A nil cap is unlimited.
 func (s *Service) SetQuota(ctx context.Context, userID int64, bytes *int64) error {
+	if bytes != nil && *bytes <= 0 {
+		return ErrInvalidQuota
+	}
 	return s.write(ctx, func(tx *sql.Tx) error {
 		var v any
 		if bytes != nil {

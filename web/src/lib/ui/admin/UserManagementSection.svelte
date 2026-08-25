@@ -187,7 +187,7 @@
       if (err instanceof ApiError && err.code === 'fs.conflict') {
         createError = t('common.name_already_taken')
       } else if (err instanceof ApiError && err.code === 'auth.weak_password') {
-        const min = (err.detail?.min_length as number | undefined) ?? MIN_PASSWORD_LEN
+        const min = err.reasonNumber('min_length') ?? MIN_PASSWORD_LEN
         createError = t('user.password_must_at_least_characters', { min })
       } else {
         createError = t('user.could_not_create_user')

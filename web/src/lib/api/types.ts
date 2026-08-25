@@ -20,10 +20,10 @@ export interface Perms {
   download: boolean
 }
 
+/** What a listing row says about its thumbnail. Dimensions are not in it: the
+ *  server reports whether it can re-encode the file, not what is inside it. */
 export interface PreviewInfo {
   available: boolean
-  width?: number
-  height?: number
 }
 
 export interface SymlinkInfo {
@@ -128,6 +128,24 @@ export class ApiError extends Error {
     this.code = body.code
     this.detail = body.detail
   }
+
+  /** One placeholder from `detail.reason_params`, where the server puts the
+   *  values its catalogue key interpolates. They arrive as strings, because a
+   *  placeholder is data and renders the same in every language. */
+  reasonParam(name: string): string | undefined {
+    const params = this.detail?.reason_params
+    if (!params || typeof params !== 'object') return undefined
+    const v = (params as Record<string, unknown>)[name]
+    return typeof v === 'string' ? v : undefined
+  }
+
+  /** Same, parsed as a number. Undefined when absent or not numeric. */
+  reasonNumber(name: string): number | undefined {
+    const raw = this.reasonParam(name)
+    if (raw === undefined) return undefined
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : undefined
+  }
 }
 
 export interface UserInfo {
@@ -168,10 +186,8 @@ export interface AppPasswordInfo {
   created_ns: string
   last_used_ns: string | null
   expires_ns: string | null
-  /** (`scope_perms`). Optional because today's server
-   *  doesn't emit it yet — see `createScopedAppPassword`'s header comment in
-   *  `client.ts` for the seam that will fill this in. Absent/`undefined` and
-   *  `false` both render as an unscoped (full-access) password. */
+  /** Derived server-side from `scope_perms`: true when the scope holds no
+   *  permission that changes anything. An unscoped password is false. */
   read_only?: boolean
 }
 
@@ -661,13 +677,6 @@ export interface RecentHit {
 
 // ── content links ──
 
-export type LinkDisposition = 'attachment' | 'inline_thumb' | 'stream'
-
-/** `POST /api/fs/link` response (`go/internal/httpapi/handler/link.go`). */
-export interface LinkResponse {
-  url: string
-}
-
 // ── share links, owner side ──
 
 /** `POST/PATCH /api/shares[/:id]` request body's `perms` field
@@ -728,12 +737,11 @@ export interface MoveReq {
   paths: string[]
   dest: string
   on_conflict: OnConflict
-  if_match?: Record<string, string>
   dry_run?: boolean
 }
 
 /**
- * What `POST /api/fs/move` answers instead of `202 { job }` when `dry_run` is
+ * What `POST /api/fs/move` answers when `dry_run` is
  * set (`go/internal/httpapi/handler/fs.go`). A move whose source and
  * destination sit on different filesystems cannot be a rename — the server
  * falls back to copy-then-delete, which reads and rewrites every byte and
@@ -742,11 +750,10 @@ export interface MoveReq {
  * tells the user before they commit.
  */
 export interface MovePreflight {
-  will_copy: boolean
-  /** Bytes that will actually be rewritten — 0 unless `will_copy`. */
-  total_bytes: number
-  /** `"cross_device"`, or empty when `will_copy` is false. */
-  reason: string
+  /** One entry per requested path, in request order. `will_copy` on an item
+   *  is the cross-device warning; `ok: false` is a path the move would refuse
+   *  outright, which the picker can show before anybody commits. */
+  results: BatchItemResult[]
 }
 
 // ── long-running jobs ──
@@ -803,11 +810,12 @@ export interface JobListResponse {
 // "server pushes named events" shape: this one is bidirectional (the client
 // sends `sub`/`unsub`/`ping`), which SSE cannot do. ──
 
+// What the hub actually sends today is `inval` and `pong`
+// (`go/internal/httpapi/ws/ws.go`). The other three were declared here and
+// handled in `state/events.ts` against a server that never sent them, which
+// made the polling fallback look like a redundancy rather than the only path.
 export type ServerMsg =
   | { t: 'inval'; path: string; etag: string }
-  | { t: 'job'; id: string; done: number; total: number }
-  | { t: 'quota'; used: number; limit: number | null }
-  | { t: 'revoked' }
   | { t: 'pong' }
 
 export type ClientMsg = { t: 'sub'; paths: string[] } | { t: 'unsub'; paths: string[] } | { t: 'ping' }
@@ -978,7 +986,6 @@ export interface SmbSettingsReq {
   service_user: string
   allow_public_bind: boolean
   totp_policy: 'require_separate' | 'block'
-  service_uid: number
   service_gid: number
 }
 
@@ -989,13 +996,19 @@ export interface SearchSettingsReq {
   max_concurrent_slow: number
   walk_deadline_fast_ms: number
   walk_deadline_slow_ms: number
-  rate_per_minute: number
 }
 
 /** `PATCH /api/admin/server-settings/archive` body (`ArchivePatch`) — fully
  *  live. */
 export interface ArchiveSettingsReq {
   max_concurrent: number
+}
+
+/** `PATCH /api/admin/server-settings/rate` body. Applies live: the limiter is
+ *  the same instance the chain holds. */
+export interface RateSettingsReq {
+  per_sec: number
+  burst: number
 }
 
 /** `PATCH /api/admin/server-settings/network` body (`NetworkPatch`) —

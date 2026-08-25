@@ -5,6 +5,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -246,14 +247,36 @@ func TOTPDisable(d Deps) http.HandlerFunc {
 		if err := d.Auth.DisableTOTP(r.Context(), int64(uid)); err != nil {
 			return err
 		}
+		// Whether a dedicated SMB password is about to be overwritten has to be
+		// read before the write, not asserted after it: the answer is the whole
+		// point of the notice the screen shows.
+		replaced, serr := smbPasswordWillBeReplaced(r.Context(), d, int64(uid))
+		if serr != nil {
+			return serr
+		}
 		// Enrolling dropped the credential derived from the account password,
 		// so removing the factor mints it again from the password just
 		// re-confirmed: this is the exact undo of that.
 		if err := d.Auth.SetPassword(r.Context(), int64(uid), secret.New([]byte(req.Password))); err != nil {
 			return err
 		}
-		return writeJSON(w, http.StatusOK, map[string]bool{"smb_password_replaced": true})
+		return writeJSON(w, http.StatusOK, map[string]bool{"smb_password_replaced": replaced})
 	})
+}
+
+// smbPasswordWillBeReplaced reports whether setting the account password now
+// overwrites an SMB credential the account already holds.
+//
+// The schema stores one NT hash whatever it was derived from, so a separate
+// password and one minted from the account password are the same row after the
+// fact. What can be answered is whether a row is there to overwrite, which is
+// the question behind the notice: nothing is replaced when nothing was stored.
+func smbPasswordWillBeReplaced(ctx context.Context, d Deps, uid int64) (bool, error) {
+	state, err := d.Auth.SMBStateOf(ctx, uid)
+	if err != nil {
+		return false, err
+	}
+	return state.Reason != auth.SMBUnavailableNotSet, nil
 }
 
 // RecoveryCodes answers both halves of /api/auth/totp/recovery-codes.
@@ -306,10 +329,7 @@ func SMBSettings(d Deps) http.HandlerFunc {
 		if err := decodeJSON(r, &req); err != nil {
 			return err
 		}
-		// Opting out is the stronger statement and wins: it means the account
-		// holds no credential for the protocol at all, which is not something
-		// the other toggle can leave half-done.
-		if err := d.Auth.SetSMBAccess(r.Context(), int64(uid), req.Enabled && !req.OptOut); err != nil {
+		if err := d.Auth.SetSMBAccess(r.Context(), int64(uid), req.OptOut, req.Enabled); err != nil {
 			return err
 		}
 		w.WriteHeader(http.StatusNoContent)

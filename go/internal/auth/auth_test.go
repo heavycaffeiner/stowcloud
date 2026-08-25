@@ -123,7 +123,7 @@ func TestSessionAbsoluteLifetimeIsHonoured(t *testing.T) {
 	clk := &mutableClock{t: time.Unix(0, 0)}
 	s, _ := openService(t, clk)
 	ctx := context.Background()
-	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw"))); err != nil {
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw-correct-horse"))); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	sess, err := s.CreateSession(ctx, 1, "127.0.0.1", "ua", 1, time.Minute)
@@ -144,7 +144,7 @@ func TestSessionAbsoluteLifetimeIsHonoured(t *testing.T) {
 func TestAppPasswordScopeSurvivesTheCache(t *testing.T) {
 	s, _ := openService(t, nil)
 	ctx := context.Background()
-	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw"))); err != nil {
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw-correct-horse"))); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	tok, err := s.CreateAppPassword(ctx, 1, "desktop", Scope{Perms: 1, Shares: []string{"photos"}}, 0)
@@ -328,7 +328,7 @@ func TestEveryCredentialPathRepublishesThePassdb(t *testing.T) {
 	s, dir := openService(t, nil)
 	ctx := context.Background()
 	passdb := filepath.Join(dir, "passdb")
-	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw1"))); err != nil {
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw1-correct-horse"))); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
@@ -345,7 +345,7 @@ func TestEveryCredentialPathRepublishesThePassdb(t *testing.T) {
 	}
 
 	// 1. set password.
-	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw2"))); err != nil {
+	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw2-correct-horse"))); err != nil {
 		t.Fatalf("SetPassword: %v", err)
 	}
 	check("a password change", true)
@@ -364,11 +364,11 @@ func TestEveryCredentialPathRepublishesThePassdb(t *testing.T) {
 	check("an OIDC unlink", true)
 
 	// 4. The per-account SMB toggle.
-	if err := s.SetSMBAccess(ctx, 1, false); err != nil {
+	if err := s.SetSMBAccess(ctx, 1, false, false); err != nil {
 		t.Fatalf("SetSMBAccess off: %v", err)
 	}
 	check("SMB being turned off", false)
-	if err := s.SetSMBAccess(ctx, 1, true); err != nil {
+	if err := s.SetSMBAccess(ctx, 1, false, true); err != nil {
 		t.Fatalf("SetSMBAccess on: %v", err)
 	}
 	check("SMB being turned on", true)
@@ -391,7 +391,7 @@ func TestEveryCredentialPathRepublishesThePassdb(t *testing.T) {
 		t.Fatalf("DisableTOTP: %v", err)
 	}
 	check("a TOTP removal", false)
-	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw3"))); err != nil {
+	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw3-correct-horse"))); err != nil {
 		t.Fatalf("SetPassword after TOTP: %v", err)
 	}
 	check("a password set after TOTP", true)
@@ -403,10 +403,10 @@ func TestEveryCredentialPathRepublishesThePassdb(t *testing.T) {
 func TestThePassdbLineIsTheFormatSmbdReads(t *testing.T) {
 	s, dir := openService(t, nil)
 	ctx := context.Background()
-	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw1"))); err != nil {
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw1-correct-horse"))); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw2"))); err != nil {
+	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw2-correct-horse"))); err != nil {
 		t.Fatalf("SetPassword: %v", err)
 	}
 
@@ -445,12 +445,12 @@ func TestTheAccountFileAgreesWithThePassdbOnEveryUid(t *testing.T) {
 	s, dir := openService(t, nil)
 	ctx := context.Background()
 	for i, name := range []string{"alice", "bob", "carol"} {
-		if _, err := s.CreateUser(ctx, name, name, secret.New([]byte("pw1"))); err != nil {
+		if _, err := s.CreateUser(ctx, name, name, secret.New([]byte("pw1-correct-horse"))); err != nil {
 			t.Fatalf("CreateUser %s: %v", name, err)
 		}
 		// Creating an account only ever adds a hash, so it is not one of the
 		// paths that republishes. A password set is.
-		if err := s.SetPassword(ctx, int64(i+1), secret.New([]byte("pw2"))); err != nil {
+		if err := s.SetPassword(ctx, int64(i+1), secret.New([]byte("pw2-correct-horse"))); err != nil {
 			t.Fatalf("SetPassword %s: %v", name, err)
 		}
 	}
@@ -504,10 +504,10 @@ func TestTheAccountFileAgreesWithThePassdbOnEveryUid(t *testing.T) {
 func TestAnAccountWithNoHashIsNotPublished(t *testing.T) {
 	s, dir := openService(t, nil)
 	ctx := context.Background()
-	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw1"))); err != nil {
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw1-correct-horse"))); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw2"))); err != nil {
+	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw2-correct-horse"))); err != nil {
 		t.Fatalf("SetPassword: %v", err)
 	}
 	if _, err := s.st.SQL().ExecContext(ctx, sqlDeleteSMBSecret, 1); err != nil {
@@ -535,7 +535,7 @@ func TestTOTPKnownVectorAndReplayGuard(t *testing.T) {
 
 	s, _ := openService(t, nil)
 	ctx := context.Background()
-	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw"))); err != nil {
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw-correct-horse"))); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	secretB32, gerr := s.GenerateTOTPSecret()
@@ -569,7 +569,7 @@ func TestTOTPKnownVectorAndReplayGuard(t *testing.T) {
 func TestSessionLifecycle(t *testing.T) {
 	s, _ := openService(t, nil)
 	ctx := context.Background()
-	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw"))); err != nil {
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw-correct-horse"))); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	sess, err := s.CreateSession(ctx, 1, "127.0.0.1", "ua", 1, time.Hour)
@@ -596,7 +596,7 @@ func TestSessionLifecycle(t *testing.T) {
 func TestAppPasswordRevocationIsImmediate(t *testing.T) {
 	s, _ := openService(t, nil)
 	ctx := context.Background()
-	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw"))); err != nil {
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw-correct-horse"))); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	tok, err := s.CreateAppPassword(ctx, 1, "desktop", Scope{Perms: 1}, 0)
@@ -636,7 +636,7 @@ func TestAppPasswordRevocationIsImmediate(t *testing.T) {
 func TestRecoveryCodeIsSingleUse(t *testing.T) {
 	s, _ := openService(t, nil)
 	ctx := context.Background()
-	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw"))); err != nil {
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw-correct-horse"))); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	codes, err := s.GenerateRecoveryCodes(ctx, 1, 4)
@@ -680,16 +680,16 @@ func insertShareLink(t *testing.T, s *Service, userID int64) []byte {
 func TestRotationResealsAndCompacts(t *testing.T) {
 	s, dir := openService(t, nil)
 	ctx := context.Background()
-	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw1"))); err != nil {
+	if _, err := s.CreateUser(ctx, "alice", "Alice", secret.New([]byte("pw1-correct-horse"))); err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw2"))); err != nil {
+	if err := s.SetPassword(ctx, 1, secret.New([]byte("pw2-correct-horse"))); err != nil {
 		t.Fatalf("SetPassword: %v", err)
 	}
 	// The second factor goes on a second account, because enrolling one drops
 	// the NT hash derived from the account password and this needs one of each
 	// ciphertext to re-seal.
-	if _, err := s.CreateUser(ctx, "bob", "Bob", secret.New([]byte("pw1"))); err != nil {
+	if _, err := s.CreateUser(ctx, "bob", "Bob", secret.New([]byte("pw1-correct-horse"))); err != nil {
 		t.Fatalf("CreateUser bob: %v", err)
 	}
 	secretB32, gerr := s.GenerateTOTPSecret()

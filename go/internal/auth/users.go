@@ -71,6 +71,9 @@ func (s *Service) CreateAdmin(ctx context.Context, name, display string, pw secr
 }
 
 func (s *Service) createUser(ctx context.Context, name, display string, pw secret.Secret, role int64) (int64, error) {
+	if pw.Len() < MinPasswordLen {
+		return 0, ErrWeakPassword
+	}
 	hash, err := s.Hash(ctx, pw)
 	if err != nil {
 		return 0, err
@@ -111,6 +114,9 @@ func (s *Service) createUser(ctx context.Context, name, display string, pw secre
 // the SMB passdb. It is one of the six paths a credential change has to reach
 // on every surface.
 func (s *Service) SetPassword(ctx context.Context, userID int64, newPW secret.Secret) error {
+	if newPW.Len() < MinPasswordLen {
+		return ErrWeakPassword
+	}
 	hash, err := s.Hash(ctx, newPW)
 	if err != nil {
 		return err
@@ -135,6 +141,27 @@ func (s *Service) DisableAccount(ctx context.Context, userID int64) error {
 	return s.setAccountDisabled(ctx, userID, true)
 }
 
+// guardLastAdmin refuses a write that would leave no administrator who can
+// sign in. It runs inside the caller's transaction, so a concurrent disable of
+// the other administrator cannot slip between the check and the write.
+func guardLastAdmin(ctx context.Context, tx *sql.Tx, userID int64) error {
+	var isAdmin int64
+	if err := tx.QueryRowContext(ctx, sqlIsActiveAdmin, userID).Scan(&isAdmin); err != nil {
+		return err
+	}
+	if isAdmin == 0 {
+		return nil
+	}
+	var others int64
+	if err := tx.QueryRowContext(ctx, sqlOtherActiveAdmins, userID).Scan(&others); err != nil {
+		return err
+	}
+	if others == 0 {
+		return ErrLastAdmin
+	}
+	return nil
+}
+
 // EnableAccount restores a disabled account and puts it back in the passdb.
 func (s *Service) EnableAccount(ctx context.Context, userID int64) error {
 	return s.setAccountDisabled(ctx, userID, false)
@@ -142,6 +169,11 @@ func (s *Service) EnableAccount(ctx context.Context, userID int64) error {
 
 func (s *Service) setAccountDisabled(ctx context.Context, userID int64, disabled bool) error {
 	err := s.write(ctx, func(tx *sql.Tx) error {
+		if disabled {
+			if gerr := guardLastAdmin(ctx, tx, userID); gerr != nil {
+				return gerr
+			}
+		}
 		if _, err := tx.ExecContext(ctx, sqlUpdateDisabled, disabled, userID); err != nil {
 			return err
 		}
@@ -158,10 +190,28 @@ func (s *Service) setAccountDisabled(ctx context.Context, userID int64, disabled
 	return s.republishPassdb(ctx)
 }
 
-// SetSMBAccess turns an account's SMB access on or off, which is the "set SMB
-// settings" path the passdb sink has to reach.
-func (s *Service) SetSMBAccess(ctx context.Context, userID int64, enabled bool) error {
-	return s.setSMBEnabled(ctx, userID, enabled)
+// SetSMBAccess writes both self-service SMB switches.
+//
+// They are two facts, not one: opting out says the account holds no credential
+// for the protocol at all, and enabled says whether the credential it does
+// hold is currently live. Collapsing them into the enabled flag left the
+// opt-out column unwritable, so the screen's own toggle never survived a
+// reload.
+func (s *Service) SetSMBAccess(ctx context.Context, userID int64, optOut, enabled bool) error {
+	// Opting out is the stronger statement and forces the other off: a
+	// credential that is not stored cannot be live.
+	if optOut {
+		enabled = false
+	}
+	err := s.write(ctx, func(tx *sql.Tx) error {
+		_, eerr := tx.ExecContext(ctx, sqlSetSMBOptOut, optOut, enabled, userID)
+		return eerr
+	})
+	if err != nil {
+		return err
+	}
+	s.bumpGeneration()
+	return s.republishPassdb(ctx)
 }
 
 // LinkOIDC may disable local password login for an account, which is one of

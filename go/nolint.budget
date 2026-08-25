@@ -219,5 +219,7 @@
 # 248: the share link's POST download folded into the GET, taking one of the
 # three closes with it. A browser navigates to a download, so minting a URL to
 # navigate to was a round trip that spent the cap on a discarded response.
-248
-
+#
+# 249: auth.weak_password, the code the refusal mapper returns for a password
+# under the floor. G101 reads the identifier rather than what it holds.
+249

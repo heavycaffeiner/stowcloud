@@ -62,7 +62,7 @@
       if (err instanceof ApiError && err.code === 'auth.invalid_credentials') {
         currentError = t('password.current_password_incorrect')
       } else if (err instanceof ApiError && err.code === 'auth.weak_password') {
-        const min = (err.detail?.min_length as number | undefined) ?? MIN_LEN
+        const min = err.reasonNumber('min_length') ?? MIN_LEN
         newError = t('password.must_at_least_characters', { min })
       } else {
         currentError = t('password.could_not_change_password_try')

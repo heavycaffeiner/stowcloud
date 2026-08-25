@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 )
 
@@ -121,7 +122,11 @@ func RateLimit(l *RateLimiter) func(http.Handler) http.Handler {
 				return
 			}
 			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())))
-			http.Error(w, "rate limited", http.StatusTooManyRequests)
+			// The envelope, not plain text: the client branches on the code,
+			// and a bare body reached it as a generic internal error, so the
+			// "you are going too fast" message never showed.
+			apierr.Write(w, http.StatusTooManyRequests,
+				apierr.NewError(apierr.CodeRateLimited, "rate limited", ""))
 		})
 	}
 }
