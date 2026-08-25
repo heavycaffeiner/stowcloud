@@ -274,12 +274,12 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # comparing paths alone it missed six calls mounted under a different verb,
   # each of which answers "method not allowed" from a route that exists.
   #
-  # src/lib rather than src/lib/api: the resumable upload transport is a
-  # sibling directory, so the narrower path saw none of its calls and read
-  # every upload route as one nothing calls.
+  # src rather than src/lib/api: the resumable upload transport is a sibling
+  # directory, so a narrower path saw none of its calls, and the screens under
+  # routes/ build URLs of their own that no .ts file names.
   run "routecheck (the client's paths are mounted)" \
       ingo_host go run ./tools/routecheck \
-        -client-dir ../web/src/lib \
+        -client-dir ../web/src \
         -routes internal/server/routes.go \
         -allow routes.allow \
         -server-only routes.server-only

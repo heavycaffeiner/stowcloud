@@ -53,13 +53,18 @@ func main() {
 	}
 	allowed := readAllow(*allowPath)
 
-	called := clientPaths(client)
+	called, builtOnly := clientPaths(client)
 	mounted := mountedPaths(string(routes))
 	serverOnly := readAllow(*serverOnlyPath)
 
 	var missing []string
 	for _, c := range called {
 		if mounted[c] || allowed[c.path] || matchesWildcard(c, mounted) {
+			continue
+		}
+		// A URL the client builds without a verb of its own. The path being
+		// mounted at all is the whole claim it makes.
+		if builtOnly[c.path] && len(verbsFor(c.path, mounted)) > 0 {
 			continue
 		}
 		// A path mounted under a different verb is the more useful message:
@@ -80,7 +85,7 @@ func main() {
 	// because the routes a sync client or an operator calls are not ones the
 	// web interface has a screen for. What it catches is a route left behind
 	// by a client change, which is a maintenance cost rather than a fault.
-	if unused := unusedRoutes(mounted, called, serverOnly); len(unused) > 0 {
+	if unused := unusedRoutes(mounted, called, serverOnly, builtOnly); len(unused) > 0 {
 		say(os.Stdout, "\n%d mounted routes no client module calls:\n", len(unused))
 		for _, p := range unused {
 			say(os.Stdout, "  %s\n", p)
@@ -126,7 +131,12 @@ func readClient(dir string) (string, error) {
 			}
 			return nil
 		}
-		if !strings.HasSuffix(name, ".ts") || strings.Contains(name, ".test.") {
+		// Components too, not just the client modules. A screen that builds a
+		// URL inline is calling the same route table, and reading only .ts
+		// reported four live routes as uncalled: the thumbnail, the public
+		// zip, and both halves of a share link's public surface.
+		isSource := strings.HasSuffix(name, ".ts") || strings.HasSuffix(name, ".svelte")
+		if !isSource || strings.Contains(name, ".test.") {
 			return nil
 		}
 		body, rerr := os.ReadFile(path) //nolint:gosec // G304 reads the variable: the directory is the gate's own argument, never request input.
@@ -164,6 +174,15 @@ var (
 	// match: a bare fetch to somewhere else is not this server's route table's
 	// business.
 	directCall = regexp.MustCompile("(?:fetch|new EventSource|new WebSocket)\\(\\s*`\\$\\{BASE\\}([^`]*)`")
+	// A URL built for a navigation rather than a call. The verb lives with
+	// whoever follows the URL, which is always a GET: an anchor, a window
+	// location, or an img src. Both bases appear, because a public share link
+	// is served from the origin and the rest of the surface from the API base.
+	urlBuilder = regexp.MustCompile("`\\$\\{(?:BASE|ORIGIN)\\}([^`]*)`")
+	// The same, for a component that writes the path out in full rather than
+	// interpolating a base. Anchored on the mount prefixes so an unrelated
+	// string is not read as a route.
+	literalPath = regexp.MustCompile("[`'\"]((?:/api|/s)/[A-Za-z0-9_{}$/.-]*)")
 	// A template hole can itself contain braces, as a call with an object
 	// argument does, so the match is not "up to the first closing brace":
 	// that leaves the remainder of the call in the path.
@@ -172,6 +191,15 @@ var (
 	// The client builds a query with a helper, which appears as a trailing
 	// hole naming it.
 	queryBuilder = regexp.MustCompile(`\$\{qs\((?:[^{}]|\{[^{}]*\})*\)\}$`)
+	// The same idea for a module's own query helper. Matched by name ending in
+	// Query, not by "any trailing call": a path's last segment is frequently
+	// ${encodeURIComponent(id)}, and dropping that turns a real route into its
+	// parent.
+	tailBuilder = regexp.MustCompile(`\$\{[A-Za-z_$][A-Za-z0-9_$.]*(?:Query|query)\((?:[^{}]|\{[^{}]*\})*\)\}$`)
+	// A trailing hole holding a query string that was built a line earlier and
+	// put in a variable. Matched by name, for the same reason as above: the
+	// last segment of a real path is a hole too.
+	tailQueryVar = regexp.MustCompile(`\$\{q(?:uery)?\}$`)
 	// The verb, which follows the path in the same call. Absent means GET,
 	// which is what both the helper and a bare fetch default to.
 	//
@@ -183,28 +211,58 @@ var (
 )
 
 // call is one path the client asks for, and how.
+//
+// verbKnown is false for a URL the client only builds: the verb then lives
+// with whoever follows it, which may be a fetch on a later line or a
+// navigation with no verb at all. Such a call proves the path is wanted and
+// says nothing about the method, so the method comparison is skipped for it
+// rather than guessed at and reported as a mismatch that is not one.
 type call struct {
 	method string
 	path   string
 }
 
-func clientPaths(src string) []call {
+func clientPaths(src string) ([]call, map[string]bool) {
 	seen := map[call]bool{}
+	seenPath := map[string]bool{}
+	builtOnly := map[string]bool{}
 	var out []call
-	for _, re := range []*regexp.Regexp{requestCall, directCall} {
+	// The first two carry their own verb in the call's options. The last two
+	// are URLs somebody navigates to, which is a GET wherever it is followed.
+	verbInCall := map[*regexp.Regexp]bool{requestCall: true, directCall: true}
+	for _, re := range []*regexp.Regexp{requestCall, directCall, urlBuilder, literalPath} {
 		for _, loc := range re.FindAllStringSubmatchIndex(src, -1) {
 			p := normalise(src[loc[2]:loc[3]])
 			// The helper's own body is the one fetch whose path is the
 			// argument every other call already supplied, so it normalises to
 			// a bare placeholder rather than a route.
-			if p == "" || p == "/api{}" {
+			if p == "" || p == "/api{}" || p == "/api" || p == "/s" {
 				continue
 			}
-			c := call{method: methodOf(src, loc[1]), path: p}
+			// A URL builder inside a call this loop already matched would be
+			// counted twice, the second time as the GET a navigation implies.
+			// The call's own verb is the true one.
+			if !verbInCall[re] && seenPath[p] {
+				continue
+			}
+			// A comment or a doc line naming a route is not a call. Only the
+			// literal scan can pick one up, and it is the one pattern with no
+			// call syntax anchoring it.
+			if re == literalPath && inComment(src, loc[2]) {
+				continue
+			}
+			method := "GET"
+			if verbInCall[re] {
+				method = methodOf(src, loc[1])
+			} else {
+				builtOnly[p] = true
+			}
+			c := call{method: method, path: p}
 			if seen[c] {
 				continue
 			}
 			seen[c] = true
+			seenPath[p] = true
 			out = append(out, c)
 		}
 	}
@@ -214,7 +272,25 @@ func clientPaths(src string) []call {
 		}
 		return out[i].method < out[j].method
 	})
-	return out
+	return out, builtOnly
+}
+
+// inComment reports whether an offset sits inside a line or block comment.
+//
+// The literal scan has no call syntax to anchor on, so a route named in prose
+// would otherwise be counted as a call the server has to mount.
+func inComment(src string, at int) bool {
+	lineStart := strings.LastIndexByte(src[:at], '\n') + 1
+	line := strings.TrimSpace(src[lineStart:at])
+	if strings.HasPrefix(line, "//") || strings.HasPrefix(line, "*") || strings.HasPrefix(line, "/*") {
+		return true
+	}
+	// A block comment opened on an earlier line and not yet closed.
+	open := strings.LastIndex(src[:at], "/*")
+	if open < 0 {
+		return false
+	}
+	return strings.LastIndex(src[:at], "*/") < open
 }
 
 // methodOf reads the verb out of the options object that follows a call.
@@ -258,7 +334,7 @@ func mountedPaths(src string) map[call]bool {
 // The wildcard match runs the other way round here: the client names a value
 // where the server names a wildcard, so the mounted pattern is the pattern and
 // the client's path is the concrete one.
-func unusedRoutes(mounted map[call]bool, called []call, allowed map[string]bool) []string {
+func unusedRoutes(mounted map[call]bool, called []call, allowed, builtOnly map[string]bool) []string {
 	var out []string
 	for m := range mounted {
 		if allowed[m.path] {
@@ -266,7 +342,12 @@ func unusedRoutes(mounted map[call]bool, called []call, allowed map[string]bool)
 		}
 		used := false
 		for _, c := range called {
-			if c.method == m.method && pathMatches(c.path, m.path) {
+			// The verb is compared only when the client's call carries one.
+			// A URL built into a variable and fetched on a later line names
+			// the path and not the method, and demanding a match there
+			// reports a live route as uncalled.
+			verbAgrees := c.method == m.method || builtOnly[c.path]
+			if verbAgrees && pathMatches(c.path, m.path) {
 				used = true
 				break
 			}
@@ -328,6 +409,8 @@ func normalise(p string) string {
 	// A hole that builds a query string sits at the end and is not part of the
 	// path, so it is dropped rather than becoming a segment.
 	p = queryBuilder.ReplaceAllString(p, "")
+	p = tailBuilder.ReplaceAllString(p, "")
+	p = tailQueryVar.ReplaceAllString(p, "")
 	p = interpolate.ReplaceAllString(p, "{}")
 	p = queryTail.ReplaceAllString(p, "")
 	p = strings.TrimSpace(p)
@@ -335,8 +418,9 @@ func normalise(p string) string {
 		return ""
 	}
 	// The client's own base is the API prefix, so its paths are relative to it
-	// and the table's are absolute.
-	if !strings.HasPrefix(p, "/api") {
+	// and the table's are absolute. A public share link is the exception: it is
+	// served from the origin, so its path is already absolute.
+	if !strings.HasPrefix(p, "/api") && !strings.HasPrefix(p, "/s/") {
 		p = "/api" + p
 	}
 	// A named wildcard on the server and a value on the client are the same
