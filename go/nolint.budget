@@ -212,5 +212,8 @@
 #
 # 248: the public share-link surface. Three closes on paths where the bytes
 # are already going out, so the close's error has nowhere left to be reported.
-248
+#
+# 249: the virtual root's multistatus. The document is already on the wire by
+# the time the close runs, so its error has nowhere to be reported either.
+249
 

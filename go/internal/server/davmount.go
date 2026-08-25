@@ -99,6 +99,20 @@ func davMount(h *dav.Handler, c *core.Core, aliases []DavAlias) http.Handler {
 		if rewritten, ok := davAlias(path, aliases); ok {
 			path = rewritten
 		}
+		// The virtual root has no directory behind it, so it cannot be
+		// resolved: it is the projection of the caller's grants rather than a
+		// path. Listing it is how a sync client checks the account it just
+		// signed in as, and answering 404 there made every client report the
+		// server as unreachable immediately after a successful sign-in.
+		if r.Method == "PROPFIND" && davIsRoot(path) {
+			roots := c.Roots(user)
+			children := make([]dav.RootChild, 0, len(roots))
+			for _, rt := range roots {
+				children = append(children, dav.RootChild{Label: rt.Label})
+			}
+			h.ServeRootPropfind(w, r, children)
+			return
+		}
 		res, err := resolveDavPath(c, user, path, davPermFor(r.Method))
 		if err != nil {
 			writeDavError(w, err)
@@ -124,6 +138,15 @@ func davMount(h *dav.Handler, c *core.Core, aliases []DavAlias) http.Handler {
 			h.ServeMethod(w, r, res)
 		}
 	})
+}
+
+// davIsRoot reports whether a mount-relative path names the virtual root.
+//
+// Both spellings, because a client asking for a collection may or may not send
+// the trailing slash and the two name the same thing.
+func davIsRoot(path string) bool {
+	rest := strings.TrimPrefix(path, davPrefix)
+	return rest == "" || rest == "/"
 }
 
 // resolveDavPath turns a mount-relative URL into a resolution.
