@@ -8,7 +8,7 @@ import type { BatchResult } from '../api/types'
 import type { JobKindWire, JobStatus } from '../api/client'
 import { JobFailedError, JobTimeoutError, pollJob } from './jobs'
 
-export type JobKind = 'delete' | 'copy' | 'archive' | 'index' | 'move'
+export type JobKind = 'delete' | 'copy' | 'index'
 export type JobItemStatus = 'running' | 'done' | 'error' | 'cancelled' | 'interrupted'
 
 export interface JobItem {
@@ -23,8 +23,6 @@ export interface JobItem {
   message?: string
   /** `{name}` holes for [`message`], when the key has any. */
   messageParams?: Record<string, string>
-  /** Archive jobs only: the filename to save the zip as once `download()` is called. */
-  downloadName?: string
   /** Paths the server started but never recorded an outcome for — the
    *  process died between `begin_result` and `finish_result`, so whether the
    *  file was moved/copied/deleted is genuinely unknown and only a look at
@@ -38,12 +36,24 @@ export interface JobItem {
 
 // The only place the frontend's own `JobKind` (also used for tray icon/label
 // lookup) and the backend's wire `JobKindWire` (`"index_build"` vs `"index"`)
-// diverge — every other value is spelled identically in both.
+// diverge. Every other value is spelled identically in both.
 function wireKind(kind: JobKind): JobKindWire {
   return kind === 'index' ? 'index_build' : kind
 }
+
+// A kind this build has no tray row for still has to land somewhere: an
+// archive streams and a move finishes inline, so neither creates a job here,
+// but an older server's rows are still readable and are shown as a copy
+// rather than dropped.
 function frontendKind(kind: JobKindWire): JobKind {
-  return kind === 'index_build' ? 'index' : kind
+  switch (kind) {
+    case 'index_build':
+      return 'index'
+    case 'delete':
+      return 'delete'
+    default:
+      return 'copy'
+  }
 }
 
 export class JobTrayState {
@@ -113,8 +123,8 @@ export class JobTrayState {
   }
 
   /** Starts tracking a job the server just answered with `202 { job }`. */
-  async track(id: string, kind: JobKind, downloadName?: string): Promise<BatchResult> {
-    this.items = [...this.items, { id, kind, done: 0, total: 0, status: 'running', downloadName }]
+  async track(id: string, kind: JobKind): Promise<BatchResult> {
+    this.items = [...this.items, { id, kind, done: 0, total: 0, status: 'running' }]
     this.open = true
     return this.#poll(id, kind)
   }
@@ -180,12 +190,6 @@ export class JobTrayState {
    *  its own `pollJob` (REST poll or the WS push, whichever lands first). */
   async cancel(id: string): Promise<void> {
     await api.jobCancel(id)
-  }
-
-  /** Fetches a finished archive job's zip bytes — only valid once its item's
-   *  `status` is `'done'` and it was tracked with a `downloadName`. */
-  async download(id: string): Promise<Blob> {
-    return api.jobDownload(id)
   }
 
   dismiss(id: string): void {

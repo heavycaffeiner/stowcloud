@@ -20,14 +20,25 @@ import (
 // only two things a client does with an operation; the work itself is
 // owned by the core.
 
+// operationResponse is a job as the tray reads it.
+//
+// The id is a string because every other id on this surface is, and the client
+// hands it straight back in a path. done/total drive the progress bar, errors
+// is what the failure dialogue reads, and each result carries a full error
+// envelope rather than a bare status word, because the screen branches on the
+// code (a conflict opens the overwrite dialogue, a quota failure does not).
 type operationResponse struct {
-	ID      int64  `json:"id"`
-	Kind    string `json:"kind"`
-	State   string `json:"state"`
-	Results []struct {
-		Path   string `json:"path,omitempty"`
-		Status string `json:"status"`
-	} `json:"results,omitempty"`
+	ID         string      `json:"id"`
+	Kind       string      `json:"kind"`
+	State      string      `json:"state"`
+	Done       int64       `json:"done"`
+	Total      int64       `json:"total"`
+	Current    *string     `json:"current"`
+	Errors     []string    `json:"errors"`
+	Results    []batchItem `json:"results"`
+	Attempting []string    `json:"attempting"`
+	Pending    []string    `json:"pending"`
+	Download   bool        `json:"download"`
 }
 
 // Operation answers GET /api/jobs/{id}.
@@ -46,21 +57,6 @@ func Operation(d Deps) http.HandlerFunc {
 			return err
 		}
 		return writeJSON(w, http.StatusOK, operationToJSON(op))
-	})
-}
-
-// OperationDownload answers GET /api/jobs/{id}/download.
-//
-// Mounted and honest rather than absent. A job does not keep its output: an
-// archive is streamed as it is packed, because the server never holds one, so
-// there is nothing here to hand back. A client that asks gets a status it can
-// act on instead of a connection to a path that does not exist.
-func OperationDownload(d Deps) http.HandlerFunc {
-	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		if _, cerr := userOf(r); cerr != nil {
-			return cerr
-		}
-		return notImplemented("jobs.download_unavailable")
 	})
 }
 
@@ -89,14 +85,53 @@ func OperationCancel(d Deps) http.HandlerFunc {
 }
 
 func operationToJSON(op core.Operation) operationResponse {
-	out := operationResponse{ID: int64(op.ID), Kind: opKindString(op.Kind), State: opStateString(op.State)}
+	out := operationResponse{
+		ID:         strconv.FormatInt(int64(op.ID), 10),
+		Kind:       opKindString(op.Kind),
+		State:      opStateString(op.State),
+		Done:       op.Progress,
+		Total:      op.Total,
+		Errors:     []string{},
+		Results:    make([]batchItem, 0, len(op.Results)),
+		Attempting: []string{},
+		Pending:    []string{},
+	}
+	if op.Message != "" {
+		out.Errors = append(out.Errors, op.Message)
+	}
 	for _, res := range op.Results {
-		out.Results = append(out.Results, struct {
-			Path   string `json:"path,omitempty"`
-			Status string `json:"status"`
-		}{Path: res.Path, Status: opResultStatus(res.OK, res.Reason)})
+		item := batchItem{Path: res.Path, OK: res.OK}
+		if !res.OK {
+			item.Error = opResultError(res)
+			if res.Text != "" {
+				out.Errors = append(out.Errors, res.Text)
+			}
+		}
+		out.Results = append(out.Results, item)
 	}
 	return out
+}
+
+// opResultError renders one failed item as the same envelope a refused request
+// carries, so the screen branches on one vocabulary rather than two.
+func opResultError(res state.OpResult) *apierr.Wire {
+	var e *apierr.Error
+	switch res.Reason {
+	case state.ReasonItemDenied:
+		e = apierr.NewError(apierr.CodeACLDenied, "permission denied", "")
+	case state.ReasonItemNotFound:
+		e = apierr.MapNotFound()
+	case state.ReasonItemConflict:
+		e = apierr.NewError(apierr.CodeFsConflict, "state conflict", "")
+	case state.ReasonItemSkipped:
+		e = apierr.NewError(apierr.CodeInvalidRequest, "skipped", "jobs.item_skipped")
+	case state.ReasonItemOk, state.ReasonItemFailed:
+		e = apierr.Internal()
+	default:
+		e = apierr.Internal()
+	}
+	w := e.Wire()
+	return &w
 }
 
 func opStateString(s state.OpState) string {
@@ -106,7 +141,10 @@ func opStateString(s state.OpState) string {
 	case state.OpDone:
 		return "done"
 	case state.OpFailed:
-		return "failed"
+		// "error" is the terminal state the client knows. It was "failed",
+		// which matched no branch there, so a failed job was polled until the
+		// client's own timeout fired and reported a hung server.
+		return "error"
 	case state.OpCancelled:
 		return "cancelled"
 	case state.OpInterrupted:
@@ -124,26 +162,11 @@ func opKindString(k state.OpKind) string {
 	case state.OpArchive:
 		return "archive"
 	case state.OpIndexBuild:
-		return "index-build"
+		// Underscore, which is the spelling the client switches on. It was a
+		// hyphen here and matched nothing.
+		return "index_build"
 	}
 	return "unknown"
-}
-
-func opResultStatus(ok bool, reason state.OpResultReason) string {
-	if ok {
-		return "ok"
-	}
-	switch reason {
-	case state.ReasonItemDenied:
-		return "denied"
-	case state.ReasonItemNotFound:
-		return "not_found"
-	case state.ReasonItemConflict:
-		return "conflict"
-	case state.ReasonItemSkipped:
-		return "skipped"
-	}
-	return "failed"
 }
 
 // Operations answers GET /api/jobs: what this account has in flight.

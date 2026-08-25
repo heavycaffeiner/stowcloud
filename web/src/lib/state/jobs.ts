@@ -6,7 +6,6 @@
 // while the job runs, surfaced by `ui/JobTray.svelte`.
 import { api, ApiError, type JobKindWire, type JobStatus } from '../api/client'
 import { batchErrorKey } from '../api/error-text'
-import { events } from './events'
 
 const POLL_MS = 1000
 // A job that hasn't reached a terminal state after this long is either a
@@ -43,9 +42,8 @@ export class JobFailedError extends Error {
 
 /**
  * Polls `GET /api/jobs/{id}` until it reaches a terminal state, calling
- * `onProgress` on every observed update — including ones delivered faster,
- * over the WebSocket `job` push (`state/events.ts`'s `onJob`;: "progress is also pushed over the websocket; polling is the
- * fallback"). Resolves with the final
+ * `onProgress` on every observed update. Polling is the only channel: the
+ * hub sends invalidations, not job progress. Resolves with the final
  * `JobStatus` on `done`; rejects with `JobFailedError` for `error`/
  * `cancelled`/`interrupted` (all three are "did not complete successfully"
  * from a caller's point of view — `err.status.state` says which) or
@@ -66,34 +64,10 @@ export function pollJob(id: string, kind: JobKindWire, onProgress?: (status: Job
     let timer: ReturnType<typeof setTimeout> | null = null
     const deadline = Date.now() + MAX_POLL_MS
 
-    const unsubJob = events.onJob((jobId, done, total) => {
-      if (jobId !== id || settled) return
-      // The push frame doesn't carry `current`/`errors`/`results`/`download`
-      // ('s wire shape is narrower than the REST one) —
-      // report what it has and let the next poll tick, or the terminal state
-      // itself, fill in the rest rather than fabricating fields the server
-      // didn't send. `id`/`kind` are the caller's own (`track()` already knew
-      // them before it started polling), not a guess.
-      onProgress?.({
-        id,
-        kind,
-        state: 'running',
-        done,
-        total,
-        current: null,
-        errors: [],
-        results: [],
-        attempting: [],
-        pending: [],
-        download: false
-      })
-    })
-
     function settle(fn: () => void): void {
       if (settled) return
       settled = true
       if (timer) clearTimeout(timer)
-      unsubJob()
       fn()
     }
 

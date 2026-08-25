@@ -149,7 +149,6 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		// The spelling the shipped client uses. It was not mounted, so
 		// cancelling a job answered that the method is not allowed.
 		{Method: "DELETE", Pattern: "/api/jobs/{id}", Req: any, Handler: handler.OperationCancel(d)},
-		{Method: "GET", Pattern: "/api/jobs/{id}/download", Req: any, Handler: handler.OperationDownload(d)},
 
 		// The change channel.
 		{Method: "GET", Pattern: "/api/events", Req: any, Handler: handler.Events(d)},
@@ -172,7 +171,6 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		{Method: "PATCH", Pattern: "/api/admin/users/{id}", Req: selfAdmin, Handler: handler.AdminUser(d)},
 		{Method: "DELETE", Pattern: "/api/admin/users/{id}", Req: selfAdmin, Handler: handler.AdminUser(d)},
 		{Method: "GET", Pattern: "/api/admin/users/{id}/oidc", Req: selfAdmin, Handler: handler.AdminUserOIDC(d)},
-		{Method: "PUT", Pattern: "/api/admin/users/{id}/oidc", Req: selfAdmin, Handler: handler.AdminUserOIDC(d)},
 		{Method: "DELETE", Pattern: "/api/admin/users/{id}/oidc", Req: selfAdmin, Handler: handler.AdminUserOIDC(d)},
 		{Method: "POST", Pattern: "/api/admin/smb/apply", Req: selfAdmin, Handler: handler.SMBApply(d)},
 		{Method: "GET", Pattern: "/api/admin/groups", Req: selfAdmin, Handler: handler.AdminGroups(d)},

@@ -95,7 +95,9 @@ try {
       JSON.stringify(build.body))
     const job = await api('GET', `/api/jobs/${build.body?.job}`)
     check('the build job is readable', job.status === 200, `status ${job.status}`)
-    check('the build job knows what kind it is', job.body?.kind === 'index-build',
+    // Underscore, which is the spelling the client switches on. It was a
+    // hyphen on the wire and matched no branch there.
+    check('the build job knows what kind it is', job.body?.kind === 'index_build',
       `kind=${job.body?.kind}`)
   }
 
@@ -213,12 +215,6 @@ try {
   const cancelled = await api('DELETE', '/api/jobs/999999', null, csrf)
   check('cancelling a job is not a method error',
     cancelled.status !== 405, `status ${cancelled.status}`)
-
-  // A finished job's download, which is mounted and honest rather than absent.
-  const jobDownload = await api('GET', '/api/jobs/999999/download')
-  check('a job download is not a method error',
-    jobDownload.status !== 405 && jobDownload.status !== 404,
-    `status ${jobDownload.status}`)
 
   // ---- archives ----
   const shares = await api('GET', '/api/admin/shares')

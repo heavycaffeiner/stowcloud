@@ -4,7 +4,6 @@
   import { fly, slide } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import { jobTray, type JobItem, type JobKind } from '../state/job-tray.svelte'
-  import { triggerBlobDownload } from '../format/download'
   import IconButton from './IconButton.svelte'
   import { Icon } from 'm3-svelte'
   import { icons, type IconName } from '../icons'
@@ -20,26 +19,10 @@
   })
 
   function kindLabel(kind: JobKind): string {
-    return kind === 'delete'
-      ? t('common.delete')
-      : kind === 'copy'
-        ? t('common.copy')
-        : kind === 'move'
-          ? t('common.move')
-          : kind === 'archive'
-            ? t('job.zip')
-            : t('job.index_build')
+    return kind === 'delete' ? t('common.delete') : kind === 'copy' ? t('common.copy') : t('job.index_build')
   }
   function kindIcon(kind: JobKind): IconName {
-    return kind === 'delete'
-      ? 'delete'
-      : kind === 'copy'
-        ? 'copy'
-        : kind === 'move'
-          ? 'move'
-          : kind === 'archive'
-            ? 'download'
-            : 'search'
+    return kind === 'delete' ? 'delete' : kind === 'copy' ? 'copy' : 'search'
   }
 
   /** Everything the job was asked to do and did not finish: the item whose
@@ -97,21 +80,6 @@
       if (!seenIds.has(id)) lastStatus.delete(id)
     }
   })
-
-  // Per-item download failure text -- not part of `JobItem` itself (that's
-  // `jobTray`'s own state, patched only from `track()`'s poll loop); this is
-  // purely a local reaction to a button click here.
-  let downloadErrors = $state<Record<string, string>>({})
-
-  async function onDownload(item: JobItem): Promise<void> {
-    if (!item.downloadName) return
-    try {
-      const blob = await jobTray.download(item.id)
-      triggerBlobDownload(blob, item.downloadName)
-    } catch {
-      downloadErrors = { ...downloadErrors, [item.id]: t('job.could_not_download_archive') }
-    }
-  }
 
   function reduceMotion(): boolean {
     return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -201,20 +169,12 @@
                 <p class="sc-job-tray__message">{t('job.anything_marked_not_started_untouched')}</p>
               </details>
             {/if}
-            {#if downloadErrors[item.id]}
-              <p class="sc-job-tray__message">{downloadErrors[item.id]}</p>
-            {/if}
             <div class="sc-job-tray__controls">
               {#if item.status === 'running'}
                 <IconButton label={t('job.cancel_job')} onclick={() => jobTray.cancel(item.id)}>
                   <Icon icon={icons.close} size={16} />
                 </IconButton>
               {:else}
-                {#if item.status === 'done' && item.downloadName}
-                  <IconButton label={t('job.download')} onclick={() => onDownload(item)}>
-                    <Icon icon={icons.download} size={16} />
-                  </IconButton>
-                {/if}
                 <IconButton label={t('common.clear')} onclick={() => jobTray.dismiss(item.id)}>
                   <Icon icon={icons.close} size={16} />
                 </IconButton>

@@ -27,6 +27,14 @@ type Operation struct {
 	ID    OperationID
 	Kind  state.OpKind
 	State state.OpState
+	// Progress and Total are the item counter a progress bar is drawn from.
+	// Total is zero for an operation whose size is not known until its walk
+	// ends.
+	Progress int64
+	Total    int64
+	// Message is the failure line the runner recorded, empty while the
+	// operation is running or when it succeeded.
+	Message string
 	// Results is the bounded per-item outcome, present once the operation is
 	// terminal. Nothing streams during the run.
 	Results []state.OpResult
@@ -46,7 +54,11 @@ func (c *Core) Operation(ctx context.Context, owner UserID, id OperationID) (Ope
 	if op.User != int64(owner) {
 		return Operation{}, ErrNotFound
 	}
-	return Operation{ID: OperationID(op.ID), Kind: op.Kind, State: op.State, Results: results}, nil
+	return Operation{
+		ID: OperationID(op.ID), Kind: op.Kind, State: op.State,
+		Progress: op.Progress, Total: op.Total, Message: op.Message,
+		Results: results,
+	}, nil
 }
 
 // CancelOperation requests a running operation's cancellation. It goes through
@@ -114,7 +126,10 @@ func (c *Core) ListOperations(ctx context.Context, owner UserID, limit int) ([]O
 		// The per-item results are deliberately not read here. They are
 		// bounded per operation and a listing would multiply that by the page,
 		// and the screen this feeds shows progress rather than outcomes.
-		out = append(out, Operation{ID: OperationID(op.ID), Kind: op.Kind, State: op.State})
+		out = append(out, Operation{
+			ID: OperationID(op.ID), Kind: op.Kind, State: op.State,
+			Progress: op.Progress, Total: op.Total, Message: op.Message,
+		})
 	}
 	return out, nil
 }

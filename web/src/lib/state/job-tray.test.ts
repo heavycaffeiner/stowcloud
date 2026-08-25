@@ -12,7 +12,7 @@ import { JobTrayState } from './job-tray.svelte'
 function job(partial: Partial<JobStatus>): JobStatus {
   return {
     id: 'J-1',
-    kind: 'move',
+    kind: 'copy',
     state: 'interrupted',
     done: 1,
     total: 4,
@@ -41,7 +41,7 @@ describe('JobTrayState.attachOpenJobs', () => {
     expect(tray.items).toHaveLength(1)
     expect(tray.items[0]).toMatchObject({
       id: 'J-1',
-      kind: 'move',
+      kind: 'copy',
       status: 'interrupted',
       done: 1,
       total: 4,

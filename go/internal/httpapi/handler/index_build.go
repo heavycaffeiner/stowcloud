@@ -6,6 +6,7 @@ package handler
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/service"
@@ -100,6 +101,9 @@ func AdminIndexBuild(d Deps) http.HandlerFunc {
 			}
 		})
 
-		return writeJSON(w, http.StatusAccepted, map[string]any{"job": id})
+		// The id is a string, like every other job id this surface hands out.
+		// A number here reached the client as one and the tray polled a path
+		// built from it that never matched.
+		return writeJSON(w, http.StatusAccepted, map[string]any{"job": strconv.FormatInt(id, 10)})
 	})
 }

@@ -1,15 +1,11 @@
-// web/src/lib/state/jobs.test.ts — pollJob's terminal-state resolution,
-// error/timeout rejection, and its WebSocket-push shortcut ("progress is also pushed over the websocket; polling is the
-// fallback"). Independent of a live server or a real WebSocket:
-// `api.jobStatus` is spied on directly (`api`
-// is a plain object — no module mock/reset needed), and the WebSocket push
-// is simulated by intercepting `events.onJob`'s registration — see
-// `events.test.ts` for the hub's own transport-level tests.
+// web/src/lib/state/jobs.test.ts — pollJob's terminal-state resolution and
+// its error/timeout rejection. Independent of a live server: `api.jobStatus`
+// is spied on directly, since `api` is a plain object and needs no module
+// mock. The hub's own transport-level tests live in `events.test.ts`.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '../api/client'
 import { ApiError } from '../api/types'
 import type { JobStatus } from '../api/types'
-import { events } from './events'
 import { JobFailedError, JobTimeoutError, pollJob } from './jobs'
 
 function status(partial: Partial<JobStatus>): JobStatus {
@@ -88,34 +84,16 @@ describe('pollJob', () => {
     await expect(promise).resolves.toMatchObject({ state: 'done' })
   })
 
-  it('a job push over the WebSocket updates progress immediately, without waiting for the next poll tick', async () => {
-    vi.spyOn(api, 'jobStatus').mockResolvedValue(status({ state: 'running', done: 0, total: 10 }))
+  it('reports progress from each poll tick', async () => {
+    vi.spyOn(api, 'jobStatus')
+      .mockResolvedValueOnce(status({ state: 'running', done: 4, total: 10 }))
+      .mockResolvedValueOnce(status({ state: 'done', done: 10, total: 10 }))
     const onProgress = vi.fn()
-    let pushed: ((id: string, done: number, total: number) => void) | undefined
-    vi.spyOn(events, 'onJob').mockImplementation((cb) => {
-      pushed = cb
-      return () => {}
-    })
 
     const promise = pollJob('J-5', 'delete', onProgress)
-    pushed?.('some-other-job', 99, 100) // must be ignored — wrong id
-    expect(onProgress).not.toHaveBeenCalled()
-    pushed?.('J-5', 4, 10)
-    expect(onProgress).toHaveBeenCalledWith({
-      id: 'J-5',
-      kind: 'delete',
-      state: 'running',
-      done: 4,
-      total: 10,
-      current: null,
-      errors: [],
-      results: [],
-      attempting: [],
-      pending: [],
-      download: false
-    })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ done: 4, total: 10, state: 'running' }))
 
-    vi.spyOn(api, 'jobStatus').mockResolvedValueOnce(status({ state: 'done' }))
     await vi.advanceTimersByTimeAsync(1000)
     await expect(promise).resolves.toMatchObject({ state: 'done' })
   })
