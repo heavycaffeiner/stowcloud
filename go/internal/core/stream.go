@@ -103,46 +103,28 @@ func (c *Core) OpenStream(ctx context.Context, r Resolved, range_ *[2]uint64) (F
 	return entry, &Stream{f: f, pos: start, end: end}, nil
 }
 
-// openSeekOf is the whole-file seekable reader a zip reader needs: the central
-// directory lives at the end of the file.
-type openSeekable struct {
-	f   *vfs.File
-	pos int64
-	len int64
+// RandomRead is a whole file open for reading at arbitrary offsets, which is
+// what a format that keeps its index at the end needs: a zip's central
+// directory is the last thing in the file.
+//
+// The caller closes it. It carries the size because every such format needs
+// one to find its index, and asking the caller to stat again would be a second
+// answer that can disagree with the descriptor it is reading through.
+type RandomRead struct {
+	f    *vfs.File
+	Size int64
 }
 
-// Read implements io.Reader.
-func (s *openSeekable) Read(p []byte) (int, error) {
-	if s.pos >= s.len {
-		return 0, io.EOF
-	}
-	n, err := s.f.ReadAt(p, s.pos)
-	s.pos += int64(n)
-	return n, err
-}
+// ReadAt implements io.ReaderAt against the open descriptor.
+func (r *RandomRead) ReadAt(p []byte, off int64) (int, error) { return r.f.ReadAt(p, off) }
 
-// Seek implements io.Seeker, refusing a position before the start.
-func (s *openSeekable) Seek(offset int64, whence int) (int64, error) {
-	var target int64
-	switch whence {
-	case io.SeekStart:
-		target = offset
-	case io.SeekCurrent:
-		target = s.pos + offset
-	case io.SeekEnd:
-		target = s.len + offset
-	default:
-		return 0, errf(ErrNotFound, "an invalid seek whence")
-	}
-	if target < 0 {
-		return 0, errf(ErrNotFound, "seek before the start of the file")
-	}
-	s.pos = target
-	return target, nil
-}
+// Close releases the descriptor.
+func (r *RandomRead) Close() error { return r.f.Close() }
 
-func (c *Core) OpenSeekable(ctx context.Context, r Resolved) (FidEntry, io.ReadSeeker, error) {
-	if err := r.Require(acl.Download); err != nil {
+// OpenRandom opens a file for reading at arbitrary offsets, ACL-checked like
+// every other entry point.
+func (c *Core) OpenRandom(ctx context.Context, r Resolved) (FidEntry, *RandomRead, error) {
+	if err := r.Require(acl.Read | acl.Download); err != nil {
 		return FidEntry{}, nil, err
 	}
 	f, err := r.root.OpenRead(r.path, vfs.IntentRead)
@@ -156,11 +138,11 @@ func (c *Core) OpenSeekable(ctx context.Context, r Resolved) (FidEntry, io.ReadS
 	}
 	if st.Kind.IsDir() {
 		_ = f.Close() //nolint:errcheck // the denial is the answer; the descriptor is going away.
-		return FidEntry{}, nil, errf(ErrDenied, "stream a directory")
+		return FidEntry{}, nil, errf(ErrDenied, "read a directory")
 	}
 	etag, weak := FileETag(st)
 	return FidEntry{Name: r.path.Name(), Size: st.Size, MTime: st.MtimeNs, ETag: etag, ETagWeak: weak},
-		&openSeekable{f: f, len: int64(st.Size)}, nil //nolint:gosec // G115 reads the conversion: the seekable's length is the file's own size, which the descriptor addressed at open.
+		&RandomRead{f: f, Size: int64(st.Size)}, nil //nolint:gosec // G115 reads the conversion: the length is the file's own size, which the descriptor addressed at open.
 }
 
 func min64(a, b uint64) uint64 {

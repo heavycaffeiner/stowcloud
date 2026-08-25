@@ -45,6 +45,11 @@ type ArchiveListing struct {
 	// Truncated reports that the entry cap cut the listing, so a caller can
 	// say so rather than presenting a partial archive as a whole one.
 	Truncated bool
+	// Skipped counts members left out because their names cannot be shown
+	// safely. Reported rather than silent for the same reason Truncated is: a
+	// listing missing entries that does not admit it reads as an archive with
+	// fewer files in it.
+	Skipped int
 	// TotalUncompressed is the sum over the entries listed. A caller compares
 	// it against the archive's own size to see a bomb before extracting.
 	TotalUncompressed uint64
@@ -84,6 +89,7 @@ func ListArchive(ctx context.Context, r io.ReaderAt, size int64) (ArchiveListing
 		// carrying a traversal or a control character is a name a client would
 		// render or, worse, hand to its own extractor.
 		if !safeArchiveName(name) {
+			out.Skipped++
 			continue
 		}
 

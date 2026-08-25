@@ -142,6 +142,11 @@ func TestTraversingAndAbsoluteNamesAreNotListed(t *testing.T) {
 	if len(got.Entries) != 1 {
 		t.Fatalf("got %d entries, want only the safe one", len(got.Entries))
 	}
+	// Counted, not silently dropped: a listing missing entries that does not
+	// admit it reads as an archive with fewer files in it.
+	if got.Skipped != 5 {
+		t.Fatalf("skipped = %d, want the five refused names", got.Skipped)
+	}
 }
 
 func TestControlCharactersInANameAreNotListed(t *testing.T) {

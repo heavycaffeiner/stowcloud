@@ -13,24 +13,35 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
+	"github.com/heavycaffeiner/stowcloud/go/internal/preview"
 )
 
-// The archive-listing surface. The listing reads the file itself, never the
-// directory, and the cost bound is stated in the response: an archive over
-// the listed-entry ceiling is truncated and says so.
+// The archive-listing surface: what is inside a zip file, read from the
+// archive's own central directory. Nothing is extracted to produce it, so a
+// zip bomb costs the directory parse and nothing else, and the cost bound is
+// stated in the response: an archive over the listed-entry ceiling is
+// truncated and says so.
+//
+// It used to walk the filesystem tree under the path instead, which is a
+// different question with a different answer shape: listing a zip returned the
+// directory containing it, under field names the client does not read, so the
+// preview never rendered a single member.
 
-// errListingFull ends the walk at the listed-entry bound. It never reaches the
-// caller: the response says the listing is truncated instead.
-var errListingFull = errors.New("archive: the listing is full")
-
+// archiveEntry is one member of the archive, in the shape the preview reads.
+// A directory carries the trailing slash the archive itself stores, which is
+// the only thing that distinguishes one in a zip.
 type archiveEntry struct {
-	Path  string `json:"path"`
-	IsDir bool   `json:"is_dir"`
-	Size  uint64 `json:"size,omitempty"`
+	Name  string `json:"name"`
+	Kind  string `json:"kind"`
+	Size  uint64 `json:"size"`
 	MTime int64  `json:"mtime_ns,omitempty"`
 }
 
 // ArchiveList answers GET /api/fs/archive/list?path=...
+//
+// A path the caller cannot read and a file that is not a zip are the same 404:
+// whether a file this account may not see happens to be an archive is not
+// something the answer should say.
 func ArchiveList(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
 		uid, cerr := userOf(r)
@@ -41,35 +52,50 @@ func ArchiveList(d Deps) http.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		resolved, err := d.Core.Resolve(uid, p, acl.Read)
+		// Download as well as read: the members' names and sizes are what the
+		// file contains, so listing them is seeing into it.
+		resolved, err := d.Core.Resolve(uid, p, acl.Read|acl.Download)
 		if err != nil {
 			return err
 		}
+
+		_, src, oerr := d.Core.OpenRandom(r.Context(), resolved)
+		if oerr != nil {
+			return oerr
+		}
+		defer src.Close() //nolint:errcheck // the listing is the answer either way.
+
+		listing, lerr := preview.ListArchive(r.Context(), src, src.Size)
+		if errors.Is(lerr, preview.ErrNotArchive) {
+			return core.ErrNotFound
+		}
+		if lerr != nil {
+			return lerr
+		}
+
 		out := struct {
 			Entries   []archiveEntry `json:"entries"`
 			Truncated bool           `json:"truncated"`
 			Limit     int            `json:"limit"`
-		}{Limit: limits.ArchiveEntriesListed}
-		err = d.Core.ArchiveWalk(r.Context(), resolved, func(e core.WalkEntry, s *core.Stream) error {
-			if s != nil {
-				defer s.Close() //nolint:errcheck // per-entry handle, released at once.
-			}
-			if len(out.Entries) >= limits.ArchiveEntriesListed {
-				// The walk ends here rather than running to the end of the tree
-				// discarding what it finds. It used to keep going, opening a
-				// stream per entry it then threw away, so a listing of a large
-				// tree cost the whole tree to produce its first ten thousand
-				// names.
-				out.Truncated = true
-				return errListingFull
+			Skipped   int            `json:"skipped"`
+		}{
+			Entries:   make([]archiveEntry, 0, len(listing.Entries)),
+			Truncated: listing.Truncated,
+			Limit:     limits.ArchiveEntriesListed,
+			// Members left out because their names cannot be handed to a client
+			// safely: a path escape, a raw Windows separator, a control
+			// character. Counted rather than fatal, so one odd entry does not
+			// hide the archive.
+			Skipped: listing.Skipped,
+		}
+		for _, e := range listing.Entries {
+			kind := "file"
+			if e.IsDir {
+				kind = "dir"
 			}
 			out.Entries = append(out.Entries, archiveEntry{
-				Path: e.RelPath, IsDir: e.IsDir, Size: e.Size, MTime: e.MTimeNs,
+				Name: e.Name, Kind: kind, Size: e.Size, MTime: e.ModTimeNs,
 			})
-			return nil
-		})
-		if err != nil && !errors.Is(err, errListingFull) {
-			return err
 		}
 		return writeJSON(w, http.StatusOK, out)
 	})
