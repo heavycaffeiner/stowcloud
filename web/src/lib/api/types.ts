@@ -1039,16 +1039,24 @@ export interface RateSettingsReq {
   burst: number
 }
 
-/** `PATCH /api/admin/server-settings/network` body (`NetworkPatch`) —
- *  restart-required. */
+/**
+ * `PATCH /api/admin/server-settings/network` body. Applies live: both fields
+ * are holders the request chain reads, so a save moves them at once.
+ *
+ * Exactly the two the server decodes. It carried a `bind`, an
+ * `allowed_origins` and a `public_origins` as well, and the handler reads none
+ * of them: every save of those three answered "applied" and changed nothing,
+ * and the snapshot has no such fields, so they loaded back empty. The bind
+ * address is reported in the read-only field list instead, which is where the
+ * server marks it: the socket is bound once at startup.
+ */
 export interface NetworkSettingsReq {
-  bind: string
+  /** The host names this server answers on, which is also the origin check
+   *  every state-changing request passes. An empty list admits nothing. */
   app_hosts: string[]
-  allowed_origins: string[]
+  /** CIDR ranges whose `X-Forwarded-For` is believed. Empty trusts no proxy,
+   *  so the peer address is the client address. */
   trusted_proxies: string[]
-  /** Absolute `http(s)://` origins, first canonical. Refused at save time if
-   *  malformed, unlike the boot path which drops the entry with a warning. */
-  public_origins: string[]
 }
 
 /** `PATCH /api/admin/server-settings/db` body (`DbPatch`) —

@@ -1283,11 +1283,8 @@ const mockServerSettings = {
   archive: { max_concurrent: 2 },
   rate: { per_sec: 20, burst: 40 },
   network: {
-    bind: '127.0.0.1:8443',
     app_hosts: ['nas.local'] as string[],
-    allowed_origins: [] as string[],
-    trusted_proxies: [] as string[],
-    public_origins: ['https://nas.local'] as string[]
+    trusted_proxies: [] as string[]
   },
   db: { size_guard: true, max_bytes: 5_000_000_000, min_free_bytes: 1_000_000_000 },
   symlink_policy: 'deny' as 'deny' | 'within_share' | 'follow',
@@ -1322,17 +1319,14 @@ const mockOverriddenSections = new Set<SettingsSectionId>(['network', 'smb'])
 /** What each group falls back to when its override is dropped, standing in
  *  for `sc.toml` plus the environment. */
 const mockFileSettings = JSON.parse(JSON.stringify(mockServerSettings)) as typeof mockServerSettings
-mockFileSettings.network.public_origins = []
+mockFileSettings.network.app_hosts = ['localhost']
 mockFileSettings.smb.server_name = 'STOWCLOUD'
 
 /** Which group each row belongs to, so the screen can ask one field for a
  *  group's source. */
 const MOCK_SECTION_OF: Record<string, SettingsSectionId> = {
-  bind: 'network',
   app_hosts: 'network',
-  allowed_origins: 'network',
   trusted_proxies: 'network',
-  public_origins: 'network',
   symlink_policy: 'symlink-policy',
   data_dir: 'paths',
   master_key_file: 'paths',
@@ -1348,14 +1342,19 @@ function sectionOf(key: string): SettingsSectionId | undefined {
   return undefined
 }
 
-function settingsField(key: string, value: unknown, restartRequired: boolean): SettingsField {
+function settingsField(
+  key: string,
+  value: unknown,
+  restartRequired: boolean,
+  readonlyReasonKey: string | null = null
+): SettingsField {
   const section = sectionOf(key)
   return {
     key,
     value,
     source: section && mockOverriddenSections.has(section) ? 'admin_override' : 'config_file',
     restart_required: restartRequired,
-    readonly_reason_key: null
+    readonly_reason_key: readonlyReasonKey
   }
 }
 
@@ -1364,17 +1363,14 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
   const s = mockServerSettings
   return {
     fields: [
-      settingsField('bind', s.network.bind, true),
-      settingsField('app_hosts', s.network.app_hosts, true),
-      settingsField('allowed_origins', s.network.allowed_origins, true),
-      settingsField('trusted_proxies', s.network.trusted_proxies, true),
-      // The one row carrying a pending-restart value, so the badge is
-      // exercisable under the mock: the file says nothing is declared and the
-      // saved override says otherwise, and the process is still on the file's.
-      {
-        ...settingsField('public_origins', s.network.public_origins, true),
-        running_value: mockFileSettings.network.public_origins
-      },
+      // The listener's address and the data directory: reported, never
+      // editable. The socket is bound once at startup and everything open was
+      // opened relative to the directory, which is what the server says about
+      // both.
+      settingsField('bind', '127.0.0.1:8443', false, /* i18n */ 'settings.readonly_bind_address'),
+      settingsField('data_dir', '/var/lib/stowcloud', false, /* i18n */ 'settings.readonly_data_dir'),
+      settingsField('app_hosts', s.network.app_hosts, false),
+      settingsField('trusted_proxies', s.network.trusted_proxies, false),
       settingsField('db.size_guard', s.db.size_guard, true),
       settingsField('db.max_bytes', s.db.max_bytes, true),
       settingsField('db.min_free_bytes', s.db.min_free_bytes, true),
@@ -1564,21 +1560,20 @@ async function adminSetRateSettings(req: RateSettingsReq): Promise<ApplyOutcome>
 
 async function adminSetNetworkSettings(req: NetworkSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
-  const bad = req.public_origins.find((o) => !/^https?:\/\/[^/]+/.test(o.trim()))
-  if (bad !== undefined) {
+  const badCidr = req.trusted_proxies.find((c) => !/^[0-9a-fA-F.:]+\/\d{1,3}$/.test(c.trim()))
+  if (badCidr !== undefined) {
     throw new ApiError(422, {
-      code: 'fs.invalid_name',
-      message: 'invalid name',
-      detail: {
-        reason: `public_origins: ${bad} is not an absolute http(s):// origin`,
-        reason_key: 'settings.invalid_origin',
-        reason_params: { value: bad }
-      }
+      code: 'fs.invalid_request',
+      message: 'invalid request',
+      detail: { reason_key: 'settings.invalid_cidr', reason_params: { field: 'trusted_proxies' } }
     })
   }
   mockServerSettings.network = { ...req }
   mockOverriddenSections.add('network')
-  return { applied_live: false, restart_required: true }
+  // Both fields are live holders the request chain reads, so a save moves
+  // them at once. It answered restart-required, which is what the three
+  // fields this request no longer carries would have needed.
+  return { applied_live: true, restart_required: false }
 }
 
 async function adminSetDbSettings(req: DbSettingsReq): Promise<ApplyOutcome> {

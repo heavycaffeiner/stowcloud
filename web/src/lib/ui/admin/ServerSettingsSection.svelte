@@ -223,11 +223,8 @@
 
   function networkBody(): Record<string, unknown> {
     return {
-      bind: netBind.trim(),
       app_hosts: strToArr(netAppHosts),
-      allowed_origins: strToArr(netAllowedOrigins),
-      trusted_proxies: strToArr(netTrustedProxies),
-      public_origins: strToArr(netPublicOrigins)
+      trusted_proxies: strToArr(netTrustedProxies)
     }
   }
 
@@ -351,76 +348,35 @@
     }
   }
 
-  // ── network (restart-required) ──
+  // ── network ──
+  //
+  // Two editable fields, which is what the server actually stores and applies.
+  // This screen used to offer a bind address, an allowed-origin list and a
+  // public-origin list as well: the server decodes none of the three, so a
+  // save reported success and changed nothing, and the snapshot has no such
+  // fields so they loaded blank every time. The bind address is reported
+  // read-only in the field list below, where the server marks it.
 
-  let netBind = $state('')
   let netAppHosts = $state('')
-  let netAllowedOrigins = $state('')
   let netTrustedProxies = $state('')
-  let netPublicOrigins = $state('')
   let netSaving = $state(false)
   let netError = $state<string | null>(null)
   let netOutcome = $state<ApplyOutcome | null>(null)
 
-  /** The authority of a declared origin, for comparing against `app_hosts`. */
-  function authorityOf(origin: string): string {
-    const rest = origin.includes('://') ? origin.split('://')[1] : origin
-    return rest.split(/[/?#]/)[0]
-  }
-
-  /** Origins whose host this server will not answer on. Not a refusal: the
-   *  admin may be about to fill in `app_hosts` on the same screen. Declaring
-   *  an origin does not admit it, and silently widening a security allowlist
-   *  as a side effect of editing a display setting would be worse than the
-   *  warning. */
-  const netUnservedOrigins = $derived.by(() => {
-    const hosts = strToArr(netAppHosts).map((h) => h.split(':')[0].toLowerCase())
-    if (!hosts.length) return []
-    return strToArr(netPublicOrigins).filter(
-      (o) => !hosts.includes(authorityOf(o).split(':')[0].toLowerCase())
-    )
-  })
-
-  /** What `public_origins` was when this screen loaded, so a save can say
-   *  what is changing about it. */
-  let netOriginsLoaded = $state<string[]>([])
-  let netOriginsConfirmOpen = $state(false)
-
-  /** Neither of these disconnects an enrolled client: admission is
-   *  `app_hosts`, and these edits only change which name the server offers.
-   *  They are still not something an operator infers from a text field, so
-   *  they are said out loud before the save. */
-  const netOriginChanges = $derived.by(() => {
-    const next = strToArr(netPublicOrigins)
-    const removed = netOriginsLoaded.filter((o) => !next.includes(o))
-    const canonicalChanged = (netOriginsLoaded[0] ?? '') !== (next[0] ?? '')
-    return { removed, canonicalChanged, canonical: next[0] ?? '' }
-  })
-
-  function openNetworkSave(): void {
-    netError = null
-    netOutcome = null
-    if (!netBind.trim()) {
-      netError = t('server.enter_bind_address')
-      return
-    }
-    if (netOriginChanges.removed.length || netOriginChanges.canonicalChanged) {
-      netOriginsConfirmOpen = true
-      return
-    }
-    void saveNetwork()
-  }
-
   async function saveNetwork(): Promise<void> {
-    netOriginsConfirmOpen = false
     netError = null
     netOutcome = null
+    const hosts = strToArr(netAppHosts)
+    if (hosts.length === 0) {
+      // The host list is the origin check. An empty one is a server that
+      // admits nothing, and it is refused here rather than saved and
+      // discovered on the next request.
+      netError = t('server.enter_at_least_one_app_host')
+      return
+    }
     const req: NetworkSettingsReq = {
-      bind: netBind.trim(),
-      app_hosts: strToArr(netAppHosts),
-      allowed_origins: strToArr(netAllowedOrigins),
-      trusted_proxies: strToArr(netTrustedProxies),
-      public_origins: strToArr(netPublicOrigins)
+      app_hosts: hosts,
+      trusted_proxies: strToArr(netTrustedProxies)
     }
     netSaving = true
     try {
@@ -648,13 +604,8 @@
       ratePerSec = String(field('rate.per_sec')?.value ?? '')
       rateBurst = String(field('rate.burst')?.value ?? '')
 
-      netBind = String(field('bind')?.value ?? '')
       netAppHosts = arrToStr(field('app_hosts')?.value)
-      netAllowedOrigins = arrToStr(field('allowed_origins')?.value)
       netTrustedProxies = arrToStr(field('trusted_proxies')?.value)
-      netPublicOrigins = arrToStr(field('public_origins')?.value)
-      netOriginsLoaded = strToArr(netPublicOrigins)
-
 
 
       homesEnabled = Boolean(field('homes.enabled')?.value)
@@ -854,18 +805,17 @@
 
     <h4 class="sc-admin-section__subhead">{t('server.network')}</h4>
     <div class="sc-server-settings__form">
-      <TextField label={t('server.bind_address_host_port')} bind:value={netBind} />
-      <p class="sc-admin-section__hint">{t('server.bind_https_hint')}</p>
       <TextField label={t('server.app_hosts_comma_separated')} bind:value={netAppHosts} />
+      <p class="sc-admin-section__hint">{t('server.app_hosts_hint')}</p>
       <TextField label={t('server.trusted_proxies_comma_separated')} bind:value={netTrustedProxies} />
       {#if !netTrustedProxies.trim() && emptyNote('trusted_proxies')}
         <p class="sc-server-settings__empty-note">{emptyNote('trusted_proxies')}</p>
       {/if}
-      <Button variant="filled" onclick={openNetworkSave} loading={netSaving}>{t('common.save')}</Button>
+      <Button variant="filled" onclick={saveNetwork} loading={netSaving}>{t('common.save')}</Button>
       {@render checkButton('network', networkBody)}
     </div>
     {@render checkPanel('network', networkBody)}
-    <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart_listener')}</p>
+    <p class="sc-admin-section__hint">{t('server.applies_immediately_no_restart_needed')}</p>
     {#if netError}<p class="sc-admin-section__error" role="alert">{netError}</p>{/if}
     {#if netOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(netOutcome)}</p>{/if}
 
@@ -957,25 +907,6 @@
     {/if}
   {/if}
 </section>
-
-<!-- Naming the values it restores, because two of them are not obvious from
-     the button: removing an origin stops new enrolments on that name (the
-     name keeps serving as long as it is in `app_hosts`), and changing the
-     first entry changes what an unrecognised `Host` is answered with. -->
-
-<ConfirmDialog
-  open={netOriginsConfirmOpen}
-  title={t('server.change_public_origins')}
-  message={t('server.public_origin_change_effects', {
-    removed: netOriginChanges.removed.join(', ') || t('server.none'),
-    canonical: netOriginChanges.canonical || t('server.none')
-  })}
-  confirmLabel={t('common.save')}
-  danger
-  onclose={() => (netOriginsConfirmOpen = false)}
-  onconfirm={saveNetwork}
-/>
-
 
 <ConfirmDialog
   open={restartConfirmOpen}
