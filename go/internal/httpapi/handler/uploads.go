@@ -117,6 +117,7 @@ func UploadsCreate(d Deps) http.HandlerFunc {
 			TotalLen:     total,
 			RandomAccess: r.Header.Get(hdrRandomAccess) == "1",
 			IfMatch:      r.Header.Get("If-Match"),
+			Meta:         uploadMeta(r.Header),
 		}
 
 		session, serr := d.Uploads.Create(r.Context(), resolved, spec)
@@ -371,6 +372,30 @@ func uploadDest(h http.Header) (string, error) {
 		return leaf, nil
 	}
 	return strings.TrimSuffix(dir, "/") + "/" + leaf, nil
+}
+
+// uploadMeta reads the metadata the client sent about the file itself.
+//
+// mtime is the source file's modification time, which the finalizer applies
+// after the bytes land. Dropped, every upload carried the time it finished
+// instead of the time the file was written, which is what a sync client
+// compares against on its next pass.
+func uploadMeta(h http.Header) upload.Meta {
+	meta := parseMetadata(h.Get(hdrMetadata))
+	out := upload.Meta{
+		Filename:     meta["filename"],
+		RelativePath: meta["relativePath"],
+		Mime:         meta["filetype"],
+	}
+	if raw := meta["mtime"]; raw != "" {
+		// A client sending a stamp this cannot parse gets the upload time
+		// rather than a refused upload: the bytes are the point, and the
+		// timestamp is a courtesy on top of them.
+		if ns, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			out.MtimeNs = &ns
+		}
+	}
+	return out
 }
 
 // parseMetadata reads the comma-separated pairs the metadata header carries,

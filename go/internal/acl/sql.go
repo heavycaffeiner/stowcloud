@@ -16,7 +16,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	// Who a grant is for and which share it covers are not updatable: they
 	// identify it. See UpdateGrant.
-	sqlUpdateGrant = `UPDATE "grant" SET allow = ?, deny = ?, inherit = ? WHERE id = ?`
+	sqlUpdateGrant = `UPDATE "grant" SET allow = ?, deny = ?, inherit = ?, label = ? WHERE id = ?`
 
 	sqlDeleteGrant = `DELETE FROM "grant" WHERE id = ?`
 )

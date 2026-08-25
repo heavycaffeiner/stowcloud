@@ -158,9 +158,9 @@ func List(d Deps) http.HandlerFunc {
 		if err != nil {
 			return err
 		}
-		// The order the client asked for. Both were sent on every listing
-		// request and read by nothing, so the sort control in the interface
-		// changed the query string and never the order.
+		// The order the client asked for. Both reach ListSorted, which is what
+		// makes the interface's sort control move the listing rather than only
+		// the query string.
 		q := r.URL.Query()
 		opt := core.ListOptions{
 			Sort: core.ParseSortKey(q.Get("sort")),

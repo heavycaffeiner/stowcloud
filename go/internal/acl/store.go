@@ -83,14 +83,19 @@ func CreateGrant(ctx context.Context, db writeDB, g Grant, nowNs int64) (Grant, 
 	return g, nil
 }
 
-// UpdateGrant replaces the permission bits and the inheritance of one grant.
+// UpdateGrant replaces the permission bits, the inheritance and the label of
+// one grant. An empty label clears it.
 //
 // What it deliberately cannot change is who the grant is for or which share it
 // covers. Those identify the grant; changing them is deleting one rule and
 // writing another, and doing that under one id makes an audit trail read as
 // though a permission moved when a different rule replaced it.
-func UpdateGrant(ctx context.Context, db writeDB, id int64, allow, deny Perms, inherit bool) error {
-	res, err := db.ExecContext(ctx, sqlUpdateGrant, int64(allow), int64(deny), inherit, id)
+func UpdateGrant(ctx context.Context, db writeDB, id int64, allow, deny Perms, inherit bool, label string) error {
+	var stored any
+	if label != "" {
+		stored = label
+	}
+	res, err := db.ExecContext(ctx, sqlUpdateGrant, int64(allow), int64(deny), inherit, stored, id)
 	if err != nil {
 		return err
 	}

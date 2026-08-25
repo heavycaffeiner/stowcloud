@@ -4,6 +4,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -195,6 +196,10 @@ func AdminGrant(d Deps) http.HandlerFunc {
 			Allow   []string `json:"allow"`
 			Deny    []string `json:"deny"`
 			Inherit *bool    `json:"inherit"`
+			// Label is what the screen shows for the rule. It was decoded by
+			// nothing, so the edit dialogue accepted one, the server answered
+			// 200, and it reverted on the next load.
+			Label *string `json:"label"`
 		}
 		if derr := decodeJSON(r, &patch); derr != nil {
 			return derr
@@ -208,8 +213,15 @@ func AdminGrant(d Deps) http.HandlerFunc {
 			return derr
 		}
 		inherit := patch.Inherit != nil && *patch.Inherit
+		// An absent label leaves the stored one alone; an empty one clears it.
+		label := ""
+		if patch.Label != nil {
+			label = *patch.Label
+		} else if existing, lerr := grantLabel(r.Context(), d, id); lerr == nil {
+			label = existing
+		}
 
-		uerr := acl.UpdateGrant(r.Context(), d.State.SQL(), id, allow, deny, inherit)
+		uerr := acl.UpdateGrant(r.Context(), d.State.SQL(), id, allow, deny, inherit, label)
 		record(r, d, actor, "grant.update", strconv.FormatInt(id, 10), uerr == nil)
 		if uerr != nil {
 			return grantError(uerr)
@@ -248,6 +260,21 @@ func grantError(err error) error {
 		}
 	}
 	return err
+}
+
+// grantLabel reads the label a grant already carries, for a patch that does
+// not name one.
+func grantLabel(ctx context.Context, d Deps, id int64) (string, error) {
+	grants, err := acl.ListGrants(ctx, d.State.SQL(), acl.GrantFilter{})
+	if err != nil {
+		return "", err
+	}
+	for _, g := range grants {
+		if g.ID == id {
+			return g.Label, nil
+		}
+	}
+	return "", acl.ErrNoSuchGrant
 }
 
 func toAdminGrant(g acl.Grant) adminGrant {
