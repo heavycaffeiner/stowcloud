@@ -23,6 +23,12 @@ func BodyLimit(limit int64, next http.Handler) http.Handler {
 	})
 }
 
+// DefaultBodyLimit is the bound this step applies to every mount but the
+// upload one. Exported because the drop-link view reports it: a page that
+// announces no ceiling lets somebody wait out a whole upload to be refused at
+// the end.
+const DefaultBodyLimit int64 = 1 << 20
+
 // uploadPrefix is the one mount this step does not apply to.
 const uploadPrefix = "/api/uploads"
 

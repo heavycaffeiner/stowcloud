@@ -13,6 +13,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
+	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
@@ -42,16 +43,26 @@ type linkRequest struct {
 	Note    string `json:"note,omitempty"`
 }
 
+// linkResponse is one link as its owner reads it.
+//
+// The two nanosecond stamps are strings because the value is past what a JSON
+// number carries exactly, and null rather than absent when there is none: the
+// screen branches on null, and an omitted key reached it as undefined and
+// threw on the date it tried to format.
+//
+// max_downloads is null for unlimited, not -1. The core stores -1; the client
+// reads null, and a link with no cap rendered as a used-up one.
 type linkResponse struct {
 	ID          int64     `json:"id"`
 	URL         string    `json:"url,omitempty"`
 	Path        string    `json:"path"`
 	Perms       permsJSON `json:"perms"`
 	HasPassword bool      `json:"has_password"`
-	Expires     int64     `json:"expires_ns,omitempty"`
-	MaxDown     int32     `json:"max_downloads"`
+	Expires     *string   `json:"expires_ns"`
+	MaxDown     *int32    `json:"max_downloads"`
 	Downs       int32     `json:"downloads"`
-	Label       string    `json:"label,omitempty"`
+	CreatedNs   string    `json:"created_ns"`
+	Label       *string   `json:"label"`
 	Note        string    `json:"note,omitempty"`
 }
 
@@ -63,7 +74,22 @@ func Links(d Deps) http.HandlerFunc {
 			return cerr
 		}
 		if r.Method == http.MethodGet {
-			links, err := d.Core.ListLinks(r.Context(), uid, nil)
+			// ?path= scopes the listing to one item, which is what the share
+			// dialog for a single file asks for. Ignored, it listed every link
+			// the account owns next to a form for this one file.
+			var at *core.Resolved
+			if raw := r.URL.Query().Get("path"); raw != "" {
+				vp, perr := vfs.ParseVpath(raw)
+				if perr != nil {
+					return perr
+				}
+				resolved, rerr := d.Core.Resolve(uid, vp, acl.Read)
+				if rerr != nil {
+					return rerr
+				}
+				at = &resolved
+			}
+			links, err := d.Core.ListLinks(r.Context(), uid, at)
 			if err != nil {
 				return err
 			}
@@ -71,7 +97,7 @@ func Links(d Deps) http.HandlerFunc {
 			for _, l := range links {
 				out = append(out, linkToResponse(d, uid, l, requestBase(r)))
 			}
-			return writeJSON(w, http.StatusOK, map[string]any{"links": out})
+			return writeJSON(w, http.StatusOK, out)
 		}
 		var req linkRequest
 		if err := decodeJSON(r, &req); err != nil {
@@ -160,13 +186,23 @@ func requestBase(r *http.Request) string {
 func linkToResponse(d Deps, uid core.UserID, l core.Link, base string) linkResponse {
 	out := linkResponse{
 		ID: l.ID, Perms: permsOf(l.Perms), HasPassword: l.HasPassword,
-		MaxDown: l.MaxDown, Downs: l.Downs, Label: l.Label, Note: l.Note,
+		Downs: l.Downs, Note: l.Note,
+		CreatedNs: strconv.FormatInt(l.CreatedNs, 10),
+	}
+	if l.MaxDown >= 0 {
+		maxDown := l.MaxDown
+		out.MaxDown = &maxDown
+	}
+	if l.Label != "" {
+		label := l.Label
+		out.Label = &label
 	}
 	if l.Token != nil && base != "" {
 		out.URL = base + "/s/" + string(l.Token.Reveal())
 	}
 	if l.Expires != 0 {
-		out.Expires = l.Expires
+		expires := strconv.FormatInt(l.Expires, 10)
+		out.Expires = &expires
 	}
 	if vp, err := d.Core.VpathFor(uid, l.Share, l.Path); err == nil {
 		out.Path = vp.String()
@@ -214,6 +250,9 @@ func LinkPublic(d Deps) http.HandlerFunc {
 			"can_download": link.Perms.Has(acl.Download),
 			"drop":         link.Perms.Has(acl.Create) && !link.Perms.Has(acl.Read),
 			"has_password": link.HasPassword,
+			// The ceiling a drop hits, so the page can refuse an oversized
+			// file before it streams one and learns at the end.
+			"max_upload_bytes": mw.DefaultBodyLimit,
 		}
 		// A drop link admits files and shows none: whoever holds it can put
 		// something in and cannot see what is already there. Sending the listing
