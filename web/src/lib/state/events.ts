@@ -24,11 +24,9 @@ const BACKOFF_MS = [500, 1000, 2000, 4000, 8000, 15000, 30000]
 const CONNECTED_RESET_MS = 5000
 
 type InvalCb = (etag: string) => void
-type JobCb = (id: string, done: number, total: number) => void
 
 class EventsHub {
   #wanted = new Map<string, Set<InvalCb>>()
-  #jobCbs = new Set<JobCb>()
   #connected = false
   #backoffIdx = 0
   #connectedAt = 0
@@ -94,25 +92,9 @@ class EventsHub {
         if (cbs) for (const cb of cbs) cb(msg.etag)
         break
       }
-      case 'job':
-        for (const cb of this.#jobCbs) cb(msg.id, msg.done, msg.total)
-        break
-      case 'revoked':
-        // "session revoked → immediate logout". `noteUnauthorized`
-        // is the same single choke point every 401 already goes through
-        // (`api/http.ts`'s `request`) — routing through it here instead of a
-        // bespoke logout path keeps "what a dead session looks like" to one
-        // answer, not two that can drift apart.
-        noteUnauthorized()
-        this.close()
-        break
-      case 'quota':
       case 'pong':
-        // Both defined by; neither has a UI consumer yet
-        // (no quota display, no connection-health indicator in this app).
-        // Matched explicitly rather than falling off the end of the switch
-        // so the next thing that needs one has an obvious place to add it,
-        // instead of rediscovering that the server already sends it.
+        // The keepalive's answer. Nothing reads it: the connection being
+        // alive is what it proves, and the transport already knows that.
         break
     }
   }
@@ -139,15 +121,6 @@ class EventsHub {
         if (this.#connected) eventsTransport.send({ t: 'unsub', paths: [path] })
       }
     }
-  }
-
-  /** Job progress pushes (`{"t":"job",...}`) — `state/jobs.ts`'s poller is
-   *  the fallback describes ("progress is also pushed over
-   *  the websocket; polling is the fallback"); a connected hub delivers
-   *  these without a request round-trip per tick. */
-  onJob(cb: JobCb): () => void {
-    this.#jobCbs.add(cb)
-    return () => this.#jobCbs.delete(cb)
   }
 
   /** Tears the connection down for good — used on logout and by the

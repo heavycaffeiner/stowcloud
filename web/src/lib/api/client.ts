@@ -53,8 +53,6 @@ export type {
   AdminOidcUnlinkResult,
   ReadFileResponse,
   TrashEntry,
-  LinkDisposition,
-  LinkResponse,
   ShareLinkInfo,
   ShareLinkCreateReq,
   ShareLinkPatchReq,

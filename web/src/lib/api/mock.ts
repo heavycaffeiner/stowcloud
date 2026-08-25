@@ -25,6 +25,7 @@ import {
   type ApplyOutcome,
   type ArchiveListing,
   type ArchiveSettingsReq,
+  type RateSettingsReq,
   type AuditPage,
   type FolderSize,
   type RecentHit,
@@ -44,8 +45,6 @@ import {
   type JobListResponse,
   type JobState,
   type JobStatus,
-  type LinkDisposition,
-  type LinkResponse,
   type ListResponse,
   type LoginResult,
   type MovePreflight,
@@ -394,9 +393,9 @@ async function rename(path: string, newName: string): Promise<Entry> {
 }
 
 /** Backs both `copy()` and `move()` — the two differ only in whether the
- *  source survives, so the conflict, `if_match` and rename-suffix behaviour
+ *  source survives, so the conflict and rename-suffix behaviour
  *  they must agree on lives here once. */
-async function transfer(req: MoveReq, keepSource: boolean): Promise<{ job: string }> {
+async function transfer(req: MoveReq, keepSource: boolean): Promise<BatchResult> {
   await delay()
   const results: BatchResult['results'] = []
   for (const p of req.paths) {
@@ -416,18 +415,6 @@ async function transfer(req: MoveReq, keepSource: boolean): Promise<{ job: strin
         results.push({ path: n, ok: true })
         continue
       }
-      if (destExists && req.on_conflict === 'Overwrite') {
-        const wantEtag = req.if_match?.[n]
-        const currentEtag = resolveDirEntries(destDir).find((e) => e.name === name)?.etag
-        if (wantEtag && wantEtag !== currentEtag) {
-          throw new ApiError(412, {
-            code: 'fs.precondition',
-            message: 'If-Match precondition failed',
-            detail: { current_etag: currentEtag }
-          })
-        }
-      }
-
       let finalName = name
       if (destExists && req.on_conflict === 'Rename') {
         let i = 1
@@ -444,22 +431,26 @@ async function transfer(req: MoveReq, keepSource: boolean): Promise<{ job: strin
       results.push({ path: p, ok: false, error: { code: e.code, message: e.message, detail: e.detail } })
     }
   }
-  return { job: makeMockJob(keepSource ? 'copy' : 'move', req.paths.length, results) }
+  return { results }
 }
 
+/** A copy is a durable job: it rewrites every byte whatever the two paths
+ *  are, so the server answers with an id and the tray polls it. */
 async function copy(req: MoveReq): Promise<{ job: string }> {
-  return transfer(req, true)
+  const { results } = await transfer(req, true)
+  return { job: makeMockJob('copy', req.paths.length, results) }
 }
 
-async function move(req: MoveReq): Promise<{ job: string }> {
+/** A move finishes in the request: it is a rename. */
+async function move(req: MoveReq): Promise<BatchResult> {
   return transfer(req, false)
 }
 
 /** The mock tree is one device, so a move here is always a rename and never
  *  the copy-then-delete fallback the real server warns about. */
-async function movePreflight(_req: MoveReq): Promise<MovePreflight> {
+async function movePreflight(req: MoveReq): Promise<MovePreflight> {
   await delay(10)
-  return { will_copy: false, total_bytes: 0, reason: '' }
+  return { results: req.paths.map((p) => ({ path: normalizePath(p), ok: true })) }
 }
 
 async function del(paths: string[], permanent = false): Promise<{ results: BatchItemResult[] }> {
@@ -576,13 +567,6 @@ async function jobCancel(id: string): Promise<void> {
   throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } })
 }
 
-async function jobDownload(id: string): Promise<Blob> {
-  await delay(10)
-  const job = mockJobs.get(id)
-  if (job?.blob) return job.blob
-  throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } })
-}
-
 // ── trash (mirrors `go/internal/core/trash` closely enough to drive the
 // UI in dev mode: an id is opaque, restoring back to an occupied name
 // conflicts, purging is permanent) ──
@@ -662,33 +646,13 @@ function findEntryById(id: number): { entry: Entry; dirPath: string } | null {
   return null
 }
 
-async function link(fid: number, _disposition: LinkDisposition = 'attachment', _dim?: [number, number]): Promise<LinkResponse> {
-  await delay(40)
-  const hit = findEntryById(fid)
-  if (!hit) throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
-  // A real, fetchable same-origin URL (not a `#`-fragment placeholder) so a
-  // component under test can actually follow it — a tiny same-origin data
-  // URL would be more "correct" but `blob:`/`data:` URLs can't carry a
-  // filename for `Content-Disposition`, and this only needs to prove the
-  // wiring, not simulate the signed-URL crypto.
-  return { url: `${typeof location !== 'undefined' ? location.origin : ''}/mock-download/${encodeURIComponent(hit.entry.name)}` }
-}
-
-/** Mock counterpart of `http.ts`'s `archive` — always answers `{ job }` like
- *  the real server, with a tiny valid (if fake) zip-shaped byte blob already
- *  sitting behind it so `jobDownload` has something plausible to hand back
- *  once the job (immediately, in this mock) reports `download: true`. */
-async function archive(paths: string[]): Promise<{ job: string }> {
+/** Mock counterpart of `http.ts`'s `archive`: the real server streams the zip
+ *  as the response body, so this hands back a blob rather than a job id. */
+async function archive(paths: string[], _name?: string): Promise<Blob> {
   await delay(120)
   if (paths.length === 0) throw new ApiError(422, { code: 'fs.invalid_name', message: 'paths must not be empty' })
   const body = `mock zip archive of:\n${paths.join('\n')}\n`
-  const id = makeMockJob(
-    'archive',
-    paths.length,
-    paths.map((p) => ({ path: p, ok: true }))
-  )
-  mockJobs.get(id)!.blob = new Blob([body], { type: 'application/zip' })
-  return { job: id }
+  return new Blob([body], { type: 'application/zip' })
 }
 
 /** A fixed listing for any `.zip`, since the mock stores no archive bytes. */
@@ -1075,25 +1039,6 @@ async function adminGetUserOidc(id: number): Promise<AdminUserOidc> {
   }
 }
 
-async function adminLinkUserOidc(id: number, subject: string): Promise<void> {
-  await delay(60)
-  const trimmed = subject.trim()
-  if (!trimmed) {
-    throw new ApiError(422, { code: 'oidc.invalid_subject', message: 'subject must not be empty' })
-  }
-  for (const [other, s] of mockUserOidc) {
-    if (other !== id && s === trimmed) {
-      throw new ApiError(409, { code: 'oidc.subject_already_linked', message: 'that identity belongs to another account' })
-    }
-  }
-  const existing = mockUserOidc.get(id)
-  if (existing && existing !== trimmed) {
-    throw new ApiError(409, { code: 'oidc.already_linked', message: 'this account already has a linked identity' })
-  }
-  mockUserOidc.set(id, trimmed)
-  if (id === 1) mockAuthState.oidcLinked = true
-}
-
 async function adminUnlinkUserOidc(id: number): Promise<AdminOidcUnlinkResult> {
   await delay(60)
   if (!mockUserOidc.has(id)) {
@@ -1165,7 +1110,11 @@ async function changePassword(currentPassword: string, newPassword: string, revo
     throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
   }
   if (newPassword.length < 10) {
-    throw new ApiError(422, { code: 'auth.weak_password', message: 'password is too short', detail: { min_length: 10 } })
+    throw new ApiError(422, {
+      code: 'auth.weak_password',
+      message: 'password is too short',
+      detail: { reason_key: 'auth.weak_password', reason_params: { min_length: '10' } }
+    })
   }
   mockAuthState.password = newPassword
   if (revokeOtherSessions) {
@@ -1324,7 +1273,7 @@ async function setSmbPassword(
     throw new ApiError(422, {
       code: 'auth.weak_password',
       message: 'password is too short',
-      detail: { min_length: 10 }
+      detail: { reason_key: 'auth.weak_password', reason_params: { min_length: '10' } }
     })
   }
   const cleared = mockAuthState.smbOptOut || !mockAuthState.smbEnabled
@@ -1401,17 +1350,16 @@ const mockServerSettings = {
     service_user: 'sc-smb',
     allow_public_bind: false,
     totp_policy: 'require_separate' as 'require_separate' | 'block',
-    service_uid: 1000,
     service_gid: 1000
   },
   search: {
     max_concurrent_fast: 4,
     max_concurrent_slow: 2,
     walk_deadline_fast_ms: 100,
-    walk_deadline_slow_ms: 500,
-    rate_per_minute: 30
+    walk_deadline_slow_ms: 500
   },
   archive: { max_concurrent: 2 },
+  rate: { per_sec: 20, burst: 40 },
   network: {
     bind: '127.0.0.1:8443',
     app_hosts: ['nas.local'] as string[],
@@ -1517,14 +1465,14 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       settingsField('smb.service_user', s.smb.service_user, false),
       settingsField('smb.allow_public_bind', s.smb.allow_public_bind, false),
       settingsField('smb.totp_policy', s.smb.totp_policy, false),
-      settingsField('smb.service_uid', s.smb.service_uid, false),
       settingsField('smb.service_gid', s.smb.service_gid, false),
       settingsField('search.max_concurrent_fast', s.search.max_concurrent_fast, false),
       settingsField('search.max_concurrent_slow', s.search.max_concurrent_slow, false),
       settingsField('search.walk_deadline_fast_ms', s.search.walk_deadline_fast_ms, false),
       settingsField('search.walk_deadline_slow_ms', s.search.walk_deadline_slow_ms, false),
-      settingsField('search.rate_per_minute', s.search.rate_per_minute, false),
       settingsField('archive.max_concurrent', s.archive.max_concurrent, false),
+      settingsField('rate.per_sec', s.rate.per_sec, false),
+      settingsField('rate.burst', s.rate.burst, false),
       settingsField('watch.backend', s.watch.backend, true),
       settingsField('watch.hot_set_max', s.watch.hot_set_max, true),
       settingsField('watch.full_threshold', s.watch.full_threshold, true),
@@ -1658,7 +1606,6 @@ async function adminCheckServerSettings(
  *  real bridge refuses it where it is typed and so does this. */
 async function adminSetSearchSettings(req: SearchSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
-  if (req.rate_per_minute < 1) throw mustBeAtLeastOne('search.rate_per_minute')
   mockServerSettings.search = { ...req }
   mockOverriddenSections.add('search')
   return { applied_live: true, restart_required: false }
@@ -1681,6 +1628,15 @@ async function adminSetArchiveSettings(req: ArchiveSettingsReq): Promise<ApplyOu
   if (req.max_concurrent < 1) throw mustBeAtLeastOne('archive.max_concurrent')
   mockServerSettings.archive = { ...req }
   mockOverriddenSections.add('archive')
+  return { applied_live: true, restart_required: false }
+}
+
+async function adminSetRateSettings(req: RateSettingsReq): Promise<ApplyOutcome> {
+  await delay(30)
+  if (req.per_sec < 1) throw mustBeAtLeastOne('rate.per_sec')
+  if (req.burst < 1) throw mustBeAtLeastOne('rate.burst')
+  mockServerSettings.rate = { ...req }
+  mockOverriddenSections.add('rate')
   return { applied_live: true, restart_required: false }
 }
 
@@ -1926,7 +1882,11 @@ async function adminListUsers(): Promise<AdminUser[]> {
 async function adminCreateUser(name: string, password: string): Promise<AdminUser> {
   await delay(60)
   if (password.length < 10) {
-    throw new ApiError(422, { code: 'auth.weak_password', message: 'password is too short', detail: { min_length: 10 } })
+    throw new ApiError(422, {
+      code: 'auth.weak_password',
+      message: 'password is too short',
+      detail: { reason_key: 'auth.weak_password', reason_params: { min_length: '10' } }
+    })
   }
   if (mockUsers.some((u) => u.name.toLowerCase() === name.toLowerCase())) {
     throw new ApiError(409, { code: 'fs.conflict', message: 'a user with that name already exists' })
@@ -1954,10 +1914,30 @@ async function adminSetUserDisabled(id: number, disabled: boolean): Promise<Admi
     throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
   }
   if (disabled && user.is_admin && !user.disabled && activeAdminCount() <= 1) {
-    throw new ApiError(409, { code: 'admin.last_admin', message: 'refusing to remove the last administrator' })
+    throw new ApiError(409, {
+      code: 'admin.last_admin',
+      message: 'refusing to remove the last administrator',
+      detail: { reason_key: 'admin.last_admin', reason_params: {} }
+    })
   }
   user.disabled = disabled
   mockUsers = mockUsers.map((u) => (u.id === id ? { ...user } : u))
+  return { ...user }
+}
+
+/** An administrator resetting an account they hold no current password for.
+ *  The floor is the server's own, so the mock refuses what the server would. */
+async function adminSetUserPassword(id: number, password: string): Promise<AdminUser> {
+  await delay(40)
+  const user = mockUsers.find((u) => u.id === id)
+  if (!user) throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
+  if (password.length < 10) {
+    throw new ApiError(422, {
+      code: 'auth.weak_password',
+      message: 'password is too short',
+      detail: { reason_key: 'auth.weak_password', reason_params: { min_length: '10' } }
+    })
+  }
   return { ...user }
 }
 
@@ -1971,7 +1951,11 @@ async function adminSetUserQuota(id: number, quotaBytes: number | null): Promise
     throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
   }
   if (quotaBytes === 0) {
-    throw new ApiError(422, { code: 'admin.invalid_quota', message: 'quota must be greater than zero, or null for unlimited' })
+    throw new ApiError(422, {
+      code: 'admin.invalid_quota',
+      message: 'quota must be greater than zero, or absent for unlimited',
+      detail: { reason_key: 'admin.invalid_quota', reason_params: {} }
+    })
   }
   user.quota_bytes = quotaBytes === null ? null : String(quotaBytes)
   mockUsers = mockUsers.map((u) => (u.id === id ? { ...user } : u))
@@ -1985,7 +1969,11 @@ async function adminDeleteUser(id: number): Promise<void> {
     throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
   }
   if (user.is_admin && !user.disabled && activeAdminCount() <= 1) {
-    throw new ApiError(409, { code: 'admin.last_admin', message: 'refusing to remove the last administrator' })
+    throw new ApiError(409, {
+      code: 'admin.last_admin',
+      message: 'refusing to remove the last administrator',
+      detail: { reason_key: 'admin.last_admin', reason_params: {} }
+    })
   }
   mockUsers = mockUsers.filter((u) => u.id !== id)
 }
@@ -2460,13 +2448,22 @@ export interface SearchHit {
   entry: Entry
 }
 
-function searchStream(query: string, onHit: (hit: SearchHit) => void, onDone: () => void): () => void {
+/** The `done` event of `GET /api/search/stream`. `truncated` says the walk hit
+ *  its deadline, so the hits that arrived are a prefix of the matches. */
+export interface SearchDone {
+  truncated: boolean
+  /** Which index tier answered, for a diagnostic. Absent when the stream
+   *  ended without a parsable payload. */
+  tier?: string
+}
+
+function searchStream(query: string, onHit: (hit: SearchHit) => void, onDone: (done: SearchDone) => void): () => void {
   let cancelled = false
   const q = query.trim().toLowerCase()
 
   async function run() {
     if (!q) {
-      onDone()
+      onDone({ truncated: false })
       return
     }
     // Search small static dirs immediately.
@@ -2488,7 +2485,7 @@ function searchStream(query: string, onHit: (hit: SearchHit) => void, onDone: ()
       }
       await delay(0)
     }
-    if (!cancelled) onDone()
+    if (!cancelled) onDone({ truncated: false })
   }
 
   run()
@@ -2510,7 +2507,6 @@ export const mockApi = {
   move,
   movePreflight,
   delete: del,
-  link,
   archive,
   archiveList,
   folderSize,
@@ -2519,7 +2515,6 @@ export const mockApi = {
   jobList,
   jobStatus,
   jobCancel,
-  jobDownload,
   trashList,
   trashRestore,
   trashPurge,
@@ -2558,6 +2553,7 @@ export const mockApi = {
   adminSetSmbSettings,
   adminSetSearchSettings,
   adminSetArchiveSettings,
+  adminSetRateSettings,
   adminSetNetworkSettings,
   adminSetDbSettings,
   adminSetSymlinkPolicySettings,
@@ -2571,9 +2567,9 @@ export const mockApi = {
   adminCreateUser,
   adminSetUserDisabled,
   adminSetUserQuota,
+  adminSetUserPassword,
   adminDeleteUser,
   adminGetUserOidc,
-  adminLinkUserOidc,
   adminUnlinkUserOidc,
   adminListShares,
   adminCreateShare,

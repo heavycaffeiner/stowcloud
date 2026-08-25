@@ -93,8 +93,6 @@ export function oidcErrorMessage(code: string | null | undefined): string | null
       // that person should be told to start again, not told which check caught
       // it.
       return t('oidc.sign_could_not_verified_start')
-    case 'oidc.expired':
-      return t('oidc.sign_took_long_try_again')
     case 'oidc.not_linked':
       // Covers "no local account has this identity" *and* "the account is
       // disabled". §5-2 gives them the same code on purpose, the same account
@@ -109,8 +107,6 @@ export function oidcErrorMessage(code: string | null | undefined): string | null
       return t('oidc.you_signed_out_or_switched')
     case 'oidc.subject_already_linked':
       return t('oidc.identity_already_connected_another_account')
-    case 'oidc.already_linked':
-      return t('oidc.account_already_has_connected_identity')
     default:
       return t('oidc.single_sign_did_not_complete')
   }

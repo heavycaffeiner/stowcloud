@@ -484,21 +484,9 @@ describe('mockApi trash', () => {
   })
 })
 
-describe('mockApi download (link + archive)', () => {
-  it('mints a URL for an entry by its numeric fid', async () => {
-    const res = await mockApi.list('/home/Photos', {})
-    const entry = res.entries.find((e) => e.kind === 'file')!
-    expect(entry.id).toBeTypeOf('number')
-    const { url } = await mockApi.link(entry.id!)
-    expect(url).toContain(encodeURIComponent(entry.name))
-  })
-
-  it('archive answers a job whose finished download is a real zip-typed Blob', async () => {
-    const { job } = await mockApi.archive(['/home/Photos/휴가-2026-07-01.jpg', '/home/Photos/가족사진.png'])
-    const status = await mockApi.jobStatus(job)
-    expect(status.state).toBe('done')
-    expect(status.download).toBe(true)
-    const blob = await mockApi.jobDownload(job)
+describe('mockApi download (archive)', () => {
+  it('archive answers the zip bytes themselves', async () => {
+    const blob = await mockApi.archive(['/home/Photos/휴가-2026-07-01.jpg', '/home/Photos/가족사진.png'])
     expect(blob).toBeInstanceOf(Blob)
     expect(blob.type).toBe('application/zip')
     expect(blob.size).toBeGreaterThan(0)
@@ -563,8 +551,8 @@ describe('mockApi transfer', () => {
 
   it('move takes the source with it', async () => {
     await mockApi.mkdir('/home/Documents/move-src')
-    const { job } = await mockApi.move({ paths: ['/home/Documents/move-src'], dest: '/home/Photos', on_conflict: 'Fail' })
-    expect(await mockApi.jobStatus(job)).toMatchObject({ kind: 'move', state: 'done' })
+    const { results } = await mockApi.move({ paths: ['/home/Documents/move-src'], dest: '/home/Photos', on_conflict: 'Fail' })
+    expect(results.every((r) => r.ok)).toBe(true)
 
     const src = await mockApi.list('/home/Documents', {})
     const dest = await mockApi.list('/home/Photos', {})
@@ -572,13 +560,12 @@ describe('mockApi transfer', () => {
     expect(dest.entries.some((e) => e.name === 'move-src')).toBe(true)
   })
 
-  it('a move onto an existing name fails the job rather than silently overwriting', async () => {
+  it('a move onto an existing name fails that item rather than silently overwriting', async () => {
     await mockApi.mkdir('/home/Documents/clash')
     await mockApi.mkdir('/home/Photos/clash')
-    const { job } = await mockApi.move({ paths: ['/home/Documents/clash'], dest: '/home/Photos', on_conflict: 'Fail' })
-    const status = await mockApi.jobStatus(job)
-    expect(status.state).toBe('error')
-    expect(status.results[0].error?.code).toBe('fs.conflict')
+    const { results } = await mockApi.move({ paths: ['/home/Documents/clash'], dest: '/home/Photos', on_conflict: 'Fail' })
+    expect(results[0].ok).toBe(false)
+    expect(results[0].error?.code).toBe('fs.conflict')
     // The source has to still be there — a conflict must not consume it.
     const src = await mockApi.list('/home/Documents', {})
     expect(src.entries.some((e) => e.name === 'clash')).toBe(true)

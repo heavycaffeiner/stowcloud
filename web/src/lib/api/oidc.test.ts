@@ -14,20 +14,19 @@
 import { describe, expect, it } from 'vitest'
 import { oidcErrorMessage, startOidcLogin } from './oidc'
 
-/** Every code the callback can put in `?oidc_error=` (§5-2 table B), plus
- *  `internal`, which `oidc_error_redirect` also emits and the table does not
- *  list. */
+/** Every code the callback can actually put in `?oidc_error=`, taken from the
+ *  handlers that emit one (`go/internal/httpapi/handler/oidc_flow.go`). An
+ *  expired flow and an unknown state are both `oidc.bad_state` there, so
+ *  neither `oidc.expired` nor `oidc.already_linked` is in this list. */
 const TABLE_B = [
   'oidc.disabled',
   'oidc.bad_request',
   'oidc.bad_state',
-  'oidc.expired',
   'oidc.not_linked',
   'oidc.provider_unavailable',
   'oidc.access_denied',
   'oidc.link_session_changed',
-  'oidc.subject_already_linked',
-  'oidc.already_linked'
+  'oidc.subject_already_linked'
 ]
 
 describe('oidcErrorMessage', () => {

@@ -11,7 +11,6 @@
   // directory" projection.
   import { api, type MovePreflight } from '../api/client'
   import { destinationProblem, type DestinationProblem } from '../api/path-utils'
-  import { formatBytes } from '../format/bytes'
   import { t } from '../i18n'
   import { authState } from '../state/auth.svelte'
   import Button from './Button.svelte'
@@ -31,6 +30,10 @@
 
   let selected = $state<string | null>(null)
   let preflight = $state<MovePreflight | null>(null)
+
+  // Any item crossing a device turns the whole batch into a copy-then-delete,
+  // so one warning covers the selection.
+  const willCopy = $derived(preflight?.results.some((r) => r.will_copy) ?? false)
 
   const problem = $derived<DestinationProblem | null>(selected ? destinationProblem(selected, sources) : null)
   // A copy into the source's own folder is the ordinary duplicate case, so
@@ -99,9 +102,9 @@
         {t('dest.no_folder_chosen')}
       {/if}
     </p>
-    {#if preflight?.will_copy}
+    {#if willCopy}
       <p class="sc-dest__status sc-dest__status--notice">
-        {t('dest.cross_device_move_rewrites_bytes', { size: formatBytes(preflight.total_bytes) })}
+        {t('dest.cross_device_move_rewrites')}
       </p>
     {/if}
   </div>

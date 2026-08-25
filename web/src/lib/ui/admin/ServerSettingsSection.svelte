@@ -127,7 +127,7 @@
     { id: 'network', name: t('server.network') },
     { id: 'homes', name: t('server.home_folders') },
     { id: 'watch', name: t('server.file_watching') },
-    { id: 'rate', name: t('server.requests_per_minute') }
+    { id: 'rate', name: t('server.request_rate') }
   ]
 
   function sectionName(id: SettingsSectionId): string {
@@ -200,7 +200,6 @@
       service_user: smbServiceUser,
       allow_public_bind: smbAllowPublicBind,
       totp_policy: smbTotpPolicy,
-      service_uid: Number(smbServiceUid),
       service_gid: Number(smbServiceGid)
     }
   }
@@ -210,13 +209,16 @@
       max_concurrent_fast: Number(searchMaxFast),
       max_concurrent_slow: Number(searchMaxSlow),
       walk_deadline_fast_ms: Number(searchDeadlineFast),
-      walk_deadline_slow_ms: Number(searchDeadlineSlow),
-      rate_per_minute: Number(searchRate)
+      walk_deadline_slow_ms: Number(searchDeadlineSlow)
     }
   }
 
   function archiveBody(): Record<string, unknown> {
     return { max_concurrent: Number(archiveMax) }
+  }
+
+  function rateBody(): Record<string, unknown> {
+    return { per_sec: Number(ratePerSec), burst: Number(rateBurst) }
   }
 
   function networkBody(): Record<string, unknown> {
@@ -251,7 +253,6 @@
   let smbServiceUser = $state('')
   let smbAllowPublicBind = $state(false)
   let smbTotpPolicy = $state<'require_separate' | 'block'>('require_separate')
-  let smbServiceUid = $state('')
   let smbServiceGid = $state('')
   let smbSaving = $state(false)
   let smbError = $state<string | null>(null)
@@ -260,10 +261,9 @@
   async function saveSmb(): Promise<void> {
     smbError = null
     smbOutcome = null
-    const uid = Number(smbServiceUid)
     const gid = Number(smbServiceGid)
-    if (!Number.isInteger(uid) || uid < 0 || !Number.isInteger(gid) || gid < 0) {
-      smbError = t('server.uid_gid_must_integer_0')
+    if (!Number.isInteger(gid) || gid < 0) {
+      smbError = t('server.gid_must_integer_0')
       return
     }
     if (!smbWorkgroup.trim() || !smbServiceUser.trim() || !smbServerName.trim()) {
@@ -277,7 +277,6 @@
       service_user: smbServiceUser,
       allow_public_bind: smbAllowPublicBind,
       totp_policy: smbTotpPolicy,
-      service_uid: uid,
       service_gid: gid
     }
     smbSaving = true
@@ -297,7 +296,6 @@
   let searchMaxSlow = $state('')
   let searchDeadlineFast = $state('')
   let searchDeadlineSlow = $state('')
-  let searchRate = $state('')
   let searchSaving = $state(false)
   let searchError = $state<string | null>(null)
   let searchOutcome = $state<ApplyOutcome | null>(null)
@@ -305,24 +303,16 @@
   async function saveSearch(): Promise<void> {
     searchError = null
     searchOutcome = null
-    const nums = [searchMaxFast, searchMaxSlow, searchDeadlineFast, searchDeadlineSlow, searchRate].map(Number)
+    const nums = [searchMaxFast, searchMaxSlow, searchDeadlineFast, searchDeadlineSlow].map(Number)
     if (nums.some((n) => !Number.isInteger(n) || n < 0)) {
       searchError = t('server.every_value_must_integer_0')
-      return
-    }
-    // Zero here is not a low limit, it is an off switch: every search from
-    // every user answers 429 from the moment it applies, live. The server
-    // refuses it too; this just says so before the round trip.
-    if (nums[4] < 1) {
-      searchError = t('server.must_integer_1_or_more')
       return
     }
     const req: SearchSettingsReq = {
       max_concurrent_fast: nums[0],
       max_concurrent_slow: nums[1],
       walk_deadline_fast_ms: nums[2],
-      walk_deadline_slow_ms: nums[3],
-      rate_per_minute: nums[4]
+      walk_deadline_slow_ms: nums[3]
     }
     searchSaving = true
     try {
@@ -499,6 +489,36 @@
     }
   }
 
+  // ── request rate ──
+
+  let ratePerSec = $state('')
+  let rateBurst = $state('')
+  let rateSaving = $state(false)
+  let rateError = $state<string | null>(null)
+  let rateOutcome = $state<ApplyOutcome | null>(null)
+
+  async function saveRate(): Promise<void> {
+    rateError = null
+    rateOutcome = null
+    const perSec = Number(ratePerSec)
+    const burst = Number(rateBurst)
+    // Zero is not a low limit, it is an off switch: every request from every
+    // visitor answers 429 the moment it applies. The server refuses it too.
+    if (!Number.isInteger(perSec) || perSec < 1 || !Number.isInteger(burst) || burst < 1) {
+      rateError = t('server.must_integer_1_or_more')
+      return
+    }
+    rateSaving = true
+    try {
+      rateOutcome = await api.adminSetRateSettings({ per_sec: perSec, burst })
+      await load()
+    } catch (err) {
+      rateError = describeApiError(err, t('server.could_not_save_rate_settings'))
+    } finally {
+      rateSaving = false
+    }
+  }
+
   // ── everything else this screen doesn't have a dedicated control for —
   // always read-only (the server never leaves an editable field
   // out of the groups above), shown with its Korean reason rather than
@@ -522,14 +542,14 @@
     'smb.service_user',
     'smb.allow_public_bind',
     'smb.totp_policy',
-    'smb.service_uid',
     'smb.service_gid',
     'search.max_concurrent_fast',
     'search.max_concurrent_slow',
     'search.walk_deadline_fast_ms',
     'search.walk_deadline_slow_ms',
-    'search.rate_per_minute',
     'archive.max_concurrent',
+    'rate.per_sec',
+    'rate.burst',
     'watch.backend',
     'watch.hot_set_max',
     'watch.full_threshold',
@@ -612,16 +632,17 @@
       smbServiceUser = String(field('smb.service_user')?.value ?? '')
       smbAllowPublicBind = Boolean(field('smb.allow_public_bind')?.value)
       smbTotpPolicy = (field('smb.totp_policy')?.value as 'require_separate' | 'block') ?? 'require_separate'
-      smbServiceUid = String(field('smb.service_uid')?.value ?? '1000')
       smbServiceGid = String(field('smb.service_gid')?.value ?? '1000')
 
       searchMaxFast = String(field('search.max_concurrent_fast')?.value ?? '')
       searchMaxSlow = String(field('search.max_concurrent_slow')?.value ?? '')
       searchDeadlineFast = String(field('search.walk_deadline_fast_ms')?.value ?? '')
       searchDeadlineSlow = String(field('search.walk_deadline_slow_ms')?.value ?? '')
-      searchRate = String(field('search.rate_per_minute')?.value ?? '')
 
       archiveMax = String(field('archive.max_concurrent')?.value ?? '')
+
+      ratePerSec = String(field('rate.per_sec')?.value ?? '')
+      rateBurst = String(field('rate.burst')?.value ?? '')
 
       netBind = String(field('bind')?.value ?? '')
       netAppHosts = arrToStr(field('app_hosts')?.value)
@@ -751,7 +772,6 @@
       <TextField label={t('server.service_account_name')} bind:value={smbServiceUser} />
       <Switch checked={smbAllowPublicBind} onchange={(v) => (smbAllowPublicBind = v)} label={t('server.allow_access_from_outside_private')} />
       <SelectOutlined label={t('server.smb_access_2fa_users')} width="100%" options={SMB_TOTP_OPTIONS} bind:value={smbTotpPolicy} />
-      <TextField label={t('server.service_account_uid')} bind:value={smbServiceUid} />
       <TextField label={t('server.service_account_gid')} bind:value={smbServiceGid} />
       <Button variant="filled" onclick={saveSmb} loading={smbSaving}>{t('common.save')}</Button>
       {@render pendingRows('smb')}
@@ -858,6 +878,19 @@
     <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart_when')}</p>
     {#if homesError}<p class="sc-admin-section__error" role="alert">{homesError}</p>{/if}
     {#if homesOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(homesOutcome)}</p>{/if}
+
+    <h4 class="sc-admin-section__subhead">{t('server.request_rate')}</h4>
+    <p class="sc-admin-section__hint">{t('server.what_the_request_rate_is_for')}</p>
+    <div class="sc-server-settings__form">
+      <TextField label={t('server.requests_per_second')} bind:value={ratePerSec} />
+      <TextField label={t('server.burst_allowance')} bind:value={rateBurst} />
+      <Button variant="filled" onclick={saveRate} loading={rateSaving}>{t('common.save')}</Button>
+      {@render checkButton('rate', rateBody)}
+    </div>
+    {@render checkPanel('rate', rateBody)}
+    <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
+    {#if rateError}<p class="sc-admin-section__error" role="alert">{rateError}</p>{/if}
+    {#if rateOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(rateOutcome)}</p>{/if}
 
     <h4 class="sc-admin-section__subhead">{t('server.file_watching')}</h4>
     <p class="sc-admin-section__hint">{t('server.what_file_watching_is_for')}</p>

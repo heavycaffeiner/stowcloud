@@ -39,7 +39,7 @@
     supportsDirectoryPicker
   } from '../../../../lib/upload/directory-picker'
   import { formatBytes } from '../../../../lib/format/bytes'
-  import { triggerUrlDownload } from '../../../../lib/format/download'
+  import { triggerBlobDownload, triggerUrlDownload } from '../../../../lib/format/download'
   import { jobTray } from '../../../../lib/state/job-tray.svelte'
   import { JobFailedError } from '../../../../lib/state/jobs'
 
@@ -301,6 +301,9 @@
   /** A query has actually been submitted (Enter), so an empty
    *  `searchResults` means "nothing matched" rather than "not asked yet". */
   let searchRan = $state(false)
+  // The server stopped the walk at its deadline, so what is listed is a
+  // prefix of the matches. Saying so beats a short list that reads complete.
+  let searchTruncated = $state(false)
   let searchInputEl: HTMLInputElement | undefined = $state()
   let fileInputEl: HTMLInputElement | undefined = $state()
   let dirInputEl: HTMLInputElement | undefined = $state()
@@ -412,22 +415,17 @@
   // a plain navigation (not `fetch`) hands the browser the actual
   // `Content-Disposition: attachment` bytes -- no CORS/blob juggling needed,
   // since the signed URL is itself the whole authorization story.
-  // Multi-selection (and any directory): `POST /api/fs/archive` is always a
-  // durable job now -- JobTray tracks progress/cancel and
-  // offers a download button once the job reports bytes waiting.
+  // Multi-selection (and any directory): `POST /api/fs/archive` streams the
+  // ZIP as its own response body. The server never stores one, so there is no
+  // job to track and nothing to fetch afterwards.
 
   async function downloadAsArchive(entries: Entry[]): Promise<void> {
     if (entries.length === 0) return
     const paths = entries.map((e) => joinPath(browse.path, e.name))
     const filename = entries.length === 1 ? `${entries[0].name}.zip` : 'archive.zip'
     try {
-      const { job } = await api.archive(paths)
-      // Doesn't await the job -- same fire-and-forget shape as an upload
-      // add; `jobTray` (mounted once at the app root) keeps reporting
-      // progress after this component unmounts.
-      jobTray.track(job, 'archive', filename).catch((err) => {
-        snackbarMsg = err instanceof ApiError ? err.message : t('browse.zip_job_failed')
-      })
+      const blob = await api.archive(paths, filename)
+      triggerBlobDownload(blob, filename)
     } catch (err) {
       if (err instanceof ApiError && err.code === 'rate.limited') {
         // the server caps concurrent archive streams
@@ -547,17 +545,35 @@
       mode === 'move' ? t('browse.not_enough_storage_space_move') : t('browse.not_enough_storage_space_copy')
     try {
       const req = { paths, dest, on_conflict: onConflict }
-      const { job } = mode === 'move' ? await api.move(req) : await api.copy(req)
-      // Every move/copy is a durable job -- a per-item
-      // conflict/quota failure still ends the job in `error` state
-      // (`spawn_batch_job`'s `all_ok` check), so conflict detection happens in
-      // `JobFailedError`'s `status.results` once the job actually rejects,
-      // not in the response to the request that started it.
+      // A move finishes in the request: it is a rename, and only the
+      // cross-device case rewrites bytes, which the server reports per item.
+      // A copy is a durable job, because it always rewrites them.
+      if (mode === 'move') {
+        const { results } = await api.move(req)
+        const conflicted = results.find((r) => r.error?.code === 'fs.conflict')
+        if (conflicted) {
+          conflictName = baseName(conflicted.path)
+          conflictOpen = true
+          return
+        }
+        const failed = results.find((r) => !r.ok)
+        if (failed) {
+          snackbarMsg = failed.error?.code === 'quota.exceeded' ? quotaMsg : failMsg
+          return
+        }
+        conflictOpen = false
+        browse.clearSelection()
+        browse.refresh()
+        return
+      }
+      const { job } = await api.copy(req)
+      // A per-item conflict or quota failure still ends the job in `error`
+      // state, so detection happens in `JobFailedError`'s `status.results`
+      // once the job rejects, not in the response that started it.
       jobTray
         .track(job, mode)
         .then(() => {
           conflictOpen = false
-          if (mode === 'move') browse.clearSelection()
           browse.refresh()
         })
         .catch((err) => {
@@ -634,20 +650,25 @@
     searchQuery = ''
     searchResults = []
     searchRan = false
+    searchTruncated = false
     searchCancel?.()
   }
   function onSearchInput(): void {
     searchCancel?.()
     searchResults = []
     searchRan = false
+    searchTruncated = false
     if (!searchQuery.trim()) return
     searchRan = true
+    searchTruncated = false
     searchCancel = api.searchStream(
       searchQuery,
       (hit) => {
         searchResults = [...searchResults, hit].slice(0, 100)
       },
-      () => {}
+      (done) => {
+        searchTruncated = done.truncated
+      }
     )
   }
   function onSearchResultClick(hit: { path: string; entry: Entry }): void {
@@ -1029,6 +1050,9 @@
           {searchRan ? t('browse.no_results') : t('browse.press_enter_to_search')}
         </li>
       {/each}
+      {#if searchTruncated && searchResults.length > 0}
+        <li class="sc-browse__search-empty">{t('browse.search_stopped_early')}</li>
+      {/if}
     </ul>
   {/if}
 

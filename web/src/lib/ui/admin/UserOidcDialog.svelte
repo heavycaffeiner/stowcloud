@@ -2,12 +2,12 @@
   // One account's single sign-on link, from the administrator's side
   // (`docs/proposals/stowcloud-0-oidc-login.md` §5-1's three admin routes).
   //
-  // This is the recovery path, not the ordinary one. The ordinary one is the
-  // owner's own `POST /api/auth/oidc/link/start`, which charges their password
-  // and walks the real flow. An administrator has neither, which is why
-  // linking here is typed by hand and why unlinking here cannot put the SMB
-  // credential back (§4.3.6): there is no plaintext to re-derive it from, and
-  // the unlink confirmation has to say so out loud.
+  // This is the recovery path, and it only disconnects. Attaching an identity
+  // is the owner's own `POST /api/auth/oidc/link/start`, which charges their
+  // password and walks the real flow; the server refuses to do it from here,
+  // so there is no form for it. Unlinking here cannot put the SMB credential
+  // back either: there is no plaintext to re-derive it from, and the
+  // confirmation says so out loud.
   //
   // Unlike the account's own screen, this shows the *whole* subject. Somebody
   // working out why a person cannot sign in needs the exact string to compare
@@ -16,7 +16,6 @@
   import { api, ApiError, type AdminUser, type AdminUserOidc } from '../../api/client'
   import Button from '../Button.svelte'
   import Dialog from '../Dialog.svelte'
-  import TextField from '../TextField.svelte'
   import ProgressCircular from '../ProgressCircular.svelte'
   import { Icon } from 'm3-svelte'
   import { icons } from '../../icons'
@@ -34,9 +33,6 @@
   let loading = $state(false)
   let loadError = $state<string | null>(null)
 
-  let subject = $state('')
-  let linking = $state(false)
-  let linkError = $state<string | null>(null)
 
   let confirmUnlink = $state(false)
   let unlinking = $state(false)
@@ -59,11 +55,9 @@
   async function load(id: number): Promise<void> {
     loading = true
     loadError = null
-    linkError = null
     unlinkError = null
     confirmUnlink = false
     unlinked = false
-    subject = ''
     try {
       link = await api.adminGetUserOidc(id)
     } catch (err) {
@@ -83,27 +77,11 @@
           return t('oidc.enter_identifier')
         case 'oidc.subject_already_linked':
           return t('oidc.identity_already_connected_another_account')
-        case 'oidc.already_linked':
-          return t('oidc.account_already_has_connected_identity')
         case 'oidc.not_linked':
           return t('oidc.account_has_no_connected_identity')
       }
     }
     return fallback
-  }
-
-  async function submitLink(): Promise<void> {
-    if (!user || !subject.trim()) return
-    linkError = null
-    linking = true
-    try {
-      await api.adminLinkUserOidc(user.id, subject.trim())
-      await load(user.id)
-    } catch (err) {
-      linkError = describeError(err, t('oidc.could_not_connect_identity'))
-    } finally {
-      linking = false
-    }
   }
 
   async function submitUnlink(): Promise<void> {
@@ -168,15 +146,7 @@
         {t('oidc.disconnected_smb_access_account_will')}
       </p>
     {/if}
-    <p class="sc-user-oidc__hint">{t('oidc.no_identity_connected_paste_subject')}</p>
-    <TextField
-      label={t('oidc.subject_sub')}
-      bind:value={subject}
-      error={linkError}
-      placeholder="f81d4fae-7dec-11d0-a765-00a0c91e6bf6"
-      autocomplete="off"
-    />
-    <p class="sc-user-oidc__hint">{t('oidc.identifier_immutable_one_provider_uses')}</p>
+    <p class="sc-user-oidc__hint">{t('oidc.no_identity_connected_user_must_link')}</p>
   {/if}
 
   {#snippet actions()}
@@ -191,10 +161,7 @@
     {:else if loading || loadError}
       <Button variant="text" onclick={onclose}>{t('common.close')}</Button>
     {:else}
-      <Button variant="text" onclick={onclose} disabled={linking}>{t('common.close')}</Button>
-      <Button variant="filled" disabled={!subject.trim()} loading={linking} onclick={submitLink}>
-        {t('oidc.connect')}
-      </Button>
+      <Button variant="text" onclick={onclose}>{t('common.close')}</Button>
     {/if}
   {/snippet}
 </Dialog>

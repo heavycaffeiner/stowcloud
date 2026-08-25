@@ -61,36 +61,26 @@ describe('httpApi job wrappers', () => {
   it('movePreflight() asks the same endpoint for a dry run', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(jsonResponse(200, { will_copy: true, total_bytes: 1024, reason: 'cross_device' }))
+      .mockResolvedValueOnce(jsonResponse(200, { results: [{ path: '/a', ok: true, will_copy: true }] }))
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await httpApi.movePreflight({ paths: ['/a'], dest: '/b', on_conflict: 'Fail' })
 
-    expect(result).toEqual({ will_copy: true, total_bytes: 1024, reason: 'cross_device' })
+    expect(result).toEqual({ results: [{ path: '/a', ok: true, will_copy: true }] })
     expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).dry_run).toBe(true)
   })
 
-  it('archive() returns the { job } envelope, never a Blob', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(202, { job: 'J-2' }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    const result = await httpApi.archive(['/big'])
-
-    expect(result).toEqual({ job: 'J-2' })
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-  })
-
-  it("jobDownload() fetches the finished archive job's bytes from the download endpoint", async () => {
+  it('archive() reads the streamed zip out of the response body', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(new Blob(['PK...']), { status: 200, headers: { 'Content-Type': 'application/zip' } }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const blob = await httpApi.jobDownload('J-2')
+    const blob = await httpApi.archive(['/home/a.txt'], 'a.zip')
 
     expect(blob.size).toBeGreaterThan(0)
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/jobs/J-2/download')
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/fs/archive')
   })
 
   it('jobList() fetches GET /api/jobs and returns its jobs array', async () => {

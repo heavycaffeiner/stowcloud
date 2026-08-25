@@ -160,20 +160,12 @@ describe('EventsHub reconnect backoff', () => {
 })
 
 describe('EventsHub message routing', () => {
-  it('forwards `job` pushes to every onJob listener', () => {
+  it('forwards an `inval` to the subscriber watching that path', () => {
     events.ensureConnected()
     open()
     const cb = vi.fn()
-    events.onJob(cb)
-    fake.handlers?.onMessage({ t: 'job', id: 'J-1', done: 3, total: 10 })
-    expect(cb).toHaveBeenCalledWith('J-1', 3, 10)
-  })
-
-  it('a `revoked` push logs the session out and closes the connection', () => {
-    events.ensureConnected()
-    open()
-    fake.handlers?.onMessage({ t: 'revoked' })
-    expect(authSvelte.authState.screen).toBe('login')
-    expect(fake.closeCount).toBe(1)
+    events.subscribe('/x', cb)
+    fake.handlers?.onMessage({ t: 'inval', path: '/x', etag: 'e2' })
+    expect(cb).toHaveBeenCalledWith('e2')
   })
 })

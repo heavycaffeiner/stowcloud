@@ -81,13 +81,6 @@
       if (one.kind !== 'dir') out.push({ key: 'size', label: t('details.size'), value: formatBytes(one.size) })
       out.push({ key: 'modified', label: t('details.modified'), value: formatDateNs(one.mtime_ns) })
       out.push({ key: 'location', label: t('details.location'), value: location })
-      if (one.preview?.width && one.preview?.height) {
-        out.push({
-          key: 'dimensions',
-          label: t('details.dimensions'),
-          value: `${one.preview.width} x ${one.preview.height}`
-        })
-      }
       if (one.link) {
         out.push({ key: 'link', label: t('details.symlink_target'), value: one.link.target })
       }

@@ -159,9 +159,9 @@ export const STATIC_SEED: SeedDir[] = [
   {
     path: `${ROOT}/Photos`,
     entries: [
-      fileEntry('휴가-2026-07-01.jpg', 4_213_665, 26, { preview: { available: true, width: 4032, height: 3024 } }),
-      fileEntry('휴가-2026-07-02.jpg', 3_982_211, 26, { preview: { available: true, width: 4032, height: 3024 } }),
-      fileEntry('가족사진.png', 2_112_004, 100, { preview: { available: true, width: 1920, height: 1080 } })
+      fileEntry('휴가-2026-07-01.jpg', 4_213_665, 26, { preview: { available: true } }),
+      fileEntry('휴가-2026-07-02.jpg', 3_982_211, 26, { preview: { available: true } }),
+      fileEntry('가족사진.png', 2_112_004, 100, { preview: { available: true } })
     ]
   },
   {
