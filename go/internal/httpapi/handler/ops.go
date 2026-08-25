@@ -85,15 +85,18 @@ func OperationCancel(d Deps) http.HandlerFunc {
 
 func operationToJSON(op core.Operation) operationResponse {
 	out := operationResponse{
-		ID:         strconv.FormatInt(int64(op.ID), 10),
-		Kind:       opKindString(op.Kind),
-		State:      opStateString(op.State),
-		Done:       op.Progress,
-		Total:      op.Total,
-		Errors:     []string{},
-		Results:    make([]batchItem, 0, len(op.Results)),
-		Attempting: []string{},
-		Pending:    []string{},
+		ID:      strconv.FormatInt(int64(op.ID), 10),
+		Kind:    opKindString(op.Kind),
+		State:   opStateString(op.State),
+		Done:    op.Progress,
+		Total:   op.Total,
+		Errors:  []string{},
+		Results: make([]batchItem, 0, len(op.Results)),
+		// Never nil: the client iterates both without checking, and these were
+		// hardcoded empty here while the store had no record to fill them from,
+		// so an interrupted job could not say what it had left undone.
+		Attempting: emptyIfNil(op.Attempting),
+		Pending:    emptyIfNil(op.Pending),
 	}
 	if op.Message != "" {
 		out.Errors = append(out.Errors, op.Message)
@@ -131,6 +134,14 @@ func opResultError(res state.OpResult) *apierr.Wire {
 	}
 	w := e.Wire()
 	return &w
+}
+
+// emptyIfNil keeps a JSON array from encoding as null.
+func emptyIfNil(in []string) []string {
+	if in == nil {
+		return []string{}
+	}
+	return in
 }
 
 func opStateString(s state.OpState) string {

@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
+	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/num"
@@ -128,12 +130,66 @@ func crossesDevice(from, to Resolved, srcDev uint64) bool {
 	return from.share != to.share || to.root.Dev() != srcDev
 }
 
+// OnConflict is what a transfer does when the destination name is taken.
+//
+// It is a typed value rather than a string compared inside the protocol layer,
+// which is where it used to live: a spelling the comparison did not recognise
+// silently became "fail", so choosing overwrite in the conflict dialogue asked
+// again for the same conflict forever.
+type OnConflict uint8
+
+const (
+	// ConflictFail returns ErrConflict, which is what opens the dialogue.
+	ConflictFail OnConflict = iota
+	// ConflictRename keeps both, giving the copy the next free "name (2).ext".
+	ConflictRename
+	// ConflictOverwrite replaces the destination.
+	ConflictOverwrite
+	// ConflictSkip leaves the destination alone and reports the item as done.
+	ConflictSkip
+)
+
+// ParseOnConflict reads the wire spelling, reporting whether it is one this
+// build has.
+//
+// Case-insensitive because the two ends of this wire disagreed about the case
+// once already: the client sent "Overwrite" and an exact comparison against
+// "overwrite" read it as the default, so choosing overwrite in the conflict
+// dialogue asked again for the same conflict forever. An unrecognised value is
+// reported rather than folded into one of the four, because a client asking
+// for a policy this build does not have must not silently get a different one.
+func ParseOnConflict(s string) (OnConflict, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "fail":
+		return ConflictFail, true
+	case "rename":
+		return ConflictRename, true
+	case "overwrite":
+		return ConflictOverwrite, true
+	case "skip":
+		return ConflictSkip, true
+	}
+	return ConflictFail, false
+}
+
 // MoveOpts carries what a move needs beyond the two ends.
 type MoveOpts struct {
 	// Overwrite replaces the destination. Off means a conflict is returned.
 	Overwrite bool
+	// OnConflict is the full policy, which Overwrite is the two-value form of.
+	// Set it and Overwrite is ignored.
+	OnConflict OnConflict
 	// IfMatch validates the destination when it exists. Weak is refused.
 	IfMatch *Token
+}
+
+// policy is the effective conflict policy for a move, folding the older
+// two-value Overwrite into the four-value one.
+func (o MoveOpts) policy() OnConflict {
+	if o.Overwrite {
+		return ConflictOverwrite
+	}
+	return o.OnConflict
 }
 
 // MoveResult says what a move did, which is not always exactly a move.
@@ -142,10 +198,16 @@ type MoveResult struct {
 	// share boundary had to be copied and deleted rather than renamed, which
 	// the UI warns about before the user commits.
 	WillCopy bool
-	// Created is the path the entry landed at.
+	// Created is the path the entry landed at. Under ConflictRename this is
+	// the suffixed name, not the one the request asked for, which is why the
+	// caller reports it back rather than echoing its own request.
 	Created vfs.SafePath
 	// Moved reports a plain rename happened.
 	Moved bool
+	// Skipped reports the destination was taken and ConflictSkip left it
+	// alone. Nothing was written, which is a different outcome from both a
+	// completed move and a refusal.
+	Skipped bool
 }
 
 // Move moves from to to within a share, or copies and deletes across shares.
@@ -173,29 +235,46 @@ func (c *Core) Move(ctx context.Context, from, to Resolved, opt MoveOpts) (MoveR
 		return MoveResult{}, mapVFSErr(err)
 	}
 
+	policy := opt.policy()
 	destExists, derr := pathExists(to.root, to.path)
 	if derr != nil {
 		return MoveResult{}, derr
 	}
+	overwriting := false
 	if destExists {
-		if !opt.Overwrite {
+		switch policy {
+		case ConflictFail:
 			return MoveResult{}, ErrConflict
-		}
-		dstSt, serr := to.root.Stat(to.path)
-		if serr != nil {
-			return MoveResult{}, mapVFSErr(serr)
-		}
-		if err := precondition(opt.IfMatch, dstSt); err != nil {
-			return MoveResult{}, err
-		}
-		// An overwrite replaces the destination, and rename cannot do that when
-		// the destination is a directory with anything in it: the kernel answers
-		// ENOTEMPTY, which surfaced as a conflict on every collection move onto
-		// an existing collection. RFC 4918 9.9.4 deletes it first, which is the
-		// same thing the specification says a copy does.
-		if dstSt.Kind.IsDir() {
-			if err := c.deleteResolved(ctx, to, dstSt, false); err != nil {
+		case ConflictSkip:
+			return MoveResult{Created: to.path, Skipped: true}, nil
+		case ConflictRename:
+			// The next free suffixed name in the same directory, which is what
+			// "keep both" means. Re-resolved rather than mutated in place so
+			// the permission set travels with it.
+			free, ferr := c.uniqueSiblingName(to.root, to.path)
+			if ferr != nil {
+				return MoveResult{}, ferr
+			}
+			to.path = free
+		case ConflictOverwrite:
+			overwriting = true
+			dstSt, serr := to.root.Stat(to.path)
+			if serr != nil {
+				return MoveResult{}, mapVFSErr(serr)
+			}
+			if err := precondition(opt.IfMatch, dstSt); err != nil {
 				return MoveResult{}, err
+			}
+			// An overwrite replaces the destination, and rename cannot do that
+			// when the destination is a directory with anything in it: the
+			// kernel answers ENOTEMPTY, which surfaced as a conflict on every
+			// collection move onto an existing collection. RFC 4918 9.9.4
+			// deletes it first, which is the same thing the specification says
+			// a copy does.
+			if dstSt.Kind.IsDir() {
+				if err := c.deleteResolved(ctx, to, dstSt, false); err != nil {
+					return MoveResult{}, err
+				}
 			}
 		}
 	}
@@ -204,12 +283,14 @@ func (c *Core) Move(ctx context.Context, from, to Resolved, opt MoveOpts) (MoveR
 	res := MoveResult{WillCopy: willCopy}
 
 	if !willCopy {
-		if err := to.root.Rename(from.path, to.path, !opt.Overwrite); err != nil {
+		if err := to.root.Rename(from.path, to.path, !overwriting); err != nil {
 			return MoveResult{}, mapVFSErr(err)
 		}
 		res.Moved = true
 	} else {
-		if err := c.copyRecursive(ctx, from, to, srcSt); err != nil {
+		// No cancellation gate: a move answers inline, so there is no job row
+		// for anybody to mark while this runs.
+		if err := c.copyRecursive(ctx, from, to, srcSt, nil); err != nil {
 			return MoveResult{}, err
 		}
 		if err := c.deleteResolved(ctx, from, srcSt, false); err != nil {
@@ -230,7 +311,14 @@ func (c *Core) Move(ctx context.Context, from, to Resolved, opt MoveOpts) (MoveR
 // copyRecursive duplicates a subtree into a destination path. Files go
 // through the VFS copy-range helper: a reflink on btrfs and XFS when aligned,
 // an in-kernel copy otherwise.
-func (c *Core) copyRecursive(ctx context.Context, from, to Resolved, srcSt vfs.Stat) error {
+//
+// cancelled is polled at every item boundary and may be nil for a copy nobody
+// can cancel (the inline cross-device leg of a move, which finishes inside the
+// request that asked for it).
+func (c *Core) copyRecursive(ctx context.Context, from, to Resolved, srcSt vfs.Stat, cancelled func() bool) error {
+	if cancelled != nil && cancelled() {
+		return errOpCancelled
+	}
 	if srcSt.Kind.IsDir() {
 		if _, err := c.Mkdir(ctx, to); err != nil {
 			if !errors.Is(err, ErrExists) {
@@ -256,7 +344,7 @@ func (c *Core) copyRecursive(ctx context.Context, from, to Resolved, srcSt vfs.S
 			}
 			childFrom := Resolved{user: from.user, share: from.share, root: from.root, path: childFromPath, perms: from.perms}
 			childTo := Resolved{user: to.user, share: to.share, root: to.root, path: childToPath, perms: to.perms}
-			if err := c.copyRecursive(ctx, childFrom, childTo, cst); err != nil {
+			if err := c.copyRecursive(ctx, childFrom, childTo, cst, cancelled); err != nil {
 				return err
 			}
 		}
@@ -391,6 +479,41 @@ func requireCreatableLeaf(p vfs.SafePath) error {
 	_, err := p.Parent().Join(p.Name())
 	return err
 }
+
+// uniqueSiblingName picks the next free "name (2).ext" beside a taken path.
+//
+// It is what "keep both" resolves to, and what a drop link does with a
+// colliding upload: one rule, so the suffix a person sees is the same wherever
+// this server had to invent a name.
+func (c *Core) uniqueSiblingName(root *vfs.ShareRoot, taken vfs.SafePath) (vfs.SafePath, error) {
+	dir := taken.Parent()
+	name := taken.Name()
+	stem, ext := name, ""
+	if i := lastDot(name); i > 0 {
+		// i > 0 rather than i >= 0: a leading dot is a hidden file's name, not
+		// an extension, so ".bashrc" becomes ".bashrc (2)" and not " (2).bashrc".
+		stem, ext = name[:i], name[i:]
+	}
+	for n := 2; n < uniqueNameBound; n++ {
+		candidate, jerr := dir.Join(stem + " (" + strconv.Itoa(n) + ")" + ext)
+		if jerr != nil {
+			continue
+		}
+		exists, err := pathExists(root, candidate)
+		if err != nil {
+			return vfs.SafePath{}, err
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
+	return vfs.SafePath{}, ErrConflict
+}
+
+// uniqueNameBound is where the search above gives up. A directory holding this
+// many collisions of one name is one where the caller wanted a different
+// answer than a longer suffix.
+const uniqueNameBound = 10_000
 
 // pathExists stats a path and reports whether it is there, folding the
 // missing answer to false. It is the one way a mutation asks "is the

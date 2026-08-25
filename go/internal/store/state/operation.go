@@ -93,7 +93,14 @@ type OpResult struct {
 
 // CreateOp starts a fresh operation. The id it returns is what a client
 // reattaches with. createdNs is the durable stamp the caller's clock provided.
-func (d *DB) CreateOp(ctx context.Context, user int64, kind OpKind, total, createdNs int64) (int64, error) {
+//
+// paths is what the operation was asked to do, recorded now rather than as it
+// goes: a job that stops short can then say which items it never reached, which
+// is the difference between telling somebody that four of five files moved and
+// telling them which one did not.
+func (d *DB) CreateOp(
+	ctx context.Context, user int64, kind OpKind, total, createdNs int64, paths []string,
+) (int64, error) {
 	var id int64
 	err := d.Write(ctx, func(tx *sql.Tx) error {
 		res, ierr := tx.ExecContext(ctx, sqlInsertOp,
@@ -103,12 +110,59 @@ func (d *DB) CreateOp(ctx context.Context, user int64, kind OpKind, total, creat
 		}
 		var rerr error
 		id, rerr = res.LastInsertId()
-		return rerr
+		if rerr != nil {
+			return rerr
+		}
+		for i, p := range paths {
+			if _, perr := tx.ExecContext(ctx, sqlInsertOpItem, id, int64(i), p); perr != nil {
+				return perr
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return 0, fmt.Errorf("starting an operation: %w", err)
 	}
 	return id, nil
+}
+
+// StartOpItem marks one item as in flight, so a process that dies mid-item
+// leaves a record saying which one it was holding.
+func (d *DB) StartOpItem(ctx context.Context, id, idx int64) error {
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		_, ierr := tx.ExecContext(ctx, sqlMarkOpItemStarted, id, idx)
+		return ierr
+	})
+}
+
+// UnfinishedOpItems returns the paths an operation was asked for and never
+// recorded an outcome for, split by whether it had started on them.
+//
+// Attempting is at most one entry in practice: the runner works one item at a
+// time, so it is whatever it was holding when the process stopped. Whether that
+// item landed is genuinely unknown, which is why it is reported separately from
+// the ones nothing touched.
+func (d *DB) UnfinishedOpItems(ctx context.Context, id int64) (attempting, pending []string, err error) {
+	rows, err := d.SQL().QueryContext(ctx, sqlReadOpUnfinished, id)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reading an operation's unfinished items: %w", err)
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	for rows.Next() {
+		var (
+			path    string
+			started bool
+		)
+		if serr := rows.Scan(&path, &started); serr != nil {
+			return nil, nil, serr
+		}
+		if started {
+			attempting = append(attempting, path)
+			continue
+		}
+		pending = append(pending, path)
+	}
+	return attempting, pending, rows.Err()
 }
 
 // GetOp reads one operation and its results.

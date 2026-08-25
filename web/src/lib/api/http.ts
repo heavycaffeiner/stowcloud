@@ -48,6 +48,7 @@ import {
   type SettingsSectionId,
   type SettingsCheckResult,
   type BatchItemResult,
+  type CopyResult,
   type ShareLinkCreateReq,
   type ShareLinkInfo,
   type ShareLinkPatchReq,
@@ -187,7 +188,16 @@ async function rename(path: string, newName: string): Promise<Entry> {
   return request('/fs/rename', { method: 'POST', body: JSON.stringify({ path, new_name: newName }) })
 }
 
-async function copy(req: MoveReq): Promise<{ job: string }> {
+/**
+ * `POST /api/fs/copy` answers per-item results and, when at least one item
+ * actually started, the job to poll.
+ *
+ * `job` is absent when nothing started: every item was refused, or every item
+ * was skipped because its destination was taken. This was typed as always
+ * present, so a caller destructured `undefined` and polled a job by that name
+ * until its own timeout fired.
+ */
+async function copy(req: MoveReq): Promise<CopyResult> {
   return request('/fs/copy', { method: 'POST', body: JSON.stringify(req) })
 }
 

@@ -552,7 +552,7 @@ describe('mockApi share links', () => {
 describe('mockApi transfer', () => {
   it('copy leaves the source where it was', async () => {
     await mockApi.mkdir('/home/Documents/copy-src')
-    await mockApi.copy({ paths: ['/home/Documents/copy-src'], dest: '/home/Photos', on_conflict: 'Fail' })
+    await mockApi.copy({ paths: ['/home/Documents/copy-src'], dest: '/home/Photos', on_conflict: 'fail' })
 
     const src = await mockApi.list('/home/Documents', {})
     const dest = await mockApi.list('/home/Photos', {})
@@ -562,7 +562,7 @@ describe('mockApi transfer', () => {
 
   it('move takes the source with it', async () => {
     await mockApi.mkdir('/home/Documents/move-src')
-    const { results } = await mockApi.move({ paths: ['/home/Documents/move-src'], dest: '/home/Photos', on_conflict: 'Fail' })
+    const { results } = await mockApi.move({ paths: ['/home/Documents/move-src'], dest: '/home/Photos', on_conflict: 'fail' })
     expect(results.every((r) => r.ok)).toBe(true)
 
     const src = await mockApi.list('/home/Documents', {})
@@ -574,7 +574,7 @@ describe('mockApi transfer', () => {
   it('a move onto an existing name fails that item rather than silently overwriting', async () => {
     await mockApi.mkdir('/home/Documents/clash')
     await mockApi.mkdir('/home/Photos/clash')
-    const { results } = await mockApi.move({ paths: ['/home/Documents/clash'], dest: '/home/Photos', on_conflict: 'Fail' })
+    const { results } = await mockApi.move({ paths: ['/home/Documents/clash'], dest: '/home/Photos', on_conflict: 'fail' })
     expect(results[0].ok).toBe(false)
     expect(results[0].error?.code).toBe('fs.conflict')
     // The source has to still be there — a conflict must not consume it.

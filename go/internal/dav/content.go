@@ -311,7 +311,14 @@ func (h *Handler) ServeCopy(w http.ResponseWriter, r *http.Request, from core.Re
 	}
 
 	if st.Kind.IsDir() {
-		if _, err := h.core.StartCopy(r.Context(), from.User(), from, to.Resolved); err != nil {
+		// Overwrite when the header allowed it, refuse otherwise: the two
+		// values are the whole of what RFC 4918 9.8.4 offers, and the
+		// destination has already been removed above when it was a collection.
+		policy := core.ConflictFail
+		if to.Overwrite {
+			policy = core.ConflictOverwrite
+		}
+		if _, err := h.core.StartCopy(r.Context(), from.User(), from, to.Resolved, policy); err != nil {
 			h.fail(w, r, err)
 			return
 		}
@@ -472,32 +479,10 @@ func parseByteRange(raw string, size uint64) (*[2]uint64, error) {
 var errUnsatisfiableRange = errors.New("dav: unsatisfiable range")
 
 // refuseSelfDescendant refuses a COPY or MOVE whose destination is the source
-// or sits inside it.
+// or sits inside it. RFC 4918 9.8.4 and 9.9.4 both make this 403.
 //
-// RFC 4918 9.8.4 and 9.9.4 both make this 403. Without it a collection copied
-// into its own subtree is a walk that does not terminate: each pass copies
-// what the previous one wrote, and the operation runs until the disk is full.
-// This build accepted both and answered 202 for the copy and 204 for the move.
-//
-// Compared component-wise on the resolved paths, not on the request strings: a
-// destination is only inside the source when every component of the source is
-// a prefix of it, and comparing text would make "/a/bc" look like a child of
-// "/a/b".
+// The rule itself is the core's, so the two surfaces cannot disagree about
+// which destinations are inside which sources.
 func refuseSelfDescendant(from, to core.Resolved) error {
-	if from.Share() != to.Share() {
-		return nil
-	}
-	src := from.Path().Components()
-	dst := to.Path().Components()
-	if len(dst) < len(src) {
-		return nil
-	}
-	for i, c := range src {
-		if dst[i] != c {
-			return nil
-		}
-	}
-	// Equal length is the destination being the source itself; longer is a
-	// descendant of it.
-	return fmt.Errorf("%w: the destination is inside the source", core.ErrDenied)
+	return core.RefuseSelfDescendant(from, to)
 }

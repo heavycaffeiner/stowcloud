@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strconv"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
@@ -420,8 +419,9 @@ func (c *Core) LinkDrop(ctx context.Context, link Link, name string, body []byte
 		return Entry{}, err
 	} else if p {
 		// A name already taken gets a counting suffix rather than an
-		// overwrite, which is the drop-box contract.
-		uniq, uerr := c.uniqueDropName(root, dir, name)
+		// overwrite, which is the drop-box contract. The same rule "keep both"
+		// uses, so one server invents one shape of name.
+		uniq, uerr := c.uniqueSiblingName(root, dest)
 		if uerr != nil {
 			return Entry{}, uerr
 		}
@@ -440,27 +440,6 @@ func (c *Core) LinkDrop(ctx context.Context, link Link, name string, body []byte
 		dest.Name(), dest)
 	entry.Perms = link.Perms
 	return entry, nil
-}
-
-// uniqueDropName picks the next free "name (2).ext" in a directory.
-func (c *Core) uniqueDropName(root *vfs.ShareRoot, dir vfs.SafePath, name string) (vfs.SafePath, error) {
-	stem, ext := name, ""
-	if i := lastDot(name); i >= 0 {
-		stem, ext = name[:i], name[i:]
-	}
-	for n := 2; n < 10_000; n++ {
-		candidate := stem + " (" + strconv.Itoa(n) + ")" + ext
-		p, jerr := dir.Join(candidate)
-		if jerr != nil {
-			continue
-		}
-		if exists, err := pathExists(root, p); err != nil {
-			return vfs.SafePath{}, err
-		} else if !exists {
-			return p, nil
-		}
-	}
-	return vfs.SafePath{}, ErrConflict
 }
 
 // lastDot finds the last '.' in a name, which is where the extension starts.

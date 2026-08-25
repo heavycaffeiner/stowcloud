@@ -33,6 +33,7 @@ import {
   type AuditRow,
   type BatchItemResult,
   type BatchResult,
+  type CopyResult,
   type CreateGrantReq,
   type CreateGroupReq,
   type CreateShareReq,
@@ -305,7 +306,12 @@ async function rename(path: string, newName: string): Promise<Entry> {
 
 /** Backs both `copy()` and `move()` — the two differ only in whether the
  *  source survives, so the conflict and rename-suffix behaviour
- *  they must agree on lives here once. */
+ *  they must agree on lives here once.
+ *
+ *  The suffix matches the server's (`(2)`, `(3)`, …, never `(1)`), and the
+ *  result carries the name the item actually landed under: a rename that
+ *  reported the requested path back would tell the caller a file exists under
+ *  a name nothing wrote. */
 async function transfer(req: MoveReq, keepSource: boolean): Promise<BatchResult> {
   await delay()
   const results: BatchResult['results'] = []
@@ -319,24 +325,26 @@ async function transfer(req: MoveReq, keepSource: boolean): Promise<BatchResult>
 
       const destDir = normalizePath(req.dest)
       const destExists = resolveDirEntries(destDir).some((e) => e.name === name)
-      if (destExists && req.on_conflict === 'Fail') {
+      if (destExists && req.on_conflict === 'fail') {
         throw new ApiError(409, { code: 'fs.conflict', message: 'destination already exists', detail: { path: joinPath(destDir, name) } })
       }
-      if (destExists && req.on_conflict === 'Skip') {
-        results.push({ path: n, ok: true })
+      if (destExists && req.on_conflict === 'skip') {
+        results.push({ path: joinPath(destDir, name), ok: true, skipped: true })
         continue
       }
       let finalName = name
-      if (destExists && req.on_conflict === 'Rename') {
-        let i = 1
+      if (destExists && req.on_conflict === 'rename') {
+        const dot = name.lastIndexOf('.')
+        const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
+        let i = 2
         while (resolveDirEntries(destDir).some((e) => e.name === finalName)) {
-          finalName = `${name} (${i++})`
+          finalName = `${stem} (${i++})${ext}`
         }
       }
 
       addOverlayEntry(destDir, { ...entry, name: finalName, etag: randomId('e') })
       if (!keepSource) removeEntry(parent, name)
-      results.push({ path: n, ok: true })
+      results.push({ path: joinPath(destDir, finalName), ok: true })
     } catch (err) {
       const e = err instanceof ApiError ? err : new ApiError(500, { code: 'internal', message: 'internal error' })
       results.push({ path: p, ok: false, error: { code: e.code, message: e.message, detail: e.detail } })
@@ -346,10 +354,16 @@ async function transfer(req: MoveReq, keepSource: boolean): Promise<BatchResult>
 }
 
 /** A copy is a durable job: it rewrites every byte whatever the two paths
- *  are, so the server answers with an id and the tray polls it. */
-async function copy(req: MoveReq): Promise<{ job: string }> {
+ *  are, so the server answers with an id and the tray polls it.
+ *
+ *  The destination is checked before the job exists, so a conflict is in this
+ *  response rather than in the job's own results, and a batch where nothing
+ *  started carries no job at all. */
+async function copy(req: MoveReq): Promise<CopyResult> {
   const { results } = await transfer(req, true)
-  return { job: makeMockJob('copy', req.paths.length, results) }
+  const started = results.filter((r) => r.ok && !r.skipped)
+  if (started.length === 0) return { results }
+  return { results, job: makeMockJob('copy', started.length, started) }
 }
 
 /** A move finishes in the request: it is a rename. */

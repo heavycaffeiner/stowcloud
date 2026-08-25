@@ -461,8 +461,32 @@ func migrations() []dbfile.Migration {
 		{Name: "5: upload aliases and the persisted chunk settings", SQL: schemaV5},
 		{Name: "6: the compat layer's durable rows", SQL: schemaV6},
 		{Name: "7: the single-sign-on link flow", SQL: schemaV7},
+		{Name: "8: the paths an operation was asked for", SQL: schemaV8},
 	}
 }
+
+// schemaV8 records what an operation was asked to do, item by item, when it is
+// created rather than when it finishes.
+//
+// Without it a job that stopped short could say how many items it did not
+// reach and never which ones. A process killed mid-copy leaves rows here with
+// no matching result, which is exactly the list the tray needs: what was in
+// flight when it died, and what it never started. Both are unknowable from the
+// result table, because a result is written only once an item is done with.
+//
+// The state is derived rather than stored: an item with a result is settled,
+// one marked started without a result was in flight, and one that is neither
+// was never reached. Storing a per-item status as well would be a second
+// answer to the same question that can disagree with the first.
+const schemaV8 = `
+CREATE TABLE operation_item (
+  operation INTEGER NOT NULL REFERENCES operation(id) ON DELETE CASCADE,
+  idx       INTEGER NOT NULL,
+  path      TEXT NOT NULL,
+  started   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (operation, idx)
+) WITHOUT ROWID;
+`
 
 // schemaV7 holds a link flow between the redirect out and the callback back.
 //

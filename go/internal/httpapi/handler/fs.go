@@ -486,19 +486,30 @@ type transferRequest struct {
 	DryRun bool `json:"dry_run,omitempty"`
 }
 
-// resolveTransfer validates the batch and the destination once.
-func resolveTransfer(d Deps, uid core.UserID, req transferRequest) (core.Resolved, error) {
+// resolveTransfer validates the batch, the conflict policy and the destination
+// once.
+//
+// The policy is parsed here rather than compared inline where it is used: an
+// unrecognised spelling was read as the default, so the client's "Overwrite"
+// (which is the case it sends) silently meant "fail" and the conflict dialogue
+// re-opened on every answer.
+func resolveTransfer(d Deps, uid core.UserID, req transferRequest) (core.Resolved, core.OnConflict, error) {
 	if len(req.Paths) == 0 {
-		return core.Resolved{}, apierr.BadRequest("fs.no_paths", "paths")
+		return core.Resolved{}, 0, apierr.BadRequest("fs.no_paths", "paths")
 	}
 	if len(req.Paths) > limits.BatchPaths {
-		return core.Resolved{}, limits.Exceed("transfer paths", limits.BatchPaths, int64(len(req.Paths)))
+		return core.Resolved{}, 0, limits.Exceed("transfer paths", limits.BatchPaths, int64(len(req.Paths)))
+	}
+	policy, ok := core.ParseOnConflict(req.OnConflict)
+	if !ok {
+		return core.Resolved{}, 0, apierr.Unprocessable("fs.unknown_conflict_policy", "on_conflict")
 	}
 	destV, err := vfs.ParseVpath(req.Dest)
 	if err != nil {
-		return core.Resolved{}, err
+		return core.Resolved{}, 0, err
 	}
-	return d.Core.Resolve(uid, destV, acl.Create)
+	resolved, rerr := d.Core.Resolve(uid, destV, acl.Create)
+	return resolved, policy, rerr
 }
 
 // Move answers POST /api/fs/move: a set of paths and the directory to move
@@ -514,21 +525,22 @@ func Move(d Deps) http.HandlerFunc {
 		if derr := decodeJSON(r, &req); derr != nil {
 			return derr
 		}
-		dest, err := resolveTransfer(d, uid, req)
+		dest, policy, err := resolveTransfer(d, uid, req)
 		if err != nil {
 			return err
 		}
 
 		results := make([]batchItem, 0, len(req.Paths))
 		for _, raw := range req.Paths {
-			results = append(results, moveOne(r, d, uid, dest, raw, req))
+			results = append(results, moveOne(r, d, uid, dest, raw, req, policy))
 		}
 		return writeJSON(w, http.StatusOK, map[string]any{"results": results})
 	})
 }
 
 func moveOne(
-	r *http.Request, d Deps, uid core.UserID, dest core.Resolved, raw string, req transferRequest,
+	r *http.Request, d Deps, uid core.UserID, dest core.Resolved, raw string,
+	req transferRequest, policy core.OnConflict,
 ) batchItem {
 	item := batchItem{Path: raw}
 
@@ -563,15 +575,17 @@ func moveOne(
 		return item
 	}
 
-	res, err := d.Core.Move(r.Context(), from, to, core.MoveOpts{
-		Overwrite: req.OnConflict == "overwrite",
-	})
+	res, err := d.Core.Move(r.Context(), from, to, core.MoveOpts{OnConflict: policy})
 	if err != nil {
 		item.Error = itemError(err)
 		return item
 	}
 	item.OK = true
 	item.WillCopy = res.WillCopy
+	item.Skipped = res.Skipped
+	// Where it landed, which is not the requested name when the policy renamed
+	// it: the client shows the result, so it has to be told which one is the
+	// new file.
 	if out, verr := d.Core.VpathFor(uid, dest.Share(), res.Created.Share()); verr == nil {
 		item.Path = out.String()
 	}
@@ -590,7 +604,8 @@ func Copy(d Deps) http.HandlerFunc {
 		if derr := decodeJSON(r, &req); derr != nil {
 			return derr
 		}
-		if _, err := resolveTransfer(d, uid, req); err != nil {
+		destResolved, policy, err := resolveTransfer(d, uid, req)
+		if err != nil {
 			return err
 		}
 
@@ -598,14 +613,21 @@ func Copy(d Deps) http.HandlerFunc {
 		results := make([]batchItem, 0, len(req.Paths))
 		for _, raw := range req.Paths {
 			item := batchItem{Path: raw}
-			id, err := copyOne(r, d, uid, raw, req.Dest)
-			if err != nil {
-				item.Error = itemError(err)
+			start, cerr := copyOne(r, d, uid, raw, req.Dest, policy)
+			if cerr != nil {
+				item.Error = itemError(cerr)
 				results = append(results, item)
 				continue
 			}
 			item.OK = true
-			jobs = append(jobs, id)
+			item.Skipped = start.Skipped
+			// The path the copy is landing at, which a rename policy moved.
+			if out, verr := d.Core.VpathFor(uid, destResolved.Share(), start.Dest.Path().Share()); verr == nil {
+				item.Path = out.String()
+			}
+			if start.Started {
+				jobs = append(jobs, int64(start.ID))
+			}
 			results = append(results, item)
 		}
 
@@ -613,6 +635,11 @@ func Copy(d Deps) http.HandlerFunc {
 		// The client tracks one job for the batch, so the first is what it
 		// polls. Every id is reported as well, because a multi-source copy
 		// genuinely has several and reporting one would lose the rest.
+		//
+		// A batch that started none (every item skipped, or every item refused)
+		// carries no job key at all, and the client reads the results instead:
+		// it used to hand the missing value to its poller and ask about a job
+		// named "undefined" once a second until its own timeout.
 		if len(jobs) > 0 {
 			out["job"] = strconv.FormatInt(jobs[0], 10)
 			out["jobs"] = jobs
@@ -621,24 +648,26 @@ func Copy(d Deps) http.HandlerFunc {
 	})
 }
 
-func copyOne(r *http.Request, d Deps, uid core.UserID, raw, dest string) (int64, error) {
+func copyOne(
+	r *http.Request, d Deps, uid core.UserID, raw, dest string, policy core.OnConflict,
+) (core.CopyStart, error) {
 	fromV, err := vfs.ParseVpath(raw)
 	if err != nil {
-		return 0, err
+		return core.CopyStart{}, err
 	}
 	from, err := d.Core.Resolve(uid, fromV, acl.Read)
 	if err != nil {
-		return 0, err
+		return core.CopyStart{}, err
 	}
 	toV, err := vfs.ParseVpath(joinPath(dest, fromV.Name()))
 	if err != nil {
-		return 0, err
+		return core.CopyStart{}, err
 	}
 	to, err := d.Core.Resolve(uid, toV, acl.Create)
 	if err != nil {
-		return 0, err
+		return core.CopyStart{}, err
 	}
-	return d.Core.StartCopy(r.Context(), uid, from, to)
+	return d.Core.StartCopy(r.Context(), uid, from, to, policy)
 }
 
 // Write answers POST /api/fs/write, replacing a file's content atomically.

@@ -53,6 +53,7 @@
   "browse.grid_view": "Grid view",
   "browse.hide_folder_tree": "Hide the folder tree",
   "browse.home": "Home",
+  "browse.items_skipped_name_taken": "{count} left alone: the name was already taken",
   "browse.list_view": "List view",
   "browse.manage_share_links": "Manage share links",
   "browse.more": "More",

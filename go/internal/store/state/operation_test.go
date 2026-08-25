@@ -25,7 +25,7 @@ func TestOperationLifecycle(t *testing.T) {
 	addUserForOp(t, d, 7, "alice")
 	ctx := context.Background()
 
-	id, err := d.CreateOp(ctx, 7, state.OpCopy, 3, 100)
+	id, err := d.CreateOp(ctx, 7, state.OpCopy, 3, 100, []string{"a", "b", "c"})
 	if err != nil {
 		t.Fatalf("CreateOp: %v", err)
 	}
@@ -60,6 +60,51 @@ func TestOperationLifecycle(t *testing.T) {
 	if len(results) != 2 || !results[0].OK || results[1].OK {
 		t.Fatalf("results = %+v, want ok then failed", results)
 	}
+
+	// The third path was recorded at creation and never got a result, which is
+	// what a job that stopped short leaves behind. Without it a client is told
+	// how many items are missing and never which.
+	attempting, pending, uerr := d.UnfinishedOpItems(ctx, id)
+	if uerr != nil {
+		t.Fatalf("UnfinishedOpItems: %v", uerr)
+	}
+	if len(attempting) != 0 {
+		t.Fatalf("attempting = %v, want none: nothing was marked started", attempting)
+	}
+	if len(pending) != 1 || pending[0] != "c" {
+		t.Fatalf("pending = %v, want the one path with no result", pending)
+	}
+}
+
+// An item marked started and never finished is the process dying mid-item, and
+// it is reported apart from the ones nothing touched: whether it landed is
+// genuinely unknown, and only looking at the destination settles it.
+func TestOperationItemInFlightIsReportedApartFromUntouched(t *testing.T) {
+	d := open(t)
+	addUserForOp(t, d, 3, "carol")
+	ctx := context.Background()
+
+	id, err := d.CreateOp(ctx, 3, state.OpCopy, 2, 100, []string{"held", "never"})
+	if err != nil {
+		t.Fatalf("CreateOp: %v", err)
+	}
+	if serr := d.StartOpItem(ctx, id, 0); serr != nil {
+		t.Fatalf("StartOpItem: %v", serr)
+	}
+	if ierr := d.InterruptOp(ctx, id, 200); ierr != nil {
+		t.Fatalf("InterruptOp: %v", ierr)
+	}
+
+	attempting, pending, uerr := d.UnfinishedOpItems(ctx, id)
+	if uerr != nil {
+		t.Fatalf("UnfinishedOpItems: %v", uerr)
+	}
+	if len(attempting) != 1 || attempting[0] != "held" {
+		t.Fatalf("attempting = %v, want the started item", attempting)
+	}
+	if len(pending) != 1 || pending[0] != "never" {
+		t.Fatalf("pending = %v, want the untouched item", pending)
+	}
 }
 
 func TestOperationScopedToOwner(t *testing.T) {
@@ -68,7 +113,7 @@ func TestOperationScopedToOwner(t *testing.T) {
 	addUserForOp(t, d, 2, "b")
 	ctx := context.Background()
 
-	id, err := d.CreateOp(ctx, 1, state.OpDelete, 0, 100)
+	id, err := d.CreateOp(ctx, 1, state.OpDelete, 0, 100, nil)
 	if err != nil {
 		t.Fatalf("CreateOp: %v", err)
 	}

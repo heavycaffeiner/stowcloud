@@ -31,7 +31,9 @@ func AdminIndexBuild(d Deps) http.HandlerFunc {
 			return notImplemented("search.index_build_unavailable")
 		}
 
-		id, cerr := d.State.CreateOp(r.Context(), int64(uid), state.OpIndexBuild, 0, d.Clock.Nanos())
+		// No item list: a build walks every share, so there is no set of paths
+		// the request named and nothing for an interrupted one to hand back.
+		id, cerr := d.State.CreateOp(r.Context(), int64(uid), state.OpIndexBuild, 0, d.Clock.Nanos(), nil)
 		if cerr != nil {
 			return cerr
 		}

@@ -2,7 +2,7 @@
   import { fade } from 'svelte/transition'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
-  import { api, ApiError, type Entry, type OnConflict } from '../../../../lib/api/client'
+  import { api, ApiError, type BatchItemResult, type Entry, type OnConflict } from '../../../../lib/api/client'
   import { baseName, joinPath, normalizePath, parentOf } from '../../../../lib/api/path-utils'
   import { authState } from '../../../../lib/state/auth.svelte'
   import { browse } from '../../../../lib/state/browse.svelte'
@@ -370,7 +370,7 @@
       share: requestShare,
       rename: requestRename,
       transfer: requestTransfer,
-      duplicate: () => duplicate('Fail'),
+      duplicate: () => duplicate(),
       remove: requestDelete
     })
   )
@@ -516,10 +516,14 @@
 
   function onDestinationPicked(dest: string, mode: 'move' | 'copy'): void {
     destOpen = false
-    void transfer(destSources, dest, mode, 'Fail')
+    void transfer(destSources, dest, mode, 'fail')
   }
 
-  function duplicate(onConflict: OnConflict = 'Fail'): void {
+  /** Duplicate is a copy into the folder the entry is already in, so it always
+   *  collides with itself. `rename` rather than `fail`: asking "this name is
+   *  taken, what now" about a name the user did not choose is a dialog with
+   *  one sensible answer, and the point of the action is a second copy. */
+  function duplicate(onConflict: OnConflict = 'rename'): void {
     if (!contextEntry) return
     // The one menu action that forgot this. `Menu` only dismisses on a click
     // *outside* itself, so an item's own click leaves it open -- and duplicate
@@ -531,6 +535,14 @@
     // the context menu can be pointed at a different entry by then, since
     // this doesn't await the job.
     void transfer([joinPath(browse.path, contextEntry.name)], browse.path, 'copy', onConflict)
+  }
+
+  /** Says how many items were left alone because their destination was taken.
+   *  A skip is a success with nothing written, so without this the operation
+   *  reports as done and the files are silently not there. */
+  function noteSkipped(results: BatchItemResult[]): void {
+    const skipped = results.filter((r) => r.skipped).length
+    if (skipped > 0) snackbarMsg = t('browse.items_skipped_name_taken', { count: skipped })
   }
 
   async function transfer(paths: string[], dest: string, mode: 'move' | 'copy', onConflict: OnConflict): Promise<void> {
@@ -563,31 +575,46 @@
         conflictOpen = false
         browse.clearSelection()
         browse.refresh()
+        noteSkipped(results)
         return
       }
-      const { job } = await api.copy(req)
-      // A per-item conflict or quota failure still ends the job in `error`
-      // state, so detection happens in `JobFailedError`'s `status.results`
-      // once the job rejects, not in the response that started it.
+      // The destination is now checked before any job is created, so a
+      // conflict, a denial or a quota refusal is in this response rather than
+      // minutes later in a job that already started.
+      const { results, job } = await api.copy(req)
+      const conflicted = results.find((r) => r.error?.code === 'fs.conflict')
+      if (conflicted) {
+        // The first conflicting item names the dialog. The answer then applies
+        // to the whole batch, because `on_conflict` is a property of the
+        // request and not of an item -- asking once per name would mean one
+        // dialog per file for a selection that mostly collides.
+        conflictName = baseName(conflicted.path)
+        conflictOpen = true
+        return
+      }
+      const refused = results.find((r) => !r.ok)
+      if (refused) {
+        snackbarMsg = refused.error?.code === 'quota.exceeded' ? quotaMsg : failMsg
+        return
+      }
+      conflictOpen = false
+      noteSkipped(results)
+      if (job === undefined) {
+        // Nothing to poll: every item was skipped because its destination was
+        // taken and the answer was to leave it alone. Handing `undefined` to
+        // the tray is what used to poll `/api/jobs/undefined` once a second
+        // until the client's own twenty-minute timeout.
+        browse.refresh()
+        return
+      }
       jobTray
         .track(job, mode)
         .then(() => {
-          conflictOpen = false
           browse.refresh()
         })
         .catch((err) => {
-          const results = err instanceof JobFailedError ? err.status.results : []
-          // The first conflicting item names the dialog. The answer then
-          // applies to the whole batch, because `on_conflict` is a property of
-          // the request and not of an item -- asking once per name would mean
-          // one dialog per file for a selection that mostly collides.
-          const conflicted = results.find((r) => r.error?.code === 'fs.conflict')
-          if (conflicted) {
-            conflictName = baseName(conflicted.path)
-            conflictOpen = true
-            return
-          }
-          const quota = results.some((r) => r.error?.code === 'quota.exceeded')
+          const failures = err instanceof JobFailedError ? err.status.results : []
+          const quota = failures.some((r) => r.error?.code === 'quota.exceeded')
           snackbarMsg =
             quota || (err instanceof ApiError && err.code === 'quota.exceeded')
               ? quotaMsg
@@ -1225,9 +1252,9 @@
   open={conflictOpen}
   name={conflictName}
   onclose={() => (conflictOpen = false)}
-  onkeepboth={() => conflictRetry?.('Rename')}
-  onoverwrite={() => conflictRetry?.('Overwrite')}
-  onskip={() => conflictRetry?.('Skip')}
+  onkeepboth={() => conflictRetry?.('rename')}
+  onoverwrite={() => conflictRetry?.('overwrite')}
+  onskip={() => conflictRetry?.('skip')}
 />
 <PreviewDialog
   open={previewOpen && previewEntry !== null}

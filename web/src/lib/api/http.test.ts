@@ -33,21 +33,36 @@ describe('httpApi job wrappers', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
-  it('copy() returns the { job } envelope', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(202, { job: 'J-4' }))
+  it('copy() returns the per-item results alongside the job', async () => {
+    const body = { results: [{ path: '/b/a', ok: true }], job: 'J-4' }
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(202, body))
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await httpApi.copy({ paths: ['/a'], dest: '/b', on_conflict: 'Fail' })
+    const result = await httpApi.copy({ paths: ['/a'], dest: '/b', on_conflict: 'fail' })
 
-    expect(result).toEqual({ job: 'J-4' })
+    expect(result).toEqual(body)
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  // The destination is checked before a job exists, so a batch where nothing
+  // started carries no job key. It was typed as always present, and the caller
+  // handed `undefined` to the poller and asked about a job by that name once a
+  // second until its own timeout.
+  it('copy() omits the job when nothing started', async () => {
+    const body = { results: [{ path: '/b/a', ok: true, skipped: true }] }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(jsonResponse(202, body)))
+
+    const result = await httpApi.copy({ paths: ['/a'], dest: '/b', on_conflict: 'skip' })
+
+    expect(result.job).toBeUndefined()
+    expect(result.results[0].skipped).toBe(true)
   })
 
   it('move() returns the { job } envelope and never asks for a dry run', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(202, { job: 'J-5' }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await httpApi.move({ paths: ['/a'], dest: '/b', on_conflict: 'Fail' })
+    const result = await httpApi.move({ paths: ['/a'], dest: '/b', on_conflict: 'fail' })
 
     expect(result).toEqual({ job: 'J-5' })
     const [url, init] = fetchMock.mock.calls[0]
@@ -64,7 +79,7 @@ describe('httpApi job wrappers', () => {
       .mockResolvedValueOnce(jsonResponse(200, { results: [{ path: '/a', ok: true, will_copy: true }] }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const result = await httpApi.movePreflight({ paths: ['/a'], dest: '/b', on_conflict: 'Fail' })
+    const result = await httpApi.movePreflight({ paths: ['/a'], dest: '/b', on_conflict: 'fail' })
 
     expect(result).toEqual({ results: [{ path: '/a', ok: true, will_copy: true }] })
     expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).dry_run).toBe(true)

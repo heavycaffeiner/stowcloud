@@ -48,6 +48,11 @@ type batchItem struct {
 	// is omitted otherwise: it is a warning about one item, not a field every
 	// batch response carries.
 	WillCopy bool `json:"will_copy,omitempty"`
+	// Skipped says the destination was taken and the conflict policy left it
+	// alone. It rides beside ok rather than replacing it: nothing failed, and
+	// nothing was written either, which a client showing what happened has to
+	// be able to tell apart.
+	Skipped bool `json:"skipped,omitempty"`
 }
 
 // itemError renders a per-item failure the way the envelope renders a whole

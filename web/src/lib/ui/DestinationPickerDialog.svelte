@@ -58,7 +58,7 @@
     if (!dest || !canMove) return
     let live = true
     api
-      .movePreflight({ paths: sources, dest, on_conflict: 'Fail' })
+      .movePreflight({ paths: sources, dest, on_conflict: 'fail' })
       .then((p) => {
         if (live) preflight = p
       })

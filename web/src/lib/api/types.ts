@@ -544,7 +544,15 @@ export interface AuthUser {
  *  `status` (`go/internal/httpapi/handler/session.go`). */
 export type LoginResult = { status: 'ok'; user: AuthUser } | { status: 'totp_required'; challenge: string }
 
-export type OnConflict = 'Fail' | 'Rename' | 'Overwrite' | 'Skip'
+/**
+ * What a move or a copy does when the destination name is taken.
+ *
+ * Lowercase, which is what the server parses. It was capitalised here, and the
+ * server compared against the lowercase spelling: every answer other than the
+ * default was read as "fail", so choosing overwrite in the conflict dialog
+ * re-opened the same dialog forever and "keep both" never renamed anything.
+ */
+export type OnConflict = 'fail' | 'rename' | 'overwrite' | 'skip'
 
 /** `go/internal/httpapi/handler/ops.go` — the one per-item result shape
  *  `/fs/delete`, `/fs/move`, `/fs/copy`, `/trash/restore` and `/trash/purge`
@@ -566,10 +574,30 @@ export interface BatchItemResult {
    *  = "std::ops::Not::not"`) — `CoreError::CrossDevice`'s cheap same-call
    *  signal that a move degraded into a copy. */
   will_copy?: boolean
+  /** The destination was taken and `on_conflict: 'skip'` left it alone. Rides
+   *  beside `ok: true`, because nothing failed and nothing was written: a
+   *  screen reporting what happened has to tell the two apart. */
+  skipped?: boolean
 }
 
 export interface BatchResult {
   results: BatchItemResult[]
+}
+
+/**
+ * `POST /api/fs/copy`. The destination is checked before any job exists, so a
+ * conflict, a denial or a quota refusal is here rather than in a job that has
+ * already started copying.
+ *
+ * `job` is absent when nothing started: every item refused, or every item
+ * skipped because its destination was taken and the request said to leave it.
+ * `jobs` carries every id when the batch had several sources; `job` is the
+ * first, which is the one the tray tracks.
+ */
+export interface CopyResult {
+  results: BatchItemResult[]
+  job?: string
+  jobs?: number[]
 }
 
 // ── trash ──

@@ -95,7 +95,8 @@ func (c *Core) ensureHome(ctx context.Context, user UserID) error {
 			return mapVFSErr(serr)
 		}
 		tmpl := Resolved{user: user, share: homeShareID, root: root, path: template, perms: homePerms}
-		if err := c.copyRecursive(ctx, tmpl, home, st); err != nil {
+		// No cancellation gate: seeding a home is not a job anybody polls.
+		if err := c.copyRecursive(ctx, tmpl, home, st, nil); err != nil {
 			return err
 		}
 	} else {
