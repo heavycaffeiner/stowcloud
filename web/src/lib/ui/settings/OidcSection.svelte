@@ -91,13 +91,13 @@
     connectError = null
     connecting = true
     try {
-      const { authorize_url } = await api.oidcLinkStart(connectPassword)
+      // Where the finished flow should land. Named explicitly, because the
+      // server's default is the root: without it, connecting a provider from
+      // the settings screen dropped the user on the file browser.
+      const { authorize_url } = await api.oidcLinkStart(connectPassword, window.location.pathname)
       // The browser has to actually arrive at the provider's login page, so
       // this is a full navigation. `authorize_url` comes from the server's own
       // URL builder, never from anything typed here.
-      //
-      // No `returnTo` was sent: with none, the server lands a finished link
-      // flow back on this screen, which is where it started.
       window.location.href = authorize_url
     } catch (err) {
       connectError = describeError(err, t('oidc.could_not_start_connection_try'))
