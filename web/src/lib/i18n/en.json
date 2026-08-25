@@ -406,7 +406,6 @@
   "progress.loading": "Loading",
   "progress.progress": "Progress",
   "public_share.could_not_load": "Could not load it",
-  "public_share.could_not_start_download_try": "Could not start the download. Try again in a moment.",
   "public_share.could_not_verify_try_again": "Could not verify it. Try again in a moment.",
   "public_share.download_folder": "Download this folder",
   "public_share.empty": "Empty",

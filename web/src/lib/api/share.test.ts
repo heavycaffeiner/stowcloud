@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 let getShare: typeof import('./share').getShare
 let unlockShare: typeof import('./share').unlockShare
-let requestShareDownload: typeof import('./share').requestShareDownload
+let shareDownloadUrl: typeof import('./share').shareDownloadUrl
 let dropUpload: typeof import('./share').dropUpload
 let ShareNotFoundError: typeof import('./share').ShareNotFoundError
 let SharePasswordRequiredError: typeof import('./share').SharePasswordRequiredError
@@ -19,7 +19,7 @@ describe('share.ts (mock)', () => {
     ;({
       getShare,
       unlockShare,
-      requestShareDownload,
+      shareDownloadUrl,
       dropUpload,
       ShareNotFoundError,
       SharePasswordRequiredError,
@@ -47,10 +47,9 @@ describe('share.ts (mock)', () => {
     await expect(unlockShare('locked', 'hunter2')).resolves.toBe(true)
   })
 
-  it('requestShareDownload resolves to a url', async () => {
-    const url = await requestShareDownload('demo-token')
-    expect(typeof url).toBe('string')
-    expect(url.length).toBeGreaterThan(0)
+  it('a download is an address, and a subpath rides in the query', () => {
+    expect(shareDownloadUrl('demo-token')).toContain('/s/demo-token/download')
+    expect(shareDownloadUrl('demo-token', 'a/b.txt')).toContain('path=a%2Fb.txt')
   })
 
   it('a drop link lists nothing and carries its own upload ceiling', async () => {

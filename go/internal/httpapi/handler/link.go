@@ -303,49 +303,35 @@ func LinkUnlock(d Deps) http.HandlerFunc {
 // LinkDownload answers GET /s/{token}/download, serving the bytes. A
 // password-protected link verifies the password header first; each download
 // counts against the cap, which is what turns an exhausted link into a 410.
+// The browser reaches this by navigating, so the password cannot travel in a
+// header: it comes from the cookie /auth set, scoped to this link.
 func LinkDownload(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		link, _, err := d.Core.LinkPublic(r.Context(), r.PathValue("token"))
+		link, err := linkFor(r, d)
 		if err != nil {
 			return err
 		}
-		if link.HasPassword {
-			ok, aerr := d.Core.LinkCheckPassword(r.Context(), link, r.Header.Get("X-Link-Password"))
-			if aerr != nil {
-				return aerr
-			}
-			if !ok {
-				return apierr.BadRequest("fs.link_password", "password")
-			}
+		if !link.Perms.Has(acl.Download) {
+			return apierr.BadRequest("fs.link_no_download", "path")
 		}
-		entry, stream, err := d.Core.LinkStream(r.Context(), link, nil)
-		if err != nil {
-			return err
+		// The subpath, so that a file inside a shared folder downloads through
+		// the same address as the file a link points at directly.
+		entry, stream, serr := d.Core.LinkStreamAt(r.Context(), link, r.URL.Query().Get("path"), nil)
+		if serr != nil {
+			return serr
 		}
 		defer stream.Close() //nolint:errcheck // the download is done either way.
-		if err := d.Core.NoteLinkDownload(r.Context(), link); err != nil {
-			return err
+		if nerr := d.Core.NoteLinkDownload(r.Context(), link); nerr != nil {
+			return nerr
 		}
 		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Length", strconv.FormatUint(entry.Size, 10))
-		w.Header().Set("Content-Disposition", `attachment; filename="`+sanitizeFilename(entry.Name)+`"`)
-		if _, err := io.Copy(w, stream); err != nil {
-			return err
+		w.Header().Set("Content-Length", strconv.FormatUint(stream.Remaining(), 10))
+		w.Header().Set("Content-Disposition", contentDisposition(entry.Name))
+		if _, cerr := io.Copy(w, stream); cerr != nil {
+			return cerr
 		}
 		return nil
 	})
-}
-
-func sanitizeFilename(name string) string {
-	out := make([]rune, 0, len(name))
-	for _, c := range name {
-		if c == '"' || c == '\\' || c == '\n' || c == '\r' {
-			out = append(out, '_')
-			continue
-		}
-		out = append(out, c)
-	}
-	return string(out)
 }
 
 // LinkUpdate answers PATCH /api/shares/{id}.

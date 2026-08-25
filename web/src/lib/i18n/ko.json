@@ -406,7 +406,6 @@
   "progress.loading": "로딩 중",
   "progress.progress": "진행률",
   "public_share.could_not_load": "불러오지 못했습니다",
-  "public_share.could_not_start_download_try": "다운로드를 시작하지 못했습니다. 잠시 후 다시 시도하세요.",
   "public_share.could_not_verify_try_again": "확인하지 못했습니다. 잠시 후 다시 시도하세요.",
   "public_share.download_folder": "이 폴더 다운로드",
   "public_share.empty": "비어 있습니다",

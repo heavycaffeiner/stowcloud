@@ -196,27 +196,14 @@ export function unlockShare(token: string, password: string): Promise<boolean> {
   }).then((res) => res.ok)
 }
 
-async function mockRequestDownload(): Promise<string> {
-  await new Promise((r) => setTimeout(r, 100))
-  return '#mock-download'
-}
-
-/** `POST /s/{token}/download?path=…` — mints a one-time signed content URL for
- *  one file under the link.
+/** `GET /s/{token}/download?path=…` — one file under the link.
  *
- *  **Every minted URL counts one download**, so a folder link with a small
- *  `max_downloads` is spent faster than its owner expects. The cap counts at
- *  mint time so that a broken transfer cannot be replayed for free. */
-export function requestShareDownload(token: string, path = ''): Promise<string> {
-  if (IS_MOCK) return mockRequestDownload()
-  return fetch(`${ORIGIN}/s/${encodeURIComponent(token)}/download${shareQuery(path)}`, {
-    method: 'POST',
-    credentials: 'include'
-  }).then(async (res) => {
-    if (!res.ok) throw new Error(`download request failed: ${res.status}`)
-    const body: { url: string } = await res.json()
-    return body.url
-  })
+ *  A plain navigation, like the zip: the response is the bytes themselves,
+ *  with `Content-Disposition: attachment`. There is no URL to mint first, and
+ *  fetching one only to navigate to it would spend the download cap on a
+ *  request whose body was then thrown away. */
+export function shareDownloadUrl(token: string, path = ''): string {
+  return `${ORIGIN}/s/${encodeURIComponent(token)}/download${shareQuery(path)}`
 }
 
 /** `GET /s/{token}/zip?path=…` — the streamed archive of one folder under the

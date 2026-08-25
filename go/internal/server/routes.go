@@ -223,7 +223,6 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		{Method: "GET", Pattern: "/s/{token}", Req: any, Handler: linkEntry(handler.LinkPublic(d))},
 		{Method: "POST", Pattern: "/s/{token}/auth", Req: any, Handler: handler.LinkUnlock(d)},
 		{Method: "GET", Pattern: "/s/{token}/download", Req: any, Handler: handler.LinkDownload(d)},
-		{Method: "POST", Pattern: "/s/{token}/download", Req: any, Handler: handler.LinkFetch(d)},
 		{Method: "GET", Pattern: "/s/{token}/zip", Req: any, Handler: handler.LinkZip(d)},
 		{Method: "POST", Pattern: "/s/{token}/drop", Req: any, Handler: handler.LinkDrop(d)},
 	}

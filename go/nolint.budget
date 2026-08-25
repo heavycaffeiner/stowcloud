@@ -215,5 +215,9 @@
 #
 # 249: the virtual root's multistatus. The document is already on the wire by
 # the time the close runs, so its error has nowhere to be reported either.
-249
+#
+# 248: the share link's POST download folded into the GET, taking one of the
+# three closes with it. A browser navigates to a download, so minting a URL to
+# navigate to was a round trip that spent the cap on a discarded response.
+248
 

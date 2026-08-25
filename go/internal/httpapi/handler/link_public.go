@@ -4,9 +4,7 @@
 package handler
 
 import (
-	"io"
 	"net/http"
-	"strconv"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
@@ -36,38 +34,6 @@ func linkFor(r *http.Request, d Deps) (core.Link, error) {
 		return core.Link{}, apierr.BadRequest("fs.link_password", "password")
 	}
 	return link, nil
-}
-
-// LinkFetch answers POST /s/{token}/download, streaming one file.
-//
-// A folder link takes ?path= to name a file inside it. The subpath is resolved
-// beneath the link's own root by the same resolver every other read uses, so
-// it cannot be walked out of the folder that was shared.
-func LinkFetch(d Deps) http.HandlerFunc {
-	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		link, err := linkFor(r, d)
-		if err != nil {
-			return err
-		}
-		if !link.Perms.Has(acl.Download) {
-			return apierr.BadRequest("fs.link_no_download", "path")
-		}
-		entry, stream, serr := d.Core.LinkStreamAt(r.Context(), link, r.URL.Query().Get("path"), nil)
-		if serr != nil {
-			return serr
-		}
-		defer stream.Close() //nolint:errcheck // the download is done either way.
-		if nerr := d.Core.NoteLinkDownload(r.Context(), link); nerr != nil {
-			return nerr
-		}
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Length", strconv.FormatUint(stream.Remaining(), 10))
-		w.Header().Set("Content-Disposition", contentDisposition(entry.Name))
-		if _, cerr := io.Copy(w, stream); cerr != nil {
-			return cerr
-		}
-		return nil
-	})
 }
 
 // LinkZip answers GET /s/{token}/zip, packing a shared folder.
