@@ -4,6 +4,7 @@
 package handler
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -176,25 +177,126 @@ func linkToResponse(d Deps, uid core.UserID, l core.Link, base string) linkRespo
 // LinkPublic answers GET /s/{token}, the unauthenticated view of a public
 // link. The token authenticates the request; the password, when one is set,
 // is the second gate.
+//
+// The shape it answers with is what the page reads: a shared folder carries
+// its listing, and a file carries its own size. Both come back from one
+// endpoint because a visitor holding a link does not know which they have, and
+// two addresses would mean the page guessing before it asks.
 func LinkPublic(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
 		token := r.PathValue("token")
-		link, entry, err := d.Core.LinkPublic(r.Context(), token)
+		link, _, err := d.Core.LinkPublic(r.Context(), token)
 		if err != nil {
 			return err
 		}
-		if link.HasPassword {
-			// The metadata is public once the token is right; the bytes need
-			// the password, answered through POST /s/{token}/password.
-			if _, err := d.Core.LinkCheckPassword(r.Context(), link, ""); err != nil {
-				return err
-			}
+		// A locked link answers with nothing but the fact that it is locked.
+		// The name and the listing are behind the password too: a link whose
+		// contents are readable without it is one where the password only
+		// guards the bytes.
+		if link.HasPassword && !linkUnlocked(r, d, link) {
+			return writeJSON(w, http.StatusOK, map[string]any{"protected": true})
 		}
-		return writeJSON(w, http.StatusOK, map[string]any{
-			"id": link.ID, "name": entry.Name, "is_dir": entry.IsDir,
-			"size": entry.Size, "label": link.Label, "note": link.Note,
+
+		listing, lerr := d.Core.LinkBrowse(r.Context(), link, r.URL.Query().Get("path"))
+		if lerr != nil {
+			return lerr
+		}
+		out := map[string]any{
+			"protected": false,
+			"id":        link.ID,
+			"name":      listing.Name,
+			"is_dir":    listing.IsDir,
+			"size":      listing.Size,
+			"label":     link.Label,
+			"note":      link.Note,
+			"path":      listing.Path,
+			// What the visitor may do, which the page draws its buttons from.
+			"can_download": link.Perms.Has(acl.Download),
+			"drop":         link.Perms.Has(acl.Create) && !link.Perms.Has(acl.Read),
 			"has_password": link.HasPassword,
+		}
+		// A drop link admits files and shows none: whoever holds it can put
+		// something in and cannot see what is already there. Sending the listing
+		// anyway would make the page draw what the link exists not to reveal.
+		if listing.IsDir && link.Perms.Has(acl.Read) {
+			entries := make([]map[string]any, 0, len(listing.Entries))
+			for _, e := range listing.Entries {
+				kind := "file"
+				if e.IsDir {
+					kind = "dir"
+				}
+				entries = append(entries, map[string]any{
+					"name": e.Name, "kind": kind, "size": e.Size,
+				})
+			}
+			out["entries"] = entries
+		}
+		return writeJSON(w, http.StatusOK, out)
+	})
+}
+
+// linkCookie is where an unlocked link's proof lives.
+//
+// One cookie per link, scoped to that link's own path, so unlocking one does
+// not unlock another and the proof is not sent anywhere it is not needed.
+func linkCookie(id int64) string {
+	return "sc_link_" + strconv.FormatInt(id, 10)
+}
+
+// linkUnlocked reports whether this visitor has already answered the password.
+//
+// The cookie holds the password rather than a token of its own. It is scoped
+// to the link's path, sent only over TLS, and unreadable to script; what it
+// protects is one link's contents, and a separate session table for public
+// links would be a second credential store for the same fact.
+func linkUnlocked(r *http.Request, d Deps, link core.Link) bool {
+	c, err := r.Cookie(linkCookie(link.ID))
+	if err != nil || c.Value == "" {
+		return false
+	}
+	raw, derr := base64.RawURLEncoding.DecodeString(c.Value)
+	if derr != nil {
+		return false
+	}
+	ok, cerr := d.Core.LinkCheckPassword(r.Context(), link, string(raw))
+	return cerr == nil && ok
+}
+
+// LinkUnlock answers POST /s/{token}/auth, which is how a visitor answers the
+// password.
+//
+// A correct password sets the cookie the reads above look for. A wrong one
+// answers the same way whether the link is locked or not, so the endpoint does
+// not report which links have passwords.
+func LinkUnlock(d Deps) http.HandlerFunc {
+	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
+		link, _, err := d.Core.LinkPublic(r.Context(), r.PathValue("token"))
+		if err != nil {
+			return err
+		}
+		var req struct {
+			Password string `json:"password"`
+		}
+		if derr := decodeJSON(r, &req); derr != nil {
+			return derr
+		}
+		ok, cerr := d.Core.LinkCheckPassword(r.Context(), link, req.Password)
+		if cerr != nil {
+			return cerr
+		}
+		if !ok {
+			return apierr.BadRequest("fs.link_password", "password")
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     linkCookie(link.ID),
+			Value:    base64.RawURLEncoding.EncodeToString([]byte(req.Password)),
+			Path:     "/s/" + r.PathValue("token"),
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
 		})
+		w.WriteHeader(http.StatusNoContent)
+		return nil
 	})
 }
 

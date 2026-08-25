@@ -133,8 +133,13 @@ interface RawLinkGetResponse {
 }
 
 async function httpGetShare(token: string, path: string): Promise<ShareInfo> {
+  // `/s/{token}` is both the page a visitor opens and the endpoint this
+  // reads: the address in a share link has to be the one that works when
+  // pasted into a browser. The Accept header is what tells the two apart, so
+  // it is explicit here rather than left to whatever the browser defaults to.
   const res = await fetch(`${ORIGIN}/s/${encodeURIComponent(token)}${shareQuery(path)}`, {
-    credentials: 'include'
+    credentials: 'include',
+    headers: { Accept: 'application/json' }
   })
   // A refused subpath and a dead link are different states to the page: the
   // first clears back to the root, the second has nowhere to go.

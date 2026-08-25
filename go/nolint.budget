@@ -209,5 +209,8 @@
 #
 # 245: the device-login consent page's template execution. The headers are
 # already written by then, so a failed body has nowhere to be reported to.
-245
+#
+# 248: the public share-link surface. Three closes on paths where the bytes
+# are already going out, so the close's error has nowhere left to be reported.
+248
 

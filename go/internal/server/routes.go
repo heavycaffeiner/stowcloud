@@ -119,6 +119,10 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		{Method: "GET", Pattern: "/api/fs/size", Req: req(acl.Read), Handler: handler.Size(d)},
 		{Method: "GET", Pattern: "/api/fs/link", Req: req(acl.Read), Handler: handler.Links(d)},
 		{Method: "POST", Pattern: "/api/fs/link", Req: req(acl.Read), Handler: handler.Links(d)},
+		// Editing a link, which the manage dialog offers and nothing served:
+		// the handler was written and never mounted, so every change to an
+		// expiry, a password or a download cap answered 405.
+		{Method: "PATCH", Pattern: "/api/fs/link/{id}", Req: req(acl.Read), Handler: handler.LinkUpdate(d)},
 		{Method: "DELETE", Pattern: "/api/fs/link/{id}", Req: req(acl.Read), Handler: handler.LinkDelete(d)},
 
 		// The same links under the name the client uses for them. The
@@ -212,8 +216,16 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 
 		// Public share links. The token authenticates the request; no session
 		// is involved, which is why they are public in the auth step.
-		{Method: "GET", Pattern: "/s/{token}", Req: any, Handler: handler.LinkPublic(d)},
+		// The one address a share link carries is both the page a visitor opens
+		// and the endpoint the page reads. Which one a request wants is the
+		// Accept header's answer, decided in linkEntry below: a link that only
+		// worked as an API is one nobody can paste into a browser.
+		{Method: "GET", Pattern: "/s/{token}", Req: any, Handler: linkEntry(handler.LinkPublic(d))},
+		{Method: "POST", Pattern: "/s/{token}/auth", Req: any, Handler: handler.LinkUnlock(d)},
 		{Method: "GET", Pattern: "/s/{token}/download", Req: any, Handler: handler.LinkDownload(d)},
+		{Method: "POST", Pattern: "/s/{token}/download", Req: any, Handler: handler.LinkFetch(d)},
+		{Method: "GET", Pattern: "/s/{token}/zip", Req: any, Handler: handler.LinkZip(d)},
+		{Method: "POST", Pattern: "/s/{token}/drop", Req: any, Handler: handler.LinkDrop(d)},
 	}
 }
 
@@ -250,6 +262,49 @@ func mux(table []route.Route, compat []compatMount, davs http.Handler, aliases [
 		m.Handle("/", root)
 	}
 	return m
+}
+
+// linkEntry decides whether a share link's address is being opened or read.
+//
+// The address in a link is the one somebody pastes into a browser, so it has
+// to render a page; it is also the only address the page has to read the
+// link's contents from. A browser navigating asks for text/html and the page's
+// own fetch asks for application/json, which is the difference between the two
+// and the only thing that distinguishes them.
+//
+// The default is the page. A client that names neither is far more likely to
+// be something a person is looking at than a script, and a page rendered for a
+// script is a readable mistake where JSON rendered for a person is not.
+func linkEntry(api http.Handler) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if wantsJSON(r) {
+			api.ServeHTTP(w, r)
+			return
+		}
+		page, ok := spa.Handler()
+		if !ok {
+			// No frontend in this build, so the data is the only answer there
+			// is. It beats a 404 for a link that resolves.
+			api.ServeHTTP(w, r)
+			return
+		}
+		page.ServeHTTP(w, r)
+	})
+}
+
+// wantsJSON reports whether the caller asked for data rather than a document.
+func wantsJSON(r *http.Request) bool {
+	accept := r.Header.Get("Accept")
+	if accept == "" {
+		return false
+	}
+	// A browser's Accept leads with text/html and mentions nothing about JSON;
+	// the page's fetch names application/json and nothing else. Anything that
+	// names both is treated as a document for the reason above.
+	if strings.Contains(accept, "text/html") {
+		return false
+	}
+	return strings.Contains(accept, "application/json")
 }
 
 // rootHandler sends the WebDAV prefix to the protocol and everything else to

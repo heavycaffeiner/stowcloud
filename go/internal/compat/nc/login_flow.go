@@ -275,13 +275,22 @@ func (l *LoginFlow) Poll(ctx context.Context, pollToken, origin string) (PollRes
 		return PollResult{}, ErrFlowUnknown
 	}
 
-	// Rate limited before the approval is looked at, so a prober cannot poll
-	// faster than the limit whether or not the flow exists.
-	if terr := l.store.TouchPoll(ctx, d, now); terr != nil {
-		return PollResult{}, terr
-	}
-
+	// An approved flow is delivered whatever the poll rate. The limit exists to
+	// stop a stranger hammering a token that is not theirs, and a flow that has
+	// already been approved has nothing left to guess: the credential is minted
+	// once and the flow is dropped with it.
+	//
+	// Checking the limit first meant a client that polled while the human was
+	// approving got 429 forever. Its next poll was inside the interval that the
+	// refused one had just recorded, so every attempt reset the window it was
+	// waiting on and the app hung on a flow that was ready.
 	if rec.ApprovedUser == nil {
+		// Rate limited only on the answer that costs nothing to retry, so a
+		// prober cannot poll faster than the limit whether or not the flow
+		// exists.
+		if terr := l.store.TouchPoll(ctx, d, now); terr != nil {
+			return PollResult{}, terr
+		}
 		return PollResult{}, ErrFlowPending
 	}
 
