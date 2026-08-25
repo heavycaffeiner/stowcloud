@@ -16,7 +16,8 @@
   import { t } from '../../i18n'
   import { untrack } from 'svelte'
   import { authState, setAuthenticated } from '../../state/auth.svelte'
-  import { api, ApiError } from '../../api/client'
+  import { api } from '../../api/client'
+  import { describeApiError } from '../../api/error-text'
   import { BYTES_PER_MB, bytesToMb, formatBytes } from '../../format/bytes'
   import { CHUNK_SIZE_MIN, CHUNK_SIZE_STORAGE_KEY } from '../../upload/chunk-planner'
   import Button from '../Button.svelte'
@@ -68,11 +69,11 @@
       }
       serverSaved = true
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'fs.invalid_name') {
-        serverError = t('upload_settings.value_entered_outside_server_s')
-      } else {
-        serverError = t('common.could_not_save')
-      }
+      // `describeApiError` renders `admin.chunk_below_floor` (the server's
+      // real refusal for a chunk_min under its floor) when the response
+      // carries that key, and falls back to the generic save failure for
+      // anything else.
+      serverError = describeApiError(err, t('common.could_not_save'))
     } finally {
       serverSaving = false
     }

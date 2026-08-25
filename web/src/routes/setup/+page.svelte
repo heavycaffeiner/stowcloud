@@ -49,19 +49,13 @@
     if (err instanceof ApiError) {
       switch (err.code) {
         case 'setup.invalid_token':
-        case 'auth.invalid_token':
           return t('setup.invalid_setup_token_check_server')
-        case 'fs.gone':
-        case 'setup.disabled':
-          return t('setup.setup_already_complete_or_setup')
-        case 'auth.required':
-          // What today's server answers for an unrecognized route — i.e.
-          // this build's /setup guess (see lib/api/setup.ts) doesn't match
-          // the real route yet. Not a user-facing failure to explain in
-          // detail, just "try again later" framing until that lands.
-          return t('setup.initial_setup_not_available_yet')
+        case 'setup.completed':
+          return t('setup.setup_already_complete')
+        case 'setup.token_expired':
+          return t('setup.setup_token_has_expired')
         default:
-          // Deliberately not surfacing err.message here — it may be a raw,
+          // Deliberately not surfacing err.message here, it may be a raw,
           // untranslated string from the server and this UI is Korean-only.
           return t('setup.could_not_create_administrator_account')
       }

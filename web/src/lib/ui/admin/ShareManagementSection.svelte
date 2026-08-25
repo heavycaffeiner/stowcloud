@@ -45,11 +45,12 @@
 
   load()
 
-  /** `go/internal/core` name each refusal with a
-   *  catalogue key (`share.*`); `describeApiError` renders it. This used to
-   *  reverse the server's English sentences back into keys by substring,
-   *  which meant a one-word copy edit on the server silently dropped the
-   *  screen to its generic fallback. */
+  /** A bad host path refuses with `admin.share_rejected` and a `reason`
+   *  argument (missing, unreadable, an unsupported filesystem);
+   *  `describeApiError` renders the keyed message with that reason filled
+   *  in. This used to reverse the server's English sentences back into keys
+   *  by substring, which meant a one-word copy edit on the server silently
+   *  dropped the screen to its generic fallback. */
   function describeError(err: unknown, fallback: string): string {
     if (err instanceof ApiError && err.code === 'fs.not_found') return t('common.share_no_longer_exists')
     return describeApiError(err, fallback)
