@@ -210,8 +210,11 @@ func AdminServerSettingsRestart(d Deps) http.HandlerFunc {
 		if !req.Force && d.ActiveWork != nil {
 			active := d.ActiveWork()
 			if active.Uploads > 0 || active.Jobs > 0 {
+				// Its own code, not the generic conflict: the screen branches on
+				// this one to show the counts and offer the forced retry, and it
+				// read fs.conflict as an ordinary failure with no way forward.
 				return &apierr.RequestError{
-					Status: http.StatusConflict, Code: apierr.CodeFsConflict,
+					Status: http.StatusConflict, Code: apierr.CodeRestartBusy,
 					Message: "work is in flight", Key: "restart.busy",
 					Args: []apierr.Arg{
 						{Name: "active_uploads", Value: strconv.Itoa(active.Uploads)},

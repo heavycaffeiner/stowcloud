@@ -37,6 +37,11 @@ const (
 	CodeNotImplemented    Code = "internal.not_implemented"
 	CodeSubsystemUnavail  Code = "internal.subsystem_unavailable"
 	CodeInvalidRequest    Code = "fs.invalid_request"
+	// CodeRestartBusy is a restart refused because work is in flight. Its own
+	// code rather than the generic conflict: the screen branches on it to show
+	// the counts and offer the forced retry, and folding it into fs.conflict
+	// made a busy server read as an ordinary failure with no way forward.
+	CodeRestartBusy Code = "restart.busy"
 )
 
 // The generic fallback sentences. They are stable and generic by design: the

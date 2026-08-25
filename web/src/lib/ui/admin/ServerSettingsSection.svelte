@@ -605,10 +605,14 @@
       restartBusyOpen = false
     } catch (err) {
       if (err instanceof ApiError && err.code === 'restart.busy') {
-        const d = err.detail
+        // The counts ride in `detail.reason_params`, as strings, which is
+        // where every keyed refusal on this surface puts its placeholders.
+        // They were read off `detail` directly and as numbers, so both came
+        // back undefined and the dialog said zero uploads and zero jobs were
+        // in the way of a restart it had just refused.
         restartBusyCounts = {
-          active_uploads: typeof d?.active_uploads === 'number' ? d.active_uploads : 0,
-          running_jobs: typeof d?.running_jobs === 'number' ? d.running_jobs : 0
+          active_uploads: err.reasonNumber('active_uploads') ?? 0,
+          running_jobs: err.reasonNumber('running_jobs') ?? 0
         }
         restartConfirmOpen = false
         restartBusyOpen = true
