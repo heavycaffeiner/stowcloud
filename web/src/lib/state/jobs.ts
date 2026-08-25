@@ -103,8 +103,7 @@ export function pollJob(id: string, kind: JobKindWire, onProgress?: (status: Job
                 errors: [err.message],
                 results: [],
                 attempting: [],
-                pending: [],
-                download: false
+                pending: []
               })
             )
           )

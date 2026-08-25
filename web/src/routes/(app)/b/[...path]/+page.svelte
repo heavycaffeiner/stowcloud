@@ -411,10 +411,9 @@
   }
 
   // ── download ──
-  // Single file: `POST /api/fs/link` mints a signed content-origin URL, then
-  // a plain navigation (not `fetch`) hands the browser the actual
-  // `Content-Disposition: attachment` bytes -- no CORS/blob juggling needed,
-  // since the signed URL is itself the whole authorization story.
+  // Single file: a plain navigation to `GET /api/fs/read?download=1`, which is
+  // what makes the server send Content-Disposition. Not a fetch: the browser
+  // saves the response itself and no blob has to be held in memory.
   // Multi-selection (and any directory): `POST /api/fs/archive` streams the
   // ZIP as its own response body. The server never stores one, so there is no
   // job to track and nothing to fetch afterwards.

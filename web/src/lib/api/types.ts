@@ -790,12 +790,9 @@ export interface JobStatus {
    *  which is what lets the tray say *what* is left to redo rather than only
    *  how many items are missing. */
   pending: string[]
-  /** Whether `GET /api/jobs/{id}/download` has bytes waiting. Only ever
-   *  `true` for a finished `JobKind::Archive`. */
-  download: boolean
 }
 
-/** `GET /api/jobs` (`go/internal/httpapi/handler/admin_ops.go`) — every
+/** `GET /api/jobs` (`go/internal/httpapi/handler/ops.go`) — every
  *  non-terminal job (`running`/`interrupted`) the caller owns. `JobTray`
  *  fetches this once on mount to re-attach across a browser refresh *or* a
  *  server restart (a Docker cutover), since `jobs.db` — not the browser — is
@@ -815,7 +812,10 @@ export interface JobListResponse {
 // handled in `state/events.ts` against a server that never sent them, which
 // made the polling fallback look like a redundancy rather than the only path.
 export type ServerMsg =
-  | { t: 'inval'; path: string; etag: string }
+  // No etag on the frame: the hub sends the path that changed and the client
+  // re-reads it, because the token it would carry is one directory read old
+  // by the time it arrives.
+  | { t: 'inval'; path: string }
   | { t: 'pong' }
 
 export type ClientMsg = { t: 'sub'; paths: string[] } | { t: 'unsub'; paths: string[] } | { t: 'ping' }

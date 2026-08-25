@@ -23,7 +23,9 @@ const BACKOFF_MS = [500, 1000, 2000, 4000, 8000, 15000, 30000]
 // waiting the full 30s ladder-max instead of starting back at 500ms.
 const CONNECTED_RESET_MS = 5000
 
-type InvalCb = (etag: string) => void
+// No argument: the frame carries the path that changed and nothing else, and
+// a subscriber re-reads that path rather than trusting a token to compare.
+type InvalCb = () => void
 
 class EventsHub {
   #wanted = new Map<string, Set<InvalCb>>()
@@ -89,7 +91,7 @@ class EventsHub {
     switch (msg.t) {
       case 'inval': {
         const cbs = this.#wanted.get(msg.path)
-        if (cbs) for (const cb of cbs) cb(msg.etag)
+        if (cbs) for (const cb of cbs) cb()
         break
       }
       case 'pong':

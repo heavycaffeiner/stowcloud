@@ -56,9 +56,10 @@ const (
 // field, and every kind the client understands carries its own payload.
 type serverMsg struct {
 	T string `json:"t"`
-	// Inval: the path whose contents changed, and its new directory token.
+	// Inval: the path whose contents changed. No token travels with it: one
+	// read here would already be stale by the time the frame lands, and the
+	// client re-reads the path anyway.
 	Path string `json:"path,omitempty"`
-	ETag string `json:"etag,omitempty"`
 }
 
 // Hub is the shared broker. One instance for the process; the route handler

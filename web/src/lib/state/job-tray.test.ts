@@ -21,7 +21,6 @@ function job(partial: Partial<JobStatus>): JobStatus {
     results: [],
     attempting: [],
     pending: [],
-    download: false,
     ...partial
   }
 }

@@ -38,7 +38,6 @@ type operationResponse struct {
 	Results    []batchItem `json:"results"`
 	Attempting []string    `json:"attempting"`
 	Pending    []string    `json:"pending"`
-	Download   bool        `json:"download"`
 }
 
 // Operation answers GET /api/jobs/{id}.
