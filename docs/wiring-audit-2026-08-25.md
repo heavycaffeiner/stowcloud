@@ -4,7 +4,13 @@ Date: 2026-08-25. Scope: every route the Go server mounts (`go/internal/server/r
 
 Baseline: `routecheck` and `contractcheck` both pass. Everything below is what those gates cannot see: body-shape drift, error-code drift, response-envelope drift, and dead wiring inside `.svelte` files.
 
-Severity: **broken** = the feature does not work against the real backend. **degraded** = works but loses information or shows wrong text. **cosmetic** = dead code or latent drift with no current user impact.
+Section 6 is a full existence sweep run after the per-route audits: every URL the frontend builds (through the `request` helper, direct `fetch`, `EventSource`, `WebSocket`, and bare URL template literals in `.ts` and `.svelte`) was extracted, normalized, and matched method-by-method against the route table. 105 distinct (method, path) calls against 105 mounted routes.
+
+Verification pass: every claim in this document was re-checked against the code after it was written. Verdicts and corrections are folded into the findings below; the pass itself is summarized in section 7. Two claims were revised (1.3 fixed by a commit that landed mid-audit, 2.3 half-fixed by another), a handful of line numbers were corrected, and two findings gained severity (1.10, 1.8).
+
+Severity levels: **broken** = the feature does not work against the real backend. **degraded** = works but loses information or shows wrong text. **cosmetic** = dead code or latent drift with no current user impact.
+
+**Status: every finding below is fixed.** Section 8 records what each fix was and which side moved. `scripts/verify.sh` passes 32 of 32, including the browser end-to-end run, and `tools/routecheck` was extended to scan `.svelte` so the class of gap this audit found cannot reappear silently.
 
 ---
 
@@ -22,11 +28,10 @@ Severity: **broken** = the feature does not work against the real backend. **deg
 - Frontend `web/src/lib/api/http.ts:220-222` routes `archive()` through the JSON `request()` helper; `+page.svelte:424` destructures `{job}` and tracks it.
 - Effect: the ZIP bytes are discarded, `job` is `undefined`, the download-as-zip and multi-select download features do not work at all. Additionally `GET /api/jobs/{id}/download` is `notImplemented` (`ops.go:63`) and nothing ever sets `JobStatus.download: true`, so the whole client-side job-download flow (`http.ts:302-310`, `jobDownload`) is unreachable by design on the server.
 
-### 1.3 Public share download: raw byte stream vs expected `{url}` JSON
+### 1.3 Public share download: raw byte stream vs expected `{url}` JSON [FIXED during audit]
 
-- Backend `go/internal/httpapi/handler/link_public.go:46-70` (`POST /s/{token}/download`): streams the file as `application/octet-stream`.
-- Frontend `web/src/lib/api/share.ts:206-220` (`requestShareDownload`): does `res.json()` expecting `{url}` and then navigates to `url`.
-- Effect: `.json()` fails on binary, `url` is `undefined`, `window.location.href = undefined`. Downloading from the public share page (single file and per-row inside a folder share) is broken. The `GET /s/{token}/zip` folder path is fine.
+- Backend `go/internal/httpapi/handler/link_public.go` (`POST /s/{token}/download`): streamed the file as `application/octet-stream` while the frontend (`share.ts` `requestShareDownload`) did `res.json()` expecting `{url}` and navigated to it.
+- Status: commit `d6ec434` (feat(shares): serve the page a share link opens) landed mid-audit and rewired this: the client now navigates to `GET /s/{token}/download?path=` (`share.ts` `shareDownloadUrl`, used by `s/[token]/+page.svelte:186`) and the server serves the bytes with `Content-Disposition` from that GET (`link.go`, `LinkDownload`). Re-verified consistent after the commit. Kept here because the pre-fix state is what the audit found.
 
 ### 1.4 App password scope silently dropped: a "read-only" token is minted with full access
 
@@ -54,11 +59,12 @@ Severity: **broken** = the feature does not work against the real backend. **deg
 - Backend `go/internal/httpapi/handler/admin_grants.go:192-196` decodes only `allow`, `deny`, `inherit`; `go/internal/acl` `UpdateGrant` never writes a label.
 - Effect: the edit dialog accepts a label, the server answers 200, and the label reverts on reload. A silently ignored write path.
 
-### 1.8 SMB `service_uid` setting does not exist on the backend
+### 1.8 SMB `service_uid` and `search.rate_per_minute` settings do not exist on the backend
 
-- Frontend `ServerSettingsSection.svelte` requires and sends `service_uid` in every SMB section save (`types.ts:981`, `SmbSettingsReq`), and client-side validation blocks the save if it is not a non-negative integer.
-- Backend `go/internal/runtimecfg/runtimecfg.go:83-93, 262-271`: the SMB config has only `service_gid`; nothing reads `smb.service_uid`. SMB UIDs are derived as `SMBBaseUid + rowID` (`go/internal/auth/passdb.go:30-37`).
-- Effect: a form field that gates the save button, is presented as persisted configuration, and does nothing.
+- Frontend `ServerSettingsSection.svelte` requires and sends `service_uid` in every SMB section save (`types.ts:981`, `SmbSettingsReq`; svelte `:203,:280,:525,:615`), and client-side validation blocks the save if it is not a non-negative integer.
+- Backend `go/internal/runtimecfg/runtimecfg.go:83-93, 262-271`: the SMB config has only `service_gid`; nothing reads `smb.service_uid`. SMB UIDs are derived as `SMBBaseUid + rowID` (`go/internal/auth/passdb.go:30-37`). The settings layer stores unknown keys without checking (`admin_settings.go:84-89` documents this as policy), so the value round-trips through the DB and the snapshot, which makes the field look real while nothing consumes it.
+- Same pattern, second field (found in verification): `search.rate_per_minute` is sent in every search-section save and rendered in the form (`ServerSettingsSection.svelte:214,300,325,531,622`; `types.ts:992`), but no backend code reads a `rate_per_minute` key: `runtimecfg.go:222-233` reads only `max_concurrent_fast/slow` and `walk_deadline_fast/slow_ms`, and `settings.go:157-172` snapshots only those four. A rate limit the admin sets is stored and ignored.
+- Effect: two form fields that gate their sections' save buttons, are presented as persisted configuration, and do nothing.
 
 ### 1.9 `GET /api/shares?path=` filter ignored
 
@@ -66,12 +72,26 @@ Severity: **broken** = the feature does not work against the real backend. **deg
 - Frontend `http.ts:328-330` sends `?path=`; `ShareManageDialog.svelte:141` expects only the selected item's links.
 - Effect: the per-file share dialog lists every link the account owns, next to a create form for the current file. Misleading and an information-scoping bug.
 
-### 1.10 Job wire enums and per-item result shape mismatch
+### 1.9b `GET /api/shares` response envelope and missing fields
 
-- `go/internal/httpapi/handler/ops.go:102-116` emits state `"failed"`; `types.ts:762` (`JobState`) has no `"failed"`, so `jobs.ts:20,110` never sees the job as terminal and polls for 20 minutes until `JobTimeoutError`. A failed copy is reported as a timeout.
-- `ops.go:118-128` emits kind `"index-build"` (hyphen); `types.ts:757` and `job-tray.svelte.ts:42-46` match `'index_build'` (underscore). Currently unreachable because index build answers `notImplemented` (`index_build.go:30`), but the literal is wrong on the day it ships.
-- `ops.go:23-30` emits `results: [{path, status}]` with status strings `ok|denied|not_found|conflict|skipped|failed`; the client (`types.ts:800-816`, `jobs.ts:29-38`) reads `{path, ok, error:{code,...}}`. `r.ok` and `r.error` are always `undefined`, so per-item failure reporting through `GET /api/jobs/{id}` never works, and the conflict/quota detection at `+page.svelte:566-577` cannot match on job results.
-- Also `POST /api/admin/index/build` (`index_build.go:103`) writes `{"job": id}` as a JSON number where every other job creator formats a string (`fs.go:557-560`); `http.ts:638-640` types it `{job: string}`.
+- Backend `link.go:74`: the GET answers `{"links":[...]}`, an envelope. Frontend `http.ts:328-330` (`sharesList`) types the body as bare `ShareLinkInfo[]` and `ShareManageDialog.svelte:141` assigns it directly to a list it iterates.
+- Field drift inside each row (`linkResponse`, `link.go:44-56` vs `ShareLinkInfo`, `types.ts:685-697`):
+  - `created_ns` is never sent by the server; `ShareManageDialog.svelte:343` renders `formatDateNs(link.created_ns)`, and `formatDateNs` (`i18n/index.ts:53-56`) does `BigInt(undefined)`, which throws. Even after the envelope is fixed, every row render would crash on the created date.
+  - `expires_ns`: server sends an `int64` JSON number with `omitempty` (absent when none); client declares `string | null` and passes it to `BigInt()`. Number happens to work in `BigInt()`, but the type is wrong and `omitempty` vs `null` differ.
+  - `max_downloads`: server sends `-1` for unlimited (`core/links.go:33`); client declares `number | null` and treats `null` as unlimited (`ShareManageDialog.svelte:228,339`), so an unlimited link renders as "0/-1"-style garbage rather than unlimited.
+- Severity: broken (the share dialog list cannot render against the real backend: envelope mismatch first, then a throwing date format).
+
+### 1.10 Job status envelope: missing fields, wrong enums, wrong result shape
+
+The backend's whole job-status body is `operationResponse{id, kind, state, results}` (`ops.go:23-31`); the client's `JobStatus` (`types.ts:766-786`) additionally requires `done`, `total`, `current`, `errors`, `attempting`, `pending`, `download`, none of which the server sends. Consequences, verified individually:
+
+- **`errors` missing crashes the failure path.** `JobFailedError`'s constructor (`jobs.ts:36`) does `status.errors[0]`, which on `undefined` throws `TypeError` before the tray can render anything. Any job that reaches a terminal non-done state through polling crashes the handler instead of showing the failure.
+- **`done`/`total` missing.** `job-tray.svelte.ts:76-77` patches progress from `s.done`/`s.total`: always `undefined`, so job progress can never display.
+- **`id` type.** Server sends int64 JSON number; client declares `id: string`.
+- **State `"failed"` unknown to the client.** `ops.go:102-116` emits `"failed"`; `types.ts:762` (`JobState`) has no such value, so `jobs.ts:20,110` never sees the job as terminal and polls for 20 minutes until `JobTimeoutError`.
+- **Kind `"index-build"` vs `'index_build'`.** `ops.go:118-128` emits the hyphen form; `types.ts:757` and `job-tray.svelte.ts:42-46` match the underscore. Latent while index build is stubbed.
+- **Per-item results.** `ops.go:27-30` emits `[{path, status}]` with status strings `ok|denied|not_found|conflict|skipped|failed`; the client (`types.ts:774-776`, `jobs.ts:38`) reads `{path, ok, error:{code,...}}`. `r.ok`/`r.error` are always `undefined`, so per-item failure reporting through `GET /api/jobs/{id}` never works and the conflict/quota detection at `+page.svelte:566-577` cannot match.
+- **`POST /api/admin/index/build`** (`index_build.go:103`) writes `{"job": id}` as a JSON number where every other job creator formats a string (`fs.go:557-560`); `http.ts:636-640` types it `{job: string}`.
 
 ### 1.11 tus upload metadata dropped: `mtime` and `ifMatch` never applied
 
@@ -103,8 +123,8 @@ Severity: broken as error UX, and the missing last-admin guard and password-leng
 
 ### 2.1 Share-folder rejection reason never reaches the admin
 
-- Backend `go/internal/httpapi/handler/shares.go:150-164` (`shareRefused`): the only bad-`host_path` refusal path, always `422 fs.invalid_request` with key `admin.share_rejected` and `reason` in {missing, unreadable, unavailable, AdmissionError type} (`core/share_admin.go:254-266`).
-- Frontend `web/src/lib/api/error-text.ts:22-75`: `admin.share_rejected` is in neither `SERVER_KEYS` nor `CODE_KEYS`; the eight `share.path_*`/`share.name_*` keys that ARE allowlisted are emitted by no live backend path (they exist only in `apierr` doc comments and tests). So `ShareManagementSection.svelte:96,141` always shows the generic "could not add folder" and the computed reason (missing vs unreadable vs wrong filesystem) is discarded. The dead `share.*` allowlist entries mask the gap.
+- Backend `go/internal/httpapi/handler/shares.go:150-165` (`shareRefused`): the only bad-`host_path` refusal path, always `422 fs.invalid_request` with key `admin.share_rejected` and `reason` in {missing, unreadable, unavailable, AdmissionError type} (`core/share_admin.go:254-266`).
+- Frontend `web/src/lib/api/error-text.ts:25-79`: `admin.share_rejected` is in neither `SERVER_KEYS` nor `CODE_KEYS`; the eight `share.path_*`/`share.name_*` keys that ARE allowlisted are emitted by no live backend path (they exist only in `apierr` doc comments and tests). So `ShareManagementSection.svelte:94,137` always shows the generic "could not add folder" and the computed reason (missing vs unreadable vs wrong filesystem) is discarded. The dead `share.*` allowlist entries mask the gap.
 
 ### 2.2 Settings readonly reasons render as raw dotted keys
 
@@ -112,10 +132,11 @@ Severity: broken as error UX, and the missing last-admin guard and password-leng
 - Frontend `error-text.ts` `SERVER_KEYS` is missing three of them: `readonly_bind_address`, `readonly_data_dir`, `readonly_needs_restart_oidc`. `serverKeyText()` (`error-text.ts:105-107`) then renders the raw key string next to the bind, data-dir, and every OIDC field on the settings screen. The i18n catalogue entries exist (`en.json:570-573`); only the allowlist is stale. Conversely 19 `settings.*` entries in `SERVER_KEYS` (`stale_client`, `master_key_*`, `oidc_redirect_*`, `readonly_secret_file_path`, `readonly_owned_by_*`, `readonly_static_*`, `readonly_smb_interfaces`, `readonly_local_password_login`, `unknown_symlink_policy`, `unknown_oidc_smb_policy`, ...) are emitted by no backend path: dead entries.
 - `settings.invalid_cidr` is rendered correctly in the check-preview panel but is missing from `SERVER_KEYS`, so an actual save with a bad CIDR shows only the generic fallback while the preview names the problem.
 
-### 2.3 SMB opt-out/enabled: two switches, one stored bit
+### 2.3 SMB opt-out toggle: the write path never reaches the opt-out column [REVISED after commit 91ba60c]
 
-- Backend `session.go:204-207` derives `smb_opt_out = !smb_enabled`; `account.go` `SMBSettings` collapses the request to `SetSMBAccess(enabled && !optOut)`.
-- Frontend `SmbSection.svelte` models them as independent toggles. "Enabled off but not opted out" is unrepresentable and reads back as opted-out after reload.
+- The originally reported read-side derivation (`smb_opt_out = !smb_enabled` in the session handler) was fixed by commit `91ba60c`, which added a real `smb_opt_out` column read via `auth.SMBStateOf` (`go/internal/auth/sql.go:137-141`).
+- The write side is still broken: `account.go` `SMBSettings` (:296-317) collapses both toggles into `SetSMBAccess(enabled && !optOut)` at :312, which only ever writes `smb_enabled`. No code path anywhere in `go/internal` sets `smb_opt_out` to true; the column can only be read or cleared (`sqlClearSMBOptOut`). Turning the "do not store SMB credentials" toggle on in `SmbSection.svelte` therefore never records the opt-out; the state the fixed read path faithfully reports can never be entered from the UI.
+- Frontend `SmbSection.svelte` models two independent toggles that this write path cannot represent.
 
 ### 2.4 `oidcLinkStart` return field name mismatch
 
@@ -151,7 +172,7 @@ Severity: broken as error UX, and the missing last-admin guard and password-leng
 
 ### 2.11 `admin.chunk_below_floor` refusal shows the wrong message
 
-- Backend `admin_ops.go:246-248` refuses with `400 fs.invalid_request` (key `admin.chunk_below_floor`); frontend `UploadSettingsSection.svelte:71` checks `fs.invalid_name`. Falls to generic "could not save".
+- Backend `admin_ops.go:260` refuses with `400 fs.invalid_request` (key `admin.chunk_below_floor`); frontend `UploadSettingsSection.svelte:71` checks `fs.invalid_name`. Falls to generic "could not save".
 
 ### 2.12 `totpDisable` / `oidcUnlink` hardcode `smb_password_replaced: true`
 
@@ -166,8 +187,8 @@ Severity: broken as error UX, and the missing last-admin guard and password-leng
 - **`loginRequest.Factor`** (`session.go:39`) is never sent by the client; second factor goes through `/api/auth/login/totp`. Dead field.
 - **`oidc.ts` dead branches**: `oidc.expired` and `oidc.already_linked` (`oidc.ts:96,112`) are never emitted; expiry maps to `oidc.bad_state`, already-linked to `oidc.subject_already_linked` (handled).
 - **`admin.name_taken` reason key discarded**: `apierr/map.go:105-109` attaches it to `fs.conflict`, but the user/group screens branch on the code and render their own text, and `admin.name_taken` is not in `en.json`. Functionally fine, redundant payload.
-- **`MoveReq.if_match`** (`types.ts:731`) has no backend counterpart (`fs.go:392-397`) and no caller sets it.
-- **`PreviewInfo.width/height`** (`types.ts:29-32`, read by `DetailsPanel.svelte:84-89`) is never sent (`thumb.go` `previewJSON` has only `available`); the Dimensions row can never render.
+- **`MoveReq.if_match`** (`types.ts:731`) has no backend counterpart (`fs.go:421-430`, `transferRequest`) and no caller sets it.
+- **`PreviewInfo.width/height`** (`types.ts:23-27`, read by `DetailsPanel.svelte:84-89`) is never sent (`thumb.go:136-142` `previewJSON` has only `available`); the Dimensions row can never render.
 - **Stale comment** above `fs.go:161-168` claims `sort`/`order` are read by nothing; the code below reads and honors both.
 - **`POST /api/admin/smb/apply`** has no frontend caller: recorded intentionally in `go/routes.server-only`, consistent.
 - **`GET /api/fs/thumb`** is flagged by routecheck as uncalled, but that is the tool's `.ts`-only blind spot: `Thumbnail.svelte` and `PreviewDialog.svelte` call `api.thumbUrl`, and the size mapping (`http.ts:256-258`: <=256 small, <=512 medium, else large) matches `thumb.go`'s presets. Consider adding a note in `routes.server-only` or teaching routecheck to scan `.svelte`.
@@ -175,7 +196,52 @@ Severity: broken as error UX, and the missing last-admin guard and password-leng
 
 ---
 
-## 4. Verified consistent (spot-checked both sides, no drift found)
+## 4. Frontend-to-backend existence sweep (all expected APIs present?)
+
+Method-by-method comparison of every URL the client builds against the route table, including `.svelte` files and bare URL builders that `routecheck` misses.
+
+### 4.1 Result: no missing route, one contract-note
+
+Every (method, path) pair the frontend requests is mounted. The sweep parsed 105 distinct calls; each resolves to a mounted route with the right verb. The apparent exceptions are all URL builders whose consumer supplies the verb elsewhere:
+
+- `oidc.ts:68` builds `/api/auth/oidc/start?returnTo=` for `window.location.href` (GET, mounted).
+- `share.ts:191,249` build `/s/{token}/auth` and `/s/{token}/drop` URLs whose `fetch` options are on following lines (POST, mounted).
+- `upload/transport.ts:66-123` builds `/api/uploads` URLs; the tus verbs (POST/HEAD/PATCH/DELETE) are in the options objects (all mounted).
+
+So there is no case of "frontend requests it, Go never mounts it". The route-level contract holds; every break found in this audit is inside the bodies, envelopes, and codes (sections 1-3).
+
+### 4.2 Routes that answer but are permanently stubbed (`notImplemented`)
+
+A mounted route that always refuses is, for the screen calling it, the same as a missing one. Callers with no working backend in some or all builds:
+
+| Route | Stub condition | Frontend caller |
+|---|---|---|
+| `GET /api/jobs/{id}/download` | always: `ops.go:63` `jobs.download_unavailable`; nothing ever sets `download: true` on a job either | `http.ts:302-310` `jobDownload`, `job-tray.svelte.ts` download button |
+| `POST /api/admin/index/build` | when `d.Search == nil`: `index_build.go:30` | `StorageIndexSection.svelte` build button |
+| `GET /api/search/stream` | when `d.Search == nil`: `search.go:53` | search UI |
+| `GET /api/events` | when `d.Events == nil`: `events.go:18-20` | `events-transport.ts` |
+
+`serve.go:544,695` always constructs the search service and the WS hub, so in the shipped binary only `jobs/{id}/download` is a hard stub. That one is real: the archive-download flow the client implements (`archive -> job -> download`) has no working server half at any point (see 1.2).
+
+### 4.3 CSRF header contract
+
+State-changing calls need `Sc-Csrf` when authenticated by cookie (`mw/csrf.go:21-61`). Verified senders: the `request` helper (`http.ts:83-84`), which covers every `api.*` call including `oidcLinkStart`, and the tus transport (`transport.ts:74,92,123`). Verified exempt-and-correct: `/s/**` (public per `mw/auth.go:225`, principal-less requests skip the check at `csrf.go:37-40`; `share.ts:242` deliberately omits the header), `POST /api/setup` (`setup.ts:47-49`, public path, no principal), login (same). Swept every fetch/request call in `.ts` and `.svelte`: no state-changing cookie-authenticated call misses the header. No mismatch.
+
+### 4.4 Client API-object internal wiring
+
+`web/src/lib/api/client.ts` switches between `httpApi` (94 members) and `mockApi` (93 members). Diff: `adminSetUserPassword` exists in `http.ts:753,986` only, is absent from the mock, and has no UI caller: dead code, and a mock-mode crash if it ever gains a caller without a mock half. Every `api.*` call site in the UI resolves in both implementations.
+
+### 4.5 tus header contract
+
+Headers the client sends (`transport.ts:57-127`): `Tus-Resumable`, `Upload-Length`, `Upload-Metadata`, `Sc-Random-Access`, `Upload-Offset`, `Content-Type: application/offset+octet-stream`. Headers the server reads/writes (`uploads.go:35-50,146`): same set plus `Location` and `Sc-Chunk-Size`, both of which the client reads back (`transport.ts:78-80,111-117`). Consistent (metadata value handling aside, see 1.11).
+
+### 4.6 `GET /api/setup` shape
+
+`setup.ts:82-92` reads `{required}`; `setup.go:76` sends `{"required": ...}`. Consistent (the handler comment records this exact field name was once wrong; it is right now).
+
+---
+
+## 5. Verified consistent (spot-checked both sides, no drift found)
 
 Auth: `POST /api/auth/login`, `POST /api/auth/login/totp`, `POST /api/auth/logout`, `GET /api/auth/session` envelope (except 2.3, 3-roots-perms), `POST /api/auth/password` request, TOTP setup/enroll/disable, recovery codes, `POST /api/auth/smb` request shape, SMB password set/clear shapes, app-password delete/wipe call shapes, `GET /api/auth/oidc/config`, OIDC start/callback redirect protocol, `DELETE /api/auth/oidc/link`, `GET/POST /api/setup` request shapes.
 
@@ -185,9 +251,66 @@ Admin: users list/create/patch/delete shapes (including `quota_bytes` string-out
 
 ---
 
-## 5. Suggested fix order
+## 6. Verification pass summary
 
-1. Data-loss and security first: 1.12 (server-side last-admin guard, password minimum, quota bound), 1.4 (app-password scope contract, pick one wire shape), 1.13 (map expired-cookie to a distinguishable code or branch on 401+both codes).
-2. Feature-dead paths: 1.1 move/job contract, 1.2 archive contract (either stream-and-save on the client or implement the job), 1.3 share download, 1.5/1.6 session and app-password lists, 1.9 shares path filter, 1.10 job state/kind/result shapes, 1.11 upload mtime.
-3. Contract hygiene: 1.7 grant label, 1.8 service_uid, section 2 error-text/i18n allowlist sync, 2.4 return_to, 2.5 setup codes, 2.10 ratelimit envelope.
+Every numbered finding was re-verified against the working tree (post `bac9055`). Results:
+
+- Confirmed unchanged: 1.1, 1.2, 1.4, 1.5, 1.6, 1.7, 1.9, 1.9b, 1.11, 1.12, 1.13, 2.1, 2.2, 2.4-2.10, 2.12, all of section 3, all of section 4. Spot notes: the `BigInt(undefined)` throw in 1.9b was executed and confirmed; the 19 dead `SERVER_KEYS` entries in 2.2 were re-derived by grep and match exactly; the `Hub.Close` claim in 2.6 has one test-only caller (`events_route_test.go:31`), production count is still zero.
+- Revised: 1.3 (fixed by commit `d6ec434` mid-audit; kept with a FIXED marker), 2.3 (read side fixed by `91ba60c`; the surviving defect is the write path never setting `smb_opt_out`), 1.10 (upgraded: the missing `errors` field makes `JobFailedError` throw a `TypeError`, so the failure path crashes rather than merely mislabeling).
+- Extended: 1.8 gained `search.rate_per_minute`, a second settings field the backend never reads.
+- Line corrections applied in place: 2.1 (svelte :94,:137), 2.11 (:260), 3 if_match (`fs.go:421-430`), 3 PreviewInfo (`types.ts:23-27`), 4.3 (`csrf.go:21-61`, `oidcLinkStart` goes through the request helper).
+
+No claim was refuted outright; two were overtaken by commits that landed while the audit ran.
+
+## 7. Suggested fix order
+
+1. Data-loss and security first: 1.12 (server-side last-admin guard, password minimum, quota bound), 1.4 (app-password scope contract, pick one wire shape), 1.13 (map expired-cookie to a distinguishable code or branch on 401+both codes), 2.3 (wire the opt-out write).
+2. Feature-dead paths: 1.1 move/job contract, 1.2 archive contract (either stream-and-save on the client or implement the job, and implement or drop `jobs/{id}/download`), 1.5/1.6 session and app-password lists, 1.9/1.9b shares path filter and list envelope/fields, 1.10 job status envelope (add the missing fields or trim the client type; fix state/kind/result shapes), 1.11 upload mtime.
+3. Contract hygiene: 1.7 grant label, 1.8 service_uid and search.rate_per_minute, section 2 error-text/i18n allowlist sync, 2.4 return_to, 2.5 setup codes, 2.10 ratelimit envelope.
 4. Consider extending `tools/routecheck`/`contractcheck` to scan `.svelte` files and to compare error-code literals (`err.code === '...'`) against `apierr` emitters; nearly every finding in section 1.12 and 2.x would have been caught by that gate.
+
+## 8. What was fixed
+
+Which side moved was decided per finding by asking which one was right, not by which was cheaper to change.
+
+### Trust boundary
+
+- **1.12 last-admin guard.** `auth.ErrLastAdmin` plus `guardLastAdmin`, run inside the deleting and disabling transactions (`auth/users.go`, `auth/admin.go`), so a concurrent disable cannot slip between the check and the write. Mapped to `409 admin.last_admin`, the code the screen already branched on.
+- **1.12 password floor.** `auth.MinPasswordLen = 10` enforced in `createUser`, `SetPassword` and `SetSMBPassword`, so every path that stores a password is covered rather than the ones a browser reaches. Mapped to `422 auth.weak_password` with the floor as an argument.
+- **1.12 quota bound.** `auth.ErrInvalidQuota` refuses a zero or negative cap in `SetQuota`; unlimited stays a nil cap. Mapped to `422 admin.invalid_quota`.
+- **1.4 app-password scope.** The backend now decodes the nested `{scope:{perms,shares}}` the client sends, with the eight named booleans rather than a bitmask. No scope means `ScopeFull`; an empty permission set is refused; an unknown share label is refused with `422 auth.unknown_share` instead of being dropped. `AppPasswordsSection.svelte` now actually passes `{readOnly: true}`.
+- **1.13 expired session.** A session cookie that no longer resolves answers `auth.required` and is cleared, so the browser stops presenting it and the client's existing 401 handling routes to the login screen. `auth.invalid_credentials` is left to mean a re-confirmation the user just failed.
+- **2.3 SMB opt-out.** `SetSMBAccess` takes both switches and writes both columns.
+- **2.10 rate limit envelope.** The limiter answers the JSON envelope with `rate.limited` rather than plain text.
+- **Frontend placeholder reads.** The three `err.detail?.min_length` reads were wrong about the wire shape; `ApiError.reasonParam`/`reasonNumber` read `detail.reason_params`, where the server actually puts them.
+
+### Contracts, backend moved
+
+- **1.5 / 1.6 list envelopes.** Sessions and app passwords answer bare arrays with the client's field names and string nanoseconds: `id_hash`, `created_ns`, `last_seen_ns`, `absolute_expiry_ns`, `ip_first`, `ua_first`. App-password rows carry `read_only`, derived from the stored scope, and the create response carries the real id.
+- **1.9 / 1.9b shares.** `?path=` is honoured, the envelope is a bare array, `created_ns` is sent, `expires_ns` is a nullable string, `max_downloads` is null for unlimited rather than -1, and `label` is nullable.
+- **1.10 job status.** The envelope carries `id` as a string plus `done`, `total`, `current`, `errors`, `attempting`, `pending` and `download`; per-item results carry a full error envelope rather than a status word; the failed state is `error` and the index-build kind is `index_build`. `core.Operation` now passes `Progress`, `Total` and `Message` through instead of dropping them.
+- **1.7 grant label.** `UpdateGrant` writes it; an absent label leaves the stored one alone and an empty one clears it.
+- **1.11 upload metadata.** `uploadMeta` reads the tus metadata header into `SessionSpec.Meta`, so the finalizer applies the source file's mtime.
+- **2.8 drop-link ceiling.** `GET /s/{token}` reports `max_upload_bytes` from the body limit the drop actually hits.
+- **2.12 SMB replacement notice.** Read before the write instead of hardcoded true. The schema cannot tell a dedicated password from a derived one, so the honest answer is whether a credential was there to overwrite.
+- **3 roots perms.** Sent as the eight named booleans, like every other perms object on the surface.
+- **2.7 rate section.** The section the backend advertised as editable now has a form.
+
+### Contracts, frontend moved
+
+- **1.1 move.** A move is a rename and finishes in the request. The client reads the per-item results it already returns, including `will_copy`, rather than waiting for a job id that was never coming. `MovePreflight` is the same shape.
+- **1.2 archive.** The server streams the ZIP as the response body, so the client saves that body. The job-tracking and `jobs/{id}/download` path it implied is gone, along with the stub route, the tray's download button and the dead catalogue entries.
+- **2.6 WS event kinds.** The hub sends `inval` and `pong`. The declared-but-never-sent `job`, `quota` and `revoked` handling is gone; polling was always the only channel.
+- **2.9 search truncation.** The `done` payload is read, and a cut-short search says so.
+- **1.8 phantom settings.** `smb.service_uid` and `search.rate_per_minute` were stored and never read; both fields are gone from the form and the request types.
+- **Dead admin OIDC link form.** The server refuses to attach an identity from the admin screen, so the form and the `PUT` route are gone.
+- **Dead client members.** `api.link` (a body the server never accepted, no caller), `LinkResponse`, `MoveReq.if_match`, `PreviewInfo.width/height`, and the `oidc.expired` / `oidc.already_linked` branches.
+- **Mock parity.** `adminSetUserPassword` gained its mock half, and the mock's error bodies now carry `reason_key` / `reason_params` like the real ones, so a test against the mock proves something about the server.
+
+### i18n and error text
+
+`admin.share_rejected` (with its reason argument), `admin.chunk_below_floor`, the three missing `settings.readonly_*` keys and `settings.invalid_cidr` were added to `SERVER_KEYS`; 19 dead `settings.*` and 8 dead `share.*` entries were removed after checking that nothing emits them. The setup screen handles `setup.completed` and `setup.token_expired` and no longer branches on codes that route cannot produce. `lint:i18n` reports no drift.
+
+### The gate
+
+`tools/routecheck` now reads `.svelte` as well as `.ts`, understands URL builders on both `${BASE}` and `${ORIGIN}`, skips routes named in comments, and compares verbs only where the call carries one. It passes with no allowlist additions: 102 client calls against 103 mounted routes.
