@@ -6,6 +6,7 @@ package handler
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -115,7 +116,12 @@ func AdminUser(d Deps) http.HandlerFunc {
 		}
 
 		var patch struct {
-			Disabled   *bool  `json:"disabled"`
+			Disabled *bool `json:"disabled"`
+			// QuotaBytes is null to clear the cap back to unlimited and absent
+			// to leave it alone. One pointer cannot say both, so which keys the
+			// body carried is read separately below: clearing a quota decoded
+			// as nil either way and was indistinguishable from not mentioning
+			// it, so the interface could set a cap and never remove one.
 			QuotaBytes *int64 `json:"quota_bytes"`
 			// Password is an administrator resetting an account they do not
 			// have the current password for, which is the only way back in for
@@ -123,8 +129,16 @@ func AdminUser(d Deps) http.HandlerFunc {
 			// send a reset link with.
 			Password *string `json:"password"`
 		}
-		if derr := decodeJSON(r, &patch); derr != nil {
-			return derr
+		raw, rerr := readBody(r)
+		if rerr != nil {
+			return rerr
+		}
+		if uerr := json.Unmarshal(raw, &patch); uerr != nil {
+			return apierr.BadRequest("fs.invalid_json", "body")
+		}
+		var present map[string]json.RawMessage
+		if uerr := json.Unmarshal(raw, &present); uerr != nil {
+			return apierr.BadRequest("fs.invalid_json", "body")
 		}
 		if patch.Disabled != nil {
 			// Same reasoning as the delete above: an administrator who
@@ -152,7 +166,8 @@ func AdminUser(d Deps) http.HandlerFunc {
 				return derr
 			}
 		}
-		if patch.QuotaBytes != nil {
+		if _, ok := present["quota_bytes"]; ok {
+			// A nil cap here is the explicit null, which is unlimited.
 			if qerr := d.Auth.SetQuota(r.Context(), id, patch.QuotaBytes); qerr != nil {
 				return qerr
 			}
