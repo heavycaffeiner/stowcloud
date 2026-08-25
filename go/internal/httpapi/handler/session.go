@@ -4,6 +4,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -129,11 +130,14 @@ type sessionUser struct {
 // sessionRoot is one readable share, labeled the way the caller's own grant
 // labels it.
 type sessionRoot struct {
-	Label            string `json:"label"`
-	Perms            uint16 `json:"perms"`
-	ShareKind        string `json:"share_kind"`
-	SharedExternally bool   `json:"shared_externally"`
-	TrashEnabled     bool   `json:"trash_enabled"`
+	Label string `json:"label"`
+	// The eight named booleans, like every other perms object this surface
+	// sends. It was a bitmask here alone, which the client declares as the
+	// object and would have read as eight undefined fields.
+	Perms            permsJSON `json:"perms"`
+	ShareKind        string    `json:"share_kind"`
+	SharedExternally bool      `json:"shared_externally"`
+	TrashEnabled     bool      `json:"trash_enabled"`
 }
 
 type sessionLimits struct {
@@ -265,7 +269,7 @@ func rootsOf(d Deps, uid core.UserID) []sessionRoot {
 	for _, e := range entries {
 		out = append(out, sessionRoot{
 			Label:            e.Label,
-			Perms:            uint16(e.Perms),
+			Perms:            permsOf(e.Perms),
 			ShareKind:        shareKindOf(e),
 			SharedExternally: e.SharedExternally,
 			TrashEnabled:     e.TrashEnabled,
@@ -346,16 +350,27 @@ func Logout(d Deps) http.HandlerFunc {
 
 // The app-password surface: mint, list, revoke. Each password is shown once,
 // at creation, and a listing never reveals a token because none is stored.
+//
+// Scope is a nested object with named permission booleans, not a bitmask: the
+// client works in the same eight named booleans everywhere else on this
+// surface, and a bitmask on one route was decoded as zero, which minted tokens
+// that could reach nothing.
 type appPasswordRequest struct {
-	Name   string   `json:"name"`
-	Perms  uint16   `json:"perms"`
-	Shares []string `json:"shares,omitempty"`
+	Name  string `json:"name"`
+	Scope *struct {
+		Perms  permsJSON `json:"perms"`
+		Shares []string  `json:"shares,omitempty"`
+	} `json:"scope,omitempty"`
 }
 
 type appPasswordResponse struct {
-	ID    int64  `json:"id"`
-	Name  string `json:"name"`
-	Token string `json:"token,omitempty"`
+	ID         int64   `json:"id"`
+	Name       string  `json:"name"`
+	Token      string  `json:"token,omitempty"`
+	CreatedNs  string  `json:"created_ns"`
+	LastUsedNs *string `json:"last_used_ns"`
+	ExpiresNs  *string `json:"expires_ns"`
+	ReadOnly   bool    `json:"read_only"`
 }
 
 func AppPasswords(d Deps) http.HandlerFunc {
@@ -372,9 +387,15 @@ func AppPasswords(d Deps) http.HandlerFunc {
 			}
 			out := make([]appPasswordResponse, 0, len(rows))
 			for _, row := range rows {
-				out = append(out, appPasswordResponse{ID: row.ID, Name: row.Name})
+				out = append(out, appPasswordResponse{
+					ID: row.ID, Name: row.Name,
+					CreatedNs:  strconv.FormatInt(row.CreatedNs, 10),
+					LastUsedNs: nsString(row.LastUsedNs),
+					ExpiresNs:  nsString(row.ExpiresNs),
+					ReadOnly:   scopeIsReadOnly(row.ScopePerms),
+				})
 			}
-			return writeJSON(w, http.StatusOK, map[string]any{"app_passwords": out})
+			return writeJSON(w, http.StatusOK, out)
 		case http.MethodPost:
 			var req appPasswordRequest
 			if err := decodeJSON(r, &req); err != nil {
@@ -383,12 +404,37 @@ func AppPasswords(d Deps) http.HandlerFunc {
 			if req.Name == "" {
 				return apierr.BadRequest("auth.apppw_name", "name")
 			}
-			token, err := d.Auth.CreateAppPassword(r.Context(), int64(uid), req.Name,
-				auth.Scope{Perms: req.Perms, Shares: req.Shares}, 0)
+			// No scope object means the whole account, which is the sentinel
+			// the gate reads as unrestricted. A scope object with no permission
+			// set would mint a token that can reach nothing, so it is refused
+			// rather than stored.
+			scope := auth.Scope{Perms: mw.ScopeFull}
+			if req.Scope != nil {
+				perms := uint16(permsFrom(req.Scope.Perms))
+				if perms == 0 {
+					return apierr.Unprocessable("auth.apppw_scope_empty", "scope.perms")
+				}
+				shares, serr := knownShareLabels(d, uid, req.Scope.Shares)
+				if serr != nil {
+					return serr
+				}
+				scope = auth.Scope{Perms: perms, Shares: shares}
+			}
+			token, err := d.Auth.CreateAppPassword(r.Context(), int64(uid), req.Name, scope, 0)
 			if err != nil {
 				return err
 			}
-			return writeJSON(w, http.StatusCreated, appPasswordResponse{Name: req.Name, Token: token})
+			// Read back so the id is the stored one. The screen shows the token
+			// once and then lists rows by id, and a zero id collides.
+			id, lerr := latestAppPasswordID(r.Context(), d, int64(uid), req.Name)
+			if lerr != nil {
+				return lerr
+			}
+			return writeJSON(w, http.StatusCreated, appPasswordResponse{
+				ID: id, Name: req.Name, Token: token,
+				CreatedNs: strconv.FormatInt(d.Clock.Nanos(), 10),
+				ReadOnly:  scopeIsReadOnly(scope.Perms),
+			})
 		}
 		return apierr.BadRequest("auth.method", "method")
 	})
@@ -413,13 +459,68 @@ func AppPasswordDelete(d Deps) http.HandlerFunc {
 	})
 }
 
+// scopeIsReadOnly reports whether a scope can look but not change anything.
+func scopeIsReadOnly(perms uint16) bool {
+	if perms == mw.ScopeFull {
+		return false
+	}
+	const writing = uint16(acl.Write | acl.Create | acl.Delete | acl.Rename | acl.Move | acl.Share)
+	return perms&writing == 0
+}
+
+// knownShareLabels refuses a scope naming a root the caller cannot reach. A
+// label silently dropped would mint a token broader or narrower than the one
+// that was asked for, and neither is what the screen showed.
+func knownShareLabels(d Deps, uid core.UserID, want []string) ([]string, error) {
+	if len(want) == 0 {
+		return nil, nil
+	}
+	roots := d.Core.Roots(uid)
+	have := make(map[string]struct{}, len(roots))
+	for _, root := range roots {
+		have[root.Label] = struct{}{}
+	}
+	for _, label := range want {
+		if _, ok := have[label]; !ok {
+			return nil, &apierr.RequestError{
+				Status: http.StatusUnprocessableEntity, Code: apierr.CodeInvalidRequest,
+				Message: "no such share", Key: "auth.unknown_share",
+				Args: []apierr.Arg{{Name: "label", Value: label}},
+			}
+		}
+	}
+	return want, nil
+}
+
+// latestAppPasswordID finds the row just minted. The mint returns the token
+// only, and the list is newest first, so the first row carrying the name is
+// the one this request created.
+func latestAppPasswordID(ctx context.Context, d Deps, uid int64, name string) (int64, error) {
+	rows, err := d.Auth.AppPasswords(ctx, uid)
+	if err != nil {
+		return 0, err
+	}
+	for _, row := range rows {
+		if row.Name == name {
+			return row.ID, nil
+		}
+	}
+	return 0, nil
+}
+
 // The session-management surface: list the caller's devices and sign one out.
+//
+// Field names are the client's, and every nanosecond stamp is a string: the
+// screen keys rows on id_hash and renders three dates, and a number here
+// rounds them.
 type sessionRow struct {
-	IDHash   string `json:"id"`
-	LastSeen int64  `json:"last_seen_ns"`
-	IP       string `json:"ip,omitempty"`
-	UA       string `json:"ua,omitempty"`
-	Current  bool   `json:"current"`
+	IDHash     string `json:"id_hash"`
+	CreatedNs  string `json:"created_ns"`
+	LastSeenNs string `json:"last_seen_ns"`
+	AbsoluteNs string `json:"absolute_expiry_ns"`
+	IPFirst    string `json:"ip_first,omitempty"`
+	UAFirst    string `json:"ua_first,omitempty"`
+	Current    bool   `json:"current"`
 }
 
 func Sessions(d Deps) http.HandlerFunc {
@@ -443,15 +544,17 @@ func Sessions(d Deps) http.HandlerFunc {
 			out := make([]sessionRow, 0, len(rows))
 			for _, row := range rows {
 				item := sessionRow{
-					IDHash:   hex.EncodeToString(row.IDHash),
-					LastSeen: row.LastSeenNs,
-					IP:       row.IP,
-					UA:       row.UA,
-					Current:  string(row.IDHash) == string(current),
+					IDHash:     hex.EncodeToString(row.IDHash),
+					CreatedNs:  strconv.FormatInt(row.CreatedNs, 10),
+					LastSeenNs: strconv.FormatInt(row.LastSeenNs, 10),
+					AbsoluteNs: strconv.FormatInt(row.AbsoluteNs, 10),
+					IPFirst:    row.IP,
+					UAFirst:    row.UA,
+					Current:    string(row.IDHash) == string(current),
 				}
 				out = append(out, item)
 			}
-			return writeJSON(w, http.StatusOK, map[string]any{"sessions": out})
+			return writeJSON(w, http.StatusOK, out)
 		}
 		// DELETE /api/auth/sessions/{id}: sign out that device.
 		hash, err := hex.DecodeString(r.PathValue("id"))

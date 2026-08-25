@@ -17,6 +17,7 @@ import {
   type ApplyOutcome,
   type ArchiveListing,
   type ArchiveSettingsReq,
+  type RateSettingsReq,
   type AuditPage,
   type AuditQuery,
   type BatchResult,
@@ -30,8 +31,6 @@ import {
   type IndexSettings,
   type JobListResponse,
   type JobStatus,
-  type LinkDisposition,
-  type LinkResponse,
   type ListResponse,
   type LoginResult,
   type MovePreflight,
@@ -63,7 +62,7 @@ import {
   type UploadSettingsResp,
   type WatchSettingsReq
 } from './types'
-import type { ListOpts, SearchHit } from './mock'
+import type { ListOpts, SearchDone, SearchHit } from './mock'
 import { noteUnauthorized } from '../state/auth.svelte'
 import { normalizePath } from './path-utils'
 
@@ -180,12 +179,18 @@ async function copy(req: MoveReq): Promise<{ job: string }> {
   return request('/fs/copy', { method: 'POST', body: JSON.stringify(req) })
 }
 
-async function move(req: MoveReq): Promise<{ job: string }> {
+/**
+ * `POST /api/fs/move` answers inline, not with a job: a move is a rename
+ * within one filesystem, which finishes in the request. Only the cross-device
+ * case copies bytes, and the server reports that per item as `will_copy`
+ * rather than deferring the whole batch.
+ */
+async function move(req: MoveReq): Promise<BatchResult> {
   return request('/fs/move', { method: 'POST', body: JSON.stringify({ ...req, dry_run: false }) })
 }
 
-/** The same endpoint with `dry_run`, which answers `MovePreflight` inline
- *  rather than `202 { job }` — see that type for why the caller asks. */
+/** The same endpoint with `dry_run`, which reports what each item would do
+ *  without doing it: what the destination picker asks before it commits. */
 async function movePreflight(req: MoveReq): Promise<MovePreflight> {
   return request('/fs/move', { method: 'POST', body: JSON.stringify({ ...req, dry_run: true }) })
 }
@@ -197,28 +202,27 @@ async function del(paths: string[], permanent = false): Promise<{ results: Batch
 // ── content links & archive download (§8) ──
 
 /**
- * `POST /api/fs/link` — mints a signed, cookie-free content-origin URL for a
- * single file's bytes (`go/internal/httpapi/handler/link.go`). Requires
- * `fid`, i.e. `entry.id` — see that field's doc comment in `types.ts` for why
- * it is frequently `undefined` and what the caller should do then (not call
- * this at all; there is no path-based alternative on this endpoint).
+ * `POST /api/fs/archive` streams the ZIP itself. The server never stores one,
+ * so there is no job to poll and no second request for the bytes: they arrive
+ * as this response's body, and the caller saves it.
+ *
+ * Not a plain navigation, because the request is a POST carrying the path list
+ * and needs the CSRF header a form submission cannot send.
  */
-async function link(fid: number, disposition: LinkDisposition = 'attachment', dim?: [number, number]): Promise<LinkResponse> {
-  return request('/fs/link', {
+async function archive(paths: string[], name?: string): Promise<Blob> {
+  const headers = new Headers({ 'Content-Type': 'application/json' })
+  if (csrfToken) headers.set('Sc-Csrf', csrfToken)
+  const res = await fetch(`${BASE}/fs/archive`, {
     method: 'POST',
-    body: JSON.stringify({ fid, disposition, dim })
+    credentials: 'include',
+    headers,
+    body: JSON.stringify({ paths, name })
   })
-}
-
-/**
- * `POST /api/fs/archive` — always answers `202 { job }` now (`fs_archive`,
- * `go/internal/httpapi/handler`): every archive request is a durable job
- * regardless of size, so there is no synchronous zip stream left to branch
- * on here. `state/job-tray.svelte.ts` tracks the job and fetches the bytes
- * with `jobDownload` once it reports `download: true`.
- */
-async function archive(paths: string[]): Promise<{ job: string }> {
-  return request('/fs/archive', { method: 'POST', body: JSON.stringify({ paths }) })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw errorFrom(res, body)
+  }
+  return res.blob()
 }
 
 /**
@@ -275,12 +279,11 @@ async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }
 }
 
 // ── long-running jobs ──
-// Every `fs_move`/`fs_copy`/`fs_delete`/`fs_archive` request always answers
-// `202 { job }` (`go/internal/httpapi/handler`) — there is no size/count
-// threshold and no synchronous fallback. `copy`/`del`/`archive` above return
-// that envelope as-is; `state/job-tray.svelte.ts` is the one caller that
-// wraps `state/jobs.ts::pollJob` (REST poll + WS `job` push reconciled) to
-// show live progress and calls `jobCancel` on user request.
+// A copy, a delete over the inline threshold and an index build answer
+// `202 { job }`; a move and an archive finish in the request itself.
+// `state/job-tray.svelte.ts` is the one caller that wraps
+// `state/jobs.ts::pollJob` (REST poll plus the WS `job` push) to show live
+// progress and calls `jobCancel` on user request.
 
 /** `GET /api/jobs` — every non-terminal job the caller owns. `JobTray` calls
  *  this once on mount to re-attach across a refresh or a server restart
@@ -295,18 +298,6 @@ async function jobStatus(id: string): Promise<JobStatus> {
 
 async function jobCancel(id: string): Promise<void> {
   await request(`/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' })
-}
-
-/** `GET /api/jobs/{id}/download` — one-shot fetch of a finished archive job's
- *  zip bytes, once its tracked status reports `download: true`. */
-async function jobDownload(id: string): Promise<Blob> {
-  const res = await fetch(`${BASE}/jobs/${encodeURIComponent(id)}/download`, { credentials: 'include' })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    const errBody = (body as ApiErrorBody).error ?? { code: 'internal', message: res.statusText }
-    throw new ApiError(res.status, errBody)
-  }
-  return res.blob()
 }
 
 // ── trash ──
@@ -454,13 +445,11 @@ async function createAppPassword(name: string): Promise<{ id: number; token: str
  *
  * `shares` naming labels rather than ids is deliberate on the server side: a
  * label is what the user actually sees, and an unknown one is refused
- * (`422 auth.unknown_share`) rather than silently dropped — a token that
+ * (`422 auth.unknown_share`) rather than silently dropped: a token that
  * quietly ends up broader than asked for is the failure worth preventing here.
  *
- * Enforcement is real, not advisory: verified against a running server, a
- * token scoped to one share is refused on another over both the native API
- * (403) and WebDAV (403), and a read-only one is refused a `PUT` even on the
- * share it does own.
+ * A scope with no permission at all is refused too (`422`), because a token
+ * that can reach nothing is not a restriction anybody asked for.
  */
 async function createScopedAppPassword(
   name: string,
@@ -591,26 +580,6 @@ async function adminGetUserOidc(id: number): Promise<AdminUserOidc> {
   return request(`/admin/users/${id}/oidc`)
 }
 
-/**
- * `PUT /api/admin/users/{id}/oidc`. Attaches an identity by hand.
- *
- * Only the `subject` is sent: the issuer is this deployment's configured one,
- * never a request field, so that a manual link and one made through the real
- * flow are the same row. It does not contradict "no JIT provisioning" because
- * it creates no account, and it is the recovery path for somebody who does not
- * know their own password and so cannot drive `oidcLinkStart`.
- */
-async function adminLinkUserOidc(id: number, subject: string): Promise<void> {
-  await request(`/admin/users/${id}/oidc`, { method: 'PUT', body: JSON.stringify({ subject }) })
-}
-
-/**
- * `DELETE /api/admin/users/{id}/oidc`. Answers `200` with a body, not `204`:
- * an administrator has no plaintext password, so the NT hash linking deleted
- * cannot be re-derived here and `smb_nt_restored` is always `false`. The
- * caller has to say so to the operator rather than leave SMB quietly broken
- * (§4.3.6).
- */
 async function adminUnlinkUserOidc(id: number): Promise<AdminOidcUnlinkResult> {
   return request(`/admin/users/${id}/oidc`, { method: 'DELETE' })
 }
@@ -664,6 +633,10 @@ async function adminSetSearchSettings(req: SearchSettingsReq): Promise<ApplyOutc
 
 async function adminSetArchiveSettings(req: ArchiveSettingsReq): Promise<ApplyOutcome> {
   return request('/admin/server-settings/archive', { method: 'PATCH', body: JSON.stringify(req) })
+}
+
+async function adminSetRateSettings(req: RateSettingsReq): Promise<ApplyOutcome> {
+  return request('/admin/server-settings/rate', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 async function adminSetNetworkSettings(req: NetworkSettingsReq): Promise<ApplyOutcome> {
@@ -892,18 +865,34 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
   }
 }
 
-function searchStream(query: string, onHit: (hit: SearchHit) => void, onDone: () => void): () => void {
+/**
+ * `GET /api/search/stream`. The `done` event carries `{truncated, tier}`:
+ * truncated means the walk hit its deadline, so what arrived is a prefix of
+ * the matches and not all of them. Discarding it made a cut-short search
+ * render identically to a complete one.
+ */
+function searchStream(query: string, onHit: (hit: SearchHit) => void, onDone: (done: SearchDone) => void): () => void {
   const es = new EventSource(`${BASE}/search/stream${qs({ q: query })}`, { withCredentials: true })
   es.addEventListener('hit', (ev: MessageEvent) => {
     onHit(toSearchHit(JSON.parse((ev as MessageEvent).data)))
   })
-  es.addEventListener('done', () => {
-    onDone()
+  es.addEventListener('done', (ev: MessageEvent) => {
+    let done: SearchDone = { truncated: false }
+    try {
+      const raw = JSON.parse(ev.data) as { truncated?: unknown; tier?: unknown }
+      done = { truncated: raw.truncated === true, tier: typeof raw.tier === 'string' ? raw.tier : undefined }
+    } catch {
+      // A `done` with no parsable payload still ends the search. Reporting
+      // it as complete is the safe read: it claims less, not more.
+    }
+    onDone(done)
     es.close()
   })
   es.onerror = () => {
     es.close()
-    onDone()
+    // The stream broke rather than finished, so the result list is a prefix
+    // whatever the server would have said.
+    onDone({ truncated: true })
   }
   return () => es.close()
 }
@@ -921,12 +910,10 @@ export const httpApi = {
   move,
   movePreflight,
   delete: del,
-  link,
   archive,
   jobList,
   jobStatus,
   jobCancel,
-  jobDownload,
   trashList,
   trashRestore,
   trashPurge,
@@ -969,6 +956,7 @@ export const httpApi = {
   adminSetSmbSettings,
   adminSetSearchSettings,
   adminSetArchiveSettings,
+  adminSetRateSettings,
   adminSetNetworkSettings,
   adminSetDbSettings,
   adminSetSymlinkPolicySettings,
@@ -985,7 +973,6 @@ export const httpApi = {
   adminDeleteUser,
   adminSetUserPassword,
   adminGetUserOidc,
-  adminLinkUserOidc,
   adminUnlinkUserOidc,
   adminListShares,
   adminCreateShare,

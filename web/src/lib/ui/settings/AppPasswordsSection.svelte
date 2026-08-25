@@ -63,7 +63,7 @@
     createError = null
     try {
       const res = newReadOnly
-        ? await api.createScopedAppPassword(newName.trim())
+        ? await api.createScopedAppPassword(newName.trim(), { readOnly: true })
         : await api.createAppPassword(newName.trim())
       issuedToken = res.token
       createOpen = false
