@@ -57,7 +57,7 @@ each stays its own package.
 
 | Package | Lines | Verdict |
 | --- | --- | --- |
-| `vfs` | 3,226 | Rebuild before core. The security foundation: openat2 share roots, safe paths, admission, durable writes, publish. Its API is the contract every core document already writes against. Composition is cohesive except one intruder: `ReplaceFileDurable`/`PublishNew` take plain paths, never a share root, and serve control files; they move out to `store/fsatomic` (see Persistence). After the move, everything `vfs` exports goes through a `ShareRoot` or a path type. |
+| `vfs` | 3,226 | Rebuild before core. The security foundation: openat2 share roots, safe paths, admission, durable writes, publish. Its API is the contract every core document already writes against. Composition is cohesive except one intruder: `ReplaceFileDurable` takes plain paths, never a share root, and serves control files; it moves out to `store/fsatomic`, and `PublishNew` beside it is dropped (no caller). After the move, everything `vfs` exports goes through a `ShareRoot` or a path type. |
 | `jail` | 1,034 | Not a core dependency. Rebuild in the preview phase. |
 
 ### Persistence

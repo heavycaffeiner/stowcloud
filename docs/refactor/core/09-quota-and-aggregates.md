@@ -355,6 +355,15 @@ are recomputed on next read. Behaviors:
    insertion sort for child names; the rebuild uses `slices.Sort`. The
    observable contract (ascending byte order feeding the hash) is unchanged,
    so ETags are byte-identical.
+5. **Deletes actually credit the ledger.** The reference's `chargeQuota`
+   passes the caller's delta straight to `Release`, and `Release` refuses a
+   negative delta as a caller bug; deletes pass `int64Minus(freed)`, which
+   is negative, so every delete credit failed with a logged warning and the
+   ledger only ever grew. The rebuilt `chargeQuota` splits by sign (negative
+   credits through `Release` with the magnitude, positive books through
+   `Reserve` best-effort), so freed bytes reach the ledger for the first
+   time. Usage figures on a deployment that deletes will drop after the
+   rebuild; that is the correction, not a regression.
 
 No other observable behavior changes.
 
@@ -371,6 +380,10 @@ Quota:
 - `AttachQuotaSink` twice errors.
 - A `Core` with no sink admits writes with no cap.
 - `chargeQuota` with a failing sink logs and does not propagate.
+- `chargeQuota` with a negative delta reduces `usage_bytes` by the
+  magnitude (the delete-credit fix, Deliberate changes item 5); with a
+  positive delta it books through `Reserve`; a refusal is logged, not
+  returned.
 - Store side (`engine/store/state`): Reserve refuses at the cap and admits
   below it; a NULL cap always admits; a missing user refuses; N goroutines
   racing Reserve against headroom for one admit exactly one; Commit is
