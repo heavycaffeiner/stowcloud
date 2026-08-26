@@ -108,7 +108,17 @@ engine/
                         password check
     home.go             EnableHomes, ensureHome, template seeding
     recent.go           Recent, RecentHit, journal-backed listing
+    grants.go           CreateGrant/ListGrants/UpdateGrant/DeleteGrant:
+                        thin wrappers over the store's grant aggregate
+                        plus one evaluator reload each
 ```
+
+`grants.go` exists because the audits found three call sites
+(`httpapi/handler`, `cmd/stowcloud`, and emergency-adjacent code) building
+grant SQL against a raw store handle. The presentation layer calls these
+wrappers instead; the store's grant aggregate (`foundation/state.md`) owns
+the SQL, and the wrapper owns the reload, so a grant write and the
+evaluator that serves it cannot drift apart at any call site.
 
 ### What is separated out
 
@@ -198,7 +208,9 @@ is dependency order inside the package:
 7. `trash.go` (08).
 8. `quota.go`, `aggregate.go` (09), including the store-side sink.
 9. `link.go`, `linkaccess.go` (10), including the store-side `LinkStore`.
-10. `home.go`, `recent.go` (11), including the ACL-side grant persistence.
+10. `home.go`, `recent.go` (11), including the store-side grant
+    persistence, and `grants.go` beside them (same aggregate, same reload
+    discipline).
 11. `shareadmin.go` (03) last among the share pieces, because it needs the
     state store's share rows.
 

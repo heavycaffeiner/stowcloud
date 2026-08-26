@@ -36,12 +36,20 @@ here once and repeated in each document:
 ## Phase 0: foundations
 
 What must be re-specified and rebuilt before the core implementation can
-start. Scope and ordering in [01-package-survey.md](01-package-survey.md):
-foundation kit (`num`, `clock`, `task`, `secret`, `limits`), `vfs`, the
-persistence layer re-drawn per aggregate (including the grant, link and
-quota surfaces the core documents extract), and the ACL evaluator stripped
-of its SQL. Documents for these land under `foundation/` as they are
-written.
+start. Scope and ordering in [01-package-survey.md](01-package-survey.md).
+All phase 0 documents are written, under [`foundation/`](foundation/):
+
+| Document | Contents |
+| --- | --- |
+| [kit.md](foundation/kit.md) | `num`, `clock`, `task`, `secret`, `limits`, `netzone` under `engine/kit/` |
+| [vfs.md](foundation/vfs.md) | The filesystem security package: admission, paths, resolve, durable writes |
+| [fsatomic.md](foundation/fsatomic.md) | Atomic file replace, extracted from vfs; the multi-file durable unit |
+| [dbfile.md](foundation/dbfile.md) | SQLite open discipline, pragmas, migrations |
+| [state.md](foundation/state.md) | The state DB per aggregate, including the new link, quota and grant surfaces |
+| [cache.md](foundation/cache.md) | The rebuildable cache DB, id derivation, directory etags, the `Ident` home |
+| [journal.md](foundation/journal.md) | The write journal's three hard properties |
+| [acl-evaluator.md](foundation/acl-evaluator.md) | The pure permission evaluator, SQL-free |
+| [search-contract.md](foundation/search-contract.md) | The core-owned `ScanSource` shape and the inversion |
 
 ## Phase 1: core
 

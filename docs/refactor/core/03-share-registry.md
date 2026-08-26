@@ -297,8 +297,11 @@ func (c *Core) DeleteShare(ctx context.Context, id ShareID) error
 ```
 
 Unknown id: `ErrNotFound`. Delete the durable row first, then unregister
-the live entry. Grants naming the share are the admin store's cascade; a
-dangling grant is default-deny anyway.
+the live entry. The store's `DeleteShare(ctx, rowid, shareID)` takes both
+ids: the row to delete and the external id whose grants it cascades in
+the same transaction (`foundation/state.md`, the cascade decision). The
+core passes `rowIDOf(id)` and `int64(id)`; a dangling grant can no longer
+outlive its share, and default-deny stops mattering as the only guard.
 
 #### Startup reload
 
@@ -510,7 +513,9 @@ exercised by `resolve_test.go` and others):
 11. **RetryShare.** Heals a fixed path; re-refuses a still-broken one;
     `ErrNotFound` for an unknown id.
 12. **DeleteShare.** Removes row and entry; works on a broken share (the
-    old `TestABrokenShareCanBeRemoved`); `ErrNotFound` for an unknown id.
+    old `TestABrokenShareCanBeRemoved`); `ErrNotFound` for an unknown id;
+    grants naming the share are gone after the call (the store-side
+    cascade, observed through the evaluator after reload).
 13. **ReloadPersistedShares.** Round-trips ids across a simulated restart
     (create, reload into a fresh Core over the same store, same ids); an
     unparseable stored symlink policy falls to deny and still serves; an
