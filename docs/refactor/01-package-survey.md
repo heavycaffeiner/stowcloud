@@ -21,9 +21,23 @@ packages (numeric narrowing, clock, secrets, task spawn, bounds) and the two
 domain infrastructures that sit below the service layer proper (`vfs`, the
 filesystem door; `jail`, the sandbox).
 
+The directory tree spells the tiers, so a package's layer is readable from
+its path (`03-engine-bootstrap.md` fixes the layout):
+
+```
+engine/
+  kit/       foundation        num, clock, task, secret, limits, netzone, unixprobe
+  infra/     domain infra      vfs, jail
+  store/     persistence       fsatomic, ident, dbfile, cache, journal, state
+  service/   service layer     acl, core, auth, oidc, upload, search, preview,
+                               watch, settings, smb
+  http/      presentation      middleware, handler, dav, compat, apierr,
+                               archive, server
+```
+
 Import direction is strictly downward. Sideways imports inside a layer are
 allowed only downward-in-build-order and never cyclic. The import-graph gate
-enforces this.
+enforces this as a path prefix rule.
 
 ## Inventory
 
@@ -41,8 +55,9 @@ location.
 | `limits` | 287 | Keep as one constants package. It mixes bounds from every layer (HTTP body sizes beside path bounds beside DB row caps), but it is a leaf with no imports, and one registry of bounds is the point of it. Regroup its sections by layer for readability. |
 | `unixprobe` | 65 | Keep as-is. Compile-time syscall probe, nothing imports it. |
 
-New grouped home: `engine/kit/{num,clock,task,secret,limits}`. The grouping
-is a directory move, not a merge; each stays its own package.
+New grouped home: `engine/kit/{num,clock,task,secret,limits}` plus
+`netzone` and `unixprobe`. The grouping is a directory move, not a merge;
+each stays its own package.
 
 ### Domain infrastructure (below service)
 

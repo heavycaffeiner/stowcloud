@@ -22,9 +22,23 @@ here once and repeated in each document:
 - The target architecture is a 3-layer design: presentation (fiber, WebDAV,
   compat, wire shapes), service (core, ACL evaluation, auth, search, upload,
   preview), persistence (the three SQLite databases and every SQL
-  statement), over a small foundation kit. The full package survey, the
-  layer assignment for every current package, and the cross-layer
-  violations to fix are in [01-package-survey.md](01-package-survey.md).
+  statement), over a small foundation kit. The directory tree spells the
+  tiers, so a package's layer is readable from its path:
+
+  ```
+  go/engine/
+    kit/       foundation        num, clock, task, secret, limits, netzone, unixprobe
+    infra/     domain infra      vfs, jail
+    store/     persistence       fsatomic, ident, dbfile, cache, journal, state
+    service/   service layer     acl, core, auth, oidc, upload, search, preview,
+                                 watch, settings, smb
+    http/      presentation      middleware, handler, dav, compat, apierr,
+                                 archive, server
+  ```
+
+  The full package survey, the layer assignment for every current package,
+  and the cross-layer violations to fix are in
+  [01-package-survey.md](01-package-survey.md).
   Every package was then audited file by file; findings are under
   [audit/](audit/), and the consolidated document plan derived from them is
   [02-document-plan.md](02-document-plan.md). Module layout, coexistence

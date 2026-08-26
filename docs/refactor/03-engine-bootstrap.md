@@ -12,19 +12,46 @@
 The rebuilt engine lives at `go/engine/`, inside the existing Go module
 `github.com/heavycaffeiner/stowcloud/go`. Not a second module.
 
+The directory tree spells the layers. Each of the five top-level
+directories under `engine/` is one tier of the architecture, so the layer
+of any package is readable from its path, and the layer gate's rule is a
+prefix check rather than a lookup table:
+
 ```
 go/
   engine/
-    kit/{num,clock,task,secret,limits,netzone,unixprobe}
-    vfs/
-    store/{fsatomic,ident,dbfile,cache,journal,state}
-    acl/
-    core/
-    ...            (later phases: auth, upload, search, http, ...)
-  internal/        (the old tree, deleted phase by phase)
+    kit/           foundation: any layer may import; imports stdlib only
+      num/  clock/  task/  secret/  limits/  netzone/  unixprobe/
+    infra/         domain infrastructure: below service, beside store
+      vfs/         the filesystem security package (phase 0)
+      jail/        the process sandbox (preview phase)
+    store/         persistence: databases and file persistence
+      fsatomic/  ident/  dbfile/  cache/  journal/  state/
+    service/       the service layer, one package per subsystem
+      acl/         the pure permission evaluator (phase 0)
+      core/        the domain core (phase 1)
+      auth/  oidc/  upload/  search/  preview/  watch/
+      settings/  smb/          (each in its own phase)
+    http/          presentation: the only tree that may import fiber
+      middleware/  handler/  dav/  compat/  apierr/  archive/  server/
+  internal/        the old tree, deleted phase by phase
   cmd/
   tools/
 ```
+
+Import direction is strictly downward through the tiers:
+
+| Tier | May import |
+| --- | --- |
+| `kit` | stdlib only |
+| `infra`, `store` | `kit` |
+| `service` | `infra`, `store`, `kit` |
+| `http` | `service`, `kit` (and fiber; nothing else may) |
+
+Sideways imports inside a tier point only downward in build order
+(`service/core` may import nothing else in `service/`; `service/search`
+may import `service/core`; `store/state` may import `store/ident` and
+`store/dbfile`, never `store/cache`).
 
 Why one module:
 
@@ -36,8 +63,11 @@ Why one module:
   visible to the import gate instead of hidden behind a replace directive.
 
 Import paths are therefore
-`github.com/heavycaffeiner/stowcloud/go/engine/<pkg>`. Every phase 0 and
-phase 1 document's `engine/...` spelling maps onto this root.
+`github.com/heavycaffeiner/stowcloud/go/engine/<tier>/<pkg>`. Every phase 0
+and phase 1 document's `engine/...` spelling maps onto this layout:
+`engine/infra/vfs` reads as `engine/infra/vfs`, `engine/service/acl` as
+`engine/service/acl`, `engine/service/core` as `engine/service/core`, and
+`engine/kit/...` and `engine/store/...` as written.
 
 ## Coexistence rules during the rebuild
 
@@ -72,14 +102,16 @@ The existing discipline extends to `go/engine/` from the first commit:
   is anticipated; a phase that wants a new module argues for it in its
   documents first.
 - **The layer gate is new.** A small tool (`tools/layercheck`) reads the
-  import graph of `engine/` and enforces the 3-layer rule from the survey:
-  `kit` imports stdlib only; `store` imports `kit`; `vfs` imports `kit`;
-  `acl` imports `kit`; `core` imports `kit`, `vfs`, `acl`, `store`; later
-  service packages import downward likewise; `http` (phase 3) is the only
-  tree that may import fiber, and nothing under `engine/` except `http`
-  may import `net/http` either. The audit's violation catalogue
-  (`02-document-plan.md`) is the tool's initial test fixture: each entry is
-  reproduced as a refused-import test.
+  import graph of `engine/` and enforces the tier table above as a path
+  prefix rule: a package's tier is the first path element under `engine/`,
+  and an import is legal only when the importing tier lists the imported
+  tier. The intra-tier build-order exceptions (`service/search` over
+  `service/core`, `store/state` over `store/ident` and `store/dbfile`) are
+  the tool's one explicit list. `http` is the only tree that may import
+  fiber, and nothing under `engine/` except `http` may import `net/http`
+  either. The audit's violation catalogue (`02-document-plan.md`) is the
+  tool's initial test fixture: each entry is reproduced as a
+  refused-import test.
 - **contractcheck and routecheck** stay pointed at the old tree until
   phase 3, whose documents re-point them at the fiber handlers as part of
   the assembly.

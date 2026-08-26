@@ -6,7 +6,7 @@
 > specification only. The new implementation is written completely new;
 > nothing is copied.
 
-Target file: `engine/core/resolve.go`. `//go:build linux`.
+Target file: `engine/service/core/resolve.go`. `//go:build linux`.
 
 ## Purpose
 

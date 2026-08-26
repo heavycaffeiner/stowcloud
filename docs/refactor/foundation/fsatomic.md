@@ -361,7 +361,7 @@ is fixed everywhere that pattern is used.
 architecture (01-package-survey.md). It imports only `engine/kit` packages
 (`kit/limits` if a bound is ever needed here; none is used by the two
 functions as specified) and the standard library. It does not import
-`engine/vfs`: the two packages sit at the same layer and solve unrelated
+`engine/infra/vfs`: the two packages sit at the same layer and solve unrelated
 problems, and an import in either direction would wire them together for
 no shared behavior. It does not import `engine/store/dbfile` or any other
 persistence sibling; every current and named future caller hands it a bare

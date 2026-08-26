@@ -5,7 +5,7 @@
 > referenced as a behavioral specification only. The new implementation is
 > written completely new; nothing is copied.
 
-Target files: `engine/core/registry.go` and `engine/core/shareadmin.go`.
+Target files: `engine/service/core/registry.go` and `engine/service/core/shareadmin.go`.
 Both are `//go:build linux`, like every non-pure core file.
 
 ## Purpose

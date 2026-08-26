@@ -4,7 +4,7 @@
 > `go/internal/vfs` is referenced as a behavioral specification only. The new
 > implementation is written completely new; nothing is copied.
 
-Target package: `engine/vfs`. `//go:build linux` except the pure path-type
+Target package: `engine/infra/vfs`. `//go:build linux` except the pure path-type
 files (path vocabulary, name validation, error sentinels), which build on any
 OS so a non-Linux development host can still compile a caller. This matches
 the current split (`root.go`, `open.go`, `read.go`, `caps.go`, `require.go`,
@@ -959,7 +959,7 @@ the audit (foundation-persistence.md, vfs findings 1-4):
 
 2. **`seqpacket.go` (`SocketPair`, `SendMessage`, `RecvMessage`) and
    `file.go`'s `SendJob`/`OSFile` move to the preview phase's worker
-   transport package**, not into `engine/vfs`. This is `SCM_RIGHTS`
+   transport package**, not into `engine/infra/vfs`. This is `SCM_RIGHTS`
    descriptor-passing IPC for the preview worker process; nothing in it
    touches a share root, a validated path, admission, or a durable write
    (audit: vfs finding 4). Its only callers today are `preview/pool.go`
@@ -976,7 +976,7 @@ the audit (foundation-persistence.md, vfs findings 1-4):
    discipline (`withFd`/`withFd2`, `runtime.KeepAlive`) this document
    requires `vfs` to keep for every descriptor it still owns.
 
-After both moves, **every function `engine/vfs` exports takes either a
+After both moves, **every function `engine/infra/vfs` exports takes either a
 `*ShareRoot` receiver or one of the three path types as an argument**, with
 the sole documented exception of the path-type constructors themselves
 (`ParseVpath`, `ParseSharePath`, `ParseSafePath`, which take the raw string

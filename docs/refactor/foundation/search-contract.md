@@ -8,7 +8,7 @@
 ## Purpose
 
 This is not the search rebuild. It settles the one thing the core needs
-fixed before `engine/core/shareadmin.go` is written: the shape the core
+fixed before `engine/service/core/shareadmin.go` is written: the shape the core
 hands to the search service, and the direction of the dependency between
 them. The type itself is already specified in
 `core/03-share-registry.md`'s "Scan sources" section; this document exists
@@ -25,7 +25,7 @@ findings those documents absorb). None of that is settled here.
 
 ### ScanSource (core-owned)
 
-Defined in `engine/core`, exactly as `core/03-share-registry.md` specifies
+Defined in `engine/service/core`, exactly as `core/03-share-registry.md` specifies
 it:
 
 ```go

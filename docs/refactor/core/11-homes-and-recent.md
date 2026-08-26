@@ -9,9 +9,9 @@
 
 Two files of the rebuilt domain package:
 
-- `engine/core/home.go`: per-user home directories: `EnableHomes`,
+- `engine/service/core/home.go`: per-user home directories: `EnableHomes`,
   `ensureHome`, the template seeding, and the home grant.
-- `engine/core/recent.go`: the journal-backed "what this account wrote"
+- `engine/service/core/recent.go`: the journal-backed "what this account wrote"
   listing: `Recent`, `RecentHit`, `RecentQuery`.
 
 The raw grant INSERT the reference keeps in `homes.go` leaves the core in
@@ -253,7 +253,7 @@ size, and a second page is the client's request to make.
    `homes.go` holds `grantInsertStmt` and spells the grant table's columns
    in the domain package. In the rebuild, a grant aggregate in
    `engine/store/state` owns grant creation (`PersistGrant`, contract
-   above); `engine/core/home.go` builds the row, calls `PersistGrant`, and
+   above); `engine/service/core/home.go` builds the row, calls `PersistGrant`, and
    reloads the evaluator. `inheritInt` and the statement text go with it.
    The ACL package stays a pure evaluator with no SQL of its own
    (01-package-survey.md).

@@ -10,12 +10,12 @@
 Two files of the rebuilt domain package, plus one interface the store layer
 implements:
 
-- `engine/core/link.go`: the `Link` type and its predicates, `LinkSpec`,
+- `engine/service/core/link.go`: the `Link` type and its predicates, `LinkSpec`,
   `LinkPatch`, `CreateLink`, `ListLinks`, `GetLink`, `UpdateLink`,
   `DeleteLink`, `NoteLinkDownload`, the `LinkStore` interface, and the
   crypto seams (`LinkCipher`, the password hasher and verifier,
   `AttachLinkCrypto`).
-- `engine/core/linkaccess.go`: everything a bearer of a token can do:
+- `engine/service/core/linkaccess.go`: everything a bearer of a token can do:
   `LinkPublic`, `LinkStream`, `LinkStreamAt`, `LinkBrowse`,
   `LinkArchiveWalk`, `LinkResolved`, `LinkCheckPassword`, `LinkDrop`,
   `LinkDropFile`, and the shared `linkTarget` resolution.
@@ -401,7 +401,7 @@ name versus a streaming endpoint that reports the conflict); both are kept.
 ## Spec: the LinkStore interface
 
 Every SQL statement and row scan moves behind `LinkStore`, defined in
-`engine/core/link.go` and implemented in `engine/store/state`. The core
+`engine/service/core/link.go` and implemented in `engine/store/state`. The core
 hands it domain-free values and receives rows back; the schema, the
 statements and the scanning live with the schema's owner. Field types are
 primitives so the store does not import the core or the ACL package.

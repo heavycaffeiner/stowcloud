@@ -9,10 +9,10 @@
 
 Two files of the rebuilt domain package:
 
-- `engine/core/quota.go`: the two quota mechanisms. The free-space floor
+- `engine/service/core/quota.go`: the two quota mechanisms. The free-space floor
   (`FreeSpace`) and the per-user byte ledger (`QuotaSink`, `AttachQuotaSink`,
   `chargeQuota`).
-- `engine/core/aggregate.go`: the recursive directory rollup (`Aggregate`,
+- `engine/service/core/aggregate.go`: the recursive directory rollup (`Aggregate`,
   `computeAggregate`, `ensureFileIDChain`, `upsertDir`), invalidation
   (`InvalidateShare`, `markDirty`).
 
@@ -327,7 +327,7 @@ are recomputed on next read. Behaviors:
    the domain package writes UPDATEs against the user table it does not
    own. In the rebuild, `engine/store/state` owns the implementation (a
    `Quota` value over the state DB's write path, constructed by the store
-   package); `engine/core/quota.go` keeps only the `QuotaSink` interface,
+   package); `engine/service/core/quota.go` keeps only the `QuotaSink` interface,
    `AttachQuotaSink`, and `chargeQuota`. The server wires
    `core.AttachQuotaSink(state.NewQuota(db))` at startup. The statements and
    the schema knowledge live with the schema's owner.

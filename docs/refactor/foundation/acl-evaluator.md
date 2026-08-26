@@ -10,7 +10,7 @@
 > document specifies only the loading contract the evaluator accepts from
 > that aggregate, not the SQL that produces it.
 
-Target directory: `engine/acl/`. Service layer, per the target architecture
+Target directory: `engine/service/acl/`. Service layer, per the target architecture
 in `01-package-survey.md`. No non-stdlib import; in particular, no
 `database/sql` import anywhere in this package.
 

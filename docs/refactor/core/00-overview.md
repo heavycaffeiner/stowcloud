@@ -78,39 +78,40 @@ New tree (module layout per `../03-engine-bootstrap.md`: the engine lives at
 
 ```
 engine/
-  core/                 the domain package (this phase)
-    core.go             Core struct, Options, New, attach seams, logging
-    errors.go           sentinels, typed errors, the VFS error crossing
-    ident.go            UserID, ShareID, Token, instance id
-    entry.go            Entry, Page, Cursor, SortKey, ListOptions
-    etag.go             FileETag, aggregate etag hashing
-    registry.go         share registry: register, broken, probe, unregister,
-                        Shares/Share/ShareRoot accessors, Roots projection
-    shareadmin.go       CreateShare/UpdateShare/DeleteShare/RetryShare,
-                        ReloadPersistedShares, rejection kinds, scan sources
-    resolve.go          Resolved, Resolve, ResolveUnder, EntryAt, vpath
-                        crossings, path helpers (pathExists, creatable leaf,
-                        unique sibling name)
-    list.go             List/ListSorted, sorting, cursor, buildEntry
-    read.go             Stream, RandomRead, OpenStream, OpenRandom,
-                        ArchiveWalk
-    write.go            Mkdir, CreateFile, Rename, Delete, PublishPart,
-                        preconditions, journal recording
-    transfer.go         OnConflict, MoveOpts/MoveResult, Move, copyRecursive,
-                        WouldCopy, RefuseSelfDescendant
-    operation.go        Operation, StartCopy, cancel gate, list/get/cancel
-    trash.go            trashMove, TrashList, TrashRestore, TrashPurge
-    quota.go            FreeSpace, QuotaSink interface, chargeQuota
-    aggregate.go        Aggregate, computeAggregate, markDirty, invalidation
-    link.go             Link, LinkSpec/LinkPatch, create/list/get/update/
-                        delete, liveness rules
-    linkaccess.go       LinkPublic, LinkStream, LinkBrowse, LinkDrop,
-                        password check
-    home.go             EnableHomes, ensureHome, template seeding
-    recent.go           Recent, RecentHit, journal-backed listing
-    grants.go           CreateGrant/ListGrants/UpdateGrant/DeleteGrant:
-                        thin wrappers over the store's grant aggregate
-                        plus one evaluator reload each
+  service/
+    core/               the domain package (this phase)
+      core.go           Core struct, Options, New, attach seams, logging
+      errors.go           sentinels, typed errors, the VFS error crossing
+      ident.go            UserID, ShareID, Token, instance id
+      entry.go            Entry, Page, Cursor, SortKey, ListOptions
+      etag.go             FileETag, aggregate etag hashing
+      registry.go         share registry: register, broken, probe, unregister,
+                          Shares/Share/ShareRoot accessors, Roots projection
+      shareadmin.go       CreateShare/UpdateShare/DeleteShare/RetryShare,
+                          ReloadPersistedShares, rejection kinds, scan sources
+      resolve.go          Resolved, Resolve, ResolveUnder, EntryAt, vpath
+                          crossings, path helpers (pathExists, creatable leaf,
+                          unique sibling name)
+      list.go             List/ListSorted, sorting, cursor, buildEntry
+      read.go             Stream, RandomRead, OpenStream, OpenRandom,
+                          ArchiveWalk
+      write.go            Mkdir, CreateFile, Rename, Delete, PublishPart,
+                          preconditions, journal recording
+      transfer.go         OnConflict, MoveOpts/MoveResult, Move, copyRecursive,
+                          WouldCopy, RefuseSelfDescendant
+      operation.go        Operation, StartCopy, cancel gate, list/get/cancel
+      trash.go            trashMove, TrashList, TrashRestore, TrashPurge
+      quota.go            FreeSpace, QuotaSink interface, chargeQuota
+      aggregate.go        Aggregate, computeAggregate, markDirty, invalidation
+      link.go             Link, LinkSpec/LinkPatch, create/list/get/update/
+                          delete, liveness rules
+      linkaccess.go       LinkPublic, LinkStream, LinkBrowse, LinkDrop,
+                          password check
+      home.go             EnableHomes, ensureHome, template seeding
+      recent.go           Recent, RecentHit, journal-backed listing
+      grants.go           CreateGrant/ListGrants/UpdateGrant/DeleteGrant:
+                          thin wrappers over the store's grant aggregate
+                          plus one evaluator reload each
 ```
 
 `grants.go` exists because the audits found three call sites
@@ -168,8 +169,8 @@ The core depends on, and only on:
 
 | Dependency | Role |
 | --- | --- |
-| `engine/vfs` | share roots, safe paths, stats, durable writes |
-| `engine/acl` | the permission evaluator (pure; no SQL) |
+| `engine/infra/vfs` | share roots, safe paths, stats, durable writes |
+| `engine/service/acl` | the permission evaluator (pure; no SQL) |
 | `engine/store` | cache DB (aggregates, idents), state DB (ops, shares, links, quota, grants), journal DB |
 | `engine/kit/clock` | injectable time for tests |
 | `engine/kit/secret` | zeroizable secret container for link tokens |
