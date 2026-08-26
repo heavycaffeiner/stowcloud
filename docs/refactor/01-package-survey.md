@@ -48,13 +48,29 @@ is a directory move, not a merge; each stays its own package.
 
 | Package | Lines | Verdict |
 | --- | --- | --- |
-| `vfs` | 3,226 | Rebuild before core. The security foundation: openat2 share roots, safe paths, admission, durable writes, publish. Its API is the contract every core document already writes against. Composition is already cohesive (one concept per file); the rebuild is a re-specification, not a re-draw. |
+| `vfs` | 3,226 | Rebuild before core. The security foundation: openat2 share roots, safe paths, admission, durable writes, publish. Its API is the contract every core document already writes against. Composition is cohesive except one intruder: `ReplaceFileDurable`/`PublishNew` take plain paths, never a share root, and serve control files; they move out to `store/fsatomic` (see Persistence). After the move, everything `vfs` exports goes through a `ShareRoot` or a path type. |
 | `jail` | 1,034 | Not a core dependency. Rebuild in the preview phase. |
 
 ### Persistence
 
+The persistence layer is not only SQLite. The engine also persists
+application state as plain files, and the rebuild treats both as one layer:
+
+- **Databases**: the three SQLite files under `store/`.
+- **File persistence**: the atomic-replace primitive and every file the
+  engine writes about itself (keys, rendered configs, index segments,
+  cache entries, tokens, certificates).
+
+What file persistence does **not** cover is the share trees. User files are
+the domain itself, written only through `vfs.ShareRoot`, which enforces the
+admission, symlink and escape rules; wrapping that behind a persistence
+abstraction would scatter the security gate across a layer boundary. The
+share tree is also an external world other programs write into, not a store
+this engine owns. `vfs` therefore stays domain infrastructure.
+
 | Package | Lines | Verdict |
 | --- | --- | --- |
+| `store/fsatomic` (new) | ~150 | Extract before core. `ReplaceFileDurable` and `PublishNew` currently live inside `vfs` (`replace_linux.go`, `publish_linux.go`) although they take plain paths and never touch a share root: control-file writing parked inside the filesystem-security package. They move to a persistence-layer primitive package every file-writing subsystem uses. |
 | `store/dbfile` | 409 | Rebuild before core. SQLite open, migrate. |
 | `store/cache` | ~900 | Rebuild before core. Idents, dir etags, resolve. |
 | `store/journal` | 197 | Rebuild before core. Write journal. |
@@ -70,6 +86,28 @@ not depend on each other.
 properties) is acceptable: persistence serves every layer above it, and the
 alternative is a fourth database. The files are named by aggregate, which
 already says what they are.
+
+#### File persistence inventory
+
+Every place the engine writes its own state as a file today, with its
+current mechanism:
+
+| What | Where today | Mechanism | Verdict |
+| --- | --- | --- | --- |
+| Master key ring | `auth/masterkey.go` | `vfs.ReplaceFileDurable` | Sound; repoint at `store/fsatomic` in the auth phase. |
+| NT-hash passdb sidecar | `auth/passdb.go` | `vfs.ReplaceFileDurable` | Sound; same repoint. |
+| SMB rendered configs | `smbpublish/publish.go`, `smbagent` | Mostly `ReplaceFileDurable`; `smbagent/sync_linux.go` writes `smb.conf` and its candidate with plain `os.WriteFile` | Fix in the SMB phase: every rendered file goes through the primitive. |
+| Search index (base, tombstones, segments) | `search/index` | `ReplaceFileDurable` for the snapshots, `O_APPEND` for segments | Sound; the append log is its own format and stays with the index. |
+| Preview cache entries | `preview/cache.go` | `ReplaceFileDurable` | Sound; same repoint. |
+| Upload spool and parts | `upload` | VFS control names inside the destination share | Correct as-is: parts live in the share tree on purpose, so they publish by same-directory rename. Not file persistence. |
+| Setup token | `server/setup.go` | Plain `os.WriteFile` | Non-durable; rebuild through the primitive. |
+| TLS self-signed cert and key | `server/tls.go` | Plain `os.WriteFile` | Non-durable; rebuild through the primitive. Key material especially must never be a torn file. |
+| Startup probe file | `server/probefile.go` | Hand-rolled tmp plus rename, no fsync | Replace with the primitive; a second hand-rolled replace is exactly what the primitive exists to prevent. |
+| Homes host directory | `core/homes.go` | `os.MkdirAll` 0750 | Stays in the core: creating the homes root is a domain decision (11-homes-and-recent.md), and a directory create is idempotent and has no torn state. |
+
+The subsystem-owned on-disk stores (index segments, preview cache, spool)
+keep their formats and their owning packages; the layer assignment only
+names their file halves as persistence and their primitive as shared.
 
 ### Service
 
@@ -117,6 +155,12 @@ already says what they are.
    phase; both fixes are mechanical once the layers exist.
 5. **`store/state` imports `store/cache`.** Fixed in the persistence
    rebuild by moving the shared identity tuple down.
+6. **`vfs` exports the control-file replace primitives.**
+   `ReplaceFileDurable` and `PublishNew` are file persistence, not share
+   filesystem security; they move to `store/fsatomic`, and the three
+   call sites that bypass them today (`server/setup.go`, `server/tls.go`,
+   `server/probefile.go`, plus `smbagent`'s plain writes) are rebuilt on
+   top of it in their phases. |
 
 ## Amendments to the phase 1 documents
 
@@ -136,8 +180,8 @@ Each step is documented before it is built, same as phase 1.
 | Step | Scope | Why it blocks the core |
 | --- | --- | --- |
 | 0.1 | Foundation kit: `kit/num`, `kit/clock`, `kit/task`, `kit/secret`, `kit/limits` | Every later package imports them. Near-verbatim re-specification; the work is naming, grouping, and the limits regrouping. Small. |
-| 0.2 | `vfs` | Every core operation acts through it. The largest and most security-critical blocker; its documents need the same rigor as the core's (admission, safe paths, the creation table, durable write, publish, escape tests). |
-| 0.3 | Persistence: `store/dbfile`, `store/cache`, `store/journal`, `store/state` re-drawn per aggregate, plus the three new surfaces (links, quota ledger, grants) and the `Ident` move | The core's construction takes the store; the three SQL extractions the core documents promise need their receiving surfaces to exist. |
+| 0.2 | `vfs`, minus the extracted primitives | Every core operation acts through it. The largest and most security-critical blocker; its documents need the same rigor as the core's (admission, safe paths, the creation table, durable write, publish, escape tests). |
+| 0.3 | Persistence: `store/fsatomic` (extracted from `vfs`), `store/dbfile`, `store/cache`, `store/journal`, `store/state` re-drawn per aggregate, plus the three new surfaces (links, quota ledger, grants) and the `Ident` move | The core's construction takes the store; the three SQL extractions the core documents promise need their receiving surfaces to exist. `fsatomic` is documented with 0.2 since its spec is carved out of the vfs documents. |
 | 0.4 | `acl` evaluator, pure | `Resolve` is built directly on `Evaluate`/`Effective`/`Roots`. Loading comes from the new grant aggregate. |
 | 0.5 | Core scan-source inversion | A one-document decision (the type definition lands in the core docs); no separate package to build, but it must be settled before `shareadmin.go` is written. |
 | 1 | Core, per documents 00-11 | Starts when 0.1 through 0.5 are done. |
