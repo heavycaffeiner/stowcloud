@@ -62,15 +62,17 @@ linters:
           - gochecknoglobals
           - gosec
 
-      # Test fixtures. G301, G304 and G306 are about a mode or a path a request
-      # can reach; a test that writes 0644 into t.TempDir and reads it back is
-      # neither, and tightening the fixtures would stop them resembling the
-      # shares this code actually serves. Every other gosec rule still applies,
-      # G115 included, and so does every other linter.
+      # Test fixtures. G301, G302, G304 and G306 are about a mode or a path a
+      # request can reach; a test that writes 0644 into t.TempDir and reads it
+      # back is neither, and tightening the fixtures would stop them resembling
+      # the shares this code actually serves. G302 is here for the same reason
+      # as G301: a test that drops a directory's mode to prove a refusal has to
+      # put the execute bit back for its own cleanup to descend. Every other
+      # gosec rule still applies, G115 included, and so does every other linter.
       - path: _test\.go
         linters:
           - gosec
-        text: "G30[146]"
+        text: "G30[1246]"
 
 formatters:
   enable:

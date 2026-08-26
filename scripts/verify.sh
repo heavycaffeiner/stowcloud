@@ -390,15 +390,19 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   grep_gate "D9: no math/rand" "$RAND_HITS" \
     "crypto/rand. A predictable token is a token."
 
-  # D11. A raw rename is callable from internal/vfs and nowhere else. That is
-  # all this proves: the package holds four operations with different contracts
-  # -- WriteDurable for staged share content, ShareRoot.Rename for a namespace
-  # move, PublishNew for an already-complete database with no clobber, and
-  # ReplaceFileDurable for a trusted private control file -- and no grep can
-  # tell which one a caller should have taken.
-  RENAME_HITS=$(go_code 'os\.Rename\(|unix\.Renameat2?\(' | grep -v '^go/internal/vfs/')
-  grep_gate "D11: rename only from internal/vfs" "$RENAME_HITS" \
-    "Take the operation in internal/vfs whose contract matches, and add one there if none does."
+  # D11. A raw rename is callable from the packages that own a rename contract
+  # and nowhere else. That is all this proves: each holds operations with
+  # different contracts (WriteDurable for staged share content, ShareRoot.Rename
+  # for a namespace move, ReplaceFileDurable for a trusted private control
+  # file) and no grep can tell which one a caller should have taken.
+  #
+  # The engine splits the two: share content renames live in engine/infra/vfs,
+  # control-file renames in engine/store/fsatomic, which is the move that took
+  # control-file writing out of the filesystem-security package.
+  RENAME_HITS=$(go_code 'os\.Rename\(|unix\.Renameat2?\(' \
+                | grep -vE '^go/(internal/vfs|engine/infra/vfs|engine/store/fsatomic)/')
+  grep_gate "D11: rename only from the packages that own it" "$RENAME_HITS" \
+    "Take the operation whose contract matches: vfs for share content, fsatomic for a control file."
 
   # Every descriptor is an *os.File and every use of a raw one keeps the file
   # alive across the call. (*os.File).Fd takes the descriptor out of the
@@ -406,9 +410,9 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # finalizer is free to close it underneath the syscall. Two helpers do the
   # keepalive; this is what stops a third site doing it by hand and forgetting.
   FD_HITS=$(go_code '\.Fd\(\)' \
-            | grep -vE '^go/internal/(vfs/open\.go|jail/landlock\.go):')
+            | grep -vE '^go/(internal/(vfs/open\.go|jail/landlock\.go)|engine/infra/vfs/root\.go|engine/store/fsatomic/dir_linux\.go):')
   grep_gate "raw descriptors only through a keepalive helper" "$FD_HITS" \
-    "Use withFd or withFd2 in internal/vfs; internal/jail/landlock.go is the other named site."
+    "Use the withFd helpers where the descriptor's owner lives; every other site goes through them."
 
   # F5. IntentReadWrite has exactly one call site, the upload engine's lazy
   # reopen of a part file. A second one is a read path holding a writable
@@ -417,10 +421,10 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # what is outside it. Test code is excluded: a test that proves the two
   # intents differ has to name both.
   RW_SITES=$(go_code 'IntentReadWrite' | grep -v '_test\.go:' \
-             | grep -vc '^go/internal/vfs/')
+             | grep -vcE '^go/(internal|engine/infra)/vfs/')
   RW_HITS=""
   [ "${RW_SITES:-0}" -le 1 ] || RW_HITS=$(go_code 'IntentReadWrite' \
-    | grep -v '_test\.go:' | grep -v '^go/internal/vfs/')
+    | grep -v '_test\.go:' | grep -vE '^go/(internal|engine/infra)/vfs/')
   grep_gate "IntentReadWrite has at most one call site" "$RW_HITS" \
     "Only the upload finalizer may take a writable descriptor on a read path."
 
