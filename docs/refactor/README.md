@@ -38,7 +38,9 @@ here once and repeated in each document:
 
   The full package survey, the layer assignment for every current package,
   and the cross-layer violations to fix are in
-  [01-package-survey.md](01-package-survey.md).
+  [01-package-survey.md](01-package-survey.md). The decisions that shape
+  the rebuild, each with its reasoning, are indexed in
+  [00-decisions.md](00-decisions.md).
   Every package was then audited file by file; findings are under
   [audit/](audit/), and the consolidated document plan derived from them is
   [02-document-plan.md](02-document-plan.md). Module layout, coexistence

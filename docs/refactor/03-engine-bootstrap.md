@@ -48,10 +48,21 @@ Import direction is strictly downward through the tiers:
 | `service` | `infra`, `store`, `kit` |
 | `http` | `service`, `kit` (and fiber; nothing else may) |
 
-Sideways imports inside a tier point only downward in build order
-(`service/core` may import nothing else in `service/`; `service/search`
-may import `service/core`; `store/state` may import `store/ident` and
-`store/dbfile`, never `store/cache`).
+Sideways imports inside a tier point only downward in build order, and the
+legal list is explicit:
+
+- `service/acl` imports nothing else in `service/` (it is the tier's
+  bottom, pure evaluation).
+- `service/core` imports `service/acl` and nothing else in `service/`
+  (`Resolve` is built on `Evaluate`/`Effective`/`Roots`).
+- `service/search` imports `service/core` (the scan-source inversion);
+  later service packages declare their sideways imports in their own
+  phase documents, always downward, never toward `http`.
+- `store/state` imports `store/ident` and `store/dbfile`, never
+  `store/cache`; `store/cache` and `store/journal` import `store/ident`
+  and `store/dbfile` likewise.
+- `infra/vfs` and `infra/jail` import nothing else in `infra/` and
+  nothing in `store/`.
 
 Why one module:
 
@@ -64,10 +75,9 @@ Why one module:
 
 Import paths are therefore
 `github.com/heavycaffeiner/stowcloud/go/engine/<tier>/<pkg>`. Every phase 0
-and phase 1 document's `engine/...` spelling maps onto this layout:
-`engine/infra/vfs` reads as `engine/infra/vfs`, `engine/service/acl` as
-`engine/service/acl`, `engine/service/core` as `engine/service/core`, and
-`engine/kit/...` and `engine/store/...` as written.
+and phase 1 document spells engine paths in this layout already
+(`engine/infra/vfs`, `engine/service/acl`, `engine/service/core`,
+`engine/kit/...`, `engine/store/...`).
 
 ## Coexistence rules during the rebuild
 

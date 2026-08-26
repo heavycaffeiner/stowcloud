@@ -171,7 +171,7 @@ The core depends on, and only on:
 | --- | --- |
 | `engine/infra/vfs` | share roots, safe paths, stats, durable writes |
 | `engine/service/acl` | the permission evaluator (pure; no SQL) |
-| `engine/store` | cache DB (aggregates, idents), state DB (ops, shares, links, quota, grants), journal DB |
+| `engine/store/{cache,state,journal,ident}` | cache DB (aggregates, idents), state DB (ops, shares, links, quota, grants), journal DB |
 | `engine/kit/clock` | injectable time for tests |
 | `engine/kit/secret` | zeroizable secret container for link tokens |
 | `engine/kit/task` | the one legal goroutine spawn, for long operations |

@@ -81,9 +81,9 @@ because sessions gate every protocol. Directories as named.
 | auth | `auth/00-overview.md`, `01-credentials-and-sessions.md`, `02-master-key-and-crypto.md`, `03-oidc-integration.md`, `04-audit-log.md`, `05-username-policy.md` | The limiter race (a fix, not a port); auth SQL moves to state aggregates; the passdb sidecar write goes behind an SMB-phase seam; one canonical username rule shared by `auth`, `smb`, `smbagent`. |
 | oidc | `oidc/00-relying-party.md` | Clean package; behavioral transcription (discovery validation, JWKS caching, SSRF guard). |
 | upload | `upload/00-overview.md`, `01-session-lifecycle.md`, `02-spool-modes.md`, `03-cache-spool.md`, `04-verification-and-limits.md` | Durability invariants as normative; the cache spool's fake-share-id question (non-share safe-root capability in vfs, or spool under persistence); `StateFinalizing` resolution. |
-| search | `search/00-family.md`, `01-index-format.md`, `02-service.md` | Walk/scan/build triplication; segment durability; trigram consolidation; tier selection. |
+| search | `search/00-family.md`, `01-index-format.md`, `02-service.md` | Walk/scan/build triplication; segment durability; trigram consolidation; tier selection. Target package `engine/service/search`; the core-facing contract is already settled in `foundation/search-contract.md`. |
 | preview | `preview/00-overview.md`, `01-jail.md`, `02-worker-protocol.md`, `03-cache.md`, `04-archive-listing.md` | Jail's dead exports become wired or deleted; the seqpacket transport moves here from vfs; cache repoints at fsatomic. |
-| watch | `foundation/watch.md` (small, single doc) | Two-tier hot set, fail-closed inotify parsing, whole-share escalation. |
+| watch | `watch/00-watch.md` (small, single doc) | Two-tier hot set, fail-closed inotify parsing, whole-share escalation. Target package `engine/service/watch`. |
 | settings | `settings/00-runtimecfg.md`, `01-settingscheck.md`, `02-emergency.md` | `settingscheck` returns domain errors (no `apierr` import); `emergency` re-homed as presentation wiring with its invariants preserved (404-not-403 gate, audit-on-every-write, write-then-restart). |
 | smb | `smb/00-config-rendering.md`, `01-publish-and-agent-protocol.md`, `02-agent-durable-writes.md`, `03-agent-package-split.md` | Refuse-not-escape rendering rules; the `bind.go` move (to kit, 0.1); the two plain writes fixed; the agent split into protocol, supervision, scope, reconciliation. |
 
@@ -111,7 +111,7 @@ Directory: `docs/refactor/http/`.
 - Every document carries the from-scratch blockquote and a "Deliberate
   changes" section; audit-found defects land there as changes, with the
   audit line cited.
-- The import-graph gate grows with each phase: kit imports nothing,
-  persistence imports kit, service imports persistence and kit,
-  presentation imports service and kit. Violations the audits catalogued
-  are the gate's initial test list.
+- The import-graph gate (`tools/layercheck`) grows with each phase. The
+  tier table and the intra-tier exceptions are fixed in
+  `03-engine-bootstrap.md`; the violations the audits catalogued are the
+  gate's initial test list.

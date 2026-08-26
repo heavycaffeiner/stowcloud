@@ -913,6 +913,7 @@ design. Clean; keep as-is per the survey.
 - `docs/refactor/foundation/jail.md`: Landlock, seccomp, and rlimit
   sequencing, the syscall allow-list measurement methodology, and an
   explicit decision on `Limits`/`ApplyLimits`/`SealDescriptors`.
-- `docs/refactor/foundation/watch.md`: the two-tier hot set, the
-  fail-closed inotify buffer parsing, and the whole-share escalation
-  behavior on overflow.
+- `docs/refactor/watch/00-watch.md` (renamed from this audit's original
+  `foundation/watch.md` suggestion; watch is a service-phase package per
+  `02-document-plan.md`): the two-tier hot set, the fail-closed inotify
+  buffer parsing, and the whole-share escalation behavior on overflow.
