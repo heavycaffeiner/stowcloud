@@ -1,8 +1,11 @@
-// Command vetgo rejects a bare go statement anywhere but internal/task.
+// Command vetgo rejects a bare go statement anywhere but the task packages.
 //
 // The rule it enforces: a panic in a goroutine with no recover installed takes
 // the process down and every request in flight with it. task.Go is the one
 // spawn that installs one, so it is the one spawn there is.
+//
+// Two packages are named while the rebuilt engine and the old tree coexist.
+// The old one goes when the phase that deletes it lands.
 //
 // It parses rather than type-checks, because a go statement is syntax and
 // needs nothing else. Give it directories; it walks them.
@@ -20,10 +23,13 @@ import (
 	"strings"
 )
 
-// spawnPackage is the one directory allowed to hold a go statement. Matched on
+// spawnPackages are the directories allowed to hold a go statement. Matched on
 // the path so that a fixture under testdata exercises the same rule the tree
 // is held to.
-const spawnPackage = "internal/task"
+var spawnPackages = []string{"internal/task", "engine/kit/task"}
+
+// spawnNames is the allowed set as it reads in a diagnostic.
+func spawnNames() string { return strings.Join(spawnPackages, " and ") }
 
 // say writes a diagnostic. It is the one place in this command that ignores an
 // error, because a message that cannot be printed has nowhere else to go.
@@ -48,7 +54,7 @@ func main() {
 	if found > 0 {
 		say(os.Stderr, "\nvetgo: %d go statement(s) outside %s.\n"+
 			"Use task.Go, which installs a recover; a bare go statement does not.\n",
-			found, spawnPackage)
+			found, spawnNames())
 		os.Exit(1)
 	}
 }
@@ -77,7 +83,7 @@ func check(root string, out io.Writer) (int, error) {
 			}
 			found++
 			say(out, "%s: go statement outside %s\n",
-				fset.Position(g.Go), spawnPackage)
+				fset.Position(g.Go), spawnNames())
 			return true
 		})
 		return nil
@@ -85,8 +91,13 @@ func check(root string, out io.Writer) (int, error) {
 	return found, err
 }
 
-// allowed reports whether path sits in the one package that may spawn.
+// allowed reports whether path sits in a package that may spawn.
 func allowed(path string) bool {
 	dir := filepath.ToSlash(filepath.Dir(path))
-	return strings.HasSuffix(dir, spawnPackage)
+	for _, p := range spawnPackages {
+		if strings.HasSuffix(dir, p) {
+			return true
+		}
+	}
+	return false
 }

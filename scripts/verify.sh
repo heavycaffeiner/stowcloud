@@ -262,7 +262,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # The two in-tree analysers and the text scan. They run for the host's own
   # OS because `go run` has to execute what it built, and each one is pointed
   # at the shipping target from the inside.
-  run "vetgo (D7: one goroutine spawn)"        ingo_host go run ./tools/vetgo ./cmd ./internal
+  run "vetgo (D7: one goroutine spawn)"        ingo_host go run ./tools/vetgo ./cmd ./internal ./engine
   # The client and the route table are two halves of one contract, and nothing
   # else here checks that they agree. A route the frontend calls and the server
   # does not mount is a screen that cannot work, and it was invisible to every
@@ -290,7 +290,11 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
       ingo_host go run ./tools/contractcheck \
         ../web/src/lib/api/types.ts ./internal/httpapi/handler
   run "vetsecret (D12: no secret to a verb)"   ingo_host go run ./tools/vetsecret ./...
-  run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./internal ./tools
+  run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./internal ./tools ./engine
+  # The tier rule over the rebuilt engine, by the import graph. A package's
+  # tier is its first path element under engine/, and an import is legal only
+  # when the importing tier lists the imported one.
+  run "layercheck (the engine's tiers hold)" ingo_host go run ./tools/layercheck ./engine
 
   FMT=$(cd go && gofmt -l . 2>/dev/null)
   grep_gate "gofmt" "$FMT" "Run: cd go && gofmt -w ."
@@ -346,12 +350,25 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
 
   # D1. Exceptions are countable, and the count is committed, so one being
   # added shows up in the diff beside the reason it was added for.
-  NOLINT_WANT=$(grep -vE '^[[:space:]]*(#|$)' go/nolint.budget | head -1 | tr -d '[:space:]')
-  NOLINT_HAVE=$(grep -rIo '//nolint:[a-zA-Z,]*' go --include='*.go' 2>/dev/null | wc -l | tr -d '[:space:]')
+  #
+  # Two counts while the two trees coexist. The old tree's is frozen and may
+  # only go down; the engine's starts at zero, so an exception there is a diff
+  # to the second number rather than a rounding error inside the first.
+  nolint_count() {
+    grep -rIno '//nolint:[a-zA-Z,]*' go --include='*.go' 2>/dev/null \
+      | grep -c "$@" | tr -d '[:space:]'
+  }
+  NOLINT_WANT=$(grep -vE '^[[:space:]]*(#|$)' go/nolint.budget | sed -n 1p | tr -d '[:space:]')
+  NOLINT_WANT_ENGINE=$(grep -vE '^[[:space:]]*(#|$)' go/nolint.budget | sed -n 2p | tr -d '[:space:]')
+  NOLINT_HAVE=$(nolint_count -v '^go/engine/')
+  NOLINT_HAVE_ENGINE=$(nolint_count '^go/engine/')
   NOLINT_HITS=""
   [ "$NOLINT_WANT" = "$NOLINT_HAVE" ] || \
-    NOLINT_HITS="go/nolint.budget says $NOLINT_WANT, the tree has $NOLINT_HAVE"
-  grep_gate "//nolint count matches go/nolint.budget" "$NOLINT_HITS" \
+    NOLINT_HITS="the old tree: go/nolint.budget says $NOLINT_WANT, it has $NOLINT_HAVE"
+  [ "$NOLINT_WANT_ENGINE" = "$NOLINT_HAVE_ENGINE" ] || \
+    NOLINT_HITS="$NOLINT_HITS"$'\n'"the engine: go/nolint.budget says $NOLINT_WANT_ENGINE, it has $NOLINT_HAVE_ENGINE"
+  NOLINT_HITS=$(printf '%s' "$NOLINT_HITS" | sed '/^$/d')
+  grep_gate "//nolint counts match go/nolint.budget" "$NOLINT_HITS" \
     "Every exception carries a reason on its line. Update the budget deliberately."
 
   # Three rules that are about a call appearing outside the one package that
@@ -362,8 +379,10 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
 
   # D8. One clock. F10 was a now_ns that unwrapped duration_since(UNIX_EPOCH),
   # which aborts the process on a machine whose RTC has not been set.
-  CLOCK_HITS=$(go_code 'time\.Now\(' | grep -v '^go/internal/clock/')
-  grep_gate "D8: time.Now only in internal/clock" "$CLOCK_HITS" \
+  # One per tree while the two coexist; the old entry goes with the old tree.
+  CLOCK_HITS=$(go_code 'time\.Now\(' \
+               | grep -vE '^go/(internal/clock|engine/kit/clock)/')
+  grep_gate "D8: time.Now only in the clock packages" "$CLOCK_HITS" \
     "Take a clock.Clock. Nothing else reads the wall clock."
 
   # D9. crypto/rand only.
