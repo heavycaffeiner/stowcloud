@@ -157,33 +157,27 @@ jobs:
       # generated certificate off it. A real deployment uses a named volume and
       # needs no preparation at all, which is what the compose smoke test in
       # this same job proves.
-      - name: Write the configuration and a data directory the image can write
+      - name: Prepare a data directory the image can write
         run: |
           mkdir -p /tmp/sc-data /tmp/sc-shares/files
           # The uid the image runs as, which cannot chown anything itself.
           # 1000 is also the runner's own uid, so this is a no-op there and is
           # kept for the deployment where it is not.
           sudo chown -R 1000:1000 /tmp/sc-data /tmp/sc-shares
-          cat > /tmp/sc.toml <<'TOML'
-          [server]
-          data_dir = "/var/lib/stowcloud"
-          listen = "0.0.0.0:8443"
 
-          [http]
-          app_hosts = ["127.0.0.1", "localhost"]
-          content_hosts = ["content.localhost"]
-
-          [security]
+      - name: Seed the settings, which live in the database
+        run: |
+          seed() {
+            docker run --rm -i \
+              -v /tmp/sc-data:/var/lib/stowcloud \
+              sc:core-ci settings set "$1" >/dev/null
+          }
+          echo '{"bind":"0.0.0.0:8443","app_hosts":["127.0.0.1","localhost"]}' | seed network
           # The runner is a virtual machine with whatever kernel the image
           # ships this month, so a missing layer is reported on the health
           # endpoint rather than refusing to start. The container runtime's
           # default seccomp profile is the thing under test here.
-          hardening = "preferred"
-
-          [[shares]]
-          name = "files"
-          host_path = "/shares/files"
-          TOML
+          echo '{"hardening":"preferred"}' | seed security
 
       - name: Run the container
         run: |
@@ -192,7 +186,6 @@ jobs:
             --cap-add SETUID --cap-add SETGID --cap-add CHOWN \
             --security-opt no-new-privileges:true \
             --read-only --tmpfs /tmp:size=64m \
-            -v /tmp/sc.toml:/etc/stowcloud/sc.toml:ro \
             -v /tmp/sc-data:/var/lib/stowcloud \
             -v /tmp/sc-shares/files:/shares/files \
             -p 127.0.0.1:8443:8443 \
@@ -263,31 +256,38 @@ jobs:
       # a certificate that is not valid for the address it serves fails here.
       - name: The generated certificate is valid for the address it serves
         run: |
-          docker exec sc-smoke /entrypoint.sh healthcheck /etc/stowcloud/sc.toml
+          docker exec sc-smoke /entrypoint.sh healthcheck
           echo "the server verified its own certificate over a real dial"
 
       - name: exec the healthcheck directly (proves it runs with no shell in the image)
         run: |
-          docker exec sc-smoke /entrypoint.sh healthcheck /etc/stowcloud/sc.toml
+          docker exec sc-smoke /entrypoint.sh healthcheck
           echo "healthcheck subcommand exited 0"
 
       # A share that lists is the difference between a server that started and
       # a server that works. The sandbox is built before the shares are
       # registered, and a domain that did not grant their paths denies every
       # listing with the share table and the grants both looking correct.
-      - name: A configured share is reachable through the sandbox
+      - name: A share created from the API is reachable through the sandbox
         run: |
           token=$(docker logs sc-smoke 2>&1 | grep -oE 'setup token[^:]*: [a-f0-9]+' | tail -1 | awk '{print $NF}')
           [ -n "$token" ] || { echo "the container printed no setup token"; exit 1; }
           curl -fsSk -X POST https://127.0.0.1:8443/api/setup \
             -H 'content-type: application/json' \
-            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\"}" >/dev/null
+            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\",\"app_hosts\":[\"127.0.0.1\",\"localhost\"],\"trusted_proxies\":[]}" >/dev/null
           curl -fsSk -c /tmp/jar -X POST https://127.0.0.1:8443/api/auth/login \
             -H 'content-type: application/json' \
             -d '{"username":"ci","password":"ci-smoke-password-1"}' >/dev/null
+          csrf=$(curl -fsSk -b /tmp/jar https://127.0.0.1:8443/api/auth/session |
+            grep -oE '"csrf":"[^"]+"' | head -1 | cut -d'"' -f4)
+          # A fresh deployment serves nothing until somebody says what to
+          # serve, so the share is created here rather than declared anywhere.
+          curl -fsSk -b /tmp/jar -X POST https://127.0.0.1:8443/api/admin/shares \
+            -H 'content-type: application/json' -H "sc-csrf: ${csrf}" \
+            -d '{"name":"files","host_path":"/shares/files"}' >/dev/null
           out=$(curl -fsSk -b /tmp/jar 'https://127.0.0.1:8443/api/fs/list?path=/files')
           echo "$out"
-          echo "$out" | grep -q '"dir_etag"' || { echo "the configured share does not list"; exit 1; }
+          echo "$out" | grep -q '"dir_etag"' || { echo "the share does not list"; exit 1; }
 
       - name: Wait for Docker's own HEALTHCHECK to report healthy
         # Proves the Dockerfile's HEALTHCHECK instruction itself, not just

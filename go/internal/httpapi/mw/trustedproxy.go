@@ -97,6 +97,24 @@ func ClientFrom(ctx context.Context) netip.Addr {
 	return unknownClientAddr()
 }
 
+// ResolvedClient is ClientFrom with the absence reported rather than replaced
+// by the placeholder.
+//
+// A mount that runs both inside this chain and on its own needs to tell "the
+// chain decided 0.0.0.0" from "no chain ran", because in the second case it
+// has to decide for itself and the placeholder is not an answer it can use.
+func ResolvedClient(ctx context.Context) (netip.Addr, bool) {
+	a, ok := ctx.Value(clientKey{}).(netip.Addr)
+	return a, ok
+}
+
+// ResolveClient is the peer-trust rule as a function, for a mount that runs
+// outside this chain. The rule is stated once, in resolveClient below, so the
+// two entrances cannot disagree about who a request is from.
+func ResolveClient(prefixes []netip.Prefix, peer, cf, xff string) netip.Addr {
+	return resolveClient(&trusted{prefixes: prefixes}, peer, cf, xff)
+}
+
 func resolveClient(t *trusted, peer, cf, xff string) netip.Addr {
 	peerAddr := parseHop(peer)
 	if !peerAddr.IsValid() {

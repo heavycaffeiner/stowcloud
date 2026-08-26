@@ -24,21 +24,23 @@ import (
 // matches what the server holds is a server answering with material a
 // healthcheck cannot account for.
 func runHealthcheck(args []string, w io.Writer) int {
-	if len(args) != 1 {
-		say(w, "usage: stowcloud healthcheck <sc.toml>\n\n")
+	dataDir, uerr := dataDirArg(args)
+	if uerr != nil {
+		say(w, "stowcloud %s: healthcheck: %v\n\n", version, uerr)
+		say(w, "usage: stowcloud healthcheck [--data-dir DIR]\n\n")
 		say(w, "  Dials the server over 127.0.0.1, verifies its certificate against\n")
-		say(w, "  the pair in data/tls, and answers 0 on ok or degraded, 1 when\n")
-		say(w, "  nothing answered at all.\n")
+		say(w, "  the pair in DIR/tls, and answers 0 on ok or degraded, 1 when\n")
+		say(w, "  nothing answered at all. DIR defaults to %s.\n", defaultDataDir)
 		return exitUsage
 	}
-	cfg, err := server.Load(args[0])
-	if err != nil {
-		say(w, "stowcloud %s: healthcheck: %v\n", version, err)
-		return exitConfig
-	}
+
+	// Where to dial and what name to ask under. The settings live in a
+	// database the running server holds, so this reads the snapshot that
+	// server writes beside the certificate it is about to verify.
+	probe := server.ReadProbe(dataDir)
 
 	// The data directory is the operator's own argument, never request input.
-	certPEM, err := os.ReadFile(filepath.Join(cfg.DataDir, "tls", "cert.pem")) //nolint:gosec // G703 reads the variable: the path is the operator's config.
+	certPEM, err := os.ReadFile(filepath.Join(dataDir, "tls", "cert.pem")) //nolint:gosec // G703 reads the variable: the path is the operator's argument.
 	if err != nil {
 		// No certificate material yet means the server has never started;
 		// that is the "nothing answered" case, not a degraded one.
@@ -62,15 +64,19 @@ func runHealthcheck(args []string, w io.Writer) int {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	// The dial target comes from the operator's config, never from a request.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://127.0.0.1"+tlsPortOf(cfg.Listen)+"/api/health", nil) //nolint:gosec // G704 reads the variable: the address is the operator's config.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://127.0.0.1"+tlsPortOf(probe.Listen)+"/api/health", nil) //nolint:gosec // G704 reads the variable: the address is the server's own snapshot.
 	if err != nil {
 		return exitNoAnswer
 	}
 	// The host guard answers a request for a name it does not serve with a
 	// refusal, and the loopback address is not one of the configured names. The
 	// probe therefore asks under the first configured host, which is the same
-	// name the certificate is checked against.
-	req.Host = cfg.AppHost
+	// name the certificate is checked against. Empty before setup has named
+	// one, which leaves the request carrying the dial host and the guard
+	// admitting it, because before setup there is no host list to refuse from.
+	if probe.AppHost != "" {
+		req.Host = probe.AppHost
+	}
 
 	resp, err := client.Do(req) //nolint:gosec // G704 reads the variable: the address is the operator's config.
 	if err != nil {

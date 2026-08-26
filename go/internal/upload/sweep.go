@@ -23,6 +23,11 @@ type SweepReport struct {
 	OrphanParts int
 	// OrphanSpools is spool directories in the same position.
 	OrphanSpools int
+	// OrphanCaches is cache directories whose session row is gone. They are
+	// counted separately because no walk of the shares can find them: the
+	// cache spool is not a share and the session row is the only thing that
+	// names a directory in it.
+	OrphanCaches int
 }
 
 // Sweep collects the two kinds of debt an upload leaves: a session row whose
@@ -67,7 +72,35 @@ func (e *Engine) Sweep(ctx context.Context) (SweepReport, error) {
 		rep.OrphanParts += parts
 		rep.OrphanSpools += spools
 	}
+
+	rep.OrphanCaches = e.sweepCache(live)
 	return rep, nil
+}
+
+// sweepCache removes cache directories no live session claims.
+//
+// It reads the same session list the rest of the sweep does, taken before any
+// directory was opened, so a session created while this runs is not mistaken
+// for an orphan.
+func (e *Engine) sweepCache(live []state.UploadSession) int {
+	if e.cache == nil {
+		return 0
+	}
+	claimed := map[string]struct{}{}
+	for _, sess := range live {
+		if sess.CacheDir != "" {
+			claimed[sess.CacheDir] = struct{}{}
+		}
+	}
+	taken := 0
+	for _, dir := range e.cache.sessionDirs() {
+		if _, held := claimed[dir.Name()]; held {
+			continue
+		}
+		e.cache.removeSession(dir)
+		taken++
+	}
+	return taken
 }
 
 // shareDir names one directory inside one share, which is the unit the sweep
@@ -136,6 +169,11 @@ func (e *Engine) collectExpired(ctx context.Context, sess state.UploadSession) b
 			e.removeSpoolDir(root, dir)
 		}
 	}
+	// The cache spool is not a share, so no directory walk below reaches it.
+	// The session row is the only thing that names this directory, and it is
+	// about to be deleted.
+	e.stopMerger(sessionIDOrZero(sess.ID))
+	e.releaseCache(sess.CacheDir)
 
 	if derr := e.state.DeleteUploadSession(ctx, sess.ID); derr != nil {
 		e.log.Warn("could not delete an expired upload session; it is retried next sweep",
@@ -258,6 +296,17 @@ func (e *Engine) removeSpoolDir(root *vfs.ShareRoot, dir vfs.SafePath) {
 	if rerr := root.Rmdir(dir); rerr != nil && !errors.Is(rerr, vfs.ErrNotFound) {
 		e.log.Warn("could not remove an upload spool directory", slog.Any("error", rerr))
 	}
+}
+
+// sessionIDOrZero is for the two callers holding stored bytes that are a
+// session id by construction. A row whose id will not parse names no merger,
+// and the zero id matches none.
+func sessionIDOrZero(b []byte) SessionID {
+	id, err := sessionIDFromBytes(b)
+	if err != nil {
+		return SessionID{}
+	}
+	return id
 }
 
 func shareIDOf(v int64) (core.ShareID, bool) {

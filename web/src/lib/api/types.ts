@@ -235,7 +235,7 @@ export interface IndexEstimate {
 
 /** `GET`/`PATCH /api/admin/index/settings` — the
  *  persisted (survives-restart, `index.db`-backed) runtime override for the
- *  off-by-default name index, independent of `sc.toml`'s `[index]
+ *  off-by-default name index, independent of the stored `[index]
  *  name_enabled`. */
 export interface IndexSettings {
   name_enabled: boolean
@@ -249,9 +249,20 @@ export interface IndexSettings {
 export interface UploadSettingsReq {
   chunk_min: number
   chunk_default: number
+  /** Spool chunks to the cache volume before they reach the destination.
+   *  Omitted leaves it as it was, so saving the chunk sizes cannot silently
+   *  turn it off. */
+  cache_enabled?: boolean
 }
 
-export type UploadSettingsResp = UploadSettingsReq
+export interface UploadSettingsResp {
+  chunk_min: number
+  chunk_default: number
+  cache_enabled: boolean
+  /** False when the deployment has no spool at all, in which case the switch
+   *  is shown disabled rather than offered as something that does nothing. */
+  cache_available: boolean
+}
 
 /** One row of `GET /api/admin/users` — every account on
  *  the deployment, from the admin's point of view. Never carries a password
@@ -306,14 +317,57 @@ export interface AdminShare {
   id: number
   name: string
   host_path: string
-  /** `true` for a share declared in `sc.toml`. It is still renameable,
-   *  repointable and trash-toggleable here — the backend keeps those as
-   *  overrides in `shares.db` and reapplies them at startup — but it cannot
-   *  be deleted, because the config entry would re-declare it on the next
-   *  restart. Only the delete affordance is hidden. */
-  config_defined: boolean
   /** Off by default for every share. */
   trash_enabled: boolean
+  /** Why this share cannot be served right now, or absent when it can. A
+   *  broken share is still listed: dropping it made a disk that did not come
+   *  back look exactly like a share somebody had deleted, with the only trace
+   *  a line on the health endpoint. */
+  broken_reason?: string
+  /** What the SMB republish this write triggered did. Only on write
+   *  responses, and only when the deployment has a sidecar. */
+  smb?: SMBOutcome
+}
+
+/** What a republish to the SMB sidecar did, carried on the response of the
+ *  write that triggered it.
+ *
+ *  It exists because the write never fails on a publish failure: the row is
+ *  committed and this server is already serving the change, so refusing would
+ *  report a change that happened as one that did not. What was missing was
+ *  saying so at the moment it happens rather than on the health page later. */
+export interface SMBOutcome {
+  /** `applied` is the daemon serving it. `unreachable` is the configuration
+   *  written with nothing having applied it. `warnings` is an apply that
+   *  happened and found something to fix. */
+  state: 'applied' | 'unreachable' | 'warnings'
+  /** Where the agent was expected, present only when it could not be reached:
+   *  "rendered and nothing applied it" and "the agent answered with a
+   *  failure" are different things to go and look at. */
+  socket?: string
+  report?: SmbApplyReport
+}
+
+/** The sidecar's own answer to an apply.
+ *
+ *  Everything worth knowing about an SMB change is true in the other
+ *  container, so this is the daemon's report rather than this server's guess.
+ *  `missingPaths` in particular cannot be seen from here: without it the
+ *  symptom is a client being told the network name is invalid while every
+ *  file on the server's side looks right. */
+export interface SmbApplyReport {
+  ok: boolean
+  shares: string[]
+  interfaces: string
+  hostsAllow: string
+  action: string
+  /** Share paths named in the configuration that do not exist where the
+   *  daemon runs. */
+  missingPaths: string[]
+  /** Accounts the credential import produced nothing for, so they cannot
+   *  authenticate over SMB. */
+  missingCredentials: string[]
+  message?: string
 }
 
 /** `POST /api/admin/shares` body. */
@@ -453,6 +507,11 @@ export interface RootEntry {
   /** Whether this share keeps deleted items. Off by default, so the delete
    *  confirmation has to say which of the two it is. */
   trash_enabled: boolean
+  /** Why this folder cannot be opened right now, or absent when it can. The
+   *  folder stays in the list either way: one whose disk did not come back
+   *  used to vanish, which reads as somebody having deleted it rather than as
+   *  hardware that needs looking at. */
+  broken_reason?: string
 }
 
 export interface ClientLimits {
@@ -859,13 +918,13 @@ export interface ReadFileResponse {
 }
 
 // ── server settings (`go/internal/httpapi/handler/settings.go`) — the admin
-// screen's parity with every operator-settable `sc.toml` field. One flat
-// field list, keyed with the same dotted path `sc.toml` itself uses, so
+// screen's parity with every operator-settable field. One flat
+// field list, keyed with the same dotted path the store uses, so
 // an operator can cross-reference the two; each field carries where its
 // current value came from and whether changing it needs a restart. ──
 
 /** Where a settings value came from (`go/internal/httpapi/handler/settings.go`). */
-export type SettingsSource = 'builtin_default' | 'config_file' | 'admin_override'
+export type SettingsSource = 'builtin_default' | 'admin_override'
 
 /** One row of `GET /api/admin/server-settings`. A field this screen can't
  *  safely change is still listed, never hidden; `readonly_reason_key` is then
@@ -937,16 +996,6 @@ export interface SettingsFinding {
   reason_params?: Record<string, string>
 }
 
-/** `POST /api/admin/server-settings/{section}/check` — the dry run. Runs the
- *  same probes a save runs and stores nothing, so `ok: false` here means a
- *  save of the same body is refused. */
-export interface SettingsCheckResult {
-  section: SettingsSectionId
-  ok: boolean
-  restart_required: boolean
-  findings: SettingsFinding[]
-}
-
 export interface SettingsSnapshot {
   fields: SettingsField[]
   /** `go/internal/smb` — the same
@@ -996,14 +1045,23 @@ export interface SmbOvergrant {
 
 /** What applying a patch tells the caller — whether it already took effect
  *  or needs the restart flow. */
+/** What a save did. Four outcomes, because they are four different things to
+ *  tell somebody who just pressed save: in effect now; in effect now and the
+ *  listener moved to do it; stored and the process is going down to pick it
+ *  up; stored and this build has nothing wired to apply it. */
+export type Applied = 'live' | 'serve_restarted' | 'engine_restart' | 'reserved'
+
 export interface ApplyOutcome {
-  applied_live: boolean
-  restart_required: boolean
+  applied: Applied
 }
 
-/** `PATCH /api/admin/server-settings/smb` body (`SmbPatch`). `enabled` needs
- *  a restart; everything else here applies live. */
+/** `PATCH /api/admin/server-settings/smb` body (`SmbPatch`). The publisher is
+ *  assembled once, so saving this section restarts the process to pick it up;
+ *  `force` takes that restart with work still in flight. */
 export interface SmbSettingsReq {
+  /** Take the restart even with uploads or jobs running. Absent means the
+   *  save is refused with `409 restart.busy` and the counts. */
+  force?: boolean
   enabled: boolean
   workgroup: string
   /** NetBIOS name clients can open `\\NAME\share` by. Required, like every
@@ -1040,15 +1098,12 @@ export interface RateSettingsReq {
 }
 
 /**
- * `PATCH /api/admin/server-settings/network` body. Applies live: both fields
- * are holders the request chain reads, so a save moves them at once.
+ * `PATCH /api/admin/server-settings/network` body.
  *
- * Exactly the two the server decodes. It carried a `bind`, an
- * `allowed_origins` and a `public_origins` as well, and the handler reads none
- * of them: every save of those three answered "applied" and changed nothing,
- * and the snapshot has no such fields, so they loaded back empty. The bind
- * address is reported in the read-only field list instead, which is where the
- * server marks it: the socket is bound once at startup.
+ * The two lists are holders the request chain reads, so a save moves them at
+ * once. `bind` is a socket rather than a holder: saving it binds the new
+ * address before it drops the old one, so it applies without a restart too,
+ * and a refused bind leaves the server reachable where it was.
  */
 export interface NetworkSettingsReq {
   /** The host names this server answers on, which is also the origin check
@@ -1057,6 +1112,8 @@ export interface NetworkSettingsReq {
   /** CIDR ranges whose `X-Forwarded-For` is believed. Empty trusts no proxy,
    *  so the peer address is the client address. */
   trusted_proxies: string[]
+  /** host:port the listener binds. Omitted leaves it where it is. */
+  bind?: string
 }
 
 /** `PATCH /api/admin/server-settings/db` body (`DbPatch`) —
@@ -1073,19 +1130,21 @@ export interface SymlinkPolicyReq {
   policy: 'deny' | 'within_share' | 'follow'
 }
 
-/** `PATCH /api/admin/server-settings/homes` body (`HomesPatch`) —
- *  restart-required. */
+/** `PATCH /api/admin/server-settings/homes` body (`HomesPatch`). The homes
+ *  share is registered at startup, so this restarts the process. */
 export interface HomesSettingsReq {
   enabled: boolean
   root: string | null
+  force?: boolean
 }
 
-/** `PATCH /api/admin/server-settings/watch` body (`WatchPatch`) —
- *  restart-required. */
+/** `PATCH /api/admin/server-settings/watch` body (`WatchPatch`). The watcher
+ *  takes its bounds when it starts, so this restarts the process. */
 export interface WatchSettingsReq {
   backend: 'auto' | 'hotset' | 'inotify_full' | 'fanotify'
   hot_set_max: number
   full_threshold: number
+  force?: boolean
 }
 
 /** `PATCH /api/admin/server-settings/oidc` body (`OidcPatch`): the eight
@@ -1095,7 +1154,7 @@ export interface WatchSettingsReq {
  *  The other two `oidc.*` settings are not here on purpose.
  *  `oidc.client_secret_file` is the path to a secret, and
  *  `oidc.local_password_login` would be unrecoverable if this screen could
- *  write it: an admin override beats `sc.toml` on every boot, so setting
+ *  write it: an admin override beats the compiled-in default on every boot, so setting
  *  it to `deny` here and then losing the IdP would lock everyone out with no
  *  way back in (§4.3.5). The server refuses both fields; this type refuses to
  *  offer them. */

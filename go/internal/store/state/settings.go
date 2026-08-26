@@ -34,11 +34,20 @@ func (d *DB) Settings(ctx context.Context) (map[string]any, error) {
 	return out, nil
 }
 
-// MergeSettings writes one section, leaving every other key as it was.
+// MergeSettings writes one section's keys, leaving every other key as it was.
 //
 // Read, merge, write, in one transaction: two administrators saving different
 // sections at once would otherwise have the later write drop the earlier one's
 // section entirely.
+//
+// The merge reaches inside the section, and that is load-bearing. A save is a
+// patch naming the fields it changes, and replacing the section wholesale made
+// every field the caller did not mention disappear: the first-run form saved
+// an app-host list into the network section and silently dropped the bind
+// address an operator had seeded beside it, so the server came back on a port
+// nobody had asked for. A caller clearing a field sends it explicitly, which
+// is the difference between "set this to empty" and "I am not talking about
+// this one".
 func (d *DB) MergeSettings(ctx context.Context, section string, value any) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		merged := map[string]any{}
@@ -56,7 +65,7 @@ func (d *DB) MergeSettings(ctx context.Context, section string, value any) error
 			return err
 		}
 
-		merged[section] = value
+		merged[section] = mergeKeys(merged[section], value)
 		encoded, jerr := json.Marshal(merged)
 		if jerr != nil {
 			return jerr
@@ -64,6 +73,27 @@ func (d *DB) MergeSettings(ctx context.Context, section string, value any) error
 		_, eerr := tx.ExecContext(ctx, sqlWriteSettings, string(encoded))
 		return eerr
 	})
+}
+
+// mergeKeys folds a section patch over what is stored.
+//
+// Only when both sides are documents. A section stored as something else, or a
+// value that is not a document, is replaced: there is nothing to merge into,
+// and guessing would leave half of one shape under the other.
+func mergeKeys(stored, patch any) any {
+	old, oldOK := stored.(map[string]any)
+	next, nextOK := patch.(map[string]any)
+	if !oldOK || !nextOK {
+		return patch
+	}
+	out := make(map[string]any, len(old)+len(next))
+	for k, v := range old {
+		out[k] = v
+	}
+	for k, v := range next {
+		out[k] = v
+	}
+	return out
 }
 
 // searchSection is the stored search settings, or an empty document when there

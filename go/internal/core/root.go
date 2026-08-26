@@ -69,9 +69,17 @@ type Core struct {
 }
 
 // shareEntry is one registered share: its definition and the live root.
+//
+// root is nil when the share is broken. A broken share is still an entry, and
+// that is the point: it used to be dropped, so a folder whose path disappeared
+// vanished from the admin screen and from every user's root list, which reads
+// as a share somebody deleted rather than a disk that did not come back. It
+// stays listed, marked, with the reason attached.
 type shareEntry struct {
 	def  ShareDef
 	root *vfs.ShareRoot
+	// brokenErr is why the root could not be opened, or nil when it is live.
+	brokenErr error
 }
 
 // New wires a Core over the store. nil is refused for every field that has no
@@ -127,6 +135,12 @@ type Share struct {
 	// SharedExternally marks a share another service also reads, which the
 	// client renders as a badge.
 	SharedExternally bool
+
+	// BrokenReason is a token naming why this share cannot be served right
+	// now, or empty when it can. It is the same vocabulary the health surface
+	// carries ("missing", "unreadable", "unavailable"), because a screen and a
+	// probe asking the same question should get the same word back.
+	BrokenReason string
 }
 
 // ShareDef is the internal spelling of Share, kept separate so the config
@@ -164,18 +178,122 @@ func (c *Core) RegisterShare(ctx context.Context, def ShareDef) error {
 	if adm.Warn != "" {
 		c.logger.Warn("share admitted with a caveat", "share", def.Name, "warning", adm.Warn)
 	}
-	c.sharesMu.Lock()
-	defer c.sharesMu.Unlock()
-	c.shares[def.ID] = &shareEntry{def: def, root: root}
+	def.BrokenReason = ""
+	c.replaceEntry(&shareEntry{def: def, root: root})
 	return nil
 }
 
-// ShareRoot returns the live root for id, and false if it is not registered.
-func (c *Core) ShareRoot(id ShareID) (*vfs.ShareRoot, bool) {
+// RegisterBroken remembers a share whose root would not open.
+//
+// The alternative is what this replaces: the share was left out of the
+// registry, so it was absent from the admin list, absent from every user's
+// roots, and present only as a line on the health endpoint. From the interface
+// that is indistinguishable from a share nobody ever created, which is the
+// worst thing a missing disk can look like.
+func (c *Core) RegisterBroken(def ShareDef, cause error) {
+	def.BrokenReason = RejectionKind(cause)
+	c.replaceEntry(&shareEntry{def: def, brokenErr: cause})
+}
+
+// replaceEntry installs an entry, closing the root the previous one held.
+//
+// Closing is what makes re-registration safe to call repeatedly: retry and
+// edit both go through it, and without this each attempt would leak the
+// descriptor the last one opened.
+func (c *Core) replaceEntry(e *shareEntry) {
+	c.sharesMu.Lock()
+	old, had := c.shares[e.def.ID]
+	c.shares[e.def.ID] = e
+	c.sharesMu.Unlock()
+	if had && old.root != nil && old.root != e.root {
+		if err := old.root.Close(); err != nil {
+			c.logger.Warn("closing a replaced share's root failed",
+				slog.String("share", old.def.Name), slog.Any("error", err))
+		}
+	}
+}
+
+// ShareBroken is why a share cannot be served, or nil when it can.
+func (c *Core) ShareBroken(id ShareID) error {
 	c.sharesMu.RLock()
 	defer c.sharesMu.RUnlock()
 	e, ok := c.shares[id]
 	if !ok {
+		return nil
+	}
+	return e.brokenErr
+}
+
+// ProbeShares re-checks every registered root and moves shares between live
+// and broken.
+//
+// Both directions, which is what makes it worth running on a schedule. A root
+// whose filesystem was unmounted underneath it keeps a descriptor that opens
+// nothing, so the share fails one request at a time and nothing notices; a
+// broken share whose disk came back has to start working again without
+// somebody pressing anything.
+//
+// It returns what changed, so the caller can log a transition rather than the
+// steady state: a probe that logged every pass would bury the one line that
+// matters under a line a minute.
+func (c *Core) ProbeShares(ctx context.Context) (broke, healed []ShareDef) {
+	for _, def := range c.Shares() {
+		switch alive := c.ShareBroken(def.ID) == nil; {
+		case alive:
+			root, ok := c.ShareRoot(def.ID)
+			if !ok {
+				continue
+			}
+			if err := root.Alive(); err != nil {
+				c.RegisterBroken(def, err)
+				def.BrokenReason = RejectionKind(err)
+				broke = append(broke, def)
+			}
+		default:
+			// Retried by re-registering, which runs the whole admission gate
+			// again rather than only re-opening: a path that came back on a
+			// filesystem this server will not serve is still broken, and
+			// finding that out here beats finding it out per request.
+			if err := c.RegisterShare(ctx, def); err == nil {
+				def.BrokenReason = ""
+				healed = append(healed, def)
+			}
+		}
+	}
+	return broke, healed
+}
+
+// UnregisterShare stops serving a share and closes its root.
+//
+// The root is closed rather than dropped: it is an open descriptor on a
+// directory, and a deployment that adds and removes shares over its life would
+// otherwise leak one per removal. An in-flight request holding the same root
+// keeps its own reference, so the close lands when that reference goes.
+func (c *Core) UnregisterShare(id ShareID) {
+	c.sharesMu.Lock()
+	e, ok := c.shares[id]
+	delete(c.shares, id)
+	c.sharesMu.Unlock()
+	// A broken share has no root to close. Dereferencing one is what made
+	// removing a share whose disk had gone answer 500, which left the only
+	// share nothing will ever re-probe stuck as a permanent degradation.
+	if !ok || e.root == nil {
+		return
+	}
+	if err := e.root.Close(); err != nil {
+		c.logger.Warn("closing a removed share's root failed",
+			slog.String("share", e.def.Name), slog.Any("error", err))
+	}
+}
+
+// ShareRoot returns the live root for id, and false if it is not registered
+// or is broken. A broken share has no root to hand out, and handing out a nil
+// one would move the failure to whoever dereferenced it.
+func (c *Core) ShareRoot(id ShareID) (*vfs.ShareRoot, bool) {
+	c.sharesMu.RLock()
+	defer c.sharesMu.RUnlock()
+	e, ok := c.shares[id]
+	if !ok || e.root == nil {
 		return nil, false
 	}
 	return e.root, true
@@ -223,6 +341,10 @@ func (c *Core) Roots(user UserID) []acl.RootEntry {
 		if e, ok := c.shareDef(ShareID(s)); ok {
 			roots[i].TrashEnabled = e.TrashEnabled
 			roots[i].SharedExternally = e.SharedExternally
+			// The root stays in the list when its disk is gone, carrying why.
+			// Dropping it is what made a share disappear from the browser with
+			// no explanation anywhere a user could see.
+			roots[i].BrokenReason = e.BrokenReason
 		}
 	}
 	return roots

@@ -237,6 +237,13 @@ type RootEntry struct {
 
 	TrashEnabled     bool
 	SharedExternally bool
+
+	// BrokenReason is why this share cannot be served right now, or empty when
+	// it can. It is filled in by the layer that owns the share registry; this
+	// package only carries it, because the projection is where a client learns
+	// what its folders are, and a folder that is listed and unusable is
+	// something it has to be able to say.
+	BrokenReason string
 }
 
 // Roots is the virtual root projection for user: one entry per distinct

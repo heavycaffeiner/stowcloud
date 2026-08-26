@@ -1,16 +1,11 @@
-// The one-time admin bootstrap.
+// The first-run form.
 // Standalone module, same reasoning as share.ts: it does NOT import
 // ./client, ./mock, or ./http, so the not-yet-authenticated bundle (login +
 // first-run screens) never pulls in the full fs mock or the rest of the
 // authenticated app surface.
 //
-// The real backend for this is being written by another agent against the
-// design doc *right now* — `POST /api/setup {token, username, password}`
-// below is a best-effort guess at the eventual contract, not a read of
-// working code. `createInitialAdmin` is THE seam: it is the only function in
-// the entire frontend that knows this request shape, so retargeting it once
-// the real route lands (different path, method, or field names) is a
-// one-line change here — nothing else in the app needs to know.
+// `createInitialAdmin` is THE seam: it is the only function in the entire
+// frontend that knows this request shape.
 import { t } from '../i18n'
 import { ApiError, type ApiErrorBody } from './types'
 
@@ -18,6 +13,36 @@ export interface SetupCreateAdminReq {
   token: string
   username: string
   password: string
+  /** The names this server will answer for. Required: until one is saved the
+   *  host guard is in its first-boot mode, admitting the local network on the
+   *  strength of the peer address alone. */
+  app_hosts: string[]
+  /** CIDR ranges whose forwarded headers are believed. Empty trusts none. */
+  trusted_proxies: string[]
+  /** host:port the listener moves to. Empty leaves it where it is. */
+  bind?: string
+  /** The folder to start serving. Omitted lands on the empty home, which
+   *  offers the same thing one click later. */
+  first_share?: { name: string; host_path: string }
+}
+
+/** What setup noticed and did not refuse over. The one that matters is a host
+ *  list that does not contain the address the operator is browsing from: it is
+ *  correct behind a proxy and a lockout otherwise, and no rule can tell the
+ *  two apart. */
+export interface SetupFinding {
+  level: 'block' | 'warn' | 'ok'
+  field?: string
+  reason_key: string
+  reason_params?: Record<string, string>
+}
+
+export interface SetupResult {
+  warnings: SetupFinding[]
+  /** True when the listener could not move to the address that was asked
+   *  for. The old address is still serving, which is why this is a field
+   *  rather than a failure. */
+  bind_failed?: boolean
 }
 
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
@@ -31,7 +56,7 @@ const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api'
 // for the same reason).
 const MOCK_SETUP_ADMIN_KEY = 'sc.mock.setup_admin'
 
-async function mockCreateAdmin(req: SetupCreateAdminReq): Promise<void> {
+async function mockCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
   await new Promise((r) => setTimeout(r, 200))
   if (!req.token.trim()) {
     throw new ApiError(401, { code: 'setup.invalid_token', message: t('setup.invalid_setup_token') })
@@ -41,23 +66,38 @@ async function mockCreateAdmin(req: SetupCreateAdminReq): Promise<void> {
   } catch {
     /* private browsing etc. — the mock auto-login after setup just won't work; non-fatal */
   }
+  // The one warning a browser can work out for itself, which is also the one
+  // that matters: the list does not name where this page is being read from.
+  const self = location.hostname
+  if (req.app_hosts.length > 0 && !req.app_hosts.some((h) => h.toLowerCase() === self.toLowerCase())) {
+    return {
+      warnings: [
+        { level: 'warn', field: 'app_hosts', reason_key: 'settings.would_lock_you_out', reason_params: { host: self } }
+      ]
+    }
+  }
+  return { warnings: [] }
 }
 
-async function httpCreateAdmin(req: SetupCreateAdminReq): Promise<void> {
+async function httpCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
   const res = await fetch(`${BASE}/setup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
     credentials: 'include',
     body: JSON.stringify(req)
   })
-  if (res.ok || res.status === 204) return
+  if (res.status === 204) return { warnings: [] }
   const body = await res.json().catch(() => ({}))
+  if (res.ok) {
+    const done = body as { warnings?: SetupFinding[]; bind_failed?: boolean }
+    return { warnings: done.warnings ?? [], bind_failed: done.bind_failed }
+  }
   const err = (body as ApiErrorBody).error ?? { code: 'internal', message: res.statusText }
   throw new ApiError(res.status, err)
 }
 
 /** THE SEAM — see file header. */
-export function createInitialAdmin(req: SetupCreateAdminReq): Promise<void> {
+export function createInitialAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
   return IS_MOCK ? mockCreateAdmin(req) : httpCreateAdmin(req)
 }
 

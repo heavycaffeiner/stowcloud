@@ -7,7 +7,7 @@
   // lib/state/auth.svelte.ts).
   import { t } from '../../lib/i18n'
   import { goto } from '$app/navigation'
-  import { createInitialAdmin } from '../../lib/api/setup'
+  import { createInitialAdmin, type SetupFinding } from '../../lib/api/setup'
   import { api, ApiError, isMock } from '../../lib/api/client'
   import { completeLogin } from '../../lib/state/auth-bootstrap'
   import { scorePasswordStrength } from '../../lib/format/password-strength'
@@ -24,6 +24,37 @@
   let submitting = $state(false)
   let errorMsg = $state<string | null>(null)
   let doneButLoginFailed = $state(false)
+
+  // The deployment's first configuration. It is asked for here because this is
+  // the one moment somebody is definitely looking at the screen: a host list
+  // saved now is one they will not have to discover from a refused request
+  // later. Everything but the host list may stay as it is.
+  //
+  // Prefilled with the name this page was opened under, which is right far
+  // more often than it is wrong: an operator browsing to the box by address or
+  // by its LAN name is naming the thing they will keep using.
+  let appHosts = $state(typeof location === 'undefined' ? '' : location.hostname)
+  let trustedProxies = $state('')
+  let bind = $state('')
+  let shareName = $state('')
+  let sharePath = $state('')
+  let warnings = $state<SetupFinding[]>([])
+  let bindFailed = $state(false)
+
+  function toList(v: string): string[] {
+    return v
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean)
+  }
+
+  // The catalogue renders the sentence; the server sends the key and its
+  // placeholders. The keys cannot be seen at the call site.
+  /* i18n */ 'settings.would_lock_you_out'
+  /* i18n */ 'settings.proxy_range_is_everything'
+  function warningText(f: SetupFinding): string {
+    return t(f.reason_key, f.reason_params ?? {})
+  }
 
   const strength = $derived(scorePasswordStrength(password))
 
@@ -42,8 +73,30 @@
       token.trim().length > 0 &&
       username.trim().length > 0 &&
       password.length >= MIN_PASSWORD_LENGTH &&
-      passwordConfirm === password
+      passwordConfirm === password &&
+      // The host list is the origin check every later request passes. An empty
+      // one is a server that answers for no name at all.
+      toList(appHosts).length > 0 &&
+      // A folder is either named whole or not at all: half of one is a save
+      // that would be refused for a reason nobody typed.
+      (shareName.trim() === '') === (sharePath.trim() === '')
   )
+
+  /** Signs the new administrator in and lands them on the file browser. The
+   *  account was just created with these exact credentials, so this is one
+   *  step rather than a bounce through the login screen. */
+  async function enter(): Promise<void> {
+    const login = await api.login(username.trim(), password)
+    if (login.status === 'ok') {
+      await completeLogin()
+      await goto('/b/')
+      return
+    }
+    // TOTP is never enabled on a freshly created account, but if the backend
+    // somehow disagrees, don't strand the user: send them to the normal login
+    // flow, which handles the totp_required step.
+    doneButLoginFailed = true
+  }
 
   function messageFor(err: unknown): string {
     if (err instanceof ApiError) {
@@ -70,19 +123,28 @@
     doneButLoginFailed = false
     submitting = true
     try {
-      await createInitialAdmin({ token: token.trim(), username: username.trim(), password })
-      // The admin was just created with these exact credentials — log them
-      // in immediately instead of bouncing to a separate login step.
-      const result = await api.login(username.trim(), password)
-      if (result.status === 'ok') {
-        await completeLogin()
-        await goto('/b/')
-      } else {
-        // TOTP is never enabled on a freshly created account, but if the
-        // backend somehow disagrees, don't strand the user — send them to
-        // the normal login flow, which handles the totp_required step.
-        doneButLoginFailed = true
+      const result = await createInitialAdmin({
+        token: token.trim(),
+        username: username.trim(),
+        password,
+        app_hosts: toList(appHosts),
+        trusted_proxies: toList(trustedProxies),
+        bind: bind.trim() || undefined,
+        first_share: shareName.trim() ? { name: shareName.trim(), host_path: sharePath.trim() } : undefined
+      })
+      warnings = result.warnings
+      bindFailed = result.bind_failed === true
+      // Something worth reading before the page navigates away from it. The
+      // one that matters is a host list that does not name where this page is
+      // being read from: correct behind a proxy, and a lockout otherwise, and
+      // nothing here can tell which. Landing straight on the file browser
+      // would put the person one refused request away from a message they
+      // never saw.
+      if (warnings.length > 0 || bindFailed) {
+        submitting = false
+        return
       }
+      await enter()
     } catch (err) {
       errorMsg = messageFor(err)
     } finally {
@@ -124,14 +186,43 @@
         autocomplete="new-password"
       />
 
+      <h2 class="sc-auth-card__section">{t('setup.how_this_server_is_reached')}</h2>
+      <TextField label={t('server.app_hosts_comma_separated')} bind:value={appHosts} autocomplete="off" />
+      <p class="sc-auth-card__hint">{t('setup.app_hosts_hint')}</p>
+      <TextField label={t('server.trusted_proxies_comma_separated')} bind:value={trustedProxies} autocomplete="off" />
+      <p class="sc-auth-card__hint">{t('setup.trusted_proxies_hint')}</p>
+      <TextField label={t('server.bind_address')} bind:value={bind} autocomplete="off" placeholder="0.0.0.0:8443" />
+      <p class="sc-auth-card__hint">{t('setup.bind_hint')}</p>
+
+      <h2 class="sc-auth-card__section">{t('setup.first_shared_folder')}</h2>
+      <p class="sc-auth-card__hint">{t('setup.first_share_hint')}</p>
+      <TextField label={t('common.name')} bind:value={shareName} autocomplete="off" />
+      <TextField label={t('folder_share.server_path')} bind:value={sharePath} autocomplete="off" />
+
       {#if errorMsg}
         <p class="sc-auth-card__error" role="alert">{errorMsg}</p>
       {/if}
 
+      <!-- Setup finished and noticed something. The page stays here rather
+           than navigating away, because a lockout warning nobody read is the
+           same as no warning. -->
+      {#if warnings.length > 0 || bindFailed}
+        <div class="sc-auth-card__warning" role="status">
+          {#if bindFailed}<p>{t('setup.bind_failed_still_on_old_address')}</p>{/if}
+          {#each warnings as w, i (w.reason_key + i)}
+            <p>{warningText(w)}</p>
+          {/each}
+        </div>
+      {/if}
+
       <div class="sc-auth-card__actions">
-        <Button variant="filled" type="submit" disabled={!canSubmit} loading={submitting}>
-          {t('setup.create_administrator_account')}
-        </Button>
+        {#if warnings.length > 0 || bindFailed}
+          <Button variant="filled" onclick={enter} loading={submitting}>{t('setup.continue_anyway')}</Button>
+        {:else}
+          <Button variant="filled" type="submit" disabled={!canSubmit} loading={submitting}>
+            {t('setup.create_administrator_account')}
+          </Button>
+        {/if}
       </div>
 
       <a class="sc-auth-card__setup-link sc-focus-ring" href="/login">{t('setup.already_have_account_sign')}</a>
@@ -194,6 +285,29 @@
     background: var(--m3c-error-container);
     color: var(--m3c-on-error-container);
     @apply --m3-body-medium;
+  }
+  .sc-auth-card__section {
+    margin: 8px 0 0;
+    @apply --m3-title-small;
+  }
+  .sc-auth-card__hint {
+    margin: calc(-1 * 8px) 0 0;
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
+  }
+  .sc-auth-card__warning {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 12px 16px;
+    border-radius: var(--m3-shape-small);
+    background: var(--m3c-surface-container-highest);
+    color: var(--m3c-on-surface);
+    @apply --m3-body-medium;
+  }
+  .sc-auth-card__warning p {
+    margin: 0;
   }
   .sc-auth-card__actions {
     display: flex;

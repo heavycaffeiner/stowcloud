@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/netip"
@@ -17,6 +18,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/dav"
+	"github.com/heavycaffeiner/stowcloud/go/internal/emergency"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/mw"
@@ -105,12 +107,39 @@ type Options struct {
 	// which is what makes an edit on the admin screen take effect without a
 	// restart. A nil one leaves the grants as they were loaded.
 	ReloadACL func(ctx context.Context) error
+
+	// StoreSecret seals a settings value that is a credential. It comes from
+	// the command, which is the layer holding the master key.
+	StoreSecret func(ctx context.Context, plain string) error
+
+	// HasOIDCSecret reports whether a client secret is stored, which is all
+	// the settings screen is ever told about it.
+	HasOIDCSecret bool
+
+	// RequestRestart asks the process to exit so a supervisor starts it again.
+	// It is what a saved setting the sandbox pins reaches. A nil one leaves
+	// those saves reporting the value as stored and not in effect, which is
+	// honest rather than a success that changed nothing.
+	RequestRestart func()
+
+	// ActiveWork reports what a restart would interrupt, so the refusal can
+	// name the counts an administrator decides from.
+	ActiveWork func() handler.ActiveWork
+
+	// PathInJail reports whether a host path is inside the sandbox's domain,
+	// which is what tells a new share that is reachable now from one that
+	// needs the process rebuilt.
+	PathInJail func(host string) bool
 }
 
-// New assembles the whole HTTP surface: the state, the route table, the
-// chain, the listener's TLS configuration, and the http.Server with the
-// timeouts D13 asserts. It does not bind; the command does that.
-func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
+// New assembles the whole HTTP surface once and returns what serves it.
+//
+// The Serve it hands back owns the listener and can move it: the request
+// state, the route table and the chain are built here and reused, and a swap
+// rebuilds only the http.Server and its TLS configuration. That is the whole
+// of what a bind address decides, so nothing under it has to be rebuilt to
+// move a socket.
+func New(ctx context.Context, cfg *Config, opt Options, setup *SetupGate) (*Serve, error) {
 	clk := opt.Clk
 	if clk == nil {
 		clk = clock.System()
@@ -141,7 +170,25 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		health = handler.NewHealthState()
 	}
 
+	// The listener does not exist yet: it is built below, from the table this
+	// is about to go into. The handlers reach it through this rather than
+	// through a copy of a value taken before it existed, which is what a
+	// captured field would have been.
+	var serve *Serve
+
 	deps := handler.Deps{
+		Listen: func() string {
+			if serve == nil {
+				return cfg.Listen
+			}
+			return serve.Addr()
+		},
+		SwapListener: func(c context.Context, addr string) error {
+			if serve == nil {
+				return errors.New("the listener is not running yet")
+			}
+			return serve.Swap(c, addr)
+		},
 		Core:              opt.Core,
 		Auth:              opt.Auth,
 		Clock:             clk,
@@ -154,19 +201,22 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		Runtime:           opt.Runtime,
 		SMBConfigDir:      cfg.SMB.ConfigDir,
 		DataDir:           cfg.DataDir,
-		Listen:            cfg.Listen,
 		Health:            health,
 		Uploads:           opt.Uploads,
 		Preview:           opt.Preview,
 		State:             opt.Store.State(),
-		ConfigShares:      configShareNames(cfg),
 		Search:            opt.Search,
 		OIDC:              opt.OIDC,
 		OIDCDisplayName:   cfg.OIDCDisplayName,
 		Events:            eventsHandler(opt.WS),
 		PublishSMB:        opt.PublishSMB,
-		SMBChanged:        smbSink(opt.PublishSMB, health, log),
+		SMBChanged:        smbSink(opt.PublishSMB, cfg.SMB.AgentSocket, health, log),
 		ApplyIndexEnabled: opt.ApplyIndexEnabled,
+		StoreSecret:       opt.StoreSecret,
+		HasOIDCSecret:     opt.HasOIDCSecret,
+		RequestRestart:    opt.RequestRestart,
+		ActiveWork:        opt.ActiveWork,
+		PathInJail:        opt.PathInJail,
 		ReloadACL: func(ctx context.Context) error {
 			if opt.ReloadACL == nil {
 				return nil
@@ -200,6 +250,17 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 			if len(v.TrustedProxy) > 0 {
 				state.Trusted.Set(parsePrefixes(v.TrustedProxy, log))
 			}
+			// The healthcheck is a second process and cannot read the
+			// database this server holds, so the two facts it needs are
+			// written out whenever they move. A failure is a line, not a
+			// refusal: the server is serving either way.
+			probe := Probe{Listen: v.Listen}
+			if len(v.AppHosts) > 0 {
+				probe.AppHost = v.AppHosts[0]
+			}
+			if perr := WriteProbe(cfg.DataDir, probe); perr != nil {
+				log.Warn("the healthcheck snapshot could not be written", "error", perr)
+			}
 		})
 		// Applied once at startup, so the values loaded from the store are in
 		// the components before the first request rather than after the first
@@ -230,13 +291,59 @@ func New(cfg *Config, opt Options, setup *SetupGate) (*http.Server, error) {
 		davMount(davHandler, opt.Core, davAliases), davAliases)
 	handler := httpapi.Chain(state)(m)
 
-	tlsCfg, err := tlsConfig(cfg, opt)
+	// The emergency door, always mounted.
+	//
+	// It exists on a healthy server because the moment it is needed is not the
+	// moment to be starting things: an operator who has just locked themselves
+	// out of the interface has no way to add a route to it. It runs outside the
+	// chain, which is deliberate. The chain's host guard is one of the things
+	// this door is for repairing, and a repair screen behind the guard it
+	// repairs is a screen nobody can reach.
+	//
+	// What it is guarded by instead is the peer address, resolved from the
+	// same live proxy set the chain reads, so the two entrances cannot end up
+	// with different opinions about who a request is from.
+	emergencyPage, _ := spa.Handler()
+	emergencyMux := emergency.Handler(emergency.Deps{
+		Auth: opt.Auth, State: opt.Store.State(), Log: log, DataDir: cfg.DataDir,
+		Page: emergencyPage,
+		// Healthy: there is nothing to put in the banner, because nobody was
+		// sent here. The degraded case has no engine at all and is served by
+		// the standalone layer, which owns its own reason.
+		Reason:  func() string { return "" },
+		Restart: opt.RequestRestart,
+		Trusted: state.Trusted,
+	})
+	handler = emergencyDoor(emergencyMux, handler)
+
+	// Rebuilt per listener rather than captured, because the certificate is
+	// part of what a swap can be moving: an app host saved beside the bind
+	// address changes which name the certificate has to carry.
+	build := func(string) (*http.Server, error) {
+		tlsCfg, terr := tlsConfig(cfg, opt)
+		if terr != nil {
+			return nil, terr
+		}
+		return newHTTPServer(handler, tlsCfg), nil
+	}
+
+	s, err := NewServe(ctx, log, cfg.Listen, build)
 	if err != nil {
 		return nil, err
 	}
+	serve = s
+	return serve, nil
+}
 
-	srv := newHTTPServer(handler, tlsCfg)
-	return srv, nil
+// emergencyDoor claims the one prefix and passes everything else through.
+func emergencyDoor(mux, normal http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, emergency.Prefix) {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		normal.ServeHTTP(w, r)
+	})
 }
 
 // newHTTPServer is the one construction of the product's http.Server, split
@@ -301,12 +408,6 @@ func parsePrefixes(cidrs []string, log *slog.Logger) []netip.Prefix {
 	return out
 }
 
-// configShareNames is the set of shares the config file declares.
-//
-// They can be renamed, repointed and trash-toggled, and they cannot be
-// deleted: the next restart re-declares the entry, so a deletion would look
-// like it silently failed. The admin screen hides that affordance rather than
-// offering an action that undoes itself.
 // originOf is the base URL the compatibility layer hands to a client.
 //
 // The first declared app host, over https because that is the only listener
@@ -319,14 +420,6 @@ func originOf(cfg *Config) string {
 		return ""
 	}
 	return "https://" + cfg.AppHost
-}
-
-func configShareNames(cfg *Config) map[string]bool {
-	out := make(map[string]bool, len(cfg.Shares))
-	for _, sh := range cfg.Shares {
-		out[sh.Name] = true
-	}
-	return out
 }
 
 // smbSink turns the publisher into the form every write path calls.
@@ -352,21 +445,34 @@ func configShareNames(cfg *Config) map[string]bool {
 //
 // The context is detached from the request. A browser that navigated away
 // mid-publish must not cancel a revocation that is halfway to the sidecar.
-func smbSink(publish func(context.Context) (smbagent.Report, error), health *handler.HealthState, log *slog.Logger) func(context.Context) {
+//
+// What it returns is the same fact it degrades health with, handed to the
+// caller so their own response can carry it. The caller still never fails:
+// what changes is that an administrator learns at the moment they press save
+// that the change did not reach the daemon, instead of on the health page
+// whenever they next look at it.
+func smbSink(
+	publish func(context.Context) (smbagent.Report, error),
+	socket string, health *handler.HealthState, log *slog.Logger,
+) func(context.Context) handler.SMBOutcome {
 	if publish == nil {
 		// No sidecar in this deployment. A sink that does nothing is correct
 		// here, and it is the one case where nothing is the right answer.
 		return nil
 	}
-	return func(ctx context.Context) {
+	return func(ctx context.Context) handler.SMBOutcome {
 		pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), smbPublishTimeout)
 		defer cancel()
 
 		report, err := publish(pctx)
 		switch {
 		case err != nil:
-			log.Warn("a change did not reach the SMB sidecar", "error", err)
+			log.Warn("a change did not reach the SMB sidecar", "error", err, "socket", socket)
 			health.Degrade(handler.ReasonSMBStale, "publish_failed")
+			// The socket is named, which is the difference between "rendered
+			// and nothing applied it" and "the agent answered with a failure".
+			// They are different things to go and look at.
+			return handler.SMBOutcome{State: handler.SMBUnreachable, Socket: socket}
 		case !report.OK:
 			// The files were promoted and something in them is wrong: a share
 			// path that does not exist where the daemon runs, or an account
@@ -374,9 +480,11 @@ func smbSink(publish func(context.Context) (smbagent.Report, error), health *han
 			// fix and neither is this request's failure.
 			log.Warn("the SMB sidecar applied a change with a warning", "error", report.Error)
 			health.Degrade(handler.ReasonSMBStale, "applied_with_warnings")
+			return handler.SMBOutcomeOf(handler.SMBWarnings, report)
 		default:
 			health.Resolve(handler.ReasonSMBStale, "publish_failed")
 			health.Resolve(handler.ReasonSMBStale, "applied_with_warnings")
+			return handler.SMBOutcomeOf(handler.SMBApplied, report)
 		}
 	}
 }

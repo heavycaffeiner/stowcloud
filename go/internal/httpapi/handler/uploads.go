@@ -246,6 +246,13 @@ func UploadsPatch(d Deps) http.HandlerFunc {
 		// connection, which is a different thing from a size cap.
 		next, werr := d.Uploads.PatchAt(r.Context(), root, id, uid, off, r.Body, sum)
 		if werr != nil {
+			// The wait goes in a header rather than only in the body: a client
+			// told just "unavailable" retries at once and makes the thing it is
+			// waiting for slower.
+			var full *upload.CacheFullError
+			if errors.As(werr, &full) {
+				w.Header().Set("Retry-After", strconv.Itoa(int(full.RetryAfter.Seconds())))
+			}
 			return tusError(werr)
 		}
 
@@ -500,6 +507,16 @@ func tusError(err error) error {
 			Code:    apierr.CodeFsNotFound,
 			Message: "no such upload session",
 			Key:     "upload.not_found",
+		}
+	case errors.Is(err, upload.ErrCacheFull):
+		// Retryable and the client's own doing: the cache cannot drain until
+		// the chunks below the hole arrive, and those are this client's to
+		// send. 503 rather than 429, because nothing is rate limiting it.
+		return &apierr.RequestError{
+			Status:  http.StatusServiceUnavailable,
+			Code:    apierr.CodeSubsystemUnavail,
+			Message: "the upload cache is full; send the earlier chunks first and retry",
+			Key:     "upload.cache_full",
 		}
 	case errors.Is(err, upload.ErrBadRequest):
 		return badTusRequest(fmt.Sprintf("the request is malformed: %v", err))

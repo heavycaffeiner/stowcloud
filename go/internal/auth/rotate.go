@@ -15,6 +15,9 @@ type RotationReport struct {
 	SMBBrought   int
 	TOTPBrought  int
 	LinksBrought int
+	// ConfigSecretsBrought is the settings that are credentials: the
+	// single-sign-on client secret is one.
+	ConfigSecretsBrought int
 }
 
 // RotateMasterKey is the recovery protocol that re-seals every encrypted row
@@ -61,6 +64,11 @@ func (s *Service) RotateMasterKey(ctx context.Context) (RotationReport, error) {
 		}
 		n, err = s.resealLinks(ctx, tx, oldKey, newKey, next)
 		rep.LinksBrought = n
+		if err != nil {
+			return err
+		}
+		n, err = s.resealConfigSecrets(ctx, tx, oldKey, newKey, next)
+		rep.ConfigSecretsBrought = n
 		if err != nil {
 			return err
 		}
@@ -139,6 +147,56 @@ func (s *Service) resealTOTP(ctx context.Context, tx *sql.Tx, oldKey, newKey [ke
 		n++
 	}
 	return n, rows.Err()
+}
+
+// resealConfigSecrets brings the settings that are credentials across.
+//
+// Without it a rotation would leave the single-sign-on secret sealed under a
+// key the ring no longer holds, and the failure would appear at the next
+// start as single sign-on quietly not working.
+func (s *Service) resealConfigSecrets(ctx context.Context, tx *sql.Tx, oldKey, newKey [keyLen]byte, ver uint32) (n int, err error) {
+	rows, err := tx.QueryContext(ctx, sqlForEachConfigSecret)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { err = errors.Join(err, rows.Close()) }()
+	type entry struct {
+		name  string
+		plain []byte
+	}
+	var opened []entry
+	for rows.Next() {
+		var (
+			name   string
+			ct     []byte
+			keyVer uint32
+		)
+		if serr := rows.Scan(&name, &ct, &keyVer); serr != nil {
+			return 0, serr
+		}
+		plain, oerr := open(oldKey, ct, aadConfig(name, keyVer))
+		if oerr != nil {
+			return 0, fmt.Errorf("decrypting the configuration secret %q: %w", name, oerr)
+		}
+		opened = append(opened, entry{name: name, plain: plain})
+	}
+	if rerr := rows.Err(); rerr != nil {
+		return 0, rerr
+	}
+	// Written after the cursor is drained rather than inside the loop: this
+	// updates the table it is reading, and the two other reseals above walk
+	// tables keyed by a column they do not touch.
+	for _, e := range opened {
+		sealed, serr := seal(newKey, e.plain, aadConfig(e.name, ver))
+		if serr != nil {
+			return n, serr
+		}
+		if _, uerr := tx.ExecContext(ctx, sqlUpsertConfigSecret, e.name, sealed, ver); uerr != nil {
+			return n, uerr
+		}
+		n++
+	}
+	return n, nil
 }
 
 func (s *Service) resealLinks(ctx context.Context, tx *sql.Tx, oldKey, newKey [keyLen]byte, ver uint32) (n int, err error) {

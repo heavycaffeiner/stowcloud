@@ -38,7 +38,15 @@ type UploadSession struct {
 	PartName string
 	// SpoolDir is set for a name-ordered session and empty otherwise.
 	SpoolDir string
-	Mode     int64
+	// CacheDir is the session's directory under the cache spool, and empty for
+	// a session writing straight to the destination. Its presence is what says
+	// which mode a session runs in, so a switch flipped mid-upload cannot
+	// change where a session in flight looks for its bytes.
+	CacheDir string
+	// CacheMerged is how many bytes from the front of the file are already in
+	// the part file and durable there. A restart resumes merging from it.
+	CacheMerged int64
+	Mode        int64
 	// TotalLen is nil for a deferred length, which the client may supply later
 	// and finalize requires.
 	TotalLen *int64
@@ -95,7 +103,8 @@ func (d *DB) CreateUploadSession(ctx context.Context, s UploadSession) error {
 			nullInt(s.TotalLen), s.ChunkSize, s.ChunkMinAtCreation, s.RandomAccess,
 			s.NextName, s.WriteHead, names, strArg(s.IfMatch), s.Filename,
 			nullInt(s.MtimeNs), strArg(s.Mime), strArg(s.RelativePath),
-			nullInt(s.Verify), blobArg(s.VerifyDigest), s.CreatedNs, s.ExpiresNs, s.State)
+			nullInt(s.Verify), blobArg(s.VerifyDigest), s.CreatedNs, s.ExpiresNs, s.State,
+			strArg(s.CacheDir), s.CacheMerged)
 		return ierr
 	})
 }
@@ -149,8 +158,21 @@ func (d *DB) UpdateUploadSession(ctx context.Context, s UploadSession) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		_, ierr := tx.ExecContext(ctx, sqlUpdateUploadSession,
 			nullInt(s.TotalLen), s.NextName, s.WriteHead, names,
-			nullInt(s.MtimeNs), s.ExpiresNs, s.State, s.ID)
+			nullInt(s.MtimeNs), s.ExpiresNs, s.State, s.CacheMerged, s.ID)
 		return ierr
+	})
+}
+
+// AdvanceUploadCacheMerged records how far the merge has reached.
+//
+// It moves one column and never goes backwards, because it runs while chunks
+// of the same session are still arriving: writing the whole row from the
+// merger would put back a copy of fields the chunk writer has since moved, and
+// a frontier that retreated would re-merge cache files that are already gone.
+func (d *DB) AdvanceUploadCacheMerged(ctx context.Context, id []byte, merged int64) error {
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, sqlAdvanceUploadCacheMerged, merged, id, merged)
+		return err
 	})
 }
 
@@ -374,6 +396,39 @@ func (d *DB) WriteChunkSettings(ctx context.Context, minBytes, defaultBytes int6
 	})
 }
 
+// ReadUploadCacheEnabled reports whether chunks are spooled to the cache
+// volume before they reach the destination. No row means off, which is the
+// mode every deployment has run in so far.
+func (d *DB) ReadUploadCacheEnabled(ctx context.Context) (bool, error) {
+	var on int64
+	err := d.f.SQL().QueryRowContext(ctx, sqlReadCacheSettings).Scan(&on)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("reading the upload cache setting: %w", err)
+	}
+	return on != 0, nil
+}
+
+// WriteUploadCacheEnabled persists the cache switch.
+func (d *DB) WriteUploadCacheEnabled(ctx context.Context, on bool) error {
+	if err := d.f.EnsureWritable(); err != nil {
+		return err
+	}
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, sqlWriteCacheSettings, boolInt(on))
+		return err
+	})
+}
+
+func boolInt(v bool) int64 {
+	if v {
+		return 1
+	}
+	return 0
+}
+
 // scanner is the one row shape both QueryRow and Rows satisfy.
 type uploadScanner interface {
 	Scan(dest ...any) error
@@ -390,14 +445,17 @@ func scanUploadSession(row uploadScanner) (UploadSession, error) {
 		relPath  sql.NullString
 		verify   sql.NullInt64
 		names    []byte
+		cacheDir sql.NullString
 	)
 	if err := row.Scan(&s.ID, &s.User, &s.Share, &s.Dest, &s.PartName, &spoolDir, &s.Mode,
 		&totalLen, &s.ChunkSize, &s.ChunkMinAtCreation, &s.RandomAccess, &s.NextName,
 		&s.WriteHead, &names, &ifMatch, &s.Filename, &mtimeNs, &mime, &relPath,
-		&verify, &s.VerifyDigest, &s.CreatedNs, &s.ExpiresNs, &s.State); err != nil {
+		&verify, &s.VerifyDigest, &s.CreatedNs, &s.ExpiresNs, &s.State,
+		&cacheDir, &s.CacheMerged); err != nil {
 		return UploadSession{}, err
 	}
 	s.SpoolDir = spoolDir.String
+	s.CacheDir = cacheDir.String
 	s.IfMatch = ifMatch.String
 	s.Mime = mime.String
 	s.RelativePath = relPath.String

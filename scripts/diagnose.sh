@@ -59,15 +59,21 @@ for d in /shares/*; do
 done'
 
 say "health, as the server reports it"
-docker exec "$C" /entrypoint.sh healthcheck /etc/stowcloud/sc.toml >/dev/null 2>&1 &&
+docker exec "$C" /entrypoint.sh healthcheck >/dev/null 2>&1 &&
     echo "  the probe passes" || echo "  the probe FAILS"
 docker exec "$C" sh -c 'wget -qO- --no-check-certificate https://127.0.0.1:8443/api/health 2>/dev/null ||
                         curl -sk https://127.0.0.1:8443/api/health 2>/dev/null' 2>&1 | head -c 600
 echo
 
 say "app_hosts, which decides 421 vs 200"
-docker exec "$C" sh -c 'sed -n "/^\[http\]/,/^\[/p" /etc/stowcloud/sc.toml' 2>&1 | head -8
-echo "  A name you browse to that is not listed above answers 421, not 500."
+# The settings live in the database, and the server holds it: this reads the
+# running server's own answer rather than opening the store behind its back.
+docker exec "$C" sh -c 'wget -qO- --no-check-certificate https://127.0.0.1:8443/api/admin/server-settings 2>/dev/null ||
+                        curl -sk https://127.0.0.1:8443/api/admin/server-settings 2>/dev/null' 2>&1 |
+    head -c 400
+echo
+echo "  Signed out this answers 401; sign in as an administrator to read it."
+echo "  A name you browse to that is not in app_hosts answers 421, not 500."
 
 say "the last refusals in the log"
 docker logs --tail 400 "$C" 2>&1 |

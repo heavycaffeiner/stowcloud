@@ -1,23 +1,20 @@
 <script lang="ts">
-  // Folder share management — adding, renaming and removing shared folders
-  // without editing sc.toml or restarting the server.
+  // Folder share management: adding, renaming and removing shared folders.
   // GET/POST /api/admin/shares, PATCH/DELETE /api/admin/shares/{id}.
   //
-  // A share declared in sc.toml (`config_defined`) is editable here like
-  // any other — the backend keeps the new name/path as an override in
-  // `shares.db` and reapplies it at startup, so nothing is reverted. Only
-  // *delete* is hidden for it: the config entry would re-declare the share on
-  // the next restart, and `go/internal/core` refuses accordingly.
+  // There is one kind of share. This screen is where every one of them comes
+  // from: no file declares any, so a deployment serves nothing until somebody
+  // adds a folder here.
   //
   // This is a distinct, adjacent screen from `GrantManagementSection`: that
   // one decides *who* can see a share (or a subpath of it); this one decides
   // *which folders exist* as shares in the first place. A share still needs
   // a grant before anyone but an admin can see it.
   import { t } from '../../i18n'
-  import { api, ApiError, type AdminShare } from '../../api/client'
+  import { api, ApiError, type AdminShare, type SMBOutcome } from '../../api/client'
   import { describeApiError } from '../../api/error-text'
   import Button from '../Button.svelte'
-  import Chip from '../Chip.svelte'
+  import { smbOutcomeText } from '../../api/smb-text'
   import Dialog from '../Dialog.svelte'
   import { Icon } from 'm3-svelte'
   import { icons } from '../../icons'
@@ -89,6 +86,7 @@
     adding = true
     try {
       const created = await api.adminCreateShare({ name: addName.trim(), host_path: addHostPath.trim() })
+      noteSMB(created)
       shares = [...shares, created]
       addOpen = false
     } catch (err) {
@@ -132,6 +130,7 @@
     editing = true
     try {
       const updated = await api.adminUpdateShare(editTarget.id, { name: editName.trim(), host_path: editHostPath.trim() })
+      noteSMB(updated)
       shares = shares.map((s) => (s.id === updated.id ? updated : s))
       editTarget = null
     } catch (err) {
@@ -159,6 +158,56 @@
     }
   }
 
+  // What the SMB republish that every write here triggers did. It is reported
+  // beside the list rather than swallowed: a share saved with the sidecar
+  // stopped answered a clean success, and "saved here, not applied over
+  // there" showed up only on the health page whenever somebody next looked.
+  let smbNote = $state<string | null>(null)
+
+  function noteSMB(share: { smb?: SMBOutcome }): void {
+    smbNote = smbOutcomeText(share.smb)
+  }
+
+  // ── retry a broken share ──
+
+  // A share whose backing folder is not there is listed, marked, with the
+  // three things an administrator can do about it: retry, because the usual
+  // repair is a remount that changes nothing about the share; edit, because
+  // the folder may have moved; remove, because it may be gone for good.
+  let retryingId = $state<number | null>(null)
+  let retryError = $state<string | null>(null)
+
+  async function retry(s: AdminShare): Promise<void> {
+    retryError = null
+    retryingId = s.id
+    try {
+      const healed = await api.adminRetryShare(s.id)
+      noteSMB(healed)
+      shares = shares.map((x) => (x.id === healed.id ? healed : x))
+    } catch (err) {
+      // Still broken. The message says why this attempt failed, which is not
+      // necessarily the reason the row is already showing.
+      retryError = describeError(err, t('folder_share.the_folder_is_still_unavailable'))
+    } finally {
+      retryingId = null
+    }
+  }
+
+  // The catalogue renders the sentence; the server sends the token.
+  /* i18n */ 'folder_share.broken_missing'
+  /* i18n */ 'folder_share.broken_unreadable'
+  /* i18n */ 'folder_share.broken_unavailable'
+  function brokenText(reason: string): string {
+    switch (reason) {
+      case 'missing':
+        return t('folder_share.broken_missing')
+      case 'unreadable':
+        return t('folder_share.broken_unreadable')
+      default:
+        return t('folder_share.broken_unavailable')
+    }
+  }
+
   // ── remove share ──
 
   let deleteTarget = $state<AdminShare | null>(null)
@@ -180,7 +229,7 @@
     deleting = true
     deleteError = null
     try {
-      await api.adminDeleteShare(deleteTarget.id)
+      smbNote = smbOutcomeText((await api.adminDeleteShare(deleteTarget.id)).smb)
       shares = shares.filter((s) => s.id !== deleteTarget!.id)
       deleteTarget = null
     } catch (err) {
@@ -218,6 +267,13 @@
               {/snippet}
               {#snippet supporting()}
                 <span class="sc-shares__path">{s.host_path}</span>
+                {#if s.broken_reason}
+                  <!-- The row stays, with the reason on it. A share dropped
+                       from the list is indistinguishable from one somebody
+                       deleted, which is the worst thing a missing disk can
+                       look like. -->
+                  <span class="sc-shares__broken">{brokenText(s.broken_reason)}</span>
+                {/if}
               {/snippet}
               {#snippet trailing()}
                 <!-- Where the share came from is a fact about the row, like the
@@ -228,7 +284,6 @@
                      rows that lack it: this group is right-aligned, so dropping
                      its leading item shortens the group from the left and moves
                      nothing else. -->
-                {#if s.config_defined}<Chip variant="assist">{t('folder_share.config_file')}</Chip>{/if}
                 <!-- The switch used to stand here bare, named only by a
                      `title` — nothing on screen said which setting it was.
                      The visible word is the label now; the switch keeps the
@@ -242,24 +297,17 @@
                     onchange={(checked) => toggleTrash(s, checked)}
                   />
                 </span>
+                {#if s.broken_reason}
+                  <Button variant="tonal" onclick={() => retry(s)} loading={retryingId === s.id}>
+                    {t('folder_share.retry')}
+                  </Button>
+                {/if}
                 <IconButton label={t('common.edit', { name: s.name })} onclick={() => openEdit(s)}>
                   <Icon icon={icons.rename} size={18} />
                 </IconButton>
-                <!-- Everything else about a config-file share is editable;
-                     only removing it is not, because the config entry would
-                     declare it again on the next restart. -->
-                {#if !s.config_defined}
-                  <IconButton label={t('common.remove', { name: s.name })} onclick={() => askDelete(s)}>
-                    <Icon icon={icons.delete} size={18} />
-                  </IconButton>
-                {:else}
-                  <!-- The column has to stay even where the button cannot. The
-                       trailing group is right-aligned, so without this every
-                       control on a config-file row sat 40px right of the same
-                       control on a dynamic one and the switches read as a
-                       zigzag down the list. -->
-                  <span class="sc-shares__action-gap" aria-hidden="true"></span>
-                {/if}
+                <IconButton label={t('common.remove', { name: s.name })} onclick={() => askDelete(s)}>
+                  <Icon icon={icons.delete} size={18} />
+                </IconButton>
               {/snippet}
             </ListItem>
           </li>
@@ -267,6 +315,8 @@
       </ul>
     {/if}
     {#if trashToggleError}<p class="sc-shares__error" role="alert">{trashToggleError}</p>{/if}
+    {#if retryError}<p class="sc-shares__error" role="alert">{retryError}</p>{/if}
+    {#if smbNote}<p class="sc-shares__smb" role="status">{smbNote}</p>{/if}
 
     <Button variant="tonal" onclick={openAdd}>
       {#snippet icon()}<Icon icon={icons.add} size={18} />{/snippet}
@@ -293,9 +343,6 @@
     <form class="sc-shares__form" onsubmit={(e) => (e.preventDefault(), submitEdit())}>
       <TextField label={t('common.name')} bind:value={editName} autocomplete="off" />
       <TextField label={t('folder_share.server_path')} bind:value={editHostPath} autocomplete="off" />
-      {#if editTarget.config_defined}
-        <p class="sc-shares__field-hint">{t('folder_share.config_share_edit_wins_over_the_file')}</p>
-      {/if}
       {#if editError}<p class="sc-shares__error" role="alert">{editError}</p>{/if}
     </form>
   {/if}
@@ -376,6 +423,21 @@
     @apply --m3-body-small;
     font-family: var(--sc-font-mono, monospace);
   }
+  /* The error colour, plus the word itself: a row marked only by colour says
+     nothing to a reader who cannot see the difference. */
+  .sc-shares__smb {
+    margin: 0;
+    padding: 12px 16px;
+    border-radius: var(--m3-shape-small);
+    background: var(--m3c-surface-container-highest);
+    color: var(--m3c-on-surface);
+    @apply --m3-body-small;
+  }
+  .sc-shares__broken {
+    display: block;
+    color: var(--m3c-error);
+    @apply --m3-body-small;
+  }
   /* `ListItem`'s trailing group has no gap of its own: every other caller puts
      only icon buttons there, which carry their own padding. This one holds a
      chip and a labelled switch as well, so it needs one. It replaces the
@@ -389,18 +451,13 @@
     align-items: center;
     gap: 8px;
   }
-  /* One IconButton wide, matching what it stands in for. */
-  .sc-shares__action-gap {
-    flex: none;
-    inline-size: 40px;
-  }
   .sc-shares__trash-label {
     color: var(--m3c-on-surface-variant);
     white-space: nowrap;
     @apply --m3-label-large;
   }
-  /* The trailing group cannot shrink -- it holds a chip, a switch and 40px
-     icon buttons -- so on a 360px screen it took more room than the row had
+  /* The trailing group cannot shrink -- it holds a switch and 40px icon
+     buttons -- so on a 360px screen it took more room than the row had
      and ran past the card's edge. The word goes; the switch keeps the whole
      per-share sentence as its accessible name, so nothing is lost to a screen
      reader and the visible label returns as soon as there is room for it. */

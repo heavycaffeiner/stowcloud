@@ -50,7 +50,29 @@ var (
 
 	// ErrQuotaExceeded is a write the acting user's ledger cap refuses.
 	ErrQuotaExceeded = errors.New("quota exceeded")
+
+	// ErrShareBroken is a share whose backing directory is not there right
+	// now. It is deliberately not ErrNotFound: the path the caller named is
+	// perfectly good and the disk under it is gone, and telling somebody their
+	// folder does not exist when a drive did not come back sends them looking
+	// in the wrong place.
+	ErrShareBroken = errors.New("the folder this share points at is unavailable")
 )
+
+// ShareBrokenError names which share is broken and why, so the message a user
+// gets says the folder rather than the request.
+type ShareBrokenError struct {
+	Share string
+	// Reason is the health surface's own token: "missing", "unreadable",
+	// "unavailable".
+	Reason string
+}
+
+func (e *ShareBrokenError) Error() string {
+	return fmt.Sprintf("%s: %s is %s", ErrShareBroken, e.Share, e.Reason)
+}
+
+func (e *ShareBrokenError) Unwrap() error { return ErrShareBroken }
 
 // PreconditionError carries the current weak token alongside ErrPrecondition,
 // so a conflict-resolution UI can show it without a second round trip.

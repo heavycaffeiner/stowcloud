@@ -23,6 +23,12 @@ import (
 // rolled back and reporting one as a resumable upload whose destination
 // already exists is worse than the debt.
 func (e *Engine) Finalize(ctx context.Context, r core.Resolved, id SessionID) (core.Entry, error) {
+	// The cache is drained before the row lock is taken. Draining needs that
+	// lock itself, and the merger has to be stopped before the part file is
+	// synced and closed under it.
+	if err := e.drainCache(ctx, id); err != nil {
+		return core.Entry{}, err
+	}
 	unlock := e.lockRow(id)
 	defer unlock()
 	return e.finalize(ctx, r, id)
@@ -96,6 +102,7 @@ func (e *Engine) finalize(ctx context.Context, r core.Resolved, id SessionID) (c
 	// 4 and 5. Both are after the commit point, so neither can fail the
 	//    upload. Invalidation is repaired by revalidation and a surviving
 	//    session row is cleanup debt the sweep collects.
+	e.releaseCache(row.sess.CacheDir)
 	e.forgetRow(id)
 	if derr := e.state.DeleteUploadSession(ctx, id.Bytes()); derr != nil {
 		e.log.Warn("an upload published but its session row survived; the sweep will collect it",

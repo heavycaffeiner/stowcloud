@@ -6,9 +6,8 @@ package handler
 import (
 	"net/http"
 	"net/netip"
-	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/apierr"
+	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
 	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
 )
 
@@ -49,16 +48,37 @@ type settingsField struct {
 	Source string `json:"source"`
 	// RestartRequired is a property of the field, not of this value.
 	RestartRequired bool `json:"restart_required"`
+	// RunningValue is what the process is actually on, present only when that
+	// is not the saved value. Absent in the ordinary case.
+	RunningValue any `json:"running_value,omitempty"`
 	// ReadonlyReasonKey names why a field cannot be changed here, or is null
 	// when it can. A catalogue key rather than a sentence: the server does not
 	// know which language the reader picked.
 	ReadonlyReasonKey *string `json:"readonly_reason_key"`
 }
 
-// The sources a value can have.
+// listenNow is the address in service, and the stored one when this build has
+// no listener to ask (a test harness).
+func listenNow(d Deps) string {
+	if d.Listen == nil {
+		return ""
+	}
+	return d.Listen()
+}
+
+// differs is the running value when it is not the saved one, and nil when the
+// two agree: the field is omitted rather than repeating itself.
+func differs(saved, running string) any {
+	if running == "" || running == saved {
+		return nil
+	}
+	return running
+}
+
+// The sources a value can have. There is no config file, so a value either
+// came from the compiled-in defaults or from something an administrator saved.
 const (
 	sourceBuiltin  = "builtin_default"
-	sourceConfig   = "config_file"
 	sourceOverride = "admin_override"
 )
 
@@ -103,12 +123,12 @@ func Settings(d Deps) http.HandlerFunc {
 		}
 		sourceOf := func(section, key string) string {
 			if d.State == nil {
-				return sourceConfig
+				return sourceBuiltin
 			}
 			if storedHas(r, d, section, key) {
 				return sourceOverride
 			}
-			return sourceConfig
+			return sourceBuiltin
 		}
 
 		fields := []settingsField{
@@ -117,27 +137,43 @@ func Settings(d Deps) http.HandlerFunc {
 			// screen's network form patches.
 			{
 				Key: "app_hosts", Value: d.Hosts.App(),
-				Range: stringListRange(32), Source: sourceConfig,
+				Range: stringListRange(32), Source: sourceOf("network", "app_hosts"),
+				ReadonlyReasonKey: frozen,
 			},
 			{
 				Key: "trusted_proxies", Value: prefixesToStrings(d.Trusted.Get()),
-				Range: stringListRange(32), Source: sourceConfig,
-				EmptyMeansKey: emptyMeans("settings.empty_trusts_no_proxy"),
+				Range: stringListRange(32), Source: sourceOf("network", "trusted_proxies"),
+				EmptyMeansKey:     emptyMeans("settings.empty_trusts_no_proxy"),
+				ReadonlyReasonKey: frozen,
 			},
-			// The listener's address. Reported and not editable: the socket is
-			// bound once at startup, and a screen that let somebody change the
-			// address it is being served over would be offering to cut the
-			// branch it is sitting on.
+			// The listener's address. Saving it moves the socket: the new one is
+			// bound before the old one is touched, so this is live like the
+			// lists above rather than something waiting for a restart.
+			//
+			// The value reported is the address in service, which is not the
+			// stored one when a swap could not bind. running_value is what says
+			// the two differ.
 			{
-				Key: "bind", Value: d.Listen, Source: sourceConfig,
-				ReadonlyReasonKey: readonly("settings.readonly_bind_address"),
+				Key: "bind", Value: rt.Listen, RunningValue: differs(rt.Listen, listenNow(d)),
+				Source:            sourceOf("network", "bind"),
+				Range:             map[string]any{"kind": "string"},
+				ReadonlyReasonKey: frozen,
 			},
-			// Where the databases, the certificate and the master key live.
-			// Reported for the same reason and editable nowhere: everything open
-			// was opened relative to it.
+			// Where the databases, the certificate and the master key live. It is
+			// the one thing that cannot be a setting, because it is where the
+			// settings are; it is a process argument and is reported here so the
+			// screen can say which directory this server is using.
 			{
-				Key: "data_dir", Value: d.DataDir, Source: sourceConfig,
+				Key: "data_dir", Value: d.DataDir, Source: sourceBuiltin,
 				ReadonlyReasonKey: readonly("settings.readonly_data_dir"),
+			},
+			// The sandbox. Applied once, before anything is opened, so it is
+			// stored now and applied on the next start.
+			{
+				Key: "security.hardening", Value: rt.Hardening.String(),
+				Range:  map[string]any{"kind": "enum", "values": jail.PolicyNames()},
+				Source: sourceOf("security", "hardening"), RestartRequired: true,
+				ReadonlyReasonKey: frozen,
 			},
 
 			// The bounds an administrator moves. Each carries the live value,
@@ -217,7 +253,7 @@ func Settings(d Deps) http.HandlerFunc {
 			},
 		}
 		fields = append(fields, smbFields(d, rt, sourceOf, frozen)...)
-		fields = append(fields, oidcFields(d)...)
+		fields = append(fields, oidcFields(d, rt, sourceOf)...)
 
 		return writeJSON(w, http.StatusOK, map[string]any{
 			"fields": fields,
@@ -226,79 +262,6 @@ func Settings(d Deps) http.HandlerFunc {
 			// off it either way.
 			"smb_public_bind_warning": false,
 		})
-	})
-}
-
-// SettingsNetwork answers PATCH /api/admin/server-settings/network. The
-// trusted-proxy ranges and the host lists are the one part of the proxy
-// trust boundary an administrator may move live, so a malformed entry is
-// refused here, where an administrator is watching and can fix it; the same
-// entry is dropped with a warning at boot, because refusing there would make
-// a server unbootable over a typo committed weeks ago.
-func SettingsNetwork(d Deps) http.HandlerFunc {
-	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
-		if _, aerr := requireAdmin(r, d.Auth); aerr != nil {
-			return aerr
-		}
-		// The names the client sends, which are the names the snapshot reports.
-		// This read trusted_proxy_cidrs while the client sent trusted_proxies,
-		// so that field decoded as absent on every save: the screen reported
-		// success and the proxy list never moved.
-		var req struct {
-			TrustedProxyCIDRs []string `json:"trusted_proxies,omitempty"`
-			AppHosts          []string `json:"app_hosts,omitempty"`
-		}
-		if err := decodeJSON(r, &req); err != nil {
-			return err
-		}
-		if req.TrustedProxyCIDRs != nil {
-			parsed := make([]netip.Prefix, 0, len(req.TrustedProxyCIDRs))
-			for _, cidr := range req.TrustedProxyCIDRs {
-				p, err := netip.ParsePrefix(strings.TrimSpace(cidr))
-				if err != nil {
-					return apierr.Unprocessable("settings.invalid_cidr", "trusted_proxies")
-				}
-				parsed = append(parsed, p)
-			}
-			d.Trusted.Set(parsed)
-		}
-		// The same probes the preview and the generic save run. This route
-		// exists because the network group has live holders to push into, not
-		// because it has different rules, and a second copy of the rules here
-		// is a second place they can disagree.
-		probe := map[string]any{}
-		if req.AppHosts != nil {
-			probe["app_hosts"] = toAnyList(req.AppHosts)
-		}
-		if req.TrustedProxyCIDRs != nil {
-			probe["trusted_proxies"] = toAnyList(req.TrustedProxyCIDRs)
-		}
-		if findings := checkSection(d, r, "network", probe); blocked(findings) {
-			return settingsRefused(findings)
-		}
-
-		if req.AppHosts != nil {
-			d.Hosts.Set(req.AppHosts)
-		}
-
-		// Persisted as well as applied. Applying without storing is a boundary
-		// that reverts on the next restart, which is the shape of change an
-		// administrator does not find out about until something stops working.
-		if d.State != nil {
-			stored := map[string]any{}
-			if req.AppHosts != nil {
-				stored["app_hosts"] = req.AppHosts
-			}
-			if req.TrustedProxyCIDRs != nil {
-				stored["trusted_proxies"] = req.TrustedProxyCIDRs
-			}
-			if len(stored) > 0 {
-				if err := d.State.MergeSettings(r.Context(), "network", stored); err != nil {
-					return err
-				}
-			}
-		}
-		return writeJSON(w, http.StatusOK, applyOutcome("network", false))
 	})
 }
 
@@ -399,7 +362,7 @@ func smbFields(
 		// a container boundary agrees on, so changing one here would move only
 		// this side of the pair.
 		{
-			Key: "smb.config_dir", Value: d.SMBConfigDir, Source: sourceConfig,
+			Key: "smb.config_dir", Value: d.SMBConfigDir, Source: sourceBuiltin,
 			ReadonlyReasonKey: readonly("settings.readonly_smb_agent_socket"),
 		},
 	}
@@ -413,33 +376,39 @@ func smbFields(
 // under a live client would leave the two halves describing different
 // providers.
 //
-// The client secret is not among them and never will be. It is read from a
-// file the operator owns, and a settings surface that could show it would be a
-// settings surface that could leak it.
-func oidcFields(d Deps) []settingsField {
-	frozen := readonly("settings.readonly_needs_restart_oidc")
-	if d.OIDC == nil {
+// The client secret is reported by its presence and never by its value. It
+// rests sealed under the master key, apart from the settings document; a
+// settings surface that could show it would be a settings surface that could
+// leak it. Writing it is a write-only field: sending one stores it, and
+// sending nothing leaves the stored one alone.
+func oidcFields(d Deps, rt runtimecfg.Values, sourceOf func(string, string) string) []settingsField {
+	// Every one of these is read when the client is built, which happens once
+	// at startup: it fetches the discovery document, pins what it found and
+	// holds the certificate pool the back channel uses.
+	const restart = true
+	cfg := rt.OIDC
+	if cfg == nil {
 		// Off. The fields are still reported, because a screen that hides the
 		// section until it is configured has nowhere to say it is off.
-		return []settingsField{
-			{Key: "oidc.enabled", Value: false, Range: map[string]any{"kind": "bool"},
-				Source: sourceConfig, RestartRequired: true, ReadonlyReasonKey: frozen},
-		}
+		cfg = &runtimecfg.OIDC{}
 	}
-	issuer, clientID, scopes, allowPrivate := d.OIDC.Settings()
 	return []settingsField{
-		{Key: "oidc.enabled", Value: true, Range: map[string]any{"kind": "bool"},
-			Source: sourceConfig, RestartRequired: true, ReadonlyReasonKey: frozen},
-		{Key: "oidc.issuer", Value: issuer, Source: sourceConfig,
-			RestartRequired: true, ReadonlyReasonKey: frozen},
-		{Key: "oidc.client_id", Value: clientID, Source: sourceConfig,
-			RestartRequired: true, ReadonlyReasonKey: frozen},
-		{Key: "oidc.scopes", Value: scopes, Source: sourceConfig,
-			RestartRequired: true, ReadonlyReasonKey: frozen},
-		{Key: "oidc.display_name", Value: d.OIDCDisplayName, Source: sourceConfig,
-			RestartRequired: true, ReadonlyReasonKey: frozen},
-		{Key: "oidc.allow_private_endpoints", Value: allowPrivate,
-			Range: map[string]any{"kind": "bool"}, Source: sourceConfig,
-			RestartRequired: true, ReadonlyReasonKey: frozen},
+		{Key: "oidc.enabled", Value: cfg.Enabled, Range: map[string]any{"kind": "bool"},
+			Source: sourceOf("oidc", "enabled"), RestartRequired: restart},
+		{Key: "oidc.issuer", Value: cfg.Issuer, Range: map[string]any{"kind": "string"},
+			Source: sourceOf("oidc", "issuer"), RestartRequired: restart},
+		{Key: "oidc.client_id", Value: cfg.ClientID, Range: map[string]any{"kind": "string"},
+			Source: sourceOf("oidc", "client_id"), RestartRequired: restart},
+		// Presence, never the value.
+		{Key: "oidc.client_secret_set", Value: d.HasOIDCSecret,
+			Source: sourceOf("oidc", "client_id"), RestartRequired: restart,
+			ReadonlyReasonKey: readonly("settings.secret_is_write_only")},
+		{Key: "oidc.scopes", Value: cfg.Scopes, Range: stringListRange(16),
+			Source: sourceOf("oidc", "scopes"), RestartRequired: restart},
+		{Key: "oidc.display_name", Value: rt.OIDCDisplayName, Range: map[string]any{"kind": "string"},
+			Source: sourceOf("oidc", "display_name"), RestartRequired: restart},
+		{Key: "oidc.allow_private_endpoints", Value: cfg.AllowPrivateEndpoints,
+			Range:  map[string]any{"kind": "bool"},
+			Source: sourceOf("oidc", "allow_private_endpoints"), RestartRequired: restart},
 	}
 }

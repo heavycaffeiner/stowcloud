@@ -21,6 +21,7 @@
   import { BYTES_PER_MB, bytesToMb, formatBytes } from '../../format/bytes'
   import { CHUNK_SIZE_MIN, CHUNK_SIZE_STORAGE_KEY } from '../../upload/chunk-planner'
   import Button from '../Button.svelte'
+  import Checkbox from '../Checkbox.svelte'
   import TextField from '../TextField.svelte'
 
   const serverMin = $derived(authState.session?.limits.chunk_min ?? CHUNK_SIZE_MIN)
@@ -35,6 +36,12 @@
   let serverError = $state<string | null>(null)
   let serverSaving = $state(false)
   let serverSaved = $state(false)
+
+  // The cache spool switch. Its current value only arrives in a save
+  // response, so until one comes back this reflects what the operator has
+  // selected rather than claiming to know the server's state.
+  let cacheEnabled = $state(false)
+  let cacheAvailable = $state(true)
 
   async function saveServerSettings(): Promise<void> {
     serverError = null
@@ -60,13 +67,19 @@
     }
     serverSaving = true
     try {
-      const resp = await api.adminSetUploadSettings({ chunk_min: minBytes, chunk_default: defaultBytes })
+      const resp = await api.adminSetUploadSettings({
+        chunk_min: minBytes,
+        chunk_default: defaultBytes,
+        cache_enabled: cacheEnabled
+      })
       if (authState.session) {
         setAuthenticated({
           ...authState.session,
           limits: { ...authState.session.limits, chunk_min: resp.chunk_min, chunk_size: resp.chunk_default }
         })
       }
+      cacheEnabled = resp.cache_enabled
+      cacheAvailable = resp.cache_available
       serverSaved = true
     } catch (err) {
       // `describeApiError` renders `admin.chunk_below_floor` (the server's
@@ -152,6 +165,15 @@
     <div><dt>{t('upload_settings.current_server_minimum')}</dt><dd>{formatBytes(serverMin)}</dd></div>
     <div><dt>{t('upload_settings.current_server_default')}</dt><dd>{formatBytes(serverDefault)}</dd></div>
   </dl>
+
+  <h4 class="sc-admin-section__subhead">{t('upload_settings.cache_spool')}</h4>
+  <p class="sc-admin-section__hint">
+    {t('upload_settings.cache_spool_hint')}
+  </p>
+  <Checkbox bind:checked={cacheEnabled} label={t('upload_settings.cache_spool_enable')} />
+  {#if !cacheAvailable}
+    <p class="sc-admin-section__upload-error" role="alert">{t('upload_settings.cache_spool_unavailable')}</p>
+  {/if}
 
   <h4 class="sc-admin-section__subhead">{t('upload_settings.override_browser_only')}</h4>
   <p class="sc-admin-section__hint">

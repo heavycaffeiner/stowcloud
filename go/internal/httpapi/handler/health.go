@@ -6,6 +6,7 @@ package handler
 import (
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 )
 
@@ -111,6 +112,24 @@ func (h *HealthState) ResolveKind(kind string) {
 	defer h.mu.Unlock()
 	for k, r := range h.reasons {
 		if r.Kind == kind {
+			delete(h.reasons, k)
+		}
+	}
+}
+
+// ResolveShare clears every degradation recorded against one share.
+//
+// The detail a share is degraded under is "name:reason", and the reason it
+// broke with is not necessarily the one it is carrying now: a mount that went
+// missing and came back on a filesystem this server refuses would have been
+// recorded twice under different reasons. Clearing by name is what makes a
+// recovered share actually stop being reported.
+func (h *HealthState) ResolveShare(name string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	prefix := name + ":"
+	for k, r := range h.reasons {
+		if r.Kind == ReasonShareRejected && strings.HasPrefix(r.Detail, prefix) {
 			delete(h.reasons, k)
 		}
 	}

@@ -127,7 +127,6 @@ else
 fi
 
 echo
-echo "Point sc.toml at the same directory and enable SMB from the settings"
-echo "screen (or run 'stowcloud smb-sync'):"
-echo "  [smb]"
-echo "  config_dir = \"$CONFIG_DIR\""
+echo "Point the server at the same directory and enable SMB from the settings"
+echo "screen. There is no config file; the setting lives in the database:"
+echo "  config_dir = $CONFIG_DIR"

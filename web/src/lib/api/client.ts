@@ -23,6 +23,8 @@ if (import.meta.env.PROD && isMock) {
 export const api = isMock ? mockApi : httpApi
 
 export type {
+  SMBOutcome,
+  SmbApplyReport,
   Entry,
   Perms,
   SessionInfo,

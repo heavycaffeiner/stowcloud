@@ -40,6 +40,11 @@ func (p Policy) String() string {
 	return "required"
 }
 
+// PolicyNames is every policy this build has, for the settings screen to draw
+// a choice from. Sent rather than compiled into the client: a client carrying
+// its own copy is one that offers a policy the server does not have.
+func PolicyNames() []string { return []string{"required", "preferred", "off"} }
+
 // ParsePolicy is the trust boundary for the configured value.
 func ParsePolicy(s string) (Policy, error) {
 	switch s {
@@ -85,6 +90,20 @@ type Status struct {
 	Policy Policy
 	Kernel string
 	Steps  []StepStatus
+}
+
+// LandlockApplied reports whether the filesystem domain is actually in force.
+//
+// It decides one thing outside this package: whether a path that was not
+// granted is reachable. A domain that was never installed constrains nothing,
+// so a share added under any parent works and needs no restart.
+func (s Status) LandlockApplied() bool {
+	for _, st := range s.Steps {
+		if st.Name == "landlock" {
+			return st.Applied
+		}
+	}
+	return false
 }
 
 // Degraded reports a policy that asked for something it did not get.

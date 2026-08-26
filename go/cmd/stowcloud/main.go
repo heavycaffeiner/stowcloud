@@ -46,11 +46,13 @@ type command struct {
 // is a compile-time table by construction and not by convention.
 func table() []command {
 	return []command{
-		{name: "serve", summary: "the server, and the default with no argv"},
+		{name: "serve", summary: "the server; --emergency for the settings editor alone"},
 		{name: "healthcheck", summary: "loopback TLS probe, exit 0 on ok or degraded"},
 		{name: "preview-worker", summary: "the jailed decoder; never run by hand"},
 		{name: "caps", summary: "print the kernel capability probe and exit"},
 		{name: "setup", summary: "print and persist a one-time setup token"},
+		{name: "settings", verbs: []string{"get", "set"},
+			summary: "read or write the stored settings without a server"},
 		{name: "gc", summary: "incremental vacuum, trash and upload sweeps"},
 		{name: "routes", summary: "dump the route table; --json for machine use"},
 		{name: "smb-sync", summary: "render smb.conf, smbpasswd and passwd"},
@@ -100,6 +102,11 @@ func run(args []string, stderr io.Writer) int {
 	}
 	if cmd.name == "preview-worker" {
 		return runPreviewWorker(args[1:], stderr)
+	}
+	if cmd.name == "settings" {
+		// The way back into a deployment whose stored configuration stops the
+		// server answering. It is the one editor outside the web interface.
+		return runSettings(args[1:], stderr)
 	}
 	if len(args) > 1 && cmd.name == "masterkey" && args[1] == "rotate" {
 		// Phase 3's command: re-seal every ciphertext under a new key and swap

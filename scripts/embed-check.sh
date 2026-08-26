@@ -56,18 +56,14 @@ fi
 echo "==> serving it"
 DIR=$(mktemp -d)
 mkdir -p "$DIR/data"
-cat > "$DIR/sc.toml" <<TOML
-[server]
-data_dir = "$DIR/data"
-listen = "127.0.0.1:18500"
-[http]
-app_hosts = ["localhost"]
-content_hosts = ["content.localhost"]
-[security]
-hardening = "off"
-TOML
+# The settings live in the database, seeded with the one command that writes
+# them without a server.
+echo '{"bind":"127.0.0.1:18500","app_hosts":["localhost"]}' \
+  | "$BIN" settings set network --data-dir "$DIR/data" >/dev/null
+echo '{"hardening":"off"}' \
+  | "$BIN" settings set security --data-dir "$DIR/data" >/dev/null
 
-"$BIN" serve "$DIR/sc.toml" > "$DIR/log" 2>&1 &
+"$BIN" serve --data-dir "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 sleep 4

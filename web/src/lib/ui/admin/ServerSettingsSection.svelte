@@ -1,12 +1,14 @@
 <script lang="ts">
-  // Server settings — parity with `sc.toml`: every operator-settable
-  // field this deployment has, reachable from this one screen
-  // (`go/internal/httpapi/handler/settings.go`). Most groups
-  // apply live; network/db/symlink-policy/homes and SMB's own on/off switch
-  // need a restart, handled by the restart section at the bottom.
+  // Server settings: every operator-settable field this deployment has,
+  // reachable from this one screen
+  // (`go/internal/httpapi/handler/settings.go`). There is no config file, so
+  // this is the only place a deployment is configured. Most groups apply live;
+  // the bind address, db/symlink-policy/homes, single sign-on, the sandbox
+  // policy and SMB's own on/off switch need a restart, handled by the restart
+  // section at the bottom.
   //
-  // `snapshot.fields` is one flat, dotted-key list (mirrors `sc.toml`'s
-  // own `[section] key` shape) — this component groups by an explicit key
+  // `snapshot.fields` is one flat, dotted-key list keyed by section and
+  // field — this component groups by an explicit key
   // set per form below, and anything left over (a field this screen doesn't
   // have a dedicated control for, always because it's `readonly_reason_key`'d —
   // the server never emits an editable field outside these groups)
@@ -18,7 +20,6 @@
   import type {
     SettingsSnapshot,
     SettingsField,
-    SettingsFinding,
     SettingsSectionId,
     ApplyOutcome,
     SmbSettingsReq,
@@ -63,18 +64,18 @@
     return snapshot?.fields.find((f) => f.key === key)
   }
 
-  // The paths section: everything already open when the process started, so
-  // every one is reported rather than offered.
-  const PATH_KEYS = ['data_dir', 'smb.config_dir', 'bind']
+  // The paths section: what the process opened before anything could be
+  // configured, reported rather than offered. The bind address is not one of
+  // them any more; it is a setting like the rest and lives with the network
+  // form, which is the group it decides.
+  const PATH_KEYS = ['data_dir', 'smb.config_dir']
 
   // What the server says an empty value means, for the two fields where empty
   // is a setting rather than a gap. Nothing renders when it sent no key.
   // The keys the server can send that no call site here shows literally:
   //   /* i18n */ 'settings.empty_trusts_no_proxy'
   //   /* i18n */ 'settings.empty_disables_netbios_name'
-  //   /* i18n */ 'settings.readonly_bind_address'
   //   /* i18n */ 'settings.readonly_data_dir'
-  //   /* i18n */ 'settings.readonly_needs_restart_oidc'
   function emptyNote(key: string): string | null {
     const f = field(key)
     return f?.empty_means_key ? t(f.empty_means_key) : null
@@ -82,7 +83,6 @@
 
   function sourceLabel(src: SettingsField['source']): string {
     if (src === 'admin_override') return t('server.admin_override')
-    if (src === 'config_file') return 'sc.toml'
     return t('server.default')
   }
 
@@ -97,10 +97,10 @@
   }
 
   function outcomeText(o: ApplyOutcome): string {
-    const parts: string[] = []
-    if (o.applied_live) parts.push(t('server.change_took_effect_immediately'))
-    if (o.restart_required) parts.push(t('server.change_takes_full_effect_only'))
-    return parts.join(' ')
+    if (o.applied === 'serve_restarted') return t('server.listener_moved_to_the_new_address')
+    if (o.applied === 'engine_restart') return t('server.server_is_restarting_to_apply')
+    if (o.applied === 'reserved') return t('server.change_takes_full_effect_only')
+    return t('server.change_took_effect_immediately')
   }
 
   function formatValue(v: unknown): string {
@@ -110,13 +110,13 @@
     return String(v)
   }
 
-  // ── dry run ──
+  // ── sections ──
   //
-  // The screen used to describe what a value must be and let the server find
-  // out later whether it worked. The server can just try it: render the SMB
-  // configuration, write a file into the homes root, check the host list still
-  // contains the host this browser is talking to. Same probes the save runs,
-  // so a clean preview and a refused save cannot both happen.
+  // Saving is what tries the change. The server renders the SMB
+  // configuration, writes a file into the homes root and checks the host list
+  // still contains the host this browser is talking to, and refuses the write
+  // when one of those fails, naming the field. There is no preview button
+  // beside the save: it asked a question the next click answered.
 
   type Section = { id: SettingsSectionId; name: string }
 
@@ -134,39 +134,9 @@
     return SECTIONS.find((s) => s.id === id)?.name ?? id
   }
 
-  /** Findings per section, cleared as soon as the inputs move: a result that
-   *  outlives the values it was computed from is worse than none. */
-  let checks = $state<Partial<Record<SettingsSectionId, SettingsFinding[]>>>({})
-  let checking = $state<SettingsSectionId | null>(null)
-  let checkError = $state<Partial<Record<SettingsSectionId, string>>>({})
-
-  async function runCheck(id: SettingsSectionId, body: unknown): Promise<void> {
-    checking = id
-    checkError = { ...checkError, [id]: undefined }
-    try {
-      const res = await api.adminCheckServerSettings(id, body)
-      checks = { ...checks, [id]: res.findings }
-      checkedFor = { ...checkedFor, [id]: JSON.stringify(body) }
-    } catch (err) {
-      checkError = { ...checkError, [id]: describeApiError(err, t('server.could_not_check')) }
-    } finally {
-      checking = null
-    }
-  }
-
-  /** The values each result was computed from. A finding that outlives the
-   *  input it describes is worse than no finding, so the panel compares and
-   *  hides itself rather than relying on every input to remember to clear. */
-  let checkedFor = $state<Partial<Record<SettingsSectionId, string>>>({})
-
-  function isCurrent(id: SettingsSectionId, body: () => unknown): boolean {
-    return checkedFor[id] === JSON.stringify(body())
-  }
-
-  // The catalogue renders the sentence; the server sends only the key and its
-  // placeholders. The keys cannot be seen at the call site, so they are named
-  // here for the extractor.
-  /* i18n */ 'settings.check_passed'
+  // The catalogue renders the sentence; a refused save carries only the key
+  // and its placeholders. The keys cannot be seen at the call site, so they
+  // are named here for the extractor.
   /* i18n */ 'settings.out_of_range'
   /* i18n */ 'settings.host_list_empty'
   /* i18n */ 'settings.would_lock_you_out'
@@ -184,14 +154,14 @@
   /* i18n */ 'settings.path_must_be_absolute'
   /* i18n */ 'settings.unknown_totp_policy'
   /* i18n */ 'settings.must_be_at_least_one'
-  function findingText(f: SettingsFinding): string {
-    return t(f.reason_key, f.reason_params ?? {})
-  }
-
-  /** The bodies, built once and used by both the check and the save, so the
-   *  preview cannot be run against a different value than the one that gets
-   *  stored. Numbers are sent as numbers: the server reads them as such, and
-   *  a numeric string would fail its bound check for the wrong reason. */
+  /* i18n */ 'settings.invalid_bind_address'
+  /* i18n */ 'settings.unknown_hardening_policy'
+  /* i18n */ 'settings.guard_has_no_bound'
+  /* i18n */ 'settings.required_when_enabled'
+  /* i18n */ 'settings.issuer_must_be_https'
+  /** The bodies each save sends. Numbers are sent as numbers: the server
+   *  reads them as such, and a numeric string would fail its bound check for
+   *  the wrong reason. */
   function smbBody(): Record<string, unknown> {
     return {
       enabled: smbEnabled,
@@ -224,7 +194,8 @@
   function networkBody(): Record<string, unknown> {
     return {
       app_hosts: strToArr(netAppHosts),
-      trusted_proxies: strToArr(netTrustedProxies)
+      trusted_proxies: strToArr(netTrustedProxies),
+      bind: netBind.trim()
     }
   }
 
@@ -241,6 +212,52 @@
   }
 
 
+
+  // ── the restart a save takes ──
+  //
+  // Three sections are decided when the process builds what is under the
+  // sandbox, so saving one restarts it. The restart is not a button any more:
+  // the save takes it. What is left is the one question the server cannot
+  // answer for itself, which is whether interrupting the work in flight is
+  // acceptable. The counts come from the refusal itself rather than from a
+  // separately polled snapshot, which could be stale by the time somebody
+  // reacts to it.
+
+  let busyOpen = $state(false)
+  let busyCounts = $state<{ uploads: number; jobs: number } | null>(null)
+  let busyRetry = $state<(() => Promise<void>) | null>(null)
+
+  /** Runs a save, and on a busy refusal offers to take the restart anyway.
+   *  retry is the same save with force set. */
+  async function saving(
+    run: () => Promise<ApplyOutcome>,
+    retry: () => Promise<void>,
+    fallback: string,
+    set: (o: ApplyOutcome | null, err: string | null) => void
+  ): Promise<void> {
+    try {
+      set(await run(), null)
+      await load()
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'restart.busy') {
+        busyCounts = {
+          uploads: err.reasonNumber('active_uploads') ?? 0,
+          jobs: err.reasonNumber('running_jobs') ?? 0
+        }
+        busyRetry = retry
+        busyOpen = true
+        return
+      }
+      set(null, describeApiError(err, fallback))
+    }
+  }
+
+  async function confirmBusy(): Promise<void> {
+    busyOpen = false
+    const retry = busyRetry
+    busyRetry = null
+    if (retry) await retry()
+  }
 
   // ── SMB ──
 
@@ -277,14 +294,24 @@
       service_gid: gid
     }
     smbSaving = true
-    try {
-      smbOutcome = await api.adminSetSmbSettings(req)
-      await load()
-    } catch (err) {
-      smbError = describeApiError(err, t('server.could_not_save_smb_settings'))
-    } finally {
-      smbSaving = false
-    }
+    await saving(
+      () => api.adminSetSmbSettings(req),
+      () => saveSmbForced(req),
+      t('server.could_not_save_smb_settings'),
+      (o, e) => ((smbOutcome = o), (smbError = e))
+    )
+    smbSaving = false
+  }
+
+  async function saveSmbForced(req: SmbSettingsReq): Promise<void> {
+    smbSaving = true
+    await saving(
+      () => api.adminSetSmbSettings({ ...req, force: true }),
+      async () => {},
+      t('server.could_not_save_smb_settings'),
+      (o, e) => ((smbOutcome = o), (smbError = e))
+    )
+    smbSaving = false
   }
 
   // ── search ──
@@ -351,14 +378,14 @@
   // ── network ──
   //
   // Two editable fields, which is what the server actually stores and applies.
-  // This screen used to offer a bind address, an allowed-origin list and a
-  // public-origin list as well: the server decodes none of the three, so a
-  // save reported success and changed nothing, and the snapshot has no such
-  // fields so they loaded blank every time. The bind address is reported
-  // read-only in the field list below, where the server marks it.
+  // The bind address is in this form because it is in this section, and
+  // saving it moves the socket: the server binds the new address before it
+  // drops the old one, so a refused bind leaves the deployment reachable and
+  // the save says so.
 
   let netAppHosts = $state('')
   let netTrustedProxies = $state('')
+  let netBind = $state('')
   let netSaving = $state(false)
   let netError = $state<string | null>(null)
   let netOutcome = $state<ApplyOutcome | null>(null)
@@ -376,7 +403,8 @@
     }
     const req: NetworkSettingsReq = {
       app_hosts: hosts,
-      trusted_proxies: strToArr(netTrustedProxies)
+      trusted_proxies: strToArr(netTrustedProxies),
+      bind: netBind.trim() || undefined
     }
     netSaving = true
     try {
@@ -404,15 +432,26 @@
       homesError = t('server.enter_root_path_enable_home')
       return
     }
+    const req: HomesSettingsReq = { enabled: homesEnabled, root: homesRoot.trim() || null }
     homesSaving = true
-    try {
-      homesOutcome = await api.adminSetHomesSettings({ enabled: homesEnabled, root: homesRoot.trim() || null })
-      await load()
-    } catch (err) {
-      homesError = describeApiError(err, t('server.could_not_save_home_folder'))
-    } finally {
-      homesSaving = false
-    }
+    await saving(
+      () => api.adminSetHomesSettings(req),
+      () => saveHomesForced(req),
+      t('server.could_not_save_home_folder'),
+      (o, e) => ((homesOutcome = o), (homesError = e))
+    )
+    homesSaving = false
+  }
+
+  async function saveHomesForced(req: HomesSettingsReq): Promise<void> {
+    homesSaving = true
+    await saving(
+      () => api.adminSetHomesSettings({ ...req, force: true }),
+      async () => {},
+      t('server.could_not_save_home_folder'),
+      (o, e) => ((homesOutcome = o), (homesError = e))
+    )
+    homesSaving = false
   }
 
   // ── file watching (restart-required) ──
@@ -435,14 +474,24 @@
     }
     const req: WatchSettingsReq = { backend: watchBackend, hot_set_max: hot, full_threshold: full }
     watchSaving = true
-    try {
-      watchOutcome = await api.adminSetWatchSettings(req)
-      await load()
-    } catch (err) {
-      watchError = describeApiError(err, t('server.could_not_save_file_watch'))
-    } finally {
-      watchSaving = false
-    }
+    await saving(
+      () => api.adminSetWatchSettings(req),
+      () => saveWatchForced(req),
+      t('server.could_not_save_file_watch'),
+      (o, e) => ((watchOutcome = o), (watchError = e))
+    )
+    watchSaving = false
+  }
+
+  async function saveWatchForced(req: WatchSettingsReq): Promise<void> {
+    watchSaving = true
+    await saving(
+      () => api.adminSetWatchSettings({ ...req, force: true }),
+      async () => {},
+      t('server.could_not_save_file_watch'),
+      (o, e) => ((watchOutcome = o), (watchError = e))
+    )
+    watchSaving = false
   }
 
   // ── request rate ──
@@ -528,59 +577,6 @@
    *  the restart has not happened yet. */
   const pendingFields = $derived(snapshot?.fields.filter((f) => f.running_value !== undefined) ?? [])
 
-  // ── restart (`POST /api/admin/server-settings/restart`) ──
-  //
-  // Two-step confirm, deliberately: step 1 is a plain "are you sure" with no
-  // network call yet (nothing fires until the admin clicks its own confirm
-  // button — a restart cannot happen from one accidental click). Only that
-  // click issues the real `force:false` attempt. If the server refuses with
-  // `409 restart.busy`, step 2 shows the exact counts from THAT response
-  // (never a separately-polled snapshot, which could be stale by the time the
-  // admin reacts to it) and asks for an explicit `force:true`.
-
-  let restartConfirmOpen = $state(false)
-  let restartBusyOpen = $state(false)
-  let restartBusyCounts = $state<{ active_uploads: number; running_jobs: number } | null>(null)
-  let restarting = $state(false)
-  let restartError = $state<string | null>(null)
-  let restartAccepted = $state(false)
-
-  function openRestartConfirm(): void {
-    restartError = null
-    restartAccepted = false
-    restartConfirmOpen = true
-  }
-
-  async function attemptRestart(force: boolean): Promise<void> {
-    restarting = true
-    restartError = null
-    try {
-      await api.adminRestartServer(force)
-      restartAccepted = true
-      restartConfirmOpen = false
-      restartBusyOpen = false
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'restart.busy') {
-        // The counts ride in `detail.reason_params`, as strings, which is
-        // where every keyed refusal on this surface puts its placeholders.
-        // They were read off `detail` directly and as numbers, so both came
-        // back undefined and the dialog said zero uploads and zero jobs were
-        // in the way of a restart it had just refused.
-        restartBusyCounts = {
-          active_uploads: err.reasonNumber('active_uploads') ?? 0,
-          running_jobs: err.reasonNumber('running_jobs') ?? 0
-        }
-        restartConfirmOpen = false
-        restartBusyOpen = true
-      } else {
-        restartError = describeApiError(err, t('server.could_not_send_restart_signal'))
-        restartConfirmOpen = false
-      }
-    } finally {
-      restarting = false
-    }
-  }
-
   async function load(): Promise<void> {
     loading = true
     loadError = null
@@ -606,6 +602,7 @@
 
       netAppHosts = arrToStr(field('app_hosts')?.value)
       netTrustedProxies = arrToStr(field('trusted_proxies')?.value)
+      netBind = String(field('bind')?.value ?? '')
 
 
       homesEnabled = Boolean(field('homes.enabled')?.value)
@@ -660,42 +657,6 @@
       </div>
     {/if}
 
-    <!-- What the server learned by trying the change. Rendered under the
-         form it belongs to, with each finding beside the field it names, so a
-         refusal points at the input that caused it rather than at the group. -->
-    {#snippet checkPanel(id: SettingsSectionId, body: () => unknown)}
-      {@const found = isCurrent(id, body) ? checks[id] : undefined}
-      {#if checkError[id]}
-        <p class="sc-admin-section__error" role="alert">{checkError[id]}</p>
-      {:else if found}
-        <ul class="sc-server-settings__findings" role="status">
-          {#each found as f, i (f.reason_key + i)}
-            <li class="sc-server-settings__finding sc-server-settings__finding--{f.level}">
-              <!-- The level is in the text, not only the colour. -->
-              <span class="sc-server-settings__finding-level">
-                {f.level === 'block'
-                  ? t('server.check_blocks')
-                  : f.level === 'warn'
-                    ? t('server.check_warns')
-                    : t('server.check_ok')}
-              </span>
-              {#if f.field}<code>{f.field}</code>{/if}
-              {findingText(f)}
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    {/snippet}
-
-    <!-- Try it without saving. Placed beside the save rather than replacing
-         it: an administrator who already knows the value is fine should not
-         have to run a preview to get to the button. -->
-    {#snippet checkButton(id: SettingsSectionId, body: () => unknown)}
-      <Button variant="outlined" disabled={checking !== null} onclick={() => runCheck(id, body())}>
-        {checking === id ? t('server.checking') : t('server.check_without_saving')}
-      </Button>
-    {/snippet}
-
     <!-- One badge per row that is waiting, grouped under the form it belongs
          to. A single global "something is pending" bit would not tell an
          administrator *which* change is waiting, which is the only useful
@@ -730,9 +691,7 @@
       <TextField label={t('server.service_account_gid')} bind:value={smbServiceGid} />
       <Button variant="filled" onclick={saveSmb} loading={smbSaving}>{t('common.save')}</Button>
       {@render pendingRows('smb')}
-      {@render checkButton('smb', smbBody)}
     </div>
-    {@render checkPanel('smb', smbBody)}
     <p class="sc-admin-section__hint">
       {t('server.only_toggling_enable_smb_needs')}
     </p>
@@ -785,9 +744,7 @@
       <TextField label={t('server.fast_search_timeout_ms')} bind:value={searchDeadlineFast} />
       <TextField label={t('server.slow_search_timeout_ms')} bind:value={searchDeadlineSlow} />
       <Button variant="filled" onclick={saveSearch} loading={searchSaving}>{t('common.save')}</Button>
-      {@render checkButton('search', searchBody)}
     </div>
-    {@render checkPanel('search', searchBody)}
     <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
     {#if searchError}<p class="sc-admin-section__error" role="alert">{searchError}</p>{/if}
     {#if searchOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(searchOutcome)}</p>{/if}
@@ -796,9 +753,7 @@
     <div class="sc-server-settings__form">
       <TextField label={t('server.concurrent_zip_streams')} bind:value={archiveMax} />
       <Button variant="filled" onclick={saveArchive} loading={archiveSaving}>{t('common.save')}</Button>
-      {@render checkButton('archive', archiveBody)}
     </div>
-    {@render checkPanel('archive', archiveBody)}
     <p class="sc-admin-section__hint">{t('server.applies_immediately_no_restart_needed')}</p>
     {#if archiveError}<p class="sc-admin-section__error" role="alert">{archiveError}</p>{/if}
     {#if archiveOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(archiveOutcome)}</p>{/if}
@@ -811,10 +766,10 @@
       {#if !netTrustedProxies.trim() && emptyNote('trusted_proxies')}
         <p class="sc-server-settings__empty-note">{emptyNote('trusted_proxies')}</p>
       {/if}
+      <TextField label={t('server.bind_address')} bind:value={netBind} />
+      <p class="sc-admin-section__hint">{t('server.bind_address_hint')}</p>
       <Button variant="filled" onclick={saveNetwork} loading={netSaving}>{t('common.save')}</Button>
-      {@render checkButton('network', networkBody)}
     </div>
-    {@render checkPanel('network', networkBody)}
     <p class="sc-admin-section__hint">{t('server.applies_immediately_no_restart_needed')}</p>
     {#if netError}<p class="sc-admin-section__error" role="alert">{netError}</p>{/if}
     {#if netOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(netOutcome)}</p>{/if}
@@ -826,9 +781,7 @@
       <TextField label={t('server.homes_root_path')} bind:value={homesRoot} />
       <Button variant="filled" onclick={saveHomes} loading={homesSaving}>{t('common.save')}</Button>
       {@render pendingRows('homes')}
-      {@render checkButton('homes', homesBody)}
     </div>
-    {@render checkPanel('homes', homesBody)}
     <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart_when')}</p>
     {#if homesError}<p class="sc-admin-section__error" role="alert">{homesError}</p>{/if}
     {#if homesOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(homesOutcome)}</p>{/if}
@@ -839,9 +792,7 @@
       <TextField label={t('server.requests_per_second')} bind:value={ratePerSec} />
       <TextField label={t('server.burst_allowance')} bind:value={rateBurst} />
       <Button variant="filled" onclick={saveRate} loading={rateSaving}>{t('common.save')}</Button>
-      {@render checkButton('rate', rateBody)}
     </div>
-    {@render checkPanel('rate', rateBody)}
     <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
     {#if rateError}<p class="sc-admin-section__error" role="alert">{rateError}</p>{/if}
     {#if rateOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(rateOutcome)}</p>{/if}
@@ -854,9 +805,7 @@
       <TextField label={t('server.changes_before_a_full_rescan')} bind:value={watchFullThreshold} />
       <Button variant="filled" onclick={saveWatch} loading={watchSaving}>{t('common.save')}</Button>
       {@render pendingRows('watch')}
-      {@render checkButton('watch', watchBody)}
     </div>
-    {@render checkPanel('watch', watchBody)}
     <p class="sc-admin-section__hint">
       {t('server.takes_effect_after_restart_when')}
     </p>
@@ -894,41 +843,20 @@
       {/each}
     </dl>
 
-    <h4 class="sc-admin-section__subhead">{t('server.restart_server')}</h4>
-    <p class="sc-admin-section__hint">
-      {t('server.if_you_have_changes_need')}
-    </p>
-    <Button variant="outlined" danger onclick={openRestartConfirm}>{t('server.restart_server')}</Button>
-    {#if restartError}<p class="sc-admin-section__error" role="alert">{restartError}</p>{/if}
-    {#if restartAccepted}
-      <p class="sc-admin-section__saved" role="status">
-        {t('server.restart_signal_sent_server_will')}
-      </p>
-    {/if}
   {/if}
 </section>
 
 <ConfirmDialog
-  open={restartConfirmOpen}
-  title={t('server.restart_server')}
-  message={t('server.restarting_server_interrupts_service_briefly')}
-  confirmLabel={t('server.restart')}
-  danger
-  onclose={() => (restartConfirmOpen = false)}
-  onconfirm={() => attemptRestart(false)}
-/>
-
-<ConfirmDialog
-  open={restartBusyOpen}
+  open={busyOpen}
   title={t('server.work_still_progress')}
-  message={t(
-    'server.uploads_jobs_running_right_now',
-    { uploads: restartBusyCounts?.active_uploads ?? 0, jobs: restartBusyCounts?.running_jobs ?? 0 }
-  )}
+  message={t('server.uploads_jobs_running_right_now', {
+    uploads: busyCounts?.uploads ?? 0,
+    jobs: busyCounts?.jobs ?? 0
+  })}
   confirmLabel={t('server.restart_anyway')}
   danger
-  onclose={() => (restartBusyOpen = false)}
-  onconfirm={() => attemptRestart(true)}
+  onclose={() => ((busyOpen = false), (busyRetry = null))}
+  onconfirm={confirmBusy}
 />
 
 <style>

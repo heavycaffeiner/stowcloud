@@ -25,9 +25,14 @@ const statMask = unix.STATX_BASIC_STATS | unix.STATX_BTIME
 type ShareRoot struct {
 	ID ShareID
 
-	anchor   *os.File
-	policy   SharePolicy
-	dev      uint64
+	anchor *os.File
+	policy SharePolicy
+	dev    uint64
+	// ino is the anchor's inode, recorded so a later resolution of the same
+	// path can be compared against what was opened. Without it an unmounted
+	// share is undetectable: the descriptor keeps the filesystem alive, so
+	// every question asked of the handle answers as if nothing happened.
+	ino      uint64
 	fsType   FsType
 	hasBtime bool
 
@@ -76,6 +81,7 @@ func OpenShareRoot(id ShareID, host string, policy SharePolicy) (*ShareRoot, err
 		anchor:   anchor,
 		policy:   policy,
 		dev:      unix.Mkdev(stx.Dev_major, stx.Dev_minor),
+		ino:      stx.Ino,
 		fsType:   fsType,
 		hasBtime: stx.Mask&unix.STATX_BTIME != 0,
 		admitted: map[uint64]struct{}{},
@@ -151,6 +157,46 @@ func (r *ShareRoot) admitDevice(dir *os.File, dev uint64, path string) error {
 func (r *ShareRoot) Close() error { return r.anchor.Close() }
 
 func (r *ShareRoot) Policy() SharePolicy { return r.policy }
+
+// Alive reports whether the configured path still names the directory this
+// root has open.
+//
+// It asks about the path rather than about the descriptor, and that is the
+// whole of why it works. A descriptor outlives the directory it names: an
+// unmounted share root leaves a handle that still stats, still reports the
+// same device, and is otherwise indistinguishable from a working one, because
+// holding it is what keeps the filesystem alive. Nothing about the handle can
+// tell you the mount is gone.
+//
+// What can is a fresh resolution of the same path: after an unmount it lands
+// on the underlying directory, which is a different inode, or on nothing at
+// all. So the comparison is device and inode against what registration
+// recorded, and a mismatch is the mount having been swapped underneath.
+//
+// This is the one path resolution in this package that does not go through the
+// anchor, and it is not a security decision: it decides whether to mark a
+// share broken, never what a request may reach. Every operation still resolves
+// through the anchor under openat2, so a path swapped between this probe and
+// the next request changes nothing about what is reachable.
+func (r *ShareRoot) Alive() error {
+	var stx unix.Statx_t
+	if err := unix.Statx(unix.AT_FDCWD, r.anchor.Name(), 0,
+		unix.STATX_TYPE|unix.STATX_INO, &stx); err != nil {
+		return mapErrno("probe share root", err)
+	}
+	// A path that resolves and is no longer a directory is a share root
+	// something replaced with a file, which is not a share this can serve.
+	if stx.Mode&unix.S_IFMT != unix.S_IFDIR {
+		return fmt.Errorf("probe share root: %w", ErrNotADirectory)
+	}
+	if unix.Mkdev(stx.Dev_major, stx.Dev_minor) != r.dev || stx.Ino != r.ino {
+		// The path is there and it is not what this root has open. The share
+		// is serving a tree nobody can reach by its own name any more, which
+		// is worse than serving nothing.
+		return fmt.Errorf("probe share root: %w", ErrNotFound)
+	}
+	return nil
+}
 
 // Dev is the device the share root itself sits on. A subdirectory may be on
 // another one, which is ordinary rather than a fault.
@@ -566,22 +612,52 @@ func syncDirFd(d *os.File) error {
 // different numbers, and answering from the anchor gives every such directory
 // the root disk's.
 func (r *ShareRoot) Space(p SafePath) (FsSpace, error) {
-	dir, err := r.resolveDir(p.comps)
+	dir, err := r.resolveDirOrParent(p)
 	if err != nil {
-		// Both ENOENT and ENOTDIR arrive as ErrNotFound, and the second is the
-		// ordinary case of p naming a file. Retry at the parent, which holds
-		// the file and is therefore on the same filesystem.
-		if !p.IsRoot() && errors.Is(err, ErrNotFound) {
-			dir, err = r.resolveDir(p.Parent().comps)
-		}
-		if err != nil {
-			return FsSpace{}, err
-		}
+		return FsSpace{}, err
 	}
 	defer closeAfter(dir, "space probe")
+	return spaceOf(dir)
+}
 
+// DirDev is the device the directory at p sits on, for the same reason Space
+// exists: a volume mounted under media/ is a different device from the share
+// root, and a rename cannot cross that boundary. A caller choosing between a
+// rename and a copy asks about the directory an entry lands in, not the root.
+func (r *ShareRoot) DirDev(p SafePath) (uint64, error) {
+	dir, err := r.resolveDirOrParent(p)
+	if err != nil {
+		return 0, err
+	}
+	defer closeAfter(dir, "device probe")
+	st, err := statOf(dir)
+	if err != nil {
+		return 0, err
+	}
+	return st.Dev, nil
+}
+
+// resolveDirOrParent resolves p as a directory, falling back to its parent.
+//
+// Both ENOENT and ENOTDIR arrive as ErrNotFound, and the second is the ordinary
+// case of p naming a file. The parent holds it and is therefore on the same
+// filesystem, which is the only fact either probe above is after.
+func (r *ShareRoot) resolveDirOrParent(p SafePath) (*os.File, error) {
+	dir, err := r.resolveDir(p.comps)
+	if err == nil {
+		return dir, nil
+	}
+	if !p.IsRoot() && errors.Is(err, ErrNotFound) {
+		return r.resolveDir(p.Parent().comps)
+	}
+	return nil, err
+}
+
+// spaceOf runs the accounting against an already-open descriptor, so the path
+// probe and the open-handle one cannot disagree about what a block size means.
+func spaceOf(f *os.File) (FsSpace, error) {
 	var sfs unix.Statfs_t
-	if err := withFdErr(dir, func(fd int) error { return unix.Fstatfs(fd, &sfs) }); err != nil {
+	if err := withFdErr(f, func(fd int) error { return unix.Fstatfs(fd, &sfs) }); err != nil {
 		return FsSpace{}, mapErrno("statfs", err)
 	}
 	bsize, nerr := num.Narrow[uint64](sfs.Bsize)

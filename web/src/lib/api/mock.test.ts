@@ -166,7 +166,6 @@ describe('mockApi admin share management', () => {
   it('creates a share and it appears in the list', async () => {
     const created = await mockApi.adminCreateShare({ name: 'Recipes', host_path: '/srv/recipes' })
     expect(created.id).toBeGreaterThan(0)
-    expect(created.config_defined).toBe(false)
     const shares = await mockApi.adminListShares()
     expect(shares.some((s) => s.id === created.id)).toBe(true)
   })
@@ -189,23 +188,14 @@ describe('mockApi admin share management', () => {
     })
   })
 
-  it('renames and repoints an admin-created share', async () => {
+  it('renames and repoints a share', async () => {
     const created = await mockApi.adminCreateShare({ name: 'Books', host_path: '/srv/books' })
     const updated = await mockApi.adminUpdateShare(created.id, { name: 'Ebooks', host_path: '/srv/ebooks' })
     expect(updated.name).toBe('Ebooks')
     expect(updated.host_path).toBe('/srv/ebooks')
   })
 
-  it('renames a config-file share too — the edit is kept as an override, not lost on restart', async () => {
-    const shares = await mockApi.adminListShares()
-    const configShare = shares.find((s) => s.config_defined)!
-    const updated = await mockApi.adminUpdateShare(configShare.id, { name: 'Renamed', host_path: '/srv/renamed' })
-    expect(updated.name).toBe('Renamed')
-    expect(updated.host_path).toBe('/srv/renamed')
-    expect(updated.config_defined).toBe(true)
-  })
-
-  it('is off by default and toggleable on an admin-created share', async () => {
+  it('is off by default and toggleable', async () => {
     const created = await mockApi.adminCreateShare({ name: 'Backups', host_path: '/srv/backups' })
     expect(created.trash_enabled).toBe(false)
     const on = await mockApi.adminUpdateShare(created.id, { trash_enabled: true })
@@ -214,20 +204,7 @@ describe('mockApi admin share management', () => {
     expect(off.trash_enabled).toBe(false)
   })
 
-  it('is toggleable on a config-file share', async () => {
-    const shares = await mockApi.adminListShares()
-    const configShare = shares.find((s) => s.config_defined)!
-    const updated = await mockApi.adminUpdateShare(configShare.id, { trash_enabled: true })
-    expect(updated.trash_enabled).toBe(true)
-  })
-
-  it('refuses deleting a config-file share — the config entry would re-declare it', async () => {
-    const shares = await mockApi.adminListShares()
-    const configShare = shares.find((s) => s.config_defined)!
-    await expect(mockApi.adminDeleteShare(configShare.id)).rejects.toMatchObject({ code: 'fs.invalid_name' })
-  })
-
-  it('deletes an admin-created share and it stops being listed', async () => {
+  it('deletes a share and it stops being listed', async () => {
     const created = await mockApi.adminCreateShare({ name: 'Scratch', host_path: '/srv/scratch' })
     await mockApi.adminDeleteShare(created.id)
     const shares = await mockApi.adminListShares()

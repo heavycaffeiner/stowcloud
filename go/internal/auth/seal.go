@@ -27,6 +27,7 @@ const (
 	bindNT     = "smb_nt"
 	bindTOTP   = "totp"
 	bindShLink = "shlink"
+	bindConfig = "config"
 )
 
 // ErrCiphertextTooShort is a stored blob that lacks even a nonce, which is
@@ -79,6 +80,16 @@ func aadTOTP(user int64, keyVer uint32) []byte {
 	return out
 }
 
+// aadConfig binds a stored configuration secret to the name it is stored
+// under, so a value cannot be transplanted between settings.
+func aadConfig(name string, keyVer uint32) []byte {
+	out := make([]byte, 0, len(bindConfig)+len(name)+4)
+	out = append(out, bindConfig...)
+	out = append(out, name...)
+	out = binary.LittleEndian.AppendUint32(out, keyVer)
+	return out
+}
+
 func aadLink(tokenHash []byte, keyVer uint32) []byte {
 	out := make([]byte, 0, len(bindShLink)+len(tokenHash)+4)
 	out = append(out, bindShLink...)
@@ -125,6 +136,27 @@ func sealLink(key [keyLen]byte, token, tokenHash []byte, keyVer uint32) ([]byte,
 
 func openLink(key [keyLen]byte, blob, tokenHash []byte, keyVer uint32) ([]byte, error) {
 	return open(key, blob, aadLink(tokenHash, keyVer))
+}
+
+// SealConfigSecret encrypts one configuration secret under the active key.
+//
+// It exists because a setting can be a credential: the single-sign-on client
+// secret is one, and a settings document that carried it would put a
+// credential in every read of the settings table and in every response the
+// settings screen renders.
+func (s *Service) SealConfigSecret(name string, plain []byte) ([]byte, uint32, error) {
+	key, ver := s.mk.Active()
+	blob, err := seal(key, plain, aadConfig(name, ver))
+	if err != nil {
+		return nil, 0, err
+	}
+	return blob, ver, nil
+}
+
+// OpenConfigSecret is the inverse.
+func (s *Service) OpenConfigSecret(name string, blob []byte, keyVer uint32) ([]byte, error) {
+	key, _ := s.mk.Active()
+	return open(key, blob, aadConfig(name, keyVer))
 }
 
 // LinkCipher is the at-rest cryptography for share-link tokens, exported for

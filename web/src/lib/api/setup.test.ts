@@ -27,13 +27,13 @@ describe('createInitialAdmin (mock)', () => {
 
   it('rejects a blank installation token', async () => {
     await expect(
-      createInitialAdmin({ token: '   ', username: 'root', password: 'longenoughpw' })
+      createInitialAdmin({ token: '   ', username: 'root', password: 'longenoughpw', app_hosts: ['localhost'], trusted_proxies: [] })
     ).rejects.toMatchObject({ code: 'setup.invalid_token' })
   })
 
   it('accepts a token and lets that exact account log in afterwards', async () => {
     await mockApi.logout()
-    await createInitialAdmin({ token: 'DEV-TOKEN', username: 'root', password: 'longenoughpw' })
+    await createInitialAdmin({ token: 'DEV-TOKEN', username: 'root', password: 'longenoughpw', app_hosts: ['localhost'], trusted_proxies: [] })
 
     const result = await mockApi.login('root', 'longenoughpw')
     expect(result.status).toBe('ok')
@@ -41,7 +41,7 @@ describe('createInitialAdmin (mock)', () => {
 
   it('does not let a different password through for the created account', async () => {
     await mockApi.logout()
-    await createInitialAdmin({ token: 'DEV-TOKEN', username: 'root2', password: 'longenoughpw' })
+    await createInitialAdmin({ token: 'DEV-TOKEN', username: 'root2', password: 'longenoughpw', app_hosts: ['localhost'], trusted_proxies: [] })
 
     await expect(mockApi.login('root2', 'wrong-password')).rejects.toMatchObject({
       code: 'auth.invalid_credentials'

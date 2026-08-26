@@ -147,8 +147,8 @@ port that is safe only as long as nobody publishes it is a footgun worth not
 shipping.
 
 > **Before anyone outside your network can reach it,** put a reverse proxy with
-> a real certificate in front, and set `trusted_proxies` in `data/sc.toml` to
-> that proxy's addresses. Without that last part every visitor looks like the
+> a real certificate in front, and set the trusted-proxy ranges on the admin
+> settings screen to that proxy's addresses. Without that last part every visitor looks like the
 > proxy, so the login rate limit and the audit log collapse onto one address and
 > a single attacker can lock out everyone.
 >
@@ -248,13 +248,9 @@ switch is in the admin screen, and turning it on starts the daemon without
 touching a shell.
 
 The sidecar shares the host's network stack, so port 445 must be free: stop a
-Samba already running there first. Two settings under `[smb]` in `data/sc.toml`
-are worth setting before you do.
-
-```toml
-server_name = "stowcloud"
-interfaces = ["192.168.1.10"]
-```
+Samba already running there first. Two fields in the SMB section of the admin
+settings screen are worth setting before you do: the server name clients see
+(`stowcloud`), and the interfaces the daemon binds (`192.168.1.10`).
 
 The first is what makes shares open as `\\stowcloud\photos` instead of
 `\\192.168.1.10\photos`. It needs the host's network to work at all, because the

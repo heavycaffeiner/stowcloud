@@ -43,8 +43,16 @@ func (f *File) WriteAt(b []byte, off int64) (int, error) { return f.f.WriteAt(b,
 func (f *File) Truncate(n int64) error { return f.f.Truncate(n) }
 
 // Stat answers from the descriptor, so it describes the file this handle holds
-// rather than whatever currently answers to its name.
+// rather than whatever currently answers to its name. Stat.Dev is the device it
+// sits on, which a caller holding two handles compares to tell whether they are
+// on one filesystem.
 func (f *File) Stat() (Stat, error) { return statOf(f.f) }
+
+// Space reports the filesystem behind this handle, the same accounting
+// ShareRoot.Space answers for a path. It is for the caller that already holds
+// the file open and would otherwise re-resolve a name it has in hand.
+
+func (f *File) Space() (FsSpace, error) { return spaceOf(f.f) }
 
 // SyncData makes the contents durable. It is fdatasync rather than fsync: the
 // name is made durable separately, by syncing the parent directory, and doing

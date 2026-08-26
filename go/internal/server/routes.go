@@ -200,17 +200,19 @@ func routes(d handler.Deps, setup handler.Setup) []route.Route {
 		// in which key they write, and a section nobody recognises is refused
 		// rather than created.
 		{Method: "PATCH", Pattern: "/api/admin/server-settings/{section}", Req: selfAdmin, Handler: handler.AdminServerSettingsSection(d)},
-		{Method: "POST", Pattern: "/api/admin/server-settings/restart", Req: selfAdmin, Handler: handler.AdminServerSettingsRestart(d)},
 		// The dry run. Same probes as the save, storing nothing, so an
 		// administrator can see what a change would do before it does it.
-		{Method: "POST", Pattern: "/api/admin/server-settings/{section}/check", Req: selfAdmin, Handler: handler.AdminServerSettingsCheck(d)},
 
 		{Method: "GET", Pattern: "/api/admin/shares", Req: selfAdmin, Handler: handler.Shares(d)},
 		{Method: "POST", Pattern: "/api/admin/shares", Req: selfAdmin, Handler: handler.Shares(d)},
 		{Method: "PATCH", Pattern: "/api/admin/shares/{id}", Req: selfAdmin, Handler: handler.ShareUpdate(d)},
 		{Method: "DELETE", Pattern: "/api/admin/shares/{id}", Req: selfAdmin, Handler: handler.ShareDelete(d)},
+		// Re-opening a share whose disk came back. Its own route because the
+		// ordinary repair is a remount that changes nothing about the share,
+		// and making somebody retype a path that was always right to prove it
+		// is a screen built around the implementation.
+		{Method: "POST", Pattern: "/api/admin/shares/{id}/retry", Req: selfAdmin, Handler: handler.ShareRetry(d)},
 		{Method: "GET", Pattern: "/api/admin/server-settings", Req: selfAdmin, Handler: handler.Settings(d)},
-		{Method: "PATCH", Pattern: "/api/admin/server-settings/network", Req: selfAdmin, Handler: handler.SettingsNetwork(d)},
 
 		// Public share links. The token authenticates the request; no session
 		// is involved, which is why they are public in the auth step.

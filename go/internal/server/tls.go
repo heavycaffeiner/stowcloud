@@ -32,11 +32,20 @@ type tlsMaterial struct {
 // persists a fresh pair. A stale or corrupt pair is a startup refusal rather
 // than a silent regeneration: silently minting a new certificate invalidates
 // every client's pinned fingerprint with no record of the change.
+//
+// The one exception is a certificate that does not name the host this server
+// answers under. That is the first boot: the pair is minted before anyone has
+// said what the deployment is called, so it covers localhost and the loopback
+// addresses and nothing else. Keeping it would mean every browser reaching the
+// deployment by name is told the certificate is for something else, forever.
+// Nothing has pinned it yet, because nothing could reach it by name to pin.
 func loadOrCreateTLS(dir string, appHost string) (*tlsMaterial, error) {
 	certPath := filepath.Join(dir, "tls", "cert.pem")
 	keyPath := filepath.Join(dir, "tls", "key.pem")
 	if cert, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
-		return &tlsMaterial{Cert: &cert}, nil
+		if covers(&cert, appHost) {
+			return &tlsMaterial{Cert: &cert}, nil
+		}
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "tls"), 0o700); err != nil {
 		return nil, fmt.Errorf("creating the TLS directory: %w", err)
@@ -58,6 +67,24 @@ func loadOrCreateTLS(dir string, appHost string) (*tlsMaterial, error) {
 	return &tlsMaterial{Cert: &cert}, nil
 }
 
+// covers reports whether a certificate names this host.
+//
+// An empty host is covered by anything: before setup there is no name to
+// answer under, so there is nothing a certificate could fail to carry.
+func covers(cert *tls.Certificate, appHost string) bool {
+	if appHost == "" {
+		return true
+	}
+	if len(cert.Certificate) == 0 {
+		return false
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return false
+	}
+	return leaf.VerifyHostname(appHost) == nil
+}
+
 // generateSelfSigned mints a certificate whose SANs cover the app host,
 // localhost and the loopback addresses, and returns the PEM pair.
 func generateSelfSigned(appHost string) (certPEM, keyPEM []byte, err error) {
@@ -70,6 +97,12 @@ func generateSelfSigned(appHost string) (certPEM, keyPEM []byte, err error) {
 		return nil, nil, err
 	}
 	now := clock.System().Now()
+	// The app host is absent on a first boot, and an empty SAN entry is a
+	// certificate no client can match against anything.
+	names := []string{"localhost"}
+	if appHost != "" {
+		names = append([]string{appHost}, names...)
+	}
 	tmpl := &x509.Certificate{
 		SerialNumber: serial,
 		Subject:      pkix.Name{CommonName: appHost},
@@ -77,7 +110,7 @@ func generateSelfSigned(appHost string) (certPEM, keyPEM []byte, err error) {
 		NotAfter:     now.AddDate(10, 0, 0),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:     []string{appHost, "localhost"},
+		DNSNames:     names,
 		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
 	}
 	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)

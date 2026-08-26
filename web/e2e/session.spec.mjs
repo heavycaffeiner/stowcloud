@@ -5,11 +5,14 @@
 // check that would have caught login being mounted on the wrong path: the
 // handler was correct, its tests passed, and nothing could reach it.
 //
-// Run: node e2e/session.spec.mjs <base-url> <setup-token>
+// Run: node e2e/session.spec.mjs <base-url> <setup-token> <share-path>
 import { chromium } from 'playwright'
 
 const BASE = process.argv[2] ?? 'https://127.0.0.1:18900'
 const TOKEN = process.argv[3] ?? ''
+// The folder the fixture serves, as the server sees it. Nothing declares a
+// share any more, so the suite creates one.
+const SHARE = process.argv[4] ?? ''
 const USER = 'e2e-admin'
 const PASSWORD = 'correct-horse-battery-staple'
 
@@ -22,12 +25,15 @@ function check(name, ok, detail = '') {
 }
 
 /** The API as the browser sees it: same origin, same cookies, same guard. */
-async function api(page, method, path, body) {
+async function api(page, method, path, body, csrf) {
   return page.evaluate(
-    async ([m, p, b]) => {
+    async ([m, p, b, token]) => {
+      const headers = {}
+      if (b) headers['Content-Type'] = 'application/json'
+      if (token) headers['Sc-Csrf'] = token
       const res = await fetch(p, {
         method: m,
-        headers: b ? { 'Content-Type': 'application/json' } : {},
+        headers,
         body: b ? JSON.stringify(b) : undefined
       })
       let parsed = null
@@ -39,7 +45,7 @@ async function api(page, method, path, body) {
       }
       return { status: res.status, body: parsed }
     },
-    [method, path, body ?? null]
+    [method, path, body ?? null, csrf ?? '']
   )
 }
 
@@ -92,10 +98,15 @@ try {
     const created = await api(page, 'POST', '/api/setup', {
       token: TOKEN,
       username: USER,
-      password: PASSWORD
+      password: PASSWORD,
+      // The form names what the server answers for. It is required: until it
+      // is saved the host guard is in its first-boot mode, admitting the
+      // local network on the strength of the address alone.
+      app_hosts: [new URL(BASE).hostname],
+      trusted_proxies: []
     })
     check('the administrator is created', created.status === 200 || created.status === 201,
-      `status ${created.status}`)
+      `status ${created.status} ${JSON.stringify(created.body).slice(0, 160)}`)
   }
 
   console.log('signing in')
@@ -122,14 +133,25 @@ try {
   const csrf = session.body?.csrf ?? ''
   check('the session carries a token for state-changing requests', csrf.length > 0)
 
+  console.log('the first share')
+  // A fresh deployment serves nothing: no file declares a folder, so the
+  // first share is one the administrator creates from the interface.
+  const existing = await api(page, 'GET', '/api/admin/shares')
+  const already = (Array.isArray(existing.body) ? existing.body : (existing.body?.shares ?? []))
+    .some((s) => s.name === 'docs')
+  if (!already && SHARE) {
+    const made = await api(page, 'POST', '/api/admin/shares',
+      { name: 'docs', host_path: SHARE }, csrf)
+    check('the first share is created from the interface', made.status === 201,
+      `status ${made.status} ${JSON.stringify(made.body).slice(0, 160)}`)
+  }
+
   console.log('browsing')
-  // The first administrator is granted every configured share at setup, so
-  // this account can read the one the fixture serves. Without that a fresh
-  // deployment is a dead end: a share is only reachable through a grant, the
-  // screen that creates grants is behind the interface, and the first run has
-  // none.
+  // Creating a share grants it to whoever created it, so this account can read
+  // it at once. Without that a fresh deployment is a dead end: a share is only
+  // reachable through a grant and the first run has none.
   const list = await api(page, 'GET', '/api/fs/list?path=docs')
-  check('the first administrator can read the configured share', list.status === 200,
+  check('the administrator can read the share they created', list.status === 200,
     `status ${list.status}`)
 
   // The client's own path spelling is rooted, and it has to be accepted: its

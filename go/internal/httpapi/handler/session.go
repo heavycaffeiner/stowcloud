@@ -138,6 +138,11 @@ type sessionRoot struct {
 	ShareKind        string    `json:"share_kind"`
 	SharedExternally bool      `json:"shared_externally"`
 	TrashEnabled     bool      `json:"trash_enabled"`
+	// BrokenReason is why this folder cannot be opened right now, or absent
+	// when it can. The folder stays in the list either way: a share whose disk
+	// did not come back used to vanish, which reads as somebody having deleted
+	// it rather than as hardware that needs looking at.
+	BrokenReason string `json:"broken_reason,omitempty"`
 }
 
 type sessionLimits struct {
@@ -273,6 +278,7 @@ func rootsOf(d Deps, uid core.UserID) []sessionRoot {
 			ShareKind:        shareKindOf(e),
 			SharedExternally: e.SharedExternally,
 			TrashEnabled:     e.TrashEnabled,
+			BrokenReason:     e.BrokenReason,
 		})
 	}
 	return out

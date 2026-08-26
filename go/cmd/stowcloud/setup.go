@@ -21,20 +21,17 @@ import (
 // read it. It shares the gate's refusal: an administrator already exists, so
 // the token is not coming back.
 func runSetup(args []string, w io.Writer) int {
-	if len(args) != 1 {
-		say(w, "usage: stowcloud setup <sc.toml>\n\n")
+	dataDir, uerr := dataDirArg(args)
+	if uerr != nil {
+		say(w, "stowcloud %s: setup: %v\n\n", version, uerr)
+		say(w, "usage: stowcloud setup [--data-dir DIR]\n\n")
 		say(w, "  Prints and persists a one-time setup token, valid for fifteen\n")
 		say(w, "  minutes and spent once by POST /api/setup. Refused when an\n")
-		say(w, "  administrator already exists.\n")
+		say(w, "  administrator already exists. DIR defaults to %s.\n", defaultDataDir)
 		return exitUsage
 	}
-	cfg, err := server.Load(args[0])
-	if err != nil {
-		say(w, "stowcloud %s: setup: %v\n", version, err)
-		return exitConfig
-	}
 	ctx := context.Background()
-	st, serr := store.Open(cfg.DataDir, store.Options{Clock: clock.System()})
+	st, serr := store.Open(dataDir, store.Options{Clock: clock.System()})
 	if serr != nil {
 		say(w, "stowcloud %s: setup: opening the store: %v\n", version, serr)
 		return exitConfig
@@ -44,12 +41,12 @@ func runSetup(args []string, w io.Writer) int {
 			say(w, "stowcloud %s: setup: closing the store: %v\n", version, cerr)
 		}
 	}()
-	svc := auth.New(auth.Config{Store: st.State(), StoreDir: cfg.DataDir, Clock: clock.System()})
+	svc := auth.New(auth.Config{Store: st.State(), StoreDir: dataDir, Clock: clock.System()})
 	if _, kerr := svc.OpenMasterKey(ctx); kerr != nil {
 		say(w, "stowcloud %s: setup: the master key: %v\n", version, kerr)
 		return exitConfig
 	}
-	gate, gerr := server.NewSetupGate(ctx, svc, clock.System(), cfg.DataDir)
+	gate, gerr := server.NewSetupGate(ctx, svc, clock.System(), dataDir)
 	if gerr != nil {
 		say(w, "stowcloud %s: setup: %v\n", version, gerr)
 		return exitConfig
@@ -58,6 +55,6 @@ func runSetup(args []string, w io.Writer) int {
 		say(w, "stowcloud %s: setup: %v\n", version, rerr)
 		return exitConfig
 	}
-	say(w, "The token is also in %s\n", filepath.Join(cfg.DataDir, "setup-token"))
+	say(w, "The token is also in %s\n", filepath.Join(dataDir, "setup-token"))
 	return exitOK
 }

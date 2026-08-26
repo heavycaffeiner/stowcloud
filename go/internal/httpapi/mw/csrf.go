@@ -18,7 +18,13 @@ import (
 // The token is stateless: hex(HMAC-SHA256(key, sha256(session_token))), so
 // no database column and no per-session table are needed, and it derives from
 // exactly the data the Auth step already validated.
-func CSRF(key []byte, allowedOrigins []string) func(http.Handler) http.Handler {
+//
+// The origin list is the live holder rather than a copy of it. Taken as a
+// slice at build time it froze the hosts this chain was assembled with, so an
+// administrator who saved a new app host got a guard that admitted the request
+// and a CSRF step that refused it, and the only symptom was every save from
+// the new name failing with a malformed-request error.
+func CSRF(key []byte, hosts *HostSet) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !stateChanging(r.Method) {
@@ -38,7 +44,7 @@ func CSRF(key []byte, allowedOrigins []string) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			if !originAllowed(r, allowedOrigins) {
+			if !originAllowed(r, hosts.App()) {
 				apierr.Write(w, http.StatusBadRequest,
 					apierr.NewError(apierr.CodeInvalidRequest, "malformed request", "csrf.origin_refused"))
 				return
@@ -90,6 +96,13 @@ func originAllowed(r *http.Request, allowed []string) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return false
+	}
+	// No declared host is the first boot, the same case the host guard admits:
+	// nothing has named this deployment, so there is no origin to compare
+	// against and the setup form is all that is behind this. The guard has
+	// already bounded the request to the local network by then.
+	if len(allowed) == 0 {
+		return true
 	}
 	// Origin is scheme://host[:port]; the declared lists carry no port.
 	host := origin

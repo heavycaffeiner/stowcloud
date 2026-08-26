@@ -250,6 +250,10 @@ func AdminUploadSettings(d Deps) http.HandlerFunc {
 		var patch struct {
 			ChunkMin     *uint64 `json:"chunk_min"`
 			ChunkDefault *uint64 `json:"chunk_default"`
+			// CacheEnabled spools chunks to the cache volume before they reach
+			// the destination. Absent leaves it as it was, so a screen editing
+			// the chunk sizes does not silently turn it off.
+			CacheEnabled *bool `json:"cache_enabled"`
 		}
 		if err := decodeJSON(r, &patch); err != nil {
 			return err
@@ -262,9 +266,20 @@ func AdminUploadSettings(d Deps) http.HandlerFunc {
 		if err := d.Uploads.ApplySettings(r.Context(), patch.ChunkMin, patch.ChunkDefault); err != nil {
 			return err
 		}
+		// The cache switch probes the spool before it stores anything, so a
+		// spool that cannot take a file is refused here rather than discovered
+		// at the first upload after the next restart.
+		if patch.CacheEnabled != nil {
+			if err := d.Uploads.SetCacheEnabled(r.Context(), *patch.CacheEnabled); err != nil {
+				return err
+			}
+		}
 		s := d.Uploads.Settings()
-		return writeJSON(w, http.StatusOK, map[string]uint64{
-			"chunk_min": s.Min(), "chunk_default": s.Default(),
+		return writeJSON(w, http.StatusOK, map[string]any{
+			"chunk_min":       s.Min(),
+			"chunk_default":   s.Default(),
+			"cache_enabled":   d.Uploads.CacheEnabled(),
+			"cache_available": d.Uploads.CacheAvailable(),
 		})
 	})
 }

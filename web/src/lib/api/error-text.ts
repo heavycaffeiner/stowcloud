@@ -31,13 +31,23 @@ const SERVER_KEYS = new Set<string>([
   /* i18n */ 'settings.must_be_at_least_one',
   /* i18n */ 'settings.unknown_section',
   /* i18n */ 'settings.not_in_this_build',
-  /* i18n */ 'settings.readonly_bind_address',
   /* i18n */ 'settings.readonly_data_dir',
-  /* i18n */ 'settings.readonly_needs_restart_oidc',
   /* i18n */ 'settings.readonly_smb_agent_socket',
+  /* i18n */ 'settings.secret_is_write_only',
   /* i18n */ 'settings.invalid_cidr',
+  /* i18n */ 'settings.invalid_bind_address',
+  /* i18n */ 'settings.unknown_hardening_policy',
+  /* i18n */ 'settings.guard_has_no_bound',
+  /* i18n */ 'settings.required_when_enabled',
+  /* i18n */ 'settings.issuer_must_be_https',
+  /* i18n */ 'settings.bind_failed',
+  /* i18n */ 'settings.must_be_a_string',
   /* i18n */ 'admin.share_rejected',
-  /* i18n */ 'admin.chunk_below_floor'
+  /* i18n */ 'admin.chunk_below_floor',
+  // A folder whose backing disk is not there. It names the share and the
+  // reason, because "not found" for a path that is perfectly good sends a
+  // person looking in the wrong place.
+  /* i18n */ 'fs.share_broken'
 ])
 
 /** `go/internal/apierr/map.go`'s codes → catalogue key. Only
@@ -53,6 +63,7 @@ const CODE_KEYS: Record<string, string> = {
   'fs.gone': /* i18n */ 'error.fs_gone',
   'acl.denied': /* i18n */ 'error.acl_denied',
   'quota.exceeded': /* i18n */ 'error.quota_exceeded',
+  'share.broken': /* i18n */ 'error.share_broken',
   'internal': /* i18n */ 'error.internal',
   'internal.not_implemented': /* i18n */ 'error.not_implemented'
 }

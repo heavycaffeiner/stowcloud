@@ -47,6 +47,17 @@ type Engine struct {
 	// nested the other way.
 	rowsMu sync.Mutex
 	rows   map[SessionID]*sync.Mutex
+
+	// cache is the spool chunks land in before they reach the destination, and
+	// nil for a deployment that has none.
+	cache *Cache
+
+	// mergeCtx is the parent of every merger, so Close stops them all. The
+	// mergers themselves are one per cached session in flight.
+	mergeCtx  context.Context
+	mergeStop context.CancelFunc
+	mergersMu sync.Mutex
+	mergers   map[SessionID]*merger
 }
 
 // handle is one session's part-file descriptor and the lock guarding it.
@@ -64,6 +75,10 @@ type Options struct {
 	ChunkMin     uint64
 	ChunkDefault uint64
 	Logger       *slog.Logger
+	// CacheDir is where chunks spool when the cache is turned on. Empty means
+	// this deployment has no spool and the switch is unavailable, which is what
+	// a test harness with no data directory gets.
+	CacheDir string
 }
 
 // New wires an engine over the core and the durable half, and loads the
@@ -84,15 +99,58 @@ func New(ctx context.Context, c *core.Core, st *state.DB, opt Options) (*Engine,
 	if err != nil {
 		return nil, err
 	}
-	return &Engine{
-		core:     c,
-		state:    st,
-		clk:      clk,
-		log:      log,
-		settings: settings,
-		handles:  map[SessionID]*handle{},
-		rows:     map[SessionID]*sync.Mutex{},
-	}, nil
+	// The merger context is detached from ctx on purpose: ctx is the caller's
+	// startup context, and a merger has to outlive it and stop at Close.
+	mergeCtx, mergeStop := context.WithCancel(context.WithoutCancel(ctx))
+	e := &Engine{
+		core:      c,
+		state:     st,
+		clk:       clk,
+		log:       log,
+		settings:  settings,
+		handles:   map[SessionID]*handle{},
+		rows:      map[SessionID]*sync.Mutex{},
+		mergeCtx:  mergeCtx,
+		mergeStop: mergeStop,
+		mergers:   map[SessionID]*merger{},
+	}
+	if opt.CacheDir != "" {
+		cache, cerr := openCache(opt.CacheDir)
+		if cerr != nil {
+			// A spool that will not open is a degradation and not a refusal to
+			// start: every upload still works by writing to the destination,
+			// which is what this server did before the spool existed.
+			log.Error("the upload cache spool is unavailable; uploads write straight to their destination",
+				slog.String("dir", opt.CacheDir), slog.Any("error", cerr))
+		} else {
+			on, rerr := st.ReadUploadCacheEnabled(ctx)
+			if rerr != nil {
+				mergeStop()
+				return nil, errors.Join(rerr, cache.Close())
+			}
+			cache.enabled.Store(on)
+			e.cache = cache
+		}
+	}
+	return e, nil
+}
+
+// Close stops every merger and releases the spool. A merger is waited for
+// rather than abandoned: it writes part files, and leaving one running past
+// the shutdown is a write into a descriptor the process is closing.
+func (e *Engine) Close() error {
+	e.mergeStop()
+	e.mergersMu.Lock()
+	live := make([]*merger, 0, len(e.mergers))
+	for id, m := range e.mergers {
+		live = append(live, m)
+		delete(e.mergers, id)
+	}
+	e.mergersMu.Unlock()
+	for _, m := range live {
+		<-m.done
+	}
+	return e.cache.Close()
 }
 
 // Settings is the live chunk floor and default.
@@ -167,6 +225,16 @@ func (e *Engine) Create(ctx context.Context, r core.Resolved, spec SessionSpec) 
 	}
 	if spec.Mode == SpoolNameOrdered {
 		sess.SpoolDir = spoolDirName(id)
+	}
+	// The mode is fixed here and read from the row afterwards. A switch flipped
+	// mid-upload must not change where a session in flight looks for its bytes:
+	// they are in one place or the other and no setting moves them.
+	//
+	// Name-ordered sessions are excluded. They already spool out-of-order
+	// chunks to files of their own and assemble by name, so the cache would be
+	// a second staging layer under the first.
+	if e.cacheEnabled() && spec.Mode == SpoolOffsetAddressed {
+		sess.CacheDir = cacheDirName(id)
 	}
 	if spec.TotalLen != nil {
 		n, nerr := num.Narrow[int64](*spec.TotalLen)
@@ -342,17 +410,30 @@ func (e *Engine) PatchAt(
 		unlock()
 		return 0, err
 	}
-	f, err := e.handleFor(root, id, part)
-	if err != nil {
-		unlock()
-		return 0, err
+	cached := r.sess.CacheDir != "" && e.cache != nil
+	var f *vfs.File
+	if !cached {
+		f, err = e.handleFor(root, id, part)
+		if err != nil {
+			unlock()
+			return 0, err
+		}
 	}
 	unlock()
 
 	// The body is written and hashed in one pass. Nothing accumulates the
 	// whole chunk, so a per-chunk checksum costs a hasher and not a copy of
 	// the chunk.
-	n, digest, werr := e.writeBody(f, off, body, r, sum)
+	var (
+		n      uint64
+		digest []byte
+		werr   error
+	)
+	if cached {
+		n, digest, werr = e.patchCached(ctx, root, r, id, part, off, body, sum)
+	} else {
+		n, digest, werr = e.writeBody(f, off, body, r, sum)
+	}
 	if werr != nil {
 		// A cancel closes the part file while chunks of the same session are
 		// still writing, and this is what those writes hit. The session is
@@ -412,6 +493,19 @@ func (e *Engine) PatchAt(
 func (e *Engine) writeBody(
 	f *vfs.File, off uint64, body io.Reader, r *row, sum *Checksum,
 ) (uint64, []byte, error) {
+	return e.writeBodyAt(f, off, off, body, r, sum)
+}
+
+// writeBodyAt is writeBody with the two offsets separated: where the bytes go,
+// and where they belong in the finished file.
+//
+// They differ for exactly one caller. A cached chunk is a file of its own and
+// its bytes start at zero in it, while the declared length and the chunk floor
+// are rules about the assembled file and have to be measured against the
+// offset the client sent.
+func (e *Engine) writeBodyAt(
+	f *vfs.File, at, logical uint64, body io.Reader, r *row, sum *Checksum,
+) (uint64, []byte, error) {
 	var hasher *hasherFunc
 	if sum != nil {
 		if err := checkDigestLen(sum.Algo, len(sum.Digest)); err != nil {
@@ -433,10 +527,10 @@ func (e *Engine) writeBody(
 			// from a header, because a header is a claim and this is the
 			// stream. A body longer than declared is refused before it is
 			// written past the end of the file.
-			if err := e.checkWithinDeclared(r, off, written+got); err != nil {
+			if err := e.checkWithinDeclared(r, logical, written+got); err != nil {
 				return written, nil, err
 			}
-			if err := writeAllAt(f, buf[:read], off+written); err != nil {
+			if err := writeAllAt(f, buf[:read], at+written); err != nil {
 				return written, nil, err
 			}
 			if hasher != nil {
@@ -454,7 +548,7 @@ func (e *Engine) writeBody(
 			break
 		}
 	}
-	if err := e.checkChunkFloor(r, off, written); err != nil {
+	if err := e.checkChunkFloor(r, logical, written); err != nil {
 		return written, nil, err
 	}
 	if hasher == nil {
@@ -597,6 +691,10 @@ func (e *Engine) checkFreeSpace(root *vfs.ShareRoot, dir vfs.SafePath, total *ui
 // Abort terminates a session. The part file stays on disk for the sweep, which
 // is what keeps a termination from racing a write already in flight.
 func (e *Engine) Abort(ctx context.Context, id SessionID, user core.UserID) error {
+	// Outside the row lock, because stopping a merger means waiting for a step
+	// that takes it.
+	e.stopMerger(id)
+
 	unlock := e.lockRow(id)
 	defer unlock()
 
@@ -616,6 +714,10 @@ func (e *Engine) Abort(ctx context.Context, id SessionID, user core.UserID) erro
 	if err := e.save(ctx, r); err != nil {
 		return err
 	}
+	// The cache goes now rather than at the sweep. Its contents can never be
+	// finished, and the spool is the small volume: holding a cancelled
+	// upload's window there for a day is what fills it.
+	e.releaseCache(r.sess.CacheDir)
 	e.closeHandle(id)
 	return nil
 }

@@ -138,7 +138,9 @@ func TestSharesRegistry(t *testing.T) {
 	d := open(t)
 	ctx := context.Background()
 
-	rowid, ierr := d.InsertShare(ctx, "photos", "/srv/photos", 100)
+	rowid, ierr := d.InsertShare(ctx, state.ShareRow{
+		Name: "photos", Host: "/srv/photos", SymlinkPolicy: "deny",
+	}, 100)
 	if ierr != nil {
 		t.Fatalf("InsertShare: %v", ierr)
 	}
@@ -153,32 +155,22 @@ func TestSharesRegistry(t *testing.T) {
 		t.Fatalf("rows = %+v", rows)
 	}
 
-	if err := d.UpdateShare(ctx, rowid, "pics", "/srv/pics"); err != nil {
+	// Every property of a share is on the row, which is what folding the two
+	// kinds into one is: there is no second table an edit half lands in.
+	if err := d.UpdateShare(ctx, rowid, state.ShareRow{
+		Name: "pics", Host: "/srv/pics", TrashEnabled: true,
+		SharedExternally: true, SymlinkPolicy: "within_share",
+	}); err != nil {
 		t.Fatalf("UpdateShare: %v", err)
 	}
 	rows, lerr = d.ListShares(ctx)
 	if lerr != nil {
 		t.Fatalf("ListShares after update: %v", lerr)
 	}
-	if rows[0].Name != "pics" || rows[0].Host != "/srv/pics" {
-		t.Fatalf("after update rows = %+v", rows)
-	}
-
-	if err := d.SetTrashOverride(ctx, 5, true); err != nil {
-		t.Fatalf("SetTrashOverride: %v", err)
-	}
-	if on, ok, terr := d.TrashOverrideFor(ctx, 5); terr != nil || !ok || !on {
-		t.Fatalf("TrashOverrideFor = %v %v %v, want on", on, ok, terr)
-	}
-	if on, ok, terr := d.TrashOverrideFor(ctx, 6); terr != nil || ok || on {
-		t.Fatalf("TrashOverrideFor(6) = %v %v %v, want off absent", on, ok, terr)
-	}
-
-	if err := d.SetIdentityOverride(ctx, 3, "video", "/srv/video"); err != nil {
-		t.Fatalf("SetIdentityOverride: %v", err)
-	}
-	if o, ok, terr := d.IdentityOverrideFor(ctx, 3); terr != nil || !ok || o.Name != "video" {
-		t.Fatalf("IdentityOverrideFor = %+v %v %v", o, ok, terr)
+	got := rows[0]
+	if got.Name != "pics" || got.Host != "/srv/pics" || !got.TrashEnabled ||
+		!got.SharedExternally || got.SymlinkPolicy != "within_share" {
+		t.Fatalf("after update rows = %+v", got)
 	}
 
 	if err := d.DeleteShare(ctx, rowid); err != nil {

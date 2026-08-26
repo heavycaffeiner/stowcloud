@@ -49,7 +49,6 @@ services:
       # `:z` on every bind mount: this guest runs SELinux enforcing, where an
       # unlabelled host directory is unreachable from container_t.
       - ./data:/var/lib/stowcloud:z
-      - ./sc.dev.toml:/etc/stowcloud/sc.toml:ro,z
       - ./shares/files:/shares/files:z
       - ./smbcfg:/config/smb:z
       - sc-smb-control:/run/sc-smb
@@ -61,7 +60,7 @@ services:
     stop_grace_period: 30s
 
     healthcheck:
-      test: [CMD, /entrypoint.sh, healthcheck, /etc/stowcloud/sc.toml]
+      test: [CMD, /entrypoint.sh, healthcheck]
       interval: 30s
       timeout: 5s
       start_period: 10s

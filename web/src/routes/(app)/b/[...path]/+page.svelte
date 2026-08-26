@@ -4,6 +4,7 @@
   import { page } from '$app/state'
   import { api, ApiError, type BatchItemResult, type Entry, type OnConflict } from '../../../../lib/api/client'
   import { baseName, joinPath, normalizePath, parentOf } from '../../../../lib/api/path-utils'
+  import { describeApiError } from '../../../../lib/api/error-text'
   import { authState } from '../../../../lib/state/auth.svelte'
   import { browse } from '../../../../lib/state/browse.svelte'
   import { setDetails, uiState } from '../../../../lib/state/ui.svelte'
@@ -55,6 +56,19 @@
   // roots, so the home screen appeared to work; against the real server it is
   // a 404 rendered as "not found" on the first screen after login.
   const firstRoot = $derived(authState.session?.roots?.[0]?.label ?? null)
+
+  // No root at all is a deployment nobody has given this account a folder in,
+  // which on a fresh install is every account including the first
+  // administrator. The redirect above has nowhere to go, so this screen is
+  // where they stay and it has to say something useful.
+  const noShares = $derived((authState.session?.roots ?? []).length === 0)
+
+  // A folder that is listed and cannot be opened, because the disk under it is
+  // not there right now. It is in the root list on purpose: dropping it made a
+  // drive that did not come back look exactly like a share somebody deleted.
+  const rootBroken = $derived(
+    (authState.session?.roots ?? []).find((r) => r.label === currentRootLabel)?.broken_reason ?? ''
+  )
 
   // item 133: a root marked `shared_externally` is read/written by another
   // service (Jellyfin, SMB) outside this app -- true for every path under
@@ -908,6 +922,15 @@
           {t('common.shared_with_other_services')}
         </span>
       {/if}
+      {#if rootBroken}
+        <!-- The badge is on the folder rather than only in the failed
+             listing, because the folder is still navigable from the root
+             list and the reason has to travel with it. -->
+        <span class="sc-browse__broken-badge" role="status">
+          <Icon icon={icons.warning} size={14} />
+          {t('browse.this_folder_is_unavailable')}
+        </span>
+      {/if}
     </div>
     <div class="sc-browse__toolbar-actions">
       {#if searchOpen}
@@ -1111,10 +1134,35 @@
       onpointerdown={onMarqueePointerDown}
       onclick={onEmptyAreaClick}
     >
-      {#if browse.loading}
+      {#if noShares}
+        <!-- Not an empty folder: there is no folder. A deployment serves
+             nothing until somebody says what to serve, and this is the only
+             screen the person who can say it lands on. -->
+        <div class="sc-browse__nothing">
+          <h2 class="sc-browse__nothing-title">{t('browse.nothing_here')}</h2>
+          {#if authState.session?.user.is_admin}
+            <p class="sc-browse__nothing-hint">{t('browse.press_this_button_to_set_up_your_first_folder')}</p>
+            <Button variant="filled" onclick={() => goto('/admin#shares')}>
+              {#snippet icon()}<Icon icon={icons.add} size={18} />{/snippet}
+              {t('common.add_folder')}
+            </Button>
+          {:else}
+            <!-- Nothing is granted to this account, which an administrator
+                 fixes. Offering the button would be offering a screen this
+                 account is refused from. -->
+            <p class="sc-browse__nothing-hint">{t('browse.ask_an_administrator_for_a_folder')}</p>
+          {/if}
+        </div>
+      {:else if browse.loading}
         <div class="sc-browse__loading"><ProgressCircular /></div>
       {:else if browse.error}
-        <p class="sc-browse__error" role="alert">{browse.error.message}</p>
+        <!-- The server's own answer in the reader's language, not the wire
+             message. A folder whose disk did not come back says so and names
+             the folder, which is a different thing to act on from a path that
+             is genuinely not there. -->
+        <p class="sc-browse__error" role="alert">
+          {describeApiError(browse.error, t('browse.this_folder_could_not_be_opened'))}
+        </p>
       {:else if browse.view === 'grid'}
         <div
           class="sc-browse__view"
@@ -1363,6 +1411,20 @@
     @apply --m3-label-small;
     white-space: nowrap;
   }
+  /* The error container, plus the sentence: a badge distinguished only by
+     colour says nothing to a reader who cannot see the difference. */
+  .sc-browse__broken-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding-inline: 8px;
+    border-radius: var(--m3-shape-full);
+    background: var(--m3c-error-container);
+    color: var(--m3c-on-error-container);
+    @apply --m3-label-small;
+    white-space: nowrap;
+  }
   .sc-browse__search {
     display: flex;
     align-items: center;
@@ -1511,6 +1573,26 @@
     align-items: center;
     justify-content: center;
     flex: 1;
+  }
+  .sc-browse__nothing {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 24px;
+    text-align: center;
+  }
+  .sc-browse__nothing-title {
+    margin: 0;
+    @apply --m3-headline-small;
+  }
+  .sc-browse__nothing-hint {
+    max-width: 360px;
+    margin: 0;
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-medium;
   }
   .sc-browse__error {
     padding: 24px;

@@ -35,7 +35,7 @@ func steps() []Step {
 		{Name: "Auth", Wrap: func(s *State, h http.Handler) http.Handler {
 			return mw.Auth(s.Auth, mw.PublicPathsWith(s.Protocol), s.Protocol.FilePrefixes)(h)
 		}},
-		{Name: "CSRF", Wrap: func(s *State, h http.Handler) http.Handler { return mw.CSRF(s.CSRFKey, s.Hosts.App())(h) }},
+		{Name: "CSRF", Wrap: func(s *State, h http.Handler) http.Handler { return mw.CSRF(s.CSRFKey, s.Hosts)(h) }},
 		{Name: "ACLScope", Wrap: func(s *State, h http.Handler) http.Handler { return mw.ACLScope(s.ScopeLookup)(h) }},
 		{Name: "AuditSink", Wrap: func(s *State, h http.Handler) http.Handler { return mw.AuditSink(s.Log, s.Clock)(h) }},
 		{Name: "ErrorMapper", Wrap: func(_ *State, h http.Handler) http.Handler { return mw.ErrorMapper(h) }},

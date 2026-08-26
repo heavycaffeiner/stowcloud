@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/smb"
 )
 
 // HostSet is the live declared-origin list. HostGuard reads it per request
@@ -42,6 +44,17 @@ func (h *HostSet) Set(app []string) {
 // The refusal is 421, which is what an origin that does not know the host is
 // for: the client has sent a request to a server that cannot answer for that
 // name, and the 421 tells the client to retry against the right one.
+//
+// An empty list is the first boot, and it is admitted from the local network
+// only. Nothing has named this deployment yet, so there is no name to compare
+// against, and refusing every host would leave a server nobody can reach to
+// tell it what its name is. What is behind the guard at that point is the
+// setup form; the address the request came from is what bounds it, so a
+// deployment exposed to the internet before anyone has configured it is not
+// offering that form to the internet.
+//
+// Setup writes the list, and from then on this is the origin check it has
+// always been, from anywhere.
 func HostGuard(hosts *HostSet) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -50,7 +63,12 @@ func HostGuard(hosts *HostSet) func(http.Handler) http.Handler {
 				// The Host header may carry a port; the declared lists do not.
 				host = host[:i]
 			}
-			if eqAny(host, hosts.App()) {
+			declared := hosts.App()
+			admit := eqAny(host, declared)
+			if len(declared) == 0 {
+				admit = smb.IsPrivate(ClientFrom(r.Context()))
+			}
+			if admit {
 				next.ServeHTTP(w, r.WithContext(withOrigin(r.Context(), OriginApp)))
 				return
 			}

@@ -126,8 +126,25 @@ func (c *Core) WouldCopy(from, to Resolved) bool {
 // crossesDevice is the rule the move and its preflight share. Two shares are
 // two trees whatever the filesystem says, and one rename cannot cross a device
 // even within a share.
+//
+// The comparison is against the destination's own parent directory, not the
+// destination share root. A volume mounted below the root (a RAID array under
+// media/) is a different device with different numbers, so answering from the
+// root calls a real boundary same-device and attempts a rename the kernel
+// refuses with EXDEV.
+//
+// A destination whose device cannot be read answers true: a copy across a
+// boundary that was not there is slow, and a rename across one that was is a
+// failed move.
 func crossesDevice(from, to Resolved, srcDev uint64) bool {
-	return from.share != to.share || to.root.Dev() != srcDev
+	if from.share != to.share {
+		return true
+	}
+	dstDev, err := to.root.DirDev(to.path.Parent())
+	if err != nil {
+		return true
+	}
+	return dstDev != srcDev
 }
 
 // OnConflict is what a transfer does when the destination name is taken.
@@ -279,7 +296,7 @@ func (c *Core) Move(ctx context.Context, from, to Resolved, opt MoveOpts) (MoveR
 		}
 	}
 
-	willCopy := from.share != to.share || to.root.Dev() != srcSt.Dev
+	willCopy := crossesDevice(from, to, srcSt.Dev)
 	res := MoveResult{WillCopy: willCopy}
 
 	if !willCopy {

@@ -107,7 +107,8 @@ func TestAHomesRootUnderAMissingParentBlocks(t *testing.T) {
 	// A root whose parent does not exist either. The server creates the root
 	// and not a chain above it, so this is the case where turning homes on
 	// yields a share whose directory can never appear.
-	got := checkHomesLive(Deps{}, map[string]any{
+	r := httptest.NewRequest("POST", "/", nil)
+	got := checkSection(Deps{}, r, "homes", map[string]any{
 		"enabled": true,
 		"root":    filepath.Join(t.TempDir(), "missing", "deeper", "homes"),
 	})
@@ -122,7 +123,8 @@ func TestAHomesRootUnderAMissingParentBlocks(t *testing.T) {
 // A writable root passes and says so, so a clean run is distinguishable from
 // a check that did not run.
 func TestAWritableHomesRootPasses(t *testing.T) {
-	got := checkHomesLive(Deps{}, map[string]any{"enabled": true, "root": t.TempDir()})
+	r := httptest.NewRequest("POST", "/", nil)
+	got := checkSection(Deps{}, r, "homes", map[string]any{"enabled": true, "root": t.TempDir()})
 	if blocked(got) {
 		t.Fatalf("a writable root blocked: %+v", got)
 	}

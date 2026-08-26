@@ -29,6 +29,11 @@ func quietLog() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
+// testAgentSocket is where the sink believes the agent lives. It matters only
+// for the unreachable case, which names it so an operator can tell "nothing
+// applied this" from "the agent answered with a failure".
+const testAgentSocket = "/run/sc-smb/agent.sock"
+
 // The watch fan-out.
 //
 // One channel with two readers gives each event to exactly one of them, so the
@@ -77,7 +82,7 @@ func TestTheFanOutGivesEveryEventToBothConsumers(t *testing.T) {
 // A deployment with no sidecar gets no sink, so the write paths call nothing
 // rather than calling something that reports a failure every time.
 func TestNoPublisherMeansNoSink(t *testing.T) {
-	if sink := smbSink(nil, handler.NewHealthState(), quietLog()); sink != nil {
+	if sink := smbSink(nil, testAgentSocket, handler.NewHealthState(), quietLog()); sink != nil {
 		t.Fatal("a build with no publisher was given a sink")
 	}
 }
@@ -88,7 +93,7 @@ func TestTheSinkPublishes(t *testing.T) {
 	sink := smbSink(func(context.Context) (smbagent.Report, error) {
 		calls++
 		return smbagent.Report{OK: true}, nil
-	}, handler.NewHealthState(), quietLog())
+	}, testAgentSocket, handler.NewHealthState(), quietLog())
 
 	sink(context.Background())
 	if calls != 1 {
@@ -103,7 +108,7 @@ func TestAFailedPublishDegradesHealth(t *testing.T) {
 	health := handler.NewHealthState()
 	sink := smbSink(func(context.Context) (smbagent.Report, error) {
 		return smbagent.Report{}, errors.New("the sidecar did not answer")
-	}, health, quietLog())
+	}, testAgentSocket, health, quietLog())
 
 	sink(context.Background())
 
@@ -129,7 +134,7 @@ func TestAWarningReportDegradesHealth(t *testing.T) {
 	health := handler.NewHealthState()
 	sink := smbSink(func(context.Context) (smbagent.Report, error) {
 		return smbagent.Report{OK: false, Error: "a share path does not exist"}, nil
-	}, health, quietLog())
+	}, testAgentSocket, health, quietLog())
 
 	sink(context.Background())
 	if health.Status() != handler.HealthDegraded {
@@ -147,7 +152,7 @@ func TestASuccessfulPublishClearsTheDegradation(t *testing.T) {
 			return smbagent.Report{}, errors.New("down")
 		}
 		return smbagent.Report{OK: true}, nil
-	}, health, quietLog())
+	}, testAgentSocket, health, quietLog())
 
 	sink(context.Background())
 	if health.Status() != handler.HealthDegraded {
@@ -167,7 +172,7 @@ func TestThePublishIsNotCancelledByTheRequest(t *testing.T) {
 	sink := smbSink(func(c context.Context) (smbagent.Report, error) {
 		seen = c.Err()
 		return smbagent.Report{OK: true}, nil
-	}, handler.NewHealthState(), quietLog())
+	}, testAgentSocket, handler.NewHealthState(), quietLog())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -175,5 +180,54 @@ func TestThePublishIsNotCancelledByTheRequest(t *testing.T) {
 
 	if seen != nil {
 		t.Fatalf("the publisher saw a cancelled context: %v", seen)
+	}
+}
+
+// What the sink hands back, which is what the write's own response carries.
+//
+// It was missing entirely: a share saved with the sidecar stopped answered a
+// clean success, and "saved here, not applied over there" surfaced only on the
+// health page whenever somebody next looked at it.
+func TestTheSinkReportsWhatHappenedToTheCaller(t *testing.T) {
+	// Unreachable names the socket, which is what tells "rendered and nothing
+	// applied it" from "the agent answered with a failure".
+	down := smbSink(func(context.Context) (smbagent.Report, error) {
+		return smbagent.Report{}, errors.New("no such file or directory")
+	}, testAgentSocket, handler.NewHealthState(), quietLog())
+
+	out := down(context.Background())
+	if out.State != handler.SMBUnreachable {
+		t.Errorf("state = %q, want %q", out.State, handler.SMBUnreachable)
+	}
+	if out.Socket != testAgentSocket {
+		t.Errorf("socket = %q, want the configured one", out.Socket)
+	}
+
+	// An apply that happened and found something carries the detail, because
+	// the missing paths cannot be seen from this side at all.
+	warn := smbSink(func(context.Context) (smbagent.Report, error) {
+		return smbagent.Report{OK: false, MissingPaths: []string{"/srv/photos"}}, nil
+	}, testAgentSocket, handler.NewHealthState(), quietLog())
+
+	out = warn(context.Background())
+	if out.State != handler.SMBWarnings {
+		t.Fatalf("state = %q, want %q", out.State, handler.SMBWarnings)
+	}
+	if out.Report == nil || len(out.Report.MissingPaths) != 1 {
+		t.Fatalf("the report did not reach the caller: %+v", out.Report)
+	}
+
+	// A clean apply says so, and the socket is not repeated: there is nothing
+	// to go and look at.
+	ok := smbSink(func(context.Context) (smbagent.Report, error) {
+		return smbagent.Report{OK: true, Shares: []string{"photos"}}, nil
+	}, testAgentSocket, handler.NewHealthState(), quietLog())
+
+	out = ok(context.Background())
+	if out.State != handler.SMBApplied {
+		t.Errorf("state = %q, want %q", out.State, handler.SMBApplied)
+	}
+	if out.Socket != "" {
+		t.Errorf("a successful apply named the socket: %q", out.Socket)
 	}
 }

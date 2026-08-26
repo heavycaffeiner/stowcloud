@@ -42,6 +42,12 @@ const (
 	// the counts and offer the forced retry, and folding it into fs.conflict
 	// made a busy server read as an ordinary failure with no way forward.
 	CodeRestartBusy Code = "restart.busy"
+	// CodeShareBroken is a folder whose backing disk is not there. Its own
+	// code rather than fs.not_found, because the path the caller named is
+	// perfectly good: telling somebody their folder does not exist when a
+	// drive did not come back sends them looking in the wrong place, and the
+	// screen shows the folder with the reason instead of hiding it.
+	CodeShareBroken Code = "share.broken"
 )
 
 // The generic fallback sentences. They are stable and generic by design: the
@@ -57,6 +63,7 @@ const (
 	msgInvalidName      Message = "invalid name"
 	msgGone             Message = "the resource is permanently gone"
 	msgQuotaExceeded    Message = "quota exceeded"
+	msgShareBroken      Message = "the folder is unavailable"
 	msgRateLimited      Message = "rate limited"
 	msgLimitExceeded    Message = "a configured limit was exceeded"
 	msgLastAdmin        Message = "refusing to remove the last administrator"
@@ -134,6 +141,19 @@ func Map(err error) (int, *Error) {
 		return http.StatusInsufficientStorage, NewError(CodeQuotaExceeded, msgQuotaExceeded, "")
 	case errors.Is(err, core.ErrQuotaExceeded):
 		return http.StatusInsufficientStorage, NewError(CodeQuotaExceeded, msgQuotaExceeded, "")
+	case errors.Is(err, core.ErrShareBroken):
+		// 503 rather than 404 or 409: it is the deployment that is not able to
+		// answer right now, and it may well answer in a minute when a mount
+		// comes back. The share and the reason travel with it, because a
+		// message that names the folder is one a person can act on.
+		var broken *core.ShareBrokenError
+		if errors.As(err, &broken) {
+			return http.StatusServiceUnavailable, NewError(CodeShareBroken, msgShareBroken,
+				"fs.share_broken",
+				Arg{Name: "share", Value: broken.Share},
+				Arg{Name: "reason", Value: broken.Reason})
+		}
+		return http.StatusServiceUnavailable, NewError(CodeShareBroken, msgShareBroken, "")
 	case errors.Is(err, limits.ErrTooLarge):
 		var ex *limits.Exceeded
 		if errors.As(err, &ex) {

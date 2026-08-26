@@ -59,8 +59,6 @@ import {
   type SettingsField,
   type SettingsSnapshot,
   type SettingsSectionId,
-  type SettingsCheckResult,
-  type SettingsFinding,
   type ShareLinkCreateReq,
   type ShareLinkInfo,
   type ShareLinkPatchReq,
@@ -74,6 +72,7 @@ import {
   type UpdateGrantReq,
   type UpdateGroupReq,
   type UpdateShareReq,
+  type SMBOutcome,
   type UploadSettingsReq,
   type UploadSettingsResp,
   type WatchSettingsReq
@@ -1255,13 +1254,24 @@ async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSet
   }
   mockAuthState.chunkMin = req.chunk_min
   mockAuthState.chunkDefault = req.chunk_default
-  return { chunk_min: req.chunk_min, chunk_default: req.chunk_default }
+  if (req.cache_enabled !== undefined) {
+    mockUploadCacheEnabled = req.cache_enabled
+  }
+  return {
+    chunk_min: req.chunk_min,
+    chunk_default: req.chunk_default,
+    cache_enabled: mockUploadCacheEnabled,
+    cache_available: true
+  }
 }
+
+/** The cache spool switch, which the real server keeps in `upload_cache_settings`. */
+let mockUploadCacheEnabled = false
 
 // ── server settings (`go/internal/httpapi/handler/settings.go`) — mirrors
 // `http.ts`'s real-server surface, same convention as every other section of
-// this file. Field keys match `go/internal/runtimecfg`'s dotted `sc.toml`
-// paths exactly, since `ServerSettingsSection.svelte` groups by those literal
+// this file. Field keys match `go/internal/runtimecfg`'s dotted paths
+// exactly, since `ServerSettingsSection.svelte` groups by those literal
 // strings regardless of which backend answered them. ──
 
 const mockServerSettings = {
@@ -1317,7 +1327,7 @@ const mockServerSettings = {
 const mockOverriddenSections = new Set<SettingsSectionId>(['network', 'smb'])
 
 /** What each group falls back to when its override is dropped, standing in
- *  for `sc.toml` plus the environment. */
+ *  for the stored settings plus the environment. */
 const mockFileSettings = JSON.parse(JSON.stringify(mockServerSettings)) as typeof mockServerSettings
 mockFileSettings.network.app_hosts = ['localhost']
 mockFileSettings.smb.server_name = 'STOWCLOUD'
@@ -1352,7 +1362,7 @@ function settingsField(
   return {
     key,
     value,
-    source: section && mockOverriddenSections.has(section) ? 'admin_override' : 'config_file',
+    source: section && mockOverriddenSections.has(section) ? 'admin_override' : 'builtin_default',
     restart_required: restartRequired,
     readonly_reason_key: readonlyReasonKey
   }
@@ -1367,7 +1377,7 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       // editable. The socket is bound once at startup and everything open was
       // opened relative to the directory, which is what the server says about
       // both.
-      settingsField('bind', '127.0.0.1:8443', false, /* i18n */ 'settings.readonly_bind_address'),
+      settingsField('bind', mockBind, false),
       settingsField('data_dir', '/var/lib/stowcloud', false, /* i18n */ 'settings.readonly_data_dir'),
       settingsField('app_hosts', s.network.app_hosts, false),
       settingsField('trusted_proxies', s.network.trusted_proxies, false),
@@ -1405,13 +1415,13 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       settingsField('oidc.display_name', s.oidc.display_name, true),
       settingsField('oidc.allow_private_endpoints', s.oidc.allow_private_endpoints, true),
       settingsField('oidc.smb_policy', s.oidc.smb_policy, true),
-      // The two `sc.toml` owns outright (§6-4). They carry their reason
+      // The two the process settles before anything is configurable. They carry their reason
       // here the same way the real bridge writes it, so the screen's
       // read-only list is not empty under the mock.
       {
         key: 'oidc.client_secret_file',
         value: null,
-        source: 'config_file',
+        source: 'builtin_default',
         restart_required: true,
         readonly_reason_key: 'settings.readonly_secret_file_path'
       },
@@ -1426,7 +1436,7 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       {
         key: 'index.name_enabled',
         value: false,
-        source: 'config_file',
+        source: 'builtin_default',
         restart_required: false,
         readonly_reason_key: 'settings.readonly_owned_by_index_section'
       },
@@ -1470,7 +1480,7 @@ async function adminSetSmbSettings(req: SmbSettingsReq): Promise<ApplyOutcome> {
   const enabledChanged = mockServerSettings.smb.enabled !== req.enabled
   mockServerSettings.smb = { ...mockServerSettings.smb, ...req }
   mockOverriddenSections.add('smb')
-  return { applied_live: !enabledChanged, restart_required: enabledChanged }
+  return { applied: enabledChanged ? 'engine_restart' : 'live' }
 }
 
 /** The groups this process cannot move while running, matching the server. */
@@ -1484,49 +1494,13 @@ const RESTART_REQUIRED_SECTIONS = new Set<SettingsSectionId>([
   'oidc'
 ])
 
-/** The dry run. Mirrors the server's probes in shape, not in depth: a mock
- *  has no filesystem to write into, so it answers the checks that are pure
- *  rules and reports the rest as clean. */
-async function adminCheckServerSettings(
-  section: SettingsSectionId,
-  body: unknown
-): Promise<SettingsCheckResult> {
-  await delay(30)
-  const b = (body ?? {}) as Record<string, unknown>
-  const findings: SettingsFinding[] = []
-  const hosts = b.app_hosts
-  if (Array.isArray(hosts)) {
-    if (hosts.length === 0) {
-      findings.push({ level: 'block', field: 'app_hosts', reason_key: 'settings.host_list_empty' })
-    } else if (!hosts.includes(location.hostname)) {
-      findings.push({
-        level: 'block',
-        field: 'app_hosts',
-        reason_key: 'settings.would_lock_you_out',
-        reason_params: { host: location.hostname }
-      })
-    }
-  }
-  if (b.service_gid === 0) {
-    findings.push({ level: 'block', field: 'service_gid', reason_key: 'settings.gid_zero_is_root' })
-  }
-  if (findings.length === 0) findings.push({ level: 'ok', reason_key: 'settings.check_passed' })
-  return {
-    section,
-    ok: !findings.some((f) => f.level === 'block'),
-    restart_required: RESTART_REQUIRED_SECTIONS.has(section),
-    findings
-  }
-}
-
-
 /** Zero rejects every search from every user the moment it is applied, so the
  *  real bridge refuses it where it is typed and so does this. */
 async function adminSetSearchSettings(req: SearchSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
   mockServerSettings.search = { ...req }
   mockOverriddenSections.add('search')
-  return { applied_live: true, restart_required: false }
+  return { applied: 'live' }
 }
 
 function mustBeAtLeastOne(field: string): ApiError {
@@ -1546,7 +1520,7 @@ async function adminSetArchiveSettings(req: ArchiveSettingsReq): Promise<ApplyOu
   if (req.max_concurrent < 1) throw mustBeAtLeastOne('archive.max_concurrent')
   mockServerSettings.archive = { ...req }
   mockOverriddenSections.add('archive')
-  return { applied_live: true, restart_required: false }
+  return { applied: 'live' }
 }
 
 async function adminSetRateSettings(req: RateSettingsReq): Promise<ApplyOutcome> {
@@ -1555,8 +1529,10 @@ async function adminSetRateSettings(req: RateSettingsReq): Promise<ApplyOutcome>
   if (req.burst < 1) throw mustBeAtLeastOne('rate.burst')
   mockServerSettings.rate = { ...req }
   mockOverriddenSections.add('rate')
-  return { applied_live: true, restart_required: false }
+  return { applied: 'live' }
 }
+
+let mockBind = '0.0.0.0:8443'
 
 async function adminSetNetworkSettings(req: NetworkSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
@@ -1570,31 +1546,37 @@ async function adminSetNetworkSettings(req: NetworkSettingsReq): Promise<ApplyOu
   }
   mockServerSettings.network = { ...req }
   mockOverriddenSections.add('network')
+  // The listener moves when the address does: the server binds the new socket
+  // before dropping the old one, so this is live rather than a restart.
+  if (req.bind && req.bind !== mockBind) {
+    mockBind = req.bind
+    return { applied: 'serve_restarted' }
+  }
   // Both fields are live holders the request chain reads, so a save moves
   // them at once. It answered restart-required, which is what the three
   // fields this request no longer carries would have needed.
-  return { applied_live: true, restart_required: false }
+  return { applied: 'live' }
 }
 
 async function adminSetDbSettings(req: DbSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
   mockServerSettings.db = { ...req }
   mockOverriddenSections.add('db')
-  return { applied_live: false, restart_required: true }
+  return { applied: 'engine_restart' }
 }
 
 async function adminSetSymlinkPolicySettings(req: SymlinkPolicyReq): Promise<ApplyOutcome> {
   await delay(30)
   mockServerSettings.symlink_policy = req.policy
   mockOverriddenSections.add('symlink-policy')
-  return { applied_live: false, restart_required: true }
+  return { applied: 'engine_restart' }
 }
 
 async function adminSetHomesSettings(req: HomesSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
   mockServerSettings.homes = { ...req }
   mockOverriddenSections.add('homes')
-  return { applied_live: false, restart_required: true }
+  return { applied: 'engine_restart' }
 }
 
 async function adminSetWatchSettings(req: WatchSettingsReq): Promise<ApplyOutcome> {
@@ -1612,7 +1594,7 @@ async function adminSetWatchSettings(req: WatchSettingsReq): Promise<ApplyOutcom
   }
   mockServerSettings.watch = { ...req }
   mockOverriddenSections.add('watch')
-  return { applied_live: false, restart_required: true }
+  return { applied: 'engine_restart' }
 }
 
 /** Reproduces the two refusals a browser could not have made for itself: a
@@ -1664,7 +1646,7 @@ async function adminSetOidcSettings(req: OidcSettingsReq): Promise<ApplyOutcome>
   }
   mockServerSettings.oidc = { ...req, smb_policy: 'block' }
   mockOverriddenSections.add('oidc')
-  return { applied_live: false, restart_required: true }
+  return { applied: 'engine_restart' }
 }
 
 /** The real server also refuses paths that do not exist, a `data_dir` without
@@ -1691,14 +1673,7 @@ async function adminSetPathsSettings(req: PathsSettingsReq): Promise<ApplyOutcom
     smb_config_dir: req.smb_config_dir
   }
   mockOverriddenSections.add('paths')
-  return { applied_live: false, restart_required: true }
-}
-
-/** The mock backend never has uploads/jobs in flight, so `force` is accepted
- *  but never actually needed — the busy-refusal path is only exercisable
- *  against the real server. */
-async function adminRestartServer(_force: boolean): Promise<void> {
-  await delay(30)
+  return { applied: 'engine_restart' }
 }
 
 async function adminIndexEstimate(): Promise<IndexEstimate> {
@@ -1901,9 +1876,7 @@ async function adminDeleteUser(id: number): Promise<void> {
 // no-access-by-default, a grant needs at least one `allow` or `deny` bit,
 // `subpath`/`share`/`principal` are immutable once created (delete and
 // recreate instead — same rule `go/internal/acl` enforces
-// server-side), and a config-file share (`config_defined: true`) takes an
-// edit but refuses a delete, the same way `go/internal/core`/
-// `delete_share` do.
+// server-side).
 // The real endpoints now exist
 // (`go/internal/httpapi/handler/shares.go` (
 // `admin_update_share`/`admin_delete_share`/`admin_list_grants`/
@@ -1917,20 +1890,17 @@ async function adminDeleteUser(id: number): Promise<void> {
 // `go/internal/core` to derive this from. A small fixed list
 // matching the top-level folders `STATIC_SEED` already seeds is enough to
 // demo the grant-creation screen's share picker.
-// Both kinds of share are seeded on purpose. A config-file share renders a
-// badge and no delete button; a dynamic one renders neither badge nor the
-// same action set. Seeding only one kind meant the list never showed the two
-// side by side, and the column misalignment between them was reachable only by
-// creating a share by hand -- so no screenshot and no audit ever saw it.
+// There is one kind of share: every one was created from this screen, because
+// nothing else can declare one.
 let mockShares: AdminShare[] = [
-  { id: 1, name: 'Documents', host_path: '/srv/documents', config_defined: true, trash_enabled: false },
-  { id: 2, name: 'Photos', host_path: '/srv/photos', config_defined: true, trash_enabled: true },
-  { id: 3, name: 'Videos', host_path: '/srv/videos', config_defined: true, trash_enabled: false },
-  { id: 4, name: 'Music', host_path: '/srv/music', config_defined: true, trash_enabled: false },
-  { id: 1_000_001, name: 'Team', host_path: '/srv/team', config_defined: false, trash_enabled: false },
-  { id: 1_000_002, name: 'Archive', host_path: '/srv/archive', config_defined: false, trash_enabled: true }
+  { id: 1_000_001, name: 'Documents', host_path: '/srv/documents', trash_enabled: false },
+  { id: 1_000_002, name: 'Photos', host_path: '/srv/photos', trash_enabled: true },
+  { id: 1_000_003, name: 'Videos', host_path: '/srv/videos', trash_enabled: false },
+  { id: 1_000_004, name: 'Music', host_path: '/srv/music', trash_enabled: false },
+  { id: 1_000_005, name: 'Team', host_path: '/srv/team', trash_enabled: false },
+  { id: 1_000_006, name: 'Archive', host_path: '/srv/archive', trash_enabled: true }
 ]
-let nextShareId = 1_000_003 // mirrors `go/internal/core`'s dynamic share id base, past the seeded dynamic pair
+let nextShareId = 1_000_007 // mirrors `go/internal/core`'s share id base, past the seeded ones
 
 // One grant of each shape the row can take: inherited against path-only, a
 // group principal against a user one, a long label against a bare share name.
@@ -1966,15 +1936,13 @@ async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
   if (mockShares.some((s) => s.host_path === req.host_path)) {
     throw new ApiError(422, { code: 'fs.invalid_name', message: `overlaps existing share` })
   }
-  const share: AdminShare = { id: nextShareId++, name, host_path: req.host_path, config_defined: false, trash_enabled: false }
+  const share: AdminShare = { id: nextShareId++, name, host_path: req.host_path, trash_enabled: false }
   mockShares = [...mockShares, share]
   return share
 }
 
-/** A config-file share takes an edit like any other: the real backend keeps
- *  the new name/path (and the trash toggle) in `shares.db` rather than
- *  `sc.toml` and reapplies them at startup, so nothing is lost on
- *  restart (`go/internal/core`). */
+/** An edit is stored on the share's own row and reapplied at startup, so
+ *  nothing is lost on restart (`go/internal/core`). */
 async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<AdminShare> {
   await delay(35)
   const share = mockShares.find((s) => s.id === id)
@@ -1998,20 +1966,29 @@ async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<Admi
   return updated
 }
 
-async function adminDeleteShare(id: number): Promise<void> {
+async function adminDeleteShare(id: number): Promise<{ smb?: SMBOutcome }> {
   await delay(30)
   const share = mockShares.find((s) => s.id === id)
   if (!share) {
     throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
   }
-  if (share.config_defined) {
-    throw new ApiError(422, {
-      code: 'fs.invalid_name',
-      message: 'this share is defined in the config file and cannot be deleted here; edit the config and restart'
-    })
-  }
   mockShares = mockShares.filter((s) => s.id !== id)
   mockGrants = mockGrants.filter((g) => g.share !== id)
+  return {}
+}
+
+/** Re-opening a share whose disk came back. The mock has no filesystem, so
+ *  the retry always succeeds: what it exercises is the screen's own path from
+ *  broken back to working. */
+async function adminRetryShare(id: number): Promise<AdminShare> {
+  await delay(30)
+  const share = mockShares.find((s) => s.id === id)
+  if (!share) {
+    throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
+  }
+  const healed: AdminShare = { ...share, broken_reason: undefined }
+  mockShares = mockShares.map((s) => (s.id === id ? healed : s))
+  return healed
 }
 
 async function adminListGrants(opts: { userId?: number; groupId?: number; share?: number } = {}): Promise<AdminGrant[]> {
@@ -2478,8 +2455,6 @@ export const mockApi = {
   adminSetWatchSettings,
   adminSetOidcSettings,
   adminSetPathsSettings,
-  adminCheckServerSettings,
-  adminRestartServer,
   adminListUsers,
   adminCreateUser,
   adminSetUserDisabled,
@@ -2492,6 +2467,7 @@ export const mockApi = {
   adminCreateShare,
   adminUpdateShare,
   adminDeleteShare,
+  adminRetryShare,
   adminListGrants,
   adminCreateGrant,
   adminUpdateGrant,

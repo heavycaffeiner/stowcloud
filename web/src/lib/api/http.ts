@@ -46,7 +46,6 @@ import {
   type SessionInfo,
   type SettingsSnapshot,
   type SettingsSectionId,
-  type SettingsCheckResult,
   type BatchItemResult,
   type CopyResult,
   type ShareLinkCreateReq,
@@ -59,6 +58,7 @@ import {
   type UpdateGrantReq,
   type UpdateGroupReq,
   type UpdateShareReq,
+  type SMBOutcome,
   type UploadSettingsReq,
   type UploadSettingsResp,
   type WatchSettingsReq
@@ -641,7 +641,7 @@ async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSet
 }
 
 // ── admin: server settings (`go/internal/httpapi/handler/settings.go`) — parity
-// with every operator-settable sc.toml field, live-apply where possible,
+// with every operator-settable field, live-apply where possible,
 // restart-required where not. ──
 
 async function adminGetServerSettings(): Promise<SettingsSnapshot> {
@@ -698,29 +698,6 @@ async function adminSetPathsSettings(req: PathsSettingsReq): Promise<ApplyOutcom
   return request('/admin/server-settings/paths', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
-/** `POST /api/admin/server-settings/{section}/check` — try the change without
- *  storing it. The server runs the same probes a save runs: it renders the SMB
- *  configuration, writes a file into the homes root, and checks the proposed
- *  host list still contains the host this request arrived on. `ok: false`
- *  means a save of this body is refused. */
-async function adminCheckServerSettings(
-  section: SettingsSectionId,
-  body: unknown
-): Promise<SettingsCheckResult> {
-  return request(`/admin/server-settings/${section}/check`, {
-    method: 'POST',
-    body: JSON.stringify(body ?? {})
-  })
-}
-
-/** `POST /api/admin/server-settings/restart` — refuses `409 restart.busy`
- *  (detail: `{active_uploads, running_jobs}`) unless `force`. The confirm
- *  dialog's first attempt is always `force: false`; a second, explicit call
- *  with `force: true` only follows the admin accepting that exact refusal. */
-async function adminRestartServer(force: boolean): Promise<void> {
-  await request('/admin/server-settings/restart', { method: 'POST', body: JSON.stringify({ force }) })
-}
-
 // ── admin: user management ──
 
 async function adminListUsers(): Promise<AdminUser[]> {
@@ -772,8 +749,18 @@ async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<Admi
   return request(`/admin/shares/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
 }
 
-async function adminDeleteShare(id: number): Promise<void> {
-  await request(`/admin/shares/${id}`, { method: 'DELETE' })
+async function adminDeleteShare(id: number): Promise<{ smb?: SMBOutcome }> {
+  // A delete answers with the republish outcome when there is a sidecar and
+  // 204 when there is not, so the body may legitimately be absent.
+  return (await request<{ smb?: SMBOutcome } | undefined>(`/admin/shares/${id}`, { method: 'DELETE' })) ?? {}
+}
+
+/** `POST /api/admin/shares/{id}/retry` — re-open a share whose disk came
+ *  back. Its own route because the ordinary repair is a remount that changes
+ *  nothing about the share: making somebody retype a path that was always
+ *  right, to prove it, is a screen built around the implementation. */
+async function adminRetryShare(id: number): Promise<AdminShare> {
+  return request(`/admin/shares/${id}/retry`, { method: 'POST' })
 }
 
 /** `opts.userId`/`opts.groupId` narrow to one principal's grants — used by
@@ -989,8 +976,6 @@ export const httpApi = {
   adminSetWatchSettings,
   adminSetOidcSettings,
   adminSetPathsSettings,
-  adminCheckServerSettings,
-  adminRestartServer,
   adminListUsers,
   adminCreateUser,
   adminSetUserDisabled,
@@ -1003,6 +988,7 @@ export const httpApi = {
   adminCreateShare,
   adminUpdateShare,
   adminDeleteShare,
+  adminRetryShare,
   adminListGrants,
   adminCreateGrant,
   adminUpdateGrant,

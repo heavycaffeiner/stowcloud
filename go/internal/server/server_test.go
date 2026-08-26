@@ -14,6 +14,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
+	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
 )
@@ -44,26 +45,33 @@ func TestServerTimeouts(t *testing.T) {
 	}
 }
 
-// TestConfigValidation refuses the values that would make the server unsafe
-// or unbootable, each naming the key.
-func TestConfigValidation(t *testing.T) {
-	if _, err := Validate(raw{}); err == nil {
-		t.Fatal("an empty config must be refused")
+// A deployment that has saved nothing starts on every interface, which is what
+// makes a first boot reachable from the LAN it is plugged into.
+func TestAnUnconfiguredDeploymentStartsOnEveryInterface(t *testing.T) {
+	cfg := FromValues("/tmp/x", runtimecfg.Defaults(), "")
+	if cfg.Listen != runtimecfg.DefaultListen {
+		t.Errorf("default listen = %q, want %q", cfg.Listen, runtimecfg.DefaultListen)
 	}
-	good := raw{}
-	good.Server.DataDir = "/tmp/x"
-	good.HTTP.AppHosts = []string{"nas.local"}
-	cfg, err := Validate(good)
-	if err != nil {
-		t.Fatalf("a minimal valid config: %v", err)
+	if cfg.DataDir != "/tmp/x" {
+		t.Errorf("data dir = %q", cfg.DataDir)
 	}
-	if cfg.Listen != ":8443" {
-		t.Errorf("default listen = %q, want :8443", cfg.Listen)
+	// No host list yet, which is what the setup gate serves behind: a guard
+	// with names to check is what setup produces, not what precedes it.
+	if len(cfg.AppHosts) != 0 || cfg.AppHost != "" {
+		t.Errorf("an unconfigured deployment names hosts: %v", cfg.AppHosts)
 	}
-	bad := good
-	bad.HTTP.TrustedProxyCIDRs = []string{"not a cidr"}
-	if _, err := Validate(bad); err == nil {
-		t.Fatal("a malformed trusted-proxy CIDR must be refused at startup")
+}
+
+// A stored proxy range that will not parse is dropped rather than taking the
+// start down with it. The same value is refused at save time, where somebody
+// is watching; refusing here makes a server unbootable over a typo committed
+// weeks ago.
+func TestAMalformedProxyRangeIsDroppedRatherThanFatal(t *testing.T) {
+	v := runtimecfg.Defaults()
+	v.TrustedProxy = []string{"not a cidr", "10.0.0.0/8"}
+	cfg := FromValues("/tmp/x", v, "")
+	if len(cfg.TrustedProxy) != 1 || cfg.TrustedProxy[0].String() != "10.0.0.0/8" {
+		t.Fatalf("trusted proxies = %v, want only the parseable one", cfg.TrustedProxy)
 	}
 }
 

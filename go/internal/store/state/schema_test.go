@@ -51,13 +51,14 @@ func TestEveryDurableTableExists(t *testing.T) {
 
 	want := []string{
 		"app_password", "audit", "compat_kv", "compat_login_flow",
-		"compat_upload_alias", "dav_lock", "dav_prop", "favorite",
+		"compat_upload_alias", "config_secret", "dav_lock", "dav_prop", "favorite",
 		"fileid_override", "grant", "group", "key_version", "membership",
 		"oidc_flow", "oidc_link", "operation", "operation_item", "operation_result",
 		"recovery_code",
-		"session", "settings", "share_definition", "share_identity_override",
-		"share_link", "share_trash_override", "totp_secret", "totp_used",
-		"upload_alias", "upload_chunk_settings", "upload_interval", "upload_session",
+		"session", "settings", "share_definition",
+		"share_link", "totp_secret", "totp_used",
+		"upload_alias", "upload_cache_settings", "upload_chunk_settings",
+		"upload_interval", "upload_session",
 		"upload_touched_dir", "user", "user_smb_secret",
 	}
 	rows, err := d.SQL().QueryContext(ctx,

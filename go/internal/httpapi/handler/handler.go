@@ -70,9 +70,16 @@ type Deps struct {
 	// name, and reported by the settings surface.
 	DataDir string
 
-	// Listen is the address the server bound, reported by the settings surface
-	// and editable nowhere: the socket is bound once at startup.
-	Listen string
+	// Listen reports the address the listener is on right now, which is not
+	// always the stored one: a save that could not bind leaves the old socket
+	// serving, and the screen has to be able to say so.
+	Listen func() string
+
+	// SwapListener moves the listener to a new address. It binds the new
+	// socket before it touches the old one, so a failure leaves the deployment
+	// reachable and the save is refused. A nil one leaves the address stored
+	// and applied on the next start.
+	SwapListener func(ctx context.Context, addr string) error
 
 	// Preview generates thumbnails. A nil one is a build with no preview
 	// subsystem: the listing then reports every entry as having none and the
@@ -87,23 +94,34 @@ type Deps struct {
 	// does not own: the grant rows the admin screen edits.
 	State *state.DB
 
-	// ConfigShares are the share names the config file declares. The admin
-	// screen hides the delete affordance for one, because the next restart
-	// re-declares it and the deletion would look like it silently failed.
-	ConfigShares map[string]bool
-
 	// ReloadACL rebuilds the permission evaluator from the stored grants. A
 	// grant live in the database and stale in the process serving requests is
 	// a permission decision that depends on which half was asked.
 	ReloadACL func(ctx context.Context) error
+
+	// StoreSecret seals a settings value that is a credential and stores it
+	// apart from the settings document. Nil leaves the field refused rather
+	// than stored in the clear.
+	StoreSecret func(ctx context.Context, plain string) error
+
+	// HasOIDCSecret reports whether a client secret is stored, which is all
+	// the settings screen is ever told about it.
+	HasOIDCSecret bool
 
 	// ActiveWork reports what a restart would interrupt. A nil one reports
 	// nothing in flight, which is what a build with no job machinery has.
 	ActiveWork func() ActiveWork
 
 	// RequestRestart asks the process to exit so a supervisor starts it again.
-	// A nil one makes the restart surface refuse rather than pretend.
+	// A nil one leaves a change that needs it stored and reported as not in
+	// effect, rather than as a success that changed nothing.
 	RequestRestart func()
+
+	// PathInJail reports whether a host path is already inside the sandbox's
+	// domain, which is what decides whether a new share is reachable now or
+	// after a restart. A nil one answers that every path is, which is what a
+	// build with no sandbox has.
+	PathInJail func(host string) bool
 
 	// OIDCDisplayName is what the sign-in button says. It is configuration
 	// rather than something the provider tells us, because the login screen
@@ -127,16 +145,21 @@ type Deps struct {
 	// without the sidecar has.
 	PublishSMB func(ctx context.Context) (smbagent.Report, error)
 
-	// SMBChanged is the same publisher as a sink: it reports nothing and
-	// records a failure as a degradation instead. Every write that changes
-	// what SMB should serve calls it.
+	// SMBChanged republishes and reports what happened, without ever failing
+	// the caller. Every write that changes what SMB should serve calls it.
 	//
 	// It exists separately from PublishSMB because the two have different
 	// callers with different needs. An administrator pressing apply wants the
-	// sidecar's report; a grant being revoked wants the change to reach SMB and
-	// must not fail because the sidecar is down, since the grant is already
-	// committed and the web surface already refuses.
-	SMBChanged func(ctx context.Context)
+	// sidecar's report as the answer to their request; a grant being revoked
+	// wants the change to reach SMB and must not fail because the sidecar is
+	// down, since the grant is already committed and the web surface already
+	// refuses.
+	//
+	// The outcome comes back so the write's own response can carry it. Not
+	// carrying it was the gap: a share saved here with the sidecar stopped
+	// answered a clean success, and "saved here, not applied over there" only
+	// showed up on the health page whenever somebody next looked at it.
+	SMBChanged func(ctx context.Context) SMBOutcome
 
 	// OIDC is the single-sign-on client. A nil one leaves the link surfaces
 	// answering that the provider is not configured, which is what a
@@ -152,9 +175,6 @@ type Deps struct {
 	// can reach into is a status any of them can rewrite.
 	Health *HealthState
 }
-
-// ConfigShare reports whether the config file declares this share.
-func (d Deps) ConfigShare(name string) bool { return d.ConfigShares[name] }
 
 // record writes one audit row for an administrator's action.
 //

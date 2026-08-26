@@ -248,6 +248,12 @@ func partName(id SessionID) string { return ".scpart-" + id.String() }
 // carries the same reserved prefix, so it is unlistable for its whole life.
 func spoolDirName(id SessionID) string { return ".scpart-" + id.String() + ".d" }
 
+// cacheDirName is the directory a cached session's chunks land in, inside the
+// spool. The spool is not a share and nothing lists it, but the prefix is what
+// every filter in this tree keys on and a control file that leaves its
+// directory has to stay unlistable wherever it ends up.
+func cacheDirName(id SessionID) string { return ".scpart-" + id.String() + ".c" }
+
 // partPath is the part file's path: the destination's own directory, because
 // the rename that publishes it is only atomic within one directory.
 func partPath(dest vfs.SafePath, name string) (vfs.SafePath, error) {

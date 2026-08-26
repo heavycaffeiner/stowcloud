@@ -106,6 +106,14 @@ func (c *Core) Resolve(user UserID, p vfs.Vpath, need acl.Perms) (Resolved, erro
 	if !ok {
 		return Resolved{}, ErrNotFound
 	}
+	// A share whose disk is not there says so, rather than reporting the path
+	// as missing. The caller has a grant over it and can see it in their root
+	// list, so "not found" would be this server contradicting its own listing.
+	if entry.brokenErr != nil {
+		return Resolved{}, &ShareBrokenError{
+			Share: entry.def.Name, Reason: RejectionKind(entry.brokenErr),
+		}
+	}
 
 	full, err := c.joinSubpath(entry.def, match.Subpath, rest)
 	if err != nil {

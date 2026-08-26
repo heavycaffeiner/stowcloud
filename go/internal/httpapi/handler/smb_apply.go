@@ -61,6 +61,56 @@ func wireReport(r smbagent.Report) smbReport {
 	return out
 }
 
+// SMBOutcome is what a republish did, for a response that is not about SMB.
+//
+// It is a separate shape from smbReport because the question is different. The
+// apply endpoint is asked "what does the daemon look like now", and answers
+// with the whole report. A share save is asked "did my change land", and the
+// answer is one of three words plus the detail behind whichever it is.
+type SMBOutcome struct {
+	// State is "applied", "unreachable" or "warnings". Empty when this
+	// deployment has no sidecar, which is not a state worth reporting: a
+	// screen that showed "SMB: not configured" after every folder rename
+	// would be noise on most deployments.
+	State string `json:"state,omitempty"`
+	// Socket names where the agent was expected, present only when it could
+	// not be reached. It is the difference between "rendered and nothing
+	// applied it" and "the agent answered with a failure", which are different
+	// things to go and look at.
+	Socket string `json:"socket,omitempty"`
+	// Report is the agent's own answer, present when it gave one.
+	Report *smbReport `json:"report,omitempty"`
+}
+
+// The three states a republish ends in.
+const (
+	// SMBApplied is the daemon now serving what this server rendered.
+	SMBApplied = "applied"
+	// SMBUnreachable is the configuration written and nobody having applied
+	// it. The change is live here and not over there.
+	SMBUnreachable = "unreachable"
+	// SMBWarnings is an apply that happened and found something an operator
+	// has to fix: a share path missing where the daemon runs, or an account
+	// the import produced no credential for.
+	SMBWarnings = "warnings"
+)
+
+// SMBOutcomeOf pairs a state with the agent's report. Exported because the
+// wiring builds the sink and this package owns the shape it produces.
+func SMBOutcomeOf(state string, report smbagent.Report) SMBOutcome {
+	wire := wireReport(report)
+	return SMBOutcome{State: state, Report: &wire}
+}
+
+// smbChanged republishes and hands back what happened, or the zero outcome on
+// a deployment with no sidecar.
+func smbChanged(r *http.Request, d Deps) SMBOutcome {
+	if d.SMBChanged == nil {
+		return SMBOutcome{}
+	}
+	return d.SMBChanged(r.Context())
+}
+
 // SMBApply answers POST /api/admin/smb/apply.
 func SMBApply(d Deps) http.HandlerFunc {
 	return Wrap(func(w http.ResponseWriter, r *http.Request) error {

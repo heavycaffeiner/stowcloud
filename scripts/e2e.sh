@@ -50,29 +50,19 @@ mkdir -p "$DIR/data" "$DIR/share/sub"
 echo hello > "$DIR/share/a.txt"
 echo world > "$DIR/share/sub/b.txt"
 
+# Everything the deployment is configured with lives in the database, so the
+# settings are seeded with the one command that writes them without a server.
 # The suite sends several hundred requests from one address in a few seconds,
-# so the limiter is raised for the run. Left at the default it refuses most of
+# so the limiter is raised for the run: left at the default it refuses most of
 # them, which reports as a suite failure rather than as what it is.
-cat > "$DIR/sc.toml" <<TOML
-[server]
-data_dir = "$DIR/data"
-listen = "127.0.0.1:18900"
-[http]
-app_hosts = ["localhost"]
-content_hosts = ["content.localhost"]
-[rate]
-per_sec = 2000
-burst = 5000
-[security]
-hardening = "off"
+seed() { "$BIN" settings set "$1" --data-dir "$DIR/data" >/dev/null; }
 
-[[shares]]
-name = "docs"
-host_path = "$DIR/share"
-TOML
+echo '{"bind":"127.0.0.1:18900","app_hosts":["localhost"]}' | seed network
+echo '{"per_sec":2000,"burst":5000}' | seed rate
+echo '{"hardening":"off"}' | seed security
 
 echo "==> serving"
-"$BIN" serve "$DIR/sc.toml" > "$DIR/log" 2>&1 &
+"$BIN" serve --data-dir "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 sleep 6
@@ -89,7 +79,7 @@ TOKEN=$(grep -oE 'setup token \(valid[^)]*\): [a-f0-9]+' "$DIR/log" | tail -1 | 
 # loopback address it answers a misdirected request, which is the host guard
 # working rather than a fault.
 echo "==> the session, in a browser"
-(cd web && node e2e/session.spec.mjs https://localhost:18900 "$TOKEN")
+(cd web && node e2e/session.spec.mjs https://localhost:18900 "$TOKEN" "$DIR/share")
 
 echo "==> the grant path, in a browser"
 (cd web && node e2e/grant.spec.mjs https://localhost:18900)

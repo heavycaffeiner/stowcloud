@@ -462,8 +462,77 @@ func migrations() []dbfile.Migration {
 		{Name: "6: the compat layer's durable rows", SQL: schemaV6},
 		{Name: "7: the single-sign-on link flow", SQL: schemaV7},
 		{Name: "8: the paths an operation was asked for", SQL: schemaV8},
+		{Name: "9: the upload cache spool switch", SQL: schemaV9},
+		{Name: "10: one kind of share", SQL: schemaV10},
+		{Name: "11: configuration secrets at rest", SQL: schemaV11},
 	}
 }
+
+// schemaV11 holds the settings that are credentials.
+//
+// Separate from the settings document because that document is read whole by
+// everything that reads any setting, and rendered to the settings screen. A
+// credential in it would be a credential in every one of those. These rows are
+// sealed under the master key and read only by the wiring that needs the
+// plaintext.
+const schemaV11 = `
+CREATE TABLE config_secret (
+  name    TEXT PRIMARY KEY,
+  value   BLOB NOT NULL,
+  key_ver INTEGER NOT NULL
+) WITHOUT ROWID;
+`
+
+// schemaV10 folds every share into one table.
+//
+// There used to be two kinds. A share the config file declared took its id
+// from its position in that file and could not be deleted, and an admin's
+// edits to it went into two override tables that registration read back on
+// top of the file. A share created from the screen owned a row and needed
+// none of that. With the config file gone there is one kind, so the
+// properties that lived in the overrides become columns and the override
+// tables go.
+//
+// The trash toggle is carried across rather than reset: it applies to shares
+// an administrator created, and dropping the table without moving it would
+// silently turn trash off on a deployment that had turned it on. The identity
+// overrides are not carried, because the rows they edited were the config
+// file's and there is no config file to edit.
+const schemaV10 = `
+ALTER TABLE share_definition ADD COLUMN shared_externally INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE share_definition ADD COLUMN trash_enabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE share_definition ADD COLUMN symlink_policy TEXT NOT NULL DEFAULT 'deny';
+
+UPDATE share_definition SET trash_enabled = coalesce(
+  (SELECT enabled FROM share_trash_override WHERE share_id = share_definition.id + 1000000), 0);
+
+DROP TABLE share_identity_override;
+DROP TABLE share_trash_override;
+`
+
+// schemaV9 lands the upload cache spool: its switch, and the two columns a
+// session needs to survive a restart with chunks still in the cache.
+//
+// The switch is its own table rather than a column on upload_chunk_settings,
+// because that table's row existing is itself a fact the settings screen
+// reports: it is what separates "an admin stored these numbers" from "these
+// fell back to the compiled-in defaults". Turning the cache on would create
+// the row and make the screen claim an override of a floor nobody wrote.
+//
+// cache_merged is the byte count already copied into the part file and made
+// durable there. It is the frontier a restart resumes merging from, and it is
+// the reason a cache on tmpfs cannot lose an acknowledged byte: everything
+// below it is in the destination, and everything above it is re-derived from
+// the cache files that are actually still on disk.
+const schemaV9 = `
+CREATE TABLE upload_cache_settings (
+  id      INTEGER PRIMARY KEY CHECK (id = 1),
+  enabled INTEGER NOT NULL
+);
+
+ALTER TABLE upload_session ADD COLUMN cache_dir TEXT;
+ALTER TABLE upload_session ADD COLUMN cache_merged INTEGER NOT NULL DEFAULT 0;
+`
 
 // schemaV8 records what an operation was asked to do, item by item, when it is
 // created rather than when it finishes.

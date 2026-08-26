@@ -24,16 +24,18 @@ import (
 // this process leaves the daemon serving the previous set: a share deleted
 // here and still reachable there.
 
-// sharesChanged tells SMB the share set moved.
+// sharesChanged tells SMB the share set moved, and reports what happened.
 //
 // A publish failure does not fail the request. The share is already written
 // and this server is already serving the new set; what is behind is the second
-// surface, and that is recorded as a degradation rather than turned into a
-// refusal for a change that already happened.
-func sharesChanged(r *http.Request, d Deps) {
-	if d.SMBChanged != nil {
-		d.SMBChanged(r.Context())
-	}
+// surface, and that is a thing to report rather than a refusal for a change
+// that already happened.
+//
+// The outcome goes in the response. Without it a share saved with the sidecar
+// stopped answered a clean success, and "saved here, not applied over there"
+// surfaced only on the health page whenever somebody next looked at it.
+func sharesChanged(r *http.Request, d Deps) SMBOutcome {
+	return smbChanged(r, d)
 }
 
 // shareRequest is the create and patch body.
@@ -46,6 +48,9 @@ type shareRequest struct {
 	Name         string `json:"name"`
 	HostPath     string `json:"host_path"`
 	TrashEnabled *bool  `json:"trash_enabled,omitempty"`
+	// Force takes the restart a folder outside the sandbox's domain needs
+	// even with work in flight. Only the create path reads it.
+	Force bool `json:"force,omitempty"`
 }
 
 type shareResponse struct {
@@ -54,20 +59,29 @@ type shareResponse struct {
 	// HostPath is where the folder lives as this process sees it, which is
 	// what the admin screen shows under the name and what tells two shares
 	// with similar labels apart.
-	HostPath     string `json:"host_path"`
-	TrashEnabled bool   `json:"trash_enabled"`
-	// ConfigDefined marks a share the config file declares. The screen hides
-	// the delete affordance for one, because the next restart re-declares it
-	// and the deletion would look like it silently failed.
-	ConfigDefined  bool `json:"config_defined"`
-	SharedExternal bool `json:"shared_external"`
+	HostPath       string `json:"host_path"`
+	TrashEnabled   bool   `json:"trash_enabled"`
+	SharedExternal bool   `json:"shared_external"`
+	// Applied says whether the new folder is reachable now or after the
+	// restart its path needs. Empty on the surfaces that are not answering a
+	// create.
+	Applied string `json:"applied,omitempty"`
+	// BrokenReason is why this share cannot be served right now, or absent
+	// when it can. A broken share is still listed, which is the whole point:
+	// dropping it left an administrator with a health-endpoint line and no
+	// screen offering retry, edit or remove.
+	BrokenReason string `json:"broken_reason,omitempty"`
+	// SMB is what the republish this write triggered did, absent on a
+	// deployment with no sidecar and on the read paths.
+	SMB *SMBOutcome `json:"smb,omitempty"`
 }
 
-func shareOf(def core.ShareDef, configDefined bool) shareResponse {
+func shareOf(def core.ShareDef) shareResponse {
 	return shareResponse{
 		ID: int64(def.ID), Name: def.Name, HostPath: def.Host,
-		TrashEnabled: def.TrashEnabled, ConfigDefined: configDefined,
+		TrashEnabled:   def.TrashEnabled,
 		SharedExternal: def.SharedExternally,
+		BrokenReason:   def.BrokenReason,
 	}
 }
 
@@ -100,7 +114,7 @@ func Shares(d Deps) http.HandlerFunc {
 			// over.
 			out := make([]shareResponse, 0, len(defs))
 			for _, def := range defs {
-				out = append(out, shareOf(def, d.ConfigShare(def.Name)))
+				out = append(out, shareOf(def))
 			}
 			return writeJSON(w, http.StatusOK, out)
 		}
@@ -128,8 +142,38 @@ func Shares(d Deps) http.HandlerFunc {
 		if gerr := grantToCreator(r, d, actor, share); gerr != nil {
 			return gerr
 		}
-		sharesChanged(r, d)
-		return writeJSON(w, http.StatusCreated, shareOf(share, false))
+		smb := sharesChanged(r, d)
+
+		// A share is registered and granted the moment it is created, so it is
+		// usually reachable at once: the sandbox grants each share's parent
+		// directory, and a folder beside one that is already served is inside
+		// the domain already.
+		//
+		// Under a parent the domain has never seen it is not. A Landlock
+		// domain cannot be widened in a running process, so that share is
+		// registered, granted, listed, and every attempt to open it answers
+		// permission denied from the kernel. The restart is what makes it
+		// reachable, and it is taken rather than left for somebody to work out.
+		out := shareOf(share)
+		out.SMB = outcomeOrNil(smb)
+		if d.PathInJail != nil && !d.PathInJail(share.Host) {
+			if err := requireIdle(d, req.Force); err != nil {
+				// The share exists and is stored; what is refused is the
+				// restart. The response says the folder is not reachable yet
+				// rather than pretending the create failed.
+				return err
+			}
+			out.Applied = AppliedEngineRestart
+			if err := writeJSON(w, http.StatusCreated, out); err != nil {
+				return err
+			}
+			if d.RequestRestart != nil {
+				d.RequestRestart()
+			}
+			return nil
+		}
+		out.Applied = AppliedLive
+		return writeJSON(w, http.StatusCreated, out)
 	})
 }
 
@@ -221,12 +265,77 @@ func ShareUpdate(d Deps) http.HandlerFunc {
 		if req.HostPath != "" {
 			patch.Host = &req.HostPath
 		}
+		before, _ := d.Core.Share(shareIDOf(id))
 		share, err := d.Core.UpdateShare(r.Context(), shareIDOf(id), patch)
 		if err != nil {
-			return err
+			// A repointed path that will not open leaves the row written and
+			// the share broken against it, which the core has already recorded.
+			// The answer names what is wrong with the path rather than being a
+			// bare failure, because the field the operator just typed is the
+			// thing to put it beside.
+			return shareRefused(err)
 		}
-		sharesChanged(r, d)
-		return writeJSON(w, http.StatusOK, shareOf(share, d.ConfigShare(share.Name)))
+		// Repointing a broken share at a path that works is the other repair,
+		// beside retry, and it clears the same degradation. The name before the
+		// edit, because a rename in the same request would leave the old name's
+		// reason standing forever.
+		if d.Health != nil && before.BrokenReason != "" {
+			d.Health.ResolveShare(before.Name)
+		}
+		out := shareOf(share)
+		out.SMB = outcomeOrNil(sharesChanged(r, d))
+		return writeJSON(w, http.StatusOK, out)
+	})
+}
+
+// outcomeOrNil drops the zero outcome, so a deployment with no sidecar sends
+// no SMB field at all rather than an empty object a screen has to branch on.
+func outcomeOrNil(o SMBOutcome) *SMBOutcome {
+	if o.State == "" {
+		return nil
+	}
+	return &o
+}
+
+// ShareRetry answers POST /api/admin/shares/{id}/retry.
+//
+// The disk came back and somebody is saying so. It exists as its own route
+// rather than as a side effect of an edit because the ordinary repair is a
+// remount that changes nothing about the share: a path that was right an hour
+// ago is still right, and asking an administrator to retype it to prove it is
+// a screen designed around the implementation.
+func ShareRetry(d Deps) http.HandlerFunc {
+	return Wrap(func(w http.ResponseWriter, r *http.Request) error {
+		actor, aerr := requireAdmin(r, d.Auth)
+		if aerr != nil {
+			return aerr
+		}
+		id, perr := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if perr != nil {
+			return apierr.BadRequest("admin.share_id", "id")
+		}
+		share, err := d.Core.RetryShare(r.Context(), shareIDOf(id))
+		record(r, d, actor, "share.retry", strconv.FormatInt(id, 10), err == nil)
+		if err != nil {
+			// Still broken, and the answer names why: the screen shows the same
+			// reason it was already showing rather than a generic failure that
+			// says nothing about whether the retry did anything.
+			return shareRefused(err)
+		}
+		// The health surface is told here rather than left to the next probe
+		// pass: an administrator who just fixed a share and then reads a status
+		// still calling it broken has no way to tell a stale answer from a
+		// repair that did not take.
+		if d.Health != nil {
+			d.Health.ResolveShare(share.Name)
+		}
+		// The set of live shares moved, so SMB has to catch up: a share that is
+		// serving again here and absent there is the same half-applied state
+		// every other write on this surface republishes to avoid.
+		out := shareOf(share)
+		out.SMB = outcomeOrNil(sharesChanged(r, d))
+		out.Applied = AppliedLive
+		return writeJSON(w, http.StatusOK, out)
 	})
 }
 
@@ -244,12 +353,25 @@ func ShareDelete(d Deps) http.HandlerFunc {
 		if aerr2 != nil {
 			return aerr2
 		}
+		gone, _ := d.Core.Share(shareIDOf(id))
 		derr := d.Core.DeleteShare(r.Context(), shareIDOf(id))
 		record(r, d, actor, "share.delete", strconv.FormatInt(id, 10), derr == nil)
 		if derr != nil {
 			return derr
 		}
-		sharesChanged(r, d)
+		// Removing a broken share is a repair too, and it is the one that would
+		// otherwise leave the deployment degraded forever: nothing re-probes a
+		// share that no longer exists, so the reason would never clear.
+		if d.Health != nil && gone.BrokenReason != "" {
+			d.Health.ResolveShare(gone.Name)
+		}
+		// A delete answers with the outcome rather than 204, because the one
+		// thing worth saying about removing a share is whether it also stopped
+		// being served over SMB. A share deleted here and still reachable there
+		// is the failure this reports.
+		if smb := outcomeOrNil(sharesChanged(r, d)); smb != nil {
+			return writeJSON(w, http.StatusOK, map[string]any{"smb": smb})
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return nil
 	})

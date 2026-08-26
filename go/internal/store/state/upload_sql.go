@@ -6,14 +6,15 @@ const (
 INSERT INTO upload_session(id, user, share, dest, part_name, spool_dir, mode, total_len,
                            chunk_size, chunk_min_at_creation, random_access, next_name,
                            write_head, spooled_names, if_match, filename, mtime_ns, mime,
-                           relative_path, verify, verify_digest, created_ns, expires_ns, state)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                           relative_path, verify, verify_digest, created_ns, expires_ns, state,
+                           cache_dir, cache_merged)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	uploadSessionColumns = `
 id, user, share, dest, part_name, spool_dir, mode, total_len, chunk_size,
 chunk_min_at_creation, random_access, next_name, write_head, spooled_names,
 if_match, filename, mtime_ns, mime, relative_path, verify, verify_digest,
-created_ns, expires_ns, state`
+created_ns, expires_ns, state, cache_dir, cache_merged`
 
 	sqlReadUploadSession = `SELECT ` + uploadSessionColumns + ` FROM upload_session WHERE id = ?`
 
@@ -31,8 +32,15 @@ SELECT ` + uploadSessionColumns + ` FROM upload_session WHERE expires_ns <= ?`
 	sqlUpdateUploadSession = `
 UPDATE upload_session
 SET total_len = ?, next_name = ?, write_head = ?, spooled_names = ?,
-    mtime_ns = ?, expires_ns = ?, state = ?
+    mtime_ns = ?, expires_ns = ?, state = ?, cache_merged = ?
 WHERE id = ?`
+
+	// The merge frontier moves on its own, without the rest of the row: the
+	// merger runs while chunks are still arriving, and writing the whole row
+	// from there would put back a copy of fields another writer has since
+	// moved.
+	sqlAdvanceUploadCacheMerged = `
+UPDATE upload_session SET cache_merged = ? WHERE id = ? AND cache_merged < ?`
 
 	sqlDeleteUploadSession = `DELETE FROM upload_session WHERE id = ?`
 
@@ -90,4 +98,10 @@ ON CONFLICT(share, dir) DO NOTHING`
 INSERT INTO upload_chunk_settings(id, chunk_min, chunk_default) VALUES (1, ?, ?)
 ON CONFLICT(id) DO UPDATE SET chunk_min = excluded.chunk_min,
                               chunk_default = excluded.chunk_default`
+
+	sqlReadCacheSettings = `SELECT enabled FROM upload_cache_settings WHERE id = 1`
+
+	sqlWriteCacheSettings = `
+INSERT INTO upload_cache_settings(id, enabled) VALUES (1, ?)
+ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled`
 )

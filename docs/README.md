@@ -18,5 +18,6 @@ deployment is a document that quietly goes wrong.
 | [`releases/`](releases/) | release notes, one file per tag, read by the publish workflow |
 
 For running it, the two readmes at the repository root are the entry point:
-[English](../README.md), [한국어](../README.ko.md). The compose file and
-`deploy/sc.toml.example` carry the rest, at the point an operator meets it.
+[English](../README.md), [한국어](../README.ko.md). The compose file carries
+the rest, at the point an operator meets it; everything else is configured from
+the web interface on first run.

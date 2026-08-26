@@ -10,15 +10,13 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
-	"net/http"
 	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
-	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/acl"
 	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
@@ -26,7 +24,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/httpapi/handler"
 	"github.com/heavycaffeiner/stowcloud/go/internal/jail"
-	"github.com/heavycaffeiner/stowcloud/go/internal/limits"
 	"github.com/heavycaffeiner/stowcloud/go/internal/oidc"
 	"github.com/heavycaffeiner/stowcloud/go/internal/preview"
 	"github.com/heavycaffeiner/stowcloud/go/internal/runtimecfg"
@@ -50,30 +47,28 @@ import (
 // Execute is left unhandled because the sandbox becomes process-wide through an
 // exec, and a domain that denied it would deny that. Removing the syscall
 // entirely is the filter's job in the step after, which denies it harder.
-func jailSpec(cfg *server.Config, configPath string, shareHosts []string) jail.Spec {
+func jailSpec(cfg *server.Config, shareHosts []string) jail.Spec {
 	spec := jail.Spec{ExceptExec: true}
 	spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: cfg.DataDir})
-	// The config file is read again by the image the sandbox re-executes into,
-	// because that image starts from the beginning. A domain that did not grant
-	// it starts, replaces itself, and then cannot read the file it was told to
-	// read, which is a failure that only appears once the sandbox is real.
-	if dir := filepath.Dir(configPath); dir != "" {
-		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dir, Access: jail.ReadOnly})
-	}
 	// Where the server renders smb.conf and the credential file for the
 	// sidecar to read. Left out of the domain, it was the one directory the
 	// server writes that the sandbox denied: the mount was correct, the owner
 	// was correct, the mode was correct, and every publish failed with
 	// "replacing smb.conf: open /config/smb: permission denied" from the
 	// kernel rather than from the filesystem.
-	if cfg.SMB.ConfigDir != "" {
+	//
+	// Granted only when SMB is on. A grant names a path that has to exist, and
+	// the default names the sidecar's mount point: on a deployment that is not
+	// running one, granting it unconditionally is a first boot that refuses to
+	// start over a directory nothing was going to use.
+	if cfg.SMB.Render.Enabled && cfg.SMB.ConfigDir != "" {
 		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: cfg.SMB.ConfigDir})
 	}
 	// The sidecar's control socket, which the server connects to rather than
 	// creates. Connecting to a unix socket is a filesystem operation, so the
 	// directory holding it has to be in the domain or every push to the
 	// sidecar is refused the same way.
-	if sock := cfg.SMB.AgentSocket; sock != "" {
+	if sock := cfg.SMB.AgentSocket; cfg.SMB.Render.Enabled && sock != "" {
 		if dir := filepath.Dir(sock); dir != "" && dir != "/" {
 			spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dir})
 		}
@@ -81,12 +76,6 @@ func jailSpec(cfg *server.Config, configPath string, shareHosts []string) jail.S
 	// Every share is granted by its host path. A domain built from the data
 	// directory alone would deny every share the server exists to serve, which
 	// is a sandbox that only works on a deployment with no shares.
-	//
-	// The config file's shares are granted here as well as the database's. The
-	// domain is built before registration runs, so on a first run the database
-	// is empty and granting only what it holds leaves every configured share
-	// outside the sandbox: the kernel denies each listing while the share table
-	// and the grants both look correct.
 	//
 	// Each share's parent is granted rather than the share itself, and that is
 	// what lets a folder added from the admin screen work without a restart. A
@@ -101,22 +90,16 @@ func jailSpec(cfg *server.Config, configPath string, shareHosts []string) jail.S
 	// deliberate boundary rather than an arbitrary one, and "/" is never
 	// granted: a share directly under it keeps its own narrow rule.
 	seen := map[string]bool{}
-	grant := func(host string) {
+	for _, host := range shareHosts {
 		if host == "" {
-			return
+			continue
 		}
 		path := shareGrantPath(host)
 		if seen[path] {
-			return
+			continue
 		}
 		seen[path] = true
 		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: path})
-	}
-	for _, sh := range cfg.Shares {
-		grant(sh.Host)
-	}
-	for _, host := range shareHosts {
-		grant(host)
 	}
 	return spec
 }
@@ -136,32 +119,65 @@ func shareGrantPath(host string) string {
 	return parent
 }
 
-// applyJail builds the domain and applies it.
+// inJail reports whether a path is inside a domain built from these grants.
 //
-// The share paths are read straight from the database rather than from the
-// core, because the core cannot be built before the sandbox: doing so is what
-// made everything above the sandbox run twice.
-//
-// The config file's shares are added to whatever the database holds, and that
-// is what makes a first run work. Registration happens after the sandbox is
-// already up, so on a fresh deployment the database is empty and a domain
-// built from it alone grants no share at all: every listing answers "permission
-// denied" from the kernel while the grants and the share table look correct.
-func applyJail(cfg *server.Config, configPath string, clk clock.Clock) (jail.Status, error) {
-	var hosts []string
-	if st, err := store.Open(cfg.DataDir, store.Options{Clock: clk}); err == nil {
-		rows, lerr := st.State().ListShares(context.Background())
-		if lerr == nil {
-			for _, row := range rows {
-				hosts = append(hosts, row.Host)
-			}
+// A path_beneath rule covers everything under the directory it names, so this
+// is what decides whether a share added now is reachable now or only after the
+// process is rebuilt. It is a string comparison on cleaned paths because a
+// Landlock domain cannot be asked what it holds: what it grants is what was
+// handed to it, and this is that list.
+func inJail(spec jail.Spec, host string) bool {
+	clean := filepath.Clean(host)
+	for _, g := range spec.GrantBeneath {
+		granted := filepath.Clean(g.Path)
+		if clean == granted {
+			return true
 		}
-		// Closed again immediately: this is only to learn which paths the
-		// domain has to grant, and holding it open across the re-exec would
-		// leave the descriptor in the replaced image.
-		_ = st.Close() //nolint:errcheck // nothing was written, and the open below is the one that matters.
+		// Under it, component-wise: "/srv/media2" is not inside "/srv/media",
+		// and a plain prefix test says it is.
+		if strings.HasPrefix(clean, strings.TrimSuffix(granted, "/")+"/") {
+			return true
+		}
 	}
-	return jail.Apply(cfg.Hardening, jailSpec(cfg, configPath, hosts))
+	return false
+}
+
+// The domain is built from the share paths in the database rather than from
+// the core, because the core cannot be built before the sandbox: doing so is
+// what made everything above the sandbox run twice.
+//
+// A first boot has no shares, so the domain grants only the data directory.
+// Nothing is lost by that: a share created afterwards is granted through its
+// parent, and the first one under a parent the domain has never seen is what
+// the restart exists for.
+
+// bootSettings reads what the sandbox has to be built from, before the store
+// is opened for real.
+//
+// It opens the store, takes the settings and the share paths, and closes it
+// again: this runs before the sandbox, so it runs twice, and holding the
+// descriptor across the re-exec would leave it in the replaced image.
+//
+// A store that will not open answers the compiled-in defaults with no shares.
+// The open below is the one that reports the failure; refusing here would
+// report it from the copy of the process that is about to be replaced.
+func bootSettings(dataDir string, clk clock.Clock, log *slog.Logger) (runtimecfg.Values, []string) {
+	st, err := store.Open(dataDir, store.Options{Clock: clk})
+	if err != nil {
+		return runtimecfg.Defaults(), nil
+	}
+	defer func() {
+		_ = st.Close() //nolint:errcheck // nothing was written, and the open below is the one that matters.
+	}()
+	ctx := context.Background()
+	values := runtimecfg.Load(ctx, st.State(), runtimecfg.Defaults(), log)
+	var hosts []string
+	if rows, lerr := st.State().ListShares(ctx); lerr == nil {
+		for _, row := range rows {
+			hosts = append(hosts, row.Host)
+		}
+	}
+	return values, hosts
 }
 
 // grantEveryShare gives one account full access to every registered share.
@@ -214,62 +230,30 @@ func grantEveryShare(
 	return ev.LoadFromState(ctx, st.State().SQL())
 }
 
-// registerConfigShares opens every folder the config file names.
-//
-// A folder that cannot be served is reported and skipped rather than stopping
-// the server: one bad entry is not a reason for the other folders to be
-// unreachable, and the health surface names which one is missing and why.
-func registerConfigShares(
-	ctx context.Context, c *core.Core, cfg *server.Config, log *slog.Logger,
-) []core.RejectedShare {
-	var rejected []core.RejectedShare
-	for i, sh := range cfg.Shares {
-		// The default is the restrictive policy, and the share's own symlink
-		// setting is applied over it. That setting had a type, three modes and a
-		// resolver that branches on all three, and no way to reach it: every
-		// share got Deny whatever the operator wrote.
-		policy := vfs.DefaultSharePolicy()
-		policy.Symlink = sh.Symlink
-		def := core.ShareDef{
-			ID:               core.ShareID(i + 1),
-			Name:             sh.Name,
-			Host:             sh.Host,
-			Policy:           policy,
-			SharedExternally: sh.SharedExternally,
-			TrashEnabled:     sh.TrashEnabled,
-		}
-		if err := c.RegisterShare(ctx, def); err != nil {
-			log.Error("a configured share was refused and is not being served",
-				"share", sh.Name, "path", sh.Host, "error", err)
-			rejected = append(rejected, core.RejectedShare{
-				Name: sh.Name, Kind: core.RejectionKind(err), Err: err,
-			})
-			continue
-		}
-		log.Info("serving share", "name", sh.Name, "path", sh.Host)
-	}
-	return rejected
-}
-
-// runServe starts the server: config, store, master key, core domain, the
+// runServe starts the server: settings, store, master key, core domain, the
 // setup gate, the listener, and a graceful shutdown on SIGINT or SIGTERM.
 func runServe(args []string, stderr io.Writer) int {
-	if len(args) > 1 {
-		say(stderr, "usage: stowcloud serve [sc.toml]\n\n")
-		say(stderr, "  Starts the server. The one config file names the data directory,\n")
-		say(stderr, "  the hosts this server answers for, the trusted-proxy ranges, and\n")
-		say(stderr, "  the rate bounds. With no argument, sc.toml in the working\n")
-		say(stderr, "  directory is read; a missing file is a refused startup.\n")
+	dataDir, emergencyOnly, uerr := serveArgs(args)
+	if uerr != nil {
+		say(stderr, "stowcloud %s: serve: %v\n\n", version, uerr)
+		say(stderr, "usage: stowcloud serve [--data-dir DIR] [--emergency]\n\n")
+		say(stderr, "  Starts the server. Everything it serves is configured from the\n")
+		say(stderr, "  web interface and stored in the database under DIR, which\n")
+		say(stderr, "  defaults to %s. A directory with no settings yet is a first\n", defaultDataDir)
+		say(stderr, "  boot: the server comes up on %s and serves the setup form.\n\n", runtimecfg.DefaultListen)
+		say(stderr, "  --emergency brings up only the settings editor, on the stored\n")
+		say(stderr, "  address. It touches nothing the server proper owns, so it is\n")
+		say(stderr, "  what repairs a stored setting that stops the server starting.\n")
 		return exitUsage
-	}
-	configPath := "sc.toml"
-	if len(args) == 1 {
-		configPath = args[0]
 	}
 
 	log := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	clk := clock.System()
 	ctx := context.Background()
+
+	if emergencyOnly {
+		return runEmergency(ctx, dataDir, log, stderr)
+	}
 
 	// The atomic path resolver is checked before anything is opened. It is a
 	// refusal under every hardening policy, the one that turns hardening off
@@ -280,11 +264,16 @@ func runServe(args []string, stderr io.Writer) int {
 		return exitConfig
 	}
 
-	cfg, err := server.Load(configPath)
-	if err != nil {
-		say(stderr, "stowcloud %s: serve: %v\n", version, err)
-		return exitConfig
-	}
+	// What the sandbox is built from, read before it goes on. The settings are
+	// read again below, from the store this process keeps open; this pass is
+	// only what the domain needs, and it runs in the copy of the process the
+	// re-exec replaces.
+	bootValues, shareHosts := bootSettings(dataDir, clk, log)
+	cfg := server.FromValues(dataDir, bootValues, "")
+	// Held so the share surface can tell a folder that is reachable now from
+	// one that needs the process rebuilt. It is the same spec the domain was
+	// built from, which is the only thing that knows what it grants.
+	domain := jailSpec(cfg, shareHosts)
 
 	// The sandbox goes on before anything else is opened.
 	//
@@ -293,11 +282,38 @@ func runServe(args []string, stderr io.Writer) int {
 	// rather than just before the listener: with it later, the store was
 	// opened twice, the master key was opened twice, and a first run minted
 	// and printed two setup tokens, only the second of which was the live one.
-	jailStatus, jerr := applyJail(cfg, configPath, clk)
+	jailStatus, jerr := jail.Apply(cfg.Hardening, domain)
 	if jerr != nil {
-		return jail.Refuse(stderr, jailStatus)
+		code := jail.Refuse(stderr, jailStatus)
+		// The one failure that cannot degrade into the repair door: nothing is
+		// open yet, and opening it after refusing to confine the process is
+		// exactly what the refusal said not to do. So the log names the step
+		// instead. A required policy this kernel cannot satisfy is a stored
+		// setting, and it is the one most likely to put a deployment in a
+		// restart loop with nowhere to click.
+		emergencyHint(stderr, dataDir)
+		return code
 	}
 	log.Info("hardening", "status", jailStatus.String())
+
+	// The data directory is one server's, and the lock is what says so.
+	//
+	// It is taken here rather than assumed because two processes writing these
+	// databases is a real shape now: `serve --emergency` opens the same files
+	// to repair them, and a repair applied to a document a running server then
+	// overwrites is worse than a refusal. The lock is on the open descriptor,
+	// so a crash drops it and nothing has to be cleaned up.
+	lock, lockErr := store.LockInstance(cfg.DataDir)
+	if lockErr != nil {
+		say(stderr, "stowcloud %s: serve: %v\n", version, lockErr)
+		say(stderr, "  Another stowcloud is using this directory. Stop it first.\n")
+		return exitConfig
+	}
+	defer func() {
+		if rerr := lock.Release(); rerr != nil {
+			log.Warn("releasing the data directory lock", "error", rerr)
+		}
+	}()
 
 	st, serr := store.Open(cfg.DataDir, store.Options{Clock: clk})
 	if serr != nil {
@@ -328,15 +344,17 @@ func runServe(args []string, stderr io.Writer) int {
 	// The evaluator is held rather than created inline, because the admin
 	// screens edit the grants it answers from and it has to be reloaded when
 	// they do. Created inline it could only ever be loaded once, at startup.
+	// Everything from here can fail over a stored setting, and everything from
+	// here degrades rather than exits: the store and the auth service are open,
+	// which is all the repair door needs, and a process that exited would leave
+	// an operator with a log line and no screen to act on it from.
 	evaluator := acl.NewEvaluator()
 	if lerr := evaluator.LoadFromState(ctx, st.State().SQL()); lerr != nil {
-		say(stderr, "stowcloud %s: serve: loading the grants: %v\n", version, lerr)
-		return exitConfig
+		return degrade(ctx, st, authSvc, dataDir, "the grants could not be loaded: "+lerr.Error(), log, stderr)
 	}
 	coreSvc, cerr := core.New(st, core.Options{ACL: evaluator, Clock: clk})
 	if cerr != nil {
-		say(stderr, "stowcloud %s: serve: the core domain: %v\n", version, cerr)
-		return exitConfig
+		return degrade(ctx, st, authSvc, dataDir, "the core domain could not be built: "+cerr.Error(), log, stderr)
 	}
 	// Share links need the master key to open their own tokens and the auth
 	// service to hash and check their passwords. Nothing called this, so a
@@ -357,17 +375,12 @@ func runServe(args []string, stderr io.Writer) int {
 			return ok, verr
 		},
 	)
-	// Admin-created shares live in the state database; a restart must re-open
-	// them under the same ids the running process used.
+	// Every share lives in the state database; a restart must re-open them
+	// under the same ids the running process used.
 	rejectedShares, rerr := coreSvc.ReloadPersistedShares(ctx)
 	if rerr != nil {
-		say(stderr, "stowcloud %s: serve: reloading persisted shares: %v\n", version, rerr)
-		return exitConfig
+		return degrade(ctx, st, authSvc, dataDir, "the shares could not be reopened: "+rerr.Error(), log, stderr)
 	}
-	// The shares the operator named in the config file. Their ids are low and
-	// fixed by position, below the range an admin-created share takes, so the
-	// two cannot collide and a config share keeps its id across a restart.
-	rejectedShares = append(rejectedShares, registerConfigShares(ctx, coreSvc, cfg, log)...)
 
 	setupGate, gerr := server.NewSetupGate(ctx, authSvc, clk, cfg.DataDir)
 	if gerr != nil {
@@ -393,6 +406,11 @@ func runServe(args []string, stderr io.Writer) int {
 	for _, rej := range rejectedShares {
 		health.Degrade(handler.ReasonShareRejected, rej.Name+":"+rej.Kind)
 	}
+	// Every share root is re-probed on a schedule, in both directions: a disk
+	// unmounted underneath a running server leaves a descriptor that fails one
+	// request at a time with nothing saying which share is at fault, and one
+	// that came back has to start working without anybody pressing anything.
+	server.WatchShares(ctx, coreSvc, health, log)
 	for _, step := range jailStatus.Steps {
 		if !step.Applied {
 			// The detail is a token naming the layer, not the errno's
@@ -402,52 +420,31 @@ func runServe(args []string, stderr io.Writer) int {
 		}
 	}
 
-	// What an administrator has changed from the interface, over what the
-	// config file said. This is the half that used to be missing: a save was
-	// written to the settings table and nothing read it back, so the screen
-	// reported a change that had taken effect nowhere and did not survive a
-	// restart either.
+	// The settings, read again from the store this process holds open. The
+	// pass above the sandbox was for the domain and ran in the image the
+	// re-exec replaced.
+	//
+	// The compiled-in defaults are the floor, because there is no file: a key
+	// nobody has saved runs as the default, and the stored document is the only
+	// thing over it.
+	defaults := runtimecfg.Defaults()
 	watchDefaults := watch.DefaultConfig()
-	rtcfg := runtimecfg.New(runtimecfg.Values{
-		SearchConcurrentSSD:  limits.ConcurrentSearchesSSD,
-		SearchConcurrentRot:  limits.ConcurrentSearchesRotational,
-		SearchDeadlineSSD:    limits.SearchWalkDeadlineSSD,
-		SearchDeadlineRot:    limits.SearchWalkDeadlineRotational,
-		ArchiveMaxConcurrent: limits.ArchiveEntriesListed,
-		// Taken from the watcher's own defaults rather than restated here. A
-		// second copy of a default is a second thing to keep true, and this one
-		// is what the settings screen reports as the value in force.
-		WatchHotSetMax:     watchDefaults.HotSetMax,
-		WatchFullThreshold: watchDefaults.FullThreshold,
-		RatePerSec:         cfg.RatePerSec,
-		RateBurst:          cfg.RateBurst,
+	defaults.WatchHotSetMax = watchDefaults.HotSetMax
+	defaults.WatchFullThreshold = watchDefaults.FullThreshold
+	// The root homes would take, named rather than left blank: a switch whose
+	// effect is not visible until it is flipped is one an administrator has to
+	// guess at.
+	defaults.HomesRoot = filepath.Join(dataDir, "homes")
+	rtcfg := runtimecfg.New(runtimecfg.Load(ctx, st.State(), defaults, log))
 
-		// The network boundary as the config file settled it, so the screen
-		// shows what the guard is actually using rather than an empty list.
-		AppHosts:     cfg.AppHosts,
-		TrustedProxy: trustedProxyStrings(cfg.TrustedProxy),
-
-		// Homes are off until somebody turns them on, and the root they would
-		// take is named rather than left blank: a switch whose effect is not
-		// visible until it is flipped is one an administrator has to guess at.
-		HomesEnabled: false,
-		HomesRoot:    filepath.Join(cfg.DataDir, "homes"),
-
-		// SMB as the config file settled it, including the defaults Validate
-		// filled in. SMBConfigured stays false: this is the baseline the screen
-		// reports, not a stored override, and marking it configured would make
-		// the boot path fold these values back over themselves.
-		SMB: runtimecfg.SMB{
-			Enabled:         cfg.SMB.Render.Enabled,
-			Workgroup:       cfg.SMB.Render.Workgroup,
-			ServerName:      cfg.SMB.Render.ServerName,
-			ServiceUser:     cfg.SMB.Render.ServiceUser,
-			AllowPublicBind: cfg.SMB.Render.AllowPublicBind,
-			TOTPPolicy:      "require_separate",
-			ServiceGID:      cfg.SMB.ServiceGID,
-		},
-	})
-	rtcfg.Set(runtimecfg.Load(ctx, st.State(), rtcfg.Base(), log))
+	// The typed configuration the listener and the guards are built from,
+	// rebuilt now that the OIDC secret can be opened: the boot pass above had
+	// no master key, so it had no secret either.
+	clientSecret, cserr := server.OpenOIDCSecret(ctx, st.State(), authSvc)
+	if cserr != nil {
+		log.Error("the single sign-on secret could not be opened; single sign-on stays off", "error", cserr)
+	}
+	cfg = server.FromValues(dataDir, rtcfg.Get(), clientSecret)
 
 	// Thumbnails. The pool, the cache, the decoders and the jailed worker were
 	// all complete and tested, and nothing outside the package had ever
@@ -476,10 +473,28 @@ func runServe(args []string, stderr io.Writer) int {
 		}()
 	}
 
-	uploads, uerr := upload.New(ctx, coreSvc, st.State(), upload.Options{Clock: clk, Logger: log})
+	uploads, uerr := upload.New(ctx, coreSvc, st.State(), upload.Options{
+		Clock: clk, Logger: log,
+		// Fixed under the data directory: it is already inside the sandbox's
+		// domain, so the switch needs no restart, and there is no path setting
+		// to get wrong. An operator wanting a faster or larger spool mounts a
+		// volume there.
+		CacheDir: filepath.Join(cfg.DataDir, "spool"),
+	})
 	if uerr != nil {
-		say(stderr, "stowcloud %s: serve: the upload engine: %v\n", version, uerr)
-		return exitConfig
+		return degrade(ctx, st, authSvc, dataDir, "the upload engine could not be built: "+uerr.Error(), log, stderr)
+	}
+	defer func() {
+		if cerr := uploads.Close(); cerr != nil {
+			log.Warn("closing the upload engine", "error", cerr)
+		}
+	}()
+	// What the cache still holds is reconciled against what the sessions claim
+	// before a single request is served. The recommended spool is a tmpfs and a
+	// reboot empties one, so a resuming client must not be handed an offset
+	// whose bytes are gone.
+	if rerr := uploads.RecoverCache(ctx); rerr != nil {
+		log.Error("the upload cache could not be reconciled after the restart", "error", rerr)
 	}
 
 	// The search index's updater, declared before the watcher so the fan-out
@@ -518,8 +533,7 @@ func runServe(args []string, stderr io.Writer) int {
 		}
 	})
 	if werr != nil {
-		say(stderr, "stowcloud %s: serve: the watcher: %v\n", version, werr)
-		return exitConfig
+		return degrade(ctx, st, authSvc, dataDir, "the watcher could not be started: "+werr.Error(), log, stderr)
 	}
 	defer func() {
 		_ = watcher.Close() //nolint:errcheck // shutdown is closing everything anyway.
@@ -531,8 +545,7 @@ func runServe(args []string, stderr io.Writer) int {
 	if cfg.OIDC != nil {
 		c, oerr := oidc.New(*cfg.OIDC, clk)
 		if oerr != nil {
-			say(stderr, "stowcloud %s: serve: the identity provider: %v\n", version, oerr)
-			return exitConfig
+			return degrade(ctx, st, authSvc, dataDir, "the identity provider could not be built: "+oerr.Error(), log, stderr)
 		}
 		oidcClient = c
 	}
@@ -692,49 +705,75 @@ func runServe(args []string, stderr io.Writer) int {
 		return nil
 	}
 
-	srv, nerr := server.New(cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health, Uploads: uploads, Preview: previewSvc,
+	// What a settings save asks for when the change is one this process
+	// cannot make in place: the sandbox, and everything built under it.
+	//
+	// The process exits and the supervisor starts it again. It is a request
+	// rather than a restart: nothing here can bring the process back, and a
+	// deployment with no supervisor stays stopped. The exit is scheduled
+	// rather than immediate so the response the caller is reading finishes
+	// leaving.
+	restart := make(chan struct{}, 1)
+	requestRestart := func() {
+		select {
+		case restart <- struct{}{}:
+		default:
+		}
+	}
+
+	serve, nerr := server.New(ctx, cfg, server.Options{Store: st, Auth: authSvc, Core: coreSvc, Log: log, Clk: clk, Watch: watcher, WS: hub, Health: health, Uploads: uploads, Preview: previewSvc,
 		Search:            searchSvc,
 		Runtime:           rtcfg,
 		ApplyIndexEnabled: applyIndex,
 		OIDC:              oidcClient,
 		PublishSMB:        publishSMB,
 		ReloadACL:         func(c context.Context) error { return evaluator.LoadFromState(c, st.State().SQL()) },
+		StoreSecret: func(c context.Context, plain string) error {
+			return server.StoreOIDCSecret(c, st.State(), authSvc, plain)
+		},
+		HasOIDCSecret:  clientSecret != "",
+		RequestRestart: requestRestart,
+		PathInJail: func(host string) bool {
+			// A domain that was never applied constrains nothing, so every
+			// path is reachable and no share needs a restart.
+			if !jailStatus.LandlockApplied() {
+				return true
+			}
+			return inJail(domain, host)
+		},
+		ActiveWork: func() handler.ActiveWork {
+			w, aerr := st.State().CountActiveWork(ctx)
+			if aerr != nil {
+				// Unknown reads as busy: the refusal is what an administrator
+				// can override, and guessing idle would take a restart
+				// through an upload without asking.
+				log.Warn("could not count the work a restart would interrupt", "error", aerr)
+				return handler.ActiveWork{Uploads: 1}
+			}
+			return handler.ActiveWork{Uploads: w.Uploads, Jobs: w.Jobs}
+		},
 	}, setupGate)
 	if nerr != nil {
-		say(stderr, "stowcloud %s: serve: %v\n", version, nerr)
-		return exitConfig
+		return degrade(ctx, st, authSvc, dataDir, "the listener could not be started: "+nerr.Error(), log, stderr)
 	}
+	// The engine is up, so whatever it failed on before is over. Forgetting
+	// the history here rather than on exit is what makes the count mean
+	// "consecutive failures": a deployment that has run for a month and then
+	// fails once should get three fresh attempts, not the conclusion.
+	clearEngineFailures(dataDir)
+	log.Info("listening", "addr", serve.Addr(), "app_host", cfg.AppHost)
 
-	ln, lerr := net.Listen("tcp", cfg.Listen)
-	if lerr != nil {
-		say(stderr, "stowcloud %s: serve: binding %s: %v\n", version, cfg.Listen, lerr)
-		return exitNoAnswer
-	}
-
-	// The shutdown path: a signal starts the drain, and the drain has a
-	// deadline of its own so a stuck upload cannot hold the process forever.
-	// The watcher is a task, which is the one spawn this tree allows and the
-	// one that installs a recover.
-	done := make(chan struct{})
+	// The shutdown path: a signal or a restart request starts the drain, and
+	// the drain has a deadline of its own so a stuck upload cannot hold the
+	// process forever.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	task.Go(ctx, "shutdown watcher", func() {
-		s := <-sig
+	select {
+	case s := <-sig:
 		log.Info("shutting down", "signal", s.String())
-		shCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		defer cancel()
-		if serr := srv.Shutdown(shCtx); serr != nil {
-			log.Error("shutdown did not drain cleanly", "error", serr)
-			_ = srv.Close() //nolint:errcheck // the drain already failed; closing is the fallback.
-		}
-		close(done)
-	})
-
-	log.Info("listening", "addr", cfg.Listen, "app_host", cfg.AppHost)
-	if err := srv.ServeTLS(ln, "", ""); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		say(stderr, "stowcloud %s: serve: %v\n", version, err)
-		return exitNoAnswer
+	case <-restart:
+		log.Info("restarting: a saved setting needs the process rebuilt")
 	}
-	<-done
+	serve.Stop(ctx)
 	return exitOK
 }

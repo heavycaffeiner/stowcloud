@@ -39,7 +39,7 @@ export default defineConfig({
     // would not survive a cross-origin hop.
     //
     // **8081, not 8443.** 8443 is the production instance someone is actually
-    // using; 8081 is the development one (`.dev/sc.toml`, its own data dir and
+    // using; 8081 is the development one (`.dev/data`, its own data dir and
     // its own shares). They were the same server until an upload test wrote a
     // file into a share someone was browsing at the time. Override with
     // SC_DEV_API if you need to point somewhere else; do not point it at 8443.

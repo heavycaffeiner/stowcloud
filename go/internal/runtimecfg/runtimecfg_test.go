@@ -214,11 +214,6 @@ func TestSetAppliesToTheLiveComponents(t *testing.T) {
 	if h.Get().SearchConcurrentSSD != 11 {
 		t.Fatal("the holder did not keep the value it applied")
 	}
-	// The base is what the config file said, and a save does not move it:
-	// it is what a revert returns to.
-	if h.Base().SearchConcurrentSSD != base().SearchConcurrentSSD {
-		t.Fatal("a save moved the config file's own value")
-	}
 }
 
 // Every default this package hands out has to be a value it would also accept.

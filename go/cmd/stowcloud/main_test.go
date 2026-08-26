@@ -18,7 +18,7 @@ import (
 // stops existing.
 func TestTheSubcommandSet(t *testing.T) {
 	want := []string{
-		"serve", "healthcheck", "preview-worker", "caps", "setup", "gc",
+		"serve", "healthcheck", "preview-worker", "caps", "setup", "settings", "gc",
 		"routes", "smb-sync", "index", "masterkey",
 	}
 	var got []string
@@ -35,7 +35,10 @@ func TestNoArgvIsServe(t *testing.T) {
 	if code := run(nil, &out); code == exitUsage {
 		t.Fatalf("empty argv was a usage error: %s", out.String())
 	}
-	if !strings.Contains(out.String(), "serve") {
+	// Serve is the only command that reads the default data directory, so
+	// naming it is what says the dispatch landed there. It gets no further on
+	// a test machine, where that directory does not exist.
+	if !strings.Contains(out.String(), defaultDataDir) {
 		t.Fatalf("empty argv did not dispatch to serve: %s", out.String())
 	}
 }
@@ -95,15 +98,10 @@ func TestExitCodes(t *testing.T) {
 // grants both look correct, which reads as a permission bug anywhere but where
 // it is. This is what a fresh container deployment does.
 func TestTheJailGrantsEveryConfiguredShare(t *testing.T) {
-	cfg := &server.Config{
-		DataDir: "/var/lib/stowcloud",
-		Shares: []server.ShareConfig{
-			{Name: "files", Host: "/shares/files"},
-			{Name: "media", Host: "/srv/media"},
-		},
-	}
+	cfg := &server.Config{DataDir: "/var/lib/stowcloud"}
+	hosts := []string{"/shares/files", "/srv/media"}
 
-	spec := jailSpec(cfg, "/etc/stowcloud/sc.toml", nil)
+	spec := jailSpec(cfg, hosts)
 	granted := map[string]bool{}
 	for _, g := range spec.GrantBeneath {
 		granted[g.Path] = true
@@ -112,9 +110,9 @@ func TestTheJailGrantsEveryConfiguredShare(t *testing.T) {
 	// added later is inside the domain without a restart. A path_beneath rule
 	// covers everything under it, which is what makes that safe to assert this
 	// way.
-	for _, sh := range cfg.Shares {
-		if !granted[sh.Host] && !granted[filepath.Dir(sh.Host)] {
-			t.Errorf("share %q at %s is outside the sandbox", sh.Name, sh.Host)
+	for _, host := range hosts {
+		if !granted[host] && !granted[filepath.Dir(host)] {
+			t.Errorf("the share at %s is outside the sandbox", host)
 		}
 	}
 	if !granted[cfg.DataDir] {
@@ -131,12 +129,9 @@ func TestTheJailGrantsEveryConfiguredShare(t *testing.T) {
 // without a restart, which is only true if the domain already covers where it
 // will live.
 func TestAShareAddedLaterIsInsideTheDomain(t *testing.T) {
-	cfg := &server.Config{
-		DataDir: "/var/lib/stowcloud",
-		Shares:  []server.ShareConfig{{Name: "files", Host: "/shares/files"}},
-	}
+	cfg := &server.Config{DataDir: "/var/lib/stowcloud"}
 
-	spec := jailSpec(cfg, "/etc/stowcloud/sc.toml", nil)
+	spec := jailSpec(cfg, []string{"/shares/files"})
 	granted := map[string]bool{}
 	for _, g := range spec.GrantBeneath {
 		granted[g.Path] = true
