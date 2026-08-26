@@ -102,6 +102,7 @@ Directory: `docs/refactor/http/`.
 | `http/06-login-flow-v2.md` | The two-token state machine, digest-only storage, POST-only approval; standalone because it is reusable security design. |
 | `http/07-server-assembly.md` | Composition root on fiber: supervisor/hot-swap semantics (bind-new-before-touching-old, bounded drain), TLS material through fsatomic as one durable unit, setup token and probe file through fsatomic. |
 | `http/08-regression-tests.md` | The transcription of every documented past-incident comment (`httpapi/mw`, `server`, `compat/nc`) into named test cases. |
+| `http/09-api-consistency.md` | Written ahead of the rest of phase 3: the v1 API. Everything moves under `/api/v1` in nine categories (auth, account, files, links, trash, jobs, uploads, search, admin, system), every endpoint renamed into one scheme, all aliases dead, the settings split folded into one resource, and the frontend rewired in the same phase. The old API dies with the old stack. |
 
 ## Working rules
 

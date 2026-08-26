@@ -156,7 +156,22 @@ vetsecret, deps.allow, verify.sh) from its first commit, plus the new
 `tools/layercheck`. `engine/`'s nolint budget starts at zero; the old
 tree's budget is frozen and may only go down. (`03-engine-bootstrap.md`.)
 
-## D15. Implementer discipline
+## D15. The native API is redesigned wholesale as v1
+
+The web API moves under `/api/v1`, renamed end to end into nine categories
+(auth, account, files, links, trash, jobs, uploads, search, admin,
+system) under one rule set: plural-noun resources with standard CRUD,
+`POST .../{action}` for non-CRUD, RPC verbs with `?path=`/body arguments
+for file operations, one spelling per operation, category-default access
+classes. The `shares` collision resolves by renaming the user resource to
+`links`; the three settings surfaces fold into one sectioned resource; the
+three double spellings die. No compatibility mounts for the old paths:
+the shipped frontend is rewired in the same phase, and the break is
+accepted because v1's version prefix makes it the last unversioned one.
+The public `/s/{token}` surface, WebDAV and the compat layer keep their
+wire shapes. (`http/09-api-consistency.md`.)
+
+## D16. Implementer discipline
 
 The rules binding anyone who writes code for the rebuild are spelled out
 in the README's "Instructions to implementers" section: build exactly the
@@ -167,7 +182,7 @@ the first commit. An agent given a rebuild task starts by reading that
 section, the bootstrap document, and the specification document for the
 package it is building. (README, `03-engine-bootstrap.md`.)
 
-## D16. Phase order
+## D17. Phase order
 
 Phase 0 builds `kit`, `infra/vfs`, `store/*`, `service/acl` in that
 dependency order (critical path: vfs). Phase 1 builds `service/core` per
