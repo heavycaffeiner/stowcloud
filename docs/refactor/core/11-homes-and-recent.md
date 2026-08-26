@@ -118,31 +118,33 @@ pointing at a home that was not created.
 
 ### The grant persistence contract
 
-The core does not spell the grant table's columns. It calls the ACL layer:
+The core does not spell the grant table's columns. Under the 3-layer
+assignment (01-package-survey.md) the ACL package is a pure service-layer
+evaluator and the grant table belongs to the persistence layer, so the
+write surface is a grant aggregate in `engine/store/state`:
 
 ```go
-// In engine/acl. The evaluator already owns grant loading (LoadFromState);
-// it owns grant creation too.
+// In engine/store/state, beside the other aggregates.
 //
 // PersistGrant validates the grant (exactly one of User and Group set, a
 // share id present, a non-empty allow set), writes one grant row through
-// the state database's serialized write path, stamps CreatedNs from its
-// clock argument, and returns the stored grant's id. It does not reload
-// the evaluator; loading stays an explicit separate step so a caller
-// creating several grants reloads once.
-func (e *Evaluator) PersistGrant(ctx context.Context, db writeDB, g Grant, nowNs int64) (int64, error)
+// the state database's serialized write path, stamps CreatedNs, and
+// returns the stored grant's id. It does not touch the evaluator;
+// reloading stays an explicit separate step so a caller creating several
+// grants reloads once.
+func (db *DB) PersistGrant(ctx context.Context, g GrantRow, nowNs int64) (int64, error)
 ```
 
-- `writeDB` is the same narrow write-transaction surface `LoadFromState`
-  reads through, so the ACL package's storage dependencies stay symmetric:
-  it reads grants and writes grants through handles the caller passes, and
-  owns the table's spelling in both directions.
-- `Grant` is the ACL package's existing struct (user or group, share,
-  subpath, allow, deny, inherit, label).
-- The core's `createHomeGrant` becomes: build the `Grant` value, call
-  `PersistGrant`, then call `LoadFromState` to reload. The INSERT text, the
-  column order and the inherit-to-integer mapping all live in the ACL
-  package.
+- `GrantRow` mirrors the ACL package's `Grant` value (user or group, share,
+  subpath as its string spelling, allow, deny, inherit, label); the state
+  package owns the row shape, the ACL package owns the domain shape, and
+  the core converts between them.
+- The evaluator keeps its read path: `LoadFromState` loads grants and
+  memberships from rows the store hands it. The INSERT text, the column
+  order and the inherit-to-integer mapping live in `store/state` with the
+  rest of the schema.
+- The core's `createHomeGrant` becomes: build the row, call
+  `PersistGrant`, then reload the evaluator.
 
 ### What homes deliberately do not do
 
@@ -247,13 +249,14 @@ size, and a second page is the client's request to make.
 
 ## Deliberate changes
 
-1. **Grant persistence moves to the ACL package.** The reference's
+1. **Grant persistence moves to the state store.** The reference's
    `homes.go` holds `grantInsertStmt` and spells the grant table's columns
-   in the domain package. In the rebuild, the ACL package owns grant
-   creation (`PersistGrant`, contract above) alongside the loading it
-   already owns; `engine/core/home.go` builds a `Grant` value, calls
-   `PersistGrant`, and reloads via `LoadFromState`. `inheritInt` and the
-   statement text go with it.
+   in the domain package. In the rebuild, a grant aggregate in
+   `engine/store/state` owns grant creation (`PersistGrant`, contract
+   above); `engine/core/home.go` builds the row, calls `PersistGrant`, and
+   reloads the evaluator. `inheritInt` and the statement text go with it.
+   The ACL package stays a pure evaluator with no SQL of its own
+   (01-package-survey.md).
 2. **`ensureDir`/`osMkdirAll` collapse to one helper.** The reference
    splits them so a stateless gate has a single place to check the mode;
    the rebuild keeps one function with the `0750` mode and lets the gate
@@ -295,9 +298,9 @@ Homes:
   for the user's other shares.
 - Homes disabled: `ensureHome` is a no-op and no home appears in the
   projected root.
-- ACL side: `PersistGrant` round-trips through `LoadFromState` (write one,
-  reload, evaluate); it stamps `CreatedNs`; it refuses a grant with
-  neither or both of user and group.
+- Store side: `PersistGrant` round-trips through the evaluator's reload
+  (write one, reload, evaluate); it stamps `CreatedNs`; it refuses a grant
+  with neither or both of user and group.
 
 Recent:
 

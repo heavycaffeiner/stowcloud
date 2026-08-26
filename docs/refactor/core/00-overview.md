@@ -124,11 +124,11 @@ reasons the domain does not:
    implementation (`sqlQuota` over the user row) moves to the store layer.
    The core keeps only the interface, the attach seam and the charge helper.
    Detail in 09-quota-and-aggregates.md.
-3. **Grant persistence.** The raw grant INSERT in `homes.go` moves behind the
-   ACL package's own storage surface: the ACL engine already owns grant
-   loading (`LoadFromState`), so it owns grant creation too. The core asks
-   the ACL layer to persist a grant; it never spells the grant table's
-   columns. Detail in 11-homes-and-recent.md.
+3. **Grant persistence.** The raw grant INSERT in `homes.go` moves into a
+   grant aggregate in the state store, beside the other aggregates. The ACL
+   package stays a pure evaluator; the core persists a grant through the
+   store and then reloads the evaluator. It never spells the grant table's
+   columns. Detail in 11-homes-and-recent.md and 01-package-survey.md.
 
 Everything else stays in the package and moves to the file that owns its
 concept. Shared helpers get one home each: the VFS error crossing in
@@ -159,17 +159,24 @@ The core depends on, and only on:
 | Dependency | Role |
 | --- | --- |
 | `engine/vfs` | share roots, safe paths, stats, durable writes |
-| `engine/acl` | the permission evaluator and grant persistence |
-| `engine/store` | cache DB (aggregates, idents), state DB (ops, shares), journal DB |
-| `engine/clock` | injectable time for tests |
-| `engine/secret` | zeroizable secret container for link tokens |
-| `engine/task` | the one legal goroutine spawn, for long operations |
+| `engine/acl` | the permission evaluator (pure; no SQL) |
+| `engine/store` | cache DB (aggregates, idents), state DB (ops, shares, links, quota, grants), journal DB |
+| `engine/kit/clock` | injectable time for tests |
+| `engine/kit/secret` | zeroizable secret container for link tokens |
+| `engine/kit/task` | the one legal goroutine spawn, for long operations |
+| `engine/kit/num`, `engine/kit/limits` | integer narrowing, bounds |
 | stdlib + blake3 | hashing for etags and aggregates |
 
-The `vfs`, `acl`, `store`, `clock`, `secret` and `task` packages are
-re-specified in their own phase documents; for this phase their existing
-behavior (as implemented under `go/internal/`) is taken as the contract the
-core writes against.
+The current core also imports `internal/search` to build scan sources for
+the index. That dependency inverts in the rebuild: the core exposes its own
+scan-source shape (share id, root, base path, per-path allow closure), and
+the search service adapts it into its walker's input. The rebuilt core
+imports nothing from search (01-package-survey.md).
+
+The `vfs`, `acl`, `store` and kit packages are re-specified before the core
+is built; the pre-core work order and the package survey are in
+`../01-package-survey.md`. Until those documents land, the existing behavior
+under `go/internal/` is the contract the core writes against.
 
 Nothing in the core imports fiber, `net/http`, or any protocol package. The
 gate that checks the import graph is part of the phase 1 acceptance.

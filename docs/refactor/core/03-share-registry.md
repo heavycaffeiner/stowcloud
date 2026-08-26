@@ -341,11 +341,28 @@ These move here from the old `scan.go`; they are read-side projections of
 the registry for the search feature and sit beside the admin surface that
 owns the share vocabulary.
 
+The shape they return is core-owned. The current code returns
+`[]search.Source`, which makes the core import the search package: a
+service-layer dependency pointing the wrong way, since search consumes the
+core's shares rather than providing vocabulary to it
+(01-package-survey.md). The rebuild inverts it:
+
 ```go
-func (c *Core) ScanSources() []search.Source
+// ScanSource is one share as the search walker consumes it. Defined here,
+// adapted by the search service into its own input type.
+type ScanSource struct {
+    Share uint32
+    Root  *vfs.ShareRoot
+    Base  vfs.SafePath
+    // Allow reports whether the caller may see a path. Nil means
+    // everything, which is the administrator-scoped form.
+    Allow func(p vfs.SafePath, isDir bool) bool
+}
+
+func (c *Core) ScanSources() []ScanSource
 ```
 
-Every registered share as a `search.Source{Share, Root: e.root, Base:
+Every registered share as a `ScanSource{Share, Root: e.root, Base:
 vfs.RootPath()}`. Administrator-scoped by design: the index covers every
 share, so sizing it against one account's view would report a number the
 built index does not match. The caller checks who is asking. A broken
@@ -353,7 +370,7 @@ entry's nil root is passed through as the old code does; the search walker
 owns skipping an unopenable source.
 
 ```go
-func (c *Core) UserScanSources(user UserID) []search.Source
+func (c *Core) UserScanSources(user UserID) []ScanSource
 ```
 
 The same, with an `Allow` closure per source that evaluates `acl.Read` per

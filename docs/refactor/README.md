@@ -19,9 +19,26 @@ here once and repeated in each document:
   stays HTTP-agnostic: nothing below the protocol layer may import fiber, and
   the rebuild enforces that with the same import-graph gate the current tree
   uses.
-- The rebuild order is dependency order: core domain first, then the storage
-  and filesystem seams it needs re-specified, then the protocol layers on
-  fiber, then compatibility surfaces (WebDAV, Nextcloud compat, SMB agent).
+- The target architecture is a 3-layer design: presentation (fiber, WebDAV,
+  compat, wire shapes), service (core, ACL evaluation, auth, search, upload,
+  preview), persistence (the three SQLite databases and every SQL
+  statement), over a small foundation kit. The full package survey, the
+  layer assignment for every current package, and the cross-layer
+  violations to fix are in [01-package-survey.md](01-package-survey.md).
+- The rebuild order is dependency order: the pre-core foundations first
+  (kit, vfs, persistence, the pure ACL evaluator; work order in the survey
+  document), then the domain core, then the protocol layers on fiber, then
+  compatibility surfaces (WebDAV, Nextcloud compat, SMB agent).
+
+## Phase 0: foundations
+
+What must be re-specified and rebuilt before the core implementation can
+start. Scope and ordering in [01-package-survey.md](01-package-survey.md):
+foundation kit (`num`, `clock`, `task`, `secret`, `limits`), `vfs`, the
+persistence layer re-drawn per aggregate (including the grant, link and
+quota surfaces the core documents extract), and the ACL evaluator stripped
+of its SQL. Documents for these land under `foundation/` as they are
+written.
 
 ## Phase 1: core
 
