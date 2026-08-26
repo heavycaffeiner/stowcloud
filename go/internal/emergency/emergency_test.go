@@ -181,7 +181,10 @@ func TestAnAdministratorCanRepairASetting(t *testing.T) {
 	if derr != nil {
 		t.Fatalf("reading the stored settings: %v", derr)
 	}
-	sec, _ := doc["security"].(map[string]any)
+	sec, ok := doc["security"].(map[string]any)
+	if !ok {
+		t.Fatalf("the security section is %T, want a document", doc["security"])
+	}
 	if sec["hardening"] != "off" {
 		t.Errorf("stored security = %v, want the repair", doc["security"])
 	}
@@ -248,9 +251,15 @@ func TestAHostListThatOmitsTheCallerIsSavedWithAWarning(t *testing.T) {
 	if !found {
 		t.Errorf("the lockout was not reported: %+v", got.Warnings)
 	}
-	doc, _ := st.State().Settings(ctx)
-	net, _ := doc["network"].(map[string]any)
-	if net == nil || net["app_hosts"] == nil {
+	doc, derr := st.State().Settings(ctx)
+	if derr != nil {
+		t.Fatalf("reading the stored settings: %v", derr)
+	}
+	net, ok := doc["network"].(map[string]any)
+	if !ok {
+		t.Fatalf("the network section is %T, want a document", doc["network"])
+	}
+	if net["app_hosts"] == nil {
 		t.Errorf("the host list was not stored: %v", doc["network"])
 	}
 }

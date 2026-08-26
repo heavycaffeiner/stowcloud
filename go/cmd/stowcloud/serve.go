@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -195,16 +194,6 @@ func bootSettings(dataDir string, clk clock.Clock, log *slog.Logger) (runtimecfg
 // absent from the process serving the request is a permission decision that
 // depends on which half was asked, and the first thing this account does is
 // ask.
-
-// trustedProxyStrings renders the parsed ranges back for the settings screen,
-// which reports and stores them as text.
-func trustedProxyStrings(ps []netip.Prefix) []string {
-	out := make([]string, 0, len(ps))
-	for _, p := range ps {
-		out = append(out, p.String())
-	}
-	return out
-}
 
 func grantEveryShare(
 	ctx context.Context, c *core.Core, st *store.Store, ev *acl.Evaluator,

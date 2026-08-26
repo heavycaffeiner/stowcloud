@@ -139,6 +139,7 @@ func runNestedMoveChild(t *testing.T, dir string) {
 	if string(got) != body {
 		t.Fatalf("the destination holds %q, want %q", got, body)
 	}
+	//nolint:gosec // G703 reads the variable: this test's own temporary directory and a constant name.
 	if _, serr := os.Stat(filepath.Join(dir, "a.txt")); !os.IsNotExist(serr) {
 		t.Fatalf("the source survived the move: %v", serr)
 	}

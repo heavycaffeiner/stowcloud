@@ -9,13 +9,30 @@
 # zero and stays there; an exception under go/engine/ is an argument to be made
 # in that phase's document first.
 #
-# The old tree's count is 277 rather than 249 as of this line. The gap arrived
+# The old tree's count is 276 rather than 249 as of this line. The gap arrived
 # with fba2b83 ("feat!: move every setting into the database and make failures
 # visible") and its neighbours, which added directives without moving the
-# budget, so the gate has been failing on master since then. The number is
+# budget, so the gate had been failing on master since then. The number is
 # corrected here to what the tree holds rather than the directives removed,
-# because none of them belong to this rebuild and the old tree is read-only for
-# its duration. Each one is still on a line carrying its own reason.
+# because none of them belong to this rebuild. Each one is still on a line
+# carrying its own reason.
+#
+# 276: the probe snapshot's own write went through vfs.ReplaceFileDurable, so
+# the gosec exception on its hand-rolled write is gone with the write.
+#
+# 277: layercheck's diagnostic writer, the same exemption every tool in
+# go/tools carries, for a message that has nowhere else to go. The engine's
+# own count stays zero; go/tools is not the engine.
+#
+# 287: the linter's own backlog, which had been failing alongside the count.
+# Four unchecked returns in tests were fixed rather than suppressed (a swallowed
+# Settings error and three type assertions that now say what they got), and one
+# dead function was deleted. The ten added here are the families this file
+# already names: G101 reading an identifier on statements against the
+# config_secret table, G703 reading a variable where the path is this file's own
+# constant under the operator's data directory or a test's own TempDir, and G302
+# on a test that makes its own spool read-only to prove the refusal and puts the
+# execute bit back so cleanup can descend.
 #
 # Phase 1 added four. Three are in internal/jail: the kernel takes a struct
 # pointer for landlock_create_ruleset, landlock_add_rule and seccomp, and
@@ -239,5 +256,5 @@
 #
 # 277: the settings-in-the-database change and the work around it, counted
 # rather than justified one by one, for the reason at the top of this file.
-277
+287
 0

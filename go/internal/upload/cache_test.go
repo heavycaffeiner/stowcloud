@@ -352,11 +352,11 @@ func TestTheCacheSwitchRefusesAnUnwritableSpool(t *testing.T) {
 		t.Fatal("the switch reports off after being turned on")
 	}
 
-	if cerr := os.Chmod(dir, 0o500); cerr != nil {
+	if cerr := os.Chmod(dir, 0o500); cerr != nil { //nolint:gosec // G302: a read-only mode is the condition under test, on this test's own temporary directory.
 		t.Fatalf("making the spool read-only: %v", cerr)
 	}
 	t.Cleanup(func() {
-		if rerr := os.Chmod(dir, 0o700); rerr != nil {
+		if rerr := os.Chmod(dir, 0o700); rerr != nil { //nolint:gosec // G302: cleanup needs the execute bit back to descend and remove.
 			t.Errorf("restoring the spool mode: %v", rerr)
 		}
 	})

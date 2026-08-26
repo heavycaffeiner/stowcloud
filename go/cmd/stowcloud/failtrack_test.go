@@ -16,9 +16,14 @@ import (
 // an undifferentiated spin: the same lines repeating, with nothing saying
 // whether this is the first attempt or the fortieth.
 
+// testNow is the instant every case here measures from. The window arithmetic
+// is what is under test, so a fixed point makes the cases reproducible and
+// keeps the wall clock out of a tree that reads it in one package.
+func testNow() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
+
 func TestThreeFailuresInsideTheWindowIsALoop(t *testing.T) {
 	dir := t.TempDir()
-	now := time.Now()
+	now := testNow()
 
 	for i := 1; i <= 2; i++ {
 		attempts, looping := recordEngineFailure(dir, now.Add(time.Duration(i)*time.Second))
@@ -39,7 +44,7 @@ func TestThreeFailuresInsideTheWindowIsALoop(t *testing.T) {
 // once a week for a month is not held on the strength of history.
 func TestFailuresOutsideTheWindowAreForgotten(t *testing.T) {
 	dir := t.TempDir()
-	now := time.Now()
+	now := testNow()
 
 	recordEngineFailure(dir, now.Add(-2*engineLoopWindow))
 	recordEngineFailure(dir, now.Add(-2*engineLoopWindow))
@@ -57,7 +62,7 @@ func TestFailuresOutsideTheWindowAreForgotten(t *testing.T) {
 // then fails once gets three fresh attempts rather than the conclusion.
 func TestAHealthyStartClearsTheHistory(t *testing.T) {
 	dir := t.TempDir()
-	now := time.Now()
+	now := testNow()
 
 	recordEngineFailure(dir, now)
 	recordEngineFailure(dir, now)
@@ -77,7 +82,7 @@ func TestACorruptCounterStartsOver(t *testing.T) {
 	if err := os.WriteFile(path, []byte("not json at all"), 0o600); err != nil {
 		t.Fatalf("writing: %v", err)
 	}
-	attempts, looping := recordEngineFailure(dir, time.Now())
+	attempts, looping := recordEngineFailure(dir, testNow())
 	if looping || attempts != 1 {
 		t.Fatalf("a corrupt file produced %d, %v", attempts, looping)
 	}

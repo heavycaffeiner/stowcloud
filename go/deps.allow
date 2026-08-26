@@ -5,9 +5,11 @@
 # Blank lines and lines starting with # are ignored.
 #
 # The parent proposal's table says why each one is not the standard library.
-# The ones it commits to that have not arrived yet, and the phase that brings
-# each: x/crypto, x/sync, klauspost/compress (9), BurntSushi/toml (5), a
-# pure-Go BLAKE3 (6), x/image (9).
+# The one it commits to that has not arrived: x/sync.
+#
+# An entry here is a module the tree actually imports. Listing one it does not
+# makes the gate fail closed on a dependency nobody took, which is how the
+# TOML parser sat here for phases after every setting moved into the database.
 
 golang.org/x/sys
 
@@ -30,10 +32,6 @@ modernc.org/sqlite
 # aggregate; Phase 6 reuses it for the client-selected upload checksum, which
 # is why it is one entry here and one direct dependency rather than two.
 lukechampine.com/blake3
-
-# sc.toml, the one config file the product reads. It enters the module graph
-# with Phase 5, which is the phase that parses it.
-github.com/BurntSushi/toml
 
 # BMP, TIFF and WebP decoding for the preview worker. The standard library
 # covers JPEG, PNG and GIF; these three are what x/image adds, and all of them

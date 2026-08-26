@@ -11,7 +11,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
-	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/auth"
 	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
@@ -129,7 +128,7 @@ func degrade(
 	ctx context.Context, st *store.Store, authSvc *auth.Service,
 	dataDir, reason string, log *slog.Logger, stderr io.Writer,
 ) int {
-	attempts, looping := recordEngineFailure(dataDir, time.Now())
+	attempts, looping := recordEngineFailure(dataDir, clock.System().Now())
 	log.Error("the server could not be built; serving only the settings editor",
 		"reason", reason, "recent_failures", attempts)
 	if looping {

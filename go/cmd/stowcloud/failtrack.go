@@ -45,7 +45,7 @@ func recordEngineFailure(dataDir string, now time.Time) (attempts int, looping b
 
 	// Bounded: only what the window holds is ever written back, so a
 	// deployment that has failed for a month does not grow a file.
-	if err := os.WriteFile(path, mustJSON(recent), 0o600); err != nil {
+	if err := os.WriteFile(path, mustJSON(recent), 0o600); err != nil { //nolint:gosec // G703 reads the variable: the name is this file's own constant under the operator's data directory.
 		return len(recent), len(recent) >= engineLoopCount
 	}
 	return len(recent), len(recent) >= engineLoopCount
@@ -56,6 +56,7 @@ func recordEngineFailure(dataDir string, now time.Time) (attempts int, looping b
 func clearEngineFailures(dataDir string) {
 	// A file that will not go away is not worth failing a healthy start over;
 	// the next failure rewrites it with only what its own window holds.
+	//nolint:gosec // G703 reads the variable: the name is this file's own constant under the operator's data directory.
 	_ = os.Remove(filepath.Join(dataDir, engineFailureFile)) //nolint:errcheck // see above.
 }
 

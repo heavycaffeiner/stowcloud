@@ -70,7 +70,10 @@ func TestAnExplicitEmptyValueClearsTheField(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading: %v", err)
 	}
-	net, _ := doc["network"].(map[string]any)
+	net, ok := doc["network"].(map[string]any)
+	if !ok {
+		t.Fatalf("the network section is %T, want a document", doc["network"])
+	}
 	list, ok := net["trusted_proxies"].([]any)
 	if !ok || len(list) != 0 {
 		t.Errorf("trusted_proxies = %v, want an empty list", net["trusted_proxies"])

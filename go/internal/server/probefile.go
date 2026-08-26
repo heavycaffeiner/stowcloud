@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
 // What a second process needs to reach this one.
@@ -44,14 +46,14 @@ func WriteProbe(dataDir string, p Probe) error {
 		return err
 	}
 	path := filepath.Join(dataDir, probeFileName)
-	// Written whole and renamed into place, so a probe reading concurrently
-	// sees either the old snapshot or the new one and never half of one.
-	tmp := path + ".tmp"
-	if werr := os.WriteFile(tmp, body, 0o600); werr != nil { //nolint:gosec // G703 reads the variable: the path is the operator's data directory.
-		return fmt.Errorf("writing the probe snapshot: %w", werr)
-	}
-	if rerr := os.Rename(tmp, path); rerr != nil {
-		return fmt.Errorf("publishing the probe snapshot: %w", rerr)
+	// Staged and renamed into place, so a probe reading concurrently sees
+	// either the old snapshot or the new one and never half of one.
+	werr := vfs.ReplaceFileDurable(path, 0o600, func(f *os.File) error {
+		_, err := f.Write(body)
+		return err
+	})
+	if werr != nil {
+		return fmt.Errorf("publishing the probe snapshot: %w", werr)
 	}
 	return nil
 }

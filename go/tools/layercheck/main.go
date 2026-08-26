@@ -69,10 +69,10 @@ var sideways = map[string]map[string]bool{
 	"store/journal":  {"store/ident": true, "store/dbfile": true},
 }
 
-// say writes a diagnostic. It ignores the write's error, because a message
-// that cannot be printed has nowhere else to go.
+// say writes a diagnostic. It is the one place in this command that ignores an
+// error, because a message that cannot be printed has nowhere else to go.
 func say(w io.Writer, format string, a ...any) {
-	_, _ = fmt.Fprintf(w, format, a...)
+	fmt.Fprintf(w, format, a...) //nolint:errcheck // see the comment above.
 }
 
 func main() {

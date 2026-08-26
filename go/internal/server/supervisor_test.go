@@ -63,15 +63,20 @@ func TestSwapMovesTheListener(t *testing.T) {
 	}
 
 	// The old socket goes once it has drained. It holds nothing here, so this
-	// is the ordinary case rather than the one below.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
+	// is the ordinary case rather than the one below. Timed off a channel
+	// rather than a wall-clock deadline: one package in this tree reads the
+	// clock, and a test is not it.
+	deadline := time.After(5 * time.Second)
+	for {
 		if _, err := dial(first); err != nil {
 			return
 		}
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case <-deadline:
+			t.Fatal("the old listener is still accepting connections")
+		case <-time.After(20 * time.Millisecond):
+		}
 	}
-	t.Fatal("the old listener is still accepting connections")
 }
 
 // The whole reason the new socket is bound first: an address nothing can bind

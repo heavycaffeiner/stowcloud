@@ -111,8 +111,9 @@ FROM share_link WHERE token_enc IS NOT NULL`
 
 	sqlSealLink = `UPDATE share_link SET token_enc = ?, token_key_ver = ? WHERE id = ?`
 
-	sqlForEachConfigSecret = `SELECT name, value, key_ver FROM config_secret`
+	sqlForEachConfigSecret = `SELECT name, value, key_ver FROM config_secret` //nolint:gosec // G101 reads the identifier: this is a statement, not a credential.
 
+	//nolint:gosec // G101 reads the identifier: this is a statement, not a credential.
 	sqlUpsertConfigSecret = `
 INSERT INTO config_secret(name, value, key_ver) VALUES (?, ?, ?)
 ON CONFLICT(name) DO UPDATE SET value = excluded.value, key_ver = excluded.key_ver`

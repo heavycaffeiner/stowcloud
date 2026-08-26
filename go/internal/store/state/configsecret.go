@@ -56,11 +56,12 @@ func (d *DB) DeleteConfigSecret(ctx context.Context, name string) error {
 
 // Every statement this file runs, as a constant (D14).
 const (
-	sqlReadConfigSecret = `SELECT value, key_ver FROM config_secret WHERE name = ?`
+	sqlReadConfigSecret = `SELECT value, key_ver FROM config_secret WHERE name = ?` //nolint:gosec // G101 reads the identifier: this is a statement naming the sealed-secret table, not a credential.
 
+	//nolint:gosec // G101 reads the identifier: a statement naming the table, not a credential.
 	sqlWriteConfigSecret = `
 INSERT INTO config_secret(name, value, key_ver) VALUES (?, ?, ?)
 ON CONFLICT(name) DO UPDATE SET value = excluded.value, key_ver = excluded.key_ver`
 
-	sqlDeleteConfigSecret = `DELETE FROM config_secret WHERE name = ?`
+	sqlDeleteConfigSecret = `DELETE FROM config_secret WHERE name = ?` //nolint:gosec // G101 reads the identifier: a statement naming the table, not a credential.
 )
