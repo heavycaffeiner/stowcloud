@@ -73,8 +73,8 @@ break the guarantee or interface indirection that serves no second
 implementation. Cohesion inside the package is raised by re-drawing file
 boundaries so each file is one closed concept.
 
-New tree (module layout for the rebuilt engine; final module path decided in
-the engine bootstrap document of the next phase):
+New tree (module layout per `../03-engine-bootstrap.md`: the engine lives at
+`go/engine/` inside the existing module):
 
 ```
 engine/
