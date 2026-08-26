@@ -25,6 +25,9 @@ here once and repeated in each document:
   statement), over a small foundation kit. The full package survey, the
   layer assignment for every current package, and the cross-layer
   violations to fix are in [01-package-survey.md](01-package-survey.md).
+  Every package was then audited file by file; findings are under
+  [audit/](audit/), and the consolidated document plan derived from them is
+  [02-document-plan.md](02-document-plan.md).
 - The rebuild order is dependency order: the pre-core foundations first
   (kit, vfs, persistence, the pure ACL evaluator; work order in the survey
   document), then the domain core, then the protocol layers on fiber, then
