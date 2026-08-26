@@ -156,7 +156,18 @@ vetsecret, deps.allow, verify.sh) from its first commit, plus the new
 `tools/layercheck`. `engine/`'s nolint budget starts at zero; the old
 tree's budget is frozen and may only go down. (`03-engine-bootstrap.md`.)
 
-## D15. Phase order
+## D15. Implementer discipline
+
+The rules binding anyone who writes code for the rebuild are spelled out
+in the README's "Instructions to implementers" section: build exactly the
+normative tree, write everything from scratch with the old tree read-only,
+follow each specification document whole including its test list, respect
+the import rules, build in dependency order, and keep the gates green from
+the first commit. An agent given a rebuild task starts by reading that
+section, the bootstrap document, and the specification document for the
+package it is building. (README, `03-engine-bootstrap.md`.)
+
+## D16. Phase order
 
 Phase 0 builds `kit`, `infra/vfs`, `store/*`, `service/acl` in that
 dependency order (critical path: vfs). Phase 1 builds `service/core` per

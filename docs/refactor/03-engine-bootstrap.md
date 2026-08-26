@@ -15,7 +15,15 @@ The rebuilt engine lives at `go/engine/`, inside the existing Go module
 The directory tree spells the layers. Each of the five top-level
 directories under `engine/` is one tier of the architecture, so the layer
 of any package is readable from its path, and the layer gate's rule is a
-prefix check rather than a lookup table:
+prefix check rather than a lookup table.
+
+**This layout is normative.** An implementer creates exactly these
+directories, at exactly these paths, and nothing else: no extra tier, no
+package outside its tier, no "utils" or "common" or "helpers" directory
+anywhere. A package not named here enters the tree only after the document
+that specifies it names its path. Where a phase 2 or phase 3 package's
+internal layout is not yet documented, its tier and path below are still
+fixed; only its contents await their documents:
 
 ```
 go/

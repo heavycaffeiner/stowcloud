@@ -10,6 +10,47 @@ here once and repeated in each document:
 > existing file, the citation is a pointer to the behavior being preserved or
 > deliberately changed, never to code being copied.
 
+## Instructions to implementers
+
+Binding on anyone, human or agent, who writes code for this rebuild. Read
+this section before touching the tree.
+
+1. **Build exactly the tree below.** New code goes under `go/engine/`, in
+   the tier directory the layout names, at the exact path the owning
+   document names. Do not invent a directory, do not add a tier, do not
+   place a package at a path no document names. If the right location is
+   genuinely unclear, the layout in [03-engine-bootstrap.md](03-engine-bootstrap.md)
+   decides; if it does not decide, stop and ask rather than guess.
+2. **Write everything from scratch.** Never copy, move, or adapt a file,
+   function, type, comment, or SQL statement from `go/internal/`. Open the
+   old code to learn behavior, close it, and write new code from the
+   specification document. If the document and the old code disagree, the
+   document wins; if the disagreement looks like a documentation bug,
+   stop and ask rather than silently following either.
+3. **Never edit the old tree.** `go/internal/` is read-only for the whole
+   rebuild: no fixes, no refactors, no formatting, however small. A defect
+   found there is fixed in the new implementation by its document's
+   "Deliberate changes" section, not in place. Deletion of old packages
+   happens only at a phase boundary, in the same change set that wires
+   their replacement.
+4. **Follow the document, whole.** Each package is implemented from its
+   specification document: the listed files, the exact signatures, the
+   "Deliberate changes", and the full test list. A spec test that is not
+   written is a step that is not done. Do not add surface the document
+   does not name; YAGNI holds.
+5. **Respect the import rules.** The tier table and the intra-tier
+   exception list in [03-engine-bootstrap.md](03-engine-bootstrap.md) are
+   exhaustive. No import of `go/internal/` from `go/engine/`, ever. No
+   fiber or `net/http` outside `engine/http/`.
+6. **Build order is dependency order.** Phase 0 in the order kit, vfs and
+   fsatomic, store, acl ([01-package-survey.md](01-package-survey.md) work
+   order); phase 1 per [core/00-overview.md](core/00-overview.md); each
+   step compiles and passes its tests before the next begins.
+7. **Gates from the first commit.** koscan, vetgo, vetsecret and
+   `tools/layercheck` cover `engine/` from the start; `engine/`'s nolint
+   budget is zero. A change that needs a nolint or a new dependency is a
+   change to argue in a document first.
+
 ## Scope and direction
 
 - The engine is rebuilt bottom-up, one layer at a time, on dedicated
