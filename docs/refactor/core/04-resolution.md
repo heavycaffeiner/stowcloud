@@ -186,7 +186,7 @@ The projection of the resolved path itself, for a protocol that reports on
 a directory as well as its children (WebDAV `Depth: 0`). Builds an `Entry`
 from the resolution and a stat the caller already holds: name and share
 path from `r.path`, kind, size and times from `st`, `Ident` from
-`cache.IdentOf(r.share, st)`, the pair from `FileETag(st)`, and `Perms`
+`ident.Of(r.share, st)`, the pair from `FileETag(st)`, and `Perms`
 from `r.perms`. It exists in the core because `Entry` carries an identity
 and a validator only the core mints; building one by hand outside the
 package is impossible by design.

@@ -52,7 +52,36 @@ func Of(share vfs.ShareID, st vfs.Stat) Ident
 func (i Ident) Equal(o Ident) bool
 func (i Ident) ToSQL() (dev, ino int64, present, btime int64)
 func FromSQL(share, dev, ino, present, btime int64) (Ident, error)
+
+// FileID and Assignment travel with Ident rather than living in `cache`,
+// because the Overrides seam (below) crosses from `state` into `cache`
+// carrying exactly these two shapes: `state.RecordFileIDs` and
+// `state.LookupFileIDOwner` need to name a file id and an assignment
+// without importing `cache` for them, the same reason `Ident` itself
+// moved here. A type that only `cache` used would belong in `cache`; a
+// type both databases need to spell belongs in the neutral package both
+// already import.
+
+type FileID int64
+
+// RootID is the "no id" sentinel: never a real node's id, and also the
+// parent id of a share root, so a parent-chain walk terminates on it
+// without a sentinel row ever existing in any table.
+const RootID FileID = 0
+
+// Assignment is one identity and the id it holds, which is what a
+// collision makes durable.
+type Assignment struct {
+    Ident Ident
+    ID    FileID
+}
 ```
+
+`FileID` is a node's stable id, derived (by `cache.DeriveID`, below) as a
+pure function of an `Ident`. `Assignment`'s fields are exactly what a
+collision resolution needs to make durable: the identity that was
+displaced or that displaced another, and the id it was assigned to hold
+(`cache.AllocateID`'s collision path, below, is what constructs one).
 
 Justification for `store/ident` over folding it into `dbfile`:
 
@@ -66,10 +95,12 @@ Justification for `store/ident` over folding it into `dbfile`:
   A new, tiny, downward-only package that both import removes the
   direction question entirely rather than deciding which of the two
   "wins".
-- The package is deliberately minimal: the tuple, equality, and the two
-  SQL-boundary conversions. It imports only `vfs` (for `ShareID`) and holds
-  no database handle and no SQL statement of its own, so it is a foundation
-  leaf like `kit`, not a third database package.
+- The package is deliberately minimal: the identity tuple, equality, the
+  two SQL-boundary conversions, and the two small shapes
+  (`FileID`, `Assignment`) the `Overrides` seam carries across the same
+  boundary. It imports only `vfs` (for `ShareID`) and holds no database
+  handle and no SQL statement of its own, so it is a foundation leaf like
+  `kit`, not a third database package.
 
 `Btime` stays a pointer for the reason the current code documents: an
 absent birth time and a zero one are different facts about a file, and
@@ -77,29 +108,17 @@ folding them together would let two distinct files share a derivation key.
 Because of this, `Ident` is not `==`-comparable and must never be used as a
 map key; `Equal` is the value comparison every caller uses instead.
 
-This document's remaining sections use `ident.Ident` throughout. The state
-document specifies where `dav.go` and `favorite.go` adopt it, retiring
-their own copies.
+This document's remaining sections use `ident.Ident`, `ident.FileID`,
+`ident.RootID` and `ident.Assignment` throughout, with no re-export under
+a `cache`-local name; the state document specifies where `dav.go` and
+`favorite.go` adopt `ident.Ident`, retiring their own copies.
 
 ## Spec: id derivation
-
-### FileID and RootID
-
-```go
-type FileID int64
-
-const RootID FileID = 0
-```
-
-`FileID` is a node's stable id. It is never zero for a real node; zero is
-the "no id" sentinel and is also the parent id of a share root, so a
-parent-chain walk terminates on it without a sentinel row ever existing in
-the table.
 
 ### DeriveID
 
 ```go
-func DeriveID(ident ident.Ident, attempt uint32) FileID
+func DeriveID(id ident.Ident, attempt uint32) ident.FileID
 ```
 
 The id is a pure function of the identity tuple: a rebuilt cache derives
@@ -127,7 +146,7 @@ top bit set would arrive at some clients as negative.
 ### AllocateID and collision handling
 
 ```go
-func (d *DB) AllocateID(ctx context.Context, tx *sql.Tx, ident ident.Ident) (FileID, error)
+func (d *DB) AllocateID(ctx context.Context, tx *sql.Tx, id ident.Ident) (ident.FileID, error)
 ```
 
 The only function that may decide an id. In order:
@@ -145,8 +164,8 @@ The only function that may decide an id. In order:
    not distributing, a different and worse problem than one collision,
    and must not be hidden behind a retry loop that never terminates.
 4. On the first free candidate past attempt zero, both the base holder's
-   identity and the newcomer's identity are recorded as an `Assignment` in
-   one write to the durable `Overrides` table, and a `slog.Warn` is
+   identity and the newcomer's identity are recorded as an `ident.Assignment`
+   in one write to the durable `Overrides` table, and a `slog.Warn` is
    emitted: the event is worth an operator's attention as the first sign a
    corpus has reached the size where a 63-bit collision is no longer
    abstract, not because anything is broken.
@@ -174,9 +193,9 @@ incidental implementation details; both are preserved as hard requirements.
 
 ```go
 type Overrides interface {
-    LookupFileID(ctx context.Context, ident ident.Ident) (FileID, bool, error)
-    LookupFileIDOwner(ctx context.Context, id FileID) (ident.Ident, bool, error)
-    RecordFileIDs(ctx context.Context, assignments ...Assignment) error
+    LookupFileID(ctx context.Context, id ident.Ident) (ident.FileID, bool, error)
+    LookupFileIDOwner(ctx context.Context, id ident.FileID) (ident.Ident, bool, error)
+    RecordFileIDs(ctx context.Context, assignments ...ident.Assignment) error
 }
 ```
 
@@ -196,8 +215,8 @@ never imports `state`.
 
 ```go
 func (d *DB) Upsert(ctx context.Context, tx *sql.Tx,
-    share vfs.ShareID, parent FileID, name string, st vfs.Stat) (FileID, error)
-func (d *DB) Lookup(ctx context.Context, share vfs.ShareID, st vfs.Stat) (FileID, bool, error)
+    share vfs.ShareID, parent ident.FileID, name string, st vfs.Stat) (ident.FileID, error)
+func (d *DB) Lookup(ctx context.Context, share vfs.ShareID, st vfs.Stat) (ident.FileID, bool, error)
 ```
 
 `Upsert` is the only function that inserts into the node table, which
@@ -248,7 +267,7 @@ have a fresh one" and "here, store this one".
 ### DirEtag
 
 ```go
-func (d *DB) DirEtag(ctx context.Context, share vfs.ShareID, id FileID) (Aggregate, bool, error)
+func (d *DB) DirEtag(ctx context.Context, share vfs.ShareID, id ident.FileID) (Aggregate, bool, error)
 ```
 
 Returns `(_, false, nil)` when the caller must recompute: no row exists,
@@ -262,9 +281,9 @@ recompute.
 
 ```go
 func (d *DB) PutDirEtag(ctx context.Context, tx *sql.Tx,
-    share vfs.ShareID, id FileID, agg Aggregate, gen uint64) error
+    share vfs.ShareID, id ident.FileID, agg Aggregate, gen uint64) error
 func (d *DB) MarkDirty(ctx context.Context, tx *sql.Tx,
-    share vfs.ShareID, chain []FileID) error
+    share vfs.ShareID, chain []ident.FileID) error
 ```
 
 Both are **explicitly not gated by the size guard**, and this is a
@@ -309,7 +328,7 @@ cannot be precise.
 ## Spec: resolve
 
 ```go
-func (d *DB) Resolve(ctx context.Context, id FileID) (vfs.ShareID, vfs.SharePath, error)
+func (d *DB) Resolve(ctx context.Context, id ident.FileID) (vfs.ShareID, vfs.SharePath, error)
 ```
 
 Walks the parent chain from `id` to the share root, joining names in
@@ -333,7 +352,7 @@ the trust boundary here is stored data that this process did not
 necessarily write.
 
 ```go
-func (d *DB) Rename(ctx context.Context, tx *sql.Tx, id, newParent FileID, newName string) error
+func (d *DB) Rename(ctx context.Context, tx *sql.Tx, id, newParent ident.FileID, newName string) error
 ```
 
 Renaming under a stable id is one row update regardless of subtree size,
@@ -351,7 +370,7 @@ table's contents outright (`Discard: true`, `foundation/dbfile.md`) instead
 of migrating rows forward, and it is what makes deleting `cache.db` a
 supported operator action rather than an incident:
 
-- A rebuild after deletion re-derives the same `FileID` values for the
+- A rebuild after deletion re-derives the same `ident.FileID` values for the
   same files, because the derivation is pure over the identity tuple.
 - The `Overrides` table (durable, in `state`) is what makes a rebuild also
   reproduce past collision resolutions rather than re-deciding them by
@@ -390,13 +409,19 @@ foundation-persistence.md`, `store/cache` finding 6).
 
 ## Deliberate changes
 
-1. **`Ident` moves to `engine/store/ident`.** See "Spec: identity" above.
-   This ends the `store/state` -> `store/cache` import
-   (`01-package-survey.md` cross-layer violation 5) and retires the three
-   separate identity representations the audit found
+1. **`Ident`, `FileID`, `RootID` and `Assignment` all move to
+   `engine/store/ident`.** See "Spec: identity" above. `Ident` alone
+   moving is not enough to end the `store/state` -> `store/cache` import:
+   the `Overrides` interface still carries `FileID` and `Assignment` at
+   its two call sites (`state.RecordFileIDs`, `state.LookupFileIDOwner`),
+   so those two types move with `Ident` to the same neutral package. This
+   retires the three separate identity representations the audit found
    (`audit/foundation-persistence.md`, `store/cache` finding 1 and
-   `store/state` finding 2). `state.md` specifies the corresponding change
-   on the `state` side (`dav.go`, `favorite.go`).
+   `store/state` finding 2) and, together, are what removes the
+   `store/state` -> `store/cache` import (`01-package-survey.md`
+   cross-layer violation 5). `state.md` specifies the corresponding change
+   on the `state` side (`dav.go`, `favorite.go`, the `Overrides`
+   implementation).
 2. **The two id-derivation and one bit-pattern helper pair
    (`toSQL`/`fromSQL`) become methods on `ident.Ident`
    (`ToSQL`/`FromSQL`)**, ending the three independent

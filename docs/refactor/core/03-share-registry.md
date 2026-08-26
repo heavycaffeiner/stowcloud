@@ -230,7 +230,7 @@ func shareIDOf(rowid int64) (ShareID, error)  // base + rowid, checked into uint
 func rowIDOf(id ShareID) int64                // the inverse
 ```
 
-A share's external id is its state-store rowid plus 1,000,000. The offset
+A share's external id is its state-store rowid plus 1_000_000. The offset
 must be preserved exactly: deployments that predate the single registry
 minted ids in this range, and the grants, share links and cache rows that
 reference those ids are still on disk. Any other mapping makes a restart
@@ -245,7 +245,7 @@ truncated.
 The homes feature (11-homes-and-recent.md) registers its single share under
 the fixed id `999_999`. That id sits below `dynamicShareIDBase`, and rowids
 are positive, so no stored share can ever mint it: dynamic ids start at
-1,000,001. The constant lives in `home.go`; this document records the
+1_000_001. The constant lives in `home.go`; this document records the
 reservation because the id scheme here is what guarantees it never
 collides.
 
@@ -382,7 +382,7 @@ grant can start partway down a tree; a share-level answer would either hide
 a readable subtree or count an unreadable one.
 
 ```go
-func (c *Core) ShareLabel(user UserID, share uint32) string
+func (c *Core) ShareLabel(user UserID, share ShareID) string
 ```
 
 The label this account navigates the share under, from the grant
@@ -504,7 +504,7 @@ exercised by `resolve_test.go` and others):
    `SharedExternally` and `BrokenReason` from the registry; a broken share
    stays listed with its reason (the old
    `TestAShareWithAMissingPathIsStillListed`).
-9. **CreateShare.** Mints id rowid + 1,000,000; refuses a duplicate name
+9. **CreateShare.** Mints id rowid + 1_000_000; refuses a duplicate name
    with `ErrConflict`; rolls the row back when registration fails, so a
    subsequent `ReloadPersistedShares` does not resurrect it.
 10. **UpdateShare.** Patch semantics (nil leaves alone, pointer sets);
@@ -523,8 +523,8 @@ exercised by `resolve_test.go` and others):
     not stop the other rows.
 14. **Id scheme edge.** `shareIDOf` refuses a rowid that would overflow
     uint32; `rowIDOf(shareIDOf(n)) == n` for representative n.
-15. **Home id reservation.** `shareIDOf(1)` is 1,000,001 and every minted
-    id is strictly greater than 999,999.
+15. **Home id reservation.** `shareIDOf(1)` is 1_000_001 and every minted
+    id is strictly greater than 999_999.
 16. **Scan sources.** `ScanSources` returns one source per registered
     share; `UserScanSources` filters per entry through the evaluator
     (a grant on a subtree admits the subtree and refuses a sibling);

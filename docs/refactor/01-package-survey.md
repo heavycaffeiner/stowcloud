@@ -8,18 +8,11 @@
 
 ## Target architecture
 
-The rebuilt engine is a 3-layer design:
-
-| Layer | Role | May import |
-| --- | --- | --- |
-| Presentation | fiber HTTP surface, WebDAV, compat, wire shapes, status mapping | service, foundation |
-| Service | domain logic: core, ACL evaluation, auth, search, upload, preview | persistence, foundation |
-| Persistence | the three SQLite databases and every SQL statement | foundation |
-
-Plus a foundation tier that any layer may use: small, dependency-free kit
-packages (numeric narrowing, clock, secrets, task spawn, bounds) and the two
-domain infrastructures that sit below the service layer proper (`vfs`, the
-filesystem door; `jail`, the sandbox).
+The rebuilt engine is a 3-layer design over a foundation kit: presentation,
+service, persistence. `03-engine-bootstrap.md`'s tier table is the
+normative statement of which tier may import which, including the intra-
+tier exceptions (among them: `store/*` may import `infra/vfs` for its type
+vocabulary only); this document does not restate that table.
 
 The directory tree spells the tiers, so a package's layer is readable from
 its path (`03-engine-bootstrap.md` fixes the layout):
@@ -35,14 +28,15 @@ engine/
                                archive, server
 ```
 
-Import direction is strictly downward. Sideways imports inside a layer are
-allowed only downward-in-build-order and never cyclic. The import-graph gate
-enforces this as a path prefix rule.
+Import direction is strictly downward, per `03-engine-bootstrap.md`'s tier
+table. Sideways imports inside a layer are allowed only
+downward-in-build-order and never cyclic. The import-graph gate
+(`tools/layercheck`) enforces this as a path prefix rule.
 
 ## Inventory
 
-Sizes are non-test lines. "Layer" is the target assignment, not the current
-location.
+Sizes are non-test lines; these counts exclude tests throughout the survey.
+"Layer" is the target assignment, not the current location.
 
 ### Foundation kit
 
@@ -85,11 +79,11 @@ this engine owns. `vfs` therefore stays domain infrastructure.
 
 | Package | Lines | Verdict |
 | --- | --- | --- |
-| `store/fsatomic` (new) | ~150 | Extract before core. `ReplaceFileDurable` and `PublishNew` currently live inside `vfs` (`replace_linux.go`, `publish_linux.go`) although they take plain paths and never touch a share root: control-file writing parked inside the filesystem-security package. They move to a persistence-layer primitive package every file-writing subsystem uses. |
+| `store/fsatomic` (new) | ~150 | Extract before core. `ReplaceFileDurable` currently lives inside `vfs` (`replace_linux.go`) although it takes plain paths and never touches a share root: control-file writing parked inside the filesystem-security package. It moves to a persistence-layer primitive package every file-writing subsystem uses. `PublishNew` (`publish_linux.go`) is dropped, since grep found no caller for it, per `foundation/fsatomic.md`. |
 | `store/dbfile` | 409 | Rebuild before core. SQLite open, migrate. |
 | `store/cache` | ~900 | Rebuild before core. Idents, dir etags, resolve. |
 | `store/journal` | 197 | Rebuild before core. Write journal. |
-| `store/state` | ~2,600 | Rebuild before core, re-drawn per aggregate. Today it is a grab-bag: shares, uploads, operations, settings, overrides, share links, favorites, login flows, DAV locks, config secrets, active work. Each aggregate gets its own file pair (logic + SQL) as it mostly already has; the three new surfaces the core documents require land here: the `LinkStore` (10-share-links.md), the quota ledger (09-quota-and-aggregates.md), and the grant write surface (amended, see below). |
+| `store/state` | ~3,062 | Rebuild before core, re-drawn per aggregate. Today it is a grab-bag: shares, uploads, operations, settings, overrides, share links, favorites, login flows, DAV locks, config secrets, active work. Each aggregate gets its own file pair (logic + SQL) as it mostly already has; the three new surfaces the core documents require land here: the `LinkStore` (10-share-links.md), the quota ledger (09-quota-and-aggregates.md), and the grant write surface (amended, see below). |
 | `store` | 455 | Rebuild before core. Aggregator, size guard, instance lock. |
 
 One smell inside the layer: `store/state` imports `store/cache` (for the
@@ -129,7 +123,7 @@ names their file halves as persistence and their primitive as shared.
 | Package | Lines | Verdict |
 | --- | --- | --- |
 | `core` | 5,190 | Phase 1 target. Documents 00-11 written. |
-| `acl` | ~1,080 | Split before core. Today one package holds the evaluator (`eval.go`, `grant.go`, `perms.go`, `cache.go`, pure and dependency-free) and the grant SQL (`store.go`, `sql.go`, `grant_storage.go`, `database/sql` against state.db). Under 3-layer the SQL moves to `store/state` as a grant aggregate; `acl` keeps evaluation only and loads from rows the store hands it. This amends 11-homes-and-recent.md, which had placed grant persistence inside the ACL package. |
+| `acl` | 782 | Split before core. Today one package holds the evaluator (`eval.go`, `grant.go`, `perms.go`, `cache.go`, pure and dependency-free) and the grant SQL (`store.go`, `sql.go`, `grant_storage.go`, `database/sql` against state.db). Under 3-layer the SQL moves to `store/state` as a grant aggregate; `acl` keeps evaluation only and loads from rows the store hands it. This amends 11-homes-and-recent.md, which had placed grant persistence inside the ACL package. |
 | `search` | 1,272 | The walker and the index. Not rebuilt before core, but the core's dependency on it must be inverted first: see below. |
 | `auth` | 4,353 | Own phase, after core. Two violations to fix then: it carries its own SQL (`sql.go` and friends move to a state aggregate), and it imports `smb` (`passdb.go` maintains the NT-hash sidecar file; that write moves behind a seam the smb phase owns). |
 | `upload` | 3,928 | Own phase. Its durable half already lives in `store/state/upload.go`, which is the right shape. |
@@ -170,12 +164,12 @@ names their file halves as persistence and their primitive as shared.
    phase; both fixes are mechanical once the layers exist.
 5. **`store/state` imports `store/cache`.** Fixed in the persistence
    rebuild by moving the shared identity tuple down.
-6. **`vfs` exports the control-file replace primitives.**
-   `ReplaceFileDurable` and `PublishNew` are file persistence, not share
-   filesystem security; they move to `store/fsatomic`, and the three
-   call sites that bypass them today (`server/setup.go`, `server/tls.go`,
-   `server/probefile.go`, plus `smbagent`'s plain writes) are rebuilt on
-   top of it in their phases. |
+6. **`vfs` exports the control-file replace primitive.**
+   `ReplaceFileDurable` is file persistence, not share filesystem
+   security; it moves to `store/fsatomic` (`PublishNew` is dropped, no
+   caller), and the three call sites that bypass the primitive today
+   (`server/setup.go`, `server/tls.go`, `server/probefile.go`, plus
+   `smbagent`'s plain writes) are rebuilt on top of it in their phases.
 
 ## Amendments to the phase 1 documents
 

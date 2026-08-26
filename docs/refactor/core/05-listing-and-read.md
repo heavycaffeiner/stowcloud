@@ -150,7 +150,7 @@ func (c *Core) buildEntry(r Resolved, name string, p vfs.SafePath) Entry
 
 `buildEntry` stats the path and projects the result into the one `Entry`
 shape: name, share path, kind, `IsDir` as exactly `Kind.IsDir()`, size,
-mtime, btime, `cache.IdentOf(share, st)`, `FileETag`, and the resolver's
+mtime, btime, `ident.Of(share, st)`, `FileETag`, and the resolver's
 permission set.
 
 Two fallbacks are part of the contract:

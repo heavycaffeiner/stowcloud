@@ -88,6 +88,59 @@ resolution in the package starts from this descriptor; no method accepts a
 path relative to the process working directory, and no method opens
 anything by an absolute host path after registration.
 
+### SharePolicy and DefaultSharePolicy
+
+```go
+type Owner struct {
+    UID uint32
+    GID uint32
+}
+
+// SharePolicy is the per-share half of every resolution and every create.
+type SharePolicy struct {
+    Symlink SymlinkPolicy
+
+    // CrossMount allows traversal into a filesystem mounted inside the
+    // share, which is ordinary: a RAID array under media/ or a second
+    // disk under archive/ is a different device and users browse
+    // straight into it.
+    CrossMount bool
+
+    // ModeFile and ModeDir are applied verbatim to what this server
+    // creates, not filtered through umask.
+    ModeFile uint32
+    ModeDir  uint32
+
+    // Chown is nil to leave what this process creates at the process uid
+    // and gid.
+    Chown *Owner
+}
+
+// DefaultSharePolicy is the restrictive one: no symlink is followed, and
+// the modes are the group-writable pair a shared folder needs so the
+// neighbours keep their access.
+func DefaultSharePolicy() SharePolicy {
+    return SharePolicy{
+        Symlink:    SymlinkDeny,
+        CrossMount: true,
+        ModeFile:   0o664,
+        ModeDir:    0o775,
+    }
+}
+```
+
+`SharePolicy` is carried on `ShareRoot` (unexported, as shown above) and
+consumed at two points: `resolveFlags` (below, "Spec: resolve mechanics")
+turns `Symlink` and `CrossMount` into `openat2` resolve flags for every
+resolution against the root, and the create path (`WriteDurable`'s
+sibling create calls, below) applies `ModeFile`/`ModeDir`/`Chown` verbatim
+to what it creates, never filtered through the process umask.
+`DefaultSharePolicy` denies symlinks and allows crossing into a nested
+mount, which is the policy a share gets when nothing overrides it;
+`core/03-share-registry.md` and `core/07-transfers.md` construct or read
+a `SharePolicy` value at the points where a share is registered or a
+transfer needs to know its symlink and ownership rules.
+
 ### RegisterShareRoot
 
 ```go
@@ -204,7 +257,8 @@ itself can reveal that the mount is gone.
 (via `unix.Statx` against the path string, not the anchor descriptor) and
 compares device and inode against what `RegisterShareRoot` recorded:
 
-- The path resolves to something that is not a directory: `ErrNotADirectory`.
+- The path resolves to something that is not a directory: `ErrNotADirectory`
+  (the target is a non-directory where a directory was expected).
 - The path resolves to a directory whose (dev, ino) differs from the
   recorded pair: `ErrNotFound` (something else now occupies the name; the
   original tree is unreachable by the name the operator gave it).
@@ -269,14 +323,18 @@ func (p Vpath) IsRoot() bool
 func (p Vpath) Name() string
 func (p Vpath) Label() string
 func (p Vpath) Rest() SharePath
+func (p Vpath) String() string                          // "{share label}/{rest}", the wire spelling
 
 func ParseSharePath(s string) (SharePath, error)
 func (p SharePath) Safe() (SafePath, error)             // SharePath -> SafePath
+func (p SharePath) IsRoot() bool                        // zero components, the share root itself
 
 func ParseSafePath(s string) (SafePath, error)
 func RootPath() SafePath                                // the share root, zero components
 func (p SafePath) Components() []string                 // a defensive copy
 func (p SafePath) Parent() SafePath
+func (p SafePath) Name() string                         // last component, empty at the root
+func (p SafePath) String() string                       // "/"-joined components
 func (p SafePath) Join(name string) (SafePath, error)        // creation table
 func (p SafePath) JoinExisting(name string) (SafePath, error) // existing-name table
 func (p SafePath) JoinControl(name string) (SafePath, error)  // reserved-prefix table
@@ -285,6 +343,19 @@ func (p SafePath) Under(other SafePath) bool              // component-wise, p a
 func (p SafePath) Equal(other SafePath) bool
 func (p SafePath) Share() SharePath                       // SafePath -> SharePath
 ```
+
+Four of these exist purely because a core document calls them and this
+package otherwise had no reason to expose them: `SafePath.Name()`
+(`core/06-mutations.md`'s control-name check,
+`vfs.IsReservedName(part.Name())`), `SafePath.String()`
+(`core/07-transfers.md`'s operation item naming, `to.path.String()`),
+`SharePath.IsRoot()` (`core/04-resolution.md`'s `joinSubpath`, deciding
+whether to append `rest.Safe()`'s components at all), and `Vpath.String()`
+(`core/11-homes-and-recent.md`'s recent-listing scope check, comparing a
+journal row's rebuilt vpath against a scope prefix as a string). Each
+follows the same pattern as its sibling methods on the type: `Name` mirrors
+`Vpath.Name`, `String` mirrors the type's own parse function in reverse,
+and `IsRoot` mirrors `Vpath.IsRoot`.
 
 `ParseVpath` strips exactly one leading `/` before validating (a client's
 own URL model is rooted; this package's is not, and `"documents/a.txt"` and
@@ -896,8 +967,24 @@ sentinel is ever constructed by hand elsewhere in the package):
 | `ENOSPC` | `ErrNoSpace` |
 | `EXDEV` | `ErrCrossDevice` |
 | `ELOOP` | `ErrSymlinkDenied` |
-| `EISDIR` | `ErrNotADirectory` |
+| `EISDIR` | `ErrIsDirectory` |
 | anything else | wrapped as-is (`errors.As` still finds the raw errno) |
+
+`ErrIsDirectory` is its own sentinel, distinct from `ErrNotADirectory`
+(produced directly by `Alive`, above, and by `ENOTDIR` where this table's
+first row maps it into `ErrNotFound` instead, per the existence rule):
+the two carry opposite meanings and a caller cannot branch correctly on
+one sentinel standing for both. `ErrNotADirectory` is the target being a
+non-directory where a directory was expected; `ErrIsDirectory` is the
+target being a directory where a file was expected (`EISDIR`, from a
+caller that opened a directory path expecting to stream or write file
+content). Before this document, `EISDIR` mapped to `ErrNotADirectory`,
+the wrong sentinel for what the errno means; the core maps the two
+sentinels to opposite answers of its own, not the same one:
+`ErrNotADirectory` to `ErrNotFound` (listing a non-directory reports the
+path as not listable), `ErrIsDirectory` to `ErrDenied` (streaming or
+reading a directory is a refusal), per `core/01-errors.md`'s `mapVFSErr`
+table.
 
 `ErrSymlinkDenied` is a distinct sentinel from `ErrNotFound`, not a
 folding of the two, and the distinction is load-bearing: it is how a share
@@ -945,17 +1032,17 @@ applied before it. Every section above traces back to this:
 Two intruders leave the package, per the survey (01-package-survey.md) and
 the audit (foundation-persistence.md, vfs findings 1-4):
 
-1. **`ReplaceFileDurable` and `PublishNew` move to `store/fsatomic`**
-   (document B, `foundation/fsatomic.md`). Both take a plain `string` path,
-   never a `ShareRoot` or a `SafePath`, and both open their target with
-   `unix.Open`/`os.Stat` rather than this package's `openat2` resolver
-   (audit: vfs findings 1, 3). They are file persistence for control files
-   this server itself wrote (a key ring, a passdb sidecar, an index
-   snapshot), not filesystem security for share content, and after the
-   move `vfs` no longer exports any function that accepts a bare string
-   path. `PublishNew` specifically has no verified call site anywhere in
-   the current tree (audit: vfs finding 2); document B makes the explicit
-   keep-or-drop decision.
+1. **`ReplaceFileDurable` moves to `store/fsatomic`; `PublishNew` is
+   dropped (no caller), per `foundation/fsatomic.md`.** `ReplaceFileDurable`
+   takes a plain `string` path, never a `ShareRoot` or a `SafePath`, and
+   opens its target with `unix.Open`/`os.Stat` rather than this package's
+   `openat2` resolver (audit: vfs finding 1). It is file persistence for a
+   control file this server itself wrote (a key ring, a passdb sidecar, an
+   index snapshot), not filesystem security for share content, and after
+   the move `vfs` no longer exports any function that accepts a bare
+   string path. `PublishNew` has no verified call site anywhere in the
+   current tree (audit: vfs finding 2); `foundation/fsatomic.md` makes the
+   keep-or-drop decision explicit and drops it rather than moving it.
 
 2. **`seqpacket.go` (`SocketPair`, `SendMessage`, `RecvMessage`) and
    `file.go`'s `SendJob`/`OSFile` move to the preview phase's worker

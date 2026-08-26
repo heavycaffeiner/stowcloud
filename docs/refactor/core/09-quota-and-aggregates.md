@@ -85,8 +85,8 @@ type QuotaSink interface {
 
     // Release returns reserved bytes whose write did not land, and credits
     // bytes freed by a permanent delete. The same operation serves both,
-    // which is why it takes an unsigned magnitude with the direction fixed:
-    // Release only ever credits.
+    // which is why it takes a non-negative magnitude with the direction
+    // fixed: Release only ever credits.
     Release(ctx context.Context, user int64, delta int64) error
 }
 ```
@@ -127,10 +127,9 @@ Contract, stated so the store side can be built independently:
 
   The clamp exists because the ledger can drift low (a crash between a
   filesystem delete and its credit), and recovery must never push the usage
-  negative. A zero delta is a no-op. A negative delta is an error: it would
-  book bytes, which no caller ever asks Release for (the write path reserves,
-  the delete path credits), so a negative value reaching here is a caller bug
-  and is reported instead of silently booking.
+  negative. A zero delta is a no-op. The contract is a non-negative `int64`
+  magnitude, credit only; a negative argument to `Release` itself is a
+  caller bug, reported instead of silently booking.
 
 - All three methods run on the durable state database's serialized write
   path.
@@ -155,14 +154,24 @@ The internal settlement helper the write and delete paths call after the
 filesystem change has committed. Behaviors:
 
 - No sink attached, or a zero delta: no-op.
-- Positive delta credits freed bytes through `Release`.
-- Best-effort: an error is logged as a warning ("settling the quota ledger
-  failed; the filesystem change has committed") and swallowed. The
+- A **negative** delta is bytes freed (a delete): it credits the ledger
+  through `Release` with the magnitude, `-delta`. Callers pass a negative
+  delta already saturated for the signed range (`int64Minus(freed)` in
+  06-mutations.md and 08-trash.md).
+- A **positive** delta is bytes grown (`PublishPart` replacing a smaller
+  file with a larger one, `deltaOf` in 06-mutations.md): it books the grown
+  bytes through `Reserve`, best-effort, since the write has already
+  committed and the request cannot be failed over a booking refusal.
+- Best-effort in both directions: an error, or on the booking side a
+  refusal (`ok` false), is logged as a warning ("settling the quota
+  ledger failed; the filesystem change has committed") and swallowed. The
   filesystem change is already durable; failing the request over ledger
-  drift would report an operation as failed that in fact happened, which is
-  worse than drift. Drift is bounded and self-correcting only downward
-  (Release clamps at zero), so the failure mode is a user shown slightly
-  more usage than real, never data loss.
+  drift would report an operation as failed that in fact happened, which
+  is worse than drift. On the credit side drift is bounded and
+  self-correcting only downward (`Release` clamps at zero); on the
+  booking side a refused best-effort charge for a grown file undercounts
+  the account's usage rather than overcounting it, so the failure mode
+  never blocks a legitimate later write on ledger drift it did not cause.
 
 ## Spec: aggregates
 
@@ -186,7 +195,7 @@ Behaviors, in order:
    row read as stale.
 3. `ensureFileIDChain` walks from the share root to `p`, allocating (or
    reusing) a stable file id for every directory component on the way. The
-   share root itself is the sentinel `cache.RootID`; no row is ever inserted
+   share root itself is the sentinel `ident.RootID`; no row is ever inserted
    for it, but its rollup is still cached under the sentinel. Directory ids
    are allocated lazily here because computing a rollup is the one thing
    that needs a directory's stable id to exist, so that is where it is
@@ -245,8 +254,8 @@ would be shared mutable state serving only a rare race.
 ### upsertDir
 
 ```go
-func (c *Core) upsertDir(ctx context.Context, share ShareID, parent cache.FileID,
-    name string, st vfs.Stat) (cache.FileID, error)
+func (c *Core) upsertDir(ctx context.Context, share ShareID, parent ident.FileID,
+    name string, st vfs.Stat) (ident.FileID, error)
 ```
 
 One cache write transaction around the cache package's `Upsert`, which
@@ -277,7 +286,7 @@ are recomputed on next read. Behaviors:
 
 - An unregistered share is a silent no-op (the share vanished under a racing
   admin action; there is nothing left to invalidate).
-- The share root's id (`cache.RootID`) is pushed unconditionally: it is a
+- The share root's id (`ident.RootID`) is pushed unconditionally: it is a
   sentinel with no row, so it cannot be looked up, and the root's aggregate
   always covers the change.
 - The remaining chain is `p.Parent()`'s components, walked from the root:

@@ -70,7 +70,7 @@ type Entry struct {
     Size     uint64
     MTimeNs  int64
     BTimeNs  *int64
-    Ident    cache.Ident
+    Ident    ident.Ident
     ETag     string
     ETagWeak bool
     Perms    acl.Perms
@@ -87,9 +87,9 @@ Field rules the rebuild preserves:
   the interface as an ordinary file.
 - `BTimeNs` is a pointer because a filesystem without birth times has no
   value to report, and zero is a real timestamp.
-- `Ident` is the stable identity the cache mints (`cache.IdentOf`); only the
-  core builds entries, so only the core mints identities, which is what
-  makes them trustworthy to protocols.
+- `Ident` is the stable identity `ident.Of` builds (`engine/store/ident`);
+  only the core builds entries, so only the core mints identities, which is
+  what makes them trustworthy to protocols.
 - `Perms` is the caller's effective permission set at the entry's path. Under
   a share link it is the link's permission set instead, overwritten by the
   link surface (10-share-links.md).

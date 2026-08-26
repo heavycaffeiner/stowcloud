@@ -8,9 +8,9 @@
 
 This is the consolidated list of rebuild specification documents, in writing
 order. Phase 1 (core, `core/00` through `core/11`) is already written. The
-audits found 65 defect citations across the tree; each document below
-absorbs the findings for its packages, so a finding is fixed by
-specification, not by a patch to the old code.
+audits carry 311 numbered findings, 21 of them tagged defect, across the
+tree; each document below absorbs the findings for its packages, so a
+finding is fixed by specification, not by a patch to the old code.
 
 ## Highest-severity audit findings, for orientation
 
@@ -49,8 +49,8 @@ The findings that change plans, as opposed to confirming them:
 
 ## Phase 0: foundation and persistence documents
 
-Written in this order; the core implementation starts when 0.2 and 0.3 are
-done. Directory: `docs/refactor/foundation/`.
+Written in this order; the core implementation starts when 0.1 through 0.5
+are done. Directory: `docs/refactor/foundation/`.
 
 | # | Document | Scope, and the audit findings it absorbs |
 | --- | --- | --- |
@@ -62,14 +62,17 @@ done. Directory: `docs/refactor/foundation/`.
 | 0.3c | `foundation/cache.md` | Id derivation and directory-etag contracts; consumes the `Ident` decision from 0.3b. |
 | 0.3d | `foundation/journal.md` | The three stated properties (not an audit log, count-capped, no activity stream) as hard requirements. |
 | 0.4 | `foundation/acl-evaluator.md` | The pure evaluator only; grant persistence lives in 0.3b; loading from rows the store hands it. |
-| 0.5 | `foundation/search-contract.md` | Only what the core needs settled now: the core-owned `ScanSource` shape and the inversion (already reflected in `core/03`). The search internals get their own phase documents later (`search-family`, index format, service tiering, per the foundation audit). |
+| 0.5 | `foundation/search-contract.md` | Only what the core needs settled now: the core-owned `ScanSource` shape and the inversion (already reflected in `core/03`). `foundation/search-contract.md` satisfies the core-facing slice of the search documents the foundation audit asks for; the search internals get their own phase documents later, renamed from the audit's `search-family.md`, `search-index-format.md`, `search-service.md` to `search/00-family.md`, `01-index-format.md`, `02-service.md` in this plan, and from `jail.md` to `preview/01-jail.md`. |
 
 ## Phase 1: core
 
 Written: `core/00` through `core/11`. Amendments already applied: grant
-persistence to the store, scan-source inversion, kit paths. One more
-amendment lands when 0.3b is written: the `LinkStore` methods must match
-the state document's aggregate spelling.
+persistence to the store (`grants.go`, already named in
+`core/00-overview.md`), scan-source inversion, kit paths. The one
+amendment 0.3b was to check, whether `core/10`'s `LinkStore` methods match
+the state document's aggregate spelling, is resolved: `foundation/state.md`
+verified the interface matches `core/10` method for method, so no
+amendment is needed.
 
 ## Phase 2: service phases, each with its own documents
 
@@ -80,9 +83,9 @@ because sessions gate every protocol. Directories as named.
 | --- | --- | --- |
 | auth | `auth/00-overview.md`, `01-credentials-and-sessions.md`, `02-master-key-and-crypto.md`, `03-oidc-integration.md`, `04-audit-log.md`, `05-username-policy.md` | The limiter race (a fix, not a port); auth SQL moves to state aggregates; the passdb sidecar write goes behind an SMB-phase seam; one canonical username rule shared by `auth`, `smb`, `smbagent`. |
 | oidc | `oidc/00-relying-party.md` | Clean package; behavioral transcription (discovery validation, JWKS caching, SSRF guard). |
-| upload | `upload/00-overview.md`, `01-session-lifecycle.md`, `02-spool-modes.md`, `03-cache-spool.md`, `04-verification-and-limits.md` | Durability invariants as normative; the cache spool's fake-share-id question (non-share safe-root capability in vfs, or spool under persistence); `StateFinalizing` resolution. |
+| upload | `upload/00-overview.md`, `01-session-lifecycle.md`, `02-spool-modes.md`, `03-cache-spool.md`, `04-verification-and-limits.md` | Durability invariants as normative; the cache spool's fake-share-id question (non-share safe-root capability in vfs, or spool under persistence); `StateFinalizing` resolution; the question `audit/service.md` raises under `store/upload-aggregate.md`, whether `UploadSession`'s row type should be internally grouped, answered here rather than in a separate store document. |
 | search | `search/00-family.md`, `01-index-format.md`, `02-service.md` | Walk/scan/build triplication; segment durability; trigram consolidation; tier selection. Target package `engine/service/search`; the core-facing contract is already settled in `foundation/search-contract.md`. |
-| preview | `preview/00-overview.md`, `01-jail.md`, `02-worker-protocol.md`, `03-cache.md`, `04-archive-listing.md` | Jail's dead exports become wired or deleted; the seqpacket transport moves here from vfs; cache repoints at fsatomic. |
+| preview | `preview/00-overview.md`, `01-jail.md`, `02-worker-protocol.md`, `03-cache.md`, `04-archive-listing.md` | Jail's dead exports become wired or deleted; the seqpacket transport moves here from vfs; cache repoints at fsatomic. The audit's suggested `01-decode-limits.md` lands inside `02-worker-protocol.md` instead of its own document. |
 | watch | `watch/00-watch.md` (small, single doc) | Two-tier hot set, fail-closed inotify parsing, whole-share escalation. Target package `engine/service/watch`. |
 | settings | `settings/00-runtimecfg.md`, `01-settingscheck.md`, `02-emergency.md` | `settingscheck` returns domain errors (no `apierr` import); `emergency` re-homed as presentation wiring with its invariants preserved (404-not-403 gate, audit-on-every-write, write-then-restart). |
 | smb | `smb/00-config-rendering.md`, `01-publish-and-agent-protocol.md`, `02-agent-durable-writes.md`, `03-agent-package-split.md` | Refuse-not-escape rendering rules; the `bind.go` move (to kit, 0.1); the two plain writes fixed; the agent split into protocol, supervision, scope, reconciliation. |
@@ -96,13 +99,13 @@ Directory: `docs/refactor/http/`.
 | `http/00-overview.md` | The fiber application shape, layer rules, what replaces `httpapi`/`server`; fiber-specific hazards the audit lists (fasthttp `Flusher`/`Hijacker` differences, wildcard route semantics, CORS and body-limit defaults). |
 | `http/01-middleware-chain.md` | The ordered chain as data (the current `chain.go` discipline), auth credential-resolution order, CSRF and HostGuard coupling, the three fail-closed proxy-trust rules, public-path rules; each named historical regression becomes a named test. |
 | `http/02-error-mapping.md` | One canonical error-class enumeration with per-protocol adapters, replacing the three hand-written mappers. |
-| `http/03-handlers.md` | The native REST surface over the service layer; handlers stop reaching into `acl`+SQL (they call the grant surface from 0.3b). |
+| `http/03-handlers.md` | The native REST surface over the service layer; handlers stop reaching into `acl`+SQL (they call the grant surface from 0.3b). The grant write surface spans three phases: the store aggregate (phase 0, `foundation/state.md`), the core wrappers (phase 1, `core/00-overview.md`), and this document's handler rewiring (phase 3). |
 | `http/04-webdav.md` | RFC 4918 parsing rules, the If-header grammar, the lock conflict matrix, the two TOCTOU fixes. |
 | `http/05-compat-scope.md` | The Nextcloud compat decision: what of the built-but-unwired surface ships, feature by feature, before any of it is treated as spec. |
 | `http/06-login-flow-v2.md` | The two-token state machine, digest-only storage, POST-only approval; standalone because it is reusable security design. |
 | `http/07-server-assembly.md` | Composition root on fiber: supervisor/hot-swap semantics (bind-new-before-touching-old, bounded drain), TLS material through fsatomic as one durable unit, setup token and probe file through fsatomic. |
 | `http/08-regression-tests.md` | The transcription of every documented past-incident comment (`httpapi/mw`, `server`, `compat/nc`) into named test cases. |
-| `http/09-api-consistency.md` | Written ahead of the rest of phase 3: the v1 API. Everything moves under `/api/v1` in nine categories (auth, account, files, links, trash, jobs, uploads, search, admin, system), every endpoint renamed into one scheme, all aliases dead, the settings split folded into one resource, and the frontend rewired in the same phase. The old API dies with the old stack. |
+| `http/09-api-consistency.md` | Written ahead of the rest of phase 3: the v1 API. Everything moves under `/api/v1` in ten categories (auth, account, files, links, trash, jobs, uploads, search, admin, system), every endpoint renamed into one scheme, all aliases dead, the settings split folded into one resource, and the frontend rewired in the same phase. The old API dies with the old stack. |
 
 ## Working rules
 

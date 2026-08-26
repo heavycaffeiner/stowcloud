@@ -52,7 +52,8 @@ Import direction is strictly downward through the tiers:
 | Tier | May import |
 | --- | --- |
 | `kit` | stdlib only |
-| `infra`, `store` | `kit` |
+| `infra` | `kit` |
+| `store` | `kit`, `infra/vfs` (types) |
 | `service` | `infra`, `store`, `kit` |
 | `http` | `service`, `kit` (and fiber; nothing else may) |
 
@@ -69,6 +70,11 @@ legal list is explicit:
 - `store/state` imports `store/ident` and `store/dbfile`, never
   `store/cache`; `store/cache` and `store/journal` import `store/ident`
   and `store/dbfile` likewise.
+- `store/*` may import `infra/vfs` for its type vocabulary only
+  (`ShareID`, `SharePath`, `SafePath`, `Stat` and the path and id types
+  persistence rows are keyed by): the persistence layer stores facts
+  about share files, and inventing a second id and path vocabulary would
+  be a conversion layer with no second meaning.
 - `infra/vfs` and `infra/jail` import nothing else in `infra/` and
   nothing in `store/`.
 
@@ -127,9 +133,9 @@ The existing discipline extends to `go/engine/` from the first commit:
   `service/core`, `store/state` over `store/ident` and `store/dbfile`) are
   the tool's one explicit list. `http` is the only tree that may import
   fiber, and nothing under `engine/` except `http` may import `net/http`
-  either. The audit's violation catalogue (`02-document-plan.md`) is the
-  tool's initial test fixture: each entry is reproduced as a
-  refused-import test.
+  either. The catalogue in `01-package-survey.md`'s "Cross-layer
+  violations found" section is the tool's initial test fixture: each
+  entry is reproduced as a refused-import test.
 - **contractcheck and routecheck** stay pointed at the old tree until
   phase 3, whose documents re-point them at the fiber handlers as part of
   the assembly.

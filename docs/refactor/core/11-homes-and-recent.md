@@ -24,7 +24,7 @@ Homes are **off by default**. An operator turns them on; nothing else does.
 ### Not a second resolution mechanism
 
 One share root is opened for the whole homes tree and every user's home is a
-subdirectory under it, registered under the reserved share id `999999`. A
+subdirectory under it, registered under the reserved share id `999_999`. A
 home reaches a caller through the same grant-projected virtual root and the
 same single `Resolve` every other share uses. This is a load-bearing
 decision: a home that resolved by a different path would be a second place
@@ -139,10 +139,11 @@ func (db *DB) PersistGrant(ctx context.Context, g GrantRow, nowNs int64) (int64,
   subpath as its string spelling, allow, deny, inherit, label); the state
   package owns the row shape, the ACL package owns the domain shape, and
   the core converts between them.
-- The evaluator keeps its read path: `LoadFromState` loads grants and
-  memberships from rows the store hands it. The INSERT text, the column
-  order and the inherit-to-integer mapping live in `store/state` with the
-  rest of the schema.
+- The evaluator keeps its read path: `LoadFromState(grants, memberships)`
+  takes the evaluator's own domain values, which the core converts from
+  the store's rows (`foundation/acl-evaluator.md`). The INSERT text, the
+  column order and the inherit-to-integer mapping live in `store/state`
+  with the rest of the schema.
 - The core's `createHomeGrant` becomes: build the row, call
   `PersistGrant`, then reload the evaluator.
 
@@ -275,7 +276,7 @@ as the reference.
 Homes:
 
 - `EnableHomes` twice errors; the host directory is created with mode
-  `0750`; the share registers under `999999` with the `Home` label.
+  `0750`; the share registers under `999_999` with the `Home` label.
 - First `ensureHome` creates the directory named by the decimal user id and
   exactly one grant: right user, home share, subpath equal to the user's
   own directory, `homePerms`, inherit, label `Home`. The grant is visible

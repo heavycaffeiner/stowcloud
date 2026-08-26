@@ -32,7 +32,7 @@ its meanings:
 | `ErrCrossShare` | An operation that cannot span shares atomically; the message names which half completed. |
 | `ErrNoSpace` | ENOSPC, or the configured free-space floor. |
 | `ErrTrashDisabled` | Restore or purge against a share with trash off. A plain delete on such a share is not this error; it is simply a permanent delete. |
-| `ErrLinkExpired` | Expired, revoked, or over the download cap. One error, because distinguishing them tells a stranger about the link. |
+| `ErrLinkExpired` | Expired or over the download cap. One error, because distinguishing them tells a stranger about the link. A revoked link is a deleted row, so its token answers `ErrNotFound` instead, per the information-leak rule in 10-share-links.md. |
 | `ErrQuotaExceeded` | A write the acting user's ledger cap refuses. |
 | `ErrShareBroken` | The share the path names is registered but its backing directory is unavailable right now. Deliberately not `ErrNotFound`: the path the caller named is good and the disk under it is gone. |
 
@@ -84,6 +84,9 @@ The mapping table:
 | `vfs.ErrNotEmpty` | `ErrNotEmpty` |
 | `vfs.ErrNoSpace` | `ErrNoSpace` |
 | `vfs.ErrCrossDevice` | `ErrCrossShare` |
+| `vfs.ErrNotADirectory` | `ErrNotFound`: listing a non-directory reports the path as not listable. |
+| `vfs.ErrIsDirectory` | `ErrDenied`: streaming or reading a directory is a refusal. |
+| `vfs.ErrInvalidName` | `ErrNotFound`: an unaddressable name is a missing path. |
 | anything else | passed through unchanged |
 
 The existence rule is applied in `Resolve`, so a VFS `ErrNotFound` reaching

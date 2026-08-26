@@ -150,10 +150,21 @@ after the fact; see each aggregate's section below.
 
 Every aggregate gets exactly two files: `<aggregate>.go` (the Go surface,
 the row shapes, the behavior) and `<aggregate>_sql.go` (every statement
-that aggregate runs, as constants, per the project's D14 rule that nothing
-here is ever built from parts). `sql.go` at the package root holds only the
-schema and its migration history; it holds no aggregate's active
+that aggregate runs, as constants). `sql.go` at the package root holds
+only the schema and its migration history; it holds no aggregate's active
 statements.
+
+The rule behind the split: **every SQL statement in this package is a
+complete constant, never assembled from fragments at runtime.** No
+`fmt.Sprintf`, no string concatenation, and no optional clause appended
+conditionally; a statement that must vary by which fields are present
+(`Update`, per-field, in the share-link aggregate below) gets one constant
+per variant instead of one assembled statement. This was the old tree's
+own discipline, tracked under its own internal decision numbering
+(`go/internal/acl/sql.go`); it is restated here in full, rather than cited
+by that number, to avoid colliding with this rebuild's own decision record
+(`00-decisions.md`), which uses the same D-prefixed numbering for a
+different, unrelated set of decisions.
 
 Per `audit/foundation-persistence.md` (`store/state` finding 7 and finding
 12), this fixes two aggregates that do not follow their own package's
@@ -197,11 +208,108 @@ is already stated.
   `DeleteShare` over `share_definition`. `DeleteShare`'s cascade behavior
   toward the grant table is specified below under "Grant-to-share
   cascade", which changes its implementation without changing its
-  signature.
+  signature. `core/03-share-registry.md` writes against `state.ShareRow`
+  directly, so this document spells its fields:
+
+  ```go
+  type ShareRow struct {
+      ID   int64
+      Name string
+      Host string
+      // SharedExternally marks a folder another program also writes.
+      // Nothing on a filesystem says so, which is why it is the operator
+      // who says it.
+      SharedExternally bool
+      // TrashEnabled keeps deleted items in the share rather than
+      // removing them. Off by default, because trash is disk somebody has
+      // to reclaim.
+      TrashEnabled bool
+      // SymlinkPolicy is the share's own answer to a symlink, as the vfs
+      // package spells it. Stored as its name rather than its number so a
+      // renumbering of the enum cannot silently change what a share does.
+      SymlinkPolicy string
+      Created       int64
+  }
+  ```
+
 - **Operations** (`operation.go`): the bounded, restart-visible history of
   long operations (`CreateOp`, `StartOpItem`, `UnfinishedOpItems`, `GetOp`,
   `SetOpProgress`, `RequestOpCancel`, `FinishOp`, `InterruptOp`, `ListOps`)
   over `operation`, `operation_item`, `operation_result`.
+  `core/07-transfers.md` writes against `state.OpKind`, `state.OpState`,
+  `state.OpResult`, `state.OpResultReason` and `state.ErrNoSuchOp`
+  directly, so this document spells them:
+
+  ```go
+  // OpState is the terminal or interim machine state of one operation.
+  type OpState int8
+
+  const (
+      OpRunning OpState = iota
+      OpDone
+      OpFailed
+      OpCancelled
+      // OpInterrupted is a run that was not finished when the process
+      // stopped and that nothing resumes. A refreshed client gets an
+      // honest terminal state with its progress and results preserved.
+      OpInterrupted
+  )
+
+  // OpKind is what kind of work an operation is.
+  type OpKind int8
+
+  const (
+      OpCopy OpKind = iota
+      OpDelete
+      OpArchive
+      // OpIndexBuild walks every share to build the name index. Appended
+      // rather than inserted: these are stored as numbers, so renumbering
+      // would change what an already-written row means.
+      OpIndexBuild
+  )
+
+  // OpResultReason is the typed reason an item-level result failed,
+  // replacing a lower-layer error sentence.
+  type OpResultReason int8
+
+  const (
+      ReasonItemOk OpResultReason = iota
+      ReasonItemFailed
+      ReasonItemDenied
+      ReasonItemNotFound
+      ReasonItemConflict
+      ReasonItemSkipped
+  )
+
+  // OpResult is one item's outcome from a batch operation.
+  type OpResult struct {
+      Operation int64
+      Idx       int64
+      Path      string
+      OK        bool
+      Reason    OpResultReason
+      Text      string
+  }
+
+  // ErrNoSuchOp is an operation id that holds no row.
+  var ErrNoSuchOp = errors.New("no such operation")
+
+  // CreateOp starts a fresh operation. The id it returns is what a client
+  // reattaches with. createdNs is the durable stamp the caller's clock
+  // provided. paths is what the operation was asked to do, recorded now
+  // rather than as it goes: a job that stops short can then say which
+  // items it never reached.
+  func (d *DB) CreateOp(
+      ctx context.Context, user int64, kind OpKind, total, createdNs int64, paths []string,
+  ) (int64, error)
+  ```
+
+  `CreateOp`'s six arguments, in order: the context, the owning user, the
+  operation kind, the total item count (`0` when unknown until the walk
+  ends), the caller's clock stamp, and the paths the operation was asked
+  to act on. `GetOp` answers an unknown id with `ErrNoSuchOp`, which the
+  core maps to `ErrNotFound` at its own boundary
+  (`core/07-transfers.md`).
 - **Uploads** (`upload.go`): session lifecycle, intervals, aliases, touched
   directories, chunk and cache settings. The largest aggregate and the one
   the audit names as the positive counter-example on size-guard coverage;
@@ -212,12 +320,17 @@ is already stated.
   regression fix (a save that dropped another section), are preserved as
   required behavior.
 - **Overrides** (`override.go`): the fileid-collision authority
-  (`LookupFileID`, `LookupFileIDOwner`, `RecordFileIDs`,
+  (`LookupFileID(ctx, id ident.Ident) (ident.FileID, bool, error)`,
+  `LookupFileIDOwner(ctx, id ident.FileID) (ident.Ident, bool, error)`,
+  `RecordFileIDs(ctx, assignments ...ident.Assignment) error`,
   `CountFileIDOverrides`) consumed by `store/cache` through the
-  `cache.Overrides` interface. Adopts `ident.Ident`, which is what removes
-  its `store/cache` import (the other half of `01-package-survey.md`'s
-  named smell; `foundation/cache.md` documents the `cache` side of the same
-  fix).
+  `cache.Overrides` interface. It is `ident.Ident`, `ident.FileID` and
+  `ident.Assignment` together, not `Ident` alone, that remove this file's
+  `store/cache` import: `Ident` moving but `FileID` and `Assignment`
+  staying in `cache` would still force this package to import `cache` for
+  the other two shapes the interface's methods carry
+  (`foundation/cache.md`'s "Spec: identity" documents the `cache` side of
+  the same fix, moving all three types together).
 - **Favorites** (`favorite.go`): stars keyed by identity, adopting
   `ident.Ident` as specified above.
 - **Login flows** (`loginflow.go`): the device login flow's durable half.
@@ -270,9 +383,10 @@ func (d *DB) KeyVersion(ctx context.Context) (uint32, error)
 ```
 
 Because `*state.DB` already exposes these nine methods with these exact
-signatures, it satisfies `core.LinkStore` with no adapter type; the server
-wires `core.New` with the `*state.DB` value directly, as
-`09-quota-and-aggregates.md`'s pattern for `QuotaSink` also does.
+signatures, it satisfies `core.LinkStore` with no adapter type; the seam
+is `core.Options.Links`, which `core/10-share-links.md` names: the server
+passes the `*state.DB` value there at construction (`core/10:443-446`),
+the same field group as `ACL`.
 
 No amendment to `core/10-share-links.md` is required: the interface
 spelling matches as designed.
@@ -326,13 +440,22 @@ Per `core/09-quota-and-aggregates.md`'s "Deliberate changes" item 1, the
 SQL ledger moves to this layer; `core.quota.go` keeps only the
 `QuotaSink` interface, `AttachQuotaSink`, and `chargeQuota`.
 
+`store/state` never imports the core, in either direction: `NewQuota`
+returns the package-local concrete type, not `core.QuotaSink`. The wiring
+site, not this package, is where the concrete type meets the interface:
+`core.AttachQuotaSink(state.NewQuota(db))` type-checks because `*Quota`
+happens to implement `core.QuotaSink`, which this package never states and
+never needs to import to be true.
+
 ```go
 // quota.go
-func NewQuota(db *DB) core.QuotaSink // returns a value implementing core/09's interface
+type Quota struct { /* unexported: db *DB */ }
 
-func (q *quota) Reserve(ctx context.Context, user int64, additional uint64) (ok bool, err error)
-func (q *quota) Commit(ctx context.Context, user int64, additional uint64) error
-func (q *quota) Release(ctx context.Context, user int64, delta int64) error
+func NewQuota(db *DB) *Quota
+
+func (q *Quota) Reserve(ctx context.Context, user int64, additional uint64) (ok bool, err error)
+func (q *Quota) Commit(ctx context.Context, user int64, additional uint64) error
+func (q *Quota) Release(ctx context.Context, user int64, delta int64) error
 ```
 
 This matches `core/09`'s interface exactly, including the signature change
@@ -400,13 +523,22 @@ call to `acl.CreateGrant(ctx, st.State().SQL(), acl.Grant{...})`
 (`httpapi/handler/admin_grants.go`, `httpapi/handler/shares.go`,
 `cmd/stowcloud/serve.go`'s `grantEveryShare`).
 
-### GrantRow, matching core/11 exactly
+### GrantRow, matching core/11's PersistGrant signature
 
 `core/11-homes-and-recent.md` specifies `PersistGrant`'s signature and the
-shape it needs. This document implements it with no spelling delta and
-extends it to a full CRUD surface, since `core/11` only had to specify the
-one insert path homes needs, while the presentation-layer bypass needs
-list, update and delete as well:
+shape it needs, describing `GrantRow` only loosely ("mirrors the ACL
+package's `Grant` value"). This document spells `GrantRow` out fully as
+the store's own row shape and extends the surface to a full CRUD API,
+since `core/11` only had to specify the one insert path homes needs, while
+the presentation-layer bypass needs list, update and delete as well.
+`state.GrantRow` is not the same type as `acl.Grant`
+(`foundation/acl-evaluator.md`): `User`/`Group` are `*int64` here (nil
+means unset) against `acl.Grant`'s zero-sentinel `int64`, and `Allow`/
+`Deny` are `uint16` here against `acl.Grant`'s `Perms` (`uint16`-backed but
+a distinct named type). The state package owns this row shape, the ACL
+package owns the domain shape, and the core converts between them
+(`core/11-homes-and-recent.md`), exactly as it already does for the
+membership row below.
 
 ```go
 // grant.go
@@ -449,22 +581,42 @@ func (d *DB) UpdateGrant(ctx context.Context, id int64, allow, deny uint16, inhe
 // DeleteGrant removes one grant.
 func (d *DB) DeleteGrant(ctx context.Context, id int64) error
 
+// MembershipRow is one (user, group) pairing, in the store's own row
+// shape.
+type MembershipRow struct {
+    User, Group int64
+}
+
 // Memberships returns every (user, group) pairing, for the evaluator's
 // reload. It is grouped with the grant aggregate rather than given a file
-// of its own because the evaluator loads both in one call
-// (LoadFromState, foundation/acl-evaluator.md) and a group with no grant
-// naming it is not a concept this layer otherwise needs.
-func (d *DB) Memberships(ctx context.Context) (map[int64][]int64, error)
+// of its own because the evaluator loads both in one call and a group
+// with no grant naming it is not a concept this layer otherwise needs.
+func (d *DB) Memberships(ctx context.Context) ([]MembershipRow, error)
 ```
 
-`ListGrants(ctx, GrantFilter{})` (no filter) is what
-`foundation/acl-evaluator.md`'s `LoadFromState` calls for the unfiltered
-load; the admin listing surface calls it with a populated filter. Filtering
-is applied in Go, not assembled into the `WHERE` clause, per the same
-reasoning the current `acl.ListGrants` already uses and this document
-preserves: the table is small enough to hold in memory for the evaluator
-anyway, and a statement built from optional filter parts is exactly what
-every statement in this package being a constant exists to prevent.
+`Memberships` returns a flat `[]MembershipRow`, not a
+`map[int64][]int64`: grouping by user is a shape the evaluator's own
+internal representation wants, not one this row-shaped store surface
+should pre-impose, and a slice of pairs is what a `SELECT` naturally scans
+into without an intermediate grouping step in this package.
+
+`ListGrants(ctx, GrantFilter{})` (no filter) and `Memberships(ctx)`
+together are what the core's reload path calls for the unfiltered load:
+the core converts each returned `GrantRow` into an `acl.Grant` and each
+`MembershipRow` into an `acl.Membership`, then calls
+`Evaluator.LoadFromState` with the converted slices
+(`foundation/acl-evaluator.md`). This store does not feed
+`LoadFromState` directly: `ListGrants`/`Memberships` return this
+package's own row shapes, and the core owns the conversion into the
+evaluator's domain types, per `core/11`'s "the state package owns the
+row shape, the ACL package owns the domain shape, and the core converts
+between them." The admin listing surface calls `ListGrants` with a
+populated filter instead. Filtering is applied in Go, not assembled into
+the `WHERE` clause, per the same reasoning the current `acl.ListGrants`
+already uses and this document preserves: the table is small enough to
+hold in memory for the evaluator anyway, and a statement built from
+optional filter parts is exactly what every statement in this package
+being a constant exists to prevent.
 
 ### Behavior
 
@@ -504,22 +656,17 @@ surface that a real service-level grant API needs: without `PersistGrant`,
 `httpapi/handler`, `cmd/stowcloud`, or any other future caller to call
 instead of reaching for `acl.CreateGrant(ctx, st.State().SQL(), ...)`.
 
-The remaining half, a core-level (or presentation-level, per the eventual
-fiber phase's layering) wrapper method that calls this surface and then
-reloads the evaluator in one call for handlers and the bootstrap CLI to
-use, is not specified here: it is service-layer orchestration, and the
-core documents (`00` through `11`) do not currently name it, since
-`core/11` only needed the one home-creation insert path. **This is an
-amendment this document flags for the phase 1 core, not one it makes
-itself**: a future core document (or an addendum to `00-overview.md`'s
-file layout) should add a small `grants.go` exposing
+The remaining half, a core-level wrapper method that calls this surface
+and then reloads the evaluator in one call for handlers and the bootstrap
+CLI to use, is not specified here: it is service-layer orchestration.
+`core/00-overview.md` already names it: `grants.go`, exposing
 `Core.CreateGrant`/`ListGrants`/`UpdateGrant`/`DeleteGrant`, each a thin
-wrapper over this aggregate plus an evaluator reload, which is what
-`httpapi/handler` and `cmd/stowcloud` call in their own rebuilds instead of
-touching `store/state` or `acl` directly. Until that core-level surface
-exists, this document's aggregate is necessary but not sufficient to
-retire the three call sites; it is the reason retiring them becomes
-possible.
+wrapper over this aggregate plus one evaluator reload, in the build-order
+slot `00-overview.md`'s file layout lists. `httpapi/handler` and
+`cmd/stowcloud` call these wrappers in their own rebuilds instead of
+touching `store/state` or `acl` directly. This document's aggregate is
+what that wrapper calls; the wrapper itself is `core/00`'s to specify, not
+this document's.
 
 ## Spec: the grant-to-share cascade decision
 
@@ -611,20 +758,13 @@ do"), so `DeleteShare` is never called with the home share's id in the
 first place; this decision is about correctness for the shares that do
 delete, not a special case carved out for the one that cannot.
 
-**This amends `core/03-share-registry.md`.** That document's spec for
-`Core.DeleteShare` ("Delete the durable row first, then unregister the
-live entry. Grants naming the share are the admin store's cascade; a
-dangling grant is default-deny anyway.") describes the cascade as the
-admin store's problem without saying which store call enforces it, and
-its test list (item 12) does not cover grant cleanup. With this document's
-decision, `Core.DeleteShare` calls `state.DB.DeleteShare(ctx, rowIDOf(id),
-int64(id))`, passing both the row id and the external share id, and the
-cascade is real (enforced inside that one call) rather than a comment
-trusting the caller. `core/03-share-registry.md` should add a test
-matching this document's "`DeleteShare` on a share with grants removes
-every grant referencing it and the share row, atomically" case to its own
-list, and update its `DeleteShare` spec text to name the two-argument
-store call.
+**`core/03-share-registry.md` already reflects this.** Its spec for
+`Core.DeleteShare` names the two-argument store call
+(`state.DB.DeleteShare(ctx, rowid, shareID)`, passing `rowIDOf(id)` and
+`int64(id)`) and states that a dangling grant can no longer outlive its
+share. Its test list (item 12, "DeleteShare") covers the cascade: grants
+naming the share are gone after the call, observed through the evaluator
+after reload. No pending change to `core/03` remains from this decision.
 
 `share_link.share` has the identical unenforced-reference shape (a link
 can be created on the home share, since `homePerms` includes `acl.Share`),
@@ -675,8 +815,11 @@ document silently also applied to links.
    `store/state` finding 2; `foundation/cache.md` specifies the
    `store/cache` side of the same fix).
 2. **`override.go` drops its `store/cache` import**, consuming
-   `ident.Ident` instead, which is the other half of the
-   `store/state`-imports-`store/cache` violation
+   `ident.Ident`, `ident.FileID` and `ident.Assignment` instead of
+   `cache.Ident`, `cache.FileID` and `cache.Assignment`. All three moving
+   together is what removes the import: `Ident` alone would leave
+   `FileID` and `Assignment` still needing `cache`. This is the other
+   half of the `store/state`-imports-`store/cache` violation
    (`01-package-survey.md` cross-layer violation 5).
 3. **Size guard added to four existing paths** (`InsertShare`, `CreateOp`,
    `PutLoginFlow`, `RecordFileIDs`) and one this document additionally
@@ -696,19 +839,19 @@ document silently also applied to links.
    2).
 7. **The grant write surface extracted from `acl/store.go`, `sql.go`,
    `grant_storage.go` into `grant.go`/`grant_sql.go`**, implementing
-   `core/11-homes-and-recent.md`'s `PersistGrant` with no spelling delta
-   and extending it to `ListGrants`/`UpdateGrant`/`DeleteGrant`/
-   `Memberships`, ending the store-side half of the three-site grant SQL
-   bypass (`audit/presentation.md`, `httpapi/handler` findings 1 and 2,
+   `core/11-homes-and-recent.md`'s `PersistGrant` signature exactly and
+   spelling `GrantRow` and `MembershipRow` out fully as this package's own
+   row shapes (distinct from `acl.Grant` and `acl.Membership`, which the
+   core converts to and from), extending the surface to
+   `ListGrants`/`UpdateGrant`/`DeleteGrant`/`Memberships`, ending the
+   store-side half of the three-site grant SQL bypass
+   (`audit/presentation.md`, `httpapi/handler` findings 1 and 2,
    `cmd/stowcloud` finding 2; `01-package-survey.md` amendment on
    `11-homes-and-recent.md`).
-8. **Amendment flagged for phase 1 core**: a small core-level
-   `Core.CreateGrant`/`ListGrants`/`UpdateGrant`/`DeleteGrant` wrapper,
-   calling this document's grant aggregate plus an evaluator reload, is
-   needed before `httpapi/handler` and `cmd/stowcloud` can stop calling
-   `acl`/`store/state` directly. This document provides the surface that
-   wrapper calls; it does not itself write the wrapper, since no existing
-   core document (`00` through `11`) currently names it.
+8. **The core-level `Core.CreateGrant`/`ListGrants`/`UpdateGrant`/
+   `DeleteGrant` wrapper is `core/00-overview.md`'s `grants.go`**, not
+   this document's to write: this document provides the aggregate that
+   wrapper calls.
 9. **Grant-to-share cascade**: no foreign key; `DeleteShare` deletes the
    share's grants in the same transaction as the share row, per "Spec: the
    grant-to-share cascade decision" above (`store/state` finding 8).

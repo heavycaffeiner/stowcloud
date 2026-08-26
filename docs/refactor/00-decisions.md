@@ -77,7 +77,7 @@ Code that changes for storage reasons leaves the domain package:
 - Grant persistence moves to a grant aggregate in `store/state`, not into
   the ACL package: the evaluator stays pure. The core gains `grants.go`,
   thin CRUD wrappers plus one evaluator reload each, which ends the
-  three-site raw-SQL bypass the audits found (`core/11`,
+  three-site raw-SQL bypass the audits found (`core/00-overview.md`,
   `foundation/state.md`, `audit/presentation.md`).
 
 ## D7. The scan-source inversion
@@ -91,14 +91,14 @@ search. (`core/03`, `foundation/search-contract.md`.)
 
 The persistence layer is the three SQLite databases plus every file the
 engine writes about itself: keys, rendered configs, index snapshots, cache
-entries, tokens, certificates. The atomic-replace primitives
-(`ReplaceFileDurable`, and `PublishNew`, which grep showed has no caller
-and is dropped) move from `vfs` to `store/fsatomic`, which also gains a
-multi-file durable unit for writes that must land together (the TLS
-cert/key pair). The share trees are explicitly not persistence: user files
-are the domain itself, written only through `vfs.ShareRoot`, whose
-admission and escape rules must not sit behind a storage abstraction.
-(`01-package-survey.md` persistence section, `foundation/fsatomic.md`.)
+entries, tokens, certificates. `ReplaceFileDurable` moves from `vfs` to
+`store/fsatomic`, which also gains a multi-file durable unit for writes
+that must land together (the TLS cert/key pair); `PublishNew` is dropped,
+since grep found no caller for it. The share trees are explicitly not
+persistence: user files are the domain itself, written only through
+`vfs.ShareRoot`, whose admission and escape rules must not sit behind a
+storage abstraction. (`01-package-survey.md` persistence section,
+`foundation/fsatomic.md`.)
 
 ## D9. vfs keeps only share-filesystem security
 
@@ -123,8 +123,8 @@ not every valid share id has a row there: the homes share is registered
 under the reserved id `999_999` and never inserted, so an FK would refuse
 every home grant. The cascade is enforced instead inside the store's own
 `DeleteShare(ctx, rowid, shareID)`, in the same transaction as the share
-row's deletion. (`foundation/state.md` cascade section, `core/03`,
-`core/11`.)
+row's deletion. (`foundation/state.md` cascade section, `core/03`; `core/11`
+is cited only for the reserved id `999_999` itself, not the cascade.)
 
 ## D12. Data compatibility is a hard contract
 
@@ -138,9 +138,9 @@ step argued in the phase document that needs it. (`03-engine-bootstrap.md`.)
 ## D13. Audit findings are fixed by specification
 
 Every package was audited file by file before phase 0 was specified
-(`audit/`, 65 defect citations). A finding is absorbed into the rebuild
-document that owns the code, as a "Deliberate changes" entry citing the
-audit; nothing is patched in the old tree. The headline findings and the
+(`audit/`, 311 numbered findings, 21 tagged defect). A finding is absorbed
+into the rebuild document that owns the code, as a "Deliberate changes"
+entry citing the audit; nothing is patched in the old tree. The headline findings and the
 document each lands in are indexed in `02-document-plan.md`. The ones that
 change behavior: the login limiter gets its missing mutex (auth phase), the
 two DAV lock TOCTOU windows close (`http/04`), the TLS pair becomes one
@@ -158,7 +158,7 @@ tree's budget is frozen and may only go down. (`03-engine-bootstrap.md`.)
 
 ## D15. The native API is redesigned wholesale as v1
 
-The web API moves under `/api/v1`, renamed end to end into nine categories
+The web API moves under `/api/v1`, renamed end to end into ten categories
 (auth, account, files, links, trash, jobs, uploads, search, admin,
 system) under one rule set: plural-noun resources with standard CRUD,
 `POST .../{action}` for non-CRUD, RPC verbs with `?path=`/body arguments

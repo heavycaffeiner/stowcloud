@@ -7,8 +7,10 @@
 > (`store.go`, `sql.go`, `grant_storage.go`) is out of scope for this
 > document: it moves to the grant aggregate in `store/state`
 > (`foundation/state.md`, written in parallel by another agent). This
-> document specifies only the loading contract the evaluator accepts from
-> that aggregate, not the SQL that produces it.
+> document specifies only the loading contract the evaluator accepts, in
+> its own domain types; converting the state aggregate's row shapes into
+> those types is core-side orchestration, not this document's or
+> `state.md`'s concern.
 
 Target directory: `engine/service/acl/`. Service layer, per the target architecture
 in `01-package-survey.md`. No non-stdlib import; in particular, no
@@ -26,9 +28,9 @@ assumes about the evaluator's shape and guarantees, this document states.
 Grant persistence (creating, updating, deleting a grant row) is not here.
 The package this document specifies never writes to a database and never
 imports one; it holds an in-memory grant and membership table, refreshed
-wholesale from rows the state store hands it, and answers permission
-questions against that table (`01-package-survey.md`, `acl` verdict;
-`audit/foundation-persistence.md`, acl finding 1).
+wholesale from already-converted domain values the core hands it, and
+answers permission questions against that table (`01-package-survey.md`,
+`acl` verdict; `audit/foundation-persistence.md`, acl finding 1).
 
 ## Spec
 
@@ -299,46 +301,41 @@ together; a decision cache with its own, separate mutex sits beside it
 
 #### Loading contract
 
-The evaluator does not know SQL exists. It accepts already-fetched rows in
-two small, exported shapes it defines itself:
+The evaluator does not know SQL exists, and it does not define a row type
+for either grants or memberships: it takes its own domain types directly.
+`Grant` is the struct already defined above (Grant). `Membership` is a
+small pair the evaluator defines for itself:
 
 ```go
-// GrantRow is one grant, in the shape the state store's grant aggregate
-// hands to the evaluator. The state store owns the schema and the
-// statements (foundation/state.md); this shape is the seam between the
-// two layers, defined on the evaluator's side so this package need not
-// import store/state or database/sql to load.
-type GrantRow struct {
-    ID        int64
-    User      int64  // 0 when Group is set
-    Group     int64  // 0 when User is set
-    Share     int64
-    Subpath   string // "/"-separated, the stored spelling; parsed with ParsePath
-    Allow     int64  // bit pattern; narrowed into Perms
-    Deny      int64
-    Inherit   bool
-    Label     string
-    CreatedNs int64
-}
-
-// MembershipRow is one user-to-group edge.
-type MembershipRow struct {
+// Membership is one user-to-group edge, in the evaluator's own domain
+// shape.
+type Membership struct {
     User  int64
     Group int64
 }
 
 // LoadFromState replaces the evaluator's grants and memberships from
-// already-fetched rows, as one atomic swap: both new tables are installed
-// under a single lock acquisition and the generation counter is bumped
-// exactly once. A caller (the core, or whatever assembles a reload) never
-// observes new grants paired with old memberships, or the reverse, under
-// any generation the cache can have cached against.
-func (e *Evaluator) LoadFromState(grants []GrantRow, memberships []MembershipRow) error
+// already-converted domain values, as one atomic swap: both new tables
+// are installed under a single lock acquisition and the generation
+// counter is bumped exactly once. A caller (the core, or whatever
+// assembles a reload) never observes new grants paired with old
+// memberships, or the reverse, under any generation the cache can have
+// cached against.
+func (e *Evaluator) LoadFromState(grants []Grant, memberships []Membership) error
 ```
 
-`LoadFromState` converts each `GrantRow` into a `Grant` (`ParsePath` for
-`Subpath`, a narrowing cast for `Allow`/`Deny` into `Perms`) and each
-`MembershipRow` into the internal `map[int64][]int64`, then installs both
+The evaluator never sees the store's row shape (`state.GrantRow`, with its
+`User *int64` nil convention and `uint16` bit widths). Converting a
+`state.GrantRow` into an `acl.Grant`, and a `state.MembershipRow` into an
+`acl.Membership`, is core-side orchestration: the state package owns the
+row shape, the ACL package owns the domain shape, and the core converts
+between them (`core/11-homes-and-recent.md`). This package's only
+remaining knowledge of persistence, after that conversion happens
+upstream of it, is nothing at all; `LoadFromState` takes values already in
+its own vocabulary.
+
+`LoadFromState` installs the given `grants` and converts each
+`Membership` into the internal `map[int64][]int64`, then installs both
 under one `Lock`/`Unlock` and increments `gen` once, inside that same
 critical section. This differs from the current code's two-step
 `ReplaceGrants` then `SetMemberships` (each its own lock and its own
@@ -360,14 +357,15 @@ the atomic guarantee; a caller that calls `ReplaceGrants` and
 document deliberately closes for `LoadFromState`, and that is an accepted,
 documented cost of using the split primitives directly.
 
-The row shapes carry no validation beyond the type conversion: `Subpath`
-that fails to parse, or `Allow`/`Deny` bits outside the eight defined,
-would only occur from a row the grant aggregate itself did not produce
-correctly, since the write side validates on `CreateGrant`
+`LoadFromState` carries no validation of its own beyond installing what it
+is given: a `Grant` with `Allow`/`Deny` bits outside the eight defined, or
+a malformed `Subpath`, would only occur from a conversion the core got
+wrong or a row the grant aggregate itself did not produce correctly, since
+the write side validates on `PersistGrant`
 (`audit/foundation-persistence.md`, acl finding 1 area; the write-time
-checks move to `foundation/state.md`'s grant aggregate unchanged). This
-package trusts what it is handed, the same way `Resolve` trusts a
-narrowed `ShareID` came from a real row.
+checks move to `foundation/state.md`'s grant aggregate). This package
+trusts what it is handed, the same way `Resolve` trusts a narrowed
+`ShareID` came from a real row.
 
 #### Thread safety
 
@@ -422,8 +420,8 @@ cache invents on its own.
 ## Rationale
 
 - **Pure by construction, not by convention.** The package holds no I/O
-  type anywhere in its exported or unexported surface: `GrantRow` and
-  `MembershipRow` are plain structs with primitive fields, not a database
+  type anywhere in its exported or unexported surface: `Grant` and
+  `Membership` are plain structs with primitive fields, not a database
   row scanner and not a `store/state` type. This is what makes "no
   `database/sql` import" a property of the whole dependency graph, not
   just of the files that happen not to call it today
@@ -459,17 +457,18 @@ cache invents on its own.
    `audit/foundation-persistence.md`'s acl finding 1. What remains
    (`eval.go`, `grant.go`, `perms.go`, `cache.go`) is exactly the survey's
    "pure and dependency-free" half.
-2. **The loading contract is now row-shaped, not `database/sql`-shaped.**
-   The old `LoadFromState(ctx, db readDB)` took a `QueryContext` interface
-   and ran two `SELECT`s itself. The new `LoadFromState(grants []GrantRow,
-   memberships []MembershipRow) error` takes already-fetched rows, so this
-   package's only remaining knowledge of persistence is the two small row
-   shapes it defines for itself. Whatever calls the state store's grant
-   aggregate and passes the result to `LoadFromState` is out of scope for
-   this document; it is core-side orchestration, specified wherever the
-   core's reload path is documented (`core/11-homes-and-recent.md`
-   already describes one caller: after `PersistGrant`, the core reloads
-   the evaluator).
+2. **The loading contract now takes domain values, not `database/sql`
+   rows and not row-shaped structs of its own.** The old
+   `LoadFromState(ctx, db readDB)` took a `QueryContext` interface and ran
+   two `SELECT`s itself. The new `LoadFromState(grants []Grant,
+   memberships []Membership) error` takes already-converted values in the
+   evaluator's own vocabulary, so this package's only remaining knowledge
+   of persistence is nothing: it defines no row shape at all. Converting
+   the state store's row shape (`state.GrantRow`, `state.MembershipRow`)
+   into these domain values is out of scope for this document; it is
+   core-side orchestration, specified wherever the core's reload path is
+   documented (`core/11-homes-and-recent.md` already describes one
+   caller: after `PersistGrant`, the core reloads the evaluator).
 3. **`LoadFromState` is a single atomic swap.** One lock acquisition, one
    `gen` bump, closing the two-generation window the current two-call
    implementation leaves open (see Rationale). `ReplaceGrants` and

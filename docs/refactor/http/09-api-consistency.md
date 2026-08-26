@@ -59,15 +59,21 @@ mechanical ones.
 8. **Access class follows category.** The route table declares a default
    per category and only exceptions per route: `admin/*` is session-only;
    `auth/*` and `account/*` are session-only except the login and OIDC
-   entry points, which are public; `files/*`, `links/*`, `trash/*`,
-   `jobs/*`, `uploads/*`, `search/*` are permission-scoped and reachable
-   with an app password holding the bits; `system/health` is public,
-   `system/setup` is the setup gate's own rule, `events` is any
+   entry points, which are public, and `POST /api/v1/auth/logout`, which
+   accepts any authenticated credential, as today; `files/*`, `links/*`,
+   `trash/*`, `uploads/*`, `search/*` are permission-scoped and reachable
+   with an app password holding the bits (`links/*` requires
+   `acl.Share`); `jobs/*` is any authenticated caller, matching today's
+   `AccessAny` and the canonical bookkeeping case named in
+   `route.go`; `uploads/*`'s two `OPTIONS` routes
+   (`/api/v1/uploads` and `/api/v1/uploads/{id}`) are public exceptions,
+   since protocol discovery carries no credential; `system/health` is
+   public, `system/setup` is the setup gate's own rule, `events` is any
    authenticated caller.
 
 ## The category map
 
-Nine categories. Every current route appears exactly once in the tables
+Ten categories. Every current route appears exactly once in the tables
 below; the old spelling is the behavioral reference for the new one.
 
 ### auth: authentication itself
@@ -136,6 +142,11 @@ vocabulary (`core/10-share-links.md`).
 | `PATCH /api/v1/links/{id}` | `PATCH /api/shares/{id}` and `PATCH /api/fs/link/{id}` |
 | `DELETE /api/v1/links/{id}` | `DELETE /api/shares/{id}` and `DELETE /api/fs/link/{id}` |
 
+`links/*` requires `acl.Share`. This is deliberate: the old `/api/fs/link`
+family required only `acl.Read`, but `core/10`'s `CreateLink` already
+requires `acl.Share` at the target, so the merge tightens the `acl.Read`
+half to match rather than the reverse.
+
 ### trash
 
 | v1 | Replaces |
@@ -187,10 +198,9 @@ vocabulary (`core/10-share-links.md`).
 | `POST /api/v1/admin/smb/apply` | same | operator's apply-now |
 | `POST /api/v1/admin/index/build` | same | |
 | `GET /api/v1/admin/index/estimate` | same | |
-| `GET /api/v1/admin/settings` | `GET /api/admin/server-settings` | whole snapshot |
+| `GET /api/v1/admin/settings` | `GET /api/admin/server-settings` and `GET /api/admin/index/settings` | whole snapshot, index section included |
 | `PATCH /api/v1/admin/settings/{section}` | `PATCH /api/admin/server-settings/{section}` | |
 | `PATCH /api/v1/admin/settings/upload` | `PATCH /api/admin/upload-settings` | folded in as a section |
-| `GET /api/v1/admin/settings` (carries `index`) | `GET /api/admin/index/settings` | folded into the snapshot |
 | `PATCH /api/v1/admin/settings/index` | `PATCH /api/admin/index/settings` | folded in as a section |
 
 Settings become one resource with sections; the three scattered settings

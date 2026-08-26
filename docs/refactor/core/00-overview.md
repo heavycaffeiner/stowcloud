@@ -31,8 +31,9 @@ Three invariants define the core, and the rebuild keeps all three:
 
 ## What is wrong with the current composition
 
-The current `go/internal/core` is one package of roughly 6,800 lines across
-23 files, and the file boundaries no longer match the responsibility
+The current `go/internal/core` is one package of roughly 6,800 lines
+(including tests; the package survey's 5,190 excludes them) across 23
+files, and the file boundaries no longer match the responsibility
 boundaries. The problems this rebuild fixes:
 
 - **Persistence SQL inside domain files.** `links_sql.go` holds every
@@ -81,6 +82,9 @@ engine/
   service/
     core/               the domain package (this phase)
       core.go           Core struct, Options, New, attach seams, logging
+                          (Options carries ACL and Clock alongside
+                          Links LinkStore, the store's LinkStore
+                          implementation)
       errors.go           sentinels, typed errors, the VFS error crossing
       ident.go            UserID, ShareID, Token, instance id
       entry.go            Entry, Page, Cursor, SortKey, ListOptions
@@ -113,6 +117,10 @@ engine/
                           thin wrappers over the store's grant aggregate
                           plus one evaluator reload each
 ```
+
+File paths in the core documents are spelled relative to
+`engine/service/core/`: `core/errors.go` means
+`engine/service/core/errors.go`.
 
 `grants.go` exists because the audits found three call sites
 (`httpapi/handler`, `cmd/stowcloud`, and emergency-adjacent code) building

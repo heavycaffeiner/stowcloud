@@ -61,6 +61,11 @@ type Link struct {
 in a log by accident. No password material is ever on the struct; only
 `HasPassword`.
 
+The value versus pointer split is deliberate: `CreateLink` hands the
+plaintext back once as a `secret.Secret` value, the one moment the token
+exists outside the hash; `Token` on a listed `Link` is a pointer because
+nil is the unrecoverable-legacy case, a fact a value type cannot carry.
+
 ### The identity pin
 
 At creation, when the target is not the share root and the filesystem
@@ -432,7 +437,7 @@ type LinkRow struct {
 // LinkRowPatch mirrors LinkPatch at the row level. Outer nil leaves the
 // column; inner nil sets it NULL. Non-nullable columns use a single pointer.
 type LinkRowPatch struct {
-    Perms        *int64
+    Perms        *uint16
     PasswordHash **string
     ExpiresNs    **int64
     MaxDown      **int64
@@ -440,6 +445,12 @@ type LinkRowPatch struct {
     Note         *string
 }
 
+**Wiring.** The server passes the store's `LinkStore` implementation
+through `core.Options.Links` at construction, the same field group as `ACL`
+and `Clock`. A `Core` built without one fails every link operation with a
+wiring error, the same discipline `AttachLinkCrypto`'s unwired seams follow.
+
+```go
 type LinkStore interface {
     // Insert stores a new link with downloads zero and returns its id.
     Insert(ctx context.Context, row LinkRow) (int64, error)
