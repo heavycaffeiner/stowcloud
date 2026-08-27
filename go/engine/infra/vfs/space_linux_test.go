@@ -33,9 +33,21 @@ func TestFileSpaceAgreesWithThePathProbe(t *testing.T) {
 	if byHandle.Total != byPath.Total {
 		t.Fatalf("handle reports total %d, path reports %d", byHandle.Total, byPath.Total)
 	}
-	if byHandle.Available != byPath.Available {
+	// Available moves under us: anything else on the host writes to the same
+	// filesystem between the two probes. A block size read at the wrong scale
+	// is off by a factor, so a one percent band separates the two.
+	if !within(byHandle.Available, byPath.Available, 100) {
 		t.Fatalf("handle reports available %d, path reports %d", byHandle.Available, byPath.Available)
 	}
+}
+
+// within reports whether a and b differ by no more than 1/ratio of the larger.
+func within(a, b uint64, ratio uint64) bool {
+	hi, lo := a, b
+	if lo > hi {
+		hi, lo = lo, hi
+	}
+	return hi-lo <= hi/ratio
 }
 
 // Item 16. DirDev answers for the directory asked about, not the share
