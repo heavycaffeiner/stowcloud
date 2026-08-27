@@ -56,6 +56,11 @@ type Core struct {
 	clk     clock.Clock
 	logger  *slog.Logger
 
+	// quota is the per-user byte ledger, attached after construction
+	// because a deployment without one is legitimate and because the
+	// implementation lives in the store layer.
+	quota QuotaSink
+
 	sharesMu sync.RWMutex
 	shares   map[ShareID]*shareEntry
 }
