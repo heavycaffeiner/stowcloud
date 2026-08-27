@@ -74,6 +74,27 @@ linters:
           - gosec
         text: "G30[1246]"
 
+      # An <aggregate>_sql.go file holds this package's SQL statements as
+      # constants and nothing else, which is the convention that keeps a
+      # statement from being assembled from parts at runtime. G101 reads the
+      # identifier rather than the value, so a constant named after the table
+      # it selects from (config_secret, app_password) reads as a credential
+      # when it is a query. Every other gosec rule still applies to these
+      # files, and so does every other linter.
+      - path: _sql\.go
+        linters:
+          - gosec
+        text: "G101"
+
+      # The same reading, in a fixture: a lock token or a stored hash a test
+      # writes and reads back is the value under test, not a credential this
+      # tree ships. G101 only ever matches the identifier, so it cannot tell
+      # the two apart in a test either.
+      - path: _test\.go
+        linters:
+          - gosec
+        text: "G101"
+
 formatters:
   enable:
     - gofmt
