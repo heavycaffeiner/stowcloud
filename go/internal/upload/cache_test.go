@@ -201,7 +201,7 @@ func TestARestartDoesNotReportCachedBytesThatAreGone(t *testing.T) {
 	ctx := context.Background()
 
 	const chunk = 4096
-	body := make([]byte, chunk*2)
+	body := make([]byte, chunk*3)
 	for i := range body {
 		body[i] = byte(i)
 	}
@@ -209,7 +209,9 @@ func TestARestartDoesNotReportCachedBytesThatAreGone(t *testing.T) {
 
 	// One chunk at the front, which the merger drains into the part file, and
 	// one past a hole, which stays in the cache because nothing below it has
-	// arrived.
+	// arrived. The hole is what keeps the second chunk in the cache: leaving
+	// it contiguous would let the merger drain that one too, and the test
+	// would be racing a background goroutine for its own setup.
 	if _, err := f.engine.PatchAt(ctx, f.root, s.ID, testUser, 0,
 		bytes.NewReader(body[:chunk]), nil); err != nil {
 		t.Fatalf("the first chunk: %v", err)
@@ -217,8 +219,8 @@ func TestARestartDoesNotReportCachedBytesThatAreGone(t *testing.T) {
 	if err := f.engine.drainCache(ctx, s.ID); err != nil {
 		t.Fatalf("draining: %v", err)
 	}
-	if _, err := f.engine.PatchAt(ctx, f.root, s.ID, testUser, chunk,
-		bytes.NewReader(body[chunk:]), nil); err != nil {
+	if _, err := f.engine.PatchAt(ctx, f.root, s.ID, testUser, chunk*2,
+		bytes.NewReader(body[chunk*2:]), nil); err != nil {
 		t.Fatalf("the second chunk: %v", err)
 	}
 
@@ -226,8 +228,8 @@ func TestARestartDoesNotReportCachedBytesThatAreGone(t *testing.T) {
 	if gerr != nil {
 		t.Fatalf("Get: %v", gerr)
 	}
-	if before.Received != uint64(len(body)) {
-		t.Fatalf("before the restart the session holds %d bytes, want %d", before.Received, len(body))
+	if before.Received != chunk*2 {
+		t.Fatalf("before the restart the session holds %d bytes, want %d", before.Received, chunk*2)
 	}
 
 	// The reboot: the tmpfs comes back empty.
