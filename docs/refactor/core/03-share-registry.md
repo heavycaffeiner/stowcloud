@@ -354,7 +354,7 @@ core's shares rather than providing vocabulary to it
 // ScanSource is one share as the search walker consumes it. Defined here,
 // adapted by the search service into its own input type.
 type ScanSource struct {
-    Share uint32
+    Share ShareID
     Root  *vfs.ShareRoot
     Base  vfs.SafePath
     // Allow reports whether the caller may see a path. Nil means

@@ -152,10 +152,19 @@ defines `Secret` as a value type.
 Severity: drift.
 Resolution: pick one and document the single plaintext handoff.
 
+### 1.16 `ScanSource.Share` is a raw `uint32`, the same drift as 1.14
+
+`core/03-share-registry.md:357` and `foundation/search-contract.md:34`
+against `core/02-domain-types.md:27`. The two documents agree with each
+other, which is why the first pass filed the type as clean, but they agree
+on the spelling every other core signature moved away from in 1.14.
+Severity: drift.
+Resolution: use `ShareID`; the search adapter converts to its own width
+explicitly. Applied in phase 0.5.
+
 Clean: the `LinkStore` interface itself (all nine methods identical between
 `core/10:443-475` and `state.md:258-269`), `QuotaSink.Reserve`,
-`PersistGrant`'s signature, `ScanSource` (byte-identical between `core/03`
-and `foundation/search-contract.md`), the reserved id values, the VFS
+`PersistGrant`'s signature, the reserved id values, the VFS
 errno-to-core sentinel chain names, `journal.Op` and the recent surface,
 `acl.RootEntry` decoration.
 
@@ -474,10 +483,12 @@ inside code blocks; no marketing adjectives (the one "first-class" hit in
 | --- | --- |
 | contradiction | 14 |
 | gap | 13 |
-| drift | 16 |
+| drift | 17 |
 | style | 1 |
 
-44 findings. The most consequential: 2.1 (the layer gate as specified
+45 findings. 1.16 was added in phase 0.5, when the implementation of the
+contract found the one drift this review's first pass filed as clean. The
+most consequential: 2.1 (the layer gate as specified
 refuses three foundation packages as specified), 5.1 (the quota ledger as
 specified never credits a delete and refunds a growing write), 1.2 (two
 incompatible `GrantRow` types at the store-evaluator seam), and 1.10 with

@@ -32,7 +32,7 @@ it:
 // ScanSource is one share as the search walker consumes it. Defined here,
 // adapted by the search service into its own input type.
 type ScanSource struct {
-    Share uint32
+    Share ShareID
     Root  *vfs.ShareRoot
     Base  vfs.SafePath
     // Allow reports whether the caller may see a path. Nil means
@@ -48,6 +48,12 @@ The core produces `[]ScanSource` through two functions, also specified in
 func (c *Core) ScanSources() []ScanSource               // administrator-scoped, Allow nil
 func (c *Core) UserScanSources(user UserID) []ScanSource // Allow checks acl.Read per entry
 ```
+
+`ShareID` is the core's alias for `vfs.ShareID` (`core/02-domain-types.md`),
+which is a `uint32`. The field is spelled as the alias rather than the raw
+width so it matches every other core signature that names a share; an
+adapter whose own input type carries a bare `uint32` converts explicitly,
+and the conversion is lossless in both directions.
 
 `ScanSource` carries no persistence-specific or index-specific field: no
 index handle, no segment reference, nothing from `search/index`. It names
