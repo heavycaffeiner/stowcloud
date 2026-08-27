@@ -211,6 +211,17 @@ func (c *Core) ShareRoot(id ShareID) (*vfs.ShareRoot, bool) {
 	return e.root, true
 }
 
+// shareEntry is the package-internal lookup Resolve uses, handing back the
+// entry itself rather than a copy: the resolver needs the live root and the
+// broken cause together, and reading them through two accessors could see
+// two different registrations.
+func (c *Core) shareEntry(id ShareID) (*shareEntry, bool) {
+	c.sharesMu.RLock()
+	defer c.sharesMu.RUnlock()
+	e, ok := c.shares[id]
+	return e, ok
+}
+
 // Share is the definition for a registered id, broken or not.
 func (c *Core) Share(id ShareID) (ShareDef, bool) {
 	c.sharesMu.RLock()
