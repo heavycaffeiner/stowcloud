@@ -80,13 +80,14 @@ func (d *DB) StartOIDCFlow(ctx context.Context, in NewOIDCFlow, cutoffNs int64) 
 	return nil
 }
 
-// TakeOIDCFlow reads a flow and deletes it in one transaction, whatever the
-// caller then decides about the binding.
+// TakeOIDCFlow retrieves a flow and removes it within one transaction, whatever
+// the caller subsequently concludes about the binding.
 //
-// Consumed rather than read: a flow that can be redeemed twice is a code that
-// can be replayed. The binding comparison is the caller's, because comparing
-// in constant time is a property of the comparison rather than of the row,
-// and a flow whose binding failed is still not one to leave redeemable.
+// It consumes rather than merely reads: a flow redeemable twice is a code that
+// can be replayed. Comparing the binding belongs to the caller, since
+// constant-time comparison is a property of the comparison rather than of the
+// row, and a flow whose binding check failed must still not remain
+// redeemable.
 func (d *DB) TakeOIDCFlow(ctx context.Context, stateDigest []byte, cutoffNs int64) (OIDCFlow, error) {
 	var f OIDCFlow
 	err := d.Write(ctx, func(tx *sql.Tx) error {
@@ -116,7 +117,7 @@ func (d *DB) TakeOIDCFlow(ctx context.Context, stateDigest []byte, cutoffNs int6
 	return f, nil
 }
 
-// OIDCLink is one account's link.
+// OIDCLink represents a single account's link.
 type OIDCLink struct {
 	Issuer   string
 	Subject  string
@@ -126,7 +127,7 @@ type OIDCLink struct {
 	LastLoginNs *int64
 }
 
-// OIDCLinkOf reads an account's link.
+// OIDCLinkOf retrieves the link belonging to an account.
 func (d *DB) OIDCLinkOf(ctx context.Context, user int64) (OIDCLink, error) {
 	var (
 		l    OIDCLink
@@ -147,10 +148,10 @@ func (d *DB) OIDCLinkOf(ctx context.Context, user int64) (OIDCLink, error) {
 	return l, nil
 }
 
-// UserForOIDCIdentity resolves a provider identity to the account it names.
-// The identity is the issuer and the subject together, never an address: a
-// provider may reassign an address to a different person, and matching on one
-// would hand that person the account.
+// UserForOIDCIdentity maps a provider identity onto the account it designates.
+// Identity means the issuer and subject together and never an address, because a
+// provider may reassign an address to someone else and matching on it would hand
+// that person the account.
 func (d *DB) UserForOIDCIdentity(ctx context.Context, issuer, subject string) (int64, error) {
 	var id int64
 	err := d.f.SQL().QueryRowContext(ctx, sqlSelectOIDCLinkByIdentity, issuer, subject).Scan(&id)
@@ -185,9 +186,9 @@ func (d *DB) CreateOIDCLink(ctx context.Context, user int64, issuer, subject str
 		case serr != nil && !errors.Is(serr, sql.ErrNoRows):
 			return serr
 		}
-		// Replaced rather than updated in place: the identity is the primary
-		// key, so a changed subject is a different row and an update would
-		// leave the old one linked.
+		// Replaced instead of updated in place. Identity forms the primary key,
+		// so a changed subject constitutes a different row and an update would
+		// leave the previous one still linked.
 		if _, derr := tx.ExecContext(ctx, sqlDeleteOIDCLinkByUser, user); derr != nil {
 			return derr
 		}

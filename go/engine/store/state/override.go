@@ -9,27 +9,26 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/ident"
 )
 
-// fileid_override records which of two colliding files took the derived id,
-// for both of them.
+// fileid_override records, for both files in a collision, which one received the
+// derived id.
 //
-// The derivation is a proposal and this table is the authority. Which file
-// takes the base id depends on which was seen first, which is insertion
-// order, which a rebuild does not reproduce: so the order decides once, the
-// rows make it permanent, and every later rebuild reads them instead of
-// racing again.
+// Derivation only proposes; this table decides. Whichever file claims the base
+// id is determined by which was encountered first, an insertion order no rebuild
+// reproduces. So the order settles the question once, these rows preserve it,
+// and every later rebuild consults them rather than racing again.
 //
-// Both sides are recorded because both are insertion-order decisions once a
-// collision exists. Recording only the newcomer reproduces a two-file case
-// and nothing larger.
+// Both sides are stored because once a collision exists, both placements are
+// insertion-order decisions. Recording only the newcomer would handle a two-file
+// case and nothing beyond it.
 //
-// The table is expected to be empty. A row in it is the first evidence that
-// a corpus has reached the size where a 63-bit collision stops being
-// abstract.
+// The table should normally be empty. Any row is the first indication that a
+// corpus has grown to the point where a 63-bit collision is no longer
+// theoretical.
 
-// ErrOverrideConflict is a recorded assignment that disagrees with the one
-// being written. Nothing rewrites a row here: a past decision that no longer
-// matches is corruption in the durable half, and answering a sync client
-// with either value would be a guess.
+// ErrOverrideConflict reports a stored assignment contradicting the one being
+// written. Rows here are never rewritten: an earlier decision that no longer
+// agrees indicates corruption in the durable half, and returning either value to
+// a sync client would be guesswork.
 var ErrOverrideConflict = errors.New("a recorded file id override disagrees")
 
 // LookupFileID reports the recorded id for an identity, if one was ever
@@ -79,13 +78,13 @@ func (d *DB) LookupFileIDOwner(ctx context.Context, id ident.FileID) (ident.Iden
 	return owner, true, nil
 }
 
-// RecordFileIDs writes every assignment in one transaction on this database.
-// It returns once that transaction has committed, which is what puts it
-// ahead of the node rows that use the ids.
+// RecordFileIDs commits every assignment in a single transaction against this
+// database, returning only after that transaction lands, which is what places it
+// ahead of the node rows referencing those ids.
 //
-// A row that already says the same thing is left alone, so a rebuild that
-// reaches the same decision writes nothing. A row that says something else
-// is refused rather than replaced.
+// Rows already stating the same thing are left untouched, so a rebuild arriving
+// at an identical decision writes nothing. Rows stating something different are
+// rejected rather than overwritten.
 func (d *DB) RecordFileIDs(ctx context.Context, assignments ...ident.Assignment) error {
 	if len(assignments) == 0 {
 		return nil
@@ -130,9 +129,9 @@ func recordOne(ctx context.Context, tx *sql.Tx, a ident.Assignment) error {
 	return nil
 }
 
-// CountFileIDOverrides is how many collision assignments this install has
-// recorded. It is a diagnostic: the number is expected to be zero and a
-// non-zero one is worth an operator seeing.
+// CountFileIDOverrides reports how many collision assignments this installation
+// has stored. It serves as a diagnostic: zero is expected, and anything else
+// merits an operator's attention.
 func (d *DB) CountFileIDOverrides(ctx context.Context) (int64, error) {
 	var n int64
 	if err := d.f.SQL().QueryRowContext(ctx, sqlCountFileIDOverrides).Scan(&n); err != nil {
@@ -141,10 +140,10 @@ func (d *DB) CountFileIDOverrides(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
-// noOverrides answers the common case from a counter loaded once. The cache
-// consults this table twice for every id it allocates, so on a cold walk of
-// a large tree the counter is what stands between two queries and several
-// million against a table that is almost always empty.
+// noOverrides resolves the common case using a counter read once. The cache
+// queries this table twice per allocated id, so during a cold walk of a large
+// tree that counter is the difference between two queries and several million
+// against a table that is nearly always empty.
 func (d *DB) noOverrides(ctx context.Context) (bool, error) {
 	n := d.overrides.Load()
 	if n < 0 {

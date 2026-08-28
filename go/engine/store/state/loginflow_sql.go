@@ -15,8 +15,8 @@ SELECT poll_digest, login_digest, created_ns, approved_user, approved_login, las
   FROM compat_login_flow
  WHERE login_digest = ?`
 
-	// The null check is what makes a second approval a no-op rather than an
-	// overwrite: the row moves only while nobody has approved it.
+	// The null test is what turns a second approval into a no-op instead of an
+	// overwrite: the row changes only while no approval exists.
 	sqlApproveLoginFlow = `
 UPDATE compat_login_flow
    SET approved_user = ?, approved_login = ?

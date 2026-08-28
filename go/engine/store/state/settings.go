@@ -10,15 +10,15 @@ import (
 	"os"
 )
 
-// The administrator's stored overrides.
+// Overrides saved by the administrator.
 //
-// One JSON document rather than a column per setting, because a setting
-// added in one place and read in another is how a screen ends up editing a
-// value nothing consumes. The document is read whole, merged, and written
-// whole, so a key nobody in this build knows about survives an edit rather
-// than being dropped by it.
+// Stored as one JSON document instead of a column per setting, because adding a
+// setting in one place and reading it in another is how a screen ends up editing
+// a value nothing consumes. The document is read in full, merged, and written in
+// full, so a key unknown to this build survives an edit rather than being
+// discarded by it.
 
-// Settings reads the stored overrides.
+// Settings retrieves the stored overrides.
 func (d *DB) Settings(ctx context.Context) (map[string]any, error) {
 	var raw string
 	err := d.f.SQL().QueryRowContext(ctx, sqlReadSettings).Scan(&raw)
@@ -64,7 +64,8 @@ func (d *DB) MergeSettings(ctx context.Context, section string, value any) error
 				}
 			}
 		case errors.Is(err, sql.ErrNoRows):
-			// No document yet; this creates one carrying only this section.
+			// No document exists yet, so this writes one holding just this
+			// section.
 		default:
 			return err
 		}
@@ -111,8 +112,8 @@ func searchSection(all map[string]any) map[string]any {
 	return section
 }
 
-// IndexNameEnabled reports whether the name index is on. Absent means off:
-// building one is an act somebody has to choose.
+// IndexNameEnabled reports whether the name index is enabled. An absent value
+// means off, since building one is a deliberate choice somebody must make.
 func (d *DB) IndexNameEnabled(ctx context.Context) (bool, error) {
 	all, err := d.Settings(ctx)
 	if err != nil {
@@ -163,9 +164,9 @@ func (d *DB) IndexBuildRate(ctx context.Context) (uint64, error) {
 	return uint64(rate), nil
 }
 
-// SetIndexBuildRate stores what a completed build measured, so the next
-// estimate is derived from this corpus on this disk rather than from a
-// constant nobody timed.
+// SetIndexBuildRate records what a finished build measured, so the following
+// estimate comes from this corpus on this disk instead of an untimed
+// constant.
 func (d *DB) SetIndexBuildRate(ctx context.Context, rate uint64) error {
 	all, err := d.Settings(ctx)
 	if err != nil {

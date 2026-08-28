@@ -14,7 +14,7 @@ import (
 // every write goes through, so nothing above this layer needs a
 // database/sql handle to change a permission.
 
-// ErrNoSuchGrant is a grant id that names nothing.
+// ErrNoSuchGrant reports a grant id matching nothing.
 var ErrNoSuchGrant = errors.New("no such grant")
 
 // GrantRow is one stored grant, in this store's own row shape. The ACL
@@ -35,7 +35,7 @@ type GrantRow struct {
 	CreatedNs int64
 }
 
-// GrantFilter narrows a listing. A zero field is not a filter.
+// GrantFilter restricts a listing. Fields left at zero impose no restriction.
 type GrantFilter struct {
 	User  int64
 	Group int64
@@ -92,7 +92,7 @@ func (d *DB) PersistGrant(ctx context.Context, g GrantRow, nowNs int64) (int64, 
 	return id, nil
 }
 
-// ListGrants returns the stored grants, optionally narrowed.
+// ListGrants yields the stored grants, restricted when asked.
 func (d *DB) ListGrants(ctx context.Context, filter GrantFilter) (out []GrantRow, err error) {
 	rows, err := d.f.SQL().QueryContext(ctx, sqlReadGrants)
 	if err != nil {
@@ -151,12 +151,13 @@ func keepGrant(g GrantRow, filter GrantFilter) bool {
 	return true
 }
 
-// UpdateGrant replaces the permission bits, the inheritance and the label of
-// one grant. An empty label clears it.
+// UpdateGrant substitutes a grant's permission bits, inheritance and label. An
+// empty label removes it.
 //
-// What it cannot change is who the grant is for or which share it covers.
-// Those identify the grant; changing them under one id would make an audit
-// trail read as though a permission moved when a different rule replaced it.
+// It cannot alter the grant's subject or the share it applies to. Those identify
+// the grant, and changing them under a single id would make an audit trail
+// appear to show a permission moving when in fact a different rule replaced
+// it.
 func (d *DB) UpdateGrant(
 	ctx context.Context, id int64, allow, deny uint16, inherit bool, label string,
 ) error {
@@ -177,7 +178,7 @@ func (d *DB) UpdateGrant(
 	})
 }
 
-// DeleteGrant removes one grant.
+// DeleteGrant deletes a single grant.
 func (d *DB) DeleteGrant(ctx context.Context, id int64) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		res, err := tx.ExecContext(ctx, sqlDeleteGrant, id)

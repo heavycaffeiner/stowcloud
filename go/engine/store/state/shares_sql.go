@@ -10,9 +10,9 @@ const (
 INSERT INTO share_definition(name, host_path, shared_externally, trash_enabled, symlink_policy, created_ns)
 VALUES (?, ?, ?, ?, ?, ?)`
 
-	// The definition, without the id or the creation time: neither is
-	// something an edit may move. The id is referenced by every grant, every
-	// link and every cache row, and the creation time is a fact.
+	// The definition minus the id and creation time, neither of which an edit
+	// may alter. Every grant, link and cache row references the id, and the
+	// creation time records what happened.
 	sqlUpdateShare = `
 UPDATE share_definition
 SET name = ?, host_path = ?, shared_externally = ?, trash_enabled = ?, symlink_policy = ?

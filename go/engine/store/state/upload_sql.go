@@ -18,27 +18,27 @@ created_ns, expires_ns, state, cache_dir, cache_merged`
 
 	sqlReadUploadSession = `SELECT ` + uploadSessionColumns + ` FROM upload_session WHERE id = ?`
 
-	// The sweep reads every session before it reads the directories, so a
-	// session created between the two passes is not mistaken for an orphan.
+	// Every session is read before any directory, so a session created between
+	// the two passes is never mistaken for an orphan.
 	sqlListUploadSessions = `SELECT ` + uploadSessionColumns + ` FROM upload_session`
 
 	sqlListExpiredUploadSessions = `
 SELECT ` + uploadSessionColumns + ` FROM upload_session WHERE expires_ns <= ?`
 
-	// The mutable half of a session row. The immutable columns (the
-	// destination, the part name, the mode) are never rewritten: a session
-	// that could move its own destination is a session that could publish
-	// somewhere the permission check never looked.
+	// The changeable portion of a session row. Destination, part name and mode
+	// are never rewritten, because a session able to relocate its own
+	// destination could publish somewhere the permission check never
+	// examined.
 	sqlUpdateUploadSession = `
 UPDATE upload_session
 SET total_len = ?, next_name = ?, write_head = ?, spooled_names = ?,
     mtime_ns = ?, expires_ns = ?, state = ?, cache_merged = ?
 WHERE id = ?`
 
-	// The merge frontier moves on its own, without the rest of the row: the
-	// merger runs while chunks are still arriving, and writing the whole row
-	// from there would put back a copy of fields another writer has since
-	// moved.
+	// The merge frontier advances independently of the rest of the row. The
+	// merger runs while chunks continue arriving, so writing the full row from
+	// there would restore stale copies of fields another writer has already
+	// advanced.
 	sqlAdvanceUploadCacheMerged = `
 UPDATE upload_session SET cache_merged = ? WHERE id = ? AND cache_merged < ?`
 
@@ -46,24 +46,24 @@ UPDATE upload_session SET cache_merged = ? WHERE id = ? AND cache_merged < ?`
 
 	sqlReadUploadIntervals = `SELECT lo, hi FROM upload_interval WHERE session = ? ORDER BY lo`
 
-	// The interval set is rows rather than a blob, so a partially written set
-	// is a shorter one rather than a corrupt one.
+	// Intervals are stored as rows rather than a blob, so a partially written
+	// set is merely shorter instead of corrupt.
 	sqlInsertUploadInterval = `
 INSERT INTO upload_interval(session, lo, hi) VALUES (?, ?, ?)
 ON CONFLICT(session, lo) DO UPDATE SET hi = excluded.hi`
 
 	sqlDeleteUploadIntervals = `DELETE FROM upload_interval WHERE session = ?`
 
-	// Recording a range is also what proves the session is alive, so the
-	// lifetime is pushed out in the same transaction as the ranges.
+	// Recording a range is itself evidence the session is alive, so the lifetime
+	// extension shares the transaction with the ranges.
 	sqlTouchUploadSessionExpiry = `UPDATE upload_session SET expires_ns = ? WHERE id = ?`
 
 	sqlCountUploadSessionsForUser = `
 SELECT count(*) FROM upload_session WHERE user = ? AND state = 0`
 
-	// Only a receiving session reserves anything: an aborted one's part file
-	// belongs to the sweep, and counting it would refuse an account room it
-	// is about to get back.
+	// Only receiving sessions reserve space. An aborted session's part file
+	// belongs to the sweep, and counting it would deny an account capacity it is
+	// about to reclaim.
 	sqlSumUploadReservedForUser = `
 SELECT coalesce(sum(coalesce(total_len, 0)), 0) FROM upload_session
 WHERE user = ? AND state = 0`
@@ -83,9 +83,9 @@ SELECT session, share, dest FROM upload_alias WHERE user = ? AND tid = ?`
 
 	sqlDeleteUploadAliasesForSession = `DELETE FROM upload_alias WHERE session = ?`
 
-	// The set is added to and never deleted from: a directory that held one
-	// part file will hold another, and forgetting it is how the sweep loses
-	// the orphan it exists to find.
+	// Entries are only ever added, never removed. A directory that held one part
+	// file will hold another, and dropping it is how the sweep loses the very
+	// orphan it exists to locate.
 	sqlTouchUploadDir = `
 INSERT INTO upload_touched_dir(share, dir) VALUES (?, ?)
 ON CONFLICT(share, dir) DO NOTHING`

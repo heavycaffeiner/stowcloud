@@ -17,7 +17,7 @@ import (
 // ErrNoSuchLock is a token that holds no live row.
 var ErrNoSuchLock = errors.New("no such lock")
 
-// DavProp is one stored dead property.
+// DavProp holds a single stored dead property.
 type DavProp struct {
 	NS    string
 	Name  string
@@ -32,7 +32,7 @@ type DavPropOp struct {
 	Remove bool
 }
 
-// DavLock is one row of dav_lock.
+// DavLock represents a row in dav_lock.
 type DavLock struct {
 	Token string
 	Ident ident.Ident
@@ -41,8 +41,8 @@ type DavLock struct {
 	// reads rather than the identity.
 	Path      string
 	Principal int64
-	// Owner is the text content of the client's owner element, re-serialized
-	// on the way out and never echoed as markup.
+	// Owner carries the text of the client's owner element, re-serialized when
+	// emitted and never echoed back as markup.
 	Owner     string
 	Depth     int64
 	Scope     int64
@@ -50,7 +50,7 @@ type DavLock struct {
 	TimeoutS  int64
 }
 
-// DavProps returns every dead property on one resource.
+// DavProps yields all dead properties attached to a resource.
 func (d *DB) DavProps(ctx context.Context, id ident.Ident) (out []DavProp, err error) {
 	dev, ino, present, btime := id.ToSQL()
 	rows, err := d.f.SQL().QueryContext(ctx, sqlSelectDavProps,
@@ -73,9 +73,9 @@ func (d *DB) DavProps(ctx context.Context, id ident.Ident) (out []DavProp, err e
 	return out, nil
 }
 
-// SetDavProps applies a set of property writes in one transaction, so a
-// PROPPATCH that fails partway leaves none of its changes behind. RFC 4918
-// requires exactly that.
+// SetDavProps performs a group of property writes in a single transaction, so a
+// PROPPATCH failing midway leaves nothing behind. RFC 4918 mandates precisely
+// this.
 func (d *DB) SetDavProps(ctx context.Context, id ident.Ident, ops []DavPropOp) error {
 	if err := d.f.EnsureWritable(); err != nil {
 		return err
@@ -128,11 +128,11 @@ func (d *DB) DropDavProps(ctx context.Context, id ident.Ident) error {
 	})
 }
 
-// DavLocks returns every lock that has not expired.
+// DavLocks yields every lock still within its lifetime.
 //
-// Expiry is applied on read rather than by a sweep: a lock whose deadline
-// passed is gone whether or not anything has got round to deleting the row,
-// and a reader that trusted the table would honor a lock nobody holds.
+// Expiry is evaluated at read time rather than by a sweep. A lock past its
+// deadline is gone regardless of whether anything has deleted the row, and a
+// reader trusting the table blindly would enforce a lock nobody holds.
 func (d *DB) DavLocks(ctx context.Context, nowNs int64) (out []DavLock, err error) {
 	rows, err := d.f.SQL().QueryContext(ctx, sqlSelectDavLocks, nowNs)
 	if err != nil {
@@ -153,7 +153,7 @@ func (d *DB) DavLocks(ctx context.Context, nowNs int64) (out []DavLock, err erro
 	return out, nil
 }
 
-// PutDavLock stores a new lock, refusing past the per-user cap.
+// PutDavLock records a new lock and rejects any beyond the per-account cap.
 func (d *DB) PutDavLock(ctx context.Context, l DavLock, nowNs int64) error {
 	if err := d.f.EnsureWritable(); err != nil {
 		return err
@@ -194,7 +194,7 @@ func (d *DB) RefreshDavLock(ctx context.Context, token string, expiresNs, timeou
 	})
 }
 
-// DropDavLock removes one lock by token.
+// DropDavLock deletes a lock identified by token.
 func (d *DB) DropDavLock(ctx context.Context, token string) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, sqlDeleteDavLock, token)
@@ -202,9 +202,9 @@ func (d *DB) DropDavLock(ctx context.Context, token string) error {
 	})
 }
 
-// SweepDavLocks deletes the rows whose deadline has passed. Reads already
-// ignore them, so this reclaims space rather than changing an answer, which
-// is also why it is never gated by the size guard.
+// SweepDavLocks removes rows past their deadline. Reads already skip them, so
+// this recovers space without altering any answer, which is also why the size
+// guard never applies to it.
 func (d *DB) SweepDavLocks(ctx context.Context, nowNs int64) (int64, error) {
 	var n int64
 	err := d.Write(ctx, func(tx *sql.Tx) error {

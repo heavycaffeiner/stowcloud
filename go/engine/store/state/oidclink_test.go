@@ -145,8 +145,8 @@ func TestAnIdentityLinkRoundTripsAndReplaces(t *testing.T) {
 	}
 }
 
-// Taking an identity that belongs to somebody else would move that account's
-// only way in to a different person.
+// Claiming an identity owned by someone else would transfer that account's sole
+// means of access to a different person.
 func TestATakenIdentityIsRefused(t *testing.T) {
 	ctx := context.Background()
 	d, _ := open(t)

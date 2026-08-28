@@ -17,19 +17,19 @@ import (
 // That contract is why there are exactly two representations and why a third
 // has to be refused rather than guessed at.
 
-// ErrLinkTargetMalformed is a partial identity tuple: some columns set and
-// some not, or a birth time recorded as absent. There are exactly two shapes
-// a link may hold, path-only and a complete identity, and anything else is
-// corruption in the durable half.
+// ErrLinkTargetMalformed reports a partial identity tuple: some columns
+// populated and others not, or a birth time stored as absent. A link may hold
+// exactly two shapes, path-only or a complete identity, and anything else
+// indicates corruption in the durable half.
 //
-// It is refused rather than repaired. Reading a partial tuple as path-only
-// would hand public access to whatever is created at that path next, which
-// is the one outcome worse than a link that stops working.
+// Such rows are rejected rather than repaired. Interpreting a partial tuple as
+// path-only would grant public access to whatever gets created at that path
+// next, the one outcome worse than a link that stops working.
 var ErrLinkTargetMalformed = errors.New("a share link carries a partial identity")
 
-// linkOperatorFix is what a refusal carries. Nothing can reconstruct the
-// missing half of the tuple, so the row has to go: the link stops working,
-// which is what a corrupt link should do.
+// linkOperatorFix accompanies a rejection. Nothing can recover the tuple's
+// missing half, so the row must be removed. The link ceases to work, which is
+// the correct behaviour for a corrupt link.
 const linkOperatorFix = "restore state.db from a backup, or delete the link row and issue a new link"
 
 // checkShareLinkTargets refuses a link whose target the next schema cannot

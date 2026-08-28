@@ -10,12 +10,13 @@ VALUES (?, ?, ?, 0, ?, ?, 0, ?)`
 SELECT id, user, kind, state, progress, total, message, cancellation, created_ns, finished_ns
 FROM operation WHERE id = ?`
 
-	// One account's unfinished operations, newest first and bounded.
+	// An account's unfinished operations, newest first, subject to a limit.
 	//
-	// Unfinished only: this feeds a client re-attaching after a reload, and a
-	// finished operation reappearing there tells somebody that a copy they
-	// watched complete an hour ago is running now. Nothing prunes the table,
-	// so without the filter every page load reopens the whole history.
+	// Restricted to unfinished because this serves a client reattaching after a
+	// reload. A completed operation resurfacing here would suggest that a copy
+	// somebody watched finish an hour ago is running now. Nothing prunes the
+	// table, so omitting the filter would reopen the entire history on every
+	// page load.
 	sqlListOps = `
 SELECT id, user, kind, state, progress, total, message, created_ns, finished_ns
 FROM operation WHERE user = ? AND state IN (?, ?) ORDER BY id DESC LIMIT ?`
@@ -43,9 +44,9 @@ VALUES (?, ?, ?, 0)`
 
 	sqlMarkOpItemStarted = `UPDATE operation_item SET started = 1 WHERE operation = ? AND idx = ?`
 
-	// The items with no result of their own, which is what a job that stopped
-	// short did not finish. started tells the two cases apart: in flight when
-	// the process died, or never reached.
+	// Items lacking a result of their own, which is exactly what a job that
+	// halted early left undone. started separates the two possibilities: in
+	// flight when the process died, or never reached at all.
 	sqlReadOpUnfinished = `
 SELECT i.path, i.started
 FROM operation_item i

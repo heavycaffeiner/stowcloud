@@ -9,22 +9,22 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 )
 
-// The settings that are credentials.
+// Settings that happen to be credentials.
 //
-// They live apart from the settings document because that document is read
-// whole by everything that reads any setting, and is rendered to the
-// settings screen. A credential in it would be a credential in all of those.
-// What is stored here is already sealed under the master key; this layer
-// holds bytes and a key version and has no key of its own.
+// They sit outside the settings document because anything reading any setting
+// reads that document in full, and it is rendered onto the settings screen. A
+// credential placed there would be exposed through all of that. Values stored
+// here arrive already sealed under the master key; this layer handles bytes and
+// a key version while holding no key itself.
 
-// ConfigSecret is one sealed value and the key version that sealed it.
+// ConfigSecret pairs a sealed value with the key version that sealed it.
 type ConfigSecret struct {
 	Value  []byte
 	KeyVer uint32
 }
 
-// ReadConfigSecret reads one sealed setting. A name with no row is not an
-// error: a deployment that never configured single sign-on has no secret.
+// ReadConfigSecret retrieves a sealed setting. A name lacking a row is not an
+// error, since a deployment that never set up single sign-on holds no secret.
 func (d *DB) ReadConfigSecret(ctx context.Context, name string) (ConfigSecret, bool, error) {
 	var (
 		s   ConfigSecret
@@ -46,7 +46,7 @@ func (d *DB) ReadConfigSecret(ctx context.Context, name string) (ConfigSecret, b
 	return s, true, nil
 }
 
-// WriteConfigSecret stores one sealed setting.
+// WriteConfigSecret persists a sealed setting.
 func (d *DB) WriteConfigSecret(ctx context.Context, name string, s ConfigSecret) error {
 	if err := d.f.EnsureWritable(); err != nil {
 		return err
@@ -57,7 +57,8 @@ func (d *DB) WriteConfigSecret(ctx context.Context, name string, s ConfigSecret)
 	})
 }
 
-// DeleteConfigSecret removes one, which is what clearing the setting means.
+// DeleteConfigSecret removes one, which is what clearing the setting amounts
+// to.
 func (d *DB) DeleteConfigSecret(ctx context.Context, name string) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, sqlDeleteConfigSecret, name)

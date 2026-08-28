@@ -9,27 +9,27 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 )
 
-// The operation store: the bounded, restart-visible history of long
-// operations. A recursive copy, delete or archive of a large subtree outlives
-// the request that started it, so the operation gets an id, its progress is
-// readable, and a client that refreshes the tab reattaches.
+// The operation store holds a bounded history of long operations that survives
+// restarts. Recursive copies, deletes and archives over a large subtree outlast
+// the request that began them, so each operation receives an id, exposes its
+// progress, and lets a client reattach after refreshing the tab.
 //
-// A job that was running when the server stopped is read back as
-// interrupted: nothing resumes it, because the task that owned its progress
-// is gone with the process. Completed history, progress and per-item results
-// stay readable.
+// Any job running when the server stopped reads back as interrupted. Nothing
+// resumes it, because the task tracking its progress died with the process.
+// Completed history, progress figures and per-item results all remain
+// readable.
 
-// OpState is the terminal or interim machine state of one operation.
+// OpState gives an operation's machine state, whether interim or terminal.
 type OpState int8
 
 const (
-	// OpRunning is an operation in flight.
+	// OpRunning marks an operation still in flight.
 	OpRunning OpState = iota
 	// OpDone is one that completed.
 	OpDone
-	// OpFailed is one that aborted with an error.
+	// OpFailed marks one that aborted with an error.
 	OpFailed
-	// OpCancelled is one a client cancelled through its own call.
+	// OpCancelled marks one a client stopped through its own request.
 	OpCancelled
 	// OpInterrupted is a run that was not finished when the process stopped
 	// and that nothing resumes. A refreshed client gets an honest terminal
@@ -37,7 +37,7 @@ const (
 	OpInterrupted
 )
 
-// OpKind is what kind of work an operation is.
+// OpKind names the sort of work an operation performs.
 type OpKind int8
 
 const (
@@ -69,9 +69,9 @@ type Op struct {
 	User  int64
 	Kind  OpKind
 	State OpState
-	// Progress and Total are the item counter a progress bar is drawn from.
-	// Both are zero for an operation whose total is unknown until its walk
-	// ends.
+	// Progress and Total form the item counter behind a progress bar. Both
+	// remain zero while an operation's total stays unknown until its walk
+	// finishes.
 	Progress int64
 	Total    int64
 	Message  string
@@ -82,7 +82,7 @@ type Op struct {
 	FinishedNs   int64
 }
 
-// OpResult is one item's outcome from a batch operation.
+// OpResult records how a single item fared within a batch operation.
 type OpResult struct {
 	Operation int64
 	Idx       int64
@@ -92,17 +92,16 @@ type OpResult struct {
 	Text      string
 }
 
-// ErrNoSuchOp is an operation id that holds no row.
+// ErrNoSuchOp reports an operation id backed by no row.
 var ErrNoSuchOp = errors.New("no such operation")
 
-// CreateOp starts a fresh operation. The id it returns is what a client
-// reattaches with. createdNs is the durable stamp the caller's clock
-// provided.
+// CreateOp begins a new operation. The returned id is what a client reattaches
+// with, and createdNs is the durable timestamp supplied by the caller's clock.
 //
-// paths is what the operation was asked to do, recorded now rather than as
-// it goes: a job that stops short can then say which items it never reached,
-// which is the difference between telling somebody that four of five files
-// moved and telling them which one did not.
+// paths captures everything the operation was asked to handle, written up front
+// rather than incrementally. A job that halts early can then report which items
+// it never reached, which is the difference between saying four of five files
+// moved and saying which one did not.
 func (d *DB) CreateOp(
 	ctx context.Context, user int64, kind OpKind, total, createdNs int64, paths []string,
 ) (int64, error) {
@@ -135,8 +134,8 @@ func (d *DB) CreateOp(
 	return id, nil
 }
 
-// StartOpItem marks one item as in flight, so a process that dies mid-item
-// leaves a record saying which one it was holding.
+// StartOpItem flags an item as in flight, so a process dying partway through
+// leaves behind a record of which item it held.
 func (d *DB) StartOpItem(ctx context.Context, id, idx int64) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		_, ierr := tx.ExecContext(ctx, sqlMarkOpItemStarted, id, idx)
@@ -144,13 +143,13 @@ func (d *DB) StartOpItem(ctx context.Context, id, idx int64) error {
 	})
 }
 
-// UnfinishedOpItems returns the paths an operation was asked for and never
-// recorded an outcome for, split by whether it had started on them.
+// UnfinishedOpItems returns paths the operation was given but never recorded an
+// outcome for, separated by whether work had begun on them.
 //
-// Attempting is at most one entry in practice: the runner works one item at
-// a time, so it is whatever it was holding when the process stopped. Whether
-// that item landed is genuinely unknown, which is why it is reported
-// separately from the ones nothing touched.
+// In practice the attempting set holds at most one entry, since the runner
+// processes items serially and this is whatever it held when the process
+// stopped. Whether that item completed is genuinely unknown, which is why it is
+// reported apart from those never touched.
 func (d *DB) UnfinishedOpItems(
 	ctx context.Context, id int64,
 ) (attempting, pending []string, err error) {
@@ -180,7 +179,7 @@ func (d *DB) UnfinishedOpItems(
 	return attempting, pending, nil
 }
 
-// GetOp reads one operation and its results.
+// GetOp retrieves an operation together with its results.
 func (d *DB) GetOp(ctx context.Context, id int64) (op Op, results []OpResult, err error) {
 	var (
 		msg      sql.NullString
@@ -228,7 +227,7 @@ func (d *DB) GetOp(ctx context.Context, id int64) (op Op, results []OpResult, er
 	return op, results, nil
 }
 
-// SetOpProgress updates a running operation's progress and message.
+// SetOpProgress revises a running operation's progress and message.
 func (d *DB) SetOpProgress(ctx context.Context, id int64, progress int64, message string) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		_, ierr := tx.ExecContext(ctx, sqlSetOpProgress, progress, textArg(message), id)
@@ -246,9 +245,9 @@ func (d *DB) RequestOpCancel(ctx context.Context, id int64) error {
 	})
 }
 
-// FinishOp writes an operation's terminal state, its final progress, and its
-// whole item-result set in one transaction, so a client never sees a
-// finished operation whose results have not landed yet.
+// FinishOp commits an operation's terminal state, final progress and complete
+// item-result set within one transaction, so no client ever observes a finished
+// operation whose results are still missing.
 func (d *DB) FinishOp(
 	ctx context.Context, id int64, state OpState, progress int64,
 	message string, finishedNs int64, results []OpResult,
@@ -274,8 +273,9 @@ func (d *DB) FinishOp(
 	})
 }
 
-// InterruptOp marks a running operation interrupted, preserving its progress
-// and results so a refreshed client gets an honest terminal state.
+// InterruptOp marks a running operation as interrupted while keeping its
+// progress and results, so a client that refreshes receives a truthful terminal
+// state.
 func (d *DB) InterruptOp(ctx context.Context, id int64, finishedNs int64) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		_, ierr := tx.ExecContext(ctx, sqlSetOpState,
@@ -285,12 +285,12 @@ func (d *DB) InterruptOp(ctx context.Context, id int64, finishedNs int64) error 
 	})
 }
 
-// ListOps returns one account's unfinished operations, newest first and
-// bounded.
+// ListOps returns an account's unfinished operations, newest first, up to a
+// limit.
 //
-// Unfinished means running or interrupted: the two states a client can still
-// do something about. A finished one is history, and the caller reading this
-// is re-attaching to what is in flight. Bounded because the table grows with
+// Unfinished covers running and interrupted, the two states a client can still
+// act on. Finished operations are history, and a caller reading this is
+// reattaching to work in flight. The bound exists because the table grows with
 // every batch anyone runs.
 func (d *DB) ListOps(ctx context.Context, user int64, limit int) (out []Op, err error) {
 	if limit <= 0 {

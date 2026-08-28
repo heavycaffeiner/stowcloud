@@ -7,40 +7,41 @@ import (
 	"fmt"
 )
 
-// The device login flow's durable half.
+// The persistent side of the device login flow.
 //
-// A client asks to sign in, a human approves in a browser, and the client
-// collects an app password. The three steps happen in different processes
-// minutes apart, so the flow between them is a row rather than memory.
+// A client requests sign-in, a person approves it in a browser, and the client
+// retrieves an app password. Those three steps occur in separate processes
+// minutes apart, so what connects them is a row rather than memory.
 //
-// Nothing here holds a credential. Both tokens rest as digests and the
-// password is minted at delivery, so a read of this table is a list of
-// sign-ins in progress rather than a way to finish one.
+// No credential is stored here. Both tokens sit as digests and the password is
+// generated at delivery time, so reading this table reveals which sign-ins are
+// underway without providing any means to complete one.
 
-// LoginFlowRow is one flow in progress.
+// LoginFlowRow describes a single in-progress flow.
 type LoginFlowRow struct {
 	PollDigest  []byte
 	LoginDigest []byte
 	CreatedNs   int64
-	// ApprovedUser is nil until a human approves.
+	// ApprovedUser stays nil until a person approves.
 	ApprovedUser  *int64
 	ApprovedLogin string
 	LastPollNs    int64
 }
 
-// The refusals this file answers with. They are sentinels because the caller
-// turns each into a different answer to the client: unknown is a 404, a
-// second approval is a conflict, and a poll that is too soon is a 429.
+// The rejections this file produces. Each is a sentinel because the caller maps
+// them to distinct client responses: an unknown flow becomes a 404, a repeat
+// approval becomes a conflict, and an early poll becomes a 429.
 var (
-	// ErrLoginFlowUnknown is a digest no live flow has.
+	// ErrLoginFlowUnknown reports a digest matching no live flow.
 	ErrLoginFlowUnknown = errors.New("no such login flow")
-	// ErrLoginFlowApproved refuses a second approval of one flow.
+	// ErrLoginFlowApproved rejects approving the same flow twice.
 	ErrLoginFlowApproved = errors.New("the login flow is already approved")
-	// ErrLoginFlowTooSoon is a poll inside the interval the last one started.
+	// ErrLoginFlowTooSoon reports a poll arriving within the interval opened by
+	// the previous one.
 	ErrLoginFlowTooSoon = errors.New("polling too fast")
 )
 
-// PutLoginFlow stores a new flow.
+// PutLoginFlow persists a new flow.
 func (d *DB) PutLoginFlow(ctx context.Context, rec LoginFlowRow) error {
 	// A new row is what grows the file.
 	if err := d.f.EnsureWritable(); err != nil {
@@ -56,12 +57,13 @@ func (d *DB) PutLoginFlow(ctx context.Context, rec LoginFlowRow) error {
 	})
 }
 
-// LoginFlowByPoll finds a flow by the token the client polls with.
+// LoginFlowByPoll locates a flow using the token the client polls with.
 func (d *DB) LoginFlowByPoll(ctx context.Context, digest []byte) (LoginFlowRow, error) {
 	return d.loginFlowBy(ctx, sqlSelectLoginFlowByPoll, digest)
 }
 
-// LoginFlowByLogin finds a flow by the token in the browser's address bar.
+// LoginFlowByLogin locates a flow using the token from the browser's address
+// bar.
 func (d *DB) LoginFlowByLogin(ctx context.Context, digest []byte) (LoginFlowRow, error) {
 	return d.loginFlowBy(ctx, sqlSelectLoginFlowByLogin, digest)
 }
@@ -87,18 +89,18 @@ func (d *DB) loginFlowBy(ctx context.Context, query string, digest []byte) (Logi
 	return out, nil
 }
 
-// ApproveLoginFlow records who approved, and refuses a second approval.
+// ApproveLoginFlow records the approver and rejects any repeat approval.
 //
-// The refusal is the point rather than tidiness: without it, one login URL
-// opened twice mints two credentials, and the second one goes to whoever
-// replayed the link.
+// That rejection is a security property rather than housekeeping. Without it, a
+// single login URL opened twice issues two credentials, and the second lands
+// with whoever replayed the link.
 func (d *DB) ApproveLoginFlow(
 	ctx context.Context, loginDigest []byte, user int64, login string,
 ) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
-		// The guard is in the statement rather than a read followed by a
-		// write: two approvals arriving together would both pass a check
-		// made before either wrote.
+		// The guard lives inside the statement instead of a read followed by a
+		// write, since two approvals arriving together would both satisfy a
+		// check performed before either one wrote.
 		res, err := tx.ExecContext(ctx, sqlApproveLoginFlow, user, login, loginDigest)
 		if err != nil {
 			return fmt.Errorf("approving a login flow: %w", err)
@@ -110,8 +112,8 @@ func (d *DB) ApproveLoginFlow(
 		if n == 1 {
 			return nil
 		}
-		// Nothing moved: either there is no such flow, or it was approved
-		// already. The two are different answers to the caller.
+		// No row changed, meaning either the flow does not exist or it was
+		// already approved. The caller must distinguish the two.
 		var approved sql.NullInt64
 		qerr := tx.QueryRowContext(ctx, sqlSelectLoginFlowApproval, loginDigest).Scan(&approved)
 		if errors.Is(qerr, sql.ErrNoRows) {
@@ -127,10 +129,10 @@ func (d *DB) ApproveLoginFlow(
 	})
 }
 
-// TouchLoginFlowPoll records a poll, refusing one that arrives too soon.
+// TouchLoginFlowPoll registers a poll and rejects one arriving prematurely.
 //
-// minIntervalNs is how long a client must wait between polls. The comparison
-// and the write are one statement so two polls racing cannot both pass.
+// minIntervalNs sets the mandatory wait between polls. Comparison and write
+// occupy one statement so that racing polls cannot both succeed.
 func (d *DB) TouchLoginFlowPoll(
 	ctx context.Context, pollDigest []byte, nowNs, minIntervalNs int64,
 ) error {
@@ -159,7 +161,7 @@ func (d *DB) TouchLoginFlowPoll(
 	})
 }
 
-// DropLoginFlow removes a flow once its credential has been delivered.
+// DropLoginFlow deletes a flow after its credential has been handed over.
 func (d *DB) DropLoginFlow(ctx context.Context, pollDigest []byte) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, sqlDeleteLoginFlow, pollDigest); err != nil {
@@ -169,9 +171,9 @@ func (d *DB) DropLoginFlow(ctx context.Context, pollDigest []byte) error {
 	})
 }
 
-// SweepLoginFlows removes what has expired and reports how many. An
-// abandoned flow is the normal case: a client that begins one and never
-// opens the browser leaves a row nothing will ever collect.
+// SweepLoginFlows deletes expired flows and returns the count. Abandonment is
+// the ordinary case: a client that starts a flow and never opens the browser
+// leaves behind a row nothing else would ever reclaim.
 func (d *DB) SweepLoginFlows(ctx context.Context, olderThanNs int64) (int64, error) {
 	var n int64
 	err := d.Write(ctx, func(tx *sql.Tx) error {

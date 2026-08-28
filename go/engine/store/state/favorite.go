@@ -24,7 +24,7 @@ type Favorite struct {
 	Path  string
 }
 
-// Favorites returns everything a user has starred.
+// Favorites yields every entry an account has starred.
 func (d *DB) Favorites(ctx context.Context, user int64) (out []Favorite, err error) {
 	rows, err := d.f.SQL().QueryContext(ctx, sqlSelectFavorites, user)
 	if err != nil {
@@ -53,7 +53,7 @@ func (d *DB) Favorites(ctx context.Context, user int64) (out []Favorite, err err
 	return out, nil
 }
 
-// SetFavorite stars or unstars an entry.
+// SetFavorite adds or removes a star on an entry.
 func (d *DB) SetFavorite(ctx context.Context, user int64, f Favorite, on bool) error {
 	// Starring inserts a row; unstarring does not, but the guard is checked
 	// once here rather than split across the two branches below, because the

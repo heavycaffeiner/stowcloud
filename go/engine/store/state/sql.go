@@ -2,33 +2,31 @@ package state
 
 import "github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
 
-// The schema history, and nothing else: no aggregate's active statements
-// live here. Every table holds something the filesystem cannot regenerate,
-// which is what makes this file the data backup.
+// Schema history alone; no aggregate keeps its working statements here. Each
+// table stores something the filesystem cannot regenerate, which is what makes
+// this file the data backup.
 //
-// The shapes are fixed by what the current build wrote. An existing state.db
-// has to open at its stored version, so a step that has shipped is carried
-// forward exactly and never edited; a correction is a new step appended.
+// The shapes follow whatever the current build wrote. Any existing state.db must
+// open at its recorded version, so a released step is preserved verbatim and
+// never modified; corrections arrive as newly appended steps.
 //
-// Three tables key by the identity tuple rather than by a node id: dead
-// properties, locks and favorites. Keying by an id only the cache mints is
-// what forced the cache to carry a pin saying "do not reap this, something
-// durable points at it". An identity is a fact about the file, so deleting
-// the cache costs a lookup rather than leaving a row pointing at nothing.
+// Dead properties, locks and favorites key on the identity tuple rather than a
+// node id. Keying on an id that only the cache generates is what once forced the
+// cache to hold a pin declaring that something durable referenced the row. An
+// identity is a property of the file itself, so discarding the cache costs a
+// lookup instead of leaving rows pointing nowhere.
 //
-// The birth time is two columns rather than the one node carries, and the
-// difference is SQLite's rather than a choice: a WITHOUT ROWID table
-// enforces NOT NULL on every column of its primary key, so a nullable
-// btime_ns there would refuse exactly the rows a filesystem with no birth
-// time produces. The pair is the derivation's own flag byte, stored.
+// Birth time occupies two columns rather than the single one node uses, and that
+// difference comes from SQLite rather than preference: a WITHOUT ROWID table
+// imposes NOT NULL across every primary key column, so a nullable btime_ns there
+// would reject exactly the rows produced by a filesystem lacking birth times.
+// The pair stores the derivation's own flag byte.
 //
-// A grant's principal is two nullable columns with a CHECK rather than a
-// kind and an id, because a polymorphic reference cannot carry a foreign
-// key, and a grant belonging to a user who no longer exists is the thing the
-// key is for.
+// A grant's principal uses two nullable columns guarded by a CHECK instead of a
+// kind and id pair, because a polymorphic reference cannot carry a foreign key,
+// and a grant referencing a deleted user is precisely what that key prevents.
 //
-// "group" is quoted because it is a SQLite keyword. "grant" is quoted for
-// symmetry with it.
+// "group" is quoted as a SQLite keyword, and "grant" is quoted to match.
 const schemaV1 = `
 CREATE TABLE user (
   id          INTEGER PRIMARY KEY,
@@ -251,19 +249,19 @@ CREATE TABLE fileid_override (
 ) WITHOUT ROWID;
 `
 
-// Step 2 gives a share link one coherent target representation and pairs the
-// encrypted token with the key version that sealed it.
+// Step 2 gives share links a single coherent target representation and joins the
+// encrypted token to the key version that sealed it.
 //
-// Version 1 made all four identity columns nullable and constrained no
-// combination of them, so "path only", "path plus identity" and a partial
-// tuple were the same shape on disk. A link is the one durable row that must
-// not follow a rename: it stats the stored path and requires the stored
-// identity to match, and a link that cannot tell the original inode from one
-// reused after a delete cannot keep that contract.
+// In version 1 all four identity columns were nullable with no constraint across
+// any combination, leaving path-only, path-plus-identity and partial tuples
+// indistinguishable on disk. Links are the one durable row that must not follow
+// a rename: they stat the stored path and demand the stored identity match, and
+// a link unable to separate the original inode from one reused after a delete
+// cannot honour that.
 //
-// This step preserves rows. There is nothing to rebuild this database from,
-// so a row it cannot represent stops the migration rather than being dropped
-// or weakened; the precondition names which row.
+// Rows are preserved here. Nothing exists to rebuild this database from, so any
+// row this step cannot represent halts the migration instead of being dropped or
+// weakened, and the precondition identifies which row.
 const schemaV2 = `
 CREATE TABLE share_link_next (
   id            INTEGER PRIMARY KEY,
@@ -463,13 +461,14 @@ CREATE TABLE compat_upload_alias (
 ) WITHOUT ROWID;
 `
 
-// Step 7 holds a link flow between the redirect out and the callback back.
+// Step 7 carries a link flow across the outbound redirect and the returning
+// callback.
 //
-// The state and the binding rest only as digests. Both are handed to the
-// browser, so storing them whole would mean a read of this table is enough
-// to complete somebody else's link, and what the callback checks is equality
-// rather than the value. The verifier and the nonce are stored whole: each
-// has to be sent, and neither authenticates anything on its own.
+// State and binding are stored solely as digests. Both reach the browser, so
+// keeping them intact would make a read of this table sufficient to complete
+// someone else's link, and the callback tests equality rather than the value
+// itself. The verifier and nonce are stored intact because each must be
+// transmitted and neither authenticates anything alone.
 const schemaV7 = `
 CREATE TABLE oidc_flow (
   state_digest    BLOB PRIMARY KEY,
@@ -502,12 +501,12 @@ CREATE TABLE operation_item (
 ) WITHOUT ROWID;
 `
 
-// Step 9 lands the upload cache spool: its switch, and the two columns a
-// session needs to survive a restart with chunks still in the cache.
+// Step 9 introduces the upload cache spool: its switch plus the two columns a
+// session requires to survive a restart while chunks remain cached.
 //
-// cache_merged is the byte count already copied into the part file and made
-// durable there. It is the frontier a restart resumes merging from, and the
-// reason a cache on tmpfs cannot lose an acknowledged byte.
+// cache_merged counts bytes already copied into the part file and made durable
+// there. It marks the frontier a restart resumes merging from, and is why a
+// cache backed by tmpfs cannot lose an acknowledged byte.
 const schemaV9 = `
 CREATE TABLE upload_cache_settings (
   id      INTEGER PRIMARY KEY CHECK (id = 1),
@@ -552,9 +551,9 @@ CREATE TABLE config_secret (
 ) WITHOUT ROWID;
 `
 
-// migrations is a function rather than a package-level slice so the list
-// cannot be reassigned. Position is version, so a step that has shipped is
-// never edited, renumbered or reordered.
+// migrations is a function instead of a package-level slice so nothing can
+// reassign the list. Position determines version, so a released step is never
+// modified, renumbered or moved.
 func migrations() []dbfile.Migration {
 	return []dbfile.Migration{
 		{Name: "1: the durable tables", SQL: schemaV1},

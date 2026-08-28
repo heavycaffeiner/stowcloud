@@ -34,8 +34,8 @@ DELETE FROM dav_prop
  WHERE share = ? AND dev = ? AND ino = ? AND btime_present = ? AND btime_ns = ?`
 )
 
-// Locks are read with the deadline applied, so an expired row can never be
-// honored even if the sweep has not run.
+// Reads apply the deadline, so an expired row can never be enforced even when
+// the sweep has not yet run.
 const (
 	sqlSelectDavLocks = `
 SELECT token, share, dev, ino, btime_present, btime_ns,

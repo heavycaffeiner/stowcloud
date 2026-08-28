@@ -150,8 +150,8 @@ func TestAnEmptyScopeIsNoShareList(t *testing.T) {
 	}
 }
 
-// The wipe marks the credential and revokes it in one statement: a device
-// that never reconnects to hear the request must not keep working.
+// A single statement both marks and revokes the credential, so a device that
+// never reconnects to receive the request cannot continue working.
 func TestAWipeRequestAlsoExpiresTheCredential(t *testing.T) {
 	ctx := context.Background()
 	d, _ := open(t)

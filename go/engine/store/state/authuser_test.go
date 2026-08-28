@@ -52,9 +52,9 @@ func TestAnAccountRoundTripsByNameAndByID(t *testing.T) {
 	}
 }
 
-// An imported account carries no display name. Reading an absent one used to
-// fail the scan, which meant the account could not sign in at all and the
-// refusal was a server error rather than anything a person could act on.
+// Imported accounts have no display name. Reading a missing one previously broke
+// the scan, leaving the account unable to sign in at all and producing a server
+// error rather than anything actionable.
 func TestAnAbsentDisplayNameReadsAsEmpty(t *testing.T) {
 	ctx := context.Background()
 	d, _ := open(t)

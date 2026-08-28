@@ -11,12 +11,12 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 )
 
-// The upload session store. The rows live here rather than in a database of
-// their own because an interrupted upload whose session row vanished is a
-// part file nobody will ever finish, and that is data loss dressed as
+// The upload session store. These rows share this database rather than occupying
+// their own, because an interrupted upload whose session row disappeared leaves
+// a part file no one can ever complete, which is data loss disguised as
 // cleanup.
 
-// ErrNoSuchUploadSession is a session id that holds no row.
+// ErrNoSuchUploadSession reports a session id backed by no row.
 var ErrNoSuchUploadSession = errors.New("no such upload session")
 
 // UploadSession is one row of upload_session. It is the store's shape, not
@@ -25,54 +25,56 @@ var ErrNoSuchUploadSession = errors.New("no such upload session")
 type UploadSession struct {
 	ID   []byte
 	User int64
-	// Share is the share the finished file lands in. A caller holding only a
-	// session id has to be able to reach the share root without keeping an
-	// id-to-share table of its own that a restart would lose.
+	// Share identifies where the completed file lands. A caller holding nothing
+	// but a session id must still reach the share root, without maintaining a
+	// private id-to-share table that a restart would discard.
 	Share int64
-	// Dest is the share-relative destination path. It is never rewritten: a
-	// session that could move its own destination could publish somewhere the
-	// permission check never looked.
+	// Dest holds the share-relative destination path and is never rewritten. A
+	// session able to relocate its own destination could publish somewhere the
+	// permission check never examined.
 	Dest string
 	// PartName is the reserved control name the bytes accumulate under, in
 	// the destination's own directory, because the rename that publishes it
 	// is only atomic within one directory.
 	PartName string
-	// SpoolDir is set for a name-ordered session and empty otherwise.
+	// SpoolDir carries a value for name-ordered sessions and is empty for the
+	// rest.
 	SpoolDir string
 	// CacheDir is the session's directory under the cache spool, and empty
 	// for a session writing straight to the destination. Its presence is what
 	// says which mode a session runs in, so a switch flipped mid-upload
 	// cannot change where a session in flight looks for its bytes.
 	CacheDir string
-	// CacheMerged is how many bytes from the front of the file are already in
-	// the part file and durable there. A restart resumes merging from it.
+	// CacheMerged counts bytes from the file's start already present and durable
+	// in the part file. Merging resumes from this point after a restart.
 	CacheMerged int64
 	Mode        int64
 	// TotalLen is nil for a deferred length, which the client may supply
 	// later and finalize requires.
 	TotalLen *int64
-	// ChunkSize is the size advertised at creation, and ChunkMinAtCreation is
-	// the floor snapshotted then. The floor is a snapshot rather than a live
-	// read so an admin moving it mid-upload cannot retroactively make an
-	// already-legal chunk illegal.
+	// ChunkSize records the size advertised at creation, and ChunkMinAtCreation
+	// captures the floor as it stood then. Snapshotting the floor rather than
+	// reading it live stops an administrator who changes it mid-upload from
+	// retroactively invalidating a chunk that was legal when sent.
 	ChunkSize          int64
 	ChunkMinAtCreation int64
 	RandomAccess       bool
-	// NextName and WriteHead are the name-ordered assembly cursor: the chunk
-	// name expected next, and where in the part file it will be written.
+	// NextName and WriteHead together form the name-ordered assembly cursor,
+	// naming the chunk expected next and the offset in the part file where it
+	// will land.
 	NextName  int64
 	WriteHead int64
-	// SpooledNames are the out-of-order chunk names sitting in the spool
-	// directory waiting for their predecessor.
+	// SpooledNames lists out-of-order chunk names held in the spool directory
+	// awaiting their predecessor.
 	SpooledNames []uint32
 	IfMatch      string
 	Filename     string
 	MtimeNs      *int64
 	Mime         string
 	RelativePath string
-	// Verify and VerifyDigest are always written together. An algorithm with
-	// nothing to compare against is a check that can never fail, so the pair
-	// is stored and read as a pair.
+	// Verify and VerifyDigest are always written as a unit. An algorithm with no
+	// expected value produces a check incapable of failing, so both are stored
+	// and read together.
 	Verify       *int64
 	VerifyDigest []byte
 	CreatedNs    int64
@@ -80,7 +82,7 @@ type UploadSession struct {
 	State        int64
 }
 
-// UploadAlias is a client-chosen transfer id bound to a session, within one
+// UploadAlias binds a client-chosen transfer id to a session within a single
 // account's namespace.
 type UploadAlias struct {
 	Session []byte
@@ -110,7 +112,7 @@ func (d *DB) CreateUploadSession(ctx context.Context, s UploadSession) error {
 	})
 }
 
-// ReadUploadSession reads one session row, without its intervals.
+// ReadUploadSession retrieves a session row without its intervals.
 func (d *DB) ReadUploadSession(ctx context.Context, id []byte) (UploadSession, error) {
 	s, err := scanUploadSession(d.f.SQL().QueryRowContext(ctx, sqlReadUploadSession, id))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -122,14 +124,14 @@ func (d *DB) ReadUploadSession(ctx context.Context, id []byte) (UploadSession, e
 	return s, nil
 }
 
-// ListUploadSessions reads every session row. The sweep takes this before it
-// reads a single directory, so a session created between the two passes is
-// not mistaken for an orphan.
+// ListUploadSessions retrieves every session row. The sweep obtains this before
+// examining any directory, so a session created between the two passes is never
+// mistaken for an orphan.
 func (d *DB) ListUploadSessions(ctx context.Context) ([]UploadSession, error) {
 	return d.queryUploadSessions(ctx, sqlListUploadSessions)
 }
 
-// ListExpiredUploadSessions reads the sessions whose lifetime has run out.
+// ListExpiredUploadSessions retrieves sessions whose lifetime has elapsed.
 func (d *DB) ListExpiredUploadSessions(ctx context.Context, nowNs int64) ([]UploadSession, error) {
 	return d.queryUploadSessions(ctx, sqlListExpiredUploadSessions, nowNs)
 }
@@ -155,7 +157,7 @@ func (d *DB) queryUploadSessions(
 	return out, nil
 }
 
-// UpdateUploadSession rewrites the mutable half of a session row.
+// UpdateUploadSession rewrites the mutable portion of a session row.
 func (d *DB) UpdateUploadSession(ctx context.Context, s UploadSession) error {
 	names, err := encodeSpooledNames(s.SpooledNames)
 	if err != nil {
@@ -169,13 +171,13 @@ func (d *DB) UpdateUploadSession(ctx context.Context, s UploadSession) error {
 	})
 }
 
-// AdvanceUploadCacheMerged records how far the merge has reached.
+// AdvanceUploadCacheMerged records the merge's current extent.
 //
-// It moves one column and never goes backwards, because it runs while chunks
-// of the same session are still arriving: writing the whole row from the
-// merger would put back a copy of fields the chunk writer has since moved,
-// and a frontier that retreated would re-merge cache files that are already
-// gone.
+// It touches a single column and never moves backwards, since it executes while
+// chunks for the same session are still arriving. Writing the entire row from
+// the merger would restore stale copies of fields the chunk writer has already
+// advanced, and a retreating frontier would attempt to re-merge cache files that
+// no longer exist.
 func (d *DB) AdvanceUploadCacheMerged(ctx context.Context, id []byte, merged int64) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, sqlAdvanceUploadCacheMerged, merged, id, merged)
@@ -183,12 +185,12 @@ func (d *DB) AdvanceUploadCacheMerged(ctx context.Context, id []byte, merged int
 	})
 }
 
-// RecordUploadInterval writes the ranges a merge produced and refreshes the
-// session's lifetime, in one transaction.
+// RecordUploadInterval writes the ranges produced by a merge and extends the
+// session's lifetime within one transaction.
 //
-// The whole set is rewritten rather than one row appended, because an insert
-// that merged three runs into one has to delete the two it absorbed. The set
-// is bounded by the run limit, so the write is bounded too.
+// The complete set is rewritten instead of appending a single row, because an
+// insert combining three runs into one must remove the two it absorbed. The run
+// limit bounds the set, which bounds the write as well.
 func (d *DB) RecordUploadInterval(
 	ctx context.Context, id []byte, runs [][2]uint64, expiresNs int64,
 ) error {
@@ -218,7 +220,7 @@ func (d *DB) RecordUploadInterval(
 	})
 }
 
-// ReadUploadIntervals reads one session's recorded ranges in order.
+// ReadUploadIntervals retrieves a session's recorded ranges in order.
 func (d *DB) ReadUploadIntervals(ctx context.Context, id []byte) (out [][2]uint64, err error) {
 	rows, err := d.f.SQL().QueryContext(ctx, sqlReadUploadIntervals, id)
 	if err != nil {
@@ -244,10 +246,10 @@ func (d *DB) ReadUploadIntervals(ctx context.Context, id []byte) (out [][2]uint6
 	return out, nil
 }
 
-// DeleteUploadSession removes a session, its intervals and its aliases. The
-// two child tables cascade, and the alias delete is written out because a
-// transfer id outliving the session it names would keep addressing a freed
-// id.
+// DeleteUploadSession removes a session along with its intervals and aliases.
+// Both child tables cascade, and the alias deletion is stated explicitly because
+// a transfer id surviving the session it names would continue addressing a
+// released id.
 func (d *DB) DeleteUploadSession(ctx context.Context, id []byte) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, sqlDeleteUploadAliasesForSession, id); err != nil {
@@ -261,7 +263,8 @@ func (d *DB) DeleteUploadSession(ctx context.Context, id []byte) error {
 	})
 }
 
-// CountUploadSessionsForUser is how many receiving sessions an account holds.
+// CountUploadSessionsForUser reports how many receiving sessions an account
+// holds.
 func (d *DB) CountUploadSessionsForUser(ctx context.Context, user int64) (int64, error) {
 	var n int64
 	if err := d.f.SQL().QueryRowContext(ctx, sqlCountUploadSessionsForUser, user).Scan(&n); err != nil {
@@ -281,12 +284,12 @@ func (d *DB) SumUploadReservedForUser(ctx context.Context, user int64) (int64, e
 	return n, nil
 }
 
-// BindUploadAlias binds a transfer id to a session inside one account's
-// namespace, and reports false when the account already holds that id.
+// BindUploadAlias associates a transfer id with a session inside one account's
+// namespace, returning false when the account already holds that id.
 //
-// The caller answers a conflict rather than replacing: a silent rebind would
-// orphan the first session's spool directory with nothing left pointing at
-// it.
+// Callers respond with a conflict rather than replacing the binding. A silent
+// rebind would strand the first session's spool directory with nothing
+// referencing it.
 func (d *DB) BindUploadAlias(
 	ctx context.Context, tid string, user int64, a UploadAlias, createdNs int64,
 ) (bool, error) {
@@ -310,10 +313,9 @@ func (d *DB) BindUploadAlias(
 	return bound, nil
 }
 
-// LookupUploadAlias resolves a transfer id within one account's namespace. A
-// tid belonging to another account resolves to ErrNoSuchUploadSession,
-// exactly like one that never existed, so the lookup is not an existence
-// oracle.
+// LookupUploadAlias resolves a transfer id inside one account's namespace. An id
+// owned by a different account yields ErrNoSuchUploadSession, identical to one
+// that never existed, keeping the lookup from acting as an existence oracle.
 func (d *DB) LookupUploadAlias(ctx context.Context, tid string, user int64) (UploadAlias, error) {
 	var a UploadAlias
 	err := d.f.SQL().QueryRowContext(ctx, sqlReadUploadAlias, user, tid).
@@ -327,7 +329,7 @@ func (d *DB) LookupUploadAlias(ctx context.Context, tid string, user int64) (Upl
 	return a, nil
 }
 
-// UnbindUploadAlias drops one transfer id from an account's namespace.
+// UnbindUploadAlias removes a transfer id from an account's namespace.
 func (d *DB) UnbindUploadAlias(ctx context.Context, tid string, user int64) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, sqlDeleteUploadAlias, user, tid)
@@ -335,18 +337,18 @@ func (d *DB) UnbindUploadAlias(ctx context.Context, tid string, user int64) erro
 	})
 }
 
-// TouchedDir is one directory a part file has been created in.
+// TouchedDir names a directory where a part file has been created.
 type TouchedDir struct {
 	Share int64
 	Dir   string
 }
 
-// TouchUploadDir records a directory a part file was created in, so the sweep
-// knows where to look for one whose session row is gone.
+// TouchUploadDir notes a directory where a part file was created, so the sweep
+// knows where to search for one whose session row has disappeared.
 //
-// A failure is the caller's to decide about rather than this package's: the
-// upload it belongs to is fine, and what has been lost is the sweep's record
-// of where to look later.
+// How to treat a failure is the caller's decision rather than this package's.
+// The associated upload is unaffected; what is lost is the sweep's record of
+// where to look afterwards.
 func (d *DB) TouchUploadDir(ctx context.Context, share int64, dir string) error {
 	if err := d.f.EnsureWritable(); err != nil {
 		return err
@@ -357,8 +359,8 @@ func (d *DB) TouchUploadDir(ctx context.Context, share int64, dir string) error 
 	})
 }
 
-// ListUploadTouchedDirs is every directory a part file has ever been created
-// in.
+// ListUploadTouchedDirs returns every directory in which a part file has ever
+// been created.
 func (d *DB) ListUploadTouchedDirs(ctx context.Context) (out []TouchedDir, err error) {
 	rows, err := d.f.SQL().QueryContext(ctx, sqlListUploadTouchedDirs)
 	if err != nil {
@@ -378,10 +380,10 @@ func (d *DB) ListUploadTouchedDirs(ctx context.Context) (out []TouchedDir, err e
 	return out, nil
 }
 
-// ChunkSettings is the persisted floor and default, and whether a row exists
-// at all. The flag is what separates "an admin stored this" from "it fell
-// back to the compiled-in defaults": without it both are the same pair of
-// integers and the settings screen has nothing to report.
+// ChunkSettings returns the stored floor and default plus whether any row
+// exists. That flag distinguishes values an administrator saved from the
+// compiled-in fallbacks; without it both appear as the same pair of integers and
+// the settings screen has nothing meaningful to display.
 type ChunkSettings struct {
 	Min      int64
 	Default  int64
@@ -403,7 +405,7 @@ func (d *DB) ReadChunkSettings(ctx context.Context) (ChunkSettings, error) {
 	return c, nil
 }
 
-// WriteChunkSettings persists an admin's floor and default.
+// WriteChunkSettings stores an administrator's floor and default.
 func (d *DB) WriteChunkSettings(ctx context.Context, minBytes, defaultBytes int64) error {
 	if err := d.f.EnsureWritable(); err != nil {
 		return err
@@ -414,8 +416,8 @@ func (d *DB) WriteChunkSettings(ctx context.Context, minBytes, defaultBytes int6
 	})
 }
 
-// ReadUploadCacheEnabled reports whether chunks are spooled to the cache
-// volume before they reach the destination. No row means off.
+// ReadUploadCacheEnabled reports whether chunks pass through the cache volume
+// before reaching their destination. An absent row means disabled.
 func (d *DB) ReadUploadCacheEnabled(ctx context.Context) (bool, error) {
 	var on int64
 	err := d.f.SQL().QueryRowContext(ctx, sqlReadCacheSettings).Scan(&on)
@@ -428,7 +430,7 @@ func (d *DB) ReadUploadCacheEnabled(ctx context.Context) (bool, error) {
 	return on != 0, nil
 }
 
-// WriteUploadCacheEnabled persists the cache switch.
+// WriteUploadCacheEnabled stores the cache switch.
 func (d *DB) WriteUploadCacheEnabled(ctx context.Context, on bool) error {
 	if err := d.f.EnsureWritable(); err != nil {
 		return err
@@ -484,10 +486,10 @@ func scanUploadSession(row interface{ Scan(...any) error }) (UploadSession, erro
 	return s, nil
 }
 
-// encodeSpooledNames packs the out-of-order chunk names as fixed-width big
-// endian words. Fixed width rather than a varint because the set is small,
-// bounded and never read by anything but this file, and a decoder that cannot
-// run off the end is one less thing to get right.
+// encodeSpooledNames serializes out-of-order chunk names as fixed-width
+// big-endian words. Fixed width rather than varint because the set is small,
+// bounded, and read only by this file, and a decoder incapable of running off
+// the end is one fewer thing to get wrong.
 func encodeSpooledNames(names []uint32) ([]byte, error) {
 	if len(names) > limits.UploadSpooledNames {
 		return nil, limits.Exceed("upload spooled names",
@@ -500,9 +502,9 @@ func encodeSpooledNames(names []uint32) ([]byte, error) {
 	return out, nil
 }
 
-// decodeSpooledNames is the trust boundary on the way back: the length has to
-// divide evenly and the count has to be within the bound, because these are
-// bytes read back from a file.
+// decodeSpooledNames validates untrusted input on the way back in: the length
+// must divide evenly and the count must respect the bound, since these bytes
+// come from a file.
 func decodeSpooledNames(b []byte) ([]uint32, error) {
 	if len(b)%4 != 0 {
 		return nil, fmt.Errorf(

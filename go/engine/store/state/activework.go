@@ -5,15 +5,15 @@ import (
 	"fmt"
 )
 
-// What a restart would interrupt.
+// What restarting would disrupt.
 //
-// An upload in flight loses the part nobody has finished sending, and a
-// running job stops where it is. Both are recoverable (a session resumes, a
-// job is recorded as interrupted) and neither is something to do to somebody
-// without saying so, which is what these counts are for.
+// An in-flight upload loses whichever part was still arriving, and a running job
+// halts wherever it stands. Both recover afterwards, since a session resumes and
+// a job is recorded as interrupted, but neither should happen to someone
+// unannounced. These counts exist to make the warning possible.
 
-// ActiveWork is the two counts, across every account rather than one: a
-// restart takes the process down for all of them.
+// ActiveWork holds both counts spanning every account rather than a single one,
+// since a restart stops the process for all of them at once.
 type ActiveWork struct {
 	Uploads int
 	Jobs    int
@@ -36,8 +36,8 @@ func (d *DB) CountActiveWork(ctx context.Context) (ActiveWork, error) {
 // Two read-only counts and no write path, so they stay here rather than
 // taking a SQL file of their own.
 const (
-	// State zero is receiving. An aborted or finished session has nothing in
-	// flight to lose.
+	// State zero means receiving. Sessions that aborted or completed have
+	// nothing in flight left to lose.
 	sqlCountReceivingUploads = `SELECT count(*) FROM upload_session WHERE state = 0`
 
 	sqlCountRunningOps = `SELECT count(*) FROM operation WHERE state = ?`

@@ -320,13 +320,12 @@ func (d *DB) DeleteAccount(ctx context.Context, userID int64) error {
 	return err
 }
 
-// SetAccountSMBAccess writes both self-service switches.
+// SetAccountSMBAccess persists both self-service switches.
 //
-// They are two facts, not one: opting out says the account holds no
-// credential for the protocol at all, and enabled says whether the credential
-// it does hold is currently live. Collapsing them into one flag left the
-// opt-out column unwritable, so the screen's own toggle never survived a
-// reload.
+// These express two separate facts. Opting out states that the account holds no
+// protocol credential whatsoever, while enabled states whether an existing
+// credential is currently active. Merging them into one flag rendered the
+// opt-out column unwritable, so the screen's toggle never survived a reload.
 func (d *DB) SetAccountSMBAccess(ctx context.Context, userID int64, optOut, enabled bool) error {
 	if err := d.Write(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, sqlUpdateAccountSMBAccess, optOut, enabled, userID)
@@ -361,9 +360,9 @@ func (d *DB) SetAccountQuota(ctx context.Context, userID int64, bytes *int64) er
 	return nil
 }
 
-// guardLastAdmin refuses a write that would leave no administrator who can
-// sign in. It runs inside the caller's transaction, so a concurrent disable
-// of the other administrator cannot slip between the check and the write.
+// guardLastAdmin rejects any write that would leave no administrator able to
+// sign in. It executes within the caller's transaction, so a concurrent disable
+// of the remaining administrator cannot slip between the check and the write.
 func guardLastAdmin(ctx context.Context, tx *sql.Tx, userID int64) error {
 	var isAdmin int64
 	if err := tx.QueryRowContext(ctx, sqlCountThisActiveAdmin, userID).Scan(&isAdmin); err != nil {
@@ -500,8 +499,8 @@ func (d *DB) DeleteGroup(ctx context.Context, id int64) error {
 	return err
 }
 
-// AddMembership puts an account in a group. Adding twice is not an error: the
-// caller asked for a state, and the state is reached either way.
+// AddMembership places an account into a group. Repeating it is not an error,
+// since the caller requested a state and that state holds either way.
 func (d *DB) AddMembership(ctx context.Context, userID, groupID int64) error {
 	if err := d.f.EnsureWritable(); err != nil {
 		return err
@@ -549,7 +548,7 @@ func (d *DB) SetMemberships(ctx context.Context, userID int64, groupIDs []int64)
 	return nil
 }
 
-// GroupIDsOf returns the groups an account belongs to.
+// GroupIDsOf yields the groups containing an account.
 func (d *DB) GroupIDsOf(ctx context.Context, userID int64) (out []int64, err error) {
 	rows, err := d.f.SQL().QueryContext(ctx, sqlMembershipsOfUser, userID)
 	if err != nil {

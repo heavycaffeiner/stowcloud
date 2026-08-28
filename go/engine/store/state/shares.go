@@ -12,7 +12,7 @@ import (
 // share and one place it lives. None of it can be rebuilt from the
 // filesystem, which is why it is durable rather than cached.
 
-// ShareRow is one persisted share definition.
+// ShareRow holds a single persisted share definition.
 type ShareRow struct {
 	ID   int64
 	Name string
@@ -30,7 +30,7 @@ type ShareRow struct {
 	Created       int64
 }
 
-// ListShares returns every share, in id order.
+// ListShares yields all shares ordered by id.
 func (d *DB) ListShares(ctx context.Context) (out []ShareRow, err error) {
 	rows, err := d.f.SQL().QueryContext(ctx, sqlListShares)
 	if err != nil {
@@ -62,7 +62,7 @@ func scanShare(row interface{ Scan(...any) error }) (ShareRow, error) {
 	return r, nil
 }
 
-// InsertShare records a new share and returns its row id.
+// InsertShare stores a new share and returns its row id.
 func (d *DB) InsertShare(ctx context.Context, s ShareRow, createdNs int64) (int64, error) {
 	// A new row is what grows the file.
 	if err := d.f.EnsureWritable(); err != nil {
@@ -86,7 +86,7 @@ func (d *DB) InsertShare(ctx context.Context, s ShareRow, createdNs int64) (int6
 	return id, nil
 }
 
-// UpdateShare rewrites one share's definition.
+// UpdateShare replaces a share's definition.
 func (d *DB) UpdateShare(ctx context.Context, rowid int64, s ShareRow) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		_, ierr := tx.ExecContext(ctx, sqlUpdateShare,
