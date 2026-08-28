@@ -258,7 +258,7 @@ func TestNegativeLifetimesReflectTheFact(t *testing.T) {
 // otherwise poison the key.
 func TestPuttingNoReasonRemembersNothing(t *testing.T) {
 	n := NewNegatives()
-	n.Put(keyFor(1, 100, PresetSmall), NegativeNone, time.Now())
+	n.Put(keyFor(1, 100, PresetSmall), NegativeNone, time.Unix(1_700_000_000, 0))
 	if n.Len() != 0 {
 		t.Errorf("the cache holds %d entries after remembering nothing", n.Len())
 	}
@@ -295,7 +295,7 @@ func TestSweepDropsExpiredEntriesAndCounts(t *testing.T) {
 // behaviour after an upgrade fixes a decoder.
 func TestNegativesAreForgottenOnRestart(t *testing.T) {
 	k := keyFor(1, 100, PresetSmall)
-	now := time.Now()
+	now := time.Unix(1_700_000_000, 0)
 
 	first := NewNegatives()
 	first.Put(k, NegativeUnsupported, now)

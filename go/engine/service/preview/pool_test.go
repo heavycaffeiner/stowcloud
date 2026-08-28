@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"image"
 	"image/color"
 	"image/png"
@@ -330,13 +331,16 @@ func TestAHungWorkerDiesAtItsDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 	defer cancel()
 
-	start := time.Now()
+	// The elapsed check wants monotonic time, which is what Since is for: a
+	// wall clock stepped by NTP mid-test would report a bogus duration.
+	c := clock.System()
+	start := c.Now()
 	_, err := p.Generate(ctx, Request{Kind: JobImage, Preset: PresetSmall},
 		PlainSource{F: in}, out)
 	if !errors.Is(err, ErrWorkerDied) {
 		t.Fatalf("got %v, want ErrWorkerDied", err)
 	}
-	if elapsed := time.Since(start); elapsed > 10*time.Second {
+	if elapsed := c.Since(start); elapsed > 10*time.Second {
 		t.Errorf("the deadline took %v to fire", elapsed)
 	}
 }

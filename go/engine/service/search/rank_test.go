@@ -5,6 +5,9 @@ import (
 	"time"
 )
 
+// A fixed instant, so recency scores do not depend on the day the test runs.
+const testNowNs = int64(1_700_000_000_000_000_000)
+
 // The golden ordering the ranking exists to produce: an exact match above a
 // prefix match, a prefix match above a plain substring, and a hidden file
 // below its visible twin.
@@ -53,7 +56,7 @@ func TestEmptyNeedleAwardsNoNameTerm(t *testing.T) {
 func TestRecencyIsZeroWithoutAStat(t *testing.T) {
 	withoutStat := Score(RankInput{NameFolded: FoldString("a.txt"), Needle: FoldString("a.txt")})
 
-	now := time.Now().UnixNano()
+	now := testNowNs
 	fresh := now
 	withStat := Score(RankInput{
 		NameFolded: FoldString("a.txt"), Needle: FoldString("a.txt"),
@@ -67,7 +70,7 @@ func TestRecencyIsZeroWithoutAStat(t *testing.T) {
 // The decay is linear over the window and stops at zero rather than going
 // negative, so an old file is never pushed below an unstatted one.
 func TestRecencyDecaysLinearlyAndFloorsAtZero(t *testing.T) {
-	now := time.Now().UnixNano()
+	now := testNowNs
 	at := func(age time.Duration) float32 {
 		m := now - int64(age)
 		return Score(RankInput{MTimeNs: &m, NowNs: now})
