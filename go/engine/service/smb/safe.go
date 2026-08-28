@@ -6,15 +6,15 @@ import (
 	"unicode/utf8"
 )
 
-// The characters that end a value early or change what the rest of the file
-// means. A value carrying any of them is refused.
+// Characters that terminate a value prematurely or alter the meaning of the
+// surrounding file. Any value containing one is rejected.
 //
-// A newline or a carriage return ends the directive, and everything after it is
-// read as a fresh directive at the same scope. A bracket at the start of a line
-// opens a section, so a value carrying one can close the current section and
-// open another. A trailing backslash is a line continuation, which swallows the
-// directive on the next line into this value. A comment marker makes the
-// remainder of the line disappear.
+// Newlines and carriage returns close the directive, leaving whatever follows
+// to be parsed as a new directive at the same level. A bracket beginning a line
+// starts a section, letting a value close the current section and open a
+// different one. A backslash at the end continues the line, absorbing the
+// following directive into this value. A comment marker erases the rest of the
+// line.
 const (
 	unsafeAnywhere = "\n\r\x00[]"
 	unsafeComment  = ";#"
@@ -24,10 +24,10 @@ const (
 	listModifiers = "+-&@"
 )
 
-// serverNameMaxRunes is what the name service itself accepts.
+// serverNameMaxRunes is the limit imposed by the name service.
 const serverNameMaxRunes = 15
 
-// checkSafeValue refuses a value that cannot be interpolated.
+// checkSafeValue rejects values that cannot be interpolated.
 func checkSafeValue(field, v string) error {
 	unsafe := func(reason string) error {
 		return &UnsafeError{Field: field, Value: v, Reason: reason}
@@ -42,8 +42,8 @@ func checkSafeValue(field, v string) error {
 	if strings.ContainsAny(v, unsafeComment) {
 		return unsafe("contains a comment marker, which would hide the rest of the line")
 	}
-	// A trailing backslash continues the line, so the directive written below
-	// this one becomes part of this value.
+	// A backslash at the end continues the line, folding the directive on the
+	// following line into this value.
 	if strings.HasSuffix(v, `\`) {
 		return unsafe("ends in a backslash, which continues onto the next line")
 	}
@@ -62,12 +62,12 @@ func checkSafeValue(field, v string) error {
 	return nil
 }
 
-// checkSafeName refuses a value that also has to survive being one item in a
-// space-separated list, which is how the account lists are written.
+// checkSafeName rejects values that must additionally survive as a single item
+// in a space-separated list, the format the account lists use.
 //
-// A name carrying a space would split into two names, and the second one is a
-// grant nobody wrote. That makes whitespace an access-control question here
-// rather than a formatting one.
+// A name containing a space would divide into two names, the second granting
+// access nobody intended. Whitespace is therefore an authorization concern
+// here, not a formatting one.
 func checkSafeName(field, v string) error {
 	if v == "" {
 		return &UnsafeError{Field: field, Value: v, Reason: "must not be empty"}
@@ -94,12 +94,12 @@ func checkSafeName(field, v string) error {
 	return nil
 }
 
-// checkSafePath refuses a share path that cannot be interpolated, and one that
-// is not absolute.
+// checkSafePath rejects share paths that cannot be interpolated, along with any
+// that are not absolute.
 //
-// A relative path is resolved by Samba against its own working directory, which
-// is not a directory anyone chose, so it is refused here rather than pointing
-// somewhere nobody predicted.
+// Samba resolves a relative path against its own working directory, a location
+// nobody selected, so such paths are rejected here rather than resolving
+// somewhere unforeseen.
 func checkSafePath(v string) error {
 	if v == "" {
 		return &UnsafeError{Field: "share path", Value: v, Reason: "must not be empty"}
@@ -117,11 +117,11 @@ func checkSafePath(v string) error {
 	return nil
 }
 
-// checkServerName refuses a name the name service cannot carry.
+// checkServerName rejects names the name service cannot represent.
 //
-// An allow-list rather than a list of banned characters, because every name
-// anyone would type fits inside it, and because the name service itself refuses
-// anything over fifteen characters.
+// Validation uses an allow-list instead of a set of forbidden characters: any
+// name a person would plausibly enter falls inside it, and the name service
+// itself rejects anything longer than fifteen characters.
 func checkServerName(v string) error {
 	if v == "" {
 		return nil
@@ -142,10 +142,11 @@ func checkServerName(v string) error {
 	return nil
 }
 
-// checkPasswdName refuses a name the account file cannot carry.
+// checkPasswdName rejects names the account file cannot represent.
 //
-// The format is colon-separated with one record per line, and it has no escape
-// at all, so a name carrying either character is refused rather than written.
+// Records are one per line with colon-separated fields and no escaping
+// mechanism whatsoever, so a name containing either character is rejected
+// instead of being emitted.
 func checkPasswdName(v string) error {
 	if v == "" {
 		return &UnsafeError{Field: "smb user", Value: v, Reason: "must not be empty"}

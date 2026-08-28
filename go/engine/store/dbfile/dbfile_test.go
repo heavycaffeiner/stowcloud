@@ -68,8 +68,8 @@ func TestPragmasOnEveryPooledConnection(t *testing.T) {
 		{"PRAGMA foreign_keys", "1"},
 	}
 
-	// Held at once, so the pool has to open all of them instead of handing
-	// the same connection back eight times.
+	// All are held simultaneously, forcing the pool to open each one rather
+	// than returning a single connection eight times over.
 	conns := make([]*sql.Conn, 0, poolSize)
 	for range poolSize {
 		c, err := d.SQL().Conn(ctx)
@@ -236,8 +236,8 @@ func TestSchemaAheadRefusesAndLeavesTheFileAlone(t *testing.T) {
 	}
 }
 
-// A step and its version bump are one transaction. Half a step beside a
-// version claiming the whole of it is the state this proves cannot happen.
+// Each step and its version increment share a transaction. This rules out a
+// partially applied step sitting next to a version that claims it completed.
 func TestFailedMigrationLeavesTheOldVersionAndShape(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "x.db")

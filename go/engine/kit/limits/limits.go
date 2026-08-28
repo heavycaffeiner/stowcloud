@@ -238,7 +238,7 @@ const DirEntriesBuffered = 100_000
 const JournalRowsPerAccount = 1_000
 
 const (
-	// DavLocksPerUser refuses with 507.
+	// DavLocksPerUser rejects with status 507.
 	DavLocksPerUser = 256
 
 	// DavPropsPerResource bounds how many dead properties one resource may

@@ -446,7 +446,7 @@ func (p SafePath) Under(other SafePath) bool {
 	return slices.Equal(p.comps[:len(other.comps)], other.comps)
 }
 
-// Equal compares component-wise.
+// Equal reports whether both paths have identical components.
 func (p SafePath) Equal(other SafePath) bool { return slices.Equal(p.comps, other.comps) }
 
 // String joins the components with "/". The root's string is "".

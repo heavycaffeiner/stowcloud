@@ -44,8 +44,8 @@ func EnclosingPrivateRange(ip netip.Addr) string {
 			return "127.0.0.0/8"
 		case o[0] == 169 && o[1] == 254:
 			return "169.254.0.0/16"
-		// The carrier-NAT block is 100.64.0.0/10: the top ten bits are
-		// fixed, so the second octet runs 64 through 127.
+		// Carrier NAT occupies 100.64.0.0/10. Ten leading bits are fixed,
+		// putting the second octet between 64 and 127.
 		case o[0] == 100 && o[1] >= 64 && o[1] <= 127:
 			return "100.64.0.0/10"
 		}
@@ -58,8 +58,8 @@ func EnclosingPrivateRange(ip netip.Addr) string {
 		return "::1/128"
 	}
 	b := ip.As16()
-	// The unique-local block is fc00::/7: the top seven bits are fixed, so
-	// the first byte is 0xfc or 0xfd.
+	// Unique-local addresses occupy fc00::/7. Seven leading bits are fixed,
+	// leaving the first byte as either 0xfc or 0xfd.
 	if b[0] == 0xfc || b[0] == 0xfd {
 		return "fc00::/7"
 	}

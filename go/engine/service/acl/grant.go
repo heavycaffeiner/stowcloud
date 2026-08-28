@@ -39,7 +39,7 @@ func (p Path) Components() []string {
 // Len is the number of components, and the path's depth.
 func (p Path) Len() int { return len(p.comps) }
 
-// Name is the last component, empty at the root.
+// Name holds the final component, and is empty for the root.
 func (p Path) Name() string {
 	if len(p.comps) == 0 {
 		return ""

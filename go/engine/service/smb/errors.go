@@ -17,19 +17,19 @@ import (
 	"fmt"
 )
 
-// The refusals rendering can produce. Each names the value that caused it,
-// because an operator who made the typo can act on the value and cannot act on
-// "invalid configuration".
+// Rendering's rejection reasons. Each one identifies the offending value: an
+// operator who mistyped something can correct the value, but can do nothing
+// with a bare "invalid configuration".
 
-// ErrBindRefused is a pinned interface that is global without the opt-in, or a
-// pinned value that is not an address at all.
+// ErrBindRefused covers a globally routable pin lacking the opt-in, and a
+// pinned value that is not an address in the first place.
 var ErrBindRefused = errors.New("smb: the pinned interface is refused")
 
-// ErrUnsafeValue is a value that cannot be represented in the configuration
-// file safely.
+// ErrUnsafeValue marks a value with no safe representation in the configuration
+// file.
 var ErrUnsafeValue = errors.New("smb: the value cannot be represented safely")
 
-// BindError is a refused interface pin.
+// BindError reports an interface pin that was rejected.
 type BindError struct {
 	Value  string
 	Reason string
@@ -41,10 +41,10 @@ func (e *BindError) Error() string {
 
 func (e *BindError) Is(target error) bool { return target == ErrBindRefused }
 
-// UnsafeError is a value that cannot be interpolated safely.
+// UnsafeError reports a value that cannot be safely interpolated.
 type UnsafeError struct {
-	// Field names what carried the value, so the refusal points at the setting
-	// rather than at the file.
+	// Field identifies the setting the value came from, directing the rejection
+	// at the configuration rather than at the output file.
 	Field  string
 	Value  string
 	Reason string

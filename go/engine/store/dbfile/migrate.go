@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 )
 
-// Migration is one ordered step. Its position in the list is the version it
-// produces, so a shipped step is never edited, renumbered or reordered; the
-// next step is only ever appended.
+// Migration represents a single ordered step. The version it yields is its
+// index in the list, so a released step is never rewritten, renumbered or
+// moved; new steps are only ever appended.
 type Migration struct {
 	Name string
 

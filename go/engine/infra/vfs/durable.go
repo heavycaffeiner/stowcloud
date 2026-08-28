@@ -425,10 +425,10 @@ func destinationSpelling(r *ShareRoot, parent *os.File, leaf string) string {
 	return normalizeNewName(leaf)
 }
 
-// Unlink removes a non-directory leaf.
+// Unlink deletes a leaf that is not a directory.
 func (r *ShareRoot) Unlink(p SafePath) error { return r.unlinkAt(p, 0, "unlink") }
 
-// Rmdir removes an empty directory.
+// Rmdir deletes a directory that contains no entries.
 func (r *ShareRoot) Rmdir(p SafePath) error { return r.unlinkAt(p, unix.AT_REMOVEDIR, "rmdir") }
 
 func (r *ShareRoot) unlinkAt(p SafePath, flags int, op string) error {

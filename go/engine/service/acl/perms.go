@@ -22,16 +22,16 @@ const (
 	Download
 )
 
-// Has reports whether every bit in want is set.
+// Has reports whether all bits of want are present.
 func (p Perms) Has(want Perms) bool { return p&want == want }
 
-// Intersects reports whether any bit in want is set.
+// Intersects reports whether at least one bit of want is present.
 func (p Perms) Intersects(want Perms) bool { return p&want != 0 }
 
-// Remove clears the bits in other.
+// Remove unsets whichever bits other holds.
 func (p Perms) Remove(other Perms) Perms { return p &^ other }
 
-// IsEmpty reports whether no bit is set.
+// IsEmpty reports whether the set contains no bits.
 func (p Perms) IsEmpty() bool { return p == 0 }
 
 // String renders the set as slash-joined names in orderedBits order, or "-"

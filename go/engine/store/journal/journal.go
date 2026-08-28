@@ -1,18 +1,18 @@
-// Package journal holds one row per (account, file): the last thing that
-// account did to it. It is what a recent-files listing reads.
+// Package journal stores a single row for each (account, file) pair, recording
+// that account's most recent action on the file. Recent-files listings read it.
 //
-// Three properties, each arrived at from a specific failure:
+// Three properties, each the result of a particular failure:
 //
-// It is not an audit log. The file write has already succeeded by the time a
-// row is written, so a failure here is logged and dropped, and nothing may
-// treat the absence of a row as evidence that a write did not happen.
+// This is not an audit log. By the time a row is written the file write has
+// already completed, so errors here are logged and discarded, and a missing row
+// must never be read as proof that a write did not occur.
 //
-// It is capped by row count per account, never by age. A prune comparing a
-// stored timestamp against now empties the table the moment the clock jumps
-// forward, which is ordinary on a box with a dead RTC before NTP corrects it.
+// The bound is a per-account row count, never an age. Pruning by comparing a
+// stored timestamp to the present wipes the table as soon as the clock jumps
+// ahead, a routine occurrence on a machine with a dead RTC awaiting NTP.
 //
-// It is not an activity stream. No per-event history, and no reader other
-// than the account whose rows they are.
+// This is not an activity stream. It keeps no per-event history and is readable
+// only by the account whose rows it holds.
 package journal
 
 import (
@@ -28,7 +28,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
 )
 
-// Op is what an account did to a file.
+// Op describes the action an account performed on a file.
 type Op uint8
 
 const (
@@ -76,9 +76,9 @@ func ParseOp(s string) Op {
 	return OpUpload
 }
 
-// Event is one account's last touch of one file.
+// Event records a single account's most recent interaction with one file.
 type Event struct {
-	// Account is the user id the auth layer hands out.
+	// Account is the user id issued by the auth layer.
 	Account uint32
 	Share   vfs.ShareID
 	Path    vfs.SharePath
@@ -89,18 +89,18 @@ type Event struct {
 	AtNs int64
 }
 
-// DB is the journal. A nil *DB is the feature disabled, which is what an
-// unopenable journal.db leaves behind: recording does nothing and a listing
-// is empty. Every method below is safe on a nil receiver, deliberately, so
-// that losing this file costs one listing rather than a branch at every call
-// site up to the core.
+// DB is the journal. A nil *DB means the feature is off, the state left behind
+// when journal.db cannot be opened: recording becomes a no-op and listings come
+// back empty. Every method tolerates a nil receiver by design, so losing this
+// file costs one listing instead of requiring a check at every call site up
+// through the core.
 type DB struct {
 	f   *dbfile.DB
 	clk clock.Clock
 }
 
-// Spec is this database's file. It is not rebuildable: nothing can
-// reconstruct who wrote what before the record existed.
+// Spec describes this database's file. Rebuilding is impossible, since no other
+// source records which account wrote which file before these rows existed.
 func Spec(path string) dbfile.Spec {
 	return dbfile.Spec{Path: path, Migrations: migrations(), Rebuildable: false}
 }
@@ -139,19 +139,20 @@ func (d *DB) Recent(ctx context.Context, account uint32, limit int) ([]Event, er
 	return d.RecentSince(ctx, account, 0, limit)
 }
 
-// RecentSince is the same, bounded to writes at or after an instant.
+// RecentSince behaves identically but restricts results to writes at or after a
+// given instant.
 //
-// An instant rather than a duration, resolved by the caller: a relative
-// window resolved inside this package would be resolved against this
-// package's clock, and "the last seven days" then means two different
-// windows depending on which side of the call did the arithmetic.
+// The caller supplies an instant rather than a duration. Resolving a relative
+// window inside this package would resolve it against this package's clock,
+// making "the last seven days" mean different spans depending on which side of
+// the call performed the arithmetic.
 //
-// A sinceNs of zero is no window. limit clamps to the same cap the table
-// holds per account, and a non-positive limit takes that cap rather than
-// erroring. Every row is re-parsed on the way out: a stored path this
-// server would now refuse fails the read rather than being silently
-// dropped, because this package cannot tell a corrupt row from a stale one
-// and that judgment belongs to the caller.
+// Passing zero for sinceNs disables the window. limit is clamped to the same
+// per-account cap the table enforces, and a non-positive limit adopts that cap
+// instead of producing an error. Rows are re-parsed as they are read out: a
+// stored path this server would now reject fails the read rather than being
+// quietly skipped, since this package cannot distinguish a corrupt row from a
+// stale one and that call belongs to the caller.
 func (d *DB) RecentSince(ctx context.Context, account uint32, sinceNs int64, limit int) (out []Event, err error) {
 	if d == nil {
 		return nil, nil

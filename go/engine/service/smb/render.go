@@ -10,39 +10,39 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/netzone"
 )
 
-// Config is what rendering is told. Everything in it comes from the operator's
-// configuration, which is a trust boundary, so every field that reaches the
-// output is checked before it gets there.
+// Config supplies the inputs to rendering. It arrives from operator-controlled
+// configuration, an untrusted source, so each field is validated before any of
+// it is written into the output.
 type Config struct {
-	// Enabled is off by default. SMB starts explicitly.
+	// Enabled defaults to false; the operator must opt in to SMB.
 	Enabled   bool
 	Workgroup string
 
-	// ServerName is the name clients can reach this server by, so a share opens
-	// under a name instead of an address. Empty is the default and means no name
-	// at all: the name service stays off and only the address works.
+	// ServerName lets clients open a share by name rather than by address. The
+	// default is empty, meaning no name is published: name service remains
+	// disabled and only the address works.
 	//
-	// A name only resolves when the sidecar shares the LAN's broadcast domain,
-	// because name service is broadcast and does not cross a bridge.
+	// Resolution requires the sidecar to sit in the LAN's broadcast domain,
+	// since the name service relies on broadcast and will not traverse a
+	// bridge.
 	ServerName string
 
-	// Interfaces pins exactly which addresses may be bound, overriding the
-	// detection the sidecar would otherwise do. Entries are addresses and CIDR
-	// blocks only.
+	// Interfaces restricts binding to an explicit set of addresses, replacing
+	// the sidecar's own detection. Only addresses and CIDR blocks are accepted.
 	//
-	// Empty does not mean "bind everything". It means the closed case: this
-	// process runs in a different network namespace from the one that binds, so
-	// it renders loopback only and the sidecar expands it from the host's own
-	// devices.
+	// An empty list is the restrictive case, not a wildcard. Binding happens in
+	// a different network namespace than this process occupies, so rendering
+	// emits loopback alone and leaves the sidecar to expand it against the
+	// host's real devices.
 	Interfaces []string
 
-	// ServiceUser is the single account every connection runs as. Real access
-	// control is the per-share account lists, never Unix permissions.
+	// ServiceUser is the one account all connections execute as. Authorization
+	// comes from the per-share account lists; Unix permissions play no part.
 	ServiceUser string
 
-	// AllowPublicBind lets a globally routable address be pinned. Off by
-	// default, and turning it on is the thing worth warning about: whether a
-	// public address exists at all is only knowable in the namespace that binds.
+	// AllowPublicBind permits pinning a globally routable address. It defaults
+	// to off and deserves a warning when enabled, because only the binding
+	// namespace can determine whether a public address is present.
 	AllowPublicBind bool
 }
 
@@ -69,7 +69,7 @@ func (c Config) WithDefaults() Config {
 // ShareDef is one share block.
 type ShareDef struct {
 	Name string
-	// Path is the on-disk path as the sidecar sees it.
+	// Path is the filesystem location from the sidecar's point of view.
 	Path string
 
 	ValidUsers []string
@@ -82,21 +82,21 @@ type ShareDef struct {
 	ModeFile uint32
 	ModeDir  uint32
 
-	// SharedExternally marks a share another program also writes, which turns
-	// off the client-side caching that would otherwise show a stale view.
+	// SharedExternally indicates a share with other writers, disabling the
+	// client-side caching that would otherwise present stale contents.
 	SharedExternally bool
 }
 
-// The mode pair a share inherits when its policy names none. It matches the
-// server's own default, which is what makes a file created over SMB writable
-// from the web UI and the other way round.
+// Fallback mode pair for shares whose policy specifies none. It mirrors the
+// server's default so that files created through SMB stay writable from the web
+// interface, and vice versa.
 const (
 	defaultModeFile = 0o664
 	defaultModeDir  = 0o775
 )
 
-// vetoNames is this server's own control files, which must never be visible or
-// writable over SMB.
+// vetoNames lists this server's internal control files, which SMB must neither
+// expose nor allow writes to.
 const vetoNames = "/.sctrash/.scpart-*/.scmeta/.scindex/"
 
 // DroppedName is one account name that could not be written, and why.
@@ -127,21 +127,21 @@ func Validate(cfg Config) error {
 	return checkConfig(cfg.WithDefaults())
 }
 
-// Render produces the configuration file.
+// Render builds the configuration file.
 //
-// It touches no network and no filesystem. The hardening directives are
-// unconditional: coexistence with other programs writing the same trees, and the
-// refusal of the legacy authentication protocols, are facts about how this
-// server runs rather than settings.
+// No network or filesystem access occurs. The hardening directives are always
+// emitted: sharing trees with other writers, and rejecting the obsolete
+// authentication protocols, describe how this server operates and are not
+// adjustable.
 //
-// With no pinned interface the network scope is the closed case, loopback only,
-// and the sidecar rewrites it from the host's own devices in the namespace that
-// can actually see them.
+// Absent any pinned interface, the network scope renders restrictively as
+// loopback alone, and the sidecar rewrites it using the host devices visible
+// from the namespace that performs the bind.
 //
-// Refusal is whole-batch for configuration fields and per-entry for account
-// names. The split is deliberate: a config with one bad field is operator input
-// to fix, while a legacy account name must cost one account its SMB access
-// rather than everyone's.
+// Configuration fields fail the entire batch; account names fail individually.
+// That asymmetry is intended. A bad configuration field is operator input
+// awaiting correction, whereas an unusable legacy account name should deny SMB
+// to that one account instead of to everybody.
 func Render(cfg Config, shares []ShareDef) ([]byte, Result, error) {
 	cfg = cfg.WithDefaults()
 	if err := checkConfig(cfg); err != nil {
@@ -182,10 +182,10 @@ func checkConfig(cfg Config) error {
 	return checkInterfaces(cfg)
 }
 
-// checkInterfaces validates the pins.
+// checkInterfaces validates the pinned addresses.
 //
-// A pin is the one bind decision this process can check, because the operator
-// wrote the address down rather than the machine reporting it.
+// Pins are the only bind decision verifiable here, since the operator supplied
+// the address literally instead of the machine discovering it.
 func checkInterfaces(cfg Config) error {
 	for _, spec := range cfg.Interfaces {
 		ip, err := netzone.ParseAddrSpec(spec)
@@ -236,16 +236,17 @@ func checkShares(shares []ShareDef) error {
 func renderGlobal(cfg Config) string {
 	scopeNote, ifaces, hostsAllow := networkScope(cfg)
 
-	// Without a name there is nothing for the name service to announce, so it
-	// stays off and clients use the address. With one, the name service answers
-	// queries while the port setting below keeps the server off the legacy
-	// transport, which predates the current encryption and signing.
+	// With no name configured the name service has nothing to advertise, so it
+	// remains disabled and clients connect by address. When a name is present
+	// the service responds to queries, while the port directive below keeps the
+	// server clear of the legacy transport that predates today's encryption and
+	// signing.
 	//
-	// A name is only reachable when the sidecar shares the LAN's broadcast
-	// domain, and there the name service's defaults stop being harmless: it
-	// would enter browser elections against whatever else browses that LAN, and
-	// would answer a name it does not know by asking DNS. Both are off, leaving
-	// it answering for its own name only.
+	// Names resolve only where the sidecar shares the LAN's broadcast domain,
+	// and in that setting the name service's defaults become a problem: it
+	// would contest browser elections with anything else browsing that LAN, and
+	// would resolve unknown names via DNS. Both behaviours are disabled, so it
+	// answers only for itself.
 	netbios := "  disable netbios = yes\n"
 	if cfg.ServerName != "" {
 		netbios = "" +
@@ -297,9 +298,9 @@ func renderGlobal(cfg Config) string {
 		"\n" +
 		"  # Network scope.\n" +
 		scopeNote +
-		// An interface list without this is advice to the server rather than a
-		// restriction: it goes on binding the wildcard address and the list only
-		// decides which one it announces.
+		// Omitting this reduces the interface list to a suggestion: the server
+		// keeps binding the wildcard address, and the list merely selects what
+		// gets announced.
 		"  bind interfaces only = yes\n" +
 		"  interfaces = " + ifaces + "\n" +
 		"  hosts allow = " + hostsAllow + "\n" +
@@ -310,11 +311,11 @@ func renderGlobal(cfg Config) string {
 		"  server multi channel support = no\n"
 }
 
-// networkScope produces the two lines that decide who can reach the server, and
-// the comment saying which of the two shapes they are.
+// networkScope emits the pair of directives governing reachability, plus a note
+// identifying which of the two forms was produced.
 //
-// Loopback leads either way, so a local listing and the health check keep
-// working whichever list follows it.
+// Loopback comes first in both forms, keeping local listings and the health
+// check functional regardless of what follows.
 func networkScope(cfg Config) (note, ifaces, hostsAllow string) {
 	if len(cfg.Interfaces) == 0 {
 		return "" +
@@ -326,9 +327,9 @@ func networkScope(cfg Config) (note, ifaces, hostsAllow string) {
 			"127.0.0.0/8 ::1/128"
 	}
 
-	// The private list goes into the admission line only, never into the bind
-	// line. Narrowing what the server binds must not narrow who may reach the
-	// address it bound, and the two answer different questions.
+	// Private ranges belong in the admission directive alone and never in the
+	// bind directive. Restricting what gets bound must not restrict who may
+	// contact the bound address; the two settings answer separate questions.
 	return "" +
 			"  # smb.interfaces is pinned, so detection leaves the two lines below\n" +
 			"  # alone. The admission list stays wide on purpose: narrowing what\n" +
@@ -377,10 +378,10 @@ func renderShare(s ShareDef) (string, []DroppedName) {
 		"  valid users = " + strings.Join(valid, " ") + "\n" +
 		"  read list = " + strings.Join(read, " ") + "\n" +
 		"  write list = " + strings.Join(write, " ") + "\n" +
-		// The mask comes from the share's own policy rather than from Samba's
-		// defaults, because the sidecar and this server have to agree on
-		// ownership: a file created over SMB under a different mask is
-		// unwritable from the web UI, and the other way round.
+		// The mask is taken from the share's policy instead of Samba's defaults
+		// so the sidecar and this server agree about ownership. A file written
+		// over SMB under a divergent mask ends up unwritable from the web
+		// interface, and the reverse holds too.
 		fmt.Sprintf("  create mask = %04o\n", modeFile) +
 		fmt.Sprintf("  force create mode = %04o\n", modeFile) +
 		fmt.Sprintf("  directory mask = %04o\n", modeDir) +
@@ -398,26 +399,27 @@ func renderShare(s ShareDef) (string, []DroppedName) {
 	return out, dropped
 }
 
-// User is one SMB-enabled account, as the sidecar's account file needs it.
+// User describes a single SMB-enabled account in the form the sidecar's account
+// file expects.
 type User struct {
 	Name string
-	// Uid is this account's own, distinct from every other. Ownership is
-	// unaffected: the forced user decides what a connection writes as, so this
-	// only has to make the name lookup succeed and be unique.
+	// Uid belongs to this account alone and differs from every other. It does
+	// not affect ownership, since the forced user determines the identity writes
+	// occur under; it exists only so name lookups resolve, and must be unique.
 	Uid uint32
 }
 
-// PasswdEntries renders the account entries the sidecar needs, because Samba
-// requires a name lookup to succeed for every SMB user.
+// PasswdEntries produces the account records the sidecar requires, since Samba
+// needs a successful name lookup for every SMB user.
 //
-// Each entry carries its own uid and the shared service gid. The uid has to be
-// unique: the import tool matches an entry to an account by uid rather than by
-// name, so several names on one uid all import as whichever name the reverse
-// lookup answers with, leaving one account in the database and the rest unable
-// to authenticate at all.
+// Every record pairs a per-account uid with the shared service gid. Uniqueness
+// of the uid matters because the import tool keys on uid rather than name:
+// multiple names sharing one uid all import as whichever name the reverse
+// lookup returns, leaving a single account in the database while the others
+// cannot authenticate at all.
 //
-// Neither number decides who can read what. Access control stays in the
-// per-share account lists, and ownership comes from the forced user and group.
+// Neither identifier grants access. Authorization remains with the per-share
+// account lists, and ownership derives from the forced user and group.
 func PasswdEntries(users []User, gid uint32) ([]byte, error) {
 	sorted := slices.Clone(users)
 	slices.SortFunc(sorted, func(a, b User) int { return strings.Compare(a.Name, b.Name) })
@@ -428,8 +430,8 @@ func PasswdEntries(users []User, gid uint32) ([]byte, error) {
 		if err := checkPasswdName(u.Name); err != nil {
 			return nil, err
 		}
-		// A shared uid is the failure above, and it fails silently, so it is
-		// refused here rather than rendered.
+		// Duplicate uids cause the silent failure described above, so they are
+		// rejected here instead of being written out.
 		if other, dup := seen[u.Uid]; dup {
 			return nil, &UnsafeError{
 				Field:  "smb user",

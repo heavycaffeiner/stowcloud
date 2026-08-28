@@ -84,14 +84,14 @@ func FromSQL(share, dev, ino, present, btime int64) (Ident, error) {
 	return id, nil
 }
 
-// SQLite has one integer type and it is signed, so a device or inode number
-// with the top bit set is stored as its bit pattern and read back the same
-// way. Nothing orders these as numbers: they are compared for equality and
-// hashed, and both survive the round trip exactly.
+// SQLite offers a single signed integer type, so a device or inode number with
+// its high bit set round-trips as the same bit pattern. Numeric ordering never
+// applies to these values: they are only compared for equality and hashed, and
+// both operations are unaffected by the representation.
 //
-// The conversion is done a byte at a time rather than with a whole-word
-// cast, so the value never passes through a conversion that could lose a
-// range the kernel is free to hand out.
+// Conversion proceeds byte by byte instead of through a whole-word cast, so the
+// value never traverses a conversion capable of discarding part of the range
+// the kernel may legitimately produce.
 func signed(v uint64) int64 {
 	var out int64
 	for i := range 8 {
@@ -109,17 +109,17 @@ func unsigned(v int64) uint64 {
 	return out
 }
 
-// FileID is a node's stable id, and the value a sync client keys its local
-// journal on. It is derived from the file's identity rather than assigned
-// by the database, so a cache that was deleted rebuilds to the same ids.
+// FileID is a node's durable identifier and the key a sync client uses for its
+// local journal. Deriving it from the file's identity instead of assigning it
+// from the database means a deleted cache rebuilds with identical ids.
 type FileID int64
 
 // RootID is the "no id" sentinel and the parent id of a share root, so a
 // parent-chain walk terminates on it without any sentinel row existing.
 const RootID FileID = 0
 
-// Assignment is one identity and the id it holds, which is what a collision
-// makes durable.
+// Assignment pairs an identity with the id it owns, the binding a collision
+// makes permanent.
 type Assignment struct {
 	Ident Ident
 	ID    FileID

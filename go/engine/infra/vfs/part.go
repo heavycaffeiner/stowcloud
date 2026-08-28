@@ -14,22 +14,22 @@ import (
 // part file it accumulates bytes in, and the modification time a client asks
 // its finished file to carry.
 
-// CreatePart creates a control file under the reserved prefix and returns it
-// open for reading and writing.
+// CreatePart makes a control file beneath the reserved prefix, returning it
+// opened for reading and writing.
 //
-// It is the upload engine's part file and nothing else. The handle is
-// read-write by construction rather than through an access intent, for the
-// same reason the durable write's staging file is: a file this server just
-// created is writable because it made it, not because a caller asked for
-// privilege on a path that already existed.
+// This serves the upload engine's part files exclusively. Read-write access
+// follows from construction rather than from a requested access intent, on the
+// same grounds as the staging file used by durable writes: this server may
+// write the file because it just created it, not because someone asked for
+// privileges on a pre-existing path.
 //
-// The create is exclusive, so a collision is the kernel's refusal rather than
-// a clobber, and the mode is applied afterwards because the create filters it
-// through the process umask.
+// Creation is exclusive, turning a collision into a kernel rejection instead of
+// an overwrite. The mode is set after the fact, since creation would otherwise
+// filter it through the process umask.
 //
-// The name has to come from JoinControl, which is the only call permitted to
-// produce the reserved prefix. A name without it is refused here rather than
-// quietly creating something a listing would show.
+// Names must originate from JoinControl, the sole call allowed to produce the
+// reserved prefix. Anything else is rejected here rather than silently creating
+// a file that would appear in a listing.
 func (r *ShareRoot) CreatePart(p SafePath) (*File, error) {
 	if p.IsRoot() {
 		return nil, fmt.Errorf("create a part file: %w", ErrDenied)

@@ -89,7 +89,7 @@ func (e *Evaluator) SetMemberships(m map[int64][]int64) {
 	e.gen++
 }
 
-// MembershipOf returns the groups a user belongs to.
+// MembershipOf lists the groups containing a user.
 func (e *Evaluator) MembershipOf(user int64) []int64 {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
