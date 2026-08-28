@@ -3,6 +3,7 @@
 package service
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/internal/search/index"
@@ -70,5 +71,36 @@ func TestABuiltIndexStillAnswers(t *testing.T) {
 	}
 	if len(res.Hits) != 1 {
 		t.Errorf("the built index found %d hits, want 1", len(res.Hits))
+	}
+}
+
+// The state a running server reaches, built the way serve.go builds it rather
+// than by handing the service an index directly.
+//
+// serve.go calls OpenIndex on <data_dir>/index and attaches whatever comes
+// back, with no build behind it, which is exactly what flipping the switch
+// does. This asserts the whole of that path rather than the Query method
+// alone: OpenIndex has to return a usable index (not nil, or the fallback
+// would be trivial), and the service over it has to still answer.
+func TestTheServerPathWalksWithAFreshIndexDirectory(t *testing.T) {
+	root := newRoot(t, []string{"reports/annual.txt", "notes.md"})
+	dataDir := t.TempDir()
+
+	// Exactly serve.go's call.
+	ix := OpenIndex(filepath.Join(dataDir, "index"), index.DefaultConfig(), nil)
+	if ix == nil {
+		t.Fatal("OpenIndex refused a fresh directory, so the fallback below would prove nothing")
+	}
+
+	s, src := newService(t, root, ix)
+	res, err := s.Query(t.Context(), src, QueryOptions{Query: "annual", Limit: 10})
+	if err != nil {
+		t.Fatalf("querying: %v", err)
+	}
+	if res.Tier != TierWalk {
+		t.Errorf("a server that just enabled the index served from %s", res.Tier)
+	}
+	if len(res.Hits) != 1 {
+		t.Errorf("the server found %d hits for a file that exists", len(res.Hits))
 	}
 }

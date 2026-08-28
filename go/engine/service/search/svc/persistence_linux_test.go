@@ -481,3 +481,38 @@ func TestATruncatedIndexDoesNotBreakSearch(t *testing.T) {
 	t.Logf("after truncating %d file(s) the %s tier answered with %d hit(s)",
 		truncated, res.Tier, len(res.Hits))
 }
+
+// The state a deployment reaches the moment the index is enabled, through
+// OpenIndex rather than by constructing an index directly.
+//
+// OpenIndex reports OpenAbsent for a directory nothing was built into, and a
+// caller may reasonably attach the index anyway: the state is advisory and the
+// handle is usable. What must not happen is that attaching it makes search
+// answer from nothing, which is why the emptiness check lives in Query rather
+// than in whoever decides to attach.
+func TestAFreshlyOpenedIndexDoesNotAnswer(t *testing.T) {
+	src, _ := corpus(t, 1, equivalenceCorpus()...)
+	dir := filepath.Join(t.TempDir(), "index")
+
+	ix, st := OpenIndex(dir, index.DefaultConfig(), nil)
+	if st != OpenAbsent {
+		t.Fatalf("a directory nothing built into reported %v, want absent", st)
+	}
+	if ix == nil {
+		t.Fatal("OpenIndex returned no index for a fresh directory, so this proves nothing")
+	}
+
+	// Attached despite the absent state, which is the case that matters.
+	s := New(Options{Index: ix})
+	res, err := s.Query(t.Context(), []search.Source{src},
+		QueryOptions{Query: "annual", Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Tier != TierWalk {
+		t.Errorf("a freshly opened index served the query from %s", res.Tier)
+	}
+	if len(res.Hits) == 0 {
+		t.Error("search found nothing for a file that exists")
+	}
+}

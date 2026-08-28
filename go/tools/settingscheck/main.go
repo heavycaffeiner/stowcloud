@@ -36,19 +36,21 @@ func say(w io.Writer, format string, a ...any) {
 // section maps a client request interface to the settings section its body is
 // PATCHed to. The name is not derivable: SymlinkPolicyReq writes to
 // "symlink-policy", and the route is what decides.
+// The security section is absent on purpose: the sandbox policy is reported by
+// the snapshot and is not editable from the screen, so the client has no
+// request type for it. A mapping here would check that section against nothing.
 var section = map[string]string{
-	"SmbSettingsReq":      "smb",
-	"SearchSettingsReq":   "search",
-	"ArchiveSettingsReq":  "archive",
-	"RateSettingsReq":     "rate",
-	"NetworkSettingsReq":  "network",
-	"DbSettingsReq":       "db",
-	"SymlinkPolicyReq":    "symlink-policy",
-	"HomesSettingsReq":    "homes",
-	"WatchSettingsReq":    "watch",
-	"OidcSettingsReq":     "oidc",
-	"SecuritySettingsReq": "security",
-	"PathsSettingsReq":    "paths",
+	"SmbSettingsReq":     "smb",
+	"SearchSettingsReq":  "search",
+	"ArchiveSettingsReq": "archive",
+	"RateSettingsReq":    "rate",
+	"NetworkSettingsReq": "network",
+	"DbSettingsReq":      "db",
+	"SymlinkPolicyReq":   "symlink-policy",
+	"HomesSettingsReq":   "homes",
+	"WatchSettingsReq":   "watch",
+	"OidcSettingsReq":    "oidc",
+	"PathsSettingsReq":   "paths",
 }
 
 // allowed names keys the client writes that no loader reads, each with the

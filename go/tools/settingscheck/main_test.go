@@ -142,6 +142,45 @@ func TestNoAllowedKeyIsOneTheLoaderActuallyReads(t *testing.T) {
 	}
 }
 
+// The other direction: every interface this tool maps has to exist.
+//
+// A mapping naming an interface that is gone contributes no keys, so the tool
+// checks that section against nothing and still passes. That is the failure
+// mode worth guarding, because it looks exactly like success.
+//
+// SecuritySettingsReq was in the map and absent from the client when this test
+// was written: the security section is not editable from the screen, so no
+// request type exists for it. Removing the entry is the fix, and this is what
+// would have said so.
+func TestEveryMappedInterfaceExists(t *testing.T) {
+	src, err := readFileForTest("../../../web/src/lib/api/types.ts")
+	if err != nil {
+		t.Skipf("the client types are not where this test expects: %v", err)
+	}
+	for iface := range section {
+		if !strings.Contains(src, "export interface "+iface+" {") {
+			t.Errorf("%s is mapped and does not exist, so its section is checked against nothing", iface)
+		}
+	}
+}
+
+// The tool has to see fields at the indentation the client actually uses. A
+// regex that matched nothing would report every section as clean.
+func TestTheClientScanFindsTheRealInterfaces(t *testing.T) {
+	src, err := readFileForTest("../../../web/src/lib/api/types.ts")
+	if err != nil {
+		t.Skipf("the client types are not where this test expects: %v", err)
+	}
+	got := clientKeys(src)
+	if len(got) < 20 {
+		t.Errorf("the scan found %d keys across every settings interface, which is too few to be right", len(got))
+	}
+	// A specific one, so a scan returning noise rather than fields fails here.
+	if !got["search.max_concurrent_fast"] {
+		t.Errorf("the scan missed a field that is definitely there: %v", got)
+	}
+}
+
 // Every section the client can PATCH is one this tool knows about. A route
 // added without a mapping here silently checks nothing.
 func TestEverySectionTheClientPatchesIsMapped(t *testing.T) {
