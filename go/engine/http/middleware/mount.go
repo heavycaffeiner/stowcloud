@@ -55,6 +55,11 @@ type Deps struct {
 	// Principal resolves what a credential proves. Nil leaves every request
 	// unauthenticated, which is what a server with no auth service wired does.
 	Principal func(c Credential) (Principal, bool)
+
+	// CSRFKey is the deployment's durable derivation key. Nil refuses every
+	// mutation that would need one, rather than letting them through
+	// unchecked.
+	CSRFKey func() []byte
 }
 
 // Record is one entry in a replay: which step ran, and whether it passed the
@@ -152,7 +157,11 @@ func stepHandler(s Step, d Deps) fiber.Handler {
 		}
 	case StepACLScope:
 		return func(c *fiber.Ctx) error { return scopeHandler(c) }
-	case StepBodyLimit, StepCSRF, StepAuditSink, StepErrorMapper, StepUnset:
+	case StepBodyLimit:
+		return func(c *fiber.Ctx) error { return bodyLimitHandler(c) }
+	case StepCSRF:
+		return func(c *fiber.Ctx) error { return csrfHandler(c, d) }
+	case StepAuditSink, StepErrorMapper, StepUnset:
 		// Not yet implemented here. Passing through is deliberate and visible:
 		// a step that silently did nothing while claiming to run would be worse
 		// than one that is plainly a placeholder.
@@ -184,16 +193,64 @@ func authHandler(c *fiber.Ctx, d Deps) error {
 
 // scopeHandler applies the matched route's requirement.
 func scopeHandler(c *fiber.Ctx) error {
-	req, ok := c.Locals(string(routeRequirementKey)).(route.Requirement)
+	m, ok := metaOf(c)
 	if !ok {
 		// No metadata means no route matched, so there is nothing to scope and
 		// the 404 belongs to the router rather than to this step.
 		return c.Next()
 	}
-	if err := Scope(req, principalOf(c)); err != nil {
+	if err := Scope(m.req, principalOf(c)); err != nil {
 		if errors.Is(err, ErrCredentialRequired) || errors.Is(err, ErrSessionRequired) {
 			return fiber.NewError(fiber.StatusUnauthorized)
 		}
+		return fiber.NewError(fiber.StatusForbidden)
+	}
+	return c.Next()
+}
+
+// bodyLimitHandler refuses a body past its route's class before a handler can
+// read it.
+//
+// The declared length is what is checked here, because refusing before reading
+// is the point: a handler that streams still meets the same bound through
+// LimitBody, but a client that announced an oversized body is told so without
+// the server first accepting it.
+func bodyLimitHandler(c *fiber.Ctx) error {
+	m, ok := metaOf(c)
+	if !ok {
+		return c.Next()
+	}
+	bound, bounded := BodyBound(m.body)
+	if !bounded {
+		return c.Next()
+	}
+	if declared := int64(c.Request().Header.ContentLength()); declared > bound {
+		return fiber.NewError(fiber.StatusRequestEntityTooLarge)
+	}
+	return c.Next()
+}
+
+// csrfHandler checks the token on a mutating cookie-authenticated request.
+func csrfHandler(c *fiber.Ctx, d Deps) error {
+	p := principalOf(c)
+	if !CSRFRequired(c.Method(), p.Kind) {
+		return c.Next()
+	}
+	var key []byte
+	if d.CSRFKey != nil {
+		key = d.CSRFKey()
+	}
+	if len(key) == 0 {
+		// A deployment with no key cannot verify, and serving the mutation
+		// anyway would be the check silently not existing. Checked on the
+		// value rather than only on the accessor, because HMAC accepts an
+		// empty key without complaint: every deployment would then derive the
+		// same token from nothing at all.
+		return fiber.NewError(fiber.StatusForbidden)
+	}
+	if !CSRFValid(key, c.Cookies(SessionCookieName), c.Get(CSRFHeader)) {
+		// Wrong, missing and cross-origin tokens answer identically: the
+		// difference between them is information about the session.
 		return fiber.NewError(fiber.StatusForbidden)
 	}
 	return c.Next()
@@ -261,8 +318,8 @@ func clientOf(c *fiber.Ctx) netip.Addr {
 
 // publicRead reports whether this route attempts only the session cookie.
 func publicRead(c *fiber.Ctx) bool {
-	req, ok := c.Locals(string(routeRequirementKey)).(route.Requirement)
-	return ok && req.Access == route.AccessPublic
+	m, ok := metaOf(c)
+	return ok && m.req.Access == route.AccessPublic
 }
 
 // routeRequirementKey is where registration leaves the matched route's
@@ -270,8 +327,25 @@ func publicRead(c *fiber.Ctx) bool {
 const routeRequirementKey contextKey = "sc.route.requirement"
 
 // SetRequirement is how the server attaches a route's metadata.
-func SetRequirement(c *fiber.Ctx, req route.Requirement) {
-	c.Locals(string(routeRequirementKey), req)
+//
+// The requirement and the body class travel together under one key. Two keys
+// could be set apart, and a route whose class was forgotten would silently get
+// the zero one, which is "no body" and would truncate every request to it.
+func SetRequirement(c *fiber.Ctx, req route.Requirement, body route.BodyClass) {
+	c.Locals(string(routeRequirementKey), routeMeta{req: req, body: body})
+}
+
+// routeMeta is what registration leaves for the chain.
+type routeMeta struct {
+	req  route.Requirement
+	body route.BodyClass
+}
+
+// metaOf reads the matched route's metadata, reporting whether a route matched
+// at all.
+func metaOf(c *fiber.Ctx) (routeMeta, bool) {
+	m, ok := c.Locals(string(routeRequirementKey)).(routeMeta)
+	return m, ok
 }
 
 func isUpgrade(c *fiber.Ctx) bool {

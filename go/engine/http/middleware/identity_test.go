@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/route"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 )
 
@@ -219,7 +220,7 @@ func TestScopeRefusesThroughTheChain(t *testing.T) {
 		// Registration attaches the route's metadata, which is what the chain
 		// reads. Set before the chain so ACLScope sees it.
 		app.Use(func(c *fiber.Ctx) error {
-			SetRequirement(c, req)
+			SetRequirement(c, req, route.BodyNone)
 			return c.Next()
 		})
 		if err := Mount(app, Chain(), Deps{
@@ -252,5 +253,163 @@ func TestScopeRefusesThroughTheChain(t *testing.T) {
 		Principal{Kind: CredentialBearerApp, Mask: acl.Read},
 	); got != fiber.StatusForbidden {
 		t.Errorf("an app password missing a bit answered %d, want 403", got)
+	}
+}
+
+// chainWith builds a server whose routes all carry one requirement and body
+// class, so a test can drive one rule through the whole chain.
+func chainWith(t *testing.T, req route.Requirement, body route.BodyClass, p Principal, key []byte) *fiber.App {
+	t.Helper()
+	app := fiber.New(fiber.Config{DisableStartupMessage: true})
+	app.Use(func(c *fiber.Ctx) error {
+		SetRequirement(c, req, body)
+		return c.Next()
+	})
+	if err := Mount(app, Chain(), Deps{
+		Hosts:     func() Hosts { return namedHosts() },
+		Trusted:   func() []netip.Prefix { return nil },
+		Limiter:   NewLimiter(newStepClock(), 1000, 1000),
+		Principal: func(Credential) (Principal, bool) { return p, true },
+		CSRFKey:   func() []byte { return key },
+	}, nil); err != nil {
+		t.Fatalf("Mount: %v", err)
+	}
+	app.All("/*", func(c *fiber.Ctx) error { return c.SendString("handled") })
+	return app
+}
+
+// A cookie mutation without the token is refused, and with it goes through.
+func TestCSRFIsCheckedThroughTheChain(t *testing.T) {
+	key := []byte("deployment key material")
+	session := Principal{Kind: CredentialSessionCookie, Mask: SessionMask()}
+	app := chainWith(t, route.Requirement{Access: route.AccessSession}, route.BodyNone, session, key)
+
+	// The cookie's value is what the token derives from, so the test derives
+	// from the same value the request carries.
+	cookie := sessionCookie()
+	post := func(token string) int {
+		r := httptest.NewRequest("POST", "http://app.example.test/thing", nil)
+		r.AddCookie(cookie)
+		r.Header.Set("Origin", "https://app.example.test")
+		if token != "" {
+			r.Header.Set(CSRFHeader, token)
+		}
+		return send(t, app, r).status
+	}
+
+	if got := post(""); got != fiber.StatusForbidden {
+		t.Errorf("a mutation with no token answered %d, want 403", got)
+	}
+	if got := post("wrong"); got != fiber.StatusForbidden {
+		t.Errorf("a mutation with a wrong token answered %d, want 403", got)
+	}
+	if got := post(CSRFToken(key, cookie.Value)); got != fiber.StatusOK {
+		t.Errorf("a mutation with the right token answered %d", got)
+	}
+
+	// A read needs no token at all.
+	r := httptest.NewRequest("GET", "http://app.example.test/thing", nil)
+	r.AddCookie(cookie)
+	if got := send(t, app, r).status; got != fiber.StatusOK {
+		t.Errorf("a read with no token answered %d", got)
+	}
+}
+
+// An app password is not asked for a token, because an Authorization header is
+// not ambient browser authority.
+func TestAnAppPasswordSkipsCSRFThroughTheChain(t *testing.T) {
+	app := chainWith(t,
+		route.Requirement{Access: route.AccessAnyCredential}, route.BodyNone,
+		Principal{Kind: CredentialBearerApp, Mask: acl.Read | acl.Write},
+		[]byte("deployment key material"))
+
+	r := httptest.NewRequest("POST", "http://app.example.test/thing", nil)
+	r.Header.Set("Authorization", "Bearer token")
+	if got := send(t, app, r).status; got != fiber.StatusOK {
+		t.Errorf("an app password mutation answered %d", got)
+	}
+}
+
+// A deployment with no CSRF key refuses the mutation rather than serving it
+// unchecked.
+//
+// Both spellings of "no key": no accessor at all, and an accessor that returns
+// nothing. The second is the one that matters, because HMAC accepts an empty
+// key without complaint, so a token would derive from nothing and every
+// deployment would agree on the same value.
+func TestNoCSRFKeyRefusesTheMutation(t *testing.T) {
+	session := Principal{Kind: CredentialSessionCookie, Mask: SessionMask()}
+
+	for _, c := range []struct {
+		what string
+		deps func(*fiber.App) Deps
+	}{
+		{"no accessor", func(*fiber.App) Deps { return Deps{} }},
+		{"an empty key", func(*fiber.App) Deps { return Deps{CSRFKey: func() []byte { return nil }} }},
+	} {
+		app := fiber.New(fiber.Config{DisableStartupMessage: true})
+		app.Use(func(fc *fiber.Ctx) error {
+			SetRequirement(fc, route.Requirement{Access: route.AccessSession}, route.BodyNone)
+			return fc.Next()
+		})
+		d := c.deps(app)
+		d.Hosts = func() Hosts { return namedHosts() }
+		d.Trusted = func() []netip.Prefix { return nil }
+		d.Limiter = NewLimiter(newStepClock(), 1000, 1000)
+		d.Principal = func(Credential) (Principal, bool) { return session, true }
+		if err := Mount(app, Chain(), d, nil); err != nil {
+			t.Fatalf("Mount: %v", err)
+		}
+		app.All("/*", func(fc *fiber.Ctx) error { return fc.SendString("handled") })
+
+		// The token an empty key derives, not an arbitrary string. An
+		// arbitrary one fails the comparison anyway, which would make this
+		// pass whether or not the guard exists: the attack is a caller who
+		// knows there is no key, since without one every deployment agrees on
+		// this same value.
+		r := httptest.NewRequest("POST", "http://app.example.test/thing", nil)
+		cookie := sessionCookie()
+		r.AddCookie(cookie)
+		r.Header.Set("Origin", "https://app.example.test")
+		r.Header.Set(CSRFHeader, CSRFToken(nil, cookie.Value))
+		if got := send(t, app, r).status; got != fiber.StatusForbidden {
+			t.Errorf("%s answered %d, want 403", c.what, got)
+		}
+	}
+}
+
+// A declared length past the route's class is refused before the handler runs,
+// and a stream route is not bounded by it.
+func TestTheBodyLimitRefusesByDeclaredLength(t *testing.T) {
+	// The body really is this long: a declaration that overstates the bytes
+	// fails in the transport before any middleware sees it, which would test
+	// fiber rather than this step.
+	oversized := strings.Repeat("x", int(limits.RequestBody)+1)
+
+	jsonApp := chainWith(t,
+		route.Requirement{Access: route.AccessPublic}, route.BodyJSON,
+		Principal{Kind: CredentialNone}, nil)
+	r := httptest.NewRequest("POST", "http://app.example.test/thing", strings.NewReader(oversized))
+	if got := send(t, jsonApp, r).status; got != fiber.StatusRequestEntityTooLarge {
+		t.Errorf("an oversized body answered %d, want 413", got)
+	}
+
+	// The same body on a stream route is served: TUS sends far more than the
+	// JSON bound and must not meet it here.
+	streamApp := chainWith(t,
+		route.Requirement{Access: route.AccessPublic}, route.BodyStream,
+		Principal{Kind: CredentialNone}, nil)
+	r = httptest.NewRequest("POST", "http://app.example.test/thing", strings.NewReader(oversized))
+	if got := send(t, streamApp, r).status; got != fiber.StatusOK {
+		t.Errorf("an oversized stream answered %d", got)
+	}
+
+	// A body within the bound is served.
+	okApp := chainWith(t,
+		route.Requirement{Access: route.AccessPublic}, route.BodyJSON,
+		Principal{Kind: CredentialNone}, nil)
+	r = httptest.NewRequest("POST", "http://app.example.test/thing", strings.NewReader(`{}`))
+	if got := send(t, okApp, r).status; got != fiber.StatusOK {
+		t.Errorf("a body within the bound answered %d", got)
 	}
 }
