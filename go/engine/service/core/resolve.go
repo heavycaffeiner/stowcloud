@@ -3,6 +3,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"strconv"
 
@@ -77,6 +78,15 @@ func (c *Core) Resolve(user UserID, p vfs.Vpath, need acl.Perms) (Resolved, erro
 		// The virtual root names no share. It is listed through Roots and
 		// never resolved.
 		return Resolved{}, ErrNotFound
+	}
+
+	// Eager, because the projected root is built from grants: without this
+	// hook a home appears only after an access that cannot happen until the
+	// home is in the root. Best-effort, because a home hiccup must not break
+	// access to the user's other shares.
+	if err := c.ensureHome(context.Background(), user); err != nil {
+		c.warn("creating a home directory failed; the user's other shares are unaffected",
+			"user", int64(user), "error", err)
 	}
 
 	match, ok := c.rootFor(user, p.Label())

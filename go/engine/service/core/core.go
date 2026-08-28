@@ -75,6 +75,10 @@ type Core struct {
 
 	sharesMu sync.RWMutex
 	shares   map[ShareID]*shareEntry
+
+	// homeOnce serializes the once-per-user home creation. Only the slow
+	// path takes it; the steady state reads the grant marker and returns.
+	homeOnce sync.Mutex
 }
 
 // New wires a Core over the store and loads the grant table into the
