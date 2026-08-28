@@ -40,6 +40,22 @@ reaches into another service's persistence.
   that approximated subtree denies would be an approximation someone
   relies on.
 
+### The access-change sink
+
+Phase 3 wires one publisher value into core and auth through interfaces those
+packages declare. Its method owns the cross-surface revocation policy:
+
+```go
+func (p *Publisher) AccessChanged(ctx context.Context) Outcome
+```
+
+It detaches from request cancellation, applies a bounded timeout, renders and
+pushes synchronously, and never turns an already-committed account/grant/share
+write into a reported rollback. The returned outcome says applied, warnings or
+agent unreachable and updates health through an injected neutral sink. Core
+and auth invoke it for every change affecting SMB access; the presentation
+handler does not remember which writes need a republish.
+
 ## The wire protocol
 
 One request per connection over a unix socket, JSON, line-delimited:
@@ -75,6 +91,9 @@ the code that relies on it.
 2. **The durable-write repoints** to `store/fsatomic`.
 3. Nothing else: the deny rule, the narrow deps, the failure wording
    and the socket trade-off carry whole.
+4. **`AccessChanged` becomes the one synchronous, detached revocation sink**
+   (Phase 3 amendment), replacing three handler/server spellings and closing
+   the stale-SMB-access window at the service boundary.
 
 ## Tests
 
@@ -88,3 +107,6 @@ the code that relies on it.
 - Agent: an oversized request line refuses (through the reader bound);
   a malformed JSON line refuses; one request per connection.
 - The failure wording: an apply failure names the files as written.
+- Every core/auth access mutation invokes the sink once; browser cancellation
+  does not cancel the push; agent failure returns an outcome without changing
+  the committed mutation's error.

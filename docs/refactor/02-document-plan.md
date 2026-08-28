@@ -88,7 +88,7 @@ because sessions gate every protocol. Directories as named.
 | preview | `preview/00-overview.md`, `01-jail.md`, `02-worker-protocol.md`, `03-cache.md`, `04-archive-listing.md` | Jail's dead exports become wired or deleted; the seqpacket transport moves here from vfs; cache repoints at fsatomic. The audit's suggested `01-decode-limits.md` lands inside `02-worker-protocol.md` instead of its own document. |
 | watch | `watch/00-watch.md` (small, single doc) | Two-tier hot set, fail-closed inotify parsing, whole-share escalation. Target package `engine/service/watch`. |
 | settings | `settings/00-runtimecfg.md`, `01-settingscheck.md`, `02-emergency.md` | `settingscheck` returns domain errors (no `apierr` import); `emergency` re-homed as presentation wiring with its invariants preserved (404-not-403 gate, audit-on-every-write, write-then-restart). |
-| smb | `smb/00-config-rendering.md`, `01-publish-and-agent-protocol.md`, `02-agent-durable-writes.md`, `03-agent-package-split.md` | Refuse-not-escape rendering rules; the `bind.go` move (to kit, 0.1); the two plain writes fixed; the agent split into protocol, supervision, scope, reconciliation. |
+| smb | `smb/00-config-rendering.md`, `01-publish-and-agent-protocol.md`, `02-agent-durable-writes.md`, `03-agent-runtime.md` | Refuse-not-escape rendering rules; the `bind.go` move (to kit, 0.1); the promoted plain write fixed; the agent runtime covers supervision, scope and reconciliation. |
 
 ## Phase 3: presentation on fiber
 
@@ -103,9 +103,16 @@ Directory: `docs/refactor/http/`.
 | `http/04-webdav.md` | RFC 4918 parsing rules, the If-header grammar, the lock conflict matrix, the two TOCTOU fixes. |
 | `http/05-compat-scope.md` | The Nextcloud compat decision: what of the built-but-unwired surface ships, feature by feature, before any of it is treated as spec. |
 | `http/06-login-flow-v2.md` | The two-token state machine, digest-only storage, POST-only approval; standalone because it is reusable security design. |
-| `http/07-server-assembly.md` | Composition root on fiber: supervisor/hot-swap semantics (bind-new-before-touching-old, bounded drain), TLS material through fsatomic as one durable unit, setup token and probe file through fsatomic. |
+| `http/07-server-assembly.md` | Composition root on fiber: supervisor/hot-swap semantics (bind-new-before-touching-old, bounded drain), TLS material through fsatomic as one durable unit, setup token and probe file through fsatomic, and the explicit HTTP/1.1 direct-listener constraint. |
 | `http/08-regression-tests.md` | The transcription of every documented past-incident comment (`httpapi/mw`, `server`, `compat/nc`) into named test cases. |
 | `http/09-api-consistency.md` | Written ahead of the rest of phase 3: the v1 API. Everything moves under `/api/v1` in ten categories (auth, account, files, links, trash, jobs, uploads, search, admin, system), every endpoint renamed into one scheme, all aliases dead, the settings split folded into one resource, and the frontend rewired in the same phase. The old API dies with the old stack. |
+
+Phase 3 also amends the already-written owning documents where presentation
+requires a downward seam: durable CSRF/presentation keys and sync credentials
+(auth), transactional DAV locks and retryable login-flow delivery (state),
+protocol-neutral projections (core), exact-size preview, settings application
+and content hosts, and the SMB access-change sink. These are amendments to the
+owning contracts, not presentation imports around the layer gate.
 
 ## Working rules
 

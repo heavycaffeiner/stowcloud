@@ -147,6 +147,25 @@ only "done".
    `vfs.ReplaceFileDurable` (the survey's inventory names this repoint).
    Semantics identical: durable, atomic, mode preserved.
 2. **The narrowings** in the parse and marshal paths use `kit/num`.
+3. **Presentation secrets join the key ring's durable material** (Phase 3
+   amendment): a stable CSRF derivation key and an AEAD key/version for
+   short-lived content capabilities and sealed login-flow delivery state.
+   Sessions are durable, so a process-random CSRF key would strand live
+   sessions after every restart. Content/login-flow plaintext never rests in
+   the database. The methods are narrow and purpose-bound:
+
+   ```go
+   func (s *Service) CSRFKey(ctx context.Context) ([]byte, error)
+   func (s *Service) SealPresentation(ctx context.Context, purpose string, plain []byte) (sealed []byte, version uint32, err error)
+   func (s *Service) OpenPresentation(ctx context.Context, purpose string, sealed []byte, version uint32) ([]byte, error)
+   ```
+
+   `purpose` is AAD and callers use fixed literals (`content-claim`,
+   `login-flow-delivery`), never request input. Rotation re-seals durable
+   login-flow delivery rows in the same state transaction; short-lived content
+   claims remain readable through their recorded old version until their
+   five-minute expiry, so the ring keeps the immediately previous key for that
+   bounded overlap before compaction.
 
 Nothing else changes: the format, the env rule, the warning decision, the
 three-step protocol and the startup checks are all as the reference.
@@ -169,3 +188,8 @@ three-step protocol and the startup checks are all as the reference.
   ciphertext replayed under the wrong version refuses; `LinkCipher`
   round-trips with the core's seam test doubles.
 - Config secrets round-trip by name; the wrong name refuses.
+- `CSRFKey` is stable across restart, 32 bytes and never logged; two fresh
+  deployments differ.
+- Presentation sealing is purpose- and version-bound; cross-purpose replay
+  refuses. Rotation preserves an unexpired content claim and a deliverable
+  login flow, then compacts after the overlap.

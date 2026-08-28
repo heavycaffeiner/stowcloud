@@ -66,6 +66,14 @@ Carried whole, with their verified properties:
 - The host-list self-lockout probe: a host list omitting the caller's
   own host saves **with a warning**, not a refusal; the administrator
   may be intentionally moving hosts.
+- App and content hosts are checked as two disjoint role sets (Phase 3
+  amendment). A host in both is blocking: one TLS name cannot both carry the
+  session application and be the cookie-free content origin. Duplicate and
+  malformed entries are named by field.
+- Allowed CORS origins require absolute HTTPS origin syntax only. The compat
+  canonical URL must match a declared app host. Neither list can widen the Host
+  guard; this checker validates roles rather than folding all host-like strings
+  into one allowlist.
 
 ## Deliberate changes
 
@@ -73,6 +81,8 @@ Carried whole, with their verified properties:
    misplacement finding 1).
 2. **The SMB probe goes through the shared entry point** (audit
    finding 2; the drift-prone duplicate defaults die).
+3. **Network checks validate app/content host disjointness** (Phase 3
+   amendment).
 
 The probe behaviors, the blocking/warning split per finding, and the
 reason keys are behavior-preserving.
@@ -89,3 +99,6 @@ reason keys are behavior-preserving.
 - The self-lockout warning saves; the finding says so.
 - The SMB probe refuses what the renderer refuses (parity test through
   the entry point).
+- App/content overlap blocks and names both roles; distinct case-insensitive
+  host lists pass.
+- Allowed-origin/canonical URL syntax and app-host containment vectors.

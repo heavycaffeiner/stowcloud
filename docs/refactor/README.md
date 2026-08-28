@@ -142,6 +142,38 @@ The core documents live in [`core/`](core/):
 | [10-share-links.md](core/10-share-links.md) | Public share links: minting, liveness, browse, drop, passwords |
 | [11-homes-and-recent.md](core/11-homes-and-recent.md) | Per-user homes, the recent-writes surface |
 
+## Phase 2: services
+
+The remaining service specifications are complete:
+
+| Area | Documents |
+| --- | --- |
+| auth | [`auth/00-overview.md`](auth/00-overview.md) through [`auth/05-username-policy.md`](auth/05-username-policy.md) |
+| oidc | [`oidc/00-relying-party.md`](oidc/00-relying-party.md) |
+| upload | [`upload/00-overview.md`](upload/00-overview.md) through [`upload/04-verification-and-limits.md`](upload/04-verification-and-limits.md) |
+| search | [`search/00-family.md`](search/00-family.md) through [`search/02-service.md`](search/02-service.md) |
+| preview | [`preview/00-overview.md`](preview/00-overview.md) through [`preview/04-archive-listing.md`](preview/04-archive-listing.md) |
+| watch | [`watch/00-watch.md`](watch/00-watch.md) |
+| settings | [`settings/00-runtimecfg.md`](settings/00-runtimecfg.md) through [`settings/02-emergency.md`](settings/02-emergency.md) |
+| smb | [`smb/00-config-rendering.md`](smb/00-config-rendering.md) through [`smb/03-agent-runtime.md`](smb/03-agent-runtime.md) |
+
+## Phase 3: presentation and cutover
+
+The presentation specifications live under [`http/`](http/):
+
+| Document | Contents |
+| --- | --- |
+| [00-overview.md](http/00-overview.md) | Fiber shape, package inventory, content-host split and build order |
+| [01-middleware-chain.md](http/01-middleware-chain.md) | Route metadata, auth, proxy trust, host/origin, CSRF and limits |
+| [02-error-mapping.md](http/02-error-mapping.md) | One classifier with REST, DAV and OCS adapters |
+| [03-handlers.md](http/03-handlers.md) | Native v1, public links, TUS, SSE, WebSocket and archive streams |
+| [04-webdav.md](http/04-webdav.md) | XML/If parsing, methods, locks and the two race fixes |
+| [05-compat-scope.md](http/05-compat-scope.md) | Complete Nextcloud OCS and DAV compatibility matrix |
+| [06-login-flow-v2.md](http/06-login-flow-v2.md) | Two-token approval and retryable sealed credential delivery |
+| [07-server-assembly.md](http/07-server-assembly.md) | Listener generations, TLS/setup durability, process assembly and cutover |
+| [08-regression-tests.md](http/08-regression-tests.md) | Named tests for every historical presentation regression |
+| [09-api-consistency.md](http/09-api-consistency.md) | The `/api/v1` route contract and frontend rewiring |
+
 ## Branch strategy
 
 - `refactor/core` is the phase 1 branch. Documents land first, then the new

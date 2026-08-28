@@ -187,6 +187,7 @@ func (s *Service) VerifyAppPassword(ctx context.Context, token string) (Principa
 func (s *Service) RevokeAppPassword(ctx context.Context, userID, id int64) error
 func (s *Service) AppPasswords(ctx context.Context, userID int64) ([]AppPasswordRow, error)
 func (s *Service) RequestWipe(ctx context.Context, userID, id int64) error
+func (s *Service) CreateSyncCredential(ctx context.Context, userID int64, name string) (token string, id int64, err error)
 ```
 
 - Tokens are 256 bits in Crockford Base32 (no I, L, O, U), so a token
@@ -207,6 +208,39 @@ func (s *Service) RequestWipe(ctx context.Context, userID, id int64) error
   value; the route table consults it, and a new route is refused by
   default until its required scope is declared (that check is the
   presentation layer's, phase 3).
+- `CreateSyncCredential` is the login-flow policy seam: full filesystem
+  scope, every currently visible share and no silent expiry. Keeping this
+  choice in auth prevents a presentation wiring adapter from hardcoding
+  credential policy. It returns the row id for audit/orphan cleanup and the
+  plaintext once.
+
+## Presentation-neutral account directory
+
+Phase 3's complete compatibility surface needs account facts and grantee
+resolution without importing auth persistence or reproducing policy in HTTP:
+
+```go
+type AccountInfo struct {
+    ID int64; LoginName, DisplayName string; Enabled bool
+    Email *string; Groups []string; Language, Locale string
+    QuotaBytes *uint64; UsageBytes uint64
+}
+func (s *Service) AccountInfo(ctx context.Context, id int64) (AccountInfo, error)
+func (s *Service) AccountInfoByLogin(ctx context.Context, caller int64, login string) (AccountInfo, bool, error)
+func (s *Service) ResolveAccount(ctx context.Context, login string) (int64, bool, error)
+func (s *Service) ResolveGroup(ctx context.Context, name string) (int64, bool, error)
+```
+
+`AccountInfoByLogin` applies configured visibility; out-of-scope and absent
+are one `false,nil`. The caller's own account is always visible. Quota free
+space remains a core/storage projection and is combined through a neutral
+service adapter, not guessed here.
+
+Auth also exposes neutral login-flow durable operations over its state store,
+including begin lookup, atomic approval, pending poll touch, first-delivery
+claim, sealed-delivery store/read and sweep. The HTTP compat package never
+imports state rows; the auth service maps state sentinels to its own flow
+sentinels consumed by 02's classifier.
 
 ## TOTP
 
@@ -294,7 +328,7 @@ type SMBCredential struct {
 
 // Config carries the two seams, both nil-able:
 //   RenderPassdb  func(creds []SMBCredential) []byte     // the smb phase's renderer
-//   PublishSMB    func(ctx context.Context)              // the whole-config publisher
+//   AccessChanged interface{ AccessChanged(context.Context) }
 ```
 
 - `SMBBaseUid = 30000` stays here and is part of the contract: the
@@ -312,6 +346,10 @@ type SMBCredential struct {
   security decision until the sidecar file agrees; smbd authenticates
   against the last published file, and a revocation that stops at SQLite
   leaves the revoked credential serving.
+- The concrete sink is the SMB publisher's Phase 3 `AccessChanged` method
+  (`../smb/01-publish-and-agent-protocol.md`). Auth does not interpret its
+  outcome and does not fail an already-committed account write over an agent
+  failure; the sink records health/operator state itself.
 - `SetSMBPassword` seals a fresh NT hash from the given password;
   `ClearSMBPassword` deletes it and reports `revertible`: whether the
   account password takes over (false when opted out, provider-linked, or
@@ -351,6 +389,11 @@ No error here chooses a wire status; the protocol layer maps them once.
 5. **`ErrNameTaken` replaces `isUniqueViolation`** (audit finding 5); the
    string match moves nowhere, it is deleted, and the aggregate maps the
    driver's constraint error once.
+6. **`CreateSyncCredential` owns device-login app-password policy** (Phase 3
+   amendment; presentation audit `ncwire` finding 3).
+7. **Neutral account-directory and login-flow ports become auth methods**
+   (Phase 3 amendment), removing nil compat ports and presentation-to-store
+   imports.
 
 Everything else is behavior-preserving, including every constant named in
 this document.
@@ -397,6 +440,11 @@ App passwords:
 - Expiry honored; a disabled owner refuses; scope round-trips including
   multiple share labels.
 - Case-folded and confusable-letter presentations verify.
+- `CreateSyncCredential` produces full scope/no expiry, returns its id, and a
+  failed presentation delivery can revoke that exact id without retaining the
+  plaintext.
+- Account-info/resolve visibility and login-flow atomic operations, including
+  out-of-scope versus absent parity and one delivery claimant under concurrency.
 
 TOTP and recovery:
 - The RFC 6238 known-answer vector; the drift window accepts one step

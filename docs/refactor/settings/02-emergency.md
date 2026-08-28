@@ -66,6 +66,10 @@ POST  /emergency/api/restart
 Plus the page itself. Write-then-restart is the flow: a write commits
 through the checker, and the restart is a separate explicit action.
 
+The content-host setting is editable here with the network section. The door
+itself is never mounted on a content host; it remains on the listener address
+under the app/first-boot host behavior, and public peers still receive 404.
+
 ## The deliberate duplications
 
 Two things look like duplications of the main stack and are kept

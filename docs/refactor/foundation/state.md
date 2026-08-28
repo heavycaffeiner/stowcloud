@@ -338,10 +338,21 @@ is already stated.
   live inside the `UPDATE ... WHERE` clause, never a read followed by a
   write) is preserved as required behavior; it is what makes one login URL
   opened twice mint exactly one credential.
+  Phase 3 extends the row with delivery state, sealed credential bytes, key
+  version, credential id and delivered timestamp. `ClaimLoginFlowDelivery`
+  atomically chooses one first poller; `StoreLoginFlowDelivery` records the
+  sealed result; later polls return the same row until expiry. No plaintext
+  credential column exists. The migration is forward-only and old rows read
+  as pending/undelivered.
 - **DAV locks and dead properties** (`dav.go`): keyed by identity rather
   than by a cache-minted id, per the documented reasoning (a property keyed
   by file id would move when the cache rebuilds; one keyed by identity
   moves when the file does). Adopts `ident.Ident`.
+  Phase 3 adds two neutral transactional operations: lock admission performs
+  expiry cleanup, conflict/count checks and insert under the database's
+  serialized writer; a lock snapshot returns all covering rows for a set of
+  targets in one read transaction. DAV maps these neutral rows at its service
+  adapter and never imports this package.
 - **Config secrets** (`configsecret.go`): settings that are credentials,
   sealed under the master key before they reach this layer; this layer
   holds bytes and a key version and has no key of its own.
@@ -864,6 +875,11 @@ document silently also applied to links.
     import path moves from `internal/core` (the SQL portion only) to
     `engine/store/state`; the quota aggregate's import path moves from
     `internal/core` (the SQL portion only) to `engine/store/state`.
+11. **Phase 3 forward migrations extend two existing aggregates.**
+    `compat_login_flow` gains sealed delivery columns and atomic claim/store
+    methods for `http/06-login-flow-v2.md`; `dav_lock` gains transactional
+    admission/snapshot methods for `http/04-webdav.md`. Existing rows remain
+    readable and no plaintext credential or protocol HTTP type enters state.
 
 No other observable behavior changes: every carried-forward aggregate's
 schema, statements, and race-closing patterns (login flow approval and
@@ -885,6 +901,11 @@ Cross-cutting:
 - `dav.go` and `favorite.go` round-trip through `ident.Ident` identically
   to their current column layout (a fixture written with the old shape's
   column values reads back as an equal `ident.Ident`).
+- Login-flow migration reads an old pending/approved row, atomically admits
+  one delivery claimant, stores only sealed bytes, returns the same delivery
+  row to retries and sweeps it at expiry.
+- DAV transactional admission under concurrent exclusive/shared requests and
+  one-snapshot covering-lock reads, using neutral state shapes.
 
 Share links:
 

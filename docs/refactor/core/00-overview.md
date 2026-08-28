@@ -116,6 +116,11 @@ engine/
       grants.go           CreateGrant/ListGrants/UpdateGrant/DeleteGrant:
                           thin wrappers over the store's grant aggregate
                           plus one evaluator reload each
+      compat.go           presentation-neutral projections needed by machine
+                          protocols: first-admin grant-all, stable file ids,
+                          identity-backed favorites and compat sharing policy
+      protocolstate.go    neutral wrappers for deployment identity, DAV dead
+                          properties and transactional lock operations
 ```
 
 File paths in the core documents are spelled relative to
@@ -222,6 +227,68 @@ is dependency order inside the package:
     discipline).
 11. `shareadmin.go` (03) last among the share pieces, because it needs the
     state store's share rows.
+12. `compat.go` (Phase 3 amendment) after grants, links, aggregates and recent:
+    it composes those existing capabilities and adds no protocol vocabulary.
+
+## Phase 3 protocol seam amendment
+
+The complete presentation rebuild needs a small neutral surface that the old
+`ncwire` improvised with direct state access or left nil. It belongs in core
+because it combines path resolution, effective permissions, stable ids,
+grants, links, favorites and trash authority:
+
+```go
+func (c *Core) GrantEveryShare(ctx context.Context, user UserID) error
+func (c *Core) FileID(ctx context.Context, r Resolved) (ident.FileID, error)
+func (c *Core) LocateFileID(ctx context.Context, user UserID, id ident.FileID, need acl.Perms) (Resolved, error)
+
+type Favorite struct { Ident ident.Ident; Path string }
+func (c *Core) Favorites(ctx context.Context, user UserID) ([]Favorite, error)
+func (c *Core) SetFavorite(ctx context.Context, user UserID, r Resolved, on bool) error
+
+type CompatShareKind uint8 // user, group, public link; no vendor wire numbers
+type CompatShareSpec struct { /* resolved target, grantee, perms and link fields */ }
+type CompatShare struct { /* neutral projection rendered by HTTP compat */ }
+func (c *Core) CreateCompatShare(ctx context.Context, actor UserID, spec CompatShareSpec) (CompatShare, error)
+func (c *Core) ListCompatShares(ctx context.Context, actor UserID, filter CompatShareFilter) ([]CompatShare, error)
+func (c *Core) UpdateCompatShare(ctx context.Context, actor UserID, id int64, patch CompatSharePatch) (CompatShare, error)
+func (c *Core) DeleteCompatShare(ctx context.Context, actor UserID, id int64) error
+
+func (c *Core) InstanceID(ctx context.Context) (string, error)
+
+type Property, PropertyOp, ProtocolLock, ProtocolLockRequest, ProtocolLockTarget struct { /* neutral values */ }
+func (c *Core) Properties(ctx context.Context, r Resolved) ([]Property, error)
+func (c *Core) SetProperties(ctx context.Context, r Resolved, ops []PropertyOp) error
+func (c *Core) DropProperties(ctx context.Context, r Resolved) error
+func (c *Core) AdmitProtocolLock(ctx context.Context, req ProtocolLockRequest) (ProtocolLock, error)
+func (c *Core) ProtocolLockSnapshot(ctx context.Context, targets []ProtocolLockTarget, nowNs int64) ([]ProtocolLock, error)
+func (c *Core) RefreshProtocolLock(ctx context.Context, token string, principal UserID, expiresNs, timeoutS int64) (ProtocolLock, error)
+func (c *Core) DropProtocolLock(ctx context.Context, token string, principal UserID) error
+func (c *Core) SweepProtocolLocks(ctx context.Context, nowNs int64) (int64, error)
+
+type AccessChangeSink interface { AccessChanged(ctx context.Context) }
+func (c *Core) SetAccessChangeSink(s AccessChangeSink)
+```
+
+`GrantEveryShare` persists every grant and reloads once. File-id lookup applies
+the existence rule and current ACL. Favorites remain keyed by identity and
+cannot be set over an unresolved path. Compat sharing prevents delegation of
+permissions the actor does not hold, resolves account/group grantees through
+an injected auth directory seam, and uses ordinary grant/link wrappers. It
+contains no OCS names, route values or HTTP statuses.
+
+Every core mutation that changes SMB-visible shares or grants invokes
+`AccessChangeSink` once after its transaction/reload succeeds. The sink owns
+detachment, synchronous push, health and operator outcome
+(`../smb/01-publish-and-agent-protocol.md`); core neither imports SMB nor
+fails the committed mutation over sink failure.
+
+The directory seam is a neutral interface declared by core and implemented by
+auth at assembly; core does not import auth. `protocolstate.go` maps resolved
+entries to `ident.Ident` and delegates to state. Its types carry namespace,
+name, text, path, depth, scope, principal and expiry, but no DAV constants,
+URNs, XML names or HTTP statuses. This is the downward seam that lets
+`engine/http/dav` avoid importing persistence.
 
 ## Behavioral compatibility
 

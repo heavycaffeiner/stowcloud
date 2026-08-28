@@ -46,6 +46,34 @@ refuses.
 **before** the update callback runs (the callback-under-lock deadlock
 is the named risk), readers taking snapshots.
 
+## Section application service
+
+Phase 3 adds the root `engine/service/settings` package over `runtimecfg` and
+`check`. It owns section schemas, secret extraction and running-versus-stored
+outcomes:
+
+```go
+type Lifecycle interface {
+    SwapListener(ctx context.Context, addr string) error
+    RequestRestart()
+    ActiveWork(ctx context.Context) (uploads, jobs int, err error)
+}
+
+type ApplyOutcome struct {
+    Stored, Applied, RestartRequired bool
+    Findings []check.Finding
+}
+
+func (s *Service) Snapshot(ctx context.Context) (Snapshot, error)
+func (s *Service) ApplySection(ctx context.Context, actor int64, section string, patch SectionPatch, force bool) (ApplyOutcome, error)
+```
+
+Known section schemas identify secret fields (initially OIDC client secret),
+seal them through auth, remove plaintext from the JSON settings document, run
+the shared checker, merge one section and apply its live effects. Unknown
+sections refuse. Listener swap/restart are neutral callbacks; no HTTP status or
+Fiber type enters the service. Stored and applied are reported separately.
+
 ## Deliberate changes
 
 1. **The SMB render probe moves to the smb phase as a dry-validate
@@ -62,6 +90,20 @@ is the named risk), readers taking snapshots.
    over `map[string]any` disappear behind the store's typed settings
    schema; the aggregate hands back typed sections, and this package
    stops spelunking maps.
+3. **Network settings include the full host-role schema** (Phase 3 amendment):
+   `AppHosts []string`, `ContentHosts []string`, `AllowedOrigins []string` and
+   `CompatCanonicalURL string`. App/content hosts use host-only syntax and
+   must be disjoint. Allowed origins are absolute HTTPS origins with no path,
+   query, fragment or userinfo and govern explicitly CORS-readable public
+   compatibility responses only, never credential trust. The compat canonical
+   URL must be one of the configured app origins and is the fallback used when
+   a request origin is unavailable. Content-host-dependent capabilities remain
+   unavailable when their list is empty. Boot-time malformed/duplicate entries
+   are dropped with warnings; save time refuses overlap or a canonical URL
+   outside the declared app hosts.
+4. **Section application and secret extraction move into a settings service**
+   (presentation audit handler findings 5 and 6). HTTP no longer switches on
+   section names or knows which fields are credentials.
 
 Everything else, including every bound value and the two-moment rule,
 is behavior-preserving.
@@ -79,3 +121,10 @@ is behavior-preserving.
   that reads the holder).
 - The bounds table covers every numeric field (reflection test: no
   field without a bound).
+- Content hosts round-trip; app/content overlap refuses at save; boot drops a
+  malformed or overlapping stored content host without refusing startup.
+- Allowed-origin and canonical-URL shape/containment vectors, with no CORS
+  value ever becoming an admitted Host, proxy or login-flow origin.
+- ApplySection: blocking finding writes nothing; warning writes; secret
+  plaintext is absent from settings JSON; swap failure reports stored but not
+  applied; restart-required/force and active-work outcomes.

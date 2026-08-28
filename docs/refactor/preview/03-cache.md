@@ -10,6 +10,7 @@
 ```go
 func NewService(o ServiceOptions) *Service // Core, Pool, Cache, Clock
 func (s *Service) Get(ctx context.Context, r core.Resolved, preset Preset) (Thumb, error)
+func (s *Service) GetSized(ctx context.Context, r core.Resolved, width, height int) (Thumb, error)
 ```
 
 - **The permission is `Read|Download`, the same a download needs**: a
@@ -19,6 +20,11 @@ func (s *Service) Get(ctx context.Context, r core.Resolved, preset Preset) (Thum
 - Order: validate the preset, require the permission, consult the
   negative cache, consult the thumbnail cache, generate through the
   pool, store, answer. A generation failure stores a negative.
+- `GetSized` is the compatibility-content seam added in Phase 3. Width and
+  height clamp to 1..4096 and map onto a cache key that includes both exact
+  dimensions. It applies the same Read+Download check and worker path. It does
+  not stretch one preset result and does not accept a path without a resolved
+  capability.
 
 ## Presets
 
@@ -68,6 +74,8 @@ desired behavior after an upgrade fixes a decoder.
 1. **`Put` repoints at `store/fsatomic`** (the survey's inventory).
 2. Nothing else: the permission rule, the key shape, the negative
    reasons and the disposability are behavior-preserving.
+3. **Exact bounded dimensions are supported for the content-host compat
+   preview route** (Phase 3 amendment).
 
 ## Tests
 
@@ -79,3 +87,5 @@ desired behavior after an upgrade fixes a decoder.
   expires it; the sweep counts; a restart forgets.
 - End to end: a real image through service, pool and worker produces a
   thumbnail; the second request is a cache hit (the pool sees one job).
+- `GetSized` clamps/refuses bounds as specified, differs in its key by either
+  dimension, and cannot use a planted cache entry without current Download.

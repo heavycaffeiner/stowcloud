@@ -191,3 +191,39 @@ auth first because sessions gate every protocol. Phase 3 is the fiber
 presentation layer and the cutover, which switches `cmd/stowcloud` to
 `engine/http/server` and deletes the last of `internal/`.
 (`01-package-survey.md` work order, `02-document-plan.md` phases.)
+
+## D18. The complete Nextcloud compatibility surface ships
+
+The old build wired only status/OCS basics, preview and login flow while
+leaving implemented OCS shares, DAV aliases, chunking, trash and vendor
+properties unreachable. Phase 3 treats that as an incomplete rollout, not a
+compatibility contract: every implemented feature in the declared matrix is
+wired, required ports are non-nil at construction, and capabilities advertise
+only the live matrix. (`http/05-compat-scope.md`.)
+
+## D19. Fiber's direct listener is HTTP/1.1
+
+Fiber v2 sits on fasthttp and does not serve HTTP/2 directly. The product does
+not hide that behind an adapter that changes Fiber's streaming/body/upgrade
+semantics. Its TLS listener advertises HTTP/1.1; deployments needing HTTP/2
+terminate it at a trusted reverse proxy and forward HTTP/1.1. Protocol feature
+behavior remains in scope, direct HTTP/2 transport compatibility does not.
+(`http/07-server-assembly.md`.)
+
+## D20. Compatibility capabilities use a real content host
+
+The old compat package described signed preview/direct URLs on a separate
+content origin but never wired the signer. Phase 3 makes the split real:
+configured content hosts expose only `/c/{claim}`, carry no app/session routes,
+and recheck current ACL when opening short-lived AEAD claims. Ordinary native
+and public-link downloads remain attachment streams on the app host; uploaded
+content is never served by the SPA/static mount. (`http/00-overview.md`,
+`http/03-handlers.md`, `http/05-compat-scope.md`.)
+
+## D21. Login flow delivery is retryable without plaintext at rest
+
+Approval stores no credential. The first approved poll mints one app password,
+stores only a master-key-sealed delivery result, and later polls under the same
+token receive the same credential until the short flow expiry. A dropped
+response cannot leave an unknown live credential or mint a second one.
+(`http/06-login-flow-v2.md`.)
