@@ -171,6 +171,31 @@ unasserted:
 
 Both are covered now, and both mutations fail.
 
+### The restart was never recorded
+
+The test list above says "Restart: recorded, and only after an
+authenticated session". Only the second half was true, in either tree:
+`internal/emergency` records a login and a save and nothing else, so the
+rebuild inherited a requirement the code had never met.
+
+It is the one action here that leaves no other evidence. A login and a
+save can both be inferred from what changed afterwards; a restart is
+indistinguishable from a crash or from somebody at the console. The row
+is now written before the process goes away, since one logged after the
+exit never lands, and a restart the deployment cannot perform is recorded
+as a refusal rather than passing silently.
+
+A failed login is recorded by the auth service under its own `login`
+event rather than the door's `emergency.login`. That is correct and worth
+stating: the credential never verified, so the door was never reached and
+has nothing to attribute. The door records what the door decides.
+
+The limiter claim is checked by driving it rather than by asserting a
+call happened. Fifteen wrong passwords, then the correct one, which is
+still refused: the count is per client, so a run of guesses does not stop
+costing anything the moment one of them is right. Disabling the limiter
+fails the test.
+
 ### Prose
 
 `freshscan` found nineteen comment lines carried over from

@@ -353,6 +353,107 @@ func TestAPublicPeerGetsNothingOverARealConnection(t *testing.T) {
 	}
 }
 
+// The limiter is the auth service's own, so a run of guesses against this door
+// is counted and eventually refused. An unlimited password oracle reachable
+// from every machine on the network would be worse than no door at all.
+//
+// This drives the real limiter rather than asserting a call happened: ten
+// attempts in five minutes is what the service allows, so the eleventh is
+// refused for being too many rather than for being wrong.
+func TestTheRealLimiterStopsARunOfGuesses(t *testing.T) {
+	l := start(t)
+	l.admin(t, "operator")
+
+	// Well past the limit, all with the wrong password.
+	for i := range 15 {
+		res, _ := l.do(t, "POST", emergency.Prefix+"/api/login",
+			`{"username":"operator","password":"wrong"}`)
+		if res.Status != http.StatusUnauthorized {
+			t.Fatalf("attempt %d returned %d, want 401", i, res.Status)
+		}
+	}
+
+	// The correct password now, which the limiter must still refuse: the
+	// counting is per client rather than per credential, or a run of guesses
+	// would cost nothing once one of them happened to be right.
+	res, _ := l.do(t, "POST", emergency.Prefix+"/api/login",
+		`{"username":"operator","password":"`+testPassword+`"}`)
+	if res.Status != http.StatusUnauthorized {
+		t.Errorf("the correct password was accepted at attempt 16, so nothing is counting")
+	}
+
+	// And the refusals are in the audit log, which is how a run of guesses is
+	// noticed at all.
+	//
+	// Under the auth service's own "login" event rather than the door's
+	// "emergency.login": the credential never verified, so the door was never
+	// reached and has nothing to attribute. The door records what it decides
+	// (an administrator check, a save) and the service records what it decides.
+	if !auditHas(t, l, "login") {
+		t.Error("a run of failed logins left nothing in the audit log")
+	}
+}
+
+// The restart is recorded. It is the one action here that leaves no other
+// trace: a login and a save can both be inferred from what changed afterwards,
+// while a restart is indistinguishable from a crash or an operator at the
+// console.
+func TestTheRestartIsRecorded(t *testing.T) {
+	l := start(t)
+	l.admin(t, "operator")
+
+	if res, _ := l.do(t, "POST", emergency.Prefix+"/api/login",
+		`{"username":"operator","password":"`+testPassword+`"}`); res.Status != http.StatusOK {
+		t.Fatal("login failed")
+	}
+	if res, out := l.do(t, "POST", emergency.Prefix+"/api/restart", ""); res.Status != http.StatusOK {
+		t.Fatalf("restart returned %d: %v", res.Status, out)
+	}
+
+	if !auditHas(t, l, emergency.EventRestart) {
+		t.Error("the restart is not in the audit log, so a safe-mode restart looks like a crash")
+	}
+}
+
+// A restart nobody can perform is recorded as a refusal rather than passing
+// silently, since somebody asked and the answer was no.
+func TestARestartWithNoSupervisorIsRecordedAsAFailure(t *testing.T) {
+	store, svc, dir := realStore(t)
+	if _, err := svc.CreateAdmin(t.Context(), "operator", "",
+		secret.New([]byte(testPassword))); err != nil {
+		t.Fatalf("CreateAdmin: %v", err)
+	}
+	l := &live{store: store, svc: svc, dir: dir, client: newClient()}
+	// No Restart, which is a deployment with nothing to bring the process back.
+	l.base = serve(t, emergency.Handler(emergency.Deps{Auth: svc, State: store, DataDir: dir}))
+
+	if res, _ := l.do(t, "POST", emergency.Prefix+"/api/login",
+		`{"username":"operator","password":"`+testPassword+`"}`); res.Status != http.StatusOK {
+		t.Fatal("login failed")
+	}
+	res, out := l.do(t, "POST", emergency.Prefix+"/api/restart", "")
+	if res.Status != http.StatusOK || out["restarting"] != false {
+		t.Fatalf("the door reported %v (%d)", out["restarting"], res.Status)
+	}
+
+	rows, _, err := svc.AuditPage(t.Context(), auth.AuditFilter{Limit: 50})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, r := range rows {
+		if r.Event == emergency.EventRestart {
+			found = true
+			if r.OK {
+				t.Error("a restart that could not happen was recorded as a success")
+			}
+		}
+	}
+	if !found {
+		t.Error("a refused restart left nothing in the audit log")
+	}
+}
+
 // A real password failure goes through the real hashing and the real limiter.
 func TestABadPasswordIsRefusedByTheRealAuthService(t *testing.T) {
 	l := start(t)

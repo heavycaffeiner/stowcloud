@@ -50,6 +50,11 @@ const Prefix = "/emergency"
 const (
 	EventLogin = "emergency.login"
 	EventSave  = "emergency.settings_write"
+	// EventRestart marks the door stopping the process. It is the one action
+	// here that leaves no other trace: a login and a save can both be inferred
+	// from what changed afterwards, while a restart looks identical to a crash
+	// or an operator at the console.
+	EventRestart = "emergency.restart"
 )
 
 // bodyLimit caps a settings document. Every value in it is a scalar or a short
@@ -388,17 +393,29 @@ func writeSettings(d Deps) http.HandlerFunc {
 // values loaded.
 func restart(d Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := requireAdmin(d, w, r); !ok {
+		uid, ok := requireAdmin(d, w, r)
+		if !ok {
 			return
 		}
+		ip := clientAddr(d, r).String()
+
 		if d.Restart == nil {
 			// Honest rather than a success that changes nothing. A deployment
 			// with no supervisor stays stopped, and telling somebody the server
 			// is coming back when nothing will start it is worse than telling
 			// them to start it themselves.
+			//
+			// Recorded as a failure: somebody asked, and the answer was no.
+			d.Auth.Record(r.Context(), uid, EventRestart, "no_supervisor", ip, r.UserAgent(), false)
 			writeJSON(w, http.StatusOK, map[string]any{"restarting": false})
 			return
 		}
+
+		// Written before the process goes away, because a row logged after the
+		// exit is a row that never lands. This is the one action here that
+		// leaves no other evidence of itself.
+		d.Auth.Record(r.Context(), uid, EventRestart, "", ip, r.UserAgent(), true)
+
 		writeJSON(w, http.StatusOK, map[string]any{"restarting": true})
 		// Sequenced after the write so the client sees its request accepted.
 		// Exiting first drops the connection and leaves the operator unsure
