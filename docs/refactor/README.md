@@ -169,6 +169,38 @@ The remaining service specifications are complete:
 | settings | [`settings/00-runtimecfg.md`](settings/00-runtimecfg.md) through [`settings/02-emergency.md`](settings/02-emergency.md) |
 | smb | [`smb/00-config-rendering.md`](smb/00-config-rendering.md) through [`smb/03-agent-runtime.md`](smb/03-agent-runtime.md) |
 
+### Phase 0 through 2 audit
+
+Audited against the tree before phase 3's implementation began, on the two
+things the documents can be measured on.
+
+**Declared signatures.** Every `func` in every phase 0 through 2 document,
+344 of them, compared with what the engine implements. Seven had drifted.
+Six were the document being stale and were corrected in place: `Assemble`,
+`NewKeyRing`, preview's `NewService`, smb's `Render`, `Varint` and `Walk`.
+One was the code being wrong: `PutNamed` carried a `sum *Checksum` it never
+read, so a name-ordered upload accepted a chunk whose digest did not match
+while an offset-addressed one refused it. Fixed, with the deliberate change
+recorded in [upload/02-spool-modes.md](upload/02-spool-modes.md).
+
+Twenty-one documented names have no implementation. All twenty-one are
+deferred by their own documents: nineteen under core's "Phase 3 protocol
+seam amendment", settings' section-application service, smb's access-change
+sink, plus `PublishNew`, which [foundation/fsatomic.md](foundation/fsatomic.md)
+decides to drop rather than carry.
+
+**Deliberate changes.** `tools/speccheck` had been pointed at the phase 2
+areas only, leaving foundation's and core's 175 numbered changes checked by
+nothing. Both are in the gate now. The seventeen identifiers that surfaced
+were all documents naming the old tree's spelling in order to say what
+replaced it; the tool now scopes that skip to one identifier rather than a
+whole entry, and the six needing a judgement are in its ignore list with
+what replaced them.
+
+One test named in a document was missing rather than merely unnamed: the
+mutations document requires that a failing journal not fail the write, and
+only the nil-journal case was covered. The behavior was already correct.
+
 ## Phase 3: presentation and cutover
 
 The presentation specifications live under [`http/`](http/):
