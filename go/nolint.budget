@@ -362,6 +362,16 @@
 # a grep invocation whose arguments are this tool's own root and an identifier
 # read from a document in the same repository, and a document read whose path
 # came from walking the caller's own documents directory.
+#
+# 295: the cookie probe in the emergency door's TLS test. It builds cookies the
+# browser rules forbid on purpose, to measure which of the three __Host- rules
+# Go's cookiejar actually enforces, so the linter's objection is the test's
+# subject rather than a defect in it.
 
-294
-71
+#
+# 73: two in the search comparison against independent tools. One runs a binary
+# LookPath resolved with this test's own temp directory and needles, and one
+# reads an exit status where a non-zero value means "nothing matched", which is
+# an answer rather than a failure.
+295
+73
