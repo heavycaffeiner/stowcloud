@@ -38,6 +38,12 @@ The current surface grew route by route and shows it:
 Every v1 route follows all of these; the route table test enforces the
 mechanical ones.
 
+Tables use protocol-neutral `{id}` and `{path...}` notation. The Fiber route
+builder translates these to Fiber's `:id` and `*` syntax at registration and
+retains the canonical form in route metadata and route dumps. No table path is
+pasted directly into Fiber without that translation; wildcard edge cases are
+tested against the registered route.
+
 1. **Base and version.** Everything the web client calls lives under
    `/api/v1`. The version is in the path so the next breaking change is a
    `v2` beside `v1`, not another flag day.
@@ -167,8 +173,12 @@ half to match rather than the reverse.
 
 | v1 | Replaces | Notes |
 | --- | --- | --- |
-| `OPTIONS`/`POST /api/v1/uploads` | same at `/api/uploads` | TUS discovery and create |
-| `HEAD`/`PATCH`/`DELETE`/`OPTIONS /api/v1/uploads/{id}` | same at `/api/uploads/{id}` | TUS; methods are the protocol's own |
+| `OPTIONS /api/v1/uploads` | `OPTIONS /api/uploads` | TUS discovery |
+| `POST /api/v1/uploads` | `POST /api/uploads` | create |
+| `HEAD /api/v1/uploads/{id}` | `HEAD /api/uploads/{id}` | status/offset |
+| `PATCH /api/v1/uploads/{id}` | `PATCH /api/uploads/{id}` | stream chunk |
+| `DELETE /api/v1/uploads/{id}` | `DELETE /api/uploads/{id}` | abort |
+| `OPTIONS /api/v1/uploads/{id}` | `OPTIONS /api/uploads/{id}` | per-resource discovery |
 
 ### search
 
@@ -180,28 +190,41 @@ half to match rather than the reverse.
 
 | v1 | Replaces | Notes |
 | --- | --- | --- |
-| `GET`/`POST /api/v1/admin/users` | same at `/api/admin/users` | |
-| `PATCH`/`DELETE /api/v1/admin/users/{id}` | same | |
-| `GET /api/v1/admin/users/{id}/oidc` | same | |
-| `DELETE /api/v1/admin/users/{id}/oidc` | same | |
-| `GET`/`POST /api/v1/admin/groups` | same | |
-| `PATCH`/`DELETE /api/v1/admin/groups/{id}` | same | |
-| `POST /api/v1/admin/groups/{id}/members` | same (was `{gid}`) | id spelling unified |
-| `DELETE /api/v1/admin/groups/{id}/members/{user}` | same | |
-| `GET`/`POST /api/v1/admin/grants` | same | |
-| `PATCH`/`DELETE /api/v1/admin/grants/{id}` | same | |
-| `GET`/`POST /api/v1/admin/shares` | same | now the only "shares" |
-| `PATCH`/`DELETE /api/v1/admin/shares/{id}` | same | |
-| `POST /api/v1/admin/shares/{id}/retry` | same | |
-| `GET /api/v1/admin/audit` | same | |
-| `GET /api/v1/admin/storage` | same | |
-| `POST /api/v1/admin/smb/apply` | same | operator's apply-now |
-| `POST /api/v1/admin/index/build` | same | |
-| `GET /api/v1/admin/index/estimate` | same | |
+| `GET /api/v1/admin/users` | `GET /api/admin/users` | |
+| `POST /api/v1/admin/users` | `POST /api/admin/users` | |
+| `PATCH /api/v1/admin/users/{id}` | `PATCH /api/admin/users/{id}` | |
+| `DELETE /api/v1/admin/users/{id}` | `DELETE /api/admin/users/{id}` | |
+| `GET /api/v1/admin/users/{id}/oidc` | `GET /api/admin/users/{id}/oidc` | |
+| `DELETE /api/v1/admin/users/{id}/oidc` | `DELETE /api/admin/users/{id}/oidc` | |
+| `GET /api/v1/admin/groups` | `GET /api/admin/groups` | |
+| `POST /api/v1/admin/groups` | `POST /api/admin/groups` | |
+| `PATCH /api/v1/admin/groups/{id}` | `PATCH /api/admin/groups/{id}` | |
+| `DELETE /api/v1/admin/groups/{id}` | `DELETE /api/admin/groups/{id}` | |
+| `POST /api/v1/admin/groups/{id}/members` | `POST /api/admin/groups/{gid}/members` | id spelling unified |
+| `DELETE /api/v1/admin/groups/{id}/members/{user}` | `DELETE /api/admin/groups/{gid}/members/{user}` | |
+| `GET /api/v1/admin/grants` | `GET /api/admin/grants` | |
+| `POST /api/v1/admin/grants` | `POST /api/admin/grants` | |
+| `PATCH /api/v1/admin/grants/{id}` | `PATCH /api/admin/grants/{id}` | |
+| `DELETE /api/v1/admin/grants/{id}` | `DELETE /api/admin/grants/{id}` | |
+| `GET /api/v1/admin/shares` | `GET /api/admin/shares` | now the only "shares" |
+| `POST /api/v1/admin/shares` | `POST /api/admin/shares` | |
+| `PATCH /api/v1/admin/shares/{id}` | `PATCH /api/admin/shares/{id}` | |
+| `DELETE /api/v1/admin/shares/{id}` | `DELETE /api/admin/shares/{id}` | |
+| `POST /api/v1/admin/shares/{id}/retry` | `POST /api/admin/shares/{id}/retry` | |
+| `GET /api/v1/admin/audit` | `GET /api/admin/audit` | |
+| `GET /api/v1/admin/storage` | `GET /api/admin/storage` | |
+| `POST /api/v1/admin/smb/apply` | `POST /api/admin/smb/apply` | operator's apply-now |
+| `POST /api/v1/admin/index/build` | `POST /api/admin/index/build` | |
+| `GET /api/v1/admin/index/estimate` | `GET /api/admin/index/estimate` | |
 | `GET /api/v1/admin/settings` | `GET /api/admin/server-settings` and `GET /api/admin/index/settings` | whole snapshot, index section included |
 | `PATCH /api/v1/admin/settings/{section}` | `PATCH /api/admin/server-settings/{section}` | |
-| `PATCH /api/v1/admin/settings/upload` | `PATCH /api/admin/upload-settings` | folded in as a section |
-| `PATCH /api/v1/admin/settings/index` | `PATCH /api/admin/index/settings` | folded in as a section |
+
+The generic section route owns `upload` and `index` too. In particular,
+`PATCH /api/v1/admin/settings/upload` replaces
+`PATCH /api/admin/upload-settings`, and
+`PATCH /api/v1/admin/settings/index` replaces
+`PATCH /api/admin/index/settings`; they are examples of `{section}`, not two
+extra overlapping Fiber registrations.
 
 Settings become one resource with sections; the three scattered settings
 surfaces end. The snapshot carries every section, `upload` and `index`
@@ -225,6 +248,9 @@ included, and each section PATCHes at one place.
   specs (`http/04`, `http/05`).
 - The emergency server's `/emergency/api`: its own tiny surface
   (`settings/02-emergency.md`).
+- `/c/{claim}`: the short-lived content-host capability used by compat preview
+  and direct-download clients (`http/03`, `http/05`). It is not a native API
+  resource and is never mounted on an app host.
 
 ## What dies
 
@@ -271,6 +297,23 @@ Phase 3 work, same change set as the route table:
 - **Category-default access classes** turn the per-route requirement
   declarations into exceptions, which is less to get wrong; the startup
   validation that refuses an undeclared route stays.
+
+## Deliberate changes
+
+1. **The complete native surface moves under `/api/v1`**, with no aliases,
+   redirects or compatibility mounts for the old unversioned API.
+2. **The three duplicate operation spellings die**: PUT file write, DELETE
+   job cancel and the `fs/link` family.
+3. **User-owned public shares become `links`**, leaving `admin/shares` as the
+   one folder-share resource.
+4. **Settings become one sectioned resource**, including upload and index.
+5. **File paths remain arguments rather than wildcard URL tails**, avoiding a
+   second encoded-path grammar on the native API.
+6. **The shipped frontend, mock backend and contract tools move in the same
+   cutover.** There is no state where the new server ships with the old client.
+
+The public `/s/{token}` routes, WebDAV, Nextcloud compatibility and emergency
+routes keep their protocol-owned wire paths.
 
 ## Tests
 
