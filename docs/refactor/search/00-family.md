@@ -21,6 +21,53 @@ the base tier; the index is an escalation taken when measurement says
 the walk is not enough, and it is a cache whose directory can be deleted
 with no data loss. Everything in this family serves that ordering.
 
+## Where the tiers do not agree (measured)
+
+The ordering above implies a property nothing had asserted: an indexed
+query must return what the walk would have returned, or the cache is
+changing answers rather than accelerating them. An equivalence test now
+runs both tiers over one real tree, and it found two divergences. Both
+are inherited: `internal/search` behaves identically, so neither is a
+regression introduced by the rebuild.
+
+**1. The index matches the whole path; the walk matches the entry name.**
+`index.matchesFolded` folds the stored path and searches the whole of it,
+while `walk.matchesName` tests only the entry's own name. So a query
+naming a folder returns every file beneath it from the index and the
+folder itself from the walk. Measured on a four-file corpus:
+
+```
+query "holiday"
+  index: photos/holiday/IMG_1234.jpg
+         photos/holiday/beach.jpg
+         photos/holiday/sunset.jpg
+  walk:  photos/holiday
+```
+
+Three hits against one, over the same tree, with the same query. This is
+the more serious of the two, because the index is meant to be the fast
+path for the answer the walk would give, and here it gives a different
+one that happens to look plausible.
+
+**2. The walk matches directory names; the index holds none.** The build
+descends through a directory without indexing its name, so the walk can
+return a directory hit with `IsDir` set and the index never can.
+
+Both need a product decision rather than a silent fix, and the options
+differ in what they cost:
+
+- Match the entry name in the index too, which makes the tiers agree and
+  narrows what an indexed query finds. A user who typed a folder name to
+  find its contents loses that.
+- Match the whole path in the walk, which agrees the other way and makes
+  every walk hit under a matching directory, at no storage cost.
+- Index directory names, which is orthogonal to the first point and adds
+  an entry per directory, a cost `estimate.go` does not currently model.
+
+Until it is decided, the equivalence test asserts what does hold, pins
+each divergence in its own test so a change to either is deliberate, and
+names them here rather than comparing only the cases that already agree.
+
 ## The inversion (already settled)
 
 The old `core/scan.go` builds `[]search.Source`, making the core import
