@@ -116,11 +116,31 @@ exist in this container, a daemon that did not settle.
 
 ## Deliberate changes
 
-1. None. The promotion durability fix lives in
+1. None to the behavior. The promotion durability fix lives in
    `02-agent-durable-writes.md`; everything in this document carries
    whole. The scope rules, the closed-by-default policy reading, the
    settle table and the teardown are behavior-preserving
    requirements.
+2. **`settle` splits into a pure decision and the call that acts on it**
+   (`Settle` and `Tell`). The four-row table was previously reachable
+   only through a live daemon, so the one row that matters most, a moved
+   bind line outranking an unchanged configuration, had no test. Both
+   halves keep their behavior; only the seam is new.
+3. **`Compute` sorts its devices itself** rather than relying on
+   `Devices` having sorted them. The determinism requirement belongs to
+   the fold that renders the line, not to the one caller that happens to
+   supply it in order, and a test passing devices in a different order
+   now proves it.
+
+## What this phase built
+
+The scope fold, the policy reading, the candidate transformation, the
+read-backs, the settle decision and the fingerprint, each with the tests
+this document lists. The daemon control itself (`DetectMode`, the
+supervise and service modes, `nmbd`, `fail2ban`) and the apply pass that
+drives them are wiring over a live `smbd` and a service manager, and land
+with phase 3's assembly, where there is a process to supervise. `Daemon`
+is the interface they satisfy, and `Tell` is the seam they attach to.
 
 ## Tests
 
