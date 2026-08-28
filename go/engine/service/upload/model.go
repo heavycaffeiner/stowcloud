@@ -1,4 +1,4 @@
-// Linux only: it names types that are openat2 handles underneath.
+// Builds only on Linux, where the types it names are openat2 handles beneath.
 //go:build linux
 
 // Package upload is the resumable-upload state machine every protocol
@@ -31,7 +31,7 @@ import (
 // authorization.
 const sessionIDBytes = 16
 
-// SessionID is an opaque, unguessable session handle.
+// SessionID is an opaque session handle that cannot be guessed.
 type SessionID [sessionIDBytes]byte
 
 // NewSessionID mints one from the system random source.
@@ -47,7 +47,7 @@ func NewSessionID() (SessionID, error) {
 // named after.
 func (id SessionID) String() string { return base64.RawURLEncoding.EncodeToString(id[:]) }
 
-// Bytes is the storage spelling.
+// Bytes gives the on-disk representation.
 func (id SessionID) Bytes() []byte { return id[:] }
 
 // ParseSessionID reads the wire spelling.
@@ -76,22 +76,22 @@ func sessionIDFromBytes(b []byte) (SessionID, error) {
 	return id, nil
 }
 
-// SessionState is where one session is in its life.
+// SessionState marks a session's stage of life.
 type SessionState int64
 
 const (
-	// StateReceiving is a session still accepting bytes.
+	// StateReceiving marks a session still taking bytes.
 	StateReceiving SessionState = iota
 	// StateFinalizing is one that has begun publishing. It is a real
 	// transition rather than a declared-and-never-set value: a session that
 	// is publishing is not receiving, and must not be swept mid-publish.
 	StateFinalizing
-	// StateDone is one whose bytes are at the destination.
+	// StateDone marks one whose bytes have reached the destination.
 	StateDone
 	// StateAborted is one a client terminated.
 	StateAborted
-	// StateExpired is one past its lifetime. It is derived from the clock
-	// rather than stored, so a session needs no writer to expire.
+	// StateExpired marks one beyond its lifetime. It is computed from the clock
+	// instead of stored, so expiry requires no writer.
 	StateExpired
 )
 
@@ -100,16 +100,16 @@ const (
 // abandoned session.
 func (s SessionState) live() bool { return s == StateReceiving || s == StateFinalizing }
 
-// SpoolMode is how chunks map onto the part file.
+// SpoolMode determines how chunks map onto the part file.
 type SpoolMode int64
 
 const (
-	// SpoolOffsetAddressed writes each chunk at the offset the client gave,
-	// so nothing has to be assembled.
+	// SpoolOffsetAddressed places each chunk at the client-supplied offset, so
+	// no assembly is needed.
 	SpoolOffsetAddressed SpoolMode = iota
-	// SpoolNameOrdered writes each chunk to a file of its own and assembles
-	// them at finalize in ascending name order, for a protocol that carries
-	// no offsets.
+	// SpoolNameOrdered gives each chunk its own file and assembles them during
+	// finalize in ascending name order, serving protocols that carry no
+	// offsets.
 	SpoolNameOrdered
 )
 
@@ -121,7 +121,8 @@ const (
 type Algo int64
 
 const (
-	// AlgoCRC32C is CRC32 with the Castagnoli polynomial, standard library.
+	// AlgoCRC32C is CRC32 using the Castagnoli polynomial from the standard
+	// library.
 	AlgoCRC32C Algo = iota
 	// AlgoBLAKE3 is the pure-Go module the directory ETag already uses, so a
 	// build with no C toolchain has nothing to fall back from.
@@ -151,7 +152,7 @@ func ParseAlgo(s string) (Algo, error) {
 	return 0, fmt.Errorf("%w: %q", ErrUnknownAlgo, s)
 }
 
-// Algorithms is what the server advertises, in the order it prefers them.
+// Algorithms lists what the server advertises, ordered by preference.
 func Algorithms() []Algo { return []Algo{AlgoCRC32C, AlgoBLAKE3} }
 
 // Checksum is one digest and the algorithm that produced it.
@@ -189,9 +190,9 @@ func (c Checksum) String() string {
 	return c.Algo.String() + " " + base64.StdEncoding.EncodeToString(c.Digest)
 }
 
-// checkDigestLen refuses a digest that cannot be the algorithm's output. A
-// short one would otherwise be compared against a truncation of the real
-// digest and pass.
+// checkDigestLen rejects a digest that could not be the algorithm's output.
+// Without this, a short one would be compared against a truncation of the real
+// digest and succeed.
 func checkDigestLen(a Algo, n int) error {
 	if want := digestLen(a); n != want {
 		return fmt.Errorf("%w: a %s digest is %d bytes, not %d", ErrBadRequest, a, want, n)
@@ -224,34 +225,34 @@ type Meta struct {
 	MtimeNs      *int64
 	Mime         string
 	RelativePath string
-	// Verify is nil for a session that asked for no whole-file check.
+	// Verify is nil where a session requested no whole-file check.
 	Verify *Verify
 }
 
-// SessionSpec is what Create is asked to open.
+// SessionSpec describes what Create is asked to open.
 type SessionSpec struct {
-	// TotalLen is nil for a deferred length, which the client supplies later
-	// and finalize requires.
+	// TotalLen is nil when the length is deferred, supplied by the client later
+	// and demanded by finalize.
 	TotalLen *uint64
 	// RandomAccess lets chunks arrive at any offset. Without it a chunk has
 	// to land at the resumable offset.
 	RandomAccess bool
-	// IfMatch is the destination's token as the client last saw it.
+	// IfMatch holds the destination's token as of the client's last view.
 	IfMatch string
 	Mode    SpoolMode
 	Meta    Meta
 }
 
-// Session is one upload as a caller sees it.
+// Session presents a single upload as a caller sees it.
 type Session struct {
 	ID    SessionID
 	User  core.UserID
 	Share core.ShareID
-	// Dest is the share-relative destination the file publishes to.
+	// Dest names the share-relative destination the file publishes to.
 	Dest  vfs.SafePath
 	State SessionState
-	// Offset is the resumable offset: the end of the first range when the set
-	// starts at zero, and zero otherwise.
+	// Offset gives the resumable position: the end of the first range when the
+	// set begins at zero, and zero in every other case.
 	Offset   uint64
 	TotalLen *uint64
 	// Received is how many bytes have actually landed, which is not the
@@ -274,12 +275,12 @@ type Alias struct {
 	Dest    string
 }
 
-// partName is the reserved control name a session's bytes accumulate under.
+// partName gives the reserved control name a session's bytes accumulate under.
 //
-// It is ".scpart-{id}" and nothing else. An earlier design disguised it as
-// ".{basename}.scpart-{id}" to get past component validation, which defeated
-// the reserved-name filter: part files then appeared in ordinary listings,
-// in the web interface and to sync clients, for the whole of every upload.
+// The form is ".scpart-{id}" exclusively. An earlier design disguised it as
+// ".{basename}.scpart-{id}" to slip past component validation, which broke the
+// reserved-name filter: part files then showed up in ordinary listings, in the
+// web interface and to sync clients, throughout every upload.
 func partName(id SessionID) string { return ".scpart-" + id.String() }
 
 // spoolDirName is the directory a name-ordered session's chunks wait in.
@@ -293,8 +294,9 @@ func spoolDirName(id SessionID) string { return ".scpart-" + id.String() + ".d" 
 // outlives its directory has to stay unlistable wherever it ends up.
 func cacheDirName(id SessionID) string { return ".scpart-" + id.String() + ".c" }
 
-// partPath is the part file's path: the destination's own directory, because
-// the rename that publishes it is only atomic within one directory.
+// partPath gives the part file's location, which is the destination's own
+// directory, because the publishing rename is atomic only within a single
+// directory.
 func partPath(dest vfs.SafePath, name string) (vfs.SafePath, error) {
 	return dest.Parent().JoinControl(name)
 }

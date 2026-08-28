@@ -13,12 +13,12 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
-// The crossing between the engine's shapes and the durable half's rows. It is
-// its own file because the engine has enough to do without also knowing which
-// column a nullable length lives in.
+// The translation between the engine's types and the durable half's rows. It
+// occupies its own file because the engine has plenty to handle without also
+// tracking which column holds a nullable length.
 
-// row is one session as the engine holds it: the stored columns, plus the
-// interval set the second table carries.
+// row represents a session as the engine keeps it: the stored columns together
+// with the interval set held by the second table.
 type row struct {
 	sess state.UploadSession
 	set  *IntervalSet
@@ -32,7 +32,7 @@ func (r *row) mode() SpoolMode { return SpoolMode(r.sess.Mode) }
 
 func (r *row) cached() bool { return r.sess.CacheDir != "" }
 
-// totalLen reports the declared length, and false for a deferred one.
+// totalLen returns the declared length, reporting false when it is deferred.
 func (r *row) totalLen() (uint64, bool) {
 	if r.sess.TotalLen == nil {
 		return 0, false
@@ -44,12 +44,12 @@ func (r *row) totalLen() (uint64, bool) {
 	return n, true
 }
 
-// verify is the whole-file check, and nil for a session that asked for none.
+// verify returns the whole-file check, or nil when a session requested none.
 //
-// Both columns are written together at creation, so an algorithm with no
-// digest beside it is a schema-level inconsistency rather than a legitimate
-// "opt in but compare against nothing". It reads as no check at all, because
-// the alternative is verifying against a fabricated expectation and refusing a
+// Creation writes both columns together, so an algorithm lacking an accompanying
+// digest indicates a schema-level inconsistency rather than a legitimate opt-in
+// with nothing to compare against. It is read as no check at all, because the
+// alternative would verify against an invented expectation and reject a
 // perfectly good upload.
 func (r *row) verify() *Verify {
 	if r.sess.Verify == nil || len(r.sess.VerifyDigest) == 0 {
@@ -58,7 +58,7 @@ func (r *row) verify() *Verify {
 	return &Verify{Algo: Algo(*r.sess.Verify), Digest: r.sess.VerifyDigest}
 }
 
-// load reads one session and its interval set.
+// load retrieves a session along with its interval set.
 func (e *Engine) load(ctx context.Context, id SessionID) (*row, error) {
 	sess, err := e.state.ReadUploadSession(ctx, id.Bytes())
 	if errors.Is(err, state.ErrNoSuchUploadSession) {
@@ -70,7 +70,7 @@ func (e *Engine) load(ctx context.Context, id SessionID) (*row, error) {
 	return e.rowOf(ctx, sess)
 }
 
-// rowOf attaches the interval set to a session already read.
+// rowOf pairs the interval set with a session that has already been read.
 func (e *Engine) rowOf(ctx context.Context, sess state.UploadSession) (*row, error) {
 	runs, err := e.state.ReadUploadIntervals(ctx, sess.ID)
 	if err != nil {
@@ -78,28 +78,28 @@ func (e *Engine) rowOf(ctx context.Context, sess state.UploadSession) (*row, err
 	}
 	set, err := LoadIntervalSet(rangesOf(runs))
 	if err != nil {
-		// A set that will not rebuild cannot say what the session holds, and
-		// answering an offset from it would hand the client a hole. The session
-		// refuses rather than silently resetting: the part file is still on
-		// disk and the sweep is what decides its fate.
+		// A set that fails to rebuild cannot report what the session holds, and
+		// deriving an offset from it would hand the client a gap. The session
+		// rejects instead of quietly resetting: the part file remains on disk
+		// and the sweep determines its fate.
 		return nil, fmt.Errorf("session for %s: %w", sess.Dest, err)
 	}
 	return &row{sess: sess, set: set}, nil
 }
 
-// save writes the mutable half of a session row back.
+// save persists the mutable portion of a session row.
 func (e *Engine) save(ctx context.Context, r *row) error {
 	return e.state.UpdateUploadSession(ctx, r.sess)
 }
 
-// commitRange records a merged interval set and pushes the session's lifetime
-// out, in one transaction.
+// commitRange stores a merged interval set and extends the session's lifetime
+// within a single transaction.
 //
-// It is step two of the ordering rule and never runs before the bytes are on
-// disk: a crash between the two leaves the set reporting the smaller prefix,
-// so the client resends the same bytes at the same offset and they land
-// identically. Reversing it would let the set claim bytes that were never
-// durably written, which is silent corruption rather than a slow upload.
+// This is the ordering rule's second step and never precedes the bytes reaching
+// disk. Crashing between the two leaves the set reporting the shorter prefix, so
+// the client resends identical bytes at the same offset and they land the same
+// way. Inverting the order would let the set claim bytes never durably written,
+// producing silent corruption rather than a slow upload.
 func (e *Engine) commitRange(ctx context.Context, r *row) error {
 	runs := make([][2]uint64, 0, r.set.Count())
 	for _, run := range r.set.Runs() {
@@ -109,7 +109,7 @@ func (e *Engine) commitRange(ctx context.Context, r *row) error {
 	return e.state.RecordUploadInterval(ctx, r.sess.ID, runs, r.sess.ExpiresNs)
 }
 
-// session is the caller-facing projection of a row.
+// session projects a row into the caller-facing shape.
 func (e *Engine) session(r *row) (Session, error) {
 	id, err := r.id()
 	if err != nil {
@@ -146,9 +146,9 @@ func (e *Engine) session(r *row) (Session, error) {
 	if n, declared := r.totalLen(); declared {
 		out.TotalLen = &n
 	}
-	// A name-ordered session advances its write head and leaves the interval
-	// set empty until assembly fills it, so reading the set here would report
-	// zero for exactly the sessions that need an answer.
+	// A name-ordered session moves its write head while leaving the interval set
+	// empty until assembly populates it, so consulting the set here would report
+	// zero for precisely the sessions requiring an answer.
 	if r.mode() == SpoolNameOrdered && r.set.Count() == 0 {
 		head, herr := num.Narrow[uint64](r.sess.WriteHead)
 		if herr != nil {
@@ -159,8 +159,8 @@ func (e *Engine) session(r *row) (Session, error) {
 	return out, nil
 }
 
-// effectiveState derives expiry from the clock rather than from a stored flag,
-// so a session expires without needing a writer to notice.
+// effectiveState computes expiry from the clock instead of a stored flag, so a
+// session expires without requiring a writer to observe it.
 func (e *Engine) effectiveState(r *row) SessionState {
 	st := SessionState(r.sess.State)
 	if st.live() && e.clk.Nanos() > r.sess.ExpiresNs {
@@ -180,7 +180,8 @@ func requireOwner(r *row, user core.UserID) error {
 	return nil
 }
 
-// requireReceiving refuses a call against a session that is not taking bytes.
+// requireReceiving rejects a call made against a session no longer accepting
+// bytes.
 func (e *Engine) requireReceiving(r *row) error {
 	switch e.effectiveState(r) {
 	case StateReceiving:

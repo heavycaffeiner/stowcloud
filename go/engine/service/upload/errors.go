@@ -15,36 +15,38 @@ var (
 	// deferred length that was never supplied.
 	ErrBadRequest = errors.New("malformed upload request")
 
-	// ErrNotFound is an unknown session, or one belonging to another account.
-	// The two are one answer: telling them apart says a session id is real.
+	// ErrNotFound covers an unknown session and one owned by another account.
+	// Both yield the same answer, since separating them would confirm that a
+	// session id exists.
 	ErrNotFound = errors.New("no such upload session")
 
-	// ErrOffsetConflict is a chunk that did not arrive at the resumable
-	// offset, on a session that is not random-access.
+	// ErrOffsetConflict reports a chunk arriving somewhere other than the
+	// resumable offset on a session that is not random-access.
 	ErrOffsetConflict = errors.New("offset does not match the resumable offset")
 
-	// ErrTooLarge is a write past the declared length.
+	// ErrTooLarge reports a write extending beyond the declared length.
 	ErrTooLarge = errors.New("past the declared upload length")
 
-	// ErrChunkTooSmall is a mid-stream chunk below the session's own floor.
-	// It drives a client's own adjustment, so it is ordinary operation rather
-	// than a fault: the refusal is the protocol working.
+	// ErrChunkTooSmall reports a mid-stream chunk under the session's floor. It
+	// prompts the client to adjust, making it routine operation rather than a
+	// fault: the rejection is the protocol functioning.
 	ErrChunkTooSmall = errors.New("chunk below the minimum size")
 
-	// ErrChecksum is a per-chunk digest that did not match. The range is not
-	// recorded, so the client resends it rather than resuming past a hole.
+	// ErrChecksum reports a per-chunk digest mismatch. The range goes
+	// unrecorded, so the client resends it instead of resuming beyond a gap.
 	ErrChecksum = errors.New("chunk checksum mismatch")
 
-	// ErrVerify is a whole-file digest that did not match at finalize.
+	// ErrVerify reports a whole-file digest mismatch at finalize.
 	ErrVerify = errors.New("whole-file verification failed")
 
 	// ErrSessionExpired is a session past its lifetime.
 	ErrSessionExpired = errors.New("upload session expired")
 
-	// ErrSessionState is a call against a session that is not receiving.
+	// ErrSessionState reports a call made against a non-receiving session.
 	ErrSessionState = errors.New("upload session is not receiving")
 
-	// ErrIncomplete is a finalize whose interval set does not cover the file.
+	// ErrIncomplete reports a finalize whose interval set leaves the file
+	// uncovered.
 	ErrIncomplete = errors.New("upload incomplete")
 
 	// ErrFragmented is an insert that would take the interval set past the
@@ -52,27 +54,28 @@ var (
 	// one chunk rather than the session.
 	ErrFragmented = errors.New("too many disjoint received ranges")
 
-	// ErrExhausted is a per-account bound: too many sessions, too many
-	// reserved bytes, or not enough room on the destination filesystem.
+	// ErrExhausted reports a per-account bound: excess sessions, excess reserved
+	// bytes, or insufficient room on the destination filesystem.
 	ErrExhausted = errors.New("upload resource limit exceeded")
 
-	// ErrAliasTaken is a transfer id this account already holds. Rebinding it
-	// would orphan the first session's spool with nothing naming it.
+	// ErrAliasTaken reports a transfer id the account already holds. Rebinding
+	// would strand the first session's spool with nothing referencing it.
 	ErrAliasTaken = errors.New("transfer id already bound")
 
 	// ErrCacheFull is the spool at its budget. What it waits for is a disk
 	// write already in progress, which is why the refusal carries a delay.
 	ErrCacheFull = errors.New("the upload cache is full")
 
-	// ErrUnknownAlgo is a checksum algorithm this server does not offer.
+	// ErrUnknownAlgo reports a checksum algorithm this server does not
+	// provide.
 	ErrUnknownAlgo = errors.New("unknown checksum algorithm")
 
 	// ErrNoCache is the cache switch on a deployment that has no spool.
 	ErrNoCache = errors.New("this deployment has no upload cache")
 )
 
-// IncompleteError is a finalize over holes, naming what is missing so a
-// client knows what to resend rather than starting again.
+// IncompleteError reports a finalize across gaps, listing what is absent so a
+// client can resend precisely that rather than restarting.
 type IncompleteError struct {
 	Missing []Range
 }
@@ -87,8 +90,8 @@ func (e *IncompleteError) Error() string {
 
 func (e *IncompleteError) Is(target error) bool { return target == ErrIncomplete }
 
-// ConflictError carries the offset the client should have written at, so a
-// resuming client does not need a second round trip to find out.
+// ConflictError supplies the offset the client should have written at, sparing a
+// resuming client a second round trip to discover it.
 type ConflictError struct {
 	Expected uint64
 	Got      uint64
@@ -101,8 +104,8 @@ func (e *ConflictError) Error() string {
 
 func (e *ConflictError) Is(target error) bool { return target == ErrOffsetConflict }
 
-// ChunkTooSmallError names the floor that refused, which is the number a
-// client's own adjustment needs.
+// ChunkTooSmallError states the floor that rejected the chunk, the figure a
+// client needs to adjust.
 type ChunkTooSmallError struct {
 	Min uint64
 	Got uint64
@@ -115,8 +118,8 @@ func (e *ChunkTooSmallError) Error() string {
 
 func (e *ChunkTooSmallError) Is(target error) bool { return target == ErrChunkTooSmall }
 
-// ExhaustedError names which bound refused. "Resource exhausted" without the
-// name is a refusal an operator cannot act on.
+// ExhaustedError identifies which bound rejected the request. A bare "resource
+// exhausted" gives an operator nothing to act on.
 type ExhaustedError struct {
 	Limit string
 }

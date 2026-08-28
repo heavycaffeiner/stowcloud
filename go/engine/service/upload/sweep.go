@@ -12,29 +12,31 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
-// SweepReport is what one sweep did, per kind of debt.
+// SweepReport records what a single sweep accomplished, broken down by kind of
+// debt.
 type SweepReport struct {
-	// ExpiredSessions is rows whose lifetime ran out, with their part files.
+	// ExpiredSessions counts rows past their lifetime, along with their part
+	// files.
 	ExpiredSessions int
-	// OrphanParts is part files with no session row, older than the grace
-	// period.
+	// OrphanParts counts part files lacking a session row and older than the
+	// grace period.
 	OrphanParts int
-	// OrphanSpools is spool directories in the same position.
+	// OrphanSpools counts spool directories in that same state.
 	OrphanSpools int
-	// OrphanCaches is cache directories whose session row is gone. They are
-	// counted apart because no walk of the shares can find them: the spool is
-	// not a share, and the row is the only thing that names a directory in
-	// it.
+	// OrphanCaches counts cache directories whose session row has disappeared.
+	// They are tallied separately because no walk of the shares can locate them:
+	// the spool is not a share, and the row is the only thing naming a directory
+	// within it.
 	OrphanCaches int
 }
 
-// Sweep collects the two kinds of debt an upload leaves: a session row whose
-// part file is gone, and a part file whose session row is gone.
+// Sweep reclaims the two kinds of debt an upload leaves behind: a session row
+// whose part file has vanished, and a part file whose session row has vanished.
 //
-// Neither is inferred from the other's absence in a single pass. Both sides
-// are read first and then acted on, so a session created between the two
-// reads is not mistaken for an orphan, and an orphan is additionally only
-// taken once it is older than the session lifetime.
+// Neither is deduced from the other's absence within one pass. Both sides are
+// read before anything is acted on, so a session created between the two reads
+// is not misread as an orphan, and an orphan is additionally only collected once
+// it exceeds the session lifetime in age.
 func (e *Engine) Sweep(ctx context.Context) (SweepReport, error) {
 	var rep SweepReport
 	now := e.clk.Nanos()
@@ -61,11 +63,11 @@ func (e *Engine) Sweep(ctx context.Context) (SweepReport, error) {
 		}
 	}
 
-	// Side two: the directories a part file has ever been created in. A sweep
-	// that walked whole shares would read a multi-terabyte tree to find a
-	// handful of control files, and one that walked only the live sessions'
-	// directories could not see the orphan it exists for: an orphan is a part
-	// file whose session row is already gone.
+	// The second side: every directory in which a part file has ever been
+	// created. Walking whole shares would traverse a multi-terabyte tree to
+	// locate a handful of control files, while walking only the live sessions'
+	// directories would miss the very orphans this exists for, since an orphan
+	// is a part file whose session row has already gone.
 	dirs, err := e.touchedDirs(ctx)
 	if err != nil {
 		return rep, err
@@ -80,7 +82,7 @@ func (e *Engine) Sweep(ctx context.Context) (SweepReport, error) {
 	return rep, nil
 }
 
-// sweepCache removes cache directories no live session claims.
+// sweepCache deletes cache directories claimed by no live session.
 func (e *Engine) sweepCache(live []state.UploadSession) int {
 	if e.cache == nil {
 		return 0
@@ -102,8 +104,8 @@ func (e *Engine) sweepCache(live []state.UploadSession) int {
 	return taken
 }
 
-// shareDir names one directory inside one share, which is the unit the sweep
-// walks.
+// shareDir identifies a single directory within one share, the unit the sweep
+// traverses.
 type shareDir struct {
 	share core.ShareID
 	dir   string
@@ -124,9 +126,9 @@ func (e *Engine) touchedDirs(ctx context.Context) (map[shareDir]vfs.SafePath, er
 		}
 		dir, perr := vfs.ParseSafePath(t.Dir)
 		if perr != nil {
-			// A stored path that will not parse names nothing this can open.
-			// It is skipped rather than failing the sweep, which still has
-			// every other directory to get through.
+			// A stored path that fails to parse names nothing openable here. It
+			// is skipped rather than failing the sweep, which still has every
+			// other directory to process.
 			continue
 		}
 		out[shareDir{share: share, dir: t.Dir}] = dir
@@ -134,12 +136,12 @@ func (e *Engine) touchedDirs(ctx context.Context) (map[shareDir]vfs.SafePath, er
 	return out, nil
 }
 
-// collectExpired removes an expired session's part file, its spool directory
-// and its row.
+// collectExpired deletes an expired session's part file, spool directory and
+// row.
 //
-// A row whose delete fails is left alone and retried next sweep rather than
-// aborting the whole pass: one bad row stopping every other share's cleanup
-// is exactly the failure a periodic sweep exists to be resilient against.
+// A row whose deletion fails is left in place and retried on the next sweep
+// rather than aborting the entire pass. One bad row halting every other share's
+// cleanup is precisely the failure a periodic sweep is meant to withstand.
 func (e *Engine) collectExpired(ctx context.Context, sess state.UploadSession) bool {
 	share, ok := shareIDOf(sess.Share)
 	if !ok {
@@ -147,9 +149,9 @@ func (e *Engine) collectExpired(ctx context.Context, sess state.UploadSession) b
 	}
 	root, ok := e.core.ShareRoot(share)
 	if !ok {
-		// The share is not registered in this process, so its files are not
-		// reachable. The row stays: deleting it would strand the part file
-		// with nothing left naming it.
+		// The share is unregistered in this process, leaving its files
+		// unreachable. The row remains, since deleting it would strand the part
+		// file with nothing naming it.
 		return false
 	}
 	dest, err := vfs.ParseSafePath(sess.Dest)
@@ -185,8 +187,8 @@ func (e *Engine) collectExpired(ctx context.Context, sess state.UploadSession) b
 	return true
 }
 
-// sweepDir removes the control files in one directory that no live session
-// claims and that are older than the grace period.
+// sweepDir deletes control files in a directory that no live session claims and
+// that exceed the grace period in age.
 func (e *Engine) sweepDir(
 	share core.ShareID, dir vfs.SafePath, live []state.UploadSession, now int64,
 ) (parts, spools int) {
@@ -211,8 +213,8 @@ func (e *Engine) sweepDir(
 		return true
 	})
 	if err != nil {
-		// A directory that cannot be read is not a reason to stop sweeping the
-		// others: it may have been deleted since the session that named it.
+		// An unreadable directory is no reason to abandon sweeping the rest; it
+		// may have been removed since the session that named it.
 		return 0, 0
 	}
 
@@ -225,9 +227,9 @@ func (e *Engine) sweepDir(
 		if serr != nil {
 			continue
 		}
-		// Old enough to be an orphan rather than a session created while this
-		// sweep was running. The two reads already rule out most of that; this
-		// is the belt for a session whose row lands between them.
+		// Old enough to be a genuine orphan rather than a session created while
+		// this sweep ran. The two reads already exclude most of that case; this
+		// covers a session whose row arrives between them.
 		if now-st.MtimeNs < int64(sessionTTL()) {
 			continue
 		}
@@ -246,12 +248,12 @@ func (e *Engine) sweepDir(
 	return parts, spools
 }
 
-// claimedNames is the control names live sessions hold in one directory, so
-// the sweep never takes a file an upload in flight is still writing to.
+// claimedNames lists the control names live sessions hold within a directory, so
+// the sweep never collects a file an in-flight upload is still writing.
 //
-// The directory comparison is component-wise through the path type rather
-// than on the strings: "ab" is not inside "a", and a string prefix test says
-// it is.
+// Directory comparison runs component by component through the path type rather
+// than over strings, because "ab" does not sit inside "a" while a string prefix
+// test would claim it does.
 func claimedNames(live []state.UploadSession, share core.ShareID, dir vfs.SafePath) map[string]struct{} {
 	out := map[string]struct{}{}
 	for _, sess := range live {
@@ -271,8 +273,8 @@ func claimedNames(live []state.UploadSession, share core.ShareID, dir vfs.SafePa
 	return out
 }
 
-// removeSpoolDir empties a spool directory and removes it. Both steps are
-// best effort: what is left behind is unlistable and is found again next
+// removeSpoolDir clears a spool directory and deletes it. Both steps are best
+// effort, since anything left behind stays unlistable and resurfaces on the next
 // sweep.
 func (e *Engine) removeSpoolDir(root *vfs.ShareRoot, dir vfs.SafePath) {
 	var names []string

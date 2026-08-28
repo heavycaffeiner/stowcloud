@@ -22,29 +22,29 @@ import (
 // because the thing it waits for is a disk write already in progress.
 const cacheRetryAfter = 5 * time.Second
 
-// cacheWaitMax bounds how long one chunk waits for the merger. Reaching it
-// means the merge is not failing loudly but is not moving either, which is a
-// destination problem rather than a full cache; the request is answered
-// rather than held open forever.
+// cacheWaitMax limits how long a chunk waits on the merger. Hitting it means the
+// merge is neither failing visibly nor progressing, which points at the
+// destination rather than a full cache. The request is answered instead of being
+// held open indefinitely.
 const cacheWaitMax = 30 * time.Second
 
-// mergeCopyMax bounds one merge step, so a chunk larger than it drains across
-// several and the loop gets to look at its cancellation in between. An
-// unbounded step is one copy a shutdown has to wait out.
+// mergeCopyMax caps a single merge step, so a larger chunk drains over several
+// and the loop can observe cancellation between them. An unbounded step would be
+// one copy a shutdown must sit through.
 const mergeCopyMax = 64 << 20
 
-// merger is one session's drain: the goroutine copying contiguous cached data
-// into the part file, and the two channels a writer talks to it through.
+// merger holds a session's drain: the goroutine copying contiguous cached data
+// into the part file, plus the two channels writers use to reach it.
 type merger struct {
 	wake chan struct{}
 	stop context.CancelFunc
 	done chan struct{}
 
-	// progress is closed and replaced at the end of every round, where a round
-	// is one merge step or the moment the merger runs out of work. A writer
-	// waiting for room reads this channel before it checks the budget, so a
-	// round landing in between wakes it rather than being missed. That
-	// ordering is the protocol's correctness.
+	// progress is closed and recreated at the end of each round, a round being
+	// either one merge step or the point where the merger exhausts its work. A
+	// writer waiting for room reads this channel before consulting the budget,
+	// so a round completing in between wakes it instead of going unnoticed. That
+	// ordering is what makes the protocol correct.
 	mu       sync.Mutex
 	progress chan struct{}
 }
@@ -58,8 +58,8 @@ func newMerger(stop context.CancelFunc) *merger {
 	}
 }
 
-// nudge asks the merger to look again. It never blocks: the channel holds one
-// token, and one pending wake is the same request as five.
+// nudge prompts the merger to re-examine its work. It never blocks, since the
+// channel holds a single token and one pending wake conveys as much as five.
 func (m *merger) nudge() {
 	select {
 	case m.wake <- struct{}{}:
@@ -67,7 +67,7 @@ func (m *merger) nudge() {
 	}
 }
 
-// endRound reports that a round finished, waking everything waiting for room.
+// endRound signals a completed round, waking everything waiting for room.
 func (m *merger) endRound() {
 	m.mu.Lock()
 	old := m.progress
@@ -76,8 +76,8 @@ func (m *merger) endRound() {
 	close(old)
 }
 
-// watch is the channel to wait on for the next round. It is read before the
-// budget is checked, which is what closes the race.
+// watch returns the channel to await the next round on. Reading it before
+// checking the budget is what eliminates the race.
 func (m *merger) watch() <-chan struct{} {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -90,11 +90,12 @@ func (m *merger) wait() {
 	<-m.done
 }
 
-// startMerger returns the session's merger, starting it if it is not running.
+// startMerger yields the session's merger, launching it when not already
+// running.
 //
-// It takes a row rather than an id because a session that is not cached needs
-// no merger at all, and asking the store again to find that out is a read per
-// chunk.
+// It accepts a row rather than an id because an uncached session requires no
+// merger whatsoever, and re-querying the store to discover that would cost a
+// read per chunk.
 func (e *Engine) startMerger(r *row) error {
 	id, err := r.id()
 	if err != nil {
@@ -123,11 +124,11 @@ func (e *Engine) mergerFor(id SessionID) *merger {
 	return m
 }
 
-// stopMerger cancels a session's merger and waits for it to leave.
+// stopMerger cancels a session's merger and waits for its exit.
 //
-// Waiting is the point: the merger writes the part file, and finalize is
-// about to sync it, close it and rename it. A merger still running through
-// that is a write to a descriptor another goroutine is closing.
+// The wait is essential: the merger writes the part file, and finalize is about
+// to sync, close and rename it. A merger still active during that sequence would
+// be writing to a descriptor another goroutine is closing.
 func (e *Engine) stopMerger(id SessionID) {
 	e.mergersMu.Lock()
 	m, ok := e.mergers[id]
@@ -139,7 +140,7 @@ func (e *Engine) stopMerger(id SessionID) {
 	m.wait()
 }
 
-// mergeLoop drains a session's cache until it is cancelled.
+// mergeLoop drains a session's cache until cancellation.
 func (e *Engine) mergeLoop(ctx context.Context, id SessionID, m *merger) {
 	for {
 		select {
@@ -155,10 +156,10 @@ func (e *Engine) mergeLoop(ctx context.Context, id SessionID, m *merger) {
 				if errors.Is(err, ErrNotFound) {
 					return
 				}
-				// A step that failed is retried on the next chunk rather than
-				// spun on: the part file is unchanged, the cache file is still
-				// there, and the frontier has not moved. A cancelled context
-				// is this merger being stopped, which is not a failure.
+				// A failed step is retried on the next chunk instead of being
+				// spun on: the part file is untouched, the cache file remains,
+				// and the frontier has not advanced. A cancelled context means
+				// this merger is being stopped, which is not a failure.
 				if !errors.Is(err, context.Canceled) {
 					e.log.Warn("an upload cache merge step failed; "+
 						"it is retried on the next chunk",
@@ -171,28 +172,28 @@ func (e *Engine) mergeLoop(ctx context.Context, id SessionID, m *merger) {
 			}
 			m.endRound()
 		}
-		// The end of the round is announced whether or not it moved anything.
-		// Without this a waiter that decided to sleep just as the merger ran
-		// out of work would wait for a step that is never coming.
+		// The round's end is announced regardless of whether anything moved.
+		// Without it, a waiter that chose to sleep exactly as the merger ran out
+		// of work would await a step that never arrives.
 		m.endRound()
 	}
 }
 
-// mergeStep copies one cached chunk's unmerged tail into the part file and
-// reports whether it moved anything.
+// mergeStep copies the unmerged tail of one cached chunk into the part file and
+// reports whether anything moved.
 //
-// The order is the whole durability argument: copy, make the part file
-// durable, record the frontier, then delete the cache file. A crash between
-// the copy and the record re-merges the same range, which is idempotent. A
-// crash between the record and the delete leaves a cache file entirely below
-// the frontier, which the next step removes without copying. No ordering here
-// can lose a byte the client was told had landed.
+// The ordering carries the entire durability argument: copy, make the part file
+// durable, record the frontier, then remove the cache file. Crashing between the
+// copy and the record re-merges the same range, which is idempotent. Crashing
+// between the record and the removal leaves a cache file wholly below the
+// frontier, which the following step deletes without copying. No sequence here
+// can lose a byte the client was told had arrived.
 //
-// Nothing above the committed contiguous prefix is ever merged. A cache file
-// exists from the moment its chunk is whole, which is before the range is
-// recorded and therefore before its checksum has been checked: merging one
-// early would put bytes the client is about to resend into the part file, and
-// then answer the resend with a frontier already past them.
+// Nothing beyond the committed contiguous prefix is ever merged. A cache file
+// appears the moment its chunk is complete, which precedes recording the range
+// and therefore precedes verifying its checksum. Merging one early would place
+// bytes the client is about to resend into the part file, then answer that
+// resend with a frontier already past them.
 func (e *Engine) mergeStep(ctx context.Context, id SessionID) (bool, error) {
 	unlock := e.lockRow(id)
 	r, err := e.load(ctx, id)
@@ -221,8 +222,8 @@ func (e *Engine) mergeStep(ctx context.Context, id SessionID) (bool, error) {
 	}
 	root, ok := e.core.ShareRoot(share)
 	if !ok {
-		// The share is not registered in this process, so the part file is not
-		// reachable. The cache keeps its files and the frontier stays put.
+		// The share is unregistered in this process, leaving the part file
+		// unreachable. The cache retains its files and the frontier holds.
 		unlock()
 		return false, nil
 	}
@@ -253,7 +254,7 @@ func (e *Engine) mergeStep(ctx context.Context, id SessionID) (bool, error) {
 		end = frontier + copied
 	}
 
-	// Durable in the destination before anything else is believed about it.
+	// Made durable at the destination before anything is assumed about it.
 	if serr := e.syncPart(root, id, part); serr != nil {
 		return false, serr
 	}
@@ -276,8 +277,8 @@ func (e *Engine) mergeStep(ctx context.Context, id SessionID) (bool, error) {
 		return end > frontier, nil
 	}
 	if uerr := e.cache.root.Unlink(next.path); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
-		// The bytes are in the part file and the frontier has moved, so a file
-		// that would not go is an unlistable orphan the sweep collects.
+		// The bytes reached the part file and the frontier advanced, so a file
+		// that refuses to go becomes an unlistable orphan for the sweep.
 		e.log.Warn("a merged upload cache chunk could not be removed; "+
 			"the sweep will collect it",
 			"session", id.String(), "error", uerr)
@@ -295,8 +296,8 @@ func nextMergeable(chunks []cacheChunk, frontier, committed uint64) (cacheChunk,
 		if ch.off > frontier {
 			continue
 		}
-		// Either it has something to contribute below the commit point, or it
-		// is entirely behind the frontier and is a leftover to remove.
+		// Either it contributes something below the commit point, or it lies
+		// wholly behind the frontier and is a remnant to delete.
 		if committed > frontier || ch.off+ch.size <= frontier {
 			return ch, true
 		}
@@ -304,9 +305,9 @@ func nextMergeable(chunks []cacheChunk, frontier, committed uint64) (cacheChunk,
 	return cacheChunk{}, false
 }
 
-// copyIntoPart copies a chunk's unmerged tail into the part file at the
-// frontier, never below it: everything below is already durable there and is
-// the chunk writer's region, not the merger's.
+// copyIntoPart writes a chunk's unmerged tail into the part file at the
+// frontier and never below it. Everything below is already durable there and
+// belongs to the chunk writer rather than the merger.
 func (e *Engine) copyIntoPart(
 	root *vfs.ShareRoot, id SessionID, part vfs.SafePath, ch cacheChunk, frontier, end uint64,
 ) (uint64, error) {
@@ -339,7 +340,7 @@ func (e *Engine) copyIntoPart(
 	return copied, nil
 }
 
-// syncPart makes the part file's contents durable.
+// syncPart flushes the part file's contents to durable storage.
 func (e *Engine) syncPart(root *vfs.ShareRoot, id SessionID, part vfs.SafePath) error {
 	f, err := e.handleFor(root, id, part)
 	if err != nil {
@@ -358,9 +359,9 @@ func (e *Engine) patchCached(
 	part vfs.SafePath, off uint64, body io.Reader, sum *Checksum,
 ) (uint64, []byte, error) {
 	m := e.mergerFor(id)
-	// The part file is opened here rather than inside the merger, so a failure
-	// to open it refuses the chunk instead of becoming a warning in a
-	// background loop the client never sees.
+	// Opening happens here rather than inside the merger, so a failure to open
+	// rejects the chunk instead of surfacing as a warning in a background loop
+	// the client never observes.
 	if _, herr := e.handleFor(root, id, part); herr != nil {
 		return 0, nil, herr
 	}
@@ -368,9 +369,9 @@ func (e *Engine) patchCached(
 		return 0, nil, rerr
 	}
 	n, digest, werr := e.writeCached(r, off, func(f *vfs.File) (uint64, []byte, error) {
-		// Zero in the cache file, off in the finished file: the declared length
-		// and the chunk floor are rules about the file being assembled, not
-		// about the staging file the bytes happen to sit in.
+		// Zero within the cache file, offset within the finished file. The
+		// declared length and chunk floor constrain the file being assembled
+		// rather than the staging file the bytes temporarily occupy.
 		return e.writeBodyAt(f, 0, off, body, r, sum)
 	})
 	m.nudge()
@@ -381,15 +382,15 @@ func (e *Engine) patchCached(
 // body is read and this file decides only where it lands.
 type chunkWriter func(*vfs.File) (uint64, []byte, error)
 
-// writeCached puts one chunk in the cache instead of the part file.
+// writeCached stores a chunk in the cache rather than the part file.
 //
-// The chunk is written under a staging name and renamed into place once it is
-// whole and durable. That is not tidiness: the merger runs concurrently and
-// decides what to copy from the directory listing, so a file appearing at its
-// final name before it is complete is a file the merger can copy half of,
-// advance its frontier past, and delete out from under the writer. The
-// staging name does not parse as a chunk, so the merger cannot see it, and a
-// rename within one directory is atomic.
+// Writing goes to a staging name, renamed into position once the chunk is
+// complete and durable. This is not housekeeping: the merger runs concurrently
+// and chooses what to copy from the directory listing, so a file bearing its
+// final name before completion is one the merger can partially copy, advance its
+// frontier beyond, and delete from under the writer. The staging name does not
+// parse as a chunk, keeping it invisible to the merger, and renaming within a
+// single directory is atomic.
 func (e *Engine) writeCached(r *row, off uint64, body chunkWriter) (uint64, []byte, error) {
 	dir, err := cacheDirOf(r.sess.CacheDir)
 	if err != nil {
@@ -423,8 +424,8 @@ func (e *Engine) writeCached(r *row, off uint64, body chunkWriter) (uint64, []by
 		if done {
 			return
 		}
-		// A chunk that failed part way leaves nothing behind: it never reached
-		// its final name, so nothing will ever look for it.
+		// A chunk that failed midway leaves nothing: it never acquired its final
+		// name, so nothing will ever search for it.
 		if uerr := e.cache.root.Unlink(staging); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
 			e.log.Warn("an abandoned cached upload chunk could not be removed", "error", uerr)
 		}
@@ -434,14 +435,14 @@ func (e *Engine) writeCached(r *row, off uint64, body chunkWriter) (uint64, []by
 	if werr != nil {
 		return n, digest, werr
 	}
-	// Durable in the cache before the range is recorded, which is the same
-	// ordering the direct path keeps: a crash between the two under-reports
-	// what arrived and the client resends it.
+	// Made durable in the cache before recording the range, matching the direct
+	// path's ordering: crashing between the two under-reports what arrived and
+	// the client resends it.
 	if syncErr := f.SyncData(); syncErr != nil {
 		return n, digest, mapVFSErr(syncErr)
 	}
-	// Replacing rather than refusing: a repeated offset is a client retry
-	// after a lost response, carrying the same bytes.
+	// Replaced rather than rejected, since a repeated offset indicates a client
+	// retry after a lost response carrying identical bytes.
 	if rerr := e.cache.root.Rename(staging, file, false); rerr != nil {
 		return n, digest, mapVFSErr(rerr)
 	}
@@ -452,31 +453,31 @@ func (e *Engine) writeCached(r *row, off uint64, body chunkWriter) (uint64, []by
 	return n, digest, nil
 }
 
-// waitForRoom blocks until the cache has room for another chunk, or reports
-// that it will not get any.
+// waitForRoom blocks until the cache can accept another chunk, or reports that
+// it never will.
 //
-// The budget is checked before the write rather than during it, so a chunk
-// can carry the spool one chunk past the bound. That overshoot is one chunk
-// per client in flight; enforcing it mid-body would mean tearing up a chunk
-// that is already half written and asking for it again.
+// The budget is consulted before the write rather than during it, so a chunk may
+// push the spool one chunk beyond the bound. That overshoot amounts to one chunk
+// per client in flight; enforcing mid-body would mean discarding a half-written
+// chunk and requesting it again.
 //
-// Three outcomes, and they are different facts:
+// Three outcomes, each a distinct fact:
 //
-//   - There is room. Nothing to decide.
-//   - The merger has contiguous data to drain, so the room is coming. Waiting
-//     is right, and it is what bounds a sequential client to the disk's speed
-//     instead of letting it fill the spool.
-//   - It has not, which means the bytes it is missing are the ones this client
-//     has not sent. Nothing this server does frees space. The one exception is
-//     the chunk that would extend the contiguous region: refusing that would
-//     refuse exactly the chunk that unblocks the merge, so it is taken and the
-//     overshoot accepted. Anything else is refused with a retry, so the client
-//     backs off rather than the server buffering an unbounded hole.
+//   - Room exists. Nothing to decide.
+//   - The merger holds contiguous data to drain, so room is on its way. Waiting
+//     is correct here, and it is what limits a sequential client to the disk's
+//     pace instead of letting it fill the spool.
+//   - The merger holds none, meaning the bytes it lacks are ones this client has
+//     not sent. Nothing the server does will free space. The single exception is
+//     a chunk that would extend the contiguous region: rejecting it would reject
+//     precisely the chunk that unblocks the merge, so it is accepted and the
+//     overshoot tolerated. Everything else is rejected with a retry, making the
+//     client back off rather than the server buffer an unbounded hole.
 func (e *Engine) waitForRoom(ctx context.Context, m *merger, id SessionID, off uint64) error {
 	for {
-		// Read before the budget is checked: a round landing between the two
-		// closes this channel, so the wait below returns at once rather than
-		// sleeping through the very progress it was waiting for.
+		// Read before consulting the budget: a round completing between the two
+		// closes this channel, so the wait below returns immediately instead of
+		// sleeping through the very progress it awaited.
 		watch := m.watch()
 		if e.cache.used.Load() < e.cache.budget() {
 			return nil
@@ -502,21 +503,21 @@ func (e *Engine) waitForRoom(ctx context.Context, m *merger, id SessionID, off u
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(cacheWaitMax):
-			// The merger had work and has done none of it for this long, so
-			// something on the destination side is wrong: a share that went
-			// away, a disk that stopped answering. Holding the request open
-			// past that point is worse than telling the client to come back.
+			// The merger had work and has completed none of it for this long,
+			// so something is wrong at the destination: a vanished share, a
+			// disk no longer responding. Keeping the request open beyond that
+			// point serves the client worse than asking it to return later.
 			return &CacheFullError{RetryAfterSeconds: int(cacheRetryAfter.Seconds())}
 		}
 	}
 }
 
-// drainCache merges everything a cached session still holds and stops its
-// merger, so finalize meets a part file nothing else is writing to.
+// drainCache merges whatever a cached session still holds and halts its merger,
+// so finalize encounters a part file no one else is writing.
 //
-// It is not an error for a session to have holes here: finalize is what
-// refuses an incomplete set, and it names the missing ranges. This stops when
-// the merger has nothing contiguous left rather than deciding that itself.
+// Holes at this stage are not an error: finalize is what rejects an incomplete
+// set, naming the absent ranges. This stops once the merger has nothing
+// contiguous remaining rather than judging completeness itself.
 func (e *Engine) drainCache(ctx context.Context, id SessionID) error {
 	if e.cache == nil {
 		return nil

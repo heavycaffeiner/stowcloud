@@ -16,22 +16,22 @@ import (
 
 // The offset-addressed write path.
 //
-// The ordering rule is not negotiable: the disk write completes before the
-// range is committed. A crash between the two leaves the set reporting the
-// smaller prefix, so the client resends the same bytes at the same offset and
-// they land identically. Reversing it would let the set claim bytes that were
-// never durably written, which is silent corruption rather than a slow
+// The ordering rule admits no exceptions: the disk write finishes before the
+// range is committed. Crashing between the two leaves the set reporting the
+// shorter prefix, so the client resends identical bytes at the same offset and
+// they land the same way. Inverting the order would let the set claim bytes
+// never durably written, producing silent corruption rather than a slow
 // upload.
 
-// PatchAt writes the body at off in the session's part file and records the
-// range. It is the only writer for an offset-addressed session.
+// PatchAt writes the body at off within the session's part file and records the
+// range. It is the sole writer for an offset-addressed session.
 //
-// The row lock covers the bookkeeping and never the body. That is a named
-// regression: holding it across the body read serialized concurrent chunks,
-// and over a multiplexed connection that deadlocks rather than queues.
-// Blocked handlers never read their streams, the connection's flow-control
-// window fills, and the chunk holding the lock cannot receive its own body.
-// Every upload stopped after its first chunk.
+// The row lock protects the bookkeeping and never the body. This is a named
+// regression: holding it across the body read serialized concurrent chunks, and
+// over a multiplexed connection that deadlocks instead of queuing. Blocked
+// handlers never read their streams, the connection's flow-control window fills,
+// and the chunk holding the lock cannot receive its own body. Every upload
+// stalled after its first chunk.
 func (e *Engine) PatchAt(
 	ctx context.Context, root *vfs.ShareRoot, id SessionID, user core.UserID,
 	off uint64, body io.Reader, sum *Checksum,
@@ -74,8 +74,8 @@ func (e *Engine) PatchAt(
 	}
 	unlock()
 
-	// The body is written and hashed in one pass. Nothing accumulates the
-	// whole chunk, so a per-chunk checksum costs a hasher and not a copy.
+	// Writing and hashing happen in a single pass. Nothing buffers the whole
+	// chunk, so a per-chunk checksum costs a hasher rather than a copy.
 	var (
 		n      uint64
 		digest []byte
@@ -97,19 +97,19 @@ func (e *Engine) PatchAt(
 		return 0, werr
 	}
 
-	// The checksum is verified before the range is recorded. A chunk that
-	// fails leaves the set untouched, so the client resends the same range
-	// rather than resuming past a hole it believes is filled. The bytes are
-	// already on disk and are simply overwritten by the resend.
+	// Checksum verification precedes recording the range. A failing chunk leaves
+	// the set unchanged, so the client resends that same range instead of
+	// resuming beyond a gap it believes is filled. The bytes already on disk are
+	// simply overwritten by the resend.
 	if sum != nil && digest != nil && !constantTimeEqual(digest, sum.Digest) {
 		return 0, fmt.Errorf("%w: the %s digest does not match the %d bytes received",
 			ErrChecksum, sum.Algo, n)
 	}
 
-	// Retaken to record what landed. The row is re-read under the lock rather
-	// than reusing the copy from above: another chunk of this same file has
-	// very likely recorded its own range in the meantime, and writing back a
-	// stale set would drop it.
+	// Reacquired to record what arrived. The row is re-read while holding the
+	// lock instead of reusing the earlier copy, because another chunk of this
+	// same file has very likely committed its own range meanwhile, and writing
+	// back a stale set would discard it.
 	relock := e.lockRow(id)
 	defer relock()
 
@@ -136,13 +136,13 @@ func (e *Engine) writeBody(
 	return e.writeBodyAt(f, off, off, body, r, sum)
 }
 
-// writeBodyAt is writeBody with the two offsets separated: where the bytes go,
-// and where they belong in the finished file.
+// writeBodyAt is writeBody with its two offsets kept apart: the position the
+// bytes are written to, and the position they occupy in the finished file.
 //
-// They differ for exactly one caller. A cached chunk is a file of its own and
-// its bytes start at zero in it, while the declared length and the chunk floor
-// are rules about the assembled file and have to be measured against the
-// offset the client sent.
+// Only one caller sees them diverge. A cached chunk lives in its own file with
+// bytes beginning at zero, whereas the declared length and the chunk floor
+// constrain the assembled file and must be measured against the offset the
+// client supplied.
 //
 // r is nil for a write no session rule applies to, which is a spooled chunk:
 // it is measured against the assembled file, and a name-ordered client does
@@ -167,10 +167,10 @@ func (e *Engine) writeBodyAt(
 			if nerr != nil {
 				return written, nil, nerr
 			}
-			// The declared length is enforced as the bytes arrive rather than
-			// from a header, because a header is a claim and this is the
-			// stream. A body longer than declared is refused before it is
-			// written past the end of the file.
+			// The declared length is checked as bytes arrive rather than from
+			// a header, since a header merely asserts while this observes. A
+			// body exceeding the declaration is rejected before anything is
+			// written past the file's end.
 			if cerr := checkWithinDeclared(r, logical, written+got); cerr != nil {
 				return written, nil, cerr
 			}

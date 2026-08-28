@@ -13,7 +13,7 @@ import (
 // The administrative surface over the cache: whether there is one, whether it
 // is on, and turning it on or off.
 
-// cacheEnabled reports whether new sessions spool to the cache.
+// cacheEnabled reports whether new sessions route through the cache.
 func (e *Engine) cacheEnabled() bool {
 	return e.cache != nil && e.cache.enabled.Load()
 }
@@ -27,15 +27,15 @@ func (e *Engine) CacheEnabled() bool { return e.cacheEnabled() }
 // rather than offering a switch that does nothing.
 func (e *Engine) CacheAvailable() bool { return e.cache != nil }
 
-// SetCacheEnabled persists the switch and makes it live.
+// SetCacheEnabled stores the switch and applies it immediately.
 //
-// The switch is read when a session is created and never afterwards, so
-// turning it either way moves only future sessions: a session in flight has
-// its bytes in one place or the other and no setting moves them.
+// The switch is consulted at session creation and never again, so toggling it
+// affects only future sessions. A session already in flight has its bytes in one
+// location or the other, and no setting relocates them.
 //
-// The probe runs before the write: a spool that cannot take a file is refused
-// here, where an administrator is watching, rather than at the first upload
-// after the next restart.
+// The probe precedes the write, so a spool unable to accept a file is rejected
+// here with an administrator present rather than at the first upload following
+// the next restart.
 func (e *Engine) SetCacheEnabled(ctx context.Context, on bool) error {
 	if e.cache == nil {
 		return ErrNoCache
@@ -52,9 +52,10 @@ func (e *Engine) SetCacheEnabled(ctx context.Context, on bool) error {
 	return nil
 }
 
-// probe writes and removes one file, which is the only way to learn whether
-// the spool is writable. A stat says what the metadata claims; a read-only
-// mount and a directory owned by somebody else both pass one.
+// probe creates and deletes a single file, the only reliable way to determine
+// whether the spool accepts writes. A stat reports what the metadata asserts,
+// and both a read-only mount and a directory owned by someone else satisfy
+// it.
 func (c *cacheSpool) probe() error {
 	name, err := NewSessionID()
 	if err != nil {

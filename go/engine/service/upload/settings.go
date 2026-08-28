@@ -12,13 +12,13 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
-// Settings is the live chunk floor and default: the two numbers that can move
-// after the engine is built, without a restart.
+// Settings holds the live chunk floor and default, the two values that can
+// change after the engine is built without requiring a restart.
 //
-// Plain atomics rather than a mutex. Every reader wants the current pair,
-// nothing coordinates the two fields against each other, and a reader that
-// sees one write's floor beside another's default is no different from two
-// sessions created a moment apart.
+// Implemented with plain atomics rather than a mutex. Every reader wants the
+// current pair, nothing coordinates the two fields against each other, and a
+// reader observing one write's floor alongside another's default is
+// indistinguishable from two sessions created moments apart.
 type Settings struct {
 	minBytes     atomic.Uint64
 	defaultBytes atomic.Uint64
@@ -55,9 +55,9 @@ func loadSettings(ctx context.Context, st *state.DB, cfgMin, cfgDefault uint64) 
 	minBytes, minErr := num.Narrow[uint64](stored.Min)
 	defBytes, defErr := num.Narrow[uint64](stored.Default)
 	if minErr != nil || defErr != nil {
-		// A stored pair that will not read is not a reason to refuse to start:
-		// the configuration's values are a working fallback and the override
-		// is reported as absent, which is what it now effectively is.
+		// An unreadable stored pair is no reason to refuse startup. The
+		// configuration's values serve as a working fallback and the override is
+		// reported absent, which is effectively what it has become.
 		return s, nil
 	}
 	s.store(minBytes, defBytes)
@@ -65,8 +65,8 @@ func loadSettings(ctx context.Context, st *state.DB, cfgMin, cfgDefault uint64) 
 	return s, nil
 }
 
-// store applies the floor to both numbers on the way in, so no path can leave
-// a live value below the compiled-in minimum.
+// store clamps both values to the floor on entry, so no path can leave a live
+// value beneath the compiled-in minimum.
 func (s *Settings) store(minBytes, defaultBytes uint64) {
 	if minBytes < limits.UploadChunkFloor {
 		minBytes = limits.UploadChunkFloor
@@ -78,15 +78,15 @@ func (s *Settings) store(minBytes, defaultBytes uint64) {
 	s.defaultBytes.Store(defaultBytes)
 }
 
-// Min is the live floor a mid-stream chunk is measured against.
+// Min gives the current floor a mid-stream chunk is measured against.
 func (s *Settings) Min() uint64 { return s.minBytes.Load() }
 
-// Default is the live advertised chunk size. It is a recommendation and never
-// a requirement: not enforcing a ceiling does not make middleboxes disappear,
-// it means this server is not the one refusing.
+// Default gives the currently advertised chunk size. It recommends rather than
+// requires: declining to impose a ceiling does not remove middleboxes, it just
+// means this server is not the one doing the rejecting.
 func (s *Settings) Default() uint64 { return s.defaultBytes.Load() }
 
-// Snapshot is both numbers, for a caller that stores them together.
+// Snapshot returns both values for a caller that keeps them together.
 func (s *Settings) Snapshot() (minBytes, defaultBytes uint64) {
 	return s.minBytes.Load(), s.defaultBytes.Load()
 }
@@ -96,19 +96,19 @@ func (s *Settings) Snapshot() (minBytes, defaultBytes uint64) {
 // can answer that for the settings screen.
 func (s *Settings) Overridden() bool { return s.override.Load() }
 
-// ApplySettings stores an administrator's chunk bounds and makes them live.
+// ApplySettings persists an administrator's chunk bounds and activates them.
 //
-// It is the one write path: the second one that used to exist did the same
-// job and only this one had a caller outside a test.
+// This is the sole write path. A second one previously existed doing the same
+// work, and only this one had any caller outside a test.
 //
-// The order is load-bearing. A validation failure or a failed disk write
-// never lets the in-memory pair drift from what is on disk, which is what a
-// restart would then read back. A nil value leaves that half as it was, so a
-// screen editing one field does not silently reset the other.
+// The sequencing matters. Neither a validation failure nor a failed disk write
+// can leave the in-memory pair diverging from what is on disk, which is what a
+// restart would subsequently read. A nil value leaves that half untouched, so a
+// screen editing one field does not quietly reset the other.
 //
-// It does not touch a session in flight: both numbers are snapshotted once at
-// creation, so raising the floor cannot retroactively refuse a chunk that was
-// legal when the session started.
+// Sessions in flight are unaffected: both numbers are captured once at creation,
+// so raising the floor cannot retroactively reject a chunk that was legal when
+// the session began.
 func (e *Engine) ApplySettings(ctx context.Context, minBytes, defaultBytes *uint64) error {
 	curMin, curDefault := e.settings.Snapshot()
 	newMin, newDefault := curMin, curDefault
@@ -122,8 +122,8 @@ func (e *Engine) ApplySettings(ctx context.Context, minBytes, defaultBytes *uint
 		return fmt.Errorf("%w: the minimum chunk is below the compiled-in floor of %d bytes",
 			ErrBadRequest, limits.UploadChunkFloor)
 	}
-	// A default below the minimum is a configuration where every chunk the
-	// server suggests is one it then refuses.
+	// A default beneath the minimum yields a configuration where every chunk the
+	// server recommends is one it subsequently rejects.
 	if newDefault < newMin {
 		return fmt.Errorf("%w: the default chunk is below the minimum", ErrBadRequest)
 	}

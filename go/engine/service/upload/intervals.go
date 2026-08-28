@@ -25,7 +25,7 @@ type IntervalSet struct {
 	runs []Range
 }
 
-// NewIntervalSet is the empty set.
+// NewIntervalSet returns an empty set.
 func NewIntervalSet() *IntervalSet { return &IntervalSet{} }
 
 // FullIntervalSet is the set of a file wholly received, which is what
@@ -158,7 +158,7 @@ func (s *IntervalSet) Received() uint64 {
 	return n
 }
 
-// Count is how many disjoint runs the set holds.
+// Count reports how many disjoint runs the set contains.
 func (s *IntervalSet) Count() int { return len(s.runs) }
 
 // Runs is a copy of the set, for persistence and for a caller that wants to

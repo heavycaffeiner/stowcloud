@@ -16,16 +16,16 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 )
 
-// verifyBufBytes is the reused read buffer for whole-file verification. The
-// digest is computed in a stream, so a fifty-gigabyte upload costs this much
-// memory and not one byte more.
+// verifyBufBytes sizes the reused read buffer for whole-file verification. The
+// digest is computed streaming, so a fifty-gigabyte upload costs exactly this
+// much memory and nothing beyond it.
 const verifyBufBytes = 256 << 10
 
 // castagnoli names the polynomial in one place rather than at each call. The
 // standard library memoizes its own table for the standard polynomials.
 func castagnoli() *crc32.Table { return crc32.MakeTable(crc32.Castagnoli) }
 
-// newHasher is the one place an algorithm becomes a hash.
+// newHasher is the single point where an algorithm becomes a hash.
 func newHasher(a Algo) hash.Hash {
 	if a == AlgoBLAKE3 {
 		return blake3.New(digestLen(AlgoBLAKE3), nil)
@@ -33,8 +33,8 @@ func newHasher(a Algo) hash.Hash {
 	return crc32.New(castagnoli())
 }
 
-// Sum computes a digest over data, which is the direction a caller holding
-// bytes with no checksum attached needs.
+// Sum computes a digest over data, serving a caller that holds bytes with no
+// checksum attached.
 func Sum(a Algo, data []byte) ([]byte, error) {
 	h := newHasher(a)
 	if _, err := h.Write(data); err != nil {
@@ -86,16 +86,16 @@ func constantTimeEqual(a, b []byte) bool {
 	return subtle.ConstantTimeCompare(a, b) == 1
 }
 
-// VerifyWholeFile streams length bytes of f from zero and compares the digest
-// against what the caller expected.
+// VerifyWholeFile streams length bytes of f starting at zero and compares the
+// resulting digest with the caller's expectation.
 //
-// It takes an algorithm and an expected digest, never one alone: the shape
-// that shipped before carried only a selector, so verification computed a
-// digest and logged it, and could never fail whatever arrived on disk.
+// It requires both an algorithm and an expected digest, never just one. An
+// earlier shipped shape carried only a selector, so verification computed a
+// digest, logged it, and could never fail regardless of what reached disk.
 //
-// The read goes through the same descriptor that took the chunk writes, which
-// is the one holder of the read-write intent and the reason that intent
-// exists: a read-only reopen would fail the verification it was opened for.
+// Reading uses the same descriptor that accepted the chunk writes, the sole
+// holder of the read-write intent and the reason that intent exists: a read-only
+// reopen would fail the verification it was opened for.
 func VerifyWholeFile(f *vfs.File, v Verify, length uint64) error {
 	if err := checkDigestLen(v.Algo, len(v.Digest)); err != nil {
 		return err
@@ -125,9 +125,9 @@ func VerifyWholeFile(f *vfs.File, v Verify, length uint64) error {
 			at += read
 		}
 		if rerr != nil {
-			// Short of the declared length is a real failure here, unlike in a
-			// stream: the interval set already claimed these bytes, so a file
-			// that cannot produce them is one that did not land.
+			// Falling short of the declared length is a genuine failure here,
+			// unlike in a stream: the interval set already claimed these bytes,
+			// so a file unable to produce them never landed.
 			if errors.Is(rerr, io.EOF) || errors.Is(rerr, io.ErrUnexpectedEOF) {
 				break
 			}

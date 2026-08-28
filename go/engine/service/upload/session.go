@@ -44,9 +44,9 @@ func (e *Engine) Create(ctx context.Context, r core.Resolved, spec SessionSpec) 
 		return Session{}, err
 	}
 
-	// The part file is created and sized up front: an exclusive create plus a
-	// sparse truncate, so nothing is copied and the destination directory
-	// holds exactly one unlistable entry for the session's whole life.
+	// The part file is created and sized immediately via an exclusive create
+	// and a sparse truncate, so nothing is copied and the destination directory
+	// carries exactly one unlistable entry throughout the session's life.
 	f, err := e.createPart(r.Root(), part, spec.TotalLen)
 	if err != nil {
 		return Session{}, err
@@ -99,9 +99,9 @@ func (e *Engine) newRow(
 		Dest:     dest.String(),
 		PartName: partName(id),
 		Mode:     int64(spec.Mode),
-		// The floor is snapshotted rather than read live on every chunk: an
-		// administrator moving it mid-upload must not retroactively make a
-		// chunk that was legal when it was sent illegal now.
+		// The floor is captured once rather than read per chunk, so an
+		// administrator changing it mid-upload cannot retroactively invalidate
+		// a chunk that was legal when sent.
 		ChunkMinAtCreation: floor,
 		ChunkSize:          size,
 		RandomAccess:       spec.RandomAccess,
@@ -143,7 +143,7 @@ func (e *Engine) newRow(
 	return sess, nil
 }
 
-// createPart makes the part file and sizes it sparsely for a declared length.
+// createPart creates the part file and sparsely sizes it to a declared length.
 func (e *Engine) createPart(root *vfs.ShareRoot, part vfs.SafePath, total *uint64) (*vfs.File, error) {
 	f, err := root.CreatePart(part)
 	if err != nil {
@@ -163,7 +163,7 @@ func (e *Engine) createPart(root *vfs.ShareRoot, part vfs.SafePath, total *uint6
 	return f, nil
 }
 
-// discardPart closes and removes a part file a failed creation left behind.
+// discardPart closes and deletes a part file left over from a failed creation.
 func (e *Engine) discardPart(root *vfs.ShareRoot, part vfs.SafePath, f *vfs.File) error {
 	err := f.Close()
 	if uerr := root.Unlink(part); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
@@ -172,7 +172,7 @@ func (e *Engine) discardPart(root *vfs.ShareRoot, part vfs.SafePath, f *vfs.File
 	return err
 }
 
-// Get reports one session, scoped to the account that owns it.
+// Get returns a single session, restricted to its owning account.
 func (e *Engine) Get(ctx context.Context, id SessionID, user core.UserID) (Session, error) {
 	r, err := e.load(ctx, id)
 	if err != nil {
@@ -197,8 +197,8 @@ func (e *Engine) Offset(ctx context.Context, id SessionID, user core.UserID) (ui
 	return s.Offset, nil
 }
 
-// SetLength supplies a deferred length, which finalize requires and the
-// interval set needs before it can report completeness.
+// SetLength provides a deferred length, required by finalize and needed by the
+// interval set before it can report completeness.
 func (e *Engine) SetLength(ctx context.Context, id SessionID, user core.UserID, total uint64) error {
 	unlock := e.lockRow(id)
 	defer unlock()
@@ -219,8 +219,8 @@ func (e *Engine) SetLength(ctx context.Context, id SessionID, user core.UserID, 
 		}
 		return nil
 	}
-	// Whatever has already landed has to fit inside the length being declared,
-	// or the session would be complete over bytes past its own end.
+	// Everything already written must fit within the length being declared, or
+	// the session would count as complete over bytes beyond its own end.
 	if received := r.set.Runs(); len(received) > 0 && received[len(received)-1].Hi > total {
 		return fmt.Errorf("%w: %d bytes have already landed, past the declared length of %d",
 			ErrBadRequest, received[len(received)-1].Hi, total)
@@ -241,8 +241,8 @@ func (e *Engine) SetLength(ctx context.Context, id SessionID, user core.UserID, 
 // the bookkeeping lock: leaving it for the sweep meant an aborted session's
 // mutex sat in the map for a day.
 func (e *Engine) Abort(ctx context.Context, id SessionID, user core.UserID) error {
-	// Outside the row lock, because stopping a merger means waiting for a step
-	// that takes it.
+	// Performed outside the row lock, since stopping a merger means waiting on a
+	// step that acquires it.
 	e.stopMerger(id)
 
 	unlock := e.lockRow(id)
@@ -260,15 +260,16 @@ func (e *Engine) Abort(ctx context.Context, id SessionID, user core.UserID) erro
 		return ErrNotFound
 	}
 	r.sess.State = int64(StateAborted)
-	// Immediately eligible for the sweep, which is what takes the part file.
+	// Eligible for the sweep at once, and the sweep is what claims the part
+	// file.
 	r.sess.ExpiresNs = e.clk.Nanos()
 	if serr := e.save(ctx, r); serr != nil {
 		unlock()
 		return serr
 	}
-	// The cache goes now rather than at the sweep. Its contents can never be
-	// finished, and the spool is the small volume: holding a cancelled
-	// upload's window there for a day is what fills it.
+	// The cache is released now rather than at the sweep. Its contents can never
+	// be completed, and the spool is the small volume, so retaining a cancelled
+	// upload's window there for a day is exactly what fills it.
 	e.releaseCache(r.sess.CacheDir)
 	e.closeHandle(id)
 	unlock()

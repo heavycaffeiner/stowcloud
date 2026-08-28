@@ -67,8 +67,8 @@ type Engine struct {
 	rowsMu sync.Mutex
 	rows   map[SessionID]*sync.Mutex
 
-	// cache is the spool chunks land in before they reach the destination, and
-	// nil for a deployment that has none.
+	// cache is the spool chunks pass through before reaching the destination,
+	// and nil where a deployment has none.
 	cache *cacheSpool
 
 	// mergeCtx is the parent of every merger, so Close stops them all.
@@ -78,9 +78,8 @@ type Engine struct {
 	mergers   map[SessionID]*merger
 }
 
-// New wires an engine over the core and the durable half, and loads the
-// persisted chunk settings so a restart does not lose an administrator's
-// write.
+// New assembles an engine atop the core and the durable half, loading the stored
+// chunk settings so a restart preserves an administrator's write.
 func New(ctx context.Context, c *core.Core, st *state.DB, opt Options) (*Engine, error) {
 	if c == nil || st == nil {
 		return nil, errors.New("the upload engine requires a core and a state store")
@@ -168,7 +167,7 @@ func (e *Engine) Close() error {
 	return err
 }
 
-// Settings is the live chunk floor and default.
+// Settings returns the current chunk floor and default.
 func (e *Engine) Settings() *Settings { return e.settings }
 
 // expiry is how long a session survives without a write.
@@ -190,10 +189,10 @@ func (e *Engine) lockRow(id SessionID) func() {
 	return mu.Unlock
 }
 
-// forgetRow drops a session's bookkeeping lock once nothing can reach it.
+// forgetRow releases a session's bookkeeping lock once it is unreachable.
 //
-// Every terminal path calls it, including Abort: leaving the entry for the
-// sweep meant an aborted session's mutex stayed in the map for a day.
+// Every terminal path invokes it, Abort included. Leaving the entry for the
+// sweep to collect kept an aborted session's mutex in the map for a day.
 func (e *Engine) forgetRow(id SessionID) {
 	e.rowsMu.Lock()
 	delete(e.rows, id)
@@ -208,12 +207,13 @@ func (e *Engine) rowLockCount() int {
 	return len(e.rows)
 }
 
-// handleFor is the lazy reopen of a part file, and the one place in the tree
-// that takes a writable descriptor on a read path.
+// handleFor lazily reopens a part file and is the only place in the tree that
+// acquires a writable descriptor along a read path.
 //
-// The same descriptor takes the chunk writes and is read back at finalize to
-// verify the whole-file digest, which is exactly why the read-write intent
-// exists: a read-only reopen would fail the verification it was opened for.
+// That single descriptor receives the chunk writes and is read back during
+// finalize to check the whole-file digest, which is precisely why the read-write
+// intent exists: a read-only reopen would fail the very verification it was
+// opened for.
 func (e *Engine) handleFor(root *vfs.ShareRoot, id SessionID, part vfs.SafePath) (*vfs.File, error) {
 	e.handlesMu.Lock()
 	h, ok := e.handles[id]
@@ -264,7 +264,7 @@ func (e *Engine) closeHandle(id SessionID) {
 	h.f = nil
 }
 
-// partPathOf is a session's part-file path.
+// partPathOf gives a session's part-file path.
 func (e *Engine) partPathOf(r *row) (vfs.SafePath, error) {
 	dest, err := r.dest()
 	if err != nil {
@@ -273,7 +273,7 @@ func (e *Engine) partPathOf(r *row) (vfs.SafePath, error) {
 	return partPath(dest, r.sess.PartName)
 }
 
-// spoolDirOf is a name-ordered session's spool directory.
+// spoolDirOf gives a name-ordered session's spool directory.
 func (e *Engine) spoolDirOf(r *row) (vfs.SafePath, error) {
 	if r.sess.SpoolDir == "" {
 		return vfs.SafePath{}, fmt.Errorf("%w: this session has no spool directory", ErrBadRequest)
@@ -285,7 +285,7 @@ func (e *Engine) spoolDirOf(r *row) (vfs.SafePath, error) {
 	return dest.Parent().JoinControl(r.sess.SpoolDir)
 }
 
-// checkAccountLimits applies the two per-account bounds before anything is
+// checkAccountLimits enforces both per-account bounds before anything is
 // created.
 func (e *Engine) checkAccountLimits(ctx context.Context, user core.UserID, total *uint64) error {
 	count, err := e.state.CountUploadSessionsForUser(ctx, int64(user))
@@ -312,15 +312,15 @@ func (e *Engine) checkAccountLimits(ctx context.Context, user core.UserID, total
 	return nil
 }
 
-// checkFreeSpace refuses a session whose declared length would not leave the
-// destination filesystem its margin.
+// checkFreeSpace rejects a session whose declared length would consume the
+// destination filesystem's margin.
 //
-// The measurement is against the directory the part file is created in rather
-// than the share root, because a mount inside the share is the filesystem the
-// upload actually consumes.
+// Measurement targets the directory holding the part file rather than the share
+// root, because a mount inside the share is the filesystem the upload genuinely
+// consumes.
 //
-// A probe that could not run is not itself a refusal: an unsupported statfs is
-// a fact about the filesystem, not a reason to stop accepting uploads.
+// A probe that fails to run is not itself a rejection: an unsupported statfs
+// describes the filesystem rather than justifying refusal of uploads.
 func (e *Engine) checkFreeSpace(root *vfs.ShareRoot, dir vfs.SafePath, total *uint64) error {
 	space, err := root.Space(dir)
 	if err != nil {
@@ -330,17 +330,17 @@ func (e *Engine) checkFreeSpace(root *vfs.ShareRoot, dir vfs.SafePath, total *ui
 	if total != nil {
 		need += *total
 	}
-	// Available rather than free: the blocks a filesystem reserves for root
-	// are not ours to write into, and counting them admits an upload that is
-	// going to run out part way.
+	// Available rather than free, because blocks a filesystem reserves for root
+	// are not ours to use, and counting them would admit an upload destined to
+	// run out midway.
 	if space.Available < need {
 		return &ExhaustedError{Limit: "free space on the destination filesystem"}
 	}
 	return nil
 }
 
-// validateOffset applies the ordering rule for a session that is not
-// random-access: a chunk has to land at the resumable offset.
+// validateOffset enforces the ordering rule for non-random-access sessions,
+// where a chunk must arrive at the resumable offset.
 func validateOffset(r *row, off uint64) error {
 	if r.sess.RandomAccess {
 		return nil
@@ -351,9 +351,9 @@ func validateOffset(r *row, off uint64) error {
 	return nil
 }
 
-// checkWithinDeclared refuses a body that runs past the length the session
-// declared. It is enforced as bytes arrive rather than from a header, because
-// a header is a claim and this is the stream.
+// checkWithinDeclared rejects a body exceeding the session's declared length.
+// Enforcement happens as bytes arrive rather than from a header, since a header
+// only asserts while this observes.
 func checkWithinDeclared(r *row, off, written uint64) error {
 	if r == nil {
 		return nil
@@ -373,12 +373,12 @@ func checkWithinDeclared(r *row, off, written uint64) error {
 	return nil
 }
 
-// checkChunkFloor refuses a mid-stream chunk below the session's own floor.
+// checkChunkFloor rejects a mid-stream chunk beneath the session's floor.
 //
-// The last chunk is exempt, and so is a whole file smaller than the floor:
-// neither can be made bigger. The comparison is against the floor snapshotted
-// at creation rather than the live one, so an administrator's write does not
-// retroactively refuse a chunk that was legal when it was sent.
+// The final chunk is exempt, as is a whole file smaller than the floor; neither
+// can be enlarged. Comparison uses the floor captured at creation rather than
+// the current value, so an administrator's write cannot retroactively reject a
+// chunk that was legal when sent.
 func checkChunkFloor(r *row, off, n uint64) error {
 	if r == nil || n == 0 {
 		return nil
@@ -396,8 +396,8 @@ func checkChunkFloor(r *row, off, n uint64) error {
 	return &ChunkTooSmallError{Min: floor, Got: n}
 }
 
-// mapVFSErr converts a filesystem refusal into this package's vocabulary,
-// leaving anything it has no word for as it came.
+// mapVFSErr translates a filesystem rejection into this package's vocabulary,
+// passing through anything it has no term for.
 func mapVFSErr(err error) error {
 	switch {
 	case err == nil:

@@ -12,26 +12,26 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
-// The transfer-id alias, which is what makes a named chunk collection
-// resumable after a restart: the client addresses its upload by an id it
-// chose, and without a stored binding that id means nothing to a process that
-// did not create it.
+// The transfer-id alias is what lets a named chunk collection resume after a
+// restart. Clients address an upload by an id they chose, and absent a stored
+// binding that id conveys nothing to a process that did not create it.
 //
-// The alias is never a session key on its own. A transfer id is the client's
-// own string, so it is guessable and collidable; every lookup is scoped to
-// the authenticated account, and that scoping is the whole of the security.
+// An alias never serves as a session key by itself. A transfer id is a
+// client-supplied string, so it is both guessable and prone to collision. Every
+// lookup is confined to the authenticated account, and that confinement is the
+// entirety of the security.
 
-// aliasMaxBytes bounds a transfer id. It arrives in a URL path segment, so it
-// is untrusted input and is bounded before it reaches a statement.
+// aliasMaxBytes caps a transfer id. It arrives inside a URL path segment, making
+// it untrusted input that is bounded before reaching any statement.
 const aliasMaxBytes = limits.NameBytes
 
-// BindAlias binds a client-chosen transfer id to a session inside one
+// BindAlias associates a client-chosen transfer id with a session inside one
 // account's namespace.
 //
-// It runs after Create succeeds, so a failed creation leaves no binding
-// pointing at a session that does not exist. An id the account already holds
-// is refused rather than rebound: a silent rebind would orphan the first
-// session's spool with nothing left naming it.
+// It runs only after Create succeeds, so a failed creation leaves no binding
+// referencing a nonexistent session. An id the account already holds is rejected
+// instead of rebound, since a silent rebind would strand the first session's
+// spool with nothing naming it.
 func (e *Engine) BindAlias(ctx context.Context, tid string, user core.UserID, id SessionID) error {
 	if err := checkTransferID(tid); err != nil {
 		return err
@@ -57,14 +57,14 @@ func (e *Engine) BindAlias(ctx context.Context, tid string, user core.UserID, id
 	return nil
 }
 
-// LookupAlias resolves a transfer id within one account's namespace.
+// LookupAlias resolves a transfer id inside one account's namespace.
 //
-// An id belonging to another account resolves identically to one that never
-// existed, so the lookup is not an existence oracle.
+// An id owned by a different account resolves exactly as one that never existed,
+// keeping the lookup from acting as an existence oracle.
 //
-// The share and destination come from what was captured at bind time rather
-// than being re-resolved, so a later call reuses exactly what the session was
-// created against rather than a path that may since mean something else.
+// Share and destination come from what bind time captured rather than being
+// resolved again, so a later call reuses precisely what the session was created
+// against instead of a path that may since denote something else.
 func (e *Engine) LookupAlias(ctx context.Context, tid string, user core.UserID) (Alias, error) {
 	if err := checkTransferID(tid); err != nil {
 		return Alias{}, err
@@ -87,9 +87,9 @@ func (e *Engine) LookupAlias(ctx context.Context, tid string, user core.UserID) 
 	return Alias{Session: id, Share: share, Dest: a.Dest}, nil
 }
 
-// UnbindAlias drops one transfer id from an account's namespace. The session
-// is untouched: a client that unbinds an id has stopped addressing the upload
-// that way, not abandoned it.
+// UnbindAlias removes a transfer id from an account's namespace, leaving the
+// session intact. A client that unbinds an id has merely stopped addressing the
+// upload that way rather than abandoning it.
 func (e *Engine) UnbindAlias(ctx context.Context, tid string, user core.UserID) error {
 	if err := checkTransferID(tid); err != nil {
 		return err

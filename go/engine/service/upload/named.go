@@ -20,12 +20,12 @@ import (
 // than an offset, so where it lands is decided by what has already been
 // assembled rather than by what the client said.
 
-// PutNamed writes one named chunk.
+// PutNamed writes a single named chunk.
 //
-// A chunk whose name is the one expected next is appended straight to the
-// part file and the write head advances. Anything else is spooled to a file
-// of its own and waits, and each append drains whatever successors have
-// arrived in the meantime.
+// When a chunk's name matches the one expected next it is appended directly to
+// the part file and the write head moves forward. Everything else goes to its
+// own spooled file to wait, and each append drains whichever successors arrived
+// in the interim.
 func (e *Engine) PutNamed(
 	ctx context.Context, root *vfs.ShareRoot, id SessionID, user core.UserID,
 	name uint32, body io.Reader,
@@ -77,14 +77,15 @@ func (e *Engine) PutNamed(
 		}
 	}
 
-	// The row is written after every byte is on disk, which is the same
-	// ordering rule the offset-addressed path keeps: a crash between the two
-	// under-reports what arrived and the client resends it.
+	// The row is written only once every byte reaches disk, matching the
+	// offset-addressed path's ordering rule. A crash in between under-states
+	// what arrived, and the client sends it again.
 	r.sess.ExpiresNs = e.expiry()
 	return e.save(ctx, r)
 }
 
-// appendToPart writes a chunk body at the current write head and advances it.
+// appendToPart writes a chunk body at the current write head and moves it
+// forward.
 func (e *Engine) appendToPart(root *vfs.ShareRoot, r *row, id SessionID, body io.Reader) error {
 	part, err := e.partPathOf(r)
 	if err != nil {
@@ -110,12 +111,12 @@ func (e *Engine) appendToPart(root *vfs.ShareRoot, r *row, id SessionID, body io
 	return nil
 }
 
-// spoolChunk writes an out-of-order chunk to a file of its own inside the
-// session's spool directory.
+// spoolChunk writes an out-of-order chunk into its own file within the session's
+// spool directory.
 //
-// A repeated name is a client retry and overwrites idempotently: the chunk is
-// the same bytes, and refusing it would strand a client that lost the
-// response rather than the request.
+// A repeated name indicates a client retry and overwrites idempotently, since
+// the chunk carries identical bytes. Rejecting it would strand a client that
+// lost the response rather than the request.
 func (e *Engine) spoolChunk(root *vfs.ShareRoot, r *row, name uint32, body io.Reader) error {
 	dir, err := e.spoolDirOf(r)
 	if err != nil {
@@ -131,12 +132,13 @@ func (e *Engine) spoolChunk(root *vfs.ShareRoot, r *row, name uint32, body io.Re
 
 	f, err := root.CreatePart(file)
 	if errors.Is(err, vfs.ErrExists) {
-		// The client re-sent a name it already sent, which is a retry after a
-		// lost response. The old file is removed and made again rather than
-		// reopened for writing: reopening would be a second writable
-		// descriptor on a read path, and the part-file handle is the only one
-		// of those in the tree. Unlinking first also means a partial write
-		// from the abandoned attempt cannot survive underneath a shorter one.
+		// The client resent a name it had already sent, a retry following a lost
+		// response. The previous file is deleted and recreated rather than
+		// reopened for writing, because reopening would introduce a second
+		// writable descriptor on a read path and the part-file handle is the
+		// only such descriptor in the tree. Unlinking first also ensures a
+		// partial write from the abandoned attempt cannot persist beneath a
+		// shorter one.
 		if uerr := root.Unlink(file); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
 			return mapVFSErr(uerr)
 		}
@@ -151,21 +153,21 @@ func (e *Engine) spoolChunk(root *vfs.ShareRoot, r *row, name uint32, body io.Re
 		}
 	}()
 
-	// The floor does not apply to a spooled chunk: it is measured against the
-	// assembled file, and a name-ordered client does not choose its own
-	// offsets to be measured at.
+	// The floor does not govern a spooled chunk, since it is measured against the
+	// assembled file and a name-ordered client does not select the offsets it
+	// would be measured at.
 	if _, _, werr := e.writeBody(f, 0, body, nil, nil); werr != nil {
 		return werr
 	}
 	return f.SyncData()
 }
 
-// drainSpool merges spooled chunks onto the part file in ascending name
-// order, which is what "assembled in the order of their names" means.
+// drainSpool merges spooled chunks into the part file in ascending name order,
+// which is precisely what assembling by name means.
 //
-// strict decides what a gap is. Mid-upload a missing name is ordinary: the
-// chunk is still in flight and draining simply stops. At assembly it is a
-// refusal, because there is nothing left to wait for.
+// strict determines how a gap is treated. During an upload a missing name is
+// unremarkable: the chunk remains in flight and draining simply halts. At
+// assembly time it becomes a rejection, because nothing further is coming.
 func (e *Engine) drainSpool(ctx context.Context, root *vfs.ShareRoot, r *row, strict bool) error {
 	for {
 		if len(r.sess.SpooledNames) == 0 {
@@ -260,16 +262,16 @@ func (e *Engine) mergeChunk(root *vfs.ShareRoot, r *row, name uint32) error {
 	r.sess.WriteHead += written
 
 	if uerr := root.Unlink(file); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
-		// The chunk is already in the part file, so a removal that failed is
-		// an unlistable orphan for the sweep rather than a failed assembly.
+		// The chunk already sits in the part file, so a failed removal leaves an
+		// unlistable orphan for the sweep instead of a failed assembly.
 		e.log.Warn("a merged upload chunk could not be removed; the sweep will collect it",
 			"error", uerr)
 	}
 	return nil
 }
 
-// ListChunks reports the chunk names a name-ordered session holds: everything
-// already assembled, plus everything still spooled.
+// ListChunks returns the chunk names a name-ordered session holds, covering both
+// what is already assembled and what remains spooled.
 func (e *Engine) ListChunks(ctx context.Context, id SessionID, user core.UserID) ([]uint32, error) {
 	r, err := e.load(ctx, id)
 	if err != nil {

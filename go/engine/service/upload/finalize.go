@@ -13,14 +13,14 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
-// Finalize verifies and publishes.
+// Finalize verifies the upload and publishes it.
 //
-// The durable rename is the commit point and everything is arranged around
-// that one fact. A failure before it leaves the session resumable and the
-// part file on disk. After it the upload is complete even if cleanup has to
-// be retried, because a filesystem commit cannot be rolled back and reporting
-// one as a resumable upload whose destination already exists is worse than
-// the debt.
+// The durable rename is the commit point, and everything else is arranged
+// around that single fact. Failing before it leaves the session resumable with
+// the part file still on disk. Once past it the upload counts as complete even
+// if cleanup needs retrying, because a filesystem commit cannot be undone and
+// presenting one as a resumable upload whose destination already exists is worse
+// than carrying the debt.
 func (e *Engine) Finalize(ctx context.Context, r core.Resolved, id SessionID) (core.Entry, error) {
 	// The cache drains before the row lock is taken: draining needs that lock
 	// itself, and the merger has to be stopped before the part file is synced
@@ -50,10 +50,10 @@ func (e *Engine) finalize(ctx context.Context, r core.Resolved, id SessionID) (c
 	if err != nil {
 		return core.Entry{}, err
 	}
-	// The destination the session was created against is the one it publishes
-	// to. A resolution naming somewhere else is a different file, and
-	// honouring it would publish through a permission check that looked at
-	// another path. This is checked before anything is touched.
+	// Publication targets the destination the session was created against. A
+	// resolution pointing elsewhere describes a different file, and honouring it
+	// would publish through a permission check performed on another path. This
+	// is verified before anything is modified.
 	if !dest.Equal(r.Path()) {
 		return core.Entry{}, fmt.Errorf("%w: this session publishes to %s",
 			ErrBadRequest, rw.sess.Dest)
@@ -116,12 +116,11 @@ func (e *Engine) finalize(ctx context.Context, r core.Resolved, id SessionID) (c
 	return entry, nil
 }
 
-// publish moves the part file onto the destination durably.
+// publish durably moves the part file onto the destination.
 //
-// It goes through the core's own publish path rather than renaming here, so
-// the mode and ownership transplant, the quota charge, the cache
-// invalidation and the journal row are the same ones every other write in the
-// product gets.
+// It routes through the core's publish path rather than renaming locally, so the
+// mode and ownership transplant, the quota charge, the cache invalidation and
+// the journal row all match what every other write in the product receives.
 func (e *Engine) publish(
 	ctx context.Context, r core.Resolved, rw *row, part vfs.SafePath, total uint64,
 ) (core.Entry, error) {
@@ -130,18 +129,19 @@ func (e *Engine) publish(
 	if err := e.checkIfMatch(root, r.Path(), rw.sess.IfMatch); err != nil {
 		return core.Entry{}, err
 	}
-	// The descriptor goes before the rename, so nothing depends on the
-	// semantics of renaming a file that is still open. The sync here
-	// guarantees the bytes; the directory sync the publish does afterwards is
-	// what guarantees anyone can find them.
+	// The descriptor is released before the rename, so nothing relies on the
+	// semantics of renaming a file that remains open. This sync secures the
+	// bytes, while the directory sync performed later by publish is what makes
+	// them findable.
 	if err := e.syncAndClose(root, rw, part); err != nil {
 		return core.Entry{}, err
 	}
 
 	if rw.sess.MtimeNs != nil {
 		if err := root.SetTimes(part, *rw.sess.MtimeNs); err != nil {
-			// A timestamp the client asked for and did not get is worth a line
-			// and not a failed upload: the bytes are right either way.
+			// A timestamp the client requested and did not receive merits a log
+			// line rather than a failed upload, since the bytes are correct
+			// regardless.
 			e.log.Warn("could not apply the client's modification time to an upload",
 				"dest", rw.sess.Dest, "error", err)
 		}
@@ -149,7 +149,8 @@ func (e *Engine) publish(
 	return e.core.PublishPart(ctx, r, part, total)
 }
 
-// syncAndClose makes the uploaded bytes durable and gives up the descriptor.
+// syncAndClose flushes the uploaded bytes to durable storage and releases the
+// descriptor.
 func (e *Engine) syncAndClose(root *vfs.ShareRoot, rw *row, part vfs.SafePath) error {
 	id, err := rw.id()
 	if err != nil {
@@ -166,13 +167,13 @@ func (e *Engine) syncAndClose(root *vfs.ShareRoot, rw *row, part vfs.SafePath) e
 	return nil
 }
 
-// checkIfMatch applies the client's validator to the destination as it
-// stands, not to what was there when the session opened.
+// checkIfMatch evaluates the client's validator against the destination's
+// current state rather than its state when the session opened.
 //
-// A supplied validator can never pass, and that is the file-token rule rather
-// than a shortcut here: the token is derived from metadata and is always weak,
-// and a weak validator cannot satisfy a strong comparison. An explicit
-// unconditional retry is the way past.
+// A supplied validator can never succeed, which follows from the file-token rule
+// instead of being a shortcut taken here: the token derives from metadata and is
+// always weak, and a weak validator cannot satisfy a strong comparison. Getting
+// past it requires an explicit unconditional retry.
 func (e *Engine) checkIfMatch(root *vfs.ShareRoot, dest vfs.SafePath, ifMatch string) error {
 	if ifMatch == "" {
 		return nil
@@ -188,14 +189,13 @@ func (e *Engine) checkIfMatch(root *vfs.ShareRoot, dest vfs.SafePath, ifMatch st
 	return fmt.Errorf("%w: the destination's current token is %s", core.ErrPrecondition, current)
 }
 
-// Assemble is the name-ordered path's finalize: it merges whatever chunks are
-// still spooled, in ascending name order, then publishes through the same
-// path every other session takes.
+// Assemble finalizes the name-ordered path by merging whatever chunks remain
+// spooled in ascending name order, then publishing through the same route every
+// other session uses.
 //
-// total is what the caller's own protocol declared. The wording stays
-// protocol-neutral because this package does not know which protocol created
-// the session, and the layer that read the header is the one that can name
-// it.
+// total carries whatever the caller's protocol declared. The terminology stays
+// protocol-neutral because this package cannot tell which protocol created the
+// session; only the layer that parsed the header can name it.
 func (e *Engine) Assemble(
 	ctx context.Context, r core.Resolved, id SessionID, total uint64, mtimeNs *int64,
 ) (core.Entry, error) {
@@ -226,9 +226,9 @@ func (e *Engine) Assemble(
 			ErrBadRequest, head, total)
 	}
 
-	// The assembled file is contiguous by construction, so the set is the one
-	// range covering it. Writing it now is what makes the completeness check
-	// in finalize mean the same thing for both modes.
+	// Assembly produces a contiguous file by construction, so the set reduces to
+	// the single range covering it. Writing that now is what gives finalize's
+	// completeness check identical meaning across both modes.
 	declared, nerr := num.Narrow[int64](total)
 	if nerr != nil {
 		return core.Entry{}, nerr
@@ -249,8 +249,9 @@ func (e *Engine) Assemble(
 	if err != nil {
 		return core.Entry{}, err
 	}
-	// The spool directory is empty by now and its removal is best effort: an
-	// orphan under the reserved prefix is unlistable and the sweep takes it.
+	// The spool directory is empty at this point and removing it is best effort:
+	// an orphan beneath the reserved prefix stays unlistable and the sweep
+	// collects it.
 	if dir, derr := e.spoolDirOf(rw); derr == nil {
 		if rerr := r.Root().Rmdir(dir); rerr != nil && !errors.Is(rerr, vfs.ErrNotFound) {
 			e.log.Warn("an upload spool directory survived assembly; the sweep will collect it",

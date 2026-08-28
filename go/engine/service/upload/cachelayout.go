@@ -38,9 +38,9 @@ type cacheSpool struct {
 	// them.
 	enabled atomic.Bool
 
-	// used is the bytes the spool holds, maintained by the writers and the
-	// merger rather than measured. Measuring means walking a directory per
-	// chunk, and the number is only ever compared against a budget.
+	// used counts the bytes the spool holds, kept current by the writers and
+	// the merger rather than being measured. Measuring would walk a directory
+	// per chunk, and the figure is only ever weighed against a budget.
 	used atomic.Int64
 
 	// limit and step replace the measured budget and the per-step copy bound
@@ -59,19 +59,20 @@ type cacheSpool struct {
 // restart and there is no path setting to validate or to get wrong. An
 // operator who wants faster or larger scratch space mounts a volume there.
 func openCacheSpool(dir string) (*cacheSpool, error) {
-	// The path is the operator's own data directory, never request input.
+	// The path comes from the operator's data directory and never from a
+	// request.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("preparing the upload cache spool: %w", err)
 	}
 	policy := vfs.SharePolicy{
 		Symlink: vfs.SymlinkDeny,
-		// Nothing is mounted inside the spool: a volume an operator supplies
-		// is mounted at the spool itself, which is this anchor. Refusing to
-		// cross a boundary below it means a mount somebody placed in there
-		// cannot be written through.
+		// Nothing mounts inside the spool. An operator-supplied volume mounts at
+		// the spool itself, which is this anchor. Declining to cross a boundary
+		// beneath it means a mount someone placed there cannot be written
+		// through.
 		CrossMount: false,
-		// The spool holds other people's file contents in transit and lives
-		// under the data directory, which is the server's alone.
+		// The spool carries other people's file contents in transit and sits
+		// under the data directory, which belongs to the server alone.
 		ModeFile: 0o600,
 		ModeDir:  0o700,
 	}
@@ -95,10 +96,10 @@ func (c *cacheSpool) close() error {
 
 func (c *cacheSpool) setEnabled(on bool) { c.enabled.Store(on) }
 
-// measure walks the spool and totals what is in it, staging files included: a
-// half-written chunk occupies the volume like any other file. It runs at
-// startup, where the alternative is trusting a counter a crash did not get to
-// write.
+// measure walks the spool and sums its contents, staging files included, since a
+// half-written chunk consumes the volume like any other file. It runs at
+// startup, where the alternative would be trusting a counter that a crash
+// prevented from being written.
 func (c *cacheSpool) measure() int64 {
 	var total int64
 	for _, dir := range c.sessionDirs() {
@@ -122,7 +123,7 @@ func (c *cacheSpool) measure() int64 {
 	return total
 }
 
-// sessionDirs is every per-session directory in the spool.
+// sessionDirs lists each per-session directory within the spool.
 func (c *cacheSpool) sessionDirs() []vfs.SafePath {
 	var out []vfs.SafePath
 	// An unreadable spool root yields no directories, which every caller
@@ -141,12 +142,12 @@ func (c *cacheSpool) sessionDirs() []vfs.SafePath {
 	return out
 }
 
-// budget is what the spool may hold right now: a share of the volume's free
-// space plus what the spool already occupies, since that space is the spool's
-// already and the filesystem has stopped counting it as free.
+// budget gives what the spool may currently hold: a portion of the volume's free
+// space plus whatever the spool already uses, since that space belongs to the
+// spool and the filesystem no longer counts it as free.
 //
-// A probe that cannot run answers zero, which refuses new cached writes
-// rather than letting an unmeasurable volume fill up.
+// A probe that cannot run returns zero, rejecting new cached writes instead of
+// permitting an unmeasurable volume to fill.
 func (c *cacheSpool) budget() int64 {
 	if n := c.limit.Load(); n > 0 {
 		return n
@@ -169,7 +170,7 @@ func (c *cacheSpool) budget() int64 {
 	return (avail + used) / 100 * cacheFreeFraction
 }
 
-// stepMax is how much one merge step may copy.
+// stepMax caps how much a single merge step copies.
 func (c *cacheSpool) stepMax() uint64 {
 	if n := c.step.Load(); n > 0 {
 		if v, err := num.Narrow[uint64](n); err == nil {
@@ -179,14 +180,14 @@ func (c *cacheSpool) stepMax() uint64 {
 	return mergeCopyMax
 }
 
-// cacheDirOf is a session's directory inside the spool.
+// cacheDirOf gives a session's directory within the spool.
 func cacheDirOf(name string) (vfs.SafePath, error) {
 	return vfs.RootPath().JoinControl(name)
 }
 
-// cacheChunkName is what one cached chunk is called: the reserved prefix and
-// the offset it holds, fixed width and hex, so a listing sorts by offset
-// without parsing and the name is the whole of the file's placement.
+// cacheChunkName builds a cached chunk's filename from the reserved prefix and
+// its offset in fixed-width hex, so a listing sorts by offset without parsing
+// and the name fully determines the file's placement.
 func cacheChunkName(off uint64) string { return fmt.Sprintf(".scpart-%016x", off) }
 
 // parseCacheChunkName reads an offset back out of a chunk file's name.
@@ -214,9 +215,9 @@ func parseCacheChunkName(name string) (uint64, bool) {
 	return off, true
 }
 
-// cacheStagingName is the name a chunk wears while it is being written. It
-// carries the control prefix so it is unlistable, and deliberately does not
-// parse as a chunk name, which is what hides it from the merger.
+// cacheStagingName gives the name a chunk holds while being written. The control
+// prefix keeps it unlistable, and it intentionally fails to parse as a chunk
+// name, which is what conceals it from the merger.
 func cacheStagingName() (string, error) {
 	id, err := NewSessionID()
 	if err != nil {
@@ -225,14 +226,14 @@ func cacheStagingName() (string, error) {
 	return ".scpart-w" + id.String(), nil
 }
 
-// cacheChunk is one file in a session's cache directory.
+// cacheChunk describes a single file in a session's cache directory.
 type cacheChunk struct {
 	path vfs.SafePath
 	off  uint64
 	size uint64
 }
 
-// chunksOf lists a session's cached chunks in ascending offset order.
+// chunksOf enumerates a session's cached chunks ordered by ascending offset.
 func (c *cacheSpool) chunksOf(dir vfs.SafePath) ([]cacheChunk, error) {
 	var out []cacheChunk
 	err := c.root.ReadDirFunc(dir, vfs.IncludeReserved, func(e vfs.DirEntry) bool {
@@ -268,12 +269,12 @@ func sortChunks(s []cacheChunk) {
 	}
 }
 
-// removeSession empties a session's cache directory and removes it, returning
-// the bytes it held so the caller can give them back to the budget.
+// removeSession clears a session's cache directory and deletes it, returning the
+// bytes it occupied so the caller can restore them to the budget.
 //
-// Everything in the directory goes, not only the files whose names parse as
-// chunks: a staging file an interrupted write left behind occupies the volume
-// exactly as much as a finished chunk does.
+// The entire directory goes, not merely files whose names parse as chunks: a
+// staging file left by an interrupted write consumes exactly as much of the
+// volume as a completed chunk.
 func (c *cacheSpool) removeSession(dir vfs.SafePath) int64 {
 	var freed int64
 	err := c.root.ReadDirFunc(dir, vfs.IncludeReserved, func(e vfs.DirEntry) bool {
@@ -304,14 +305,14 @@ func (c *cacheSpool) removeSession(dir vfs.SafePath) int64 {
 	return freed
 }
 
-// RecoverCache rebuilds what the cached sessions actually still hold.
+// RecoverCache reconstructs what cached sessions genuinely still hold.
 //
-// It runs at startup and it exists because the recommended spool is a memory
-// filesystem. A reboot empties one, and a session whose recorded intervals
-// still claimed those bytes would answer a resuming client with an offset
-// whose data is gone. What survives is everything below the merge frontier,
-// which is in the part file, plus the cache files really on disk; the
-// recorded set is cut down to that.
+// It runs at startup and exists because the recommended spool is a memory
+// filesystem. A reboot empties one, and a session whose recorded intervals still
+// claimed those bytes would hand a resuming client an offset whose data has
+// vanished. What survives is everything below the merge frontier, already in the
+// part file, together with the cache files actually present on disk; the
+// recorded set is trimmed to that.
 func (e *Engine) RecoverCache(ctx context.Context) error {
 	if e.cache == nil {
 		return nil
@@ -332,23 +333,23 @@ func (e *Engine) RecoverCache(ctx context.Context) error {
 				"dest", sess.Dest, "error", rerr)
 		}
 	}
-	// A directory whose session row is gone is debt no walk of the shares can
-	// see: the spool is not a share, and the row is the only thing that names
-	// a directory in it.
+	// A directory whose session row has disappeared is debt invisible to any
+	// walk of the shares: the spool is not a share, and the row is the only
+	// thing that names a directory inside it.
 	for _, dir := range e.cache.sessionDirs() {
 		if _, held := known[dir.Name()]; held {
 			continue
 		}
 		e.cache.removeSession(dir)
 	}
-	// Measured rather than accumulated: the counter the writers keep is what a
-	// crash did not get to write, and every later budget decision reads it.
+	// Measured instead of accumulated, because the writers' counter is exactly
+	// what a crash prevented from being written, and every subsequent budget
+	// decision consults it.
 	e.cache.used.Store(e.cache.measure())
 	return nil
 }
 
-// recoverSession cuts one session's interval set down to what is still on
-// disk.
+// recoverSession trims a session's interval set to what remains on disk.
 func (e *Engine) recoverSession(ctx context.Context, id []byte, cacheDir string, merged int64) error {
 	sid, err := sessionIDFromBytes(id)
 	if err != nil {
@@ -389,10 +390,10 @@ func (e *Engine) recoverSession(ctx context.Context, id []byte, cacheDir string,
 		}
 	}
 
-	// The recorded set is the claim and this is the evidence, so the answer is
-	// the intersection: a range that was recorded and is no longer anywhere
-	// must stop being reported, and a cache file with no recorded range is a
-	// chunk whose write never committed.
+	// The recorded set states the claim and this supplies the evidence, so the
+	// result is their intersection. A range recorded but no longer present
+	// anywhere must cease being reported, and a cache file lacking a recorded
+	// range belongs to a chunk whose write never committed.
 	trimmed := intersectSets(r.set, survived)
 	if sameRuns(trimmed, r.set) {
 		return nil
@@ -404,7 +405,7 @@ func (e *Engine) recoverSession(ctx context.Context, id []byte, cacheDir string,
 	return e.commitRange(ctx, r)
 }
 
-// intersectSets is the ranges both sets hold.
+// intersectSets yields the ranges present in both sets.
 func intersectSets(a, b *IntervalSet) *IntervalSet {
 	out := NewIntervalSet()
 	for _, x := range a.Runs() {
