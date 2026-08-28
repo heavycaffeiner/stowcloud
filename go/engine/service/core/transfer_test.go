@@ -123,7 +123,7 @@ func TestMoveWithinAShareIsAPlainRename(t *testing.T) {
 	if got := readHost(t, host, "moved.txt"); got != "body" {
 		t.Fatalf("the moved file holds %q, want %q", got, "body")
 	}
-	if _, err := os.Stat(filepath.Join(host, "note.txt")); !errors.Is(err, os.ErrNotExist) {
+	if _, err = os.Stat(filepath.Join(host, "note.txt")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("the source name survived a rename")
 	}
 

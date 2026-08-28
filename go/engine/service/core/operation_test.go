@@ -17,8 +17,10 @@ import (
 // a test observes the detached runner without reaching into it.
 func waitForOp(t *testing.T, c *Core, owner UserID, id OperationID) Operation {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
+	// The core's own clock, because nothing outside the clock package reads
+	// the wall clock directly, tests included.
+	deadline := c.clk.Now().Add(10 * time.Second)
+	for c.clk.Now().Before(deadline) {
 		op, err := c.Operation(context.Background(), owner, id)
 		if err != nil {
 			t.Fatalf("reading operation %d: %v", id, err)
@@ -46,10 +48,10 @@ func TestAnOperationIsScopedToItsOwner(t *testing.T) {
 
 	// A row owned by somebody else and a row that does not exist are one
 	// answer, so an id-probing client learns nothing.
-	if _, err := c.Operation(ctx, 2, start.ID); !errors.Is(err, ErrNotFound) {
+	if _, err = c.Operation(ctx, 2, start.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("reading another owner's operation returned %v, want ErrNotFound", err)
 	}
-	if err := c.CancelOperation(ctx, 2, start.ID); !errors.Is(err, ErrNotFound) {
+	if err = c.CancelOperation(ctx, 2, start.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("cancelling another owner's operation returned %v, want ErrNotFound", err)
 	}
 	ops, err := c.ListOperations(ctx, 2, 10)
@@ -81,7 +83,7 @@ func TestTheUnfinishedSplitIsReadOnlyOnceAnOperationStopped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating an operation: %v", err)
 	}
-	if err := st.StartOpItem(ctx, id, 0); err != nil {
+	if err = st.StartOpItem(ctx, id, 0); err != nil {
 		t.Fatalf("marking the first item started: %v", err)
 	}
 
@@ -95,7 +97,7 @@ func TestTheUnfinishedSplitIsReadOnlyOnceAnOperationStopped(t *testing.T) {
 		t.Fatalf("a running operation reported %+v, want an empty split", running)
 	}
 
-	if err := st.InterruptOp(ctx, id, 0); err != nil {
+	if err = st.InterruptOp(ctx, id, 0); err != nil {
 		t.Fatalf("interrupting: %v", err)
 	}
 	stopped, err := c.Operation(ctx, 1, OperationID(id))
@@ -127,7 +129,7 @@ func TestListingCarriesNoResultsAndSplitsOnlyInterruptedRows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating the interrupted operation: %v", err)
 	}
-	if err := st.InterruptOp(ctx, interrupted, 0); err != nil {
+	if err = st.InterruptOp(ctx, interrupted, 0); err != nil {
 		t.Fatalf("interrupting: %v", err)
 	}
 
@@ -367,7 +369,7 @@ func TestACancelledCopyStopsAndRecordsNoResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating the operation: %v", err)
 	}
-	if err := c.CancelOperation(ctx, 1, OperationID(id)); err != nil {
+	if err = c.CancelOperation(ctx, 1, OperationID(id)); err != nil {
 		t.Fatalf("CancelOperation: %v", err)
 	}
 

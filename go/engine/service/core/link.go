@@ -209,7 +209,7 @@ func (c *Core) CreateLink(ctx context.Context, r Resolved, spec LinkSpec) (Link,
 	if err != nil {
 		return Link{}, secret.Secret{}, err
 	}
-	if err := r.Require(acl.Share); err != nil {
+	if err = r.Require(acl.Share); err != nil {
 		return Link{}, secret.Secret{}, err
 	}
 	if spec.Perms.IsEmpty() {

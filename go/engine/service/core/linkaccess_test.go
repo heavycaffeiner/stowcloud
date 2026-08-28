@@ -97,7 +97,7 @@ func TestAFileLinkBrowsesAsItselfWithNoEntries(t *testing.T) {
 }
 
 func TestBrowseSeparatesADeadBaseFromAMissingSubpath(t *testing.T) {
-	c, host, link := folderLink(t, acl.Read|acl.Download)
+	c, _, link := folderLink(t, acl.Read|acl.Download)
 	ctx := context.Background()
 
 	// A missing entry inside a live link is an ordinary miss.
@@ -105,9 +105,7 @@ func TestBrowseSeparatesADeadBaseFromAMissingSubpath(t *testing.T) {
 		t.Fatalf("a missing subpath returned %v, want ErrNotFound", err)
 	}
 	// The base going away is the link dying.
-	if err := os.Rename(filepath.Join(host, "shared"), filepath.Join(host, "moved")); err != nil {
-		t.Fatalf("renaming the base: %v", err)
-	}
+	renameInShare(t, c, 10, "shared", "moved")
 	if _, err := c.LinkBrowse(ctx, link, ""); !errors.Is(err, ErrLinkExpired) {
 		t.Fatalf("a renamed base returned %v, want ErrLinkExpired", err)
 	}
@@ -272,12 +270,10 @@ func TestLinkDropFileRefusesATakenNameAndDoesNotWidenTheLink(t *testing.T) {
 }
 
 func TestADeadLinkRefusesEveryBearerSurface(t *testing.T) {
-	c, host, link := folderLink(t, acl.Read|acl.Download|acl.Create)
+	c, _, link := folderLink(t, acl.Read|acl.Download|acl.Create)
 	ctx := context.Background()
 	// The base is renamed, so the identity cross-check fails everywhere.
-	if err := os.Rename(filepath.Join(host, "shared"), filepath.Join(host, "gone")); err != nil {
-		t.Fatalf("renaming the base: %v", err)
-	}
+	renameInShare(t, c, 10, "shared", "gone")
 
 	if _, err := c.LinkBrowse(ctx, link, ""); !errors.Is(err, ErrLinkExpired) {
 		t.Fatalf("LinkBrowse returned %v", err)

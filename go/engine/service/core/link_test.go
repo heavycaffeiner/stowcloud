@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"os"
 	"path/filepath"
@@ -22,7 +23,9 @@ import (
 type fakeCipher struct{ refuse bool }
 
 func (f *fakeCipher) aad(hash []byte, ver uint32) []byte {
-	return append(append([]byte{byte(ver)}, hash...), '|')
+	// The version goes in whole rather than as a truncated byte, so two
+	// versions that share a low byte cannot produce the same binding.
+	return append(binary.LittleEndian.AppendUint32(nil, ver), append(hash, '|')...)
 }
 
 func (f *fakeCipher) Seal(token, hash []byte, ver uint32) ([]byte, error) {
@@ -527,10 +530,7 @@ func TestLinkPublicAppliesEveryLivenessRule(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateLink: %v", err)
 		}
-		if rerr := os.Rename(filepath.Join(host, "note.txt"),
-			filepath.Join(host, "moved.txt")); rerr != nil {
-			t.Fatalf("renaming: %v", rerr)
-		}
+		renameInShare(t, c, 10, "note.txt", "moved.txt")
 		if _, _, err := c.LinkPublic(ctx, string(tok.Reveal())); !errors.Is(err, ErrLinkExpired) {
 			t.Fatalf("a renamed target returned %v, want ErrLinkExpired", err)
 		}
@@ -649,3 +649,17 @@ func TestLinkCheckPasswordAcceptsRefusesAndFailsClosed(t *testing.T) {
 // sqlTx is the transaction type the state store hands its writers, named here
 // so a test can reach the two columns no store method exposes.
 type sqlTx = sql.Tx
+
+// renameInShare moves an entry through the share root that owns the rename
+// contract for share content, which is what a rename outside this package's
+// own filesystem layer would have to go through anyway.
+func renameInShare(t *testing.T, c *Core, share ShareID, from, to string) {
+	t.Helper()
+	root, ok := c.ShareRoot(share)
+	if !ok {
+		t.Fatalf("share %d has no live root", share)
+	}
+	if err := root.Rename(safe(t, from), safe(t, to), false); err != nil {
+		t.Fatalf("renaming %q to %q: %v", from, to, err)
+	}
+}

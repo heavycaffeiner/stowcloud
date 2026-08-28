@@ -173,7 +173,7 @@ func (c *Core) StartCopy(
 	if err != nil {
 		return CopyStart{}, mapVFSErr(err)
 	}
-	if err := RefuseSelfDescendant(from, to); err != nil {
+	if err = RefuseSelfDescendant(from, to); err != nil {
 		return CopyStart{}, err
 	}
 
