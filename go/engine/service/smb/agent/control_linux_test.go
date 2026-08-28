@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 )
 
@@ -63,17 +64,20 @@ func serve(t *testing.T, h Handler) string {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	task.Go(ctx, "smb agent under test", func() { done <- Serve(ctx, socket, h, dir, quiet()) })
+	task.Go(ctx, "smb agent under test", func() {
+		done <- Serve(ctx, socket, h, dir, clock.System(), quiet())
+	})
 
 	// The listener is bound asynchronously, so wait for the socket to accept
 	// rather than sleeping for a fixed period.
-	deadline := time.Now().Add(5 * time.Second)
+	clk := clock.System()
+	deadline := clk.Now().Add(5 * time.Second)
 	for {
 		if c, err := net.Dial("unix", socket); err == nil {
 			closeQuietly(c)
 			break
 		}
-		if time.Now().After(deadline) {
+		if clk.Now().After(deadline) {
 			cancel()
 			t.Fatal("the agent never started listening")
 		}
@@ -103,7 +107,7 @@ func ask(t *testing.T, socket string, req []byte) string {
 		t.Fatal(err)
 	}
 	defer closeQuietly(conn)
-	if derr := conn.SetDeadline(time.Now().Add(10 * time.Second)); derr != nil {
+	if derr := conn.SetDeadline(clock.System().Now().Add(10 * time.Second)); derr != nil {
 		t.Fatal(derr)
 	}
 	if _, werr := conn.Write(req); werr != nil {
@@ -169,7 +173,7 @@ func TestAnOversizedRequestIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer closeQuietly(conn)
-	if derr := conn.SetDeadline(time.Now().Add(20 * time.Second)); derr != nil {
+	if derr := conn.SetDeadline(clock.System().Now().Add(20 * time.Second)); derr != nil {
 		t.Fatal(derr)
 	}
 
@@ -215,7 +219,7 @@ func TestATruncatedRequestIsNotParsed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer closeQuietly(conn)
-	if derr := conn.SetDeadline(time.Now().Add(10 * time.Second)); derr != nil {
+	if derr := conn.SetDeadline(clock.System().Now().Add(10 * time.Second)); derr != nil {
 		t.Fatal(derr)
 	}
 
@@ -285,7 +289,7 @@ func TestOneRequestPerConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer closeQuietly(conn)
-	if derr := conn.SetDeadline(time.Now().Add(10 * time.Second)); derr != nil {
+	if derr := conn.SetDeadline(clock.System().Now().Add(10 * time.Second)); derr != nil {
 		t.Fatal(derr)
 	}
 
@@ -400,9 +404,10 @@ func TestTheDeadlineReachesTheConnection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 	defer cancel()
 
-	start := time.Now()
+	clk := clock.System()
+	start := clk.Now()
 	_, aerr := Apply(ctx, socket)
-	elapsed := time.Since(start)
+	elapsed := clk.Since(start)
 
 	if aerr == nil {
 		t.Fatal("a silent agent answered successfully")
@@ -429,16 +434,17 @@ func TestAStaleSocketFileDoesNotBlockTheBind(t *testing.T) {
 
 	done := make(chan error, 1)
 	task.Go(ctx, "smb agent over a stale socket", func() {
-		done <- Serve(ctx, socket, &stubHandler{}, dir, quiet())
+		done <- Serve(ctx, socket, &stubHandler{}, dir, clock.System(), quiet())
 	})
 
-	deadline := time.Now().Add(5 * time.Second)
+	clk := clock.System()
+	deadline := clk.Now().Add(5 * time.Second)
 	for {
 		if c, err := net.Dial("unix", socket); err == nil {
 			closeQuietly(c)
 			break
 		}
-		if time.Now().After(deadline) {
+		if clk.Now().After(deadline) {
 			t.Fatal("the agent did not bind over a stale socket file")
 		}
 		time.Sleep(2 * time.Millisecond)

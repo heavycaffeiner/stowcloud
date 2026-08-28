@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 )
 
 // The four-row table, and the reason the order within it matters.
@@ -163,7 +165,7 @@ func TestTheFingerprintFollowsTheRenderedFiles(t *testing.T) {
 
 	// The same content at a later time is still a change, because a republish
 	// that rewrote the same bytes still needs applying.
-	later := time.Now().Add(2 * time.Second)
+	later := clock.System().Now().Add(2 * time.Second)
 	if err := os.Chtimes(conf, later, later); err != nil {
 		t.Fatal(err)
 	}

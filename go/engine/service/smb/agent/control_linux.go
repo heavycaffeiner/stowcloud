@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 	"golang.org/x/sys/unix"
 )
@@ -47,7 +48,11 @@ type Handler interface {
 }
 
 // Serve binds the socket and answers until the context ends.
-func Serve(ctx context.Context, socket string, h Handler, configDir string, log *slog.Logger) error {
+//
+// clk supplies the deadline each exchange is bounded by. It is a parameter
+// rather than a direct wall-clock read so this package keeps no clock of its
+// own, which is the rule the whole tree follows.
+func Serve(ctx context.Context, socket string, h Handler, configDir string, clk clock.Clock, log *slog.Logger) error {
 	if parent := filepath.Dir(socket); parent != "" {
 		if err := prepareSocketDir(parent); err != nil {
 			return err
@@ -89,15 +94,15 @@ func Serve(ctx context.Context, socket string, h Handler, configDir string, log 
 			}
 			return fmt.Errorf("accepting on the control socket: %w", aerr)
 		}
-		answer(conn, h, log)
+		answer(conn, h, clk, log)
 	}
 }
 
 // answer handles one connection: read a request, act, reply, close.
-func answer(conn net.Conn, h Handler, log *slog.Logger) {
+func answer(conn net.Conn, h Handler, clk clock.Clock, log *slog.Logger) {
 	defer conn.Close() //nolint:errcheck // the reply is already written and a failed close has nowhere to go.
 
-	if err := conn.SetDeadline(time.Now().Add(ExchangeTimeout)); err != nil {
+	if err := conn.SetDeadline(clk.Now().Add(ExchangeTimeout)); err != nil {
 		log.Warn("could not bound the control exchange", "error", err)
 		return
 	}
@@ -257,9 +262,11 @@ func setMode(socket string, mode os.FileMode, log *slog.Logger) {
 //
 // A failure here is not fatal: the poll still applies changes, which is exactly
 // what this deployment had before the socket existed.
-func ServeInBackground(ctx context.Context, socket string, h Handler, configDir string, log *slog.Logger) {
+func ServeInBackground(
+	ctx context.Context, socket string, h Handler, configDir string, clk clock.Clock, log *slog.Logger,
+) {
 	task.Go(ctx, "smb-agent-control", func() {
-		if err := Serve(ctx, socket, h, configDir, log); err != nil {
+		if err := Serve(ctx, socket, h, configDir, clk, log); err != nil {
 			log.Error("the control socket is not listening; changes will be picked up by the poll instead",
 				"socket", socket, "error", err)
 		}
