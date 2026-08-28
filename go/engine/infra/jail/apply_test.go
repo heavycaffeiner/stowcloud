@@ -38,8 +38,8 @@ func (f *fakeSteps) steps() steps {
 	}
 }
 
-// Off attempts nothing and says so, which is how "I know, and I accept it" is
-// expressible without a code change.
+// Off attempts nothing and reports as much, letting an operator accept the
+// absence deliberately without a code change.
 func TestOffAttemptsNothing(t *testing.T) {
 	f := &fakeSteps{available: true}
 	st, err := apply(Off, Spec{}, f.steps())
@@ -228,7 +228,7 @@ func TestTheTwoPoliciesHaveTheirOwnTerminalActions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("assembleFor: %v", err)
 	}
-	// A listed number is denied and everything else runs.
+	// Listed numbers are refused; everything else proceeds.
 	if got := proc[len(proc)-3].K; got != unix.SECCOMP_RET_ALLOW {
 		t.Errorf("the server's default action is %#x, want ALLOW", got)
 	}

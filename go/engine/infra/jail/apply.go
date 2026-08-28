@@ -12,15 +12,16 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// exitConfig is the exit code a refused configuration gets, which is what a
-// hardening refusal is.
+// exitConfig is the exit code for a rejected configuration, which is what a
+// hardening rejection amounts to.
 const exitConfig = 78
 
-// steps is the kernel-facing half of Apply, behind an unexported struct so a
-// test can fault one without needing a kernel that refuses it.
+// steps holds Apply's kernel-facing half behind an unexported struct, letting a
+// test inject a failure without requiring a kernel that actually rejects it.
 //
-// A parameter a caller could set would be a way to turn the sandbox off from
-// outside, which is the thing this package exists to stop.
+// Exposing this as a caller-settable parameter would create an external switch
+// for disabling the sandbox, which is exactly what this package exists to
+// prevent.
 type steps struct {
 	restrictAndReexec func(Spec, string) error
 	installSeccomp    func(FilterKind) error
@@ -39,23 +40,22 @@ func kernelSteps() steps {
 	}
 }
 
-// Apply runs the server's hardening sequence under policy.
+// Apply executes the server's hardening sequence under policy.
 //
-// It is called once in the life of a server process image and twice in the life
-// of a server: the first time it builds the Landlock domain and replaces the
-// process image, so on success it does not return at all, and the second time,
-// in the new image, it installs the seccomp filter and returns the status the
-// health endpoint reports.
+// It runs once per server process image and twice per server lifetime. The first
+// call constructs the Landlock domain and replaces the process image, so success
+// means it never returns. The second call, inside the new image, installs the
+// seccomp filter and returns the status the health endpoint publishes.
 //
-// The order is the design. Landlock first, because the domain has to be built
-// while the paths are still openable; the exec next, because that is what makes
-// the domain cover every thread; seccomp last, because it is the only one of
-// the two with an all-threads flag and it does not need to survive an exec.
+// The ordering carries the design. Landlock comes first because the domain must
+// be built while its paths remain openable. The exec follows because that is
+// what spreads the domain across every thread. Seccomp comes last because it is
+// the only one with an all-threads flag and has no need to survive an exec.
 //
-// Under Required a step that could not be applied returns an error wrapping
-// ErrHardeningRefused, and the caller renders it with Refuse and exits. A
-// package that calls os.Exit itself is a package whose refusal path no test
-// ever runs.
+// Under Required, a step that cannot be applied yields an error wrapping
+// ErrHardeningRefused; the caller formats it through Refuse and exits. A package
+// calling os.Exit directly is one whose rejection path no test ever
+// exercises.
 func Apply(policy Policy, spec Spec) (Status, error) {
 	return apply(policy, spec, kernelSteps())
 }
@@ -85,8 +85,8 @@ func apply(policy Policy, spec Spec, s steps) (Status, error) {
 // Required, where a step that could not be applied stops the sequence.
 func applyLandlock(st *Status, policy Policy, spec Spec, s steps) error {
 	if s.reexeced(reexecMarker) {
-		// This image was produced by the restrict-and-exec below, so it carries
-		// the domain on every thread by inheritance.
+		// The restrict-and-exec below produced this image, so every thread
+		// inherits the domain.
 		st.Steps = append(st.Steps, StepStatus{Name: StepLandlock, Applied: true})
 		return nil
 	}
@@ -109,7 +109,7 @@ func applyLandlock(st *Status, policy Policy, spec Spec, s steps) error {
 	rerr := s.restrictAndReexec(spec, reexecMarker)
 	runtime.UnlockOSThread()
 
-	// Only reached on failure: a successful exec never returns.
+	// Reached only on failure, since a successful exec never returns.
 	st.Steps = append(st.Steps, StepStatus{Name: StepLandlock, Err: rerr})
 	if policy == Required {
 		return refusal(*st)
@@ -125,9 +125,9 @@ func refusal(st Status) error {
 	return fmt.Errorf("%w: %s: %w", ErrHardeningRefused, step.Name, step.Err)
 }
 
-// Refuse writes the reason a required hardening step could not be applied and
-// returns the process exit code. It names the step, the errno and the kernel,
-// because "hardening failed" tells an operator nothing they can act on.
+// Refuse reports why a required hardening step failed to apply and returns the
+// process exit code. It states the step, the errno and the kernel version,
+// because a bare "hardening failed" gives an operator nothing actionable.
 func Refuse(w io.Writer, st Status) int {
 	step, ok := st.firstUnapplied()
 	if !ok {

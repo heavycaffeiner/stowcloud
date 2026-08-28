@@ -14,39 +14,40 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Grant is one path the domain allows something beneath.
+// Grant names a path beneath which the domain permits something.
 type Grant struct {
-	// Path is a host path. It is opened once to build the rule and closed
-	// again; the domain outlives the descriptor.
+	// Path is a host path, opened once while constructing the rule and then
+	// closed. The domain persists beyond the descriptor.
 	Path string
 
-	// Access is the rights allowed beneath Path. Zero grants every right the
-	// ruleset handles, which is what a share root gets.
+	// Access lists the rights permitted beneath Path. Zero confers every right
+	// the ruleset handles, which is what a share root receives.
 	Access uint64
 }
 
-// Spec describes a Landlock domain. The ruleset handles every filesystem right
-// the running kernel reports, so a right that is handled and not granted is
-// denied everywhere; a Spec with no grants at all denies the whole filesystem.
+// Spec describes a Landlock domain. The ruleset covers every filesystem right
+// the running kernel advertises, so any handled right left ungranted is denied
+// throughout. A Spec carrying no grants denies the entire filesystem.
 type Spec struct {
-	// ExceptExec leaves LANDLOCK_ACCESS_FS_EXECUTE unhandled.
+	// ExceptExec leaves LANDLOCK_ACCESS_FS_EXECUTE outside the handled set.
 	//
-	// This is not a weakening and it is worth being explicit about. A ruleset
-	// that handled EXECUTE and granted nothing would deny the worker's own
-	// execve, which is how the domain becomes process-wide in the first place.
-	// Denying execve is seccomp's job in the step after, and seccomp denies it
-	// harder: Landlock would refuse to execute a file, while seccomp removes
-	// the syscall, so there is nothing to execute and nothing to point it at.
+	// This does not weaken anything, and saying so explicitly is worthwhile. A
+	// ruleset handling EXECUTE while granting nothing would block the worker's
+	// own execve, which is precisely how the domain becomes process-wide.
+	// Blocking execve belongs to seccomp in the following step, and seccomp does
+	// it more thoroughly: Landlock would decline to execute a file, whereas
+	// seccomp eliminates the syscall, leaving nothing to execute and nothing to
+	// aim it at.
 	ExceptExec bool
 
 	GrantBeneath []Grant
 }
 
-// abiVersion asks the kernel which Landlock ABI it implements.
+// abiVersion queries the kernel for the Landlock ABI it implements.
 //
-// The two failures are different facts to an operator and are kept apart:
-// ENOSYS is a kernel older than 5.13, and EOPNOTSUPP is Landlock compiled out
-// or disabled at boot.
+// The two failure modes tell an operator different things and stay separate:
+// ENOSYS means a kernel predating 5.13, while EOPNOTSUPP means Landlock was
+// compiled out or disabled at boot.
 func abiVersion() (int, error) {
 	v, _, errno := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET,
 		0, 0, uintptr(unix.LANDLOCK_CREATE_RULESET_VERSION))
@@ -56,18 +57,18 @@ func abiVersion() (int, error) {
 	return int(v), nil
 }
 
-// ABIVersion reports the running kernel's Landlock ABI, for the capability
-// probe. Zero and an error mean the kernel has none.
+// ABIVersion returns the running kernel's Landlock ABI for the capability probe.
+// Zero together with an error indicates the kernel provides none.
 func ABIVersion() (int, error) { return abiVersion() }
 
-// fsRights is the filesystem access set each ABI version added, accumulated up
-// to abi.
+// fsRights accumulates, up to abi, the filesystem access set introduced by each
+// ABI version.
 //
-// A kernel newer than this table reports an ABI whose extra rights are not
-// handled, which is the conservative direction: an unhandled right is one
-// Landlock does not police, so the worst case is the domain permitting
-// something the process was permitted to do anyway. Guessing at a constant this
-// build does not have a name for is the other direction.
+// A kernel newer than this table reports an ABI whose additional rights go
+// unhandled, which errs safely: an unhandled right is one Landlock does not
+// enforce, so the worst outcome is the domain allowing something the process
+// could already do. Guessing at a constant this build has no name for would err
+// the other way.
 func fsRights(abi int) uint64 {
 	if abi < 1 {
 		return 0
@@ -97,22 +98,22 @@ func fsRights(abi int) uint64 {
 	return r
 }
 
-// readExecute is what the binary's own path needs: the process has to be able
-// to read and execute itself to complete the re-exec that makes the domain
-// process-wide.
+// readExecute covers what the binary's own path requires: reading and executing
+// itself, which the re-exec that makes the domain process-wide depends on.
 const readExecute = unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_EXECUTE
 
-// ReadOnly is a grant that can read files and list directories and nothing
-// else. It is for a path the server reads and must never write, such as the
-// operator's own configuration.
+// ReadOnly grants file reads and directory listings and nothing further. It
+// suits a path the server reads but must never write, such as the operator's own
+// configuration.
 const ReadOnly = unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_READ_DIR
 
-// restrict builds spec's domain and applies it to the calling thread.
+// restrict constructs spec's domain and applies it to the calling thread.
 //
-// The caller must already hold the OS thread. Landlock restricts the calling
-// thread and has no all-threads flag, so a goroutine that migrates between this
-// and the exec that follows leaves the domain on a thread that is not the one
-// that execs, and the call still returns success.
+// The caller must already be locked to the OS thread. Landlock restricts only
+// the calling thread and offers no all-threads flag, so a goroutine migrating
+// between this call and the subsequent exec leaves the domain attached to a
+// thread other than the one that execs, while the call still reports
+// success.
 func restrict(spec Spec) error {
 	abi, err := abiVersion()
 	if err != nil {
@@ -128,7 +129,7 @@ func restrict(spec Spec) error {
 
 	attr := unix.LandlockRulesetAttr{Access_fs: handled}
 	fd, _, errno := unix.Syscall(unix.SYS_LANDLOCK_CREATE_RULESET,
-		//nolint:gosec // the kernel takes a struct pointer; there is no wrapper for this call.
+		//nolint:gosec // this call has no x/sys wrapper and the kernel wants a struct pointer.
 		uintptr(unsafe.Pointer(&attr)), unsafe.Sizeof(attr), 0)
 	runtime.KeepAlive(attr)
 	if errno != 0 {
@@ -143,7 +144,7 @@ func restrict(spec Spec) error {
 		}
 	}
 
-	// Required before an unprivileged process may restrict itself.
+	// A precondition for any unprivileged process restricting itself.
 	if perr := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); perr != nil {
 		return fmt.Errorf("prctl(PR_SET_NO_NEW_PRIVS): %w", perr)
 	}
@@ -162,8 +163,8 @@ func addPathBeneath(ruleset *os.File, g Grant, handled uint64) error {
 	if access == 0 {
 		access = handled
 	}
-	// A right the ruleset does not handle is EINVAL from the kernel, so the
-	// grant is narrowed to what is actually being policed.
+	// Rights outside the ruleset's handled set draw EINVAL from the kernel, so
+	// the grant is trimmed to what is actually enforced.
 	access &= handled
 	if access == 0 {
 		return nil
@@ -184,7 +185,7 @@ func addPathBeneath(ruleset *os.File, g Grant, handled uint64) error {
 	rule := unix.LandlockPathBeneathAttr{Allowed_access: access, Parent_fd: parent}
 	_, _, errno := unix.Syscall6(unix.SYS_LANDLOCK_ADD_RULE,
 		ruleset.Fd(), uintptr(unix.LANDLOCK_RULE_PATH_BENEATH),
-		//nolint:gosec // as above, and the first twelve bytes are the packed layout the kernel reads.
+		//nolint:gosec // same as above; the kernel parses the packed layout in the leading twelve bytes.
 		uintptr(unsafe.Pointer(&rule)), 0, 0, 0)
 	runtime.KeepAlive(ruleset)
 	runtime.KeepAlive(rule)
@@ -203,8 +204,8 @@ func restrictSelf(ruleset *os.File) error {
 	return nil
 }
 
-// available reports whether this kernel can carry a domain at all, so Preferred
-// can name the reason rather than reporting a generic failure.
+// available reports whether this kernel supports a domain at all, letting
+// Preferred state the reason instead of returning a generic failure.
 func available() (bool, error) {
 	abi, err := abiVersion()
 	if err != nil {

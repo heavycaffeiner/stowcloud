@@ -11,9 +11,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Classic BPF opcodes, from linux/bpf_common.h. Each is spelled as the OR of
-// its named parts so it can be checked against the header by eye; several of
-// those parts are genuinely zero there.
+// Classic BPF opcodes taken from linux/bpf_common.h. Each appears as the OR of
+// its named components so a reader can verify it against the header directly;
+// several of those components are legitimately zero.
 const (
 	bpfLd  = 0x00
 	bpfW   = 0x00
@@ -37,14 +37,15 @@ const (
 	offArch = 4
 )
 
-// The two AUDIT_ARCH values this build has a verified syscall mapping for.
+// The two AUDIT_ARCH values for which this build holds a verified syscall
+// mapping.
 const (
 	auditArchAmd64 = 0xC000003E
 	auditArchArm64 = 0xC00000B7
 
-	// On x86-64 the x32 ABI reports the same AUDIT_ARCH with this bit set on
-	// the syscall number, so an x32 task would otherwise be matched against
-	// x86-64 numbers. The whole range is rejected.
+	// Under x86-64 the x32 ABI reports an identical AUDIT_ARCH while setting
+	// this bit in the syscall number, so an x32 task would otherwise be checked
+	// against x86-64 numbers. The entire range is refused.
 	x32SyscallBit = 0x40000000
 )
 
@@ -53,44 +54,44 @@ const (
 type FilterKind uint8
 
 const (
-	// FilterProcess is the server's deny-list. It returns EPERM rather than
-	// killing, because it is a second line of defence beside Landlock and an
-	// unprivileged uid, not a sandbox on its own.
+	// FilterProcess holds the server's deny-list. It answers EPERM instead of
+	// killing, since it backs up Landlock and an unprivileged uid rather than
+	// standing as a sandbox by itself.
 	FilterProcess FilterKind = iota
 
-	// FilterWorker is the decoder's allow-list. Everything not on it kills the
-	// process, which is the designed outcome: a crafted input that kills a
-	// decoder costs one thumbnail.
+	// FilterWorker holds the decoder's allow-list. Anything absent kills the
+	// process, which is the intended result: a crafted input that kills a
+	// decoder costs a single thumbnail.
 	FilterWorker
 
-	// FilterWorkerAudit is the allow-list with the kill replaced by a log
-	// record. It is how the shipped list is measured rather than guessed:
-	// the worker runs under it against a corpus of real images, and the audit
-	// log names every syscall the list is missing.
+	// FilterWorkerAudit is the allow-list with logging substituted for the kill.
+	// It is how the shipped list gets measured instead of guessed: the worker
+	// runs under it across a corpus of real images, and the audit log identifies
+	// every syscall the list omits.
 	//
-	// It is never shipped. A filter that logs instead of killing is not a
-	// sandbox, and the one caller is the measurement command.
+	// It never ships. A filter that logs rather than kills is not a sandbox, and
+	// its only caller is the measurement command.
 	FilterWorkerAudit
 
-	// FilterWorkerTrap is the allow-list with the kill replaced by SIGSYS.
+	// FilterWorkerTrap is the allow-list with SIGSYS substituted for the kill.
 	//
-	// It exists because SECCOMP_RET_LOG writes to the kernel audit log, which
-	// needs root to read: on a machine where auditd owns it, a measurement run
-	// as an ordinary user gets a clean result that means only that it could not
-	// see the records. A trap is delivered to the process itself, so the
-	// measurement records what it observed rather than what it was permitted to
-	// read, and it needs no privilege.
+	// It exists because SECCOMP_RET_LOG writes into the kernel audit log, which
+	// requires root to read. On a machine where auditd owns that log, a
+	// measurement run as an ordinary user returns a clean result meaning only
+	// that it could not see the records. A trap arrives at the process itself,
+	// so the measurement captures what it actually observed rather than what it
+	// was allowed to read, and it needs no privilege.
 	//
-	// Never shipped either, for the same reason: a trap a handler swallows is
+	// Also never shipped, for the same reason: a trap that a handler absorbs is
 	// not a sandbox.
 	FilterWorkerTrap
 )
 
-// archProfileFor is a table rather than a build tag, because an architecture
-// with no entry has to be a refusal at runtime and not a compile error nobody
-// sees until they try to build for it. Taking the name as an argument is what
-// lets the refusal be tested from the two architectures that do have entries,
-// which is otherwise a branch nothing ever runs.
+// archProfileFor uses a table instead of a build tag, because an architecture
+// without an entry must produce a runtime refusal rather than a compile error
+// nobody encounters until they attempt that build. Accepting the name as an
+// argument is what allows the refusal to be exercised from the two architectures
+// that do have entries; otherwise it is a branch nothing ever reaches.
 func archProfileFor(goarch string) (auditArch uint32, rejectX32 bool, ok bool) {
 	switch goarch {
 	case "amd64":
@@ -101,8 +102,8 @@ func archProfileFor(goarch string) (auditArch uint32, rejectX32 bool, ok bool) {
 	return 0, false, false
 }
 
-// deniedSyscalls is the server's list. Each one is a way out of the process or
-// into another one, and none of them has a legitimate caller here.
+// deniedSyscalls holds the server's list. Every entry is a route out of this
+// process or into another, and none has any legitimate caller here.
 func deniedSyscalls() []int {
 	return []int{
 		unix.SYS_PTRACE,
@@ -116,44 +117,44 @@ func deniedSyscalls() []int {
 	}
 }
 
-// allowedSyscalls is the decoder's list.
+// allowedSyscalls holds the decoder's list.
 //
-// What is absent is the proof obligation, and each absence is deliberate: no
-// openat and no openat2, so no file by name ever; no socket and no connect, so
-// no network; no clone and no execve, so no new process; no ptrace. recvmsg and
-// sendmsg are on it because they are how a job and its two descriptors arrive
-// at all.
+// The omissions carry the security argument, and each is intentional: without
+// openat or openat2 no file is ever opened by name; without socket or connect
+// there is no network; without clone or execve no new process appears; ptrace is
+// absent as well. recvmsg and sendmsg appear because they are the mechanism by
+// which a job and its two descriptors arrive in the first place.
 //
-// This list is measured, not reasoned about. A real worker was driven over a
-// real socket against the committed corpus and traced; the union of its steady
-// state and the decode phase is thirteen calls, and every one of them is here.
-// The remainder are startup and teardown the trace showed before the filter is
-// installed or on the way out, kept because a decode that grows the heap or
-// takes a signal must not be killed for it.
+// The list comes from measurement rather than reasoning. A real worker was
+// exercised over a real socket against the committed corpus while traced. The
+// union of its steady state and decode phase is thirteen calls, all present
+// here. The rest cover startup and teardown that the trace observed before the
+// filter is installed or during shutdown, retained so a decode that grows the
+// heap or receives a signal is not killed over it.
 //
-// Three came from the measurement rather than the estimate, and none would
-// have been guessed:
+// Three entries emerged from measurement rather than estimation, and none would
+// have been predicted:
 //
-//   - fcntl, which os.NewFile issues as F_GETFL on each descriptor a job
-//     arrives with, to learn whether it is readable or writable.
-//   - epoll_pwait and getpid, which the Go runtime's scheduler and its
-//     signal path use even with one thread.
-//   - epoll_create1, eventfd2 and epoll_ctl, which are the network poller
-//     being built. The runtime does that lazily, on whichever job first parks
-//     a goroutine on the socket, so a worker survives its first few and then
-//     is killed. The original measurement had epoll_pwait without them, which
-//     is the wait without the setup: it had captured a poller that was already
-//     running before the trace began.
+//   - fcntl, issued by os.NewFile as F_GETFL against each descriptor a job
+//     brings, to determine whether it is readable or writable.
+//   - epoll_pwait and getpid, used by the Go runtime's scheduler and signal
+//     path even with a single thread.
+//   - epoll_create1, eventfd2 and epoll_ctl, which construct the network
+//     poller. The runtime builds it lazily on whichever job first parks a
+//     goroutine against the socket, so a worker handles its first few jobs and
+//     is then killed. An earlier measurement recorded epoll_pwait without these,
+//     capturing the wait without its setup because the poller was already
+//     running before that trace started.
 //
-// clone is deliberately absent and the measurement is what makes that
-// affordable. Every clone the trace showed carried CLONE_THREAD, so it was the
-// runtime adding an OS thread rather than a fork. A worker that cannot clone
-// cannot fork either, which is the property this list is for.
+// clone is deliberately excluded, and the measurement is what makes exclusion
+// viable. Every clone the trace recorded carried CLONE_THREAD, meaning the
+// runtime was adding an OS thread rather than forking. A worker unable to clone
+// is equally unable to fork, which is the property this list secures.
 //
-// GOMAXPROCS=1 does not mean one OS thread. It bounds goroutines running Go
-// code, not threads: the runtime still has five or so for its own work. What
-// makes clone's absence hold is that none of them is started after the filter
-// is installed, not that they do not exist.
+// GOMAXPROCS=1 does not imply a single OS thread. It caps goroutines executing
+// Go code rather than threads, and the runtime keeps roughly five for its own
+// purposes. What makes clone's absence workable is that none of them starts
+// after the filter is installed, not that they are absent.
 func allowedSyscalls() []int {
 	return []int{
 		unix.SYS_READ,
@@ -184,7 +185,7 @@ func allowedSyscalls() []int {
 		unix.SYS_GETTID,
 		unix.SYS_TGKILL,
 
-		// Measured, and absent from the estimate. See the note above.
+		// Found by measurement and missing from the estimate; see above.
 		unix.SYS_FCNTL,
 		unix.SYS_EPOLL_PWAIT,
 		unix.SYS_GETPID,
@@ -192,21 +193,21 @@ func allowedSyscalls() []int {
 		unix.SYS_EVENTFD2,
 		unix.SYS_EPOLL_CTL,
 
-		// prctl, which the runtime issues as PR_SET_VMA_ANON_NAME to label its
-		// own mappings so they are identifiable in /proc/pid/maps. It is on by
-		// default from Go 1.26 and happens whenever the heap grows, so a
-		// worker decoding a larger image than the last one is killed for it.
+		// prctl, issued by the runtime as PR_SET_VMA_ANON_NAME so its own
+		// mappings are identifiable in /proc/pid/maps. Enabled by default
+		// from Go 1.26 and triggered whenever the heap grows, so a worker
+		// decoding a larger image than its predecessor would be killed over it.
 		//
-		// It grants nothing: PR_SET_VMA only renames a mapping this process
-		// already owns.
+		// It confers nothing: PR_SET_VMA merely renames a mapping this process
+		// already holds.
 		unix.SYS_PRCTL,
 	}
 }
 
-// AllowedSyscalls is the worker's list, for the command that measures it.
+// AllowedSyscalls exposes the worker's list to the command that measures it.
 //
-// Exported so the audit run and the list it checks cannot drift apart: a
-// measurement against a copy of the list proves nothing about the one that
+// Exported so the audit run and the list under test cannot diverge: measuring
+// against a duplicate of the list establishes nothing about the one that
 // ships.
 func AllowedSyscalls() []int { return allowedSyscalls() }
 
@@ -218,30 +219,31 @@ func jump(code uint16, k uint32, jt, jf uint8) unix.SockFilter {
 	return unix.SockFilter{Code: code, Jt: jt, Jf: jf, K: k}
 }
 
-// assembleFor builds the program.
+// assembleFor constructs the program.
 //
-//	0                  A = seccomp_data.arch
-//	1                  if A != AUDIT_ARCH      -> kill
-//	2                  A = seccomp_data.nr
-//	3                  if A >= X32_SYSCALL_BIT -> kill   (amd64 only)
-//	prologue..+n-1     one compare per listed syscall
-//	prologue+n         the default action for this policy
-//	prologue+n+1       the matched action for this policy
-//	prologue+n+2       kill, where an unexpected ABI lands
+//	0                load seccomp_data.arch
+//	1                arch mismatch          -> kill
+//	2                load seccomp_data.nr
+//	3                nr >= X32_SYSCALL_BIT  -> kill   (amd64 only)
+//	prologue..+n-1   one comparison per listed syscall
+//	prologue+n       this policy's default action
+//	prologue+n+1     this policy's action on a match
+//	prologue+n+2     kill, where an unexpected ABI arrives
 //
-// The arch check comes first and it is not decoration. A syscall number is only
-// meaningful together with the ABI that issued it, so a filter matching numbers
-// without pinning the arch is matching numbers that mean something else.
+// The architecture check leads, and not for tidiness. A syscall number carries
+// meaning only alongside the ABI that issued it, so a filter comparing numbers
+// without pinning the architecture is comparing numbers that denote something
+// else entirely.
 //
-// The refusal is its own instruction rather than the policy's default action,
-// and that is the difference between the two things this fixes. The server's
-// default action is ALLOW, so pointing an ABI mismatch at it would wave through
-// exactly the task the check exists to catch. An unexpected ABI is killed under
-// every policy.
+// The refusal occupies its own instruction rather than relying on the policy's
+// default action, which is what separates the two problems this addresses. The
+// server's default action is ALLOW, so directing an ABI mismatch there would
+// admit precisely the task the check exists to catch. An unexpected ABI is
+// killed under every policy.
 //
-// BPF jump offsets are unsigned 8-bit and relative to the following
-// instruction, so the longest jump has to stay under 256. There is headroom at
-// these list lengths; this checks rather than trusting that nobody grows one.
+// BPF jump offsets are unsigned 8-bit values relative to the following
+// instruction, so the longest jump must remain below 256. These list lengths
+// leave room to spare; this verifies rather than assuming nobody extends one.
 func assembleFor(kind FilterKind, goarch string) ([]unix.SockFilter, error) {
 	auditArch, rejectX32, ok := archProfileFor(goarch)
 	if !ok {
@@ -252,24 +254,25 @@ func assembleFor(kind FilterKind, goarch string) ([]unix.SockFilter, error) {
 	var matched, unmatched uint32
 	switch kind {
 	case FilterProcess:
-		// A listed number is denied and everything else runs.
+		// Listed numbers are refused; everything else proceeds.
 		list = deniedSyscalls()
 		matched = unix.SECCOMP_RET_ERRNO | uint32(unix.EPERM)
 		unmatched = unix.SECCOMP_RET_ALLOW
 	case FilterWorker:
-		// A listed number runs and everything else kills the process.
+		// Listed numbers proceed; everything else kills the process.
 		list = allowedSyscalls()
 		matched = unix.SECCOMP_RET_ALLOW
 		unmatched = unix.SECCOMP_RET_KILL_PROCESS
 	case FilterWorkerAudit:
-		// The same list, but an unlisted call is logged and then allowed, so
-		// one run finds every missing entry rather than the first.
+		// The same list, except an unlisted call is logged and then permitted,
+		// so a single run surfaces every missing entry instead of just the
+		// first.
 		list = allowedSyscalls()
 		matched = unix.SECCOMP_RET_ALLOW
 		unmatched = unix.SECCOMP_RET_LOG
 	case FilterWorkerTrap:
-		// The same list, with an unlisted call raising SIGSYS in the calling
-		// thread. The handler records the number and the run continues.
+		// The same list, with an unlisted call raising SIGSYS on the calling
+		// thread. The handler notes the number and execution continues.
 		list = allowedSyscalls()
 		matched = unix.SECCOMP_RET_ALLOW
 		unmatched = unix.SECCOMP_RET_TRAP
@@ -286,8 +289,8 @@ func assembleFor(kind FilterKind, goarch string) ([]unix.SockFilter, error) {
 	matchedIdx := unmatchedIdx + 1
 	refuseIdx := matchedIdx + 1
 
-	// Every jump targets one of the three terminal instructions, so the longest
-	// one is the reach from the first jump to the last instruction.
+	// All jumps land on one of the three terminal instructions, so the longest
+	// is the span from the first jump to the final instruction.
 	if refuseIdx > 1+int(^uint8(0)) {
 		return nil, fmt.Errorf("a %d entry seccomp list does not fit in 8-bit BPF jump offsets", n)
 	}
@@ -320,7 +323,7 @@ func assembleFor(kind FilterKind, goarch string) ([]unix.SockFilter, error) {
 		if nerr != nil {
 			return nil, fmt.Errorf("syscall number %d: %w", nr, nerr)
 		}
-		// A non-match falls through to the next compare, never jumps.
+		// A non-match falls through to the following compare and never jumps.
 		prog = append(prog, jump(opJumpEqual, number, off, 0))
 	}
 
@@ -337,8 +340,8 @@ func assemble(kind FilterKind) ([]unix.SockFilter, error) {
 	return assembleFor(kind, runtime.GOARCH)
 }
 
-// offsetTo is the jump distance from the instruction at from to the one at to,
-// which BPF counts from the instruction after the jump.
+// offsetTo gives the jump distance between the instructions at from and to,
+// which BPF measures starting from the instruction after the jump.
 func offsetTo(to, from int) (uint8, error) {
 	d := to - from - 1
 	if d < 0 {
@@ -347,19 +350,19 @@ func offsetTo(to, from int) (uint8, error) {
 	return num.Narrow[uint8](d)
 }
 
-// InstallSeccomp assembles and installs the policy for kind with TSYNC, so it
-// covers every thread the Go runtime has already started rather than whichever
-// one this goroutine happens to be on.
+// InstallSeccomp builds and applies the policy for kind using TSYNC, so it
+// reaches every thread the Go runtime has already created rather than only
+// whichever one this goroutine currently occupies.
 //
-// Irreversible for the life of the process, and for the worker it has to be the
-// last thing the jail does.
+// The effect lasts for the process's lifetime, and in the worker it must be the
+// final action the jail takes.
 func InstallSeccomp(kind FilterKind) error {
 	prog, err := assemble(kind)
 	if err != nil {
 		return err
 	}
 
-	// Required before an unprivileged process may install a filter at all.
+	// A precondition for any unprivileged process installing a filter.
 	if perr := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); perr != nil {
 		return fmt.Errorf("prctl(PR_SET_NO_NEW_PRIVS): %w", perr)
 	}
@@ -370,12 +373,12 @@ func InstallSeccomp(kind FilterKind) error {
 	}
 	fprog := unix.SockFprog{Len: length, Filter: &prog[0]}
 
-	// TSYNC applies the filter to every thread or fails atomically, which is
-	// the answer Landlock has no equivalent of.
+	// TSYNC either applies the filter across all threads or fails atomically,
+	// a guarantee Landlock provides no counterpart to.
 	_, _, errno := unix.Syscall(unix.SYS_SECCOMP,
 		uintptr(unix.SECCOMP_SET_MODE_FILTER),
 		uintptr(unix.SECCOMP_FILTER_FLAG_TSYNC),
-		//nolint:gosec // the kernel takes a sock_fprog pointer; there is no wrapper for seccomp.
+		//nolint:gosec // seccomp has no x/sys wrapper and the kernel wants a sock_fprog pointer.
 		uintptr(unsafe.Pointer(&fprog)))
 	runtime.KeepAlive(prog)
 	runtime.KeepAlive(fprog)

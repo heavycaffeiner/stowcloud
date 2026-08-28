@@ -1,10 +1,10 @@
-// Package jail is the process sandbox: a Landlock domain, two seccomp filters,
-// POSIX rlimits, and the restrict-then-exec sequence that makes the domain
-// cover every thread the Go runtime starts.
+// Package jail provides the process sandbox: a Landlock domain, two seccomp
+// filters, POSIX rlimits, and the restrict-then-exec sequence that extends the
+// domain across every thread the Go runtime creates.
 //
-// Every file here except this one is Linux-only, and there is no portable
-// stand-in. A second implementation of a security boundary is a second
-// implementation that is never the one that ships.
+// Apart from this file everything here is Linux-only, with no portable
+// substitute. A second implementation of a security boundary is a second
+// implementation that never ships.
 package jail
 
 import (
@@ -13,20 +13,21 @@ import (
 	"strings"
 )
 
-// Policy is what an operator asked for, and it is a policy rather than an
-// outcome: without a required mode, a sandbox is a thing that usually happens.
+// Policy records what an operator requested. It expresses intent rather than
+// result: absent a required mode, a sandbox is merely something that usually
+// occurs.
 type Policy uint8
 
 const (
-	// Required refuses to start when a step cannot be applied. The default in
-	// the shipped image.
+	// Required aborts startup when any step cannot be applied. This is the
+	// default in the shipped image.
 	Required Policy = iota
-	// Preferred reports a step that could not be applied as a named
-	// degradation and keeps running. The default for a bare-metal install,
-	// where an older kernel is a legitimate state the operator may not control.
+	// Preferred records an unapplied step as a named degradation and continues.
+	// This is the default for a bare-metal install, where an older kernel is a
+	// legitimate condition the operator may not govern.
 	Preferred
-	// Off attempts nothing, and says so, which is how "I know, and I accept it"
-	// is expressible without a code change.
+	// Off attempts nothing and reports as much, giving an operator a way to
+	// accept the absence deliberately without editing code.
 	Off
 )
 
@@ -40,9 +41,10 @@ func (p Policy) String() string {
 	return "required"
 }
 
-// PolicyNames is every policy this build has, for the settings screen to draw
-// a choice from. Sent rather than compiled into the client: a client carrying
-// its own copy is one that offers a policy the server does not have.
+// PolicyNames lists every policy this build supports, so the settings screen can
+// render the available choices. It is transmitted rather than compiled into the
+// client, because a client holding its own copy would offer policies the server
+// does not implement.
 func PolicyNames() []string { return []string{"required", "preferred", "off"} }
 
 // ParsePolicy is the trust boundary for the configured value. Three spellings
@@ -61,45 +63,46 @@ func ParsePolicy(s string) (Policy, error) {
 		s, "required", "preferred", "off")
 }
 
-// The refusals this package answers with.
+// The rejections this package produces.
 var (
-	// ErrHardeningRefused is a step that could not be applied under Required.
+	// ErrHardeningRefused reports a step that failed to apply under Required.
 	ErrHardeningRefused = errors.New("a hardening step could not be applied and the policy is required")
 
-	// ErrArchUnsupported is an architecture with no verified syscall mapping. A
-	// filter that waves a number through because it read it under the wrong ABI
-	// is worse than no filter, because it is believed.
+	// ErrArchUnsupported reports an architecture lacking a verified syscall
+	// mapping. A filter that admits a number because it interpreted it under the
+	// wrong ABI is worse than no filter at all, precisely because it is
+	// trusted.
 	ErrArchUnsupported = errors.New("no verified syscall mapping for this architecture")
 
-	// ErrNoProc is /proc unmounted, so the binary's own path is unknown. There
-	// is no guess from argv[0]: exec'ing the wrong file is worse than not
-	// starting.
+	// ErrNoProc reports /proc unmounted, leaving the binary's own path unknown.
+	// Nothing is inferred from argv[0], since exec'ing the wrong file is worse
+	// than declining to start.
 	ErrNoProc = errors.New("/proc is not mounted, so the binary's own path is unknown")
 )
 
-// StepStatus is one layer's outcome.
+// StepStatus records the outcome for a single layer.
 type StepStatus struct {
 	Name    string
 	Applied bool
-	// Err is why it was not applied. Kept whole so an operator sees the errno
-	// rather than a category.
+	// Err explains why it was not applied, preserved intact so an operator sees
+	// the errno instead of a category.
 	Err error
 }
 
-// Status is what the health endpoint reports. A degradation is named here
-// rather than left in a startup log, because a log line scrolls away and a
-// health field does not.
+// Status is what the health endpoint publishes. Degradations appear here rather
+// than only in a startup log, because log lines scroll out of reach while a
+// health field remains.
 type Status struct {
 	Policy Policy
 	Kernel string
 	Steps  []StepStatus
 }
 
-// LandlockApplied reports whether the filesystem domain is actually in force.
+// LandlockApplied reports whether the filesystem domain is genuinely active.
 //
-// It decides one thing outside this package: whether a path that was not
-// granted is reachable. A domain that was never installed constrains nothing,
-// so a share added under any parent works and needs no restart.
+// One decision outside this package depends on it: whether an ungranted path
+// remains reachable. A domain that was never installed restricts nothing, so a
+// share added beneath any parent works without a restart.
 func (s Status) LandlockApplied() bool {
 	for _, st := range s.Steps {
 		if st.Name == StepLandlock {
@@ -115,7 +118,7 @@ const (
 	StepSeccomp  = "seccomp"
 )
 
-// Degraded reports a policy that asked for something it did not get.
+// Degraded reports a policy whose request went unfulfilled.
 func (s Status) Degraded() bool {
 	if s.Policy == Off {
 		return false
@@ -141,7 +144,7 @@ func (s Status) String() string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-// firstUnapplied is the step a refusal names.
+// firstUnapplied identifies the step a rejection points at.
 func (s Status) firstUnapplied() (StepStatus, bool) {
 	for _, st := range s.Steps {
 		if !st.Applied {

@@ -8,14 +8,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Limits are the resource bounds the decoder runs under. They are the graceful
-// half of the jail: the syscall filter decides what the worker may do, and
-// these decide how much of it.
+// Limits define the resource bounds the decoder operates under. They form the
+// graceful half of the jail: the syscall filter governs what the worker may do,
+// and these govern how much.
 //
-// RLIMIT_AS is the one that matters most, and it is the kernel backstop the
-// in-process pixel ceiling has always been described as having. An in-process
-// bound is a bound the decoder itself enforces, and a decoder exploit is
-// exactly the case where that stops counting.
+// RLIMIT_AS carries the most weight, serving as the kernel-level backstop the
+// in-process pixel ceiling has always been said to have. An in-process bound is
+// enforced by the decoder itself, and a decoder exploit is precisely the
+// situation where that enforcement stops mattering.
 type Limits struct {
 	AddressSpaceBytes uint64
 	CPUSeconds        uint64
@@ -51,8 +51,8 @@ func DefaultLimits() Limits {
 // bound has already stopped counting.
 const defaultAddressSpaceBytes = 2 << 30
 
-// ApplyLimits sets both the soft and the hard limit for each, so nothing in the
-// worker can raise one back.
+// ApplyLimits sets soft and hard limits together for each bound, so nothing
+// inside the worker can raise one again.
 func ApplyLimits(l Limits) error {
 	for _, r := range []struct {
 		name     string
@@ -63,7 +63,8 @@ func ApplyLimits(l Limits) error {
 		{"RLIMIT_CPU", unix.RLIMIT_CPU, l.CPUSeconds},
 		{"RLIMIT_NOFILE", unix.RLIMIT_NOFILE, l.OpenFiles},
 		{"RLIMIT_NPROC", unix.RLIMIT_NPROC, l.ChildProcesses},
-		// No core dumps: a decoder's address space holds someone's file.
+		// Core dumps disabled, since a decoder's address space contains
+		// somebody's file.
 		{"RLIMIT_CORE", unix.RLIMIT_CORE, 0},
 	} {
 		lim := unix.Rlimit{Cur: r.value, Max: r.value}
