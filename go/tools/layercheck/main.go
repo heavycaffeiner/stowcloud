@@ -83,9 +83,13 @@ var sideways = map[string]map[string]bool{
 	// Read|Download on it, the same permission a download needs: a thumbnail
 	// is a derivative of the bytes, so seeing one is seeing the file.
 	"service/preview": {"service/core": true, "service/acl": true},
-	"store/state":     {"store/ident": true, "store/dbfile": true},
-	"store/cache":     {"store/ident": true, "store/dbfile": true},
-	"store/journal":   {"store/ident": true, "store/dbfile": true},
+	// Settings calls smb.Validate, the one dry-run entry point, so the
+	// workgroup and service-user defaults live in the package that owns the
+	// renderer rather than being spelled again by each checker.
+	"service/settings": {"service/smb": true},
+	"store/state":      {"store/ident": true, "store/dbfile": true},
+	"store/cache":      {"store/ident": true, "store/dbfile": true},
+	"store/journal":    {"store/ident": true, "store/dbfile": true},
 }
 
 // say writes a diagnostic. It is the one place in this command that ignores an

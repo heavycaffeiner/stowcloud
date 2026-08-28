@@ -305,5 +305,10 @@
 # tests reading their own TempDir. Three are values shared rather than rebuilt:
 # the worker's startup rlimits, captured once before the filter closes the call
 # that reads them, and the two test binaries each suite builds once.
+#
+# 52: the settings loader narrowing a stored service GID to uint32. The bound
+# it is read through starts at one and stops at the width of the type, so the
+# conversion cannot lose a value or produce a negative; gosec cannot see the
+# bound because it lives behind the read helper's parameter.
 287
-51
+52

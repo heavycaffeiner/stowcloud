@@ -44,11 +44,11 @@ var (
 //	image/jpeg  1.50   (YCbCr 4:2:0)
 //	image/gif   1.00   (paletted, one frame)
 //
-// At 4 bytes per pixel, a 100 Mpx ceiling would ask for 400 MiB against a
-// 512 MiB RLIMIT_AS, leaving nothing for the runtime, the scaled output or the
-// encoder. 64 Mpx costs a measured 257 MiB of heap in use for a PNG, which
-// leaves the hard limit as a backstop rather than as the thing that fires
-// first.
+// At 4 bytes per pixel a 100 Mpx ceiling would ask for 400 MiB of heap for the
+// source alone, before the runtime, the scaled output and the encoder. The
+// 64 Mpx ceiling costs a measured 257 MiB for a PNG, which fits inside the
+// worker's address-space limit with room for the rest and leaves that limit as
+// a backstop rather than as the thing that fires first.
 type DecodeLimits struct {
 	// MaxPixels bounds width times height of the source. It is a uint64 to
 	// avoid the overflow a 32-bit multiplication hits well before reaching
