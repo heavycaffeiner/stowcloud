@@ -33,14 +33,27 @@ func PassdbNames(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing credentials: %w", err)
 	}
+	return ParsePassdbListing(string(out)), nil
+}
+
+// ParsePassdbListing reads the tool's output.
+//
+// Separated from the call so it can be tested against the real output shape on
+// a machine where the credential database itself is unreachable, which is every
+// machine without root.
+//
+// Each line is "name:uid:comment"; the name is the field before the first
+// colon, and a blank line yields no account rather than an empty name the
+// prune would then hand back to the tool.
+func ParsePassdbListing(out string) []string {
 	var names []string
-	for _, l := range strings.Split(string(out), "\n") {
+	for _, l := range strings.Split(out, "\n") {
 		name, _, _ := strings.Cut(l, ":")
 		if strings.TrimSpace(name) != "" {
 			names = append(names, name)
 		}
 	}
-	return names, nil
+	return names
 }
 
 // Prune drops credentials for accounts that are no longer this agent's.
