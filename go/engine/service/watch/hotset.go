@@ -6,40 +6,40 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 )
 
-// key is one watched directory, in share-relative terms. Never a host path: the
-// transport is the only thing that needs one of those.
+// key identifies a watched directory relative to its share. Host paths never
+// appear here; only the transport requires one.
 type key struct {
 	share vfs.ShareID
 	dir   string
 }
 
-// hotSet is which directories currently carry a kernel watch, and it has two
-// halves. Only one of them is an LRU.
+// hotSet tracks which directories presently hold a kernel watch. It has two
+// halves, and only one behaves as an LRU.
 //
-// The recent half is capped and evicts, which is the part that sounds like the
-// whole feature. The sticky half is refcounted, never auto-evicted, and fed
-// from outside: a subscription pins the directory it is watching and releases
-// it on unsubscribe.
+// The recent half is bounded and evicts, which is the portion that resembles
+// the whole feature. The pinned half is reference counted, never evicted
+// automatically, and driven externally: subscribing pins the directory being
+// watched and unsubscribing releases it.
 //
-// Building only the LRU half is the failure mode, and it is silent. The
-// directory a user is currently looking at is exactly the one an LRU evicts
-// under load, so invalidations stop arriving for the folder in front of them
-// while everything else keeps working.
+// Implementing only the LRU half fails silently. Under load an LRU evicts
+// exactly the directory a user is currently viewing, so invalidations stop
+// reaching the folder in front of them while everything else continues
+// working.
 type hotSet struct {
 	cap int
 
-	// sticky maps a pinned key to its subscriber count.
+	// sticky associates each pinned key with how many subscribers hold it.
 	sticky map[key]uint32
 
-	// order is the recency list, most recent at the front, and recent indexes
-	// into it. Its own length is not the cap: eviction happens only through
-	// evictFor, which also unregisters the kernel watch, and a structure that
-	// self-evicts would leave a watch nothing ever removes.
+	// order lists keys by recency with the newest first, and recent indexes into
+	// it. Its length does not enforce the cap: eviction runs solely through
+	// evictFor, which also unregisters the kernel watch. A self-evicting
+	// structure would strand watches that nothing ever removes.
 	order  *list.List
 	recent map[key]*list.Element
 
-	// registered is every key with a live watch, sticky or recent. This is the
-	// set the cap applies to.
+	// registered holds every key with a live watch, pinned or recent. The cap
+	// applies to this set.
 	registered map[key]struct{}
 }
 
@@ -64,8 +64,8 @@ func (h *hotSet) isRegistered(k key) bool {
 func (h *hotSet) markRegistered(k key)   { h.registered[k] = struct{}{} }
 func (h *hotSet) markUnregistered(k key) { delete(h.registered, k) }
 
-// registeredKeys is a snapshot for the periodic rescan, which only revisits
-// directories already tracked and never walks a tree.
+// registeredKeys returns a snapshot for the periodic rescan, which revisits
+// only already-tracked directories and never walks a tree.
 func (h *hotSet) registeredKeys() []key {
 	out := make([]key, 0, len(h.registered))
 	for k := range h.registered {
@@ -74,17 +74,17 @@ func (h *hotSet) registeredKeys() []key {
 	return out
 }
 
-// addSticky pins k, promoting it out of the recent half. It reports whether the
-// caller now has to register a kernel watch.
+// addSticky pins k, lifting it out of the recent half. The return value says
+// whether the caller must now register a kernel watch.
 func (h *hotSet) addSticky(k key) bool {
 	h.dropRecent(k)
 	h.sticky[k]++
 	return !h.isRegistered(k)
 }
 
-// removeSticky releases one subscriber. At zero the key falls back into the
-// recent half, still registered and now evictable, rather than being torn down
-// while a second reader may be a moment behind.
+// removeSticky drops one subscriber. Reaching zero returns the key to the
+// recent half, still registered but now evictable, rather than tearing it down
+// while another reader might be a moment behind.
 func (h *hotSet) removeSticky(k key) {
 	n, ok := h.sticky[k]
 	if !ok {
@@ -101,9 +101,9 @@ func (h *hotSet) removeSticky(k key) {
 	}
 }
 
-// touch bumps k's recency and reports whether the caller has to register a
-// kernel watch for it. A pinned key is left alone: it is already in the half
-// that never evicts, and moving it would put it back among the evictable.
+// touch refreshes k's recency and reports whether the caller must register a
+// kernel watch. Pinned keys are untouched: they already sit in the half that
+// never evicts, and relocating one would return it to the evictable set.
 func (h *hotSet) touch(k key) bool {
 	if _, pinned := h.sticky[k]; pinned {
 		return false
@@ -113,10 +113,10 @@ func (h *hotSet) touch(k key) bool {
 	return isNew
 }
 
-// evictFor names the keys to unregister, oldest first, so that one more
-// registration fits under the cap. It does not remove the kernel watch: the
-// caller does that first and then calls markUnregistered, so a failed removal
-// cannot leave the two disagreeing.
+// evictFor selects keys to unregister, oldest first, making room for one more
+// registration under the cap. It does not remove the kernel watch itself: the
+// caller does that and then calls markUnregistered, so a failed removal cannot
+// leave the two views inconsistent.
 func (h *hotSet) evictFor(k key) []key {
 	if h.isRegistered(k) {
 		return nil
@@ -125,8 +125,8 @@ func (h *hotSet) evictFor(k key) []key {
 	for len(h.registered)+1 > h.cap {
 		back := h.order.Back()
 		if back == nil {
-			// Everything left is pinned. Exceeding the cap slightly beats
-			// dropping the watch a user is actively reading.
+			// Only pinned keys remain. Slightly overshooting the cap is
+			// preferable to discarding a watch a user is actively reading.
 			break
 		}
 		evicted, ok := back.Value.(key)
@@ -136,7 +136,8 @@ func (h *hotSet) evictFor(k key) []key {
 		}
 		h.dropRecent(evicted)
 		out = append(out, evicted)
-		// The caller marks it unregistered; count it here so the loop ends.
+		// Unregistering is the caller's job; counting it here terminates the
+		// loop.
 		delete(h.registered, evicted)
 	}
 	return out

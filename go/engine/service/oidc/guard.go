@@ -86,13 +86,13 @@ func (g guard) allowHost(host string) error {
 	return &BlockedAddressError{Addr: host}
 }
 
-// dialer builds a dialer that applies the guard at connect time.
+// dialer produces a dialer that enforces the guard at connection time.
 //
-// The hook runs after the address is resolved and before the socket connects,
-// with the address that will actually be used. Refusing there closes the
-// rebinding gap a resolve-then-check leaves open: a check that resolves a
-// name, validates the result and then hands the name to a client makes a
-// second lookup, and a hostile provider can answer the two differently.
+// The hook fires once the address is resolved and before the socket connects,
+// receiving the address that will actually be used. Rejecting at that point
+// eliminates the rebinding window a resolve-then-check leaves behind: resolving
+// a name, validating the outcome and then passing the name to a client triggers
+// a second lookup, and a hostile provider can answer each one differently.
 func (g guard) dialer() *net.Dialer {
 	return &net.Dialer{
 		Timeout: limits.OIDCConnectTimeout,
@@ -129,8 +129,8 @@ func blocked(ip netip.Addr) bool {
 	return false
 }
 
-// embedded4 extracts an address of the other family from the two well-known
-// embeddings that are not the mapped form Unmap already handles.
+// embedded4 pulls out an address of the other family from the two documented
+// embeddings that are not the mapped form Unmap already covers.
 func embedded4(ip netip.Addr) (netip.Addr, bool) {
 	if !ip.Is6() {
 		return netip.Addr{}, false
@@ -141,9 +141,9 @@ func embedded4(ip netip.Addr) (netip.Addr, bool) {
 	if b[0] == 0x00 && b[1] == 0x64 && b[2] == 0xff && b[3] == 0x9b && allZero(b[4:12]) {
 		return netip.AddrFrom4([4]byte(b[12:16])), true
 	}
-	// The compatible form, ::a.b.c.d, which is deprecated and still routed by
-	// some stacks. The first three bytes being zero is loopback or the
-	// unspecified address, which the checks above already answered.
+	// The compatible form ::a.b.c.d is deprecated yet still routed by certain
+	// stacks. Three leading zero bytes indicate loopback or the unspecified
+	// address, both already resolved by the checks above.
 	if allZero(b[0:12]) && (b[12] != 0 || b[13] != 0 || b[14] != 0) {
 		return netip.AddrFrom4([4]byte(b[12:16])), true
 	}

@@ -22,23 +22,24 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// watchMask is what a directory watch asks the kernel to report. Entries
-// appearing, disappearing, changing content or changing metadata, which is
-// every way a listing this server already answered can become wrong.
+// watchMask enumerates the events a directory watch requests from the kernel:
+// entries created, removed, written to, or altered in metadata. Together those
+// cover every way an already-served listing can go out of date.
 const watchMask = unix.IN_CREATE | unix.IN_DELETE | unix.IN_MODIFY |
 	unix.IN_MOVED_FROM | unix.IN_MOVED_TO | unix.IN_MOVE_SELF |
 	unix.IN_DELETE_SELF | unix.IN_ATTRIB
 
-// eventBufBytes holds a batch of inotify records. One name is at most 255
-// bytes, so this reads many events per syscall on a busy tree.
+// eventBufBytes sizes the buffer for a batch of inotify records. Names cap at
+// 255 bytes, so a busy tree yields many events per syscall.
 const eventBufBytes = 16 << 10
 
-// flushInterval is how often the debounce loop looks for entries that have
-// waited out their window.
+// flushInterval sets how frequently the debounce loop scans for entries whose
+// window has elapsed.
 const flushInterval = 50 * time.Millisecond
 
-// inotifyEventHeader is the fixed part of struct inotify_event: wd, mask,
-// cookie and len, four 32-bit fields, followed by len bytes of NUL-padded name.
+// inotifyEventHeader is the fixed-size prefix of struct inotify_event: the wd,
+// mask, cookie and len fields, each 32 bits, trailed by len bytes holding a
+// NUL-padded name.
 const inotifyEventHeader = 16
 
 // Field offsets inside one record, so the parser reads them by name.
@@ -48,17 +49,18 @@ const (
 	offNameLen = 12
 )
 
-// share is one registered share root, in the only terms the transport can use.
+// share holds a registered share root, expressed the only way the transport can
+// consume it.
 type share struct {
 	host string
-	// rescan is set for a filesystem whose changes inotify cannot see, which is
-	// every network and FUSE mount. The periodic sweep is then the only thing
-	// that notices a change another host made.
+	// rescan marks filesystems whose modifications inotify never reports, which
+	// covers every network and FUSE mount. On those the periodic sweep is the
+	// sole mechanism that detects a change made by another host.
 	rescan bool
 }
 
-// Watcher is the change detector. One kernel watch descriptor, one reader, one
-// debounce loop and one rescan loop.
+// Watcher detects changes using a single kernel watch descriptor, a single
+// reader, a single debounce loop and a single rescan loop.
 type Watcher struct {
 	cfg  Config
 	clk  clock.Clock
@@ -81,16 +83,16 @@ type Watcher struct {
 	wg       sync.WaitGroup
 }
 
-// Start brings up the watcher. The sink receives one event per debounced
-// directory, and the caller owns the channel.
+// Start launches the watcher. Each debounced directory produces one event on
+// the sink, which the caller owns.
 func Start(ctx context.Context, cfg Config, clk clock.Clock, sink chan<- InvalEvent) (*Watcher, error) {
 	cfg = cfg.withDefaults()
 	if clk == nil {
 		clk = clock.System()
 	}
 
-	// Non-blocking, so the descriptor joins the runtime's poller and a Close
-	// unblocks the reader instead of leaving a thread parked in read.
+	// Opened non-blocking so the descriptor is managed by the runtime's poller.
+	// Close then wakes the reader rather than stranding a thread inside read.
 	fd, err := unix.InotifyInit1(unix.IN_CLOEXEC | unix.IN_NONBLOCK)
 	if err != nil {
 		return nil, fmt.Errorf("start the watcher: %w", err)
@@ -116,11 +118,11 @@ func Start(ctx context.Context, cfg Config, clk clock.Clock, sink chan<- InvalEv
 	return w, nil
 }
 
-// AddShare registers where a share lives on the host. This is the one place the
-// watcher learns a host path, because the kernel watch API takes one and
-// nothing else here does.
+// AddShare records a share's location on the host. Nothing else in the watcher
+// deals in host paths; this is the single entry point, because the kernel's
+// watch API requires one.
 //
-// rescan marks a filesystem whose changes inotify cannot see, which is every
+// rescan flags filesystems whose changes inotify cannot observe, meaning every
 // network and FUSE mount.
 func (w *Watcher) AddShare(id vfs.ShareID, hostRoot string, rescan bool) {
 	w.mu.Lock()
@@ -128,12 +130,12 @@ func (w *Watcher) AddShare(id vfs.ShareID, hostRoot string, rescan bool) {
 	w.shares[id] = share{host: hostRoot, rescan: rescan}
 }
 
-// Subscribe pins a directory and its whole ancestor chain, and returns only
-// after the watches are registered, so the caller can read the directory
-// afterwards without missing a change that lands in between.
+// Subscribe pins a directory together with every ancestor, returning only once
+// the watches exist. A caller may then read the directory with no risk of
+// missing a change that arrives in the interval.
 //
-// The sticky half of the hot set is fed from here. A hot set with only its LRU
-// half fails silently on exactly the directory a user is looking at.
+// This supplies the pinned portion of the hot set. Were the hot set purely an
+// LRU, it would quietly fail on precisely the directory a user is viewing.
 func (w *Watcher) Subscribe(id vfs.ShareID, p vfs.SafePath) {
 	for _, k := range ancestorKeys(id, p) {
 		w.mu.Lock()
@@ -145,7 +147,8 @@ func (w *Watcher) Subscribe(id vfs.ShareID, p vfs.SafePath) {
 	}
 }
 
-// Unsubscribe releases one subscriber's pin on a directory and its ancestors.
+// Unsubscribe drops a single subscriber's pin covering a directory and its
+// ancestors.
 func (w *Watcher) Unsubscribe(id vfs.ShareID, p vfs.SafePath) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -154,8 +157,8 @@ func (w *Watcher) Unsubscribe(id vfs.ShareID, p vfs.SafePath) {
 	}
 }
 
-// Touch records that a directory was read, which is what feeds the evictable
-// half of the hot set.
+// Touch notes a read of a directory, supplying the evictable portion of the hot
+// set.
 func (w *Watcher) Touch(id vfs.ShareID, p vfs.SafePath) {
 	k := key{share: id, dir: p.String()}
 	w.mu.Lock()
@@ -177,7 +180,7 @@ func (w *Watcher) Stats() Stats {
 	}
 }
 
-// Close stops every loop and releases the watch descriptor.
+// Close halts all loops and gives up the watch descriptor.
 func (w *Watcher) Close() error {
 	var err error
 	w.stopOnce.Do(func() {
@@ -188,9 +191,9 @@ func (w *Watcher) Close() error {
 	return err
 }
 
-// ancestorKeys is the directory itself and everything above it up to the share
-// root. A change to a child changes the parent's listing, so a subscriber to a
-// deep directory pins the chain that renders it.
+// ancestorKeys yields the directory plus every level above it through the share
+// root. Because a child's change alters the parent's listing, subscribing to a
+// deep directory pins the entire chain used to render it.
 func ancestorKeys(id vfs.ShareID, p vfs.SafePath) []key {
 	comps := p.Components()
 	out := make([]key, 0, len(comps)+1)
@@ -207,13 +210,13 @@ func ancestorKeys(id vfs.ShareID, p vfs.SafePath) []key {
 	return out
 }
 
-// register puts a kernel watch on k, evicting the least recently used
-// unpinned directories first so the registered set stays under the cap.
+// register installs a kernel watch on k, first evicting the least recently used
+// unpinned directories to hold the registered set within its cap.
 //
-// A registration the kernel refuses degrades that subtree to lazy revalidation
-// rather than failing the caller's read: the read still returns the right
-// answer, it just does not get a pushed update afterwards. That is a counted,
-// named degradation and not a failure.
+// When the kernel declines a registration, that subtree falls back to lazy
+// revalidation instead of the caller's read failing. The read still yields the
+// correct answer; it simply receives no subsequent pushed update. This is a
+// named, counted degradation rather than an error.
 func (w *Watcher) register(k key) {
 	host, ok := w.hostPath(k)
 	if !ok {
@@ -245,8 +248,8 @@ func (w *Watcher) register(k key) {
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	// inotify returns the existing descriptor when a path is watched twice, so
-	// the reverse map is keyed on what the kernel actually handed back.
+	// Watching a path twice makes inotify return the descriptor it already
+	// issued, so the reverse map keys on whatever the kernel returned.
 	w.wdToKey[wd] = k
 	w.keyToWd[k] = wd
 	w.hot.markRegistered(k)
@@ -283,9 +286,9 @@ func (w *Watcher) hostPath(k key) (string, bool) {
 	return filepath.Join(s.host, filepath.FromSlash(k.dir)), true
 }
 
-// addWatch and rmWatch go through SyscallConn rather than Fd, because Fd would
-// put the descriptor back into blocking mode and take it out of the poller,
-// which is what lets Close unblock the reader.
+// addWatch and rmWatch use SyscallConn instead of Fd. Fd would restore blocking
+// mode and remove the descriptor from the poller, which is precisely what
+// allows Close to wake the reader.
 func (w *Watcher) addWatch(host string) (int, error) {
 	rc, err := w.inotify.SyscallConn()
 	if err != nil {
@@ -305,8 +308,8 @@ func (w *Watcher) addWatch(host string) (int, error) {
 }
 
 func (w *Watcher) rmWatch(wd int) error {
-	// The kernel hands watch descriptors back as a signed int and takes them
-	// back as unsigned, so this crossing is checked rather than cast.
+	// Watch descriptors come back from the kernel signed and are passed in
+	// unsigned, so this boundary is validated rather than blindly converted.
 	id, err := num.Narrow[uint32](wd)
 	if err != nil {
 		return err
@@ -324,8 +327,8 @@ func (w *Watcher) rmWatch(wd int) error {
 	return ierr
 }
 
-// readLoop parses inotify records straight off the descriptor. There is no
-// portability layer over the one thing this tree does not make portable.
+// readLoop decodes inotify records directly from the descriptor. Nothing
+// abstracts this, since it is the one part of the tree that is not portable.
 func (w *Watcher) readLoop() {
 	buf := make([]byte, eventBufBytes)
 	for {
@@ -363,9 +366,9 @@ func (w *Watcher) consume(buf []byte) {
 			return
 		}
 
-		// Widened rather than reinterpreted as a signed descriptor. The one
-		// record that carries a negative wd is the queue overflow, and that is
-		// recognised by its mask below before anything looks the wd up.
+		// Widened instead of reread as a signed descriptor. Queue overflow is
+		// the only record bearing a negative wd, and the mask check below
+		// identifies it before any lookup occurs.
 		wd := int(binary.NativeEndian.Uint32(buf[off+offWd:]))
 		mask := binary.NativeEndian.Uint32(buf[off+offMask:])
 		nameLen := binary.NativeEndian.Uint32(buf[off+offNameLen:])
@@ -381,10 +384,10 @@ func (w *Watcher) consume(buf []byte) {
 
 		switch {
 		case mask&unix.IN_Q_OVERFLOW != 0:
-			// The kernel dropped events faster than they were read, so the
-			// dirty set is now incomplete and cannot be trusted. The watch
-			// descriptor for this record is unspecified, so there is no single
-			// directory to mark: the full invalidation is the answer.
+			// Events were discarded by the kernel faster than they could be
+			// consumed, leaving the dirty set incomplete and unusable. This
+			// record's watch descriptor is unspecified, so no individual
+			// directory can be marked and full invalidation is the response.
 			w.overflow.Store(true)
 		case mask&(unix.IN_IGNORED|unix.IN_UNMOUNT) != 0:
 			w.forget(wd)
@@ -416,8 +419,8 @@ func (w *Watcher) markDirty(wd int) {
 	}
 }
 
-// forget drops the bookkeeping for a watch the kernel has already discarded,
-// which is what a deleted or unmounted directory produces.
+// forget clears the bookkeeping for a watch the kernel has already released,
+// the outcome of a directory being deleted or unmounted.
 func (w *Watcher) forget(wd int) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -430,14 +433,14 @@ func (w *Watcher) forget(wd int) {
 	w.hot.markUnregistered(k)
 }
 
-// flushLoop reports directories that have sat dirty for the debounce window, so
-// a burst that finishes inside it coalesces into one event.
+// flushLoop emits directories that have remained dirty across the debounce
+// window, collapsing a burst that completes within it into a single event.
 //
-// Two signals short-circuit that and invalidate whole shares instead: the
-// kernel reported its own queue overflowed (or the parser refused a batch), or
-// the dirty set outgrew the threshold. Both mean the per-directory set is no
-// longer worth enumerating, and both cost one event per share rather than one
-// per directory.
+// Two conditions bypass this and invalidate entire shares: the kernel reporting
+// its queue overflowed (or the parser rejecting a batch), and the dirty set
+// exceeding the threshold. Either way the per-directory set is no longer worth
+// walking, and the cost becomes one event per share instead of one per
+// directory.
 func (w *Watcher) flushLoop() {
 	t := time.NewTicker(flushInterval)
 	defer t.Stop()
@@ -496,10 +499,10 @@ func (w *Watcher) invalidateEverything(kernelOverflow bool, pendingLen int) {
 	}
 }
 
-// emit hands one event to the consumer. A sink that is full means the consumer
-// is behind, and a dropped per-directory event is a stale answer nothing
-// corrects, so it escalates to the whole-share invalidation instead: the same
-// trade the kernel's own queue makes when it overflows.
+// emit delivers a single event to the consumer. A full sink means the consumer
+// has fallen behind, and discarding a per-directory event would leave a stale
+// answer that nothing later fixes, so it escalates to whole-share invalidation:
+// the same bargain the kernel's own queue strikes on overflow.
 func (w *Watcher) emit(ev InvalEvent) {
 	select {
 	case <-w.stop:
@@ -514,9 +517,9 @@ func (w *Watcher) emit(ev InvalEvent) {
 	}
 }
 
-// rescanLoop re-marks the watched directories of every share whose filesystem
-// loses events. Never a fresh recursive walk: it only revisits what is already
-// tracked.
+// rescanLoop re-flags the watched directories belonging to shares on
+// event-losing filesystems. It never performs a new recursive walk, revisiting
+// only what is already tracked.
 func (w *Watcher) rescanLoop() {
 	t := time.NewTicker(w.cfg.RescanInterval)
 	defer t.Stop()

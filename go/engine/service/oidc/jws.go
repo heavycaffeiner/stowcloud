@@ -19,19 +19,20 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 )
 
-// Token verification, with no JOSE library. A general parser for
-// attacker-controlled input is a large surface for a job this build does in
-// two algorithms.
+// Token verification implemented without a JOSE library. A general-purpose
+// parser fed attacker-controlled input presents a wide surface for work this
+// build accomplishes with two algorithms.
 //
-// The header's algorithm selects nothing. It is compared against what the key
-// can do, and the key decides. That single rule closes both the unsigned
-// token and the confusion case where a token names a symmetric algorithm and
-// the verifier hands it the provider's public key as the shared secret.
+// The header's algorithm field selects nothing. It is only compared against the
+// key's capabilities, and the key is what decides. That one rule eliminates both
+// the unsigned token and the confusion case in which a token declares a
+// symmetric algorithm and the verifier supplies the provider's public key as
+// the shared secret.
 
-// ErrTokenVerify is a token that failed any of the checks.
+// ErrTokenVerify reports a token that failed one or more checks.
 var ErrTokenVerify = errors.New("the identity token did not verify")
 
-// VerifyError names which check refused.
+// VerifyError identifies the check that rejected the token.
 type VerifyError struct{ Reason string }
 
 func (e *VerifyError) Error() string { return "the identity token did not verify: " + e.Reason }
@@ -40,18 +41,19 @@ func (e *VerifyError) Is(target error) bool { return target == ErrTokenVerify }
 
 func refuse(reason string) error { return &VerifyError{Reason: reason} }
 
-// The algorithms this build verifies. Each names a key type, which is what
-// makes the key rather than the header decide.
+// Algorithms this build can verify. Each is tied to a key type, which is how the
+// key rather than the header becomes decisive.
 const (
 	algRS256 = "RS256"
 	algES256 = "ES256"
 )
 
-// The sizes the two accepted algorithms fix.
+// Sizes mandated by the two accepted algorithms.
 const (
-	// rsaMinBits is below what any provider uses and above what is breakable.
+	// rsaMinBits sits under every provider's actual size and over what can be
+	// broken.
 	rsaMinBits = 2048
-	// ecdsaP256SigBytes is the two coordinates at the curve's fixed width.
+	// ecdsaP256SigBytes covers both coordinates at the curve's fixed width.
 	ecdsaP256SigBytes = 64
 )
 
@@ -68,7 +70,7 @@ func anySupported(offered []string) bool {
 	return false
 }
 
-// jwk is one key from the provider's set.
+// jwk represents a single key drawn from the provider's set.
 type jwk struct {
 	Kty string `json:"kty"`
 	Kid string `json:"kid"`
@@ -85,13 +87,13 @@ type jwkSet struct {
 	Keys []jwk `json:"keys"`
 }
 
-// jwsHeader is the part of the header this reads. The algorithm is read only
-// to be checked against the key, never to select one.
+// jwsHeader is the subset of the header this parses. The algorithm is read
+// solely for comparison against the key, never to choose one.
 type jwsHeader struct {
 	Alg string `json:"alg"`
 	Kid string `json:"kid"`
-	// A key carried in the token itself is refused: a token that supplies the
-	// key that verifies it verifies itself, which is not a signature.
+	// Keys embedded in the token are rejected. A token providing its own
+	// verifying key merely verifies itself, which is not a signature.
 	Jwk  json.RawMessage `json:"jwk"`
 	Jku  string          `json:"jku"`
 	X5u  string          `json:"x5u"`
@@ -99,7 +101,7 @@ type jwsHeader struct {
 	Crit []string        `json:"crit"`
 }
 
-// Claims is what a verified token asserts.
+// Claims holds the assertions a verified token makes.
 type Claims struct {
 	Issuer   string `json:"iss"`
 	Subject  string `json:"sub"`
@@ -131,11 +133,11 @@ func (a *audArg) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// VerifyIDToken checks the signature, the issuer, the audience, the validity
-// window and the nonce.
+// VerifyIDToken validates the signature, issuer, audience, validity window and
+// nonce.
 //
-// Every check is required and they run in this order, because a check that
-// runs before the signature verified is a check on data nobody authenticated.
+// All checks are mandatory and execute in this sequence, since any check
+// performed before signature verification examines data nobody authenticated.
 func (c *Client) VerifyIDToken(ctx context.Context, raw, nonce string) (*Claims, error) {
 	if len(raw) > limits.OIDCTokenBytes {
 		return nil, limits.Exceed("oidc id token", limits.OIDCTokenBytes, int64(len(raw)))
@@ -155,13 +157,13 @@ func (c *Client) VerifyIDToken(ctx context.Context, raw, nonce string) (*Claims,
 		return nil, refuse("the header is not JSON")
 	}
 
-	// A token that carries or points at the key verifying it verifies itself.
+	// A token embedding or referencing its own verifying key verifies itself.
 	if len(header.Jwk) > 0 || len(header.X5c) > 0 || header.Jku != "" || header.X5u != "" {
 		return nil, refuse("the header supplies the key that would verify it")
 	}
-	// An extension the token declares as mandatory is one this build does not
-	// implement, so honouring the token means ignoring a requirement its
-	// issuer marked as not ignorable.
+	// Any extension the token marks mandatory is one this build does not
+	// implement, so accepting the token would mean disregarding a requirement
+	// its issuer declared cannot be disregarded.
 	if len(header.Crit) > 0 {
 		return nil, refuse("the header declares a critical extension this build does not implement")
 	}
@@ -173,9 +175,9 @@ func (c *Client) VerifyIDToken(ctx context.Context, raw, nonce string) (*Claims,
 	if err != nil {
 		return nil, err
 	}
-	// The key decides the algorithm. The header's value is only compared
-	// against it, so naming a symmetric algorithm or none at all selects
-	// nothing and matches nothing.
+	// The key determines the algorithm. The header's value serves only as a
+	// comparison, so declaring a symmetric algorithm or none selects nothing and
+	// matches nothing.
 	if merr := keyMatchesAlg(key, header.Alg); merr != nil {
 		return nil, merr
 	}
@@ -205,10 +207,10 @@ func (c *Client) VerifyIDToken(ctx context.Context, raw, nonce string) (*Claims,
 	return &claims, nil
 }
 
-// checkClaims applies every check that is not the signature.
+// checkClaims runs every validation other than the signature.
 func (c *Client) checkClaims(claims *Claims, nonce string) error {
-	// Exact equality. A prefix or a suffix comparison lets one issuer speak
-	// for another.
+	// Compared for exact equality. Prefix or suffix matching would let one
+	// issuer speak on another's behalf.
 	if claims.Issuer != c.cfg.Issuer {
 		return refuse("it names a different issuer than the configured one")
 	}
@@ -220,8 +222,8 @@ func (c *Client) checkClaims(claims *Claims, nonce string) error {
 		}
 	}
 	if !found {
-		// A token issued for another client of the same provider is a valid
-		// token that says nothing about this server.
+		// A token minted for a different client of the same provider is
+		// perfectly valid and says nothing about this server.
 		return refuse("it was not issued for this client")
 	}
 
@@ -255,7 +257,7 @@ func (c *Client) checkClaims(claims *Claims, nonce string) error {
 	return nil
 }
 
-// keyMatchesAlg checks the header's algorithm against what the key can do.
+// keyMatchesAlg compares the header's algorithm with the key's capabilities.
 func keyMatchesAlg(k jwk, alg string) error {
 	switch alg {
 	case algRS256:
@@ -272,20 +274,20 @@ func keyMatchesAlg(k jwk, alg string) error {
 	default:
 		return refuse(fmt.Sprintf("the algorithm %q is not one this build verifies", alg))
 	}
-	// A key that names its own algorithm and disagrees is refused rather than
-	// used: one of the two is wrong, and guessing which picks the attacker's
-	// answer half the time.
+	// A key declaring its own algorithm that conflicts is rejected rather than
+	// used. One of the two is incorrect, and guessing which selects the
+	// attacker's answer half the time.
 	if k.Alg != "" && k.Alg != alg {
 		return refuse("the named key is for a different algorithm than the token claims")
 	}
-	// A key published for encryption is not a key to verify with.
+	// A key published for encryption is not suitable for verification.
 	if k.Use != "" && k.Use != "sig" {
 		return refuse("the named key is not published for signing")
 	}
 	return nil
 }
 
-// verifySignature checks the signature with the key.
+// verifySignature validates the signature using the key.
 func verifySignature(k jwk, alg string, signingInput, sig []byte) error {
 	sum := sha256.Sum256(signingInput)
 
@@ -316,9 +318,8 @@ func verifyRS256(k jwk, digest, sig []byte) error {
 		return refuse("the key's exponent is not a usable value")
 	}
 	pub := &rsa.PublicKey{N: new(big.Int).SetBytes(n), E: int(exponent.Int64())}
-	// A key below this size is refused rather than verified against: a
-	// signature that verifies under a key an attacker can factor is a
-	// signature an attacker can make.
+	// Keys smaller than this are rejected instead of used. A signature that
+	// verifies under a factorable key is a signature an attacker can produce.
 	if pub.N.BitLen() < rsaMinBits {
 		return refuse(fmt.Sprintf("the key is %d bits, below the %d this build accepts",
 			pub.N.BitLen(), rsaMinBits))
@@ -338,9 +339,9 @@ func verifyES256(k jwk, digest, sig []byte) error {
 	if err != nil {
 		return refuse("the key's y coordinate is not base64url")
 	}
-	// The signature is the two halves concatenated at a fixed width, not a
-	// structured encoding. A structured one here would accept trailing bytes,
-	// which is a second valid encoding of the same signature.
+	// The signature is both halves concatenated at a fixed width rather than a
+	// structured encoding. A structured form would tolerate trailing bytes,
+	// yielding a second valid encoding of the same signature.
 	if len(sig) != ecdsaP256SigBytes {
 		return refuse("the signature is not the fixed width this curve uses")
 	}
@@ -369,7 +370,7 @@ func verifyES256(k jwk, digest, sig []byte) error {
 	return nil
 }
 
-// splitJWS separates the three segments without allocating them.
+// splitJWS divides the three segments without allocating.
 func splitJWS(raw string) (header, payload, sig string, ok bool) {
 	first := strings.IndexByte(raw, '.')
 	if first < 0 {
@@ -401,15 +402,15 @@ func decodeSegment(s string) ([]byte, error) {
 	return base64.RawURLEncoding.Strict().DecodeString(s)
 }
 
-// keyFor finds the named key, refetching the set once if it is not there.
+// keyFor locates the named key, refetching the set once when it is absent.
 func (c *Client) keyFor(ctx context.Context, kid string) (jwk, error) {
 	if keys, ok := c.jwks.fresh(c.clk); ok {
 		if k, found := findKid(keys, kid); found {
 			return k, nil
 		}
-		// A key this server has not seen is what a rotation looks like, so the
-		// set is refetched once. Without this a rotation is an outage lasting
-		// as long as the cache does.
+		// An unfamiliar key is how a rotation appears, so the set is fetched
+		// once more. Omitting this turns every rotation into an outage lasting
+		// as long as the cache.
 		c.jwks.forget()
 	}
 
@@ -432,7 +433,7 @@ func findKid(keys []jwk, kid string) (jwk, bool) {
 	return jwk{}, false
 }
 
-// fetchJWKS reads the provider's key set.
+// fetchJWKS retrieves the provider's key set.
 func (c *Client) fetchJWKS(ctx context.Context) ([]jwk, error) {
 	doc, err := c.FetchDiscovery(ctx)
 	if err != nil {

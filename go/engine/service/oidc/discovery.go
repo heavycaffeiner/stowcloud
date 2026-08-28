@@ -10,9 +10,9 @@ import (
 	"strings"
 )
 
-// The discovery document is a trust boundary. What comes back names the
-// endpoints this server will post a client secret to, so every field is
-// validated before any of them is used.
+// The discovery document arrives from outside and is untrusted. Its contents
+// name the endpoints this server will send a client secret to, so every field
+// is validated before any of it is used.
 
 // ErrDiscovery is a document that failed validation.
 var ErrDiscovery = errors.New("the discovery document is not usable")
@@ -30,41 +30,43 @@ func (e *DiscoveryError) Error() string {
 
 func (e *DiscoveryError) Is(target error) bool { return target == ErrDiscovery }
 
-// Discovery is the part of the document this package reads.
+// Discovery covers the portion of the document this package consumes.
 //
-// Everything else is ignored rather than refused: the specification lets a
-// provider add fields and most do. No field here has an open type, so a
-// document cannot smuggle in a structure this server then walks.
+// Unrecognized content is ignored rather than rejected, since the specification
+// permits providers to add fields and most do. None of these fields has an open
+// type, so a document cannot introduce a structure this server would then
+// traverse.
 type Discovery struct {
 	Issuer                string `json:"issuer"`
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	TokenEndpoint         string `json:"token_endpoint"`
 	JWKSURI               string `json:"jwks_uri"`
 
-	// Absent and empty mean the same thing, that the provider did not say.
-	// The specification makes one method the default in that case and an empty
-	// list is not a legal value, so collapsing the two costs nothing.
+	// Missing and empty carry identical meaning: the provider stated nothing.
+	// The specification designates a default method for that case, and an empty
+	// list is not valid anyway, so treating them alike loses nothing.
 	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
 	IDTokenSigningAlgValuesSupported  []string `json:"id_token_signing_alg_values_supported"`
 }
 
-// DiscoveryURL is where the document lives for an issuer.
+// DiscoveryURL gives the document's location for an issuer.
 func DiscoveryURL(issuer string) string {
 	return strings.TrimSuffix(issuer, "/") + "/.well-known/openid-configuration"
 }
 
-// FetchDiscovery reads and validates the document.
+// FetchDiscovery retrieves and validates the document.
 //
-// It is called lazily and never at startup. Calling the provider while the
-// server boots means a server that will not boot while the provider is down,
-// which trades an outage of one sign-in method for an outage of the product.
+// Invocation is lazy and never occurs at startup. Contacting the provider
+// during boot would make the server fail to start whenever the provider is
+// down, exchanging the loss of one sign-in method for the loss of the whole
+// product.
 func (c *Client) FetchDiscovery(ctx context.Context) (*Discovery, error) {
 	if doc, ok := c.discovery.fresh(c.clk); ok {
 		return doc, nil
 	}
 
-	// The configured issuer is held to the same rules as anything the document
-	// names. An issuer that skipped them would be a way to skip them.
+	// The configured issuer faces the same rules as any value the document
+	// supplies. Exempting it would simply provide a route around those rules.
 	if err := c.checkEndpoint("issuer", c.cfg.Issuer); err != nil {
 		return nil, err
 	}
@@ -81,8 +83,9 @@ func (c *Client) FetchDiscovery(ctx context.Context) (*Discovery, error) {
 		return nil, &DiscoveryError{Field: "body", Reason: derr.Error()}
 	}
 
-	// Exact equality, not a prefix and not a host comparison. Anything looser
-	// lets a document served from one issuer speak for another.
+	// Compared for exact equality, not by prefix and not by host. Any weaker
+	// test would let a document served by one issuer speak on another's
+	// behalf.
 	if doc.Issuer != c.cfg.Issuer {
 		return nil, &DiscoveryError{
 			Field:  "issuer",
@@ -120,12 +123,12 @@ func (c *Client) FetchDiscovery(ctx context.Context) (*Discovery, error) {
 	return &doc, nil
 }
 
-// checkEndpoint applies the scheme and address rules to one URL.
+// checkEndpoint enforces the scheme and address rules on a single URL.
 //
-// The address half is checked here as well as at dial time, and needs both.
-// Here it catches an address written literally into the document, which never
-// reaches a resolver. At dial time it catches a hostname, which is not
-// decided until it is resolved.
+// The address portion is verified both here and at dial time, and both are
+// required. This point catches a literal address embedded in the document,
+// which never passes through a resolver. Dial time catches a hostname, whose
+// destination is unknown until resolution.
 func (c *Client) checkEndpoint(field, raw string) error {
 	if raw == "" {
 		return &DiscoveryError{Field: field, Reason: "is missing"}
@@ -140,8 +143,8 @@ func (c *Client) checkEndpoint(field, raw string) error {
 	if u.Host == "" {
 		return &DiscoveryError{Field: field, Reason: "has no host"}
 	}
-	// A URL carrying credentials is refused: the credential would be sent to
-	// the provider on every request, and it is not one this server chose.
+	// URLs bearing credentials are rejected. Such a credential would accompany
+	// every request to the provider, and this server never selected it.
 	if u.User != nil {
 		return &DiscoveryError{Field: field, Reason: "carries credentials"}
 	}

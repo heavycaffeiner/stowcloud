@@ -234,8 +234,8 @@ func TestASmallRSAKeyIsRefused(t *testing.T) {
 	}
 }
 
-// A point that is not on the curve is a key an attacker chose, and verifying
-// against one leaks the private key of whoever is tricked into using it.
+// An off-curve point is a key selected by an attacker, and verifying against
+// one exposes the private key of whoever was induced to use it.
 func TestAnOffCurvePointIsRefused(t *testing.T) {
 	ctx := context.Background()
 	clk := fixedClock()

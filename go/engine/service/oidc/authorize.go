@@ -12,18 +12,18 @@ import (
 	"strings"
 )
 
-// One sign-in attempt needs four random values, and they are easy to confuse,
-// so what each defends:
+// A single sign-in attempt draws four random values. They are simple to mix up,
+// so each one's purpose:
 //
-//   - The state stops an attacker choosing the value the callback carries.
-//   - The binding cookie stops an attacker delivering a legitimate state to
-//     somebody else's browser, which is the sign-in forgery the state alone
-//     does not prevent.
-//   - The nonce ties the identity token to this authorization request.
-//   - The verifier ties the code redemption to whoever started the attempt.
+//   - State denies an attacker control over the value the callback carries.
+//   - The binding cookie denies an attacker the ability to hand a valid state to
+//     a different person's browser, the sign-in forgery state alone leaves open.
+//   - The nonce binds the identity token to this particular authorization
+//     request.
+//   - The verifier binds redemption of the code to whoever began the attempt.
 
-// flowSecretBytes is 256 bits, which is also exactly what the code exchange
-// wants of a verifier.
+// flowSecretBytes holds 256 bits, matching what the code exchange requires of a
+// verifier.
 const flowSecretBytes = 32
 
 // FlowSecrets are the secrets for one attempt in flight.
@@ -37,8 +37,8 @@ type FlowSecrets struct {
 	CodeVerifier string
 }
 
-// String redacts, because these are exactly the values a stray log field
-// leaks.
+// String redacts its output: these are precisely the values an accidental log
+// field would expose.
 func (FlowSecrets) String() string { return "FlowSecrets(redacted)" }
 
 // GoString redacts for the same reason: a struct printed with the verbose
@@ -51,7 +51,7 @@ func (FlowSecrets) MarshalJSON() ([]byte, error) {
 	return []byte(`"FlowSecrets(redacted)"`), nil
 }
 
-// NewFlowSecrets mints the four.
+// NewFlowSecrets generates all four values.
 func NewFlowSecrets() (FlowSecrets, error) {
 	var out FlowSecrets
 	for _, dst := range []*string{&out.State, &out.Nonce, &out.Binding, &out.CodeVerifier} {
@@ -72,25 +72,25 @@ func randomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
-// Hash is what the three stored values are stored as.
+// Hash produces the stored form of the three persisted values.
 func Hash(v string) [32]byte { return sha256.Sum256([]byte(v)) }
 
-// CodeChallenge is the challenge derived from the verifier.
+// CodeChallenge derives the challenge from the verifier.
 //
-// The other method the specification allows makes the challenge equal to the
-// verifier, so anyone who can read the authorization request can redeem the
-// code. It is not offered here.
+// The specification's alternative method sets the challenge equal to the
+// verifier, letting anyone able to read the authorization request redeem the
+// code. That method is not offered here.
 func (f FlowSecrets) CodeChallenge() string {
 	sum := sha256.Sum256([]byte(f.CodeVerifier))
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-// AuthorizeURL builds the URL the browser is sent to.
+// AuthorizeURL constructs the URL the browser is directed to.
 //
-// The redirect URI is passed in rather than configured here, because a
-// deployment reached under several names registers several of them, and which
-// one applies is decided per request by the layer that owns the host list.
-// The same string has to reach the exchange byte for byte.
+// The redirect URI arrives as an argument instead of being configured here. A
+// deployment reachable under multiple names registers several of them, and the
+// applicable one is selected per request by the layer owning the host list. The
+// identical string must reach the exchange unchanged.
 func (c *Client) AuthorizeURL(ctx context.Context, redirectURI string, f FlowSecrets) (string, error) {
 	doc, err := c.FetchDiscovery(ctx)
 	if err != nil {
@@ -114,9 +114,9 @@ func (c *Client) AuthorizeURL(ctx context.Context, redirectURI string, f FlowSec
 	return doc.AuthorizationEndpoint + sep + q.Encode(), nil
 }
 
-// scopes always carries the one that makes an identity token be issued at
-// all. Without it the provider authenticates and returns nothing this server
-// can verify, so leaving it out is a flow that cannot succeed.
+// scopes always includes the one that causes an identity token to be issued.
+// Omitting it leaves the provider authenticating and returning nothing this
+// server can verify, producing a flow incapable of succeeding.
 func (c *Client) scopes() []string {
 	out := slices.Clone(c.cfg.Scopes)
 	if !slices.Contains(out, "openid") {
@@ -125,21 +125,22 @@ func (c *Client) scopes() []string {
 	return out
 }
 
-// clientAuth is how this authenticates to the token endpoint.
+// clientAuth selects the authentication method used at the token endpoint.
 type clientAuth int
 
 const (
-	// authBasic is the method the specification prefers and the default.
+	// authBasic is both the specification's preferred method and the default
+	// here.
 	authBasic clientAuth = iota
-	// authPost carries the secret in the body, for providers not offering the
-	// first.
+	// authPost places the secret in the request body, for providers that do not
+	// support the preferred method.
 	authPost
 )
 
-// clientAuthMethod picks from what the document advertises.
+// clientAuthMethod chooses among the methods the document advertises.
 //
-// An absent or empty list means the first, which is what the specification
-// defines the default to be rather than a guess made here.
+// A missing or empty list selects the preferred method, which the specification
+// defines as the default rather than being a guess made here.
 func clientAuthMethod(doc *Discovery) (clientAuth, error) {
 	advertised := doc.TokenEndpointAuthMethodsSupported
 	switch {
@@ -150,9 +151,9 @@ func clientAuthMethod(doc *Discovery) (clientAuth, error) {
 	case slices.Contains(advertised, "client_secret_post"):
 		return authPost, nil
 	}
-	// The remaining methods need key material this product has nowhere to put,
-	// so this is not a runtime failure to recover from: the deployment cannot
-	// talk to this provider until the client is registered differently.
+	// The other methods require key material this product has no place to
+	// store, so this is not a recoverable runtime error. The deployment cannot
+	// reach this provider until the client is registered differently.
 	return 0, &DiscoveryError{
 		Field:  "token_endpoint_auth_methods_supported",
 		Reason: "names no client authentication method this build implements",
@@ -163,17 +164,18 @@ func clientAuthMethod(doc *Discovery) (clientAuth, error) {
 // access token this server does not use is a credential it would be holding.
 type tokenResponse struct {
 	IDToken string `json:"id_token"`
-	// The error fields are read so a refusal can say what the provider said,
-	// which is the difference between a fixable configuration and a mystery.
+	// The error fields are parsed so a rejection can repeat what the provider
+	// reported, separating a correctable configuration from an unexplained
+	// failure.
 	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description"`
 }
 
-// Exchange performs the back-channel code exchange.
+// Exchange carries out the back-channel code exchange.
 //
-// Every connection it makes passes the address guard at dial time, so a
-// hostname that resolved acceptably cannot be re-resolved to something else
-// between the check and the socket.
+// Each connection clears the address guard at dial time, so a hostname that
+// resolved acceptably cannot resolve to something different between the check
+// and the socket.
 func (c *Client) Exchange(
 	ctx context.Context, code, redirectURI string, f FlowSecrets,
 ) (string, error) {
