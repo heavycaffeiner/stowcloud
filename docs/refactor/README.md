@@ -197,9 +197,28 @@ replaced it; the tool now scopes that skip to one identifier rather than a
 whole entry, and the six needing a judgement are in its ignore list with
 what replaced them.
 
-One test named in a document was missing rather than merely unnamed: the
-mutations document requires that a failing journal not fail the write, and
-only the nil-journal case was covered. The behavior was already correct.
+**Declared struct fields and interface methods.** 196 of them. Two are
+absent, both belonging to phase 3's `Lifecycle`. One was stale and is
+corrected: oidc's `Config` documented an `AllowPrivate` field the engine
+spells `AllowPrivateEndpoints`, and a `ClientSecret string` that is a
+`secret.Secret`.
+
+**Named tests.** Each of the 534 bullets in the phase 0 through 2 test
+lists was scored by how much of its distinctive vocabulary appears in its
+area's test sources. Five scored low enough to read by hand. Four were
+covered under wording no search would match. Two were real gaps: the
+mutations document requires that a failing journal not fail the write and
+only the nil-journal case was covered, and the audit document requires a
+cursor that pages correctly against a log being appended to, which nothing
+exercised. Both behaviors were already correct; neither was proven. Both
+tests exist now, each verified by a mutation that compiles.
+
+Eighty-two deliberate changes name no identifier at all, so no tool can
+check them. The security-critical ones were read against the code by hand:
+the ACL precedence rules, the OIDC back channel's redirect refusal and its
+no-negative-caching rule, the registry's root-closing on replacement, the
+home id reservation, the post-commit ordering, and the emergency door's own
+audit events. All were implemented and tested.
 
 ## Phase 3: presentation and cutover
 

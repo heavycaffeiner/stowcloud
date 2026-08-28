@@ -64,10 +64,11 @@ package specifically and still refuses every other service package.
 
 ```go
 type Config struct {
-    Issuer, ClientID, ClientSecret string
-    Scopes                         []string
-    CACertFile                     string // optional trust anchors
-    AllowPrivate                   bool
+    Issuer, ClientID      string
+    ClientSecret          secret.Secret
+    Scopes                []string
+    CACertFile            string // optional trust anchors
+    AllowPrivateEndpoints bool
 }
 
 func New(cfg Config, clk clock.Clock) (*Client, error)
