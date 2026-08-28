@@ -332,6 +332,22 @@
 # 65: the agent's runtime reads. Two probe /sys/class/net for a device name the
 # kernel itself listed, to tell one end of a virtual pair from a real
 # interface, and one reads the flag file in the agent's own configured
-# directory. None takes a path from a request.
+# directory. None takes a path from a request.#
+# 70: five in the acceptance tests that drive real external tools, where the
+# argument is made once per file rather than at each call site.
+#
+# The count reached 83 before this entry, because two commits added eighteen
+# directives without moving the budget. That is precisely the lapse this file
+# exists to catch, and it caught it. Rather than raise the number by eighteen,
+# the repeated ones were collapsed: an exec helper in each of the three test
+# files, and a fixture-opening helper that closes through t.Cleanup and so
+# needs no errcheck exception at all.
+#
+# What is left is one gosec exception per test file for invoking a binary that
+# came from LookPath with arguments that are constants in that file or paths
+# under the test's own TempDir, plus two on reading a tool's output where a
+# non-zero exit is itself the assertion: exiv2 exits non-zero when a file
+# carries no metadata, which is the passing case.
+
 290
-65
+70

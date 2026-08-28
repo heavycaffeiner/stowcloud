@@ -33,6 +33,16 @@ func tool(t *testing.T, name string) string {
 
 // serverRendered is what the server writes into the shared directory: the
 // closed network case, which the agent is meant to widen.
+
+// testparmRun invokes the real parser against a configuration this test wrote.
+//
+// The gosec exception sits here rather than at each call site: the binary came
+// from LookPath and every argument is a constant in this file or a path under
+// this test's own TempDir.
+func testparmRun(tool string, args ...string) *exec.Cmd {
+	return exec.Command(tool, args...) //nolint:gosec // the tool comes from LookPath and the arguments are this file's constants and temp files.
+}
+
 func serverRendered(t *testing.T) string {
 	t.Helper()
 	body, _, err := smb.Render(
@@ -52,7 +62,7 @@ func serverRendered(t *testing.T) string {
 // pass does before promoting.
 func validate(t *testing.T, testparm, path string) (string, error) {
 	t.Helper()
-	out, err := exec.Command(testparm, "-s", path).CombinedOutput() //nolint:gosec // the tool comes from LookPath and the path is this test's temp file.
+	out, err := testparmRun(testparm, "-s", path).CombinedOutput()
 	return string(out), err
 }
 
@@ -108,7 +118,7 @@ func TestTheWidenedScopeIsWhatTheDaemonResolves(t *testing.T) {
 		{"server min protocol", "SMB3"},
 		{"smb encrypt", "required"},
 	} {
-		out, err := exec.Command(testparm, "-s", "--parameter-name", c.name, path).Output() //nolint:gosec // as above.
+		out, err := testparmRun(testparm, "-s", "--parameter-name", c.name, path).Output()
 		if err != nil {
 			t.Fatalf("testparm could not read %q: %v", c.name, err)
 		}
@@ -176,7 +186,7 @@ func TestTheReadBacksAgreeWithTheParser(t *testing.T) {
 		t.Fatalf("the agent reads the shares as %+v", sections)
 	}
 	// The same question, asked of the parser.
-	out, err := exec.Command(testparm, "-s", "--section-name", "docs", "--parameter-name", "path", path).Output() //nolint:gosec // as above.
+	out, err := testparmRun(testparm, "-s", "--section-name", "docs", "--parameter-name", "path", path).Output()
 	if err != nil {
 		t.Fatalf("the parser does not know the share the agent reported: %v", err)
 	}
@@ -186,7 +196,7 @@ func TestTheReadBacksAgreeWithTheParser(t *testing.T) {
 
 	// The bind line, which is the one thing a reload cannot change.
 	bound := agent.BoundInterfaces(promoted)
-	iout, ierr := exec.Command(testparm, "-s", "--parameter-name", "interfaces", path).Output() //nolint:gosec // as above.
+	iout, ierr := testparmRun(testparm, "-s", "--parameter-name", "interfaces", path).Output()
 	if ierr != nil {
 		t.Fatal(ierr)
 	}

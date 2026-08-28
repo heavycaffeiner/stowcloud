@@ -22,6 +22,15 @@ import (
 // the daemon would actually do with it.
 
 // testparmPath finds the real tool, or reports that this machine has none.
+
+// testparmRun invokes the real parser against a configuration this test wrote.
+//
+// The gosec exception sits here rather than at each call site: the binary came
+// from LookPath and the configuration is this test's own temporary file.
+func testparmRun(tool string, args ...string) *exec.Cmd {
+	return exec.Command(tool, args...) //nolint:gosec // the tool comes from LookPath and the conf is this test's own temp file.
+}
+
 func testparmPath(t *testing.T) string {
 	t.Helper()
 	path, err := exec.LookPath("testparm")
@@ -55,7 +64,7 @@ func effective(t *testing.T, tool, conf, section, name string) string {
 	}
 	args = append(args, conf)
 
-	out, err := exec.Command(tool, args...).Output() //nolint:gosec // the tool is resolved from PATH by LookPath and the conf is this test's own temp file.
+	out, err := testparmRun(tool, args...).Output()
 	if err != nil {
 		t.Fatalf("testparm could not read %s/%s: %v", section, name, err)
 	}
@@ -83,7 +92,7 @@ func TestTheRenderedConfigurationParses(t *testing.T) {
 	tool := testparmPath(t)
 	conf := render(t, sampleConfig(), sampleShares())
 
-	out, err := exec.Command(tool, "-s", conf).CombinedOutput() //nolint:gosec // as above.
+	out, err := testparmRun(tool, "-s", conf).CombinedOutput()
 	if err != nil {
 		t.Fatalf("the daemon's parser rejected the rendered configuration: %v\n%s", err, out)
 	}

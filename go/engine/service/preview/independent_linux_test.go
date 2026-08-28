@@ -34,6 +34,35 @@ func lookup(t *testing.T, name, why string) string {
 	return path
 }
 
+// run invokes a tool resolved by lookup against a path this test created.
+//
+// stdin is closed deliberately: several of these tools read it when an argument
+// names nothing readable, and a test that hangs is worse than one that fails.
+//
+// The gosec exception is here rather than at each call site: every caller
+// passes a binary that came from LookPath and arguments that are this test's
+// own temporary files or constants in this file.
+func run(tool string, args ...string) *exec.Cmd {
+	cmd := exec.Command(tool, args...) //nolint:gosec // the tool comes from LookPath and the arguments are this file's own constants and temp files.
+	cmd.Stdin = nil
+	return cmd
+}
+
+// openFixture opens a file this test wrote and closes it when the test ends.
+func openFixture(t *testing.T, path string) *os.File {
+	t.Helper()
+	f, err := os.Open(path) //nolint:gosec // a path this test created under its own TempDir.
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("closing the fixture %s: %v", filepath.Base(path), err)
+		}
+	})
+	return f
+}
+
 // identify asks the independent decoder what it sees, failing outright on a file
 // it cannot parse.
 //
@@ -43,9 +72,7 @@ func identify(t *testing.T, path, format string) string {
 	t.Helper()
 	tool := lookup(t, "identify", "no independent decoder is available")
 
-	cmd := exec.Command(tool, "-format", format, path) //nolint:gosec // the tool comes from LookPath and the path is this test's own temp file.
-	cmd.Stdin = nil
-	out, err := cmd.Output()
+	out, err := run(tool, "-format", format, path).Output()
 	if err != nil {
 		t.Fatalf("the independent decoder could not read %s: %v", filepath.Base(path), err)
 	}
@@ -92,17 +119,11 @@ func TestAForeignEncodedSourceRoundTrips(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src.png")
 
-	gen := exec.Command(tool, "-size", "600x300", "gradient:red-blue", src) //nolint:gosec // the tool comes from LookPath.
-	gen.Stdin = nil
-	if out, err := gen.CombinedOutput(); err != nil {
+	if out, err := run(tool, "-size", "600x300", "gradient:red-blue", src).CombinedOutput(); err != nil {
 		t.Skipf("the independent encoder could not produce a fixture: %v\n%s", err, out)
 	}
 
-	in, err := os.Open(src) //nolint:gosec // this test's own temp file.
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer in.Close() //nolint:errcheck // read-only, and the test is done with it.
+	in := openFixture(t, src)
 
 	if got := identify(t, thumbnail(t, in), "%w %h"); got != "256 128" {
 		t.Errorf("a 600x300 foreign-encoded source produced %q, want \"256 128\"", got)
@@ -151,8 +172,7 @@ exif[271] = "ACME"
 exif[274] = 6
 img.save(sys.argv[1], exif=exif)
 `
-	gen := exec.Command(python, "-c", script, src) //nolint:gosec // the interpreter comes from LookPath and the script is this file's own constant.
-	gen.Stdin = nil
+	gen := run(python, "-c", script, src)
 	if out, err := gen.CombinedOutput(); err != nil {
 		t.Skipf("the imaging library could not write an EXIF fixture: %v\n%s", err, out)
 	}
@@ -160,8 +180,7 @@ img.save(sys.argv[1], exif=exif)
 	// The fixture is only useful if it really carries the metadata, so the
 	// independent reader confirms that before the assertion below means
 	// anything.
-	check := exec.Command(exiv2, "-p", "a", src) //nolint:gosec // the tool comes from LookPath and the path is this test's temp file.
-	check.Stdin = nil
+	check := run(exiv2, "-p", "a", src)
 	out, err := check.Output()
 	if err != nil || !strings.Contains(string(out), "ACME") {
 		t.Skipf("the fixture does not carry the metadata this test strips: %v\n%s", err, out)
@@ -176,19 +195,15 @@ func TestTheThumbnailCarriesNoMetadata(t *testing.T) {
 	exiv2 := lookup(t, "exiv2", "no independent reader is available")
 	src := withEXIF(t)
 
-	in, err := os.Open(src) //nolint:gosec // this test's own temp file.
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer in.Close() //nolint:errcheck // read-only.
+	in := openFixture(t, src)
 
 	out := thumbnail(t, in)
 
 	// exiv2 exits non-zero when a file carries no metadata, which is the
 	// passing case here, so the output is what is read rather than the status.
-	cmd := exec.Command(exiv2, "-p", "a", out) //nolint:gosec // the tool comes from LookPath and the path is this test's temp file.
-	cmd.Stdin = nil
-	body, _ := cmd.Output() //nolint:errcheck // a non-zero exit means no metadata, which is the assertion.
+	// A non-zero exit means no metadata, which is the passing case, so the
+	// output is what is read rather than the status.
+	body, _ := run(exiv2, "-p", "a", out).Output() //nolint:errcheck // a non-zero exit is the assertion.
 
 	if strings.Contains(string(body), "ACME") {
 		t.Errorf("the camera make survived into the thumbnail:\n%s", body)
@@ -208,11 +223,7 @@ func TestTheThumbnailCarriesNoMetadata(t *testing.T) {
 func TestTheOrientationIsAppliedToThePixels(t *testing.T) {
 	src := withEXIF(t)
 
-	in, err := os.Open(src) //nolint:gosec // this test's own temp file.
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer in.Close() //nolint:errcheck // read-only.
+	in := openFixture(t, src)
 
 	got := identify(t, thumbnail(t, in), "%w %h")
 	fields := strings.Fields(got)
