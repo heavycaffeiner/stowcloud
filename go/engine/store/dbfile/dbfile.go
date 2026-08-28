@@ -287,3 +287,25 @@ func mapErr(err error) error {
 	}
 	return err
 }
+
+// IsUniqueViolation reports whether err is the database refusing a duplicate
+// value on a unique index or a primary key.
+//
+// It reads the driver's extended result code. The alternative, matching the
+// message text, breaks whenever the driver rewords itself, and the caller
+// that needs this needs it to tell "that name is taken" from "the server
+// broke": those are a correction the person who typed the name can make and
+// an error they cannot.
+//
+// It lives here because this is the one package that imports the driver, so
+// the aggregates above it map a duplicate to their own sentinel without
+// naming a driver type.
+func IsUniqueViolation(err error) bool {
+	var se *sqlite.Error
+	if !errors.As(err, &se) {
+		return false
+	}
+	code := se.Code()
+	return code == sqlite3.SQLITE_CONSTRAINT_UNIQUE ||
+		code == sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY
+}
