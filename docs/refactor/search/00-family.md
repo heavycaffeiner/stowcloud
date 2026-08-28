@@ -68,6 +68,56 @@ Until it is decided, the equivalence test asserts what does hold, pins
 each divergence in its own test so a change to either is deliberate, and
 names them here rather than comparing only the cases that already agree.
 
+## An empty index answered for the whole corpus (fixed)
+
+Wiring the services together the way a deployment does, rather than the
+way each package's own fixture does, turned up a defect neither tree's
+tests could see.
+
+An index that is open but holds nothing answered every query with zero
+hits, reporting success and reporting that the index tier served it. So
+search returned "no such file" about every file that exists.
+
+The state is reachable rather than theoretical. Enabling the index and
+building it are separate actions: the administrative handler stores the
+switch and applies it, and the build runs afterwards. The comment on
+that handler describes the sequence as "turned the index on, saw a
+success, built it", and every query in that window came back empty.
+Nothing else marked the index unusable, since an empty index is nowhere
+near its entry ceiling and opens without error.
+
+Confirmed inherited. The same probe against `internal/search` returned
+the same zero hits from the index tier.
+
+The fix reuses the vocabulary already there. `FallbackIncomplete` exists
+for an index that knows it covers less than the corpus, which is exactly
+what zero entries means, from the other end of the same scale. The query
+path now reports it, so the caller walks and the reason is surfaced
+instead of the result silently looking complete.
+
+The test pins both halves: an empty index answers from the walk with the
+reason set, and once built it answers from the index and agrees with the
+walk it replaced.
+
+## What a restart asks (measured)
+
+The equivalence test compares tiers against one index instance held in
+memory. A deployment reads the index from disk on every start, so a
+second suite asks what a restart asks. A built index leaves 2957 bytes
+in its directory, reopening it answers the same queries, it still equals
+the walk, and equivalence survives a merge rewriting the segments.
+
+Two of those tests exist because a mutation showed the first version
+proved less than it looked like it did. Dropping delta loading on open
+changed no result, because the suite only exercised the base segment: an
+index answering correctly for everything present at build time and
+silently forgetting everything indexed since. A file added afterwards,
+fed through the updater and read back after a reopen, covers it.
+
+The claim that the index directory can be deleted with no data loss is
+also run rather than asserted, and a torn segment refuses to open, which
+leaves search walking rather than answering from half a file.
+
 ## The inversion (already settled)
 
 The old `core/scan.go` builds `[]search.Source`, making the core import

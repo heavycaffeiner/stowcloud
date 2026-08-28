@@ -202,6 +202,62 @@ func TestAShortNeedleWalksBeforeAndAfterAReopen(t *testing.T) {
 	}
 }
 
+// An index that exists but holds nothing must not answer.
+//
+// This is the state between an administrator enabling the index and the first
+// build finishing: the directory is created, the index opens cleanly, it is
+// nowhere near its entry ceiling, and it holds no entries. Answering from it
+// means replying "no such file" about every file in the corpus, with a status
+// reporting success and a tier reporting that the index served the query.
+//
+// It was found by wiring the services together the way a deployment does rather
+// than the way each package's own fixture does, and it is inherited: the same
+// probe against internal/search returned the same zero hits from the index tier.
+func TestAnEmptyIndexDoesNotAnswer(t *testing.T) {
+	src, _ := corpus(t, 1, equivalenceCorpus()...)
+
+	// Opened, never built, which is what enabling the switch produces.
+	ix, err := index.Open(t.TempDir(), index.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := New(Options{Index: ix})
+
+	res, err := s.Query(t.Context(), []search.Source{src},
+		QueryOptions{Query: "annual", Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Tier != TierWalk {
+		t.Errorf("an empty index served the query from %s", res.Tier)
+	}
+	if len(res.Hits) == 0 {
+		t.Error("the query found nothing, which is the defect: the files exist")
+	}
+	// The reason is surfaced rather than the result silently looking complete.
+	if res.Fallback != index.FallbackIncomplete {
+		t.Errorf("the fallback reason is %v, so nothing says why the index declined", res.Fallback)
+	}
+
+	// And once it is built, it answers.
+	if _, berr := s.Build(t.Context(), []search.Source{src},
+		func() bool { return true }, nil); berr != nil {
+		t.Fatal(berr)
+	}
+	built, err := s.Query(t.Context(), []search.Source{src},
+		QueryOptions{Query: "annual", Limit: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if built.Tier != TierIndex {
+		t.Errorf("a built index still did not serve the query: %s", built.Tier)
+	}
+	if !slices.Equal(hitPaths(built.Hits), hitPaths(res.Hits)) {
+		t.Errorf("the built index disagrees with the walk it replaced\n  walk:  %v\n  index: %v",
+			hitPaths(res.Hits), hitPaths(built.Hits))
+	}
+}
+
 // A file added after the build reaches the index through the updater, not
 // through a rebuild, and it has to still be there after a restart.
 //

@@ -317,6 +317,21 @@ func (ix *NameIndex) Query(needle []byte, limit int) (Result, error) {
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
 
+	// An index holding nothing covers none of the corpus, so answering from it
+	// means answering "no such file" about every file that exists.
+	//
+	// This is reachable, not theoretical. The switch that enables the index is
+	// separate from the build that fills it, and the administrative handler
+	// stores the switch and applies it before any build has run. In that window
+	// the index is open, empty and not at its ceiling, so nothing else here
+	// marks it unusable: every search returns zero hits and reports success.
+	//
+	// Zero entries is the same claim the ceiling makes, from the other end: the
+	// index knows it does not cover the corpus, so the caller must walk.
+	if ix.entryCount() == 0 {
+		return Result{Fallback: FallbackIncomplete}, nil
+	}
+
 	if ix.incomplete {
 		// Answering from part of the corpus is the single thing an index must
 		// never do. The caller cannot separate a short result from a complete
