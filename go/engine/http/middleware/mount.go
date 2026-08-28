@@ -11,6 +11,7 @@
 package middleware
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -32,6 +33,8 @@ const (
 	// KeyCredential holds the credential kind Auth selected. The name is what
 	// gosec reads; the value is a context key and holds no secret.
 	KeyCredential contextKey = "sc.credential" //nolint:gosec // G101: a context key, not a credential.
+	// KeyTrace holds the request id.
+	KeyTrace contextKey = "sc.trace"
 )
 
 // Deps is what the chain needs from the rest of the process.
@@ -43,6 +46,15 @@ type Deps struct {
 	Hosts   func() Hosts
 	Trusted func() []netip.Prefix
 	Limiter *Limiter
+
+	// ScriptHashes are the embedded hydration scripts' CSP hashes. Empty is a
+	// deployment with no inlined hydration, which the policy simply does not
+	// name.
+	ScriptHashes []string
+
+	// Principal resolves what a credential proves. Nil leaves every request
+	// unauthenticated, which is what a server with no auth service wired does.
+	Principal func(c Credential) (Principal, bool)
 }
 
 // Record is one entry in a replay: which step ran, and whether it passed the
@@ -112,16 +124,35 @@ func stepHandler(s Step, d Deps) fiber.Handler {
 			return c.Next()
 		}
 	case StepAuth:
+		return func(c *fiber.Ctx) error { return authHandler(c, d) }
+	case StepRequestID:
 		return func(c *fiber.Ctx) error {
-			cred := Select(Presented{
-				Authorization: c.Get(fiber.HeaderAuthorization),
-				Cookie:        c.Cookies(SessionCookieName),
-			}, publicRead(c))
-			c.Locals(string(KeyCredential), cred.Kind)
+			id, err := NewTraceID()
+			if err != nil {
+				// A process that cannot read randomness cannot mint a session
+				// either, so this is reported rather than worked around with a
+				// predictable id.
+				return err
+			}
+			c.Locals(string(KeyTrace), id)
+			c.Set(TraceHeader, id)
 			return c.Next()
 		}
-	case StepRequestID, StepSecurityHeaders, StepBodyLimit,
-		StepCSRF, StepACLScope, StepAuditSink, StepErrorMapper, StepUnset:
+	case StepSecurityHeaders:
+		return func(c *fiber.Ctx) error {
+			for k, v := range SecurityHeaders() {
+				c.Set(k, v)
+			}
+			if originOf(c) != OriginContent {
+				// The content host serves bytes rather than the application,
+				// and its own document sets what it needs.
+				c.Set("Content-Security-Policy", CSP(d.ScriptHashes))
+			}
+			return c.Next()
+		}
+	case StepACLScope:
+		return func(c *fiber.Ctx) error { return scopeHandler(c) }
+	case StepBodyLimit, StepCSRF, StepAuditSink, StepErrorMapper, StepUnset:
 		// Not yet implemented here. Passing through is deliberate and visible:
 		// a step that silently did nothing while claiming to run would be worse
 		// than one that is plainly a placeholder.
@@ -129,6 +160,59 @@ func stepHandler(s Step, d Deps) fiber.Handler {
 	default:
 		return func(c *fiber.Ctx) error { return c.Next() }
 	}
+}
+
+// authHandler selects a credential and resolves what it proves.
+func authHandler(c *fiber.Ctx, d Deps) error {
+	cred := Select(Presented{
+		Authorization: c.Get(fiber.HeaderAuthorization),
+		Cookie:        c.Cookies(SessionCookieName),
+	}, publicRead(c))
+
+	p := Principal{Kind: CredentialNone}
+	if d.Principal != nil && cred.Kind != CredentialNone {
+		if resolved, ok := d.Principal(cred); ok {
+			p = resolved
+		}
+		// A credential that did not resolve leaves the request
+		// unauthenticated. Whether that is a refusal is the route's decision,
+		// which ACLScope makes: a public route still serves it.
+	}
+	c.Locals(string(KeyCredential), p)
+	return c.Next()
+}
+
+// scopeHandler applies the matched route's requirement.
+func scopeHandler(c *fiber.Ctx) error {
+	req, ok := c.Locals(string(routeRequirementKey)).(route.Requirement)
+	if !ok {
+		// No metadata means no route matched, so there is nothing to scope and
+		// the 404 belongs to the router rather than to this step.
+		return c.Next()
+	}
+	if err := Scope(req, principalOf(c)); err != nil {
+		if errors.Is(err, ErrCredentialRequired) || errors.Is(err, ErrSessionRequired) {
+			return fiber.NewError(fiber.StatusUnauthorized)
+		}
+		return fiber.NewError(fiber.StatusForbidden)
+	}
+	return c.Next()
+}
+
+// principalOf reads what Auth resolved.
+func principalOf(c *fiber.Ctx) Principal {
+	if p, ok := c.Locals(string(KeyCredential)).(Principal); ok {
+		return p
+	}
+	return Principal{Kind: CredentialNone}
+}
+
+// originOf reads what the boundary settled on.
+func originOf(c *fiber.Ctx) Origin {
+	if o, ok := c.Locals(string(KeyOrigin)).(Origin); ok {
+		return o
+	}
+	return OriginNone
 }
 
 // boundaryHandler admits or refuses, and records which origin admitted it.
