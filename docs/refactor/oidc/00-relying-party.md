@@ -22,6 +22,12 @@ verifier is dependency-free by design: a JOSE library is a parser for
 attacker-controlled input, and this build verifies exactly the two
 families it accepts.
 
+This package holds the layer gate's one named `net/http` exception
+(`../03-engine-bootstrap.md`). What it builds is an outbound client, never
+a server, and the rule it is excepted from is about a package below the
+presentation tier being able to answer a request. The gate names this
+package specifically and still refuses every other service package.
+
 ## The six properties (normative)
 
 1. **The SSRF guard runs twice.** The address guard refuses loopback,

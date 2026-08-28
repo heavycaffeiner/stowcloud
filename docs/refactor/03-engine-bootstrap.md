@@ -133,7 +133,15 @@ The existing discipline extends to `go/engine/` from the first commit:
   `service/core`, `store/state` over `store/ident` and `store/dbfile`) are
   the tool's one explicit list. `http` is the only tree that may import
   fiber, and nothing under `engine/` except `http` may import `net/http`
-  either. The catalogue in `01-package-survey.md`'s "Cross-layer
+  either, with one named exception: `service/oidc` dials an identity
+  provider, and the rule `net/http` is under is about serving rather than
+  about the import. A package below the presentation tier that can write a
+  response can answer a request from a layer with no business knowing one
+  exists; an outbound client through a guarded transport does not. The
+  alternative is hand-rolling TLS and HTTP against an untrusted peer, which
+  is the worse trade. The exception is that one package by name, and the
+  gate carries a test proving a second service package is still refused.
+  The catalogue in `01-package-survey.md`'s "Cross-layer
   violations found" section is the tool's initial test fixture: each
   entry is reproduced as a refused-import test.
 - **contractcheck and routecheck** stay pointed at the old tree until

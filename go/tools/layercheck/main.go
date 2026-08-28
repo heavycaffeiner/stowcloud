@@ -45,6 +45,17 @@ const (
 	httpTier    = "http"
 )
 
+// outboundHTTP is the one package outside the presentation tier that may
+// import net/http, and only because what it makes is an outbound client.
+//
+// The rule net/http is under is about serving: a package below the
+// presentation tier that can write a response is a package that can answer a
+// request from a layer that has no business knowing there is one. The single
+// sign-on relying party never serves; it dials an identity provider through a
+// guarded transport, and the alternative is a hand-rolled client speaking
+// TLS and HTTP to an untrusted peer, which is a worse trade than this line.
+const outboundHTTP = "service/oidc"
+
 // tierAllowed lists, for each tier, the other tiers it may import. A tier
 // missing from this map, or a target tier missing from its list, is refused.
 // Same-tier imports are never looked up here: they go through sideways
@@ -148,7 +159,7 @@ func evaluate(importerTier, importerSub, importPath string) (reason string, refu
 		return "engine packages do not import internal; the two trees cross only in cmd or a test file", true
 
 	case importPath == netHTTP:
-		if importerTier != httpTier {
+		if importerTier != httpTier && importerSub != outboundHTTP {
 			return "only engine/http may import net/http", true
 		}
 		return "", false

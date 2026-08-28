@@ -263,5 +263,11 @@
 # collision-resistant hash. Two of the four are the imports, one is the MD4
 # constructor, and one is the reference computation in the test that checks
 # the second factor against the published vector.
+#
+# 6: the relying party adds two. One is asking whether the system certificate
+# pool is empty, which has no other accessor and which an empty pool must be a
+# startup refusal for. One is a deliberately undersized key in the test that
+# proves an undersized key is refused, which cannot be written with a key the
+# rule accepts.
 287
-4
+6

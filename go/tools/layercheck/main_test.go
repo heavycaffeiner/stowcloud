@@ -190,6 +190,32 @@ var _ = http.StatusOK
 	}, "only engine/http may import net/http")
 }
 
+// The relying party is the one package below the presentation tier that may
+// dial out, and the rule it is excepted from is about serving rather than
+// about the import itself.
+func TestNetHTTPInTheRelyingPartyAllowed(t *testing.T) {
+	assertAllowed(t, map[string]string{
+		"service/oidc/client.go": `package oidc
+
+import "net/http"
+
+var _ = http.MethodPost
+`,
+	})
+}
+
+// The exception is that one package and no other package in its tier.
+func TestNetHTTPInAnotherServicePackageRefused(t *testing.T) {
+	assertRefused(t, map[string]string{
+		"service/upload/serve.go": `package upload
+
+import "net/http"
+
+var _ = http.StatusOK
+`,
+	}, "only engine/http may import net/http")
+}
+
 func TestFiberOutsideEngineHTTPRefused(t *testing.T) {
 	assertRefused(t, map[string]string{
 		"service/core/serve.go": `package core
