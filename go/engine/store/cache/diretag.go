@@ -10,23 +10,23 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/ident"
 )
 
-// Aggregate is a directory's cached ETag with the recursive size and count
-// computed alongside it.
+// Aggregate holds a directory's cached ETag together with the recursive size and
+// count computed at the same time.
 //
-// Computing one walks children and hashes what it finds, which is not this
-// package's job: it stores the result, hands it back, and says when it is no
-// longer to be trusted.
+// Producing one requires walking children and hashing the results, which is not
+// this package's role. It stores the outcome, returns it, and reports when it
+// can no longer be trusted.
 type Aggregate struct {
 	Etag   string
 	RSize  uint64
 	RCount uint64
 }
 
-// DirEtag reports the cached aggregate for a directory, and false when the
-// caller has to recompute: there is no row, the row is marked dirty, or it
-// was computed against a share generation that has since moved. A caller
-// cannot tell "never computed" from "computed against an old generation" and
-// does not need to, since both mean recompute.
+// DirEtag returns a directory's cached aggregate, or false when recomputation is
+// required: no row exists, the row is dirty, or it was computed against a share
+// generation that has since advanced. Callers cannot distinguish "never
+// computed" from "computed against an old generation", and have no need to,
+// since both call for recomputation.
 func (d *DB) DirEtag(
 	ctx context.Context, share vfs.ShareID, id ident.FileID,
 ) (Aggregate, bool, error) {
@@ -54,13 +54,12 @@ func (d *DB) DirEtag(
 	return Aggregate{Etag: etag, RSize: sizeFromSQL(rsize), RCount: sizeFromSQL(rcount)}, true, nil
 }
 
-// PutDirEtag stores a freshly computed aggregate, stamped with the share
-// generation it was computed against.
+// PutDirEtag records a newly computed aggregate, stamping it with the share
+// generation in force at computation time.
 //
-// It is not gated by the size guard, and that is deliberate rather than an
-// oversight: refusing it would leave a cached ETag that is stale and still
-// flagged valid, so clients get told nothing changed when it did. A wrong
-// answer is not an acceptable way to save a page.
+// The size guard deliberately does not apply. Rejecting the write would leave a
+// stale cached ETag still marked valid, telling clients nothing changed when it
+// had. Saving a page is not worth returning a wrong answer.
 func (d *DB) PutDirEtag(
 	ctx context.Context, tx *sql.Tx,
 	share vfs.ShareID, id ident.FileID, agg Aggregate, gen uint64,
@@ -94,11 +93,11 @@ func (d *DB) MarkDirty(
 	return nil
 }
 
-// BumpShareGen invalidates every cached aggregate in one share without
-// touching a row: each one carries the generation it was computed against,
-// so moving the counter reads as invalid everywhere at once. It is what the
-// watcher falls back to when it loses a batch of events and can no longer
-// say which paths changed.
+// BumpShareGen invalidates every cached aggregate within a share without
+// modifying any row. Each aggregate stores the generation it was computed
+// against, so advancing the counter renders all of them invalid at once. The
+// watcher resorts to this after losing a batch of events, when it can no longer
+// identify which paths changed.
 func (d *DB) BumpShareGen(
 	ctx context.Context, tx *sql.Tx, share vfs.ShareID,
 ) (uint64, error) {
@@ -114,10 +113,10 @@ func (d *DB) BumpShareGen(
 	return sizeFromSQL(gen), nil
 }
 
-// ShareGen is the share's current generation, and zero for a share that has
-// never been invalidated. Zero is not a "never invalidated" sentinel: a
-// freshly written row is also stamped 0, so freshness is valid and equal
-// generations, never a non-zero one.
+// ShareGen gives a share's current generation, zero for one never invalidated.
+// Zero is not a sentinel meaning "never invalidated": newly written rows are
+// stamped 0 as well, so freshness means a valid row with matching generations
+// rather than a non-zero value.
 func (d *DB) ShareGen(ctx context.Context, share vfs.ShareID) (uint64, error) {
 	var gen int64
 	err := d.st.readShareGen.QueryRowContext(ctx, int64(share)).Scan(&gen)

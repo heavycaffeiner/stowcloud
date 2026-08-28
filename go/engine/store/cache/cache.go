@@ -1,14 +1,14 @@
-// Package cache is the rebuildable half of the store. Everything in it can
-// be walked back out of the filesystem, which is what makes deleting the
-// file a supported operation rather than an incident.
+// Package cache holds the rebuildable portion of the store. All of it can be
+// reconstructed by walking the filesystem, which makes deleting the file a
+// supported action rather than an incident.
 //
-// Two facts a POSIX filesystem will not give you are the whole reason it
-// exists: a stable id for a file across renames, which a sync client keys
-// its entire local journal on, and whether anything under a directory
-// changed, which is what stops every sync being a full crawl.
+// It exists entirely to supply two facts a POSIX filesystem withholds: an id for
+// a file that survives renames, which a sync client uses as the key for its whole
+// local journal, and whether anything beneath a directory changed, which is what
+// keeps every sync from becoming a full crawl.
 //
-// Every method here is allowed to answer "I do not know" and have the caller
-// fall back to the filesystem. Nothing may treat a missing row as a missing
+// Any method here may answer that it does not know, leaving the caller to fall
+// back to the filesystem. Nothing may interpret a missing row as a missing
 // file.
 package cache
 
@@ -20,28 +20,27 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/ident"
 )
 
-// Overrides is the durable record of which of two colliding files took the
-// derived id. It is consulted before anything is derived and it is the
-// authority, because the answer depended on insertion order and a rebuild
-// does not reproduce that.
+// Overrides durably records which of two colliding files claimed the derived id.
+// It is consulted ahead of any derivation and is authoritative, because the
+// original outcome depended on insertion order and a rebuild does not reproduce
+// that.
 //
-// It lives in the durable half of the store, which is why it is an interface
-// here: this package must not import the package that keeps it. A cache that
-// depended on the durable half's whole surface would be a cache nobody could
-// safely delete.
+// It resides in the durable half of the store, hence the interface here: this
+// package must not import whichever package holds it. A cache depending on the
+// durable half's full surface would be a cache nobody could safely delete.
 type Overrides interface {
 	// LookupFileID reports the recorded id for an identity, if one was ever
 	// recorded.
 	LookupFileID(ctx context.Context, id ident.Ident) (ident.FileID, bool, error)
 
-	// LookupFileIDOwner reports which identity reserved an id, if any. A
-	// reservation holds whether or not the owner's node row exists, which is
-	// what makes it survive a deleted cache: after a rebuild the owner may
-	// not have been walked yet.
+	// LookupFileIDOwner reports which identity, if any, reserved an id. The
+	// reservation stands whether or not the owner's node row exists, which is
+	// how it survives a deleted cache: following a rebuild the owner may not
+	// have been walked yet.
 	LookupFileIDOwner(ctx context.Context, id ident.FileID) (ident.Ident, bool, error)
 
-	// RecordFileIDs writes every assignment in one transaction. It commits
-	// before the node row that uses any of the ids does.
+	// RecordFileIDs commits all assignments within a single transaction,
+	// landing before any node row that references those ids.
 	RecordFileIDs(ctx context.Context, assignments ...ident.Assignment) error
 }
 
@@ -58,17 +57,17 @@ type DB struct {
 	st *stmts
 }
 
-// Spec is this database's file. It is rebuildable, which is what lets a
-// migration discard it instead of carrying rows across a shape change.
+// Spec describes this database's file. Being rebuildable is what permits a
+// migration to discard it rather than carry rows through a shape change.
 func Spec(path string) dbfile.Spec {
 	return dbfile.Spec{Path: path, Migrations: migrations(), Rebuildable: true}
 }
 
-// New wraps an open file and prepares every statement on it. ov is the
-// override table, which lives in the durable half and is passed in rather
-// than reached for.
+// New wraps an open file and prepares each statement against it. ov supplies the
+// override table, which belongs to the durable half and is injected rather than
+// fetched.
 //
-// There is no Close: the prepared statements are invalidated when the parent
+// No Close exists: the prepared statements become invalid once the parent
 // dbfile.DB's pool closes, and database/sql handles that without leaking a
 // descriptor.
 func New(ctx context.Context, f *dbfile.DB, ov Overrides) (*DB, error) {
@@ -87,7 +86,7 @@ func (d *DB) Write(ctx context.Context, fn func(*sql.Tx) error) error {
 // SQL is the pool, for readers.
 func (d *DB) SQL() *sql.DB { return d.f.SQL() }
 
-// File is the underlying database, for the size guard and the vacuum.
+// File exposes the underlying database for the size guard and the vacuum.
 func (d *DB) File() *dbfile.DB { return d.f }
 
 // btimeArg binds a birth time, or SQL NULL where the filesystem carries
@@ -99,9 +98,9 @@ func btimeArg(i ident.Ident) any {
 	return *i.Btime
 }
 
-// identArgs binds an identity for a lookup. The birth time is left off
-// entirely where there is none, because the statement for that case names
-// the column as IS NULL rather than taking it as a parameter.
+// identArgs binds an identity for a lookup. Where no birth time exists it is
+// omitted entirely, since the statement covering that case tests the column with
+// IS NULL instead of accepting it as a parameter.
 func identArgs(i ident.Ident) []any {
 	dev, ino, present, btime := i.ToSQL()
 	args := []any{int64(i.Share), dev, ino}

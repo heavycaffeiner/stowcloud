@@ -24,17 +24,17 @@ var ErrNoNode = errors.New("no such node")
 // forever.
 const maxResolveHops = 8192
 
-// Resolve walks the parent chain to a path relative to the share root. There
-// is no path column and there will not be one: a directory rename is one
-// UPDATE because of that, instead of a write for every row underneath it.
+// Resolve follows the parent chain to produce a path relative to the share root.
+// No path column exists and none will: that absence is why renaming a directory
+// costs one UPDATE rather than a write per row beneath it.
 //
-// The walk is not a snapshot. A rename landing part way through yields the
-// path the tree had at some point during it, which every caller has to
-// tolerate anyway: the filesystem is the truth and this is a hint.
+// The traversal is not atomic. A rename arriving midway yields whatever path the
+// tree held at some instant during the walk, which callers must tolerate
+// regardless: the filesystem is authoritative and this is only a hint.
 //
-// A resolved component this server's own grammar would refuse, written by
-// another program sharing the directory or corrupted on disk, is an error
-// rather than a silently repaired string.
+// A resolved component that this server's own grammar would reject, whether
+// written by another program sharing the directory or corrupted on disk, raises
+// an error instead of being quietly repaired.
 func (d *DB) Resolve(ctx context.Context, id ident.FileID) (vfs.ShareID, vfs.SharePath, error) {
 	var (
 		names []string
@@ -81,13 +81,13 @@ func (d *DB) Resolve(ctx context.Context, id ident.FileID) (vfs.ShareID, vfs.Sha
 	return vfs.ShareID(s), path, nil
 }
 
-// Rename moves a node: one row, whatever is underneath it. Descendants
-// reference their parent by id, so the next resolve of every one of them is
-// correct with no further writes.
+// Rename relocates a node by updating a single row, no matter how much sits
+// beneath it. Descendants refer to their parent by id, so every subsequent
+// resolve is correct without additional writes.
 //
-// It is not gated by the size guard. The row already exists, so this cannot
-// grow the file, and leaving the id pointing at the old path would be worse
-// than a database slightly over the floor.
+// The size guard does not apply. The row already exists so this cannot enlarge
+// the file, and leaving the id aimed at the former path would be worse than a
+// database marginally above the floor.
 func (d *DB) Rename(
 	ctx context.Context, tx *sql.Tx, id, newParent ident.FileID, newName string,
 ) error {

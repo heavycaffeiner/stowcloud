@@ -2,16 +2,16 @@ package cache
 
 import "github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
 
-// The schema as it first shipped. It is carried forward unchanged because
-// an existing cache.db has to open at its stored version, and a position in
-// the list is a durable version: editing a shipped step would teach the next
-// maintainer that an applied migration is something they may rewrite.
+// The schema in its originally shipped form. It survives unchanged because an
+// existing cache.db must open at whatever version it stored, and list position
+// constitutes a durable version. Editing a released step would signal to the
+// next maintainer that applied migrations are rewritable.
 //
-// Its single node_ident index is wrong; the correction is step 2 below.
+// Its lone node_ident index is incorrect; step 2 below repairs it.
 //
-// No path column, and no index besides the identity ones. Path resolution
-// walks the parent chain, and that is what makes renaming a directory one
-// row update instead of a write for every row underneath it.
+// There is no path column and no index beyond the identity ones. Path resolution
+// walks the parent chain, which is what reduces a directory rename to a single
+// row update rather than a write for every row underneath.
 const schemaV1 = `
 CREATE TABLE node (
   id       INTEGER PRIMARY KEY,
@@ -94,8 +94,8 @@ CREATE TABLE share_gen (
 ) WITHOUT ROWID;
 `
 
-// migrations is a function rather than a package-level slice so the list
-// cannot be reassigned.
+// migrations is a function instead of a package-level slice so nothing can
+// reassign the list.
 func migrations() []dbfile.Migration {
 	return []dbfile.Migration{
 		{Name: "1: node, diretag and share_gen", SQL: schemaV1},
@@ -105,11 +105,11 @@ func migrations() []dbfile.Migration {
 
 // Every statement this package runs, written out whole.
 const (
-	// A lookup comes in two shapes for the same reason the index does. The
-	// planner cannot prove a bound parameter is not NULL, so a single
-	// "btime_ns = ?" statement matches neither partial index and reads the
-	// whole table: on a cold walk of a large tree that is the difference
-	// between a seek and a scan, per file.
+	// Lookups take two forms for the same reason the index does. The planner
+	// cannot establish that a bound parameter is non-NULL, so one unified
+	// statement comparing btime_ns matches neither partial index and scans the
+	// entire table. Across a cold walk of a large tree that is a seek versus a
+	// scan for every file.
 	sqlNodeByIdent = `
 SELECT id, parent, name, flags FROM node
 WHERE share = ? AND dev = ? AND ino = ? AND btime_ns = ?`

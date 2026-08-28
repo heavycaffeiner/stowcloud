@@ -12,9 +12,9 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/ident"
 )
 
-// The derivation. A node id is a function of the file's identity, so a cache
-// that was deleted rebuilds to the same ids and every sync client attached
-// to this server keeps its journal.
+// The derivation. Node ids are computed from a file's identity, so a deleted
+// cache rebuilds to identical ids and every sync client attached to this server
+// retains its journal.
 const (
 	// derivationPrefix domain-separates this hash from every other one and
 	// carries the version a deliberate change to the derivation would move.
@@ -23,16 +23,17 @@ const (
 
 	keyLen = len(derivationPrefix) + 8 + 8 + 8 + 1 + 8 + 4
 
-	// idBits keeps the id inside a signed 64-bit integer. A sync client
-	// consumes it as one, so an id with the top bit set reaches some clients
-	// as a negative number.
+	// idBits confines the id to a signed 64-bit integer. Sync clients consume it
+	// as one, so an id with its top bit set would arrive at some of them as a
+	// negative number.
 	idBits = 63
 
 	mask63 = int64(1<<63 - 1)
 
-	// maxAttempts bounds the walk past a collision. Reaching it means the
-	// derivation is not distributing, which is a different and worse problem
-	// than two files colliding once, and a retry loop would hide it.
+	// maxAttempts limits the search following a collision. Hitting it indicates
+	// the derivation is not distributing values, a distinct and more serious
+	// problem than a single collision between two files, which an unbounded
+	// retry loop would conceal.
 	maxAttempts = 64
 )
 
@@ -45,12 +46,12 @@ const (
 // this package chooses a value.
 func DeriveID(id ident.Ident, attempt uint32) ident.FileID { return derive(id, attempt, idBits) }
 
-// derive folds the hash into bits bits rather than always into 63.
+// derive reduces the hash to the given number of bits rather than always 63.
 //
-// The width is a parameter for one reason: forcing a collision at 63 bits
-// needs a corpus nobody can build in a test, and the collision path is the
-// half of this design a rebuild depends on. Nothing outside this package can
-// choose it; New fixes it at idBits.
+// Width is parameterized for a single reason: provoking a collision at 63 bits
+// would require a corpus no test can assemble, and the collision path is the
+// half of this design that rebuilds depend on. No caller outside this package
+// selects it; New pins it to idBits.
 func derive(id ident.Ident, attempt uint32, bits uint) ident.FileID {
 	var key [keyLen]byte
 	n := copy(key[:], derivationPrefix)
@@ -86,23 +87,23 @@ func derive(id ident.Ident, attempt uint32, bits uint) ident.FileID {
 	return ident.FileID(1 + v%mask)
 }
 
-// AllocateID returns the id for an identity, consulting the override table
-// before deriving anything. It is the only function that may decide an id.
+// AllocateID produces the id for an identity, checking the override table before
+// deriving anything. No other function may decide an id.
 //
-// A candidate is free only when neither a different node nor a different
-// override identity holds it. The second half is what makes a reservation
-// outlive the cache: after a file is deleted its owner may not have been
-// walked yet, and an id no node currently holds is still spoken for.
+// A candidate counts as free only when neither another node nor another override
+// identity holds it. That second condition is what lets a reservation outlast
+// the cache: once a file is deleted its owner may not yet have been walked, and
+// an id currently held by no node remains claimed.
 //
-// tx is the cache's write transaction. The override rows a collision forces
-// commit to the durable half before this returns, and therefore before the
-// node row that uses the id: a crash between the two leaves reservations
-// with no nodes, which is the state every rebuild starts from anyway. The
-// other order leaves a node holding an id nothing recorded, and the next
-// rebuild races the same collision with no memory of the first outcome.
+// tx is the cache's write transaction. Override rows created by a collision
+// commit to the durable half before this returns, hence before the node row
+// using the id. A crash between the two leaves reservations without nodes, which
+// is where every rebuild begins anyway. The opposite order would leave a node
+// holding an unrecorded id, and the next rebuild would re-run the same collision
+// with no memory of how it resolved before.
 //
-// A caller must not cache the result across a share re-registration: the
-// share id is part of the derivation.
+// Callers must not retain the result across a share re-registration, since the
+// share id participates in the derivation.
 func (d *DB) AllocateID(ctx context.Context, tx *sql.Tx, id ident.Ident) (ident.FileID, error) {
 	// The override is consulted first, always, so a past decision is never
 	// revisited.
@@ -139,9 +140,9 @@ func (d *DB) AllocateID(ctx context.Context, tx *sql.Tx, id ident.Ident) (ident.
 			append(base, ident.Assignment{Ident: id, ID: candidate})...); err != nil {
 			return 0, fmt.Errorf("recording the id override: %w", err)
 		}
-		// Worth an operator's attention not because anything is wrong but
-		// because it is the first evidence that this corpus has reached the
-		// size where a 63-bit collision stops being abstract.
+		// Deserves operator attention not because something has broken but
+		// because it is the first sign this corpus has grown to the size where
+		// a 63-bit collision ceases to be theoretical.
 		slog.Warn("two files derived the same node id, and the second was moved",
 			slog.Uint64("share", uint64(id.Share)),
 			slog.Uint64("dev", id.Dev),
@@ -154,12 +155,12 @@ func (d *DB) AllocateID(ctx context.Context, tx *sql.Tx, id ident.Ident) (ident.
 		id.Share, id.Dev, id.Ino, maxAttempts)
 }
 
-// available reports whether want is free for id, and who took it otherwise.
+// available reports whether want is free for id, naming the claimant when it is
+// not.
 //
-// The returned holder is a node holding the id with nothing durable recorded
-// about it, which is the one case the caller has to write down. A
-// reservation is already durable, so it comes back as occupied with no
-// holder.
+// The returned holder is a node possessing the id with nothing durable recorded
+// about it, the single case the caller must persist. Reservations are already
+// durable, so they return as occupied with no holder.
 func (d *DB) available(
 	ctx context.Context, tx *sql.Tx, want ident.FileID, id ident.Ident,
 ) (bool, *ident.Ident, error) {

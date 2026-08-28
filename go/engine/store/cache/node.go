@@ -15,11 +15,11 @@ import (
 // the identity tuple now, so there is nothing left to hold a node down.
 const flagIsDir int64 = 1 << 0
 
-// Upsert returns the stable id for the file st names, inserting the row the
-// first time the file is seen and refreshing what has moved since.
+// Upsert yields the stable id for the file st describes, inserting a row on
+// first sight and updating whatever has changed since.
 //
-// Allocation is lazy: this is the only thing that inserts into node, so a
-// deployment that never asks for a stable id creates no rows at all.
+// Allocation happens lazily. Nothing else inserts into node, so a deployment
+// that never requests a stable id creates no rows whatsoever.
 func (d *DB) Upsert(
 	ctx context.Context, tx *sql.Tx,
 	share vfs.ShareID, parent ident.FileID, name string, st vfs.Stat,
@@ -45,9 +45,8 @@ func (d *DB) Upsert(
 		}
 		size := sizeToSQL(st.Size)
 		if curParent != int64(parent) || curName != name || want != flags {
-			// The filesystem is the source of truth and this is the cache
-			// catching up with a rename or a write that happened out of
-			// band.
+			// The filesystem is authoritative; this is the cache catching up
+			// with an out-of-band rename or write.
 			_, err = tx.StmtContext(ctx, d.st.moveNode).ExecContext(ctx,
 				int64(parent), name, size, st.MtimeNs, want, row)
 		} else {
@@ -62,9 +61,10 @@ func (d *DB) Upsert(
 		return ident.FileID(row), nil
 
 	case errors.Is(err, sql.ErrNoRows):
-		// The guard is here rather than at the top: refreshing a row cannot
-		// grow the file, and a file that already has an id keeps working
-		// while the free-space floor holds. A new row is what adds a page.
+		// The guard sits here rather than at the top because refreshing a row
+		// cannot enlarge the file, and a file already holding an id keeps
+		// working while the free-space floor is respected. Only a new row
+		// consumes another page.
 		if blocked := d.f.EnsureWritable(); blocked != nil {
 			return 0, blocked
 		}
@@ -91,9 +91,9 @@ func (d *DB) Upsert(
 	}
 }
 
-// Lookup reports the id this file already has, without allocating one. It is
-// how a caller asks whether a file has a stable id without the side effect
-// of giving it one.
+// Lookup returns the id a file already holds without allocating one. It lets a
+// caller ask whether a file has a stable id without the side effect of
+// assigning it one.
 func (d *DB) Lookup(
 	ctx context.Context, share vfs.ShareID, st vfs.Stat,
 ) (ident.FileID, bool, error) {

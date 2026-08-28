@@ -7,11 +7,11 @@ import (
 	"fmt"
 )
 
-// stmts is every statement this package runs, prepared once rather than
-// compiled on each call. A cold walk of a large tree runs four of these per
-// file, and SQLite parses and plans a statement every time one arrives as
-// text. The pool closes them when it closes, which is why this package has
-// no Close of its own.
+// stmts holds every statement this package executes, prepared once instead of
+// compiled per call. A cold walk of a large tree issues four of them per file,
+// and SQLite parses and plans a statement each time one arrives as text. The
+// pool closes them on its own close, which is why this package provides no
+// Close.
 type stmts struct {
 	nodeByIdent          *sql.Stmt
 	nodeByIdentNoBtime   *sql.Stmt
