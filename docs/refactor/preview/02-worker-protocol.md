@@ -13,9 +13,18 @@ The worker decodes hostile bytes, so the worker trusts nothing,
 including its own parent. Paths never cross the boundary: the parent
 opens the source and the output and passes **descriptors** over
 `SCM_RIGHTS` on a seqpacket socketpair. The transport (message-boundary
-framing, descriptor attachment) moves here from vfs as
-`worker/transport.go`; vfs is the filesystem boundary and a socket codec
-never belonged in it.
+framing, descriptor attachment) moves here from vfs; vfs is the
+filesystem boundary and a socket codec never belonged in it.
+
+**Amended during implementation: the transport lands in
+`service/preview/transport.go`, not `worker/transport.go`.** Both halves
+need it: the parent calls `SocketPair` and `SendMessage` from the pool,
+and the worker calls `RecvMessage` and `SendMessage` from its loop.
+Placing it under `worker/` makes the parent import the worker while the
+worker imports the parent for the codec and the decoders, which is an
+import cycle the compiler refuses. The move out of vfs, which is what
+this decision was for, is unchanged. For the same reason the worker's
+two test-hook mode names live beside the codec rather than in `worker/`.
 
 ## The wire codec
 

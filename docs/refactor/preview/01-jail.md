@@ -86,8 +86,25 @@ startup order (02):
 
 With both wired, the comments become true. The worker's jailproof test
 gains two assertions: the address-space limit is reported by the child
-(read `/proc/self/limits`), and no descriptor beyond the expected set
-survives (walk `/proc/self/fd`).
+and no descriptor beyond the expected set survives.
+
+**Amended during implementation: `RLIMIT_AS` is 2 GiB, not 512 MiB.**
+Wiring `ApplyLimits` is what exposed this, which is the point of wiring
+it. RLIMIT_AS bounds the whole address space rather than resident
+memory, and the Go runtime reserves far more than it touches: measured
+on this tree, a Go process encoding a PNG dies under 1 GiB and succeeds
+at 1.5 GiB, and the worst case the decode ceiling admits, 64 Mpx as
+RGBA, also fits at 1.5 GiB. At 512 MiB every worker died at startup. Two
+gigabytes is the measured floor with headroom, and the limit is still a
+real backstop: the graceful pixel ceiling refuses a bomb long before it,
+so what remains for the kernel is the case that ceiling cannot see, a
+decoder exploit allocating on its own account.
+
+The two reporting probes read their values through the socket rather
+than calling `getrlimit` inside the finished jail: that syscall is not
+on the measured allow list, and widening a filter so a proof can run is
+the wrong direction for the thing being proved. The limits are captured
+at startup, after `ApplyLimits` and before the filter.
 
 ## Deliberate changes
 

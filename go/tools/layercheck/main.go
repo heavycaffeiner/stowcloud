@@ -79,9 +79,13 @@ var sideways = map[string]map[string]bool{
 	// the permission check from that resolution, and publishes through the
 	// core's own publish path rather than renaming into a share itself.
 	"service/upload": {"service/core": true, "service/acl": true},
-	"store/state":    {"store/ident": true, "store/dbfile": true},
-	"store/cache":    {"store/ident": true, "store/dbfile": true},
-	"store/journal":  {"store/ident": true, "store/dbfile": true},
+	// The preview service is handed a resolved capability and requires
+	// Read|Download on it, the same permission a download needs: a thumbnail
+	// is a derivative of the bytes, so seeing one is seeing the file.
+	"service/preview": {"service/core": true, "service/acl": true},
+	"store/state":     {"store/ident": true, "store/dbfile": true},
+	"store/cache":     {"store/ident": true, "store/dbfile": true},
+	"store/journal":   {"store/ident": true, "store/dbfile": true},
 }
 
 // say writes a diagnostic. It is the one place in this command that ignores an

@@ -25,6 +25,18 @@ func (f *File) Close() error { return f.f.Close() }
 // diagnostic only, never used to reopen anything.
 func (f *File) Name() string { return f.f.Name() }
 
+// OSFile is the underlying file, for a caller that must pass this descriptor
+// to another process.
+//
+// It returns the *os.File rather than the number, so the descriptor stays
+// owned by something the runtime can see and the keepalive rule still holds at
+// the point it is used: a bare number can be closed by a finalizer underneath
+// the syscall that uses it.
+//
+// The preview pool is the caller. Its worker is never told a path, so a
+// descriptor the parent opened is the only way that process reaches a file.
+func (f *File) OSFile() *os.File { return f.f }
+
 // ReadAt is pread: it never moves the descriptor's own cursor, so two callers
 // sharing one handle do not move each other's position.
 func (f *File) ReadAt(b []byte, off int64) (int, error) { return f.f.ReadAt(b, off) }

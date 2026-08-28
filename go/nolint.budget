@@ -283,5 +283,27 @@
 # a counter this package increments. The last two are the same reading in the
 # segment tests, where the path is the framework's own TempDir and a fixed
 # name, and the corruption being staged is the point of the test.
+#
+# 51: the preview family adds thirty-six, and they are the families a jailed
+# subprocess brings with it rather than new kinds.
+#
+# Three are the kernel taking a struct pointer where x/sys carries no wrapper:
+# landlock_create_ruleset, landlock_add_rule and seccomp. Two more are the
+# openat probe reaching the syscall directly, which is the only way to prove
+# the filter refuses it: AT_FDCWD travels as its bit pattern and the path is a
+# NUL-terminated buffer.
+#
+# Sixteen are closes and kills where the outcome is already decided: a control
+# socket that is what just failed, a job descriptor whose reader has gone, a
+# process that being already gone is the case being handled, a probe that
+# failed by succeeding, and the descriptor sweep where EBADF on a descriptor
+# this process never held is the expected result.
+#
+# The rest are gosec reading a path or a subprocess as untrusted where every
+# component is this tree's own: a thumbnail whose whole filename is a digest
+# this package computed, the pool exec'ing this binary's own path, and the
+# tests reading their own TempDir. Three are values shared rather than rebuilt:
+# the worker's startup rlimits, captured once before the filter closes the call
+# that reads them, and the two test binaries each suite builds once.
 287
-15
+51
