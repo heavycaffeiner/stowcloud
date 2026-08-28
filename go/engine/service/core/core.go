@@ -39,6 +39,11 @@ type Options struct {
 	// has silently denied everything since it started.
 	ACL *acl.Evaluator
 
+	// Links is the store's share_link implementation. Nil is allowed at
+	// construction and fails every link operation with a wiring error, so a
+	// deployment that never wired it is told rather than crashing mid-mint.
+	Links LinkStore
+
 	// Clock stamps rows and timestamps. Nil takes the system clock.
 	Clock clock.Clock
 
@@ -55,6 +60,13 @@ type Core struct {
 	acl     *acl.Evaluator
 	clk     clock.Clock
 	logger  *slog.Logger
+
+	// The link seams, wired after construction because the cipher needs a
+	// master key the server loads later. Each one fails closed when unwired.
+	linkStore    LinkStore
+	linkCipher   LinkCipher
+	hashLinkPw   passwordHasher
+	verifyLinkPw passwordVerifier
 
 	// quota is the per-user byte ledger, attached after construction
 	// because a deployment without one is legitimate and because the
@@ -100,6 +112,7 @@ func New(ctx context.Context, opt Options) (*Core, error) {
 		logger:  logger,
 		shares:  map[ShareID]*shareEntry{},
 	}
+	c.linkStore = opt.Links
 	if err := c.ReloadGrants(ctx); err != nil {
 		return nil, err
 	}
