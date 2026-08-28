@@ -4,13 +4,17 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
@@ -20,6 +24,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/check"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/watch"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
@@ -718,5 +723,91 @@ func TestADirectoryHasNoThumbnail(t *testing.T) {
 	}
 	if !st.Kind.IsDir() {
 		t.Error("the resolved directory does not read as one, so preview would try to decode it")
+	}
+}
+
+// The watcher and the search updater, which nothing connects yet.
+//
+// watch emits InvalEvent and the search updater consumes svc.Change. The two
+// are field-for-field the same, which is not an accident: the watcher is what a
+// deployment feeds the updater from, and the cutover in phase 3 is where that
+// wiring lands. Until then nothing asserts the shapes still line up, so a field
+// added to one and not the other is a compile error nobody sees until the day
+// somebody writes the adapter.
+//
+// This is the adapter, written once here. If it stops compiling, the two have
+// diverged and the phase 3 wiring is the thing that will have to change.
+func TestAWatcherEventFeedsTheSearchUpdater(t *testing.T) {
+	a := compose(t)
+	a.grant(t, acl.Read|acl.Download, "")
+	a.write(t, "reports/annual.txt")
+	a.build(t)
+
+	sink := make(chan watch.InvalEvent, 16)
+	w, err := watch.Start(t.Context(), watch.DefaultConfig(), nil, sink)
+	if err != nil {
+		t.Skipf("this host cannot start a watcher: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := w.Close(); cerr != nil {
+			t.Errorf("closing the watcher: %v", cerr)
+		}
+	})
+
+	w.AddShare(vfs.ShareID(a.share), a.root, false)
+	// Subscribed to the directory the file lands in, because a kernel watch is
+	// per-directory: watching the share root reports changes to the root's own
+	// entries and says nothing about what happens two levels down.
+	reports, perr := vfs.ParseSafePath("reports")
+	if perr != nil {
+		t.Fatalf("parsing the watched directory: %v", perr)
+	}
+	w.Subscribe(vfs.ShareID(a.share), reports)
+
+	// A file appears the way another program writing into the share makes one.
+	a.write(t, "reports/brandnew.txt")
+
+	// The event, converted to what the updater takes. This conversion is the
+	// point of the test: it does not compile if the shapes drift apart.
+	var change searchsvc.Change
+	select {
+	case ev := <-sink:
+		change = searchsvc.Change{
+			Share: uint32(ev.Share),
+			Dir:   ev.Dir,
+			All:   ev.All,
+		}
+	case <-time.After(10 * time.Second):
+		t.Skip("no inotify event arrived; this host may not deliver them under test")
+	}
+
+	if change.Share != uint32(a.share) {
+		t.Errorf("the event names share %d, want %d", change.Share, a.share)
+	}
+
+	// And the updater accepts it, which is the other half: the value converted
+	// above is one the consumer will take.
+	u := searchsvc.NewUpdater(a.search, func() []search.Source {
+		return search.SourcesOf(a.core.ScanSources())
+	}, slog.New(slog.DiscardHandler))
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	task.Go(ctx, "search updater", func() { u.Run(ctx); close(done) })
+	u.Offer(change)
+
+	// The file reaches the index, which is what the whole path exists to do.
+	var indexed bool
+	for range 500 {
+		if slices.Contains(a.found(t, "brandnew"), "reports/brandnew.txt") {
+			indexed = true
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	if !indexed {
+		t.Error("a file the watcher reported never reached the index")
 	}
 }
