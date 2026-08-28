@@ -256,5 +256,12 @@
 #
 # 277: the settings-in-the-database change and the work around it, counted
 # rather than justified one by one, for the reason at the top of this file.
+#
+# The engine's four are all one thing: two hash functions the protocols fix.
+# MD4 is what SMB authenticates against and SHA-1 is what RFC 6238 computes a
+# code with, so neither is a choice this tree makes and neither is used as a
+# collision-resistant hash. Two of the four are the imports, one is the MD4
+# constructor, and one is the reference computation in the test that checks
+# the second factor against the published vector.
 287
-0
+4
