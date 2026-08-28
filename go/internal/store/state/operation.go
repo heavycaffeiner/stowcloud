@@ -295,10 +295,22 @@ func (d *DB) ListOps(ctx context.Context, user int64, limit int) (out []Op, err 
 
 	for rows.Next() {
 		var op Op
+		// message and finished_ns are NULL until the operation reaches a
+		// terminal state, and this listing returns exactly the operations that
+		// have not: scanning either into a plain value fails the whole query
+		// with a conversion error the moment a running row exists. GetOp reads
+		// the same two columns through null types; this did not, so the
+		// re-attach listing broke on precisely the rows it exists to return.
+		var (
+			msg      sql.NullString
+			finished sql.NullInt64
+		)
 		if serr := rows.Scan(&op.ID, &op.User, &op.Kind, &op.State,
-			&op.Progress, &op.Total, &op.Message, &op.CreatedNs, &op.FinishedNs); serr != nil {
+			&op.Progress, &op.Total, &msg, &op.CreatedNs, &finished); serr != nil {
 			return nil, serr
 		}
+		op.Message = msg.String
+		op.FinishedNs = finished.Int64
 		out = append(out, op)
 	}
 	return out, rows.Err()

@@ -19,6 +19,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
 	"github.com/heavycaffeiner/stowcloud/go/internal/core"
 	"github.com/heavycaffeiner/stowcloud/go/internal/store"
+	"github.com/heavycaffeiner/stowcloud/go/internal/store/state"
 	"github.com/heavycaffeiner/stowcloud/go/internal/vfs"
 )
 
@@ -950,6 +951,9 @@ func TestCopyingACollectionIsAccepted(t *testing.T) {
 		_, err := os.Stat(filepath.Join(f.host, "sub2", "x.txt"))
 		return err == nil
 	})
+	// And for the runner to finish recording it, or the operation's own writes
+	// race the cleanup of this test's temporary directory.
+	f.waitForCopies(t)
 }
 
 // A MKCOL whose parent does not exist is 409, not 404.
@@ -1042,6 +1046,32 @@ func TestTheCollectionCopySequence(t *testing.T) {
 	waitFor(t, func() bool {
 		for _, m := range members {
 			if _, err := os.Stat(filepath.Join(f.host, "ccdest", m)); err != nil {
+				return false
+			}
+		}
+		return true
+	})
+}
+
+// waitForCopies blocks until every copy this fixture started has reached a
+// terminal state.
+//
+// Waiting for the copied file to appear is not enough, and the difference is
+// what a t.TempDir cleanup trips over. The runner writes the file, then writes
+// the operation's item result and its terminal row; a test that returns once
+// the file exists returns while those writes are still in flight, against a
+// directory the cleanup is already removing. That surfaces as "directory not
+// empty" from the cleanup of whichever test happens to be running, with
+// nothing pointing at the copy.
+func (f *fixture) waitForCopies(t *testing.T) {
+	t.Helper()
+	waitFor(t, func() bool {
+		ops, err := f.core.ListOperations(t.Context(), testUser, 100)
+		if err != nil {
+			t.Fatalf("listing the operations: %v", err)
+		}
+		for _, op := range ops {
+			if op.State == state.OpRunning {
 				return false
 			}
 		}

@@ -186,3 +186,73 @@ func TestSharesRegistry(t *testing.T) {
 }
 
 var _ = sql.ErrNoRows
+
+// A running operation has no message and no finish time, and this listing
+// returns exactly the operations that are still running. Scanning either column
+// into a plain value therefore failed the whole query the moment one existed.
+//
+// The route behind it is GET /api/jobs, which the progress tray polls, so the
+// listing broke precisely when there was something to show and worked whenever
+// there was nothing. GetOp reads the same two columns through null types and
+// always did; this one did not.
+func TestTheListingReadsARunningOperation(t *testing.T) {
+	d := open(t)
+	addUserForOp(t, d, 7, "alice")
+	ctx := context.Background()
+
+	id, err := d.CreateOp(ctx, 7, state.OpCopy, 2, 100, []string{"a", "b"})
+	if err != nil {
+		t.Fatalf("CreateOp: %v", err)
+	}
+
+	ops, err := d.ListOps(ctx, 7, 10)
+	if err != nil {
+		t.Fatalf("ListOps with a running operation: %v", err)
+	}
+	if len(ops) != 1 {
+		t.Fatalf("the listing returned %d operations, want the running one", len(ops))
+	}
+	if ops[0].ID != id || ops[0].State != state.OpRunning {
+		t.Errorf("the listing returned %+v", ops[0])
+	}
+	// A row that has not finished reports no message and no finish time rather
+	// than inventing either.
+	if ops[0].Message != "" {
+		t.Errorf("a running operation carries the message %q", ops[0].Message)
+	}
+	if ops[0].FinishedNs != 0 {
+		t.Errorf("a running operation reports a finish time of %d", ops[0].FinishedNs)
+	}
+}
+
+// A finished operation's message survives the same listing, so the null
+// handling did not turn every message into an empty string.
+func TestTheListingKeepsAnInterruptedOperationsMessage(t *testing.T) {
+	d := open(t)
+	addUserForOp(t, d, 7, "alice")
+	ctx := context.Background()
+
+	id, err := d.CreateOp(ctx, 7, state.OpCopy, 2, 100, []string{"a", "b"})
+	if err != nil {
+		t.Fatalf("CreateOp: %v", err)
+	}
+	// Interrupted rather than done: the listing returns running and interrupted
+	// operations, which are the two a client can still act on.
+	if ferr := d.FinishOp(ctx, id, state.OpInterrupted, 1, "the process stopped", 200, nil); ferr != nil {
+		t.Fatalf("FinishOp: %v", ferr)
+	}
+
+	ops, err := d.ListOps(ctx, 7, 10)
+	if err != nil {
+		t.Fatalf("ListOps: %v", err)
+	}
+	if len(ops) != 1 {
+		t.Fatalf("the listing returned %d operations", len(ops))
+	}
+	if ops[0].Message != "the process stopped" {
+		t.Errorf("the message came back as %q", ops[0].Message)
+	}
+	if ops[0].FinishedNs != 200 {
+		t.Errorf("the finish time came back as %d", ops[0].FinishedNs)
+	}
+}
