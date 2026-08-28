@@ -273,5 +273,15 @@
 # 7: the upload engine adds one. A free-space probe that could not run is a
 # fact about the filesystem rather than a reason to refuse an upload, so the
 # nil return beside a non-nil error is the decision rather than a mistake.
+#
+# 15: the search family adds eight. Two are immutable values shared rather
+# than rebuilt per call, which both libraries document as safe for concurrent
+# use: the folding Caser, and the zstd encoders and decoders. Four are gosec
+# reading a file path as untrusted where every component is this package's
+# own: the base and tombstone segments are fixed names under the operator's
+# index directory, and a delta segment's name is built from that directory and
+# a counter this package increments. The last two are the same reading in the
+# segment tests, where the path is the framework's own TempDir and a fixed
+# name, and the corruption being staged is the point of the test.
 287
-7
+15
