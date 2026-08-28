@@ -1015,9 +1015,16 @@ func TestTheCollectionCopySequence(t *testing.T) {
 	if rec := f.transfer(t, "COPY", "/ccsrc", "/ccdest2", false); rec.Code != http.StatusAccepted {
 		t.Fatalf("the second collection COPY returned %d", rec.Code)
 	}
+	// Every member again, not just the first. The copy below uses ccdest2 as
+	// its source, so waiting on one file starts it against a tree still being
+	// written, and what is missing there is missing from the result.
 	waitFor(t, func() bool {
-		_, err := os.Stat(filepath.Join(f.host, "ccdest2", "foo.0"))
-		return err == nil
+		for _, m := range members {
+			if _, err := os.Stat(filepath.Join(f.host, "ccdest2", m)); err != nil {
+				return false
+			}
+		}
+		return true
 	})
 
 	// Onto an existing collection without overwrite: refused.
