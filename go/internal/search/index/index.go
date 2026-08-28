@@ -299,6 +299,21 @@ func (ix *NameIndex) Query(needle []byte, limit int) (Result, error) {
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
 
+	// An index holding nothing covers none of its corpus, so answering from it
+	// is answering "no such file" about every file that exists.
+	//
+	// Reachable rather than theoretical: enabling the index and building it are
+	// separate actions, and the admin route stores the switch and applies it
+	// with no build behind it. In that window the index opens cleanly, sits
+	// nowhere near its entry ceiling, and holds nothing, so no other check here
+	// marks it unusable. Every query returned zero hits and reported success.
+	//
+	// Zero entries is the ceiling's claim from the other end: the index knows
+	// it does not cover the corpus, so the caller has to walk.
+	if ix.entryCount() == 0 {
+		return Result{Fallback: FallbackIncomplete}, nil
+	}
+
 	var out Result
 	seen := map[tombKey]bool{}
 	var hits []Hit

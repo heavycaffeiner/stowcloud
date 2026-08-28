@@ -289,6 +289,17 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   run "contractcheck (the client's fields are sent)" \
       ingo_host go run ./tools/contractcheck \
         ../web/src/lib/api/types.ts ./internal/httpapi/handler
+  # contractcheck compares response shapes. This compares the settings surface,
+  # where the drift runs the other way: the section handler stores the client's
+  # JSON object unchanged, on purpose, so a field name only the client knows is
+  # saved happily and read by nobody. The save reports success and the control
+  # never does anything.
+  #
+  # Found by writing "concurrent" where the loader reads "max_concurrent_fast"
+  # and watching the value store and vanish.
+  run "settingscheck (a stored setting is read)" \
+      ingo_host go run ./tools/settingscheck \
+        ../web/src/lib/api/types.ts ./internal/runtimecfg/runtimecfg.go
   run "vetsecret (D12: no secret to a verb)"   ingo_host go run ./tools/vetsecret ./...
   run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./internal ./tools ./engine
   # The tier rule over the rebuilt engine, by the import graph. A package's

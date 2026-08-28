@@ -353,5 +353,10 @@
 # told that it stopped reading, and the door has no error path left to take at
 # that point.
 
-290
+#
+# 291: settingscheck's diagnostic writer, the same exemption every tool in
+# go/tools carries. The tool exists because a settings key the client writes
+# and no loader reads is stored, reported as saved, and read by nobody.
+
+291
 71
