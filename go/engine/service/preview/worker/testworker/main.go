@@ -1,12 +1,12 @@
 //go:build linux
 
-// Command testworker is a preview worker without the jail, for the pool's
+// Command testworker runs a preview worker with no jail, serving the pool's
 // tests.
 //
-// The jail is proved separately against a real kernel by the probe test.
-// Applying it here would make the pool's tests depend on a kernel feature that
-// is allowed to be absent, and would hide the behaviour they exist to check:
-// what the parent does when a worker dies or stops answering.
+// The probe test verifies the jail separately against a live kernel. Installing
+// it here would tie the pool's tests to a kernel feature permitted to be
+// missing, and would obscure exactly what they exist to observe: how the parent
+// reacts when a worker dies or stops responding.
 package main
 
 import (

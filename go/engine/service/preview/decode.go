@@ -16,54 +16,55 @@ import (
 	"golang.org/x/image/webp"
 )
 
-// Decoding, and the two layers of limit around it.
+// Decoding, wrapped in two layers of limit.
 //
-// RLIMIT_AS is the hard stop: it kills the worker, which costs a thumbnail.
-// DecodeLimits is the graceful one: it refuses the job with a typed error and
-// the worker survives. The graceful limit has to fire first for the common
-// case, because a 40,000 by 40,000 PNG is an ordinary thing to find in a photo
-// library and killing a worker for it is a bad trade.
+// RLIMIT_AS is the hard stop, killing the worker at the cost of one thumbnail.
+// DecodeLimits is the graceful one, rejecting the job with a typed error while
+// the worker lives on. The graceful limit must trigger first in the common case,
+// since a 40,000 by 40,000 PNG is an unremarkable find in a photo library and
+// killing a worker over it is a poor trade.
 
 // Decode failures.
 var (
-	// ErrUnsupported is a format this build has no decoder for.
+	// ErrUnsupported reports a format this build cannot decode.
 	ErrUnsupported = errors.New("preview: unsupported image format")
-	// ErrTooLarge is a decode limit refusing. The worker survives.
+	// ErrTooLarge reports a decode limit rejecting the job, with the worker
+	// surviving.
 	ErrTooLarge = errors.New("preview: the image is too large to decode")
-	// ErrDecode is a file that is not what it claimed to be.
+	// ErrDecode reports a file that is not what it claimed.
 	ErrDecode = errors.New("preview: the image could not be decoded")
 )
 
-// DecodeLimits bounds one decode.
+// DecodeLimits constrains a single decode.
 //
-// The values are derived for Go's decoders, because allocation behaviour is
-// not the same across implementations and a limit tuned for one is a guess for
-// the other. Measured on this tree's decoders, bytes of heap per source pixel:
+// The values are derived for Go's decoders, since allocation behaviour differs
+// between implementations and a limit tuned for one is guesswork for another.
+// Measured against this tree's decoders, heap bytes per source pixel:
 //
-//	image/png   4.00   (RGBA, the worst case and the one that sets the bound)
-//	image/jpeg  1.50   (YCbCr 4:2:0)
-//	image/gif   1.00   (paletted, one frame)
+//	image/png   4.00   RGBA, the worst case, and what fixes the bound
+//	image/jpeg  1.50   YCbCr 4:2:0
+//	image/gif   1.00   paletted, single frame
 //
-// At 4 bytes per pixel a 100 Mpx ceiling would ask for 400 MiB of heap for the
-// source alone, before the runtime, the scaled output and the encoder. The
-// 64 Mpx ceiling costs a measured 257 MiB for a PNG, which fits inside the
-// worker's address-space limit with room for the rest and leaves that limit as
-// a backstop rather than as the thing that fires first.
+// At 4 bytes per pixel a 100 Mpx ceiling would demand 400 MiB of heap for the
+// source by itself, ahead of the runtime, the scaled output and the encoder. A
+// 64 Mpx ceiling measures 257 MiB for a PNG, which sits inside the worker's
+// address-space limit with room for everything else and keeps that limit a
+// backstop rather than the first thing to fire.
 type DecodeLimits struct {
-	// MaxPixels bounds width times height of the source. It is a uint64 to
-	// avoid the overflow a 32-bit multiplication hits well before reaching
-	// values an attacker would use.
+	// MaxPixels limits the source's width times height. It is a uint64 to avoid
+	// the overflow a 32-bit multiplication reaches well before the values an
+	// attacker would supply.
 	MaxPixels uint64
-	// MaxDimension bounds either side on its own. A 1 by 500,000,000 image is
-	// within a pixel budget and is still a shape no decoder or scaler handles
-	// gracefully.
+	// MaxDimension limits each side individually. A 1 by 500,000,000 image fits
+	// within a pixel budget while remaining a shape no decoder or scaler handles
+	// well.
 	MaxDimension int
-	// MaxOutputPixels bounds what is produced, so a preset can never ask for
-	// more than the encoder should be handed.
+	// MaxOutputPixels limits what gets produced, so no preset can request more
+	// than the encoder ought to receive.
 	MaxOutputPixels uint64
 }
 
-// DefaultDecodeLimits is the measured bound described above.
+// DefaultDecodeLimits holds the measured bounds described above.
 func DefaultDecodeLimits() DecodeLimits {
 	return DecodeLimits{
 		MaxPixels:       64 << 20, // 67.1 Mpx, about 257 MiB decoded as RGBA
@@ -72,7 +73,7 @@ func DefaultDecodeLimits() DecodeLimits {
 	}
 }
 
-// Format is a decodable image format.
+// Format names a decodable image format.
 type Format uint8
 
 const (
@@ -103,11 +104,11 @@ func (f Format) String() string {
 	return "unknown"
 }
 
-// Sniff identifies a format from its magic bytes.
+// Sniff determines a format from its magic bytes.
 //
-// Never from a name or a declared content type: both are attacker-chosen, and
-// handing a TIFF to the JPEG decoder because a name said so is how a decoder
-// gets input its author never considered.
+// Never from a filename or a declared content type, both of which the attacker
+// selects. Handing a TIFF to the JPEG decoder because a name said so is exactly
+// how a decoder receives input its author never anticipated.
 func Sniff(data []byte) Format {
 	switch {
 	case len(data) >= 3 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff:
@@ -126,13 +127,13 @@ func Sniff(data []byte) Format {
 	return FormatUnknown
 }
 
-// DecodeBounded decodes an image, refusing a decompression bomb before any
+// DecodeBounded decodes an image while rejecting a decompression bomb before any
 // pixel buffer is allocated.
 //
-// The order is deliberate. The format comes from the magic bytes, never from a
-// name. The header is parsed for its dimensions, which for every format here
-// reads the header only and not the compressed body. Only then, once the
-// dimensions are known and checked, is the body decoded.
+// The ordering is intentional. Format detection uses the magic bytes and never a
+// name. Dimensions come from parsing the header, which for every format here
+// touches only the header and not the compressed body. Only afterwards, with
+// dimensions known and validated, is the body decoded.
 func DecodeBounded(data []byte, lim DecodeLimits) (image.Image, error) {
 	format := Sniff(data)
 	if format == FormatUnknown {
@@ -152,9 +153,9 @@ func DecodeBounded(data []byte, lim DecodeLimits) (image.Image, error) {
 		return nil, fmt.Errorf("%w: %s: %w", ErrDecode, format, err)
 	}
 
-	// The header is attacker-controlled and the body does not have to agree
-	// with it. Checking again on what actually came out is what stops a
-	// decoder that ignored its own header from getting past the limit.
+	// The header is attacker-controlled and the body need not match it.
+	// Rechecking against what actually emerged is what prevents a decoder that
+	// disregarded its own header from slipping past the limit.
 	b := img.Bounds()
 	if berr := checkBounds(b.Dx(), b.Dy(), lim); berr != nil {
 		return nil, berr
@@ -162,7 +163,7 @@ func DecodeBounded(data []byte, lim DecodeLimits) (image.Image, error) {
 	return img, nil
 }
 
-// checkBounds applies the pixel and dimension limits.
+// checkBounds enforces the pixel and dimension limits.
 func checkBounds(w, h int, lim DecodeLimits) error {
 	if w <= 0 || h <= 0 {
 		return fmt.Errorf("%w: a %dx%d image", ErrDecode, w, h)
@@ -171,8 +172,8 @@ func checkBounds(w, h int, lim DecodeLimits) error {
 		return fmt.Errorf("%w: %dx%d exceeds the %d-pixel dimension limit",
 			ErrTooLarge, w, h, lim.MaxDimension)
 	}
-	// The multiplication is in uint64 so it cannot wrap before the comparison,
-	// which is exactly the overflow an attacker would aim for.
+	// The multiplication uses uint64 so it cannot wrap before the comparison,
+	// which is precisely the overflow an attacker would target.
 	px, perr := num.Narrow[uint64](int64(w) * int64(h))
 	if perr != nil {
 		return fmt.Errorf("%w: a %dx%d image", ErrTooLarge, w, h)
@@ -184,7 +185,7 @@ func checkBounds(w, h int, lim DecodeLimits) error {
 	return nil
 }
 
-// decodeConfig reads dimensions without decoding the body.
+// decodeConfig obtains dimensions without decoding the body.
 func decodeConfig(data []byte, f Format) (image.Config, error) {
 	r := bytes.NewReader(data)
 	switch f {
@@ -193,8 +194,8 @@ func decodeConfig(data []byte, f Format) (image.Config, error) {
 	case FormatPNG:
 		return png.DecodeConfig(r)
 	case FormatGIF:
-		// DecodeConfig supplies the logical screen bounds, which is what the
-		// pre-decode limit needs.
+		// DecodeConfig reports the logical screen bounds, which is what the
+		// pre-decode limit requires.
 		return gif.DecodeConfig(r)
 	case FormatBMP:
 		return bmp.DecodeConfig(r)
@@ -214,23 +215,23 @@ func decodeBody(data []byte, f Format) (image.Image, error) {
 	case FormatPNG:
 		return png.Decode(r)
 	case FormatGIF:
-		// gif.Decode, never gif.DecodeAll: the first stops after one frame and
-		// the second materialises the whole animation, which for a long GIF is
-		// the allocation this limit exists to prevent.
+		// gif.Decode rather than gif.DecodeAll: the former halts after one frame
+		// while the latter materialises the entire animation, which for a long
+		// GIF is exactly the allocation this limit exists to stop.
 		return gif.Decode(r)
 	case FormatBMP:
 		return bmp.Decode(r)
 	case FormatTIFF:
 		return tiff.Decode(r)
 	case FormatWebP:
-		// x/image/webp reads a still WebP. An animated one is refused rather
-		// than having its first frame produced.
+		// x/image/webp handles a still WebP. An animated one is rejected instead
+		// of yielding its first frame.
 		return webp.Decode(r)
 	}
 	return nil, ErrUnsupported
 }
 
-// Thumbnail scales an image into a preset's box, preserving the aspect ratio.
+// Thumbnail fits an image into a preset's box while keeping the aspect ratio.
 func Thumbnail(src image.Image, p Preset, lim DecodeLimits) (image.Image, error) {
 	maxW, maxH := p.Bounds()
 	if maxW <= 0 || maxH <= 0 {
@@ -239,12 +240,12 @@ func Thumbnail(src image.Image, p Preset, lim DecodeLimits) (image.Image, error)
 	return ThumbnailSized(src, maxW, maxH, lim)
 }
 
-// ThumbnailSized scales into an explicit box, which is what the compatibility
-// content route needs. The caller has already clamped the dimensions.
+// ThumbnailSized fits an image into an explicit box, which the compatibility
+// content route requires. The caller has already clamped the dimensions.
 //
-// The output is never larger than the source: scaling a 32 by 32 icon up to
-// 1024 by 1024 produces a blurry square nobody asked for and costs a megabyte
-// of cache to store it.
+// Output never exceeds the source: enlarging a 32 by 32 icon to 1024 by 1024
+// yields a blurry square nobody requested and spends a megabyte of cache
+// storing it.
 func ThumbnailSized(src image.Image, maxW, maxH int, lim DecodeLimits) (image.Image, error) {
 	if maxW <= 0 || maxH <= 0 {
 		return nil, fmt.Errorf("%w: a %dx%d box", ErrUnsupported, maxW, maxH)
@@ -278,9 +279,9 @@ func ThumbnailSized(src image.Image, maxW, maxH int, lim DecodeLimits) (image.Im
 	return dst, nil
 }
 
-// scaleInto resamples src into dst by area averaging, which is what keeps a
-// downscaled photo from aliasing into noise. This is a thumbnail, and the
-// scaler is not where the interesting failures are.
+// scaleInto resamples src into dst using area averaging, which keeps a
+// downscaled photo from aliasing into noise. This produces a thumbnail, and the
+// scaler is not where the interesting failures live.
 func scaleInto(dst *image.RGBA, src image.Image) {
 	sb := src.Bounds()
 	db := dst.Bounds()
@@ -336,9 +337,9 @@ func EncodePNG(w io.Writer, img image.Image) error {
 	return nil
 }
 
-// toByte narrows an averaged 16-bit channel to eight bits. RGBA reports
-// 0..65535, so the shift lands inside a byte; the clamp is what makes that a
-// fact in the code rather than an argument in a comment.
+// toByte reduces an averaged 16-bit channel to eight bits. RGBA reports 0 to
+// 65535, so the shift lands within a byte, and the clamp is what turns that from
+// an argument in a comment into a property of the code.
 func toByte(v uint64) uint8 {
 	v >>= 8
 	if v > 0xff {

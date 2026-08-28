@@ -31,7 +31,7 @@ const (
 	MaxSizedDimension = 4096
 )
 
-// Service answers thumbnail requests.
+// Service handles thumbnail requests.
 type Service struct {
 	core  *core.Core
 	pool  *Pool
@@ -40,7 +40,7 @@ type Service struct {
 	neg   *Negatives
 }
 
-// ServiceOptions configures the service.
+// ServiceOptions holds the service's configuration.
 type ServiceOptions struct {
 	Core  *core.Core
 	Pool  *Pool
@@ -48,7 +48,7 @@ type ServiceOptions struct {
 	Clock clock.Clock
 }
 
-// NewService builds the service.
+// NewService constructs the service.
 func NewService(o ServiceOptions) *Service {
 	clk := o.Clock
 	if clk == nil {
@@ -57,11 +57,11 @@ func NewService(o ServiceOptions) *Service {
 	return &Service{core: o.Core, pool: o.Pool, cache: o.Cache, clk: clk, neg: NewNegatives()}
 }
 
-// Thumb is a generated or cached thumbnail.
+// Thumb represents a generated or cached thumbnail.
 //
-// The caller closes it. It is a file rather than bytes because a thumbnail is
-// served straight to a response and buffering one per request is memory the
-// server does not need to hold.
+// Closing it belongs to the caller. It is a file rather than bytes because a
+// thumbnail streams directly into a response, and buffering one per request
+// would occupy memory the server has no need to hold.
 type Thumb struct {
 	File   *os.File
 	Preset Preset
@@ -75,7 +75,7 @@ func (t Thumb) Close() error {
 	return t.File.Close()
 }
 
-// Get returns a thumbnail for a resolved path, from cache when possible.
+// Get produces a thumbnail for a resolved path, preferring the cache.
 func (s *Service) Get(ctx context.Context, r core.Resolved, preset Preset) (Thumb, error) {
 	if !preset.Valid() {
 		return Thumb{}, fmt.Errorf("%w: preset %d", ErrUnsupported, preset)
@@ -123,9 +123,9 @@ func presetFor(w, h int) Preset {
 func (s *Service) get(
 	ctx context.Context, r core.Resolved, preset Preset, width, height int, sized bool,
 ) (Thumb, error) {
-	// The same permission a download needs. A thumbnail is a derivative of the
-	// bytes, so being able to see one is being able to see the file. Checked
-	// before any cache lookup, so a planted cache entry is not a way in.
+	// The same permission a download requires. A thumbnail derives from the
+	// bytes, so viewing one amounts to viewing the file. Checked ahead of any
+	// cache lookup, so a planted cache entry provides no way in.
 	if err := r.Require(acl.Read | acl.Download); err != nil {
 		return Thumb{}, err
 	}
@@ -169,7 +169,7 @@ func (s *Service) get(
 	return Thumb{File: f, Preset: preset}, nil
 }
 
-// generate runs one job through the pool and stores the result.
+// generate dispatches one job through the pool and stores the outcome.
 func (s *Service) generate(ctx context.Context, r core.Resolved, key Key, preset Preset) error {
 	in, err := r.Root().OpenRead(r.Path(), vfs.IntentRead)
 	if err != nil {
@@ -180,8 +180,8 @@ func (s *Service) generate(ctx context.Context, r core.Resolved, key Key, preset
 		_ = in.Close()
 	}()
 
-	// The worker writes into a staged file that the cache publishes by rename,
-	// so a partial thumbnail is never visible.
+	// The worker writes into a staging file that the cache publishes via rename,
+	// so a partial thumbnail never becomes visible.
 	return s.cache.Put(key, func(staged *os.File) error {
 		req := Request{
 			Kind:      JobImage,
@@ -214,7 +214,7 @@ func (s *Service) generate(ctx context.Context, r core.Resolved, key Key, preset
 // runs.
 func (s *Service) SweepNegatives() int { return s.neg.Sweep(s.clk.Now()) }
 
-// reasonFor maps a generation failure onto what is worth remembering.
+// reasonFor translates a generation failure into what deserves remembering.
 func reasonFor(err error) Negative {
 	switch {
 	case errors.Is(err, ErrTooLarge):
@@ -228,8 +228,8 @@ func reasonFor(err error) Negative {
 	case errors.Is(err, ErrWorkerDied):
 		return NegativeWorkerDied
 	}
-	// Everything else is not a statement about this file, so it is not
-	// remembered: a busy pool or a closed one would otherwise poison a key.
+	// Anything else says nothing about this file and goes unremembered, since a
+	// busy or closed pool would otherwise poison a key.
 	return NegativeNone
 }
 
@@ -249,7 +249,7 @@ func negativeError(reason Negative) error {
 	return nil
 }
 
-// statusError turns a worker's answer into this package's error set.
+// statusError converts a worker's answer into this package's error set.
 func statusError(resp Response) error {
 	switch resp.Status {
 	case StatusTooLarge:
@@ -266,16 +266,15 @@ func statusError(resp Response) error {
 	return nil
 }
 
-// vfsSource adapts a share file to the pool's Source.
+// vfsSource adapts a share file onto the pool's Source interface.
 type vfsSource struct{ f *vfs.File }
 
 func (v vfsSource) File() *os.File { return v.f.OSFile() }
 
-// maxPixelsFor is the ceiling the parent sends with a job.
+// maxPixelsFor gives the ceiling the parent attaches to a job.
 //
-// It travels with the request so the limit lives in one place rather than
-// being compiled into two that can disagree. The worker clamps it downward and
-// never upward.
+// Sending it with the request keeps the limit in one place instead of compiling
+// it into two that could disagree. The worker only ever clamps it downward.
 func maxPixelsFor() uint32 {
 	lim := DefaultDecodeLimits()
 	if lim.MaxPixels > uint64(^uint32(0)) {

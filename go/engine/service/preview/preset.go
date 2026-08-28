@@ -10,9 +10,9 @@ package preview
 
 // Preset is a thumbnail size.
 //
-// A small closed set rather than caller-chosen dimensions: an arbitrary size
-// per request is an unbounded cache and a decode the caller sizes, and neither
-// is something a stranger should choose.
+// A small fixed set instead of caller-supplied dimensions. Arbitrary per-request
+// sizes would mean an unbounded cache and a decode whose cost the caller
+// dictates, neither of which a stranger should control.
 //
 // The numbering is fixed: these are wire values that travel in the worker
 // request and in cache keys, so renumbering them would make an old cache entry
@@ -20,11 +20,11 @@ package preview
 type Preset uint8
 
 const (
-	// PresetSmall is the grid thumbnail.
+	// PresetSmall serves the grid thumbnail.
 	PresetSmall Preset = 1
-	// PresetMedium is the list preview.
+	// PresetMedium serves the list preview.
 	PresetMedium Preset = 2
-	// PresetLarge is the viewer's first paint, before the full file arrives.
+	// PresetLarge serves the viewer's first paint, ahead of the full file.
 	PresetLarge Preset = 3
 )
 
@@ -47,7 +47,7 @@ func (p Preset) String() string {
 	return "unknown"
 }
 
-// Bounds is the box a thumbnail fits inside, aspect ratio preserved.
+// Bounds gives the box a thumbnail fits within, aspect ratio preserved.
 func (p Preset) Bounds() (w, h int) {
 	switch p {
 	case PresetSmall:
@@ -60,5 +60,5 @@ func (p Preset) Bounds() (w, h int) {
 	return 0, 0
 }
 
-// Presets is every preset, for a caller iterating them.
+// Presets lists every preset for a caller that iterates them.
 func Presets() []Preset { return []Preset{PresetSmall, PresetMedium, PresetLarge} }

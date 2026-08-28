@@ -5,20 +5,20 @@ import (
 	"image"
 )
 
-// EXIF handling, which is really orientation handling.
+// EXIF handling, which amounts to orientation handling.
 //
-// Go's encoders write no EXIF, so this is not about removal so much as about
-// never carrying anything across: the pipeline decodes to a pixel buffer and
-// encodes from the buffer. The only metadata that survives is the orientation,
-// which is applied to the pixels and then discarded.
+// Go's encoders emit no EXIF, so this concerns never propagating anything rather
+// than removal: the pipeline decodes into a pixel buffer and encodes back out of
+// it. Orientation is the sole surviving metadata, applied to the pixels and then
+// discarded.
 //
-// It has to be applied rather than dropped. A camera writes an upright sensor
-// image plus a rotation tag, so dropping the tag without applying it turns
-// every portrait photo sideways. It has to be discarded rather than carried,
-// because a thumbnail of a holiday photo would otherwise take its GPS
-// coordinates to whoever the folder is shared with.
+// Applying it is necessary rather than optional. A camera stores an upright
+// sensor image alongside a rotation tag, so discarding the tag without applying
+// it leaves every portrait photo sideways. Discarding it afterwards is equally
+// necessary, since a thumbnail of a holiday photo would otherwise hand its GPS
+// coordinates to everyone the folder is shared with.
 
-// Orientation is the EXIF tag's eight values.
+// Orientation enumerates the EXIF tag's eight values.
 type Orientation uint8
 
 const (
@@ -26,10 +26,10 @@ const (
 	OrientationFlipH  Orientation = 2
 	OrientationRot180 Orientation = 3
 	OrientationFlipV  Orientation = 4
-	// OrientationTranspose is a flip across the main diagonal.
+	// OrientationTranspose flips across the main diagonal.
 	OrientationTranspose Orientation = 5
 	OrientationRot90     Orientation = 6
-	// OrientationTransverse is a flip across the anti-diagonal.
+	// OrientationTransverse flips across the anti-diagonal.
 	OrientationTransverse Orientation = 7
 	OrientationRot270     Orientation = 8
 )
@@ -45,25 +45,25 @@ const (
 	tiffMagic = 42
 	// ifdEntryLen is the fixed width of one directory entry.
 	ifdEntryLen = 12
-	// exifMaxEntries bounds an IFD. The count comes off the file, so without
-	// a ceiling a crafted header would drive the scan for as long as it liked.
+	// exifMaxEntries limits an IFD. The count originates in the file, so absent a
+	// ceiling a crafted header could drive the scan indefinitely.
 	exifMaxEntries = 1024
-	// exifMaxScan bounds how much of a file is searched for the marker.
+	// exifMaxScan limits how far into a file the marker is sought.
 	exifMaxScan = 256 << 10
 	// exifMaxDepth caps the recursion into a nested TIFF header, so a file
 	// pointing at itself terminates.
 	exifMaxDepth = 2
 )
 
-// ReadOrientation finds the EXIF orientation in a JPEG or TIFF.
+// ReadOrientation locates the EXIF orientation within a JPEG or TIFF.
 //
-// It returns OrientationNormal for anything it cannot read, which is the safe
-// answer: an image with no tag is already upright, and one whose tag cannot be
-// parsed is not worth rotating on a guess.
+// Anything unreadable yields OrientationNormal, the safe answer: an image
+// lacking a tag is already upright, and one whose tag will not parse is not
+// worth rotating on a guess.
 //
-// This is a deliberately small parser over a structure a stranger wrote. It
-// reads one tag, never allocates from a length in the file, and checks every
-// offset against the slice before indexing it.
+// This parser is intentionally minimal, operating on a structure written by a
+// stranger. It reads a single tag, never sizes an allocation from a length in
+// the file, and validates every offset against the slice before indexing.
 func ReadOrientation(data []byte) Orientation {
 	if len(data) > exifMaxScan {
 		data = data[:exifMaxScan]
@@ -77,7 +77,7 @@ func ReadOrientation(data []byte) Orientation {
 	return OrientationNormal
 }
 
-// jpegOrientation walks the JPEG marker segments looking for APP1/Exif.
+// jpegOrientation scans the JPEG marker segments for APP1/Exif.
 func jpegOrientation(data []byte) Orientation {
 	const (
 		markerPrefix      = 0xff
@@ -91,8 +91,8 @@ func jpegOrientation(data []byte) Orientation {
 			return OrientationNormal
 		}
 		marker := data[pos+1]
-		// Start of scan: the entropy-coded data begins and there are no more
-		// headers to walk.
+		// Start of scan: entropy-coded data begins here and no headers remain to
+		// traverse.
 		if marker == markerStartOfScan {
 			return OrientationNormal
 		}
@@ -112,7 +112,7 @@ func jpegOrientation(data []byte) Orientation {
 	return OrientationNormal
 }
 
-// tiffOrientation reads the orientation out of a TIFF header.
+// tiffOrientation extracts the orientation from a TIFF header.
 func tiffOrientation(tif []byte, depth int) Orientation {
 	if depth > exifMaxDepth || len(tif) < 8 {
 		return OrientationNormal
@@ -146,7 +146,7 @@ func tiffOrientation(tif []byte, depth int) Orientation {
 		if bo.Uint16(tif[at:]) != tagOrientation {
 			continue
 		}
-		// A SHORT, count one, whose value sits in the entry itself.
+		// A SHORT of count one, storing its value inline in the entry.
 		if bo.Uint16(tif[at+2:]) != tagTypeShort {
 			return OrientationNormal
 		}
@@ -162,9 +162,10 @@ func tiffOrientation(tif []byte, depth int) Orientation {
 // Valid reports whether o is one of the eight defined values.
 func (o Orientation) Valid() bool { return o >= OrientationNormal && o <= OrientationRot270 }
 
-// Apply rotates and flips an image into its upright form.
+// Apply rotates and flips an image into upright form.
 //
-// The result carries no metadata at all, because it is a fresh pixel buffer.
+// The result holds no metadata whatsoever, being a newly allocated pixel
+// buffer.
 func (o Orientation) Apply(src image.Image) image.Image {
 	if o == OrientationNormal || !o.Valid() {
 		return src
@@ -173,7 +174,7 @@ func (o Orientation) Apply(src image.Image) image.Image {
 	b := src.Bounds()
 	w, h := b.Dx(), b.Dy()
 
-	// The four quarter turns swap the axes.
+	// Quarter turns exchange the two axes.
 	outW, outH := w, h
 	switch o {
 	case OrientationTranspose, OrientationRot90, OrientationTransverse, OrientationRot270:

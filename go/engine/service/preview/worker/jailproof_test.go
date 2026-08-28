@@ -144,8 +144,8 @@ func probe(t *testing.T, p *preview.Pool, which worker.Probe) (worker.ProbeOutco
 	return worker.OutcomeFrom(resp.Width), resp.Err, nil
 }
 
-// The transport works, so a run where every probe was killed can be told from
-// one where the socket was never connected.
+// Confirms a working transport, separating a run where every probe was killed
+// from one where the socket never connected.
 func TestJailedWorkerAnswersAPing(t *testing.T) {
 	outcome, detail, err := probe(t, jailedPool(t), worker.ProbePing)
 	if err != nil {

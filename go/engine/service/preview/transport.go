@@ -10,32 +10,31 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The seqpacket control socket the jailed worker is driven over.
+// The seqpacket control socket used to drive the jailed worker.
 //
-// It has moved out of the filesystem package: vfs is the filesystem boundary,
-// and a socketpair codec never belonged in it.
+// It has left the filesystem package, since vfs marks the filesystem boundary
+// and a socketpair codec never belonged there.
 //
-// It sits beside the codec rather than inside worker/ because both halves need
-// it: the parent calls SocketPair and SendMessage from the pool, and the worker
-// calls RecvMessage and SendMessage from its loop. Putting it under worker/
-// would make the parent import the worker while the worker imports this
-// package for the codec and the decoders, which is a cycle the compiler
-// refuses.
+// It lives alongside the codec rather than under worker/ because both halves
+// require it: the parent invokes SocketPair and SendMessage from the pool, while
+// the worker invokes RecvMessage and SendMessage from its loop. Placing it under
+// worker/ would have the parent import the worker while the worker imports this
+// package for the codec and the decoders, a cycle the compiler rejects.
 //
-// A raw descriptor must not escape a keepalive. (*os.File).Fd takes the
-// descriptor out of the runtime's view for the duration of the call, and a
-// finalizer is then free to close it underneath the syscall, so every number
-// read here is held across the call that uses it.
+// No raw descriptor may outlive a keepalive. (*os.File).Fd removes the
+// descriptor from the runtime's view for the duration of the call, leaving a
+// finalizer free to close it beneath the syscall, so every number obtained here
+// is retained across the call that uses it.
 //
-// The message boundary matters as much as the descriptor. SOCK_SEQPACKET makes
-// a message a message: over a stream, a short read would look like a valid
-// short message, which is exactly the ambiguity a fixed-layout wire codec
-// exists to remove.
+// Message boundaries matter as much as descriptors. SOCK_SEQPACKET preserves
+// them: over a stream a short read would resemble a valid short message, exactly
+// the ambiguity a fixed-layout wire codec exists to eliminate.
 
-// SocketPair returns a connected seqpacket pair.
+// SocketPair creates a connected seqpacket pair.
 //
-// Both ends are close-on-exec, so a descriptor does not leak into an unrelated
-// child. The caller clears that on the end it hands to its own child.
+// Both ends carry close-on-exec, preventing a descriptor from leaking into an
+// unrelated child. The caller clears it on whichever end it passes to its own
+// child.
 func SocketPair() (a, b *os.File, err error) {
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_SEQPACKET|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
@@ -44,13 +43,13 @@ func SocketPair() (a, b *os.File, err error) {
 	return os.NewFile(uintptr(fds[0]), "seqpacket"), os.NewFile(uintptr(fds[1]), "seqpacket"), nil
 }
 
-// SendMessage writes one message on sock, optionally passing descriptors.
+// SendMessage transmits a message over sock, optionally attaching descriptors.
 //
-// The files are passed as an SCM_RIGHTS control message and every one of them
-// is kept alive across the call.
+// Files travel in an SCM_RIGHTS control message, and each is kept alive for the
+// duration of the call.
 func SendMessage(sock *os.File, msg []byte, pass ...*os.File) error {
-	// The rights are built inside the keepalive, so every passed file is held
-	// from the moment its number is read until the syscall has returned.
+	// The rights are assembled within the keepalive, so every attached file is
+	// retained from the moment its number is read until the syscall returns.
 	err := withFdErr(sock, func(fd int) error {
 		var rights []byte
 		if len(pass) > 0 {
@@ -73,11 +72,11 @@ func SendMessage(sock *os.File, msg []byte, pass ...*os.File) error {
 	return nil
 }
 
-// RecvMessage reads one message and any descriptors passed with it.
+// RecvMessage receives a message together with any descriptors attached to it.
 //
-// The returned files are the caller's to close. A message carrying none
-// returns an empty slice rather than nil, so a caller counting them does not
-// have to distinguish the two.
+// Closing the returned files is the caller's responsibility. A message carrying
+// none yields an empty slice rather than nil, sparing a caller that counts them
+// from telling the two apart.
 func RecvMessage(sock *os.File, buf []byte, maxFiles int) (n int, files []*os.File, err error) {
 	oob := make([]byte, unix.CmsgSpace(maxFiles*4))
 	var oobn int

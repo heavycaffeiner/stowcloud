@@ -12,33 +12,33 @@ import (
 
 // The proof.
 //
-// A security claim that cannot be executed is a comment, so the worker accepts
-// a probe message and attempts, from inside the finished jail, the things the
-// jail is supposed to prevent.
+// A security claim nobody can execute is just a comment, so the worker accepts a
+// probe message and attempts, from within the completed jail, precisely what the
+// jail is meant to block.
 //
-// The probes grant nothing. They run after every restriction is in place, and
-// their only possible outcomes are that the kernel refused and that the kernel
-// killed the process. A probe reporting success is a test failure.
+// Probes confer nothing. They execute once every restriction is installed, and
+// the only outcomes available to them are the kernel refusing and the kernel
+// killing the process. Any probe reporting success fails the test.
 
-// spinIterations is long enough to outlast any deadline a test sets and short
-// enough to end on its own if nothing interrupts it.
+// spinIterations runs long enough to outlast any deadline a test imposes while
+// remaining short enough to terminate unaided.
 const spinIterations = 20_000_000_000
 
-// Probe is one thing to attempt.
+// Probe names a single thing to attempt.
 type Probe uint8
 
 const (
-	// ProbePing attempts nothing and proves the transport works, so a run
-	// where every probe was killed can be told from one where the socket was
-	// never connected.
+	// ProbePing attempts nothing and demonstrates a working transport,
+	// distinguishing a run where every probe was killed from one where the
+	// socket never connected.
 	ProbePing Probe = iota
-	// ProbeOpenEtcPasswd opens a file by name.
+	// ProbeOpenEtcPasswd tries opening a file by name.
 	ProbeOpenEtcPasswd
-	// ProbeCreateSocket asks for a network socket.
+	// ProbeCreateSocket tries requesting a network socket.
 	ProbeCreateSocket
-	// ProbeFork asks for a new process.
+	// ProbeFork tries requesting a new process.
 	ProbeFork
-	// ProbeSpin burns CPU so the parent can kill it mid-job.
+	// ProbeSpin consumes CPU so the parent can kill it mid-job.
 	ProbeSpin
 	// ProbeReportLimits reads this process's own rlimits back, so the
 	// jailproof suite can assert the address-space bound is really set rather
@@ -69,25 +69,25 @@ func (p Probe) String() string {
 	return "unknown"
 }
 
-// ProbeOutcome is what happened.
+// ProbeOutcome records what happened.
 type ProbeOutcome uint8
 
 const (
-	// OutcomeRefused is the kernel saying no, which is a pass.
+	// OutcomeRefused means the kernel declined, which counts as a pass.
 	OutcomeRefused ProbeOutcome = iota
-	// OutcomeSucceeded is the probe getting what it asked for, which is a
-	// failure. A killed probe never reports at all: the process is gone and
-	// the parent sees the socket close.
+	// OutcomeSucceeded means the probe obtained what it requested, which counts
+	// as a failure. A killed probe reports nothing at all: the process is gone
+	// and the parent observes the socket closing.
 	OutcomeSucceeded
 	// OutcomeCompleted is ping, spin and the two reporting probes, which are
 	// not refusals.
 	OutcomeCompleted
 )
 
-// OutcomeFrom decodes an outcome the worker reported in a wire field.
+// OutcomeFrom decodes an outcome the worker placed in a wire field.
 //
-// An out-of-range value is a worker that is not this build, so it reads as a
-// success: the safe direction for a proof is the one that fails the test.
+// An out-of-range value indicates a worker from a different build, so it is read
+// as success: for a proof, the safe direction is the one that fails the test.
 func OutcomeFrom(v uint16) ProbeOutcome {
 	if v > uint16(OutcomeCompleted) {
 		return OutcomeSucceeded
@@ -107,12 +107,12 @@ func (o ProbeOutcome) String() string {
 	return "unknown"
 }
 
-// RunProbe attempts one probe and reports what the kernel said.
+// RunProbe carries out one probe and reports the kernel's response.
 //
-// Nothing here goes through the standard library's file or network API. The Go
-// runtime may service those through a different path, or not issue the syscall
-// at all, and a probe that did not reach the kernel proves nothing about a
-// filter that sits in front of it.
+// Nothing here uses the standard library's file or network API. The Go runtime
+// may satisfy those along a different path, or skip the syscall entirely, and a
+// probe that never reached the kernel proves nothing about a filter positioned
+// in front of it.
 func RunProbe(p Probe) (ProbeOutcome, string) {
 	switch p {
 	case ProbePing:
@@ -187,16 +187,16 @@ func probeFork() (ProbeOutcome, string) {
 }
 
 func probeSpin() (ProbeOutcome, string) {
-	// Burns CPU so the parent's deadline has something to interrupt.
+	// Consumes CPU so the parent's deadline has something to cut short.
 	//
-	// A bounded loop rather than a clock: this runs inside the jail, where
-	// nothing is injectable. The count only has to outlast a test deadline,
-	// not measure anything.
+	// A bounded loop instead of a clock, since this executes inside the jail
+	// where nothing can be injected. The count merely needs to outlast a test
+	// deadline rather than measure anything.
 	sink := 0
 	for i := range spinIterations {
 		sink += i * i
 		if sink == -1 {
-			// Never true; it stops the loop being optimised away.
+			// Never satisfied; it keeps the loop from being optimised away.
 			return OutcomeCompleted, "unreachable"
 		}
 	}
@@ -269,7 +269,7 @@ func probeDescriptors() (ProbeOutcome, string) {
 // allows fstat and nothing else.
 const probeFDScan = 256
 
-// pathPtr is a NUL-terminated path for a raw syscall.
+// pathPtr builds a NUL-terminated path for a raw syscall.
 func pathPtr(s string) *byte {
 	b, err := unix.BytePtrFromString(s)
 	if err != nil {

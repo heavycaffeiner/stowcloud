@@ -16,22 +16,24 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 )
 
-// The worker is never told a path. openat is not on the seccomp allow list and
-// the Landlock domain grants nothing, so a path-traversal bug in a decoder has
-// nothing to traverse. Input and output arrive as descriptors beside each job.
+// No path is ever given to the worker. The seccomp allow list omits openat and
+// the Landlock domain grants nothing, leaving a path-traversal bug in a decoder
+// with nothing to traverse. Input and output reach it as descriptors alongside
+// each job.
 
-// ControlFD is the descriptor the parent passes the control socket on.
+// ControlFD is the descriptor carrying the control socket from the parent.
 //
-// Three, because the runtime keeps zero, one and two. It is fixed rather than
-// passed as an argument because the worker parses no arguments: an argv is a
-// place to put a path, and this process must have no way to name a file.
+// It is three because the runtime reserves zero, one and two. The value is fixed
+// rather than supplied as an argument because the worker parses no arguments at
+// all: an argv would be somewhere to put a path, and this process must have no
+// means of naming a file.
 const ControlFD = 3
 
-// MaxInputBytes bounds one source image.
+// MaxInputBytes caps a single source image.
 //
-// The parent already refuses larger files, so this is the worker declining to
-// trust the parent about a length: the two are separate processes and one of
-// them may be compromised. Defence in depth, deliberately duplicated.
+// The parent already rejects larger files, so this represents the worker
+// refusing to take the parent's word about a length. They are separate
+// processes and either could be compromised. The duplication is deliberate.
 const MaxInputBytes = 256 << 20
 
 // jobDescriptors is how many descriptors accompany one job: the input and the
@@ -42,33 +44,33 @@ const jobDescriptors = 2
 // read from the environment because the worker parses no arguments.
 const trapEnv = "SC_PREVIEW_TRAP"
 
-// Run is the worker's whole life: apply the jail, then serve jobs until the
-// socket closes.
+// Run constitutes the worker's entire life: install the jail, then serve jobs
+// until the socket closes.
 //
-// The order is the design, and the two calls that were dead in the previous
+// The sequence carries the design, and the two calls left dead in the previous
 // build are wired into it:
 //
-//  1. GOMAXPROCS(1), before anything starts a thread.
-//  2. The Landlock domain and its re-exec.
-//  3. SealDescriptors, closing everything the worker inherited past its
-//     control socket: listening sockets, share roots, database handles.
-//     RLIMIT_NOFILE bounds what it may newly open and does nothing about these.
-//  4. ApplyLimits, so the in-process pixel ceiling has the kernel backstop the
-//     comments have always claimed. A decoder exploit is exactly the case where
-//     an in-process bound stops counting.
-//  5. The seccomp filter, last, because it is irreversible.
+//  1. GOMAXPROCS(1), before anything spawns a thread.
+//  2. The Landlock domain together with its re-exec.
+//  3. SealDescriptors, closing everything inherited beyond the control socket:
+//     listening sockets, share roots, database handles. RLIMIT_NOFILE limits
+//     what may newly be opened and does nothing about these.
+//  4. ApplyLimits, giving the in-process pixel ceiling the kernel backstop the
+//     comments have always described. A decoder exploit is precisely where an
+//     in-process bound ceases to matter.
+//  5. The seccomp filter last, because it cannot be undone.
 //
-// Only then is the first message read. A decoder bug in the first message is
-// exactly the case the jail exists for.
+// Only afterwards is the first message read. A decoder bug in that first message
+// is exactly what the jail exists for.
 func Run(policy jail.Policy) (jail.Status, error) {
-	// Held at one so the runtime does not start a thread after the filter is
-	// installed, which is what keeps clone off the allow list. It does not mean
-	// one OS thread: the runtime keeps several for its own work whatever this
-	// says. What matters is that they exist before the filter, not that they do
-	// not exist.
+	// Pinned to one so the runtime spawns no thread after the filter is
+	// installed, which is what allows clone to stay off the allow list. This
+	// does not produce a single OS thread: the runtime retains several for its
+	// own purposes regardless. What matters is that they exist before the
+	// filter, not that they are absent.
 	//
-	// It costs nothing here: a worker decodes one image at a time by design,
-	// because the pool is what provides the parallelism.
+	// The cost here is nil, since a worker decodes one image at a time by
+	// design and the pool supplies the parallelism.
 	runtime.GOMAXPROCS(1)
 
 	st, err := jail.Apply(policy, workerSpec())
@@ -86,14 +88,15 @@ func Run(policy jail.Policy) (jail.Status, error) {
 	// report what the kernel gave without widening the filter.
 	captureLimits()
 
-	// The allow-list filter is the worker's own, and it kills rather than
-	// returning an error: a decoder reaching a syscall it does not need is
-	// already executing something nobody wrote.
+	// The allow-list filter belongs to the worker and kills rather than
+	// returning an error, because a decoder reaching a syscall it does not need
+	// is already running something nobody wrote.
 	//
-	// The trap variant swaps the kill for SIGSYS, which the runtime reports
-	// with a stack naming the call. A kill prints nothing at all, so a filter
-	// missing an entry looks the same as a decoder that crashed. A trap the
-	// process survives is not a sandbox, so this is never set in a deployment.
+	// The trap variant replaces the kill with SIGSYS, which the runtime surfaces
+	// as a stack naming the call. A kill prints nothing whatsoever, so a filter
+	// missing an entry is indistinguishable from a crashed decoder. A trap the
+	// process survives is not a sandbox, so this is never enabled in a
+	// deployment.
 	filter := jail.FilterWorker
 	if os.Getenv(trapEnv) == "1" {
 		filter = jail.FilterWorkerTrap
@@ -115,13 +118,13 @@ func Run(policy jail.Policy) (jail.Status, error) {
 	return st, err
 }
 
-// Serve runs the job loop on an already-open control socket.
+// Serve executes the job loop over an already-open control socket.
 //
-// It is exported so the pool's tests can drive a real worker process without
-// applying the jail, which is proved separately against a real kernel. mode is
-// a test hook and is empty in the product: the two failure modes it offers,
-// dying mid-job and never answering, are what the parent's reap and deadline
-// paths exist to handle and cannot otherwise be reached on demand.
+// It is exported so the pool's tests can exercise a real worker process without
+// installing the jail, which is verified separately against a live kernel. mode
+// is a test hook and stays empty in the product: the two behaviours it offers,
+// dying mid-job and never replying, are what the parent's reap and deadline
+// paths exist to handle and cannot otherwise be triggered on demand.
 func Serve(control *os.File, mode string) (int, error) {
 	if control == nil {
 		return 0, errors.New("preview worker: no control socket")
@@ -129,41 +132,42 @@ func Serve(control *os.File, mode string) (int, error) {
 	return 0, serveLoop(control, mode)
 }
 
-// workerSpec is a Landlock domain granting nothing.
+// workerSpec describes a Landlock domain that grants nothing.
 //
-// A spec with no grants denies the whole filesystem, which is the point: the
-// worker holds descriptors the parent opened and has no way to open another.
-// EXECUTE is left unhandled so the domain survives the re-exec that makes it
-// process-wide; seccomp removes execve afterwards, which is the harder stop.
+// A spec without grants denies the entire filesystem, which is the intent: the
+// worker holds descriptors opened by the parent and has no route to opening
+// another. EXECUTE stays unhandled so the domain survives the re-exec that makes
+// it process-wide, and seccomp eliminates execve afterwards, which stops it more
+// firmly.
 func workerSpec() jail.Spec {
 	return jail.Spec{ExceptExec: true}
 }
 
-// serveLoop reads jobs until the socket closes.
+// serveLoop consumes jobs until the socket closes.
 func serveLoop(control *os.File, mode string) error {
 	for {
 		req, in, out, err := recvJob(control)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
-				// The parent hung up, which is how a worker retires.
+				// The parent disconnected, which is how a worker retires.
 				return nil
 			}
-			// A message that did not parse exactly is fatal by contract: a
-			// partially valid message from this process's peer is not a thing
-			// to recover from, and neither is one this process sent.
+			// A message failing to parse exactly is fatal by contract. A
+			// partially valid message from this process's peer offers nothing
+			// to recover from, and neither does one this process emitted.
 			return err
 		}
 
 		switch mode {
 		case preview.ModeDie:
-			// What a seccomp kill, an OOM and a segfault all look like from
-			// the parent: the process is simply gone mid-job.
+			// How a seccomp kill, an OOM and a segfault all appear from the
+			// parent: the process has simply vanished mid-job.
 			preview.CloseFiles([]*os.File{in, out})
 			os.Exit(1)
 		case preview.ModeHang:
-			// Never answers, so the parent's deadline is what ends it. A sleep
-			// rather than a bare select, which the runtime turns into a
-			// deadlock panic when it is the only goroutine.
+			// Never replies, leaving the parent's deadline to end it. A sleep
+			// instead of a bare select, since the runtime converts the latter
+			// into a deadlock panic when it is the sole goroutine.
 			preview.CloseFiles([]*os.File{in, out})
 			time.Sleep(time.Hour)
 		}
@@ -177,14 +181,15 @@ func serveLoop(control *os.File, mode string) error {
 	}
 }
 
-// handle runs one job. It never returns an error: a failure is a status on the
-// response, because the worker's job is to answer rather than to die.
+// handle processes one job and never returns an error. Failures travel as a
+// status on the response, because the worker's purpose is to answer rather than
+// to die.
 func handle(req preview.Request, in, out *os.File) preview.Response {
 	switch req.Kind {
 	case preview.JobProbe:
-		// Attempted from inside the finished jail. A probe that is killed
-		// never answers at all: the process is gone and the parent sees the
-		// socket close, which is itself a pass.
+		// Attempted from within the completed jail. A probe that gets killed
+		// never replies at all: the process disappears and the parent observes
+		// the socket closing, which itself counts as a pass.
 		outcome, detail := RunProbe(Probe(req.Preset))
 		return preview.Response{
 			Status: preview.StatusOK,
@@ -192,8 +197,8 @@ func handle(req preview.Request, in, out *os.File) preview.Response {
 			Err:    detail,
 		}
 	case preview.JobVideo:
-		// The honest answer, kept over the wire so a client gets a refusal it
-		// can act on rather than a generic failure.
+		// The truthful answer, preserved across the wire so a client receives an
+		// actionable rejection instead of a generic failure.
 		return preview.Response{
 			Status: preview.StatusNotImplemented,
 			Err:    "video preview generation is not implemented in this build",
@@ -225,8 +230,8 @@ func decodeJob(req preview.Request, in, out *os.File) preview.Response {
 	}
 
 	if req.Flags&preview.FlagStripEXIF != 0 {
-		// Applied to the pixels and then gone: the encoder writes no metadata,
-		// so nothing carries across from here.
+		// Applied to the pixels and then discarded. The encoder emits no
+		// metadata, so nothing propagates from here.
 		img = preview.ReadOrientation(data).Apply(img)
 	}
 
@@ -274,12 +279,12 @@ func clampLimits(req preview.Request, lim preview.DecodeLimits) preview.DecodeLi
 	return lim
 }
 
-// decodeFailure maps a decode error onto a wire status.
+// decodeFailure translates a decode error into a wire status.
 func decodeFailure(err error) preview.Response {
 	switch {
 	case errors.Is(err, preview.ErrTooLarge):
-		// The graceful limit fired, which is the whole reason it exists: the
-		// worker survives to say so instead of being killed by RLIMIT_AS.
+		// The graceful limit triggered, which is its entire purpose: the worker
+		// lives to report it rather than being killed by RLIMIT_AS.
 		return preview.Response{Status: preview.StatusTooLarge, Err: err.Error()}
 	case errors.Is(err, preview.ErrUnsupported):
 		return preview.Response{Status: preview.StatusUnsupported, Err: err.Error()}
@@ -304,8 +309,8 @@ func readAll(f *os.File) ([]byte, error) {
 	return data, nil
 }
 
-// countingWriter records how much reached the output descriptor, which the
-// parent needs to know how much of the file is the thumbnail.
+// countingWriter tracks how much reached the output descriptor, which the parent
+// needs in order to know how much of the file the thumbnail occupies.
 type countingWriter struct {
 	w io.Writer
 	n int64
@@ -317,11 +322,11 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// recvJob reads one request and its two descriptors.
+// recvJob reads a single request together with its two descriptors.
 //
-// Exactly two arrive with each job, input and output. A different count is the
-// same fatal case as a message that did not parse: it means the peer is not
-// speaking this protocol.
+// Every job carries exactly two, input and output. Any other count is the same
+// fatal condition as a message that failed to parse: the peer is not speaking
+// this protocol.
 func recvJob(control *os.File) (preview.Request, *os.File, *os.File, error) {
 	buf := make([]byte, limits.WorkerWireMessage)
 	// Asking for a bound larger than the protocol allows would let a peer hand

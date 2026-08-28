@@ -9,38 +9,37 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 )
 
-// The RPC codec between the parent and the jailed worker.
+// The RPC codec joining the parent to the jailed worker.
 //
-//	request:  ver:u8 kind:u8 preset:u8 flags:u8 maxpix:u32 deadline_ms:u32
-//	response: ver:u8 status:u8 w:u16 h:u16 nbytes:u32 errlen:u16 err:[errlen]u8
+//	request   ver:u8 kind:u8 preset:u8 flags:u8 maxpix:u32 deadline_ms:u32
+//	response  ver:u8 status:u8 w:u16 h:u16 nbytes:u32 errlen:u16 err:[errlen]u8
 //
-// A fixed layout over encoding/binary, big-endian, with an explicit version
-// byte. Deliberately not gob and not JSON, and the reason is the threat model
-// rather than performance: a reflective decoder allocates based on what the
-// peer sends, and the peer is a process that may already be executing an
-// attacker's decoder bug.
+// A fixed big-endian layout built on encoding/binary with an explicit version
+// byte. Neither gob nor JSON, chosen on threat-model grounds rather than
+// performance: a reflective decoder sizes its allocations from what the peer
+// sends, and that peer may already be running an attacker's decoder bug.
 //
-// This is an internal codec between two halves of one process tree. It is not
-// one of the presentation layer's wire shapes and it stays in this package.
+// This codec is internal to two halves of one process tree. It is not among the
+// presentation layer's wire formats and remains in this package.
 //
-// A message that does not parse exactly kills the job and the worker. A
-// partially valid message from the jailed process is not a thing to recover
+// A message that fails to parse exactly kills both the job and the worker. A
+// partially valid message from the jailed process offers nothing to recover
 // from.
 
-// WireVersion is the protocol revision. Parent and worker are shipped in one
-// binary, so a mismatch means something is impersonating one of them, and the
-// pool reads it as a dead worker rather than negotiating.
+// WireVersion identifies the protocol revision. Parent and worker ship inside a
+// single binary, so a mismatch means something is impersonating one of them, and
+// the pool treats it as a dead worker rather than negotiating.
 const WireVersion = 1
 
-// Message sizes. Both are fixed except the error string, which is capped so
-// the whole message stays inside the seqpacket bound.
+// Message sizes, fixed apart from the error string, which is capped to keep the
+// entire message within the seqpacket bound.
 const (
 	// RequestSize covers every fixed field including the exact output box.
 	RequestSize = 16
-	// ResponseHeaderSize is everything before the error string.
+	// ResponseHeaderSize covers everything preceding the error string.
 	ResponseHeaderSize = 12
-	// MaxErrorLen keeps a response inside the socket's message bound with room
-	// to spare. A worker's error text is a diagnostic, not a payload.
+	// MaxErrorLen holds a response comfortably within the socket's message
+	// bound. A worker's error text is a diagnostic rather than a payload.
 	MaxErrorLen = 1024
 )
 
@@ -49,22 +48,22 @@ const (
 // have.
 var ErrProtocol = errors.New("preview: a wire message did not parse exactly")
 
-// JobKind is what the worker is being asked to do.
+// JobKind states what the worker is being asked to do.
 type JobKind uint8
 
 const (
-	// JobImage is a still image thumbnail.
+	// JobImage requests a still image thumbnail.
 	JobImage JobKind = 1
-	// JobVideo exists so a client asking for one gets an honest refusal
-	// rather than a generic failure. It is never implemented here.
+	// JobVideo exists so a client requesting one receives a truthful rejection
+	// instead of a generic failure. It is never implemented here.
 	JobVideo JobKind = 2
-	// JobProbe asks the worker to attempt something the jail should prevent,
-	// and report what the kernel said. It exists because a security claim that
-	// cannot be executed is a comment.
+	// JobProbe directs the worker to attempt something the jail should block and
+	// report the kernel's response. It exists because a security claim that
+	// cannot be executed is merely a comment.
 	//
-	// The probe number travels in the preset field, which is otherwise unused
-	// for this kind: adding a field would widen a message every job pays for,
-	// to carry something only the proof sends.
+	// The probe number rides in the preset field, unused for this kind, since
+	// adding a dedicated field would enlarge a message every job pays for to
+	// carry something only the proof sends.
 	JobProbe JobKind = 3
 )
 
@@ -88,16 +87,16 @@ type Status uint8
 
 const (
 	StatusOK Status = iota
-	// StatusUnsupported is a format with no decoder in this build.
+	// StatusUnsupported reports a format this build has no decoder for.
 	StatusUnsupported
-	// StatusNotImplemented is video.
+	// StatusNotImplemented reports video.
 	StatusNotImplemented
-	// StatusTooLarge is a decode limit refusing. The worker survived, which
-	// is the whole point of having a graceful limit.
+	// StatusTooLarge reports a decode limit rejecting the job. The worker
+	// survived, which is the entire purpose of a graceful limit.
 	StatusTooLarge
-	// StatusDecodeFailed is a file that is not what it claimed to be.
+	// StatusDecodeFailed reports a file that is not what it claimed.
 	StatusDecodeFailed
-	// StatusInternal is anything else the worker could name.
+	// StatusInternal covers anything else the worker could identify.
 	StatusInternal
 )
 
@@ -122,9 +121,9 @@ func (s Status) String() string {
 	return "unknown"
 }
 
-// FlagStripEXIF asks the worker to apply orientation and carry no other
-// metadata across. It is always set by this build; the bit exists so a worker
-// refusing to honour it is visible rather than assumed.
+// FlagStripEXIF instructs the worker to apply orientation and propagate no other
+// metadata. This build always sets it; the bit exists so a worker declining to
+// honour it becomes visible rather than assumed.
 const FlagStripEXIF = 1 << 0
 
 // The worker's test hooks, named here rather than in the worker package so the
@@ -145,10 +144,10 @@ type Request struct {
 	Kind   JobKind
 	Preset Preset
 	Flags  uint8
-	// MaxPixels is the source-pixel ceiling for this job, so the parent's
-	// limit travels with the request rather than being compiled into two
-	// places that can disagree. The worker clamps it: a request may lower the
-	// compiled-in ceiling and never raise it.
+	// MaxPixels sets this job's source-pixel ceiling, letting the parent's limit
+	// accompany the request rather than being compiled into two places capable
+	// of disagreeing. The worker clamps it, so a request may lower the
+	// compiled-in ceiling but never raise it.
 	MaxPixels  uint32
 	DeadlineMs uint32
 	// Width and Height are an exact output box for the compatibility content
@@ -165,12 +164,13 @@ type Response struct {
 	Status Status
 	Width  uint16
 	Height uint16
-	// Bytes is how much the worker wrote to the output descriptor.
+	// Bytes reports how much the worker wrote to the output descriptor.
 	Bytes uint32
 	Err   string
 }
 
-// Encode renders a request. It cannot fail: every field is fixed width.
+// Encode serializes a request. It cannot fail, since every field is fixed
+// width.
 func (r Request) Encode() []byte {
 	out := make([]byte, RequestSize)
 	out[0] = WireVersion
@@ -184,11 +184,11 @@ func (r Request) Encode() []byte {
 	return out
 }
 
-// DecodeRequest parses a request.
+// DecodeRequest parses a request message.
 //
-// Every field is validated here rather than by the caller, because this is the
-// worker-side trust boundary: the bytes came off a socket, and the worker acts
-// on whatever this returns.
+// Validation of every field happens here rather than in the caller, because this
+// is the worker-side trust boundary: the bytes arrived over a socket, and the
+// worker acts on whatever this produces.
 func DecodeRequest(b []byte) (Request, error) {
 	if len(b) != RequestSize {
 		return Request{}, fmt.Errorf("%w: a request of %d bytes, want %d",
@@ -210,31 +210,31 @@ func DecodeRequest(b []byte) (Request, error) {
 	if !r.Kind.Valid() {
 		return Request{}, fmt.Errorf("%w: job kind %d", ErrProtocol, b[1])
 	}
-	// A probe carries its number where a preset would be, so the preset is
-	// only range-checked for the kinds that use it as one.
+	// A probe stores its number where a preset would sit, so the preset is
+	// range-checked only for the kinds that treat it as one.
 	if r.Kind != JobProbe && !r.Preset.Valid() {
 		return Request{}, fmt.Errorf("%w: preset %d", ErrProtocol, b[2])
 	}
-	// An undefined flag bit means the peer is speaking a protocol this build
-	// does not have. Ignoring it would be acting on a request nobody wrote.
+	// An undefined flag bit indicates the peer speaks a protocol this build does
+	// not implement. Ignoring it would mean acting on a request nobody wrote.
 	if r.Flags&^FlagStripEXIF != 0 {
 		return Request{}, fmt.Errorf("%w: unknown request flags %#x", ErrProtocol, r.Flags)
 	}
 	return r, nil
 }
 
-// Encode renders a response.
+// Encode serializes a response.
 //
-// An error string past the cap is truncated rather than refused: the worker is
-// reporting a failure and losing the tail of the text is better than turning a
-// diagnostic into a protocol kill.
+// An error string exceeding the cap is truncated rather than rejected: the
+// worker is already reporting a failure, and losing the end of the text beats
+// converting a diagnostic into a protocol kill.
 func (r Response) Encode() []byte {
 	msg := r.Err
 	if len(msg) > MaxErrorLen {
 		msg = msg[:MaxErrorLen]
 	}
-	// The truncation above bounds this well inside a uint16, so the length
-	// cannot be cut short by the conversion.
+	// The truncation above keeps this comfortably within a uint16, so the
+	// conversion cannot shorten the length.
 	errLen, nerr := num.Narrow[uint16](len(msg))
 	if nerr != nil {
 		errLen, msg = 0, ""
@@ -250,7 +250,7 @@ func (r Response) Encode() []byte {
 	return out
 }
 
-// DecodeResponse parses a response.
+// DecodeResponse parses a response message.
 func DecodeResponse(b []byte) (Response, error) {
 	if len(b) < ResponseHeaderSize {
 		return Response{}, fmt.Errorf("%w: a response of %d bytes, want at least %d",
@@ -280,9 +280,9 @@ func DecodeResponse(b []byte) (Response, error) {
 		return Response{}, fmt.Errorf("%w: an error string of %d bytes, past the %d cap",
 			ErrProtocol, errLen, MaxErrorLen)
 	}
-	// The declared length has to be exactly what is there. A message with
-	// trailing bytes is not a message this build wrote, and a short one is
-	// truncated: both are the same fatal case.
+	// The declared length must match exactly what is present. Trailing bytes mean
+	// a message this build never wrote, and a shortfall means truncation; both
+	// are the same fatal condition.
 	if ResponseHeaderSize+errLen != len(b) {
 		return Response{}, fmt.Errorf("%w: an error length of %d in a %d-byte message",
 			ErrProtocol, errLen, len(b))

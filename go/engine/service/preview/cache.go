@@ -20,14 +20,15 @@ import (
 
 // The thumbnail cache.
 //
-// A directory of files keyed by a digest of the identity tuple, the mtime, the
-// size and the preset. A source that changed produces a different key, so a
-// stale thumbnail is unreachable rather than evicted: there is no invalidation
-// step to get wrong, because the old key is simply never asked for again.
+// A directory of files named by a digest over the identity tuple, mtime, size
+// and preset. A changed source yields a different key, so a stale thumbnail
+// becomes unreachable rather than being evicted. No invalidation step exists to
+// get wrong, because nothing ever requests the old key again.
 //
-// The whole cache is disposable. Delete the directory and previews regenerate.
+// The cache is entirely disposable. Remove the directory and previews
+// regenerate.
 
-// Key identifies one cached thumbnail.
+// Key names a single cached thumbnail.
 type Key struct {
 	Ident   ident.Ident
 	MTimeNs int64
@@ -40,11 +41,11 @@ type Key struct {
 	Height int
 }
 
-// String is the key's on-disk name.
+// String gives the key's on-disk name.
 //
-// A digest rather than the fields laid out, because a path built from a
-// filename is a path an attacker chooses. The digest is the whole name, so
-// there is nothing in it that came from a caller.
+// A digest rather than the fields spelled out, because a path assembled from a
+// filename is a path the attacker chooses. The digest constitutes the entire
+// name, so nothing within it originated from a caller.
 func (k Key) String() string {
 	h := blake3.New(16, nil)
 	// Every field is written with its name, a fixed encoding and a separator,
@@ -67,23 +68,23 @@ func (k Key) String() string {
 }
 
 func writeSigned(h io.Writer, name string, v int64) {
-	// The bit pattern, not a narrowing: the digest only needs two different
-	// values to produce two different keys, and a signed count reinterpreted is
-	// lossless in both directions.
+	// Reinterpreted bits rather than a narrowing conversion. The digest only
+	// requires distinct values to yield distinct keys, and reinterpreting a
+	// signed count loses nothing in either direction.
 	writeField(h, name, uint64(v)) //nolint:gosec // G115: the bit pattern is the point; see above.
 }
 
 func writeField(h io.Writer, name string, v uint64) {
-	// hash.Hash never fails, which is what the interface documents.
+	// hash.Hash cannot fail, as its interface documents.
 	_, _ = h.Write([]byte(name + "=" + strconv.FormatUint(v, 10) + ";")) //nolint:errcheck // hash.Hash.Write cannot fail.
 }
 
-// Cache is the on-disk thumbnail store.
+// Cache is the thumbnail store on disk.
 type Cache struct {
 	dir string
 }
 
-// NewCache opens a cache directory.
+// NewCache opens a directory for the cache.
 func NewCache(dir string) (*Cache, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("preview: creating the cache: %w", err)
@@ -94,16 +95,16 @@ func NewCache(dir string) (*Cache, error) {
 // Dir is the cache directory.
 func (c *Cache) Dir() string { return c.dir }
 
-// path is where a key lives.
+// path locates a key.
 //
-// The first two characters of the digest are a subdirectory, so a large cache
-// does not become one directory with a million entries in it.
+// The digest's first two characters form a subdirectory, keeping a large cache
+// from collapsing into a single directory holding a million entries.
 func (c *Cache) path(k Key) string {
 	name := k.String()
 	return filepath.Join(c.dir, name[:2], name)
 }
 
-// Open returns a cached thumbnail, or reports that there is none.
+// Open returns a cached thumbnail, or reports its absence.
 func (c *Cache) Open(k Key) (*os.File, bool) {
 	f, err := os.Open(c.path(k)) //nolint:gosec // G304: the whole name is a digest this package computed.
 	if err != nil {
@@ -128,30 +129,30 @@ func (c *Cache) Put(k Key, write func(*os.File) error) error {
 	return nil
 }
 
-// Negative is why a source has no thumbnail, cached so a corrupt file in a
-// folder does not cost a worker on every listing.
+// Negative records why a source produced no thumbnail, cached so a corrupt file
+// in a folder does not consume a worker on every listing.
 type Negative uint8
 
 const (
 	NegativeNone Negative = iota
-	// NegativeTooLarge is a decode limit refusing.
+	// NegativeTooLarge records a decode limit rejecting the job.
 	NegativeTooLarge
-	// NegativeUnsupported is a format with no decoder.
+	// NegativeUnsupported records a format with no available decoder.
 	NegativeUnsupported
-	// NegativeNotImplemented is video.
+	// NegativeNotImplemented records video.
 	NegativeNotImplemented
-	// NegativeDecodeFailed is a file that is not what it claimed to be.
+	// NegativeDecodeFailed records a file that is not what it claimed.
 	NegativeDecodeFailed
-	// NegativeWorkerDied is a worker killed on this input.
+	// NegativeWorkerDied records a worker killed by this input.
 	NegativeWorkerDied
 )
 
-// Lifetime is how long a negative result is trusted.
+// Lifetime states how long a negative result remains trusted.
 //
-// They differ because the facts differ. A file too large now will be too large
-// next time, and so will one in a format this build cannot read, so those are
-// held for a long time. A worker death might have been the machine rather than
-// the file, so it is held briefly and then retried.
+// The durations differ because the underlying facts do. A file too large now
+// remains too large later, as does one in a format this build cannot read, so
+// both persist for a long time. A worker death may reflect the machine rather
+// than the file, so it persists briefly before a retry.
 func (n Negative) Lifetime() time.Duration {
 	switch n {
 	case NegativeTooLarge, NegativeUnsupported, NegativeNotImplemented:
@@ -180,18 +181,18 @@ func (n Negative) String() string {
 	return "none"
 }
 
-// Negatives is the in-memory negative cache.
+// Negatives holds the in-memory negative cache.
 //
 // A file that failed to decode will fail again, and without this a grid full of
-// corrupt files re-runs the worker on every scroll.
+// corrupt files reruns the worker on every scroll.
 //
-// In memory rather than on disk, and that is deliberate: a negative result is
-// a statement about a decode attempt, not about the file, and a restart is a
-// reasonable moment to try again. It also means a bad deploy cannot leave a
-// folder permanently thumbnail-free.
+// Kept in memory rather than on disk, deliberately: a negative result describes
+// a decode attempt rather than the file itself, and a restart is a sensible
+// moment to retry. It also ensures a bad deploy cannot leave a folder
+// permanently without thumbnails.
 //
-// It carries its own mutex. Every caller is a request goroutine, so a type that
-// needed one caller to remember the lock is one where the next caller is the
+// It owns its mutex. Every caller is a request goroutine, so a type relying on
+// one caller to remember the lock is a type where the next caller becomes the
 // data race.
 type Negatives struct {
 	mu      sync.Mutex
@@ -203,10 +204,10 @@ type negativeEntry struct {
 	expires time.Time
 }
 
-// NewNegatives builds the negative cache.
+// NewNegatives constructs the negative cache.
 func NewNegatives() *Negatives { return &Negatives{entries: map[string]negativeEntry{}} }
 
-// Get reports a remembered failure, if it has not expired.
+// Get returns a remembered failure when it has not yet expired.
 func (n *Negatives) Get(k Key, now time.Time) (Negative, bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -228,7 +229,7 @@ func (n *Negatives) Put(k Key, reason Negative, now time.Time) {
 	n.entries[k.String()] = negativeEntry{reason: reason, expires: now.Add(reason.Lifetime())}
 }
 
-// Len is how many failures are remembered, which the sweep reports.
+// Len counts the remembered failures, which the sweep reports.
 func (n *Negatives) Len() int {
 	n.mu.Lock()
 	defer n.mu.Unlock()

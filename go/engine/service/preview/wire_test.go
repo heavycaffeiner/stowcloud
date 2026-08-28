@@ -109,9 +109,9 @@ func TestAProbeCarriesItsNumberInThePresetField(t *testing.T) {
 	}
 }
 
-// An error string past the cap is truncated rather than refused: the worker is
-// reporting a failure, and losing the tail beats turning a diagnostic into a
-// protocol kill.
+// An error string exceeding the cap is truncated rather than rejected, since the
+// worker is already reporting a failure, and losing the end beats turning a
+// diagnostic into a killed connection.
 func TestALongErrorStringIsTruncatedNotRefused(t *testing.T) {
 	long := strings.Repeat("x", MaxErrorLen*3)
 	got, err := DecodeResponse(Response{Status: StatusInternal, Err: long}.Encode())

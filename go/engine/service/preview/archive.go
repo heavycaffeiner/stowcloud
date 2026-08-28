@@ -14,57 +14,57 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 )
 
-// Archive listing: what is in this zip, without extracting it.
+// Archive listing: reporting a zip's contents without extracting them.
 //
-// Listing reads the archive's central directory, not its contents, so a 100 GB
-// zip costs a directory read and a zip bomb costs the directory parse. Nothing
-// here opens an entry's content.
+// Listing consults the archive's central directory rather than its contents, so
+// a 100 GB zip costs a directory read and a zip bomb costs a directory parse.
+// Nothing here opens an entry's data.
 //
-// This runs in the parent rather than the worker, and that is deliberate: it
-// parses a directory structure rather than decoding image data, and putting it
-// in the worker would mean passing a whole archive across the socket. The
-// parser is bounded and fuzzed instead, which is the appropriate control for a
-// structure parser that does not allocate per byte.
+// This executes in the parent rather than the worker, deliberately: it parses a
+// directory structure instead of decoding image data, and relocating it to the
+// worker would require shipping an entire archive across the socket. The parser
+// is bounded and fuzzed instead, the appropriate control for a structure parser
+// that allocates nothing per byte.
 
-// ErrNotArchive is a file that is not a zip this build can read.
+// ErrNotArchive reports a file that is not a zip this build can read.
 var ErrNotArchive = errors.New("preview: not a readable archive")
 
 // maxArchiveNameBytes bounds a member name before it is kept. A name is only
 // ever displayed, so this is a bound on what a client is asked to render.
 const maxArchiveNameBytes = 4096
 
-// ArchiveEntry is one member, as the central directory describes it.
+// ArchiveEntry describes a single member as the central directory records it.
 type ArchiveEntry struct {
 	Name  string
 	Size  uint64
 	IsDir bool
-	// Compressed is what the member occupies inside the archive, which is what
-	// makes a compression ratio visible to a caller that wants to refuse one.
+	// Compressed gives the space the member occupies within the archive, which
+	// is what exposes a compression ratio to a caller wishing to reject one.
 	Compressed uint64
 	ModTimeNs  int64
 }
 
-// ArchiveListing is what a zip holds.
+// ArchiveListing describes a zip's contents.
 type ArchiveListing struct {
 	Entries []ArchiveEntry
-	// Truncated reports that the entry cap cut the listing, so a caller can
-	// say so rather than presenting a partial archive as a whole one.
+	// Truncated indicates the entry cap shortened the listing, letting a caller
+	// disclose that instead of presenting a partial archive as complete.
 	Truncated bool
-	// Skipped counts members left out because their names cannot be shown
-	// safely. Reported rather than silent for the same reason Truncated is: a
-	// listing missing entries that does not admit it reads as an archive with
-	// fewer files in it, so ten thousand entries and three unsafe ones reads
-	// as exactly that.
+	// Skipped counts members omitted because their names cannot be displayed
+	// safely. It is reported rather than hidden for the same reason as
+	// Truncated: a listing that silently drops entries reads as an archive
+	// containing fewer files, so ten thousand entries with three unsafe ones
+	// would appear as exactly that.
 	Skipped int
-	// TotalUncompressed is the sum over the entries listed. A caller compares
-	// it against the archive's own size to see a bomb before extracting.
+	// TotalUncompressed sums the listed entries. A caller weighs it against the
+	// archive's own size to spot a bomb before extracting.
 	TotalUncompressed uint64
 }
 
-// ListArchive reads the central directory of a zip.
+// ListArchive parses a zip's central directory.
 //
-// r is read through pread, so nothing is loaded to list: archive/zip seeks to
-// the directory at the end of the file and reads only that.
+// r is accessed via pread, so listing loads nothing: archive/zip seeks to the
+// directory at the file's end and reads only that.
 func ListArchive(ctx context.Context, r io.ReaderAt, size int64) (ArchiveListing, error) {
 	if size <= 0 {
 		return ArchiveListing{}, fmt.Errorf("%w: an empty file", ErrNotArchive)
@@ -76,16 +76,16 @@ func ListArchive(ctx context.Context, r io.ReaderAt, size int64) (ArchiveListing
 
 	var out ArchiveListing
 	for _, f := range zr.File {
-		// Cancellation is checked per entry here rather than per directory as
-		// in a filesystem walk: an archive's directory is already in memory, so
-		// the loop is bounded by the entry count and the check is cheap beside
+		// Cancellation is polled per entry rather than per directory as in a
+		// filesystem walk. An archive's directory already sits in memory, so the
+		// loop is bounded by the entry count and the check costs little beside
 		// it.
 		if cerr := ctx.Err(); cerr != nil {
 			return ArchiveListing{}, cerr
 		}
 		if len(out.Entries) >= limits.ArchiveEntriesListed {
-			// Truncating rather than refusing: a caller can still show what is
-			// there, and the flag stops it looking complete.
+			// Truncated rather than rejected, so a caller can still display what
+			// exists while the flag prevents it appearing complete.
 			out.Truncated = true
 			break
 		}
@@ -111,13 +111,13 @@ func ListArchive(ctx context.Context, r io.ReaderAt, size int64) (ArchiveListing
 	return out, nil
 }
 
-// safeArchiveName reports whether a member name is one worth showing.
+// safeArchiveName reports whether a member name is fit to display.
 //
-// This is a display filter, not a path-traversal guard, and the distinction
-// matters: the name is never opened by this build, so traversal is not the risk
-// standing between an attacker and the filesystem. What is a risk is a control
-// character or an absolute path in a name a client renders, or hands to its own
-// extractor.
+// This filters for display and does not guard against path traversal, and the
+// distinction matters: this build never opens the name, so traversal is not what
+// stands between an attacker and the filesystem. The actual risk is a control
+// character or an absolute path inside a name that a client renders or forwards
+// to its own extractor.
 func safeArchiveName(name string) bool {
 	if name == "" || len(name) > maxArchiveNameBytes {
 		return false
@@ -125,7 +125,7 @@ func safeArchiveName(name string) bool {
 	if strings.HasPrefix(name, "/") || strings.Contains(name, `\`) {
 		return false
 	}
-	// A drive letter or a UNC prefix is the Windows shape of an absolute path.
+	// Drive letters and UNC prefixes are how Windows spells an absolute path.
 	if len(name) >= 2 && name[1] == ':' {
 		return false
 	}
