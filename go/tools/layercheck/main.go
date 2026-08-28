@@ -90,6 +90,29 @@ var sideways = map[string]map[string]bool{
 	"store/state":      {"store/ident": true, "store/dbfile": true},
 	"store/cache":      {"store/ident": true, "store/dbfile": true},
 	"store/journal":    {"store/ident": true, "store/dbfile": true},
+
+	// The presentation tier's own order, which its overview states as a list:
+	// apierr, archive, route and spa are independent leaves; middleware sits on
+	// apierr and route; dav on apierr; compat on dav; handler on apierr,
+	// archive and middleware; server on everything.
+	//
+	// route is a leaf here rather than in the overview's list because it holds
+	// only metadata: what a route is and what credential it demands, with no
+	// handler type and nothing from the web framework. Everything that mounts
+	// or guards a route reads it.
+	"http/middleware": {"http/apierr": true, "http/route": true},
+	"http/dav":        {"http/apierr": true},
+	"http/compat":     {"http/dav": true, "http/apierr": true},
+	"http/handler": {
+		"http/apierr": true, "http/archive": true,
+		"http/middleware": true, "http/route": true,
+	},
+	"http/server": {
+		"http/apierr": true, "http/archive": true, "http/route": true,
+		"http/middleware": true, "http/handler": true,
+		"http/dav": true, "http/compat": true, "http/spa": true,
+		"http/emergency": true,
+	},
 }
 
 // say writes a diagnostic. It is the one place in this command that ignores an
