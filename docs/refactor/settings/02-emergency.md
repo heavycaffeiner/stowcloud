@@ -117,3 +117,62 @@ behavior-preserving requirements.
 - A degraded server fronts the door (the redirect wrapper serves the
   emergency page when the engine is down).
 - The body limit refuses an oversized write.
+
+## What was built, and what measuring it changed
+
+The door is `engine/http/emergency`, and it holds every constraint
+above. Two things the plan did not say are worth recording.
+
+**`Deps` takes interfaces, not the auth service and the state DB.**
+What belongs to this package is the policy wrapped around the call:
+administrator only, its own audit events, no app-password path, the
+checker consulted before the store. Depending on the concrete service
+would have meant re-testing password verification here, which the auth
+package already tests, while leaving the policy asserted only
+indirectly. The interfaces name exactly the five auth calls and the two
+store calls the door makes, so adding a sixth is a visible change.
+
+**The session cookie is `__Host-sc_sid`.** This is the product's own
+cookie rather than a second one, so a repaired server finds the operator
+already signed in. The prefix is a browser-enforced rule and not a
+naming convention: a cookie carrying it is discarded unless it is
+`Secure`, has `Path=/` and names no `Domain`. A change that drops one of
+the three does not weaken the cookie, it stops the cookie existing, and
+the failure is silent. The constant says so, and a test asserts all
+three on the emitted header.
+
+### The mutations, and the two holes they found
+
+Fourteen mutations were applied to the finished package, each one a
+plausible regression, and every one of them fails at least one test:
+404 turned into 403, the network gate opened, the origin check removed,
+the administrator check dropped at the login and again behind the
+session, blocking findings ignored, the unknown-section refusal removed,
+the body limit lifted, `Secure` and `SameSite` dropped from the cookie,
+the audit event renamed to the ordinary `auth.login`, the cookie's hex
+decode skipped, and the session lookup's error ignored.
+
+Two of them passed on the first run, which means two invariants were
+unasserted:
+
+- **The lockout rule.** Switching `LockoutWarns` to `LockoutBlocks`
+  changed nothing any test could see. That is the single behaviour this
+  door exists for. Somebody arrives here because the app-host list no
+  longer contains the address they can reach the server on, and the list
+  they save still will not contain it, because that host is the broken
+  one. The settings screen refuses that save; here it has to go through.
+  There are now three tests: the repair is saved and warns while naming
+  the omitted host, the same input blocks under `LockoutBlocks` so the
+  two modes are demonstrably different, and a list that does contain the
+  current host warns about nothing.
+- **An unrecognised session.** Ignoring the lookup error let a
+  well-formed cookie naming no live session through to every
+  authenticated route.
+
+Both are covered now, and both mutations fail.
+
+### Prose
+
+`freshscan` found nineteen comment lines carried over from
+`internal/emergency`, which is the rule that gate exists to enforce and
+the second time it has caught this. All nineteen are restated.
