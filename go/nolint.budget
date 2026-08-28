@@ -348,6 +348,10 @@
 # under the test's own TempDir, plus two on reading a tool's output where a
 # non-zero exit is itself the assertion: exiv2 exits non-zero when a file
 # carries no metadata, which is the passing case.
+#
+# 71: the emergency door's JSON writer. A client that stopped reading cannot be
+# told that it stopped reading, and the door has no error path left to take at
+# that point.
 
 290
-70
+71
