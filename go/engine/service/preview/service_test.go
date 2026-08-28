@@ -88,7 +88,7 @@ func newService(t *testing.T) *fixture {
 	pool := newPool(t, 1, "")
 
 	return &fixture{
-		svc:   NewService(ServiceOptions{Core: c, Pool: pool, Cache: thumbs}),
+		svc:   mustService(t, ServiceOptions{Core: c, Pool: pool, Cache: thumbs}),
 		core:  c,
 		state: st,
 		share: share.ID,
@@ -472,5 +472,50 @@ func TestOnlyFileFactsAreRemembered(t *testing.T) {
 	}
 	if negativeError(NegativeNone) != nil {
 		t.Error("the absence of a failure maps to an error")
+	}
+}
+
+// mustService builds a service where the construction itself is not what is
+// under test.
+func mustService(t *testing.T, o ServiceOptions) *Service {
+	t.Helper()
+	s, err := NewService(o)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	return s
+}
+
+// A half-wired service is refused at construction rather than accepted and
+// panicked on at the first request.
+//
+// Every one of these is dereferenced on the ordinary path, so a nil field is
+// not a degraded service: it is one that crashes the first time somebody opens
+// a folder. Found by building the service with only a core in a composition
+// test and watching it panic inside the cache.
+func TestAHalfWiredServiceIsRefused(t *testing.T) {
+	f := newService(t)
+
+	for _, c := range []struct {
+		name string
+		opt  ServiceOptions
+	}{
+		{"no core", ServiceOptions{Pool: f.svc.pool, Cache: f.svc.cache}},
+		{"no pool", ServiceOptions{Core: f.core, Cache: f.svc.cache}},
+		{"no cache", ServiceOptions{Core: f.core, Pool: f.svc.pool}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := NewService(c.opt); err == nil {
+				t.Error("a service missing a dependency was constructed")
+			}
+		})
+	}
+
+	// And the complete set still builds, so the refusal is about what is
+	// missing rather than a constructor that never succeeds.
+	if _, err := NewService(ServiceOptions{
+		Core: f.core, Pool: f.svc.pool, Cache: f.svc.cache,
+	}); err != nil {
+		t.Errorf("a fully wired service was refused: %v", err)
 	}
 }

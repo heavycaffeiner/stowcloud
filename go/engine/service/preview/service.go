@@ -49,12 +49,27 @@ type ServiceOptions struct {
 }
 
 // NewService constructs the service.
-func NewService(o ServiceOptions) *Service {
+//
+// A missing core, pool or cache is refused rather than accepted and panicked on
+// at the first request. Every field here is dereferenced on the ordinary path,
+// so a nil one is not a degraded service, it is one that crashes the first time
+// somebody opens a folder. The serve path already treats an unbuildable pool or
+// cache as a reason to run without thumbnails at all; this makes the same thing
+// impossible to get wrong from anywhere else.
+func NewService(o ServiceOptions) (*Service, error) {
+	switch {
+	case o.Core == nil:
+		return nil, errors.New("preview: the service requires a core")
+	case o.Pool == nil:
+		return nil, errors.New("preview: the service requires a worker pool")
+	case o.Cache == nil:
+		return nil, errors.New("preview: the service requires a thumbnail cache")
+	}
 	clk := o.Clock
 	if clk == nil {
 		clk = clock.System()
 	}
-	return &Service{core: o.Core, pool: o.Pool, cache: o.Cache, clk: clk, neg: NewNegatives()}
+	return &Service{core: o.Core, pool: o.Pool, cache: o.Cache, clk: clk, neg: NewNegatives()}, nil
 }
 
 // Thumb represents a generated or cached thumbnail.

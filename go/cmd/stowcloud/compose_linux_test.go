@@ -659,3 +659,64 @@ func TestAnIncompleteUploadBecomesVisibleToNobody(t *testing.T) {
 		t.Error("an unfinished upload is on disk at its destination")
 	}
 }
+
+// Preview's permission claim, against the real core.
+//
+// The service requires Read|Download, on the argument that a thumbnail derives
+// from the bytes, so seeing one is seeing the file. That makes Download the
+// dividing line: an account granted Read alone can list a file and open its
+// metadata, and must not be able to see its contents through a thumbnail.
+//
+// No worker pool is needed to assert it. The check runs before the pool is
+// reached, and before any cache lookup, which is the ordering the comment
+// claims: a planted cache entry must not be a way in either.
+func TestAViewOnlyAccountGetsNoThumbnail(t *testing.T) {
+	a := compose(t)
+	// Read without Download: the "view only" grant the permission model offers.
+	a.grant(t, acl.Read, "")
+	a.write(t, "photos/holiday.jpg")
+
+	// The capability a thumbnail needs is refused at resolve, since Download is
+	// not held. This is the whole of the check: the preview service requires
+	// Read|Download and there is no way to obtain that capability here.
+	if _, err := a.resolve(t, "photos/holiday.jpg", acl.Read|acl.Download); err == nil {
+		t.Fatal("a view-only account resolved a download capability")
+	}
+
+	// The capability it can obtain lacks Download, so the requirement the
+	// service applies to it fails. Asserted against the capability rather than
+	// through the service, because reaching the service means spawning a
+	// decoder, and the check runs before that.
+	r, err := a.resolve(t, "photos/holiday.jpg", acl.Read)
+	if err != nil {
+		t.Fatalf("a view-only account could not resolve for reading: %v", err)
+	}
+	if err := r.Require(acl.Read | acl.Download); err == nil {
+		t.Error("a view-only capability satisfies what a thumbnail requires")
+	}
+}
+
+// A directory has no thumbnail, and the refusal comes after the permission
+// check rather than instead of it.
+func TestADirectoryHasNoThumbnail(t *testing.T) {
+	a := compose(t)
+	a.grant(t, acl.Read|acl.Download, "")
+	a.write(t, "photos/holiday.jpg")
+
+	// A downloading account holds what a thumbnail requires, so the refusal
+	// below is about the target being a directory rather than about permission.
+	r, err := a.resolve(t, "photos", acl.Read|acl.Download)
+	if err != nil {
+		t.Fatalf("resolving the directory: %v", err)
+	}
+	if rerr := r.Require(acl.Read | acl.Download); rerr != nil {
+		t.Fatalf("the account does not hold what a thumbnail needs: %v", rerr)
+	}
+	st, serr := r.Root().Stat(r.Path())
+	if serr != nil {
+		t.Fatalf("stat: %v", serr)
+	}
+	if !st.Kind.IsDir() {
+		t.Error("the resolved directory does not read as one, so preview would try to decode it")
+	}
+}
