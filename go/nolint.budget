@@ -357,6 +357,11 @@
 # 291: settingscheck's diagnostic writer, the same exemption every tool in
 # go/tools carries. The tool exists because a settings key the client writes
 # and no loader reads is stored, reported as saved, and read by nobody.
+#
+# 294: speccheck's three. The diagnostic writer every tool in go/tools carries,
+# a grep invocation whose arguments are this tool's own root and an identifier
+# read from a document in the same repository, and a document read whose path
+# came from walking the caller's own documents directory.
 
-291
+294
 71

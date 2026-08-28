@@ -300,6 +300,21 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   run "settingscheck (a stored setting is read)" \
       ingo_host go run ./tools/settingscheck \
         ../web/src/lib/api/types.ts ./internal/runtimecfg/runtimecfg.go
+  # freshscan keeps the engine's comments from being the old tree's. This keeps
+  # the phase documents from describing a tree that moved on: each numbered
+  # deliberate change names what it is about, and a rename leaves the prose
+  # describing something that is not there.
+  #
+  # Pointed at the phase 2 areas only. The audit documents describe the old tree
+  # on purpose, and phase 3's describe what is not built yet, so both would
+  # report their own subject matter as missing.
+  run "speccheck (the phase documents match the engine)" bash -c '
+    cd go
+    fail=0
+    for area in auth oidc upload search preview settings smb; do
+      if ! go run ./tools/speccheck "../docs/refactor/$area" ./engine; then fail=1; fi
+    done
+    exit $fail'
   run "vetsecret (D12: no secret to a verb)"   ingo_host go run ./tools/vetsecret ./...
   run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./internal ./tools ./engine
   # The tier rule over the rebuilt engine, by the import graph. A package's
