@@ -316,5 +316,12 @@
 # the diagnostic writer whose error has nowhere to go, the read-only open of a
 # path the walker produced rather than a request, and the close of a file that
 # was only read.
+#
+# 60: the SMB agent's control channel. Three closes whose outcome is already
+# decided (the exchange is finished, the process is ending, the reply is
+# written), two directory and socket modes the hand-over argument in that file
+# explains, and three in its tests: the shared close helper, and the two reads
+# and writes a refusal deliberately interrupts, which is the behaviour under
+# test rather than an ignored failure.
 290
-52
+60

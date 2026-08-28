@@ -63,12 +63,22 @@ One request per connection over a unix socket, JSON, line-delimited:
 - The client (`Do`, `Apply`, `Status`) bounds the report read at
   256 KiB and applies the context deadline to the connection. The
   agent is treated as an untrusted-ish peer.
-- The agent bounds the request line with its reader's fixed buffer;
-  an over-long line fails JSON parsing on the truncated read. **The
-  rebuild deletes the dead length-check branch** (audit finding 3: the
-  branch is unreachable because the buffered reader can never return a
-  longer line) and keeps the enforcement where it really is, in the
-  bounded reader, with a comment saying so.
+- The agent bounds the request line with a reader wrapped in an explicit
+  `io.LimitReader`; an over-long line is refused by name rather than
+  parsed. **The audit's finding 3 was wrong and is corrected here.** It
+  called the length-check branch unreachable "because the buffered
+  reader can never return a longer line". That is not how `bufio`
+  behaves: the buffer size governs one fill, while `ReadString` keeps
+  growing its own result until it finds the delimiter. Measured on this
+  tree over a real unix socket, the old read path accumulated **64 MiB
+  from a 4 KiB buffer**, and the discarded branch was the only bound
+  that existed. Deleting it as the audit proposed was implemented and
+  tested: the agent then read until the 5-second exchange deadline and
+  answered nothing, which is an unbounded read on a socket whose whole
+  vocabulary is two words. The bound is therefore made real rather than
+  removed, and a truncated line is refused rather than parsed, since
+  whichever prefix happens to be valid JSON is not the request the peer
+  sent.
 - `Report` carries what the agent did and why; `FailedReport(reason)`
   is the refusal shape; `LogReport` renders it for the operator.
 
@@ -86,12 +96,19 @@ the code that relies on it.
 
 ## Deliberate changes
 
-1. **The dead length-check branch is deleted** (audit finding 3), the
-   real bound documented in place.
+1. **The request bound is made real, not deleted** (correcting audit
+   finding 3, which was measured wrong; see the protocol section). The
+   client's report read gains the same treatment: the limit wraps the
+   connection, so a peer that never sends a newline costs the bound
+   rather than whatever it chooses to send.
 2. **The durable-write repoints** to `store/fsatomic`.
-3. Nothing else: the deny rule, the narrow deps, the failure wording
+3. **`absent` matches errno values rather than message substrings.** The
+   old spelling compared libc's text, which a reworded or translated
+   message breaks silently, turning an absent agent into a reported
+   connection fault.
+4. Nothing else: the deny rule, the narrow deps, the failure wording
    and the socket trade-off carry whole.
-4. **`AccessChanged` becomes the one synchronous, detached revocation sink**
+5. **`AccessChanged` becomes the one synchronous, detached revocation sink**
    (Phase 3 amendment), replacing three handler/server spellings and closing
    the stale-SMB-access window at the service boundary.
 
