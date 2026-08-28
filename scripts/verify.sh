@@ -413,10 +413,17 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # Every descriptor is an *os.File and every use of a raw one keeps the file
   # alive across the call. (*os.File).Fd takes the descriptor out of the
   # runtime's view for the duration, so nothing keeps the owner reachable and a
-  # finalizer is free to close it underneath the syscall. Two helpers do the
-  # keepalive; this is what stops a third site doing it by hand and forgetting.
+  # finalizer is free to close it underneath the syscall. A helper per owning
+  # package does the keepalive; this is what stops another site doing it by
+  # hand and forgetting.
+  #
+  # The engine's list is longer than the old tree's because the rebuild split
+  # ownership: vfs and fsatomic each hold a withFd helper for the files they
+  # open, preview owns one for the socket it passes descriptors over, and jail
+  # calls the three landlock syscalls directly since each takes a descriptor
+  # alongside a packed struct no wrapper covers.
   FD_HITS=$(go_code '\.Fd\(\)' \
-            | grep -vE '^go/(internal/(vfs/open\.go|jail/landlock\.go)|engine/infra/vfs/root\.go|engine/store/fsatomic/dir_linux\.go):')
+            | grep -vE '^go/(internal/(vfs/open\.go|jail/landlock\.go)|engine/infra/vfs/root\.go|engine/infra/jail/landlock\.go|engine/store/fsatomic/dir_linux\.go|engine/service/preview/transport\.go):')
   grep_gate "raw descriptors only through a keepalive helper" "$FD_HITS" \
     "Use the withFd helpers where the descriptor's owner lives; every other site goes through them."
 
