@@ -811,3 +811,117 @@ func TestAWatcherEventFeedsTheSearchUpdater(t *testing.T) {
 		t.Error("a file the watcher reported never reached the index")
 	}
 }
+
+// The single sign-on seam, which runs through auth rather than by importing
+// oidc.
+//
+// The two halves are built to meet and neither imports the other. oidc speaks
+// to the provider and holds no state: it verifies a token and returns claims
+// carrying an issuer, a subject and the nonce it was told to demand. auth holds
+// the state and speaks to nobody: it stores the nonce before the browser
+// leaves, hands it back when the browser returns, and links an account to the
+// issuer and subject the verifier reported.
+//
+// Nothing asserts the halves still fit, because the code that would put them
+// together is the phase 3 handler. This drives auth's half with the values
+// oidc's half produces, so a change to either shape fails here rather than at
+// the wiring.
+func TestTheSingleSignOnStateSurvivesTheRoundTrip(t *testing.T) {
+	a := compose(t)
+
+	// What the handler mints before redirecting the browser. The state and the
+	// binding are stored as digests, so what goes in is not what is on disk.
+	const (
+		oidcState   = "the-opaque-state-value"
+		nonce       = "the-nonce-the-token-must-carry"
+		binding     = "the-cookie-bound-to-this-browser"
+		verifier    = "the-pkce-code-verifier"
+		redirectURI = "https://stowcloud.example/api/auth/oidc/callback"
+		returnTo    = "/files"
+	)
+	if err := a.auth.StartOIDCFlow(t.Context(), int64(a.user),
+		oidcState, nonce, binding, verifier, redirectURI, returnTo); err != nil {
+		t.Fatalf("starting the flow: %v", err)
+	}
+
+	// What the handler recovers when the browser comes back.
+	flow, err := a.auth.TakeOIDCFlow(t.Context(), oidcState, binding)
+	if err != nil {
+		t.Fatalf("taking the flow: %v", err)
+	}
+	// The nonce is what the token verifier demands the token carries, so
+	// losing it here means every token verifies against an empty string.
+	if flow.Nonce != nonce {
+		t.Errorf("the nonce came back as %q", flow.Nonce)
+	}
+	if flow.CodeVerifier != verifier {
+		t.Errorf("the PKCE verifier came back as %q", flow.CodeVerifier)
+	}
+	// The redirect URI has to reach the token exchange byte for byte, which is
+	// why it is stored rather than rebuilt.
+	if flow.RedirectURI != redirectURI {
+		t.Errorf("the redirect URI came back as %q", flow.RedirectURI)
+	}
+	if flow.User != int64(a.user) {
+		t.Errorf("the flow came back for account %d", flow.User)
+	}
+
+	// A flow is single use: the same state cannot be replayed.
+	if _, rerr := a.auth.TakeOIDCFlow(t.Context(), oidcState, binding); rerr == nil {
+		t.Error("the same state was taken twice")
+	}
+}
+
+// A flow taken with the wrong browser binding is refused, which is what stops a
+// stolen state value being redeemed elsewhere.
+func TestAFlowWithTheWrongBindingIsRefused(t *testing.T) {
+	a := compose(t)
+
+	if err := a.auth.StartOIDCFlow(t.Context(), int64(a.user),
+		"state", "nonce", "the-right-binding", "verifier", "https://x/cb", "/"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.auth.TakeOIDCFlow(t.Context(), "state", "a-different-binding"); err == nil {
+		t.Error("a flow was taken with the wrong binding")
+	}
+}
+
+// The link is keyed on the issuer and subject the token verifier reports, and
+// resolving that pair returns the account. This is the other half of the seam:
+// what oidc extracts from a verified token is what auth looks an account up by.
+func TestAnIdentityLinksAndResolves(t *testing.T) {
+	a := compose(t)
+
+	// Exactly the two fields oidc.Claims carries for identity.
+	const (
+		issuer  = "https://idp.example"
+		subject = "248289761001"
+	)
+	if err := a.auth.CreateOIDCLink(t.Context(), int64(a.user), issuer, subject); err != nil {
+		t.Fatalf("linking: %v", err)
+	}
+
+	uid, err := a.auth.UserForOIDCIdentity(t.Context(), issuer, subject)
+	if err != nil {
+		t.Fatalf("resolving the identity: %v", err)
+	}
+	if uid != int64(a.user) {
+		t.Errorf("the identity resolved to account %d, want %d", uid, a.user)
+	}
+
+	// A different subject at the same issuer is a different person, and the
+	// model is link-only: a provider authenticates but never creates an
+	// account, so this resolves to nobody rather than making one.
+	if _, err := a.auth.UserForOIDCIdentity(t.Context(), issuer, "someone-else"); err == nil {
+		t.Error("an unlinked subject resolved to an account")
+	}
+
+	// Removing the link is absolute, which is what makes the authority over who
+	// holds an account stay in this database.
+	if err := a.auth.RemoveOIDCLink(t.Context(), int64(a.user)); err != nil {
+		t.Fatalf("removing the link: %v", err)
+	}
+	if _, err := a.auth.UserForOIDCIdentity(t.Context(), issuer, subject); err == nil {
+		t.Error("a removed link still resolves")
+	}
+}
