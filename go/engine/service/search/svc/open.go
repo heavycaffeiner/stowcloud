@@ -53,11 +53,11 @@ func (s OpenState) String() string {
 	return "unavailable"
 }
 
-// OpenIndex opens an index directory and says which world it found.
+// OpenIndex loads an index directory and reports which state it encountered.
 //
-// The corrupt directory is left in place rather than deleted here. Removing it
-// is the rebuild's job, and an operator looking at why search got slow wants
-// the evidence still on disk.
+// A corrupt directory stays where it is rather than being deleted here. Removal
+// belongs to the rebuild, and an operator investigating why search slowed down
+// wants the evidence still present on disk.
 func OpenIndex(dir string, cfg index.Config, log *slog.Logger) (*index.NameIndex, OpenState) {
 	if log == nil {
 		log = slog.Default()

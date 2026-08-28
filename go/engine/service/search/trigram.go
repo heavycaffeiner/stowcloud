@@ -2,11 +2,11 @@ package search
 
 import "slices"
 
-// Byte trigrams: three bytes, not three characters.
+// Trigrams over bytes, meaning three bytes rather than three characters.
 //
-// This is the choice plocate makes and it is what makes the index work for
-// CJK. A UTF-8 Hangul syllable is exactly three bytes, so one syllable is one
-// trigram and a two-syllable query yields four overlapping trigrams.
+// plocate makes the same choice, and it is what lets the index serve CJK. A
+// UTF-8 Hangul syllable occupies exactly three bytes, so a single syllable forms
+// one trigram and a two-syllable query produces four overlapping ones.
 
 // Trigram is one three-byte window, packed big-endian into the low 24 bits.
 //
@@ -33,22 +33,22 @@ func (t Trigram) Bytes() [3]byte {
 	}
 }
 
-// Trigrams calls fn for every overlapping window, which avoids materialising a
-// slice for a name the caller is only scanning.
+// Trigrams invokes fn on each overlapping window, avoiding a materialised slice
+// for a name the caller merely scans.
 func Trigrams(b []byte, fn func(Trigram)) {
 	for i := 0; i+3 <= len(b); i++ {
 		fn(TrigramOf(b[i], b[i+1], b[i+2]))
 	}
 }
 
-// AppendTrigrams appends every window to out without clearing it. The caller
-// sorts and dedups once at the end.
+// AppendTrigrams adds every window to out without clearing it first. Sorting and
+// deduplication happen once, in the caller, at the end.
 func AppendTrigrams(out []Trigram, b []byte) []Trigram {
 	Trigrams(b, func(t Trigram) { out = append(out, t) })
 	return out
 }
 
-// DistinctTrigrams is the sorted, deduplicated trigram set of b.
+// DistinctTrigrams returns b's trigram set, sorted and deduplicated.
 func DistinctTrigrams(b []byte) []Trigram {
 	if len(b) < 3 {
 		return nil
@@ -66,8 +66,8 @@ func SortTrigrams(v []Trigram) { slices.Sort(v) }
 // DedupTrigrams removes adjacent duplicates from a sorted set.
 func DedupTrigrams(v []Trigram) []Trigram { return slices.Compact(v) }
 
-// TrigramOccurrences is how many windows a byte string of this length
-// contributes, which the estimator's posting-list model needs.
+// TrigramOccurrences gives how many windows a byte string of the given length
+// contributes, a figure the estimator's posting-list model requires.
 func TrigramOccurrences(n int) int {
 	if n < 3 {
 		return 0

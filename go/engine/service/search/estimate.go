@@ -5,39 +5,39 @@ import (
 	"math"
 )
 
-// Sizing the index before building one.
+// Sizing the index before one is built.
 //
-// The decision depends on how many distinct trigrams the corpus has, which is
-// what the sketch is for. A CJK corpus has vastly more distinct trigrams than
-// a Latin one at the same file count, and getting that wrong is how a search
-// that should have taken the index takes a full walk instead.
+// The decision turns on how many distinct trigrams the corpus contains, which is
+// what the sketch measures. A CJK corpus holds far more distinct trigrams than a
+// Latin one at the same file count, and misjudging that is how a search that
+// should have used the index ends up performing a full walk.
 
-// Per-entry costs the format fixes.
+// Per-entry costs the format fixes in place.
 const (
-	// EntryOverheadBytes is the varint share id and name length a block record
-	// carries beyond the name itself.
+	// EntryOverheadBytes covers the varint share id and name length a block
+	// record carries in addition to the name.
 	EntryOverheadBytes = 3
-	// BlockDirEntryBytes and DictEntryBytes are the format's own widths.
+	// BlockDirEntryBytes and DictEntryBytes give the format's own widths.
 	BlockDirEntryBytes = 16
 	DictEntryBytes     = 12
-	// HeaderBytes is the fixed segment header.
+	// HeaderBytes gives the fixed segment header's size.
 	HeaderBytes = 128
 )
 
-// fallbackPruneRetention is what the analytic model assumes survives pruning
-// when no sample measured it. It cannot model pruning properly, because it
-// treats every trigram as equally common, which is exactly what pruning is
-// about.
+// fallbackPruneRetention is the survival fraction the analytic model assumes for
+// pruning when no sample measured it. The model cannot represent pruning
+// properly because it treats every trigram as equally frequent, which is
+// precisely what pruning targets.
 const fallbackPruneRetention = 0.55
 
-// Confidence says how much the estimate is worth.
+// Confidence indicates how much weight the estimate deserves.
 type Confidence int
 
 const (
-	// ConfidenceMeasured means the posting term came from sampled blocks.
+	// ConfidenceMeasured means the posting term derives from sampled blocks.
 	ConfidenceMeasured Confidence = iota
-	// ConfidenceModelled means it came from the analytic occupancy model,
-	// which cannot account for pruning.
+	// ConfidenceModelled means it derives from the analytic occupancy model,
+	// which cannot represent pruning.
 	ConfidenceModelled
 )
 
@@ -48,39 +48,40 @@ func (c Confidence) String() string {
 	return "modelled"
 }
 
-// CorpusStats is what a sampling scan measured.
+// CorpusStats holds what a sampling scan measured.
 type CorpusStats struct {
 	Files uint64
-	// NameBytesTotal is the sum of the name lengths.
+	// NameBytesTotal sums the name lengths.
 	NameBytesTotal uint64
-	// DistinctTrigramsEst is the sketch's answer, and the term that separates
-	// a CJK corpus from a Latin one.
+	// DistinctTrigramsEst carries the sketch's answer, the term distinguishing a
+	// CJK corpus from a Latin one.
 	DistinctTrigramsEst uint64
-	// SampleCompressRatio is compressed over raw, measured on sampled blocks.
+	// SampleCompressRatio gives compressed over raw as measured on sampled
+	// blocks.
 	SampleCompressRatio float32
-	// PostingBytesPerBlock is measured on sampled blocks after pruning. Zero
-	// means nothing measured it and the analytic model is used instead.
+	// PostingBytesPerBlock is measured across sampled blocks after pruning. Zero
+	// indicates nothing measured it, so the analytic model applies instead.
 	PostingBytesPerBlock float64
 }
 
-// IndexEstimate is what building the index would cost.
+// IndexEstimate reports what building the index would cost.
 type IndexEstimate struct {
 	IndexBytes uint64
 	Confidence Confidence
-	// Formula is the term-by-term derivation, so that when the estimate is
-	// wrong it is visible which term was wrong. An operator checking the
-	// arithmetic needs the terms; everyone else needed a size.
+	// Formula records the term-by-term derivation, so a wrong estimate reveals
+	// which term was wrong. An operator verifying the arithmetic needs the
+	// terms, while everyone else only wanted a size.
 	Formula string
 }
 
-// EstimateNameIndex sizes the index for a corpus.
+// EstimateNameIndex computes the index size for a corpus.
 //
-//	blocks        = ceil(files / block_size)
-//	block_bytes  ~= (name_bytes_total + files x 3) x sample_compress_ratio
-//	blockdir      = blocks x 16
-//	dict_bytes    = distinct_trigrams x 12
-//	posting_bytes ~= sum over trigrams of df x varint width, pruned excluded
-//	index_bytes  ~= header + blockdir + dict + postings + blocks
+//	blocks         = ceil(files / block_size)
+//	block_bytes   ~= (name_bytes_total + 3 x files) x sample_compress_ratio
+//	blockdir       = 16 x blocks
+//	dict_bytes     = 12 x distinct_trigrams
+//	posting_bytes ~= sum of df x varint width across unpruned trigrams
+//	index_bytes   ~= header + blockdir + dict + postings + blocks
 func EstimateNameIndex(stats CorpusStats, blockSize uint32) IndexEstimate {
 	bs := uint64(blockSize)
 	if bs == 0 {
@@ -108,17 +109,18 @@ func EstimateNameIndex(stats CorpusStats, blockSize uint32) IndexEstimate {
 	confidence := ConfidenceMeasured
 
 	if stats.PostingBytesPerBlock > 0 {
-		// The preferred path. Sampled blocks are a uniform sample of all
-		// blocks, so per-block bytes measured on them estimate per-block bytes
-		// over the corpus without bias, and pruning is applied using the
-		// sample's own frequency distribution rather than assumed away.
+		// The preferred path. Sampled blocks form a uniform sample of all
+		// blocks, so per-block bytes measured across them estimate per-block
+		// bytes over the corpus without bias, and pruning is applied using the
+		// sample's own frequency distribution instead of being assumed away.
 		postingBytes = uint64(blocksF * stats.PostingBytesPerBlock)
 		postingNote = fmt.Sprintf("%.1f B/block measured on sampled blocks, after pruning",
 			stats.PostingBytesPerBlock)
 	} else {
-		// With occ trigram occurrences spread over d distinct values, a block
-		// holding occ/blocks of them covers d x (1 - e^(-occ_per_block/d))
-		// distinct values, which is the standard occupancy expression.
+		// Given occ trigram occurrences distributed across d distinct values, a
+		// block containing occ/blocks of them covers
+		// d x (1 - e^(-occ_per_block/d)) distinct values, the standard
+		// occupancy expression.
 		confidence = ConfidenceModelled
 		occ := float64(saturatingSub(stats.NameBytesTotal, 2*stats.Files))
 		distinctPerBlock := d * (1 - math.Exp(-(occ/blocksF)/d))

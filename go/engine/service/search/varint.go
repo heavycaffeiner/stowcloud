@@ -5,10 +5,10 @@ import (
 	"math"
 )
 
-// LEB128-style unsigned varints. Posting lists are delta plus varint encoded,
-// and block payloads use the same encoding for their lengths.
+// Unsigned varints in the LEB128 style. Posting lists combine delta and varint
+// encoding, and block payloads encode their lengths the same way.
 
-// ErrVarint is a truncated or overlong encoding.
+// ErrVarint reports a truncated or overlong encoding.
 var ErrVarint = errors.New("search: a malformed varint")
 
 // PutVarint appends v to out.
@@ -23,13 +23,15 @@ func PutVarint(out []byte, v uint64) []byte {
 	}
 }
 
-// Varint reads a varint at pos, returning the value and the position after it.
+// Varint decodes a varint at pos, returning the value and the following
+// position.
 //
-// Only the canonical encoding of a value is accepted. A continuation byte that
-// would shift past 64 bits is refused, and so is a final byte contributing no
-// bits: both are second spellings of a number the encoder never writes, and a
-// decoder that took them could not re-encode what it just read. Refusing means
-// a corrupt segment is detected here rather than turned into plausible hits.
+// Only a value's canonical encoding is accepted. A continuation byte shifting
+// past 64 bits is rejected, as is a final byte contributing no bits. Both are
+// alternative spellings of a number the encoder never emits, and a decoder
+// accepting them could not re-encode what it had just read. Rejecting them
+// catches a corrupt segment here instead of converting it into plausible
+// hits.
 func Varint(buf []byte, pos int) (uint64, int, error) {
 	var v uint64
 	var shift uint
@@ -42,16 +44,16 @@ func Varint(buf []byte, pos int) (uint64, int, error) {
 		if shift >= 64 {
 			return 0, 0, ErrVarint
 		}
-		// The tenth byte can only carry the single bit that reaches bit 63.
-		// Anything above it would be dropped by the shift, so a value that set
-		// one is a corrupt encoding rather than a large number.
+		// Only one bit of the tenth byte reaches bit 63. The shift would discard
+		// anything above it, so a value setting one indicates a corrupt encoding
+		// rather than a large number.
 		if shift == 63 && b&0x7f > 1 {
 			return 0, 0, ErrVarint
 		}
 		v |= uint64(b&0x7f) << shift
 		if b&0x80 == 0 {
-			// A final byte contributing no bits is the overlong form of a
-			// shorter encoding.
+			// A final byte adding no bits is the overlong spelling of a shorter
+			// encoding.
 			if shift > 0 && b == 0 {
 				return 0, 0, ErrVarint
 			}
@@ -61,8 +63,8 @@ func Varint(buf []byte, pos int) (uint64, int, error) {
 	}
 }
 
-// VarintLen is the encoded width of v in bytes, which the size estimator needs
-// without encoding anything.
+// VarintLen gives v's encoded width in bytes, which the size estimator needs
+// without performing an encode.
 func VarintLen(v uint64) int {
 	n := 1
 	for v >>= 7; v != 0; v >>= 7 {
@@ -71,10 +73,10 @@ func VarintLen(v uint64) int {
 	return n
 }
 
-// PutAscending delta-encodes a strictly ascending list of block ids.
+// PutAscending delta-encodes a strictly ascending sequence of block ids.
 //
-// The first id is absolute and the rest are gaps, which is what makes a dense
-// posting list mostly one-byte values.
+// The first id is stored absolutely and the remainder as gaps, which is what
+// reduces a dense posting list to mostly single-byte values.
 func PutAscending(out []byte, ids []uint32) []byte {
 	var prev uint64
 	for i, id := range ids {
@@ -89,7 +91,7 @@ func PutAscending(out []byte, ids []uint32) []byte {
 	return out
 }
 
-// Ascending is the inverse of PutAscending.
+// Ascending reverses PutAscending.
 func Ascending(buf []byte) ([]uint32, error) {
 	var out []uint32
 	var prev uint64

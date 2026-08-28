@@ -6,29 +6,29 @@ import (
 	"math/bits"
 )
 
-// A small HyperLogLog.
+// A compact HyperLogLog.
 //
-// The estimator needs the distinct-trigram count to size the posting
-// dictionary, and that is the number separating a CJK corpus from a Latin one.
-// Counting exactly would mean holding millions of trigrams in a set during the
-// estimate scan; this answers to about a percent in 16 KB.
+// The estimator requires the distinct-trigram count to size the posting
+// dictionary, and that figure is what separates a CJK corpus from a Latin one.
+// Counting exactly would mean retaining millions of trigrams in a set during the
+// estimate scan, whereas this answers within about a percent using 16 KB.
 //
-// Hand-rolled rather than taken from a module: it is eighty lines, and an
-// administrator is being asked to trust its arithmetic, so it has to be
-// auditable line by line.
+// Written here rather than pulled from a module: it spans eighty lines, and an
+// administrator is being asked to trust its arithmetic, so it must be auditable
+// line by line.
 
-// HLLDefaultPrecision gives 2^14 registers, so 16 KB and roughly 0.8 percent
-// standard error.
+// HLLDefaultPrecision yields 2^14 registers, occupying 16 KB with roughly 0.8
+// percent standard error.
 const HLLDefaultPrecision = 14
 
-// HLL precision bounds. Outside them the register array is either too small to
-// estimate with or larger than the exact set it replaces.
+// HLL precision bounds. Beyond them the register array becomes either too small
+// to estimate from or larger than the exact set it stands in for.
 const (
 	hllMinPrecision = 4
 	hllMaxPrecision = 18
 )
 
-// ErrHLLPrecision is a merge of two sketches that cannot be merged.
+// ErrHLLPrecision reports an attempt to merge two incompatible sketches.
 var ErrHLLPrecision = errors.New("search: cannot merge sketches of different precision")
 
 // HLL is the sketch.
@@ -54,28 +54,28 @@ func NewHLL(p uint8) *HLL {
 	return &HLL{p: p, regs: make([]uint8, 1<<p)}
 }
 
-// Precision is the register exponent.
+// Precision gives the register exponent.
 func (h *HLL) Precision() uint8 { return h.p }
 
-// MemoryBytes is what the sketch costs, which the estimator reports so an
-// operator can see what it spent.
+// MemoryBytes gives the sketch's cost, which the estimator reports so an
+// operator can see what was spent.
 func (h *HLL) MemoryBytes() int { return len(h.regs) }
 
 // Add inserts a byte string.
 func (h *HLL) Add(b []byte) { h.AddHash(Hash64(b)) }
 
-// AddHash inserts a pre-hashed value.
+// AddHash records a value that has already been hashed.
 func (h *HLL) AddHash(x uint64) {
 	idx := x >> (64 - h.p)
-	// The rank is the position of the first one bit in what is left, counting
-	// from one.
+	// The rank is the one-based position of the first set bit in the
+	// remainder.
 	w := x << h.p
 	var rank uint8
 	if w == 0 {
 		rank = 64 - h.p + 1
 	} else {
-		// LeadingZeros64 returns 0..63 for a non-zero word, so the sum is at
-		// most 64 and the narrowing cannot lose a bit.
+		// LeadingZeros64 yields 0 through 63 for a non-zero word, capping the
+		// sum at 64 so the narrowing cannot discard a bit.
 		lz := bits.LeadingZeros64(w)
 		if lz > 63 {
 			lz = 63
@@ -87,7 +87,7 @@ func (h *HLL) AddHash(x uint64) {
 	}
 }
 
-// Merge unions another sketch into this one.
+// Merge folds another sketch into this one.
 func (h *HLL) Merge(o *HLL) error {
 	if h.p != o.p {
 		return ErrHLLPrecision
@@ -125,16 +125,17 @@ func (h *HLL) Estimate() float64 {
 	}
 	raw := alpha * m * m / sum
 
-	// With many empty registers linear counting is far more accurate than the
-	// raw estimator. No large-range correction is needed: the hash is 64 bits,
-	// so the collision regime the correction exists for is unreachable.
+	// When many registers remain empty, linear counting proves far more accurate
+	// than the raw estimator. No large-range correction applies, since the hash
+	// is 64 bits and the collision regime that correction addresses cannot be
+	// reached.
 	if raw <= 2.5*m && zeros > 0 {
 		return m * math.Log(m/float64(zeros))
 	}
 	return raw
 }
 
-// EstimateUint is the cardinality rounded.
+// EstimateUint gives the rounded cardinality.
 func (h *HLL) EstimateUint() uint64 {
 	e := math.Round(h.Estimate())
 	if e < 0 {
@@ -143,14 +144,15 @@ func (h *HLL) EstimateUint() uint64 {
 	return uint64(e)
 }
 
-// Hash64 is FNV-1a followed by a splitmix64 finaliser.
+// Hash64 applies FNV-1a followed by a splitmix64 finaliser.
 //
-// FNV alone avalanches poorly in the high bits, which is exactly where the
-// register index is read from. The finaliser fixes the distribution without
-// taking a hashing dependency.
+// FNV on its own avalanches poorly in the high bits, precisely where the
+// register index is taken from. The finaliser corrects the distribution without
+// introducing a hashing dependency.
 //
-// Distinct from the index's FNV1a32, which is a corruption checksum. The two
-// have different collision tolerances and stay two primitives.
+// It is separate from the index's FNV1a32, which serves as a corruption
+// checksum. The two tolerate collisions differently and remain distinct
+// primitives.
 func Hash64(b []byte) uint64 {
 	h := uint64(0xcbf29ce484222325)
 	for _, c := range b {

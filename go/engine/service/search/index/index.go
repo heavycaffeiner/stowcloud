@@ -19,21 +19,21 @@ import (
 // The union of the segments.
 //
 //	<store>/names/
-//	  base.idx        immutable, block-compressed
-//	  delta.NNN.idx   append-only, lightly compressed, linearly scanned
-//	  tomb.idx        deletions
+//	  base.idx        immutable, compressed in blocks
+//	  delta.NNN.idx   append-only, lightly compressed, scanned linearly
+//	  tomb.idx        the deletion record
 //
-// A query is base plus the deltas minus the tombstones.
+// A query evaluates base plus the deltas minus the tombstones.
 //
-// The split is a necessity rather than an optimisation: an immutable block
-// index cannot be upserted. A name cannot be inserted into the middle of a
-// compressed 32-name block, and a block id cannot be inserted into a
-// delta-encoded posting list. plocate sidesteps this by rebuilding nightly,
-// which this cannot do because changes have to be visible immediately. So
-// writes go to a delta segment in constant time and the rebuild happens under
-// a gate, at idle.
+// This split is forced rather than chosen: an immutable block index admits no
+// upsert. A name cannot be spliced into the middle of a compressed 32-name
+// block, and a block id cannot be spliced into a delta-encoded posting list.
+// plocate avoids the problem by rebuilding nightly, which is unavailable here
+// because changes must appear immediately. Writes therefore land in a delta
+// segment in constant time, and the rebuild happens under a gate while
+// idle.
 
-// MinTrigramQuery is the shortest query that can produce a trigram.
+// MinTrigramQuery gives the shortest query capable of yielding a trigram.
 const MinTrigramQuery = 3
 
 // baseName, tombName and the delta prefix are the fixed names in an index
@@ -46,27 +46,27 @@ const (
 	deltaSuffix = ".idx"
 )
 
-// FallbackReason is why the index declined to answer, so the caller runs a
-// walk instead.
+// FallbackReason explains why the index declined to answer, sending the caller
+// to a walk instead.
 type FallbackReason int
 
 const (
-	// FallbackNone means the index answered.
+	// FallbackNone indicates the index answered.
 	FallbackNone FallbackReason = iota
-	// FallbackQueryTooShort is a query under three bytes, which has no
-	// trigram to look up.
+	// FallbackQueryTooShort marks a query under three bytes, leaving no trigram
+	// to look up.
 	FallbackQueryTooShort
-	// FallbackAllTrigramsPruned means every trigram was dropped by high-df
-	// pruning, so the intersection would be over nothing.
+	// FallbackAllTrigramsPruned means high-df pruning removed every trigram,
+	// leaving the intersection with nothing to work on.
 	FallbackAllTrigramsPruned
-	// FallbackIncomplete means the index is knowingly short of the corpus,
-	// because it reached its entry ceiling. A name it does not hold may still
-	// exist, so the caller has to walk.
+	// FallbackIncomplete means the index knows it covers less than the corpus
+	// because it hit its entry ceiling. A name absent from it may nonetheless
+	// exist, so the caller must walk.
 	//
-	// Without it an incomplete index answers every query from what it has, and
-	// a file past the ceiling is absent from a result carrying a success
-	// status. That is the same silent shortness the incremental update path
-	// exists to prevent, arriving by another route.
+	// Without this an incomplete index answers every query from what it holds,
+	// and a file beyond the ceiling goes missing from a result reporting
+	// success. That is the same silent incompleteness the incremental update
+	// path exists to prevent, reached by a different route.
 	FallbackIncomplete
 )
 
@@ -82,9 +82,9 @@ func (f FallbackReason) String() string {
 	return "-"
 }
 
-// Hit is one index match. The index stores names only, so a caller resolves
-// size and time with a stat performed after its own ACL check, which doubles
-// as the staleness check.
+// Hit represents a single index match. Only names are stored, so a caller
+// obtains size and time from a stat run after its own ACL check, which serves as
+// the staleness check too.
 type Hit struct {
 	Share uint32
 	Path  string
@@ -92,46 +92,46 @@ type Hit struct {
 	Score float32
 }
 
-// Result is what a query produced.
+// Result holds what a query produced.
 //
-// The fallback is a field rather than an empty slice because "the index looked
-// and found nothing" and "the index declined to look" are different answers,
-// and conflating them turns a fallback into a wrong empty result.
+// Fallback is a separate field rather than an empty slice, because the index
+// searching and finding nothing differs from the index declining to search.
+// Merging the two would turn a fallback into an incorrect empty result.
 type Result struct {
 	Hits     []Hit
 	Fallback FallbackReason
 
-	// CandidateBlocks is what the posting intersection produced, and
-	// FalsePositiveBlocks how many held no match after all. The second is the
-	// documented cost of block-level postings and the number that says whether
-	// the block size suits this corpus.
+	// CandidateBlocks counts what the posting intersection yielded, and
+	// FalsePositiveBlocks how many of those contained no match. The latter is
+	// the acknowledged cost of block-level postings and the figure indicating
+	// whether the block size fits this corpus.
 	CandidateBlocks     int
 	ScannedEntries      int
 	FalsePositiveBlocks int
 }
 
-// MustFallBack reports that the caller has to run a walk.
+// MustFallBack reports that the caller must run a walk.
 func (r Result) MustFallBack() bool { return r.Fallback != FallbackNone }
 
 // Config is the index's tuning.
 type Config struct {
-	// BlockSize is plocate's default and this one's: 32. Larger compresses
-	// better and shortens posting lists, but makes the postings less precise
-	// so more work goes into scanning blocks that hold no match.
+	// BlockSize is 32, matching plocate's default and this one. Larger values
+	// compress better and shorten posting lists while making the postings less
+	// precise, shifting effort into scanning blocks that contain no match.
 	BlockSize uint32
-	// PruneDFRatio drops a trigram present in more than this fraction of the
-	// blocks.
+	// PruneDFRatio discards any trigram appearing in more than this fraction of
+	// the blocks.
 	PruneDFRatio float32
-	// MergeRatio is when the deltas have grown enough to rebuild.
+	// MergeRatio sets the point at which the deltas justify a rebuild.
 	MergeRatio float32
 }
 
-// DefaultConfig is the tuning the product ships.
+// DefaultConfig holds the tuning the product ships with.
 func DefaultConfig() Config {
 	return Config{BlockSize: 32, PruneDFRatio: 0.6, MergeRatio: 0.15}
 }
 
-// live is one entry from a delta segment.
+// live holds a single entry from a delta segment.
 type live struct {
 	seq   uint64
 	share uint32
@@ -143,7 +143,7 @@ type tombKey struct {
 	path  string
 }
 
-// NameIndex is the union of the segments.
+// NameIndex presents the segments as one.
 type NameIndex struct {
 	dir string
 	cfg Config
@@ -154,25 +154,26 @@ type NameIndex struct {
 	delta      []live
 	deltaFiles []string
 	deltaBytes int64
-	// merging is set while a merge builds a base outside the lock. It is what
-	// stops a second one starting from a snapshot the first has not published
-	// yet, which would publish a base missing the first's writes.
+	// merging is held while a merge builds a base outside the lock. It prevents a
+	// second merge starting from a snapshot the first has not yet published,
+	// which would produce a base lacking the first's writes.
 	merging bool
-	// tomb maps a share and path to the sequence at which it was deleted.
+	// tomb associates a share and path with the sequence that deleted it.
 	tomb      map[tombKey]uint64
 	tombBytes int64
 	seq       uint64
-	// incomplete marks an index that stopped short of its corpus. Every query
-	// then declines rather than answering from a part of the tree, because the
-	// index cannot tell "no such name" from "a name past where I stopped".
+	// incomplete flags an index covering less than its corpus. Every query then
+	// declines rather than answering from a portion of the tree, because the
+	// index cannot distinguish a name that does not exist from one beyond where
+	// it stopped.
 	incomplete bool
 }
 
-// Open reads an index directory.
+// Open loads an index directory.
 //
-// A torn tail on a delta or the tombstone file is cut rather than refused: it
-// is the expected state after a crash, and a segment that failed to parse
-// would otherwise disable the index every time the machine lost power.
+// A torn tail on a delta or the tombstone file is trimmed rather than rejected,
+// since that is the expected state after a crash. A segment failing to parse
+// would otherwise disable the index on every unclean shutdown.
 func Open(dir string, cfg Config) (*NameIndex, error) {
 	if cfg.BlockSize == 0 {
 		cfg.BlockSize = DefaultConfig().BlockSize
@@ -184,14 +185,14 @@ func Open(dir string, cfg Config) (*NameIndex, error) {
 	ix := &NameIndex{dir: dir, cfg: cfg, tomb: map[tombKey]uint64{}}
 
 	basePath := filepath.Join(dir, baseName)
-	// The path is built from the caller's index directory and a fixed name, so
-	// there is no component here a request could have chosen.
+	// The path combines the caller's index directory with a fixed name, so no
+	// component of it originates from a request.
 	if buf, err := os.ReadFile(basePath); err == nil { //nolint:gosec // G304: a fixed name under the operator's own index directory.
 		seg, oerr := OpenBase(buf)
 		if oerr != nil {
-			// A corrupt base is reported, not fatal. The index is a cache, so
-			// the caller disables it and search continues on the walk: a broken
-			// cache costs speed, never answers.
+			// A corrupt base is reported rather than fatal. The index is a
+			// cache, so the caller disables it and search proceeds by walking:
+			// a broken cache costs speed and never correctness.
 			return nil, fmt.Errorf("%w: %s: %w", ErrIndexCorrupt, basePath, oerr)
 		}
 		ix.base = seg
@@ -210,11 +211,12 @@ func Open(dir string, cfg Config) (*NameIndex, error) {
 	}
 	ix.seq = max(maxSeq, tombSeq) + 1
 
-	// An index that reached its ceiling is short of its corpus, and that has to
-	// survive a restart: the flag is in memory, so without deriving it here a
-	// reopened index would answer every query from a part of the tree with a
-	// success status. Derived rather than stored, because the count is already
-	// on disk and a second copy is a second thing to keep true.
+	// An index that hit its ceiling covers less than its corpus, and that fact
+	// must survive a restart. The flag lives in memory, so without deriving it
+	// here a reopened index would answer every query from a portion of the tree
+	// while reporting success. It is derived rather than stored because the
+	// count already sits on disk, and a second copy is a second thing to keep
+	// accurate.
 	if ix.entryCount() >= limits.CorpusScanEntries {
 		ix.incomplete = true
 	}
@@ -287,8 +289,8 @@ func (ix *NameIndex) loadTombstones(dir string) (uint64, error) {
 	return maxSeq, nil
 }
 
-// entryCount is the live entry count without taking the lock, for use during
-// Open before the index is shared.
+// entryCount returns the live entry count without acquiring the lock, for use in
+// Open before the index becomes shared.
 func (ix *NameIndex) entryCount() uint64 {
 	var base uint64
 	if ix.base != nil {
@@ -297,14 +299,14 @@ func (ix *NameIndex) entryCount() uint64 {
 	return base + uint64(len(ix.delta))
 }
 
-// Config is the tuning this index was opened with.
+// Config returns the tuning this index was opened under.
 func (ix *NameIndex) Config() Config { return ix.cfg }
 
 // Dir is the index directory.
 func (ix *NameIndex) Dir() string { return ix.dir }
 
-// Query intersects the posting lists into candidate blocks, decompresses them,
-// scans the names inside, and applies the overlay.
+// Query intersects the posting lists down to candidate blocks, decompresses
+// those, scans the names within, and applies the overlay.
 func (ix *NameIndex) Query(needle []byte, limit int) (Result, error) {
 	folded := search.Fold(needle)
 	if len(folded) < MinTrigramQuery {
@@ -316,9 +318,9 @@ func (ix *NameIndex) Query(needle []byte, limit int) (Result, error) {
 	defer ix.mu.RUnlock()
 
 	if ix.incomplete {
-		// Answering from a part of the corpus is the one thing an index must
-		// never do: the caller cannot tell a short result from a complete one,
-		// and the status says success either way.
+		// Answering from part of the corpus is the single thing an index must
+		// never do. The caller cannot separate a short result from a complete
+		// one, and the status reports success in both cases.
 		return Result{Fallback: FallbackIncomplete}, nil
 	}
 
@@ -364,8 +366,8 @@ func (ix *NameIndex) Query(needle []byte, limit int) (Result, error) {
 		}
 	}
 
-	// The deltas are bounded by the merge gate, so a linear scan is the right
-	// answer: they can never grow past a fixed fraction of the base.
+	// The merge gate bounds the deltas, so a linear scan is appropriate: they
+	// can never exceed a fixed fraction of the base.
 	for _, d := range ix.delta {
 		out.ScannedEntries++
 		if !matchesFolded(d.path, folded) {
@@ -423,10 +425,10 @@ func (ix *NameIndex) candidateLists(tris []search.Trigram) ([][]uint32, Fallback
 	return lists, FallbackNone
 }
 
-// Append adds names to the current delta segment.
+// Append writes names into the current delta segment.
 //
-// Constant time in the size of the index: one framed record, one write. This
-// is why the segment split exists.
+// It costs constant time regardless of index size: one framed record and one
+// write. This is precisely why the segment split exists.
 func (ix *NameIndex) Append(entries []Entry) error {
 	if len(entries) == 0 {
 		return nil
@@ -456,7 +458,7 @@ func (ix *NameIndex) Append(entries []Entry) error {
 	return nil
 }
 
-// Tombstone records deletions. The base segment is never touched.
+// Tombstone records deletions, leaving the base segment untouched.
 func (ix *NameIndex) Tombstone(entries []Entry) error {
 	if len(entries) == 0 {
 		return nil
@@ -485,16 +487,15 @@ func (ix *NameIndex) Tombstone(entries []Entry) error {
 	return nil
 }
 
-// ChildrenOf is the paths the index holds directly inside one directory.
+// ChildrenOf lists the paths the index holds immediately inside one directory.
 //
-// Direct children only, not the subtree. It is what an incremental update
-// needs: a change notification names a directory, and what has to be compared
-// is that directory's own listing. A subtree answer would make one file
-// appearing at the top of a share cost the whole share.
+// Direct children only, never the subtree. That is what an incremental update
+// requires: a change notification names a directory, and the comparison covers
+// that directory's own listing. A subtree answer would make a single file
+// appearing at a share's root cost the entire share.
 //
-// The overlay is applied, so an entry appended since the last merge is present
-// and a tombstoned one is absent, which is what makes two updates in a row
-// agree with each other.
+// The overlay is applied, so an entry appended since the last merge appears and
+// a tombstoned one does not, which is what makes consecutive updates agree.
 func (ix *NameIndex) ChildrenOf(share uint32, dir string) ([]string, error) {
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
@@ -533,7 +534,7 @@ func (ix *NameIndex) ChildrenOf(share uint32, dir string) ([]string, error) {
 	return paths, nil
 }
 
-// isChildOf reports whether path names an entry directly inside dir.
+// isChildOf reports whether path names an entry immediately inside dir.
 func isChildOf(path, dir string) bool {
 	if dir == "" {
 		return path != "" && !strings.Contains(path, "/")
@@ -544,28 +545,29 @@ func isChildOf(path, dir string) bool {
 	return !strings.Contains(path[len(dir)+1:], "/")
 }
 
-// Incomplete reports whether this index stopped short of its corpus.
+// Incomplete reports whether this index covers less than its corpus.
 func (ix *NameIndex) Incomplete() bool {
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
 	return ix.incomplete
 }
 
-// SetIncomplete records that the index holds less than the tree it covers,
-// which is what reaching the entry ceiling means.
+// SetIncomplete records that the index holds less than the tree it covers, which
+// is what hitting the entry ceiling amounts to.
 //
-// It is the index's own flag rather than the caller's bookkeeping, because
-// every query has to see it and only the index is on that path.
+// The flag belongs to the index rather than the caller's bookkeeping, because
+// every query must observe it and only the index sits on that path.
 func (ix *NameIndex) SetIncomplete(v bool) {
 	ix.mu.Lock()
 	ix.incomplete = v
 	ix.mu.Unlock()
 }
 
-// NeedsMerge reports whether the overlay has outgrown its share of the base.
+// NeedsMerge reports whether the overlay has exceeded its allowance against the
+// base.
 //
-// Bounding this ratio is what bounds read cost: the linear delta scan on every
-// query can never grow past a fixed fraction of the base.
+// Bounding that ratio is what bounds read cost, since the linear delta scan run
+// by every query can never exceed a fixed fraction of the base.
 func (ix *NameIndex) NeedsMerge() bool {
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
@@ -577,7 +579,7 @@ func (ix *NameIndex) NeedsMerge() bool {
 	return float64(extra) > float64(ix.cfg.MergeRatio)*float64(ix.baseBytes)
 }
 
-// Stats reports what the index holds.
+// Stats describes what the index holds.
 func (ix *NameIndex) Stats() Stats {
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
@@ -600,7 +602,7 @@ func (ix *NameIndex) Stats() Stats {
 	return s
 }
 
-// Stats is the index's accounting.
+// Stats carries the index's accounting.
 type Stats struct {
 	Entries        uint64
 	BaseEntries    uint64
@@ -619,8 +621,8 @@ type Stats struct {
 // was written at. The caller holds the lock.
 func (ix *NameIndex) tombstonedLocked(share uint32, path string, seq uint64) bool {
 	at, ok := ix.tomb[tombKey{share: share, path: path}]
-	// A tombstone only hides a write that came before it, which is what makes
-	// a delete-then-recreate end up live rather than hidden forever.
+	// A tombstone conceals only writes preceding it, which is what lets a delete
+	// followed by a recreate end up live rather than permanently hidden.
 	return ok && at >= seq
 }
 
@@ -631,8 +633,8 @@ func (ix *NameIndex) currentDelta() string {
 	return filepath.Join(ix.dir, deltaPrefix+"000"+deltaSuffix)
 }
 
-// deltaNames lists the delta segments in creation order, which their names
-// encode.
+// deltaNames lists the delta segments in creation order, the ordering their
+// names encode.
 func deltaNames(dir string) ([]string, error) {
 	ents, err := os.ReadDir(dir)
 	if err != nil {
@@ -649,8 +651,8 @@ func deltaNames(dir string) ([]string, error) {
 	return out, nil
 }
 
-// intersect is the posting-list intersection, smallest list first so the
-// result shrinks as fast as it can.
+// intersect performs the posting-list intersection starting from the smallest
+// list, so the result contracts as quickly as possible.
 func intersect(lists [][]uint32) []uint32 {
 	if len(lists) == 0 {
 		return nil
@@ -716,24 +718,24 @@ func sortHits(hits []Hit) {
 	})
 }
 
-// Merge rebuilds the base from base plus the deltas minus the tombstones and
-// drops the segments.
+// Merge rebuilds the base from base plus deltas minus tombstones, then discards
+// the absorbed segments.
 //
-// This is the only heavy operation in the design, so it runs under a gate and
-// never on a request path. The gate is polled as it goes, and a refusal aborts
-// cleanly: a merge that was told to stop must never be able to damage the
-// index, so nothing is replaced until the new segment is complete.
+// This is the design's only expensive operation, so it runs under a gate and
+// never on a request path. The gate is polled throughout and a refusal aborts
+// cleanly: a merge instructed to stop must never damage the index, so nothing is
+// replaced until the new segment is finished.
 //
-// The rebuild runs without the lock. It reads every entry in the base, sorts
-// them and compresses the result, which measured 4.4 seconds on a million
-// entries against 87 microseconds for a query: holding the write lock across it
-// stops fifty thousand queries' worth of work, on a timer nobody asked for.
+// The rebuild proceeds without the lock. It reads every base entry, sorts them
+// and compresses the result, measured at 4.4 seconds over a million entries
+// against 87 microseconds for a query. Holding the write lock across that would
+// block fifty thousand queries' worth of work on a timer nobody requested.
 //
-// What makes that safe is that a base segment is immutable once written and the
-// overlay is only ever appended to. So the merge takes a snapshot, builds
-// against it with nothing held, and takes the lock again only to swap. Writes
-// that land in between are not lost and not merged: they stay in the overlay
-// and the next merge takes them.
+// Safety comes from a base segment being immutable once written and the overlay
+// being append-only. The merge therefore takes a snapshot, builds against it
+// holding nothing, and reacquires the lock solely to swap. Writes arriving in
+// between are neither lost nor merged: they remain in the overlay for the next
+// merge to collect.
 func (ix *NameIndex) Merge(ctx context.Context, gate func() bool) error {
 	if gate != nil && !gate() {
 		return nil
@@ -741,48 +743,49 @@ func (ix *NameIndex) Merge(ctx context.Context, gate func() bool) error {
 
 	snap, ok := ix.sealForMerge()
 	if !ok {
-		// Another merge is in flight. Two would each build a base from a
-		// snapshot taken before the other's, and whichever finished second
-		// would publish one that never held the first's writes.
+		// Another merge is already running. Two would each build a base from a
+		// snapshot predating the other's, and whichever finished last would
+		// publish one that never contained the first's writes.
 		return nil
 	}
 	defer ix.releaseMerge()
 
 	buf, err := snap.build(ctx, gate, ix.cfg)
 	if err != nil || buf == nil {
-		// A gate refusal returns no buffer and no error. Nothing has been
-		// replaced, and the sealed segment is picked up by the next merge.
+		// A gate refusal yields neither buffer nor error. Nothing has been
+		// replaced, and the next merge collects the sealed segment.
 		return err
 	}
 
 	return ix.publish(snap, buf)
 }
 
-// mergeSnapshot is the state one merge builds against.
+// mergeSnapshot captures the state a single merge builds against.
 //
-// Every field is either immutable or a copy, so the build reads it with no
-// lock held while the index goes on serving queries and taking writes.
+// Each field is immutable or a copy, so the build reads it while holding no lock
+// and the index continues serving queries and accepting writes.
 type mergeSnapshot struct {
 	base *BaseSegment
-	// delta is the overlay as it stood. The backing array is never written
-	// again past this length: an append either fits and writes past it, or
-	// reallocates and leaves this one alone.
+	// delta holds the overlay as it stood. Nothing rewrites the backing array
+	// beyond this length: an append either fits and writes past it or
+	// reallocates, leaving this array untouched.
 	delta []live
 	tomb  map[tombKey]uint64
-	// files are the delta segments this merge absorbs. Appends after the seal
-	// go to a new file, so these can be removed without losing a write that
-	// landed during the build.
+	// files lists the delta segments this merge absorbs. Appends following the
+	// seal go to a new file, so these can be deleted without losing a write that
+	// arrived during the build.
 	files []string
-	// seq is the sequence the seal happened at. A tombstone above it is newer
-	// than this base and has to survive the swap.
+	// seq records the sequence at which the seal occurred. Any tombstone above it
+	// postdates this base and must survive the swap.
 	seq uint64
 }
 
-// sealForMerge takes the snapshot and starts a fresh delta segment.
+// sealForMerge captures the snapshot and opens a fresh delta segment.
 //
-// The fresh segment is what makes the old ones safe to delete. Without it an
-// append during the build would land in a file this merge is about to remove,
-// and the entry would be in no segment and in no base.
+// That fresh segment is what makes the old ones safe to delete. Without it an
+// append occurring during the build would land in a file this merge is about to
+// delete,
+// leaving the entry in no segment and no base.
 func (ix *NameIndex) sealForMerge() (mergeSnapshot, bool) {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
@@ -803,7 +806,7 @@ func (ix *NameIndex) sealForMerge() (mergeSnapshot, bool) {
 		snap.tomb[k] = v
 	}
 
-	// Appends from here go to a segment this merge does not absorb.
+	// Appends from this point land in a segment this merge does not absorb.
 	ix.deltaFiles = append(ix.deltaFiles, nextDeltaPath(ix.dir, ix.deltaFiles))
 	return snap, true
 }
@@ -814,7 +817,7 @@ func (ix *NameIndex) releaseMerge() {
 	ix.mu.Unlock()
 }
 
-// build produces the new base segment. No lock is held for any of it.
+// build constructs the new base segment, holding no lock throughout.
 func (s mergeSnapshot) build(ctx context.Context, gate func() bool, cfg Config) ([]byte, error) {
 	tombstoned := func(share uint32, path string, seq uint64) bool {
 		at, ok := s.tomb[tombKey{share: share, path: path}]
@@ -870,11 +873,11 @@ func (s mergeSnapshot) build(ctx context.Context, gate func() bool, cfg Config) 
 	return buf, nil
 }
 
-// publish swaps the new base in and drops what it absorbed.
+// publish installs the new base and discards what it absorbed.
 //
-// This is the only part that holds the write lock. It is a rename, a handful of
-// removes and one small rewrite, all of them bounded by what arrived during the
-// build rather than by the corpus.
+// Only this portion holds the write lock. It performs a rename, a few removes
+// and one small rewrite, all bounded by what arrived during the build rather
+// than by the corpus.
 func (ix *NameIndex) publish(snap mergeSnapshot, buf []byte) error {
 	seg, oerr := OpenBase(buf)
 	if oerr != nil {
@@ -884,9 +887,9 @@ func (ix *NameIndex) publish(snap mergeSnapshot, buf []byte) error {
 	ix.mu.Lock()
 	defer ix.mu.Unlock()
 
-	// The new base is staged and published by an atomic rename with the parent
-	// directory synced, so a crash here leaves the old segment intact rather
-	// than a half-written index.
+	// The new base is staged and installed via an atomic rename with the parent
+	// directory synced, so a crash here preserves the old segment rather than
+	// leaving a half-written index.
 	basePath := filepath.Join(ix.dir, baseName)
 	if werr := fsatomic.ReplaceFileDurable(basePath, 0o600, func(f *os.File) error {
 		_, err := f.Write(buf)
@@ -895,9 +898,9 @@ func (ix *NameIndex) publish(snap mergeSnapshot, buf []byte) error {
 		return fmt.Errorf("index: publishing the new base: %w", werr)
 	}
 
-	// The segments the new base absorbed are only removed after it is in
-	// place, so a crash between the two leaves duplicates rather than a hole.
-	// Only the sealed ones: anything appended during the build is in a segment
+	// Segments absorbed by the new base are removed only once it is in place, so
+	// a crash between the two leaves duplicates rather than a gap. Only the
+	// sealed ones qualify: anything appended during the build sits in a segment
 	// this merge never read.
 	absorbed := make(map[string]bool, len(snap.files))
 	for _, f := range snap.files {
@@ -907,14 +910,14 @@ func (ix *NameIndex) publish(snap mergeSnapshot, buf []byte) error {
 		}
 	}
 
-	// The tombstones this base already applied are gone; any recorded during
-	// the build are newer than it and are kept. The file is rewritten rather
-	// than removed, because removing it would drop those.
+	// Tombstones this base already applied are discarded, while any recorded
+	// during the build postdate it and are retained. The file is rewritten
+	// instead of removed, since removing it would lose those.
 	//
-	// The comparison is inclusive because the seal records the next sequence to
-	// be issued, so the first write after it carries exactly that number. An
-	// exclusive one drops that tombstone while the base it was checked against
-	// still holds the entry, which resurrects a deleted file.
+	// The comparison is inclusive because the seal stores the next sequence to be
+	// issued, so the first write after it carries exactly that number. An
+	// exclusive comparison would drop that tombstone while the base it was
+	// checked against still holds the entry, resurrecting a deleted file.
 	survivors := map[tombKey]uint64{}
 	for k, at := range ix.tomb {
 		if at >= snap.seq {
@@ -926,8 +929,8 @@ func (ix *NameIndex) publish(snap mergeSnapshot, buf []byte) error {
 		return terr
 	}
 
-	// What the overlay keeps: the entries appended after the seal. They are
-	// the tail of the slice, because appends only ever add to the end.
+	// The overlay retains entries appended after the seal. They form the slice's
+	// tail, since appends only ever extend the end.
 	kept := ix.delta[min(len(snap.delta), len(ix.delta)):]
 	var files []string
 	var deltaBytes int64
@@ -951,8 +954,8 @@ func (ix *NameIndex) publish(snap mergeSnapshot, buf []byte) error {
 	return nil
 }
 
-// rewriteTombstones replaces tomb.idx with the ones that outlived a merge, and
-// reports the file's new size. An empty set removes the file.
+// rewriteTombstones rewrites tomb.idx with whichever entries outlived a merge
+// and reports the file's new size. An empty set deletes the file.
 func rewriteTombstones(dir string, survivors map[tombKey]uint64) (int64, error) {
 	tombPath := filepath.Join(dir, tombName)
 	if len(survivors) == 0 {
@@ -962,8 +965,8 @@ func rewriteTombstones(dir string, survivors map[tombKey]uint64) (int64, error) 
 		return 0, nil
 	}
 
-	// One record per sequence, because the sequence is what orders a tombstone
-	// against an append and a record carries exactly one.
+	// One record per sequence, since the sequence is what orders a tombstone
+	// relative to an append and each record carries exactly one.
 	bySeq := map[uint64][]Entry{}
 	for k, at := range survivors {
 		bySeq[at] = append(bySeq[at], Entry{Share: k.share, Path: k.path})
@@ -998,8 +1001,8 @@ func rewriteTombstones(dir string, survivors map[tombKey]uint64) (int64, error) 
 	return int64(len(body)), nil
 }
 
-// nextDeltaPath names a segment after every one that exists, so the ordering
-// their names encode keeps holding.
+// nextDeltaPath names a segment following every existing one, preserving the
+// ordering their names encode.
 func nextDeltaPath(dir string, existing []string) string {
 	next := 0
 	for _, f := range existing {

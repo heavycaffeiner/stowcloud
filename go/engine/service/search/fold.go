@@ -9,22 +9,22 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
-// Case folding and NFC normalisation, applied at index time so a case or
-// normalisation variant is never stored twice. The same fold runs on the
-// query, so both sides always meet in the same space.
+// Case folding together with NFC normalisation, performed at index time so no
+// case or normalisation variant is ever stored twice. The identical fold applies
+// to the query, so both sides always meet in one space.
 //
-// A filename is a byte string, not a string: a name that is not valid UTF-8
-// must still be findable, so it is folded ASCII-only and otherwise kept
-// verbatim rather than replaced with error runes.
+// Filenames are byte strings rather than strings. A name that is not valid UTF-8
+// must remain findable, so it is folded ASCII-only and otherwise preserved
+// verbatim instead of being rewritten with error runes.
 
-// lowerFull is language-neutral: a filename has no locale, and a Turkish
-// locale would fold ASCII "I" to a dotless one and make every Latin name
+// lowerFull stays language-neutral. Filenames carry no locale, and a Turkish
+// locale would fold ASCII "I" into a dotless form, rendering every Latin name
 // containing it unfindable.
 //
-//nolint:gochecknoglobals // cases.Caser is immutable and documented safe for concurrent use.
+//nolint:gochecknoglobals // cases.Caser is immutable and documented as concurrency-safe.
 var lowerFull = cases.Lower(language.Und)
 
-// Fold folds a byte string for indexing and matching.
+// Fold normalises a byte string for indexing and matching.
 func Fold(b []byte) []byte {
 	if !utf8.Valid(b) || isASCII(b) {
 		// Not UTF-8, so no Unicode operation is meaningful, or plain ASCII,
@@ -39,11 +39,11 @@ func Fold(b []byte) []byte {
 	return []byte(lowerFull.String(norm.NFC.String(string(b))))
 }
 
-// FoldString is Fold for a string.
+// FoldString applies Fold to a string.
 func FoldString(s string) []byte { return Fold([]byte(s)) }
 
-// IsFoldedASCII reports whether folding would change nothing, which lets a hot
-// loop skip the allocation.
+// IsFoldedASCII reports whether folding would leave the input unchanged, letting
+// a hot loop avoid the allocation.
 func IsFoldedASCII(b []byte) bool {
 	for _, c := range b {
 		if c >= utf8.RuneSelf || (c >= 'A' && c <= 'Z') {
@@ -77,9 +77,9 @@ func lowerByte(c byte) byte {
 	return c
 }
 
-// ContainsASCIIFold is a case-insensitive ASCII substring search that
-// allocates nothing. needle must already be folded and ASCII, which is the
-// overwhelmingly common Latin query against a Latin filename.
+// ContainsASCIIFold performs a case-insensitive ASCII substring search without
+// allocating. needle must arrive already folded and ASCII, covering the
+// overwhelmingly common case of a Latin query against a Latin filename.
 func ContainsASCIIFold(haystack, needle []byte) bool {
 	if len(needle) == 0 {
 		return true
@@ -106,9 +106,9 @@ func ContainsASCIIFold(haystack, needle []byte) bool {
 	return false
 }
 
-// Contains is a byte-exact substring search. Both sides are expected to be
+// Contains performs a byte-exact substring search, expecting both sides to be
 // pre-folded.
 func Contains(haystack, needle []byte) bool { return bytes.Contains(haystack, needle) }
 
-// HasPrefix is a prefix test on pre-folded bytes.
+// HasPrefix tests a prefix over pre-folded bytes.
 func HasPrefix(haystack, needle []byte) bool { return bytes.HasPrefix(haystack, needle) }

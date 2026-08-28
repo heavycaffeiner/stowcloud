@@ -189,8 +189,8 @@ func TestPruningDoesNotApplyBelowTheBlockFloor(t *testing.T) {
 	}
 }
 
-// Every offset in the header is validated against the buffer before anything
-// is read through it: a segment is a file a crash or a bad disk can rewrite.
+// Every header offset is checked against the buffer before being read through,
+// since a segment is a file a crash or failing hardware can rewrite.
 func TestOpenBaseRefusesAMalformedHeader(t *testing.T) {
 	good, err := WriteBase(entries(64), 32, 0.6)
 	if err != nil {

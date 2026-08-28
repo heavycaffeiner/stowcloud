@@ -11,31 +11,32 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search"
 )
 
-// Append-only record framing for the delta and tombstone segments.
+// Append-only record framing used by the delta and tombstone segments.
 //
-//	record := u32 payload_len | u32 fnv1a32(payload) | payload
+//	record := u32 payload_len ++ u32 fnv1a32(payload) ++ payload
 //
-// Crash safety is the length prefix plus the checksum. A torn tail, a record
-// whose header or body did not reach the disk, fails to parse, and the reader
-// reports the offset of the last complete record so the opener can cut the
-// file back to it. Everything before the tear is still good, because the file
-// is only ever appended to.
+// The length prefix together with the checksum provides crash safety. A torn
+// tail, meaning a record whose header or body never reached disk, fails to
+// parse, and the reader reports the offset of the last complete record so the
+// opener can truncate back to it. Everything preceding the tear remains valid,
+// because the file is only ever appended to.
 
-// FrameHeader is the length and checksum that precede a payload.
+// FrameHeader holds the length and checksum preceding a payload.
 const FrameHeader = 8
 
-// MaxRecord bounds one framed payload.
+// MaxRecord limits a single framed payload.
 //
-// The length prefix is read off disk before the body is, so without a ceiling
-// a corrupt four bytes would ask for an allocation of whatever they happened
-// to say. Nothing this writes approaches it: a delta record is a batch of
+// The length prefix is read from disk ahead of the body, so absent a ceiling
+// four corrupt bytes would request an allocation of whatever they happened to
+// encode. Nothing written here comes close: a delta record holds a batch of
 // paths.
 const MaxRecord = 64 << 20
 
-// FNV1a32 is the record checksum.
+// FNV1a32 computes the record checksum.
 //
-// Distinct from the root package's Hash64, which feeds the distinct-count
-// sketch. The two have different collision tolerances and stay two primitives.
+// It is separate from the root package's Hash64, which feeds the distinct-count
+// sketch. The two tolerate collisions differently and remain distinct
+// primitives.
 func FNV1a32(data []byte) uint32 {
 	h := uint32(0x811c9dc5)
 	for _, b := range data {
@@ -45,7 +46,7 @@ func FNV1a32(data []byte) uint32 {
 	return h
 }
 
-// Frame wraps a payload in its header.
+// Frame prefixes a payload with its header.
 func Frame(payload []byte) ([]byte, error) {
 	length, err := num.Narrow[uint32](len(payload))
 	if err != nil || len(payload) > MaxRecord {
@@ -57,22 +58,24 @@ func Frame(payload []byte) ([]byte, error) {
 	return append(out, payload...), nil
 }
 
-// AppendRecord appends one framed record.
+// AppendRecord writes one framed record.
 //
-// One open, one write, one sync. This is the constant-time write path the whole
-// segment split exists to enable: a name arriving does not touch the base.
+// A single open, write and sync. This constitutes the constant-time write path
+// the entire segment split exists to permit: an arriving name never touches the
+// base.
 func AppendRecord(path string, payload []byte) (int64, error) {
 	framed, err := Frame(payload)
 	if err != nil {
 		return 0, err
 	}
-	//nolint:gosec // G304: a segment path this package built, never a request's.
+	//nolint:gosec // G304: this package constructed the segment path; no request did.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return 0, fmt.Errorf("index: appending to %s: %w", path, err)
 	}
-	// A short write on an append is a torn record, which the reader is built
-	// to survive, so the close error still matters and is not discarded.
+	// A short write during an append produces a torn record, which the reader is
+	// designed to survive, so the close error still matters and is not
+	// discarded.
 	if _, werr := f.Write(framed); werr != nil {
 		return 0, errors.Join(fmt.Errorf("index: appending to %s: %w", path, werr), f.Close())
 	}
@@ -85,20 +88,20 @@ func AppendRecord(path string, payload []byte) (int64, error) {
 	return int64(len(framed)), nil
 }
 
-// Recovered is what a segment read found.
+// Recovered reports what a segment read found.
 type Recovered struct {
 	Records [][]byte
-	// GoodLen is the byte length of the intact prefix.
+	// GoodLen gives the byte length of the intact prefix.
 	GoodLen int64
-	// Torn reports that a partial tail was found past GoodLen.
+	// Torn indicates a partial tail was found beyond GoodLen.
 	Torn bool
 }
 
-// ReadRecords reads every intact record.
+// ReadRecords returns every intact record.
 //
-// A torn tail is never an error: it is the expected state after a crash, not
-// corruption, and treating it as a failure would disable the index every time
-// the machine lost power mid-append.
+// A torn tail is never an error. It is the expected state following a crash
+// rather than corruption, and treating it as a failure would disable the index
+// every time the machine lost power mid-append.
 func ReadRecords(path string) (Recovered, error) {
 	buf, err := os.ReadFile(path) //nolint:gosec // G304: as above, a segment path this package built.
 	if errors.Is(err, fs.ErrNotExist) {
@@ -134,10 +137,10 @@ func ReadRecords(path string) (Recovered, error) {
 	return out, nil
 }
 
-// TruncateTo cuts a torn tail off, which the opener does when ReadRecords
+// TruncateTo removes a torn tail, which the opener does whenever ReadRecords
 // reports one.
 func TruncateTo(path string, goodLen int64) error {
-	//nolint:gosec // G304: as above.
+	//nolint:gosec // G304: same reasoning as above.
 	f, err := os.OpenFile(path, os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("index: truncating %s: %w", path, err)
@@ -154,19 +157,21 @@ func TruncateTo(path string, goodLen int64) error {
 	return nil
 }
 
-// A record body is varint-encoded and then compressed only if that made it
-// smaller, with a one-byte tag saying which. Compressing unconditionally would
-// grow the small records that dominate a delta segment.
+// Record bodies are varint-encoded and then compressed only when compression
+// actually shrinks them, with a one-byte tag recording which form was used.
+// Compressing unconditionally would enlarge the small records that dominate a
+// delta segment.
 const (
 	codecRaw  = 0
 	codecZstd = 1
 )
 
-// EncodePayload encodes one record: a sequence number, a count, and the
-// entries.
+// EncodePayload serializes one record containing a sequence number, a count and
+// the entries.
 //
-// The sequence number is what orders a tombstone against an append of the same
-// path, so a name deleted and recreated ends up live rather than hidden.
+// The sequence number is what orders a tombstone relative to an append of the
+// same path, letting a name that was deleted and recreated end up live rather
+// than hidden.
 func EncodePayload(seq uint64, entries []Entry) ([]byte, error) {
 	body := make([]byte, 0, 16+len(entries)*24)
 	body = search.PutVarint(body, seq)
@@ -187,7 +192,7 @@ func EncodePayload(seq uint64, entries []Entry) ([]byte, error) {
 	return append([]byte{codecRaw}, body...), nil
 }
 
-// DecodePayload parses one record.
+// DecodePayload parses a single record.
 func DecodePayload(payload []byte) (uint64, []Entry, error) {
 	if len(payload) == 0 {
 		return 0, nil, fmt.Errorf("%w: an empty segment record", ErrCorrupt)
@@ -213,8 +218,8 @@ func DecodePayload(payload []byte) (uint64, []Entry, error) {
 	if err != nil {
 		return 0, nil, fmt.Errorf("%w: a truncated entry count", ErrCorrupt)
 	}
-	// The count is a length prefix off disk, so it sizes the allocation only
-	// after it is bounded by what the body could actually hold.
+	// The count arrives as a length prefix from disk, so it sizes the allocation
+	// only after being bounded by what the body could actually contain.
 	if count > uint64(len(body)) {
 		return 0, nil, fmt.Errorf("%w: a record claiming %d entries", ErrCorrupt, count)
 	}

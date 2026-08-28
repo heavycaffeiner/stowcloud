@@ -1,4 +1,4 @@
-// Linux only: it names types that are openat2 handles underneath.
+// Builds only on Linux, where the types it names are openat2 handles beneath.
 //go:build linux
 
 package svc
@@ -14,30 +14,31 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/index"
 )
 
-// Filling the index from what is on disk.
+// Populating the index from what exists on disk.
 //
-// A query answers from the index when there is one and walks when there is
-// not, so this is what moves a deployment from the second to the first. It runs
-// once on an administrator's request rather than continuously: the watcher
-// keeps the index current after that, and a rebuild is for a corpus that
-// changed underneath the server.
+// A query uses the index when one exists and walks when none does, so this is
+// what moves a deployment from the latter to the former. It runs once at an
+// administrator's request rather than continuously: afterwards the watcher keeps
+// the index current, and a rebuild addresses a corpus that changed beneath the
+// server.
 //
-// This is the third walk, and deliberately its own: it streams into segment
-// writes with its own batching, which neither the query walk nor the
-// estimator's scan does.
+// This is the third walk and remains deliberately separate, since it streams
+// into segment writes with its own batching, which neither the query walk nor
+// the estimator's scan does.
 
-// buildBatch is how many entries are appended at a time.
+// buildBatch sets how many entries are appended together.
 //
-// Batched because each append writes a record and takes the index's lock, so
-// one per file would make the build a sequence of tiny writes with a query
-// blocked behind each. Bounded because the batch is held in memory.
+// Batching exists because every append writes a record and acquires the index's
+// lock, so appending per file would reduce the build to a stream of tiny writes
+// with a query stalled behind each one. The bound exists because the batch is
+// held in memory.
 const buildBatch = 10_000
 
 // ErrNoIndex is a build with no index open to build into.
 var ErrNoIndex = errors.New("search: no index is open, so there is nothing to build into")
 
-// BuildProgress reports a build as it runs, so a long one is visible rather
-// than a request that has not answered yet.
+// BuildProgress reports on a build while it runs, so a lengthy one is observable
+// rather than appearing as a request that has yet to answer.
 type BuildProgress struct {
 	Files   uint64
 	Dirs    uint64
@@ -55,12 +56,13 @@ type builder struct {
 	progress BuildProgress
 }
 
-// Build walks every source and appends what it finds.
+// Build traverses every source and appends what it discovers.
 //
-// The gate is asked between directories and a false answer ends the build. It
-// is how a cancellation reaches here, and how a build yields to load: this
-// walks the whole corpus, and doing that while people are working is the thing
-// that makes a search feature something an administrator turns off.
+// The gate is consulted between directories and a negative answer ends the
+// build. That is how cancellation arrives here, and how a build defers to load:
+// it traverses the entire corpus, and doing so while people are working is
+// exactly what turns a search feature into something an administrator
+// disables.
 func (s *Service) Build(
 	ctx context.Context, sources []search.Source, gate func() bool, report func(BuildProgress),
 ) (BuildProgress, error) {
@@ -69,9 +71,10 @@ func (s *Service) Build(
 		return BuildProgress{}, ErrNoIndex
 	}
 
-	// A rebuild starts from whatever the previous one left. If that one
-	// stopped at the ceiling and this one does not, the index is complete
-	// again, and a flag nothing clears would make every query walk forever.
+	// A rebuild begins from whatever the previous one left behind. Should that
+	// one have stopped at the ceiling while this one does not, the index is
+	// complete again, and a flag nothing ever clears would make every query walk
+	// indefinitely.
 	ix.SetIncomplete(false)
 
 	b := &builder{
@@ -96,9 +99,9 @@ func (s *Service) Build(
 		return b.progress, err
 	}
 
-	// A build appends every entry as one delta on top of whatever was there,
-	// which is exactly the shape a merge exists to collapse. Skipping it
-	// leaves the index correct and every query paying for it.
+	// A build appends every entry as a single delta over whatever preceded it,
+	// precisely the shape a merge exists to collapse. Omitting the merge leaves
+	// the index correct while every query bears the cost.
 	if ix.NeedsMerge() {
 		if err := ix.Merge(ctx, gate); err != nil {
 			return b.progress, fmt.Errorf("merging the index after the build: %w", err)
@@ -119,22 +122,22 @@ func (b *builder) walkSource(ctx context.Context, src search.Source) (bool, erro
 			return false, err
 		}
 		if b.gate != nil && !b.gate() {
-			// Stopped rather than failed. What was appended is real and
-			// stays: the index is allowed to hold less than the corpus,
-			// because a query that misses falls back to a walk.
+			// Stopped rather than failed. Whatever was appended is genuine and
+			// remains, since the index may hold less than the corpus and a
+			// query that misses falls back to walking.
 			return true, nil
 		}
 
 		dir := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 
-		// The server's own control directories are not corpus. Indexing
-		// them would return them from a query.
+		// The server's own control directories are not part of the corpus.
+		// Indexing them would surface them in query results.
 		entries, rerr := src.Root.ReadDir(dir, vfs.HideReserved)
 		if rerr != nil {
-			// A directory that cannot be read is skipped rather than
-			// failing the build: the rest of the corpus is still worth
-			// indexing, and a query for what was skipped falls back.
+			// An unreadable directory is skipped rather than failing the
+			// build, since the remaining corpus is still worth indexing and a
+			// query covering what was skipped falls back.
 			continue
 		}
 		b.progress.Dirs++
@@ -149,11 +152,12 @@ func (b *builder) walkSource(ctx context.Context, src search.Source) (bool, erro
 				continue
 			}
 			if b.progress.Files >= b.ceiling {
-				// The bound is reached. What was indexed stays, and the
-				// index is marked short of its corpus so every query
-				// declines and walks instead: answering from the part of
-				// the tree that was reached returns a result missing the
-				// rest, with a success status and nothing saying so.
+				// The bound has been reached. What was indexed remains, and
+				// the index is flagged as covering less than its corpus so
+				// every query declines in favour of walking. Answering from
+				// the portion of the tree that was reached would return a
+				// result missing the rest, reporting success with nothing to
+				// indicate otherwise.
 				b.progress.Partial = true
 				b.ix.SetIncomplete(true)
 				return true, nil

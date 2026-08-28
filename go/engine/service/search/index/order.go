@@ -2,17 +2,17 @@ package index
 
 import "sort"
 
-// Tree order: component by component, so everything under one directory is
-// contiguous.
+// Tree order compares component by component, keeping everything beneath one
+// directory contiguous.
 //
-// A plain byte comparison gets this subtly wrong. '.' is 0x2E and '/' is 0x2F,
-// so "a.txt" lands between "a" and "a/b", which scatters siblings and costs
-// real compression. Mapping the separator below every other byte fixes it.
+// A plain byte comparison gets this subtly wrong. Since '.' is 0x2E and '/' is
+// 0x2F, "a.txt" falls between "a" and "a/b", scattering siblings and costing
+// real compression. Mapping the separator below every other byte corrects it.
 //
-// This is not cosmetic. Block compression is the whole reason the index is
-// small, and it only pays when adjacent names share a prefix.
+// This is not cosmetic. Block compression is the entire reason the index stays
+// small, and it only pays off when adjacent names share a prefix.
 
-// TreeCompare orders two paths in tree order.
+// TreeCompare compares two paths under tree order.
 func TreeCompare(a, b string) int {
 	// The key widens to int rather than staying a byte: shifting every
 	// non-separator up by one is what puts '/' below them, and in byte
@@ -43,8 +43,8 @@ func TreeCompare(a, b string) int {
 	return 0
 }
 
-// TreeOrder sorts entries into the order a base segment requires: by share,
-// then by path in tree order.
+// TreeOrder arranges entries as a base segment requires, by share first and then
+// by path in tree order.
 func TreeOrder(entries []Entry) {
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].Share != entries[j].Share {

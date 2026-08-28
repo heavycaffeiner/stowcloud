@@ -9,26 +9,27 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search"
 )
 
-// base.idx, the immutable block-compressed trigram segment.
+// base.idx holds the immutable block-compressed trigram segment.
 //
-//	header (128 B)
-//	block directory     block_count x { u64 offset, u32 comp_len, u32 raw_len }
-//	trigram dictionary  trigram_count x { [3]byte trigram, u8 flags, u32 off, u32 len }, sorted
-//	posting lists       delta and varint encoded block ids
-//	blocks              zstd frames, block_size names each, in tree order
+//	header            128 bytes, fixed
+//	block directory   per block: u64 offset, u32 comp_len, u32 raw_len
+//	trigram dict      sorted: [3]byte trigram, u8 flags, u32 off, u32 len
+//	posting lists     block ids, delta then varint encoded
+//	blocks            zstd frames holding block_size names each, tree ordered
 //
-// Three things make this small and all three are load-bearing.
+// Three properties keep this small, and each one carries weight.
 //
-// Postings point at blocks rather than at documents, so grouping 32 names into
-// one posting element makes every list 32 times shorter. Blocks are compressed
-// together in tree order, so adjacent names share a prefix that nearly
-// vanishes; that is why the builder sorts before chunking, and why random order
-// costs multiples. There is no position information, because filename matching
-// does not need offsets and the ranking is name-match based rather than BM25.
+// Postings reference blocks rather than documents, so packing 32 names into a
+// single posting element shortens every list by a factor of 32. Blocks are
+// compressed together in tree order, letting adjacent names share a prefix that
+// all but disappears; hence the builder sorts before chunking, and hence random
+// order costs several times as much. No position information is stored, since
+// filename matching needs no offsets and ranking is based on name matches rather
+// than BM25.
 //
-// The price is false positives: a block whose postings intersect may hold no
-// actual match. They are filtered by decompressing the block and scanning its
-// names, which is the trade plocate documents.
+// The cost is false positives: a block whose postings intersect may contain no
+// actual match. Filtering them means decompressing the block and scanning its
+// names, the same trade plocate documents.
 
 // The format's own constants.
 const (
@@ -36,20 +37,21 @@ const (
 	BlockDirEntry = 16
 	DictEntry     = 12
 
-	// FlagPruned marks a dictionary entry whose posting list was dropped.
+	// FlagPruned identifies a dictionary entry whose posting list was
+	// discarded.
 	FlagPruned = 1
 
-	// MinBlocksForPrune is where high-df pruning starts to mean anything.
-	// With three blocks, a trigram in two of them is at 67 percent and would
-	// be dropped, leaving nothing to intersect. Pruning only starts once "60
-	// percent of the blocks" is a statement about selectivity rather than an
-	// artefact of a tiny corpus.
+	// MinBlocksForPrune marks where high-df pruning begins to carry meaning.
+	// Across three blocks a trigram in two reaches 67 percent and would be
+	// discarded, leaving nothing to intersect. Pruning engages only once a
+	// threshold expressed as a fraction of blocks describes selectivity rather
+	// than an artefact of a tiny corpus.
 	MinBlocksForPrune = 16
 )
 
-// Magic identifies a base segment, and Version is the format revision this
-// build reads and writes. Magic is a string rather than a byte array so it can
-// be a constant: a package-level array would be mutable state.
+// Magic identifies a base segment and Version gives the format revision this
+// build reads and writes. Magic is a string rather than a byte array so it can be
+// a constant, since a package-level array would be mutable state.
 const (
 	Magic   = "SCNB"
 	Version = 1
@@ -61,8 +63,8 @@ type Entry struct {
 	Path  string
 }
 
-// EncodeBlock encodes one block's payload: the names themselves, which is what
-// makes the index self-contained and independent of any database row.
+// EncodeBlock serializes a block's payload, meaning the names themselves, which
+// is what leaves the index self-contained and independent of any database row.
 func EncodeBlock(entries []Entry) []byte {
 	size := 0
 	for _, e := range entries {
@@ -77,7 +79,7 @@ func EncodeBlock(entries []Entry) []byte {
 	return out
 }
 
-// DecodeBlock parses a block payload.
+// DecodeBlock parses a block's payload.
 func DecodeBlock(payload []byte) ([]Entry, error) {
 	var out []Entry
 	pos := 0
@@ -107,11 +109,11 @@ func DecodeBlock(payload []byte) ([]Entry, error) {
 	return out, nil
 }
 
-// WriteBase builds a base segment.
+// WriteBase constructs a base segment.
 //
-// entries must already be in tree order. That is not optional: block
-// compression is the whole reason the index is small, and it only works when
-// adjacent names share a prefix.
+// entries must arrive already in tree order. This is mandatory: block
+// compression is the entire reason the index stays small, and it depends on
+// adjacent names sharing a prefix.
 func WriteBase(entries []Entry, blockSize uint32, pruneDFRatio float32) ([]byte, error) {
 	if blockSize == 0 {
 		blockSize = 1
@@ -127,10 +129,10 @@ func WriteBase(entries []Entry, blockSize uint32, pruneDFRatio float32) ([]byte,
 	}
 
 	var blocksBuf, blockDir []byte
-	// postings is keyed by trigram, and the keys are emitted in sorted order
-	// below so the dictionary is binary-searchable and the bytes are
-	// deterministic. A map iteration reaching a format-defined byte would make
-	// two runs differ.
+	// postings is keyed by trigram, and the keys are written in sorted order
+	// below so the dictionary supports binary search and the bytes stay
+	// deterministic. Letting map iteration order reach a format-defined byte
+	// would make two runs differ.
 	postings := map[search.Trigram][]uint32{}
 	var scratch []search.Trigram
 
@@ -138,8 +140,8 @@ func WriteBase(entries []Entry, blockSize uint32, pruneDFRatio float32) ([]byte,
 		end := min(start+bs, len(entries))
 		chunk := entries[start:end]
 
-		// The trigrams of the whole block, folded and deduplicated, so the
-		// index never stores a case or normalisation variant twice.
+		// The whole block's trigrams, folded and deduplicated, so the index
+		// never records a case or normalisation variant more than once.
 		scratch = scratch[:0]
 		for _, e := range chunk {
 			scratch = search.AppendTrigrams(scratch, search.FoldString(e.Path))
@@ -155,9 +157,9 @@ func WriteBase(entries []Entry, blockSize uint32, pruneDFRatio float32) ([]byte,
 		if cerr != nil {
 			return nil, cerr
 		}
-		// The directory records both lengths in 32 bits, so a block past that
-		// is unrepresentable and is refused rather than truncated into an
-		// entry pointing at the wrong bytes.
+		// The directory stores both lengths in 32 bits, so a block exceeding
+		// that is unrepresentable and gets rejected rather than truncated into
+		// an entry pointing at the wrong bytes.
 		compLen, cerr := num.Narrow[uint32](len(comp))
 		rawLen, rerr := num.Narrow[uint32](len(raw))
 		if cerr != nil || rerr != nil {
@@ -184,10 +186,11 @@ func WriteBase(entries []Entry, blockSize uint32, pruneDFRatio float32) ([]byte,
 
 	for _, t := range keys {
 		ids := postings[t]
-		// A trigram in more than the ratio of the blocks carries almost no
-		// selectivity while owning the longest posting list, which is the worst
-		// possible bytes per bit of information. The list is dropped and the
-		// dictionary entry kept, so a query can tell pruned from absent.
+		// A trigram present in more than the configured fraction of blocks
+		// offers almost no selectivity while holding the longest posting list,
+		// the worst possible ratio of bytes to information. The list is dropped
+		// and the dictionary entry retained, so a query can distinguish pruned
+		// from absent.
 		pruned := canPrune && float64(len(ids)) > pruneAbove
 		var off, length uint32
 		if pruned {
@@ -259,22 +262,22 @@ func WriteBase(entries []Entry, blockSize uint32, pruneDFRatio float32) ([]byte,
 	return out, nil
 }
 
-// LookupKind is what a dictionary probe found.
+// LookupKind describes what a dictionary probe found.
 type LookupKind int
 
 const (
-	// LookupMissing means no block holds the trigram, so the intersection is
-	// empty and the query has no base hits.
+	// LookupMissing means no block contains the trigram, leaving the
+	// intersection empty and the query without base hits.
 	LookupMissing LookupKind = iota
-	// LookupPruned means the list was dropped at build time for having no
-	// selectivity. The query ignores it, and if every trigram lands here the
-	// caller falls back to the walk.
+	// LookupPruned means the list was discarded at build time for lacking
+	// selectivity. The query skips it, and when every trigram lands here the
+	// caller falls back to walking.
 	LookupPruned
-	// LookupPostings means the entry carries a list.
+	// LookupPostings means the entry holds a list.
 	LookupPostings
 )
 
-// BaseSegment is the read side. Opening it parses only the header.
+// BaseSegment provides the read side. Opening one parses only the header.
 type BaseSegment struct {
 	buf []byte
 
@@ -294,12 +297,12 @@ type BaseSegment struct {
 	blocksLen   int
 }
 
-// OpenBase reads a segment out of a buffer, which is a mapping in the product
-// and a fixture in the tests.
+// OpenBase reads a segment from a buffer, which is a mapping in the product and
+// a fixture in the tests.
 //
-// Every offset in the header is validated against the buffer before anything
-// is read through it. A segment is a file on disk that a crash or a bad disk
-// can have rewritten, so nothing here trusts a length it did not check.
+// Every header offset is validated against the buffer before anything is read
+// through it. A segment is a file on disk that a crash or failing hardware may
+// have rewritten, so nothing here trusts an unchecked length.
 func OpenBase(buf []byte) (*BaseSegment, error) {
 	if len(buf) < HeaderLen {
 		return nil, fmt.Errorf("%w: shorter than a header", ErrCorrupt)
@@ -321,9 +324,9 @@ func OpenBase(buf []byte) (*BaseSegment, error) {
 		PruneDFRatio: math.Float32frombits(binary.LittleEndian.Uint32(buf[32:])),
 		FileBytes:    uint64(len(buf)),
 	}
-	// The offsets come off disk, so each one is narrowed rather than cast: a
-	// header claiming a section past the address space is a corrupt segment,
-	// not a panic.
+	// The offsets originate on disk, so each is narrowed rather than cast. A
+	// header describing a section beyond the address space indicates a corrupt
+	// segment rather than justifying a panic.
 	for _, f := range []struct {
 		at   int
 		into *int
@@ -370,11 +373,11 @@ func (s *BaseSegment) dictAt(i int) (t search.Trigram, flags byte, off, length u
 		binary.LittleEndian.Uint32(e[4:]), binary.LittleEndian.Uint32(e[8:])
 }
 
-// Lookup probes the dictionary for a trigram.
+// Lookup searches the dictionary for a trigram.
 //
-// The dictionary is sorted by the packed trigram, and the packing is
-// big-endian, so this integer comparison is the same order as a comparison on
-// the three raw bytes.
+// The dictionary is sorted by packed trigram using big-endian packing, so this
+// integer comparison yields the same ordering as comparing the three raw
+// bytes.
 func (s *BaseSegment) Lookup(t search.Trigram) (LookupKind, []byte) {
 	lo, hi := 0, int(s.TrigramCount)
 	for lo < hi {
@@ -400,7 +403,7 @@ func (s *BaseSegment) Lookup(t search.Trigram) (LookupKind, []byte) {
 	return LookupMissing, nil
 }
 
-// Postings is the decoded block-id list for a trigram.
+// Postings returns the decoded block-id list for a trigram.
 func (s *BaseSegment) Postings(t search.Trigram) ([]uint32, error) {
 	kind, raw := s.Lookup(t)
 	if kind != LookupPostings {
@@ -409,8 +412,8 @@ func (s *BaseSegment) Postings(t search.Trigram) ([]uint32, error) {
 	return search.Ascending(raw)
 }
 
-// Block decompresses one block and parses its names. This is where the false
-// positives from the posting intersection are filtered out.
+// Block decompresses a block and parses its names. This is where false positives
+// from the posting intersection get filtered away.
 func (s *BaseSegment) Block(id uint32) ([]Entry, error) {
 	if id >= s.BlockCount {
 		return nil, fmt.Errorf("%w: block %d of %d", ErrCorrupt, id, s.BlockCount)
@@ -437,11 +440,11 @@ func (s *BaseSegment) Block(id uint32) ([]Entry, error) {
 	return DecodeBlock(raw)
 }
 
-// blockFirst is the first entry of a block, which is the key the block-level
-// binary search compares against.
+// blockFirst returns a block's first entry, the key the block-level binary
+// search compares against.
 //
-// It costs one decompression, so the search below pays log(blocks) of them
-// rather than reading the segment.
+// Each call costs one decompression, so the search below performs log(blocks) of
+// them instead of reading the whole segment.
 func (s *BaseSegment) blockFirst(id uint32) (Entry, bool) {
 	entries, err := s.Block(id)
 	if err != nil || len(entries) == 0 {
@@ -450,7 +453,7 @@ func (s *BaseSegment) blockFirst(id uint32) (Entry, bool) {
 	return entries[0], true
 }
 
-// entryLess orders two entries the way TreeOrder wrote them: by share, then by
+// entryLess orders two entries as TreeOrder wrote them: by share first, then by
 // path in tree order.
 func entryLess(aShare uint32, aPath string, bShare uint32, bPath string) bool {
 	if aShare != bShare {
@@ -459,33 +462,33 @@ func entryLess(aShare uint32, aPath string, bShare uint32, bPath string) bool {
 	return TreeCompare(aPath, bPath) < 0
 }
 
-// EachUnder visits the live entries of one directory's subtree.
+// EachUnder visits the live entries within one directory's subtree.
 //
-// It exists so keeping the index current costs the directory that changed
-// rather than the corpus. The alternative is reading every entry to find the
-// handful under one path, which is what makes an incremental update as
-// expensive as a rebuild.
+// It exists so that keeping the index current costs the changed directory rather
+// than the whole corpus. The alternative reads every entry to locate the handful
+// beneath one path, which is what would make an incremental update as expensive
+// as a rebuild.
 //
-// The segment is in tree order and the order maps the separator below every
-// other byte, so a directory's whole subtree is one contiguous run. That is
-// what makes this a block-level binary search followed by a forward scan, and
-// it is the same property block compression already depends on.
+// The segment sits in tree order, and that order places the separator below
+// every other byte, so a directory's entire subtree forms one contiguous run.
+// That is what reduces this to a block-level binary search followed by a forward
+// scan, and it is the same property block compression already relies on.
 func (s *BaseSegment) EachUnder(share uint32, dir string, fn func(Entry) error) error {
 	if s.BlockCount == 0 {
 		return nil
 	}
 
-	// The lowest block that can hold the run: the last one whose first entry
-	// does not sort past the directory. One before the first that does, because
-	// the run can begin partway through a block.
+	// The earliest block that could contain the run: the last whose first entry
+	// does not sort beyond the directory. That is one before the first which
+	// does, because a run may begin partway through a block.
 	lo, hi := uint32(0), s.BlockCount
 	for lo < hi {
 		mid := lo + (hi-lo)/2
 		first, ok := s.blockFirst(mid)
 		if !ok {
-			// An unreadable block cannot be compared, so the search cannot
-			// narrow past it and the scan starts here instead. The index is a
-			// cache: reading less of it is slower, never wrong.
+			// An unreadable block admits no comparison, so the search cannot
+			// narrow beyond it and the scan begins here instead. The index is a
+			// cache, so reading less of it costs speed and never correctness.
 			hi = mid
 			break
 		}
@@ -510,7 +513,7 @@ func (s *BaseSegment) EachUnder(share uint32, dir string, fn func(Entry) error) 
 			case e.Share < share:
 				continue
 			case e.Share > share:
-				// Past this share, and shares are ordered.
+				// Beyond this share, and shares are ordered.
 				return nil
 			}
 			if under(e.Path, dir) {
@@ -520,8 +523,9 @@ func (s *BaseSegment) EachUnder(share uint32, dir string, fn func(Entry) error) 
 				continue
 			}
 			if TreeCompare(e.Path, dir) > 0 {
-				// Past the run: the subtree is contiguous, so an entry sorting
-				// above the directory and not under it ends it.
+				// Beyond the run. The subtree is contiguous, so an entry
+				// sorting above the directory without lying beneath it ends
+				// it.
 				return nil
 			}
 		}
@@ -529,8 +533,8 @@ func (s *BaseSegment) EachUnder(share uint32, dir string, fn func(Entry) error) 
 	return nil
 }
 
-// under reports whether path is dir or lies beneath it. The share root, named
-// by the empty string, holds everything.
+// under reports whether path is dir itself or sits below it. The share root,
+// denoted by the empty string, contains everything.
 func under(path, dir string) bool {
 	if dir == "" {
 		return true
@@ -541,9 +545,9 @@ func under(path, dir string) bool {
 	return len(path) > len(dir) && path[:len(dir)] == dir && path[len(dir)] == '/'
 }
 
-// EachEntry visits every live entry in block order, which the merge path
-// needs. It streams rather than collecting: a base segment holds the whole
-// corpus and materialising it would defeat the point of blocks.
+// EachEntry visits every live entry in block order, as the merge path requires.
+// It streams rather than accumulating, since a base segment spans the entire
+// corpus and materialising it would negate the purpose of blocks.
 func (s *BaseSegment) EachEntry(fn func(Entry) error) error {
 	for id := uint32(0); id < s.BlockCount; id++ {
 		entries, err := s.Block(id)

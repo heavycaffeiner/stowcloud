@@ -23,22 +23,22 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/index"
 )
 
-// ErrCanceled is the caller's context ending. It is not a failure and is not
-// logged as one.
+// ErrCanceled reports the caller's context ending. It is not a failure and is
+// not logged as one.
 var ErrCanceled = errors.New("search: the query was cancelled")
 
-// ErrBusy is the concurrency gate refusing. Search sweeps whole trees, so
-// letting every request start one is how interactive listings get starved.
+// ErrBusy reports the concurrency gate declining. Search traverses entire trees,
+// so allowing every request to begin one is how interactive listings starve.
 var ErrBusy = errors.New("search: too many searches already running")
 
-// Tier says what answered, so a caller can surface "this was a full scan"
-// rather than leaving a slow query unexplained.
+// Tier identifies what produced the answer, letting a caller explain that a
+// query ran as a full scan instead of leaving its slowness unaccounted for.
 type Tier int
 
 const (
-	// TierWalk is the parallel walk.
+	// TierWalk denotes the parallel walk.
 	TierWalk Tier = iota
-	// TierIndex is the trigram index.
+	// TierIndex denotes the trigram index.
 	TierIndex
 )
 
@@ -49,8 +49,8 @@ func (t Tier) String() string {
 	return "walk"
 }
 
-// StorageClass moves two numbers, because a walk on an NVMe array and a walk
-// on a cold rotational one are different operations wearing one name.
+// StorageClass adjusts two numbers, because walking an NVMe array and walking a
+// cold rotational one are distinct operations sharing a single name.
 type StorageClass int
 
 const (
@@ -58,11 +58,11 @@ const (
 	StorageRotational
 )
 
-// Concurrency is how many searches may run at once on this storage.
+// Concurrency gives how many searches may run simultaneously on this storage.
 //
-// A lower number on rotational media is not a smaller allowance, it is a
-// larger one: four concurrent seek-bound walks on one array finish later than
-// two do, and they take the interactive requests down with them.
+// A lower figure on rotational media grants more throughput rather than less:
+// four concurrent seek-bound walks across one array complete later than two do,
+// and they drag the interactive requests down with them.
 func (s StorageClass) Concurrency() int {
 	if s == StorageRotational {
 		return limits.ConcurrentSearchesRotational
@@ -70,8 +70,8 @@ func (s StorageClass) Concurrency() int {
 	return limits.ConcurrentSearchesSSD
 }
 
-// Deadline is how long a walk may take here. The longer one on rotational
-// media is the matching admission that the work genuinely takes longer.
+// Deadline bounds how long a walk may run here. The longer value on rotational
+// media acknowledges that the work genuinely does take longer.
 func (s StorageClass) Deadline() time.Duration {
 	if s == StorageRotational {
 		return limits.SearchWalkDeadlineRotational
@@ -79,8 +79,8 @@ func (s StorageClass) Deadline() time.Duration {
 	return limits.SearchWalkDeadlineSSD
 }
 
-// Threads is the walk's worker count for this storage. Rotational media thrash
-// on seeks when over-parallelised.
+// Threads sets the walk's worker count for this storage. Rotational media
+// thrashes on seeks when over-parallelised.
 func (s StorageClass) Threads(cpus int) int {
 	if s == StorageRotational {
 		return 2
@@ -94,13 +94,13 @@ func (s StorageClass) Threads(cpus int) int {
 	return cpus
 }
 
-// Options configures the service.
+// Options holds the service's configuration.
 type Options struct {
 	Clock   clock.Clock
 	Storage StorageClass
 	CPUs    int
-	// Index is optional. Nil means the index is off, which is the default: it
-	// is an escalation taken when measurement says the walk is not enough.
+	// Index is optional, and nil disables it, which is the default. Enabling it
+	// is an escalation taken once measurement shows the walk is insufficient.
 	Index *index.NameIndex
 }
 
@@ -114,13 +114,14 @@ type Service struct {
 	ix    *index.NameIndex
 	slots chan struct{}
 
-	// The bounds an administrator moves from the settings screen. They are
-	// held rather than read from the compiled-in limits, because a value the
-	// screen changed has to be the one the next query uses: a setting that is
-	// stored and not read is a screen reporting a change that happened nowhere.
+	// The bounds an administrator adjusts from the settings screen. They are held
+	// here rather than read from the compiled-in limits, because a value the
+	// screen changed must be the one the next query uses. A setting that is
+	// stored and never read makes the screen report a change that happened
+	// nowhere.
 	//
-	// Zero means the storage class's own default, so a build that never
-	// configures them behaves as it did.
+	// Zero selects the storage class's own default, so a build that never
+	// configures them behaves exactly as before.
 	concurrency int
 	deadline    time.Duration
 }
@@ -136,13 +137,13 @@ func New(o Options) *Service {
 	return s
 }
 
-// SetBounds moves the query bounds, which is what the settings screen's search
-// section does. Zero leaves a field at the storage class's default.
+// SetBounds adjusts the query bounds, which is what the settings screen's search
+// section drives. Zero leaves a field at the storage class's default.
 //
-// The concurrency gate is not resized: it is a buffered channel taken at
-// construction, and replacing it under queries in flight would lose the slots
-// they hold. The new bound applies from the next start, which is what a
-// deployment changing it means by it.
+// The concurrency gate is not resized. It is a buffered channel established at
+// construction, and swapping it while queries are in flight would lose the slots
+// they hold. The new bound takes effect from the next start, which is what a
+// deployment changing it intends.
 func (s *Service) SetBounds(concurrency int, deadline time.Duration) {
 	s.mu.Lock()
 	s.concurrency, s.deadline = concurrency, deadline
@@ -157,7 +158,8 @@ func (s *Service) Bounds() (concurrency int, deadline time.Duration) {
 	return s.concurrency, s.deadline
 }
 
-// walkDeadline is how long a walk may take, which the administrator may move.
+// walkDeadline bounds how long a walk may run, and an administrator may adjust
+// it.
 func (s *Service) walkDeadline() time.Duration {
 	s.mu.Lock()
 	d := s.deadline
@@ -168,16 +170,16 @@ func (s *Service) walkDeadline() time.Duration {
 	return s.storage.Deadline()
 }
 
-// SetIndex attaches or detaches the index at runtime, which is what the
-// administrator's switch does.
+// SetIndex attaches or detaches the index while running, which is what the
+// administrator's switch controls.
 func (s *Service) SetIndex(ix *index.NameIndex) {
 	s.mu.Lock()
 	s.ix = ix
 	s.mu.Unlock()
 }
 
-// HasIndex reports whether a name index is attached, which is what decides
-// whether a query is answered from the index or from a walk.
+// HasIndex reports whether a name index is attached, which determines whether a
+// query is served from the index or from a walk.
 func (s *Service) HasIndex() bool { return s.index() != nil }
 
 func (s *Service) index() *index.NameIndex {
@@ -191,31 +193,31 @@ type QueryOptions struct {
 	Query string
 	Limit int
 	Scope string
-	// WithMetadata resolves size and time for the entries that survive
-	// filtering. A name-only query leaves it off.
+	// WithMetadata resolves size and time for entries surviving the filter. A
+	// name-only query leaves it disabled.
 	WithMetadata bool
 }
 
-// Results is what a query produced.
+// Results holds what a query produced.
 type Results struct {
 	Hits []search.Hit
 	// Tier says which one answered.
 	Tier Tier
-	// Fallback is why the index declined, when it did. It is reported so an
-	// operator can see that an index exists and did not help.
+	// Fallback explains why the index declined, where it did. Reporting it lets
+	// an operator see that an index exists and did not contribute.
 	Fallback index.FallbackReason
-	// Truncated reports that the limit cut the result.
+	// Truncated indicates the limit shortened the result.
 	Truncated bool
-	// Deadline reports that the walk ran out of time and the result is
-	// partial. It is flagged rather than raised: a partial answer now beats an
-	// error after eight seconds.
+	// Deadline indicates the walk exhausted its time and the result is partial.
+	// It is flagged rather than raised as an error, since a partial answer now
+	// beats an error eight seconds later.
 	Deadline bool
 	Elapsed  time.Duration
 }
 
-// Query runs a search across the sources the caller may see.
+// Query searches across the sources visible to the caller.
 //
-// The index answers where it does not decline; otherwise the walk does.
+// The index answers unless it declines, in which case the walk does.
 func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryOptions) (Results, error) {
 	if len(opt.Query) > limits.SearchQueryBytes {
 		return Results{}, limits.Exceed("search query", limits.SearchQueryBytes, int64(len(opt.Query)))
@@ -224,8 +226,8 @@ func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryO
 		opt.Limit = limits.SearchResults
 	}
 
-	// The gate is taken before any work starts, so a refused search costs a
-	// channel send rather than a directory read.
+	// The gate is acquired before any work begins, so a rejected search costs a
+	// channel send instead of a directory read.
 	select {
 	case s.slots <- struct{}{}:
 		defer func() { <-s.slots }()
@@ -242,11 +244,11 @@ func (s *Service) Query(ctx context.Context, sources []search.Source, opt QueryO
 		res, err := ix.Query([]byte(opt.Query), opt.Limit)
 		switch {
 		case err != nil:
-			// The index is a cache: a corrupt segment costs speed, never
-			// answers, so the query continues on the walk.
+			// The index is a cache, so a corrupt segment costs speed and never
+			// correctness; the query proceeds by walking.
 		case res.MustFallBack():
-			// The index said it cannot narrow this query. The walk runs, and
-			// the reason is reported so it is not mistaken for an empty
+			// The index reported it cannot narrow this query. The walk runs,
+			// and the reason is surfaced so nobody mistakes it for an empty
 			// result.
 			out, werr := s.walk(ctx, sources, needle, opt, start)
 			out.Fallback = res.Fallback
@@ -281,8 +283,8 @@ func (s *Service) walk(
 		NowNs:        s.clk.Now().UnixNano(),
 	})
 	if err != nil {
-		// The caller's own cancellation is an error; the deadline is not,
-		// because a partial answer is what the deadline exists to produce.
+		// Cancellation by the caller is an error while the deadline is not, since
+		// producing a partial answer is exactly what the deadline exists for.
 		if ctx.Err() != nil {
 			return Results{}, ErrCanceled
 		}
@@ -300,13 +302,13 @@ func (s *Service) walk(
 	}, nil
 }
 
-// pathUnder turns an index-stored path back into a validated path under the
+// pathUnder converts an index-stored path back into a validated path beneath the
 // source's base.
 //
-// This is the trust boundary the whole index rests on. Index rows are
-// yesterday's filesystem and today's decides: a stored path is re-validated
-// rather than trusted to still be legal, so nothing read off disk reaches a
-// client without meeting the live tree again.
+// This is the trust boundary the entire index depends on. Index rows describe
+// yesterday's filesystem while today's is authoritative, so a stored path is
+// revalidated rather than assumed still legal, and nothing read from disk
+// reaches a client without meeting the live tree again.
 func pathUnder(src search.Source, stored string) (vfs.SafePath, error) {
 	p := src.Base
 	for _, comp := range strings.Split(stored, "/") {
@@ -325,12 +327,11 @@ func pathUnder(src search.Source, stored string) (vfs.SafePath, error) {
 	return p, nil
 }
 
-// promote turns bare index hits into full results.
+// promote expands bare index hits into full results.
 //
-// The index stores names only. A hit becomes a result through a stat performed
-// after the caller's permission check, and that stat doubles as the staleness
-// check: an entry for a file that no longer exists is dropped rather than
-// returned.
+// Only names live in the index. A hit becomes a result via a stat run after the
+// caller's permission check, and that stat serves as the staleness check too: an
+// entry for a file that no longer exists is dropped rather than returned.
 func (s *Service) promote(
 	ctx context.Context, sources []search.Source, hits []index.Hit, opt QueryOptions,
 ) []search.Hit {
@@ -361,8 +362,8 @@ func (s *Service) promote(
 
 		st, serr := src.Root.Stat(p)
 		if serr != nil {
-			// The index is stale: the file is gone. Dropping it is the
-			// revalidation working.
+			// The index is stale and the file has gone. Dropping it is
+			// revalidation doing its job.
 			continue
 		}
 

@@ -12,20 +12,20 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 )
 
-// The parallel walk: the query tier.
+// The parallel walk, which is the query tier.
 //
-// A bounded worker pool over the share's own directory handles. The walker is
-// written here rather than taken off the shelf, and that is a security
-// decision before it is a performance one: filepath.WalkDir and everything
-// built on it resolve a path per entry, which reintroduces symlink escape and
-// TOCTOU by going around the openat2 invariant. Walking through directory
-// handles also avoids the whole-path re-resolution a path-based walker pays
-// per entry, so the safe option is the faster one.
+// A bounded worker pool operating over the share's own directory handles. The
+// walker is written here instead of taken from a library, and that is a security
+// decision ahead of a performance one: filepath.WalkDir and everything built on
+// it resolve a path per entry, reintroducing symlink escape and TOCTOU by
+// bypassing the openat2 invariant. Walking through directory handles also skips
+// the whole-path re-resolution a path-based walker pays for each entry, so the
+// safe choice is also the quicker one.
 //
-// This is one of three walks and stays its own. The estimator's ScanCorpus
-// exists to be affordable and must not spin up a worker pool to answer how big
-// a corpus is; the ingest walk streams into segment writes with its own
-// batching. They share the leaf vocabulary below and nothing else.
+// This is one of three walks and remains distinct. The estimator's ScanCorpus
+// exists to be cheap and must not start a worker pool merely to report a
+// corpus's size, while the ingest walk streams into segment writes with its own
+// batching. They share the leaf vocabulary below and nothing more.
 
 // Hit is one match.
 type Hit struct {
@@ -33,8 +33,8 @@ type Hit struct {
 	Path  string
 	Name  string
 	IsDir bool
-	// Size and MTimeNs are nil unless the stat phase ran. A name-only query
-	// never stats, so they stay nil and the ranking's recency term is zero.
+	// Size and MTimeNs stay nil unless the stat phase executed. A name-only query
+	// never stats, so they remain nil and the ranking's recency term is zero.
 	Size    *uint64
 	MTimeNs *int64
 	Score   float32
@@ -44,34 +44,34 @@ type Hit struct {
 type WalkOptions struct {
 	// Needle is the folded query.
 	Needle []byte
-	// Limit caps the result set. A truncated result says so rather than
-	// looking complete.
+	// Limit bounds the result set. A truncated result declares itself rather than
+	// appearing complete.
 	Limit int
-	// Scope is the directory the caller is looking from, for the ranking's
-	// in-scope term.
+	// Scope names the directory the caller is searching from, feeding the
+	// ranking's in-scope term.
 	Scope string
 	// Threads is the worker count. Zero takes one.
 	Threads int
-	// WithMetadata runs the stat phase. A name-only query leaves it off:
-	// published measurement puts metadata at roughly half the cost of a walk,
-	// so statting for information nobody asked for is double price.
+	// WithMetadata enables the stat phase. A name-only query leaves it disabled,
+	// since published measurement places metadata at roughly half a walk's cost
+	// and statting for information nobody requested doubles the price.
 	WithMetadata bool
 	// NowNs feeds the recency term.
 	NowNs int64
 }
 
-// WalkResult is what a walk produced.
+// WalkResult holds what a walk produced.
 type WalkResult struct {
 	Hits []Hit
-	// Truncated reports that the limit cut the result, so a caller can say so
-	// rather than presenting a partial answer as a complete one.
+	// Truncated indicates the limit shortened the result, letting a caller
+	// disclose that instead of presenting a partial answer as complete.
 	Truncated bool
-	// DirsVisited and EntriesSeen are what it cost.
+	// DirsVisited and EntriesSeen record what it cost.
 	DirsVisited int64
 	EntriesSeen int64
 }
 
-// pending is a matched entry waiting for the stat phase.
+// pending holds a matched entry awaiting the stat phase.
 type pending struct {
 	src    int
 	dev    uint64
@@ -83,13 +83,13 @@ type pending struct {
 	name   string
 	isDir  bool
 
-	// Filled by the stat phase, and nil when it did not run.
+	// Populated by the stat phase, and nil when that did not run.
 	statSize  *uint64
 	statMTime *int64
 }
 
-// job is one unit of work: one directory. Parallelism happens at directory
-// boundaries and nowhere else.
+// job is a single unit of work, meaning one directory. Parallelism occurs at
+// directory boundaries and nowhere else.
 type job struct {
 	src   int
 	path  vfs.SafePath
@@ -137,8 +137,8 @@ type walker struct {
 
 	mu   sync.Mutex
 	idle *sync.Cond
-	// busy is how many workers are inside a directory, which is what tells an
-	// idle worker whether more work can still appear.
+	// busy counts workers currently inside a directory, which is what tells an
+	// idle worker whether further work may still materialise.
 	busy    int
 	stopped bool
 	queue   []job
@@ -148,11 +148,11 @@ type walker struct {
 	dirSeq  uint64
 }
 
-// run drains the queue with a bounded pool.
+// run empties the queue using a bounded pool.
 //
-// A worker that finds the queue empty stops, so the pool ends when the tree
-// does. Idle workers are counted, because a worker that stopped while another
-// was still pushing children would end the walk early.
+// A worker encountering an empty queue stops, so the pool finishes when the tree
+// does. Idle workers are counted, because one stopping while another was still
+// pushing children would end the walk prematurely.
 func (w *walker) run(ctx context.Context) {
 	var wg sync.WaitGroup
 	for range w.opt.Threads {
@@ -164,9 +164,9 @@ func (w *walker) run(ctx context.Context) {
 				if !ok {
 					return
 				}
-				// Cancellation is checked once per directory rather than once
-				// per entry. A search the client abandoned has to stop walking
-				// a huge tree without checking a context a million times.
+				// Cancellation is polled per directory rather than per entry. A
+				// search the client abandoned must stop traversing a huge tree
+				// without consulting a context a million times.
 				if ctx.Err() != nil {
 					w.done()
 					w.drain()
@@ -180,8 +180,8 @@ func (w *walker) run(ctx context.Context) {
 	wg.Wait()
 }
 
-// drain empties the queue and wakes every waiter, so the other workers stop
-// too rather than each discovering the cancellation a directory at a time.
+// drain clears the queue and wakes every waiter, so the remaining workers stop
+// as well instead of each noticing the cancellation one directory at a time.
 func (w *walker) drain() {
 	w.mu.Lock()
 	w.queue = w.queue[:0]
@@ -190,12 +190,12 @@ func (w *walker) drain() {
 	w.mu.Unlock()
 }
 
-// take returns the next directory, or reports that the walk is over.
+// take yields the next directory or reports the walk finished.
 //
-// An empty queue is not the end on its own: another worker may be inside a
-// directory that is about to push its children. A worker therefore waits while
-// any other is still busy, and the walk ends only when the queue is empty and
-// nobody is working.
+// An empty queue alone does not signal the end, since another worker may be
+// inside a directory about to push its children. A worker therefore waits while
+// any other remains busy, and the walk concludes only once the queue is empty
+// and nobody is working.
 func (w *walker) take() (job, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -207,7 +207,7 @@ func (w *walker) take() (job, bool) {
 			return j, true
 		}
 		if w.busy == 0 || w.stopped {
-			// Nothing queued and nothing in flight to produce more.
+			// Nothing queued and nothing running that could produce more.
 			w.idle.Broadcast()
 			return job{}, false
 		}
@@ -215,7 +215,7 @@ func (w *walker) take() (job, bool) {
 	}
 }
 
-// done marks a directory finished and wakes anyone waiting for more work.
+// done marks a directory complete and wakes anyone awaiting further work.
 func (w *walker) done() {
 	w.mu.Lock()
 	w.busy--
@@ -243,8 +243,8 @@ func (w *walker) visit(j job) {
 		entSeq   uint32
 	)
 
-	// The reserved names this server owns are skipped: a part file mid-upload
-	// is not a document anybody searched for.
+	// Reserved names belonging to this server are skipped, since a part file
+	// mid-upload is not a document anyone searched for.
 	err := src.Root.ReadDirFunc(j.path, vfs.HideReserved, func(e vfs.DirEntry) bool {
 		seen++
 		p, jerr := j.path.JoinExisting(e.Name)
@@ -253,9 +253,9 @@ func (w *walker) visit(j job) {
 		}
 		isDir := e.Kind.IsDir()
 
-		// The permission check happens before the entry is scored. Search
-		// sweeps the whole tree, so it is the broadest place an existence leak
-		// could open.
+		// The permission check precedes scoring the entry. Search traverses the
+		// entire tree, making it the widest opening through which an existence
+		// leak could appear.
 		if src.Allow != nil && !src.Allow(p, isDir) {
 			return true
 		}
@@ -274,8 +274,9 @@ func (w *walker) visit(j job) {
 		return true
 	})
 	if err != nil {
-		// A directory that cannot be read is skipped rather than failing the
-		// whole search: one unreadable subtree must not lose every other hit.
+		// An unreadable directory is skipped rather than failing the entire
+		// search, since one inaccessible subtree must not discard every other
+		// hit.
 		return
 	}
 
@@ -286,11 +287,11 @@ func (w *walker) visit(j job) {
 	w.mu.Unlock()
 }
 
-// stat resolves size and time for the entries that survived filtering.
+// stat resolves size and time for entries that survived filtering.
 //
-// The batch is ordered by device and inode first. Filesystems lay inodes out
-// in increasing order, so asking for them that way makes the disk seek forward
-// only and raises the chance that several come out of one block.
+// The batch is first sorted by device and inode. Filesystems allocate inodes in
+// increasing order, so requesting them that way keeps the disk seeking forward
+// and improves the odds that several arrive from a single block.
 func (w *walker) stat() {
 	sortForStat(w.pending)
 	for i := range w.pending {
@@ -352,12 +353,12 @@ func SortHits(hits []Hit) {
 	})
 }
 
-// sortForStat orders matched entries by device and inode, then by the order
-// the directory read produced them.
+// sortForStat arranges matched entries by device and inode, falling back to the
+// order the directory read produced.
 //
-// Where a filesystem hands back no inode number the sort degrades to grouping
-// by directory and preserving readdir order, which is the best locality proxy
-// available and is not the same thing as a real inode sort.
+// Where a filesystem supplies no inode number, the sort degrades to grouping by
+// directory while preserving readdir order. That is the best available proxy for
+// locality and is not equivalent to a true inode sort.
 func sortForStat(p []pending) {
 	sort.Slice(p, func(i, j int) bool {
 		a, b := p[i], p[j]
@@ -381,15 +382,15 @@ func sortForStat(p []pending) {
 	})
 }
 
-// matchesName is the name test. An empty needle matches everything, which is
-// how a scoped listing is expressed.
+// matchesName performs the name test. An empty needle matches everything, which
+// is how a scoped listing is expressed.
 func matchesName(name string, needle []byte) bool {
 	if len(needle) == 0 {
 		return true
 	}
 	if IsFoldedASCII(needle) {
-		// The common case: a Latin query against a Latin filename, with no
-		// allocation.
+		// The common case, a Latin query against a Latin filename, allocating
+		// nothing.
 		return ContainsASCIIFold([]byte(name), needle)
 	}
 	return Contains(FoldString(name), needle)

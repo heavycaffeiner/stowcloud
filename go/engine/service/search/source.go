@@ -1,5 +1,5 @@
-// Linux only, like the walk that consumes a Source: a source names a
-// *vfs.ShareRoot, which is an openat2 handle and exists on no other platform.
+// Builds only on Linux, like the walk that consumes a Source, because a source
+// names a *vfs.ShareRoot, an openat2 handle present on no other platform.
 //go:build linux
 
 package search
@@ -13,20 +13,20 @@ import (
 type Source struct {
 	Share uint32
 	Root  *vfs.ShareRoot
-	// Base is where under the share to start.
+	// Base gives the starting point within the share.
 	Base vfs.SafePath
-	// Prefix is prepended to a reported path, so a hit names what the caller
-	// asked about rather than a share-relative fragment.
+	// Prefix is prepended to any reported path, so a hit identifies what the
+	// caller asked about instead of a share-relative fragment.
 	Prefix string
-	// Allow reports whether the caller may see a path. It runs before an entry
-	// is scored, which is what keeps a query matching many invisible entries
-	// from taking measurably longer than one matching none.
+	// Allow decides whether the caller may see a path. It executes before an
+	// entry is scored, so a query matching many invisible entries cannot take
+	// measurably longer than one that matches nothing.
 	//
-	// Nil means everything, which is the administrator-scoped form: the walker
-	// skips the call rather than treating nil as a call that returns true, so
-	// the administrator path pays no per-entry closure cost. A non-nil closure
-	// is called from several goroutines at once and has to be safe for that on
-	// its own.
+	// Nil admits everything, the administrator-scoped form. The walker skips the
+	// call entirely rather than treating nil as a call returning true, so the
+	// administrator path bears no per-entry closure cost. A non-nil closure is
+	// invoked from several goroutines simultaneously and must handle that
+	// itself.
 	Allow func(p vfs.SafePath, isDir bool) bool
 }
 

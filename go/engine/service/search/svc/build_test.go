@@ -146,8 +146,8 @@ func TestBuildAtTheCeilingReportsPartialAndMarksIncomplete(t *testing.T) {
 	}
 }
 
-// Progress is reported as the build runs, so a long one is visible rather than
-// a request that has not answered yet.
+// Progress arrives while the build runs, so a lengthy one is observable instead
+// of looking like a request that never answered.
 func TestBuildReportsProgress(t *testing.T) {
 	ix := newIndex(t)
 	svc := New(Options{Index: ix})
@@ -403,8 +403,8 @@ func TestReconcileOfADeletedDirectoryTombstonesItsEntries(t *testing.T) {
 	}
 }
 
-// A path the validator refuses is not an error: the watcher reports what the
-// kernel said, and the kernel has no opinion about this server's rules.
+// A path the validator rejects is not an error. The watcher relays what the
+// kernel reported, and the kernel holds no view on this server's rules.
 func TestReconcileOfAnIllegalPathIsNotAnError(t *testing.T) {
 	ix := newIndex(t)
 	svc := New(Options{Index: ix})

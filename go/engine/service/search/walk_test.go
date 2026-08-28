@@ -102,8 +102,9 @@ func TestWalkWithNoNeedleReturnsEverything(t *testing.T) {
 	}
 }
 
-// The permission check runs before an entry is scored: search sweeps the whole
-// tree, so it is the broadest place an existence leak could open.
+// The permission check precedes scoring an entry. Search traverses the entire
+// tree, making it the widest opening through which an existence leak could
+// appear.
 func TestWalkAppliesAllowBeforeScoring(t *testing.T) {
 	src := corpus(t, 1, "public/report.pdf", "private/report.pdf")
 	src.Allow = func(p vfs.SafePath, _ bool) bool {

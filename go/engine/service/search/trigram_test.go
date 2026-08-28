@@ -75,7 +75,7 @@ func TestOneHangulSyllableIsOneTrigram(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("one syllable produced %d trigrams, want 1", len(got))
 	}
-	// Two syllables are six bytes, so four overlapping windows.
+	// Six bytes across two syllables, producing four overlapping windows.
 	got = got[:0]
 	Trigrams([]byte(twoSyllables), func(tr Trigram) { got = append(got, tr) })
 	if len(got) != 4 {
