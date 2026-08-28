@@ -380,5 +380,9 @@
 #
 # 75: the CSRF derivation's HMAC write. hash.Hash documents Write as never
 # returning an error, so there is no failure to act on.
+#
+# 76: the chain's credential context key. G101 reads the identifier, which
+# contains "credential"; the value is a map key into the request context and
+# holds no secret.
 295
-75
+76

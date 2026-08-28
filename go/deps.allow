@@ -51,3 +51,12 @@ github.com/klauspost/compress
 # frame layer would re-implement control-frame handling, close codes and
 # fragmentation that a maintained module already owns.
 github.com/gorilla/websocket
+
+# The presentation layer's HTTP engine, replacing the hand-rolled net/http
+# stack. Settled as D2 before phase 3 began, and importable only under
+# engine/http, which the layer gate enforces.
+#
+# Its transport (fasthttp, bytebufferpool, tcplisten) arrives with it but is
+# not listed: this file names direct modules, and nothing here imports those
+# three by name.
+github.com/gofiber/fiber/v2
