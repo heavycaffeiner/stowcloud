@@ -40,6 +40,26 @@ reaches into another service's persistence.
   that approximated subtree denies would be an approximation someone
   relies on.
 
+  **The old code stated this rule and did not implement it.** Its deny
+  check was a `continue` inside the loop that fills the lists, so it
+  skipped only the grant carrying the deny. A user holding two grants on
+  one share, one allowing and one denying, kept the access the allowing
+  grant gave: the deny grant was skipped and the allow grant had already
+  added the name. Nothing in the schema prevents that pair, since the
+  grant table carries no uniqueness constraint on user and share, and
+  the old test covered only the single-grant case where allow and deny
+  sit in one row. Both orderings were implemented against the rebuilt
+  tests and both fail, which is the evidence this rule now has.
+
+  The rebuild reads every grant first, collects the denied pairs of user
+  and share, and applies them afterwards. The decision cannot then
+  depend on the order the grants arrive in.
+- **A writer is not also on the read list.** Two grants on one share,
+  one read-only and one writable, described a writer and rendered the
+  name onto both lists, which is a contradiction in the rendered file.
+  The fold resolves it in favour of the write list whichever order the
+  grants arrive in.
+
 ### The access-change sink
 
 Phase 3 wires one publisher value into core and auth through interfaces those
@@ -106,9 +126,22 @@ the code that relies on it.
    old spelling compared libc's text, which a reworded or translated
    message breaks silently, turning an absent agent into a reported
    connection fault.
-4. Nothing else: the deny rule, the narrow deps, the failure wording
-   and the socket trade-off carry whole.
-5. **`AccessChanged` becomes the one synchronous, detached revocation sink**
+4. **The deny rule is implemented rather than only stated** (see above),
+   and a writer no longer appears on the read list as well. Both are
+   defects in the old fold, both reachable through a pair of grants the
+   schema permits, and both are covered by order-independent tests.
+5. **`Deps` declares the two shapes it reads** rather than importing the
+   core and the evaluator sideways. Publishing needs a share's name,
+   path and modes, and of a grant only whether it is whole-share, whether
+   it admits reading or writing, and whether it denies anything. The
+   wiring adapts the owning packages' types, so a field the renderer
+   never reads cannot arrive here.
+6. **A dropped name is reported.** `Render` already returned what it
+   would not write and the old publish discarded it, so an account
+   silently lost access to one share with the symptom appearing nowhere.
+7. Nothing else: the narrow deps, the failure wording and the socket
+   trade-off carry whole.
+8. **`AccessChanged` becomes the one synchronous, detached revocation sink**
    (Phase 3 amendment), replacing three handler/server spellings and closing
    the stale-SMB-access window at the service boundary.
 
