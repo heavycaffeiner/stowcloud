@@ -323,5 +323,10 @@
 # explains, and three in its tests: the shared close helper, and the two reads
 # and writes a refusal deliberately interrupts, which is the behaviour under
 # test rather than an ignored failure.
+#
+# 62: the agent's two pdbedit calls. Both run the daemon's own credential tool,
+# which is the only supported way to write a tdbsam database; the import's
+# arguments are the agent's own configured paths, and the prune's account name
+# passed the portable rule on the line above it.
 290
-60
+62
