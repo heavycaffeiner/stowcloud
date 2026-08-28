@@ -56,6 +56,21 @@ var absence = regexp.MustCompile(`(?i)\bis dropped\b|\bare dropped\b|\bis delete
 	`\bmoves? to\b|\bmoved to\b|\bmoves? out of\b|\bis replaced by\b|\breplaces\b|` +
 	`\bdisappears?\b|\bstops [a-z-]+ing\b|\bstop [a-z-]+ing\b`)
 
+// prior matches the words immediately before an identifier that mark it as the
+// name the old tree used, rather than the name the rebuild is meant to have.
+//
+// Applied to a window before each identifier rather than to the whole entry.
+// That distinction matters: a whole-entry rule once skipped every change whose
+// text mentioned the past, which is most of them, and the check quietly stopped
+// working. Matching wrongly here costs one identifier, not the entry.
+var prior = regexp.MustCompile(`(?i)(the old|the current|the reference's|extracted from|` +
+	`splits out of|moved out of|\bnot\b|instead of|rather than|in place of|` +
+	`replacing|,|/)\s*$`)
+
+// intoTail matches an "extracted from A into B" clause up to the "into", so
+// every identifier before it is a source name and every one after is a target.
+var intoTail = regexp.MustCompile(`(?i)\b(into|becomes?|collapse to|are now|is now)\b`)
+
 // ignored names identifiers that are real but unfindable by this tool: a
 // package from another module, a database table, a syscall, a filename the
 // tree spells differently. Each entry is a decision; an absence is a defect.
@@ -78,6 +93,25 @@ var ignored = map[string]string{
 
 	// An HTTP method, which is a protocol token rather than a symbol.
 	"OPTIONS": "an HTTP method named in a route-table rule",
+
+	// A reference to a sibling document, not to code.
+	"core/09": "the quota document, cited for the contract this store satisfies",
+	"core/10": "the share-link document, cited the same way",
+	"core/11": "the homes document, cited the same way",
+
+	// An import the change forbids. Finding it would be the defect.
+	"database/sql": "named to say the evaluator must not import it",
+
+	// The old tree's spelling of a file, named to locate the behavior being
+	// carried over. Checked by hand: the acl evaluator has no database/sql
+	// import, ident carries ToSQL and FromSQL as methods, home.go creates its
+	// directory through one helper, and trash.go owns the recursive one.
+	"replace_linux_test.go": "the old tree's test file, named as the source of a property",
+	"toSQL":                 "the old tree's unexported spelling; it is ident.ToSQL now",
+	"fromSQL":               "the same, now ident.FromSQL",
+	"ensureDir":             "the old tree's helper, collapsed into the caller",
+	"osMkdirAll":            "the same",
+	"homes.go":              "the old tree's file, named as the source of the grant INSERT",
 }
 
 // changeLines returns the numbered deliberate-change entries in one document,
@@ -191,9 +225,22 @@ func main() {
 			if deferred.MatchString(line) || absence.MatchString(line) {
 				continue
 			}
-			for _, m := range backticked.FindAllStringSubmatch(line, -1) {
-				id := m[1]
+			// Everything before an "into" or a "becomes" in a re-homing
+			// sentence names where the code came from. Only the target side
+			// has to exist.
+			target := line
+			if loc := intoTail.FindStringIndex(line); loc != nil {
+				target = line[loc[1]:]
+			}
+			for _, m := range backticked.FindAllStringSubmatchIndex(line, -1) {
+				id := line[m[2]:m[3]]
 				if ignored[id] != "" || f.exists(id) {
+					continue
+				}
+				if prior.MatchString(line[:m[0]]) {
+					continue
+				}
+				if !strings.Contains(target, "`"+id+"`") {
 					continue
 				}
 				misses = append(misses, miss{filepath.Base(path), id, strings.TrimSpace(line)})

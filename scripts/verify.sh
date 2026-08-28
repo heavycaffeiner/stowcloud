@@ -305,13 +305,19 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # deliberate change names what it is about, and a rename leaves the prose
   # describing something that is not there.
   #
-  # Pointed at the phase 2 areas only. The audit documents describe the old tree
-  # on purpose, and phase 3's describe what is not built yet, so both would
-  # report their own subject matter as missing.
+  # Every built phase: 0 (foundation), 1 (core) and 2. The audit documents
+  # describe the old tree on purpose, and phase 3's describe what is not built
+  # yet, so both would report their own subject matter as missing.
+  #
+  # Foundation and core were left out when this gate was written and were the
+  # only areas nothing checked. Adding them brought 175 change entries under
+  # the gate and found six documents naming the old tree's spelling of a
+  # symbol; each was checked by hand and is recorded in the tool's ignore list
+  # with what replaced it.
   run "speccheck (the phase documents match the engine)" bash -c '
     cd go
     fail=0
-    for area in auth oidc upload search preview settings smb; do
+    for area in foundation core auth oidc upload search preview settings smb; do
       if ! go run ./tools/speccheck "../docs/refactor/$area" ./engine; then fail=1; fi
     done
     exit $fail'
