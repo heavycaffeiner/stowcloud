@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,6 +19,7 @@ import (
 	searchsvc "github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/check"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
@@ -498,5 +500,162 @@ func TestAFileIsFindableResolvableAndListable(t *testing.T) {
 	}
 	if !slices.Contains(names, "annual.txt") {
 		t.Errorf("the listing does not hold what search found: %v", names)
+	}
+}
+
+// Upload against the rest of the assembly.
+//
+// This is the seam with the most moving parts. The upload engine resolves a
+// destination through the core, writes into the same share the core owns, and
+// publishes through the core's own path rather than renaming into place
+// itself. Once it lands, the file has to be a file the core lists and search
+// can index: three services agreeing on one path, none of which shares a test
+// fixture with the others.
+func TestAnUploadedFileIsListableAndFindable(t *testing.T) {
+	a := compose(t)
+	a.grant(t, acl.Read|acl.Write|acl.Create|acl.Download, "")
+
+	up, err := upload.New(t.Context(), a.core, a.state, upload.Options{})
+	if err != nil {
+		t.Fatalf("building the upload engine: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := up.Close(); cerr != nil {
+			t.Errorf("closing the upload engine: %v", cerr)
+		}
+	})
+
+	// The destination directory exists, the way it does when a client uploads
+	// into a folder it just listed. The refusal when it does not is the upload
+	// package's own test.
+	if derr := os.MkdirAll(filepath.Join(a.root, "incoming"), 0o755); derr != nil {
+		t.Fatal(derr)
+	}
+
+	// The destination is resolved through the core, with the permission the
+	// caller intends to exercise, which is how a request reaches it.
+	dest, err := a.resolve(t, "incoming/report.txt", acl.Write|acl.Create)
+	if err != nil {
+		t.Fatalf("resolving the destination: %v", err)
+	}
+
+	body := []byte("the quarterly numbers")
+	total := uint64(len(body))
+	sess, err := up.Create(t.Context(), dest, upload.SessionSpec{TotalLen: &total})
+	if err != nil {
+		t.Fatalf("creating the session: %v", err)
+	}
+
+	if _, perr := up.PatchAt(t.Context(), dest.Root(), sess.ID, a.user, 0,
+		bytes.NewReader(body), nil); perr != nil {
+		t.Fatalf("writing the body: %v", perr)
+	}
+	if _, ferr := up.Finalize(t.Context(), dest, sess.ID); ferr != nil {
+		t.Fatalf("finalizing: %v", ferr)
+	}
+
+	// The core lists it, which is the first agreement: the upload engine put it
+	// where the core looks.
+	at, err := a.resolve(t, "incoming", acl.Read)
+	if err != nil {
+		t.Fatalf("resolving the directory: %v", err)
+	}
+	page, err := a.core.List(t.Context(), at, "")
+	if err != nil {
+		t.Fatalf("listing: %v", err)
+	}
+	var names []string
+	for _, e := range page.Entries {
+		names = append(names, e.Name)
+	}
+	if !slices.Contains(names, "report.txt") {
+		t.Fatalf("the core does not list the uploaded file: %v", names)
+	}
+
+	// Search finds it, which is the second: the walker sees the same tree the
+	// upload wrote into.
+	a.build(t)
+	if hits := a.found(t, "report"); !slices.Contains(hits, "incoming/report.txt") {
+		t.Errorf("search did not find the uploaded file: %v", hits)
+	}
+
+	// And the bytes are the ones that were sent, read back through the
+	// filesystem rather than from the engine that claimed to have written them.
+	got, err := os.ReadFile(filepath.Join(a.root, "incoming", "report.txt"))
+	if err != nil {
+		t.Fatalf("reading the uploaded file: %v", err)
+	}
+	if string(got) != string(body) {
+		t.Errorf("the stored bytes are %q, want %q", got, body)
+	}
+}
+
+// An upload into a share the account cannot write is refused by the core's
+// resolve, before the upload engine is reached at all.
+//
+// The engine takes a resolved capability rather than a path, so the permission
+// check cannot be skipped by calling it directly: there is no way to obtain the
+// argument without passing the check.
+func TestAnUploadWithoutWritePermissionIsRefused(t *testing.T) {
+	a := compose(t)
+	// Read only: enough to see the share, not to write into it.
+	a.grant(t, acl.Read|acl.Download, "")
+
+	if _, err := a.resolve(t, "incoming/report.txt", acl.Write|acl.Create); err == nil {
+		t.Fatal("a read-only account resolved a write capability")
+	}
+	// And the file never appeared.
+	if _, err := os.Stat(filepath.Join(a.root, "incoming", "report.txt")); err == nil {
+		t.Error("a refused upload left a file behind")
+	}
+}
+
+// A finalize with fewer bytes than declared refuses, and leaves nothing for the
+// core to list or search to index.
+//
+// The engine's own tests cover the refusal. What this adds is that a refused
+// upload does not become visible through the other two services, which is the
+// property a user would notice: a truncated file appearing in a listing.
+func TestAnIncompleteUploadBecomesVisibleToNobody(t *testing.T) {
+	a := compose(t)
+	a.grant(t, acl.Read|acl.Write|acl.Create|acl.Download, "")
+
+	up, err := upload.New(t.Context(), a.core, a.state, upload.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if cerr := up.Close(); cerr != nil {
+			t.Errorf("closing the upload engine: %v", cerr)
+		}
+	})
+
+	if derr := os.MkdirAll(filepath.Join(a.root, "incoming"), 0o755); derr != nil {
+		t.Fatal(derr)
+	}
+	dest, err := a.resolve(t, "incoming/partial.txt", acl.Write|acl.Create)
+	if err != nil {
+		t.Fatal(err)
+	}
+	total := uint64(100)
+	sess, err := up.Create(t.Context(), dest, upload.SessionSpec{TotalLen: &total})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Ten of the hundred bytes promised.
+	if _, perr := up.PatchAt(t.Context(), dest.Root(), sess.ID, a.user, 0,
+		bytes.NewReader([]byte("0123456789")), nil); perr != nil {
+		t.Fatal(perr)
+	}
+	if _, ferr := up.Finalize(t.Context(), dest, sess.ID); ferr == nil {
+		t.Fatal("a short upload finalized")
+	}
+
+	a.build(t)
+	if hits := a.found(t, "partial"); len(hits) != 0 {
+		t.Errorf("search found an unfinished upload: %v", hits)
+	}
+	if _, err := os.Stat(filepath.Join(a.root, "incoming", "partial.txt")); err == nil {
+		t.Error("an unfinished upload is on disk at its destination")
 	}
 }

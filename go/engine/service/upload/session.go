@@ -147,6 +147,13 @@ func (e *Engine) newRow(
 func (e *Engine) createPart(root *vfs.ShareRoot, part vfs.SafePath, total *uint64) (*vfs.File, error) {
 	f, err := root.CreatePart(part)
 	if err != nil {
+		// A not-found here is the destination's directory, not a session: this
+		// runs before any session exists. The general mapper turns it into
+		// ErrNotFound, which reads as "no such upload session" and names the
+		// wrong thing entirely.
+		if errors.Is(err, vfs.ErrNotFound) {
+			return nil, ErrDestMissing
+		}
 		return nil, mapVFSErr(err)
 	}
 	if total == nil {

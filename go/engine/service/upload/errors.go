@@ -20,6 +20,17 @@ var (
 	// session id exists.
 	ErrNotFound = errors.New("no such upload session")
 
+	// ErrDestMissing is a destination whose directory is not there.
+	//
+	// Separate from ErrNotFound because the two are different facts and the
+	// caller can act on only one of them. A create into a folder somebody
+	// deleted between the client listing it and starting the upload reported
+	// "no such upload session", about a session that had not been made yet:
+	// nothing to resume, nothing to retry, and the wrong thing named. The
+	// secrecy argument behind ErrNotFound does not apply, since the caller has
+	// already resolved a capability for this path and knows it exists.
+	ErrDestMissing = errors.New("the destination directory does not exist")
+
 	// ErrOffsetConflict reports a chunk arriving somewhere other than the
 	// resumable offset on a session that is not random-access.
 	ErrOffsetConflict = errors.New("offset does not match the resumable offset")

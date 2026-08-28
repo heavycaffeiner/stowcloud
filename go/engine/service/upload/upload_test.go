@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -186,3 +187,42 @@ func b64Of(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
 func bytesToHex(b []byte) string { return hex.EncodeToString(b) }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// A create into a directory that is not there says so, rather than reporting a
+// session that was never made.
+//
+// The two facts are different and the caller can act on only one. A folder
+// deleted between the client listing it and starting the upload answered "no
+// such upload session", which names nothing the client can retry or resume, and
+// the secrecy argument behind that error does not apply: the caller has already
+// resolved a capability for this path.
+func TestACreateIntoAMissingDirectorySaysSo(t *testing.T) {
+	f := newFixture(t)
+
+	total := uint64(4)
+	_, err := f.engine.Create(context.Background(),
+		f.resolve(t, "no-such-folder/file.txt"), SessionSpec{TotalLen: &total})
+
+	if !errors.Is(err, ErrDestMissing) {
+		t.Fatalf("Create into a missing directory returned %v, want ErrDestMissing", err)
+	}
+	// And not the session error, which is the confusion being removed.
+	if errors.Is(err, ErrNotFound) {
+		t.Error("a missing destination still reports as an unknown session")
+	}
+}
+
+// An unknown session still reports as one, so the split above did not widen
+// into the case that deliberately keeps its answer vague.
+func TestAnUnknownSessionStillReportsAsNotFound(t *testing.T) {
+	f := newFixture(t)
+
+	var missing SessionID
+	_, err := f.engine.Get(context.Background(), missing, testUser)
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("an unknown session returned %v, want ErrNotFound", err)
+	}
+	if errors.Is(err, ErrDestMissing) {
+		t.Error("an unknown session reports as a missing destination")
+	}
+}
