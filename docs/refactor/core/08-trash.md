@@ -177,8 +177,13 @@ that no longer resolves the same way produces a conflict or a parse failure
 rather than a silent overwrite of whatever sits there today.
 
 ```go
-func ensureDirRecursive(ctx context.Context, r Resolved, dir vfs.SafePath) error
+func (c *Core) ensureDirRecursive(r Resolved, dir vfs.SafePath) error
 ```
+
+No context parameter: every step is a path join, a stat and a mkdir through
+the share root, none of which take one. The reference carries a `ctx` it
+never reads, and passing one here would suggest the walk can be cancelled
+partway, which would leave a half-built ancestor chain.
 
 ### TrashPurge
 

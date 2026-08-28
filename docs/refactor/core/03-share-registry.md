@@ -303,6 +303,12 @@ the same transaction (`foundation/state.md`, the cascade decision). The
 core passes `rowIDOf(id)` and `int64(id)`; a dangling grant can no longer
 outlive its share, and default-deny stops mattering as the only guard.
 
+The cascade deletes grant rows, so the evaluator is reloaded afterwards,
+the same discipline every grant write follows (11-homes-and-recent.md).
+Without it the rows are gone and the evaluator keeps answering from the set
+it loaded at startup, so a user keeps reaching a deleted share's paths until
+the process restarts.
+
 #### Startup reload
 
 ```go

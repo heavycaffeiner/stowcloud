@@ -411,6 +411,12 @@ hands it domain-free values and receives rows back; the schema, the
 statements and the scanning live with the schema's owner. Field types are
 primitives so the store does not import the core or the ACL package.
 
+The two row types are declared once, in `engine/store/state`, and the core
+aliases them (`type LinkRow = state.LinkRow`). The shape below is that
+declaration, restated here for reading. Declaring it twice would mean the
+schema's owner and its consumer each hold a version to keep in step, and
+every store call would convert between two identical structs.
+
 ```go
 // LinkRow is one share_link row as it crosses the store boundary. Pointer
 // fields are NULLable columns; nil is NULL.

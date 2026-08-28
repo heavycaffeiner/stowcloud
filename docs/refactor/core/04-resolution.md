@@ -96,7 +96,7 @@ The exact algorithm, in order:
    contradicting its own listing, and it would send a user whose drive did
    not come back looking for a deleted folder. Telling this caller the
    share exists leaks nothing: their own root list already says so.
-7. **Path join.** `joinSubpath(def, match.Subpath, p.Rest())` builds the
+7. **Path join.** `joinSubpath(match.Subpath, p.Rest())` builds the
    full share-relative path: the grant's subpath components first, then the
    client rest's components, each appended with `SafePath.JoinExisting`.
    Any join error is returned as-is (the vfs validation error).
@@ -118,12 +118,17 @@ the grant table or at the filesystem is not observable.
 #### joinSubpath
 
 ```go
-func (c *Core) joinSubpath(def ShareDef, subpath acl.Path, rest vfs.SharePath) (vfs.SafePath, error)
+func (c *Core) joinSubpath(subpath acl.Path, rest vfs.SharePath) (vfs.SafePath, error)
 ```
 
 Starts from `vfs.RootPath()` and appends every component of the grant
 subpath, then (unless `rest.IsRoot()`) every component of `rest.Safe()`,
 all through `JoinExisting`.
+
+The reference takes a `ShareDef` first parameter and never reads it. It is
+dropped here rather than carried into the rebuild: a parameter nothing uses
+invites a caller to believe the join depends on the share's definition, and
+it does not.
 
 `JoinExisting`, not `Join`: resolution addresses a path, it does not create
 one. The creation table refuses Windows-reserved names (`CON`, `a:b`) so

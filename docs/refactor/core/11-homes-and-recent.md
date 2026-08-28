@@ -70,11 +70,16 @@ func (c *Core) ensureHome(ctx context.Context, user UserID) error
 ```
 
 Creates a user's home directory and grant on first access. Called eagerly
-from `Resolve`: the first thing a user does after logging in must already
-see their home in the projected root, so waiting for an explicit touch is
-too late. The call is best-effort at the call site: `Resolve` treats a
-failure as warn-and-continue, because a home hiccup must not break access
-to the user's other shares.
+from **both `Resolve` and `Roots`**: the first thing a user does after
+logging in must already see their home in the projected root, so waiting
+for an explicit touch is too late. `Roots` needs the hook as much as
+`Resolve` does, because a client that opens on the root listing never
+resolves anything first, and the home it is meant to show is exactly what
+has not been created yet.
+
+The call is best-effort at both sites, which treat a failure as
+warn-and-continue, because a home hiccup must not break access to the
+user's other shares.
 
 Behaviors, in order:
 
@@ -297,6 +302,8 @@ Homes:
   grant.
 - A failing `ensureHome` (unwritable homes host) does not fail `Resolve`
   for the user's other shares.
+- A fresh account's first `Roots` call creates the home and lists it, since
+  a client opening on the root listing resolves nothing first.
 - Homes disabled: `ensureHome` is a no-op and no home appears in the
   projected root.
 - Store side: `PersistGrant` round-trips through the evaluator's reload
