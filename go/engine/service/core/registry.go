@@ -263,6 +263,14 @@ func (c *Core) Shares() []ShareDef {
 // a share disappear from the browser with no explanation anywhere a user
 // could see.
 func (c *Core) Roots(user UserID) []acl.RootEntry {
+	// The same eager, best-effort hook Resolve runs. It belongs here too:
+	// this listing is what a client draws as the top-level folder list, and
+	// without it a new account sees no home until some later call happens to
+	// resolve one.
+	if err := c.ensureHome(context.Background(), user); err != nil {
+		c.warn("creating a home directory failed; listing the other shares anyway",
+			"user", int64(user), "error", err)
+	}
 	roots := c.acl.Roots(int64(user))
 	for i := range roots {
 		id, err := num.Narrow[uint32](roots[i].Share)

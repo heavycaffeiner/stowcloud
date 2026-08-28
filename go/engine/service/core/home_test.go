@@ -254,6 +254,25 @@ func TestAHomeDirectoryWithNoGrantIsAdopted(t *testing.T) {
 	}
 }
 
+func TestAFreshAccountSeesItsHomeInTheFirstRootListing(t *testing.T) {
+	c, st, host := homed(t)
+
+	// The listing is what a client draws as the top-level folder list, and
+	// it is often the first call an account makes. Without the eager hook
+	// here the home appears only after some later call happens to resolve
+	// one, so a new account opens the browser to nothing.
+	roots := c.Roots(1)
+	if len(roots) != 1 || roots[0].Label != homeLabel {
+		t.Fatalf("the first listing is %+v, want the home", roots)
+	}
+	if _, err := os.Stat(filepath.Join(host, "1")); err != nil {
+		t.Fatalf("the listing did not create the home: %v", err)
+	}
+	if got := len(homeGrants(t, st)); got != 1 {
+		t.Fatalf("the listing left %d grants, want one", got)
+	}
+}
+
 func TestHomesDisabledIsASilentNoOp(t *testing.T) {
 	c, st := newCore(t)
 	seedUser(t, st, 1, "ada")
