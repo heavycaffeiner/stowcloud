@@ -420,12 +420,18 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # internal/vfs is where it is declared and dispatched on, so the count is of
   # what is outside it. Test code is excluded: a test that proves the two
   # intents differ has to name both.
-  RW_SITES=$(go_code 'IntentReadWrite' | grep -v '_test\.go:' \
-             | grep -vcE '^go/(internal|engine/infra)/vfs/')
+  #
+  # Counted per tree while the two coexist: each holds one upload engine, so
+  # one site each is the rule and two in either is the defect. A comment
+  # naming the intent is not a call site, so the count is of the calls.
+  rw_sites() { go_code 'OpenRead\([^)]*IntentReadWrite' | grep -v '_test\.go:' | grep -E "$1"; }
   RW_HITS=""
-  [ "${RW_SITES:-0}" -le 1 ] || RW_HITS=$(go_code 'IntentReadWrite' \
-    | grep -v '_test\.go:' | grep -vE '^go/(internal|engine/infra)/vfs/')
-  grep_gate "IntentReadWrite has at most one call site" "$RW_HITS" \
+  for tree in '^go/internal/' '^go/engine/'; do
+    found=$(rw_sites "$tree")
+    [ "$(printf '%s' "$found" | grep -c .)" -le 1 ] || RW_HITS="$RW_HITS$found"$'\n'
+  done
+  RW_HITS=$(printf '%s' "$RW_HITS" | sed '/^$/d')
+  grep_gate "IntentReadWrite has at most one call site per tree" "$RW_HITS" \
     "Only the upload finalizer may take a writable descriptor on a read path."
 
   # D14. SQL is parameters only. Every statement is a package-level constant.

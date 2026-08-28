@@ -67,6 +67,10 @@ legal list is explicit:
 - `service/search` imports `service/core` (the scan-source inversion);
   later service packages declare their sideways imports in their own
   phase documents, always downward, never toward `http`.
+- `service/upload` imports `service/core` and `service/acl`: it resolves a
+  destination through the core, takes the permission check from that
+  resolution, and publishes through the core's own publish path rather
+  than renaming into a share itself.
 - `store/state` imports `store/ident` and `store/dbfile`, never
   `store/cache`; `store/cache` and `store/journal` import `store/ident`
   and `store/dbfile` likewise.

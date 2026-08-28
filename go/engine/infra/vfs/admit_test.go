@@ -230,3 +230,48 @@ func TestAdmitDeviceIsCachedPerDevice(t *testing.T) {
 		t.Fatalf("a cached device paid for a filesystem call and got: %v", err)
 	}
 }
+
+// Scratch space is not a share, and the constructor that opens it says so
+// rather than borrowing an id. What it does not skip is admission: a
+// filesystem this build cannot hold its contracts on is the same problem
+// under the spool as under a share.
+func TestScratchRootIsAdmittedAndMarked(t *testing.T) {
+	dir := t.TempDir()
+	r, err := OpenScratchRoot(dir, DefaultSharePolicy())
+	if err != nil {
+		t.Skipf("this host's temp directory is on a filesystem this build refuses: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := r.Close(); cerr != nil {
+			t.Errorf("close: %v", cerr)
+		}
+	})
+	if !r.IsScratch() {
+		t.Fatal("a scratch root does not report itself as one")
+	}
+
+	share, _, err := RegisterShareRoot(1, t.TempDir(), DefaultSharePolicy())
+	if err != nil {
+		t.Skipf("this host's temp directory is on a filesystem this build refuses: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := share.Close(); cerr != nil {
+			t.Errorf("close: %v", cerr)
+		}
+	})
+	if share.IsScratch() {
+		t.Fatal("a registered share reports itself as scratch space")
+	}
+}
+
+// The two constructors refuse the same things, so scratch space is not a way
+// around the gate.
+func TestScratchRootRefusesWhatAShareRefuses(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	if _, err := OpenScratchRoot(missing, DefaultSharePolicy()); err == nil {
+		t.Fatal("a nonexistent directory opened as scratch space")
+	}
+	if _, _, err := RegisterShareRoot(1, missing, DefaultSharePolicy()); err == nil {
+		t.Fatal("a nonexistent directory registered as a share")
+	}
+}

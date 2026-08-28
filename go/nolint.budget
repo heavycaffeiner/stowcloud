@@ -269,5 +269,9 @@
 # startup refusal for. One is a deliberately undersized key in the test that
 # proves an undersized key is refused, which cannot be written with a key the
 # rule accepts.
+#
+# 7: the upload engine adds one. A free-space probe that could not run is a
+# fact about the filesystem rather than a reason to refuse an upload, so the
+# nil return beside a non-nil error is the decision rather than a mistake.
 287
-6
+7

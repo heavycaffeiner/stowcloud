@@ -33,6 +33,12 @@ type ShareRoot struct {
 	fsType   FsType
 	hasBtime bool
 
+	// scratch marks a root that is server-owned space rather than a share.
+	// Nothing resolves a request path in one, and its id means nothing, so
+	// the flag is what a caller asks instead of comparing against an id
+	// value that would have to be reserved.
+	scratch bool
+
 	// admitted caches the admission verdict per device, so a mount reached
 	// below the root pays for classification once rather than on every
 	// resolution that crosses it.
@@ -153,6 +159,32 @@ func RegisterShareRoot(id ShareID, host string, policy SharePolicy) (*ShareRoot,
 	r.admitted[r.dev] = struct{}{}
 	return r, adm, nil
 }
+
+// OpenScratchRoot opens a directory that is not a share: server-owned
+// scratch space such as the upload spool.
+//
+// It exists so that space does not have to borrow a share id. The code this
+// replaces opened the spool as share zero with a comment admitting the id
+// was a lie, which put a non-share into the share domain: every accessor
+// keyed by id could reach it, and every reader of an id had to know that one
+// value meant "not really".
+//
+// The handle type is the same, so every safe-path method works unchanged, and
+// the admission gate is the same, because scratch space on a filesystem this
+// build cannot hold its contracts on is the same problem there as anywhere.
+// What is absent is the id and the share semantics that come with it.
+func OpenScratchRoot(dir string, policy SharePolicy) (*ShareRoot, error) {
+	r, _, err := RegisterShareRoot(0, dir, policy)
+	if err != nil {
+		return nil, err
+	}
+	r.scratch = true
+	return r, nil
+}
+
+// IsScratch reports whether this root is server-owned scratch space rather
+// than a registered share.
+func (r *ShareRoot) IsScratch() bool { return r.scratch }
 
 // admitDevice classifies a mount reached below the share root, the first
 // time a resolution lands on a device this root has not seen, and caches

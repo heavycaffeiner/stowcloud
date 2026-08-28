@@ -165,6 +165,29 @@ Registering is refusal-at-setup, deliberately, over accept-and-degrade:
 > file identity months later, by which time the sync clients have already
 > written the wrong thing into their own journals.
 
+### OpenScratchRoot (upload phase amendment)
+
+```go
+func OpenScratchRoot(dir string, policy SharePolicy) (*ShareRoot, error)
+func (r *ShareRoot) IsScratch() bool
+```
+
+A rooted handle over a directory that is not a share: server-owned scratch
+space, which today means the upload spool (`../upload/03-cache-spool.md`).
+
+It exists so that space does not have to borrow a share id. The code it
+replaces opened the spool as share zero with a comment admitting the id was
+a lie, which put a non-share into the share domain: every accessor keyed by
+id could reach it, and every reader of an id had to know that one value
+meant "not really".
+
+The handle type is `*ShareRoot` so every safe-path method works unchanged,
+and the admission gate is `RegisterShareRoot`'s: scratch space on a
+filesystem this build cannot hold its contracts on is the same problem there
+as anywhere. What is absent is the id and the share semantics that come with
+it; `IsScratch` is what a caller asks instead of comparing against a
+reserved id value.
+
 ### Admission
 
 ```go
@@ -892,6 +915,33 @@ picked up by the upload sweep later, and failing the caller's already-
 failed write a second time over a cleanup detail would tell them nothing
 new.
 
+### CreatePart and SetTimes (upload phase amendment)
+
+```go
+func (r *ShareRoot) CreatePart(p SafePath) (*File, error)
+func (r *ShareRoot) SetTimes(p SafePath, mtimeNs int64) error
+```
+
+The two operations the upload engine needs and no other caller does.
+
+`CreatePart` is the part file bytes accumulate in. The handle is read-write
+by construction rather than through `AccessIntent`, for the same reason
+`WriteDurable`'s staging file is: a file this server just created is
+writable because it made it, not because a caller asked for privilege on a
+path that already existed. The create is `O_EXCL`, so a collision is the
+kernel's refusal rather than a clobber, and the mode is applied by
+descriptor afterwards because `O_CREAT` filters it through umask. The name
+must come from `JoinControl`: a part file without the reserved prefix is
+refused here rather than quietly creating something a listing would show,
+which is the same defect the reserved-name rule above exists for.
+
+`SetTimes` applies the modification time a client asked its finished file to
+carry, and leaves the access time alone. The symlink is never followed: the
+timestamp belongs to the entry named, not to whatever it points at. The
+second and nanosecond split is written out rather than left to truncating
+division, because a timestamp before the epoch has a negative remainder and
+would otherwise land a second in the future.
+
 ### PublishPart
 
 ```go
@@ -1089,6 +1139,14 @@ tied to its own id scheme (a random suffix here, an upload-session id
 there). This document records the convention once; it does not centralize
 the generators, because the id spaces they draw from are not the same
 concept.
+
+3. **Three operations arrive with the phase that needs them**
+   (`../upload/03-cache-spool.md`). `OpenScratchRoot` ends the fake share
+   id, and `CreatePart` and `SetTimes` are the part-file create and the
+   client modification time. Each is specified in its own section above
+   rather than left for its caller to improvise, because all three touch
+   this package's own rules: the admission gate, the reserved-name rule,
+   and the do-not-follow-a-symlink rule.
 
 ## Tests
 

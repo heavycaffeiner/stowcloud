@@ -75,6 +75,10 @@ var tierAllowed = map[string]map[string]bool{
 var sideways = map[string]map[string]bool{
 	"service/core":   {"service/acl": true},
 	"service/search": {"service/core": true},
+	// The upload engine sits on the core: it resolves a destination, takes
+	// the permission check from that resolution, and publishes through the
+	// core's own publish path rather than renaming into a share itself.
+	"service/upload": {"service/core": true, "service/acl": true},
 	"store/state":    {"store/ident": true, "store/dbfile": true},
 	"store/cache":    {"store/ident": true, "store/dbfile": true},
 	"store/journal":  {"store/ident": true, "store/dbfile": true},
