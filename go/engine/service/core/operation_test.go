@@ -352,32 +352,92 @@ func TestOpReasonForClassifiesEverySentinelAClientBranchesOn(t *testing.T) {
 }
 
 func TestACancelledCopyStopsAndRecordsNoResult(t *testing.T) {
-	c, _, srcHost, _, src, dst := twoShares(t)
+	c, st, srcHost, dstHost, src, dst := twoShares(t)
 	ctx := context.Background()
 	if err := os.MkdirAll(filepath.Join(srcHost, "tree"), 0o755); err != nil {
 		t.Fatalf("building the tree: %v", err)
 	}
-	// Enough items that the cancel lands while the walk is still going.
-	for _, name := range []string{"a", "b", "c", "d", "e", "f", "g", "h"} {
-		writeFile(t, srcHost, "tree/"+name+".txt", "content")
-	}
+	writeFile(t, srcHost, "tree/a.txt", "content")
 
-	start, err := c.StartCopy(ctx, 1, at(t, src, "tree"), at(t, dst, "tree"), ConflictFail)
+	// The runner is driven directly with the row already marked, rather than
+	// racing a cancel against a copy that may finish first. That race is
+	// real but it is the scheduler's, not this rule's: what is under test is
+	// that a runner whose gate answers true stops and records no outcome.
+	id, err := st.CreateOp(ctx, 1, state.OpCopy, 1, c.clk.Nanos(), []string{"tree"})
 	if err != nil {
-		t.Fatalf("StartCopy: %v", err)
+		t.Fatalf("creating the operation: %v", err)
 	}
-	if err := c.CancelOperation(ctx, 1, start.ID); err != nil {
+	if err := c.CancelOperation(ctx, 1, OperationID(id)); err != nil {
 		t.Fatalf("CancelOperation: %v", err)
 	}
 
-	op := waitForOp(t, c, 1, start.ID)
-	if op.State != state.OpCancelled && op.State != state.OpDone {
-		t.Fatalf("a cancelled copy ended in state %d, want cancelled or a completed race", op.State)
+	from := at(t, src, "tree")
+	srcSt, err := from.root.Stat(from.path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
 	}
-	if op.State == state.OpCancelled && len(op.Results) != 0 {
-		// What was written stays and nothing undoes it, so the item is
-		// genuinely in an unknown state and no outcome is the honest answer.
+	c.runCopy(ctx, id, from, at(t, dst, "tree"), srcSt)
+
+	op, err := c.Operation(ctx, 1, OperationID(id))
+	if err != nil {
+		t.Fatalf("reading the cancelled operation: %v", err)
+	}
+	if op.State != state.OpCancelled {
+		t.Fatalf("a cancelled copy ended in state %d, want cancelled", op.State)
+	}
+	// The one deliberate exception to the result-row rule: what was written
+	// stays and nothing undoes it, so the item is genuinely in an unknown
+	// state and recording no outcome is the honest answer.
+	if len(op.Results) != 0 {
 		t.Fatalf("a cancelled copy recorded %+v, want no result rows", op.Results)
+	}
+	// The gate is polled at the top of every call, so a cancel already
+	// standing when the walk begins stops it before the first item.
+	if _, serr := os.Stat(filepath.Join(dstHost, "tree")); !errors.Is(serr, os.ErrNotExist) {
+		t.Fatal("the walk wrote past a cancellation that was already standing")
+	}
+}
+
+func TestACancelMidWalkStopsAtTheNextItemBoundary(t *testing.T) {
+	c, _, srcHost, dstHost, src, dst := twoShares(t)
+	ctx := context.Background()
+	if err := os.MkdirAll(filepath.Join(srcHost, "tree"), 0o755); err != nil {
+		t.Fatalf("building the tree: %v", err)
+	}
+	for _, name := range []string{"a", "b", "c", "d"} {
+		writeFile(t, srcHost, "tree/"+name+".txt", "content")
+	}
+
+	// A gate that admits the directory and the first file, then reports the
+	// cancel. The poll is once per item, so the walk must stop at the next
+	// boundary rather than partway through a file or at the very end.
+	polls := 0
+	gate := func() bool {
+		polls++
+		return polls > 2
+	}
+
+	from := at(t, src, "tree")
+	srcSt, err := from.root.Stat(from.path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	cerr := c.copyRecursive(ctx, from, at(t, dst, "tree"), srcSt, gate)
+	if !errors.Is(cerr, errOpCancelled) {
+		t.Fatalf("the walk returned %v, want errOpCancelled", cerr)
+	}
+
+	// One file landed whole before the stop; nothing is half-written,
+	// because the poll never happens inside a file.
+	entries, rerr := os.ReadDir(filepath.Join(dstHost, "tree"))
+	if rerr != nil {
+		t.Fatalf("reading the partial copy: %v", rerr)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("the stopped walk left %d entries, want the one item it finished", len(entries))
+	}
+	if got := readHost(t, dstHost, "tree/"+entries[0].Name()); got != "content" {
+		t.Fatalf("the finished item holds %q, want a whole file", got)
 	}
 }
 

@@ -4,4 +4,8 @@
 //
 // Nothing in this tree calls it. Its only job is to compile, on every
 // architecture the product ships.
+//
+// It carries no test on purpose. The assertion is the compilation: a test
+// could only call the two functions and look at values it already knows,
+// which asserts nothing the build has not already proved.
 package unixprobe
