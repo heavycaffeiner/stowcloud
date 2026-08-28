@@ -91,6 +91,17 @@ func TestAShareThatWillNotRegisterLeavesNoDanglingRow(t *testing.T) {
 	if len(rows) != 0 {
 		t.Fatalf("a failed creation left %d rows behind", len(rows))
 	}
+
+	// The reload is the actual consequence the rollback exists to prevent,
+	// so it is asserted rather than inferred from the row count.
+	rejected, rerr := c.ReloadPersistedShares(ctx)
+	if rerr != nil {
+		t.Fatalf("ReloadPersistedShares: %v", rerr)
+	}
+	if len(rejected) != 0 || len(c.Shares()) != 0 {
+		t.Fatalf("a reload resurrected the rolled-back share: rejected=%+v shares=%+v",
+			rejected, c.Shares())
+	}
 }
 
 func TestUpdateShareAppliesOnlyThePatchedFields(t *testing.T) {
@@ -338,6 +349,11 @@ func TestAnUnreadableSymlinkPolicyFallsToTheStrictest(t *testing.T) {
 	// links because nobody could read the word saying it should not.
 	if def.Policy.Symlink != vfs.SymlinkDeny {
 		t.Fatalf("the policy fell back to %v, want deny", def.Policy.Symlink)
+	}
+	// And it still serves: falling back is not the same as refusing the
+	// share, which would take a folder offline over one unreadable word.
+	if _, ok := c.ShareRoot(1_000_001); !ok {
+		t.Fatal("the share registered but has no live root")
 	}
 }
 

@@ -574,6 +574,47 @@ func TestLinkPublicAppliesEveryLivenessRule(t *testing.T) {
 	})
 }
 
+func TestAPathOnlyLinkSurvivesInodeReuse(t *testing.T) {
+	c, st, host, root, _ := linkable(t)
+	ctx := context.Background()
+	writeFile(t, host, "note.txt", "body")
+	link, tok, err := c.CreateLink(ctx, at(t, root, "note.txt"),
+		LinkSpec{Perms: acl.Read, MaxDown: -1})
+	if err != nil {
+		t.Fatalf("CreateLink: %v", err)
+	}
+
+	// A row that predates the identity rule, or one on a filesystem with no
+	// birth times, keeps a path-only check. Clearing the pin is what makes
+	// this row that shape.
+	if werr := st.Write(ctx, func(tx *sqlTx) error {
+		_, e := tx.ExecContext(ctx,
+			`UPDATE share_link SET dev = NULL, ino = NULL, btime_present = NULL, btime_ns = NULL
+			 WHERE id = ?`, link.ID)
+		return e
+	}); werr != nil {
+		t.Fatalf("ageing the row to path-only: %v", werr)
+	}
+
+	// The same replace that kills a pinned link leaves a path-only one
+	// working, because there is no recorded identity to contradict.
+	if rerr := os.Remove(filepath.Join(host, "note.txt")); rerr != nil {
+		t.Fatalf("removing: %v", rerr)
+	}
+	writeFile(t, host, "note.txt", "replaced")
+
+	got, entry, err := c.LinkPublic(ctx, string(tok.Reveal()))
+	if err != nil {
+		t.Fatalf("a path-only link died on a replace: %v", err)
+	}
+	if got.Dev() != nil {
+		t.Fatal("the row still carries an identity pin")
+	}
+	if entry.Name != "note.txt" {
+		t.Fatalf("the entry names %q", entry.Name)
+	}
+}
+
 func TestLinkCheckPasswordAcceptsRefusesAndFailsClosed(t *testing.T) {
 	c, _, host, root, _ := linkable(t)
 	ctx := context.Background()

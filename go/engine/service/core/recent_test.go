@@ -222,3 +222,47 @@ func TestAnAccountPastTheJournalWidthErrors(t *testing.T) {
 		t.Fatal("a user id past the journal's width was accepted")
 	}
 }
+
+func TestARowWhoseShareWentAwayDisappears(t *testing.T) {
+	c, _, _, root := recording(t)
+	ctx := context.Background()
+	mustCreate(t, c, at(t, root, "note.txt"), "x")
+
+	// The share stops being visible to the account entirely, which the
+	// VpathFor step catches before any path-level check runs.
+	c.UnregisterShare(10)
+
+	hits, err := c.Recent(ctx, 1, RecentQuery{Limit: 10})
+	if err != nil {
+		t.Fatalf("Recent: %v", err)
+	}
+	if len(hits) != 0 {
+		t.Fatalf("a row from an unreachable share survived: %+v", hits)
+	}
+}
+
+func TestDroppedRowsAreNotBackfilledPastTheLimit(t *testing.T) {
+	c, _, host, root := recording(t)
+	ctx := context.Background()
+	for _, name := range []string{"a.txt", "b.txt", "c.txt", "d.txt"} {
+		mustCreate(t, c, at(t, root, name), "x")
+	}
+	// The two newest rows fail revalidation. The limit bounds journal work
+	// rather than the answer size, so the older surviving rows are not
+	// pulled in to make the count up; a second page is the client's request
+	// to make.
+	for _, name := range []string{"c.txt", "d.txt"} {
+		if err := os.Remove(filepath.Join(host, name)); err != nil {
+			t.Fatalf("removing %s: %v", name, err)
+		}
+	}
+
+	hits, err := c.Recent(ctx, 1, RecentQuery{Limit: 3})
+	if err != nil {
+		t.Fatalf("Recent: %v", err)
+	}
+	// Three rows read, two dropped, one returned.
+	if len(hits) != 1 || hits[0].Name != "b.txt" {
+		t.Fatalf("the listing is %+v, want the single surviving row of the three read", hits)
+	}
+}
