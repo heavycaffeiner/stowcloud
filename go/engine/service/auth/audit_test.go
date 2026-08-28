@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 )
 
@@ -33,7 +34,7 @@ func TestTheCursorPagesAConcurrentlyAppendedLog(t *testing.T) {
 	stop := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
-	go func() {
+	task.Go(ctx, "auth: audit log writer during a paged read", func() {
 		defer wg.Done()
 		for i := 0; ; i++ {
 			select {
@@ -43,7 +44,7 @@ func TestTheCursorPagesAConcurrentlyAppendedLog(t *testing.T) {
 			}
 			f.svc.Record(ctx, actor, "login", fmt.Sprintf("live-%02d", i), "192.0.2.1", "client", true)
 		}
-	}()
+	})
 
 	seen := map[int64]bool{}
 	var order []int64
