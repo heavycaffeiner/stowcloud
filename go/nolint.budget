@@ -310,5 +310,11 @@
 # it is read through starts at one and stops at the width of the type, so the
 # conversion cannot lose a value or produce a negative; gosec cannot see the
 # bound because it lives behind the read helper's parameter.
-287
+#
+# 290: freshscan, the gate that keeps the rebuilt engine's prose its own. Three
+# directives, each matching what the other tools in this directory already do:
+# the diagnostic writer whose error has nowhere to go, the read-only open of a
+# path the walker produced rather than a request, and the close of a file that
+# was only read.
+290
 52

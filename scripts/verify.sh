@@ -295,6 +295,12 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # tier is its first path element under engine/, and an import is legal only
   # when the importing tier lists the imported one.
   run "layercheck (the engine's tiers hold)" ingo_host go run ./tools/layercheck ./engine
+  # The rebuild reads the old tree as a description of behavior and writes its
+  # own prose. A carried comment is a provenance failure and, more often, a
+  # stale one: it describes the system it was written for, not the one it was
+  # moved into.
+  run "freshscan (the engine's prose is its own)" \
+      ingo_host go run ./tools/freshscan ./internal ./engine
 
   FMT=$(cd go && gofmt -l . 2>/dev/null)
   grep_gate "gofmt" "$FMT" "Run: cd go && gofmt -w ."

@@ -27,6 +27,18 @@ this section before touching the tree.
    specification document. If the document and the old code disagree, the
    document wins; if the disagreement looks like a documentation bug,
    stop and ask rather than silently following either.
+
+   This covers comments, and comments are where it was broken. An audit
+   during phase 2 found 2596 comment lines in `go/engine/` that were
+   byte-identical to lines in `go/internal/`, against zero shared
+   non-trivial code lines: the code was rewritten and the prose was moved.
+   The cost is not only provenance. A carried comment describes the system
+   it was written for, and the preview decoder reached the engine still
+   claiming a 512 MiB address-space limit that measurement had already
+   replaced with 2 GiB. Restate the explanation in your own words, and
+   check as you write that it still describes what the new code does.
+   `tools/freshscan` runs in `scripts/verify.sh` and fails on any carried
+   line over thirty characters.
 3. **Never edit the old tree.** `go/internal/` is read-only for the whole
    rebuild: no fixes, no refactors, no formatting, however small. A defect
    found there is fixed in the new implementation by its document's
