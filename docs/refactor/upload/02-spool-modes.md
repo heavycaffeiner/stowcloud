@@ -101,7 +101,8 @@ func (e *Engine) ListChunks(ctx context.Context, id SessionID, user core.UserID)
 ## Assembly
 
 ```go
-func (e *Engine) Assemble(ctx context.Context, r core.Resolved, id SessionID) error
+func (e *Engine) Assemble(ctx context.Context, r core.Resolved, id SessionID,
+    total uint64, mtimeNs *int64) (core.Entry, error)
 ```
 
 Name-ordered only: concatenate the chunk files into the part file in
@@ -113,8 +114,24 @@ chunk already copied is not copied twice.
 
 ## Deliberate changes
 
-None beyond the overview's. The lock-scope rule, the buffer size, the
-floor snapshot and both invariants are behavior-preserving requirements.
+1. **`PutNamed` verifies its digest, on both branches.** The signature
+   above always carried `sum *Checksum` and the first implementation
+   ignored it: a name-ordered session accepted a chunk whose digest did
+   not match, while an offset-addressed session sent the same bytes
+   refused it. A client that sends checksums therefore had them checked
+   or ignored according to a spool mode it picks for unrelated reasons,
+   and a corrupted chunk landed in the assembled file as valid data.
+
+   Both branches verify. The chunk that appends directly does not move
+   the write head, so the client resends that same name rather than the
+   next one; the chunk that is spooled is not recorded in
+   `SpooledNames`, so the name stays absent and the client sends it
+   again. In both cases the bytes already written are left for the
+   resend to overwrite.
+
+Otherwise none beyond the overview's. The lock-scope rule, the buffer
+size, the floor snapshot and both invariants are behavior-preserving
+requirements.
 
 ## Tests
 
@@ -131,6 +148,10 @@ floor snapshot and both invariants are behavior-preserving requirements.
   blocking-reader body that a second chunk completes while the first
   is stalled, the HTTP/2 regression).
 - A failed per-chunk checksum leaves the interval set unrecorded.
+- A failed per-chunk checksum on the name-ordered path refuses on both
+  branches (the chunk that appends directly and the one that is
+  spooled), records nothing, and the resend with the right digest
+  lands.
 - PutNamed: ordinals round-trip; a repeated ordinal is one no-op landing
   (the row-lock rule); ListChunks reports what landed.
 - Assemble: a gap refuses naming the missing ordinal; assembly after a

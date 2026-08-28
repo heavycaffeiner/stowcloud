@@ -715,6 +715,43 @@ func TestAnAccountPastTheJournalColumnIsSkipped(t *testing.T) {
 	}
 }
 
+// A journal that cannot write does not fail the mutation. The row feeds the
+// recent-files listing, so losing it costs a convenience surface; failing the
+// write over it would lose the user's data to protect a listing.
+//
+// The journal is made to fail by closing the database under it rather than by
+// substituting a stub, so what is exercised is the real Record path returning
+// a real error.
+func TestAFailingJournalDoesNotFailAWrite(t *testing.T) {
+	c, _, host, _ := writable(t)
+
+	f, err := dbfile.Open(context.Background(),
+		journal.Spec(filepath.Join(t.TempDir(), "doomed.db")))
+	if err != nil {
+		t.Fatalf("opening the journal: %v", err)
+	}
+	c.journal = journal.New(f, clock.System())
+	if cerr := f.Close(); cerr != nil {
+		t.Fatalf("closing the journal: %v", cerr)
+	}
+
+	// The precondition for the test: this journal really does refuse.
+	probe, perr := vfs.ParseSharePath("probe.txt")
+	if perr != nil {
+		t.Fatalf("ParseSharePath: %v", perr)
+	}
+	if rerr := c.journal.Record(context.Background(), journal.Event{
+		Account: 1, Path: probe, Op: journal.OpUpload,
+	}); rerr == nil {
+		t.Fatal("the closed journal accepted a row, so this test proves nothing")
+	}
+
+	mustCreate(t, c, under(t, c, "Documents/despite.txt", acl.Write), "kept")
+	if got := readHost(t, host, "despite.txt"); got != "kept" {
+		t.Fatalf("a failing journal cost the write: the file holds %q", got)
+	}
+}
+
 func TestANilJournalDoesNotFailAWrite(t *testing.T) {
 	c, _, host, _ := writable(t)
 	if c.journal != nil {

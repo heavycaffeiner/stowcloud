@@ -8,7 +8,7 @@
 ## The service
 
 ```go
-func NewService(o ServiceOptions) *Service // Core, Pool, Cache, Clock
+func NewService(o ServiceOptions) (*Service, error) // Core, Pool, Cache, Clock
 func (s *Service) Get(ctx context.Context, r core.Resolved, preset Preset) (Thumb, error)
 func (s *Service) GetSized(ctx context.Context, r core.Resolved, width, height int) (Thumb, error)
 ```

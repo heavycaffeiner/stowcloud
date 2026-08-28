@@ -28,7 +28,7 @@ import (
 // in the interim.
 func (e *Engine) PutNamed(
 	ctx context.Context, root *vfs.ShareRoot, id SessionID, user core.UserID,
-	name uint32, body io.Reader,
+	name uint32, body io.Reader, sum *Checksum,
 ) error {
 	unlock := e.lockRow(id)
 	defer unlock()
@@ -58,7 +58,7 @@ func (e *Engine) PutNamed(
 	if name == next {
 		// The chunk the assembly is waiting for goes straight onto the end of
 		// the part file and nothing is spooled.
-		if aerr := e.appendToPart(root, r, id, body); aerr != nil {
+		if aerr := e.appendToPart(root, r, id, body, sum); aerr != nil {
 			return aerr
 		}
 		r.sess.NextName++
@@ -66,7 +66,7 @@ func (e *Engine) PutNamed(
 			return derr
 		}
 	} else {
-		if serr := e.spoolChunk(root, r, name, body); serr != nil {
+		if serr := e.spoolChunk(root, r, name, body, sum); serr != nil {
 			return serr
 		}
 		if !slices.Contains(r.sess.SpooledNames, name) {
@@ -86,7 +86,9 @@ func (e *Engine) PutNamed(
 
 // appendToPart writes a chunk body at the current write head and moves it
 // forward.
-func (e *Engine) appendToPart(root *vfs.ShareRoot, r *row, id SessionID, body io.Reader) error {
+func (e *Engine) appendToPart(
+	root *vfs.ShareRoot, r *row, id SessionID, body io.Reader, sum *Checksum,
+) error {
 	part, err := e.partPathOf(r)
 	if err != nil {
 		return err
@@ -99,9 +101,16 @@ func (e *Engine) appendToPart(root *vfs.ShareRoot, r *row, id SessionID, body io
 	if herr != nil {
 		return herr
 	}
-	n, _, werr := e.writeBody(f, head, body, r, nil)
+	n, digest, werr := e.writeBody(f, head, body, r, sum)
 	if werr != nil {
 		return werr
+	}
+	// The write head does not move over a chunk whose digest does not match, so
+	// the client resends the same name rather than the next one. The bytes are
+	// already on disk past the head and the resend overwrites them.
+	if sum != nil && digest != nil && !constantTimeEqual(digest, sum.Digest) {
+		return fmt.Errorf("%w: the %s digest does not match the %d bytes received",
+			ErrChecksum, sum.Algo, n)
 	}
 	written, nerr := num.Narrow[int64](n)
 	if nerr != nil {
@@ -117,7 +126,9 @@ func (e *Engine) appendToPart(root *vfs.ShareRoot, r *row, id SessionID, body io
 // A repeated name indicates a client retry and overwrites idempotently, since
 // the chunk carries identical bytes. Rejecting it would strand a client that
 // lost the response rather than the request.
-func (e *Engine) spoolChunk(root *vfs.ShareRoot, r *row, name uint32, body io.Reader) error {
+func (e *Engine) spoolChunk(
+	root *vfs.ShareRoot, r *row, name uint32, body io.Reader, sum *Checksum,
+) error {
 	dir, err := e.spoolDirOf(r)
 	if err != nil {
 		return err
@@ -156,8 +167,16 @@ func (e *Engine) spoolChunk(root *vfs.ShareRoot, r *row, name uint32, body io.Re
 	// The floor does not govern a spooled chunk, since it is measured against the
 	// assembled file and a name-ordered client does not select the offsets it
 	// would be measured at.
-	if _, _, werr := e.writeBody(f, 0, body, nil, nil); werr != nil {
+	n, digest, werr := e.writeBody(f, 0, body, nil, sum)
+	if werr != nil {
 		return werr
+	}
+	// A chunk that fails its digest is not recorded as spooled, so the name
+	// stays absent from the session and the client sends it again. The file it
+	// wrote is left for the resend to overwrite or the sweep to remove.
+	if sum != nil && digest != nil && !constantTimeEqual(digest, sum.Digest) {
+		return fmt.Errorf("%w: the %s digest does not match the %d bytes received",
+			ErrChecksum, sum.Algo, n)
 	}
 	return f.SyncData()
 }

@@ -373,5 +373,9 @@
 # LookPath resolved with this test's own temp directory and needles, and one
 # reads an exit status where a non-zero value means "nothing matched", which is
 # an answer rather than a failure.
+#
+# 74: the error classifier's JSON writer, the same shape as the emergency
+# door's. Once the status line is out, a client that stopped reading cannot be
+# told that it stopped reading.
 295
-73
+74

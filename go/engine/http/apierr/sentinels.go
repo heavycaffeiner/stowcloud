@@ -1,3 +1,6 @@
+// Linux only, because it classifies errors from services that are Linux only.
+//go:build linux
+
 // The sentinel table: every service error this build recognises, and what it
 // means to a protocol.
 //

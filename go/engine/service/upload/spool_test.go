@@ -168,6 +168,72 @@ func TestAFailedChecksumLeavesTheIntervalSetUnrecorded(t *testing.T) {
 	}
 }
 
+// The name-ordered path verifies a digest too, on both of its branches: the
+// chunk that lands directly on the part file and the one that is spooled to
+// wait for its predecessor.
+//
+// Without this the two spool modes disagreed about a corrupt chunk. The
+// offset-addressed path refused it and a name-ordered upload of the same bytes
+// accepted it, so a client sending checksums got them checked or ignored
+// depending on a mode it chose for unrelated reasons.
+func TestAFailedChecksumIsRefusedOnBothNamedBranches(t *testing.T) {
+	ctx := context.Background()
+	const chunk = limits.UploadChunkFloor
+
+	wrong, err := Sum(AlgoCRC32C, []byte("not these bytes"))
+	if err != nil {
+		t.Fatalf("Sum: %v", err)
+	}
+
+	// Name 1 is what the assembly waits for, so it appends to the part file.
+	// Name 2 arrives before its predecessor and is spooled.
+	for _, c := range []struct {
+		what string
+		name uint32
+	}{
+		{"appended directly", 1},
+		{"spooled", 2},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			f := newFixture(t)
+			s := f.create(t, "named-sum.bin", uint64(chunk*3), SessionSpec{Mode: SpoolNameOrdered})
+			off := uint64(c.name-1) * chunk
+			body := chunkOf(off, chunk)
+
+			perr := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, c.name,
+				bytes.NewReader(body), &Checksum{Algo: AlgoCRC32C, Digest: wrong})
+			if !errors.Is(perr, ErrChecksum) {
+				t.Fatalf("a wrong digest on the %s chunk returned %v", c.what, perr)
+			}
+
+			// Nothing is recorded, so the client resends this same name.
+			names, lerr := f.engine.ListChunks(ctx, s.ID, testUser)
+			if lerr != nil {
+				t.Fatalf("ListChunks: %v", lerr)
+			}
+			if len(names) != 0 {
+				t.Fatalf("a failed digest recorded the chunk list %v", names)
+			}
+
+			right, serr := Sum(AlgoCRC32C, body)
+			if serr != nil {
+				t.Fatalf("Sum: %v", serr)
+			}
+			if rerr := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, c.name,
+				bytes.NewReader(body), &Checksum{Algo: AlgoCRC32C, Digest: right}); rerr != nil {
+				t.Fatalf("the resend returned %v", rerr)
+			}
+			names, lerr = f.engine.ListChunks(ctx, s.ID, testUser)
+			if lerr != nil {
+				t.Fatalf("ListChunks after the resend: %v", lerr)
+			}
+			if len(names) != 1 {
+				t.Fatalf("after the resend the chunk list is %v", names)
+			}
+		})
+	}
+}
+
 // blockingReader stalls until it is released, so a test can hold one chunk
 // open while another runs.
 type blockingReader struct {
@@ -245,7 +311,7 @@ func TestNamedChunksAssembleInNameOrder(t *testing.T) {
 	for _, name := range []uint32{2, 3, 1} {
 		off := uint64(name-1) * chunk
 		if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, name,
-			bytes.NewReader(chunkOf(off, chunk))); err != nil {
+			bytes.NewReader(chunkOf(off, chunk)), nil); err != nil {
 			t.Fatalf("PutNamed(%d): %v", name, err)
 		}
 	}
@@ -285,7 +351,7 @@ func TestAssemblyRefusesAGapAndNamesIt(t *testing.T) {
 	for _, name := range []uint32{1, 3} {
 		off := uint64(name-1) * chunk
 		if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, name,
-			bytes.NewReader(chunkOf(off, chunk))); err != nil {
+			bytes.NewReader(chunkOf(off, chunk)), nil); err != nil {
 			t.Fatalf("PutNamed(%d): %v", name, err)
 		}
 	}
@@ -309,7 +375,7 @@ func TestARepeatedChunkNameIsARetry(t *testing.T) {
 	// Chunk two arrives twice while chunk one is still missing.
 	for i := 0; i < 2; i++ {
 		if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, 2,
-			bytes.NewReader(chunkOf(uint64(chunk), chunk))); err != nil {
+			bytes.NewReader(chunkOf(uint64(chunk), chunk)), nil); err != nil {
 			t.Fatalf("PutNamed attempt %d: %v", i, err)
 		}
 	}
@@ -329,7 +395,7 @@ func TestTheTwoModesRefuseEachOthersWrites(t *testing.T) {
 	names := f.create(t, "names.bin", 10, SessionSpec{Mode: SpoolNameOrdered})
 
 	if err := f.engine.PutNamed(ctx, f.root(t), offsets.ID, testUser, 1,
-		bytes.NewReader([]byte("x"))); !errors.Is(err, ErrBadRequest) {
+		bytes.NewReader([]byte("x")), nil); !errors.Is(err, ErrBadRequest) {
 		t.Fatalf("a named chunk against an offset-addressed session returned %v", err)
 	}
 	if _, err := f.engine.PatchAt(ctx, f.root(t), names.ID, testUser, 0,
@@ -338,7 +404,7 @@ func TestTheTwoModesRefuseEachOthersWrites(t *testing.T) {
 	}
 	// A chunk name starts at one: zero names nothing.
 	if err := f.engine.PutNamed(ctx, f.root(t), names.ID, testUser, 0,
-		bytes.NewReader([]byte("x"))); !errors.Is(err, ErrBadRequest) {
+		bytes.NewReader([]byte("x")), nil); !errors.Is(err, ErrBadRequest) {
 		t.Fatalf("chunk name zero returned %v", err)
 	}
 }

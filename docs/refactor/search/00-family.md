@@ -171,7 +171,7 @@ func InScope(path, scope string) bool
 func IsHidden(name []byte) bool
 
 func PutVarint(out []byte, v uint64) []byte  // LEB128
-func Varint(buf []byte) (uint64, int)
+func Varint(buf []byte, pos int) (uint64, int, error)
 
 type HLL struct{ ... }                       // the distinct-count sketch
 func NewHLL(p uint8) *HLL
@@ -179,7 +179,7 @@ func Hash64(b []byte) uint64                 // FNV-1a + splitmix64
 
 func ScanCorpus(ctx context.Context, sources []Source, opt ScanOptions) (ScanResult, error)
 func EstimateNameIndex(stats CorpusStats, blockSize uint32) IndexEstimate
-func Walk(ctx context.Context, ...) ...      // the parallel query walk
+func Walk(ctx context.Context, sources []Source, opt WalkOptions) (WalkResult, error)
 ```
 
 ## The two hashes stay two

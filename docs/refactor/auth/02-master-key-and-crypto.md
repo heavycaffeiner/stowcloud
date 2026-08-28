@@ -52,7 +52,7 @@ ring into the core at assembly.
 ```go
 type KeyRing struct { /* keys by version, order, newest, file path */ }
 
-func NewKeyRing() *KeyRing                                  // one fresh key at version 1
+func NewKeyRing() (*KeyRing, error)                         // one fresh key at version 1
 func LoadKeyRing(path string) (*KeyRing, bool, error)       // false: no file
 func (r *KeyRing) Active() ([32]byte, uint32)
 func (r *KeyRing) Get(ver uint32) ([32]byte, bool)

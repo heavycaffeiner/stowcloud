@@ -46,7 +46,7 @@ bypasses the checks on the way to `Render`. `checkPasswdName`
 additionally refuses `:` in account names, the passwd separator.
 
 ```go
-func Render(cfg Config, shares []ShareDef) ([]byte, error)
+func Render(cfg Config, shares []ShareDef) ([]byte, Result, error)
 func Validate(cfg Config) error   // the new dry-validate entry point
 ```
 

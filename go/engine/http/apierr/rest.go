@@ -1,3 +1,6 @@
+// Linux only, because it classifies errors from services that are Linux only.
+//go:build linux
+
 // The native JSON envelope and the REST status table.
 //
 // This is the only place assigning a native status, a stable code and a

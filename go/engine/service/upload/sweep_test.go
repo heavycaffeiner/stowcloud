@@ -82,7 +82,7 @@ func TestTheSweepCollectsAnOrphanedSpoolDirectory(t *testing.T) {
 	s := f.create(t, "named.bin", uint64(limits.UploadChunkFloor*2), SessionSpec{Mode: SpoolNameOrdered})
 	// One out-of-order chunk, so the spool directory exists with a file in it.
 	if err := f.engine.PutNamed(ctx, f.root(t), s.ID, testUser, 2,
-		readerOf(chunkOf(0, limits.UploadChunkFloor))); err != nil {
+		readerOf(chunkOf(0, limits.UploadChunkFloor)), nil); err != nil {
 		t.Fatalf("PutNamed: %v", err)
 	}
 	if derr := f.state.DeleteUploadSession(ctx, s.ID.Bytes()); derr != nil {

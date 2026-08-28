@@ -1,3 +1,6 @@
+// Linux only, because it classifies errors from services that are Linux only.
+//go:build linux
+
 // Package apierr is the presentation tier's one error classifier and the
 // native JSON envelope.
 //
