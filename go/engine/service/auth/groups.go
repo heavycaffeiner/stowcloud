@@ -13,14 +13,14 @@ import (
 // without it a membership change is live in the database and stale in the
 // process answering requests.
 
-// GroupRow is one group with its members.
+// GroupRow pairs a group with its membership.
 type GroupRow struct {
 	ID      int64
 	Name    string
 	Members []int64
 }
 
-// ListGroups returns every group and who is in it.
+// ListGroups yields all groups along with their members.
 func (s *Service) ListGroups(ctx context.Context) ([]GroupRow, error) {
 	groups, err := s.store.ListGroups(ctx)
 	if err != nil {
@@ -102,7 +102,7 @@ func (s *Service) SetMembership(ctx context.Context, userID int64, groupIDs []in
 	return nil
 }
 
-// GroupIDsOf returns the groups an account belongs to.
+// GroupIDsOf yields the groups containing an account.
 func (s *Service) GroupIDsOf(ctx context.Context, userID int64) ([]int64, error) {
 	return s.store.GroupIDsOf(ctx, userID)
 }

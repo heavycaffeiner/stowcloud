@@ -18,7 +18,8 @@ import (
 // would make that answer arrive eighty milliseconds sooner, and a response
 // identical in content but faster is still an oracle.
 
-// LoginRequest is everything Login needs that the account does not carry.
+// LoginRequest supplies everything Login requires beyond what the account
+// itself holds.
 type LoginRequest struct {
 	Name     string
 	Password secret.Secret
@@ -46,9 +47,9 @@ func (s *Service) Login(
 		if derr := s.burnDecoy(ctx, req.Password); derr != nil {
 			return Session{}, derr
 		}
-		// Recorded with no actor, because there is no account to attribute it
-		// to, and with the tried name as the target: a run of guesses against
-		// one name is exactly what this log is read to find.
+		// Logged without an actor, since no account can be credited, and with
+		// the attempted name as the target. A sequence of guesses against a
+		// single name is exactly what this log is consulted to reveal.
 		s.recordLoginFailure(ctx, nil, req)
 		return Session{}, ErrCredentials
 	}
@@ -65,8 +66,8 @@ func (s *Service) Login(
 		return Session{}, ErrCredentials
 	}
 
-	// A hash validated under older parameters is upgraded now, so raising the
-	// cost protects existing accounts and not only new ones.
+	// Hashes verified under older parameters are upgraded here, so increasing
+	// the cost benefits existing accounts rather than only new ones.
 	if stale {
 		if perr := s.SetPassword(ctx, acct.ID, req.Password); perr != nil {
 			return Session{}, perr
@@ -101,10 +102,10 @@ func (s *Service) Login(
 		return Session{}, err
 	}
 
-	// The session exists from here, so a failure to record it must not be
-	// reported as a failure to sign in. It was once: the audit write's error
-	// was returned, the caller answered with a refusal, and the person was
-	// told their credentials were wrong while holding a session that worked.
+	// The session is live from this point, so failing to record it must not be
+	// surfaced as a failed sign-in. That happened once: the audit write's error
+	// propagated, the caller responded with a rejection, and the user was told
+	// their credentials were wrong while holding a working session.
 	if aerr := s.store.AppendAudit(ctx, state.AuditEntry{
 		TsNs:  s.now(),
 		Actor: &acct.ID,

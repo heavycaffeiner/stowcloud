@@ -32,13 +32,13 @@ type AccessChangeSink interface {
 	AccessChanged(ctx context.Context)
 }
 
-// Config is what New needs that the store and the clock do not imply.
+// Config carries what New requires beyond the store and the clock.
 type Config struct {
 	// Store is the durable half. Required.
 	Store *state.DB
 
-	// StoreDir is where the master key file lives by default. It is the one
-	// piece of the filesystem this package knows, and only for that key.
+	// StoreDir gives the default location of the master key file. It is the
+	// sole filesystem detail this package holds, and only for that key.
 	StoreDir string
 
 	// Clock stamps every row. Nil takes the system clock.
@@ -64,9 +64,9 @@ type Config struct {
 	Logger *slog.Logger
 }
 
-// Service is the auth subsystem. It is safe for concurrent use: the gate, the
-// caches and the counter are each internally synchronized, and every durable
-// write goes through the store's single write path.
+// Service implements the auth subsystem. Concurrent use is safe: the gate, the
+// caches and the counter each synchronize internally, and every durable write
+// travels the store's one write path.
 type Service struct {
 	store *state.DB
 	dir   string
@@ -143,7 +143,7 @@ func New(cfg Config) *Service {
 // it was made under.
 func (s *Service) Generation() int64 { return s.gen.Load() }
 
-// bumpGeneration invalidates every tier of the verification path.
+// bumpGeneration clears all tiers along the verification path.
 func (s *Service) bumpGeneration() { s.gen.Add(1) }
 
 // SetAccessChangeSink wires the publisher after construction, because the
@@ -173,7 +173,7 @@ func (s *Service) setKeyRing(r *KeyRing) {
 	s.ringMu.Unlock()
 }
 
-// now is the service clock in nanoseconds, for anything that stamps a row.
+// now reports the service clock in nanoseconds for anything stamping a row.
 func (s *Service) now() int64 { return s.clk.Nanos() }
 
 // warn records a failure that must not fail the operation that hit it. The
@@ -186,9 +186,9 @@ func (s *Service) warn(msg string, err error) {
 // Principal is what a successful credential resolves to.
 type Principal struct {
 	UserID int64
-	// Login is the account's own name, which is what a client stores as the
-	// account it signed in as. Display is a label somebody set and is not a
-	// substitute: the two differ whenever a display name is set at all.
+	// Login holds the account's own name, which clients record as the identity
+	// they signed in under. Display is an operator-assigned label and never a
+	// replacement: the two diverge whenever any display name exists.
 	Login    string
 	Display  string
 	Disabled bool

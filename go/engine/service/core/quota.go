@@ -22,7 +22,7 @@ type FreeSpace struct {
 	// reporting them invites a write that then fails.
 	Available uint64
 
-	// Total is the filesystem's whole size.
+	// Total holds the filesystem's overall size.
 	Total uint64
 }
 

@@ -22,20 +22,20 @@ type Share struct {
 	// never reach a client response.
 	Host string
 
-	// Policy carries the symlink, mode and ownership decisions.
+	// Policy holds the symlink, mode and ownership decisions.
 	Policy vfs.SharePolicy
 
 	// TrashEnabled is the admin-visible toggle, reported in the listing so
 	// a delete confirmation can say whether the delete is undoable.
 	TrashEnabled bool
 
-	// SharedExternally marks a share another service also reads, which the
-	// client renders as a badge.
+	// SharedExternally flags a share that another service also reads, which the
+	// client displays as a badge.
 	SharedExternally bool
 
-	// BrokenReason is a token naming why this share cannot be served right
-	// now, or empty when it can. Same vocabulary as the health surface, so
-	// a screen and a probe asking the same question get the same word back.
+	// BrokenReason is a token explaining why this share is currently unservable,
+	// empty when it is servable. It draws on the health surface's vocabulary, so
+	// a screen and a probe asking the same question receive the same word.
 	BrokenReason string
 }
 
@@ -43,7 +43,7 @@ type Share struct {
 // config layer's registration surface is not the admin API's.
 type ShareDef = Share
 
-// ShareSpec is what CreateShare is asked to mint.
+// ShareSpec describes what CreateShare is asked to produce.
 type ShareSpec struct {
 	Name string
 
@@ -52,21 +52,21 @@ type ShareSpec struct {
 	Host string
 }
 
-// SharePatch is what UpdateShare accepts. The pointers distinguish "field
-// absent" from "field cleared", which is the difference between leaving
-// trash alone and disabling it.
+// SharePatch is what UpdateShare accepts. Pointers separate an absent field from
+// a cleared one, which is the difference between leaving trash untouched and
+// turning it off.
 type SharePatch struct {
 	Name         *string
 	Host         *string
 	TrashEnabled *bool
 }
 
-// shareEntry is one registered share: its definition and the live root.
+// shareEntry pairs a registered share's definition with its live root.
 //
-// root is nil when the share is broken, and the entry stays in the map
-// anyway. Dropping it is what made a disk that did not come back look
-// exactly like a share somebody deleted: absent from the admin list, absent
-// from every user's roots, with the only trace a line on a health endpoint.
+// root is nil for a broken share, and the entry remains in the map regardless.
+// Removing it is what made a disk that never returned indistinguishable from a
+// share someone deleted: missing from the admin list, missing from every
+// account's roots, leaving only a line on a health endpoint.
 type shareEntry struct {
 	def       ShareDef
 	root      *vfs.ShareRoot
@@ -102,14 +102,13 @@ func (c *Core) RegisterBroken(def ShareDef, cause error) {
 	c.replaceEntry(&shareEntry{def: def, brokenErr: cause})
 }
 
-// replaceEntry installs an entry and closes the root the previous one held.
+// replaceEntry installs an entry and closes the root held by its predecessor.
 //
-// Closing is what makes re-registration safe to call repeatedly: retry and
-// edit both go through here, and without it each attempt would leak the
-// descriptor the last one opened. The close happens after the lock is
-// released, because it is a syscall that must not serialize every registry
-// read behind it, and because the entry is already unreachable through the
-// map by then.
+// Closing is what makes repeated re-registration safe: both retry and edit pass
+// through here, and without it every attempt would leak the descriptor opened by
+// the last. The close runs after the lock is released, since it is a syscall
+// that must not serialize every registry read behind it, and by then the entry
+// is already unreachable through the map.
 func (c *Core) replaceEntry(e *shareEntry) {
 	c.sharesMu.Lock()
 	old, had := c.shares[e.def.ID]
@@ -125,10 +124,11 @@ func (c *Core) replaceEntry(e *shareEntry) {
 	}
 }
 
-// ShareBroken is why a share cannot be served, or nil when it can.
+// ShareBroken explains why a share is unservable, returning nil when it is
+// servable.
 //
-// An unregistered id is nil too: it is not broken, it is absent, and the
-// caller that cares about the difference gets false from the accessors.
+// Unregistered ids also yield nil: such a share is absent rather than broken,
+// and callers needing to tell the two apart get false from the accessors.
 func (c *Core) ShareBroken(id ShareID) error {
 	c.sharesMu.RLock()
 	defer c.sharesMu.RUnlock()
@@ -139,18 +139,18 @@ func (c *Core) ShareBroken(id ShareID) error {
 	return e.brokenErr
 }
 
-// ProbeShares re-checks every registered share and moves it between live and
-// broken, returning only the transitions.
+// ProbeShares revalidates every registered share, moving each between live and
+// broken, and returns only those that changed.
 //
-// Both directions are what makes this worth running on a schedule. A root
-// whose filesystem was unmounted underneath it keeps a descriptor that opens
-// nothing, so without the probe the share fails one request at a time and
-// nothing notices. A broken share whose disk came back has to start working
-// again without anybody pressing anything.
+// Handling both directions is what justifies running this on a schedule. A root
+// whose filesystem was unmounted beneath it retains a descriptor that opens
+// nothing, so absent the probe the share fails one request at a time with
+// nothing noticing. A broken share whose disk returned must resume working
+// without anyone intervening.
 //
-// A retry is a full re-registration rather than a re-open, so the admission
-// gate runs again: a path that came back on a filesystem this server refuses
-// stays broken.
+// Retrying performs a complete re-registration rather than a re-open, so the
+// admission gate runs again: a path that returned on a filesystem this server
+// rejects remains broken.
 func (c *Core) ProbeShares(ctx context.Context) (broke, healed []ShareDef) {
 	for _, def := range c.Shares() {
 		if c.ShareBroken(def.ID) != nil {
@@ -175,14 +175,14 @@ func (c *Core) ProbeShares(ctx context.Context) (broke, healed []ShareDef) {
 	return broke, healed
 }
 
-// UnregisterShare stops serving a share and closes its root.
+// UnregisterShare ceases serving a share and closes its root.
 //
-// The root is closed rather than dropped: it is an open descriptor on a
-// directory, and a deployment that adds and removes shares over its life
-// would otherwise leak one per removal. A broken entry has no root, and the
-// nil check is load-bearing: dereferencing it is what made removing a share
-// whose disk had gone answer 500, leaving the one share nothing will
-// re-probe stuck as a permanent degradation.
+// The root is closed rather than merely discarded, since it is an open directory
+// descriptor and a deployment adding and removing shares over its lifetime would
+// otherwise leak one per removal. Broken entries have no root, and the nil check
+// carries weight: dereferencing it is what made removing a share whose disk had
+// disappeared return a 500, leaving the one share nothing will re-probe stuck in
+// permanent degradation.
 func (c *Core) UnregisterShare(id ShareID) {
 	c.sharesMu.Lock()
 	e, ok := c.shares[id]

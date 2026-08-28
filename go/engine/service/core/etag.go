@@ -15,19 +15,19 @@ const etagInput = 40
 // hex characters, which is what every client already stores.
 const etagBytes = 16
 
-// FileETag derives a change token from the identity, size, mtime and ctime
-// that statx actually exposes.
+// FileETag builds a change token from the identity, size, mtime and ctime that
+// statx actually reports.
 //
-// ctime is in the input because a rename or a move changes it where mtime
-// does not, which is how a file replaced by a move is told from one that was
-// not. mtime alone misses exactly the in-place rewrite case.
+// ctime participates because renames and moves alter it while mtime stays
+// unchanged, which distinguishes a file replaced by a move from one that was
+// not. Relying on mtime alone misses precisely the in-place rewrite case.
 //
-// The token is always weak, and the flag is a return value rather than a
-// comment so that every caller has to carry it: Linux statx has no inode
-// change-version field, so a metadata-derived token cannot be a strong
-// validator and reporting it as one would be a false guarantee. Hashing the
-// content to earn a strong token is deliberately not done: it reads every
-// byte of every file on every listing.
+// The token is invariably weak, and weakness is signalled through a return value
+// rather than a comment so every caller must propagate it. Linux statx exposes
+// no inode change-version field, leaving a metadata-derived token unable to act
+// as a strong validator; claiming otherwise would be a false guarantee. Hashing
+// contents to obtain a strong token is deliberately avoided, since it would read
+// every byte of every file on every listing.
 func FileETag(st vfs.Stat) (token string, weak bool) {
 	var buf [etagInput]byte
 	putUint64(buf[0:], st.Dev)

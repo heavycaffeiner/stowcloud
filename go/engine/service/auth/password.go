@@ -16,9 +16,9 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 )
 
-// Params is a full Argon2id parameter set. Raising the cost protects existing
-// accounts only because a successful verification under older parameters
-// rehashes; see Stale and Service.Verify.
+// Params holds a complete Argon2id parameter set. Increasing the cost helps
+// existing accounts only because verifying successfully under older parameters
+// triggers a rehash; see Stale and Service.Verify.
 type Params struct {
 	MemoryKiB   uint32
 	Iterations  uint32
@@ -50,9 +50,9 @@ const saltLen = 16
 // hostile row cannot ask for an allocation nobody chose.
 const maxKeyLen = 64
 
-// gate bounds concurrent Argon2 work with a fixed-size permit pool. A
-// buffered channel is the whole primitive: send to acquire, receive to
-// release, nothing to reference-count wrong.
+// gate limits concurrent Argon2 work through a fixed pool of permits. A
+// buffered channel is the entire mechanism: send to acquire, receive to release,
+// with no reference count to get wrong.
 type gate struct {
 	permits chan struct{}
 
@@ -159,7 +159,7 @@ func Stale(enc string) bool {
 	return stored.params != CurrentParams()
 }
 
-// parsedPHC is one decoded password hash.
+// parsedPHC holds a single decoded password hash.
 type parsedPHC struct {
 	params Params
 	salt   []byte
@@ -181,7 +181,7 @@ func encodePHC(p Params, salt, key []byte) string {
 // allocation nobody chose.
 func parsePHC(s string) (parsedPHC, bool) {
 	fields := strings.Split(s, "$")
-	// ["", "argon2id", "v=19", "m=...,t=...,p=...", salt, key]
+	// Six fields: empty, algorithm, version, cost parameters, salt, key.
 	if len(fields) != 6 || fields[1] != "argon2id" || fields[2] != "v=19" {
 		return parsedPHC{}, false
 	}

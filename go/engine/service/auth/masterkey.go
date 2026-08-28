@@ -28,8 +28,8 @@ import (
 // path.
 const keyFileDefault = "master.key"
 
-// ringMagic marks a key file as the versioned ring. A file that is not this
-// header is read as the legacy raw key, which is version 1.
+// ringMagic identifies a key file as the versioned ring. Files lacking this
+// header are interpreted as the legacy raw key, treated as version 1.
 const ringMagic = "SCMKEYRNG1\n"
 
 // The refusals the key lifecycle answers with.
@@ -52,10 +52,10 @@ var (
 	ErrNoKeyRing = errors.New("the master key has not been opened")
 )
 
-// KeyRing is the set of master keys this process can open ciphertext with,
-// and the one the database says is active. A rotation keeps the old and the
-// new side by side, because the filesystem and the database cannot commit
-// together and the crossing has to be recoverable from either side.
+// KeyRing holds every master key this process can decrypt with, plus whichever
+// the database marks active. Rotation retains old and new together, since the
+// filesystem and the database cannot commit atomically and the transition must
+// be recoverable from either direction.
 type KeyRing struct {
 	mu       sync.Mutex
 	keys     map[uint32][keyLen]byte
@@ -170,9 +170,9 @@ func (r *KeyRing) Versions() []uint32 {
 	return append([]uint32(nil), r.order...)
 }
 
-// withNewKey returns a ring that also holds a fresh key at the version after
-// the newest. The database is still on the old version at that point, which
-// is why both have to be present together.
+// withNewKey produces a ring extended with a fresh key one version past the
+// newest. The database remains on the previous version at that moment, which is
+// why both must coexist.
 func (r *KeyRing) withNewKey() (*KeyRing, uint32, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -250,9 +250,9 @@ func (r *KeyRing) persist() error {
 	})
 }
 
-// ResolveKeyFile names the master key path from the environment, enforcing
-// the rule that only a path may come from there. It reports whether the key
-// resolves inside the data directory, which the caller logs.
+// ResolveKeyFile derives the master key path from the environment, enforcing
+// that only a path may originate there. It also reports whether the key lands
+// inside the data directory, which the caller records.
 func ResolveKeyFile(dir string) (path string, insideDataDir bool, err error) {
 	if _, set := os.LookupEnv("SC_MASTER_KEY"); set {
 		return "", false, ErrKeyEnvForbidden

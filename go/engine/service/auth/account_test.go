@@ -103,8 +103,8 @@ func TestADeletedAccountLeavesThePublishedCredentials(t *testing.T) {
 	}
 }
 
-// The policy decides what is published, never what is stored, so moving it
-// back restores access without anybody setting a password again.
+// Policy governs publication only, never storage, so reverting it restores
+// access with no one needing to set a password again.
 func TestTheSecondFactorPolicyOnlyChangesWhatIsPublished(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)

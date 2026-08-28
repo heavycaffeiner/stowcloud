@@ -23,9 +23,9 @@ type AuditFilter struct {
 	Event   string
 	SinceNs int64
 	UntilNs int64
-	// Before is the previous page's last row id, exclusive. Cursor-paged
-	// rather than offset-paged, so a page boundary stays correct while new
-	// rows land ahead of it.
+	// Before holds the last row id of the preceding page, exclusive. Paging is
+	// by cursor rather than offset, keeping page boundaries correct while new
+	// rows arrive ahead of them.
 	Before int64
 	Limit  int
 }
@@ -44,8 +44,8 @@ type AuditRow struct {
 	// account that has since been deleted.
 	ActorName *string `json:"actor_name"`
 	Event     string  `json:"event"`
-	// Null rather than empty when an event names nothing, so a screen can
-	// tell "no target" from "a target whose name is blank".
+	// Stored as null rather than empty when an event names nothing, letting a
+	// screen distinguish "no target" from "a target with a blank name".
 	Target *string `json:"target"`
 	IP     *string `json:"ip"`
 	UA     string  `json:"ua"`
@@ -92,9 +92,9 @@ func (s *Service) Record(ctx context.Context, actor int64, event, target, ip, ua
 	}
 }
 
-// auditOverscan is how many rows are read per row returned, so filtering in
-// this process still fills a page. It is bounded rather than unbounded: a
-// filter matching nothing reads this many and stops rather than the whole
+// auditOverscan sets how many rows are read for each row returned, so in-process
+// filtering still fills a page. The multiplier is finite by design: a filter
+// matching nothing reads this many rows and halts instead of scanning the entire
 // log.
 const auditOverscan = 20
 

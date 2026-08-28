@@ -1,6 +1,6 @@
-// Package core is the protocol-agnostic domain API every protocol sits on.
-// It knows nothing about HTTP, WebDAV or any wire shape: no error here
-// chooses a status, and no type here carries a field one protocol wanted.
+// Package core provides the protocol-neutral domain API underlying every
+// protocol. HTTP, WebDAV and wire formats are all outside its knowledge: no
+// error selects a status, and no type carries a field added for one protocol.
 package core
 
 import (
@@ -37,14 +37,14 @@ var (
 	// ErrExists is a create against an existing name with no-clobber.
 	ErrExists = errors.New("already exists")
 
-	// ErrNotEmpty is a directory delete without recursion.
+	// ErrNotEmpty reports a non-recursive delete of a populated directory.
 	ErrNotEmpty = errors.New("directory not empty")
 
 	// ErrCrossShare is an operation that cannot span shares atomically. Its
 	// message names which half completed.
 	ErrCrossShare = errors.New("cannot span shares atomically")
 
-	// ErrNoSpace is ENOSPC, or the configured free-space floor.
+	// ErrNoSpace covers ENOSPC and the configured free-space minimum.
 	ErrNoSpace = errors.New("no space left")
 
 	// ErrTrashDisabled is a restore or a purge against a share with trash
@@ -58,7 +58,7 @@ var (
 	// instead.
 	ErrLinkExpired = errors.New("share link is expired")
 
-	// ErrQuotaExceeded is a write the acting user's ledger cap refuses.
+	// ErrQuotaExceeded reports a write blocked by the acting user's ledger cap.
 	ErrQuotaExceeded = errors.New("quota exceeded")
 
 	// ErrShareBroken is a share that is registered while its backing
@@ -100,7 +100,8 @@ func (e *PreconditionError) Error() string {
 
 func (e *PreconditionError) Unwrap() error { return ErrPrecondition }
 
-// IsPrecondition reports a refusal that cannot pass a supplied validator.
+// IsPrecondition identifies a rejection caused by a validator that cannot be
+// satisfied.
 func IsPrecondition(err error) bool { return errors.Is(err, ErrPrecondition) }
 
 // mapVFSErr converts a filesystem error into a domain sentinel. It lives

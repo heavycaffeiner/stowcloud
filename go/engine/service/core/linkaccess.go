@@ -12,21 +12,22 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 )
 
-// Everything a bearer of a token can do.
+// The complete set of operations a token holder may perform.
 //
-// The liveness rule is the same on every surface here, and the error mapping
-// is part of the security design. An unknown token is ErrNotFound: a token
-// that names nothing is absent, not gone, and reporting it as gone would
-// assert it once existed, letting a stranger sort guesses into tokens that
-// were real links and tokens that never were. Every other failure, expiry, an
-// exhausted cap, an unregistered share, an unparseable path, a stat failure
-// and a failed identity cross-check, collapses to ErrLinkExpired: the link is
-// dead and the answer does not say why. Distinguishing "renamed" from "cap
-// ran out" leaks the target's history to whoever holds a stale token.
+// Every surface here applies the same liveness rule, and the error mapping forms
+// part of the security design. Unknown tokens yield ErrNotFound: a token naming
+// nothing is absent rather than removed, and calling it removed would assert it
+// once existed, letting a stranger separate guesses into tokens that were real
+// links and tokens that never were. All other failures, including expiry, an
+// exhausted cap, an unregistered share, an unparseable path, a stat failure and
+// a failed identity cross-check, collapse into ErrLinkExpired: the link is dead
+// and the response withholds the reason. Separating "renamed" from "cap
+// exhausted" would disclose the target's history to anyone holding a stale
+// token.
 //
-// The link's permissions apply to the whole subtree. There is no per-entry
-// ACL check under a link, because a link is one grant: whoever holds the
-// token has exactly what the link was given and nothing more.
+// A link's permissions cover its entire subtree. No per-entry ACL check occurs
+// beneath a link, because a link constitutes one grant: the token holder gets
+// exactly what the link was issued with and nothing further.
 
 // linkLive is the expiry and cap half of the rule, which every surface runs
 // before it touches the filesystem.
@@ -61,12 +62,12 @@ func (c *Core) linkBase(link Link) (*vfs.ShareRoot, vfs.SafePath, error) {
 	return root, base, nil
 }
 
-// linkTarget resolves a subpath beneath a link, or the link's own path when
-// the subpath is empty.
+// linkTarget resolves a subpath under a link, or the link's own path when the
+// subpath is empty.
 //
-// The subpath is parsed rather than joined as text: ParseSafePath refuses
-// "..", an absolute path and every reserved name, so a visitor cannot name
-// anything outside the folder the link was made for.
+// Subpaths are parsed rather than concatenated as text. ParseSafePath rejects
+// "..", absolute paths and all reserved names, so a visitor cannot reference
+// anything outside the folder the link was created for.
 func (c *Core) linkTarget(link Link, sub string) (*vfs.ShareRoot, vfs.SafePath, error) {
 	root, ok := c.ShareRoot(link.Share)
 	if !ok {
@@ -163,11 +164,11 @@ func (c *Core) LinkStreamAt(
 	return c.OpenStream(ctx, linkResolvedAt(link, root, target, link.Perms), range_)
 }
 
-// LinkCheckPassword verifies a candidate against a link's stored hash.
+// LinkCheckPassword tests a candidate against a link's stored hash.
 //
-// A link with no password accepts anything. The verifier fails closed: an
-// unwired one errors rather than passing. A nonexistent link cannot reach
-// here, because a bearer only ever carries a token that resolved.
+// Links without a password accept any candidate. The verifier fails closed: an
+// unconfigured one returns an error rather than succeeding. Nonexistent links
+// never arrive here, since a bearer only ever holds a token that resolved.
 func (c *Core) LinkCheckPassword(ctx context.Context, link Link, candidate string) (bool, error) {
 	store, err := c.links()
 	if err != nil {
@@ -183,16 +184,17 @@ func (c *Core) LinkCheckPassword(ctx context.Context, link Link, candidate strin
 	return c.verifyLinkPassword(ctx, *hash, candidate)
 }
 
-// LinkEntry is one row of a shared folder's listing.
+// LinkEntry is a single row within a shared folder's listing.
 type LinkEntry struct {
 	Name  string
 	IsDir bool
 	Size  uint64
 }
 
-// LinkListing is what a visitor sees at one path inside a shared folder.
+// LinkListing is the view a visitor gets at one path inside a shared folder.
 type LinkListing struct {
-	// Path is the subpath relative to the link's own root, empty at the top.
+	// Path gives the subpath relative to the link's root, and is empty at the
+	// top level.
 	Path string
 	// IsDir says which of the two shapes this is. A file link answers false
 	// with no entries, which is what lets one endpoint serve both.
@@ -202,7 +204,7 @@ type LinkListing struct {
 	Entries []LinkEntry
 }
 
-// LinkBrowse lists a shared folder at sub, or describes a shared file.
+// LinkBrowse enumerates a shared folder at sub, or reports on a shared file.
 func (c *Core) LinkBrowse(ctx context.Context, link Link, sub string) (LinkListing, error) {
 	if err := c.linkLive(link); err != nil {
 		return LinkListing{}, err
@@ -243,10 +245,10 @@ func (c *Core) LinkBrowse(ctx context.Context, link Link, sub string) (LinkListi
 	out.Entries = make([]LinkEntry, 0, len(all))
 	for _, e := range all {
 		row := LinkEntry{Name: e.Name, IsDir: e.Kind.IsDir()}
-		// The size costs a stat per entry, which a listing behind a public
-		// token is worth: the page draws it, and a listing showing every file
-		// as zero bytes would be wrong rather than merely sparse. An entry
-		// whose stat fails keeps the readdir kind and a zero size.
+		// Obtaining the size costs one stat per entry, justified for a listing
+		// behind a public token: the page displays it, and reporting every file
+		// as zero bytes would be incorrect rather than merely incomplete.
+		// Entries whose stat fails retain the readdir kind and a zero size.
 		if p, jerr := target.JoinExisting(e.Name); jerr == nil {
 			if es, eerr := root.Stat(p); eerr == nil {
 				row.Size = es.Size
@@ -255,7 +257,7 @@ func (c *Core) LinkBrowse(ctx context.Context, link Link, sub string) (LinkListi
 		}
 		out.Entries = append(out.Entries, row)
 	}
-	// Directories first, then by name, which is what the browse screen does.
+	// Directories lead, then name order, matching the browse screen.
 	sort.SliceStable(out.Entries, func(i, j int) bool {
 		if out.Entries[i].IsDir != out.Entries[j].IsDir {
 			return out.Entries[i].IsDir
@@ -265,11 +267,11 @@ func (c *Core) LinkBrowse(ctx context.Context, link Link, sub string) (LinkListi
 	return out, nil
 }
 
-// LinkResolved is the resolution a link's own permissions grant at sub.
+// LinkResolved is the resolution granted by a link's own permissions at sub.
 //
-// It exists for the surfaces that take a Resolved rather than a stream, and
-// giving it the link's permission set keeps "what may this token do" in one
-// place.
+// It serves surfaces expecting a Resolved instead of a stream, and assigning it
+// the link's permission set keeps the question of what a token may do in a
+// single location.
 func (c *Core) LinkResolved(link Link, sub string) (Resolved, error) {
 	if err := c.linkLive(link); err != nil {
 		return Resolved{}, err
@@ -281,12 +283,12 @@ func (c *Core) LinkResolved(link Link, sub string) (Resolved, error) {
 	return linkResolvedAt(link, root, target, link.Perms), nil
 }
 
-// LinkArchiveWalk walks a shared folder for the zip endpoint.
+// LinkArchiveWalk traverses a shared folder for the zip endpoint.
 //
-// It is separate from ArchiveWalk because that one asks the ACL what the
-// resolved user may read, and a link has no user: the token is the grant. A
-// walk driven by the ACL under a link visits every directory and reads
-// nothing out of them, which produced an archive with no files in it.
+// It stands apart from ArchiveWalk because that function consults the ACL about
+// what the resolved account may read, while a link has no account: the token is
+// itself the grant. An ACL-driven walk beneath a link enters every directory and
+// extracts nothing from them, which produced archives containing no files.
 func (c *Core) LinkArchiveWalk(
 	ctx context.Context, link Link, sub string, visit func(WalkEntry, *Stream) error,
 ) error {
@@ -317,14 +319,15 @@ func (c *Core) LinkArchiveWalk(
 	return c.linkWalkRec(ctx, r, "", visit)
 }
 
-// linkWalkRec is the descent, with the link's grant standing for every entry.
+// linkWalkRec performs the descent, applying the link's grant to every entry.
 func (c *Core) linkWalkRec(
 	ctx context.Context, r Resolved, rel string, visit func(WalkEntry, *Stream) error,
 ) error {
 	entries, err := r.root.ReadDir(r.path, vfs.HideReserved)
 	if err != nil {
-		// Vanished or unreadable between the parent's check and this step.
-		// Nothing under it is reported rather than failing the whole archive.
+		// Disappeared or became unreadable between the parent's check and this
+		// step. Its contents are omitted rather than failing the entire
+		// archive.
 		return nil
 	}
 	for _, e := range entries {

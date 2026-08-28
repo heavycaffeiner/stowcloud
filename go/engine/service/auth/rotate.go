@@ -18,20 +18,20 @@ type RotationReport struct {
 	ConfigSecretsBrought int
 }
 
-// RotateMasterKey re-seals every encrypted row under a new key.
+// RotateMasterKey re-encrypts every sealed row under a new key.
 //
-// It cannot be one transaction, because the database cannot commit atomically
-// with a key-file rename, so it is three steps:
+// A single transaction is impossible, since the database cannot commit
+// atomically alongside a key-file rename, so the work splits into three steps:
 //
-//  1. persist a ring holding both the old and the new key;
-//  2. in one database transaction, open and re-seal every sealed row under
-//     the new key, then record the new version. A row that will not open
-//     aborts that transaction, which changes nothing;
-//  3. compact the ring to the new key alone.
+//  1. write a ring containing both the old and the new key;
+//  2. within one database transaction, decrypt and re-encrypt every sealed row
+//     under the new key, then store the new version. Any row that fails to
+//     decrypt aborts the transaction, leaving nothing changed;
+//  3. reduce the ring to the new key alone.
 //
-// A crash at any boundary leaves at least the key the committed database
-// requires, and the next startup's alignment finishes or rolls back whichever
-// step never landed.
+// Crashing at any boundary still leaves at least the key the committed database
+// needs, and the alignment performed at the next startup either completes or
+// reverses whichever step did not land.
 func (s *Service) RotateMasterKey(ctx context.Context) (RotationReport, error) {
 	s.rotateMu.Lock()
 	defer s.rotateMu.Unlock()

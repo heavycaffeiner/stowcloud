@@ -31,19 +31,19 @@ type Resolved struct {
 	perms acl.Perms
 }
 
-// User is the caller this resolution was made for.
+// User names the caller this resolution serves.
 func (r Resolved) User() UserID { return r.user }
 
-// Share is the share this resolution landed in.
+// Share identifies where this resolution landed.
 func (r Resolved) Share() ShareID { return r.share }
 
 // Root is the live share root.
 func (r Resolved) Root() *vfs.ShareRoot { return r.root }
 
-// Path is the validated share-relative path, grant subpath on the front.
+// Path holds the validated share-relative path, prefixed by the grant subpath.
 func (r Resolved) Path() vfs.SafePath { return r.path }
 
-// Perms is the caller's full effective permission set at Path.
+// Perms holds the caller's complete effective permissions at Path.
 func (r Resolved) Perms() acl.Perms { return r.perms }
 
 // Has reports whether the caller holds every bit in want here.
@@ -59,20 +59,18 @@ func (r Resolved) Require(want acl.Perms) error {
 	return ErrDenied
 }
 
-// Resolve turns a client path into a share root, a validated path under it,
-// and the permissions the caller holds there. It is the single gate: nothing
-// else in this package parses a virtual path, and no operation accepts one.
+// Resolve converts a client path into a share root, a validated path beneath it,
+// and the permissions the caller holds there. It is the sole gate: nothing else
+// in this package parses a virtual path, and no operation accepts one.
 //
-// A path outside every grant answers ErrNotFound, byte-identical to a path
-// that is simply not on disk. Returning a denial there would tell a stranger
-// the path exists, so the existence rule is applied in exactly one place and
-// a denial can only be earned by a caller whose label already matched a
-// grant.
+// Paths outside every grant produce ErrNotFound, identical byte for byte to a
+// path simply absent from disk. Returning a denial would confirm to a stranger
+// that the path exists, so the existence rule applies in exactly one place and a
+// denial is reachable only by a caller whose label already matched a grant.
 //
-// The path is not stat'ed here. Whether it exists is the consuming
-// operation's problem, and its answer for a missing path is the same
-// ErrNotFound, which is the point: at which layer the refusal happened is
-// not observable.
+// No stat occurs here. Existence is the consuming operation's concern, and its
+// answer for a missing path is the same ErrNotFound. That is the point: which
+// layer produced the rejection is not observable.
 func (c *Core) Resolve(user UserID, p vfs.Vpath, need acl.Perms) (Resolved, error) {
 	if p.IsRoot() {
 		// The virtual root names no share. It is listed through Roots and
@@ -149,18 +147,17 @@ func (c *Core) rootFor(user UserID, label string) (acl.RootEntry, bool) {
 	return acl.RootEntry{}, false
 }
 
-// joinSubpath lays the grant's subpath on the front of the caller's rest
-// path.
+// joinSubpath prefixes the grant's subpath onto the caller's remaining path.
 //
-// JoinExisting rather than Join: resolution addresses a path, it does not
-// create one. The creation table refuses names an SMB client could never
-// open, which is right for a name this server is about to mint and wrong for
-// one another program already wrote; a directory literally named CON must
-// stay listable and resolvable.
+// JoinExisting is used rather than Join because resolution addresses a path
+// without creating one. The creation table rejects names an SMB client could
+// never open, which is correct for a name this server is about to create and
+// wrong for one another program already wrote; a directory actually named CON
+// must remain listable and resolvable.
 //
-// A join failure on a grant subpath component is a corrupt grant, and it
-// refuses the resolution rather than truncating the subpath: a grant that
-// cannot name its own scope must not resolve to a wider one.
+// A join failure on a grant subpath component indicates a corrupt grant, and the
+// resolution is rejected rather than the subpath truncated: a grant unable to
+// express its own scope must not resolve to a broader one.
 func (c *Core) joinSubpath(subpath acl.Path, rest vfs.SharePath) (vfs.SafePath, error) {
 	full := vfs.RootPath()
 	for _, comp := range subpath.Components() {
@@ -275,13 +272,13 @@ func pathExists(root *vfs.ShareRoot, p vfs.SafePath) (bool, error) {
 	return true, nil
 }
 
-// requireCreatableLeaf applies the creation table to a leaf about to be
-// brought into existence, by re-joining it onto its parent and discarding the
-// result. The root passes, since nothing is being created there by name.
+// requireCreatableLeaf applies the creation table to a leaf about to exist, by
+// rejoining it onto its parent and discarding the outcome. The root passes,
+// since nothing there is created by name.
 //
-// This is the asymmetry partner of joinSubpath: anything already on the share
-// stays fully usable, and nothing typed through this server adds a name a
-// Windows or SMB client could never open.
+// This is the counterpart to joinSubpath's asymmetry: everything already present
+// on the share stays fully usable, while nothing entered through this server
+// introduces a name a Windows or SMB client could never open.
 func requireCreatableLeaf(p vfs.SafePath) error {
 	if p.IsRoot() {
 		return nil

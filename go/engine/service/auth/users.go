@@ -146,7 +146,7 @@ func (s *Service) setDisabled(ctx context.Context, userID int64, disabled bool) 
 	return s.republishCredentials(ctx)
 }
 
-// DeleteUser removes an account and everything that belonged to it.
+// DeleteUser erases an account together with everything it owned.
 func (s *Service) DeleteUser(ctx context.Context, userID int64) error {
 	if err := s.store.DeleteAccount(ctx, userID); err != nil {
 		return mapAccountErr(err)

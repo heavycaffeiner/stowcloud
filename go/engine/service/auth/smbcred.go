@@ -23,21 +23,21 @@ import (
 // credential. This is the one place in the product where a committed
 // transaction is not yet a completed security decision.
 
-// SMBBaseUid is what an account's row id is offset by to produce the uid its
-// entry carries.
+// SMBBaseUid is the offset applied to an account's row id to yield the uid
+// carried by its entry.
 //
-// The credential file and the account file beside it have to agree on this.
-// The import tool resolves an entry to an account through the uid, and when
-// it names none it imports nothing at all: no error, no log line, a zero exit
-// status, an empty credential database, and every login refused as an unknown
+// The credential file and the adjacent account file must use the same value.
+// The import tool matches an entry to an account via the uid, and when none
+// matches it imports nothing whatsoever: no error, no log line, a zero exit
+// status, an empty credential database, and every login rejected as an unknown
 // account.
 const SMBBaseUid = 30000
 
-// TOTPPolicy decides what an account carrying a second factor may do over the
+// TOTPPolicy governs what an account with a second factor may do over the
 // file-sharing protocol.
 //
-// The policy decides what is published, never what is stored, so moving it
-// back restores access without anybody setting a password again.
+// It controls publication only and never storage, so reverting it restores
+// access without anyone setting a password again.
 type TOTPPolicy uint8
 
 const (
@@ -63,19 +63,19 @@ func (s *Service) totpPolicy() TOTPPolicy {
 	return s.smbTOTPPolicy
 }
 
-// SMBCredentialKind names what an account reaches the protocol with.
+// SMBCredentialKind identifies what an account uses to reach the protocol.
 //
-// There is no "dedicated" value, and the absence is the schema's rather than
-// an omission: one row holds the hash whether it came from the account
-// password or a separate one, so the two cannot be told apart afterwards.
-// Reporting "account" for both is the honest answer to the question the
-// screen asks, which is whether the protocol works at all.
+// No "dedicated" value exists, and that gap belongs to the schema rather than
+// being an oversight: a single row stores the hash whether it originated from
+// the account password or a separate one, leaving the two indistinguishable
+// afterwards. Reporting "account" in both cases answers honestly the question
+// the screen actually poses, which is whether the protocol works at all.
 type SMBCredentialKind string
 
 const (
 	// SMBCredentialNone means nothing works over the protocol.
 	SMBCredentialNone SMBCredentialKind = "none"
-	// SMBCredentialAccount means a stored credential does.
+	// SMBCredentialAccount indicates a stored credential provides it.
 	SMBCredentialAccount SMBCredentialKind = "account"
 )
 
@@ -96,7 +96,7 @@ type SMBState struct {
 	OptOut     bool
 	Enabled    bool
 	Credential SMBCredentialKind
-	// Reason is set only when Credential is none.
+	// Reason carries a value only where Credential is none.
 	Reason SMBUnavailableReason
 }
 
@@ -131,12 +131,12 @@ func (s *Service) SMBStateOf(ctx context.Context, userID int64) (SMBState, error
 	return out, nil
 }
 
-// SetSMBPassword stores a credential for the protocol that is not the account
+// SetSMBPassword records a protocol credential distinct from the account
 // password.
 //
-// The point of a separate one is that the account password stops being usable
-// over a protocol whose authentication cannot be made as strong, without the
-// account losing access to it.
+// Keeping them separate means the account password ceases to work over a
+// protocol whose authentication cannot be strengthened to match, without denying
+// the account access to that protocol.
 func (s *Service) SetSMBPassword(ctx context.Context, userID int64, pw secret.Secret) error {
 	if pw.Len() < MinPasswordLen {
 		return ErrWeakPassword
@@ -172,8 +172,9 @@ func (s *Service) ClearSMBPassword(ctx context.Context, userID int64) (revertibl
 		return false, derr
 	}
 	s.bumpGeneration()
-	// Republished either way: the credential is gone from the database, and a
-	// rendered file still carrying it is a revoked password that still works.
+	// Republished regardless: the credential no longer exists in the database,
+	// and a rendered file still holding it amounts to a revoked password that
+	// continues to work.
 	if perr := s.republishCredentials(ctx); perr != nil {
 		return false, perr
 	}
@@ -245,11 +246,11 @@ func publishable(r state.PassdbRow, policy TOTPPolicy) bool {
 	return !r.TOTPEnrolled || policy != TOTPBlock
 }
 
-// smbUID offsets a row id into the uid an entry carries.
+// smbUID converts a row id into the uid an entry carries by applying the offset.
 //
-// A row id that does not fit is a refusal rather than a wrapped number: the
-// wrapped one would collide with another account's uid, and the import would
-// keep whichever of the two it saw last.
+// Row ids that do not fit are rejected rather than wrapped. A wrapped value
+// would collide with some other account's uid, and the import would retain
+// whichever of the two it encountered last.
 func smbUID(rowID int64) (uint32, error) {
 	const maxRowID = int64(^uint32(0)) - SMBBaseUid
 	if rowID <= 0 || rowID > maxRowID {

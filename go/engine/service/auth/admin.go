@@ -7,16 +7,16 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
-// What the administrative screens read and write, and the neutral account
-// projections every protocol asks for.
+// Reads and writes for the administrative screens, plus the protocol-neutral
+// account projections every protocol requests.
 //
-// They live here for the same reason the self-service ones do: they touch
-// credential rows, and a package that hands those out is a package every
-// caller has to be careful in.
+// These sit here on the same grounds as the self-service operations: they touch
+// credential rows, and any package distributing those demands care from every
+// caller.
 
-// UserRow is one account as an administrator sees it. It carries no hash: the
-// screen never needs one, and a shape that could carry one is a shape
-// somebody eventually fills in.
+// UserRow presents a single account as an administrator sees it. No hash is
+// included: the screen has no use for one, and a structure capable of holding
+// one is a structure somebody eventually populates.
 type UserRow struct {
 	ID          int64
 	Name        string
@@ -58,7 +58,7 @@ func (s *Service) UserByID(ctx context.Context, id int64) (UserRow, error) {
 	return userRowOf(acct), nil
 }
 
-// ListUsers returns every account.
+// ListUsers yields all accounts.
 func (s *Service) ListUsers(ctx context.Context) ([]UserRow, error) {
 	accounts, err := s.store.ListAccounts(ctx)
 	if err != nil {
@@ -71,11 +71,11 @@ func (s *Service) ListUsers(ctx context.Context) ([]UserRow, error) {
 	return out, nil
 }
 
-// UserIDByName resolves a login name to an account id.
+// UserIDByName maps a login name to an account id.
 //
-// It exists for the sign-in flow's second step, which has to name the account
-// whose password was just accepted: the call that accepted it deliberately
-// returns nothing about who it was refusing.
+// The sign-in flow's second step needs it to identify the account whose password
+// was just accepted, because the accepting call deliberately reveals nothing
+// about whom it rejected.
 func (s *Service) UserIDByName(ctx context.Context, name string) (int64, error) {
 	acct, err := s.store.AccountByName(ctx, name)
 	if errors.Is(err, state.ErrNoSuchAccount) {
@@ -113,9 +113,9 @@ func (s *Service) IsAdmin(ctx context.Context, userID int64) (bool, error) {
 	return acct.IsAdmin(), nil
 }
 
-// HasAdmin reports whether an administrator exists. It is the setup gate's
-// read: the gate closes permanently the moment one does, so a token recovered
-// from a log or a backup afterwards is worth nothing.
+// HasAdmin reports whether any administrator exists. The setup gate reads it
+// and closes for good the instant one appears, rendering a token later recovered
+// from a log or backup useless.
 func (s *Service) HasAdmin(ctx context.Context) (bool, error) {
 	return s.store.AdminExists(ctx)
 }

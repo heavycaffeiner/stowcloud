@@ -20,11 +20,11 @@ import (
 type OnConflict uint8
 
 const (
-	// ConflictFail returns ErrConflict, which is what opens the dialogue.
+	// ConflictFail returns ErrConflict, which is what starts the conversation.
 	ConflictFail OnConflict = iota
 	// ConflictRename keeps both, landing at the next free "name (2).ext".
 	ConflictRename
-	// ConflictOverwrite replaces the destination.
+	// ConflictOverwrite overwrites the destination.
 	ConflictOverwrite
 	// ConflictSkip leaves the destination alone and reports done.
 	ConflictSkip
@@ -222,13 +222,13 @@ func (c *Core) applyConflict(
 	}
 }
 
-// WouldCopy is the preflight a destination picker asks before letting
-// somebody commit: a cross-device move is a copy plus a delete, time
-// proportional to the data, worth a warning first.
+// WouldCopy is the preflight a destination picker runs before allowing a commit.
+// A cross-device move amounts to a copy followed by a delete, taking time
+// proportional to the data, which merits a warning beforehand.
 //
-// A source that cannot be stat'd answers false rather than an error. The move
-// itself reports what is wrong with it, and a preflight that refuses is a
-// picker that cannot open.
+// A source that cannot be stat'd yields false rather than an error. The move
+// itself reports whatever is wrong, and a preflight that rejects produces a
+// picker that will not open.
 func (c *Core) WouldCopy(from, to Resolved) bool {
 	st, err := from.root.Stat(from.path)
 	if err != nil {
@@ -237,13 +237,13 @@ func (c *Core) WouldCopy(from, to Resolved) bool {
 	return crossesDevice(from, to, st.Dev)
 }
 
-// crossesDevice is the one rule the move and its preflight share.
+// crossesDevice holds the single rule shared by the move and its preflight.
 //
-// The comparison is against the destination's own parent directory, not the
-// destination share root. A volume mounted below the root (a RAID array under
-// media/) is a different device with different numbers, and answering from
-// the root would call a real boundary same-device and attempt a rename the
-// kernel refuses with EXDEV.
+// Comparison targets the destination's immediate parent directory rather than
+// the destination share root. A volume mounted below that root, such as a RAID
+// array under media/, is a separate device with separate numbers, and answering
+// from the root would treat a genuine boundary as same-device and attempt a
+// rename the kernel rejects with EXDEV.
 func crossesDevice(from, to Resolved, srcDev uint64) bool {
 	// Two shares are two trees whatever the filesystem says.
 	if from.share != to.share {
@@ -340,16 +340,17 @@ func (c *Core) copyFile(ctx context.Context, from, to Resolved) error {
 	return nil
 }
 
-// RefuseSelfDescendant refuses a transfer whose destination is the source or
-// sits inside it.
+// RefuseSelfDescendant rejects a transfer whose destination is the source itself
+// or lies within it.
 //
-// Without it a directory copied into its own subtree is a walk that does not
-// terminate: each pass copies what the previous one wrote, until the disk is
-// full. RFC 4918 makes this a 403 for WebDAV and the native surface wants the
-// same answer, so the DAV layer calls this for its own preflight.
+// Absent this check, copying a directory into its own subtree produces a walk
+// that never terminates: every pass copies what the previous pass wrote until
+// the disk fills. RFC 4918 specifies 403 for WebDAV and the native surface wants
+// the same answer, so the DAV layer calls this for its own preflight.
 //
-// The comparison is component-wise, never on request strings: a string prefix
-// check makes "/a/bc" look like a child of "/a/b".
+// Comparison proceeds component by component and never over request strings,
+// since a string prefix test would make "/a/bc" appear to be a child of
+// "/a/b".
 func RefuseSelfDescendant(from, to Resolved) error {
 	if from.share != to.share {
 		return nil

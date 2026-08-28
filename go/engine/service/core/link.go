@@ -23,8 +23,8 @@ import (
 // Legacy rows without ciphertext stay unrecoverable: the owner sees the link
 // exists and nothing invents a URL for it. Revocation is permanent.
 
-// Link is one public link as every caller above the core sees it. It carries
-// no password material, only whether one is set.
+// Link presents a public link as callers above the core see it. No password
+// material appears, only whether one exists.
 type Link struct {
 	ID int64
 	// Token is the plaintext, present only when it could be recovered. A
@@ -40,10 +40,10 @@ type Link struct {
 	Downs   int32
 	Label   string
 	Note    string
-	// HasPassword is the one fact about passwords that leaves this package.
+	// HasPassword is the sole password-related fact this package exposes.
 	HasPassword bool
 	CreatedNs   int64
-	// TokenHash is the sha256 that authenticates public requests.
+	// TokenHash holds the sha256 authenticating public requests.
 	TokenHash []byte
 
 	// The identity pinned at creation, when one could be allocated. A nil
@@ -59,7 +59,7 @@ func (l Link) IsDrop() bool {
 	return l.Perms.Has(acl.Create) && !l.Perms.Intersects(acl.Read|acl.Download)
 }
 
-// IsExpired reports the wall-clock answer.
+// IsExpired answers against the wall clock.
 func (l Link) IsExpired(now int64) bool { return l.Expires != 0 && l.Expires <= now }
 
 // IsExhausted reports the download cap reached.
@@ -68,7 +68,7 @@ func (l Link) IsExhausted() bool { return l.MaxDown >= 0 && l.Downs >= l.MaxDown
 // Dev reports the pinned device, non-nil when this link carries an identity.
 func (l Link) Dev() *int64 { return l.dev }
 
-// LinkSpec is what CreateLink is asked to mint.
+// LinkSpec describes what CreateLink is asked to produce.
 type LinkSpec struct {
 	Perms acl.Perms
 	// Password, when set, is hashed before it touches the row.
@@ -184,7 +184,8 @@ func (c *Core) links() (LinkStore, error) {
 	return c.linkStore, nil
 }
 
-// tokenLen is the CSPRNG bytes behind a token, which is 22 base64url chars.
+// tokenLen counts the CSPRNG bytes behind a token, rendering as 22 base64url
+// characters.
 const tokenLen = 16
 
 // mintToken is 16 bytes of CSPRNG, base64url without padding.
@@ -196,7 +197,7 @@ func mintToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b[:]), nil
 }
 
-// linkTokenHash is the only representation of a token ever written down.
+// linkTokenHash produces the sole token representation ever persisted.
 func linkTokenHash(token []byte) []byte {
 	sum := sha256.Sum256(token)
 	return sum[:]
@@ -318,9 +319,9 @@ func pinIdentity(row *LinkRow, p vfs.SafePath, st vfs.Stat) {
 	row.Dev, row.Ino, row.Btime = &dev, &ino, &btime
 }
 
-// sameIdent compares a stat against the identity a link pinned at creation.
-// An unverifiable pin reads as false, because the safe reading of "cannot
-// tell" is "dead link".
+// sameIdent checks a stat against the identity a link pinned when created. A pin
+// that cannot be verified returns false, since the safe interpretation of
+// "unknown" is "dead link".
 func sameIdent(st vfs.Stat, l Link) bool {
 	if l.dev == nil || l.ino == nil || l.btime == nil || st.BtimeNs == nil {
 		return false
@@ -449,8 +450,9 @@ func (c *Core) linkByID(ctx context.Context, id int64) (Link, bool, error) {
 	return l, true, nil
 }
 
-// resolveLink finds a link by its public token. The token is hashed before it
-// touches any query, which is the only place a plaintext is accepted.
+// resolveLink locates a link from its public token. Hashing happens before the
+// token reaches any query, and this is the only place a plaintext one is
+// accepted.
 func (c *Core) resolveLink(ctx context.Context, token string) (Link, bool, error) {
 	store, err := c.links()
 	if err != nil {
@@ -467,11 +469,12 @@ func (c *Core) resolveLink(ctx context.Context, token string) (Link, bool, error
 	return l, true, nil
 }
 
-// UpdateLink changes a live link.
+// UpdateLink modifies a live link.
 //
-// Widening the permissions re-checks against the creator's access as it is
-// now, not as it was at mint time. A grant revoked since then must not be
-// re-widened through an update; the update is the moment to ask again.
+// Broadening permissions revalidates against the creator's present access rather
+// than their access when the link was created. A grant revoked in the interim
+// must not be restored through an update; the update is exactly when to ask
+// again.
 func (c *Core) UpdateLink(ctx context.Context, owner UserID, id int64, patch LinkPatch) (Link, error) {
 	store, err := c.links()
 	if err != nil {

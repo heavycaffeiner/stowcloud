@@ -12,9 +12,10 @@ package auth
 
 import "errors"
 
-// The credential-failure surface. One error covers every wrong credential, so
-// that telling them apart is not an account oracle; the second one is
-// deliberately distinct because a client cannot prompt for a code without it.
+// The credential-failure surface. A single error represents every invalid
+// credential, preventing distinctions that would turn into an account oracle.
+// The second error is intentionally separate, since without it a client has no
+// way to know it should prompt for a code.
 var (
 	// ErrCredentials is the single credential failure: an unknown account, a
 	// wrong password, a wrong second factor, an expired session, a revoked

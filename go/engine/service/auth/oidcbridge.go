@@ -10,12 +10,12 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
-// The durable halves of single sign-on. The protocol half talks to the
-// internet and holds no state; this holds state and talks to nobody.
+// The persistent side of single sign-on. Its protocol counterpart speaks to the
+// internet while holding no state; this holds the state and speaks to nothing.
 //
-// The position is link-only: the provider authenticates and never creates an
-// account, so authority over who has one stays in this database. That is what
-// makes a revocation here total.
+// The model is link-only: providers authenticate but never create accounts, so
+// authority over who holds one remains in this database. That is what makes a
+// revocation here absolute.
 
 // The refusals this surface answers with, re-exported from the store so a
 // caller matches on this package's vocabulary rather than persistence's.
@@ -36,7 +36,7 @@ type OIDCFlow struct {
 	ReturnTo     string
 }
 
-// OIDCLink is one account's link.
+// OIDCLink represents a single account's link.
 type OIDCLink struct {
 	Issuer   string
 	Subject  string
@@ -108,7 +108,7 @@ func (s *Service) CreateOIDCLink(ctx context.Context, userID int64, issuer, subj
 	return s.LinkOIDC(ctx, userID)
 }
 
-// OIDCLinkOf reads an account's link.
+// OIDCLinkOf retrieves the link belonging to an account.
 func (s *Service) OIDCLinkOf(ctx context.Context, userID int64) (OIDCLink, error) {
 	row, err := s.store.OIDCLinkOf(ctx, userID)
 	if err != nil {
@@ -131,7 +131,7 @@ func (s *Service) RemoveOIDCLink(ctx context.Context, userID int64) error {
 	return s.UnlinkOIDC(ctx, userID)
 }
 
-// TouchOIDCLink records that an identity was just used to sign in.
+// TouchOIDCLink notes that an identity has just been used for a sign-in.
 func (s *Service) TouchOIDCLink(ctx context.Context, issuer, subject string) error {
 	return s.store.TouchOIDCLink(ctx, issuer, subject, s.now())
 }

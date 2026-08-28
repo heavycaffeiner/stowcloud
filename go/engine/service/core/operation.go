@@ -20,8 +20,8 @@ type Operation struct {
 	Kind  state.OpKind
 	State state.OpState
 
-	// Progress and Total are the item counter a progress bar is drawn from.
-	// Total is zero when the size is not known until the walk ends.
+	// Progress and Total form the item counter behind a progress bar. Total
+	// stays zero while the size remains unknown until the walk completes.
 	Progress int64
 	Total    int64
 
@@ -185,8 +185,8 @@ func (c *Core) StartCopy(
 		return CopyStart{Dest: dest, Skipped: true}, nil
 	}
 
-	// One item, named, so a copy interrupted mid-run can say what it was on
-	// rather than only that it did not finish.
+	// A single named item, so a copy interrupted partway can report what it was
+	// processing instead of merely that it stopped.
 	id, err := c.state.CreateOp(ctx, int64(owner), state.OpCopy, 1,
 		c.clk.Nanos(), []string{dest.path.String()})
 	if err != nil {

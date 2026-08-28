@@ -210,8 +210,7 @@ func (c *Core) ReloadPersistedShares(ctx context.Context) ([]RejectedShare, erro
 			TrashEnabled: row.TrashEnabled, SharedExternally: row.SharedExternally,
 		}
 		if rerr := c.RegisterShare(ctx, def); rerr != nil {
-			// One share this server cannot serve is not an outage of every
-			// other share.
+			// A single unservable share does not take down all the others.
 			c.RegisterBroken(def, rerr)
 			rejected = append(rejected, RejectedShare{
 				Name: row.Name, Kind: RejectionKind(rerr), Err: rerr,
@@ -255,11 +254,11 @@ func (c *Core) ScanSources() []ScanSource {
 	return out
 }
 
-// UserScanSources is the same, narrowed to what one account may read.
+// UserScanSources does the same, limited to what one account can read.
 //
-// The check is per entry rather than per share, because a grant can start
-// partway down a tree: a share-level answer would either hide a readable
-// subtree or count an unreadable one.
+// Checking happens per entry rather than per share, because a grant may begin
+// partway down a tree. A share-level answer would either conceal a readable
+// subtree or include an unreadable one.
 func (c *Core) UserScanSources(user UserID) []ScanSource {
 	out := c.ScanSources()
 	for i := range out {

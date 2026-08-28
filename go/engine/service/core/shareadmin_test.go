@@ -345,8 +345,8 @@ func TestAnUnreadableSymlinkPolicyFallsToTheStrictest(t *testing.T) {
 	if !ok {
 		t.Fatal("the share did not register")
 	}
-	// The strictest, never a start refused and never a share that follows
-	// links because nobody could read the word saying it should not.
+	// The strictest setting: never a refused startup, and never a share
+	// following links because the instruction not to was unreadable.
 	if def.Policy.Symlink != vfs.SymlinkDeny {
 		t.Fatalf("the policy fell back to %v, want deny", def.Policy.Symlink)
 	}

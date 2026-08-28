@@ -115,10 +115,9 @@ func (c *Core) OpenStream(ctx context.Context, r Resolved, range_ *[2]uint64) (F
 	return entry, &Stream{f: f, pos: start, end: end}, nil
 }
 
-// RandomRead is a whole file open for reading at arbitrary offsets, which is
-// what a format keeping its index at the end needs: a zip's central
-// directory is the last thing in the file, so a forward-only stream cannot
-// serve a zip browser.
+// RandomRead opens an entire file for reading at arbitrary offsets, which suits
+// formats storing their index at the end. A zip's central directory sits last in
+// the file, so a forward-only stream cannot serve a zip browser.
 type RandomRead struct {
 	f *vfs.File
 

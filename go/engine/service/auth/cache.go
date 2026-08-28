@@ -63,7 +63,8 @@ type tokenEntry struct {
 	inserted  time.Time
 }
 
-// caches is the three tiers plus the ephemeral key that names tier-2 entries.
+// caches bundles the three tiers together with the ephemeral key naming tier-2
+// entries.
 type caches struct {
 	ephemeral [32]byte
 

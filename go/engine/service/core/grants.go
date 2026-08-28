@@ -30,7 +30,7 @@ type GrantSpec struct {
 	Label   string
 }
 
-// GrantFilter narrows a listing. A zero field is not a filter.
+// GrantFilter restricts a listing. Fields left at zero impose no restriction.
 type GrantFilter = state.GrantFilter
 
 // Grant is one stored grant as a caller above the core sees it.

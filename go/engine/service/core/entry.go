@@ -43,8 +43,8 @@ type Entry struct {
 	Perms acl.Perms
 }
 
-// Page is one bounded slice of a directory listing, plus the accounting a
-// client needs to render a grid.
+// Page holds a size-limited portion of a directory listing together with the
+// counts a client requires to draw a grid.
 type Page struct {
 	Entries []Entry
 
@@ -54,12 +54,12 @@ type Page struct {
 	// boundary.
 	Dirs int
 
-	// DirEtag is the directory's own change token, so a sync client can ask
-	// whether anything under here changed without a second round trip.
+	// DirEtag carries the directory's change token, letting a sync client
+	// determine whether anything below changed without a second round trip.
 	DirEtag     string
 	DirEtagWeak bool
 
-	// Next is empty when this page is the last.
+	// Next is empty on the final page.
 	Next Cursor
 
 	// Total is the whole directory, not just this page. Counted there for
@@ -68,16 +68,16 @@ type Page struct {
 	Total int
 }
 
-// Cursor is an opaque position in a listing. The empty value is the first
-// page; anything else is a value a previous Page returned.
+// Cursor marks an opaque position within a listing. An empty value requests the
+// first page; any other value came from a previous Page.
 //
-// Its content is an ASCII decimal offset, minted and parsed only here. A
-// protocol treats it as opaque.
+// The content is an ASCII decimal offset, produced and consumed only here.
+// Protocols treat it as opaque.
 type Cursor string
 
-// SortKey is what a listing is ordered by. Directories are their own group
-// ahead of files under every key, so a descending order reverses within each
-// group rather than putting files first.
+// SortKey selects a listing's ordering. Under every key directories form their
+// own group ahead of files, so descending order reverses within each group
+// instead of promoting files to the top.
 type SortKey uint8
 
 const (
@@ -109,17 +109,17 @@ func ParseSortKey(s string) SortKey {
 	}
 }
 
-// NeedsStat reports whether ordering by this key has to stat every entry
-// rather than only the page being returned.
+// NeedsStat reports whether this ordering requires stating every entry rather
+// than only those on the returned page.
 func (k SortKey) NeedsStat() bool { return k == SortSize || k == SortMtime }
 
-// ListOptions is how a listing is ordered. The zero value is the default:
-// by name, ascending, which is what every caller that does not care gets.
+// ListOptions specifies a listing's ordering. The zero value means name
+// ascending, which is what every indifferent caller receives.
 type ListOptions struct {
 	Sort SortKey
 
-	// Desc reverses the order within each group. Directories stay ahead of
-	// files either way.
+	// Desc inverts the ordering inside each group. Directories precede files
+	// regardless.
 	Desc bool
 
 	// Limit is how many entries to return, and zero means pageSize. It
@@ -128,8 +128,7 @@ type ListOptions struct {
 	Limit int
 }
 
-// pageSize is how many entries one Page holds when the caller names no bound
-// of its own.
+// pageSize sets the entries per Page when the caller specifies no limit.
 const pageSize = 200
 
 // maxPageSize bounds what a caller may ask for. A window the interface

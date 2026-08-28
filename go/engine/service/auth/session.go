@@ -26,7 +26,8 @@ const (
 	defaultSessionLifetime = 30 * 24 * time.Hour
 )
 
-// Session is a freshly minted session. Token is shown once and never stored.
+// Session describes a newly issued session. The token is displayed once and
+// never persisted.
 type Session struct {
 	Token  secret.Secret
 	UserID int64
@@ -143,7 +144,8 @@ func (s *Service) RevokeSessionByHash(ctx context.Context, userID int64, hash []
 	return nil
 }
 
-// RevokeSessionsOf ends every session an account holds and reports how many.
+// RevokeSessionsOf terminates all sessions belonging to an account and returns
+// the count.
 func (s *Service) RevokeSessionsOf(ctx context.Context, userID int64) (int64, error) {
 	n, err := s.store.DeleteSessionsOf(ctx, userID)
 	if err != nil {

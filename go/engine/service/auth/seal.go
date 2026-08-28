@@ -141,9 +141,9 @@ func openTOTP(key [keyLen]byte, blob []byte, user int64, keyVer uint32) ([]byte,
 	return openWith(key, blob, aad)
 }
 
-// LinkCipher is the at-rest cryptography for share-link tokens, exported for
-// the store aggregate that owns those rows. The binding is the token hash and
-// the key version, so a ciphertext cannot be moved between links.
+// LinkCipher provides at-rest encryption for share-link tokens, exported for
+// the store aggregate owning those rows. Binding covers the token hash and the
+// key version, preventing a ciphertext from being transplanted between links.
 type LinkCipher struct {
 	key [keyLen]byte
 }
@@ -163,12 +163,12 @@ func (c LinkCipher) Open(blob, tokenHash []byte, keyVer uint32) ([]byte, error) 
 	return openWith(c.key, blob, aadBytes(bindShareLink, tokenHash, keyVer))
 }
 
-// SealConfigSecret encrypts one configuration secret under the active key.
+// SealConfigSecret encrypts a single configuration secret under the active key.
 //
-// It exists because a setting can be a credential: the single-sign-on client
-// secret is one, and a settings document carrying it would put a credential
-// in every read of that document and every response the settings screen
-// renders.
+// Settings can themselves be credentials. The single-sign-on client secret is
+// one, and a settings document holding it in the clear would expose a credential
+// on every read of that document and in every response the settings screen
+// produces.
 func (s *Service) SealConfigSecret(name string, plain []byte) ([]byte, uint32, error) {
 	key, ver, err := s.activeKey()
 	if err != nil {

@@ -14,16 +14,15 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
-// Per-user home directories, off by default: an operator turns them on and
-// nothing else does.
+// Per-account home directories, disabled unless an operator enables them.
+// Nothing else can.
 //
-// A home is not a second resolution mechanism. One share root is opened for
-// the whole homes tree and every user's home is a subdirectory under it, so a
-// home reaches a caller through the same grant-projected virtual root and the
-// same single Resolve every other share uses. A home that resolved by a
-// different path would be a second place the existence rule and the
-// permission check could be got wrong, and the single gate exists precisely
-// so there is one such place.
+// Homes introduce no second resolution mechanism. A single share root covers the
+// entire homes tree with each account's home as a subdirectory beneath it, so a
+// home reaches callers through the same grant-projected virtual root and the
+// same single Resolve every other share uses. Resolving homes by a separate path
+// would create a second place to get the existence rule and the permission check
+// wrong, and the single gate exists precisely to keep that count at one.
 
 const (
 	homeLabel = "Home"
@@ -32,19 +31,19 @@ const (
 	templateName = ".template"
 )
 
-// homePerms is the full permission set a home grant carries.
+// homePerms enumerates every permission a home grant confers.
 const homePerms = acl.Read | acl.Write | acl.Create | acl.Delete |
 	acl.Rename | acl.Move | acl.Share | acl.Download
 
 // homeHostMode keeps other local users out of the tree that holds every home.
 const homeHostMode = 0o750
 
-// EnableHomes opens host as the shared homes root, creating it if missing,
-// and registers it under the reserved home share id.
+// EnableHomes opens host as the shared homes root, creating it when absent, and
+// registers it under the reserved home share id.
 //
-// Unlike an admin share, whose directory is a pre-existing location the
-// operator points at, the homes host is entirely managed by this process.
-// Creating it is the one directory write the core does outside a share root.
+// An admin share points at a directory the operator already established, whereas
+// the homes host is managed entirely by this process. Creating it is the sole
+// directory write the core performs outside a share root.
 func (c *Core) EnableHomes(ctx context.Context, host string) error {
 	if _, ok := c.ShareRoot(homeShareID); ok {
 		return errors.New("homes are already enabled")
@@ -119,9 +118,9 @@ func (c *Core) ensureHome(ctx context.Context, user UserID) error {
 			return mapVFSErr(serr)
 		}
 		tmpl := Resolved{user: user, share: homeShareID, root: root, path: template, perms: homePerms}
-		// No cancellation gate: seeding a home is not a job anybody polls.
-		// copyRecursive creates the destination itself and tolerates one that
-		// already exists, which is what adopts a crashed earlier attempt.
+		// No cancellation gate, since seeding a home is not a job anyone polls.
+		// copyRecursive creates the destination and accepts a pre-existing one,
+		// which is how it takes over from an attempt that crashed earlier.
 		if cerr := c.copyRecursive(ctx, tmpl, home, st, nil); cerr != nil {
 			return cerr
 		}
@@ -147,13 +146,13 @@ func (c *Core) userHasHome(user UserID) bool {
 	return false
 }
 
-// createHomeGrant persists exactly one grant scoping this user to their own
-// home subpath, then reloads the evaluator so it takes effect in the running
+// createHomeGrant writes a single grant confining this account to its own home
+// subpath, then reloads the evaluator so the change applies in the running
 // process.
 //
-// The subpath scoping is the security property. The whole tree is one share,
-// so scoping is the only wall between users' homes: a root-scoped grant would
-// hand whoever received it every other user's home.
+// Subpath scoping carries the security property. Since the whole tree forms one
+// share, scoping is the only barrier between accounts' homes: a grant scoped to
+// the root would give its holder every other account's home.
 func (c *Core) createHomeGrant(ctx context.Context, user UserID, subpath string) error {
 	holder := int64(user)
 	if _, err := c.state.PersistGrant(ctx, state.GrantRow{

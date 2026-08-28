@@ -20,14 +20,14 @@ import (
 // appPWTokenLen is the entropy of one token.
 const appPWTokenLen = 32
 
-// Scope is what an app password may reach: a permission bitmask and an
-// optional set of share labels. An empty set is every share the account can
-// see.
+// Scope bounds what an app password can reach: a permission bitmask together
+// with an optional set of share labels. An empty set means every share visible
+// to the account.
 //
-// It travels in the request context as a typed value the route table
-// consults, so a route is refused by default until its required scope is
-// declared. That check belongs to the presentation layer; the shape is here
-// because the credential is.
+// It rides in the request context as a typed value the route table inspects, so
+// routes reject by default until their required scope is stated. Performing that
+// check is the presentation layer's job; the type lives here because the
+// credential does.
 type Scope struct {
 	Perms  uint16
 	Shares []string
@@ -156,8 +156,8 @@ func (s *Service) VerifyAppPassword(ctx context.Context, token string) (Principa
 func (s *Service) RevokeAppPassword(ctx context.Context, userID, id int64) error {
 	if err := s.store.DeleteAppPassword(ctx, userID, id); err != nil {
 		if errors.Is(err, state.ErrNoSuchAppPassword) {
-			// Somebody else's credential and one that never existed answer
-			// identically, so an id cannot be probed for.
+			// Another account's credential and a nonexistent one produce the
+			// same answer, so ids cannot be probed.
 			return ErrNotFound
 		}
 		return err

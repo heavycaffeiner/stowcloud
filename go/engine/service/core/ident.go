@@ -28,16 +28,15 @@ type Token string
 // bytes, hex-encoded, is what clients store and compare.
 const instanceIDBytes = 16
 
-// NewInstanceID mints the identity a deployment presents to clients.
+// NewInstanceID generates the identity a deployment shows to clients.
 //
-// It lives in the core because it is a property of the deployment rather
-// than of any protocol. Minted once and never regenerated: a client that saw
-// one identity and then another treats the server as a different server and
-// re-syncs everything it holds.
+// It belongs to the core because it describes the deployment rather than any
+// protocol. Generation happens once and never repeats: a client that observed
+// one identity and later a different one concludes it is talking to a different
+// server and resynchronizes everything it holds.
 //
-// A failure of the random source is returned rather than papered over with a
-// weaker source, because an identity two deployments could both mint is not
-// an identity.
+// Random-source failures propagate instead of being masked by a weaker source,
+// because an identity two deployments could both produce is not an identity.
 func NewInstanceID() (string, error) {
 	buf := make([]byte, instanceIDBytes)
 	if _, err := rand.Read(buf); err != nil {

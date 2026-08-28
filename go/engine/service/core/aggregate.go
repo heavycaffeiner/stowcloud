@@ -224,10 +224,10 @@ func (c *Core) computeAggregate(
 	return agg, nil
 }
 
-// InvalidateShare is the O(1) whole-share invalidation: bump the generation
-// so every cached row reads as stale, without walking or naming a path. The
-// filesystem watcher calls it when it drops a batch of events and can no
-// longer say which paths changed.
+// InvalidateShare performs constant-time invalidation of an entire share by
+// advancing the generation, which makes every cached row read as stale without
+// walking or naming any path. The filesystem watcher invokes it after dropping a
+// batch of events, when it can no longer identify which paths changed.
 func (c *Core) InvalidateShare(ctx context.Context, share ShareID) error {
 	return c.cache.Write(ctx, func(tx *sql.Tx) error {
 		_, err := c.cache.BumpShareGen(ctx, tx, share)
