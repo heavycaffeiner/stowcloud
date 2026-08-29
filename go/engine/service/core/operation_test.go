@@ -463,3 +463,114 @@ func TestACopyOutlivesTheRequestThatStartedIt(t *testing.T) {
 		t.Fatalf("the detached copy landed %q", got)
 	}
 }
+
+// Every state has a name, and Terminal agrees with what that name means.
+//
+// The presentation tier decides terminality from the name, because it may not
+// import the tier that owns the stored numbers. That leaves two lists of the
+// same states, and this is what keeps them one: a state added here with no
+// name, or named but classified differently, fails.
+func TestEveryOperationStateIsNamedAndClassified(t *testing.T) {
+	for _, c := range []struct {
+		state    state.OpState
+		name     string
+		terminal bool
+	}{
+		{state.OpRunning, "running", false},
+		{state.OpDone, "done", true},
+		{state.OpFailed, "failed", true},
+		{state.OpCancelled, "cancelled", true},
+		{state.OpInterrupted, "interrupted", true},
+	} {
+		op := Operation{State: c.state}
+		if got := op.StateName(); got != c.name {
+			t.Errorf("the state %d is named %q, want %q", c.state, got, c.name)
+		}
+		if got := op.Terminal(); got != c.terminal {
+			t.Errorf("the state %q reports terminal=%v", c.name, got)
+		}
+	}
+
+	// A state past the ones above has no name, which is what a state added to
+	// the store and not here looks like.
+	unknown := Operation{State: state.OpState(99)}
+	if unknown.StateName() != "unknown" {
+		t.Errorf("an unnamed state is called %q", unknown.StateName())
+	}
+}
+
+// The published names cover every stored state and classify each the same way
+// the methods do.
+//
+// Without this the presentation tier's cross-check is circular: it compares
+// its list against this one, and nothing would compare this one against the
+// states that actually exist. A state added to the store and named in neither
+// place fails here.
+func TestThePublishedNamesCoverEveryStoredState(t *testing.T) {
+	published := OperationStateNames()
+
+	// Every state the store defines, walked by value. An added one appears as
+	// "unknown" and is reported: skipping unknowns would make this test blind
+	// to the single thing it exists to catch.
+	for i := range state.OpStateCount() {
+		op := Operation{State: state.OpState(i)}
+		name := op.StateName()
+		if name == "unknown" {
+			t.Errorf("the stored state %d has no name", i)
+			continue
+		}
+		terminal, ok := published[name]
+		if !ok {
+			t.Errorf("the state %q is named but not published", name)
+			continue
+		}
+		if terminal != op.Terminal() {
+			t.Errorf("the state %q is published as terminal=%v and reports %v",
+				name, terminal, op.Terminal())
+		}
+		delete(published, name)
+	}
+	if len(published) != 0 {
+		t.Errorf("published names that no stored state produces: %v", published)
+	}
+}
+
+// Every kind has a name, so a kind added to the store shows up as unknown here
+// rather than as a number a client has to interpret.
+func TestEveryOperationKindIsNamed(t *testing.T) {
+	for _, c := range []struct {
+		kind state.OpKind
+		name string
+	}{
+		{state.OpCopy, "copy"},
+		{state.OpDelete, "delete"},
+		{state.OpArchive, "archive"},
+		{state.OpIndexBuild, "index_build"},
+	} {
+		if got := (Operation{Kind: c.kind}).KindName(); got != c.name {
+			t.Errorf("the kind %d is named %q, want %q", c.kind, got, c.name)
+		}
+	}
+	if got := (Operation{Kind: state.OpKind(99)}).KindName(); got != "unknown" {
+		t.Errorf("an unnamed kind is called %q", got)
+	}
+}
+
+// A successful item carries no reason: that case is described by OK, and
+// naming it would invite a client to switch on the reason instead.
+func TestASuccessfulItemHasNoReason(t *testing.T) {
+	op := Operation{Results: []state.OpResult{
+		{Idx: 0, Path: "ok.txt", OK: true, Reason: state.ReasonItemOk},
+		{Idx: 1, Path: "gone.txt", OK: false, Reason: state.ReasonItemNotFound},
+	}}
+	items := op.Items()
+	if len(items) != 2 {
+		t.Fatalf("the projection produced %d items", len(items))
+	}
+	if items[0].Reason != "" {
+		t.Errorf("a successful item carries the reason %q", items[0].Reason)
+	}
+	if items[1].Reason != "not_found" {
+		t.Errorf("a missing item carries the reason %q", items[1].Reason)
+	}
+}

@@ -45,6 +45,128 @@ type Operation struct {
 	Pending []string
 }
 
+// KindName is the wire name of an operation's kind, and StateName of its
+// state. They live here because the stored values are the persistence tier's
+// numbers and the presentation tier may not import that tier to read them.
+//
+// Names rather than the numbers themselves: the numbers may only be appended
+// to, and a client that learned them would make renaming or reordering one a
+// wire break.
+func (o Operation) KindName() string {
+	switch o.Kind {
+	case state.OpCopy:
+		return "copy"
+	case state.OpDelete:
+		return "delete"
+	case state.OpArchive:
+		return "archive"
+	case state.OpIndexBuild:
+		return "index_build"
+	default:
+		return "unknown"
+	}
+}
+
+// StateName is the wire name of the operation's state.
+func (o Operation) StateName() string {
+	switch o.State {
+	case state.OpRunning:
+		return "running"
+	case state.OpDone:
+		return "done"
+	case state.OpFailed:
+		return "failed"
+	case state.OpCancelled:
+		return "cancelled"
+	case state.OpInterrupted:
+		return "interrupted"
+	default:
+		return "unknown"
+	}
+}
+
+// Terminal reports whether the operation has finished, in any way.
+//
+// The one place that decides. A client polls until this is true, and a list of
+// terminal states written twice is how one of them is forgotten and a job
+// polls forever.
+func (o Operation) Terminal() bool {
+	switch o.State {
+	case state.OpDone, state.OpFailed, state.OpCancelled, state.OpInterrupted:
+		return true
+	case state.OpRunning:
+		return false
+	default:
+		// An unrecognised state counts as finished. A client polling forever
+		// on a state this build does not know is worse than one that stops and
+		// shows what it has.
+		return true
+	}
+}
+
+// OperationStateNames lists every state name with whether it is terminal.
+//
+// Exported because the presentation tier decides terminality from the name,
+// having no access to the stored numbers, and two lists of the same states is
+// how one of them drifts. That tier checks its own answer against this.
+func OperationStateNames() map[string]bool {
+	return map[string]bool{
+		"running":     false,
+		"done":        true,
+		"failed":      true,
+		"cancelled":   true,
+		"interrupted": true,
+	}
+}
+
+// OperationItem is one item's outcome, with the persistence tier's reason
+// already named.
+type OperationItem struct {
+	Index int64
+	Path  string
+	OK    bool
+	// Reason is empty for an item that succeeded: that case is described by
+	// OK, and naming it would invite a client to switch on the reason rather
+	// than on the flag.
+	Reason string
+	Text   string
+}
+
+// Items projects the per-item results.
+func (o Operation) Items() []OperationItem {
+	out := make([]OperationItem, 0, len(o.Results))
+	for _, r := range o.Results {
+		out = append(out, OperationItem{
+			Index:  r.Idx,
+			Path:   r.Path,
+			OK:     r.OK,
+			Reason: opResultReasonName(r.Reason),
+			Text:   r.Text,
+		})
+	}
+	return out
+}
+
+// opResultReasonName is the wire name of an item's failure reason.
+func opResultReasonName(r state.OpResultReason) string {
+	switch r {
+	case state.ReasonItemOk:
+		return ""
+	case state.ReasonItemFailed:
+		return "failed"
+	case state.ReasonItemDenied:
+		return "denied"
+	case state.ReasonItemNotFound:
+		return "not_found"
+	case state.ReasonItemConflict:
+		return "conflict"
+	case state.ReasonItemSkipped:
+		return "skipped"
+	default:
+		return "unknown"
+	}
+}
+
 // errOpCancelled ends a walk because the row was marked. It never reaches a
 // client; the row's own OpCancelled state is what says the job was cancelled.
 var errOpCancelled = errors.New("core: the operation was cancelled")

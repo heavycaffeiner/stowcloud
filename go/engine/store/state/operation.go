@@ -35,7 +35,19 @@ const (
 	// and that nothing resumes. A refreshed client gets an honest terminal
 	// state with its progress and results preserved.
 	OpInterrupted
+
+	// opStateSentinel is one past the last state and is never stored. It
+	// exists so a walk over the states has a bound that moves with them.
+	opStateSentinel
 )
+
+// OpStateCount is how many states exist.
+//
+// The states are consecutive from zero, so this is the bound a caller walks
+// them with. It reads the sentinel rather than the last named state, so
+// appending a state moves the bound without an edit here: a bound that has to
+// be updated by hand is one that will not be.
+func OpStateCount() int { return int(opStateSentinel) }
 
 // OpKind names the sort of work an operation performs.
 type OpKind int8
