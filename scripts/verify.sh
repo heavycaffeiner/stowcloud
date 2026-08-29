@@ -522,9 +522,58 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
       [ -d "go/internal/$d" ] || continue
       hits="$hits$(grep -rIn -iE '\boc[:_-]|\bocs\b|remote\.php' "go/internal/$d" 2>/dev/null || true)"
     done
-    printf '%s' "$hits"
+    # G6: the same two rules over the rebuilt engine. Vendor vocabulary lives
+    # only under engine/http/compat, and that package imports no service,
+    # store or infra type: its ports are declared for assembly to implement.
+    #
+    # Code only, not comments. A package may name the compatibility layer to
+    # explain why a boundary exists without being on the wrong side of it, and
+    # the middleware's own tests declare a protocol path as fixture data.
+    engine_vendor() {
+      grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' "$1" 2>/dev/null \
+        | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true
+    }
+    if [ -d go/engine ]; then
+      for d in kit store service infra; do
+        [ -d "go/engine/$d" ] || continue
+        hits="$hits$(engine_vendor "go/engine/$d")"
+      done
+      for d in apierr archive dav emergency handler route; do
+        [ -d "go/engine/http/$d" ] || continue
+        hits="$hits$(engine_vendor "go/engine/http/$d")"
+      done
+      # server names the prefixes because it is what mounts them. The
+      # interface fallback has to know which paths belong to another protocol
+      # so it never answers an HTML page where a sync client expected a
+      # multistatus, and that list is the reservation. Only the fallback and
+      # its declaration may say so; a vendor name anywhere else under server
+      # is the assembly learning a protocol it should be handed.
+      if [ -d go/engine/http/server ]; then
+        hits="$hits$(engine_vendor go/engine/http/server \
+                     | grep -vE '^go/engine/http/server/(fallback|preflight)' || true)"
+      fi
+      # middleware declares protocol paths as data supplied by whoever mounts
+      # a protocol, so its own fixtures name one. Only its non-test files are
+      # scanned: a shipped path there would be the layer knowing a vendor.
+      if [ -d go/engine/http/middleware ]; then
+        hits="$hits$(grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' \
+                     go/engine/http/middleware 2>/dev/null \
+                     | grep -v '_test\.go:' \
+                     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
+      fi
+      if [ -d go/engine/http/compat ]; then
+        hits="$hits$(ingo go list -tags compat_nc -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' \
+                     ./engine/http/compat/... 2>/dev/null \
+                     | grep 'stowcloud/go/engine/' \
+                     | grep -vE 'engine/http/(dav|apierr)$|engine/kit/' || true)"
+      fi
+    fi
+    # Blank lines only means no hit. Several of the scans above end with a
+    # newline whether or not they matched, and a whitespace-only string is not
+    # empty to the caller's test.
+    printf '%s' "$hits" | grep -v '^[[:space:]]*$' || true
   }
-  if [ -d go/internal/compat ]; then
+  if [ -d go/internal/compat ] || [ -d go/engine/http/compat ]; then
     NC_HITS=$(go_compat_isolation)
     grep_gate "compat isolation (import graph, seam, text)" "$NC_HITS" \
       "Compat wire vocabulary belongs behind internal/compat/ncport."
