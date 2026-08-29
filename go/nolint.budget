@@ -405,5 +405,8 @@
 #
 # 81: the compat prefix list. Both spellings a vendor request may arrive
 # under, read-only after init.
+#
+# 82: the compat feature matrix. What each feature needs before it may be
+# advertised, read-only after init.
 296
-81
+82
