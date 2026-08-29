@@ -881,6 +881,17 @@ document silently also applied to links.
     admission/snapshot methods for `http/04-webdav.md`. Existing rows remain
     readable and no plaintext credential or protocol HTTP type enters state.
 
+    As built: migration 12 adds `claimed_ns`, `sealed_result`,
+    `sealed_key_ver`, `credential_id` and `delivered_ns`, all with defaults so
+    existing rows read unchanged. `ClaimLoginFlowDelivery` guards on
+    `claimed_ns = 0 AND approved_user IS NOT NULL` inside the statement, so
+    exactly one poll may mint; 200 concurrent claims against a real database
+    yield one. `AdmitDavLock` and `SnapshotDavLocks` each run in one
+    transaction, checked structurally against the source because the write
+    path serializes and a timing test cannot separate one transaction from
+    two. A key version outside `uint32` is refused rather than truncated,
+    since a truncated version names a different key.
+
 No other observable behavior changes: every carried-forward aggregate's
 schema, statements, and race-closing patterns (login flow approval and
 poll, the settings merge) are unchanged from the reference.

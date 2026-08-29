@@ -551,6 +551,27 @@ CREATE TABLE config_secret (
 ) WITHOUT ROWID;
 `
 
+// Step 12 makes redelivery real.
+//
+// The old shape minted an app password and deleted the flow before knowing the
+// client had received it, so a dropped response left a credential live that
+// nobody had learned. The result is now sealed under the master key and kept
+// until the flow expires, which is what lets the same poll token collect the
+// same credential instead of minting a second one.
+//
+// The sealed bytes carry the key version they were sealed under, so a rotation
+// does not strand a flow that is already deliverable. delivered_ns records
+// that a response was written; the ciphertext stays until sweep either way,
+// because a connection lost after the write is exactly the case this exists
+// for.
+const schemaV12 = `
+ALTER TABLE compat_login_flow ADD COLUMN claimed_ns INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE compat_login_flow ADD COLUMN sealed_result BLOB;
+ALTER TABLE compat_login_flow ADD COLUMN sealed_key_ver INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE compat_login_flow ADD COLUMN credential_id INTEGER;
+ALTER TABLE compat_login_flow ADD COLUMN delivered_ns INTEGER NOT NULL DEFAULT 0;
+`
+
 // migrations is a function instead of a package-level slice so nothing can
 // reassign the list. Position determines version, so a released step is never
 // modified, renumbered or moved.
@@ -571,5 +592,6 @@ func migrations() []dbfile.Migration {
 		{Name: "9: the upload cache spool switch", SQL: schemaV9},
 		{Name: "10: one kind of share", SQL: schemaV10},
 		{Name: "11: configuration secrets at rest", SQL: schemaV11},
+		{Name: "12: login flow delivery state", SQL: schemaV12},
 	}
 }

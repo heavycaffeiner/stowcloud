@@ -39,4 +39,33 @@ SELECT last_poll_ns FROM compat_login_flow WHERE poll_digest = ?`
 	sqlDeleteLoginFlow = `DELETE FROM compat_login_flow WHERE poll_digest = ?`
 
 	sqlSweepLoginFlows = `DELETE FROM compat_login_flow WHERE created_ns < ?`
+
+	// The same shape as the approval, one step further along: the row moves
+	// out of unclaimed only while it is still unclaimed, so exactly one poll
+	// may go on to mint a credential.
+	sqlClaimLoginFlowDelivery = `
+UPDATE compat_login_flow
+   SET claimed_ns = ?
+ WHERE poll_digest = ? AND approved_user IS NOT NULL AND claimed_ns = 0`
+
+	sqlStoreLoginFlowDelivery = `
+UPDATE compat_login_flow
+   SET sealed_result = ?, sealed_key_ver = ?, credential_id = ?
+ WHERE poll_digest = ?`
+
+	sqlSelectLoginFlowDelivery = `
+SELECT claimed_ns, sealed_result, sealed_key_ver, credential_id, delivered_ns
+  FROM compat_login_flow
+ WHERE poll_digest = ?`
+
+	sqlMarkLoginFlowDelivered = `
+UPDATE compat_login_flow SET delivered_ns = ? WHERE poll_digest = ?`
+
+	// Only the temporary ciphertext, never the row: the flow itself expires on
+	// its own clock, and dropping it here would lose the record that a
+	// credential was minted.
+	sqlClearLoginFlowMaterial = `
+UPDATE compat_login_flow
+   SET sealed_result = NULL, sealed_key_ver = 0
+ WHERE created_ns < ?`
 )
