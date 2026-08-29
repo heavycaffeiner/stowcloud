@@ -31,3 +31,10 @@ web/.tmp-*
 # Gate tooling and cross-compiled test binaries: build products, not source.
 /go/.tools/
 /go/.testbin/
+
+# SQLite files a hand-run server leaves wherever it was pointed. Three of these
+# reached a commit from a manual boot inside the package directory; the tests
+# themselves use temp dirs and never write here.
+*.db
+*.db-wal
+*.db-shm
