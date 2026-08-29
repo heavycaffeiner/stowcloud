@@ -35,16 +35,17 @@ rebuild is nearly a replacement. Package by package it is not that simple.
 
 ## Three things block the cutover
 
-### 1. Twenty-one routes have no binding
+### 1. Nineteen routes have no binding
 
-The engine binds 66 of the 87 routes its own table names. The rest need
+The engine binds 68 of the 87 routes its own table names. The rest need
 services that `lifecycle.Open` never constructs: preview for thumbnails,
 search for the stream and the index admin, OIDC for the three sign-in routes
-and the two account-link ones, settings for the sectioned resource, SMB for
-the credential routes. The service packages exist in every one of those
-cases, including `service/settings` (1,626 lines, holding `check` and
-`runtimecfg`). What is missing is construction and binding, not the services
-themselves.
+and the two account-link ones, SMB for the credential routes. The service
+packages exist in every one of those cases. What is missing is construction
+and binding, not the services themselves.
+
+The sectioned settings resource is now bound, against `service/settings`
+(1,626 lines, holding `check` and `runtimecfg`).
 
 The unbound set, exactly, grouped by the service each one waits on:
 
@@ -54,8 +55,7 @@ The unbound set, exactly, grouped by the service each one waits on:
 - **SMB** (4): `account.smb.create`, `account.smb.password.set`,
   `account.smb.password.delete`, `admin.smb.apply`
 - **Search** (3): `search.stream`, `admin.index.build`, `admin.index.estimate`
-- **Settings** (3): `admin.settings.get`, `admin.settings.patch`,
-  `admin.storage`
+- **Storage** (1): `admin.storage`
 - **Preview** (1): `files.thumbnail`
 - **Setup** (2): `system.setup.get`, `system.setup.post`
 - **Events** (1): `events`
@@ -113,9 +113,9 @@ and the difference is mostly this.
 In dependency order, with the measured size of each piece:
 
 1. **Construct the missing services** in `lifecycle.Open`: preview, search,
-   OIDC, settings, SMB. Every package exists; this is wiring plus whatever
+   OIDC, SMB. Every package exists; this is wiring plus whatever
    each needs from configuration.
-2. **Bind the remaining 21 routes** against those services.
+2. **Bind the remaining 19 routes** against those services.
 3. **Write the dav and compat handlers.** The vocabulary is done; the method
    handlers are not, and they are roughly 2,000 and 4,300 lines in the tree
    they replace.
@@ -163,8 +163,8 @@ Both delivered files were compared against the share directory on disk.
 **Do not cut over yet.** Deleting `internal/` now would remove WebDAV, the
 vendor compatibility layer and every public link from a running deployment.
 
-The cheapest next step is item 1, constructing preview, search, OIDC, settings
-and SMB in `lifecycle.Open`, followed by item 2. Those 21 routes are binding
+The cheapest next step is item 1, constructing preview, search, OIDC and SMB
+in `lifecycle.Open`, followed by item 2. Those 19 routes are binding
 work against packages that already exist, which is what the last dozen commits
 have been, and each one converts a 501 into an answer.
 

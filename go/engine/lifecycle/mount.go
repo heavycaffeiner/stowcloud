@@ -190,6 +190,10 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminGroupMemberRemove
 		case "admin.audit":
 			out[r.Name] = e.adminAudit
+		case "admin.settings.get":
+			out[r.Name] = e.adminSettingsGet
+		case "admin.settings.patch":
+			out[r.Name] = e.adminSettingsPatch
 		case "admin.shares.list":
 			out[r.Name] = e.adminSharesList
 		case "admin.shares.create":
