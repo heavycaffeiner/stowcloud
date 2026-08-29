@@ -51,14 +51,20 @@ type Entry struct {
 func (e Entry) KindName() string { return e.Kind.String() }
 
 // PermNames lists the caller's effective permissions at this path, by name.
+func (e Entry) PermNames() []string { return PermNames(e.Perms) }
+
+// PermNames renders a permission set as names.
 //
 // Names rather than the bit set: the bits are an internal encoding, and a
-// client that learned them would make adding one a wire change. Sorted by the
-// permission model's own order, so the same set is always the same list.
-func (e Entry) PermNames() []string {
+// client that learned them would make adding one a wire change. In the
+// permission model's own order, so one set is always one list.
+//
+// Here rather than in the presentation tier because acl is a service package
+// and the tier above may not reach past its own boundary to enumerate bits.
+func PermNames(p acl.Perms) []string {
 	out := make([]string, 0, 8)
 	for _, np := range acl.NamedPerms() {
-		if e.Perms.Has(np.Perm) {
+		if p.Has(np.Perm) {
 			out = append(out, np.Name)
 		}
 	}
