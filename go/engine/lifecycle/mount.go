@@ -167,6 +167,24 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminGroupMemberRemove
 		case "admin.audit":
 			out[r.Name] = e.adminAudit
+		case "admin.shares.list":
+			out[r.Name] = e.adminSharesList
+		case "admin.shares.create":
+			out[r.Name] = e.adminSharesCreate
+		case "admin.shares.update":
+			out[r.Name] = e.adminSharesUpdate
+		case "admin.shares.retry":
+			out[r.Name] = e.adminSharesRetry
+		case "admin.shares.delete":
+			out[r.Name] = e.adminSharesDelete
+		case "admin.grants.list":
+			out[r.Name] = e.adminGrantsList
+		case "admin.grants.create":
+			out[r.Name] = e.adminGrantsCreate
+		case "admin.grants.update":
+			out[r.Name] = e.adminGrantsUpdate
+		case "admin.grants.delete":
+			out[r.Name] = e.adminGrantsDelete
 
 		default:
 			// Every other route is named by the table and has no binding yet.

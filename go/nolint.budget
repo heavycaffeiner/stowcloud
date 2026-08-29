@@ -415,5 +415,9 @@
 # 84: SHA-1 in the login test's reference code. G505 reads the import; RFC
 # 6238 fixes the algorithm, and this is the independent computation the test
 # drives the endpoint with rather than a choice about what to deploy.
+#
+# 85: the share-id truncation check in the admin test. G115 reads the
+# conversion; the truncation is the property under test, and the assertion
+# exists to fail if the chosen id does not actually wrap onto the real one.
 296
-84
+85
