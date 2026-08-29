@@ -69,8 +69,13 @@ const (
 	// requirement.
 	StepACLScope
 
-	// StepAuditSink records the event. It wraps ErrorMapper so the recorded
-	// status is the one actually sent.
+	// StepAuditSink records the event on the way back out.
+	//
+	// Second, just inside RequestID, rather than late: a refusal by the
+	// boundary, the limiter or auth is exactly the event an administrator
+	// investigates, and one recorded by a step those refusals never reach
+	// leaves no trace of them. It needs the trace id, which is why it is not
+	// first.
 	StepAuditSink
 
 	// StepErrorMapper renders a handler error as a response. Innermost: every
@@ -87,6 +92,7 @@ const (
 func Chain() []Step {
 	return []Step{
 		StepRequestID,
+		StepAuditSink,
 		StepTrustedProxy,
 		StepHostAndOriginBoundary,
 		StepSecurityHeaders,
@@ -95,7 +101,6 @@ func Chain() []Step {
 		StepAuth,
 		StepCSRF,
 		StepACLScope,
-		StepAuditSink,
 		StepErrorMapper,
 	}
 }
@@ -177,6 +182,14 @@ func ValidateChain(steps []Step) error {
 		if e, eok := indexOf(steps, StepErrorMapper); eok && a > e {
 			problems = append(problems,
 				"AuditSink is inside ErrorMapper, so it records a status that is not the one sent")
+		}
+		// Everything that can refuse a request must be inside the recorder, or
+		// its refusals leave no record.
+		for _, s := range []Step{StepHostAndOriginBoundary, StepRateLimit, StepAuth, StepACLScope} {
+			if i, ok := indexOf(steps, s); ok && i < a {
+				problems = append(problems,
+					fmt.Sprintf("%s precedes AuditSink, so its refusals are never recorded", s))
+			}
 		}
 	}
 	if p, pok := indexOf(steps, StepTrustedProxy); pok {

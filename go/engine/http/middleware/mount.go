@@ -60,6 +60,10 @@ type Deps struct {
 	// mutation that would need one, rather than letting them through
 	// unchecked.
 	CSRFKey func() []byte
+
+	// Audit receives one record per request. Nil records nothing, which is
+	// what a server with no log wired does.
+	Audit AuditSink
 }
 
 // Record is one entry in a replay: which step ran, and whether it passed the
@@ -161,7 +165,9 @@ func stepHandler(s Step, d Deps) fiber.Handler {
 		return func(c *fiber.Ctx) error { return bodyLimitHandler(c) }
 	case StepCSRF:
 		return func(c *fiber.Ctx) error { return csrfHandler(c, d) }
-	case StepAuditSink, StepErrorMapper, StepUnset:
+	case StepAuditSink:
+		return func(c *fiber.Ctx) error { return auditHandler(c, d) }
+	case StepErrorMapper, StepUnset:
 		// Not yet implemented here. Passing through is deliberate and visible:
 		// a step that silently did nothing while claiming to run would be worse
 		// than one that is plainly a placeholder.
@@ -206,6 +212,54 @@ func scopeHandler(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusForbidden)
 	}
 	return c.Next()
+}
+
+// auditHandler records the request after the rest of the chain has answered.
+//
+// The status is read after Next returns, which is why this step wraps the
+// error mapper rather than sitting inside it: a record taken before the mapper
+// runs holds a status that was never sent.
+func auditHandler(c *fiber.Ctx, d Deps) error {
+	err := c.Next()
+
+	if d.Audit == nil {
+		return err
+	}
+	name := ""
+	if m, ok := metaOf(c); ok {
+		name = m.name
+	}
+	d.Audit.Record(AuditRecordFor(
+		traceOf(c), c.Method(), name, statusOf(c, err),
+		clientOf(c), principalOf(c), originOf(c),
+	))
+	return err
+}
+
+// statusOf is the status this request will answer with.
+//
+// An error returned from the chain has not reached the framework's handler
+// yet, so the response still carries 200: reading it directly records a
+// success for every refusal. The error carries the status it will become, and
+// that is the one that goes out.
+func statusOf(c *fiber.Ctx, err error) int {
+	if err == nil {
+		return c.Response().StatusCode()
+	}
+	var fe *fiber.Error
+	if errors.As(err, &fe) {
+		return fe.Code
+	}
+	// An error the framework does not recognise becomes its generic failure.
+	return fiber.StatusInternalServerError
+}
+
+// traceOf reads the request id RequestID minted.
+func traceOf(c *fiber.Ctx) string {
+	if v, ok := c.Locals(string(KeyTrace)).(string); ok {
+		return v
+	}
+	return ""
 }
 
 // bodyLimitHandler refuses a body past its route's class before a handler can
@@ -331,14 +385,18 @@ const routeRequirementKey contextKey = "sc.route.requirement"
 // The requirement and the body class travel together under one key. Two keys
 // could be set apart, and a route whose class was forgotten would silently get
 // the zero one, which is "no body" and would truncate every request to it.
-func SetRequirement(c *fiber.Ctx, req route.Requirement, body route.BodyClass) {
-	c.Locals(string(routeRequirementKey), routeMeta{req: req, body: body})
+func SetRequirement(c *fiber.Ctx, req route.Requirement, body route.BodyClass, name string) {
+	c.Locals(string(routeRequirementKey), routeMeta{req: req, body: body, name: name})
 }
 
 // routeMeta is what registration leaves for the chain.
 type routeMeta struct {
 	req  route.Requirement
 	body route.BodyClass
+	// name is the table's name for this route. The audit record uses it in
+	// place of the request path, which carries ids and filenames that are data
+	// about the person making the request.
+	name string
 }
 
 // RequirementOf reports the matched route's requirement.

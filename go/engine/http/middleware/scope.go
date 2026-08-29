@@ -28,6 +28,9 @@ var ErrInsufficientPermission = errors.New("this credential does not carry the r
 
 // Principal is what Auth resolved, as scope needs it.
 type Principal struct {
+	// UserID is the account the credential proved. Zero is an anonymous
+	// request, which a public route serves and the audit record notes as such.
+	UserID int64
 	// Kind is which credential proved it.
 	Kind CredentialKind
 	// Mask is the app password's permission mask. A session has every bit,

@@ -45,7 +45,7 @@ func Register(app *fiber.App, table []route.Route, h Handlers) error {
 		meta := r
 		handler := h[r.Name]
 		app.Add(r.Method, FiberPath(r.Path), func(c *fiber.Ctx) error {
-			middleware.SetRequirement(c, meta.Requirement, meta.Body)
+			middleware.SetRequirement(c, meta.Requirement, meta.Body, meta.Name)
 			return handler(c)
 		})
 	}

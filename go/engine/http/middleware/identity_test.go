@@ -220,7 +220,7 @@ func TestScopeRefusesThroughTheChain(t *testing.T) {
 		// Registration attaches the route's metadata, which is what the chain
 		// reads. Set before the chain so ACLScope sees it.
 		app.Use(func(c *fiber.Ctx) error {
-			SetRequirement(c, req, route.BodyNone)
+			SetRequirement(c, req, route.BodyNone, "test.route")
 			return c.Next()
 		})
 		if err := Mount(app, Chain(), Deps{
@@ -262,7 +262,7 @@ func chainWith(t *testing.T, req route.Requirement, body route.BodyClass, p Prin
 	t.Helper()
 	app := fiber.New(fiber.Config{DisableStartupMessage: true})
 	app.Use(func(c *fiber.Ctx) error {
-		SetRequirement(c, req, body)
+		SetRequirement(c, req, body, "test.route")
 		return c.Next()
 	})
 	if err := Mount(app, Chain(), Deps{
@@ -349,7 +349,7 @@ func TestNoCSRFKeyRefusesTheMutation(t *testing.T) {
 	} {
 		app := fiber.New(fiber.Config{DisableStartupMessage: true})
 		app.Use(func(fc *fiber.Ctx) error {
-			SetRequirement(fc, route.Requirement{Access: route.AccessSession}, route.BodyNone)
+			SetRequirement(fc, route.Requirement{Access: route.AccessSession}, route.BodyNone, "test.route")
 			return fc.Next()
 		})
 		d := c.deps(app)
