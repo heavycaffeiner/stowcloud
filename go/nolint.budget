@@ -384,5 +384,9 @@
 # 76: the chain's credential context key. G101 reads the identifier, which
 # contains "credential"; the value is a map key into the request context and
 # holds no secret.
+#
+# 77: the listener swap's serving probe. It asks the new generation for a
+# reply before the old one is dropped, and the client's own timeout is the
+# bound, so noctx has no context to want.
 295
-76
+77
