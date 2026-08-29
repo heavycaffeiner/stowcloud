@@ -335,3 +335,96 @@ func TestClosingReleasesTheDatabases(t *testing.T) {
 		t.Errorf("the write-ahead log still holds %d bytes after close", info.Size())
 	}
 }
+
+// The chain runs on every request, checked by observing what only a running
+// chain produces. A chain that was built and not mounted leaves the routes
+// answering exactly as they do now, so nothing but its effects proves it.
+func TestTheMiddlewareChainIsLive(t *testing.T) {
+	base := boot(t)
+
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Get(base + "/api/v1/system/health")
+	if err != nil {
+		t.Fatalf("requesting: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+
+	// The security headers step. Each of these changes what a browser will do
+	// with the response, so a missing one is a real weakening rather than a
+	// cosmetic gap.
+	for _, header := range []string{
+		"Content-Security-Policy",
+		"X-Content-Type-Options",
+		"X-Frame-Options",
+		"Referrer-Policy",
+		"Cross-Origin-Opener-Policy",
+		"Cross-Origin-Resource-Policy",
+	} {
+		if resp.Header.Get(header) == "" {
+			t.Errorf("%s is not set, so that step did not run", header)
+		}
+	}
+}
+
+// The rate limiter throttles. Its absence is invisible until something is
+// hammering the server, which is exactly when nobody is reading tests.
+func TestTheRateLimiterThrottles(t *testing.T) {
+	base := boot(t)
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// Past the burst, by enough that the refill during the loop cannot make
+	// up the difference.
+	const attempts = 400
+
+	var served, throttled int
+	for i := 0; i < attempts; i++ {
+		resp, err := client.Get(base + "/api/v1/system/health")
+		if err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+		switch resp.StatusCode {
+		case http.StatusOK:
+			served++
+		case http.StatusTooManyRequests:
+			throttled++
+		default:
+			t.Errorf("request %d answered %d", i, resp.StatusCode)
+		}
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Fatalf("closing: %v", cerr)
+		}
+	}
+
+	if throttled == 0 {
+		t.Errorf("%d rapid requests were all served; the limiter is not running", attempts)
+	}
+	if served == 0 {
+		t.Error("every request was throttled, so the limit is not usable")
+	}
+}
+
+// The chain is mounted before the routes. Fiber runs handlers in mount order,
+// so a chain registered afterwards never sees a request that a route answers,
+// and every step would be skipped for exactly the paths it guards.
+func TestTheChainRunsBeforeTheRoutes(t *testing.T) {
+	base := boot(t)
+
+	// A route's own response carries the headers the chain sets. If the chain
+	// ran after the route, the response would already have been written.
+	resp, err := (&http.Client{Timeout: 5 * time.Second}).Get(base + "/api/v1/jobs")
+	if err != nil {
+		t.Fatalf("requesting: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+
+	if resp.Header.Get("Content-Security-Policy") == "" {
+		t.Error("a route answered without the chain having run")
+	}
+}

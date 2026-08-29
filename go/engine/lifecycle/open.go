@@ -11,12 +11,18 @@ package lifecycle
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"path/filepath"
+	"sync"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
@@ -25,6 +31,16 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/journal"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
+)
+
+// The request rate a deployment starts under, before settings are read.
+//
+// Deliberately generous: a limit that throttles a normal client is a limit an
+// operator disables, and then there is none. This stops a runaway loop, not a
+// person.
+const (
+	defaultRatePerSecond = 50
+	defaultBurst         = 200
 )
 
 // Options is what a caller supplies to build an engine.
@@ -63,6 +79,17 @@ type Engine struct {
 	clock  clock.Clock
 	logger *slog.Logger
 
+	// The chain reads these per request, so an operator's settings change
+	// takes effect on the next request rather than at the next restart.
+	settingsMu sync.RWMutex
+	appHosts   middleware.Hosts
+	trusted    []netip.Prefix
+	csrf       []byte
+
+	// limiter is shared across requests, since a per-request one would count
+	// each request against an empty window and limit nothing.
+	limiter *middleware.Limiter
+
 	// files are the open databases, closed in reverse.
 	files []*dbfile.DB
 }
@@ -87,7 +114,14 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		logger = slog.Default()
 	}
 
-	e := &Engine{clock: clk, logger: logger}
+	e := &Engine{
+		clock:  clk,
+		logger: logger,
+		// Until settings are loaded, no proxy is trusted and no host is
+		// named. An empty host list is what first boot looks like, and the
+		// boundary admits only a private client in that state.
+		limiter: middleware.NewLimiter(clk, defaultRatePerSecond, defaultBurst),
+	}
 
 	// A failure past this point closes what is already open. Leaving a
 	// database open after refusing to start holds the data directory's lock
@@ -162,6 +196,41 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	}
 	e.Core = coreSvc
 
+	// The master key is opened before anything that mints or reads a secret.
+	// An account cannot be created without it, and a key that cannot decrypt
+	// what is on disk is a refused startup rather than a cascade of failing
+	// logins at request time.
+	//
+	// The refusal has no test: every path a test can reach either generates a
+	// fresh key or loads one this process just wrote, so a failure here needs
+	// a corrupted key file or an unreadable one, and neither is something the
+	// service exposes a way to produce. What is tested is the consequence:
+	// with the key opened, accounts can be created and credentials resolve.
+	ring, rerr := e.Auth.OpenMasterKey(ctx)
+	if rerr != nil {
+		return fail(fmt.Errorf("opening the master key: %w", rerr))
+	}
+
+	// The link seams need the key, which is why they are attached after
+	// construction rather than passed to it: the core is built before the
+	// key is available, and each seam fails closed until this runs.
+	active, _ := ring.Active()
+	coreSvc.AttachLinkCrypto(
+		auth.NewLinkCipher(active),
+		func(ctx context.Context, plain string) (string, error) {
+			return e.Auth.Hash(ctx, secret.New([]byte(plain)))
+		},
+		func(ctx context.Context, enc, candidate string) (bool, error) {
+			ok, _, verr := e.Auth.Verify(ctx, enc, secret.New([]byte(candidate)))
+			return ok, verr
+		},
+	)
+
+	// The CSRF derivation key comes from the same ring. Derived rather than
+	// the key itself, so a token that leaked reveals nothing about what
+	// protects the data at rest.
+	e.csrf = csrfKeyFrom(active)
+
 	// The upload engine is last because it needs the core it uploads into.
 	// Its absence is a degradation rather than a failure: a deployment whose
 	// spool directory is unusable still serves everything else.
@@ -173,6 +242,16 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	}
 
 	return e, nil
+}
+
+// csrfKeyFrom derives the token key from the master key.
+//
+// A separate key rather than the master one: a CSRF token travels in a header
+// a page can read, and deriving it directly from the key that protects data at
+// rest would make every token a sample of that key's output.
+func csrfKeyFrom(master [32]byte) []byte {
+	sum := sha256.Sum256(append([]byte("stowcloud/csrf/v1"), master[:]...))
+	return sum[:]
 }
 
 // reloadMemberships refreshes the evaluator from the durable state.

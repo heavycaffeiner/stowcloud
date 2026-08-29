@@ -29,10 +29,6 @@ func (e *Engine) Mount() (*fiber.App, error) {
 	table := server.Table()
 	handlers := e.handlers(table)
 
-	// The chain's declared order is checked here. Mounting its steps on Fiber
-	// is separate work: the credential resolver has to read this engine's auth
-	// service, and that binding is not built. Checking the order now means the
-	// order cannot drift before the steps arrive.
 	if err := server.Check(server.Preflight{
 		Routes:   table,
 		Roots:    []string{server.Base},
@@ -50,6 +46,14 @@ func (e *Engine) Mount() (*fiber.App, error) {
 		// replaced rather than left to leak a page into an API response.
 		ErrorHandler: writeError,
 	})
+
+	// The chain goes on before the routes. Fiber runs what was mounted in
+	// mount order, so a step registered after a route never sees a request
+	// that route answers: the boundary, the limiter and the credential check
+	// would all be skipped for exactly the paths they exist to guard.
+	if err := middleware.Mount(app, middleware.Chain(), e.deps(), nil); err != nil {
+		return nil, fmt.Errorf("mounting the chain: %w", err)
+	}
 
 	if err := server.Register(app, table, handlers); err != nil {
 		return nil, fmt.Errorf("registering routes: %w", err)
