@@ -187,9 +187,9 @@ func TestTheSizeGuardCoversEveryInsertPathAndNothingElse(t *testing.T) {
 			return d.SetDavProps(ctx, ident.Ident{Share: 1, Dev: 2, Ino: 3},
 				[]state.DavPropOp{{NS: "n", Name: "a", Value: "v"}})
 		},
-		"PutDavLock": func(t *testing.T, d *state.DB) error {
+		"AdmitDavLock": func(t *testing.T, d *state.DB) error {
 			seedUser(t, d, 1, "u")
-			return d.PutDavLock(ctx, state.DavLock{
+			return d.AdmitDavLock(ctx, state.DavLock{
 				Token: "t", Ident: ident.Ident{Share: 1, Dev: 2, Ino: 3},
 				Path: "p", Principal: 1, ExpiresNs: 1 << 40,
 			}, 0)
@@ -481,7 +481,7 @@ func TestDavPropsAndLocksRoundTripThroughIdent(t *testing.T) {
 		Token: "urn:uuid:1", Ident: id, Path: "d/f", Principal: 1,
 		Owner: "somebody", Depth: 0, Scope: 1, ExpiresNs: 1 << 40, TimeoutS: 600,
 	}
-	if lerr := d.PutDavLock(ctx, lock, 0); lerr != nil {
+	if lerr := d.AdmitDavLock(ctx, lock, 0); lerr != nil {
 		t.Fatalf("PutDavLock: %v", lerr)
 	}
 	locks, err := d.DavLocks(ctx, 0)
@@ -507,7 +507,7 @@ func TestAnExpiredLockIsNeverRead(t *testing.T) {
 	seedUser(t, d, 1, "u")
 
 	id := ident.Ident{Share: 1, Dev: 1, Ino: 1}
-	if err := d.PutDavLock(ctx, state.DavLock{
+	if err := d.AdmitDavLock(ctx, state.DavLock{
 		Token: "t", Ident: id, Path: "p", Principal: 1, ExpiresNs: 100,
 	}, 0); err != nil {
 		t.Fatalf("PutDavLock: %v", err)

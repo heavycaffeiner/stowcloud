@@ -153,28 +153,6 @@ func (d *DB) DavLocks(ctx context.Context, nowNs int64) (out []DavLock, err erro
 	return out, nil
 }
 
-// PutDavLock records a new lock and rejects any beyond the per-account cap.
-func (d *DB) PutDavLock(ctx context.Context, l DavLock, nowNs int64) error {
-	if err := d.f.EnsureWritable(); err != nil {
-		return err
-	}
-	dev, ino, present, btime := l.Ident.ToSQL()
-
-	return d.Write(ctx, func(tx *sql.Tx) error {
-		var n int64
-		if err := tx.QueryRowContext(ctx, sqlCountDavLocks, l.Principal, nowNs).Scan(&n); err != nil {
-			return err
-		}
-		if n >= limits.DavLocksPerUser {
-			return limits.Exceed("dav locks per user", limits.DavLocksPerUser, n+1)
-		}
-		_, err := tx.ExecContext(ctx, sqlInsertDavLock,
-			l.Token, int64(l.Ident.Share), dev, ino, present, btime,
-			l.Path, l.Principal, l.Owner, l.Depth, l.Scope, l.ExpiresNs, l.TimeoutS)
-		return err
-	})
-}
-
 // RefreshDavLock moves a lock's deadline. A token that holds no live row is
 // ErrNoSuchLock rather than a lock silently created.
 func (d *DB) RefreshDavLock(ctx context.Context, token string, expiresNs, timeoutS, nowNs int64) error {
