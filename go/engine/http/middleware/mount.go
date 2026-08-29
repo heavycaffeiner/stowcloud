@@ -126,7 +126,7 @@ func stepHandler(s Step, d Deps) fiber.Handler {
 		return func(c *fiber.Ctx) error { return boundaryHandler(c, d) }
 	case StepRateLimit:
 		return func(c *fiber.Ctx) error {
-			key := clientOf(c).String()
+			key := ClientOf(c).String()
 			if !d.Limiter.Allow(key) {
 				return fiber.NewError(fiber.StatusTooManyRequests)
 			}
@@ -231,7 +231,7 @@ func auditHandler(c *fiber.Ctx, d Deps) error {
 	}
 	d.Audit.Record(AuditRecordFor(
 		traceOf(c), c.Method(), name, statusOf(c, err),
-		clientOf(c), principalOf(c), originOf(c),
+		ClientOf(c), principalOf(c), originOf(c),
 	))
 	return err
 }
@@ -332,7 +332,7 @@ func boundaryHandler(c *fiber.Ctx, d Deps) error {
 		Host:       string(c.Request().Host()),
 		Origin:     c.Get(fiber.HeaderOrigin),
 		Method:     c.Method(),
-		Client:     clientOf(c),
+		Client:     ClientOf(c),
 		CookieAuth: c.Cookies(SessionCookieName) != "",
 		WebSocket:  isUpgrade(c),
 	})
@@ -361,9 +361,13 @@ func resolveClient(c *fiber.Ctx, d Deps) netip.Addr {
 		c.Get("CF-Connecting-IP"), c.Get(fiber.HeaderXForwardedFor))
 }
 
-// clientOf reads what TrustedProxy resolved, or the placeholder if that step
+// ClientOf reads what TrustedProxy resolved, or the placeholder if that step
 // has not run.
-func clientOf(c *fiber.Ctx) netip.Addr {
+//
+// Exported because a handler recording who acted needs the resolved address
+// and must not re-derive one: a second derivation that trusts a header the
+// chain rejected would write an attacker-chosen address into the audit log.
+func ClientOf(c *fiber.Ctx) netip.Addr {
 	if v, ok := c.Locals(string(KeyClient)).(netip.Addr); ok {
 		return v
 	}

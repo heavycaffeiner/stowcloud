@@ -73,6 +73,14 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 		switch r.Name {
 		case "system.health":
 			out[r.Name] = e.health
+		case "auth.login":
+			out[r.Name] = e.login
+		case "auth.login.totp":
+			out[r.Name] = e.loginTOTP
+		case "auth.session":
+			out[r.Name] = e.session
+		case "auth.logout":
+			out[r.Name] = e.logout
 		case "jobs.list":
 			out[r.Name] = e.jobsList
 		case "jobs.get":

@@ -408,5 +408,12 @@
 #
 # 82: the compat feature matrix. What each feature needs before it may be
 # advertised, read-only after init.
+#
+# 83: the challenge MAC. errcheck reads the hash write; hash.Hash documents
+# Write as never returning an error, so there is nothing to handle.
+#
+# 84: SHA-1 in the login test's reference code. G505 reads the import; RFC
+# 6238 fixes the algorithm, and this is the independent computation the test
+# drives the endpoint with rather than a choice about what to deploy.
 296
-82
+84
