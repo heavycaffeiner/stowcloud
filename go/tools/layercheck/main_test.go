@@ -187,7 +187,7 @@ import "net/http"
 
 var _ = http.StatusOK
 `,
-	}, "only engine/http may import net/http")
+	}, "only engine/http and the assembly may import net/http")
 }
 
 // The relying party is the one package below the presentation tier that may
@@ -213,7 +213,7 @@ import "net/http"
 
 var _ = http.StatusOK
 `,
-	}, "only engine/http may import net/http")
+	}, "only engine/http and the assembly may import net/http")
 }
 
 func TestFiberOutsideEngineHTTPRefused(t *testing.T) {
@@ -224,7 +224,7 @@ import "github.com/gofiber/fiber/v2"
 
 var _ = fiber.New
 `,
-	}, "only engine/http may import fiber")
+	}, "only engine/http and the assembly may import fiber")
 }
 
 func TestServiceCoreImportsServiceAclAllowed(t *testing.T) {

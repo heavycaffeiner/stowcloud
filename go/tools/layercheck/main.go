@@ -67,7 +67,20 @@ var tierAllowed = map[string]map[string]bool{
 	"store":   {"kit": true},
 	"service": {"infra": true, "store": true, "kit": true},
 	"http":    {"service": true, "kit": true},
+
+	// The assembly tier is the one place that may see both halves, because
+	// assembling is exactly the act of joining them: it opens the stores,
+	// constructs the services and binds them to the presentation. Nothing
+	// imports it, which is what keeps the direction one-way.
+	"lifecycle": {"http": true, "service": true, "store": true, "infra": true, "kit": true},
 }
+
+// topTier is the tier nothing may import.
+//
+// A package below the assembly that reached up to it would be asking the
+// assembly for something, and the assembly's whole job is to hand things down.
+// That edge is how a service ends up knowing which handler calls it.
+const topTier = "lifecycle"
 
 // sideways lists the one explicit exception for each tier: which package in
 // the same tier it may import. Absence from this map, or from a listed
@@ -194,14 +207,17 @@ func evaluate(importerTier, importerSub, importPath string) (reason string, refu
 		return "engine packages do not import internal; the two trees cross only in cmd or a test file", true
 
 	case importPath == netHTTP:
-		if importerTier != httpTier && importerSub != outboundHTTP {
-			return "only engine/http may import net/http", true
+		if importerTier != httpTier && importerTier != topTier && importerSub != outboundHTTP {
+			return "only engine/http and the assembly may import net/http", true
 		}
 		return "", false
 
 	case strings.HasPrefix(importPath, fiberPrefix):
-		if importerTier != httpTier {
-			return "only engine/http may import fiber", true
+		// The assembly builds the application the presentation defines, so it
+		// names the framework type once. It does not write handlers: those
+		// live in the presentation and are handed here already built.
+		if importerTier != httpTier && importerTier != topTier {
+			return "only engine/http and the assembly may import fiber", true
 		}
 		return "", false
 
