@@ -89,6 +89,12 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.filesList
 		case "files.stat":
 			out[r.Name] = e.filesStat
+		case "files.mkdir":
+			out[r.Name] = e.filesMkdir
+		case "files.delete":
+			out[r.Name] = e.filesDelete
+		case "files.rename":
+			out[r.Name] = e.filesRename
 
 		default:
 			// Every other route is named by the table and has no binding yet.
