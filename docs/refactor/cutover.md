@@ -35,23 +35,19 @@ rebuild is nearly a replacement. Package by package it is not that simple.
 
 ## Three things block the cutover
 
-### 1. Seventeen routes have no binding
+### 1. Ten routes have no binding
 
-The engine binds 70 of the 87 routes its own table names. The rest need
+The engine binds 77 of the 87 routes its own table names. The rest need
 services that `lifecycle.Open` never constructs: preview for thumbnails,
-search's optional index for the two admin routes, OIDC for the three sign-in routes
-and the two account-link ones, SMB for the credential routes. The service
-packages exist in every one of those cases. What is missing is construction
-and binding, not the services themselves.
+search's optional index for the two admin routes, and SMB for the credential
+routes. The service packages exist in both cases. What is missing is
+construction and binding, not the services themselves.
 
 The sectioned settings resource is now bound, against `service/settings`
 (1,626 lines, holding `check` and `runtimecfg`).
 
 The unbound set, exactly, grouped by the service each one waits on:
 
-- **OIDC** (7): `auth.oidc.start`, `auth.oidc.callback`, `auth.oidc.config`,
-  `account.oidc-link.start`, `account.oidc-link.delete`,
-  `admin.users.oidc.get`, `admin.users.oidc.delete`
 - **SMB** (4): `account.smb.create`, `account.smb.password.set`,
   `account.smb.password.delete`, `admin.smb.apply`
 - **Search index** (2): `admin.index.build`, `admin.index.estimate`
@@ -111,10 +107,11 @@ and the difference is mostly this.
 
 In dependency order, with the measured size of each piece:
 
-1. **Construct the missing services** in `lifecycle.Open`: preview, OIDC, SMB.
-   Search is built; its optional name index is not. Every package exists; this is wiring plus whatever
+1. **Construct the missing services** in `lifecycle.Open`: preview and SMB.
+   Search and the sign-on client are built; search's optional name index is
+   not. Every package exists; this is wiring plus whatever
    each needs from configuration.
-2. **Bind the remaining 17 routes** against those services.
+2. **Bind the remaining 10 routes** against those services.
 3. **Write the dav and compat handlers.** The vocabulary is done; the method
    handlers are not, and they are roughly 2,000 and 4,300 lines in the tree
    they replace.
@@ -162,8 +159,8 @@ Both delivered files were compared against the share directory on disk.
 **Do not cut over yet.** Deleting `internal/` now would remove WebDAV, the
 vendor compatibility layer and every public link from a running deployment.
 
-The cheapest next step is item 1, constructing preview, OIDC and SMB in
-`lifecycle.Open`, followed by item 2. Those 17 routes are binding
+The cheapest next step is item 1, constructing preview and SMB in
+`lifecycle.Open`, followed by item 2. Those 10 routes are binding
 work against packages that already exist, which is what the last dozen commits
 have been, and each one converts a 501 into an answer.
 

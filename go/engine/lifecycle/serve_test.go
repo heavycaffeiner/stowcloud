@@ -152,7 +152,12 @@ func TestEveryDeclaredRouteAnswers(t *testing.T) {
 	}{
 		{"/api/v1/system/health", http.StatusOK},
 		{"/api/v1/jobs", http.StatusUnauthorized},
-		{"/api/v1/auth/oidc/config", http.StatusNotImplemented},
+		// Unbound and public, which is what makes it readable here without a
+		// credential. It was auth/oidc/config until sign-on was bound; a
+		// route named as an example of one shape has to be moved when it
+		// stops being that shape, or the test asserts the opposite of what
+		// it says.
+		{"/api/v1/system/setup", http.StatusNotImplemented},
 	}
 
 	for _, c := range cases {
@@ -202,7 +207,7 @@ func TestEveryAnswerIsJSON(t *testing.T) {
 func TestAnUnboundRouteRefusesRatherThanPretending(t *testing.T) {
 	base := boot(t)
 
-	status, body := get(t, base+"/api/v1/auth/oidc/config")
+	status, body := get(t, base+"/api/v1/system/setup")
 	if status != http.StatusNotImplemented {
 		t.Fatalf("an unbound route answered %d: %s", status, body)
 	}

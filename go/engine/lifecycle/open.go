@@ -27,6 +27,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/oidc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
@@ -98,6 +99,12 @@ type Engine struct {
 	appHosts   middleware.Hosts
 	trusted    []netip.Prefix
 	csrf       []byte
+
+	// The provider client, rebuilt when the settings change. Nil is off, and
+	// off is the ordinary state: a deployment without single sign-on is one
+	// where people use passwords.
+	oidcClient *oidc.Client
+	oidcName   string
 
 	// limiter is shared across requests, since a per-request one would count
 	// each request against an empty window and limit nothing.

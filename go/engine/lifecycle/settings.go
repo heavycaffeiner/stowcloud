@@ -17,6 +17,7 @@ import (
 	"net/netip"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/oidc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
 )
 
@@ -29,12 +30,28 @@ import (
 func (e *Engine) loadSettings(ctx context.Context) {
 	values := runtimecfg.Load(ctx, e.State, runtimecfg.Defaults(), e.logger)
 
+	// Built outside the lock: constructing the client reads the sealed secret
+	// and can reach the database, and holding the settings lock across that
+	// would block every request that reads a host list.
+	var provider *oidc.Client
+	if values.OIDC != nil {
+		provider = e.buildOIDCClient(ctx, &oidcSettings{
+			Issuer:                values.OIDC.Issuer,
+			ClientID:              values.OIDC.ClientID,
+			Scopes:                values.OIDC.Scopes,
+			AllowPrivateEndpoints: values.OIDC.AllowPrivateEndpoints,
+			CACertFile:            values.OIDC.CACertFile,
+		})
+	}
+
 	e.settingsMu.Lock()
 	e.appHosts = middleware.Hosts{
 		App:     values.AppHosts,
 		Content: values.ContentHosts,
 	}
 	e.trusted = parsePrefixes(values.TrustedProxy, e)
+	e.oidcClient = provider
+	e.oidcName = values.OIDCDisplayName
 	e.settingsMu.Unlock()
 
 	// The search bounds an administrator adjusts. Applied through the

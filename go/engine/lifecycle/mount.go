@@ -198,6 +198,20 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminStorage
 		case "search.stream":
 			out[r.Name] = e.searchStream
+		case "auth.oidc.config":
+			out[r.Name] = e.authOIDCConfig
+		case "auth.oidc.start":
+			out[r.Name] = e.authOIDCStart
+		case "auth.oidc.callback":
+			out[r.Name] = e.authOIDCCallback
+		case "account.oidc-link.start":
+			out[r.Name] = e.accountOIDCLinkStart
+		case "account.oidc-link.delete":
+			out[r.Name] = e.accountOIDCLinkDelete
+		case "admin.users.oidc.get":
+			out[r.Name] = e.adminUserOIDCGet
+		case "admin.users.oidc.delete":
+			out[r.Name] = e.adminUserOIDCDelete
 		case "admin.shares.list":
 			out[r.Name] = e.adminSharesList
 		case "admin.shares.create":
