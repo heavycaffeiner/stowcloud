@@ -393,7 +393,11 @@
 # tainted; it is this test's own TempDir, produced by the helper three lines
 # above the call.
 #
+# The old tree's 296th is speccheck's literal route search: G204 reads the
+# grep argument as tainted; it is the tool's own argument and a string from a
+# document in this repository.
+#
 # 79: reading the probe snapshot. G304 reads the path as tainted; it is the
 # operator's own data directory, and the read is bounded by a stat above it.
-295
+296
 79

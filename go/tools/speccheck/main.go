@@ -112,6 +112,16 @@ var ignored = map[string]string{
 	"ensureDir":             "the old tree's helper, collapsed into the caller",
 	"osMkdirAll":            "the same",
 	"homes.go":              "the old tree's file, named as the source of the grant INSERT",
+
+	// The old tree's spelling, named to say what replaced it. Checked by hand:
+	// the access class is route.AccessAnyCredential and the jobs category
+	// carries it.
+	"AccessAny": "the old tree's class; it is route.AccessAnyCredential now",
+	// The wrapper is gone and the sentinels are on state.DB, but nothing above
+	// the store maps them yet: login flow v2 is not built. This entry covers
+	// only the wrapper's absence, so remove it when that handler lands and let
+	// the gate check the classifier really carries them.
+	"flowErr": "the old tree's wrapper; the sentinels are not yet classified",
 }
 
 // changeLines returns the numbered deliberate-change entries in one document,
@@ -165,7 +175,9 @@ func (f *finder) lookUp(ident string) bool {
 		}
 	}
 	// A path or filename is looked for as one, since grep would find the
-	// string in every import that mentions it.
+	// string in every import that mentions it. An HTTP document writes route
+	// paths the same way, so a slash that matches no file falls through to a
+	// literal search: "system/health" is a route, not a directory.
 	if strings.Contains(ident, "/") || strings.HasSuffix(ident, ".go") {
 		found := false
 		werr := filepath.WalkDir(f.root, func(p string, _ os.DirEntry, err error) error {
@@ -184,9 +196,20 @@ func (f *finder) lookUp(ident string) bool {
 			say(os.Stderr, "speccheck: walking %s: %v\n", f.root, werr)
 			return true
 		}
-		return found
+		if found {
+			return true
+		}
+		return f.literal(ident)
 	}
 	return f.symbol(ident)
+}
+
+// literal reports whether the exact string appears anywhere in the tree. Used
+// for a route path, which is a string constant and has no word boundary a
+// -w match would respect.
+func (f *finder) literal(text string) bool {
+	cmd := exec.Command("grep", "-rqlF", "--include=*.go", text, f.root) //nolint:gosec // the root is this tool's argument and the text came from a document in the same repository.
+	return cmd.Run() == nil
 }
 
 // symbol reports whether a bare identifier appears in the tree, matched on a

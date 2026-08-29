@@ -314,10 +314,15 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # the gate and found six documents naming the old tree's spelling of a
   # symbol; each was checked by hand and is recorded in the tool's ignore list
   # with what replaced it.
+  #
+  # http joined once its packages existed. It found a defect in the tool: an
+  # identifier with a slash was assumed to be a file path, so a route path was
+  # reported missing while sitting in the route table. Four of its six findings
+  # were that bug.
   run "speccheck (the phase documents match the engine)" bash -c '
     cd go
     fail=0
-    for area in foundation core auth oidc upload search preview settings smb; do
+    for area in foundation core auth oidc upload search preview settings smb http; do
       if ! go run ./tools/speccheck "../docs/refactor/$area" ./engine; then fail=1; fi
     done
     exit $fail'
