@@ -79,6 +79,11 @@ type Engine struct {
 	clock  clock.Clock
 	logger *slog.Logger
 
+	// dataDir is where the databases and the master key live. Kept because
+	// the repair door probes under it when a submitted section names no root
+	// of its own.
+	dataDir string
+
 	// The chain reads these per request, so an operator's settings change
 	// takes effect on the next request rather than at the next restart.
 	settingsMu sync.RWMutex
@@ -115,8 +120,9 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	}
 
 	e := &Engine{
-		clock:  clk,
-		logger: logger,
+		clock:   clk,
+		dataDir: opt.DataDir,
+		logger:  logger,
 		// Until settings are loaded, no proxy is trusted and no host is
 		// named. An empty host list is what first boot looks like, and the
 		// boundary admits only a private client in that state.

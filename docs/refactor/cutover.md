@@ -66,16 +66,16 @@ The unbound set, exactly, grouped by the service each one waits on:
 | --- | --- | --- |
 | `http/dav` | 1,759 | no |
 | `http/compat` | 1,178 | no |
-| `http/emergency` | 519 | no |
 | `http/archive` | 418 | **yes** |
+| `http/emergency` | 519 | **yes** |
 
-That is 3,456 lines of finished, tested work that no request can reach. The
-old tree serves WebDAV, the vendor compatibility layer and the emergency
-console; a cutover that dropped them would remove working features from the
-product.
+That is 2,937 lines of finished, tested work that no request can reach. The
+old tree serves WebDAV and the vendor compatibility layer; a cutover that
+dropped them would remove working features from the product.
 
-The archive writer was in this list and is now mounted, behind
-`files.archive` and `files.archive.list`.
+The archive writer and the repair door were both in this list and are now
+mounted: archive behind `files.archive` and `files.archive.list`, the door on
+its own `/emergency` prefix ahead of the middleware chain.
 
 ### 3. The public link surface is absent
 
@@ -94,9 +94,9 @@ In dependency order, with the measured size of each piece:
 1. **Construct the missing services** in `lifecycle.Open`: preview, search,
    OIDC, settings, SMB. Every package exists; this is wiring plus whatever
    each needs from configuration.
-2. **Bind the remaining 23 routes** against those services.
-3. **Mount dav, compat and emergency.** The code is written; the mounting,
-   the route entries and the middleware ordering are not.
+2. **Bind the remaining 21 routes** against those services.
+3. **Mount dav and compat.** The code is written; the mounting, the route
+   entries and the middleware ordering are not.
 4. **Build the public link surface**, five routes with their own content
    negotiation, unlock cookie and archive path.
 5. **Port `smbagent` and `smbpublish`** (2,139 lines) or decide the sidecar
@@ -133,9 +133,9 @@ suggests for the parts it covers, and it is genuinely missing three surfaces
 the product serves today. Deleting `internal/` now would remove WebDAV, the
 vendor compatibility layer and every public link from a running deployment.
 
-The cheapest next step is item 3: mounting dav, compat and emergency is
-binding rather than construction, the same work as the last ten commits, and
-it converts 3,456 written lines into reachable behaviour.
+The cheapest next step is item 3: mounting dav and compat is binding rather
+than construction, the same work as the last dozen commits, and it converts
+2,937 written lines into reachable behaviour.
 
 ## A correction, recorded
 

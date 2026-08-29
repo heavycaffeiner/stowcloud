@@ -47,6 +47,11 @@ func (e *Engine) Mount() (*fiber.App, error) {
 		ErrorHandler: writeError,
 	})
 
+	// The repair door goes on first, before the chain. It is what an operator
+	// reaches when the chain's own configuration is what is broken, so a door
+	// behind that chain would be unreachable exactly when it is needed.
+	e.mountEmergency(app)
+
 	// The chain goes on before the routes. Fiber runs what was mounted in
 	// mount order, so a step registered after a route never sees a request
 	// that route answers: the boundary, the limiter and the credential check
