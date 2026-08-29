@@ -402,5 +402,8 @@
 #
 # 80: the DAV method table. A map literal read-only after init, kept as one
 # table so what a method needs is answered in one place.
+#
+# 81: the compat prefix list. Both spellings a vendor request may arrive
+# under, read-only after init.
 296
-80
+81
