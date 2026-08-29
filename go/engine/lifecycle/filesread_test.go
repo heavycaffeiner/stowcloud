@@ -582,15 +582,9 @@ func TestTheRecentLimitIsBounded(t *testing.T) {
 			t.Fatalf("limit=%s: decoding %s: %v", limit, body, err)
 		}
 
-		// The ceiling in the handler. A request naming a larger number must
-		// not produce more rows than this.
-		const ceiling = 500
-		if len(hits) > ceiling {
-			t.Errorf("limit=%s returned %d rows, past the ceiling of %d", limit, len(hits), ceiling)
-		}
-
-		// And a small explicit limit is honoured, which is what proves the
-		// parameter reaches the query at all rather than being ignored.
+		// The ceiling is checked against recentLimit directly, since proving
+		// it here would need more rows than the ceiling. What this covers is
+		// that the parameter reaches the query rather than being ignored.
 		if n, err := strconv.Atoi(limit); err == nil && n > 0 && len(hits) > n {
 			t.Errorf("limit=%s returned %d rows", limit, len(hits))
 		}

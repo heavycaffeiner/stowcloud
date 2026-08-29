@@ -60,7 +60,14 @@ func serve(t *testing.T, e *lifecycle.Engine) string {
 		// test client keeps one alive: measured, an unbounded wait hangs the
 		// package for the client's full 90-second idle timeout on roughly one
 		// run in fifteen.
-		if serr := app.ShutdownWithTimeout(2 * time.Second); serr != nil {
+		//
+		// The budget is generous rather than tight. One package run starts
+		// over a hundred of these, and under a full-tree run with race
+		// instrumentation and eight packages in parallel a two-second budget
+		// expired on its own: the failure was a shutdown timeout, not a test
+		// finding anything. A shutdown that genuinely hangs still fails,
+		// because this is far below the client's idle timeout.
+		if serr := app.ShutdownWithTimeout(shutdownBudget); serr != nil {
 			t.Errorf("shutting down: %v", serr)
 		}
 		<-served
@@ -68,6 +75,11 @@ func serve(t *testing.T, e *lifecycle.Engine) string {
 
 	return "http://" + ln.Addr().String()
 }
+
+// shutdownBudget bounds every test server's wind-down. Well under the
+// client's 90-second idle timeout, so a real hang is still caught, and well
+// above what a loaded machine needs to close an idle listener.
+const shutdownBudget = 20 * time.Second
 
 // testClient is a client that does not hold connections open.
 //
@@ -479,7 +491,7 @@ func TestEveryRouteHasExactlyOneHandler(t *testing.T) {
 		t.Fatalf("mounting: %v", err)
 	}
 	defer func() {
-		if serr := app.ShutdownWithTimeout(2 * time.Second); serr != nil {
+		if serr := app.ShutdownWithTimeout(shutdownBudget); serr != nil {
 			t.Errorf("shutting down: %v", serr)
 		}
 	}()

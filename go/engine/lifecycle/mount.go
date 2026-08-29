@@ -145,6 +145,28 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.trashRestore
 		case "trash.purge":
 			out[r.Name] = e.trashPurge
+		case "admin.users.list":
+			out[r.Name] = e.adminUsersList
+		case "admin.users.create":
+			out[r.Name] = e.adminUsersCreate
+		case "admin.users.update":
+			out[r.Name] = e.adminUsersUpdate
+		case "admin.users.delete":
+			out[r.Name] = e.adminUsersDelete
+		case "admin.groups.list":
+			out[r.Name] = e.adminGroupsList
+		case "admin.groups.create":
+			out[r.Name] = e.adminGroupsCreate
+		case "admin.groups.update":
+			out[r.Name] = e.adminGroupsUpdate
+		case "admin.groups.delete":
+			out[r.Name] = e.adminGroupsDelete
+		case "admin.groups.members.add":
+			out[r.Name] = e.adminGroupMemberAdd
+		case "admin.groups.members.remove":
+			out[r.Name] = e.adminGroupMemberRemove
+		case "admin.audit":
+			out[r.Name] = e.adminAudit
 
 		default:
 			// Every other route is named by the table and has no binding yet.
