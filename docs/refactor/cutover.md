@@ -18,7 +18,7 @@ rebuild is nearly a replacement. Package by package it is not that simple.
 | `core` | 5,190 | `service/core` | rebuilt |
 | `vfs` | 3,226 | `infra/vfs` | rebuilt |
 | `upload` | 3,928 | `service/upload` | rebuilt |
-| `preview` | 2,764 | `service/preview` | rebuilt |
+| `preview` | 2,764 | `service/preview` | rebuilt, bound |
 | `oidc` | 1,372 | `service/oidc` | rebuilt |
 | `smb` | 721 | `service/smb` | rebuilt |
 | `watch` | 789 | `service/watch` | rebuilt |
@@ -35,9 +35,9 @@ rebuild is nearly a replacement. Package by package it is not that simple.
 
 ## Three things block the cutover
 
-### 1. Six routes have no binding
+### 1. Five routes have no binding
 
-The engine binds 81 of the 87 routes its own table names. The rest need
+The engine binds 82 of the 87 routes its own table names. The rest need
 services that `lifecycle.Open` never constructs: preview for thumbnails,
 the pieces named below. The account-facing SMB routes and the index estimate
 are bound; what remains needs something the engine does not have rather than
@@ -51,7 +51,6 @@ The unbound set, exactly, grouped by the service each one waits on:
 - **SMB publisher** (1): `admin.smb.apply`, which needs a publisher to push
   the rendered files to. The engine has the renderer and not the publisher.
 - **Search index** (1): `admin.index.build`, which needs an index to build into
-- **Preview** (1): `files.thumbnail`
 - **Setup** (2): `system.setup.get`, `system.setup.post`
 - **Events** (1): `events`
 
@@ -107,11 +106,11 @@ and the difference is mostly this.
 
 In dependency order, with the measured size of each piece:
 
-1. **Construct what the last six routes need**: the preview worker's host
-   command, the SMB publisher, and the name index. Search and the sign-on
-   client are built. Every package exists; this is wiring plus whatever
+1. **Construct what the last five routes need**: the SMB publisher, the name
+   index, and the events hub. Search, the sign-on client and the preview
+   decoder are built. Every package exists; this is wiring plus whatever
    each needs from configuration.
-2. **Bind the remaining 6 routes** against those services.
+2. **Bind the remaining 5 routes** against those services.
 3. **Write the dav and compat handlers.** The vocabulary is done; the method
    handlers are not, and they are roughly 2,000 and 4,300 lines in the tree
    they replace.
@@ -159,7 +158,7 @@ Both delivered files were compared against the share directory on disk.
 **Do not cut over yet.** Deleting `internal/` now would remove WebDAV, the
 vendor compatibility layer and every public link from a running deployment.
 
-The cheapest next step is item 1, followed by item 2. Those 6 routes are binding
+The cheapest next step is item 1, followed by item 2. Those 5 routes are binding
 work against packages that already exist, which is what the last dozen commits
 have been, and each one converts a 501 into an answer.
 

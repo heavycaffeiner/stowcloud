@@ -198,6 +198,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminStorage
 		case "admin.index.estimate":
 			out[r.Name] = e.adminIndexEstimate
+		case "files.thumbnail":
+			out[r.Name] = e.filesThumbnail
 		case "search.stream":
 			out[r.Name] = e.searchStream
 		case "auth.oidc.config":

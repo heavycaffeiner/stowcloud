@@ -423,5 +423,10 @@
 # 86: the configuration secret's row name. G101 reads the identifier as a
 # credential; it names the row the sealed value is stored in, and the value
 # itself never appears in source.
+# 87 and 88: the thumbnail route's test builds the shipped decoder. One is the
+# exec of go build, whose every argument is this test's own constant. The other
+# is the memoised result: one build per test binary, which is what the
+# memoisation exists for, and a closure keeps it out of reach of anything else
+# in the package.
 296
-86
+88

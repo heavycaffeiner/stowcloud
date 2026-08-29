@@ -27,7 +27,13 @@ func main() {
 	ctx := context.Background()
 	dataDir, shareDir := os.Args[1], os.Args[2]
 
-	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dataDir})
+	// The decoder binary, from the environment when one is named. This harness
+	// is not the shipped command, so it answers no preview-worker subcommand
+	// and the pool's default would exec something that cannot decode.
+	e, err := lifecycle.Open(ctx, lifecycle.Options{
+		DataDir:       dataDir,
+		PreviewWorker: os.Getenv("STOWCLOUD_PREVIEW_WORKER"),
+	})
 	if err != nil {
 		log.Fatalf("opening: %v", err)
 	}

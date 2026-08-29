@@ -28,6 +28,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
@@ -59,6 +60,16 @@ type Options struct {
 	// Logger receives what construction could not do without failing. Nil
 	// takes the default.
 	Logger *slog.Logger
+
+	// PreviewWorker names the jailed decoder binary. Empty takes this
+	// process with a preview-worker argument, which is how the shipped
+	// command hosts both halves in one binary.
+	//
+	// It is named here because the engine is not yet that command: this
+	// process is a test binary or a harness, and it answers no such
+	// subcommand, so a thumbnail would fail at the first exec with nothing
+	// pointing at why.
+	PreviewWorker string
 }
 
 // Engine is a constructed set of services, and the files they hold open.
@@ -84,6 +95,10 @@ type Engine struct {
 	// Search answers filename queries. Never nil: the walking tier needs no
 	// index and no subprocess, so every deployment has one.
 	Search *svc.Service
+
+	// Preview generates thumbnails. Nil is a deployment running no decoder,
+	// which the thumbnail route reports as absence.
+	Preview *preview.Service
 
 	clock  clock.Clock
 	logger *slog.Logger
@@ -276,6 +291,12 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// Search needs nothing but a clock and the shares it is handed per query,
 	// so it is built unconditionally. Its bounds come from the settings below.
 	e.Search = svc.New(svc.Options{Clock: clk, CPUs: runtime.NumCPU()})
+
+	// Thumbnails, whose decoder runs as a separate jailed process. Absence is
+	// a degradation rather than a failure: a pool that cannot start, or a
+	// cache directory that cannot be created, leaves a deployment serving
+	// every file and no thumbnail of one.
+	e.Preview = openPreview(opt.DataDir, opt.PreviewWorker, coreSvc, clk, logger)
 
 	// The operator's settings, before anything serves. The chain reads the
 	// host lists and the proxy ranges per request, so leaving them at their
