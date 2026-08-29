@@ -37,8 +37,14 @@ func builderFor(t *testing.T, name string) Builder {
 // get asks the address who is answering.
 func get(t *testing.T, addr string) (string, error) {
 	t.Helper()
-	client := &http.Client{Timeout: 2 * time.Second}
-	res, err := client.Get("http://" + addr + "/")
+	// A path may be appended to the address by the caller; without one the
+	// root is asked for.
+	url := "http://" + addr
+	if !strings.Contains(addr, "/") {
+		url += "/"
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	res, err := client.Get(url)
 	if err != nil {
 		return "", err
 	}
@@ -389,5 +395,130 @@ func TestASwapWaitsForTheAppNotJustTheSocket(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the swap never returned after the app began answering")
+	}
+}
+
+// Draining the old generation does not stop the new one.
+//
+// This is why each generation owns its own app. Fiber's shutdown operates on an
+// app, so two generations sharing one would mean replacing a listener kills the
+// listener that replaced it, which is a server that stops serving the moment an
+// operator changes its address.
+func TestDrainingOneGenerationDoesNotStopTheOther(t *testing.T) {
+	first, second := freeAddr(t), freeAddr(t)
+	s := NewServe(func(addr string) (*fiber.App, net.Listener, error) {
+		name := "first"
+		if addr == second {
+			name = "second"
+		}
+		return builderFor(t, name)(addr)
+	}, nil)
+	t.Cleanup(func() {
+		if err := s.Shutdown(); err != nil {
+			t.Errorf("Shutdown: %v", err)
+		}
+	})
+
+	if err := s.Swap(first); err != nil {
+		t.Fatalf("the first swap: %v", err)
+	}
+	if err := s.Swap(second); err != nil {
+		t.Fatalf("the second swap: %v", err)
+	}
+
+	// The replaced generation drains in the background. The new one keeps
+	// answering throughout and after.
+	const attemptEvery = 10 * time.Millisecond
+	for range int(DrainTimeout/attemptEvery) + 1 {
+		if got, err := get(t, second); err != nil || got != "second" {
+			t.Fatalf("the new generation stopped answering: %q, %v", got, err)
+		}
+		if _, err := get(t, first); err != nil {
+			// The old one has gone, which is what should happen. The new one
+			// answered on this same pass, which is the point.
+			return
+		}
+		time.Sleep(attemptEvery)
+	}
+	t.Fatal("the replaced generation never drained")
+}
+
+// A request in flight when its generation is replaced finishes, rather than
+// being cut off at the moment of the swap.
+//
+// The drain window exists for exactly this: an operator changing an address
+// should not truncate a download somebody is halfway through.
+func TestALongRequestSurvivesItsGenerationBeingReplaced(t *testing.T) {
+	first, second := freeAddr(t), freeAddr(t)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+
+	s := NewServe(func(addr string) (*fiber.App, net.Listener, error) {
+		app := fiber.New(fiber.Config{DisableStartupMessage: true})
+		app.Get("/slow", func(c *fiber.Ctx) error {
+			<-release
+			return c.SendString("finished")
+		})
+		app.All("/*", func(c *fiber.Ctx) error { return c.SendString("ok") })
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			return nil, nil, err
+		}
+		return app, ln, nil
+	}, nil)
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(release) })
+		if err := s.Shutdown(); err != nil {
+			t.Errorf("Shutdown: %v", err)
+		}
+	})
+
+	if err := s.Swap(first); err != nil {
+		t.Fatalf("the first swap: %v", err)
+	}
+
+	// A request that will not finish until the test says so.
+	body := make(chan string, 1)
+	task.Go(context.Background(), "server: a long request", func() {
+		got, err := get(t, first+"/slow")
+		if err != nil {
+			body <- "error: " + err.Error()
+			return
+		}
+		body <- got
+	})
+
+	// Give it time to be accepted and blocked in the handler.
+	time.Sleep(50 * time.Millisecond)
+
+	// The swap does not wait for the in-flight request. A swap that blocked
+	// until every download finished would take the drain window on every
+	// address change, which is the opposite of a live swap.
+	swapped := make(chan error, 1)
+	task.Go(context.Background(), "server: the swap", func() { swapped <- s.Swap(second) })
+	select {
+	case err := <-swapped:
+		if err != nil {
+			t.Fatalf("the second swap: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the swap waited for the in-flight request")
+	}
+
+	// The new generation is already serving while the old one drains.
+	if got, err := get(t, second); err != nil || got != "ok" {
+		t.Fatalf("the new generation answered %q, %v", got, err)
+	}
+
+	// The swap has returned and the old generation is draining. The request
+	// finishes rather than being cut off.
+	releaseOnce.Do(func() { close(release) })
+	select {
+	case got := <-body:
+		if got != "finished" {
+			t.Errorf("the in-flight request ended with %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the in-flight request never finished")
 	}
 }
