@@ -100,6 +100,11 @@ type Engine struct {
 	// which the thumbnail route reports as absence.
 	Preview *preview.Service
 
+	// smb pushes the rendered file-sharing configuration to the sidecar. Nil
+	// is a deployment with no sidecar, which is the ordinary case and not a
+	// degradation: the apply route then refuses by saying so.
+	smb *smbPublisher
+
 	clock  clock.Clock
 	logger *slog.Logger
 
@@ -208,11 +213,24 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 
 	e.ACL = acl.NewEvaluator()
 
+	// The file-sharing settings are read before auth is built, because the
+	// credential file's path is fixed at construction: every credential change
+	// rewrites it, so a path arriving later would leave the changes before it
+	// stopping at the database.
+	smbCfg := smbSettingsOf(ctx, e)
+	renderPassdb, renderPasswd := smbRenderers(clk)
+
 	e.Auth = auth.New(auth.Config{
 		Store:    e.State,
 		StoreDir: opt.DataDir,
 		Clock:    clk,
 		Logger:   logger,
+		// Without these two a revocation stops at the database while the
+		// sidecar keeps authenticating against the last file that was
+		// written, which is a withdrawn credential that still works.
+		RenderPassdb: renderPassdb,
+		RenderPasswd: renderPasswd,
+		PassdbPath:   passdbPathOf(smbCfg),
 		// The evaluator is reloaded when a membership changes. Wired here
 		// rather than inside auth, so that package holds no dependency on
 		// the evaluator it is telling about.
@@ -303,6 +321,16 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// zero values would run a configured deployment as though nothing had
 	// been configured.
 	e.loadSettings(ctx)
+
+	// The publisher needs the core's share registry and the credentials auth
+	// opens, so it is built after both. Auth is told about it here rather than
+	// at construction for the same reason: the sink asks this service for the
+	// credentials it publishes, so the two cannot both be built first.
+	e.smb = newSMBPublisher(e, smbCfg)
+	if e.smb != nil {
+		e.Auth.SetAccessChangeSink(e.smb)
+		e.publishSMBAtBoot(ctx)
+	}
 
 	// The upload engine is last because it needs the core it uploads into.
 	// Its absence is a degradation rather than a failure: a deployment whose

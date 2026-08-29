@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -29,6 +30,9 @@ type fixture struct {
 	// the database.
 	published *int
 	sink      *countingSink
+	// passwdGID records the group the account renderer was handed, which is
+	// the one value of that file this package chooses nothing about.
+	passwdGID *uint32
 }
 
 type countingSink struct{ n int }
@@ -55,6 +59,7 @@ func newFixtureWithClock(t *testing.T, clk clock.Clock) fixture {
 	store := state.New(f)
 
 	published := 0
+	var passwdGID uint32
 	sink := &countingSink{}
 	svc := auth.New(auth.Config{
 		Store:      store,
@@ -70,6 +75,18 @@ func newFixtureWithClock(t *testing.T, clk clock.Clock) fixture {
 			}
 			return out, nil
 		},
+		// The real renderer lives in the SMB package, which this tier may not
+		// import. What is under test here is which accounts and which uid
+		// reach it, so the shape it writes is the simplest one a test can
+		// read back.
+		RenderPasswd: func(creds []auth.SMBCredential, gid uint32) ([]byte, error) {
+			passwdGID = gid
+			var out []byte
+			for _, c := range creds {
+				out = fmt.Appendf(out, "%s:%d\n", c.Name, c.UID)
+			}
+			return out, nil
+		},
 	})
 	svc.SetAccessChangeSink(sink)
 
@@ -79,7 +96,7 @@ func newFixtureWithClock(t *testing.T, clk clock.Clock) fixture {
 	if _, err := svc.OpenMasterKey(context.Background()); err != nil {
 		t.Fatalf("OpenMasterKey: %v", err)
 	}
-	return fixture{svc: svc, store: store, dir: dir, published: &published, sink: sink}
+	return fixture{svc: svc, store: store, dir: dir, published: &published, sink: sink, passwdGID: &passwdGID}
 }
 
 // account creates one and returns its id.

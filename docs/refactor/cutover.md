@@ -29,27 +29,32 @@ rebuild is nearly a replacement. Package by package it is not that simple.
 | `search/index` | 2,002 | `service/search` 4,392 | rebuilt |
 | `clock`, `secret`, `task` | 167 | `kit/*` | rebuilt |
 | `runtimecfg` | 629 | `service/settings/runtimecfg` | rebuilt |
-| `smbagent` | 1,851 | none | **absent** |
-| `smbpublish` | 288 | none | **absent** |
+| `smbagent` | 1,851 | `service/smb/agent` | rebuilt |
+| `smbpublish` | 288 | `service/smb/publish` | rebuilt |
 | `httpapi/handler` | 7,886 | `http/handler` + `lifecycle` | partially bound |
 
 ## Three things block the cutover
 
-### 1. Five routes have no binding
+### 1. Four routes have no binding
 
-The engine binds 82 of the 87 routes its own table names. The rest need
+The engine binds 83 of the 87 routes its own table names. The rest need
 services that `lifecycle.Open` never constructs: preview for thumbnails,
-the pieces named below. The account-facing SMB routes and the index estimate
-are bound; what remains needs something the engine does not have rather than
-something it has not been asked for.
+the pieces named below. The account-facing SMB routes, the index estimate and
+the SMB apply are bound; what remains needs something the engine does not have
+rather than something it has not been asked for.
 
 The sectioned settings resource is now bound, against `service/settings`
 (1,626 lines, holding `check` and `runtimecfg`).
 
+`admin.smb.apply` was on this list. It is bound, and the publication path
+behind it is wired: `lifecycle.Open` reads the file-sharing section, hands
+`auth.New` a credential renderer and a path, and attaches the publisher as the
+access-change sink. Before that the three account-facing SMB routes wrote the
+database and stopped there, so a withdrawn credential kept working against the
+last file the sidecar had imported.
+
 The unbound set, exactly, grouped by the service each one waits on:
 
-- **SMB publisher** (1): `admin.smb.apply`, which needs a publisher to push
-  the rendered files to. The engine has the renderer and not the publisher.
 - **Search index** (1): `admin.index.build`, which needs an index to build into
 - **Setup** (2): `system.setup.get`, `system.setup.post`
 - **Events** (1): `events`
@@ -106,21 +111,27 @@ and the difference is mostly this.
 
 In dependency order, with the measured size of each piece:
 
-1. **Construct what the last five routes need**: the SMB publisher, the name
-   index, and the events hub. Search, the sign-on client and the preview
-   decoder are built. Every package exists; this is wiring plus whatever
-   each needs from configuration.
-2. **Bind the remaining 5 routes** against those services.
+1. **Construct what the last four routes need**: the name index and the events
+   hub. Search, the sign-on client, the preview decoder and the SMB publisher
+   are built. Every package exists; this is wiring plus whatever each needs
+   from configuration.
+2. **Bind the remaining 4 routes** against those services.
 3. **Write the dav and compat handlers.** The vocabulary is done; the method
    handlers are not, and they are roughly 2,000 and 4,300 lines in the tree
    they replace.
 4. **Build the public link surface**, five routes with their own content
    negotiation, unlock cookie and archive path.
-5. **Port `smbagent` and `smbpublish`** (2,139 lines) or decide the sidecar
-   keeps using the old tree.
-6. **Rewire `cmd/stowcloud`** and delete `internal/`.
+5. **Rewire `cmd/stowcloud` and `cmd/sc-smb-agent`**, then delete `internal/`.
+   Both still import `internal/smbagent`.
 
-Steps 1 through 5 are the work. Step 6 is an afternoon.
+Steps 1 through 4 are the work. Step 5 is an afternoon.
+
+This list carried a sixth step, porting `smbagent` and `smbpublish`, and it
+was already done. Both are in the engine as `service/smb/agent` and
+`service/smb/publish`, 1,973 non-test lines between them, and both are now
+reachable through the publisher the apply route drives. The inventory table
+above recorded them as absent, which was true of nothing but the old paths;
+it is corrected.
 
 ## What has been verified about the engine so far
 

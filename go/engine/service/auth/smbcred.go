@@ -271,6 +271,37 @@ func (s *Service) PublishPassdb(ctx context.Context) error {
 	return s.renderPassdbFile(ctx)
 }
 
+// PublishPasswdEntries writes the account file the credential file is paired
+// with, at the path the caller names.
+//
+// The path is a parameter because this file belongs to the publisher's
+// directory rather than to this package: the credential file's location is
+// fixed at construction because every credential change rewrites it, and this
+// one is written only when a whole configuration is pushed.
+//
+// Both files are rendered from one account list. Deriving them separately is
+// what lets the two disagree on a uid, and a disagreement there imports as an
+// empty credential database with every login refused as an unknown account.
+func (s *Service) PublishPasswdEntries(ctx context.Context, path string, gid uint32) error {
+	if s.renderPasswd == nil || path == "" {
+		return nil
+	}
+	creds, err := s.SMBCredentials(ctx)
+	if err != nil {
+		return err
+	}
+	b, err := s.renderPasswd(creds, gid)
+	if err != nil {
+		return err
+	}
+	// Readable by the sidecar, unlike the credential file: this one carries
+	// names and numbers, and the daemon's own user has to resolve them.
+	return fsatomic.ReplaceFileDurable(path, 0o644, func(f *os.File) error {
+		_, werr := f.Write(b)
+		return werr
+	})
+}
+
 // republishCredentials is the sink every credential-changing path calls.
 //
 // It re-renders the whole file from the database and then tells the publisher,

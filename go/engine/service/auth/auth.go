@@ -54,6 +54,16 @@ type Config struct {
 	// as a nil renderer.
 	PassdbPath string
 
+	// RenderPasswd turns the same accounts into the account file that sits
+	// beside the credential file. Nil means this deployment writes no account
+	// file, and PublishPasswdEntries then does nothing.
+	//
+	// It is a second seam rather than one call producing both, because the
+	// two files are written at different moments: the credential file follows
+	// every credential change, and the account file is written by the
+	// publisher pushing a whole configuration.
+	RenderPasswd func(creds []SMBCredential, gid uint32) ([]byte, error)
+
 	// OnMembership is the one crossing into the live permission evaluator. It
 	// is wired by the layer that owns the evaluator, which keeps this package
 	// free of a dependency on it.
@@ -93,6 +103,7 @@ type Service struct {
 
 	renderPassdb func([]SMBCredential) ([]byte, error)
 	passdbPath   string
+	renderPasswd func([]SMBCredential, uint32) ([]byte, error)
 
 	policyMu      sync.RWMutex
 	smbTOTPPolicy TOTPPolicy
@@ -135,6 +146,7 @@ func New(cfg Config) *Service {
 		limit:        newLimiter(loginWindow, loginMaxAttempts, clk.Nanos),
 		renderPassdb: cfg.RenderPassdb,
 		passdbPath:   cfg.PassdbPath,
+		renderPasswd: cfg.RenderPasswd,
 		onMembership: cfg.OnMembership,
 	}
 }

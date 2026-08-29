@@ -3,10 +3,16 @@ package auth_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
 // An account created without a file-sharing credential had no way to reach
@@ -409,5 +415,103 @@ func TestEveryMembershipChangeNotifiesTheEvaluator(t *testing.T) {
 		if reloads == before {
 			t.Fatalf("%s did not notify the evaluator", step.name)
 		}
+	}
+}
+
+// The account file is written only where the publisher asks for one, and it
+// carries the same accounts at the same uids as the credential file. The two
+// are matched by uid rather than by name, so a disagreement leaves the import
+// with nothing for that account and the symptom is a client that cannot
+// connect.
+func TestTheAccountFileCarriesTheSameAccountsAtTheSameUids(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	f.account(t, "alice")
+	f.account(t, "bob")
+
+	path := filepath.Join(t.TempDir(), "passwd")
+	if err := f.svc.PublishPasswdEntries(ctx, path, 1000); err != nil {
+		t.Fatalf("PublishPasswdEntries: %v", err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading the account file: %v", err)
+	}
+
+	creds, err := f.svc.SMBCredentials(ctx)
+	if err != nil {
+		t.Fatalf("SMBCredentials: %v", err)
+	}
+	if len(creds) != 2 {
+		t.Fatalf("the publishable credentials are %+v", creds)
+	}
+	for _, c := range creds {
+		want := fmt.Sprintf("%s:%d\n", c.Name, c.UID)
+		if !strings.Contains(string(body), want) {
+			t.Errorf("the account file is missing %q:\n%s", want, body)
+		}
+	}
+	if *f.passwdGID != 1000 {
+		t.Errorf("the renderer was handed gid %d, want the one the caller named", *f.passwdGID)
+	}
+}
+
+// An account that cannot reach the protocol is absent from the account file as
+// well as the credential file. Present in one alone it would still resolve as a
+// name, which is a login that gets further than it should before failing.
+func TestAnIneligibleAccountIsAbsentFromTheAccountFile(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	id := f.account(t, "alice")
+	f.account(t, "bob")
+
+	// Opting out is the strongest of the three refusals and the one an
+	// account applies to itself.
+	if err := f.svc.SetSMBAccess(ctx, id, true, false); err != nil {
+		t.Fatalf("SetSMBAccess: %v", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "passwd")
+	if err := f.svc.PublishPasswdEntries(ctx, path, 1000); err != nil {
+		t.Fatalf("PublishPasswdEntries: %v", err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading the account file: %v", err)
+	}
+	if strings.Contains(string(body), "alice") {
+		t.Errorf("the opted-out account is still in the account file:\n%s", body)
+	}
+	if !strings.Contains(string(body), "bob") {
+		t.Errorf("the eligible account is missing from the account file:\n%s", body)
+	}
+}
+
+// A deployment with no account renderer writes no account file, rather than an
+// empty one. An empty file is a roster saying nobody may connect, which is a
+// different claim from this deployment not publishing one.
+func TestNoAccountFileIsWrittenWithoutARenderer(t *testing.T) {
+	dir := t.TempDir()
+	fdb, err := dbfile.Open(context.Background(), state.Spec(filepath.Join(dir, "state.db")))
+	if err != nil {
+		t.Fatalf("opening the state database: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := fdb.Close(); cerr != nil {
+			t.Errorf("Close: %v", cerr)
+		}
+	})
+	svc := auth.New(auth.Config{Store: state.New(fdb), StoreDir: dir})
+	t.Setenv("SC_MASTER_KEY_FILE", filepath.Join(dir, "master.key"))
+	if _, oerr := svc.OpenMasterKey(context.Background()); oerr != nil {
+		t.Fatalf("OpenMasterKey: %v", oerr)
+	}
+
+	path := filepath.Join(dir, "passwd")
+	if perr := svc.PublishPasswdEntries(context.Background(), path, 1000); perr != nil {
+		t.Fatalf("PublishPasswdEntries: %v", perr)
+	}
+	if _, serr := os.Stat(path); !os.IsNotExist(serr) {
+		t.Errorf("an account file was written with no renderer configured: %v", serr)
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -451,5 +453,314 @@ func TestThePermissivePolicyKeepsProtocolAccess(t *testing.T) {
 	}
 	if stringField(state, "reason") == "totp_blocked" {
 		t.Error("the permissive policy blocked an enrolled account holding a separate password")
+	}
+}
+
+// bootWithSidecar opens an engine whose file-sharing settings name a rendered
+// directory, and returns the engine with that directory.
+//
+// Saved before the engine that serves it opens, because the section decides
+// things at construction: the credential file's path is fixed when auth is
+// built, so a value written afterwards would not reach it.
+func bootWithSidecar(t *testing.T) (*lifecycle.Engine, string) {
+	t.Helper()
+	ctx := context.Background()
+	dir := t.TempDir()
+	configDir := filepath.Join(t.TempDir(), "smb")
+
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	if merr := first.State.MergeSettings(ctx, "smb", map[string]any{
+		"enabled": true, "config_dir": configDir, "workgroup": "WORKGROUP",
+	}); merr != nil {
+		t.Fatalf("saving the settings: %v", merr)
+	}
+	if _, cerr := first.Auth.CreateUser(ctx, loginName, "Alice",
+		secret.New([]byte(loginPassword))); cerr != nil {
+		t.Fatalf("creating the account: %v", cerr)
+	}
+	if cerr := first.Close(); cerr != nil {
+		t.Fatalf("closing: %v", cerr)
+	}
+
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("reopening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+	return e, configDir
+}
+
+// readCredentialFile returns the rendered credential file's contents.
+func readCredentialFile(t *testing.T, configDir string) string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(configDir, "smbpasswd"))
+	if err != nil {
+		t.Fatalf("reading the credential file: %v", err)
+	}
+	return string(body)
+}
+
+// A credential change reaches the rendered file, not only the database.
+//
+// This is the defect the wiring closed. The routes answered 200 while nothing
+// was passed to auth, so the file was never written: the daemon authenticates
+// against the last file that was published, which left a withdrawn credential
+// serving until something else happened to publish one.
+func TestSettingTheProtocolPasswordReachesTheRenderedFile(t *testing.T) {
+	e, configDir := bootWithSidecar(t)
+	base := serve(t, e)
+	cookie, csrf := signedIn(t, base)
+
+	if status, body := mutate(t, http.MethodPost, base+"/api/v1/account/smb/password",
+		cookie, csrf, map[string]any{
+			"current": loginPassword, "new": "a-long-enough-protocol-password",
+		}); status != http.StatusOK {
+		t.Fatalf("setting the protocol password answered %d: %v", status, body)
+	}
+
+	got := readCredentialFile(t, configDir)
+	if !strings.Contains(got, loginName+":") {
+		t.Fatalf("the account is absent from the credential file:\n%s", got)
+	}
+	// The record carries the disabled marker rather than a second, weaker hash.
+	if !strings.Contains(got, ":XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX:") {
+		t.Errorf("the record does not carry the disabled LANMAN field:\n%s", got)
+	}
+	// And the plaintext never reaches the file.
+	if strings.Contains(got, "a-long-enough-protocol-password") {
+		t.Errorf("the credential file carries the plaintext:\n%s", got)
+	}
+}
+
+// Withdrawing from the protocol removes the account from the rendered file.
+//
+// The absence is the revocation. A record left behind is one the import still
+// reads, so the daemon would go on accepting a credential the account has
+// given up.
+func TestOptingOutRemovesTheAccountFromTheRenderedFile(t *testing.T) {
+	e, configDir := bootWithSidecar(t)
+	base := serve(t, e)
+	cookie, csrf := signedIn(t, base)
+
+	if status, body := mutate(t, http.MethodPost, base+"/api/v1/account/smb/password",
+		cookie, csrf, map[string]any{
+			"current": loginPassword, "new": "a-long-enough-protocol-password",
+		}); status != http.StatusOK {
+		t.Fatalf("setting the protocol password answered %d: %v", status, body)
+	}
+	if before := readCredentialFile(t, configDir); !strings.Contains(before, loginName+":") {
+		t.Fatalf("the account never reached the credential file:\n%s", before)
+	}
+
+	if status, body := mutate(t, http.MethodPost, base+"/api/v1/account/smb",
+		cookie, csrf, map[string]any{
+			"current": loginPassword, "opt_out": true,
+		}); status != http.StatusOK {
+		t.Fatalf("opting out answered %d: %v", status, body)
+	}
+
+	if after := readCredentialFile(t, configDir); strings.Contains(after, loginName+":") {
+		t.Errorf("the withdrawn account is still in the credential file:\n%s", after)
+	}
+}
+
+// Clearing the separate credential removes the record too.
+func TestClearingTheProtocolPasswordReachesTheRenderedFile(t *testing.T) {
+	e, configDir := bootWithSidecar(t)
+	base := serve(t, e)
+	cookie, csrf := signedIn(t, base)
+
+	if status, body := mutate(t, http.MethodPost, base+"/api/v1/account/smb/password",
+		cookie, csrf, map[string]any{
+			"current": loginPassword, "new": "a-long-enough-protocol-password",
+		}); status != http.StatusOK {
+		t.Fatalf("setting answered %d: %v", status, body)
+	}
+	first := readCredentialFile(t, configDir)
+
+	if status, body := mutate(t, http.MethodDelete, base+"/api/v1/account/smb/password",
+		cookie, csrf, map[string]any{"current": loginPassword}); status != http.StatusOK {
+		t.Fatalf("clearing answered %d: %v", status, body)
+	}
+
+	second := readCredentialFile(t, configDir)
+	if first == second {
+		t.Errorf("clearing the credential left the file unchanged:\n%s", second)
+	}
+	if strings.Contains(second, loginName+":") {
+		t.Errorf("the cleared account is still in the credential file:\n%s", second)
+	}
+}
+
+// The two rendered files agree on every account and every uid.
+//
+// They are matched by uid rather than by name, so a disagreement makes the
+// import produce nothing for that account and the only symptom is a client
+// that cannot connect.
+func TestTheRenderedFilesAgreeOnEveryAccount(t *testing.T) {
+	e, configDir := bootWithSidecar(t)
+	base := serve(t, e)
+	cookie, csrf := signedIn(t, base)
+
+	if status, body := mutate(t, http.MethodPost, base+"/api/v1/account/smb/password",
+		cookie, csrf, map[string]any{
+			"current": loginPassword, "new": "a-long-enough-protocol-password",
+		}); status != http.StatusOK {
+		t.Fatalf("setting answered %d: %v", status, body)
+	}
+
+	// The account file is written by a publish rather than by a credential
+	// change, so one is asked for here.
+	if err := e.Auth.PublishPasswdEntries(context.Background(),
+		filepath.Join(configDir, "passwd"), 1000); err != nil {
+		t.Fatalf("publishing the account file: %v", err)
+	}
+
+	creds, err := e.Auth.SMBCredentials(context.Background())
+	if err != nil {
+		t.Fatalf("SMBCredentials: %v", err)
+	}
+	if len(creds) == 0 {
+		t.Fatal("no account is publishable, so this check is watching nothing")
+	}
+
+	passdb := readCredentialFile(t, configDir)
+	passwdBody, err := os.ReadFile(filepath.Join(configDir, "passwd"))
+	if err != nil {
+		t.Fatalf("reading the account file: %v", err)
+	}
+	for _, c := range creds {
+		uid := strconv.FormatUint(uint64(c.UID), 10)
+		if !strings.Contains(passdb, c.Name+":"+uid+":") {
+			t.Errorf("the credential file does not carry %s at uid %s:\n%s", c.Name, uid, passdb)
+		}
+		if !strings.Contains(string(passwdBody), c.Name+":x:"+uid+":") {
+			t.Errorf("the account file does not carry %s at uid %s:\n%s", c.Name, uid, passwdBody)
+		}
+	}
+}
+
+// A deployment with no sidecar says so rather than reporting an apply.
+func TestTheApplyRouteRefusesWithoutASidecar(t *testing.T) {
+	base, adminCookie, adminCSRF, _, _ := adminEngine(t)
+
+	status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/smb/apply",
+		adminCookie, adminCSRF, nil)
+	if status != http.StatusServiceUnavailable {
+		t.Fatalf("an unconfigured deployment answered %d: %v", status, body)
+	}
+	// The catalogue key rather than the rendered sentence: the client owns the
+	// wording, so the key is what a screen branches on.
+	if key := reasonKey(body); key != "smb.not_configured" {
+		t.Errorf("the refusal carries reason key %q, want smb.not_configured", key)
+	}
+}
+
+// reasonKey reads the catalogue key out of a refusal envelope.
+func reasonKey(body map[string]any) string {
+	err, ok := body["error"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	detail, ok := err["detail"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	return stringField(detail, "reason_key")
+}
+
+// The apply route is an administrator's.
+func TestTheApplyRouteNeedsAnAdministrator(t *testing.T) {
+	base, _, _, plainCookie, plainCSRF := adminEngine(t)
+
+	status, _ := mutate(t, http.MethodPost, base+"/api/v1/admin/smb/apply",
+		plainCookie, plainCSRF, nil)
+	if status != http.StatusForbidden {
+		t.Errorf("an ordinary account reached the apply route: %d", status)
+	}
+}
+
+// With a directory configured and no agent socket, an apply renders the files
+// and reports the daemon as unchanged.
+//
+// That is the bare-metal shape: the files are written and something else
+// applies them, so there is no socket to ask and nothing to report failing.
+func TestAnApplyRendersTheConfigurationWithoutAnAgent(t *testing.T) {
+	e, configDir := bootWithSidecar(t)
+	base := serve(t, e)
+
+	if _, err := e.Auth.CreateAdmin(context.Background(), "root", "Root",
+		secret.New([]byte(loginPassword))); err != nil {
+		t.Fatalf("creating the administrator: %v", err)
+	}
+	admin := postJSON(t, base+"/api/v1/auth/login",
+		map[string]string{"login": "root", "password": loginPassword})
+	if admin.sessionCookie() == nil {
+		t.Fatalf("the administrator did not sign in: %d %v", admin.status, admin.body)
+	}
+
+	status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/smb/apply",
+		admin.sessionCookie(), admin.field("csrf"), nil)
+	if status != http.StatusOK {
+		t.Fatalf("the apply answered %d: %v", status, body)
+	}
+	if applied, isBool := body["ok"].(bool); !isBool || !applied {
+		t.Errorf("the apply reported a failure: %v", body)
+	}
+	if action := stringField(body, "action"); action != "unchanged" {
+		t.Errorf("the daemon action is %q, want unchanged with no socket", action)
+	}
+
+	// The configuration file is on disk, which is what the agent would read.
+	if _, serr := os.Stat(filepath.Join(configDir, "smb.conf")); serr != nil {
+		t.Errorf("the configuration was not rendered: %v", serr)
+	}
+}
+
+// A withdrawal reaches the account file as well as the credential file.
+//
+// The credential file is written by auth on every change; the account file is
+// written only by a publish. So this is what proves the publisher is attached
+// as the sink: without it one file drops the account and the other keeps it,
+// leaving the pair disagreeing about who exists.
+func TestAWithdrawalReachesBothRenderedFiles(t *testing.T) {
+	e, configDir := bootWithSidecar(t)
+	base := serve(t, e)
+	cookie, csrf := signedIn(t, base)
+
+	passwdPath := filepath.Join(configDir, "passwd")
+	before, err := os.ReadFile(passwdPath)
+	if err != nil {
+		t.Fatalf("no account file was written at boot: %v", err)
+	}
+	if !strings.Contains(string(before), loginName+":x:") {
+		t.Fatalf("the account never reached the account file:\n%s", before)
+	}
+
+	if status, body := mutate(t, http.MethodPost, base+"/api/v1/account/smb",
+		cookie, csrf, map[string]any{
+			"current": loginPassword, "opt_out": true,
+		}); status != http.StatusOK {
+		t.Fatalf("opting out answered %d: %v", status, body)
+	}
+
+	after, err := os.ReadFile(passwdPath)
+	if err != nil {
+		t.Fatalf("reading the account file: %v", err)
+	}
+	if strings.Contains(string(after), loginName+":x:") {
+		t.Errorf("the withdrawn account is still in the account file:\n%s", after)
+	}
+	// The two still agree, which is what the uid pairing rests on: an account
+	// in one file and not the other cannot authenticate either way.
+	if strings.Contains(readCredentialFile(t, configDir), loginName+":") {
+		t.Error("the withdrawn account is still in the credential file")
 	}
 }
