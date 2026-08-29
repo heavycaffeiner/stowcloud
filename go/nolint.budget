@@ -388,5 +388,9 @@
 # 77: the listener swap's serving probe. It asks the new generation for a
 # reply before the old one is dropped, and the client's own timeout is the
 # bound, so noctx has no context to want.
+#
+# 78: the TLS test staging a mismatched key. G703 reads the write path as
+# tainted; it is this test's own TempDir, produced by the helper three lines
+# above the call.
 295
-77
+78
