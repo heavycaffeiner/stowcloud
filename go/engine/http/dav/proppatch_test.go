@@ -349,3 +349,31 @@ func FuzzPropPatchPlan(f *testing.F) {
 		}
 	})
 }
+
+// A truncated body commits nothing. Applying the instructions read so far
+// leaves the resource in a state the client never asked for, and its retry
+// then applies them a second time.
+func TestATruncatedProppatchCommitsNothing(t *testing.T) {
+	bodies := []string{
+		`<D:propertyupdate xmlns:D="DAV:"><D:set><D:prop><D:a>v</D:a>`,
+		`<D:propertyupdate xmlns:D="DAV:"><D:set><D:prop>`,
+		`<D:propertyupdate xmlns:D="DAV:"><D:set>`,
+	}
+
+	for _, body := range bodies {
+		t.Run(body, func(t *testing.T) {
+			got, err := patch(t, body)
+			if err == nil {
+				t.Fatalf("a truncated body was accepted with %d instructions", len(got.Instructions))
+			}
+			if len(got.Instructions) != 0 {
+				t.Errorf("a refused body returned %d instructions", len(got.Instructions))
+			}
+
+			plan := PlanPropPatch(got, liveSet("getetag"))
+			if plan.Commit {
+				t.Error("a refused body produced a committing plan")
+			}
+		})
+	}
+}

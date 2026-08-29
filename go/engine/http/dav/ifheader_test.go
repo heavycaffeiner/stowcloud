@@ -446,3 +446,21 @@ func FuzzParseIf(f *testing.F) {
 		}
 	})
 }
+
+// A truncated header sets no precondition rather than a partial one. Half a
+// precondition is one the client believes it set and did not.
+func TestATruncatedIfHeaderSetsNoPrecondition(t *testing.T) {
+	headers := []string{`(<a> `, `(<a>`, `(["v"]`, `<http://h/x> (`, `(`}
+
+	for _, header := range headers {
+		t.Run(header, func(t *testing.T) {
+			got, err := ParseIf(header, DefaultLimits(), "h")
+			if err == nil {
+				t.Fatalf("a truncated header was accepted with %d lists", len(got.Lists))
+			}
+			if len(got.Lists) != 0 {
+				t.Errorf("a refused header returned %d lists", len(got.Lists))
+			}
+		})
+	}
+}

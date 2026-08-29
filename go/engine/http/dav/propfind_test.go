@@ -394,3 +394,27 @@ func FuzzPropFind(f *testing.F) {
 		}
 	})
 }
+
+// A truncated body is refused and commits nothing. A client whose connection
+// dropped mid-request must not have half of it applied, and a parser that
+// returned what it read so far would do exactly that.
+func TestATruncatedBodyDecidesNothing(t *testing.T) {
+	bodies := []string{
+		`<D:propfind xmlns:D="DAV:"><D:prop><D:a/>`,
+		`<D:propfind xmlns:D="DAV:"><D:prop>`,
+		`<D:propfind xmlns:D="DAV:">`,
+		`<D:propfind`,
+	}
+
+	for _, body := range bodies {
+		t.Run(body, func(t *testing.T) {
+			got, err := parse(t, body)
+			if err == nil {
+				t.Fatalf("a truncated body was accepted as %s", got.Mode)
+			}
+			if len(got.Names) != 0 {
+				t.Errorf("a refused body returned names: %v", got.Names)
+			}
+		})
+	}
+}

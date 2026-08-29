@@ -7,6 +7,8 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 )
 
 // Both prefixes reach the same layout. A deployment behind a rewriting proxy
@@ -489,4 +491,63 @@ func FuzzParseDavPath(f *testing.F) {
 			}
 		}
 	})
+}
+
+// The two mounts agree about every chunk name, because there is one parser.
+// Two parsers disagreeing about whether "00001" and "1" are the same member is
+// how a client writes a chunk twice and reads one of them back.
+func TestBothMountsAgreeOnEveryChunkName(t *testing.T) {
+	names := []string{
+		"1", "9", "10", "10000", "0", "10001",
+		"00001", "01", "000", "", " 1", "1 ", "+1", "-1", "1.0", "0x1", "1e3",
+		".file", "abc", "\u0661", "99999999999999999999",
+	}
+
+	for _, name := range names {
+		t.Run(name, func(t *testing.T) {
+			viaCompat, compatErr := ParseChunk(name)
+			viaDav, davErr := dav.ParseChunkName(name, ChunkRange())
+
+			if (compatErr == nil) != (davErr == nil) {
+				t.Fatalf("%q: compat %v, dav %v", name, compatErr, davErr)
+			}
+			if compatErr == nil && viaCompat != viaDav {
+				t.Errorf("%q: compat %d, dav %d", name, viaCompat, viaDav)
+			}
+		})
+	}
+}
+
+// The reference client numbers chunks from one, so zero is outside the range
+// even though the parser accepts it for a collection that admits it.
+func TestTheVendorChunkRangeStartsAtOne(t *testing.T) {
+	if _, err := ParseChunk("0"); !errors.Is(err, dav.ErrChunkRange) {
+		t.Errorf("zero was accepted: %v", err)
+	}
+	if _, err := ParseChunk("1"); err != nil {
+		t.Errorf("one was refused: %v", err)
+	}
+	if _, err := ParseChunk("10000"); err != nil {
+		t.Errorf("ten thousand was refused: %v", err)
+	}
+	if _, err := ParseChunk("10001"); !errors.Is(err, dav.ErrChunkRange) {
+		t.Errorf("past the range was accepted: %v", err)
+	}
+}
+
+// A padded name is refused rather than accepted as an alias, on this mount as
+// on the other.
+func TestAPaddedVendorChunkNameIsRefused(t *testing.T) {
+	for _, name := range []string{"00001", "01", "0001"} {
+		if _, err := ParseChunk(name); !errors.Is(err, dav.ErrChunkLeadingZero) {
+			t.Errorf("%q was accepted: %v", name, err)
+		}
+	}
+}
+
+// The assembly member is not a chunk number.
+func TestTheAssemblyMemberIsNotAChunk(t *testing.T) {
+	if _, err := ParseChunk(AssemblyMember); err == nil {
+		t.Error(".file parsed as a chunk number")
+	}
 }

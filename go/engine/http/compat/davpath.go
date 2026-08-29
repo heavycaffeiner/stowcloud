@@ -240,3 +240,22 @@ const AssemblyMember = ".file"
 // IsAssembly reports whether an uploads member names the assembly target
 // rather than a chunk.
 func IsAssembly(member string) bool { return member == AssemblyMember }
+
+// ChunkRange is the numbers a vendor upload collection accepts.
+//
+// One through ten thousand, which is what the reference client sends. The
+// range is stated here and the parsing is not: chunk names go through the same
+// function the native mount uses, so "00001" and "1" cannot mean one chunk on
+// one mount and two on the other.
+func ChunkRange() dav.ChunkRange {
+	return dav.ChunkRange{Min: 1, Max: 10000}
+}
+
+// ParseChunk returns the number an uploads member denotes.
+//
+// The assembly member is not a chunk and is refused here: a caller asks
+// IsAssembly first, and letting ".file" through as a number would make the
+// error say the wrong thing.
+func ParseChunk(member string) (int64, error) {
+	return dav.ParseChunkName(member, ChunkRange())
+}
