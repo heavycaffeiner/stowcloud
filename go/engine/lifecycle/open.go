@@ -188,8 +188,12 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		Cache:   e.Cache,
 		Journal: e.Journal,
 		ACL:     e.ACL,
-		Clock:   clk,
-		Logger:  logger,
+		// The share-link rows. Nil is allowed at construction and fails
+		// every link operation with a wiring error, which is what an
+		// unwired deployment got before this line existed.
+		Links:  e.State,
+		Clock:  clk,
+		Logger: logger,
 	})
 	if kerr != nil {
 		return fail(fmt.Errorf("constructing the core: %w", kerr))

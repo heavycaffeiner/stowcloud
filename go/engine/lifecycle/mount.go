@@ -95,6 +95,12 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.filesDelete
 		case "files.rename":
 			out[r.Name] = e.filesRename
+		case "links.list":
+			out[r.Name] = e.linksList
+		case "links.create":
+			out[r.Name] = e.linksCreate
+		case "links.delete":
+			out[r.Name] = e.linksDelete
 
 		default:
 			// Every other route is named by the table and has no binding yet.
