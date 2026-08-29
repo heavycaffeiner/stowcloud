@@ -93,6 +93,24 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.accountAppPasswords
 		case "account.app-passwords.delete":
 			out[r.Name] = e.accountAppPasswordDelete
+		case "account.app-passwords.create":
+			out[r.Name] = e.accountAppPasswordCreate
+		case "account.app-passwords.wipe":
+			out[r.Name] = e.accountAppPasswordWipe
+		case "account.password":
+			out[r.Name] = e.accountPassword
+		case "account.sessions.delete":
+			out[r.Name] = e.accountSessionDelete
+		case "account.totp.setup":
+			out[r.Name] = e.accountTOTPSetup
+		case "account.totp.enroll":
+			out[r.Name] = e.accountTOTPEnroll
+		case "account.totp.disable":
+			out[r.Name] = e.accountTOTPDisable
+		case "account.totp.recovery-codes.list":
+			out[r.Name] = e.accountRecoveryCodesList
+		case "account.totp.recovery-codes.create":
+			out[r.Name] = e.accountRecoveryCodesCreate
 		case "files.list":
 			out[r.Name] = e.filesList
 		case "files.stat":

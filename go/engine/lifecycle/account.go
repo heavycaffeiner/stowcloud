@@ -9,12 +9,15 @@
 package lifecycle
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 )
 
 // accountSessions lists the caller's live sessions.
@@ -29,11 +32,33 @@ func (e *Engine) accountSessions(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 
-	// The session making this request is marked, so a person revoking one
-	// can see which is theirs. The stored digest never leaves: the view
-	// compares derived handles, and this passes nothing when the caller
-	// authenticated with an app password rather than a cookie.
-	return writeJSON(c, fiber.StatusOK, handler.SessionsOf(rows, nil))
+	// The session making this request is marked, so a person revoking one can
+	// see which is theirs. The stored digest never leaves: the view compares
+	// derived handles, and this is nil when the caller authenticated with an
+	// app password, which has no session row to mark.
+	//
+	// The digest is computed here rather than read from the chain because the
+	// chain keeps the principal, not the credential. It used to pass nil
+	// unconditionally, which marked nothing while the comment said otherwise:
+	// every row came back current:false, and a screen offering "sign out my
+	// other devices" would have signed the person out of the one they were
+	// using.
+	return writeJSON(c, fiber.StatusOK, handler.SessionsOf(rows, currentDigest(c)))
+}
+
+// currentDigest is the stored digest of the session this request presented,
+// or nil when it presented something else.
+func currentDigest(c *fiber.Ctx) []byte {
+	cookie := c.Cookies(middleware.SessionCookieName)
+	if cookie == "" {
+		return nil
+	}
+	raw, err := hex.DecodeString(cookie)
+	if err != nil {
+		return nil
+	}
+	sum := sha256.Sum256(raw)
+	return sum[:]
 }
 
 // accountAppPasswords lists the caller's app passwords.

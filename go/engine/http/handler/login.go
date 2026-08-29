@@ -3,7 +3,10 @@
 // What a sign-in answers.
 package handler
 
-import "strconv"
+import (
+	"net/url"
+	"strconv"
+)
 
 // IdentityView is the identity a client records after signing in, and what
 // `GET /auth/session` reports about the one it is holding.
@@ -56,3 +59,65 @@ type ChallengeView struct {
 	// silently when the person takes too long.
 	ExpiresInSeconds int `json:"expires_in_seconds"`
 }
+
+// TOTPSetupView is what an enrolment screen needs: the secret to store and the
+// URI an authenticator scans.
+type TOTPSetupView struct {
+	Secret string `json:"secret"`
+
+	// URI is the otpauth form. Built here rather than by the client, because a
+	// client that assembles it wrong produces codes the server will not accept
+	// and nothing says which side is wrong.
+	URI string `json:"uri"`
+}
+
+// TOTPSetupOf builds the enrolment payload.
+//
+// The issuer appears twice, as a label prefix and as a parameter, which is
+// what authenticator applications expect: the prefix is what they display, and
+// the parameter is what they group by.
+//
+// The label is validated rather than escaped. Account names are drawn from a
+// charset with nothing in it a URI reserves, so an escaper here would be a
+// second answer to a question the tree already answers in one place. A name
+// outside that charset, which the stored rows may hold because the rule gates
+// creation only, drops to the issuer alone: an authenticator that shows a
+// generic label still produces correct codes, while a URI assembled around an
+// unescaped delimiter does not.
+func TOTPSetupOf(secretB32, login string) TOTPSetupView {
+	label := totpIssuer
+	if uriSafeLabel(login) {
+		label += ":" + login
+	}
+	q := url.Values{
+		"secret": {secretB32},
+		"issuer": {totpIssuer},
+	}
+	return TOTPSetupView{
+		Secret: secretB32,
+		URI:    "otpauth://totp/" + label + "?" + q.Encode(),
+	}
+}
+
+// uriSafeLabel reports whether a name can sit in a path segment untouched.
+//
+// Deliberately narrower than the set a URI permits: it is the account name
+// charset, so anything unexpected is refused rather than reasoned about.
+func uriSafeLabel(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '_' || c == '-' || c == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// totpIssuer is what an authenticator shows next to the code.
+const totpIssuer = "Stowcloud"
