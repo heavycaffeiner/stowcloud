@@ -60,22 +60,43 @@ The unbound set, exactly, grouped by the service each one waits on:
 - **Setup** (2): `system.setup.get`, `system.setup.post`
 - **Events** (1): `events`
 
-### 2. Four protocol surfaces are built and unmounted
+### 2. Two protocol surfaces have their vocabulary and not their handlers
 
-| Surface | Lines | Mounted |
+| Surface | Lines | Reachable |
 | --- | --- | --- |
 | `http/dav` | 1,759 | no |
 | `http/compat` | 1,178 | no |
 | `http/archive` | 418 | **yes** |
 | `http/emergency` | 519 | **yes** |
 
-That is 2,937 lines of finished, tested work that no request can reach. The
-old tree serves WebDAV and the vendor compatibility layer; a cutover that
-dropped them would remove working features from the product.
+Archive and the repair door were both in this list and are now mounted:
+archive behind `files.archive` and `files.archive.list`, the door on its own
+`/emergency` prefix ahead of the middleware chain.
 
-The archive writer and the repair door were both in this list and are now
-mounted: archive behind `files.archive` and `files.archive.list`, the door on
-its own `/emergency` prefix ahead of the middleware chain.
+The other two are not one mount away, and an earlier version of this document
+said they were. What `engine/http/dav` holds is the protocol's vocabulary:
+the If-header grammar, the XML scanner, PROPFIND and PROPPATCH parsing, the
+multistatus writer, the href encoder, the method-to-permission table. There
+is no handler for a single method. The old tree's equivalent parsing lives
+beside roughly 2,000 lines that do the work:
+
+| `internal/dav` | Lines | Engine equivalent |
+| --- | --- | --- |
+| `lock.go` | 504 | store half only (`AdmitDavLock`, `SnapshotDavLocks`) |
+| `content.go` | 488 | absent |
+| `write.go` | 368 | absent |
+| `props.go` | 326 | absent |
+| `uploads.go` | 290 | absent |
+| `lockmethod.go` | 228 | absent |
+| `search.go` | 129 | absent |
+| `propfind_root.go` | 79 | absent |
+
+`http/compat` is the same shape: 1,178 lines of envelope, capabilities,
+permission letters and vendor path layouts, against 4,356 lines of handler in
+`internal/compat`.
+
+So these are construction, not binding, and they are the largest remaining
+piece of the rebuild rather than an afternoon's wiring.
 
 ### 3. The public link surface is absent
 
@@ -95,8 +116,9 @@ In dependency order, with the measured size of each piece:
    OIDC, settings, SMB. Every package exists; this is wiring plus whatever
    each needs from configuration.
 2. **Bind the remaining 21 routes** against those services.
-3. **Mount dav and compat.** The code is written; the mounting, the route
-   entries and the middleware ordering are not.
+3. **Write the dav and compat handlers.** The vocabulary is done; the method
+   handlers are not, and they are roughly 2,000 and 4,300 lines in the tree
+   they replace.
 4. **Build the public link surface**, five routes with their own content
    negotiation, unlock cookie and archive path.
 5. **Port `smbagent` and `smbpublish`** (2,139 lines) or decide the sidecar
@@ -124,18 +146,31 @@ Booted as a real process and driven with curl at `ea660bb`:
   return byte-identical 401 bodies. 400 concurrent requests split 206 served,
   194 throttled.
 
+- Archives: the system `unzip` lists a subtree archive's three members, the
+  extracted files compare equal to the originals on disk, an empty directory
+  comes back as a directory, and a filename carrying a quote is refused 422
+  with no header injected.
+- The repair door: `state` answers 200 with no credential and outside the
+  chain, an `X-Forwarded-For` claiming a public address does not change the
+  answer, three paths beyond its own four answer 404, reading and writing the
+  settings and requesting a restart all answer 401, and the ordinary API still
+  carries the chain's CSP header behind it.
+
 Both delivered files were compared against the share directory on disk.
 
 ## The recommendation
 
-**Do not cut over yet.** The engine is further along than the line count
-suggests for the parts it covers, and it is genuinely missing three surfaces
-the product serves today. Deleting `internal/` now would remove WebDAV, the
+**Do not cut over yet.** Deleting `internal/` now would remove WebDAV, the
 vendor compatibility layer and every public link from a running deployment.
 
-The cheapest next step is item 3: mounting dav and compat is binding rather
-than construction, the same work as the last dozen commits, and it converts
-2,937 written lines into reachable behaviour.
+The cheapest next step is item 1, constructing preview, search, OIDC, settings
+and SMB in `lifecycle.Open`, followed by item 2. Those 21 routes are binding
+work against packages that already exist, which is what the last dozen commits
+have been, and each one converts a 501 into an answer.
+
+Item 3 is the largest single piece left and should be sized before it is
+started. An earlier version of this document called it a mount and was wrong:
+the engine holds the protocol vocabulary and none of the method handlers.
 
 ## A correction, recorded
 

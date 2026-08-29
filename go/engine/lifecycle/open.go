@@ -33,11 +33,13 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
-// The request rate a deployment starts under, before settings are read.
+// The request rate the limiter holds between construction and the settings
+// being read, which is a window of a few milliseconds inside Open.
 //
-// Deliberately generous: a limit that throttles a normal client is a limit an
-// operator disables, and then there is none. This stops a runaway loop, not a
-// person.
+// Deliberately generous, because it is not the deployment's limit: the stored
+// document decides that, and loadSettings applies it before anything serves.
+// Two constants naming the same thing is how they drift, so this one is
+// bounded to that window rather than being a second opinion about the rate.
 const (
 	defaultRatePerSecond = 50
 	defaultBurst         = 200
@@ -240,6 +242,12 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// the key itself, so a token that leaked reveals nothing about what
 	// protects the data at rest.
 	e.csrf = csrfKeyFrom(active)
+
+	// The operator's settings, before anything serves. The chain reads the
+	// host lists and the proxy ranges per request, so leaving them at their
+	// zero values would run a configured deployment as though nothing had
+	// been configured.
+	e.loadSettings(ctx)
 
 	// The upload engine is last because it needs the core it uploads into.
 	// Its absence is a degradation rather than a failure: a deployment whose
