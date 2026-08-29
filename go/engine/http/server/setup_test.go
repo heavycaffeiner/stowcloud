@@ -17,17 +17,17 @@ import (
 // countingAccounts answers the durable question the gate asks.
 type countingAccounts struct {
 	mu    sync.Mutex
-	count int
+	count int64
 	err   error
 }
 
-func (a *countingAccounts) CountUsers(context.Context) (int, error) {
+func (a *countingAccounts) CountUsers(context.Context) (int64, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.count, a.err
 }
 
-func (a *countingAccounts) set(n int) {
+func (a *countingAccounts) set(n int64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.count = n

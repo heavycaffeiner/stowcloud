@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
@@ -104,6 +105,11 @@ type Engine struct {
 	// is a deployment with no sidecar, which is the ordinary case and not a
 	// degradation: the apply route then refuses by saying so.
 	smb *smbPublisher
+
+	// setup guards first-administrator creation. It is built unconditionally,
+	// because whether the window is open is a question about the account count
+	// rather than about construction.
+	setup *server.SetupGate
 
 	clock  clock.Clock
 	logger *slog.Logger
@@ -321,6 +327,16 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// zero values would run a configured deployment as though nothing had
 	// been configured.
 	e.loadSettings(ctx)
+
+	// The gate reads the account count through auth, so it is built after it.
+	// Unconditionally: a deployment that is already set up has a closed gate
+	// rather than no gate, and the two answer differently.
+	e.setup = server.NewSetupGate(clk, e.Auth)
+
+	// The token is minted at boot because nothing else can mint one: the form
+	// that would ask for it is the form the token opens. A deployment that
+	// already has an account mints none.
+	e.issueSetupToken(ctx)
 
 	// The publisher needs the core's share registry and the credentials auth
 	// opens, so it is built after both. Auth is told about it here rather than

@@ -45,8 +45,13 @@ var (
 )
 
 // AccountCounter is how the gate asks whether setup is finished.
+//
+// The width is the account service's own rather than a narrower one. This is
+// the value that decides whether the window is open, and a narrowing
+// conversion on it could wrap a populated deployment's count to zero and
+// reopen setup.
 type AccountCounter interface {
-	CountUsers(ctx context.Context) (int, error)
+	CountUsers(ctx context.Context) (int64, error)
 }
 
 // SetupGate guards first-administrator creation.

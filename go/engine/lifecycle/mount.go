@@ -200,6 +200,10 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminIndexEstimate
 		case "admin.smb.apply":
 			out[r.Name] = e.adminSMBApply
+		case "system.setup.get":
+			out[r.Name] = e.systemSetupGet
+		case "system.setup.post":
+			out[r.Name] = e.systemSetupPost
 		case "files.thumbnail":
 			out[r.Name] = e.filesThumbnail
 		case "search.stream":

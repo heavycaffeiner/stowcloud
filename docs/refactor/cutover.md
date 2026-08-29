@@ -35,9 +35,9 @@ rebuild is nearly a replacement. Package by package it is not that simple.
 
 ## Three things block the cutover
 
-### 1. Four routes have no binding
+### 1. Two routes have no binding
 
-The engine binds 83 of the 87 routes its own table names. The rest need
+The engine binds 85 of the 87 routes its own table names. The rest need
 services that `lifecycle.Open` never constructs: preview for thumbnails,
 the pieces named below. The account-facing SMB routes, the index estimate and
 the SMB apply are bound; what remains needs something the engine does not have
@@ -53,10 +53,16 @@ access-change sink. Before that the three account-facing SMB routes wrote the
 database and stopped there, so a withdrawn credential kept working against the
 last file the sidecar had imported.
 
+The two setup routes are bound as well. `SetupGate` was built and tested and
+constructed nowhere, so nothing minted a token and no deployment could be set
+up through the engine at all. `lifecycle.Open` now builds the gate, issues a
+token when the account count is zero, and writes it under the data directory.
+The first administrator's grant moved into `core.GrantEveryShare`, so no
+command builds grant rows of its own.
+
 The unbound set, exactly, grouped by the service each one waits on:
 
 - **Search index** (1): `admin.index.build`, which needs an index to build into
-- **Setup** (2): `system.setup.get`, `system.setup.post`
 - **Events** (1): `events`
 
 ### 2. Two protocol surfaces have their vocabulary and not their handlers
@@ -111,11 +117,11 @@ and the difference is mostly this.
 
 In dependency order, with the measured size of each piece:
 
-1. **Construct what the last four routes need**: the name index and the events
-   hub. Search, the sign-on client, the preview decoder and the SMB publisher
-   are built. Every package exists; this is wiring plus whatever each needs
-   from configuration.
-2. **Bind the remaining 4 routes** against those services.
+1. **Construct what the last two routes need**: the name index and the events
+   hub. Search, the sign-on client, the preview decoder, the SMB publisher and
+   the setup gate are built. Every package exists; this is wiring plus
+   whatever each needs from configuration.
+2. **Bind the remaining 2 routes** against those services.
 3. **Write the dav and compat handlers.** The vocabulary is done; the method
    handlers are not, and they are roughly 2,000 and 4,300 lines in the tree
    they replace.

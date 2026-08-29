@@ -73,6 +73,41 @@ func (c *Core) UpdateGrant(
 	return c.ReloadGrants(ctx)
 }
 
+// GrantEveryShare gives one account every permission over every registered
+// share, which is what makes a fresh deployment usable.
+//
+// A share is reachable only through a grant and a first run has none, so
+// without this the first administrator signs in to an empty interface with no
+// way to give itself anything.
+//
+// Every permission, because this is the administrator: a first account that
+// could read and not write would be a different dead end. Broken shares are
+// included, since the grant outlives a disk being absent and the account
+// should not have to care which shares happened to mount during setup.
+//
+// One reload at the end rather than one per share. The intermediate states are
+// not ones any request should be answered from.
+func (c *Core) GrantEveryShare(ctx context.Context, user int64) error {
+	const all = acl.Read | acl.Write | acl.Create | acl.Delete |
+		acl.Rename | acl.Move | acl.Share | acl.Download
+
+	for _, def := range c.Shares() {
+		_, err := c.state.PersistGrant(ctx, state.GrantRow{
+			User:    &user,
+			Share:   int64(def.ID),
+			Allow:   uint16(all),
+			Inherit: true,
+			// The share's own name: the interface draws the label as the
+			// folder, and an unlabeled grant falls back to a generated one.
+			Label: def.Name,
+		}, c.clk.Nanos())
+		if err != nil {
+			return err
+		}
+	}
+	return c.ReloadGrants(ctx)
+}
+
 // DeleteGrant removes one grant and reloads the evaluator.
 //
 // The reload is what makes a revocation take effect in the running process.
