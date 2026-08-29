@@ -37,6 +37,15 @@ func (e *Engine) loadSettings(ctx context.Context) {
 	e.trusted = parsePrefixes(values.TrustedProxy, e)
 	e.settingsMu.Unlock()
 
+	// The search bounds an administrator adjusts. Applied through the
+	// service's setter, which leaves the concurrency gate alone: it is a
+	// buffered channel established at construction, and swapping it while
+	// queries are in flight would lose the slots they hold.
+	if e.Search != nil {
+		concurrency, deadline := values.SearchConcurrentSSD, values.SearchDeadlineSSD
+		e.Search.SetBounds(concurrency, deadline)
+	}
+
 	// The limiter's own setter rather than a fresh limiter: it holds a bucket
 	// per client, and replacing it would discard every one of them, handing a
 	// full burst to whoever was being throttled at that moment.

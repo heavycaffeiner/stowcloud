@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/netip"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
@@ -26,6 +27,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
@@ -77,6 +79,10 @@ type Engine struct {
 	// Upload is the resumable transfer engine. May be nil: a deployment
 	// without one serves everything except a resumable upload.
 	Upload *upload.Engine
+
+	// Search answers filename queries. Never nil: the walking tier needs no
+	// index and no subprocess, so every deployment has one.
+	Search *svc.Service
 
 	clock  clock.Clock
 	logger *slog.Logger
@@ -259,6 +265,10 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		logger.Error("a registered share is not servable",
 			"share", r.Name, "reason", r.Kind, "error", r.Err)
 	}
+
+	// Search needs nothing but a clock and the shares it is handed per query,
+	// so it is built unconditionally. Its bounds come from the settings below.
+	e.Search = svc.New(svc.Options{Clock: clk, CPUs: runtime.NumCPU()})
 
 	// The operator's settings, before anything serves. The chain reads the
 	// host lists and the proxy ranges per request, so leaving them at their
