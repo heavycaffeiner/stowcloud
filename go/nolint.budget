@@ -399,5 +399,8 @@
 #
 # 79: reading the probe snapshot. G304 reads the path as tainted; it is the
 # operator's own data directory, and the read is bounded by a stat above it.
+#
+# 80: the DAV method table. A map literal read-only after init, kept as one
+# table so what a method needs is answered in one place.
 296
-79
+80
