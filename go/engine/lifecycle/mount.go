@@ -139,6 +139,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.linksCreate
 		case "links.delete":
 			out[r.Name] = e.linksDelete
+		case "links.update":
+			out[r.Name] = e.linksUpdate
 		case "trash.list":
 			out[r.Name] = e.trashList
 		case "trash.restore":
