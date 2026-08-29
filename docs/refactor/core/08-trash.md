@@ -212,6 +212,18 @@ nothing still answered success: the screen said the item was gone and the
 next listing showed it again. The joined error keeps the batch behavior (one
 bad entry does not stop the others) while making the failure visible.
 
+A named purge that matched no entry is `ErrNotFound`, mapping to 404. This
+document previously described only the failure cases and left the matched
+nothing case implicit, so the first implementation ran the loop, matched
+nothing, joined no error and answered 204. That is the same lie the joined
+errors were introduced to stop: the caller asked for one entry to be removed,
+none was, and the screen was told it had been. Restore already refuses an
+unknown id through `findTrashEntry`; purge now agrees.
+
+Emptying is not the same case. `id == nil` against an empty trash is success,
+because the state the caller asked for is the state that holds. The refusal
+applies only when an id was named.
+
 The purge is where the quota is credited, not `trashMove`: purge is where
 trashed bytes are actually freed; the move into the trash only relocated
 them.

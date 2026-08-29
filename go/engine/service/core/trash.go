@@ -247,10 +247,12 @@ func (c *Core) TrashPurge(ctx context.Context, r Resolved, id *string) error {
 	// used to, and the screen said the item was gone while the next listing
 	// showed it again.
 	var failures error
+	matched := false
 	for _, e := range entries {
 		if id != nil && !strings.HasPrefix(e.Name, *id+"-") {
 			continue
 		}
+		matched = true
 		p, jerr := dir.JoinExisting(e.Name)
 		if jerr != nil {
 			failures = errors.Join(failures, jerr)
@@ -290,6 +292,15 @@ func (c *Core) TrashPurge(ctx context.Context, r Resolved, id *string) error {
 	}
 
 	c.markDirty(ctx, r.share, dir)
+
+	// A named purge that matched nothing is a refusal, not a success. The
+	// caller asked to remove one entry and none was removed; answering
+	// success tells a screen the item is gone, and the next listing shows it
+	// again. Emptying is different: an empty trash is already the state that
+	// was asked for.
+	if failures == nil && id != nil && !matched {
+		return errf(ErrNotFound, "no trash entry with that id")
+	}
 	return failures
 }
 

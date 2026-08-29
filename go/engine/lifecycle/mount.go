@@ -101,6 +101,12 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.linksCreate
 		case "links.delete":
 			out[r.Name] = e.linksDelete
+		case "trash.list":
+			out[r.Name] = e.trashList
+		case "trash.restore":
+			out[r.Name] = e.trashRestore
+		case "trash.purge":
+			out[r.Name] = e.trashPurge
 
 		default:
 			// Every other route is named by the table and has no binding yet.
