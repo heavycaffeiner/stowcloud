@@ -123,6 +123,10 @@ func restTable() map[Class]restEntry {
 		NotEmpty:     {http.StatusConflict, "fs.not_empty", "not empty"},
 		Precondition: {http.StatusPreconditionFailed, "fs.precondition_failed", "a precondition failed"},
 		Locked:       {http.StatusLocked, "fs.locked", "locked"},
+		RangeNotSatisfiable: {
+			http.StatusRequestedRangeNotSatisfiable, "fs.range_not_satisfiable",
+			"the requested range is not satisfiable",
+		},
 
 		NoSpace:          {http.StatusInsufficientStorage, "fs.no_space", "not enough space"},
 		ShareUnavailable: {http.StatusServiceUnavailable, "fs.share_unavailable", "the share is unavailable"},

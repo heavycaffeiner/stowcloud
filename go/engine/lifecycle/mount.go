@@ -121,6 +121,18 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.filesDelete
 		case "files.rename":
 			out[r.Name] = e.filesRename
+		case "files.read":
+			out[r.Name] = e.filesRead
+		case "files.write":
+			out[r.Name] = e.filesWrite
+		case "files.move":
+			out[r.Name] = e.filesMove
+		case "files.copy":
+			out[r.Name] = e.filesCopy
+		case "files.size":
+			out[r.Name] = e.filesSize
+		case "files.recent":
+			out[r.Name] = e.filesRecent
 		case "links.list":
 			out[r.Name] = e.linksList
 		case "links.create":

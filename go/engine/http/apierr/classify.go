@@ -75,6 +75,10 @@ const (
 	Precondition
 	// Locked is a write with no acceptable lock token.
 	Locked
+	// RangeNotSatisfiable is a syntactically valid range naming nothing inside
+	// the file. Distinct from Unprocessable because the answer carries the
+	// real size, which is what lets a client ask again correctly.
+	RangeNotSatisfiable
 
 	// NoSpace is a physical floor or a quota.
 	NoSpace
@@ -122,6 +126,7 @@ func classNames() []string {
 		"auth-required", "auth-invalid", "account-disabled", "rate-limited",
 		"hidden", "denied", "not-found", "gone",
 		"conflict", "exists", "not-empty", "precondition", "locked",
+		"range-not-satisfiable",
 		"no-space", "share-unavailable",
 		"last-admin", "weak-password", "name-taken",
 		"subsystem-unavailable", "not-implemented", "bad-gateway",
