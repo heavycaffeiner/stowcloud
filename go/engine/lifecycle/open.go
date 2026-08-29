@@ -243,6 +243,23 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// protects the data at rest.
 	e.csrf = csrfKeyFrom(active)
 
+	// Every share the operator registered, back into the in-memory registry.
+	// The rows are durable and the registry is not, so without this a restart
+	// serves no shares at all: every grant, link and cached entry would point
+	// at an id nothing resolves, while the rows sat in the database.
+	//
+	// A share whose backing did not open is registered as broken rather than
+	// dropped. Dropping it is what makes a disk that never came back look
+	// exactly like a share somebody deleted.
+	rejected, rerr := coreSvc.ReloadPersistedShares(ctx)
+	if rerr != nil {
+		return nil, fmt.Errorf("reloading the registered shares: %w", rerr)
+	}
+	for _, r := range rejected {
+		logger.Error("a registered share is not servable",
+			"share", r.Name, "reason", r.Kind, "error", r.Err)
+	}
+
 	// The operator's settings, before anything serves. The chain reads the
 	// host lists and the proxy ranges per request, so leaving them at their
 	// zero values would run a configured deployment as though nothing had

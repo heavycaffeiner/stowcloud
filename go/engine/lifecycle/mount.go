@@ -194,6 +194,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminSettingsGet
 		case "admin.settings.patch":
 			out[r.Name] = e.adminSettingsPatch
+		case "admin.storage":
+			out[r.Name] = e.adminStorage
 		case "admin.shares.list":
 			out[r.Name] = e.adminSharesList
 		case "admin.shares.create":

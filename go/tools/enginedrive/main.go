@@ -32,31 +32,42 @@ func main() {
 		log.Fatalf("opening: %v", err)
 	}
 
+	// Seeded only on a first boot. Reopening the same directory is how a
+	// restart is driven by hand, and re-creating the accounts would collide
+	// on the name rather than exercising the reload.
+	fresh := true
 	if _, cerr := e.Auth.CreateAdmin(ctx, "root", "Root",
 		secret.New([]byte("a-long-enough-password"))); cerr != nil {
-		log.Fatalf("creating the administrator: %v", cerr)
+		fresh = false
+		log.Printf("reopening an existing deployment: %v", cerr)
 	}
-	user, err := e.Auth.CreateUser(ctx, "alice", "Alice",
-		secret.New([]byte("a-long-enough-password")))
-	if err != nil {
-		log.Fatalf("creating the account: %v", err)
+	user, err := e.Auth.UserIDByName(ctx, "alice")
+	if fresh || err != nil {
+		user, err = e.Auth.CreateUser(ctx, "alice", "Alice",
+			secret.New([]byte("a-long-enough-password")))
+		if err != nil {
+			log.Fatalf("creating the account: %v", err)
+		}
+
+		sh, serr := e.Core.CreateShare(ctx, core.ShareSpec{Name: "docs", Host: shareDir})
+		if serr != nil {
+			log.Fatalf("creating the share: %v", serr)
+		}
+		on := true
+		if _, uerr := e.Core.UpdateShare(ctx, sh.ID, core.SharePatch{TrashEnabled: &on}); uerr != nil {
+			log.Fatalf("enabling the trash: %v", uerr)
+		}
+		every := acl.Read | acl.Write | acl.Create | acl.Delete |
+			acl.Rename | acl.Move | acl.Share | acl.Download
+		if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+			User: &user, Share: sh.ID, Allow: every, Inherit: true, Label: sh.Name,
+		}); gerr != nil {
+			log.Fatalf("granting: %v", gerr)
+		}
 	}
 
-	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "docs", Host: shareDir})
-	if err != nil {
-		log.Fatalf("creating the share: %v", err)
-	}
-	on := true
-	if _, uerr := e.Core.UpdateShare(ctx, sh.ID, core.SharePatch{TrashEnabled: &on}); uerr != nil {
-		log.Fatalf("enabling the trash: %v", uerr)
-	}
-	every := acl.Read | acl.Write | acl.Create | acl.Delete |
-		acl.Rename | acl.Move | acl.Share | acl.Download
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
-		User: &user, Share: sh.ID, Allow: every, Inherit: true, Label: sh.Name,
-	}); gerr != nil {
-		log.Fatalf("granting: %v", gerr)
-	}
+	// Minted every run, since the plaintext is never stored and a reopened
+	// deployment has no way to recover the previous one.
 	token, err := e.Auth.CreateAppPassword(ctx, user, "drive",
 		auth.Scope{Perms: auth.SyncScopePerms}, 0)
 	if err != nil {

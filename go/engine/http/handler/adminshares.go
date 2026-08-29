@@ -121,3 +121,59 @@ func permNames(p acl.Perms) []string {
 	}
 	return out
 }
+
+// ShareUsage is one share's disk accounting.
+//
+// Total and Free are absent when the filesystem could not be measured, which
+// is not the same as a full disk. A share that reported zero free would have
+// an operator moving data off a device that is fine.
+type ShareUsage struct {
+	ID    core.ShareID
+	Label string
+
+	Total, Free uint64
+	Measured    bool
+}
+
+// ShareUsageView is one row of the storage screen.
+type ShareUsageView struct {
+	Share string `json:"share"`
+	Label string `json:"label"`
+
+	// Decimal strings, because a modern array is past 2^53 bytes and a
+	// JavaScript number would round the figure an operator is deciding on.
+	// Absent when the filesystem could not be measured.
+	TotalBytes *string `json:"total_bytes,omitempty"`
+	FreeBytes  *string `json:"free_bytes,omitempty"`
+}
+
+// StorageView is the whole accounting.
+type StorageView struct {
+	// DBBytes is what the deployment's own database occupies.
+	DBBytes string `json:"db_bytes"`
+
+	// Shares is never nil: a deployment with none encodes as an empty array,
+	// because a client iterating a null gets a runtime error.
+	Shares []ShareUsageView `json:"shares"`
+}
+
+// StorageOf projects the accounting.
+func StorageOf(dbBytes int64, shares []ShareUsage) StorageView {
+	out := StorageView{
+		DBBytes: strconv.FormatInt(dbBytes, 10),
+		Shares:  make([]ShareUsageView, 0, len(shares)),
+	}
+	for _, s := range shares {
+		v := ShareUsageView{
+			Share: strconv.FormatInt(int64(s.ID), 10),
+			Label: s.Label,
+		}
+		if s.Measured {
+			total := strconv.FormatUint(s.Total, 10)
+			free := strconv.FormatUint(s.Free, 10)
+			v.TotalBytes, v.FreeBytes = &total, &free
+		}
+		out.Shares = append(out.Shares, v)
+	}
+	return out
+}

@@ -35,9 +35,9 @@ rebuild is nearly a replacement. Package by package it is not that simple.
 
 ## Three things block the cutover
 
-### 1. Nineteen routes have no binding
+### 1. Eighteen routes have no binding
 
-The engine binds 68 of the 87 routes its own table names. The rest need
+The engine binds 69 of the 87 routes its own table names. The rest need
 services that `lifecycle.Open` never constructs: preview for thumbnails,
 search for the stream and the index admin, OIDC for the three sign-in routes
 and the two account-link ones, SMB for the credential routes. The service
@@ -55,7 +55,6 @@ The unbound set, exactly, grouped by the service each one waits on:
 - **SMB** (4): `account.smb.create`, `account.smb.password.set`,
   `account.smb.password.delete`, `admin.smb.apply`
 - **Search** (3): `search.stream`, `admin.index.build`, `admin.index.estimate`
-- **Storage** (1): `admin.storage`
 - **Preview** (1): `files.thumbnail`
 - **Setup** (2): `system.setup.get`, `system.setup.post`
 - **Events** (1): `events`
@@ -115,7 +114,7 @@ In dependency order, with the measured size of each piece:
 1. **Construct the missing services** in `lifecycle.Open`: preview, search,
    OIDC, SMB. Every package exists; this is wiring plus whatever
    each needs from configuration.
-2. **Bind the remaining 19 routes** against those services.
+2. **Bind the remaining 18 routes** against those services.
 3. **Write the dav and compat handlers.** The vocabulary is done; the method
    handlers are not, and they are roughly 2,000 and 4,300 lines in the tree
    they replace.
@@ -164,7 +163,7 @@ Both delivered files were compared against the share directory on disk.
 vendor compatibility layer and every public link from a running deployment.
 
 The cheapest next step is item 1, constructing preview, search, OIDC and SMB
-in `lifecycle.Open`, followed by item 2. Those 19 routes are binding
+in `lifecycle.Open`, followed by item 2. Those 18 routes are binding
 work against packages that already exist, which is what the last dozen commits
 have been, and each one converts a 501 into an answer.
 

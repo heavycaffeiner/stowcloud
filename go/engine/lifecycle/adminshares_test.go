@@ -3,12 +3,17 @@
 package lifecycle_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
 // The share listing never carries a host path.
@@ -48,10 +53,14 @@ func TestTheShareListingHidesHostPaths(t *testing.T) {
 
 // assertNoHostPath fails if a body carries the path or any component of it
 // that would disclose the server's layout.
+//
+// An empty host is a caller with no specific path to look for, not a match
+// against everything: strings.Contains is true for "" on any input, so the
+// check has to skip it rather than report every response as a leak.
 func assertNoHostPath(t *testing.T, body, host string) {
 	t.Helper()
 
-	if strings.Contains(body, host) {
+	if host != "" && strings.Contains(body, host) {
 		t.Errorf("the response carries the host path %q: %s", host, body)
 	}
 	// The full path is the obvious leak; a parent directory is the same
@@ -453,5 +462,204 @@ func TestAnOversizedShareIDNamesNothing(t *testing.T) {
 	}
 	if len(rows) != 1 || stringField(rows[0], "name") != "docs" {
 		t.Errorf("the share was changed by an oversized id: %s", raw)
+	}
+}
+
+// The storage accounting reports the database and every share.
+func TestTheStorageAccounting(t *testing.T) {
+	base, cookie, csrf, _, _ := adminEngine(t)
+	makeShare(t, base, cookie, csrf, "docs")
+
+	status, raw := withCookie(t, http.MethodGet, base+"/api/v1/admin/storage", cookie)
+	if status != http.StatusOK {
+		t.Fatalf("answered %d: %s", status, raw)
+	}
+
+	var view map[string]any
+	if err := json.Unmarshal(raw, &view); err != nil {
+		t.Fatalf("decoding %s: %v", raw, err)
+	}
+
+	// Decimal strings, because a modern array is past 2^53 bytes and a
+	// JavaScript number would round the figure an operator decides on.
+	dbBytes := stringField(view, "db_bytes")
+	if dbBytes == "" {
+		t.Fatalf("no db_bytes in %s", raw)
+	}
+	if n, err := strconv.ParseInt(dbBytes, 10, 64); err != nil || n <= 0 {
+		t.Errorf("db_bytes is %q, which is not a positive decimal", dbBytes)
+	}
+
+	shares, ok := view["shares"].([]any)
+	if !ok {
+		t.Fatalf("no shares list in %s", raw)
+	}
+	if len(shares) != 1 {
+		t.Fatalf("%d shares listed, want 1", len(shares))
+	}
+
+	row, ok := shares[0].(map[string]any)
+	if !ok {
+		t.Fatalf("the share row is not an object: %v", shares[0])
+	}
+	if stringField(row, "label") != "docs" {
+		t.Errorf("the row is labelled %v", row["label"])
+	}
+	// A measurable filesystem reports both figures, and free cannot exceed
+	// total: a screen showing more free than exists is one nobody trusts.
+	total, free := stringField(row, "total_bytes"), stringField(row, "free_bytes")
+	if total == "" || free == "" {
+		t.Fatalf("the share was not measured: %v", row)
+	}
+	t64, terr := strconv.ParseUint(total, 10, 64)
+	f64, ferr := strconv.ParseUint(free, 10, 64)
+	if terr != nil || ferr != nil {
+		t.Fatalf("the figures are not decimals: total=%q free=%q", total, free)
+	}
+	if f64 > t64 {
+		t.Errorf("free %d exceeds total %d", f64, t64)
+	}
+
+	// No host path, for the same reason the share listing carries none.
+	assertNoHostPath(t, string(raw), "")
+}
+
+// An ordinary account cannot read the storage accounting.
+func TestTheStorageAccountingNeedsAnAdministrator(t *testing.T) {
+	base, _, _, plainCookie, _ := adminEngine(t)
+
+	status, _ := withCookie(t, http.MethodGet, base+"/api/v1/admin/storage", plainCookie)
+	if status != http.StatusForbidden {
+		t.Errorf("an ordinary account read the storage accounting: %d", status)
+	}
+}
+
+// A share whose filesystem cannot be measured is listed without figures.
+//
+// Dropping the row reads as a share that does not exist; reporting zero reads
+// as a full disk. Both are answers an operator would act on, and neither is
+// what happened.
+//
+// The state is built by registering a share, closing the engine, removing the
+// directory and reopening: the root then never opens, which is what a disk
+// that did not come back looks like. Removing it under a running engine does
+// not produce this, because the measurement goes through a descriptor the
+// root already holds.
+func TestAnUnmeasurableShareIsListedWithoutFigures(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	host := t.TempDir()
+
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	if _, cerr := e.Auth.CreateAdmin(ctx, "root", "Root", pwOf(loginPassword)); cerr != nil {
+		t.Fatal(cerr)
+	}
+	if _, serr := e.Core.CreateShare(ctx, core.ShareSpec{Name: "gone", Host: host}); serr != nil {
+		t.Fatalf("creating the share: %v", serr)
+	}
+	if cerr := e.Close(); cerr != nil {
+		t.Fatalf("closing: %v", cerr)
+	}
+	if rerr := os.RemoveAll(host); rerr != nil {
+		t.Fatalf("removing the backing directory: %v", rerr)
+	}
+
+	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("reopening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := reopened.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+	base := serve(t, reopened)
+
+	signIn := postJSON(t, base+"/api/v1/auth/login",
+		map[string]string{"login": "root", "password": loginPassword})
+	cookie := signIn.sessionCookie()
+	if cookie == nil {
+		t.Fatal("the administrator did not sign in")
+	}
+
+	code, raw := withCookie(t, http.MethodGet, base+"/api/v1/admin/storage", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("answered %d: %s", code, raw)
+	}
+
+	var view map[string]any
+	if uerr := json.Unmarshal(raw, &view); uerr != nil {
+		t.Fatal(uerr)
+	}
+	shares, isList := view["shares"].([]any)
+	if !isList {
+		t.Fatalf("no shares list in %s", raw)
+	}
+
+	var found bool
+	for _, entry := range shares {
+		row, isMap := entry.(map[string]any)
+		if !isMap || stringField(row, "label") != "gone" {
+			continue
+		}
+		found = true
+
+		// Absent, not zero. A zero total would show the operator a disk with
+		// no room on a share whose disk is simply not there.
+		if _, present := row["total_bytes"]; present {
+			t.Errorf("an unmeasurable share reports a total: %v", row["total_bytes"])
+		}
+		if _, present := row["free_bytes"]; present {
+			t.Errorf("an unmeasurable share reports free space: %v", row["free_bytes"])
+		}
+	}
+	if !found {
+		t.Errorf("the unmeasurable share was dropped from the listing: %s", raw)
+	}
+}
+
+// A registered share survives a restart.
+//
+// The registry is in-memory and the rows are on disk, so something has to
+// reload them. Nothing did: every share an operator had configured vanished
+// from a restarted server, taking every grant over it with it, while the rows
+// sat in the database.
+func TestSharesSurviveARestart(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	host := t.TempDir()
+
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	if _, cerr := e.Auth.CreateAdmin(ctx, "root", "Root", pwOf(loginPassword)); cerr != nil {
+		t.Fatal(cerr)
+	}
+	if _, serr := e.Core.CreateShare(ctx, core.ShareSpec{Name: "docs", Host: host}); serr != nil {
+		t.Fatalf("creating the share: %v", serr)
+	}
+	if cerr := e.Close(); cerr != nil {
+		t.Fatalf("closing: %v", cerr)
+	}
+
+	reopened, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("reopening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := reopened.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+
+	if got := len(reopened.Core.Shares()); got != 1 {
+		t.Fatalf("%d shares after a restart, want the 1 that was registered", got)
+	}
+	if name := reopened.Core.Shares()[0].Name; name != "docs" {
+		t.Errorf("the reloaded share is named %q", name)
 	}
 }
