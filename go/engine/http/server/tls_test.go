@@ -14,32 +14,33 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 )
 
-// durable implements the seam's contract: stage each file, then rename them
-// onto their destinations in the order given.
+// durable implements the seam's contract: every file lands, in the order
+// given, or none does.
 //
 // Written here rather than bound to the store's implementation because the
-// layer rule forbids this tier from importing that one, in tests as well as in
-// code. What is under test is the contract the seam states, and a local writer
-// honouring it is what exercises the caller against that contract.
+// layer rule forbids this tier from importing that one, tests included. It
+// writes each destination directly rather than staging and renaming, since a
+// rename is a contract the persistence tier owns and reimplementing one here
+// would be a second answer to a question that already has one. What this
+// exercises is the caller against the seam's promise, which is about what
+// lands and in what order.
 func durable(paths []string, modes []uint32, write func(i int, f *os.File) error) error {
-	return stageThenRename(paths, modes, write, len(paths))
+	return writeUpTo(paths, modes, write, len(paths))
 }
 
-// tornAfterKey renames only the first unit, which is the crash window the
-// contract leaves open: a process that dies between two renames.
+// tornAfterKey writes only the first file, which is the crash window the
+// contract leaves open: a process that dies partway through publishing.
 func tornAfterKey(paths []string, modes []uint32, write func(i int, f *os.File) error) error {
-	return stageThenRename(paths, modes, write, 1)
+	return writeUpTo(paths, modes, write, 1)
 }
 
-// stageThenRename writes every unit to a staging name and renames the first
-// renameCount of them.
-func stageThenRename(
-	paths []string, modes []uint32, write func(i int, f *os.File) error, renameCount int,
+// writeUpTo writes the first count destinations and reports the interruption
+// if it stopped early.
+func writeUpTo(
+	paths []string, modes []uint32, write func(i int, f *os.File) error, count int,
 ) error {
-	staged := make([]string, len(paths))
-	for i, path := range paths {
-		staged[i] = path + ".staging"
-		f, err := os.OpenFile(staged[i], os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(modes[i]))
+	for i := range count {
+		f, err := os.OpenFile(paths[i], os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(modes[i]))
 		if err != nil {
 			return err
 		}
@@ -51,19 +52,14 @@ func stageThenRename(
 		if cerr != nil {
 			return cerr
 		}
-		// The mode is set explicitly, because the open call's mode is filtered
-		// through the process umask.
-		if merr := os.Chmod(staged[i], os.FileMode(modes[i])); merr != nil {
+		// Set explicitly, because the open call's mode is filtered through the
+		// process umask.
+		if merr := os.Chmod(paths[i], os.FileMode(modes[i])); merr != nil {
 			return merr
 		}
 	}
-	for i := range renameCount {
-		if err := os.Rename(staged[i], paths[i]); err != nil {
-			return err
-		}
-	}
-	if renameCount < len(paths) {
-		return errors.New("the write was interrupted between renames")
+	if count < len(paths) {
+		return errors.New("the write was interrupted partway through")
 	}
 	return nil
 }
