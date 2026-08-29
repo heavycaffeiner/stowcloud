@@ -307,9 +307,14 @@ func TestConcurrentSwapsAreSerialised(t *testing.T) {
 	// They do stop, within the drain window. Waited for rather than assumed,
 	// since a generation that never released its socket would make the next
 	// swap to that address fail.
-	deadline := time.Now().Add(DrainTimeout)
-	for {
-		live := 0
+	// A bounded number of attempts rather than a wall-clock deadline: D8 keeps
+	// time.Now in the clock packages, and counting attempts at a known
+	// interval measures the same window.
+	const attemptEvery = 10 * time.Millisecond
+	attempts := int(DrainTimeout/attemptEvery) + 1
+	live := len(addrs)
+	for range attempts {
+		live = 0
 		for _, addr := range addrs {
 			if _, err := get(t, addr); err == nil {
 				live++
@@ -318,10 +323,10 @@ func TestConcurrentSwapsAreSerialised(t *testing.T) {
 		if live == 1 {
 			break
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%d of %d addresses still answer after the drain window", live, len(addrs))
-		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(attemptEvery)
+	}
+	if live != 1 {
+		t.Fatalf("%d of %d addresses still answer after the drain window", live, len(addrs))
 	}
 }
 

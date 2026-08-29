@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 )
 
 // DrainTimeout is how long a replaced generation has to finish its in-flight
@@ -113,12 +115,12 @@ func (s *Serve) Swap(addr string) error {
 	// and stop the one that was.
 	done := make(chan struct{})
 	failed := make(chan error, 1)
-	go func() {
+	task.Go(context.Background(), "server: listener generation", func() {
 		defer close(done)
 		if err := app.Listener(ln); err != nil {
 			failed <- err
 		}
-	}()
+	})
 
 	if serr := confirmServing(ln, failed); serr != nil {
 		// The listener is closed here rather than left for the caller: nothing
@@ -137,7 +139,9 @@ func (s *Serve) Swap(addr string) error {
 	if old != nil {
 		// Detached from the caller's context: a settings save that returns
 		// must not cancel the drain of the generation it replaced.
-		go s.drain(old)
+		task.Go(context.Background(), "server: draining a replaced listener", func() {
+			s.drain(old)
+		})
 	}
 	return nil
 }
