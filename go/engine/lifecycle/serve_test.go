@@ -22,7 +22,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 )
 
-// boot opens an engine, mounts it and serves it on a real socket.
+// boot opens an engine and serves it on a real socket.
 func boot(t *testing.T) string {
 	t.Helper()
 
@@ -35,6 +35,12 @@ func boot(t *testing.T) string {
 			t.Errorf("closing the engine: %v", cerr)
 		}
 	})
+	return serve(t, e)
+}
+
+// serve mounts an already-open engine and puts it behind a real listener.
+func serve(t *testing.T, e *lifecycle.Engine) string {
+	t.Helper()
 
 	app, err := e.Mount()
 	if err != nil {
@@ -111,14 +117,15 @@ func TestTheEngineServesARealRequest(t *testing.T) {
 func TestEveryDeclaredRouteAnswers(t *testing.T) {
 	base := boot(t)
 
-	// Two routes with no path parameters, one of each shape: the probe that
-	// is bound, and one that is registered but not yet implemented.
+	// One of each shape a route can be in: bound and public, bound and
+	// needing a credential, and registered with no binding yet.
 	cases := []struct {
 		path string
 		want int
 	}{
 		{"/api/v1/system/health", http.StatusOK},
-		{"/api/v1/jobs", http.StatusNotImplemented},
+		{"/api/v1/jobs", http.StatusUnauthorized},
+		{"/api/v1/auth/oidc/config", http.StatusNotImplemented},
 	}
 
 	for _, c := range cases {
@@ -146,7 +153,12 @@ func TestAnUnknownPathIsNotFound(t *testing.T) {
 func TestEveryAnswerIsJSON(t *testing.T) {
 	base := boot(t)
 
-	for _, path := range []string{"/api/v1/system/health", "/api/v1/jobs", "/api/v1/nothing"} {
+	for _, path := range []string{
+		"/api/v1/system/health",
+		"/api/v1/jobs",
+		"/api/v1/auth/oidc/config",
+		"/api/v1/nothing",
+	} {
 		t.Run(path, func(t *testing.T) {
 			_, body := get(t, base+path)
 
@@ -163,7 +175,7 @@ func TestEveryAnswerIsJSON(t *testing.T) {
 func TestAnUnboundRouteRefusesRatherThanPretending(t *testing.T) {
 	base := boot(t)
 
-	status, body := get(t, base+"/api/v1/jobs")
+	status, body := get(t, base+"/api/v1/auth/oidc/config")
 	if status != http.StatusNotImplemented {
 		t.Fatalf("an unbound route answered %d: %s", status, body)
 	}

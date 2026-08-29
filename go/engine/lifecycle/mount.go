@@ -73,6 +73,12 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 		switch r.Name {
 		case "system.health":
 			out[r.Name] = e.health
+		case "jobs.list":
+			out[r.Name] = e.jobsList
+		case "jobs.get":
+			out[r.Name] = e.jobsGet
+		case "jobs.cancel":
+			out[r.Name] = e.jobsCancel
 
 		default:
 			// Every other route is named by the table and has no binding yet.
