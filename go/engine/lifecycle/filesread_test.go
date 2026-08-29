@@ -22,6 +22,13 @@ import (
 
 // contentShare serves an engine holding one share with a file of known bytes.
 func contentShare(t *testing.T, perms acl.Perms, content []byte) (base, token, share string) {
+	b, tok, sh, _ := contentShareAt(t, perms, content)
+	return b, tok, sh
+}
+
+// contentShareAt is contentShare plus the host directory, for a test that has
+// to act on the files themselves rather than through the API.
+func contentShareAt(t *testing.T, perms acl.Perms, content []byte) (base, token, share, host string) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -40,7 +47,7 @@ func contentShare(t *testing.T, perms acl.Perms, content []byte) (base, token, s
 		t.Fatal(err)
 	}
 
-	host := t.TempDir()
+	host = t.TempDir()
 	if werr := os.WriteFile(filepath.Join(host, "doc.bin"), content, 0o600); werr != nil {
 		t.Fatal(werr)
 	}
@@ -63,7 +70,7 @@ func contentShare(t *testing.T, perms acl.Perms, content []byte) (base, token, s
 	if err != nil {
 		t.Fatal(err)
 	}
-	return serve(t, e), appPW, sh.Name
+	return serve(t, e), appPW, sh.Name, host
 }
 
 // download performs a read, optionally with a Range header, and returns the

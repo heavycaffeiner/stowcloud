@@ -303,7 +303,13 @@ func TestArchiveWalkCoversATreeUnderTheRootsLeafName(t *testing.T) {
 		t.Fatalf("ArchiveWalk: %v", err)
 	}
 
-	want := map[string]bool{"box/top.txt": true, "box/inner": true, "box/inner/deep.txt": true}
+	// "box" itself is in the set: the walk announces its own root when that
+	// root is a directory. Without it an archive of an empty directory holds
+	// nothing, and extracting one loses the directory the caller asked for.
+	want := map[string]bool{
+		"box": true, "box/top.txt": true,
+		"box/inner": true, "box/inner/deep.txt": true,
+	}
 	for _, p := range w.paths() {
 		if !want[p] {
 			t.Fatalf("the walk produced the unexpected path %q (all: %v)", p, w.paths())

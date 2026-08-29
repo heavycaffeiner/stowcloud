@@ -133,6 +133,10 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.filesSize
 		case "files.recent":
 			out[r.Name] = e.filesRecent
+		case "files.archive":
+			out[r.Name] = e.filesArchive
+		case "files.archive.list":
+			out[r.Name] = e.filesArchiveList
 		case "links.list":
 			out[r.Name] = e.linksList
 		case "links.create":

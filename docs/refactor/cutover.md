@@ -35,9 +35,9 @@ rebuild is nearly a replacement. Package by package it is not that simple.
 
 ## Three things block the cutover
 
-### 1. Twenty-three routes have no binding
+### 1. Twenty-one routes have no binding
 
-The engine binds 64 of the 87 routes its own table names. The rest need
+The engine binds 66 of the 87 routes its own table names. The rest need
 services that `lifecycle.Open` never constructs: preview for thumbnails,
 search for the stream and the index admin, OIDC for the three sign-in routes
 and the two account-link ones, settings for the sectioned resource, SMB for
@@ -57,7 +57,6 @@ The unbound set, exactly, grouped by the service each one waits on:
 - **Settings** (3): `admin.settings.get`, `admin.settings.patch`,
   `admin.storage`
 - **Preview** (1): `files.thumbnail`
-- **Archive** (2): `files.archive`, `files.archive.list`
 - **Setup** (2): `system.setup.get`, `system.setup.post`
 - **Events** (1): `events`
 
@@ -67,13 +66,16 @@ The unbound set, exactly, grouped by the service each one waits on:
 | --- | --- | --- |
 | `http/dav` | 1,759 | no |
 | `http/compat` | 1,178 | no |
-| `http/archive` | 418 | no |
 | `http/emergency` | 519 | no |
+| `http/archive` | 418 | **yes** |
 
-That is 3,874 lines of finished, tested work that no request can reach. The
-old tree serves WebDAV, the vendor compatibility layer, archive downloads and
-the emergency console; a cutover that dropped them would remove working
-features from the product.
+That is 3,456 lines of finished, tested work that no request can reach. The
+old tree serves WebDAV, the vendor compatibility layer and the emergency
+console; a cutover that dropped them would remove working features from the
+product.
+
+The archive writer was in this list and is now mounted, behind
+`files.archive` and `files.archive.list`.
 
 ### 3. The public link surface is absent
 
@@ -93,8 +95,8 @@ In dependency order, with the measured size of each piece:
    OIDC, settings, SMB. Every package exists; this is wiring plus whatever
    each needs from configuration.
 2. **Bind the remaining 23 routes** against those services.
-3. **Mount dav, compat, archive and emergency.** The code is written; the
-   mounting, the route entries and the middleware ordering are not.
+3. **Mount dav, compat and emergency.** The code is written; the mounting,
+   the route entries and the middleware ordering are not.
 4. **Build the public link surface**, five routes with their own content
    negotiation, unlock cookie and archive path.
 5. **Port `smbagent` and `smbpublish`** (2,139 lines) or decide the sidecar
@@ -131,9 +133,9 @@ suggests for the parts it covers, and it is genuinely missing three surfaces
 the product serves today. Deleting `internal/` now would remove WebDAV, the
 vendor compatibility layer and every public link from a running deployment.
 
-The cheapest next step is item 3: mounting dav, compat, archive and emergency
-is binding rather than construction, the same work as the last ten commits,
-and it converts 3,874 written lines into reachable behaviour.
+The cheapest next step is item 3: mounting dav, compat and emergency is
+binding rather than construction, the same work as the last ten commits, and
+it converts 3,456 written lines into reachable behaviour.
 
 ## A correction, recorded
 

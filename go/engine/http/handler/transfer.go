@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 )
 
 // MoveView reports where an entry landed and how it got there.
@@ -125,6 +126,61 @@ func RecentListOf(hits []core.RecentHit) []RecentView {
 	out := make([]RecentView, 0, len(hits))
 	for _, h := range hits {
 		out = append(out, RecentOf(h))
+	}
+	return out
+}
+
+// ArchiveListingView is what is inside a zip, read from its own directory.
+type ArchiveListingView struct {
+	Entries []ArchiveEntryView `json:"entries"`
+
+	// Truncated marks a listing that stopped at the ceiling. Without it a
+	// client shows a partial archive as though it were the whole one.
+	Truncated bool `json:"truncated,omitempty"`
+
+	// Skipped counts members whose names were refused. They exist in the
+	// archive and are not shown, which is different from not being there.
+	Skipped int `json:"skipped,omitempty"`
+
+	// TotalUncompressed is what extraction would cost, as a decimal string.
+	// A caller weighs it against the file's own size to spot a bomb before
+	// extracting anything.
+	TotalUncompressed string `json:"total_uncompressed"`
+}
+
+// ArchiveEntryView is one member.
+type ArchiveEntryView struct {
+	Name  string `json:"name"`
+	IsDir bool   `json:"is_dir"`
+
+	Size       string `json:"size"`
+	Compressed string `json:"compressed"`
+
+	ModTimeNs string `json:"mtime_ns,omitempty"`
+}
+
+// ArchiveListingOf projects a parsed directory.
+//
+// Entries are never nil: an empty archive encodes as an empty array, because
+// a client iterating a null gets a runtime error rather than zero members.
+func ArchiveListingOf(l preview.ArchiveListing) ArchiveListingView {
+	out := ArchiveListingView{
+		Entries:           make([]ArchiveEntryView, 0, len(l.Entries)),
+		Truncated:         l.Truncated,
+		Skipped:           l.Skipped,
+		TotalUncompressed: strconv.FormatUint(l.TotalUncompressed, 10),
+	}
+	for _, e := range l.Entries {
+		v := ArchiveEntryView{
+			Name:       e.Name,
+			IsDir:      e.IsDir,
+			Size:       strconv.FormatUint(e.Size, 10),
+			Compressed: strconv.FormatUint(e.Compressed, 10),
+		}
+		if e.ModTimeNs != 0 {
+			v.ModTimeNs = strconv.FormatInt(e.ModTimeNs, 10)
+		}
+		out.Entries = append(out.Entries, v)
 	}
 	return out
 }

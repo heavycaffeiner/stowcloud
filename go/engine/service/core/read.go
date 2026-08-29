@@ -237,6 +237,24 @@ func (c *Core) ArchiveWalk(ctx context.Context, r Resolved, visit func(WalkEntry
 		}, stream)
 		return firstErr(verr, stream.Close())
 	}
+	// The root itself is announced when it is a directory, before anything
+	// under it. Only its descendants used to be visited, so archiving an
+	// empty directory produced an archive with nothing in it: the caller
+	// asked for a directory and got back a zip that extracts to nothing.
+	//
+	// Skipped for a share root, whose leaf name is empty. A zip member with
+	// no name is not a directory entry, and everything beneath it already
+	// carries its own path.
+	if base != "" {
+		if verr := visit(WalkEntry{
+			RelPath:  base,
+			IsDir:    true,
+			Readable: true,
+			MTimeNs:  st.MtimeNs,
+		}, nil); verr != nil {
+			return verr
+		}
+	}
 	return c.walkArchive(ctx, r, base, visit)
 }
 
