@@ -141,6 +141,18 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.linksDelete
 		case "links.update":
 			out[r.Name] = e.linksUpdate
+		case "uploads.discover":
+			out[r.Name] = e.uploadsDiscover
+		case "uploads.discover.one":
+			out[r.Name] = e.uploadsDiscoverOne
+		case "uploads.create":
+			out[r.Name] = e.uploadsCreate
+		case "uploads.status":
+			out[r.Name] = e.uploadsStatus
+		case "uploads.patch":
+			out[r.Name] = e.uploadsPatch
+		case "uploads.abort":
+			out[r.Name] = e.uploadsAbort
 		case "trash.list":
 			out[r.Name] = e.trashList
 		case "trash.restore":
