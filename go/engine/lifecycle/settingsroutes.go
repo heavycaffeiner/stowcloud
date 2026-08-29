@@ -59,6 +59,14 @@ func (e *Engine) adminSettingsPatch(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.Malformed})
 	}
 
+	// A credential in the body never reaches the document. It is sealed under
+	// the master key and stored in its own row, because the document is read
+	// by anybody who may read the settings and a value that authenticates
+	// this server to a provider is not something to hand them.
+	if ok, written := e.extractSecrets(c, section, body); !ok {
+		return written
+	}
+
 	findings := check.Section(check.Input{
 		Section: section,
 		Body:    body,
@@ -95,13 +103,71 @@ func (e *Engine) adminSettingsPatch(c *fiber.Ctx) error {
 		e.loadSettings(c.UserContext())
 	}
 
-	// The active-work counts are deliberately absent. The projection carries
-	// them as optional pointers, and neither the upload engine nor the core
-	// exposes a count of work in flight. Reporting zero would be a claim that
-	// a restart interrupts nothing, which is the one thing an operator would
-	// act on and the one thing this cannot currently know.
-	return writeJSON(c, fiber.StatusOK,
-		handler.ApplyOutcomeOf(true, !restart, restart, findings))
+	out := handler.ApplyOutcomeOf(true, !restart, restart, findings)
+	if restart {
+		// What a restart would interrupt, so the operator decides rather than
+		// the server deciding for them. An in-flight upload loses whichever
+		// part was still arriving and a running job halts where it stands;
+		// both recover, but neither should happen to somebody unannounced.
+		uploads, jobs := e.activeWork(c)
+		out = out.WithActiveWork(uploads, jobs)
+	}
+	return writeJSON(c, fiber.StatusOK, out)
+}
+
+// activeWork counts what a restart would interrupt.
+//
+// A count that cannot be read reports one upload rather than none. Unknown
+// has to read as busy: the warning is what an administrator can override,
+// and guessing idle would take a restart through somebody's transfer without
+// asking.
+//
+// No test covers that branch, and the mutation flipping it to zero is
+// absorbed: producing it needs the count query to fail, which happens when
+// the database does, and by then the save above it has already failed. It
+// stays because the direction is the whole point, and a later caller that
+// reaches this with a live database and a broken query would get the safe
+// answer rather than a confident wrong one.
+func (e *Engine) activeWork(c *fiber.Ctx) (uploads, jobs int) {
+	w, err := e.State.CountActiveWork(c.UserContext())
+	if err != nil {
+		e.logger.Warn("could not count the work a restart would interrupt", "error", err)
+		return 1, 0
+	}
+	return w.Uploads, w.Jobs
+}
+
+// extractSecrets removes credential fields from a section's body and stores
+// them sealed.
+//
+// Removed rather than copied: leaving the value in the map would store the
+// plaintext in the settings document alongside the sealed copy, which is the
+// whole failure this exists to prevent.
+// The bool says whether the caller may proceed and the error is the written
+// response, the same shape every other gate in this package uses.
+func (e *Engine) extractSecrets(c *fiber.Ctx, section string, body map[string]any) (bool, error) {
+	if section != "oidc" {
+		return true, nil
+	}
+	raw, present := body["client_secret"]
+	if !present {
+		// Absent means unchanged. A patch names the fields it changes, so an
+		// omitted secret must not clear the stored one: an administrator
+		// editing the issuer would otherwise silently break sign-in.
+		return true, nil
+	}
+	delete(body, "client_secret")
+
+	plain, isString := raw.(string)
+	if !isString {
+		// A non-string is refused rather than coerced. Storing the rendering
+		// of some other type would seal a credential nobody typed.
+		return false, refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
+	if err := e.StoreConfigSecret(c.UserContext(), secretOIDCClient, plain); err != nil {
+		return false, failKnown(c, err)
+	}
+	return true, nil
 }
 
 // restartRequired reports whether a section is decided once, when the process

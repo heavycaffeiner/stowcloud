@@ -175,13 +175,25 @@ the engine holds the protocol vocabulary and none of the method handlers.
 
 An earlier version of this document said 67 routes were bound and that no
 settings package existed. Both were wrong, and both came from reading a grep
-instead of reconciling the two lists. The bound count is 64, verified by
-comparing the route table's names against the binding table's cases; the
-settings package exists and is 1,626 lines.
+instead of reconciling the two lists. The bound count is verified by comparing
+the route table's names against the binding table's cases; the settings
+package exists and is 1,626 lines.
 
-The same wrong figure is in commit `413d2d4`, whose message says "Sixty-seven
-of eighty-seven routes now answer". It is 64. The commit message cannot be
-corrected without rewriting history, so the correction lives here.
+Two claims made in commit messages while working through this were also
+wrong, and are corrected here because a commit message cannot be edited:
+
+- `413d2d4` says "Sixty-seven of eighty-seven routes now answer". It was 64.
+- `823b6aa` says the OIDC client secret "has no home in either tree" and that
+  the old tree's `StoreSecret` hook has no non-test caller. Both are false.
+  `cmd/stowcloud/serve.go` supplies it, and `internal/server.StoreOIDCSecret`
+  seals the value under the master key and writes it to a config-secret row.
+  The engine has the sealing primitives (`SealConfigSecret`) and the row
+  (`WriteConfigSecret`); what it lacks is the small function joining them and
+  a settings path that strips the secret out of the document before storing
+  the rest. That is an hour, not a blocker.
+- The same commit says neither the upload engine nor the core exposes a count
+  of work in flight. `state.CountActiveWork` exists and is now used, so a
+  restart-required save reports what it would interrupt.
 
 The counts in this document come from `comm` over two sorted lists: every
 `Name` in `server.Table()` against every `case` in the binding switch. That
