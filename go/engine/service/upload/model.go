@@ -95,10 +95,62 @@ const (
 	StateExpired
 )
 
+// StateName is the wire name of a session's state.
+//
+// Names rather than the stored numbers, which may only be appended to. The
+// presentation tier has no other way to say what a session is doing.
+func (s SessionState) StateName() string {
+	switch s {
+	case StateReceiving:
+		return "receiving"
+	case StateFinalizing:
+		return "finalizing"
+	case StateDone:
+		return "done"
+	case StateAborted:
+		return "aborted"
+	case StateExpired:
+		return "expired"
+	default:
+		return "unknown"
+	}
+}
+
+// Terminal reports whether a session will take no more bytes.
+//
+// Decided here rather than by a client comparing state names, because a state
+// added later would otherwise be read as still live by every client written
+// before it.
+func (s SessionState) Terminal() bool { return !s.live() }
+
+// StateNames lists every state name with whether it is terminal, so a tier
+// that cannot read the stored numbers can check its own answer against this.
+func StateNames() map[string]bool {
+	return map[string]bool{
+		"receiving":  false,
+		"finalizing": false,
+		"done":       true,
+		"aborted":    true,
+		"expired":    true,
+	}
+}
+
 // live reports whether a state is one the sweep leaves alone. Receiving and
 // finalizing are both live: an assembly that takes minutes is not an
 // abandoned session.
 func (s SessionState) live() bool { return s == StateReceiving || s == StateFinalizing }
+
+// ModeName is the wire name of a spool mode.
+func (m SpoolMode) ModeName() string {
+	switch m {
+	case SpoolOffsetAddressed:
+		return "offset"
+	case SpoolNameOrdered:
+		return "named"
+	default:
+		return "unknown"
+	}
+}
 
 // SpoolMode determines how chunks map onto the part file.
 type SpoolMode int64
