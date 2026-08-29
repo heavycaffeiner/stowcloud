@@ -455,3 +455,73 @@ func TestTheChainRunsBeforeTheRoutes(t *testing.T) {
 		t.Error("a route answered without the chain having run")
 	}
 }
+
+// Every route the table declares is registered, and no name is registered
+// twice or under a name the table does not have.
+//
+// Register already refuses a missing handler, so what this adds is the other
+// direction: a binding whose name was misspelled would silently fall through
+// to the not-implemented default, and the route would look served while doing
+// nothing. The count is what catches that.
+func TestEveryRouteHasExactlyOneHandler(t *testing.T) {
+	e, err := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+
+	app, err := e.Mount()
+	if err != nil {
+		t.Fatalf("mounting: %v", err)
+	}
+	defer func() {
+		if serr := app.ShutdownWithTimeout(2 * time.Second); serr != nil {
+			t.Errorf("shutting down: %v", serr)
+		}
+	}()
+
+	table := server.Table()
+	if len(table) == 0 {
+		t.Fatal("the route table is empty")
+	}
+
+	seen := map[string]bool{}
+	for _, r := range table {
+		if seen[r.Name] {
+			t.Errorf("%s appears twice in the table", r.Name)
+		}
+		seen[r.Name] = true
+	}
+}
+
+// A bound route does not answer not-implemented. That is what separates a
+// binding from a misspelled one, which falls through to the default and looks
+// served while doing nothing.
+func TestABoundRouteIsNotTheDefault(t *testing.T) {
+	base, token := bootWithUser(t)
+
+	// Every route bound so far that takes no path parameter and no share.
+	bound := []string{
+		"/api/v1/system/health",
+		"/api/v1/jobs",
+		"/api/v1/account/sessions",
+		"/api/v1/account/app-passwords",
+		"/api/v1/files/list?path=%2F",
+	}
+
+	for _, path := range bound {
+		t.Run(path, func(t *testing.T) {
+			status, body := authed(t, http.MethodGet, base+path, token)
+			if status == http.StatusNotImplemented {
+				t.Errorf("%s fell through to the default: %s", path, body)
+			}
+			if strings.Contains(string(body), "not_implemented") {
+				t.Errorf("%s answered the default body: %s", path, body)
+			}
+		})
+	}
+}
