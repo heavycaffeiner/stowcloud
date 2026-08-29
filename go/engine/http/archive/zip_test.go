@@ -194,7 +194,7 @@ func TestTraversingNamesAreRefused(t *testing.T) {
 func TestANonASCIINameSurvives(t *testing.T) {
 	var buf bytes.Buffer
 	z := NewWriter(&buf)
-	if err := z.AddBytes("사진/여름.txt", []byte("x"), when()); err != nil {
+	if err := z.AddBytes("φωτογραφίες/καλοκαίρι.txt", []byte("x"), when()); err != nil {
 		t.Fatalf("AddBytes: %v", err)
 	}
 	if err := z.Close(); err != nil {
@@ -205,11 +205,14 @@ func TestANonASCIINameSurvives(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reading: %v", err)
 	}
-	if r.File[0].Name != "사진/여름.txt" {
+	if r.File[0].Name != "φωτογραφίες/καλοκαίρι.txt" {
 		t.Errorf("the name came back as %q", r.File[0].Name)
 	}
-	if !r.File[0].NonUTF8 == false {
-		t.Log("the reader reports the name as UTF-8")
+	// The reader agrees the name is UTF-8, which is what the flag in the
+	// header claims. Without it an extractor would decode these bytes through
+	// the format's ancient default encoding and produce mojibake.
+	if r.File[0].NonUTF8 {
+		t.Error("the reader read the name as non-UTF-8")
 	}
 }
 
