@@ -341,6 +341,16 @@ type routeMeta struct {
 	body route.BodyClass
 }
 
+// RequirementOf reports the matched route's requirement.
+//
+// Exported for the server's own tests, which check that registration attaches
+// each route's own metadata rather than the last one's. Nothing in a handler
+// needs it: the chain has already applied it by the time one runs.
+func RequirementOf(c *fiber.Ctx) (route.Requirement, bool) {
+	m, ok := metaOf(c)
+	return m.req, ok
+}
+
 // metaOf reads the matched route's metadata, reporting whether a route matched
 // at all.
 func metaOf(c *fiber.Ctx) (routeMeta, bool) {
