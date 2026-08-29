@@ -79,6 +79,12 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.jobsGet
 		case "jobs.cancel":
 			out[r.Name] = e.jobsCancel
+		case "account.sessions.list":
+			out[r.Name] = e.accountSessions
+		case "account.app-passwords.list":
+			out[r.Name] = e.accountAppPasswords
+		case "account.app-passwords.delete":
+			out[r.Name] = e.accountAppPasswordDelete
 
 		default:
 			// Every other route is named by the table and has no binding yet.

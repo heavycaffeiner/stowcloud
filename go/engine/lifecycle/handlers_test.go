@@ -6,8 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
@@ -54,7 +55,7 @@ func authed(t *testing.T, method, url, token string) (int, []byte) {
 	}
 	req.SetBasicAuth("ignored", token)
 
-	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
+	resp, err := testClient().Do(req)
 	if err != nil {
 		t.Fatalf("requesting %s: %v", url, err)
 	}
@@ -172,5 +173,192 @@ func TestCancellingAnAbsentJobIsRefused(t *testing.T) {
 	}
 	if status != http.StatusNotFound {
 		t.Errorf("answered %d, want a not-found: %s", status, body)
+	}
+}
+
+// A listing of credentials carries no credential. The tokens are not stored,
+// so no listing can return one, and a test that reads the bytes is what keeps
+// a future field from carrying one by accident.
+func TestNoCredentialListingCarriesACredential(t *testing.T) {
+	base, token := bootWithUser(t)
+
+	for _, path := range []string{"/api/v1/account/sessions", "/api/v1/account/app-passwords"} {
+		t.Run(path, func(t *testing.T) {
+			status, body := authed(t, http.MethodGet, base+path, token)
+			if status != http.StatusOK {
+				t.Fatalf("answered %d: %s", status, body)
+			}
+
+			// The app password used to make this very request must not be in
+			// its own listing.
+			if strings.Contains(string(body), token) {
+				t.Errorf("the listing carries the caller's own token: %s", body)
+			}
+			for _, word := range []string{"password", "token", "secret", "hash", "digest"} {
+				if strings.Contains(strings.ToLower(string(body)), `"`+word+`"`) {
+					t.Errorf("the listing has a %q field: %s", word, body)
+				}
+			}
+		})
+	}
+}
+
+// An app password lists itself, so the listing is real rather than empty for a
+// reason that would also hide a leak.
+func TestAnAppPasswordAppearsInItsOwnListing(t *testing.T) {
+	base, token := bootWithUser(t)
+
+	status, body := authed(t, http.MethodGet, base+"/api/v1/account/app-passwords", token)
+	if status != http.StatusOK {
+		t.Fatalf("answered %d: %s", status, body)
+	}
+
+	var rows []map[string]any
+	if err := json.Unmarshal(body, &rows); err != nil {
+		t.Fatalf("the listing does not parse: %v\n%s", err, body)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("the account has %d app passwords, want the one it was given", len(rows))
+	}
+	if rows[0]["name"] != "test" {
+		t.Errorf("the row names %v", rows[0]["name"])
+	}
+}
+
+// One account never sees another's credentials. This is the property the whole
+// family rests on.
+func TestOneAccountNeverSeesAnothersCredentials(t *testing.T) {
+	ctx := context.Background()
+
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+
+	alice, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := e.Auth.CreateUser(ctx, "bob", "Bob", secret.New([]byte("another-long-password")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	aliceToken, err := e.Auth.CreateAppPassword(ctx, alice, "alice-key",
+		auth.Scope{Perms: uint16(acl.Read)}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Auth.CreateAppPassword(ctx, bob, "bob-key",
+		auth.Scope{Perms: uint16(acl.Read)}, 0); err != nil {
+		t.Fatal(err)
+	}
+
+	base := serve(t, e)
+
+	status, body := authed(t, http.MethodGet, base+"/api/v1/account/app-passwords", aliceToken)
+	if status != http.StatusOK {
+		t.Fatalf("answered %d: %s", status, body)
+	}
+	if strings.Contains(string(body), "bob-key") {
+		t.Errorf("alice's listing shows bob's credential: %s", body)
+	}
+	if !strings.Contains(string(body), "alice-key") {
+		t.Errorf("alice's listing does not show her own: %s", body)
+	}
+}
+
+// Revoking someone else's app password is refused, and the credential still
+// works afterwards. A revoke that reported success while doing nothing is how
+// a person believes they have locked someone out.
+func TestRevokingAnothersCredentialIsRefused(t *testing.T) {
+	ctx := context.Background()
+
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+
+	alice, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, err := e.Auth.CreateUser(ctx, "bob", "Bob", secret.New([]byte("another-long-password")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	aliceToken, err := e.Auth.CreateAppPassword(ctx, alice, "alice-key",
+		auth.Scope{Perms: uint16(acl.Read)}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bobToken, err := e.Auth.CreateAppPassword(ctx, bob, "bob-key",
+		auth.Scope{Perms: uint16(acl.Read)}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Find the id of bob's credential, which alice will try to revoke.
+	rows, err := e.Auth.AppPasswords(ctx, bob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("bob has %d credentials", len(rows))
+	}
+	bobID := rows[0].ID
+
+	base := serve(t, e)
+
+	status, body := authed(t, http.MethodDelete,
+		base+"/api/v1/account/app-passwords/"+strconv.FormatInt(bobID, 10), aliceToken)
+	if status == http.StatusNoContent || status == http.StatusOK {
+		t.Fatalf("alice revoked bob's credential: %d %s", status, body)
+	}
+
+	// And bob's credential still works, which is what makes the refusal real
+	// rather than a status code over a completed deletion.
+	after, afterBody := authed(t, http.MethodGet, base+"/api/v1/account/app-passwords", bobToken)
+	if after != http.StatusOK {
+		t.Errorf("bob's credential stopped working: %d %s", after, afterBody)
+	}
+}
+
+// Every route needing a credential refuses without one. Checked over the whole
+// bound set rather than one route, because the check is per handler and a
+// handler added later would be the one that forgot.
+func TestEveryCredentialledRouteRefusesAnonymously(t *testing.T) {
+	base, _ := bootWithUser(t)
+
+	paths := []string{
+		"/api/v1/jobs",
+		"/api/v1/account/sessions",
+		"/api/v1/account/app-passwords",
+	}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			status, body := get(t, base+path)
+			if status != http.StatusUnauthorized {
+				t.Errorf("%s answered %d anonymously: %s", path, status, body)
+			}
+		})
+	}
+
+	// And a delete, which takes a path parameter and so has its own guard.
+	status, body := get(t, base+"/api/v1/account/app-passwords/1")
+	if status == http.StatusOK || status == http.StatusNoContent {
+		t.Errorf("an anonymous delete answered %d: %s", status, body)
 	}
 }

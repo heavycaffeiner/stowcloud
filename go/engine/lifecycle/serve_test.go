@@ -56,7 +56,11 @@ func serve(t *testing.T, e *lifecycle.Engine) string {
 	task.Go(context.Background(), "test listener", func() { served <- app.Listener(ln) })
 
 	t.Cleanup(func() {
-		if serr := app.Shutdown(); serr != nil {
+		// Bounded, because Shutdown waits for every open connection and the
+		// test client keeps one alive: measured, an unbounded wait hangs the
+		// package for the client's full 90-second idle timeout on roughly one
+		// run in fifteen.
+		if serr := app.ShutdownWithTimeout(2 * time.Second); serr != nil {
 			t.Errorf("shutting down: %v", serr)
 		}
 		<-served
@@ -65,12 +69,23 @@ func serve(t *testing.T, e *lifecycle.Engine) string {
 	return "http://" + ln.Addr().String()
 }
 
+// testClient is a client that does not hold connections open.
+//
+// Keep-alive is what makes a shutdown wait: the server has an idle connection
+// it must not cut, and closing after each response means the test's own
+// cleanup does not race the client's idle timeout.
+func testClient() *http.Client {
+	return &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: &http.Transport{DisableKeepAlives: true},
+	}
+}
+
 // get performs a real request and returns the status and body.
 func get(t *testing.T, url string) (int, []byte) {
 	t.Helper()
 
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(url)
+	resp, err := testClient().Get(url)
 	if err != nil {
 		t.Fatalf("requesting %s: %v", url, err)
 	}
@@ -354,7 +369,7 @@ func TestClosingReleasesTheDatabases(t *testing.T) {
 func TestTheMiddlewareChainIsLive(t *testing.T) {
 	base := boot(t)
 
-	resp, err := (&http.Client{Timeout: 5 * time.Second}).Get(base + "/api/v1/system/health")
+	resp, err := testClient().Get(base + "/api/v1/system/health")
 	if err != nil {
 		t.Fatalf("requesting: %v", err)
 	}
@@ -385,7 +400,7 @@ func TestTheMiddlewareChainIsLive(t *testing.T) {
 // hammering the server, which is exactly when nobody is reading tests.
 func TestTheRateLimiterThrottles(t *testing.T) {
 	base := boot(t)
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := testClient()
 
 	// Past the burst, by enough that the refill during the loop cannot make
 	// up the difference.
@@ -426,7 +441,7 @@ func TestTheChainRunsBeforeTheRoutes(t *testing.T) {
 
 	// A route's own response carries the headers the chain sets. If the chain
 	// ran after the route, the response would already have been written.
-	resp, err := (&http.Client{Timeout: 5 * time.Second}).Get(base + "/api/v1/jobs")
+	resp, err := testClient().Get(base + "/api/v1/jobs")
 	if err != nil {
 		t.Fatalf("requesting: %v", err)
 	}
