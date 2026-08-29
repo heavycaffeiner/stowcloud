@@ -196,6 +196,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminSettingsPatch
 		case "admin.storage":
 			out[r.Name] = e.adminStorage
+		case "admin.index.estimate":
+			out[r.Name] = e.adminIndexEstimate
 		case "search.stream":
 			out[r.Name] = e.searchStream
 		case "auth.oidc.config":
@@ -208,6 +210,12 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.accountOIDCLinkStart
 		case "account.oidc-link.delete":
 			out[r.Name] = e.accountOIDCLinkDelete
+		case "account.smb.create":
+			out[r.Name] = e.accountSMBCreate
+		case "account.smb.password.set":
+			out[r.Name] = e.accountSMBPasswordSet
+		case "account.smb.password.delete":
+			out[r.Name] = e.accountSMBPasswordDelete
 		case "admin.users.oidc.get":
 			out[r.Name] = e.adminUserOIDCGet
 		case "admin.users.oidc.delete":

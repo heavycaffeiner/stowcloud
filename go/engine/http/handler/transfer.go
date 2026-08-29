@@ -8,6 +8,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/search"
 )
 
 // MoveView reports where an entry landed and how it got there.
@@ -183,4 +184,41 @@ func ArchiveListingOf(l preview.ArchiveListing) ArchiveListingView {
 		out.Entries = append(out.Entries, v)
 	}
 	return out
+}
+
+// IndexEstimateView is what building a name index would cost.
+type IndexEstimateView struct {
+	// IndexBytes is the estimate, as a decimal string: a large corpus runs
+	// past 2^53 and the figure an operator is deciding on would round.
+	IndexBytes string `json:"index_bytes"`
+
+	// Confidence says how much to trust the number. An estimate presented
+	// without it invites an operator to plan against a figure the estimator
+	// itself is unsure of.
+	Confidence string `json:"confidence"`
+
+	// Formula records the derivation term by term, so a wrong estimate shows
+	// which term was wrong to somebody checking the arithmetic.
+	Formula string `json:"formula"`
+
+	// Files and NameBytes are what was measured.
+	Files     string `json:"files"`
+	NameBytes string `json:"name_bytes"`
+
+	// Partial marks a scan that hit its bound, so the figures describe a
+	// sample. Presenting a fraction as the whole is how an index is sized at
+	// a tenth of what it needs.
+	Partial bool `json:"partial"`
+}
+
+// IndexEstimateOf projects a scan and its estimate.
+func IndexEstimateOf(r search.ScanResult, e search.IndexEstimate) IndexEstimateView {
+	return IndexEstimateView{
+		IndexBytes: strconv.FormatUint(e.IndexBytes, 10),
+		Confidence: e.Confidence.String(),
+		Formula:    e.Formula,
+		Files:      strconv.FormatUint(r.Stats.Files, 10),
+		NameBytes:  strconv.FormatUint(r.Stats.NameBytesTotal, 10),
+		Partial:    r.Partial,
+	}
 }

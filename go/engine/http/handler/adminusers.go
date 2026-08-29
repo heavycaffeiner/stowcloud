@@ -104,3 +104,50 @@ func GroupsOf(rows []auth.GroupRow) []GroupView {
 	}
 	return out
 }
+
+// SMBStateView is what an account can do over the file-sharing protocol.
+//
+// No credential and no hash. What the screen needs is whether the protocol
+// works for this account and, when it does not, which of the three reasons
+// applies: the person opted out, a second factor blocks it, or no credential
+// has been set.
+type SMBStateView struct {
+	// OptOut is the account's own refusal, which forces Enabled off.
+	OptOut  bool `json:"opt_out"`
+	Enabled bool `json:"enabled"`
+
+	// Credential is "account" when something works and "none" when nothing
+	// does.
+	Credential string `json:"credential"`
+
+	// Reason carries a value only where Credential is none. Absent otherwise,
+	// because a reason alongside a working credential reads as a warning
+	// about something that is fine.
+	Reason string `json:"reason,omitempty"`
+}
+
+// SMBStateOf projects the state.
+func SMBStateOf(s auth.SMBState) SMBStateView {
+	return SMBStateView{
+		OptOut:     s.OptOut,
+		Enabled:    s.Enabled,
+		Credential: string(s.Credential),
+		Reason:     string(s.Reason),
+	}
+}
+
+// SMBClearedView answers a credential removal.
+type SMBClearedView struct {
+	State SMBStateView `json:"state"`
+
+	// Revertible says the account can restore protocol access by setting a
+	// credential again. False means clearing it was losing that access for
+	// good under the current configuration, which is a different thing to
+	// have just done and worth saying.
+	Revertible bool `json:"revertible"`
+}
+
+// SMBClearedOf projects a removal.
+func SMBClearedOf(s auth.SMBState, revertible bool) SMBClearedView {
+	return SMBClearedView{State: SMBStateOf(s), Revertible: revertible}
+}

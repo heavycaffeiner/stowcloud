@@ -17,6 +17,7 @@ import (
 	"net/netip"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/oidc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
 )
@@ -63,6 +64,15 @@ func (e *Engine) loadSettings(ctx context.Context) {
 		e.Search.SetBounds(concurrency, deadline)
 	}
 
+	// Whether an account with a second factor may reach the file-sharing
+	// protocol. The value was loaded and then dropped, so an operator who set
+	// the blocking policy kept running under the permissive one: every
+	// enrolled account held the access the operator had revoked, and the
+	// settings screen showed the revocation.
+	if e.Auth != nil {
+		e.Auth.SetSMBTOTPPolicy(smbTOTPPolicyOf(values.SMBTOTPPolicy, e))
+	}
+
 	// The limiter's own setter rather than a fresh limiter: it holds a bucket
 	// per client, and replacing it would discard every one of them, handing a
 	// full burst to whoever was being throttled at that moment.
@@ -104,4 +114,29 @@ func parsePrefixes(raw []string, e *Engine) []netip.Prefix {
 // server would need a request from an address the test cannot bind.
 func ParsePrefixesForTest(raw []string) []netip.Prefix {
 	return parsePrefixes(raw, &Engine{logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+}
+
+// smbTOTPPolicyOf reads the stored policy name.
+//
+// An unrecognised name takes the blocking policy, not the permissive one.
+// The two spellings a document can carry are the ones below, so anything else
+// is a value nobody meant, and guessing wrong in the permissive direction
+// hands protocol access to accounts an operator may have been trying to shut
+// out.
+//
+// This makes the blocking branch untestable in isolation: misspelling "block"
+// sends the value to the default, which blocks as well, so no test can tell
+// the two apart. What the tests pin instead is the permissive branch, which
+// is the one whose loss would be a security change.
+func smbTOTPPolicyOf(name string, e *Engine) auth.TOTPPolicy {
+	switch name {
+	case runtimecfg.DefaultSMBTOTPPolicy:
+		return auth.TOTPRequireSeparate
+	case "block":
+		return auth.TOTPBlock
+	default:
+		e.logger.Warn("the stored SMB second-factor policy was not understood; "+
+			"enrolled accounts are blocked from the protocol", "policy", name)
+		return auth.TOTPBlock
+	}
 }
