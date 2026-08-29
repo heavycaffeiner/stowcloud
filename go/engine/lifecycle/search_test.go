@@ -395,3 +395,60 @@ func TestSearchRespectsAGrantThatStartsPartwayDown(t *testing.T) {
 		t.Error("a file above the granted subtree was returned, so the per-entry check did not run")
 	}
 }
+
+// A file name carrying a line break cannot split the stream.
+//
+// The frame ends at a blank line, so a newline reaching the payload raw would
+// end it early and the remainder would arrive as a second event the server
+// never sent. A name is caller-supplied, so this would be a name deciding
+// what frames a client receives.
+//
+// What actually prevents it is the JSON encoder, which escapes newlines
+// inside a string. Removing the frame builder's own line-break check does not
+// fail this test, and that was measured rather than assumed. The check is a
+// second line behind the first, and this test pins the outcome rather than
+// either mechanism, so it still holds if the encoder is ever swapped.
+//
+// Created on disk rather than through the API, because a newline cannot
+// survive a URL path: the request line would be malformed before any handler
+// saw it. It is legal in a POSIX name, so a share populated by any other
+// means can hold one, and the walk will find it.
+func TestAFileNameCannotSplitTheSearchStream(t *testing.T) {
+	base, token, share, host := contentShareAt(t, everyPerm(), []byte("unused"))
+
+	nasty := "report\ndata: {\"name\":\"injected\"}\n\nevent: done\ndata: {}\n\n.txt"
+	if werr := os.WriteFile(filepath.Join(host, nasty), []byte("x"), 0o600); werr != nil {
+		t.Fatalf("creating the file: %v", werr)
+	}
+	_ = share // the share name is not needed: the file is placed on the host directly.
+
+	status, _, events := readSSE(t, base+"/api/v1/search/stream?q=report", token)
+	if status != http.StatusOK {
+		t.Fatalf("answered %d", status)
+	}
+
+	// Exactly one terminal event. A split frame is how a second one appears.
+	var done, hits int
+	for _, e := range events {
+		switch e.name {
+		case "done":
+			done++
+		case "hit":
+			hits++
+			var hit map[string]any
+			if err := json.Unmarshal([]byte(e.data), &hit); err != nil {
+				t.Errorf("a hit did not decode, so the frame was split: %q", e.data)
+				continue
+			}
+			if stringField(hit, "name") == "injected" {
+				t.Error("a file name produced a frame the server never sent")
+			}
+		}
+	}
+	if done != 1 {
+		t.Errorf("%d terminal events, want exactly 1: the name split the stream", done)
+	}
+	if hits != 1 {
+		t.Errorf("%d hits for one file, want exactly 1", hits)
+	}
+}

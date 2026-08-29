@@ -12,7 +12,6 @@ package lifecycle
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -96,7 +95,7 @@ func (e *Engine) writeSearchStream(
 	// An immediate comment, so the client and any proxy see an established
 	// stream before the first result exists. A walk that finds nothing for
 	// ten seconds otherwise looks like a connection that failed to open.
-	writeSSE(w, "", ": searching\n\n", e)
+	writeSSE(w, handler.SSEComment(), e)
 
 	results, err := e.Search.Query(ctx, sources, opt)
 	if err != nil {
@@ -124,13 +123,19 @@ func (e *Engine) writeSearchStream(
 }
 
 // writeSSEEvent writes one named event carrying a JSON payload.
+//
+// Framed by the shared builder rather than by a second encoder here. Both
+// produced the same bytes, since the JSON encoder escapes newlines and a
+// split frame was never reachable through a payload; one encoder is simply
+// one place for that to stop being true.
 func writeSSEEvent(w *bufio.Writer, name string, payload any, e *Engine) {
-	body, err := json.Marshal(payload)
+	frame, err := handler.SSEFrame(name, payload)
 	if err != nil {
-		e.logger.Warn("encoding a search event", "event", name, "error", err)
+		e.logger.Warn("a search event could not be framed and is dropped",
+			"event", name, "error", err)
 		return
 	}
-	writeSSE(w, name, "data: "+string(body)+"\n\n", e)
+	writeSSE(w, frame, e)
 }
 
 // writeSSE writes one frame and flushes it.
@@ -138,14 +143,8 @@ func writeSSEEvent(w *bufio.Writer, name string, payload any, e *Engine) {
 // Flushed per event rather than at the end, which is the whole point: a
 // buffered stream delivered on close is a slower version of a single
 // response.
-func writeSSE(w *bufio.Writer, name, body string, e *Engine) {
-	if name != "" {
-		if _, err := w.WriteString("event: " + name + "\n"); err != nil {
-			e.logger.Warn("writing a search event", "error", err)
-			return
-		}
-	}
-	if _, err := w.WriteString(body); err != nil {
+func writeSSE(w *bufio.Writer, frame string, e *Engine) {
+	if _, err := w.WriteString(frame); err != nil {
 		e.logger.Warn("writing a search event", "error", err)
 		return
 	}
