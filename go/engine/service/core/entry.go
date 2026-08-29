@@ -43,6 +43,28 @@ type Entry struct {
 	Perms acl.Perms
 }
 
+// KindName is the wire name of what this entry is.
+//
+// It lives here because Kind belongs to the filesystem tier and the
+// presentation tier may not import that tier to read it. The same reason
+// StateName lives on Operation.
+func (e Entry) KindName() string { return e.Kind.String() }
+
+// PermNames lists the caller's effective permissions at this path, by name.
+//
+// Names rather than the bit set: the bits are an internal encoding, and a
+// client that learned them would make adding one a wire change. Sorted by the
+// permission model's own order, so the same set is always the same list.
+func (e Entry) PermNames() []string {
+	out := make([]string, 0, 8)
+	for _, np := range acl.NamedPerms() {
+		if e.Perms.Has(np.Perm) {
+			out = append(out, np.Name)
+		}
+	}
+	return out
+}
+
 // Page holds a size-limited portion of a directory listing together with the
 // counts a client requires to draw a grid.
 type Page struct {
