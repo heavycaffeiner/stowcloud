@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"strconv"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
@@ -30,27 +29,27 @@ type AuditFilter struct {
 	Limit  int
 }
 
-// AuditRow is one entry as a screen reads it.
+// AuditRow is one entry of the log.
 //
-// The field names are the client's contract. OK is a boolean, because a
-// numeric result renders as a blank outcome; the timestamp is a string,
-// because nanoseconds exceed what a JSON number carries exactly and an entry
-// landing on the wrong second is one nobody can correlate.
+// No wire tags and no wire types: the timestamp is the number it is, and the
+// tier that serves it decides how a number crosses. A service type shaped by
+// a JSON format is one whose fields cannot be renamed without breaking a
+// client that this package does not know exists.
 type AuditRow struct {
-	RowID int64  `json:"rowid"`
-	TsNs  string `json:"ts_ns"`
-	Actor *int64 `json:"actor"`
-	// ActorName is best effort: null for a system-attributed row and for an
+	RowID int64
+	TsNs  int64
+	Actor *int64
+	// ActorName is best effort: nil for a system-attributed row and for an
 	// account that has since been deleted.
-	ActorName *string `json:"actor_name"`
-	Event     string  `json:"event"`
-	// Stored as null rather than empty when an event names nothing, letting a
-	// screen distinguish "no target" from "a target with a blank name".
-	Target *string `json:"target"`
-	IP     *string `json:"ip"`
-	UA     string  `json:"ua"`
-	OK     bool    `json:"ok"`
-	Detail *string `json:"detail"`
+	ActorName *string
+	Event     string
+	// Nil rather than empty when an event names nothing, so a screen can tell
+	// "no target" from "a target with a blank name".
+	Target *string
+	IP     *string
+	UA     string
+	OK     bool
+	Detail *string
 }
 
 // Audit writes one row and returns its error.
@@ -124,7 +123,7 @@ func (s *Service) AuditPage(ctx context.Context, f AuditFilter) ([]AuditRow, *in
 		}
 		row := AuditRow{
 			RowID:  rec.RowID,
-			TsNs:   strconv.FormatInt(rec.TsNs, 10),
+			TsNs:   rec.TsNs,
 			Actor:  rec.Actor,
 			Event:  rec.Event,
 			Target: rec.Target,
