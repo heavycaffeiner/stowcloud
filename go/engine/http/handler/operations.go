@@ -42,10 +42,11 @@ type OperationView struct {
 	// run, so a client polls and reads this when the state says to.
 	Results []OperationItemView `json:"results,omitempty"`
 
-	// Attempting is what the runner had started and never recorded an outcome
-	// for. Only a job whose process died has any, and whether those items
-	// landed is genuinely unknown, which is why they are not folded in with
-	// the ones nothing touched.
+	// Attempting lists items the runner began and never finished recording.
+	// Only a job whose process died has any. Nobody knows whether those items
+	// took effect, which is why a client is shown them separately from the
+	// ones that were never touched: re-running the two is not the same
+	// decision.
 	Attempting []string `json:"attempting,omitempty"`
 
 	// Pending is what the job never reached. Untouched, so re-running exactly
