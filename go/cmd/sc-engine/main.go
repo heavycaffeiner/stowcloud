@@ -28,9 +28,11 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/jail"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview/worker"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/fsatomic"
 )
 
@@ -40,20 +42,37 @@ import (
 const shutdownBudget = 20 * time.Second
 
 func main() {
+	// The decoder runs as this same binary re-executed, which is what the
+	// pool's default expects: it has no argv to put a path in, and its socket
+	// arrives on a fixed descriptor. Checked before the flags, because it takes
+	// none and must not be confused by one.
+	if len(os.Args) > 1 && os.Args[1] == "preview-worker" {
+		os.Exit(runPreviewWorker(os.Args[2:]))
+	}
+
 	var (
 		addr    = flag.String("addr", "127.0.0.1:8081", "listen address")
 		dataDir = flag.String("data", ".dev/data", "data directory")
 		plain   = flag.Bool("plain", false, "serve HTTP instead of HTTPS")
+		// The decoder confines itself before it parses anything, and a kernel
+		// that refuses the confinement is a refusal to decode. Some development
+		// environments cannot apply Landlock at all, where the choice is running
+		// the decoder degraded or having no thumbnails to look at.
+		//
+		// Required by default, because the confinement is the feature here: this
+		// is the one process whose whole job is parsing untrusted image data.
+		hardening = flag.String("hardening", "required",
+			"decoder confinement: required, preferred, or off")
 	)
 	flag.Parse()
 
-	if err := run(*addr, *dataDir, *plain); err != nil {
+	if err := run(*addr, *dataDir, *plain, *hardening); err != nil {
 		slog.Error("sc-engine failed", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run(addr, dataDir string, plain bool) error {
+func run(addr, dataDir string, plain bool, hardening string) error {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	abs, err := filepath.Abs(dataDir)
@@ -74,6 +93,9 @@ func run(addr, dataDir string, plain bool) error {
 	eng, err := lifecycle.Open(ctx, lifecycle.Options{
 		DataDir: abs,
 		Logger:  logger,
+		// This binary is both halves: the pool re-executes it with the
+		// subcommand, and the confinement policy rides beside it.
+		PreviewWorkerArgs: []string{"preview-worker", hardening},
 	})
 	if err != nil {
 		return fmt.Errorf("opening the engine: %w", err)
@@ -126,6 +148,45 @@ func run(addr, dataDir string, plain bool) error {
 		}
 		<-served
 		return nil
+	}
+}
+
+// runPreviewWorker is the jailed decoder, and it is never run by hand.
+//
+// Confinement is required rather than preferred here. This is the one process
+// whose whole job is parsing untrusted image data, so a kernel that cannot
+// confine it is a refusal: decoding unconfined would be worse than not
+// producing thumbnails at all.
+func runPreviewWorker(args []string) int {
+	policy := jail.Required
+	if len(args) > 0 {
+		policy = policyOf(args[0])
+	}
+	status, err := worker.Run(policy)
+	if err != nil {
+		if errors.Is(err, jail.ErrHardeningRefused) {
+			// The step, the errno and the kernel, because "hardening failed"
+			// is not something anybody can act on.
+			return jail.Refuse(os.Stderr, status)
+		}
+		slog.Error("the preview worker stopped", "error", err)
+		return 1
+	}
+	return 0
+}
+
+// policyOf reads a confinement name.
+//
+// Anything unrecognised is the strict policy. A misspelling must not quietly
+// weaken the one process that exists to be confined.
+func policyOf(name string) jail.Policy {
+	switch name {
+	case "preferred":
+		return jail.Preferred
+	case "off":
+		return jail.Off
+	default:
+		return jail.Required
 	}
 }
 
