@@ -59,6 +59,13 @@ type Options struct {
 	// KeyOf names the resource a property belongs to. Nil disables the
 	// property store, since rows nothing can key are rows nothing can read.
 	KeyOf KeyOf
+	// Uploads backs the chunked upload collection. Nil is a deployment
+	// without one, which answers 405 there rather than half-serving it.
+	Uploads Uploads
+	// UploadHeaders names the headers that collection reads. A partly filled
+	// set disables it, since honouring one header and ignoring another is how
+	// a client's declared length disappears without a word.
+	UploadHeaders UploadHeaders
 	// Limits bound what one request may carry. The zero value takes
 	// DefaultLimits, because a zero bound is not "unbounded" here: several of
 	// these are counts a parser compares against, so leaving them at zero
@@ -78,6 +85,8 @@ type Handler struct {
 	tokensAt        func(ctx context.Context, share uint32, path string) []string
 	locksAt         func(ctx context.Context, share uint32, path string) []Lock
 	taker           LockTaker
+	uploads         Uploads
+	uploadHeaders   UploadHeaders
 	limits          Limits
 	infinityEntries int
 	logger          *slog.Logger
@@ -105,6 +114,8 @@ func New(opt Options) *Handler {
 		tokensAt:        opt.TokensAt,
 		locksAt:         opt.LocksAt,
 		taker:           opt.Taker,
+		uploads:         opt.Uploads,
+		uploadHeaders:   opt.UploadHeaders,
 		limits:          limits,
 		infinityEntries: infinity,
 		logger:          logger,

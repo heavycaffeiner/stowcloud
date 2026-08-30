@@ -23,6 +23,13 @@ import (
 // DavPrefix is the mount point. Everything under it is WebDAV.
 const DavPrefix = "/dav"
 
+// DavUploadPrefix is where the chunked upload collection lives.
+//
+// Outside the share tree on purpose: the collection is addressed by session
+// name, and a session is not a directory under a share. A path inside a share
+// named "uploads" would collide with it.
+const DavUploadPrefix = "/dav-uploads"
+
 // DavAlias is an alternative mount point addressing the same tree.
 //
 // Data rather than constants because the names belong to another product's
@@ -40,7 +47,9 @@ type DavAlias struct {
 
 // DavHandler serves the WebDAV mount.
 //
-// aliases may be empty, which is a deployment serving only its own prefix.
+// aliases may be empty, which is a deployment serving only its own prefix. The
+// chunked upload collection is served when the engine has an upload engine;
+// without one the collection answers 405 rather than half-serving it.
 func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// No credential needed to discover: a client establishes that the
@@ -85,6 +94,40 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 				children = append(children, dav.RootChild{Label: rt.Label})
 			}
 			h.RootPropfind(w, r, children)
+			return
+		}
+
+		// The chunked upload collection lives under its own prefix, outside the
+		// share tree: it is addressed by session name, and a session is not a
+		// directory under a share. The permission lives at the destination,
+		// which the collection resolves through the same header COPY and MOVE
+		// use. A deployment with no upload engine matches anyway and lets the
+		// handler refuse: half-serving the collection would be the worse
+		// answer, and a 405 says exactly what is missing.
+		if rest, ok := strings.CutPrefix(r.URL.EscapedPath(), DavUploadPrefix); ok {
+			up, uerr := dav.ParseUploadPath(rest)
+			if uerr != nil {
+				// The dav package's own writer, since the refusal is the
+				// protocol's: the shared mapper does not know its sentinels
+				// and would answer 500 for a malformed member name.
+				if werr := dav.WriteError(w, uerr); werr != nil {
+					e.logger.Warn("the refusal did not reach the client", "error", werr)
+				}
+				return
+			}
+			// The destination is what the session binds to, and every method
+			// against the collection needs it: a chunk PUT has to reach the
+			// session that holds it, and both go through the alias scoped by
+			// the destination's share. Assembling is the one that publishes
+			// there. Clients that name the file only at the end send the
+			// header from the start; one that omits it has named nothing to
+			// upload into.
+			target, terr := e.davDestination(user, r, aliases)
+			if terr != nil {
+				apierr.Write(w, terr, apierr.VisibilityHidden)
+				return
+			}
+			h.ServeUpload(w, r, target.Resolved, up)
 			return
 		}
 
@@ -202,6 +245,7 @@ func (e *Engine) davDestination(
 	switch {
 	case errors.Is(err, dav.ErrNoDestination):
 		return dav.Target{}, apierr.BadRequest("dav.no_destination", "Destination")
+
 	case errors.Is(err, dav.ErrForeignDestination):
 		return dav.Target{}, apierr.BadGatewayError("dav.foreign_destination", "Destination")
 	case err != nil:

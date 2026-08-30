@@ -133,9 +133,14 @@ func TestTheRootAndItsSharesAreCollections(t *testing.T) {
 
 	body := f.through(f.mounted(), "PROPFIND", "/dav/", allprop).Body.String()
 
-	// One for the root, one for the share.
-	if n := strings.Count(body, "<D:collection"); n != 2 {
-		t.Errorf("%d collections reported, want 2: %s", n, body)
+	// The root plus one per share: files and safe, which the fixture registers.
+	if n := strings.Count(body, "<D:collection"); n != 3 {
+		t.Errorf("%d collections reported, want 3: %s", n, body)
+	}
+	for _, label := range []string{"files", "safe"} {
+		if !strings.Contains(body, "/"+label+"/") {
+			t.Errorf("the share %s is not listed: %s", label, body)
+		}
 	}
 }
 

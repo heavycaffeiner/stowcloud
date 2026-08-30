@@ -41,7 +41,11 @@ func StatusOf(err error) (int, xml.Name) {
 		errors.Is(err, ErrBadEscape), errors.Is(err, ErrEncodedSeparator),
 		errors.Is(err, ErrNUL), errors.Is(err, ErrDotSegment),
 		errors.Is(err, ErrChunkNotDecimal), errors.Is(err, ErrChunkLeadingZero),
-		errors.Is(err, ErrChunkRange), errors.Is(err, ErrNoDestination):
+		errors.Is(err, ErrChunkRange), errors.Is(err, ErrNoDestination),
+		errors.Is(err, ErrChunkOnCollection), errors.Is(err, ErrNoUploadLength),
+		errors.Is(err, ErrBadUploadLength), errors.Is(err, ErrBadUploadMTime),
+		errors.Is(err, ErrNoBody), errors.Is(err, ErrNoLockToken),
+		errors.Is(err, ErrBadLockDepth):
 		return http.StatusBadRequest, xml.Name{}
 
 	// A body that parsed and was too big to accept. Still the request's fault,
@@ -50,6 +54,12 @@ func StatusOf(err error) (int, xml.Name) {
 		errors.Is(err, ErrTooManyElements), errors.Is(err, ErrNameTooLong),
 		errors.Is(err, ErrTooMuchText), errors.Is(err, ErrTooManyProperties),
 		errors.Is(err, ErrIfTooLarge):
+		return http.StatusBadRequest, xml.Name{}
+
+	// A refusal an adapter marked as the client's own mistake. The interface
+	// rather than a named type: the adapters marking these cannot be imported
+	// here, and a sentinel each would mean a new one to remember adding.
+	case badRequest(err):
 		return http.StatusBadRequest, xml.Name{}
 
 	// XML the decoder itself rejected: a truncated document, a mismatched end
@@ -95,6 +105,13 @@ func StatusOf(err error) (int, xml.Name) {
 	case errors.Is(err, ErrNoPropertyStore):
 		return http.StatusConflict, xml.Name{}
 
+	// A deployment that records no locks does not implement LOCK, and Allow
+	// leaves the method out. 405 rather than 501 for the same reason as above:
+	// a client reading 501 stops offering locking entirely, where 405 is about
+	// this resource on this server.
+	case errors.Is(err, ErrNoLockTable):
+		return http.StatusMethodNotAllowed, xml.Name{}
+
 	// A parent that is missing, or a collection that still has members. Both
 	// are the request meeting a tree it did not expect.
 	case errors.Is(err, core.ErrNotEmpty), errors.Is(err, core.ErrConflict),
@@ -118,7 +135,27 @@ func StatusOf(err error) (int, xml.Name) {
 	}
 }
 
+// badRequester is what an adapter marks a client's own mistake with.
+//
+// The adapters live below this package and cannot be imported, so the mark
+// travels as a capability rather than a sentinel: one interface, checked with
+// errors.As, and no new sentinel to remember adding to the table.
+type badRequester interface{ BadRequest() bool }
+
+// badRequest reports whether an error was marked as the client's fault by an
+// adapter that cannot be imported here.
+func badRequest(err error) bool {
+	var m badRequester
+	return errors.As(err, &m)
+}
+
 // isSyntaxError reports whether the decoder rejected the document itself.
+//
+// Both forms are checked. A syntax error is what a malformed document
+// produces, and an unexpected EOF is what a truncated one produces, which is
+// the more common of the two: a client whose connection dropped mid-body.
+
+// A syntax error is a malformed document's product.
 //
 // Both forms are checked. A syntax error is what a malformed document
 // produces, and an unexpected EOF is what a truncated one produces, which is

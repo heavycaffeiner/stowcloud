@@ -18,6 +18,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	uploadsvc "github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
@@ -31,8 +32,9 @@ import (
 // share layer expects anyway.
 
 const (
-	testShare = core.ShareID(1)
-	testUser  = core.UserID(1)
+	testShare      = core.ShareID(1)
+	testShareOther = core.ShareID(2)
+	testUser       = core.UserID(1)
 )
 
 // fixture is one server's worth of state, plus the directory behind the share.
@@ -88,6 +90,29 @@ func newFixture(t *testing.T) *fixture { return build(t, nil, 0) }
 func newFixtureReadOnly(t *testing.T) *fixture {
 	f := build(t, nil, 0)
 	regrant(t, f, acl.Read|acl.Download)
+	return f
+}
+
+// newFixtureNoUploads builds one with no upload engine, which is a deployment
+// that does not offer the chunked upload collection.
+func newFixtureNoUploads(t *testing.T) *fixture {
+	f := build(t, nil, 0)
+	f.engine.Upload = nil
+	// Rebuild the handler, since the adapter was wired when it was made.
+	uploads := dav.Uploads(nil)
+	if f.engine.Upload != nil {
+		uploads = lifecycle.NewDavUploads(f.engine.Upload)
+	}
+	f.h = dav.New(dav.Options{
+		Core:    f.core,
+		Taker:   f.real,
+		Uploads: uploads,
+		UploadHeaders: dav.UploadHeaders{
+			TotalLength: "OC-Total-Length",
+			MTime:       "X-OC-Mtime",
+			ETag:        "OC-ETag",
+		},
+	})
 	return f
 }
 
@@ -150,12 +175,40 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 		t.Fatalf("registering the share: %v", rerr)
 	}
 
+	// A second share, so a test can show that a session bound to one share
+	// does not answer a collection addressed under the other. Naming them
+	// distinctly keeps a grant on one from covering the other.
+	otherDir := filepath.Join(root, "other")
+	if merr := os.MkdirAll(otherDir, 0o755); merr != nil {
+		t.Fatalf("creating the second share directory: %v", merr)
+	}
+	if rerr := c.RegisterShare(ctx, core.ShareDef{
+		ID: testShareOther, Name: "safe", Host: otherDir, Policy: vfs.DefaultSharePolicy(),
+	}); rerr != nil {
+		t.Fatalf("registering the second share: %v", rerr)
+	}
+
 	seedUser(t, st, int64(testUser))
-	grantAll(t, c, st, int64(testUser), testShare)
+	grantAll(t, c, st, int64(testUser), testShare, "files")
+	grantAll(t, c, st, int64(testUser), testShareOther, "safe")
 
 	locks := &stubLocks{}
 	props := lifecycle.NewDavProps(st)
 	real := lifecycle.NewDavLocks(st, clock.System(), nil)
+
+	// The upload engine, so the collection tests drive the real spool rather
+	// than a stub of the seam. A stub would be a second implementation of the
+	// thing under test: what the collection does is translate requests into
+	// engine calls, so the engine has to be the real one.
+	upEngine, uerr := uploadsvc.New(ctx, c, st, uploadsvc.Options{
+		// A test chunk of a few bytes beats a 5 MiB minimum, which is what the
+		// compiled-in seed would demand of every PUT below.
+		ChunkMin:     1,
+		ChunkDefault: 1,
+	})
+	if uerr != nil {
+		t.Fatalf("building the upload engine: %v", uerr)
+	}
 
 	return &fixture{
 		h: dav.New(dav.Options{
@@ -175,13 +228,19 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 			InfinityEntries: infinityEntries,
 			Store:           props,
 			KeyOf:           lifecycle.DavKeyOf,
+			Uploads:         lifecycle.NewDavUploads(upEngine),
+			UploadHeaders: dav.UploadHeaders{
+				TotalLength: "OC-Total-Length",
+				MTime:       "X-OC-Mtime",
+				ETag:        "OC-ETag",
+			},
 		}),
 		core:   c,
 		dir:    shareDir,
 		locks:  locks,
 		props:  props,
 		real:   real,
-		engine: &lifecycle.Engine{Core: c, State: st, Cache: ca},
+		engine: &lifecycle.Engine{Core: c, State: st, Cache: ca, Upload: upEngine},
 		state:  st,
 	}
 }
@@ -200,7 +259,7 @@ func seedUser(t *testing.T, st *state.DB, id int64) {
 
 // grantAll gives the test user everything over the share, so a refusal in a
 // test is the method's own decision rather than a missing grant.
-func grantAll(t *testing.T, c *core.Core, st *state.DB, user int64, share core.ShareID) {
+func grantAll(t *testing.T, c *core.Core, st *state.DB, user int64, share core.ShareID, label string) {
 	t.Helper()
 	ctx := context.Background()
 	holder := user
@@ -211,7 +270,7 @@ func grantAll(t *testing.T, c *core.Core, st *state.DB, user int64, share core.S
 		Subpath: "",
 		Allow:   uint16(all),
 		Inherit: true,
-		Label:   "files",
+		Label:   label,
 	}, 0); err != nil {
 		t.Fatalf("persisting the grant: %v", err)
 	}
