@@ -204,3 +204,64 @@ describe('writeFile and the advisory change token', () => {
     return String(init.body)
   }
 })
+
+// The widening drops anything it does not name. That is silent by
+// construction: the app reads a field the server sent and finds undefined,
+// with nothing failing at the point the field went missing. The thumbnail hint
+// went that way and no image in the product ever had a thumbnail.
+describe('the wire entry widening', () => {
+  const wireEntry = {
+    name: 'photo.png',
+    path: 'Files/photo.png',
+    kind: 'file',
+    is_dir: false,
+    size: '95',
+    mtime_ns: '1700000000000000000',
+    etag: 'abc',
+    etag_weak: false,
+    perms: ['read', 'download']
+  }
+
+  async function listOnce(entry: Record<string, unknown>) {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse(200, { entries: [entry], dirs: 0, total: 1, dir_etag: 'd', dir_etag_weak: false })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const page = await httpApi.list('/Files', {})
+    return page.entries[0]
+  }
+
+  it('carries the preview hint through to the entry', async () => {
+    const entry = await listOnce({ ...wireEntry, preview: { available: true } })
+    expect(entry.preview?.available).toBe(true)
+  })
+
+  it('leaves the hint absent when the server sends none', async () => {
+    const entry = await listOnce({ ...wireEntry, name: 'notes.txt' })
+    // Absent rather than present-and-false, so the grid tests for presence.
+    expect(entry.preview).toBeUndefined()
+  })
+
+  it('does not invent a hint from a false one', async () => {
+    const entry = await listOnce({ ...wireEntry, preview: { available: false } })
+    expect(entry.preview?.available).toBe(false)
+  })
+
+  it('carries the birth time through when the filesystem reports one', async () => {
+    const entry = await listOnce({ ...wireEntry, btime_ns: '1600000000000000000' })
+    expect(entry.btime_ns).toBe('1600000000000000000')
+  })
+
+  it('leaves the birth time absent rather than zero', async () => {
+    const entry = await listOnce(wireEntry)
+    // Zero is a real timestamp, so it cannot stand for "the filesystem has none".
+    expect(entry.btime_ns).toBeUndefined()
+  })
+
+  it('keeps the size exact past what a JavaScript number holds', async () => {
+    const entry = await listOnce({ ...wireEntry, size: '9007199254740993' })
+    // The wire carries a string for this reason; the app's field is a number,
+    // so this records where the exactness is actually lost.
+    expect(entry.size).toBe(9007199254740992)
+  })
+})

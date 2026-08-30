@@ -77,10 +77,8 @@ func run(addr, dataDir string, plain bool) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// The preview worker is this binary re-executed with a subcommand it does
-	// not answer, so name the shipped command's worker only when it is built
-	// beside us. Absent, thumbnails report the decoder as missing rather than
-	// failing at exec with nothing pointing at why.
+	// No worker is named, which leaves the pool re-executing this binary with
+	// the subcommand handled at the top of main.
 	eng, err := lifecycle.Open(ctx, lifecycle.Options{
 		DataDir: abs,
 		Logger:  logger,
