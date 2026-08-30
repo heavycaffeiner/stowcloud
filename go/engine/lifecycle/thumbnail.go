@@ -182,15 +182,9 @@ func presetOf(s string) (preview.Preset, error) {
 // no room for a cache. Refusing to boot over it would take down a server that
 // can still serve every file it holds.
 func openPreview(
-	dataDir, worker string, workerArgs []string,
-	c *core.Core, clk clock.Clock, log *slog.Logger,
+	dataDir, worker string, c *core.Core, clk clock.Clock, log *slog.Logger,
 ) *preview.Service {
 	opt := preview.PoolOptions{Clock: clk}
-	if len(workerArgs) > 0 {
-		// The caller named the argv, which is how a harness on a kernel that
-		// refuses the confinement says so. Empty leaves the pool's default.
-		opt.Args = workerArgs
-	}
 	if worker != "" {
 		// Only the binary. The pool supplies its default argument either way,
 		// and the shipped decoder reads no argv at all: its socket arrives on

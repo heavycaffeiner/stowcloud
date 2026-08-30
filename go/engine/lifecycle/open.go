@@ -72,16 +72,6 @@ type Options struct {
 	// subcommand, so a thumbnail would fail at the first exec with nothing
 	// pointing at why.
 	PreviewWorker string
-
-	// PreviewWorkerArgs is the argv the decoder is re-executed with. Empty
-	// takes the pool's default, which names the subcommand and nothing else.
-	//
-	// It exists because the decoder confines itself before it decodes, and a
-	// kernel that refuses the confinement refuses to start it. A harness on
-	// such a kernel has no other way to say so, and the alternative is a
-	// deployment where thumbnails simply never appear and the reason is in a
-	// subprocess's stderr.
-	PreviewWorkerArgs []string
 }
 
 // Engine is a constructed set of services, and the files they hold open.
@@ -342,7 +332,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// a degradation rather than a failure: a pool that cannot start, or a
 	// cache directory that cannot be created, leaves a deployment serving
 	// every file and no thumbnail of one.
-	e.Preview = openPreview(opt.DataDir, opt.PreviewWorker, opt.PreviewWorkerArgs, coreSvc, clk, logger)
+	e.Preview = openPreview(opt.DataDir, opt.PreviewWorker, coreSvc, clk, logger)
 
 	// The operator's settings, before anything serves. The chain reads the
 	// host lists and the proxy ranges per request, so leaving them at their
