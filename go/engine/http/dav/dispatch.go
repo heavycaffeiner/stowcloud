@@ -47,6 +47,7 @@ func (h *Handler) MountOptions(w http.ResponseWriter) {
 		Exists:  true,
 		IsDir:   true,
 		Locking: h.taker != nil,
+		Extra:   h.searchMethods(),
 	}))
 	w.Header().Set("MS-Author-Via", "DAV")
 	w.WriteHeader(http.StatusOK)
@@ -54,7 +55,10 @@ func (h *Handler) MountOptions(w http.ResponseWriter) {
 
 // allowFor describes what this resource accepts.
 func (h *Handler) allowFor(res core.Resolved) string {
-	set := AllowSet{Locking: h.taker != nil}
+	set := AllowSet{
+		Locking: h.taker != nil,
+		Extra:   h.searchMethods(),
+	}
 	if st, err := res.Root().Stat(res.Path()); err == nil {
 		set.Exists = true
 		set.IsDir = st.Kind.IsDir()
@@ -89,12 +93,29 @@ func (h *Handler) ServeMethod(w http.ResponseWriter, r *http.Request, res core.R
 		h.Lock(w, r, res)
 	case "UNLOCK":
 		h.Unlock(w, r, res)
+	case "SEARCH":
+		if !h.searchEnabled() {
+			h.methodNotAllowedFor(w, res)
+			return
+		}
+		h.Search(w, r, res)
+	case "REPORT":
+		if !h.searchEnabled() {
+			h.methodNotAllowedFor(w, res)
+			return
+		}
+		h.Report(w, r, res)
 	default:
 		// Including COPY and MOVE, which reach this only when a mount routed
 		// them here rather than through the two-endpoint call they need.
 		h.methodNotAllowedFor(w, res)
 	}
 }
+
+// searchEnabled reports whether any source claims a vocabulary. Without one
+// there is nothing a SEARCH or a REPORT could run, and saying 405 says more
+// than an empty result would.
+func (h *Handler) searchEnabled() bool { return len(h.sources) > 0 }
 
 // methodNotAllowedFor refuses a method and names what would work instead.
 //

@@ -36,6 +36,8 @@ var (
 	ErrNameTooLong = errors.New("an XML name is too long")
 	// ErrTooMuchText reports accumulated character data past the limit.
 	ErrTooMuchText = errors.New("too much XML character data")
+	// ErrNoElements reports a body carrying no element at all.
+	ErrNoElements = errors.New("the XML body has no elements")
 )
 
 // Limits bound what one body may contain.
@@ -88,6 +90,10 @@ type Scanner struct {
 	// here because encoding/xml resolves what it can and silently passes
 	// through what it cannot.
 	scopes []map[string]string
+	// pending holds a token read ahead by a caller that had to look before
+	// deciding. The next Token returns it before reading again.
+	pending    xml.Token
+	hasPending bool
 }
 
 // NewScanner wraps a body reader.
@@ -114,6 +120,11 @@ func NewScanner(body io.Reader, lim Limits) *Scanner {
 //
 // io.EOF ends the stream. Every other error is a refusal and the caller stops.
 func (s *Scanner) Token() (xml.Token, error) {
+	if s.hasPending {
+		t := s.pending
+		s.pending, s.hasPending = nil, false
+		return t, nil
+	}
 	tok, err := s.dec.Token()
 	if err != nil {
 		// An overflowing body is cut mid-document, and the parser reports that

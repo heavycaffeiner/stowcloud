@@ -34,6 +34,7 @@ func mappedSentinels() map[string]struct {
 		err  error
 		want int
 	}{
+		"ErrNoElements":         {ErrNoElements, http.StatusBadRequest},
 		"ErrBadDepth":           {ErrBadDepth, http.StatusBadRequest},
 		"ErrBadEscape":          {ErrBadEscape, http.StatusBadRequest},
 		"ErrBadIf":              {ErrBadIf, http.StatusBadRequest},

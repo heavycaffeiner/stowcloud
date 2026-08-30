@@ -66,6 +66,10 @@ type Options struct {
 	// set disables it, since honouring one header and ignoring another is how
 	// a client's declared length disappears without a word.
 	UploadHeaders UploadHeaders
+	// Sources answer SEARCH and REPORT for the vocabularies they claim. Empty
+	// is a deployment that answers neither, which the method refusal states
+	// rather than an empty result hiding.
+	Sources []QuerySource
 	// Limits bound what one request may carry. The zero value takes
 	// DefaultLimits, because a zero bound is not "unbounded" here: several of
 	// these are counts a parser compares against, so leaving them at zero
@@ -87,6 +91,7 @@ type Handler struct {
 	taker           LockTaker
 	uploads         Uploads
 	uploadHeaders   UploadHeaders
+	sources         []QuerySource
 	limits          Limits
 	infinityEntries int
 	logger          *slog.Logger
@@ -116,6 +121,7 @@ func New(opt Options) *Handler {
 		taker:           opt.Taker,
 		uploads:         opt.Uploads,
 		uploadHeaders:   opt.UploadHeaders,
+		sources:         opt.Sources,
 		limits:          limits,
 		infinityEntries: infinity,
 		logger:          logger,
