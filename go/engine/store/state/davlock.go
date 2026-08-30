@@ -14,11 +14,19 @@ import (
 var ErrLockConflict = errors.New("a conflicting lock is held")
 
 // The two lock scopes, as stored.
+//
+// The numbers are the on-disk encoding and are not free to choose. The shipped
+// product writes exclusive as 0 and shared as 1 into this same column, and
+// dav_lock is a schemaV1 table, so an engine reading a deployment's existing
+// state.db reads rows that product wrote. Defining these the other way round
+// silently inverts every lock already held: an exclusive lock reads as shared,
+// and the next client asking for one is granted it over a file somebody is in
+// the middle of saving.
 const (
-	// LockShared admits other shared locks and no exclusive one.
-	LockShared int64 = 0
 	// LockExclusive admits nothing else on the same resource.
-	LockExclusive int64 = 1
+	LockExclusive int64 = 0
+	// LockShared admits other shared locks and no exclusive one.
+	LockShared int64 = 1
 )
 
 // The two depths a lock may take.

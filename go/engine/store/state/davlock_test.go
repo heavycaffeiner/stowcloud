@@ -381,6 +381,68 @@ func TestALockInAnotherShareDoesNotBlock(t *testing.T) {
 	}
 }
 
+// The scope numbers are the on-disk encoding, so they are pinned as numbers.
+//
+// Every other test here names the constants, which means they all keep passing
+// if the two are swapped. The column is written by the shipped product and read
+// by this one from the same schemaV1 table, so a swap does not fail anywhere:
+// it silently reads every exclusive lock as shared, and the next client asking
+// for an exclusive lock over a file being saved is granted it.
+func TestTheScopeEncodingIsFixedOnDisk(t *testing.T) {
+	t.Parallel()
+
+	if state.LockExclusive != 0 {
+		t.Errorf("exclusive encodes as %d, want 0", state.LockExclusive)
+	}
+	if state.LockShared != 1 {
+		t.Errorf("shared encodes as %d, want 1", state.LockShared)
+	}
+}
+
+// A lock round-trips as the scope it was taken with.
+//
+// The pair above fixes the numbers; this fixes that the column is what carries
+// them, so a write that stored the scope somewhere else, or dropped it, is
+// caught rather than passing on the constants alone.
+func TestAScopeSurvivesTheRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	d, _ := open(t)
+	ctx := context.Background()
+	seedUser(t, d, 1, "a")
+
+	for _, c := range []struct {
+		name  string
+		scope int64
+	}{
+		{"exclusive", state.LockExclusive},
+		{"shared", state.LockShared},
+	} {
+		token := "tok-" + c.name
+		if err := d.AdmitDavLock(ctx, lockAt(token, "/"+c.name, c.scope, state.LockDepthZero, 1), 0); err != nil {
+			t.Fatalf("%s was refused: %v", c.name, err)
+		}
+
+		live, err := d.DavLocks(ctx, 0)
+		if err != nil {
+			t.Fatalf("reading the locks: %v", err)
+		}
+		var found bool
+		for _, l := range live {
+			if l.Token != token {
+				continue
+			}
+			found = true
+			if l.Scope != c.scope {
+				t.Errorf("%s came back with scope %d, want %d", c.name, l.Scope, c.scope)
+			}
+		}
+		if !found {
+			t.Errorf("%s was not in the table afterwards", c.name)
+		}
+	}
+}
+
 // isConflict reports whether an error is the lock conflict.
 func isConflict(err error) bool {
 	return errors.Is(err, state.ErrLockConflict)
