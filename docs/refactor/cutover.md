@@ -115,29 +115,44 @@ permission letters and vendor path layouts, against 4,356 lines of handler in
 So these are construction, not binding, and they are the largest remaining
 piece of the rebuild rather than an afternoon's wiring.
 
-### 3. The public link surface is absent
+### 3. The public link surface is built
 
-The old tree serves five routes under `/s/{token}`: the landing page, the
-password gate, the download, the zip and the drop upload. The engine's route
-table has none of them. Link creation, listing, update and deletion are bound,
-so links can be minted and never opened.
+This section said the surface was absent and that links could be minted and
+never opened. That is no longer true, and the correction is the point: all five
+routes under `/s/{token}` are implemented in `lifecycle/publiclink.go` and
+mounted from `mount.go`. They sit outside the versioned table because these
+addresses get pasted into messages and must not carry an API version.
 
-The old tree serves 101 routes in total against the engine's 87-entry table,
-and the difference is mostly this.
+Measured against a running engine, as a stranger with no cookie jar:
+
+| Route | Behaviour observed |
+| --- | --- |
+| `GET /s/{token}` | 200 with the name, size and what the holder may do |
+| `POST /s/{token}/auth` | 204 on the password, 422 on a wrong one |
+| `GET /s/{token}/download` | 200 with the bytes |
+| `GET /s/{token}/zip` | 200, a real archive of the folder's files |
+| `POST /s/{token}/drop` | 201, and the file lands in the share |
+
+A locked link answers `{"protected":true}` and nothing else: no name, no size,
+no listing. Its download is 403 until the password is answered. A drop link
+reports `drop:true` with no entries, so a collection box does not reveal what
+is already in it.
 
 ## What a cutover would actually require
 
 In dependency order, with the measured size of each piece:
 
 1. **Write the dav and compat handlers.** The vocabulary is done; the method
-   handlers are not, and they are roughly 2,000 and 4,300 lines in the tree
-   they replace.
-2. **Build the public link surface**, five routes with their own content
-   negotiation, unlock cookie and archive path.
-3. **Rewire `cmd/stowcloud` and `cmd/sc-smb-agent`**, then delete `internal/`.
-   Both still import `internal/smbagent`.
+   handlers are not, and they are 4,176 and 4,356 lines in the tree they
+   replace. Neither is mounted, and neither has an entry point to mount.
+2. **Rewire `cmd/stowcloud`**, then delete `internal/`.
 
-Steps 1 and 2 are the work. Step 3 is an afternoon.
+Step 1 is the work. Step 2 is an afternoon.
+
+The list carried two more steps that are now done. The public link surface is
+built and mounted, as the section above records. `cmd/sc-smb-agent` is rewired:
+the supervisor it needed, `Agent` and `Smbd`, is in `service/smb/agent`, and the
+command builds against the engine with no `internal/` import left.
 
 This list carried a sixth step, porting `smbagent` and `smbpublish`, and it
 was already done. Both are in the engine as `service/smb/agent` and
