@@ -90,6 +90,10 @@ type Engine struct {
 	Core *core.Core
 	// Auth owns credentials and the master key.
 	Auth *auth.Service
+	// Flow runs the device login. Never nil: a deployment without an auth
+	// service has no Open to reach this line, and construction then stops
+	// before a server could answer a begin request it could not deliver on.
+	Flow *LoginFlow
 	// Upload is the resumable transfer engine. May be nil: a deployment
 	// without one serves everything except a resumable upload.
 	Upload *upload.Engine
@@ -373,6 +377,15 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	} else {
 		e.Upload = up
 	}
+
+	// The device login rides on the auth service's own credential mint, so
+	// the plaintext of a delivered password exists once and never rests in
+	// the database.
+	flow, ferr := NewLoginFlow(e.State, &syncCredentialSource{auth: e.Auth}, clk.Nanos)
+	if ferr != nil {
+		return nil, fmt.Errorf("building the device login: %w", ferr)
+	}
+	e.Flow = flow
 
 	return e, nil
 }
