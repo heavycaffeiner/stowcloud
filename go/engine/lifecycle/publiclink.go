@@ -19,6 +19,7 @@ import (
 	"errors"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -102,14 +103,22 @@ func (e *Engine) linkUnlocked(c *fiber.Ctx, link core.Link) bool {
 	return cerr == nil && ok
 }
 
-// This surface answers data and nothing else. Pasting one of these addresses
-// into a browser shows JSON today, because the page that would render it is
-// served by the command this engine has not replaced yet: the split between a
-// document request and the page's own fetch belongs with whoever serves both,
-// and putting half of it here would be a decision made in the wrong place.
+// linkLanding answers GET /s/{token}.
+//
+// The same address is both the page a visitor opens and the endpoint the
+// page's own fetch reads, and the Accept header is what tells the two apart:
+// a navigation asking for text/html gets the interface document, whose
+// client router then fetches the data with an explicit JSON accept. A
+// request that already asked for JSON is a fetch, and gets the data.
 
-// linkLanding answers GET /s/{token}: what the page draws itself from.
 func (e *Engine) linkLanding(c *fiber.Ctx) error {
+	// A browser navigation gets the document; the page's own script then
+	// fetches the data with an explicit JSON accept. Serving the document
+	// here is what makes a pasted link open at all.
+	if strings.Contains(c.Get(fiber.HeaderAccept), "text/html") {
+		return e.serveFrontendDocument(c)
+	}
+
 	link, _, err := e.Core.LinkPublic(c.UserContext(), c.Params("token"))
 	if err != nil {
 		return fail(c, err)

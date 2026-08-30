@@ -48,3 +48,13 @@ func (e *Engine) mountFrontend(app *fiber.App) error {
 	}
 	return nil
 }
+
+// serveFrontendDocument answers an HTML navigation with the interface
+// document, whose client router owns the path the visitor arrived at.
+func (e *Engine) serveFrontendDocument(c *fiber.Ctx) error {
+	h, ok := spa.Handler()
+	if !ok {
+		return fiber.NewError(fiber.StatusNotFound)
+	}
+	return adaptor.HTTPHandler(h)(c)
+}
