@@ -33,6 +33,36 @@ func decodableFormats() []struct {
 	}
 }
 
+// The table above covers every format the decoder defines.
+//
+// Without this the table is only as good as whoever last edited it: a format
+// added to the decoder and not added here leaves every test below passing
+// while the listing quietly advertises no thumbnail for it. The enum is walked
+// rather than counted against a literal, so the check describes the decoder
+// instead of restating a number that also has to be maintained.
+func TestTheFormatTableCoversTheDecodersEnum(t *testing.T) {
+	covered := make(map[preview.Format]bool)
+	for _, f := range decodableFormats() {
+		covered[f.format] = true
+	}
+
+	// FormatUnknown is the zero value and names no format, so the walk starts
+	// past it and stops at the first value the decoder does not name.
+	for i := 1; ; i++ {
+		f := preview.Format(uint8(i))
+		if f.String() == preview.FormatUnknown.String() {
+			if i == 1 {
+				t.Fatal("the decoder names no formats at all")
+			}
+			return
+		}
+		if !covered[f] {
+			t.Errorf("the decoder defines %s and this file's table does not list it, "+
+				"so nothing checks whether the listing advertises it", f)
+		}
+	}
+}
+
 // Every format the decoder can sniff has an extension the listing advertises.
 //
 // The two halves are written apart and have to agree: a format the decoder
