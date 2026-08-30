@@ -8,15 +8,16 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// lockExclusive takes a whole-file advisory lock, or fails immediately.
+// lockExclusive claims the whole file, returning at once if someone holds it.
 //
-// The lock belongs to the open file description rather than to the process, so
-// a second call in this process opens a second descriptor and contends with the
-// first exactly as another process would. That is what makes two concurrent
-// owners testable without two processes.
+// Ownership attaches to the open file description and not to the process. Two
+// Take calls from one process therefore open two descriptions and compete just
+// as separate processes would, which is why the exclusion can be exercised
+// without spawning anything.
 //
-// SyscallConn rather than Fd: the descriptor stays in the runtime's view for
-// the duration of the call, so nothing can close it underneath the syscall.
+// The descriptor is reached through SyscallConn so the runtime keeps it alive
+// across the call. Passing a bare Fd would permit a close to land underneath
+// the syscall.
 func lockExclusive(f *os.File) error {
 	rc, err := f.SyscallConn()
 	if err != nil {

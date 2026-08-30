@@ -14,33 +14,34 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 )
 
-// One apply: read what the server rendered, decide the scope, validate,
-// promote, reconcile accounts, and tell the daemon as little as will do.
+// Single apply operation: parse server output, determine network scope, check
+// validity, install the configuration, sync user accounts, and signal the
+// daemon only when required.
 //
-// Every failure keeps the previously promoted configuration running. A rejected
-// candidate, a colliding account or an unreadable interface list all leave the
-// daemon serving what it was already serving, and turn into a report the caller
-// sends back to the server rather than a log line nobody reads.
+// Failures preserve the active configuration. When a proposed configuration is
+// invalid, when an account name conflicts with the system, or when interfaces
+// cannot be enumerated, the daemon continues serving its existing state. The
+// error becomes a report sent to the server, not a line buried in logs.
 
-// Paths is everything this agent reads or writes, so a test can point it at a
-// temporary directory and so a bare-metal install can move the two that differ
-// there.
+// Paths holds every filesystem location the agent touches, allowing tests to
+// use temporary directories and allowing production deployments to override
+// the two that vary between environments.
 type Paths struct {
-	// ConfigDir is what the server writes. Mounted read only.
+	// ConfigDir holds server output. Read only mount.
 	ConfigDir string
-	// StateDir is scratch: the candidate configuration and the validator's
-	// output.
+	// StateDir holds temporary files: proposed configuration and validation
+	// results.
 	StateDir string
-	// SmbConf is what the daemon reads.
+	// SmbConf is the daemon's configuration file.
 	SmbConf string
 	Passdb  string
 	Passwd  string
 	Group   string
 }
 
-// DefaultPaths is the container layout.
+// DefaultPaths returns the standard container filesystem layout.
 func DefaultPaths() Paths {
-	return Paths{ //nolint:gosec // G101 reads the database path as a literal credential: these are file locations, and the file itself is never in this tree.
+	return Paths{ //nolint:gosec // G101 misreads file paths as embedded credentials: these point to on-disk locations, none of which appear in this source tree.
 		ConfigDir: "/config/smb",
 		StateDir:  "/var/lib/sc-smb-agent",
 		SmbConf:   "/etc/samba/smb.conf",
@@ -56,21 +57,21 @@ func (p Paths) smbpasswd() string      { return filepath.Join(p.ConfigDir, "smbp
 func (p Paths) policy() string         { return filepath.Join(p.ConfigDir, "network.policy") }
 func (p Paths) candidate() string      { return filepath.Join(p.StateDir, "smb.conf.candidate") }
 
-// Agent applies what the server renders.
+// Agent executes the configuration rendered by the server.
 type Agent struct {
 	paths Paths
 	log   *slog.Logger
 	clock clock.Clock
 
-	// One apply at a time. Everything below is reachable from both the poll
-	// loop and the control socket.
+	// Serializes apply operations. Fields below are accessed from the polling
+	// thread and from the control socket handler.
 	mu   sync.Mutex
 	smbd *Smbd
-	// bound is the bind line the running daemon was started with. Compared,
-	// not assumed: it is the one directive a reload cannot apply.
+	// bound holds the interface binding that the active daemon process uses.
+	// Checked by comparison: reloading the daemon cannot change this setting.
 	bound string
-	// promoted is the configuration as promoted last time, so an unchanged one
-	// costs nothing.
+	// promoted holds the previously installed configuration text. When content
+	// matches, no work is needed.
 	promoted string
 	last     Report
 }
@@ -80,23 +81,23 @@ func NewAgent(paths Paths, mode Mode, log *slog.Logger, clk clock.Clock) *Agent 
 	return &Agent{paths: paths, log: log, clock: clk, smbd: NewSmbd(mode, log)}
 }
 
-// Last is the previous apply's answer, for a status request.
+// Last returns the most recent apply result, used by status queries.
 func (a *Agent) Last() Report {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.last
 }
 
-// SmbdRunning reports whether the daemon is up. Only the supervising loop
-// asks: nothing else is watching a process this agent owns.
+// SmbdRunning returns true when the daemon process is alive. Called only by
+// the supervisor: no other code tracks this agent's child process.
 func (a *Agent) SmbdRunning() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.smbd.Running()
 }
 
-// StartFail2ban starts brute-force mitigation, on top of the admission list
-// and required authentication rather than instead of them.
+// StartFail2ban enables brute-force defense, layered with the host allowlist
+// and mandatory authentication.
 func (a *Agent) StartFail2ban() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -120,12 +121,12 @@ func (a *Agent) apply(ctx context.Context) Report {
 		return FailedReport(fmt.Sprintf("the state directory: %v", err))
 	}
 
-	src, err := os.ReadFile(a.paths.renderedConf()) //nolint:gosec // G304 reads the variable: the path is the agent's own configured directory.
+	src, err := os.ReadFile(a.paths.renderedConf()) //nolint:gosec // G304 flags variable path: the input is this agent's configured directory.
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Absence is the off switch: the server removes the rendered files
-			// when the setting goes false, and reading that as "not synced
-			// yet" would leave SMB serving a revoked configuration.
+			// Missing configuration means disabled: the server deletes rendered
+			// output when the feature is turned off. Treating absence as "not
+			// ready yet" would allow a disabled service to keep serving.
 			return a.teardown(ctx)
 		}
 		return FailedReport(fmt.Sprintf("reading the rendered configuration: %v", err))
@@ -138,8 +139,8 @@ func (a *Agent) apply(ctx context.Context) Report {
 	if !policy.PinnedInterfaces {
 		s, derr := Detect(policy.AllowPublicBind)
 		if derr != nil {
-			// Not promoted: a scope this agent could not read is not a scope,
-			// and the previous configuration is still serving.
+			// Cannot proceed: interface detection failed, so the agent has no
+			// usable scope. Existing configuration remains active.
 			return FailedReport(fmt.Sprintf("reading this machine's interfaces: %v", derr))
 		}
 		if !s.Detected {
@@ -149,19 +150,19 @@ func (a *Agent) apply(ctx context.Context) Report {
 	}
 
 	candidate := Candidate(string(src), scope)
-	if werr := os.WriteFile(a.paths.candidate(), []byte(candidate), 0o600); werr != nil { //nolint:gosec // G703 traces the configured state directory into a write: it is this agent's own scratch path, never caller data.
+	if werr := os.WriteFile(a.paths.candidate(), []byte(candidate), 0o600); werr != nil { //nolint:gosec // G703 flags tracing the state directory into a file write: it is this agent's scratch space, not user input.
 		return FailedReport(fmt.Sprintf("writing the candidate configuration: %v", werr))
 	}
 	if verr := Testparm(ctx, a.paths.candidate()); verr != nil {
 		return FailedReport(fmt.Sprintf("%v; keeping the previous configuration", verr))
 	}
 
-	// Accounts are checked before anything is promoted, because a refusal here
-	// means the rendered roster cannot be applied at all.
+	// Account validation happens before installing anything. A failure at this
+	// stage means the account roster is unusable in its current form.
 	renderedPasswd, _ := os.ReadFile(a.paths.renderedPasswd()) //nolint:errcheck,gosec // an absent roster is an empty one, which is what a deployment with no SMB accounts looks like.
 	desired := ParseRendered(string(renderedPasswd))
 
-	currentPasswd, perr := os.ReadFile(a.paths.Passwd) //nolint:gosec // G304 reads the variable: the path is this agent's own configuration.
+	currentPasswd, perr := os.ReadFile(a.paths.Passwd) //nolint:gosec // G304 flags variable path: the input is this agent's configured file.
 	if perr != nil {
 		return FailedReport(fmt.Sprintf("reading %s: %v", a.paths.Passwd, perr))
 	}
@@ -174,7 +175,7 @@ func (a *Agent) apply(ctx context.Context) Report {
 		return FailedReport("refusing to sync: no group exists for " + strings.Join(m, ", "))
 	}
 
-	// Promotion starts here. Everything above could refuse; nothing below can.
+	// Installation phase begins. Steps above could reject, steps below commit.
 	if werr := Promote(a.paths.SmbConf, candidate); werr != nil {
 		return FailedReport(fmt.Sprintf("promoting %s: %v", a.paths.SmbConf, werr))
 	}
@@ -195,7 +196,7 @@ func (a *Agent) apply(ctx context.Context) Report {
 		warnings = append(warnings, "no credential exists for "+strings.Join(missingPassdb, ", ")+": they cannot authenticate over SMB")
 	}
 
-	// What the daemon is now serving.
+	// Current active shares served by the daemon.
 	sections := Sections(candidate)
 	var missingPaths []string
 	shares := make([]string, 0, len(sections))
@@ -240,11 +241,11 @@ func (a *Agent) apply(ctx context.Context) Report {
 	return report
 }
 
-// settle tells the daemon as little as will do, and no less.
+// settle signals the daemon with the minimum necessary action.
 //
-// The decision is Settle's and the acting is Tell's; what belongs here is the
-// state only this agent holds, which is the bind line the running process
-// actually bound and the configuration as last promoted.
+// Settle chooses the action and Tell executes it. This method contributes
+// state known only to the agent: the interface binding used by the running
+// daemon and the content of the last installed configuration.
 func (a *Agent) settle(candidate, wanted string) (SmbdAction, error) {
 	action := Settle(SettleInput{
 		Running:   a.smbd.Running(),
@@ -266,11 +267,11 @@ func (a *Agent) settle(candidate, wanted string) (SmbdAction, error) {
 	return done, nil
 }
 
-// teardown runs when the setting went false, or the configuration directory
-// was emptied.
+// teardown handles disablement: when the feature is toggled off or the server
+// clears the configuration directory.
 //
-// Stop serving and take the managed accounts and their credentials with it:
-// leaving them behind would keep a revoked credential working.
+// Halts the service and removes managed accounts along with their passwords.
+// Leaving credentials behind would allow authentication after revocation.
 func (a *Agent) teardown(ctx context.Context) Report {
 	if err := a.smbd.Stop(); err != nil {
 		a.log.Warn("the daemon did not stop cleanly", "error", err)
@@ -280,7 +281,7 @@ func (a *Agent) teardown(ctx context.Context) Report {
 	if _, err := Prune(ctx, nil); err != nil {
 		a.log.Warn("the credentials could not be pruned, so a revoked one may still work", "error", err)
 	}
-	if current, err := os.ReadFile(a.paths.Passwd); err == nil { //nolint:gosec // G304 reads the variable: the path is this agent's own configuration.
+	if current, err := os.ReadFile(a.paths.Passwd); err == nil { //nolint:gosec // G304 flags variable path: the input is this agent's configured file.
 		if werr := WritePasswd(a.paths.Passwd, Rebuild(string(current), nil)); werr != nil {
 			a.log.Warn("the managed accounts could not be removed", "error", werr)
 		}
@@ -288,10 +289,10 @@ func (a *Agent) teardown(ctx context.Context) Report {
 	return Report{OK: true, Smbd: ActionStopped}
 }
 
-// Shutdown stops a daemon this agent owns.
+// Shutdown halts the daemon process owned by this agent.
 //
-// Under supervision that matters: the daemon is this process's child, and
-// leaving it running means the next start finds the port taken.
+// Required under process supervision: the daemon is a child of this process.
+// Leaving it alive causes the next launch to encounter a bound port.
 func (a *Agent) Shutdown() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()

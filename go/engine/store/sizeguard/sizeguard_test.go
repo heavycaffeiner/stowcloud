@@ -10,8 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/sys/unix"
-
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/sizeguard"
 )
 
@@ -181,40 +180,45 @@ func TestTheFloorIsMeasuredAgainstWritableSpace(t *testing.T) {
 	}
 }
 
-// The real probe never reports more than the filesystem calls available.
+// The probe counts writable blocks and leaves the reserve alone.
 //
-// An inequality rather than an equality: free space moves between two statfs
-// calls on a live machine, so pinning the exact figure is a flake. What has to
-// hold is the direction. Bavail is never above Bfree, so a probe reading Bfree
-// would exceed the writable figure on any volume that reserves blocks, and the
-// case above covers the arithmetic exactly through the seam.
-func TestTheProbeNeverExceedsWritableSpace(t *testing.T) {
+// Handed a volume that holds blocks back for root, which no filesystem a test
+// runs on actually does: there the two counts are equal and reading the wrong
+// one cannot be seen. Comparing two live statfs calls instead would race the
+// machine's own free space, which is a flake rather than a check.
+func TestTheProbeCountsWritableBlocksOnly(t *testing.T) {
+	t.Parallel()
+
+	const (
+		blockSize   = 4096
+		blocksFree  = 1000 // what the filesystem has spare
+		blocksAvail = 900  // what an unprivileged writer may use
+	)
+
+	got := sizeguard.AvailableFrom(blockSize, blocksFree, blocksAvail)
+
+	if want := uint64(blocksAvail * blockSize); got != want {
+		t.Errorf("the probe reports %d, want the writable %d", got, want)
+	}
+	if reserved := uint64(blocksFree * blockSize); got == reserved {
+		t.Errorf("the probe counted the %d bytes reserved for root", reserved-uint64(blocksAvail*blockSize))
+	}
+}
+
+// The real probe agrees with the filesystem it was pointed at.
+//
+// One statfs, not two: reading the volume twice and comparing the figures races
+// whatever else is writing to it.
+func TestTheProbeReadsTheVolumeItWasGiven(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	var sfs unix.Statfs_t
-	if serr := unix.Statfs(dir, &sfs); serr != nil {
-		t.Fatalf("statfs: %v", serr)
-	}
-	bsize := uint64(sfs.Bsize) //nolint:gosec // a block size from the kernel is positive.
-	reserve := (sfs.Bfree - sfs.Bavail) * bsize
-
 	got, err := sizeguard.AvailableBytes(dir)
 	if err != nil {
 		t.Fatalf("probing: %v", err)
 	}
-
-	if free := sfs.Bfree * bsize; got > free {
-		t.Errorf("the probe reports %d, above the filesystem's free %d", got, free)
-	}
-	if reserve == 0 {
-		// Every volume here reserves nothing, so Bavail and Bfree are the same
-		// number and this cannot tell them apart. Recorded rather than passed
-		// in silence, because a reader should not take this as proof.
-		t.Skip("this volume reserves no blocks, so Bavail and Bfree are indistinguishable here")
-	}
-	if got > sfs.Bavail*bsize {
-		t.Errorf("the probe reports %d, which counts into the %d reserved for root", got, reserve)
+	if got == 0 {
+		t.Error("the probe reports no space at all on a writable directory")
 	}
 }
 
@@ -294,10 +298,10 @@ func TestRunReturnsWhenUnconfigured(t *testing.T) {
 
 	g := sizeguard.New(t.TempDir(), []sizeguard.File{&fakeFile{}})
 	done := make(chan struct{})
-	go func() {
+	task.Go(context.Background(), "sizeguard-unconfigured", func() {
 		g.Run(context.Background(), sizeguard.Config{}, nil)
 		close(done)
-	}()
+	})
 
 	select {
 	case <-done:
@@ -319,11 +323,13 @@ func TestRunSamplesBeforeTheFirstTick(t *testing.T) {
 	defer cancel()
 
 	changed := make(chan sizeguard.State, 1)
-	go g.Run(ctx, sizeguard.Config{MaxBytes: 4096, Interval: time.Hour}, func(st sizeguard.State) {
-		select {
-		case changed <- st:
-		default:
-		}
+	task.Go(ctx, "sizeguard-first-sample", func() {
+		g.Run(ctx, sizeguard.Config{MaxBytes: 4096, Interval: time.Hour}, func(st sizeguard.State) {
+			select {
+			case changed <- st:
+			default:
+			}
+		})
 	})
 
 	select {
@@ -349,10 +355,12 @@ func TestOnChangeFiresOnlyOnATransition(t *testing.T) {
 
 	var mu sync.Mutex
 	var calls int
-	go g.Run(ctx, sizeguard.Config{MaxBytes: 4096, Interval: 10 * time.Millisecond}, func(sizeguard.State) {
-		mu.Lock()
-		calls++
-		mu.Unlock()
+	task.Go(ctx, "sizeguard-transitions", func() {
+		g.Run(ctx, sizeguard.Config{MaxBytes: 4096, Interval: 10 * time.Millisecond}, func(sizeguard.State) {
+			mu.Lock()
+			calls++
+			mu.Unlock()
+		})
 	})
 
 	time.Sleep(200 * time.Millisecond)

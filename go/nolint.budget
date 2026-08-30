@@ -432,5 +432,33 @@
 # 89: the change channel closing a socket. Every caller reaches it because the
 # peer is already going away, so a close that fails has nobody left to be
 # reported to.
+#
+# The cutover work adds twenty, and eighteen of them arrive with one package:
+# the SMB supervisor, which the old tree carried and the engine had no home
+# for. They are the families a process supervisor brings rather than new kinds.
+#
+# Twelve are errcheck on a path whose outcome is already settled. Signalling a
+# process group where the group having already exited is the case being
+# handled, reaping a child that is going away either way, and closing a
+# descriptor on a path that has already decided what it will report.
+#
+# Six are gosec reading this agent's own configuration as untrusted input. It
+# edits the system account file and promotes a daemon configuration by design,
+# so the paths it writes are its purpose rather than a traversal, and the
+# service manager it invokes takes a unit name from this package's own
+# detection. The same argument the old tree's agent made, for the same code.
+#
+# 107: the lock manager's URN scheme. G101 reads the identifier; it is a URI
+# scheme prefix, and the token itself is minted per lock from the CSPRNG and
+# never appears in source.
+#
+# 108: the instance lock's file open. G304 reads the variable; the filename is
+# this package's own constant and only the directory came from the caller.
+#
+# 108: the size guard's block-size conversion. G115 reads the widening; statfs
+# guarantees a positive block size, and a filesystem reporting otherwise would
+# be reporting a negative volume. The test that checks the probe needed a
+# second one until the arithmetic was split from the syscall, which let the
+# test hand over a volume rather than read one.
 296
-89
+108

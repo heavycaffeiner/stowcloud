@@ -32,8 +32,8 @@ const DefaultInterval = 30 * time.Second
 // is in the store tier and the settings live in the service tier, so taking
 // that type would be an import the wrong way up.
 type Config struct {
-	// MinFreeBytes trips the guard when the volume holding the databases has
-	// less than this available. Zero is off, which is the default.
+	// MinFreeBytes fires once the volume beneath the databases reports less
+	// writable space than this. Unset, and therefore inactive, at zero.
 	MinFreeBytes uint64
 	// MaxBytes trips it when the databases together exceed this. Zero is off.
 	// It bounds this server's own footprint, where MinFreeBytes bounds the
@@ -43,14 +43,14 @@ type Config struct {
 	Interval time.Duration
 }
 
-// Enabled reports whether either bound is set.
+// Enabled answers whether any bound was configured at all.
 func (c Config) Enabled() bool { return c.MinFreeBytes > 0 || c.MaxBytes > 0 }
 
 // State is one sample, for the caller that reports health.
 type State struct {
-	// Blocked is whether writes are refused right now.
+	// Blocked says whether the databases are currently turning writes away.
 	Blocked bool
-	// AvailableBytes is what the volume had at the last sample.
+	// AvailableBytes records the writable space seen by this sample.
 	AvailableBytes uint64
 	// StoreBytes is what the databases occupied at the last sample.
 	StoreBytes uint64
@@ -94,14 +94,28 @@ func availableBytes(dir string) (uint64, error) {
 	if err := unix.Statfs(dir, &sfs); err != nil {
 		return 0, err
 	}
-	return sfs.Bavail * uint64(sfs.Bsize), nil //nolint:gosec // Bsize is a positive block size from the kernel.
+	return availableFrom(sfs.Bsize, sfs.Bfree, sfs.Bavail), nil
 }
 
-// Sample measures the volume and the databases and applies the bounds.
+// availableFrom is the arithmetic, apart from the syscall that feeds it.
 //
-// Every file moves together. A guard that blocked one database and not the
-// others would leave the store half-writable, which is a shape nothing above
-// it is written to handle.
+// It takes both block counts although it uses only one, because which one it
+// uses is the whole correctness of the floor. No volume a test runs on reserves
+// anything, so the two are equal there and reading the wrong one is invisible;
+// taking both lets a test hand over a volume that does reserve.
+func availableFrom(blockSize int64, blocksFree, blocksAvail uint64) uint64 {
+	// blocksAvail, not blocksFree. The blocks a filesystem holds back for root
+	// are not ours to write into, and counting them promises room that ENOSPC
+	// then refuses, which is the guard failing to fire on the volume it was
+	// configured for.
+	return blocksAvail * uint64(blockSize) //nolint:gosec // a block size from the kernel is positive.
+}
+
+// Sample reads the volume and the databases, then applies both bounds.
+//
+// The decision reaches every file at once. Blocking a subset would leave the
+// store partly writable, and no layer above this one is built to cope with
+// that arrangement.
 func (g *Guard) Sample(ctx context.Context, cfg Config) (State, error) {
 	var st State
 
@@ -149,8 +163,8 @@ func (g *Guard) Blocked() bool {
 	return false
 }
 
-// Run samples until the context ends. It returns immediately when neither
-// bound is set, which is the default.
+// Run keeps sampling until the context is done, and returns straight away when
+// nothing was configured, which is how a deployment runs by default.
 //
 // onChange is called only when the blocked state moves, so a caller can log a
 // transition without being told the same thing every interval.
@@ -200,7 +214,7 @@ func (g *Guard) sizeBytes(ctx context.Context) (uint64, error) {
 	return total, nil
 }
 
-// setBlocked moves every file together.
+// setBlocked applies one decision across the whole set.
 func (g *Guard) setBlocked(blocked bool) {
 	for _, f := range g.files {
 		f.SetWritesBlocked(blocked)

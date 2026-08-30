@@ -15,40 +15,42 @@ import (
 	"syscall"
 )
 
-// Controlling the daemon process itself: the implementation behind Daemon.
+// Process lifecycle control for the daemon: the Daemon interface's
+// implementation.
 //
-// Two ways to control it, because two deployments exist. In a container this
-// agent is the init process and owns the daemon as its own child. On bare metal
-// a service manager owns it and this agent asks that instead. The distinction
-// runs through every method here and nowhere else in the package.
+// Two control modes, matching two deployment patterns. In containers this
+// agent runs as init and supervises the daemon directly. On bare metal a
+// service manager controls it and this agent issues commands there. The
+// distinction shapes every operation here and nothing else in the package.
 
-// ModeKind is who owns the daemon process.
+// ModeKind identifies which authority manages the daemon.
 type ModeKind int
 
 const (
-	// ModeSupervise means this agent does: it spawns the daemon as its own
-	// child and replaces it. The container case, where there is no service
-	// manager to ask.
+	// ModeSupervise means this agent manages it: the daemon is spawned as a
+	// direct child and this process replaces it when needed. Used in containers
+	// where no external service manager exists.
 	ModeSupervise ModeKind = iota
-	// ModeService means a service manager does, under a unit name. The
-	// bare-metal case.
+	// ModeService delegates to a service manager with a specific unit name.
+	// Used on bare metal.
 	ModeService
 )
 
-// Mode is how the daemon is controlled.
+// Mode describes daemon control strategy.
 type Mode struct {
 	Kind ModeKind
 	Unit string
 }
 
-// DetectMode picks the control method.
+// DetectMode selects the appropriate control strategy.
 //
-// Two unit names because the distributions disagree, then the other init
-// system's, then supervision when there is neither.
+// Tries two common systemd unit names (distributions differ), then checks for
+// another init system, falling back to direct supervision if neither is
+// present.
 func DetectMode() Mode {
 	if which("systemctl") {
 		for _, unit := range []string{"smb", "smbd"} {
-			cmd := exec.Command("systemctl", "cat", unit+".service") //nolint:gosec // G204 flags a variable command: the unit name is one of the two literals above.
+			cmd := exec.Command("systemctl", "cat", unit+".service") //nolint:gosec // G204 complains about a variable argument: unit comes from the two-element literal slice above.
 			cmd.Stdout, cmd.Stderr = nil, nil
 			if err := cmd.Run(); err == nil {
 				return Mode{Kind: ModeService, Unit: unit}
@@ -67,34 +69,34 @@ func which(bin string) bool {
 		if dir == "" {
 			continue
 		}
-		if st, err := os.Stat(filepath.Join(dir, bin)); err == nil && !st.IsDir() { //nolint:gosec // G703 traces the search path to a stat: this is what looking up a program on the path is, and the name is a literal at every call.
+		if st, err := os.Stat(filepath.Join(dir, bin)); err == nil && !st.IsDir() { //nolint:gosec // G703 reports an unchecked error from a path search: this implements PATH lookup, bin is always a literal in every caller.
 			return true
 		}
 	}
 	return false
 }
 
-// Smbd controls the daemon and, when the configuration asks for it, the name
-// service beside it.
+// Smbd manages the daemon and optionally the NetBIOS name service when
+// configuration requests it.
 type Smbd struct {
 	mode Mode
 	log  *slog.Logger
-	// Only ever set under supervision.
+	// Set exclusively in supervision mode.
 	child *exec.Cmd
 	nmbd  *exec.Cmd
 }
 
-// NewSmbd makes a controller.
+// NewSmbd constructs a controller.
 func NewSmbd(mode Mode, log *slog.Logger) *Smbd {
 	return &Smbd{mode: mode, log: log}
 }
 
-// alive reports whether a spawned child is still running, reaping it if it is
-// not.
+// alive checks whether a subprocess remains active, harvesting it if
+// terminated.
 //
-// Reaping matters: without it a daemon that crashed lingers as a zombie until
-// this process exits, and this agent is the init process of its container, so
-// that is for as long as the container runs.
+// Harvesting prevents zombies: a crashed daemon would otherwise persist as
+// undead until this process terminates, and in containers this agent is
+// init, so the zombie would remain for the container's entire lifetime.
 func alive(cmd *exec.Cmd) bool {
 	if cmd == nil || cmd.Process == nil {
 		return false
@@ -104,13 +106,13 @@ func alive(cmd *exec.Cmd) bool {
 	if err != nil {
 		return false
 	}
-	// Zero means it is still running and nothing was reaped.
+	// Pid zero indicates the child remains active, no harvest occurred.
 	return pid == 0
 }
 
-// Running reports whether the daemon is up as far as this agent can tell.
-// Under supervision that is exact; under a service manager it is what the
-// manager says.
+// Running checks daemon state according to available information.
+// In supervision mode, the check is direct; with a service manager, this
+// reports what that manager claims.
 func (s *Smbd) Running() bool {
 	if s.mode.Kind == ModeSupervise {
 		return alive(s.child)
@@ -119,19 +121,18 @@ func (s *Smbd) Running() bool {
 	return err == nil && ok
 }
 
-// Start brings the daemon up.
+// Start launches the daemon.
 func (s *Smbd) Start() error {
 	if s.mode.Kind == ModeService {
 		return require(s.mode.Unit, "start")
 	}
 	cmd := exec.Command("smbd", "--foreground", "--no-process-group")
-	// Inherited output on purpose: the daemon's own diagnostics are what the
-	// container's logs show.
+	// Output passes through intentionally: daemon diagnostics appear in
+	// container logs.
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	// Its own process group, so stopping it reaches the per-connection
-	// children it forks. Signalling only the parent leaves those running, and
-	// a restart then finds the port still held by a child of the daemon that
-	// was just replaced.
+	// A dedicated process group ensures that stop signals propagate to
+	// per-connection children. Signaling just the parent leaves children alive,
+	// and restarting then fails because a child still holds the listening port.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("starting the daemon: %w", err)
@@ -140,22 +141,22 @@ func (s *Smbd) Start() error {
 	return nil
 }
 
-// Reload rereads the configuration. Cheap, and wrong for anything that moves a
-// socket.
+// Reload refreshes configuration from disk. Fast, but does not rebind listening
+// sockets.
 func (s *Smbd) Reload() error {
 	out, err := exec.Command("smbcontrol", "all", "reload-config").CombinedOutput()
 	if err == nil {
 		return nil
 	}
-	// A service manager can reload a daemon whose control socket this agent
-	// cannot reach. Supervision has no second way to ask.
+	// Service managers can reload daemons whose control sockets are unreachable
+	// from here. Supervised instances have no alternative channel.
 	if s.mode.Kind == ModeService {
 		return require(s.mode.Unit, "reload")
 	}
 	return fmt.Errorf("reloading the configuration: %w: %s", err, strings.TrimSpace(string(out)))
 }
 
-// Restart is the only thing that moves the listening sockets.
+// Restart replaces the process, which rebinds all listening sockets.
 func (s *Smbd) Restart() error {
 	if s.mode.Kind == ModeService {
 		return require(s.mode.Unit, "restart")
@@ -166,7 +167,7 @@ func (s *Smbd) Restart() error {
 	return s.Start()
 }
 
-// Stop takes the daemon and the name service down.
+// Stop terminates both the daemon and name service.
 func (s *Smbd) Stop() error {
 	s.Nmbd(false)
 	if s.mode.Kind == ModeService {
@@ -179,30 +180,30 @@ func (s *Smbd) Stop() error {
 	return nil
 }
 
-// kill ends a child and everything it forked, then reaps it so it does not
-// linger as a zombie.
+// kill terminates a subprocess and all descendants, then harvests to prevent
+// zombie processes.
 func kill(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil {
 		return
 	}
-	// The whole group, because the daemon forks a child per connection and
-	// those hold the listening socket open. The negative number is what makes
-	// this the group rather than the one process.
+	// Target the entire process group: the daemon spawns a child per active
+	// connection, and these children hold the listening socket. A negative pid
+	// targets the group instead of a single process.
 	//
-	// A process that already exited cannot be signalled, and that is not a
-	// failure: the reap below is what this is for either way.
-	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) //nolint:errcheck // an already-exited group is the expected case, and the reap below handles it.
-	_ = cmd.Process.Kill()                              //nolint:errcheck // the same, for the case where the group was never created.
+	// Signaling a terminated process fails benignly; harvest below handles both
+	// cases.
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM) //nolint:errcheck // already-terminated groups are expected here, harvest below covers both outcomes.
+	_ = cmd.Process.Kill()                              //nolint:errcheck // same rationale, for cases where setpgid never executed.
 	var status syscall.WaitStatus
-	_, _ = syscall.Wait4(cmd.Process.Pid, &status, 0, nil) //nolint:errcheck // there is nothing to do about a child that cannot be reaped, and the process is going away.
+	_, _ = syscall.Wait4(cmd.Process.Pid, &status, 0, nil) //nolint:errcheck // harvest failures have no remedy, and the enclosing process is shutting down.
 }
 
-// Nmbd runs the name service, but only while the promoted configuration asks
-// for a name.
+// Nmbd controls the NetBIOS name service, active only when promoted
+// configuration specifies a name.
 //
-// Name service is broadcast and does not cross a container bridge, so on a
-// bridged network it starts and nobody hears it. Failure is a log line, never
-// fatal: the address still mounts.
+// Broadcast packets do not traverse container bridges, so on bridged
+// networks the service runs but clients cannot hear it. Startup failure
+// logs but never aborts, since direct address access still functions.
 func (s *Smbd) Nmbd(want bool) {
 	up := alive(s.nmbd)
 	if want == up {
@@ -223,13 +224,14 @@ func (s *Smbd) Nmbd(want bool) {
 	s.nmbd = cmd
 }
 
-// StartFail2ban starts the ban daemon, when it can do anything.
+// StartFail2ban launches the intrusion prevention daemon if capabilities
+// permit.
 //
-// Its ban action writes firewall rules, which needs a capability the reference
-// deployment does not grant once this runs on the host's network: there those
-// rules are the host's firewall handed to the process that parses SMB off the
-// wire. Checking first turns that into one line saying what is off, instead of
-// a jail failing to start with an error that reads like a bug.
+// Banning requires writing firewall rules, which needs CAP_NET_ADMIN. The
+// reference container deployment omits this capability on host networking:
+// granting it would expose the host firewall to a process parsing untrusted
+// SMB traffic. Pre-checking replaces a confusing jail startup error with a
+// single informative log line.
 func (s *Smbd) StartFail2ban() {
 	if !which("fail2ban-server") {
 		return
@@ -238,9 +240,9 @@ func (s *Smbd) StartFail2ban() {
 		s.log.Info("no permission to change the firewall, so the ban daemon is not started and repeated bad passwords are never banned; what limits an attacker is the admission list plus the required authentication")
 		return
 	}
-	// A plain file rather than the system log, because a container has no log
-	// daemon: pointed at one, the ban daemon reports that it could not change
-	// its log target and comes up with no jails loaded.
+	// Log to a regular file instead of syslog: containers lack a log daemon, and
+	// pointing at syslog causes the ban daemon to report target-change failure
+	// and skip loading jails.
 	cmd := exec.Command("fail2ban-server", "-b", "--logtarget=/var/log/fail2ban.log")
 	if err := cmd.Run(); err != nil {
 		s.log.Warn("the ban daemon did not start; continuing without it", "error", err)
@@ -251,14 +253,14 @@ func service(unit, action string) (bool, error) {
 	var cmd *exec.Cmd
 	switch {
 	case which("systemctl"):
-		cmd = exec.Command("systemctl", action, unit) //nolint:gosec // G204 flags a variable command: both come from this package's own detection, never from a request.
+		cmd = exec.Command("systemctl", action, unit) //nolint:gosec // G204 objects to variable arguments: both derive from internal mode detection, never external input.
 	default:
-		cmd = exec.Command("rc-service", unit, action) //nolint:gosec // G204 flags a variable command: the same.
+		cmd = exec.Command("rc-service", unit, action) //nolint:gosec // G204 same rationale as above.
 	}
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			// A non-zero exit is an answer, not a failure to ask.
+			// Non-zero exit conveys state, not command failure.
 			return false, nil
 		}
 		return false, fmt.Errorf("asking the service manager to %s %s: %w", action, unit, err)
@@ -277,22 +279,22 @@ func require(unit, action string) error {
 	return nil
 }
 
-// Testparm validates a candidate before it can reach the daemon.
+// Testparm validates candidate configuration before promotion.
 //
-// It does not check that a share's path exists, which is why the apply checks
-// that separately.
+// Path existence is not verified; separate checks handle that during apply.
 func Testparm(ctx context.Context, candidate string) error {
-	out, err := exec.CommandContext(ctx, "testparm", "-s", filepath.Clean(candidate)).CombinedOutput() //nolint:gosec // G204 flags a variable command: the path is the agent's own state directory.
+	out, err := exec.CommandContext(ctx, "testparm", "-s", filepath.Clean(candidate)).CombinedOutput() //nolint:gosec // G204 objects to a variable path: candidate resides in the agent's controlled state directory.
 	if err != nil {
 		return fmt.Errorf("the validator rejected the candidate configuration: %s", strings.TrimSpace(string(out)))
 	}
 	return nil
 }
 
-// hasNetAdmin reports whether this process may change the firewall.
+// hasNetAdmin checks whether this process holds firewall modification
+// capability.
 //
-// Read from the process's own status rather than assumed from being root,
-// because a container routinely runs as root with that permission dropped.
+// Reads capability bits from process status instead of assuming root grants
+// this, since containers commonly run as root with selective capability drops.
 func hasNetAdmin() bool {
 	const netAdminBit = 12
 

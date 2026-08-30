@@ -1,10 +1,10 @@
 // Package instance is the advisory lock a process holds over a data
 // directory for as long as it owns it.
 //
-// It is not a PID file. Nothing is written into it and nothing reads it: the
-// only state is the kernel lock on the open descriptor, which the kernel drops
-// when the process exits however it exits. A file left behind by a crash says
-// nothing and blocks nothing.
+// The file's contents are irrelevant and never read. Ownership lives entirely
+// in the kernel's lock on the open descriptor, and the kernel releases that on
+// exit regardless of how the exit happened. A leftover file from a killed
+// process therefore conveys nothing and stops nobody.
 package instance
 
 import (
@@ -35,7 +35,7 @@ type Lock struct{ f *os.File }
 // Waiting for a server to exit is not something a command should do silently.
 func Take(dir string) (*Lock, error) {
 	path := filepath.Join(dir, LockFile)
-	//nolint:gosec // the name is this package's own constant under the directory it was handed.
+	//nolint:gosec // G304 flags the variable: the filename is this package's constant and only the directory is the caller's.
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("opening %s: %w", LockFile, err)

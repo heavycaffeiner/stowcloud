@@ -6,11 +6,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// lockExclusive takes a whole-file lock, or fails immediately.
+// lockExclusive claims the whole file, returning at once if someone holds it.
 //
-// The development host's copy. It exists so this package compiles and its
-// tests run where they are written; the file beside it is what ships. The
-// exclusion is real on both, which is what those tests are about.
+// Present so this package builds and its tests run on a development machine;
+// the sibling file is what a deployment uses. Both enforce genuine exclusion,
+// which is the property the tests are written against.
 func lockExclusive(f *os.File) error {
 	rc, err := f.SyscallConn()
 	if err != nil {

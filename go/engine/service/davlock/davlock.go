@@ -88,16 +88,17 @@ type Active struct {
 type Request struct {
 	// Ident is the file's identity, which moves with it across a rename.
 	Ident ident.Ident
-	// Path is the virtual path, which is what a depth-infinity lock's
-	// coverage is computed from. The identity names the file; the path is
-	// what the client asked about.
+	// Path is the address the client used, and the basis for working out what
+	// a depth-infinity lock reaches. Identity picks out the file itself; this
+	// records the name it was requested under.
 	Path      string
 	Principal int64
 	Owner     string
 	// Depth is state.LockDepthZero or state.LockDepthInfinity.
 	Depth   int64
 	Timeout time.Duration
-	// Shared asks for a shared lock rather than an exclusive one.
+	// Shared requests the cooperative scope in place of the default exclusive
+	// one.
 	Shared bool
 }
 
@@ -181,8 +182,8 @@ func (l *Locks) Release(ctx context.Context, token string, principal int64) erro
 	return l.store.DropDavLock(ctx, held.Token)
 }
 
-// At returns the live locks covering one path, which is what lockdiscovery
-// renders and what an If header evaluation reads.
+// At lists whatever currently covers a path. Both the lockdiscovery property
+// and an If header's evaluation are built from this.
 func (l *Locks) At(ctx context.Context, share uint32, path string) ([]Active, error) {
 	held, err := l.store.DavLocks(ctx, l.clk.Now().UnixNano())
 	if err != nil {
@@ -238,8 +239,8 @@ func (l *Locks) find(ctx context.Context, token string, nowNs int64) (state.DavL
 	return state.DavLock{}, ErrNoSuchLock
 }
 
-// covers reports whether a lock applies to a path: the locked path itself, or
-// anything beneath it when the lock is depth-infinity.
+// covers decides whether a lock reaches a path, meaning the exact path it was
+// taken on, or anything below when its depth is infinity.
 func covers(l state.DavLock, share uint32, path string) bool {
 	if uint32(l.Ident.Share) != share {
 		return false
@@ -253,11 +254,11 @@ func covers(l state.DavLock, share uint32, path string) bool {
 	return isDescendant(path, l.Path)
 }
 
-// isDescendant reports whether child is strictly below parent.
+// isDescendant answers whether one path sits strictly inside another.
 //
-// The separator check is what stops "/ab" counting as a child of "/a". Without
-// it a lock on one directory would cover every sibling whose name begins with
-// the same letters.
+// Requiring the separator is what keeps "/ab" from being treated as living
+// under "/a". Omit it and locking a directory would silently extend over every
+// neighbour sharing that opening substring.
 func isDescendant(child, parent string) bool {
 	if parent == "" || parent == "/" {
 		return child != parent
@@ -276,7 +277,7 @@ func submittedHas(submitted []string, token string) bool {
 	return false
 }
 
-// TokenURN is the wire form of a lock token.
+// TokenURN renders a token as clients expect to see it on the wire.
 func TokenURN(token string) string { return tokenURN + token }
 
 func activeOf(h state.DavLock) Active {
@@ -310,7 +311,8 @@ func newToken() (string, error) {
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", fmt.Errorf("minting a lock token: %w", err)
 	}
-	// UUID-shaped, because clients log these and a familiar shape helps.
+	// Formatted like a UUID: these end up in client logs, and a recognisable
+	// layout is easier to work with there.
 	return fmt.Sprintf("%s-%s-%s-%s-%s",
 		hex.EncodeToString(b[0:4]), hex.EncodeToString(b[4:6]),
 		hex.EncodeToString(b[6:8]), hex.EncodeToString(b[8:10]),

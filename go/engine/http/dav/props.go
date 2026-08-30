@@ -207,9 +207,9 @@ func lockDiscovery(locks []Lock) []Element {
 		if l.Infinite {
 			depth = "infinity"
 		}
-		// The scope as it was taken, not a fixed word. A client that asked for
-		// a shared lock and is told "exclusive" believes it holds something
-		// nobody else can take.
+		// Report the scope that was actually granted rather than a constant.
+		// Answering "exclusive" to a client that requested a shared lock leaves
+		// it convinced it has sole possession.
 		scope := "shared"
 		if l.Exclusive {
 			scope = "exclusive"
