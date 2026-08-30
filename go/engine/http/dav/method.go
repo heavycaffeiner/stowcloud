@@ -70,25 +70,55 @@ func Methods() []string {
 	return out
 }
 
-// AllowHeader renders the served methods for an Allow response header.
+// AllowSet describes what a resource accepts, for an Allow header.
+type AllowSet struct {
+	// IsDir selects the create method: a collection takes MKCOL and a file
+	// takes PUT, since a PUT replaces bytes a collection does not have.
+	IsDir bool
+	// Exists is false for a path nothing occupies, where both create methods
+	// apply because either would bring something into being.
+	Exists bool
+	// Locking is whether this deployment records locks. Advertising LOCK
+	// without a table would have a client take one it believes is recorded.
+	Locking bool
+	// Extra names methods an extension registered, such as SEARCH. One that
+	// is not a served method is dropped rather than advertised.
+	Extra []string
+}
+
+// AllowHeader renders what a resource accepts.
 //
-// extra names vocabularies an extension registered. An unregistered method is
-// not advertised, so a client reading Allow does not attempt one the server
-// will refuse.
-func AllowHeader(extra []string) string {
+// One function rather than a per-caller list, so the header beside a refusal
+// and the header on an OPTIONS cannot disagree about the same resource.
+func AllowHeader(set AllowSet) string {
 	served := map[string]bool{}
 	for _, m := range Methods() {
 		served[m] = true
 	}
 
-	// SEARCH and REPORT only exist when something claims their vocabulary, so
-	// they leave the base set and come back through extra.
+	// SEARCH and REPORT exist only when something claims their vocabulary, so
+	// they leave the base set and return through Extra.
 	delete(served, "SEARCH")
 	delete(served, "REPORT")
-	for _, m := range extra {
+	for _, m := range set.Extra {
 		if _, known := methodPerms[m]; known {
 			served[m] = true
 		}
+	}
+
+	if !set.Locking {
+		delete(served, "LOCK")
+		delete(served, "UNLOCK")
+	}
+
+	// The create methods, which depend on what is at the path.
+	switch {
+	case !set.Exists:
+		// Nothing there: either method would create, so both are offered.
+	case set.IsDir:
+		delete(served, "PUT")
+	default:
+		delete(served, "MKCOL")
 	}
 
 	out := make([]string, 0, len(served))

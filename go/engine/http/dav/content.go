@@ -93,7 +93,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request, res core.Resolved,
 	// RFC 4918 defines no body for a GET of a collection. Refusing beats
 	// inventing an index page that a client would then try to parse.
 	if st.Kind.IsDir() {
-		h.methodNotAllowed(w, r)
+		h.methodNotAllowedFor(w, res)
 		return
 	}
 

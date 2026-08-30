@@ -126,13 +126,6 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	}
 }
 
-// methodNotAllowed answers a method the target cannot accept, such as a GET of
-// a collection.
-func (h *Handler) methodNotAllowed(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Allow", AllowHeader(nil))
-	w.WriteHeader(http.StatusMethodNotAllowed)
-}
-
 // closing releases something whose close failure has nowhere to go.
 func (h *Handler) closing(r *http.Request, c io.Closer, what string) {
 	if err := c.Close(); err != nil {

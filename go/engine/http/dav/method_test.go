@@ -164,14 +164,14 @@ func TestOnlyCopyAndMoveHaveADestination(t *testing.T) {
 // An unregistered vocabulary is not advertised. A client reading Allow would
 // otherwise send a method the server refuses.
 func TestAllowAdvertisesOnlyRegisteredVocabularies(t *testing.T) {
-	base := AllowHeader(nil)
+	base := AllowHeader(AllowSet{Locking: true})
 	for _, m := range []string{"SEARCH", "REPORT"} {
 		if strings.Contains(base, m) {
 			t.Errorf("%s is advertised with nothing registered: %q", m, base)
 		}
 	}
 
-	with := AllowHeader([]string{"SEARCH"})
+	with := AllowHeader(AllowSet{Locking: true, Extra: []string{"SEARCH"}})
 	if !strings.Contains(with, "SEARCH") {
 		t.Errorf("SEARCH was registered but is not advertised: %q", with)
 	}
@@ -182,7 +182,7 @@ func TestAllowAdvertisesOnlyRegisteredVocabularies(t *testing.T) {
 
 // A name Allow does not know is not smuggled into the header.
 func TestAllowIgnoresAnUnknownMethod(t *testing.T) {
-	got := AllowHeader([]string{"BREW", "SEARCH"})
+	got := AllowHeader(AllowSet{Extra: []string{"BREW", "SEARCH"}})
 	if strings.Contains(got, "BREW") {
 		t.Errorf("an unknown method reached the header: %q", got)
 	}
@@ -190,10 +190,54 @@ func TestAllowIgnoresAnUnknownMethod(t *testing.T) {
 
 // The base set always carries the methods every mount serves.
 func TestAllowCarriesTheBaseMethods(t *testing.T) {
-	got := AllowHeader(nil)
-	for _, m := range []string{"OPTIONS", "GET", "HEAD", "PROPFIND", "PUT", "DELETE", "COPY", "MOVE", "LOCK", "UNLOCK"} {
+	got := AllowHeader(AllowSet{Locking: true})
+	for _, m := range []string{"OPTIONS", "GET", "HEAD", "PROPFIND", "DELETE", "COPY", "MOVE", "LOCK", "UNLOCK"} {
 		if !strings.Contains(got, m) {
 			t.Errorf("%s is missing from %q", m, got)
+		}
+	}
+}
+
+// A collection takes MKCOL and a file takes PUT, and neither takes the other.
+//
+// A client reads Allow to decide what to send. Offering PUT on a collection
+// invites a request that has to be refused, and offering MKCOL on a file
+// invites one that would have to remove the file first.
+func TestAllowSeparatesCollectionsFromFiles(t *testing.T) {
+	dir := AllowHeader(AllowSet{Exists: true, IsDir: true})
+	if strings.Contains(dir, "PUT") {
+		t.Errorf("a collection advertises PUT: %q", dir)
+	}
+	if !strings.Contains(dir, "MKCOL") {
+		t.Errorf("a collection does not advertise MKCOL: %q", dir)
+	}
+
+	file := AllowHeader(AllowSet{Exists: true})
+	if !strings.Contains(file, "PUT") {
+		t.Errorf("a file does not advertise PUT: %q", file)
+	}
+	if strings.Contains(file, "MKCOL") {
+		t.Errorf("a file advertises MKCOL: %q", file)
+	}
+}
+
+// A path nothing occupies advertises both, because either would create.
+func TestAllowOffersBothCreateMethodsOnAnEmptyPath(t *testing.T) {
+	got := AllowHeader(AllowSet{})
+	for _, m := range []string{"PUT", "MKCOL"} {
+		if !strings.Contains(got, m) {
+			t.Errorf("%s is missing for a path nothing occupies: %q", m, got)
+		}
+	}
+}
+
+// A deployment with no lock table does not advertise locking. A client told it
+// may LOCK takes one it believes is recorded and writes on the strength of it.
+func TestAllowHidesLockingWithoutATable(t *testing.T) {
+	got := AllowHeader(AllowSet{Exists: true})
+	for _, m := range []string{"LOCK", "UNLOCK"} {
+		if strings.Contains(got, m) {
+			t.Errorf("%s is advertised with no lock table: %q", m, got)
 		}
 	}
 }
