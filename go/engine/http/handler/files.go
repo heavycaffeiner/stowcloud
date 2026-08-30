@@ -10,7 +10,9 @@
 package handler
 
 import (
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
@@ -37,6 +39,33 @@ type EntryView struct {
 
 	// Perms is the caller's effective permission set at this path, by name.
 	Perms []string `json:"perms"`
+
+	// Preview is present on a file whose name suggests the decoder can
+	// re-encode it. Absent on everything else, which is what keeps a grid
+	// from requesting a thumbnail of every text file it lists.
+	Preview *PreviewView `json:"preview,omitempty"`
+}
+
+// PreviewView is the thumbnail hint for one entry.
+type PreviewView struct {
+	// Available is a guess from the name, not a promise. The thumbnail route
+	// is the authority: it opens the file, and one that is not what its name
+	// claims is refused there.
+	Available bool `json:"available"`
+}
+
+// previewable reports whether name looks like something the decoder handles.
+//
+// By extension, because the alternative is opening every file in a listing to
+// sniff it. The cost of guessing wrong is one request that comes back refused,
+// which the grid already handles by keeping the type icon.
+func previewable(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp":
+		return true
+	default:
+		return false
+	}
 }
 
 // PageView is one page of a directory listing.
@@ -80,6 +109,9 @@ func EntryOf(e core.Entry, vpath string) EntryView {
 	if e.BTimeNs != nil {
 		b := strconv.FormatInt(*e.BTimeNs, 10)
 		v.BTimeNs = &b
+	}
+	if !e.IsDir && previewable(e.Name) {
+		v.Preview = &PreviewView{Available: true}
 	}
 	return v
 }

@@ -142,6 +142,7 @@ interface WireEntry {
   etag: string
   etag_weak: boolean
   perms: string[]
+  preview?: { available: boolean }
 }
 
 interface WireListResponse {
@@ -170,7 +171,12 @@ function entryFromWire(w: WireEntry): Entry {
     mtime_ns: w.mtime_ns ?? '0',
     etag: w.etag ?? '',
     etag_weak: w.etag_weak ?? false,
-    perms: permsFromNames(w.perms)
+    perms: permsFromNames(w.perms),
+    // Dropping these two was invisible in the list, which reads neither, and
+    // total in the grid: no entry claimed a thumbnail, so no card ever asked
+    // for one and every image showed the generic type icon.
+    ...(w.btime_ns === undefined ? {} : { btime_ns: w.btime_ns }),
+    ...(w.preview === undefined ? {} : { preview: { available: w.preview.available === true } })
   }
 }
 
