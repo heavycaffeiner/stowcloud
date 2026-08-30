@@ -56,6 +56,9 @@ func newHotSet(capacity int) *hotSet {
 
 func (h *hotSet) registeredCount() int { return len(h.registered) }
 
+// stickyCount is how many keys a subscriber holds pinned.
+func (h *hotSet) stickyCount() int { return len(h.sticky) }
+
 func (h *hotSet) isRegistered(k key) bool {
 	_, ok := h.registered[k]
 	return ok

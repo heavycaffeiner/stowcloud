@@ -36,11 +36,12 @@ const moduleRoot = "github.com/heavycaffeiner/stowcloud/go/"
 const (
 	enginePrefix   = moduleRoot + "engine/"
 	internalPrefix = moduleRoot + "internal/"
-	// fiberPrefix matches go-fiber's own import path. Fiber is not a
-	// dependency yet (it arrives in phase 3), so this rule has no real
-	// importer to catch today; it exists so the rule is enforced and
-	// tested before the day it matters.
-	fiberPrefix = "github.com/gofiber/fiber"
+	// fiberPrefix matches every module under go-fiber's own organization,
+	// which is the framework and the contrib packages that extend it. It is
+	// deliberately the organization rather than the framework's own path: the
+	// websocket adapter lives under contrib, speaks the same transport, and
+	// serving is exactly what the rule below is about.
+	fiberPrefix = "github.com/gofiber/"
 	netHTTP     = "net/http"
 	httpTier    = "http"
 )

@@ -60,6 +60,11 @@ func (e *Engine) adminSharesCreate(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
+	// The watcher learns about it now rather than at the next restart.
+	// Without this a share registered while the server is running is one no
+	// change is ever reported under, and the symptom is a folder that updates
+	// for everybody except the person who just created it.
+	e.watchShare(share)
 	return writeJSON(c, fiber.StatusCreated, handler.ShareOf(share))
 }
 

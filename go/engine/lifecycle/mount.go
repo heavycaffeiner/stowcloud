@@ -200,6 +200,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminIndexEstimate
 		case "admin.smb.apply":
 			out[r.Name] = e.adminSMBApply
+		case "events":
+			out[r.Name] = e.eventsSocket()
 		case "system.setup.get":
 			out[r.Name] = e.systemSetupGet
 		case "system.setup.post":

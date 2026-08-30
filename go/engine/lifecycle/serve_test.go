@@ -152,12 +152,15 @@ func TestEveryDeclaredRouteAnswers(t *testing.T) {
 	}{
 		{"/api/v1/system/health", http.StatusOK},
 		{"/api/v1/jobs", http.StatusUnauthorized},
-		// Unbound, which is what makes the fallback answer here. It was
-		// auth/oidc/config, then system/setup, and moved each time the route
-		// it named was bound: a route named as an example of one shape has to
-		// be moved when it stops being that shape, or the test quietly asserts
-		// the opposite of what it says.
-		{"/api/v1/events", http.StatusNotImplemented},
+		// Bound and demanding an upgrade: a plain GET on the change channel
+		// is a client that has not upgraded, which is said rather than left
+		// on a stream that will never carry a frame.
+		//
+		// This entry has moved every time the route it named was bound, from
+		// auth/oidc/config to system/setup to here. A route named as an
+		// example of one shape has to move when it stops being that shape, or
+		// the test quietly asserts the opposite of what it says.
+		{"/api/v1/events", http.StatusUpgradeRequired},
 	}
 
 	for _, c := range cases {
@@ -205,18 +208,22 @@ func TestEveryAnswerIsJSON(t *testing.T) {
 // A route with no binding says so rather than answering as though it worked.
 // A client reading a success for an endpoint that did nothing acts on it.
 func TestAnUnboundRouteRefusesRatherThanPretending(t *testing.T) {
-	base := boot(t)
+	// The remaining unbound route is administrative, so the chain refuses an
+	// anonymous caller before the fallback is reached. Seeing what the
+	// fallback actually writes takes a caller the chain admits.
+	base, adminCookie, adminCSRF, _, _ := adminEngine(t)
 
-	status, body := get(t, base+"/api/v1/events")
+	status, raw := mutateRaw(t, http.MethodPost,
+		base+"/api/v1/admin/index/build", adminCookie, adminCSRF)
 	if status != http.StatusNotImplemented {
-		t.Fatalf("an unbound route answered %d: %s", status, body)
+		t.Fatalf("an unbound route answered %d: %s", status, raw)
 	}
 
 	var refusal struct {
 		Error   string `json:"error"`
 		Message string `json:"message"`
 	}
-	if err := json.Unmarshal(body, &refusal); err != nil {
+	if err := json.Unmarshal(raw, &refusal); err != nil {
 		t.Fatalf("the refusal does not parse: %v", err)
 	}
 	if refusal.Error != "not_implemented" {
@@ -225,6 +232,34 @@ func TestAnUnboundRouteRefusesRatherThanPretending(t *testing.T) {
 	if refusal.Message == "" {
 		t.Error("the refusal names no route")
 	}
+}
+
+// mutateRaw posts with a session and a CSRF header, returning the raw body.
+func mutateRaw(t *testing.T, method, url string, cookie *http.Cookie, csrf string) (int, []byte) {
+	t.Helper()
+
+	req, err := http.NewRequest(method, url, strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sc-Csrf", csrf)
+	req.AddCookie(cookie)
+
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("requesting %s: %v", url, err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+	body, rerr := io.ReadAll(resp.Body)
+	if rerr != nil {
+		t.Fatalf("reading %s: %v", url, rerr)
+	}
+	return resp.StatusCode, body
 }
 
 // Mounting reports a broken assembly before anything binds, so a defect

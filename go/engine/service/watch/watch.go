@@ -175,6 +175,7 @@ func (w *Watcher) Stats() Stats {
 	defer w.mu.Unlock()
 	return Stats{
 		Registered: w.hot.registeredCount(),
+		Pinned:     w.hot.stickyCount(),
 		Degraded:   w.degraded.Load(),
 		Shares:     len(w.shares),
 	}

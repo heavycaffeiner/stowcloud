@@ -32,6 +32,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/watch"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/journal"
@@ -110,6 +111,12 @@ type Engine struct {
 	// because whether the window is open is a question about the account count
 	// rather than about construction.
 	setup *server.SetupGate
+
+	// watcher reports what changed on disk, and events fans that out to
+	// subscribed clients. Both are nil on a deployment whose kernel refused an
+	// inotify descriptor, which costs the push and nothing else.
+	watcher *watch.Watcher
+	events  *server.EventHub
 
 	clock  clock.Clock
 	logger *slog.Logger
@@ -338,6 +345,10 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// already has an account mints none.
 	e.issueSetupToken(ctx)
 
+	// The change channel, after the registry it watches and the settings that
+	// bound it.
+	e.startEvents(ctx, watchSettingsOf(ctx, e))
+
 	// The publisher needs the core's share registry and the credentials auth
 	// opens, so it is built after both. Auth is told about it here rather than
 	// at construction for the same reason: the sink asks this service for the
@@ -397,6 +408,11 @@ func reloadMemberships(ctx context.Context, e *Engine, logger *slog.Logger) {
 // wants to know about all of them, and stopping at the first leaves the rest
 // open.
 func (e *Engine) Close() error {
+	// The sockets and the watcher first. They hold no database file, but they
+	// hold goroutines that read one, and closing a database out from under a
+	// live reader is the failure this ordering avoids.
+	e.closeEvents()
+
 	var errs []error
 	for i := len(e.files) - 1; i >= 0; i-- {
 		if err := e.files[i].Close(); err != nil {

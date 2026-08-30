@@ -22,6 +22,12 @@ type Stats struct {
 	// Registered counts directories currently holding a live kernel watch.
 	Registered int
 
+	// Pinned counts the subset a subscriber holds. Reported apart from the
+	// total because it is the half nothing evicts: a caller that takes a pin
+	// and never releases it grows this without bound, and a figure folding the
+	// two together cannot tell that from ordinary use.
+	Pinned int
+
 	// Degraded tallies refused registrations, each leaving a subtree on lazy
 	// revalidation. Any non-zero value denotes a named degradation, not a
 	// failure.

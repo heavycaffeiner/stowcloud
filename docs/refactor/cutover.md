@@ -35,9 +35,9 @@ rebuild is nearly a replacement. Package by package it is not that simple.
 
 ## Three things block the cutover
 
-### 1. Two routes have no binding
+### 1. One route has no binding
 
-The engine binds 85 of the 87 routes its own table names. The rest need
+The engine binds 86 of the 87 routes its own table names. The rest need
 services that `lifecycle.Open` never constructs: preview for thumbnails,
 the pieces named below. The account-facing SMB routes, the index estimate and
 the SMB apply are bound; what remains needs something the engine does not have
@@ -60,10 +60,19 @@ token when the account count is zero, and writes it under the data directory.
 The first administrator's grant moved into `core.GrantEveryShare`, so no
 command builds grant rows of its own.
 
+The change channel is bound too. `engine/service/watch` had `Start` and no
+caller, and the frame vocabulary in `http/handler` was referenced by nothing:
+the engine could detect a change and had nowhere to send it. `lifecycle.Open`
+now starts the watcher over the registered shares and joins it to a broker in
+`http/server`, and `Close` releases both.
+
+The old hub's leak is fixed rather than carried: it removed a socket without
+unsubscribing, so a closed tab left a kernel watch pinned for the life of the
+process. Disconnect now releases every subscription the connection held.
+
 The unbound set, exactly, grouped by the service each one waits on:
 
 - **Search index** (1): `admin.index.build`, which needs an index to build into
-- **Events** (1): `events`
 
 ### 2. Two protocol surfaces have their vocabulary and not their handlers
 
@@ -117,11 +126,11 @@ and the difference is mostly this.
 
 In dependency order, with the measured size of each piece:
 
-1. **Construct what the last two routes need**: the name index and the events
-   hub. Search, the sign-on client, the preview decoder, the SMB publisher and
-   the setup gate are built. Every package exists; this is wiring plus
-   whatever each needs from configuration.
-2. **Bind the remaining 2 routes** against those services.
+1. **Construct what the last route needs**: the name index, which is a
+   persistence decision rather than a construction. Search, the sign-on
+   client, the preview decoder, the SMB publisher, the setup gate and the
+   change channel are all built and wired.
+2. **Bind the remaining route** against it.
 3. **Write the dav and compat handlers.** The vocabulary is done; the method
    handlers are not, and they are roughly 2,000 and 4,300 lines in the tree
    they replace.

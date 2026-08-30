@@ -428,5 +428,9 @@
 # is the memoised result: one build per test binary, which is what the
 # memoisation exists for, and a closure keeps it out of reach of anything else
 # in the package.
+#
+# 89: the change channel closing a socket. Every caller reaches it because the
+# peer is already going away, so a close that fails has nobody left to be
+# reported to.
 296
-88
+89

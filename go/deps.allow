@@ -46,11 +46,24 @@ golang.org/x/image
 # was expected to need it first.
 github.com/klauspost/compress
 
-# The change channel for /api/events. The dependency decision was reopened
+# The change channel for /api/v1/events. The dependency decision was reopened
 # because the protocol carries client frames (sub/unsub), so a hand-rolled
 # frame layer would re-implement control-frame handling, close codes and
 # fragmentation that a maintained module already owns.
+#
+# It serves the old tree only. gorilla upgrades over net/http, and the engine
+# runs on fasthttp, which exposes no Hijacker for gorilla to take the socket
+# through. This entry leaves with internal/.
 github.com/gorilla/websocket
+
+# The same change channel on the engine's transport. It is the gorilla API
+# over fasthttp rather than a second protocol implementation, which is what
+# makes the wire frames and the authorization behaviour carry across unchanged.
+#
+# Confined to engine/http and the assembly by the layer gate, which matches
+# the whole gofiber organization rather than the framework's own path: this
+# module serves requests, and that is what the rule is about.
+github.com/gofiber/contrib/websocket
 
 # The presentation layer's HTTP engine, replacing the hand-rolled net/http
 # stack. Settled as D2 before phase 3 began, and importable only under
