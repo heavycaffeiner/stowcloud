@@ -391,7 +391,23 @@ async function archive(paths: string[], name?: string): Promise<Blob> {
  * not a zip are the same `404`.
  */
 async function archiveList(path: string): Promise<ArchiveListing> {
-  return request(`/files/archive/list${qs({ path })}`)
+  const w = await request<{
+    entries: Array<{ name: string; is_dir: boolean; size: string; compressed: string; mtime_ns?: string }>
+    truncated?: boolean
+    skipped?: number
+    total_uncompressed: string
+  }>(`/files/archive/list${qs({ path })}`)
+  return {
+    entries: (w.entries ?? []).map((e) => ({
+      name: e.name,
+      size: Number(e.size ?? 0),
+      kind: e.is_dir ? ('dir' as const) : ('file' as const)
+    })),
+    truncated: w.truncated === true,
+    // The wire reports what it packed rather than a ceiling it was given.
+    limit: (w.entries ?? []).length,
+    skipped: w.skipped
+  }
 }
 
 /**
@@ -421,7 +437,10 @@ function thumbUrl(path: string, dim: number): string {
 }
 
 async function folderSize(path: string): Promise<FolderSize> {
-  return request(`/files/size${qs({ path })}`)
+  // Decimal strings, because a folder's rollup can exceed what a JavaScript
+  // number holds exactly.
+  const w = await request<{ size: string; count: string }>(`/files/size${qs({ path })}`)
+  return { bytes: Number(w.size ?? 0), files: Number(w.count ?? 0) }
 }
 
 /**
@@ -474,12 +493,50 @@ async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }
 /** `GET /api/v1/jobs` — every non-terminal job the caller owns. `JobTray` calls
  *  this once on mount to re-attach across a refresh or a server restart
  *  (`go/internal/httpapi/handler/admin_ops.go`). */
+/**
+ * One long operation as the wire sends it.
+ *
+ * Counts are decimal strings, and the fields the app calls `done`, `current`
+ * and `pending` are `progress`, `message` and an absence here. A job that
+ * never listed what it had not reached yet cannot say so, so `pending` is
+ * empty rather than invented.
+ */
+interface WireJob {
+  id: string
+  kind: JobStatus['kind']
+  state: JobStatus['state']
+  progress: string
+  total: string
+  message?: string
+  results?: BatchItemResult[]
+  attempting?: string[]
+}
+
+function jobFromWire(w: WireJob): JobStatus {
+  return {
+    id: w.id,
+    kind: w.kind,
+    state: w.state,
+    done: Number(w.progress ?? 0),
+    total: Number(w.total ?? 0),
+    // The wire carries one message rather than a running item name, and an
+    // empty one is "nothing to say" rather than an item called "".
+    current: w.message ? w.message : null,
+    // Per-item failures live in results; there is no separate error list.
+    errors: (w.results ?? []).filter((r) => !r.ok).map((r) => r.error?.message ?? ''),
+    results: w.results ?? [],
+    attempting: w.attempting ?? [],
+    pending: []
+  }
+}
+
 async function jobList(): Promise<JobListResponse> {
-  return request('/jobs')
+  const rows = await request<WireJob[]>('/jobs')
+  return { jobs: (rows ?? []).map(jobFromWire) }
 }
 
 async function jobStatus(id: string): Promise<JobStatus> {
-  return request(`/jobs/${encodeURIComponent(id)}`)
+  return jobFromWire(await request<WireJob>(`/jobs/${encodeURIComponent(id)}`))
 }
 
 /** One spelling for a cancel: the DELETE alias is gone, and cancelling is an
@@ -491,7 +548,13 @@ async function jobCancel(id: string): Promise<void> {
 // ── trash ──
 
 async function trashList(): Promise<TrashEntry[]> {
-  return request('/trash')
+  const rows = await request<Array<{ id: string; name: string; size: string; deleted_at_ns: string }>>('/trash')
+  return (rows ?? []).map((w) => ({
+    id: w.id,
+    name: w.name,
+    size: Number(w.size ?? 0),
+    deleted_at_ns: w.deleted_at_ns
+  }))
 }
 
 async function trashRestore(ids: string[]): Promise<BatchResult> {
@@ -1208,8 +1271,21 @@ async function adminDeleteGrant(id: number): Promise<void> {
 // GET/POST /api/v1/admin/groups, PATCH/DELETE /api/v1/admin/groups/{id},
 // POST /api/v1/admin/groups/{id}/members, DELETE /api/v1/admin/groups/{id}/members/{user}.
 
+/** Groups carry string ids and a string member list, for the same 2^53
+ *  reason every other id on this API does. */
+interface WireGroup {
+  id: string
+  name: string
+  members: string[]
+}
+
+function groupFromWire(w: WireGroup): AdminGroup {
+  return { id: Number(w.id), name: w.name, members: (w.members ?? []).map(Number) }
+}
+
 async function adminListGroups(): Promise<AdminGroup[]> {
-  return request('/admin/groups')
+  const rows = await request<WireGroup[]>('/admin/groups')
+  return (rows ?? []).map(groupFromWire)
 }
 
 async function adminCreateGroup(req: CreateGroupReq): Promise<AdminGroup> {
@@ -1236,8 +1312,24 @@ async function adminRemoveGroupMember(id: number, userId: number): Promise<void>
  * Every filter field is optional and unfiltered when
  *  omitted; `query.before` is the previous page's `AuditPage.next` for
  *  cursor pagination. */
+/** One audit row as the wire sends it. The cursor value is `id`, and it and
+ *  the actor are decimal strings: paging on a rounded id skips or repeats a
+ *  page. */
+interface WireAudit {
+  id: string
+  ts_ns: string
+  actor?: string
+  actor_name?: string
+  event: string
+  target?: string
+  ip?: string
+  ua?: string
+  ok: boolean
+  detail?: string
+}
+
 async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
-  return request(
+  const page = await request<{ rows: WireAudit[]; next?: string }>(
     `/admin/audit${qs({
       actor: query.actor,
       event: query.event,
@@ -1247,6 +1339,22 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
       limit: query.limit
     })}`
   )
+  return {
+    rows: (page.rows ?? []).map((w) => ({
+      rowid: Number(w.id),
+      ts_ns: w.ts_ns,
+      // Absent means the event had no actor, which is not the same as an
+      // actor whose name is blank.
+      actor: w.actor !== undefined ? Number(w.actor) : null,
+      actor_name: w.actor_name ?? null,
+      event: w.event,
+      target: w.target ?? null,
+      ip: w.ip ?? null,
+      ok: w.ok,
+      detail: w.detail ?? null
+    })),
+    next: page.next !== undefined ? Number(page.next) : null
+  }
 }
 
 /** The real `hit` SSE event (`sc-http::routes::hit_json`) is flat --

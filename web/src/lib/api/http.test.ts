@@ -103,20 +103,29 @@ describe('httpApi job wrappers', () => {
       id: 'J-3',
       kind: 'delete',
       state: 'running',
-      done: 1,
-      total: 5,
-      current: '/c',
-      errors: [],
+      progress: '1',
+      total: '5',
+      message: '/c',
       results: [],
-      attempting: [],
-      download: false
+      attempting: []
     }
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { jobs: [openJob] }))
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, [openJob]))
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await httpApi.jobList()
 
-    expect(result).toEqual({ jobs: [openJob] })
+    // The wire's counts are strings and three of its fields are named
+    // differently, so what comes back is the app's shape rather than the
+    // response echoed.
+    expect(result.jobs).toHaveLength(1)
+    expect(result.jobs[0]).toMatchObject({
+      id: 'J-3',
+      kind: 'delete',
+      state: 'running',
+      done: 1,
+      total: 5,
+      current: '/c'
+    })
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/jobs')
     expect(String(fetchMock.mock.calls[0]?.[0])).not.toContain('/jobs/')
   })
@@ -132,13 +141,16 @@ describe('writeFile and the advisory change token', () => {
     return JSON.parse(String(init.body)) as Record<string, unknown>
   }
 
-  it('sends the condition when it is given one', async () => {
+  it('sends the condition as If-Match when it is given one', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { name: 'a.txt' }))
     vi.stubGlobal('fetch', fetchMock)
 
     await httpApi.writeFile('/s/a.txt', 'hello', 'W/"abc"')
 
-    expect(bodyOf(fetchMock).if_match).toBe('W/"abc"')
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(new Headers(init.headers).get('If-Match')).toBe('W/"abc"')
+    // The body is the file itself, not an envelope around it.
+    expect(init.body).toBe('hello')
   })
 
   it('omits the condition entirely when it is not given one', async () => {
@@ -147,10 +159,10 @@ describe('writeFile and the advisory change token', () => {
 
     await httpApi.writeFile('/s/a.txt', 'hello')
 
-    // Undefined rather than an empty string: an empty condition is still a
-    // condition, and the server would refuse it.
-    expect(bodyOf(fetchMock).if_match).toBeUndefined()
-    expect(String(init0(fetchMock))).not.toContain('if_match":"')
+    // Absent rather than empty: an empty condition is still a condition, and
+    // the server would refuse it.
+    const init = fetchMock.mock.calls[0][1] as RequestInit
+    expect(new Headers(init.headers).has('If-Match')).toBe(false)
   })
 
   function init0(fetchMock: ReturnType<typeof vi.fn>): string {
