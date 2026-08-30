@@ -14,6 +14,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
@@ -40,6 +41,9 @@ type fixture struct {
 	dir  string
 	// locks is what the handler was given, so a test can arrange a refusal.
 	locks *stubLocks
+	// props is the property store, for a test that reads back what PROPPATCH
+	// wrote rather than trusting the response alone.
+	props *lifecycle.DavProps
 }
 
 // stubLocks answers the guard. The lock table has its own tests; what matters
@@ -133,6 +137,7 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 	grantAll(t, c, st, int64(testUser), testShare)
 
 	locks := &stubLocks{}
+	props := lifecycle.NewDavProps(st)
 	return &fixture{
 		h: dav.New(dav.Options{
 			Core:  c,
@@ -141,10 +146,13 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 				return held
 			},
 			InfinityEntries: infinityEntries,
+			Store:           props,
+			KeyOf:           lifecycle.DavKeyOf,
 		}),
 		core:  c,
 		dir:   shareDir,
 		locks: locks,
+		props: props,
 	}
 }
 

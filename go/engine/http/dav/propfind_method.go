@@ -63,7 +63,11 @@ func (h *Handler) Propfind(w http.ResponseWriter, r *http.Request, res core.Reso
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusMultiStatus)
 
-	m := NewMultistatus(w, nil)
+	// The namespaces a request named, so a property the client asked for can
+	// be written back. The writer drops anything in a namespace it was not
+	// told about, which for a vendor property means the answer silently omits
+	// exactly what was requested.
+	m := NewMultistatus(w, requestedNamespaces(req))
 	self := h.core.EntryAt(res, st)
 	base := EncodeHref(res.Path().Components(), st.Kind.IsDir())
 
@@ -226,6 +230,24 @@ func findDead(dead []deadProp, n xml.Name) (deadProp, bool) {
 		}
 	}
 	return deadProp{}, false
+}
+
+// requestedNamespaces are the vocabularies a request named.
+//
+// Only what the client asked for. An allprop response carries live properties
+// alone, which are all in the DAV namespace the writer declares anyway, and a
+// stored property reaches a response only by being named.
+func requestedNamespaces(req PropFind) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range req.Names {
+		if n.Space == "" || n.Space == davNS || seen[n.Space] {
+			continue
+		}
+		seen[n.Space] = true
+		out = append(out, n.Space)
+	}
+	return out
 }
 
 // wantsLockDiscovery reports whether the answer could carry a lock.

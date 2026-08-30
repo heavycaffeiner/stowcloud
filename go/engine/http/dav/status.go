@@ -88,6 +88,13 @@ func StatusOf(err error) (int, xml.Name) {
 	case errors.Is(err, ErrUnsupportedMedia):
 		return http.StatusUnsupportedMediaType, xml.Name{}
 
+	// 409 rather than 501: the request is one this server implements, and the
+	// conflict is with how this deployment is configured. A client that reads
+	// 501 stops offering the feature; one that reads 409 reports the failure
+	// against the resource it tried.
+	case errors.Is(err, ErrNoPropertyStore):
+		return http.StatusConflict, xml.Name{}
+
 	// A parent that is missing, or a collection that still has members. Both
 	// are the request meeting a tree it did not expect.
 	case errors.Is(err, core.ErrNotEmpty), errors.Is(err, core.ErrConflict),
@@ -135,6 +142,12 @@ var (
 	ErrLocked = errors.New("the resource is locked")
 	// ErrUnsupportedMedia is a body on a method that defines none.
 	ErrUnsupportedMedia = errors.New("unsupported media type")
+	// ErrNoPropertyStore reports a deployment with nowhere to keep dead
+	// properties, on a request that asked to store one.
+	//
+	// Reported rather than answered 200. A client told its properties were
+	// stored has no reason to expect the next PROPFIND to lose them.
+	ErrNoPropertyStore = errors.New("this deployment stores no dead properties")
 )
 
 // WriteError writes an error response, with the precondition element when the

@@ -50,9 +50,24 @@ type StoredProp struct {
 type Store interface {
 	// Props reads what is stored against a resource.
 	Props(ctx context.Context, key ResourceKey) ([]StoredProp, error)
+	// SetProps applies a whole instruction set, or none of it. RFC 4918 makes
+	// PROPPATCH atomic across its instructions, so a store that applied a
+	// prefix would leave a resource in a state the response does not describe.
+	SetProps(ctx context.Context, key ResourceKey, ops []PropWrite) error
 	// DropProps discards them. A delete does this so the rows do not outlive
 	// the resource and attach to whatever next occupies the inode.
 	DropProps(ctx context.Context, key ResourceKey) error
+}
+
+// PropWrite is one instruction against the property store.
+type PropWrite struct {
+	// NS and Name identify the property.
+	NS   string
+	Name string
+	// Value is what a set writes, and is ignored by a removal.
+	Value string
+	// Remove deletes rather than writes.
+	Remove bool
 }
 
 // ResourceKey identifies the resource a property belongs to.
