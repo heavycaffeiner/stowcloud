@@ -46,15 +46,25 @@ type fixture struct {
 // here is that a refusal reaches the client as 423 and an admission does not
 // stop the write.
 type stubLocks struct {
-	// refuse is returned by Guard when set.
+	// refuse is returned for every path when set.
 	refuse error
+	// refuseAt refuses one path only. A method that writes at two ends has to
+	// guard both, and a stub that answers the same for either cannot tell a
+	// handler guarding one end from a handler guarding both.
+	refuseAt map[string]error
 	// sawTokens records what the last guarded write submitted, so a test can
 	// check that an If header's tokens travelled.
 	sawTokens []string
+	// guarded records every path the handler asked about, in order.
+	guarded []string
 }
 
-func (s *stubLocks) Guard(_ context.Context, _ uint32, _ string, _ int64, submitted []string) error {
+func (s *stubLocks) Guard(_ context.Context, _ uint32, path string, _ int64, submitted []string) error {
 	s.sawTokens = submitted
+	s.guarded = append(s.guarded, path)
+	if err, ok := s.refuseAt[path]; ok {
+		return err
+	}
 	return s.refuse
 }
 
