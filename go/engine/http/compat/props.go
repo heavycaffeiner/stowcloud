@@ -3,23 +3,20 @@
 package compat
 
 import (
-	"context"
 	"encoding/xml"
 	"fmt"
 	"strconv"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
-// The vendor properties a sync client reads, and the two functions that
-// render them.
+// The vendor properties a sync client reads on every PROPFIND, and the two
+// functions that render them.
 //
 // The vocabulary belongs to the client, not to this server: the namespaces,
 // the property names and the value formats are reproduced exactly, because a
 // client parses them. The permissions string in particular is the highest
-// risk value in this whole surface, and its comment says why.
+// risk value in this whole surface, and its own comment says why.
 
 // The namespaces this source claims.
 const (
@@ -61,59 +58,85 @@ func DavID(id uint64, instanceID string) string {
 // re-uploads all of it; missing C or K and nothing can be created inside; an
 // empty string and the client ignores the entry entirely, which is why a
 // read-only resource still carries G.
-func DavPermissions(p acl.Perms, isDir, shared bool) string {
+func DavPermissions(p PermBits, isDir, shared bool) string {
 	out := make([]byte, 0, 9)
 	if shared {
 		out = append(out, 'S')
 	}
-	if p.Has(acl.Share) {
+	if p.Has(PermShare) {
 		out = append(out, 'R')
 	}
-	if p.Has(acl.Read) {
+	if p.Has(PermRead) {
 		out = append(out, 'G')
 	}
-	if p.Has(acl.Delete) {
+	if p.Has(PermDelete) {
 		out = append(out, 'D')
 	}
-	if p.Has(acl.Rename) {
+	if p.Has(PermRename) {
 		out = append(out, 'N')
 	}
-	if p.Has(acl.Move) {
+	if p.Has(PermMove) {
 		out = append(out, 'V')
 	}
 	if isDir {
-		if p.Has(acl.Create) {
+		if p.Has(PermCreate) {
 			out = append(out, 'C', 'K')
 		}
-	} else if p.Has(acl.Write) {
+	} else if p.Has(PermWrite) {
 		out = append(out, 'W')
 	}
 	return string(out)
 }
 
-// PropSource emits the vendor properties for one entry.
+// The permission bits the letters read.
+const (
+	PermShare PermBits = 1 << iota
+	PermRead
+	PermDelete
+	PermRename
+	PermMove
+	PermCreate
+	PermWrite
+)
+
+// PermBits is the bitset DavPermissions renders.
+type PermBits uint8
+
+// Has answers whether the letters this renderer emits all sit in the set.
+func (p PermBits) Has(want PermBits) bool { return p&want == want }
+
+// PropEntry is what one hit carries into the renderer: the fields the
+// vocabulary touches and nothing else.
+type PropEntry struct {
+	IsDir bool
+	Size  uint64
+	Perms PermBits
+	// FileID is the durable id the entry's journal key is built from.
+	// Resolved by the caller, because the lookup belongs to the assembly.
+	FileID uint64
+}
+
+// PropSource renders the vendor properties for one entry.
 //
-// It renders; it does not decide. The file id and the shared flag arrive as
-// functions, because both belong to the assembly that owns the storage, and
-// a source that reached for them itself would need an import the layer gate
+// It renders; it does not decide. The file id and the shared flag arrive
+// resolved, because both belong to the assembly that owns the storage, and a
+// source that reached for them itself would need an import the layer gate
 // forbids.
 type PropSource struct {
 	instanceID func() string
-	// fileID answers the durable id an entry's journal key is built from.
-	fileID func(ctx context.Context, e core.Entry) (uint64, error)
 	// shared answers whether the entry is behind a share link. A source that
 	// cannot answer still renders: the flag costs one letter, not the entry.
-	shared func(e core.Entry) bool
+	shared func(PropEntry) bool
 	warn   func(msg string, args ...any)
 }
 
-// PropSourceDeps carries the source's reach into the rest of the process, as
-// functions, so the assembly decides where each answer comes from.
+// PropSourceDeps carries the source's reach, as functions, so the assembly
+// decides where each answer comes from.
 type PropSourceDeps struct {
 	InstanceID func() string
-	FileID     func(ctx context.Context, e core.Entry) (uint64, error)
-	Shared     func(e core.Entry) bool
-	Warn       func(msg string, args ...any)
+	// Shared is optional: unset renders every entry as not shared.
+	Shared func(PropEntry) bool
+	Warn   func(msg string, args ...any)
 }
 
 // NewPropSource fills the defaults a caller should not have to think about:
@@ -123,11 +146,10 @@ func NewPropSource(d PropSourceDeps) *PropSource {
 		d.Warn = func(string, ...any) {}
 	}
 	if d.Shared == nil {
-		d.Shared = func(core.Entry) bool { return false }
+		d.Shared = func(PropEntry) bool { return false }
 	}
 	return &PropSource{
 		instanceID: d.InstanceID,
-		fileID:     d.FileID,
 		shared:     d.Shared,
 		warn:       d.Warn,
 	}
@@ -143,9 +165,7 @@ func (s *PropSource) Namespaces() []string {
 // Only the names in want are computed. Several of the properties cost a
 // lookup or a decision, so producing the whole set for a request that named
 // one of them would be work nothing reads.
-func (s *PropSource) Props(
-	ctx context.Context, _ core.Resolved, e core.Entry, want []xml.Name,
-) []dav.Prop {
+func (s *PropSource) Props(e PropEntry, want []xml.Name) []dav.Prop {
 	asked := func(space, local string) bool {
 		for _, n := range want {
 			if n.Space == space && n.Local == local {
@@ -155,15 +175,13 @@ func (s *PropSource) Props(
 		return false
 	}
 
-	// The file id is the key of the client's entire local sync journal, and
-	// an entry without one is skipped outright. So on a resolution failure
-	// the zero id is emitted rather than the property dropped: a wrong id is
-	// visible and debuggable, and a silently missing entry is not.
-	id, err := s.fileID(ctx, e)
-	if err != nil {
-		s.warn("an entry reached property emission without a file id",
-			"name", e.Name, "error", err)
-		id = 0
+	// An entry without its journal key vanishes from the client's view
+	// without a word. So when the lookup could not answer, the zero id goes
+	// out anyway: a wrong id is visible and debuggable, a missing one is
+	// neither.
+	id := e.FileID
+	if id == 0 {
+		s.warn("an entry reached property emission without a file id")
 	}
 
 	// The shared lookup feeds both the share types and the leading letter of

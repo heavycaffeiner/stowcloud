@@ -13,6 +13,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/compat"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
 )
@@ -51,7 +52,7 @@ func (e *Engine) davUploadHeaders() dav.UploadHeaders {
 // property the client asked for answers missing, which is the answer it
 // already handles by skipping the entry.
 func (e *Engine) davVendorProps() func(
-	ctx context.Context, res core.Resolved, e core.Entry, want []xml.Name,
+	ctx context.Context, res core.Resolved, entry core.Entry, want []xml.Name,
 ) []dav.Prop {
 	id, err := e.State.InstanceID(context.Background())
 	if err != nil {
@@ -62,9 +63,25 @@ func (e *Engine) davVendorProps() func(
 
 	source := compat.NewPropSource(compat.PropSourceDeps{
 		InstanceID: func() string { return id },
-		FileID:     e.compatFileID,
+		Shared:     func(compat.PropEntry) bool { return false },
 	})
-	return source.Props
+
+	return func(ctx context.Context, _ core.Resolved, entry core.Entry, want []xml.Name) []dav.Prop {
+		// The file id is resolved here, where the entry's identity lives: the
+		// recorded override wins, and otherwise the id is the pure
+		// derivation the allocation policy answers for a first candidate.
+		fileID, ferr := e.compatFileID(ctx, entry)
+		if ferr != nil {
+			e.logger.Warn("an entry reached property emission without a file id",
+				"name", entry.Name, "error", ferr)
+		}
+		return source.Props(compat.PropEntry{
+			IsDir:  entry.IsDir,
+			Size:   entry.Size,
+			Perms:  permBitsOf(entry.Perms),
+			FileID: fileID,
+		}, want)
+	}
 }
 
 // compatFileID resolves the stable id a sync journal keys an entry on.
@@ -83,4 +100,35 @@ func (e *Engine) compatFileID(ctx context.Context, entry core.Entry) (uint64, er
 		return num.Narrow[uint64](recorded)
 	}
 	return num.Narrow[uint64](cache.DeriveID(entry.Ident, 0))
+}
+
+// permBitsOf maps the core's permission bitset onto the renderer's.
+//
+// Seven of the eight bits transfer one for one; Download has no letter on
+// this wire, because a client that can read a file can download it and the
+// vocabulary simply has nothing to say about the difference.
+func permBitsOf(p acl.Perms) compat.PermBits {
+	var out compat.PermBits
+	if p.Has(acl.Share) {
+		out |= compat.PermShare
+	}
+	if p.Has(acl.Read) {
+		out |= compat.PermRead
+	}
+	if p.Has(acl.Delete) {
+		out |= compat.PermDelete
+	}
+	if p.Has(acl.Rename) {
+		out |= compat.PermRename
+	}
+	if p.Has(acl.Move) {
+		out |= compat.PermMove
+	}
+	if p.Has(acl.Create) {
+		out |= compat.PermCreate
+	}
+	if p.Has(acl.Write) {
+		out |= compat.PermWrite
+	}
+	return out
 }
