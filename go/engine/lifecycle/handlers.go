@@ -90,7 +90,7 @@ const jobsPageSize = 100
 // from the request would be a second answer to the question the chain exists
 // to answer once.
 func ownerOf(c *fiber.Ctx) (core.UserID, bool) {
-	p, ok := c.Locals(string(middleware.KeyCredential)).(middleware.Principal)
+	p, ok := c.Locals(middleware.KeyCredential).(middleware.Principal)
 	if !ok || p.UserID == 0 {
 		return 0, false
 	}

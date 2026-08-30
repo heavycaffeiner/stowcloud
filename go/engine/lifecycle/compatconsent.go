@@ -96,7 +96,7 @@ document.getElementById('sc-form').addEventListener('submit', async function (e)
 // to start.
 func (e *Engine) compatLoginConsent(c *fiber.Ctx) error {
 	cookie := c.Cookies(middleware.SessionCookieName)
-	_, signedIn := c.Locals(string(middleware.KeyCredential)).(middleware.Principal)
+	_, signedIn := c.Locals(middleware.KeyCredential).(middleware.Principal)
 	if cookie == "" || !signedIn {
 		return c.Redirect("/login?returnTo="+consentEscapePath(c.Path()), fiber.StatusFound)
 	}

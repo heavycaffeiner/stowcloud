@@ -41,8 +41,20 @@ func (e *Engine) Mount() (*fiber.App, error) {
 		return nil, fmt.Errorf("the assembly is not servable: %w", err)
 	}
 
+	// The framework refuses a method it does not know before any route runs,
+	// so the WebDAV verbs join the list at construction: a sync client's
+	// PROPFIND is as ordinary as a browser's GET. COPY and MOVE are WebDAV's
+	// own too, and as missing from the framework's default as the rest.
+	methods := make([]string, 0, len(fiber.DefaultMethods)+9)
+	methods = append(methods, fiber.DefaultMethods...)
+	methods = append(methods,
+		"PROPFIND", "PROPPATCH", "MKCOL", "COPY", "MOVE",
+		"LOCK", "UNLOCK", "REPORT", "SEARCH",
+	)
+
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
+		RequestMethods:        methods,
 		// The framework's own error page is HTML. Every failure this server
 		// produces is a JSON body a client can read, so the default is
 		// replaced rather than left to leak a page into an API response.
@@ -65,6 +77,11 @@ func (e *Engine) Mount() (*fiber.App, error) {
 	if err := server.Register(app, table, handlers); err != nil {
 		return nil, fmt.Errorf("registering routes: %w", err)
 	}
+
+	// The WebDAV mount, after the chain like every other surface: a sync
+	// client's writes are ordinary writes, checked by the same boundary and
+	// resolved by the same core.
+	e.mountDav(app)
 
 	// The public link surface, after the chain and outside the table: these
 	// paths carry no API version because a short URL is the product feature,

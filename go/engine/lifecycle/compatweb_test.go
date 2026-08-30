@@ -4,6 +4,7 @@ package lifecycle_test
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net"
@@ -13,10 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
-
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
 // The compatibility surface, served over a real engine.
@@ -445,5 +447,197 @@ func TestTheConsentPageRendersForASignedInVisitor(t *testing.T) {
 	csp := resp.Header.Get("Content-Security-Policy")
 	if !strings.Contains(csp, "script-src 'nonce-") {
 		t.Errorf("the page carries no script nonce: %q", csp)
+	}
+}
+
+// The vendor properties a sync client reads, served through the real mount.
+//
+// The desktop client keys its journal on oc:fileid and gates what it does on
+// oc:permissions; an answer missing either makes entries disappear from the
+// sync or the whole sync stall. This is the end-to-end proof: credential, the
+// framework boundary, the mount, the source and the document.
+
+// davAuth mints the credential a WebDAV client carries and returns the
+// header value for it. Basic, because that is what the clients send and what
+// the chain resolves; a session cookie would be a browser authority asking
+// the CSRF step for permission to mutate, which it does not carry.
+func davAuth(t *testing.T, e *lifecycle.Engine, base string, uid int64) string {
+	t.Helper()
+	token, _, err := e.Auth.CreateSyncCredential(context.Background(), uid, "dav test")
+	if err != nil {
+		t.Fatalf("minting the dav credential: %v", err)
+	}
+	return "Basic " + base64.StdEncoding.EncodeToString(
+		[]byte("alice:"+token))
+}
+
+const propfindNamed = `<?xml version="1.0"?>
+<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <d:prop><oc:fileid/><oc:permissions/><oc:size/></d:prop>
+</d:propfind>`
+
+func TestVendorPropsAreServedOnAPropfind(t *testing.T) {
+	t.Parallel()
+	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	if openErr != nil {
+		t.Fatalf("opening the engine: %v", openErr)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing the engine: %v", cerr)
+		}
+	})
+	ctx := context.Background()
+
+	// A share over a directory the test can read back, and the setup flow's
+	// own grant, whose label is the share's name.
+	dir := t.TempDir()
+	if rerr := e.Core.RegisterShare(ctx, core.ShareDef{
+		ID: 1, Name: "files", Host: dir, Policy: vfs.DefaultSharePolicy(),
+	}); rerr != nil {
+		t.Fatalf("registering the share: %v", rerr)
+	}
+	uid, aerr := e.Auth.CreateAdmin(ctx, "alice", "Alice", pwOf(loginPassword))
+	if aerr != nil {
+		t.Fatalf("creating the admin: %v", aerr)
+	}
+	if gerr := e.Core.GrantEveryShare(ctx, uid); gerr != nil {
+		t.Fatalf("granting: %v", gerr)
+	}
+	base := serveCompatEngine(t, e)
+	dav := davAuth(t, e, base, uid)
+
+	// The file the listing will describe, written through the mount itself.
+	put, err := http.NewRequest(http.MethodPut, base+"/dav/files/test.txt",
+		strings.NewReader("contents"))
+	if err != nil {
+		t.Fatalf("building the PUT: %v", err)
+	}
+	put.Header.Set("Authorization", dav)
+	putResp, err := compatClient().Do(put)
+	if err != nil {
+		t.Fatalf("PUT: %v", err)
+	}
+	if cerr := putResp.Body.Close(); cerr != nil {
+		t.Errorf("closing the response: %v", cerr)
+	}
+	if putResp.StatusCode != http.StatusCreated {
+		t.Fatalf("the PUT answered %d, want 201", putResp.StatusCode)
+	}
+
+	find, err := http.NewRequest("PROPFIND", base+"/dav/files/test.txt",
+		strings.NewReader(propfindNamed))
+	if err != nil {
+		t.Fatalf("building the PROPFIND: %v", err)
+	}
+	find.Header.Set("Depth", "0")
+	find.Header.Set("Content-Type", "application/xml")
+	find.Header.Set("Authorization", dav)
+	findResp, err := compatClient().Do(find)
+	if err != nil {
+		t.Fatalf("PROPFIND: %v", err)
+	}
+	defer func() {
+		if cerr := findResp.Body.Close(); cerr != nil {
+			t.Errorf("closing the response: %v", cerr)
+		}
+	}()
+	if findResp.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("the PROPFIND answered %d, want 207", findResp.StatusCode)
+	}
+	raw, rerr := io.ReadAll(findResp.Body)
+	if rerr != nil {
+		t.Fatalf("reading the answer: %v", rerr)
+	}
+	body := string(raw)
+
+	// The writer allocates its own prefixes (ns0 and friends), so the
+	// assertions read the local names and check that the vocabulary's
+	// namespace is declared in the same document: a client's parser resolves
+	// by URI, and a property in a namespace the document never declares is
+	// the defect that once dropped stored properties from their own answer.
+	if !strings.Contains(body, `"http://owncloud.org/ns"`) {
+		t.Errorf("the vendor namespace is not declared: %s", body)
+	}
+	// The file id is present and non-empty, the permissions carry the letters
+	// the grant confers (G read, W writable, and the rest of the full grant),
+	// and the size is the file's own.
+	if !strings.Contains(body, ":fileid>") {
+		t.Errorf("oc:fileid is absent: %s", body)
+	}
+	if !strings.Contains(body, ":permissions>RGDNVW<") {
+		t.Errorf("oc:permissions is not the full grant's letters: %s", body)
+	}
+	if !strings.Contains(body, ":size>8<") {
+		t.Errorf("oc:size is not the file's own: %s", body)
+	}
+}
+
+// The alias a sync client mounts reaches the same tree.
+func TestTheCompatPrefixServesTheSameTree(t *testing.T) {
+	t.Parallel()
+	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	if openErr != nil {
+		t.Fatalf("opening the engine: %v", openErr)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing the engine: %v", cerr)
+		}
+	})
+	ctx := context.Background()
+	dir := t.TempDir()
+	if rerr := e.Core.RegisterShare(ctx, core.ShareDef{
+		ID: 1, Name: "files", Host: dir, Policy: vfs.DefaultSharePolicy(),
+	}); rerr != nil {
+		t.Fatalf("registering the share: %v", rerr)
+	}
+	uid, aerr := e.Auth.CreateAdmin(ctx, "alice", "Alice", pwOf(loginPassword))
+	if aerr != nil {
+		t.Fatalf("creating the admin: %v", aerr)
+	}
+	if gerr := e.Core.GrantEveryShare(ctx, uid); gerr != nil {
+		t.Fatalf("granting: %v", gerr)
+	}
+	base := serveCompatEngine(t, e)
+	dav := davAuth(t, e, base, uid)
+
+	put, err := http.NewRequest(http.MethodPut, base+"/dav/files/alias.txt",
+		strings.NewReader("via-alias"))
+	if err != nil {
+		t.Fatalf("building the PUT: %v", err)
+	}
+	put.Header.Set("Authorization", dav)
+	putResp, err := compatClient().Do(put)
+	if err != nil {
+		t.Fatalf("PUT: %v", err)
+	}
+	if cerr := putResp.Body.Close(); cerr != nil {
+		t.Errorf("closing the response: %v", cerr)
+	}
+	if putResp.StatusCode != http.StatusCreated {
+		t.Fatalf("the PUT answered %d, want 201", putResp.StatusCode)
+	}
+
+	get, err := http.NewRequest(http.MethodGet, base+"/remote.php/webdav/files/alias.txt", nil)
+	if err != nil {
+		t.Fatalf("building the GET: %v", err)
+	}
+	get.Header.Set("Authorization", dav)
+	getResp, err := compatClient().Do(get)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() {
+		if cerr := getResp.Body.Close(); cerr != nil {
+			t.Errorf("closing the response: %v", cerr)
+		}
+	}()
+	raw, rerr := io.ReadAll(getResp.Body)
+	if rerr != nil {
+		t.Fatalf("reading: %v", rerr)
+	}
+	if getResp.StatusCode != http.StatusOK || string(raw) != "via-alias" {
+		t.Errorf("the alias answered %d with %q, want 200 and the file", getResp.StatusCode, raw)
 	}
 }

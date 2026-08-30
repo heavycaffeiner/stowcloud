@@ -193,7 +193,7 @@ func authHandler(c *fiber.Ctx, d Deps) error {
 		// unauthenticated. Whether that is a refusal is the route's decision,
 		// which ACLScope makes: a public route still serves it.
 	}
-	c.Locals(string(KeyCredential), p)
+	c.Locals(KeyCredential, p)
 	return c.Next()
 }
 
@@ -312,7 +312,7 @@ func csrfHandler(c *fiber.Ctx, d Deps) error {
 
 // principalOf reads what Auth resolved.
 func principalOf(c *fiber.Ctx) Principal {
-	if p, ok := c.Locals(string(KeyCredential)).(Principal); ok {
+	if p, ok := c.Locals(KeyCredential).(Principal); ok {
 		return p
 	}
 	return Principal{Kind: CredentialNone}

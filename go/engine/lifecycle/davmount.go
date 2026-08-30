@@ -12,6 +12,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/adaptor"
+
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
@@ -43,6 +46,54 @@ type DavAlias struct {
 	// Dropped rather than checked: resolution runs against the caller's own
 	// roots, so a name in the URL cannot widen what the credential allows.
 	DropSegments int
+}
+
+// newDavHandler builds the protocol handler over the engine's services.
+//
+// The vocabulary that varies by build, the compatibility header names and the
+// vendor property source, arrives through the hooks rather than here, so this
+// file stays out of the tag's business.
+func (e *Engine) newDavHandler() *dav.Handler {
+	locks := NewDavLocks(e.State, e.clock, e.logger)
+	return dav.New(dav.Options{
+		Core:            e.Core,
+		Locks:           locks,
+		TokensAt:        locks.Tokens,
+		LocksAt:         locks.At,
+		Taker:           locks,
+		Store:           NewDavProps(e.State),
+		KeyOf:           DavKeyOf,
+		Uploads:         NewDavUploads(e.Upload),
+		UploadHeaders:   e.davUploadHeaders(),
+		VendorProps:     e.davVendorProps(),
+		InfinityEntries: davDefaultInfinity,
+		Logger:          e.logger,
+	})
+}
+
+// davDefaultInfinity is the listing ceiling, a decision named rather than a
+// bare number in the constructor.
+const davDefaultInfinity = 10_000
+
+// mountDav claims the WebDAV prefixes.
+//
+// The chain has already run by the time a request reaches the bridge, so the
+// principal it resolved travels in the request context, which is what the
+// mount reads. The bridge is built once: it is stateless, and one conversion
+// path for every prefix is what keeps the wire behaviour identical however a
+// client addresses the tree.
+func (e *Engine) mountDav(app *fiber.App) {
+	bridge := adaptor.HTTPHandler(e.DavHandler(e.newDavHandler(), e.davAliases()))
+
+	prefixes := []string{DavPrefix, DavUploadPrefix}
+	for _, a := range e.davAliases() {
+		prefixes = append(prefixes, strings.TrimSuffix(a.Prefix, "/"))
+	}
+	for _, p := range prefixes {
+		prefix := p
+		app.All(prefix, bridge)
+		app.All(prefix+"/*", bridge)
+	}
 }
 
 // DavHandler serves the WebDAV mount.
@@ -166,6 +217,11 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 }
 
 // davUser reads the caller the chain authenticated.
+//
+// The key is the plain string form, which is what the chain stores the
+// principal under: the value crosses the framework boundary into the request
+// context, whose lookup compares keys as interfaces, and the constant's
+// defined type would not match the string the chain wrote.
 func davUser(r *http.Request) (core.UserID, bool) {
 	p, ok := r.Context().Value(middleware.KeyCredential).(middleware.Principal)
 	if !ok || p.UserID == 0 {

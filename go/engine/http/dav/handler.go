@@ -4,6 +4,7 @@ package dav
 
 import (
 	"context"
+	"encoding/xml"
 	"io"
 	"log/slog"
 	"net/http"
@@ -70,6 +71,11 @@ type Options struct {
 	// is a deployment that answers neither, which the method refusal states
 	// rather than an empty result hiding.
 	Sources []QuerySource
+	// VendorProps contributes properties in vocabularies this package does
+	// not own, such as a sync client's namespace. Consulted for named
+	// requests; a name the source does not answer falls through to the
+	// missing list, which reports it as a 404 inside the document.
+	VendorProps func(ctx context.Context, res core.Resolved, e core.Entry, want []xml.Name) []Prop
 	// Limits bound what one request may carry. The zero value takes
 	// DefaultLimits, because a zero bound is not "unbounded" here: several of
 	// these are counts a parser compares against, so leaving them at zero
@@ -92,6 +98,7 @@ type Handler struct {
 	uploads         Uploads
 	uploadHeaders   UploadHeaders
 	sources         []QuerySource
+	vendorProps     func(ctx context.Context, res core.Resolved, e core.Entry, want []xml.Name) []Prop
 	limits          Limits
 	infinityEntries int
 	logger          *slog.Logger
@@ -122,6 +129,7 @@ func New(opt Options) *Handler {
 		uploads:         opt.Uploads,
 		uploadHeaders:   opt.UploadHeaders,
 		sources:         opt.Sources,
+		vendorProps:     opt.VendorProps,
 		limits:          limits,
 		infinityEntries: infinity,
 		logger:          logger,

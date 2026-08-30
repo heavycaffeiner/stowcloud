@@ -167,7 +167,17 @@ func (h *Handler) writeEntry(
 		}
 	}
 
-	found, missing := assemble(req, resource, dead)
+	// Vendor properties are consulted for named requests only. The source
+	// answers the names it owns and leaves the rest, which the assemble below
+	// reports as missing: a vendor property that is asked for and absent is
+	// the client's signal to skip the entry, and hiding that behind an empty
+	// value would have it believe the property is blank.
+	var vendor []Prop
+	if h.vendorProps != nil && req.Mode == ModeNamed {
+		vendor = h.vendorProps(ctx, res, e, req.Names)
+	}
+
+	found, missing := assemble(req, resource, dead, vendor)
 
 	groups := []PropStat{{Status: http.StatusOK, Props: found}}
 	if len(missing) > 0 {
@@ -191,7 +201,12 @@ type deadProp struct {
 }
 
 // assemble produces the properties one response carries.
-func assemble(req PropFind, r Resource, dead []deadProp) (found []Prop, missing []xml.Name) {
+//
+// vendor carries the properties a registered source contributed. They sit in
+// the order between live and dead: a live property is this package's answer,
+// a vendor property is a claimed namespace's, and a dead one is what was
+// stored against the resource.
+func assemble(req PropFind, r Resource, dead []deadProp, vendor []Prop) (found []Prop, missing []xml.Name) {
 	switch req.Mode {
 	case ModePropName:
 		// Names with no values, live and dead alike.
@@ -211,6 +226,10 @@ func assemble(req PropFind, r Resource, dead []deadProp) (found []Prop, missing 
 				found = append(found, p)
 				continue
 			}
+			if p, ok := findVendor(vendor, n); ok {
+				found = append(found, p)
+				continue
+			}
 			if d, ok := findDead(dead, n); ok {
 				found = append(found, Prop{Name: d.Name, Value: d.Value})
 				continue
@@ -221,6 +240,16 @@ func assemble(req PropFind, r Resource, dead []deadProp) (found []Prop, missing 
 		}
 	}
 	return found, missing
+}
+
+// findVendor returns the contributed property a name asked for.
+func findVendor(vendor []Prop, n xml.Name) (Prop, bool) {
+	for _, p := range vendor {
+		if p.Name == n {
+			return p, true
+		}
+	}
+	return Prop{}, false
 }
 
 func findDead(dead []deadProp, n xml.Name) (deadProp, bool) {
