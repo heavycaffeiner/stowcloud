@@ -41,8 +41,10 @@ const MaxRequestBytes = 4 << 10
 // Handler answers the two operations. The runtime supplies it; this file owns
 // the transport and nothing else.
 type Handler interface {
-	// Apply performs a pass and reports it.
-	Apply() Report
+	// Apply performs a pass and reports it. The context bounds the external
+	// commands a pass runs, so a caller that gives up stops waiting on them
+	// rather than leaving them to finish against a connection that is gone.
+	Apply(ctx context.Context) Report
 	// Last repeats the previous report without performing a pass.
 	Last() Report
 }
@@ -94,12 +96,12 @@ func Serve(ctx context.Context, socket string, h Handler, configDir string, clk 
 			}
 			return fmt.Errorf("accepting on the control socket: %w", aerr)
 		}
-		answer(conn, h, clk, log)
+		answer(ctx, conn, h, clk, log)
 	}
 }
 
 // answer handles one connection: read a request, act, reply, close.
-func answer(conn net.Conn, h Handler, clk clock.Clock, log *slog.Logger) {
+func answer(ctx context.Context, conn net.Conn, h Handler, clk clock.Clock, log *slog.Logger) {
 	defer conn.Close() //nolint:errcheck // the reply is already written and a failed close has nowhere to go.
 
 	if err := conn.SetDeadline(clk.Now().Add(ExchangeTimeout)); err != nil {
@@ -107,7 +109,7 @@ func answer(conn net.Conn, h Handler, clk clock.Clock, log *slog.Logger) {
 		return
 	}
 
-	report := dispatch(conn, h, log)
+	report := dispatch(ctx, conn, h, log)
 
 	body, merr := json.Marshal(report)
 	if merr != nil {
@@ -119,7 +121,7 @@ func answer(conn net.Conn, h Handler, clk clock.Clock, log *slog.Logger) {
 }
 
 // dispatch reads one request and produces the report answering it.
-func dispatch(conn io.Reader, h Handler, log *slog.Logger) Report {
+func dispatch(ctx context.Context, conn io.Reader, h Handler, log *slog.Logger) Report {
 	line, err := readRequestLine(conn)
 	if err != nil {
 		log.Warn("reading a request", "error", err)
@@ -135,7 +137,7 @@ func dispatch(conn io.Reader, h Handler, log *slog.Logger) Report {
 
 	switch req.Op {
 	case OpApply:
-		report := h.Apply()
+		report := h.Apply(ctx)
 		LogReport(log, report, "the server")
 		return report
 	case OpStatus:

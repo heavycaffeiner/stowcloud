@@ -37,7 +37,7 @@ type stubHandler struct {
 	applies int
 }
 
-func (h *stubHandler) Apply() Report {
+func (h *stubHandler) Apply(context.Context) Report {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.applies++
