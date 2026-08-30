@@ -107,8 +107,30 @@ type Prop struct {
 	Name xml.Name
 	// Value is its text content. Escaped on the way out; never written raw.
 	Value string
+	// Children are child elements, for the properties whose value is markup
+	// rather than text: resourcetype, supportedlock and lockdiscovery.
+	//
+	// Structured rather than a string of XML. A raw string would be the one
+	// way a caller could put unescaped bytes into this document, which is the
+	// thing this file exists to prevent, and the owner element inside
+	// lockdiscovery is text a client supplied.
+	//
+	// Ignored when Value is set: a property is text or it is elements.
+	Children []Element
 	// NamesOnly writes the tag with no content, for a propname response.
 	NamesOnly bool
+}
+
+// Element is one child element inside a property value.
+type Element struct {
+	// Name is the element's qualified name. A namespace the response did not
+	// declare is skipped, the same as for a property.
+	Name xml.Name
+	// Text is the element's text content, escaped on the way out.
+	Text string
+	// Children nest further. Depth is bounded by what this package builds,
+	// never by a request.
+	Children []Element
 }
 
 // Response writes one resource's entry.
@@ -149,12 +171,42 @@ func (m *Multistatus) property(p Prop) {
 	}
 
 	tag := prefix + ":" + p.Name.Local
-	if p.NamesOnly || p.Value == "" {
+	if p.NamesOnly || (p.Value == "" && len(p.Children) == 0) {
 		m.write("<" + tag + "/>")
 		return
 	}
 	m.write("<" + tag + ">")
-	m.escape(p.Value)
+	if p.Value != "" {
+		m.escape(p.Value)
+	} else {
+		for _, child := range p.Children {
+			m.element(child)
+		}
+	}
+	m.write("</" + tag + ">")
+}
+
+// element writes one child element and whatever nests inside it.
+func (m *Multistatus) element(e Element) {
+	prefix, known := m.prefixes[e.Name.Space]
+	if !known {
+		// Same reasoning as a property in an undeclared namespace: a prefix
+		// invented here would make the document depend on write order.
+		return
+	}
+
+	tag := prefix + ":" + e.Name.Local
+	if e.Text == "" && len(e.Children) == 0 {
+		m.write("<" + tag + "/>")
+		return
+	}
+	m.write("<" + tag + ">")
+	if e.Text != "" {
+		m.escape(e.Text)
+	}
+	for _, child := range e.Children {
+		m.element(child)
+	}
 	m.write("</" + tag + ">")
 }
 

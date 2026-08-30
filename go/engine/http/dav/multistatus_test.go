@@ -180,6 +180,103 @@ func TestTheDavPrefixIsFixed(t *testing.T) {
 	}
 }
 
+// A property whose value is markup carries child elements, since the three
+// that matter (resourcetype, supportedlock, lockdiscovery) are elements rather
+// than text.
+func TestAPropertyCarriesChildElements(t *testing.T) {
+	body := render(t, nil, func(m *Multistatus) {
+		m.Response("/dir/", []PropStat{
+			{Status: 200, Props: []Prop{{
+				Name:     xml.Name{Space: davNS, Local: "resourcetype"},
+				Children: []Element{{Name: xml.Name{Space: davNS, Local: "collection"}}},
+			}}},
+		})
+	})
+
+	if !strings.Contains(body, "<D:resourcetype><D:collection/></D:resourcetype>") {
+		t.Errorf("a collection did not render as one: %s", body)
+	}
+}
+
+// Nesting works, because lockdiscovery is three levels deep: activelock holds
+// a locktoken which holds an href.
+func TestChildElementsNest(t *testing.T) {
+	body := render(t, nil, func(m *Multistatus) {
+		m.Response("/f", []PropStat{
+			{Status: 200, Props: []Prop{{
+				Name: xml.Name{Space: davNS, Local: "lockdiscovery"},
+				Children: []Element{{
+					Name: xml.Name{Space: davNS, Local: "activelock"},
+					Children: []Element{{
+						Name:     xml.Name{Space: davNS, Local: "locktoken"},
+						Children: []Element{{Name: xml.Name{Space: davNS, Local: "href"}, Text: "urn:uuid:abc"}},
+					}},
+				}},
+			}}},
+		})
+	})
+
+	const want = "<D:lockdiscovery><D:activelock><D:locktoken>" +
+		"<D:href>urn:uuid:abc</D:href>" +
+		"</D:locktoken></D:activelock></D:lockdiscovery>"
+	if !strings.Contains(body, want) {
+		t.Errorf("the nesting did not render:\n%s", body)
+	}
+}
+
+// A child element's text is escaped like everything else here.
+//
+// This is the one that matters: the owner element inside lockdiscovery is text
+// a client supplied when it took the lock, and it comes back out on every
+// PROPFIND. Writing it raw would put a client's markup into another client's
+// parse.
+func TestChildTextIsEscaped(t *testing.T) {
+	body := render(t, nil, func(m *Multistatus) {
+		m.Response("/f", []PropStat{
+			{Status: 200, Props: []Prop{{
+				Name: xml.Name{Space: davNS, Local: "lockdiscovery"},
+				Children: []Element{{
+					Name: xml.Name{Space: davNS, Local: "owner"},
+					Text: `<D:href>injected</D:href>`,
+				}},
+			}}},
+		})
+	})
+
+	if strings.Contains(body, "<D:href>injected") {
+		t.Errorf("a client's markup reached the body unescaped: %s", body)
+	}
+	if !strings.Contains(body, "&lt;D:href&gt;injected") {
+		t.Errorf("the owner text is missing or not escaped: %s", body)
+	}
+	if err := xml.Unmarshal([]byte(body), new(struct{})); err != nil {
+		t.Errorf("the body does not parse: %v", err)
+	}
+}
+
+// A child in an undeclared namespace is dropped, for the same reason a
+// property in one is.
+func TestAnUndeclaredChildNamespaceIsNotInvented(t *testing.T) {
+	body := render(t, nil, func(m *Multistatus) {
+		m.Response("/f", []PropStat{
+			{Status: 200, Props: []Prop{{
+				Name: xml.Name{Space: davNS, Local: "resourcetype"},
+				Children: []Element{
+					{Name: xml.Name{Space: davNS, Local: "collection"}},
+					{Name: xml.Name{Space: "urn:surprise", Local: "gone"}},
+				},
+			}}},
+		})
+	})
+
+	if strings.Contains(body, "gone") || strings.Contains(body, "surprise") {
+		t.Errorf("an undeclared child namespace reached the body: %s", body)
+	}
+	if err := xml.Unmarshal([]byte(body), new(struct{})); err != nil {
+		t.Errorf("the body does not parse: %v", err)
+	}
+}
+
 // A property in a namespace nobody declared is left out rather than written
 // under an invented prefix, which would make the body depend on write order.
 func TestAnUndeclaredNamespaceIsNotInvented(t *testing.T) {
