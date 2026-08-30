@@ -148,7 +148,7 @@ func TestEachWriteRouteNeedsItsOwnPermission(t *testing.T) {
 		{
 			name:    "rename needs Rename",
 			route:   "/api/v1/files/rename",
-			body:    map[string]string{"path": "/work/existing.txt", "name": "renamed.txt"},
+			body:    map[string]string{"path": "/work/existing.txt", "new_name": "renamed.txt"},
 			granted: everyPerm() &^ acl.Rename,
 			missing: acl.Rename,
 		},

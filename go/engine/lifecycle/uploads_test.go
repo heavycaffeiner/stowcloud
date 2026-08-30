@@ -139,11 +139,16 @@ func TestAResumableUploadDeliversTheFile(t *testing.T) {
 func createUpload(t *testing.T, base, token, dest string, length int) string {
 	t.Helper()
 
+	// The wire splits the target into the destination directory and the leaf:
+	// the handler joins them, and the leaf is what the published file is
+	// named. A test that sent only the joined path would be asking for a
+	// metadata shape no client sends.
+	dir, leaf := dest[:strings.LastIndex(dest, "/")+1], dest[strings.LastIndex(dest, "/")+1:]
 	status, header, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", token,
 		map[string]string{
 			"Tus-Resumable":   "1.0.0",
 			"Upload-Length":   strconv.Itoa(length),
-			"Upload-Metadata": metadataFor(map[string]string{"path": dest}),
+			"Upload-Metadata": metadataFor(map[string]string{"dest": dir, "filename": leaf}),
 		}, nil)
 	if status != http.StatusCreated {
 		t.Fatalf("creating a session answered %d: %s", status, body)

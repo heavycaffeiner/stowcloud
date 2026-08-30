@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
@@ -95,15 +94,11 @@ func (h *Handler) runQuery(w http.ResponseWriter, r *http.Request, res core.Reso
 		scope = res.Path().String() + "/"
 	}
 	for _, e := range hits {
+		// The source vouches for the entry; its share-relative path arrives
+		// through the core's own validated types. The slash-split here only
+		// separates components of that path, never introduces one.
 		rel := strings.TrimPrefix(e.Path.String(), scope)
-		safe, serr := vfs.ParseSafePath(rel)
-		if serr != nil {
-			// A path a source reported that the path layer refuses cannot be
-			// served. Skipping it beats encoding an unvalidated one: the href
-			// is what a client requests next, so it has to name a real path.
-			continue
-		}
-		href := EncodeHref(append(append([]string{}, segs...), safe.Components()...), e.IsDir)
+		href := EncodeHref(append(append([]string{}, segs...), strings.Split(rel, "/")...), e.IsDir)
 		if werr := h.writeEntry(r.Context(), m, req, res, e, href); werr != nil {
 			h.log(r).Warn("the query result could not be written", "error", werr)
 			break

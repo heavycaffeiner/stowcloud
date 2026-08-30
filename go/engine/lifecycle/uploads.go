@@ -387,14 +387,12 @@ func failUpload(c *fiber.Ctx, err error) error {
 	return fail(c, err)
 }
 
-// uploadMetaOf reads the metadata the client sent about the file itself.
+// uploadMetaOf lifts the file's own metadata out of the header map.
 //
-// mtime is the source file's modification time, which the finalizer applies
-// after the bytes land. Dropped, every upload carried the time it finished
-// instead of the time the file was written, which is what a sync client
-// compares against on its next pass. A stamp this cannot parse costs the
-// upload its timestamp rather than the whole upload: the bytes are the point,
-// and the timestamp is a courtesy on top of them.
+// mtime matters more than it looks: the finalizer stamps the published file
+// with it, and a sync client compares that stamp against its local copy on
+// the next pass. A stamp that cannot be parsed costs the upload the courtesy,
+// never the bytes.
 func uploadMetaOf(meta map[string]string) upload.Meta {
 	out := upload.Meta{
 		Filename:     meta["filename"],

@@ -17,6 +17,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
@@ -67,31 +68,9 @@ func (e *Engine) trashList(c *fiber.Ctx) error {
 		if err != nil {
 			continue
 		}
-		qualify(core.ShareID(root.Share), entries)
+		qualify(r.Share(), entries)
 	}
 	return writeJSON(c, fiber.StatusOK, views)
-}
-
-// trashAcrossRoots gathers every reachable share's trash into one listing.
-//
-// A share that cannot be read is skipped rather than failing the request: the
-// screen lists what this account can restore, and one unreadable share is not
-// a reason to show nothing. A share with no trash directory contributes
-// nothing, which is the ordinary case.
-func (e *Engine) trashAcrossRoots(c *fiber.Ctx, owner core.UserID) ([]core.TrashEntry, error) {
-	var out []core.TrashEntry
-	for _, root := range e.Core.Roots(owner) {
-		r, err := e.resolve(owner, "/"+root.Label, acl.Read)
-		if err != nil {
-			continue
-		}
-		entries, err := e.Core.TrashList(c.UserContext(), r)
-		if err != nil {
-			continue
-		}
-		out = append(out, entries...)
-	}
-	return out, nil
 }
 
 // trashBatch is the wire body of the restore and purge calls: one entry id
@@ -206,7 +185,8 @@ func (e *Engine) resolveTrashID(
 	}
 
 	for _, root := range e.Core.Roots(owner) {
-		if uint64(root.Share) != n {
+		narrowed, nerr := num.Narrow[uint32](root.Share)
+		if nerr != nil || uint64(narrowed) != n {
 			continue
 		}
 		vp, verr := vfs.ParseVpath("/" + root.Label)

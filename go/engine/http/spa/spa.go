@@ -1,6 +1,6 @@
 //go:build linux
 
-// Package spa serves the built frontend.
+// Package spa answers browser requests for the built interface.
 //
 // The interface's compiled output rides inside the binary when the embed_ui
 // tag is set, and without the tag the server starts normally and simply has

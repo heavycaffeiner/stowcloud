@@ -116,8 +116,8 @@ func TestARestoreReturnsTheEntryToItsOrigin(t *testing.T) {
 	id := trashOne(t, base, token, share)
 
 	status, body := post(t, base+"/api/v1/trash/restore", token,
-		map[string]string{"path": "/" + share, "id": id})
-	if status != http.StatusNoContent {
+		map[string][]string{"ids": {id}})
+	if status != http.StatusOK {
 		t.Fatalf("restore answered %d: %s", status, body)
 	}
 
@@ -183,8 +183,8 @@ func TestPurgingOneEntryLeavesTheRest(t *testing.T) {
 	}
 
 	status, body := post(t, base+"/api/v1/trash/purge", token,
-		map[string]string{"path": "/" + share, "id": first})
-	if status != http.StatusNoContent {
+		map[string][]string{"ids": {first}})
+	if status != http.StatusOK {
 		t.Fatalf("purge answered %d: %s", status, body)
 	}
 
@@ -233,16 +233,28 @@ func TestRestoringNeedsCreate(t *testing.T) {
 	limitedID := trashOne(t, limited, limitedToken, limitedShare)
 
 	status, body := post(t, limited+"/api/v1/trash/restore", limitedToken,
-		map[string]string{"path": "/" + limitedShare, "id": limitedID})
-	if status < 400 {
-		t.Errorf("a restore succeeded without Create: %d %s", status, body)
+		map[string][]string{"ids": {limitedID}})
+	if status != http.StatusOK {
+		t.Fatalf("restore answered %d: %s", status, body)
+	}
+	var decoded struct {
+		Results []struct {
+			OK    bool `json:"ok"`
+			Error any  `json:"error"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+		t.Fatalf("the batch does not parse: %v", err)
+	}
+	if len(decoded.Results) != 1 || decoded.Results[0].OK {
+		t.Errorf("a restore without Create reported success: %s", body)
 	}
 
 	// With Create: served, so the refusal above is about that bit.
-	ok, okBody := post(t, base+"/api/v1/trash/restore", token,
-		map[string]string{"path": "/" + share, "id": id})
-	if ok != http.StatusNoContent {
-		t.Errorf("a restore was refused with every permission: %d %s", ok, okBody)
+	good, goodBody := post(t, base+"/api/v1/trash/restore", token,
+		map[string][]string{"ids": {id}})
+	if good != http.StatusOK {
+		t.Errorf("a restore was refused with every permission: %d %s", good, goodBody)
 	}
 }
 
@@ -289,12 +301,21 @@ func TestPurgingAnAbsentEntryIsRefused(t *testing.T) {
 	trashOne(t, base, token, share)
 
 	status, body := post(t, base+"/api/v1/trash/purge", token,
-		map[string]string{"path": "/" + share, "id": "not-a-real-id"})
-	if status == http.StatusNoContent || status == http.StatusOK {
-		t.Fatalf("purging an absent entry reported success: %d %s", status, body)
+		map[string][]string{"ids": {"not-a-real-id"}})
+	if status != http.StatusOK {
+		t.Fatalf("answered %d: %s", status, body)
 	}
-	if status != http.StatusNotFound {
-		t.Errorf("answered %d, want a not-found: %s", status, body)
+	var purged struct {
+		Results []struct {
+			OK    bool `json:"ok"`
+			Error any  `json:"error"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal([]byte(body), &purged); err != nil {
+		t.Fatalf("the batch does not parse: %v", err)
+	}
+	if len(purged.Results) != 1 || purged.Results[0].OK {
+		t.Errorf("purging an absent entry reported success: %s", body)
 	}
 
 	// And the real entry is untouched, so the refusal did not also empty it.
@@ -309,14 +330,18 @@ func TestPurgingAnAbsentEntryIsRefused(t *testing.T) {
 	}
 }
 
-// Emptying an already-empty trash is success. The state asked for is the state
-// that holds, which is not the same as a named entry that was never there.
-func TestEmptyingAnEmptyTrashIsSuccess(t *testing.T) {
-	base, token, share := trashShare(t, everyPerm())
+// An empty batch is a no-op, not an error and not an "empty everything".
+// The client names the entries it wants gone; a body that named none of them
+// has asked for nothing, so the answer is an empty result set.
+func TestAnEmptyPurgeBatchIsANoOp(t *testing.T) {
+	base, token, _ := trashShare(t, everyPerm())
 
 	status, body := post(t, base+"/api/v1/trash/purge", token,
-		map[string]string{"path": "/" + share})
-	if status != http.StatusNoContent {
-		t.Errorf("emptying an empty trash answered %d: %s", status, body)
+		map[string][]string{"ids": {}})
+	if status != http.StatusOK {
+		t.Fatalf("an empty batch answered %d, want 200", status)
+	}
+	if string(body) != `{"results":[]}` {
+		t.Errorf("an empty batch answered %s", string(body))
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
-	"sync"
 )
 
 // The compiled interface, embedded from this directory.
@@ -23,8 +22,8 @@ var bundle embed.FS
 func handler() (http.Handler, bool) {
 	sub, err := fs.Sub(bundle, "build")
 	if err != nil {
-		// Unreachable: the embed is checked at compile time, so a failure here
-		// would mean the directive and this path disagree.
+		// Compile-checked: the directive and this path cannot disagree, so
+		// this branch never runs.
 		return nil, false
 	}
 	if _, serr := fs.Stat(sub, "index.html"); serr != nil {
@@ -42,17 +41,17 @@ func handler() (http.Handler, bool) {
 			return
 		}
 		if _, serr := fs.Stat(sub, clean); serr != nil {
-			// Not a file, so the client router owns the path. The document is
-			// handed back for it to route, which is what makes a deep link
-			// work on a reload.
+			// Nothing on disk at this path, so the client-side router takes
+			// over: handing it the document is what makes a deep link survive
+			// a reload.
 			w.Header().Set("Cache-Control", "no-cache")
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = "/"
 			files.ServeHTTP(w, r2)
 			return
 		}
-		// Hash-named bundle files are immutable, so they cache for a year.
-		// The document above is the one that revalidates.
+		// The build names its assets by content hash, so they may be cached
+		// for a year; the document above is the one that revalidates.
 		if strings.HasPrefix(clean, appDir+"/") {
 			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		}
@@ -60,19 +59,20 @@ func handler() (http.Handler, bool) {
 	}), true
 }
 
-// appDir is where the frontend build puts its hash-named assets, and it
-// matches the app directory the frontend config names.
+// appDir mirrors the frontend config's app directory: the build lays its
+// hash-named assets there, and the long cache header below applies to them.
 const appDir = "app"
 
-// inlineScriptHashes scans the embedded document a single time and keeps the
-// hashes: the bundle is baked into the binary, so its content cannot change
-// out from under a computed answer.
-var inlineScriptHashes = sync.OnceValue(func() []string {
+// inlineScriptHashes scans the embedded document for its inline scripts.
+//
+// The bundle is baked into the binary, so the answer cannot change between
+// calls, and the document is small enough that rescanning costs nothing.
+func inlineScriptHashes() []string {
 	body, err := bundle.ReadFile("build/index.html")
 	if err != nil {
-		// No document, so no inline script to admit. The policy stays as
-		// strict as it was rather than being loosened over a missing file.
+		// Nothing embedded means nothing to admit; an empty list keeps the
+		// policy at its strictest rather than loosening it over a gap.
 		return nil
 	}
 	return hashesFrom(string(body))
-})
+}
