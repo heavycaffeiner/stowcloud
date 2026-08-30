@@ -69,7 +69,22 @@ func (h *Handler) Propfind(w http.ResponseWriter, r *http.Request, res core.Reso
 	// exactly what was requested.
 	m := NewMultistatus(w, requestedNamespaces(req))
 	self := h.core.EntryAt(res, st)
-	base := EncodeHref(res.Path().Components(), st.Kind.IsDir())
+	// The client can only use hrefs it can request back, so every href in
+	// the document grows from the path it just addressed, not from the
+	// entry's share-relative path, which exists in no share and answers 404.
+	// The segments come through the same splitter the mount resolves with,
+	// and EncodeHref re-encodes each: a name carrying a space, an ampersand
+	// or non-ASCII bytes lands in the document the way the client sent it.
+	segs, serr := SplitPath(r.URL.EscapedPath())
+	if serr != nil {
+		// The path reached the resolution, so it parsed there; a refusal
+		// here would mean the two parsers disagree, and the client gets the
+		// refusal rather than an answer built on a path this server cannot
+		// address.
+		h.fail(w, r, serr)
+		return
+	}
+	base := EncodeHref(segs, st.Kind.IsDir())
 
 	if werr := h.writeEntry(r.Context(), m, req, res, self, base); werr != nil {
 		// No way to turn this into an error response: the status is sent and
@@ -81,7 +96,7 @@ func (h *Handler) Propfind(w http.ResponseWriter, r *http.Request, res core.Reso
 	}
 
 	if depth != DepthZero && st.Kind.IsDir() {
-		if werr := h.walk(r.Context(), m, req, res, depth); werr != nil {
+		if werr := h.walk(r.Context(), m, req, res, depth, segs); werr != nil {
 			h.log(r).Warn("the listing stopped early", "error", werr)
 		}
 	}
@@ -90,8 +105,12 @@ func (h *Handler) Propfind(w http.ResponseWriter, r *http.Request, res core.Reso
 }
 
 // walk writes the members of a collection, and their members under infinity.
+// segs are the collection's own path segments: a member's href is those
+// segments plus the member's name, which is how a client builds the URL it
+// requests next.
 func (h *Handler) walk(
 	ctx context.Context, m *Multistatus, req PropFind, res core.Resolved, depth Depth,
+	segs []string,
 ) error {
 	var cur core.Cursor
 	for {
@@ -113,12 +132,12 @@ func (h *Handler) walk(
 				// reported: a 403 inside the listing would confirm it exists.
 				continue
 			}
-			href := EncodeHref(child.Path().Components(), e.IsDir)
+			href := EncodeHref(append(segs[:len(segs):len(segs)], e.Name), e.IsDir)
 			if werr := h.writeEntry(ctx, m, req, child, e, href); werr != nil {
 				return werr
 			}
 			if depth == DepthInfinity && e.IsDir {
-				if werr := h.walk(ctx, m, req, child, depth); werr != nil {
+				if werr := h.walk(ctx, m, req, child, depth, segs); werr != nil {
 					return werr
 				}
 			}

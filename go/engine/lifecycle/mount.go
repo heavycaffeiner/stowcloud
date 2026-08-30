@@ -94,6 +94,11 @@ func (e *Engine) Mount() (*fiber.App, error) {
 	// here, which is what makes the tag a build fact rather than a runtime
 	// flag.
 	e.mountCompatTagged(app)
+
+	// The interface, last of all: it answers what nothing else claimed.
+	if err := e.mountFrontend(app); err != nil {
+		return nil, err
+	}
 	return app, nil
 }
 

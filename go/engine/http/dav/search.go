@@ -7,7 +7,9 @@ import (
 	"encoding/xml"
 	"errors"
 	"net/http"
+	"strings"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
@@ -79,20 +81,29 @@ func (h *Handler) runQuery(w http.ResponseWriter, r *http.Request, res core.Reso
 	w.WriteHeader(http.StatusMultiStatus)
 
 	m := NewMultistatus(w, requestedNamespaces(req))
+	// Hrefs grow from the path the client addressed, with the hit's own path
+	// relative to the queried collection appended. A hit outside that
+	// collection has no href the client could request and is left out: a
+	// source answering across collections must answer per collection.
+	segs, serr := SplitPath(r.URL.EscapedPath())
+	if serr != nil {
+		h.fail(w, r, serr)
+		return
+	}
+	scope := ""
+	if !res.Path().IsRoot() {
+		scope = res.Path().String() + "/"
+	}
 	for _, e := range hits {
-		// One response per hit, each named by its own href: a shared href
-		// would make two results indistinguishable to the client reading
-		// them back.
-		// A hit's path came back from the source; converting it to a validated one
-		// is what makes the href encode the same way every other href does.
-		safe, serr := e.Path.Safe()
+		rel := strings.TrimPrefix(e.Path.String(), scope)
+		safe, serr := vfs.ParseSafePath(rel)
 		if serr != nil {
 			// A path a source reported that the path layer refuses cannot be
 			// served. Skipping it beats encoding an unvalidated one: the href
 			// is what a client requests next, so it has to name a real path.
 			continue
 		}
-		href := EncodeHref(safe.Components(), e.IsDir)
+		href := EncodeHref(append(append([]string{}, segs...), safe.Components()...), e.IsDir)
 		if werr := h.writeEntry(r.Context(), m, req, res, e, href); werr != nil {
 			h.log(r).Warn("the query result could not be written", "error", werr)
 			break

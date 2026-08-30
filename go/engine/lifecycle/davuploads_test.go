@@ -163,12 +163,12 @@ func TestTheCollectionListsTheChunksItHolds(t *testing.T) {
 	if w.Code != http.StatusMultiStatus {
 		t.Fatalf("answered %d, want 207: %s", w.Code, w.Body.String())
 	}
-	for _, name := range []string{"/tid-l/1", "/tid-l/2"} {
+	for _, name := range []string{"/dav-uploads/tid-l/1", "/dav-uploads/tid-l/2"} {
 		if !strings.Contains(w.Body.String(), "<D:href>"+name+"</D:href>") {
 			t.Errorf("chunk %s is not listed: %s", name, w.Body.String())
 		}
 	}
-	if strings.Contains(w.Body.String(), "/tid-l/3") {
+	if strings.Contains(w.Body.String(), "/dav-uploads/tid-l/3") {
 		t.Errorf("a chunk never sent is listed: %s", w.Body.String())
 	}
 }

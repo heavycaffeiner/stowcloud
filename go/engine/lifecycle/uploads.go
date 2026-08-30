@@ -19,7 +19,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
-	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
@@ -104,9 +103,24 @@ func (e *Engine) uploadsCreate(c *fiber.Ctx) error {
 	if err != nil {
 		return refuseTus(c, err)
 	}
-	dest := meta["path"]
-	if dest == "" {
+
+	// The header names a destination directory and a leaf separately, and
+	// neither alone is a target: the directory is not a file, and the leaf has
+	// no share label, which is the first segment resolution requires. The leaf
+	// prefers the relative path, which is what makes a folder upload land in
+	// its own subdirectory rather than flattening into the destination.
+	dest := meta["dest"]
+	leaf := meta["relativePath"]
+	if leaf == "" {
+		leaf = meta["filename"]
+	}
+	if leaf == "" {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
+	if dest != "" {
+		dest = strings.TrimSuffix(dest, "/") + "/" + leaf
+	} else {
+		dest = leaf
 	}
 
 	r, rerr := e.resolve(owner, dest, acl.Write|acl.Create)
@@ -114,7 +128,10 @@ func (e *Engine) uploadsCreate(c *fiber.Ctx) error {
 		return fail(c, rerr)
 	}
 
-	spec := upload.SessionSpec{IfMatch: c.Get(fiber.HeaderIfMatch)}
+	spec := upload.SessionSpec{
+		IfMatch: c.Get(fiber.HeaderIfMatch),
+		Meta:    uploadMetaOf(meta),
+	}
 	if !length.Deferred {
 		total := length.Value
 		spec.TotalLen = &total
@@ -265,11 +282,11 @@ func (e *Engine) publishUpload(
 	c *fiber.Ctx, engine *upload.Engine, sess upload.Session,
 	id upload.SessionID, owner core.UserID,
 ) error {
-	def, ok := e.Core.Share(sess.Share)
-	if !ok {
-		return fail(c, core.ErrNotFound)
-	}
-	dest, err := vfs.NewVpath(def.Name, sess.Dest.Share())
+	// The destination is the vpath under the label the caller's own grant
+	// projects the share as, not the share's registered name: the two differ
+	// whenever a grant is labeled, and resolving under the registered name
+	// answers not-found for the very upload the client just completed.
+	dest, err := e.Core.VpathFor(owner, sess.Share, sess.Dest.Share())
 	if err != nil {
 		return fail(c, core.ErrNotFound)
 	}
@@ -368,4 +385,26 @@ func failUpload(c *fiber.Ctx, err error) error {
 		})
 	}
 	return fail(c, err)
+}
+
+// uploadMetaOf reads the metadata the client sent about the file itself.
+//
+// mtime is the source file's modification time, which the finalizer applies
+// after the bytes land. Dropped, every upload carried the time it finished
+// instead of the time the file was written, which is what a sync client
+// compares against on its next pass. A stamp this cannot parse costs the
+// upload its timestamp rather than the whole upload: the bytes are the point,
+// and the timestamp is a courtesy on top of them.
+func uploadMetaOf(meta map[string]string) upload.Meta {
+	out := upload.Meta{
+		Filename:     meta["filename"],
+		RelativePath: meta["relativePath"],
+		Mime:         meta["filetype"],
+	}
+	if raw := meta["mtime"]; raw != "" {
+		if ns, err := strconv.ParseInt(raw, 10, 64); err == nil {
+			out.MtimeNs = &ns
+		}
+	}
+	return out
 }

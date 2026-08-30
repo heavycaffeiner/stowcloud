@@ -195,10 +195,13 @@ func TestACollectionHrefEndsInASlash(t *testing.T) {
 
 	got := hrefs(t, f.propfind(t, "Docs", "1", allprop).Body.String())
 
+	// The fixture addresses the mount at its own "/files" prefix, so the
+	// hrefs echo that prefix back: the client can only request what it
+	// addressed.
 	want := map[string]bool{
-		"/Docs/":        true,
-		"/Docs/nested/": true,
-		"/Docs/a.txt":   true,
+		"/files/Docs/":        true,
+		"/files/Docs/nested/": true,
+		"/files/Docs/a.txt":   true,
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %d hrefs, want %d: %v", len(got), len(want), got)

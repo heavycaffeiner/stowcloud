@@ -103,6 +103,27 @@ func unhex(c byte) (byte, bool) {
 	}
 }
 
+// HrefOf renders the request's own path as the response href for that
+// resource: a collection's href carries the trailing slash a client appends
+// member names to, a file's does not.
+//
+// The href a client can use is the one it just addressed. Deriving it from
+// the entry's share-relative path instead produced hrefs like "/a.txt" — a
+// path that exists in no share and answers 404 to the very client that read
+// it.
+func HrefOf(p string, isDir bool) string {
+	if p == "" {
+		p = "/"
+	}
+	if isDir && !strings.HasSuffix(p, "/") {
+		return p + "/"
+	}
+	if !isDir {
+		return strings.TrimSuffix(p, "/")
+	}
+	return p
+}
+
 // EncodeHref renders segments as a URL path safe to place in XML text.
 //
 // The standard path escaper leaves the sub-delimiters alone, and "&" unescaped

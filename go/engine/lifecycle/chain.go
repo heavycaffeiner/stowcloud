@@ -12,6 +12,7 @@ import (
 	"net/netip"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/spa"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 )
@@ -33,6 +34,10 @@ func (e *Engine) deps() middleware.Deps {
 		Principal: e.ResolvePrincipal,
 		CSRFKey:   e.csrfKey,
 		Audit:     nil,
+		// The interface's own inline bootstrap, admitted by hash. Empty in a
+		// build without the bundle, which keeps the policy as strict as a
+		// server with no pages to serve should be.
+		ScriptHashes: spa.InlineScriptHashList(),
 	}
 }
 

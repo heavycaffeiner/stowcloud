@@ -49,14 +49,25 @@ func (h *Handler) RootPropfind(w http.ResponseWriter, r *http.Request, roots []R
 	// no change token, no birth time: it is a projection rather than a
 	// directory, and inventing values a client would cache and compare beats
 	// omitting them only until the comparison matters.
-	m.Response("/", []PropStat{{
+	//
+	// The hrefs grow from the path the client addressed, so the members it
+	// reads back are the members it can request: a client mounting through
+	// the compatibility prefix reads its shares under that prefix, not under
+	// this server's own.
+	segs, serr := SplitPath(r.URL.EscapedPath())
+	if serr != nil {
+		h.fail(w, r, serr)
+		return
+	}
+	base := EncodeHref(segs, true)
+	m.Response(base, []PropStat{{
 		Status: http.StatusOK,
 		Props:  []Prop{collectionType()},
 	}})
 
 	if depth != DepthZero {
 		for _, c := range roots {
-			m.Response(EncodeHref([]string{c.Label}, true), []PropStat{{
+			m.Response(EncodeHref(append(segs[:len(segs):len(segs)], c.Label), true), []PropStat{{
 				Status: http.StatusOK,
 				Props:  []Prop{collectionType()},
 			}})

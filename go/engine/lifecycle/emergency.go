@@ -34,6 +34,11 @@ func (e *Engine) mountEmergency(app *fiber.App) {
 		Auth:  e.Auth,
 		State: e.State,
 
+		// The door's own screen. An interface page drawing the repair form
+		// beats a bare refusal, and the door is reachable exactly when
+		// nothing else on the server can be trusted to render one.
+		Page: spaPage(),
+
 		// The homes probe falls back to this when a submitted section names
 		// no root of its own.
 		DataDir: e.dataDir,

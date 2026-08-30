@@ -80,7 +80,10 @@ func (e *Engine) filesDelete(c *fiber.Ctx) error {
 // renameRequest is what a rename takes.
 type renameRequest struct {
 	Path string `json:"path"`
-	Name string `json:"name"`
+	// new_name is the wire name the client sends; the field renders the new
+	// leaf, and a "name" key is what an earlier contract used before the
+	// client changed to disambiguate it from the entry's own display name.
+	Name string `json:"new_name"`
 }
 
 // filesRename changes one entry's name in place.

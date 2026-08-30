@@ -66,8 +66,14 @@ func (h *Handler) Proppatch(w http.ResponseWriter, r *http.Request, res core.Res
 		}
 	}
 
-	href := EncodeHref(res.Path().Components(), st.Kind.IsDir())
-	h.writePlan(r, w, href, plan)
+	// The response href is the path the client addressed, so the result it
+	// reads back is for the resource it can request.
+	segs, serr := SplitPath(r.URL.EscapedPath())
+	if serr != nil {
+		h.fail(w, r, serr)
+		return
+	}
+	h.writePlan(r, w, EncodeHref(segs, st.Kind.IsDir()), plan)
 }
 
 // writePlan writes the multistatus reporting what each instruction got.

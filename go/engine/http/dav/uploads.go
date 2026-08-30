@@ -327,7 +327,14 @@ func (h *Handler) uploadPropfind(
 	w.WriteHeader(http.StatusMultiStatus)
 
 	m := NewMultistatus(w, requestedNamespaces(req))
-	base := EncodeHref([]string{up.Session}, true)
+	// Hrefs grow from the path the client addressed, so the members it reads
+	// back are the members it can request.
+	segs, serr := SplitPath(r.URL.EscapedPath())
+	if serr != nil {
+		h.fail(w, r, serr)
+		return
+	}
+	base := EncodeHref(segs, true)
 	m.Response(base, []PropStat{{
 		Status: http.StatusOK,
 		Props:  []Prop{collectionType()},
@@ -336,7 +343,7 @@ func (h *Handler) uploadPropfind(
 	if depth != DepthZero {
 		for _, n := range held {
 			name := ChunkName(int64(n))
-			m.Response(base+name, []PropStat{{
+			m.Response(EncodeHref(append(segs[:len(segs):len(segs)], name), false), []PropStat{{
 				Status: http.StatusOK,
 				// A member is a file, so its resourcetype is present and
 				// empty. Omitting it would leave a client unable to tell a
