@@ -429,18 +429,6 @@ func (e *Engine) compatLoginGrant(c *fiber.Ctx) error {
 	}
 }
 
-// compatLoginConsent renders the page the browser opened.
-//
-// Not served yet: the page needs the session cookie's CSRF derivation and a
-// redirect for the signed-out visitor, both of which are the server's rather
-// than this surface's, and a mount that half-rendered one would leave a
-// person approving something they cannot see. A client opening the login URL
-// is told there is nothing there, which is the same answer the flow gave
-// before the page existed.
-func (e *Engine) compatLoginConsent(c *fiber.Ctx) error {
-	return fiber.NewError(fiber.StatusNotFound)
-}
-
 // compatOriginOf is the base URL this request arrived on.
 //
 // Empty when the host header is absent, which leaves the flow's URLs without

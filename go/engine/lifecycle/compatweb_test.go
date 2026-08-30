@@ -5,8 +5,10 @@ package lifecycle_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -332,4 +334,116 @@ func loginTokenOf(loginURL string) string {
 		return ""
 	}
 	return loginURL[i+1:]
+}
+
+// The consent page the device login sends the browser to.
+
+// An unauthenticated visitor is redirected to sign in and come back, rather
+// than refused: the client opened this in a fresh browser, so having no
+// session here is the ordinary case.
+func TestTheConsentPageRedirectsAVisitorWithoutASession(t *testing.T) {
+	t.Parallel()
+	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	if openErr != nil {
+		t.Fatalf("opening the engine: %v", openErr)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing the engine: %v", cerr)
+		}
+	})
+	base := serveCompatEngine(t, e)
+
+	// The client does not follow the redirect: the answer under test is the
+	// 302 itself, and /login is the frontend's page, which nothing here
+	// serves.
+	noFollow := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := noFollow.Get(base + "/index.php/login/v2/flow/some-token")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing the response: %v", cerr)
+		}
+	}()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("answered %d, want 302", resp.StatusCode)
+	}
+	loc, lerr := url.Parse(resp.Header.Get("Location"))
+	if lerr != nil {
+		t.Fatalf("parsing the redirect: %v", lerr)
+	}
+	if loc.Path != "/login" {
+		t.Errorf("the redirect names %q, want the sign-in page", loc.Path)
+	}
+	if got := loc.Query().Get("returnTo"); got != "/index.php/login/v2/flow/some-token" {
+		t.Errorf("returnTo is %q, want the page the visitor asked for", got)
+	}
+}
+
+// A signed-in visitor gets the page, and the CSRF token on it is the one the
+// grant route's own check verifies. A page carrying a token derived from
+// anything else would render a button that always fails.
+func TestTheConsentPageRendersForASignedInVisitor(t *testing.T) {
+	t.Parallel()
+	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	if openErr != nil {
+		t.Fatalf("opening the engine: %v", openErr)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing the engine: %v", cerr)
+		}
+	})
+	ctx := context.Background()
+	if _, cerr := e.Auth.CreateUser(ctx, "alice", "Alice", pwOf(loginPassword)); cerr != nil {
+		t.Fatalf("creating the account: %v", cerr)
+	}
+	base := serveCompatEngine(t, e)
+	cookie, _ := signedIn(t, base)
+
+	// A flow to name on the page.
+	flow, err := e.Flow.Begin(ctx, base)
+	if err != nil {
+		t.Fatalf("beginning a flow: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, flow.LoginURL, nil)
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	req.AddCookie(cookie)
+	resp, err := compatClient().Do(req)
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing the response: %v", cerr)
+		}
+	}()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("answered %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Errorf("content type is %q, want text/html", ct)
+	}
+
+	body, rerr := io.ReadAll(resp.Body)
+	if rerr != nil {
+		t.Fatalf("reading the page: %v", rerr)
+	}
+	page := string(body)
+	if !strings.Contains(page, "data-token=\""+loginTokenOf(flow.LoginURL)+"\"") {
+		t.Error("the page does not carry the flow's token")
+	}
+
+	// The CSRF token on the page is the one the chain's check accepts.
+	csp := resp.Header.Get("Content-Security-Policy")
+	if !strings.Contains(csp, "script-src 'nonce-") {
+		t.Errorf("the page carries no script nonce: %q", csp)
+	}
 }
