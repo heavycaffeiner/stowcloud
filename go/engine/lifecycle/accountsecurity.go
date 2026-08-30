@@ -124,10 +124,51 @@ type appPasswordRequest struct {
 	Current string `json:"current"`
 	Name    string `json:"name"`
 
+	// Scope narrows what the credential may do. Absent means the whole
+	// filesystem surface, which is what a sync client needs.
+	//
+	// It is settable because the narrow case is the useful one: a backup tool
+	// that only ever reads should hold a credential that only ever reads, so a
+	// copy of it taken off a machine cannot write anything.
+	Scope *appPasswordScope `json:"scope,omitempty"`
+
 	// ExpiresInDays is optional. Zero means no silent expiry, which is right
 	// for a device credential: one that stops working on its own looks like a
 	// broken client rather than a policy.
 	ExpiresInDays int `json:"expires_in_days"`
+}
+
+// appPasswordScope is the narrowing a caller may ask for.
+type appPasswordScope struct {
+	// Perms are permission names. Empty leaves the permission set unnarrowed.
+	Perms []string `json:"perms,omitempty"`
+
+	// Shares are root labels, the strings the session reports. A label is what
+	// a person actually sees, and an unknown one is refused rather than
+	// dropped: a credential that quietly ends up broader than asked for is the
+	// failure worth preventing.
+	Shares []string `json:"shares,omitempty"`
+}
+
+// scopeOf reads the requested narrowing.
+//
+// No scope is the whole surface. A scope naming no permission at all is
+// refused rather than treated as absent: a credential that can reach nothing
+// is not a restriction anybody asked for, and reading it as "unrestricted"
+// would turn a typo into the opposite of what was meant.
+func scopeOf(req *appPasswordScope) (auth.Scope, bool) {
+	if req == nil {
+		return auth.Scope{Perms: auth.SyncScopePerms}, true
+	}
+	scope := auth.Scope{Perms: auth.SyncScopePerms, Shares: req.Shares}
+	if len(req.Perms) > 0 {
+		perms, ok := permsOf(req.Perms)
+		if !ok || perms == 0 {
+			return auth.Scope{}, false
+		}
+		scope.Perms = uint16(perms)
+	}
+	return scope, true
 }
 
 // accountAppPasswordCreate mints one and returns it once.
@@ -147,13 +188,16 @@ func (e *Engine) accountAppPasswordCreate(c *fiber.Ctx) error {
 	if req.ExpiresInDays < 0 {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 	}
+	scope, ok := scopeOf(req.Scope)
+	if !ok {
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
 	if proved, rerr := e.reconfirm(c, int64(owner), req.Current); !proved {
 		return rerr
 	}
 
 	token, err := e.Auth.CreateAppPassword(c.UserContext(), int64(owner), req.Name,
-		auth.Scope{Perms: auth.SyncScopePerms},
-		time.Duration(req.ExpiresInDays)*24*time.Hour)
+		scope, time.Duration(req.ExpiresInDays)*24*time.Hour)
 	if err != nil {
 		return failKnown(c, err)
 	}

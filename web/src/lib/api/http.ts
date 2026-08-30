@@ -585,14 +585,17 @@ async function writeFile(path: string, content: string, ifMatch?: string): Promi
 
 // ── settings ──
 
-async function changePassword(currentPassword: string, newPassword: string, revokeOtherSessions: boolean): Promise<void> {
+async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   await request('/account/password', {
     method: 'POST',
-    body: JSON.stringify({
-      current_password: currentPassword,
-      new_password: newPassword,
-      revoke_other_sessions: revokeOtherSessions
-    })
+    // `current` and `new`, which is what every route taking a password proof
+    // decodes.
+    //
+    // `revokeOtherSessions` is not sent and not honoured: the server does not
+    // touch other sessions on a password change. The checkbox that sets it is
+    // hidden for that reason rather than sending a field nothing reads, which
+    // would tick a box and change nothing.
+    body: JSON.stringify({ current: currentPassword, new: newPassword })
   })
 }
 
@@ -636,12 +639,41 @@ async function reissueRecoveryCodes(password: string): Promise<{ recovery_codes:
   return request('/account/totp/recovery-codes', { method: 'POST', body: JSON.stringify({ password }) })
 }
 
-async function listAppPasswords(): Promise<AppPasswordInfo[]> {
-  return request('/account/app-passwords')
+/** One app password as the wire sends it: string ids, and the scope as the
+ *  permission names it was minted with. */
+interface WireAppPassword {
+  id: string
+  name: string
+  perms: string[]
+  shares: string[]
+  created_ns: string
+  expires_ns?: string
+  last_used_ns?: string
 }
 
-async function createAppPassword(name: string): Promise<{ id: number; token: string }> {
-  return request('/account/app-passwords', { method: 'POST', body: JSON.stringify({ name }) })
+/** The permissions that change something. A credential holding none of them
+ *  is what the screen calls read-only. */
+const WRITING_PERMS = ['write', 'create', 'delete', 'rename', 'move', 'share']
+
+async function listAppPasswords(): Promise<AppPasswordInfo[]> {
+  const rows = await request<WireAppPassword[]>('/account/app-passwords')
+  return (rows ?? []).map((w) => ({
+    id: Number(w.id),
+    name: w.name,
+    created_ns: w.created_ns,
+    // Absent means never used and never expires. Zero is a real instant for
+    // both, so it cannot stand for either.
+    last_used_ns: w.last_used_ns ?? null,
+    expires_ns: w.expires_ns ?? null,
+    read_only: (w.perms ?? []).every((p) => !WRITING_PERMS.includes(p))
+  }))
+}
+
+async function createAppPassword(name: string, currentPassword: string): Promise<{ token: string }> {
+  return request('/account/app-passwords', {
+    method: 'POST',
+    body: JSON.stringify({ name, current: currentPassword })
+  })
 }
 
 /**
@@ -664,15 +696,16 @@ async function createAppPassword(name: string): Promise<{ id: number; token: str
  */
 async function createScopedAppPassword(
   name: string,
+  currentPassword: string,
   opts: { readOnly?: boolean; shares?: string[] } = {}
-): Promise<{ id: number; token: string }> {
+): Promise<{ token: string }> {
   const scope: Record<string, unknown> = {}
-  if (opts.readOnly) scope.perms = { read: true, download: true }
+  // Permission names, the same vocabulary every other route uses.
+  if (opts.readOnly) scope.perms = ['read', 'download']
   if (opts.shares?.length) scope.shares = opts.shares
-  return request('/account/app-passwords', {
-    method: 'POST',
-    body: JSON.stringify(Object.keys(scope).length ? { name, scope } : { name })
-  })
+  const body: Record<string, unknown> = { name, current: currentPassword }
+  if (Object.keys(scope).length) body.scope = scope
+  return request('/account/app-passwords', { method: 'POST', body: JSON.stringify(body) })
 }
 
 async function revokeAppPassword(id: number): Promise<void> {
@@ -691,8 +724,36 @@ async function wipeAppPassword(id: number): Promise<void> {
   await request(`/account/app-passwords/${id}/wipe`, { method: 'POST' })
 }
 
+/**
+ * One live session as the wire sends it.
+ *
+ * `handle` is a digest of the stored digest: enough to name a session for
+ * revocation, and not enough to resume one. The app calls the same value
+ * `id_hash`.
+ */
+interface WireSession {
+  handle: string
+  created_ns: string
+  last_seen_ns: string
+  absolute_ns: string
+  ip?: string
+  ua?: string
+  current: boolean
+}
+
 async function listSessions(): Promise<ActiveSession[]> {
-  return request('/account/sessions')
+  const rows = await request<WireSession[]>('/account/sessions')
+  return (rows ?? []).map((w) => ({
+    id_hash: w.handle,
+    created_ns: w.created_ns,
+    last_seen_ns: w.last_seen_ns,
+    absolute_expiry_ns: w.absolute_ns,
+    // Absent where the client presented neither, which the screen shows as an
+    // unknown device rather than an empty line.
+    ip_first: w.ip ?? null,
+    ua_first: w.ua ?? null,
+    current: w.current
+  }))
 }
 
 async function revokeSession(idHash: string): Promise<void> {
@@ -720,7 +781,7 @@ async function setSmbPassword(
 ): Promise<{ smb_toggles_cleared: boolean }> {
   return request('/account/smb/password', {
     method: 'POST',
-    body: JSON.stringify({ current_password: currentPassword, smb_password: smbPassword })
+    body: JSON.stringify({ current: currentPassword, new: smbPassword })
   })
 }
 
@@ -736,7 +797,7 @@ async function clearSmbPassword(
 ): Promise<{ reverted_to_account_password: boolean }> {
   return request('/account/smb/password', {
     method: 'DELETE',
-    body: JSON.stringify({ current_password: currentPassword })
+    body: JSON.stringify({ current: currentPassword })
   })
 }
 

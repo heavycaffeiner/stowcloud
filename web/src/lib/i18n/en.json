@@ -409,7 +409,6 @@
   "password.new_password_strength": "New password strength: {level}",
   "password.new_passwords_do_not_match": "The new passwords do not match",
   "password.password_changed": "Password changed.",
-  "password.sign_out_every_other_device": "Sign out every other device afterwards (app passwords are kept)",
   "password.strong": "Strong",
   "password.weak": "Weak",
   "preview.archive_empty": "This folder is empty.",

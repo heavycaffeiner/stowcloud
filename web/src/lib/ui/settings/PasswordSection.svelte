@@ -9,7 +9,6 @@
   import { scorePasswordStrength } from '../../format/password-strength'
   import Button from '../Button.svelte'
   import TextField from '../TextField.svelte'
-  import Checkbox from '../Checkbox.svelte'
   import ProgressLinear from '../ProgressLinear.svelte'
 
   interface Props {
@@ -20,7 +19,6 @@
   let currentPassword = $state('')
   let newPassword = $state('')
   let confirmPassword = $state('')
-  let revokeOtherSessions = $state(false)
   let submitting = $state(false)
   let currentError = $state<string | null>(null)
   let newError = $state<string | null>(null)
@@ -34,7 +32,6 @@
     currentPassword = ''
     newPassword = ''
     confirmPassword = ''
-    revokeOtherSessions = false
   }
 
   async function submit(e: SubmitEvent): Promise<void> {
@@ -54,7 +51,7 @@
 
     submitting = true
     try {
-      await api.changePassword(currentPassword, newPassword, revokeOtherSessions)
+      await api.changePassword(currentPassword, newPassword)
       success = true
       reset()
       onchanged?.()
@@ -96,10 +93,11 @@
   {/if}
   <TextField type="password" label={t('password.confirm_new_password')} bind:value={confirmPassword} autocomplete="new-password" />
 
-  <Checkbox
-    bind:checked={revokeOtherSessions}
-    label={t('password.sign_out_every_other_device')}
-  />
+  <!-- No "sign out every other device" here. The server does not revoke other
+       sessions when a password changes, so the control would set a flag
+       nothing reads: a box that ticks and does nothing is worse than its
+       absence, because it is believed. Signing another device out is done
+       from the sessions list below, which really does it. -->
 
   {#if success}
     <p class="sc-password-form__success" role="status">{t('password.password_changed')}</p>
