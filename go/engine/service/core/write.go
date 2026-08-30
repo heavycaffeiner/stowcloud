@@ -4,6 +4,7 @@ package core
 
 import (
 	"context"
+	"io"
 	"math"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
@@ -81,6 +82,41 @@ func (c *Core) Mkdir(ctx context.Context, r Resolved) (Entry, error) {
 	c.markDirty(ctx, r.share, r.path)
 	c.record(ctx, r, journal.OpUpload)
 	return c.buildEntry(r, r.path.Name(), r.path), nil
+}
+
+// WriteStream writes a file's whole content from a reader.
+//
+// It exists so a caller can write a file without naming a filesystem type.
+// CreateFile takes the mode and hands back an open descriptor, which suits the
+// assembly tier that already sees every layer; a protocol handler may not
+// import that tier, and a method that had to would be reaching past the domain
+// to reach the disk.
+//
+// The mode is the share's own rather than a constant, so a file arriving over
+// one protocol is reachable on the same terms as one arriving over another. A
+// per-caller constant is how two routes end up creating files that differ only
+// by which route made them.
+func (c *Core) WriteStream(ctx context.Context, r Resolved, src io.Reader, ifMatch *Token) (Entry, error) {
+	opts := vfs.DurableOpts{Mode: r.root.Policy().ModeFile}
+	return c.CreateFile(ctx, r, opts, ifMatch, func(f *vfs.File) error {
+		// Positional, because the descriptor carries no shared offset: the
+		// running total is the only cursor there is.
+		var off int64
+		_, err := io.Copy(writerAt{f: f, off: &off}, src)
+		return err
+	})
+}
+
+// writerAt turns positional writes into a stream.
+type writerAt struct {
+	f   *vfs.File
+	off *int64
+}
+
+func (w writerAt) Write(p []byte) (int, error) {
+	n, err := w.f.WriteAt(p, *w.off)
+	*w.off += int64(n)
+	return n, err
 }
 
 // CreateFile writes a file's whole content, whether the name is new or being

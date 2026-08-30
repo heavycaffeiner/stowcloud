@@ -1,6 +1,6 @@
 //go:build linux
 
-package dav_test
+package lifecycle_test
 
 import (
 	"errors"

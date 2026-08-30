@@ -3,10 +3,8 @@
 package dav
 
 import (
-	"io"
 	"net/http"
 
-	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
@@ -93,11 +91,7 @@ func (h *Handler) copyFile(r *http.Request, from, to core.Resolved) error {
 	}
 	defer h.closing(r, stream, "the copy source")
 
-	_, err = h.core.CreateFile(r.Context(), to, vfs.DurableOpts{Mode: newFileMode}, nil,
-		func(f *vfs.File) error {
-			_, cerr := io.Copy(&fileWriter{f: f}, stream)
-			return cerr
-		})
+	_, err = h.core.WriteStream(r.Context(), to, stream, nil)
 	return err
 }
 

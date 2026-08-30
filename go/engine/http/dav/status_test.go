@@ -150,7 +150,7 @@ func TestAnErrorBodyCarriesTheConditionElement(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	WriteError(w, ErrLocked)
+	mustWriteError(t, w, ErrLocked)
 
 	if w.Code != http.StatusLocked {
 		t.Errorf("the response is %d, want 423", w.Code)
@@ -173,7 +173,7 @@ func TestAnErrorWithoutAConditionIsPlain(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	WriteError(w, core.ErrNotFound)
+	mustWriteError(t, w, core.ErrNotFound)
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("the response is %d, want 404", w.Code)
@@ -188,12 +188,20 @@ func TestAnInternalErrorBodySaysNothingSpecific(t *testing.T) {
 	t.Parallel()
 
 	w := httptest.NewRecorder()
-	WriteError(w, errors.New("the database is at /var/lib/secret.db"))
+	mustWriteError(t, w, errors.New("the database is at /var/lib/secret.db"))
 
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("the response is %d, want 500", w.Code)
 	}
 	if strings.Contains(w.Body.String(), "secret.db") {
 		t.Errorf("the internal detail reached the client: %s", w.Body.String())
+	}
+}
+
+// mustWriteError writes and fails the test if the body did not go out.
+func mustWriteError(t *testing.T, w http.ResponseWriter, err error) {
+	t.Helper()
+	if werr := WriteError(w, err); werr != nil {
+		t.Fatalf("writing the error response: %v", werr)
 	}
 }

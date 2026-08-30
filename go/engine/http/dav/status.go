@@ -5,6 +5,7 @@ package dav
 import (
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -142,12 +143,16 @@ var (
 // A 207 never comes through here: a multistatus reports per-resource failures
 // inside its own body, and a request that failed as a whole is what this
 // answers.
-func WriteError(w http.ResponseWriter, err error) {
+//
+// It reports whether the body reached the client. The status line is already
+// sent by then, so a failure has no second response to become; a caller that
+// logs is the only thing left, and one that does not may ignore it.
+func WriteError(w http.ResponseWriter, err error) error {
 	status, cond := StatusOf(err)
 
 	if cond.Local == "" {
 		http.Error(w, http.StatusText(status), status)
-		return
+		return nil
 	}
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -160,6 +165,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		`<` + davPrefix + `:error xmlns:` + davPrefix + `="` + davNS + `">` +
 		`<` + davPrefix + `:` + cond.Local + `/>` +
 		`</` + davPrefix + `:error>`
-	//nolint:errcheck // the status is already sent and a failed body write has nowhere to go.
-	_, _ = w.Write([]byte(body))
+	if _, werr := w.Write([]byte(body)); werr != nil {
+		return fmt.Errorf("writing the error document: %w", werr)
+	}
+	return nil
 }

@@ -11,11 +11,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
-	"github.com/heavycaffeiner/stowcloud/go/engine/store/ident"
-	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
+
+// KeyOf is how a caller turns an entry into the key its store understands.
+//
+// Supplied by the assembly, which sees both tiers. Nil means no properties are
+// kept, the same as a nil store.
+type KeyOf func(core.Entry) ResourceKey
 
 // GET, HEAD, PUT, MKCOL and DELETE.
 //
@@ -24,26 +27,41 @@ import (
 // and the byte range. No grant is evaluated here, because the resolution these
 // take was produced by a mount that already did.
 
-// newFileMode is what a created file is given.
+// StoredProp is one dead property as this package handles it.
 //
-// Group-writable and world-readable, matching what the native API creates. A
-// zero mode produces a file nobody can read, including the process that just
-// wrote it. An existing destination keeps its own mode, which the filesystem
-// layer decides rather than this one.
-const newFileMode = 0o664
+// Its own type rather than the database row, because a protocol package may
+// not import the storage tier. The assembly, which sees both, converts.
+type StoredProp struct {
+	// NS is the property's namespace URI, never a prefix: a prefix is local
+	// to the document it appeared in and means nothing once stored.
+	NS string
+	// Name is the local name.
+	Name string
+	// Value is the text content.
+	Value string
+}
 
 // Store is the dead-property half of the durable state.
 //
-// An interface so this package names no database type, and so a deployment
-// that keeps no properties passes nil: then PROPFIND returns the live ones
-// alone and a delete has nothing to clean up.
+// The resource is named by an opaque key rather than by a filesystem identity,
+// so this package never learns how identity is spelled. A deployment that
+// keeps no properties passes nil: PROPFIND then returns the live ones alone
+// and a delete has nothing to clean up.
 type Store interface {
-	// DavProps reads what is stored against a resource.
-	DavProps(ctx context.Context, id ident.Ident) ([]state.DavProp, error)
-	// DropDavProps discards them, which a delete does so the rows do not
-	// outlive the resource and attach to whatever next takes the inode.
-	DropDavProps(ctx context.Context, id ident.Ident) error
+	// Props reads what is stored against a resource.
+	Props(ctx context.Context, key ResourceKey) ([]StoredProp, error)
+	// DropProps discards them. A delete does this so the rows do not outlive
+	// the resource and attach to whatever next occupies the inode.
+	DropProps(ctx context.Context, key ResourceKey) error
 }
+
+// ResourceKey identifies the resource a property belongs to.
+//
+// The identity travels as an opaque value this package only passes through:
+// what makes a resource the same resource across a rename is the storage
+// tier's business, and a protocol handler that understood it could not avoid
+// depending on how it is spelled.
+type ResourceKey any
 
 // Get answers GET and HEAD.
 //
@@ -171,11 +189,7 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request, res core.Resolved)
 	if body == nil {
 		body = http.NoBody
 	}
-	entry, err := h.core.CreateFile(r.Context(), res, vfs.DurableOpts{Mode: newFileMode}, ifMatch,
-		func(f *vfs.File) error {
-			_, cerr := io.Copy(&fileWriter{f: f}, body)
-			return cerr
-		})
+	entry, err := h.core.WriteStream(r.Context(), res, body, ifMatch)
 	if err != nil {
 		h.fail(w, r, err)
 		return
@@ -187,21 +201,6 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request, res core.Resolved)
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
-}
-
-// fileWriter turns positional writes into a stream.
-//
-// The filesystem layer writes at an offset and keeps no cursor, so the
-// position is carried here.
-type fileWriter struct {
-	f   *vfs.File
-	off int64
-}
-
-func (w *fileWriter) Write(p []byte) (int, error) {
-	n, err := w.f.WriteAt(p, w.off)
-	w.off += int64(n)
-	return n, err
 }
 
 // Mkcol creates a collection.
@@ -265,8 +264,8 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request, res core.Resolv
 	// Stored properties go with the resource. Left behind they would attach
 	// to whatever next occupies the inode, so a new file would be born
 	// carrying a deleted one's properties.
-	if h.store != nil {
-		if err := h.store.DropDavProps(r.Context(), entry.Ident); err != nil {
+	if h.store != nil && h.keyOf != nil {
+		if err := h.store.DropProps(r.Context(), h.keyOf(entry)); err != nil {
 			h.log(r).Warn("a deleted resource's properties remain", "error", err)
 		}
 	}

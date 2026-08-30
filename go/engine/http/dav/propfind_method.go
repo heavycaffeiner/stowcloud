@@ -153,8 +153,8 @@ func (h *Handler) writeEntry(
 	// Dead properties are read only when they could be returned. allprop does
 	// not dump them, which RFC 4918 permits, so under allprop this would be a
 	// query nobody reads.
-	if req.Mode != ModeAllProp && h.store != nil {
-		stored, err := h.store.DavProps(ctx, e.Ident)
+	if req.Mode != ModeAllProp && h.store != nil && h.keyOf != nil {
+		stored, err := h.store.Props(ctx, h.keyOf(e))
 		if err != nil {
 			return err
 		}

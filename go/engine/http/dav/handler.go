@@ -52,6 +52,9 @@ type Options struct {
 	// Store holds the dead properties. Nil is a deployment that keeps none,
 	// and then a delete has nothing to clean up.
 	Store Store
+	// KeyOf names the resource a property belongs to. Nil disables the
+	// property store, since rows nothing can key are rows nothing can read.
+	KeyOf KeyOf
 	// Limits bound what one request may carry. The zero value takes
 	// DefaultLimits, because a zero bound is not "unbounded" here: several of
 	// these are counts a parser compares against, so leaving them at zero
@@ -67,6 +70,7 @@ type Handler struct {
 	core            *core.Core
 	locks           Locks
 	store           Store
+	keyOf           KeyOf
 	tokensAt        func(ctx context.Context, share uint32, path string) []string
 	locksAt         func(ctx context.Context, share uint32, path string) []Lock
 	limits          Limits
@@ -92,6 +96,7 @@ func New(opt Options) *Handler {
 		core:            opt.Core,
 		locks:           opt.Locks,
 		store:           opt.Store,
+		keyOf:           opt.KeyOf,
 		tokensAt:        opt.TokensAt,
 		locksAt:         opt.LocksAt,
 		limits:          limits,
@@ -110,7 +115,9 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	if status, _ := StatusOf(err); status >= http.StatusInternalServerError {
 		h.log(r).Error("the request failed", "error", err)
 	}
-	WriteError(w, err)
+	if werr := WriteError(w, err); werr != nil {
+		h.log(r).Warn("the refusal did not reach the client", "error", werr)
+	}
 }
 
 // methodNotAllowed answers a method the target cannot accept, such as a GET of
