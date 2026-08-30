@@ -985,17 +985,21 @@ async function adminIndexEstimate(): Promise<IndexEstimate> {
 }
 
 async function adminIndexSettings(): Promise<IndexSettings> {
-  // The whole snapshot, of which the index is one section. Settings became one
-  // sectioned resource, so there is no endpoint that answers this section
-  // alone.
-  const snap = await request<{ index?: IndexSettings }>('/admin/settings')
-  return snap.index ?? { name_enabled: false }
+  // Read off the described form, which is what the settings route answers.
+  // There is no endpoint for this field alone.
+  const snap = await request<{ fields: Array<{ key: string; value: unknown }> }>('/admin/settings')
+  const field = (snap.fields ?? []).find((f) => f.key === 'search.name_index_enabled')
+  return { name_enabled: field?.value === true }
 }
 
 async function adminSetIndexSettings(nameEnabled: boolean): Promise<IndexSettings> {
-  await request('/admin/settings/index', {
+  // The index switch lives in the search section, under the name the server
+  // reads it by. There is no `index` section: writing to one is refused, and
+  // the field name differs too, so a save aimed at either would report success
+  // and change nothing.
+  await request('/admin/settings/search', {
     method: 'PATCH',
-    body: JSON.stringify({ name_enabled: nameEnabled })
+    body: JSON.stringify({ name_index_enabled: nameEnabled })
   })
   return { name_enabled: nameEnabled }
 }
@@ -1371,7 +1375,9 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
  *  which reads just `.path`) needs them, so they're synthesized placeholders
  *  rather than guesses at real values. */
 interface RawSearchHit {
+  /** The share's numeric id. Not a label, so it is never part of a path. */
   share: string
+  /** The whole virtual path, label included. */
   path: string
   name: string
   is_dir: boolean
@@ -1382,13 +1388,16 @@ interface RawSearchHit {
 
 function toSearchHit(raw: RawSearchHit): SearchHit {
   return {
-    // `/{label}/sub/path` is the virtual path the whole UI navigates in.
-    // The wire shape keeps the share separate from the share-relative path,
-    // so this is where the two are put back together.
-    path: raw.share ? normalizePath(`/${raw.share}/${raw.path}`) : normalizePath(raw.path),
+    // `path` is already the whole virtual path the interface navigates in.
+    // `share` beside it is the share's numeric id, not its label: joining the
+    // two produced `/1000001/Files/Docs/readme.txt`, which resolves to
+    // nothing, so every result was a dead link.
+    path: normalizePath(raw.path),
     entry: {
       name: raw.name,
-      path: raw.share ? `${raw.share}/${raw.path}` : raw.path,
+      // The same complete path, which is what a download or a preview reached
+      // from a result addresses the file by.
+      path: normalizePath(raw.path),
       kind: raw.is_dir ? 'dir' : 'file',
       size: raw.size ?? 0,
       mtime_ns: raw.mtime_ns ?? '0',
