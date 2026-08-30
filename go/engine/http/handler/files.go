@@ -57,11 +57,18 @@ type PageView struct {
 	Next string `json:"next,omitempty"`
 }
 
-// EntryOf projects one entry.
-func EntryOf(e core.Entry) EntryView {
+// EntryOf projects one entry, addressed by the path the caller sent it.
+//
+// vpath is the entry's path as the client addresses it, label included. A
+// core.Entry carries only its share-relative path, which names no share and
+// therefore resolves to nothing when it comes back on the next request: the
+// listing said `Docs/readme.txt` for a file the caller has to ask for as
+// `Files/Docs/readme.txt`, so every row's own path was a 404 and download,
+// preview and stat all went through it.
+func EntryOf(e core.Entry, vpath string) EntryView {
 	v := EntryView{
 		Name:     e.Name,
-		Path:     e.Path.String(),
+		Path:     vpath,
 		Kind:     e.KindName(),
 		IsDir:    e.IsDir,
 		Size:     strconv.FormatUint(e.Size, 10),
@@ -81,7 +88,7 @@ func EntryOf(e core.Entry) EntryView {
 //
 // An empty page carries an empty list rather than null, so a client iterating
 // the entries does not have to test the field first.
-func PageOf(p core.Page) PageView {
+func PageOf(p core.Page, vpathOf func(core.Entry) string) PageView {
 	out := PageView{
 		Entries:     make([]EntryView, 0, len(p.Entries)),
 		Dirs:        p.Dirs,
@@ -91,7 +98,7 @@ func PageOf(p core.Page) PageView {
 		Next:        string(p.Next),
 	}
 	for _, e := range p.Entries {
-		out.Entries = append(out.Entries, EntryOf(e))
+		out.Entries = append(out.Entries, EntryOf(e, vpathOf(e)))
 	}
 	return out
 }

@@ -113,6 +113,17 @@ func (e *Engine) sendStream(
 	}
 	c.Set(fiber.HeaderContentLength, strconv.FormatInt(length, 10))
 
+	// ?download=1 asks for the file as a download rather than as something to
+	// render. Without the header the browser navigates to the bytes and shows
+	// them, or offers a name taken from the URL, which here is "read".
+	//
+	// The name is quoted and escaped by the helper, and carried in the RFC 5987
+	// form as well: a header built by pasting a filename in is one a filename
+	// can break out of.
+	if c.Query("download") == "1" {
+		c.Set(fiber.HeaderContentDisposition, handler.ContentDisposition(entry.Name))
+	}
+
 	status := fiber.StatusOK
 	if ranged {
 		status = fiber.StatusPartialContent
@@ -211,7 +222,7 @@ func (e *Engine) filesWrite(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeJSON(c, fiber.StatusOK, handler.EntryOf(entry))
+	return writeJSON(c, fiber.StatusOK, handler.EntryOf(entry, e.vpath(owner, r, entry)))
 }
 
 // transferRequest names both ends of a copy or a move.

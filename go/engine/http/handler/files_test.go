@@ -19,7 +19,7 @@ func TestEntrySizesAndTimesCrossAsStrings(t *testing.T) {
 	const big = uint64(1)<<53 + 1
 	const when = int64(1700000000123456789)
 
-	v := EntryOf(core.Entry{Size: big, MTimeNs: when})
+	v := EntryOf(core.Entry{Size: big, MTimeNs: when}, "")
 
 	raw, err := json.Marshal(v)
 	if err != nil {
@@ -46,7 +46,7 @@ func TestEntrySizesAndTimesCrossAsStrings(t *testing.T) {
 // A filesystem with no birth time reports nothing rather than zero, because
 // zero is a real timestamp and would show a file created in 1970.
 func TestAMissingBirthTimeIsAbsentNotZero(t *testing.T) {
-	absent := EntryOf(core.Entry{})
+	absent := EntryOf(core.Entry{}, "")
 	if absent.BTimeNs != nil {
 		t.Errorf("a missing birth time is %v", absent.BTimeNs)
 	}
@@ -60,7 +60,7 @@ func TestAMissingBirthTimeIsAbsentNotZero(t *testing.T) {
 
 	// A real epoch birth time is present and is zero.
 	var epoch int64
-	got := EntryOf(core.Entry{BTimeNs: &epoch})
+	got := EntryOf(core.Entry{BTimeNs: &epoch}, "")
 	if got.BTimeNs == nil || *got.BTimeNs != "0" {
 		t.Errorf("a real zero birth time encoded as %v", got.BTimeNs)
 	}
@@ -69,7 +69,7 @@ func TestAMissingBirthTimeIsAbsentNotZero(t *testing.T) {
 // Permissions cross as names. The bits are an internal encoding, and a client
 // that learned them would make adding one a wire change.
 func TestPermissionsCrossAsNames(t *testing.T) {
-	v := EntryOf(core.Entry{Perms: acl.Read | acl.Download})
+	v := EntryOf(core.Entry{Perms: acl.Read | acl.Download}, "")
 
 	if len(v.Perms) != 2 {
 		t.Fatalf("the permissions are %v", v.Perms)
@@ -80,7 +80,7 @@ func TestPermissionsCrossAsNames(t *testing.T) {
 	}
 
 	// No permissions is an empty list rather than null.
-	raw, err := json.Marshal(EntryOf(core.Entry{}))
+	raw, err := json.Marshal(EntryOf(core.Entry{}, ""))
 	if err != nil {
 		t.Fatalf("encoding: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestPermissionsCrossAsNames(t *testing.T) {
 func TestASymlinkIsNotADirectory(t *testing.T) {
 	// IsDir is Kind.IsDir() on the service side, so a symlink carries false
 	// with a kind of its own.
-	v := EntryOf(core.Entry{Name: "link", IsDir: false})
+	v := EntryOf(core.Entry{Name: "link", IsDir: false}, "")
 	if v.IsDir {
 		t.Error("a symlink was projected as a directory")
 	}
@@ -112,7 +112,7 @@ func TestPageCountsDescribeTheWholeDirectory(t *testing.T) {
 		Dirs:    7,
 		Total:   500,
 		Next:    core.Cursor("2"),
-	})
+	}, func(core.Entry) string { return "" })
 
 	if len(p.Entries) != 2 {
 		t.Fatalf("the page carries %d entries", len(p.Entries))
@@ -128,7 +128,7 @@ func TestPageCountsDescribeTheWholeDirectory(t *testing.T) {
 // The final page has no cursor, so its absence is what a client tests rather
 // than comparing counts.
 func TestTheFinalPageCarriesNoCursor(t *testing.T) {
-	raw, err := json.Marshal(PageOf(core.Page{}))
+	raw, err := json.Marshal(PageOf(core.Page{}, func(core.Entry) string { return "" }))
 	if err != nil {
 		t.Fatalf("encoding: %v", err)
 	}

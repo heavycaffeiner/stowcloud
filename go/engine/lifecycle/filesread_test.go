@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
@@ -100,6 +101,75 @@ func download(t *testing.T, base, token, path, rangeHeader string) (int, http.He
 
 	body := readAll(t, resp)
 	return resp.StatusCode, resp.Header, body
+}
+
+// A file asked for with ?download=1 comes back as an attachment named after
+// the file.
+//
+// The parameter is what the browse screen's Download action appends, and the
+// header is the whole difference between saving a file and navigating to its
+// bytes. Without it the browser renders what it can and otherwise offers to
+// save a file called "read", after the last path segment of the endpoint.
+func TestADownloadIsAnAttachmentNamedAfterTheFile(t *testing.T) {
+	base, token, share := contentShare(t, acl.Read|acl.Download, []byte("payload"))
+
+	status, header, _ := readWithQuery(t, base, token,
+		"/"+share+"/doc.bin", "download=1")
+	if status != http.StatusOK {
+		t.Fatalf("the download answered %d", status)
+	}
+
+	got := header.Get("Content-Disposition")
+	if got == "" {
+		t.Fatal("a download carries no Content-Disposition, so the browser renders it instead of saving it")
+	}
+	if !strings.Contains(got, `filename="doc.bin"`) {
+		t.Errorf("the disposition is %q, which does not name the file", got)
+	}
+}
+
+// Without the parameter there is no attachment header: the same endpoint feeds
+// the text editor and the preview, which render rather than save.
+func TestAPlainReadIsNotAnAttachment(t *testing.T) {
+	base, token, share := contentShare(t, acl.Read|acl.Download, []byte("hello"))
+
+	status, header, body := readWithQuery(t, base, token, "/"+share+"/doc.bin", "")
+	if status != http.StatusOK {
+		t.Fatalf("the read answered %d", status)
+	}
+	if got := header.Get("Content-Disposition"); got != "" {
+		t.Errorf("a plain read carries %q, so the editor would download instead of opening", got)
+	}
+	if string(body) != "hello" {
+		t.Errorf("the body is %q", body)
+	}
+}
+
+// readWithQuery reads a path with extra query parameters appended.
+func readWithQuery(t *testing.T, base, token, path, extra string) (int, http.Header, []byte) {
+	t.Helper()
+
+	url := base + "/api/v1/files/read?path=" + urlEscape(path)
+	if extra != "" {
+		url += "&" + extra
+	}
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	req.SetBasicAuth("ignored", token)
+
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("requesting: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+
+	return resp.StatusCode, resp.Header, readAll(t, resp)
 }
 
 // readAll drains a response body.

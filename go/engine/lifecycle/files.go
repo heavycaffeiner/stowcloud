@@ -41,7 +41,7 @@ func (e *Engine) filesList(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeJSON(c, fiber.StatusOK, handler.PageOf(page))
+	return writeJSON(c, fiber.StatusOK, handler.PageOf(page, e.vpathOf(owner, r)))
 }
 
 // filesStat answers one entry.
@@ -60,7 +60,27 @@ func (e *Engine) filesStat(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeJSON(c, fiber.StatusOK, handler.EntryOf(entry))
+	return writeJSON(c, fiber.StatusOK, handler.EntryOf(entry, e.vpath(owner, r, entry)))
+}
+
+// vpath addresses one entry the way the caller has to ask for it: the share's
+// label followed by the path inside it.
+//
+// Falling back to the share-relative path keeps a listing answerable when the
+// label cannot be found, which happens only for a share the account cannot
+// see. That row is unusable either way, and dropping the whole page over one
+// entry is worse than one row whose path does not resolve.
+func (e *Engine) vpath(owner core.UserID, r core.Resolved, entry core.Entry) string {
+	vp, err := e.Core.VpathFor(owner, r.Share(), entry.Path)
+	if err != nil {
+		return entry.Path.String()
+	}
+	return vp.String()
+}
+
+// vpathOf binds vpath to one listing's share, for projecting a whole page.
+func (e *Engine) vpathOf(owner core.UserID, r core.Resolved) func(core.Entry) string {
+	return func(entry core.Entry) string { return e.vpath(owner, r, entry) }
 }
 
 // resolve turns a query parameter into a permission-checked location.

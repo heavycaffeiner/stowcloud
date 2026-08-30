@@ -14,6 +14,9 @@ web/build
 # The development server's scratch tree: its data directory, its shares, the
 # binary it builds and its log. scripts/dev.sh makes it.
 /.dev
+# `go build ./cmd/sc-engine` from inside go/ drops the binary beside the source.
+/go/sc-engine
+/go/stowcloud
 # Runtime state the testbed compose stack creates beside its own file.
 /deploy/testbed/data
 /deploy/testbed/secrets

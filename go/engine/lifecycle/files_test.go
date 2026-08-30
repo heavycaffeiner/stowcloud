@@ -237,6 +237,76 @@ func TestAGrantedShareListsItsContents(t *testing.T) {
 	}
 }
 
+// Every path a listing hands out has to work as the next request's argument.
+//
+// The projection had been sending the share-relative path, which names no
+// share: a listing of Files/Docs answered `Docs/readme.txt` for a file only
+// reachable as `Files/Docs/readme.txt`, so the row's own path was a 404. The
+// web client addresses download, stat and preview by exactly this field, which
+// is why a file in a browsed folder could not be downloaded while the same
+// file behind a public link could: the link carries its own token and never
+// looks at this path.
+//
+// Asserted by feeding the answer back in rather than by comparing to a string,
+// because the property is that the path resolves, not that it is spelled a
+// particular way.
+func TestEveryListedPathResolvesOnTheNextRequest(t *testing.T) {
+	base, token, share := engineWithShare(t)
+
+	status, body := authed(t, http.MethodGet,
+		base+"/api/v1/files/list?path="+urlEscape("/"+share), token)
+	if status != http.StatusOK {
+		t.Fatalf("listing answered %d: %s", status, body)
+	}
+
+	var page struct {
+		Entries []struct {
+			Name string `json:"name"`
+			Path string `json:"path"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(body, &page); err != nil {
+		t.Fatalf("the page does not parse: %v\n%s", err, body)
+	}
+	if len(page.Entries) == 0 {
+		t.Fatal("the listing is empty, so nothing was checked")
+	}
+
+	for _, entry := range page.Entries {
+		st, rb := authed(t, http.MethodGet,
+			base+"/api/v1/files/read?path="+urlEscape(entry.Path), token)
+		if st != http.StatusOK {
+			t.Errorf("reading %q, the path the listing gave for %q, answered %d: %s",
+				entry.Path, entry.Name, st, rb)
+		}
+	}
+}
+
+// Stat's path round-trips too. It is a separate projection call site, and the
+// one the details panel and the preview dialog address a file by.
+func TestStatsPathResolvesOnTheNextRequest(t *testing.T) {
+	base, token, share := engineWithShare(t)
+
+	status, body := authed(t, http.MethodGet,
+		base+"/api/v1/files/stat?path="+urlEscape("/"+share+"/hello.txt"), token)
+	if status != http.StatusOK {
+		t.Fatalf("stat answered %d: %s", status, body)
+	}
+
+	var entry struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(body, &entry); err != nil {
+		t.Fatalf("stat does not parse: %v\n%s", err, body)
+	}
+
+	st, rb := authed(t, http.MethodGet,
+		base+"/api/v1/files/read?path="+urlEscape(entry.Path), token)
+	if st != http.StatusOK {
+		t.Errorf("reading %q, the path stat gave, answered %d: %s", entry.Path, st, rb)
+	}
+}
+
 // The virtual root shows the granted share, so the listing and the resolve
 // agree about what this account can reach.
 func TestTheRootShowsAGrantedShare(t *testing.T) {
