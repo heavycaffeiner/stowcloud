@@ -30,6 +30,28 @@ func (h *Handler) Options(w http.ResponseWriter, _ *http.Request, res core.Resol
 	w.WriteHeader(http.StatusOK)
 }
 
+// MountOptions answers discovery for the mount itself.
+//
+// The virtual root has no resource behind it, so there is nothing to stat and
+// the full method list is what it reports. This is how a client learns the
+// server speaks the protocol, which it does before it has a credential.
+func (h *Handler) MountOptions(w http.ResponseWriter) {
+	compliance := "1"
+	if h.taker != nil {
+		compliance = "1, 2"
+	}
+	w.Header().Set("DAV", compliance)
+	// A collection, because that is what the root is, and one nothing may be
+	// written directly into: a share is created through the native surface.
+	w.Header().Set("Allow", AllowHeader(AllowSet{
+		Exists:  true,
+		IsDir:   true,
+		Locking: h.taker != nil,
+	}))
+	w.Header().Set("MS-Author-Via", "DAV")
+	w.WriteHeader(http.StatusOK)
+}
+
 // allowFor describes what this resource accepts.
 func (h *Handler) allowFor(res core.Resolved) string {
 	set := AllowSet{Locking: h.taker != nil}

@@ -48,6 +48,11 @@ type fixture struct {
 	// real is the actual lock table, for the LOCK and UNLOCK tests. The stub
 	// above answers the write guard; this is what mints a token.
 	real *lifecycle.DavLocks
+	// engine is what the mount hangs off. Only Core is populated, which is all
+	// the mount reads: the rest of an engine is other surfaces' dependencies.
+	engine *lifecycle.Engine
+	// state is the database, for a test that narrows a grant.
+	state *state.DB
 }
 
 // stubLocks answers the guard. The lock table has its own tests; what matters
@@ -77,6 +82,14 @@ func (s *stubLocks) Guard(_ context.Context, _ uint32, path string, _ int64, sub
 }
 
 func newFixture(t *testing.T) *fixture { return build(t, nil, 0) }
+
+// newFixtureReadOnly builds one whose user may read and nothing else, for
+// checking that a write method is refused at resolution.
+func newFixtureReadOnly(t *testing.T) *fixture {
+	f := build(t, nil, 0)
+	regrant(t, f, acl.Read|acl.Download)
+	return f
+}
 
 // newFixtureHolding builds one where every resource carries the given lock
 // token, which is what an If header naming it evaluates against.
@@ -163,11 +176,13 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 			Store:           props,
 			KeyOf:           lifecycle.DavKeyOf,
 		}),
-		core:  c,
-		dir:   shareDir,
-		locks: locks,
-		props: props,
-		real:  real,
+		core:   c,
+		dir:    shareDir,
+		locks:  locks,
+		props:  props,
+		real:   real,
+		engine: &lifecycle.Engine{Core: c, State: st, Cache: ca},
+		state:  st,
 	}
 }
 
@@ -201,6 +216,33 @@ func grantAll(t *testing.T, c *core.Core, st *state.DB, user int64, share core.S
 		t.Fatalf("persisting the grant: %v", err)
 	}
 	if err := c.ReloadGrants(ctx); err != nil {
+		t.Fatalf("reloading grants: %v", err)
+	}
+}
+
+// regrant replaces the test user's grant with a narrower one.
+func regrant(t *testing.T, f *fixture, allow acl.Perms) {
+	t.Helper()
+	ctx := context.Background()
+	if err := f.state.Write(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `DELETE FROM "grant"`)
+		return err
+	}); err != nil {
+		t.Fatalf("clearing the grants: %v", err)
+	}
+
+	holder := int64(testUser)
+	if _, err := f.state.PersistGrant(ctx, state.GrantRow{
+		User:    &holder,
+		Share:   int64(testShare),
+		Subpath: "",
+		Allow:   uint16(allow),
+		Inherit: true,
+		Label:   "files",
+	}, 0); err != nil {
+		t.Fatalf("persisting the narrowed grant: %v", err)
+	}
+	if err := f.core.ReloadGrants(ctx); err != nil {
 		t.Fatalf("reloading grants: %v", err)
 	}
 }

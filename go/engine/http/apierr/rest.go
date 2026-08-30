@@ -155,7 +155,15 @@ func restTable() map[Class]restEntry {
 // visibility travels from the caller because only the handler knows whether the
 // caller reached this resource through a parent it may read.
 func Write(w http.ResponseWriter, err error, visibility Visibility) {
-	status, body := REST(Classify(err, visibility))
+	WriteClassified(w, Classify(err, visibility))
+}
+
+// WriteClassified answers with an outcome the caller already decided.
+//
+// For a refusal that is not carrying an error to classify, such as a boundary
+// that has no credential to reject and simply has none.
+func WriteClassified(w http.ResponseWriter, c Classified) {
+	status, body := REST(c)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(body) //nolint:errcheck // a client that stopped reading cannot be told anything.
