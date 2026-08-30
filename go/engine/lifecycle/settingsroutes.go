@@ -14,26 +14,38 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/catalogue"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/check"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
 )
 
-// adminSettingsGet answers the whole document.
+// adminSettingsGet describes every settable field.
+//
+// The described form rather than the stored document, because the document
+// alone cannot be rendered: it holds only what somebody saved, so a screen
+// reading it shows nothing on a fresh deployment and has no way to know what a
+// field accepts or whether changing it needs a restart.
+//
+// The values are the ones in force rather than the ones on disk. A stored
+// value outside its bound is clamped when it loads, and showing the raw stored
+// number would tell an operator the server is running on something it is not.
 func (e *Engine) adminSettingsGet(c *fiber.Ctx) error {
 	if _, ok, written := e.admin(c); !ok {
 		return written
 	}
 
-	doc, err := e.State.Settings(c.UserContext())
+	stored, err := e.State.Settings(c.UserContext())
 	if err != nil {
 		return failKnown(c, err)
 	}
-	if doc == nil {
+	if stored == nil {
 		// A deployment that has saved nothing has an empty document, not a
-		// null one: a client iterating the sections would otherwise have to
-		// test the field before reading it.
-		doc = map[string]any{}
+		// null one: the lookup below would otherwise have to test it first.
+		stored = map[string]any{}
 	}
-	return writeJSON(c, fiber.StatusOK, doc)
+
+	values := runtimecfg.Load(c.UserContext(), e.State, runtimecfg.Defaults(), e.logger)
+	return writeJSON(c, fiber.StatusOK, catalogue.Of(values, stored))
 }
 
 // adminSettingsPatch replaces one section.

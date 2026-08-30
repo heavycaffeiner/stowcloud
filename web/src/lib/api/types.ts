@@ -987,6 +987,9 @@ export type SettingRange =
   | { kind: 'bool' }
   | { kind: 'string'; max_len?: number }
   | { kind: 'string_list'; max_items?: number }
+  /** A string with a fixed set of accepted values. The server sends the set,
+   *  so a client never offers an option the save would refuse. */
+  | { kind: 'choice'; choices: string[] }
 
 export interface SettingsField {
   key: string

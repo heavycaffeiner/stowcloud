@@ -33,17 +33,40 @@ func TestSavingASettingsSection(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("reading answered %d: %s", code, raw)
 	}
-	var doc map[string]any
-	if err := json.Unmarshal(raw, &doc); err != nil {
+	fields := describedFields(t, raw)
+	saved, ok := fields["rate.per_sec"]
+	if !ok {
+		t.Fatalf("the saved field is not described: %s", raw)
+	}
+	if fmt.Sprint(saved["value"]) != "30" {
+		t.Errorf("the stored rate is %v, want 30", saved["value"])
+	}
+	// And it reports itself as something an administrator set, which is what
+	// distinguishes it from a value that happens to equal the default.
+	if got := fmt.Sprint(saved["source"]); got != "admin_override" {
+		t.Errorf("a saved value reports source %q", got)
+	}
+}
+
+// describedFields indexes the settings answer by key.
+//
+// The route answers the described form rather than the stored document: the
+// document alone holds only what somebody saved, which a screen cannot render
+// on a fresh deployment and which says nothing about what a field accepts.
+func describedFields(t *testing.T, raw []byte) map[string]map[string]any {
+	t.Helper()
+
+	var out struct {
+		Fields []map[string]any `json:"fields"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
 		t.Fatalf("decoding %s: %v", raw, err)
 	}
-	section, ok := doc["rate"].(map[string]any)
-	if !ok {
-		t.Fatalf("the saved section is not in the document: %s", raw)
+	byKey := make(map[string]map[string]any, len(out.Fields))
+	for _, f := range out.Fields {
+		byKey[fmt.Sprint(f["key"])] = f
 	}
-	if fmt.Sprint(section["per_sec"]) != "30" {
-		t.Errorf("the stored rate is %v, want 30", section["per_sec"])
-	}
+	return byKey
 }
 
 // A live section says it is applied; a pinned one says a restart is needed.
@@ -339,16 +362,13 @@ func TestAClientSecretIsNeverInTheDocument(t *testing.T) {
 
 	// The rest of the section did save, so stripping the secret did not
 	// discard what it arrived with.
-	var doc map[string]any
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		t.Fatal(err)
-	}
-	section, ok := doc["oidc"].(map[string]any)
+	fields := describedFields(t, raw)
+	issuer, ok := fields["oidc.issuer"]
 	if !ok {
 		t.Fatalf("the oidc section was not stored: %s", raw)
 	}
-	if stringField(section, "issuer") != "https://provider.example" {
-		t.Errorf("the issuer is %v", section["issuer"])
+	if got := fmt.Sprint(issuer["value"]); got != "https://provider.example" {
+		t.Errorf("the issuer is %v", got)
 	}
 }
 
@@ -429,16 +449,13 @@ func TestAnOmittedSecretIsNotCleared(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("reading answered %d", code)
 	}
-	var doc map[string]any
-	if err := json.Unmarshal(raw, &doc); err != nil {
-		t.Fatal(err)
-	}
-	section, isMap := doc["oidc"].(map[string]any)
-	if !isMap {
+	fields := describedFields(t, raw)
+	issuer, ok := fields["oidc.issuer"]
+	if !ok {
 		t.Fatalf("the oidc section is missing: %s", raw)
 	}
-	if stringField(section, "issuer") != "https://elsewhere.example" {
-		t.Errorf("the issuer is %v after the second save", section["issuer"])
+	if got := fmt.Sprint(issuer["value"]); got != "https://elsewhere.example" {
+		t.Errorf("the issuer is %v after the second save", got)
 	}
 }
 
