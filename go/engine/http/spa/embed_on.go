@@ -3,7 +3,9 @@
 package spa
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/base64"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -62,6 +64,48 @@ func handler() (http.Handler, bool) {
 // appDir mirrors the frontend config's app directory: the build lays its
 // hash-named assets there, and the long cache header below applies to them.
 const appDir = "app"
+
+// hashesFrom walks a document and returns the bare hash of every script
+// whose body sits in it.
+// hashesFrom walks a document and returns the bare hash of every script
+// whose body sits in it.
+//
+// A script with a src attribute needs no hash: the browser fetches it, and
+// 'self' already covers that fetch. The hash covers the exact bytes between
+// the tags, which is what the browser computes on its side.
+func hashesFrom(html string) []string {
+	var out []string
+	lower := strings.ToLower(html)
+
+	for i := 0; ; {
+		open := strings.Index(lower[i:], "<script")
+		if open < 0 {
+			break
+		}
+		open += i
+		gt := strings.Index(lower[open:], ">")
+		if gt < 0 {
+			break
+		}
+		gt += open
+
+		bodyStart := gt + 1
+		close := strings.Index(lower[bodyStart:], "</script>")
+		if close < 0 {
+			break
+		}
+		close += bodyStart
+
+		if !strings.Contains(lower[open:gt], "src=") {
+			sum := sha256.Sum256([]byte(html[bodyStart:close]))
+			// Bare, without the quotes: quoting is the policy builder's job,
+			// and a source that arrived quoted would be quoted again.
+			out = append(out, "sha256-"+base64.StdEncoding.EncodeToString(sum[:]))
+		}
+		i = close + len("</script>")
+	}
+	return out
+}
 
 // inlineScriptHashes scans the embedded document for its inline scripts.
 //
