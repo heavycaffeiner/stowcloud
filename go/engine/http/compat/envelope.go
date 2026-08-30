@@ -28,6 +28,7 @@ type Val struct {
 	kind  valKind
 	text  string
 	num   int64
+	frac  float64
 	flag  bool
 	list  []Val
 	pairs []Pair
@@ -45,6 +46,7 @@ const (
 	kindEmpty valKind = iota
 	kindString
 	kindInt
+	kindFloat
 	kindBool
 	kindList
 	kindMap
@@ -58,6 +60,17 @@ func Str(s string) Val { return Val{kind: kindString, text: s} }
 
 // Int is a numeric value.
 func Int(n int64) Val { return Val{kind: kindInt, num: n} }
+
+// Float is a numeric value with a fraction, which the JSON form carries and
+// the XML form renders as its shortest representation.
+func Float(f float64) Val { return Val{kind: kindFloat, frac: f} }
+
+// Object is an empty ordered mapping. A client reading a record here and a
+// list elsewhere treats the two as different shapes, and they are.
+func Object(pairs ...Pair) Val { return Map(pairs...) }
+
+// ListOf is a list from values already built.
+func ListOf(items []Val) Val { return List(items...) }
 
 // Bool is a boolean, which the two formats render differently.
 func Bool(b bool) Val { return Val{kind: kindBool, flag: b} }
@@ -80,6 +93,8 @@ const (
 	StatusOKv2 = 200
 	// StatusUnauthorized asks the client to authenticate.
 	StatusUnauthorized = 997
+	// StatusForbidden reports a request the caller may not make.
+	StatusForbidden = 403
 	// StatusNotFound reports a missing resource.
 	StatusNotFound = 998
 	// StatusInvalid reports an unusable request.
@@ -234,6 +249,9 @@ func xmlValue(out []byte, v Val) ([]byte, error) {
 	case kindInt:
 		return strconv.AppendInt(out, v.num, 10), nil
 
+	case kindFloat:
+		return appendFloat(out, v.frac), nil
+
 	case kindBool:
 		// A true is "1" and a false is nothing at all. A literal "false"
 		// reads as a non-empty string to a client checking presence.
@@ -364,6 +382,12 @@ func writeJSON(w io.Writer, v Val) error {
 	return err
 }
 
+// appendFloat renders a fraction the way the reference does: shortest form
+// that round-trips, with a plain integer when the fraction is whole.
+func appendFloat(out []byte, f float64) []byte {
+	return strconv.AppendFloat(out, f, 'f', -1, 64)
+}
+
 // jsonValue appends one value.
 func jsonValue(out []byte, v Val) ([]byte, error) {
 	switch v.kind {
@@ -375,6 +399,9 @@ func jsonValue(out []byte, v Val) ([]byte, error) {
 
 	case kindInt:
 		return strconv.AppendInt(out, v.num, 10), nil
+
+	case kindFloat:
+		return appendFloat(out, v.frac), nil
 
 	case kindBool:
 		// A boolean stays a boolean here. The XML quirk is XML's.

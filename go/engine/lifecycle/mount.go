@@ -70,6 +70,13 @@ func (e *Engine) Mount() (*fiber.App, error) {
 	// paths carry no API version because a short URL is the product feature,
 	// and the token in the path is the whole of the authority.
 	e.mountPublicLinks(app)
+
+	// The compatibility surface, beside the native API on the paths another
+	// product's clients address. Same chain, same boundary; only the
+	// vocabulary on the wire differs. A build without the tag mounts nothing
+	// here, which is what makes the tag a build fact rather than a runtime
+	// flag.
+	e.mountCompatTagged(app)
 	return app, nil
 }
 
