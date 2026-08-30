@@ -42,6 +42,13 @@ type Options struct {
 	// header that names one. Nil leaves every resource holding none, which
 	// makes a condition asserting a token fail rather than pass unchecked.
 	TokensAt func(ctx context.Context, share uint32, path string) []string
+	// LocksAt describes the locks covering a path, which lockdiscovery
+	// renders. Nil reports every resource as unlocked, which is what a
+	// deployment with no lock table is.
+	LocksAt func(ctx context.Context, share uint32, path string) []Lock
+	// InfinityEntries bounds what a Depth: infinity walk will attempt. Zero
+	// takes DefaultInfinityEntries.
+	InfinityEntries int
 	// Store holds the dead properties. Nil is a deployment that keeps none,
 	// and then a delete has nothing to clean up.
 	Store Store
@@ -57,12 +64,14 @@ type Options struct {
 
 // Handler answers the WebDAV methods.
 type Handler struct {
-	core     *core.Core
-	locks    Locks
-	store    Store
-	tokensAt func(ctx context.Context, share uint32, path string) []string
-	limits   Limits
-	logger   *slog.Logger
+	core            *core.Core
+	locks           Locks
+	store           Store
+	tokensAt        func(ctx context.Context, share uint32, path string) []string
+	locksAt         func(ctx context.Context, share uint32, path string) []Lock
+	limits          Limits
+	infinityEntries int
+	logger          *slog.Logger
 }
 
 // New builds a handler.
@@ -75,13 +84,19 @@ func New(opt Options) *Handler {
 	if limits == (Limits{}) {
 		limits = DefaultLimits()
 	}
+	infinity := opt.InfinityEntries
+	if infinity <= 0 {
+		infinity = DefaultInfinityEntries
+	}
 	return &Handler{
-		core:     opt.Core,
-		locks:    opt.Locks,
-		store:    opt.Store,
-		tokensAt: opt.TokensAt,
-		limits:   limits,
-		logger:   logger,
+		core:            opt.Core,
+		locks:           opt.Locks,
+		store:           opt.Store,
+		tokensAt:        opt.TokensAt,
+		locksAt:         opt.LocksAt,
+		limits:          limits,
+		infinityEntries: infinity,
+		logger:          logger,
 	}
 }
 

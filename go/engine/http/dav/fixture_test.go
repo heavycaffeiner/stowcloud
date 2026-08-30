@@ -68,15 +68,21 @@ func (s *stubLocks) Guard(_ context.Context, _ uint32, path string, _ int64, sub
 	return s.refuse
 }
 
-func newFixture(t *testing.T) *fixture { return build(t, nil) }
+func newFixture(t *testing.T) *fixture { return build(t, nil, 0) }
 
 // newFixtureHolding builds one where every resource carries the given lock
 // token, which is what an If header naming it evaluates against.
 func newFixtureHolding(t *testing.T, tokens ...string) *fixture {
-	return build(t, tokens)
+	return build(t, tokens, 0)
 }
 
-func build(t *testing.T, held []string) *fixture {
+// newFixtureBounded builds one whose Depth: infinity ceiling is low enough to
+// reach without writing ten thousand files.
+func newFixtureBounded(t *testing.T, entries int) *fixture {
+	return build(t, nil, entries)
+}
+
+func build(t *testing.T, held []string, infinityEntries int) *fixture {
 	t.Helper()
 	ctx := context.Background()
 	root := t.TempDir()
@@ -134,6 +140,7 @@ func build(t *testing.T, held []string) *fixture {
 			TokensAt: func(context.Context, uint32, string) []string {
 				return held
 			},
+			InfinityEntries: infinityEntries,
 		}),
 		core:  c,
 		dir:   shareDir,

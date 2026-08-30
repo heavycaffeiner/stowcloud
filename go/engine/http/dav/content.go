@@ -14,6 +14,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/ident"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
 // GET, HEAD, PUT, MKCOL and DELETE.
@@ -31,12 +32,16 @@ import (
 // layer decides rather than this one.
 const newFileMode = 0o664
 
-// Store is the durable half the content methods touch.
+// Store is the dead-property half of the durable state.
 //
-// Only the dead properties, and only to discard them. An interface so this
-// package does not name a database type, and so a caller with no property
-// store can pass nil.
+// An interface so this package names no database type, and so a deployment
+// that keeps no properties passes nil: then PROPFIND returns the live ones
+// alone and a delete has nothing to clean up.
 type Store interface {
+	// DavProps reads what is stored against a resource.
+	DavProps(ctx context.Context, id ident.Ident) ([]state.DavProp, error)
+	// DropDavProps discards them, which a delete does so the rows do not
+	// outlive the resource and attach to whatever next takes the inode.
 	DropDavProps(ctx context.Context, id ident.Ident) error
 }
 

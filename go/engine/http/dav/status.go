@@ -5,6 +5,7 @@ package dav
 import (
 	"encoding/xml"
 	"errors"
+	"io"
 	"net/http"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
@@ -48,6 +49,13 @@ func StatusOf(err error) (int, xml.Name) {
 		errors.Is(err, ErrTooManyElements), errors.Is(err, ErrNameTooLong),
 		errors.Is(err, ErrTooMuchText), errors.Is(err, ErrTooManyProperties),
 		errors.Is(err, ErrIfTooLarge):
+		return http.StatusBadRequest, xml.Name{}
+
+	// XML the decoder itself rejected: a truncated document, a mismatched end
+	// tag, an illegal character. The sentinels above cover what this package
+	// refuses on purpose, and this covers what the parser refuses on its own.
+	// Without it a client's malformed body is reported as a server fault.
+	case isSyntaxError(err):
 		return http.StatusBadRequest, xml.Name{}
 
 	// A Destination on another host. 502 rather than 400, because the request
@@ -100,6 +108,16 @@ func StatusOf(err error) (int, xml.Name) {
 	default:
 		return http.StatusInternalServerError, xml.Name{}
 	}
+}
+
+// isSyntaxError reports whether the decoder rejected the document itself.
+//
+// Both forms are checked. A syntax error is what a malformed document
+// produces, and an unexpected EOF is what a truncated one produces, which is
+// the more common of the two: a client whose connection dropped mid-body.
+func isSyntaxError(err error) bool {
+	var syntax *xml.SyntaxError
+	return errors.As(err, &syntax) || errors.Is(err, io.ErrUnexpectedEOF)
 }
 
 // The refusals this layer makes that have no home in another package.
