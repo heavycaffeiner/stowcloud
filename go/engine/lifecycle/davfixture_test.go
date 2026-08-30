@@ -14,6 +14,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
@@ -44,6 +45,9 @@ type fixture struct {
 	// props is the property store, for a test that reads back what PROPPATCH
 	// wrote rather than trusting the response alone.
 	props *lifecycle.DavProps
+	// real is the actual lock table, for the LOCK and UNLOCK tests. The stub
+	// above answers the write guard; this is what mints a token.
+	real *lifecycle.DavLocks
 }
 
 // stubLocks answers the guard. The lock table has its own tests; what matters
@@ -138,13 +142,23 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 
 	locks := &stubLocks{}
 	props := lifecycle.NewDavProps(st)
+	real := lifecycle.NewDavLocks(st, clock.System(), nil)
+
 	return &fixture{
 		h: dav.New(dav.Options{
 			Core:  c,
 			Locks: locks,
-			TokensAt: func(context.Context, uint32, string) []string {
+			TokensAt: func(ctx context.Context, share uint32, path string) []string {
+				// The real table first, so a lock this fixture actually took
+				// satisfies an If header naming its token. held is the override
+				// for the tests that need a token without a lock behind it.
+				if got := real.Tokens(ctx, share, path); len(got) > 0 {
+					return got
+				}
 				return held
 			},
+			LocksAt:         real.At,
+			Taker:           real,
 			InfinityEntries: infinityEntries,
 			Store:           props,
 			KeyOf:           lifecycle.DavKeyOf,
@@ -153,6 +167,7 @@ func build(t *testing.T, held []string, infinityEntries int) *fixture {
 		dir:   shareDir,
 		locks: locks,
 		props: props,
+		real:  real,
 	}
 }
 

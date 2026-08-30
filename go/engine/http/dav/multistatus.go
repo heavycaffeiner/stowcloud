@@ -93,6 +93,30 @@ func (m *Multistatus) Close() error {
 	return m.err
 }
 
+// PropDocument writes a bare prop element, which is what a LOCK answers with.
+//
+// A lock response is not a multistatus: it reports one property of one
+// resource, so there is no href and no status to carry. It shares the element
+// writer because the owner text inside it came from a client, and escaping it
+// through a second path would mean trusting that path to match this one.
+type PropDocument struct{ m *Multistatus }
+
+// NewPropDocument prepares a writer.
+func NewPropDocument(w io.Writer) *PropDocument {
+	return &PropDocument{m: &Multistatus{w: w, prefixes: map[string]string{davNS: davPrefix}}}
+}
+
+// Write emits the document holding one property.
+func (d *PropDocument) Write(p Prop) {
+	d.m.write(`<?xml version="1.0" encoding="utf-8"?>`)
+	d.m.write("<" + davPrefix + ":prop xmlns:" + davPrefix + `="` + davNS + `">`)
+	d.m.property(p)
+	d.m.write("</" + davPrefix + ":prop>")
+}
+
+// Close reports the first write failure, if there was one.
+func (d *PropDocument) Close() error { return d.m.err }
+
 // PropStat is one group of properties sharing a status.
 type PropStat struct {
 	// Status is the HTTP status for this group.

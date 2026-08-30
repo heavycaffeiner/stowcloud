@@ -46,6 +46,10 @@ type Options struct {
 	// renders. Nil reports every resource as unlocked, which is what a
 	// deployment with no lock table is.
 	LocksAt func(ctx context.Context, share uint32, path string) []Lock
+	// Taker mints and releases locks, for LOCK and UNLOCK. Nil refuses both
+	// rather than pretending: a client told it holds a lock that was never
+	// recorded writes on the strength of it.
+	Taker LockTaker
 	// InfinityEntries bounds what a Depth: infinity walk will attempt. Zero
 	// takes DefaultInfinityEntries.
 	InfinityEntries int
@@ -73,6 +77,7 @@ type Handler struct {
 	keyOf           KeyOf
 	tokensAt        func(ctx context.Context, share uint32, path string) []string
 	locksAt         func(ctx context.Context, share uint32, path string) []Lock
+	taker           LockTaker
 	limits          Limits
 	infinityEntries int
 	logger          *slog.Logger
@@ -99,6 +104,7 @@ func New(opt Options) *Handler {
 		keyOf:           opt.KeyOf,
 		tokensAt:        opt.TokensAt,
 		locksAt:         opt.LocksAt,
+		taker:           opt.Taker,
 		limits:          limits,
 		infinityEntries: infinity,
 		logger:          logger,
