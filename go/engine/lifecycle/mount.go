@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"regexp"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -198,6 +200,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminStorage
 		case "admin.index.estimate":
 			out[r.Name] = e.adminIndexEstimate
+		case "admin.index.build":
+			out[r.Name] = e.adminIndexBuild
 		case "admin.smb.apply":
 			out[r.Name] = e.adminSMBApply
 		case "events":
@@ -303,4 +307,34 @@ func writeError(c *fiber.Ctx, err error) error {
 		status = fe.Code
 	}
 	return writeJSON(c, status, map[string]string{"error": "request_failed"})
+}
+
+// UnboundRoutesForTest names every route the table declares that the binding
+// switch does not handle.
+//
+// Exported for a test because the fallback became unobservable when the last
+// route was bound: no request reaches it any more, so asking which names would
+// is the only way left to check that none do.
+//
+// It reads the switch's case labels rather than the handler map. Every name in
+// that map is bound to something, since the ones the switch does not name get
+// the fallback, and a lookup cannot tell the two apart.
+func UnboundRoutesForTest() []string {
+	src, err := os.ReadFile("mount.go")
+	if err != nil {
+		// The caller is a test in this package, so the file is beside it.
+		return []string{"mount.go could not be read: " + err.Error()}
+	}
+	bound := map[string]struct{}{}
+	for _, m := range regexp.MustCompile(`case "([a-z0-9.-]+)":`).FindAllSubmatch(src, -1) {
+		bound[string(m[1])] = struct{}{}
+	}
+
+	var out []string
+	for _, r := range server.Table() {
+		if _, ok := bound[r.Name]; !ok {
+			out = append(out, r.Name)
+		}
+	}
+	return out
 }

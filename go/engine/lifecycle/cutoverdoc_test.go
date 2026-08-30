@@ -36,14 +36,10 @@ func TestTheCutoverDocumentMatchesTheTree(t *testing.T) {
 			claimed[1], table)
 	}
 
-	// The heading spells the unbound count as a word, so the list under it is
-	// what gets checked instead: every route named there has to be one the
-	// tree really leaves unbound, and there have to be exactly as many.
-	named := namedRoutes(doc)
-	if len(named) != table-bound {
-		t.Errorf("the document lists %d unbound routes; %d are unbound",
-			len(named), table-bound)
-	}
+	// The list of unbound routes and what it has to agree with are checked by
+	// TestTheDocumentsUnboundListIsAccurate, which also holds the case this one
+	// cannot express: a list that is empty because there is nothing left to
+	// name, rather than because the section was deleted.
 }
 
 // boundCount counts the names the binding switch handles.
@@ -106,9 +102,19 @@ func TestTheDocumentsUnboundListIsAccurate(t *testing.T) {
 		real[r.Name] = struct{}{}
 	}
 
+	table := len(server.Table())
+	unbound := table - boundCount(t)
+
 	named := namedRoutes(doc)
-	if len(named) == 0 {
-		t.Fatal("the document names no unbound routes, so this check is watching nothing")
+	if len(named) != unbound {
+		t.Errorf("the document lists %d unbound routes; %d are unbound", len(named), unbound)
+	}
+	if unbound == 0 {
+		// Every route is bound, so there is no list to check and an empty one
+		// is the correct document. Asserting the count above is what keeps
+		// this from passing vacuously: a route that loses its binding puts a
+		// number back here and fails until the document says so.
+		return
 	}
 	for name := range named {
 		if _, exists := real[name]; !exists {

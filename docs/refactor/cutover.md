@@ -35,13 +35,11 @@ rebuild is nearly a replacement. Package by package it is not that simple.
 
 ## Three things block the cutover
 
-### 1. One route has no binding
+### 1. Every route is bound
 
-The engine binds 86 of the 87 routes its own table names. The rest need
-services that `lifecycle.Open` never constructs: preview for thumbnails,
-the pieces named below. The account-facing SMB routes, the index estimate and
-the SMB apply are bound; what remains needs something the engine does not have
-rather than something it has not been asked for.
+The engine binds 87 of the 87 routes its own table names. This section listed
+the services `lifecycle.Open` never constructed; every one of them is
+constructed now.
 
 The sectioned settings resource is now bound, against `service/settings`
 (1,626 lines, holding `check` and `runtimecfg`).
@@ -70,9 +68,14 @@ The old hub's leak is fixed rather than carried: it removed a socket without
 unsubscribing, so a closed tab left a kernel watch pinned for the life of the
 process. Disconnect now releases every subscription the connection held.
 
-The unbound set, exactly, grouped by the service each one waits on:
+The name index is the last of them. `index.Open` was written and called by
+nothing, so `Service.SetIndex` had no caller outside tests and `Build` returned
+`ErrNoIndex` to anyone who asked. `lifecycle.Open` now opens the index
+directory when the stored setting asks for one, and the build route runs the
+traversal as a job the client polls rather than holding a connection open
+across it.
 
-- **Search index** (1): `admin.index.build`, which needs an index to build into
+The binding count is no longer what blocks a cutover. What follows is.
 
 ### 2. Two protocol surfaces have their vocabulary and not their handlers
 
@@ -126,20 +129,15 @@ and the difference is mostly this.
 
 In dependency order, with the measured size of each piece:
 
-1. **Construct what the last route needs**: the name index, which is a
-   persistence decision rather than a construction. Search, the sign-on
-   client, the preview decoder, the SMB publisher, the setup gate and the
-   change channel are all built and wired.
-2. **Bind the remaining route** against it.
-3. **Write the dav and compat handlers.** The vocabulary is done; the method
+1. **Write the dav and compat handlers.** The vocabulary is done; the method
    handlers are not, and they are roughly 2,000 and 4,300 lines in the tree
    they replace.
-4. **Build the public link surface**, five routes with their own content
+2. **Build the public link surface**, five routes with their own content
    negotiation, unlock cookie and archive path.
-5. **Rewire `cmd/stowcloud` and `cmd/sc-smb-agent`**, then delete `internal/`.
+3. **Rewire `cmd/stowcloud` and `cmd/sc-smb-agent`**, then delete `internal/`.
    Both still import `internal/smbagent`.
 
-Steps 1 through 4 are the work. Step 5 is an afternoon.
+Steps 1 and 2 are the work. Step 3 is an afternoon.
 
 This list carried a sixth step, porting `smbagent` and `smbpublish`, and it
 was already done. Both are in the engine as `service/smb/agent` and

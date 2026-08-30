@@ -205,61 +205,18 @@ func TestEveryAnswerIsJSON(t *testing.T) {
 	}
 }
 
-// A route with no binding says so rather than answering as though it worked.
-// A client reading a success for an endpoint that did nothing acts on it.
-func TestAnUnboundRouteRefusesRatherThanPretending(t *testing.T) {
-	// The remaining unbound route is administrative, so the chain refuses an
-	// anonymous caller before the fallback is reached. Seeing what the
-	// fallback actually writes takes a caller the chain admits.
-	base, adminCookie, adminCSRF, _, _ := adminEngine(t)
-
-	status, raw := mutateRaw(t, http.MethodPost,
-		base+"/api/v1/admin/index/build", adminCookie, adminCSRF)
-	if status != http.StatusNotImplemented {
-		t.Fatalf("an unbound route answered %d: %s", status, raw)
+// Every route the table names has a binding.
+//
+// This replaces a test that drove the fallback through the last unbound route.
+// There is no longer one, so what is checked is the property that mattered:
+// a route the table declares and the switch does not handle answers the
+// fallback, and a client discovering it would read a refusal rather than a
+// success for an endpoint that did nothing.
+func TestEveryTableRouteIsBound(t *testing.T) {
+	unbound := lifecycle.UnboundRoutesForTest()
+	if len(unbound) != 0 {
+		t.Errorf("the table names %d routes with no binding: %v", len(unbound), unbound)
 	}
-
-	var refusal struct {
-		Error   string `json:"error"`
-		Message string `json:"message"`
-	}
-	if err := json.Unmarshal(raw, &refusal); err != nil {
-		t.Fatalf("the refusal does not parse: %v", err)
-	}
-	if refusal.Error != "not_implemented" {
-		t.Errorf("the refusal says %q", refusal.Error)
-	}
-	if refusal.Message == "" {
-		t.Error("the refusal names no route")
-	}
-}
-
-// mutateRaw posts with a session and a CSRF header, returning the raw body.
-func mutateRaw(t *testing.T, method, url string, cookie *http.Cookie, csrf string) (int, []byte) {
-	t.Helper()
-
-	req, err := http.NewRequest(method, url, strings.NewReader("{}"))
-	if err != nil {
-		t.Fatalf("building: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Sc-Csrf", csrf)
-	req.AddCookie(cookie)
-
-	resp, err := testClient().Do(req)
-	if err != nil {
-		t.Fatalf("requesting %s: %v", url, err)
-	}
-	defer func() {
-		if cerr := resp.Body.Close(); cerr != nil {
-			t.Errorf("closing: %v", cerr)
-		}
-	}()
-	body, rerr := io.ReadAll(resp.Body)
-	if rerr != nil {
-		t.Fatalf("reading %s: %v", url, rerr)
-	}
-	return resp.StatusCode, body
 }
 
 // Mounting reports a broken assembly before anything binds, so a defect

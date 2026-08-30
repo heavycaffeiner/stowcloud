@@ -323,6 +323,11 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// so it is built unconditionally. Its bounds come from the settings below.
 	e.Search = svc.New(svc.Options{Clock: clk, CPUs: runtime.NumCPU()})
 
+	// The name index, when the operator asked for one. Attached rather than
+	// required: without it every query walks, which is the tier search is
+	// built on and the reason an index is an escalation.
+	e.openSearchIndex(ctx)
+
 	// Thumbnails, whose decoder runs as a separate jailed process. Absence is
 	// a degradation rather than a failure: a pool that cannot start, or a
 	// cache directory that cannot be created, leaves a deployment serving
