@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -305,6 +306,152 @@ func TestStatsPathResolvesOnTheNextRequest(t *testing.T) {
 	if st != http.StatusOK {
 		t.Errorf("reading %q, the path stat gave, answered %d: %s", entry.Path, st, rb)
 	}
+}
+
+// The listing honours the order and the window the caller asks for.
+//
+// The grid fetches the rows it is about to draw and sorts by clicking a
+// column header, so a route that ignored these would answer the first page in
+// name order no matter what was asked, and scrolling would redraw the same
+// rows. Core has supported all three since it was written; the route did not
+// pass them.
+func TestAListingSortsAndWindowsAsAsked(t *testing.T) {
+	base, token, share := engineWithManyFiles(t)
+
+	names := func(query string) []string {
+		t.Helper()
+		status, body := authed(t, http.MethodGet,
+			base+"/api/v1/files/list?path="+urlEscape("/"+share)+"&"+query, token)
+		if status != http.StatusOK {
+			t.Fatalf("%s answered %d: %s", query, status, body)
+		}
+		var page struct {
+			Entries []struct {
+				Name string `json:"name"`
+			} `json:"entries"`
+		}
+		if err := json.Unmarshal(body, &page); err != nil {
+			t.Fatalf("parsing %s: %v", query, err)
+		}
+		out := make([]string, 0, len(page.Entries))
+		for _, e := range page.Entries {
+			out = append(out, e.Name)
+		}
+		return out
+	}
+
+	ascending := names("sort=name&limit=3")
+	if len(ascending) != 3 {
+		t.Fatalf("a limit of 3 returned %d rows: %v", len(ascending), ascending)
+	}
+	if ascending[0] != "file-00.txt" {
+		t.Errorf("ascending starts at %q", ascending[0])
+	}
+
+	descending := names("sort=name&order=desc&limit=3")
+	if len(descending) != 3 {
+		t.Fatalf("descending returned %d rows: %v", len(descending), descending)
+	}
+	if descending[0] == ascending[0] {
+		t.Errorf("descending starts at %q, the same row ascending starts at", descending[0])
+	}
+	if descending[0] != "file-09.txt" {
+		t.Errorf("descending starts at %q, want the last name", descending[0])
+	}
+}
+
+// A cursor walks the whole directory without repeating or skipping a row.
+func TestACursorWalksEveryEntryExactlyOnce(t *testing.T) {
+	base, token, share := engineWithManyFiles(t)
+
+	seen := map[string]int{}
+	cursor := ""
+	for page := 0; page < 20; page++ {
+		query := "path=" + urlEscape("/"+share) + "&limit=3"
+		if cursor != "" {
+			query += "&cursor=" + urlEscape(cursor)
+		}
+		status, body := authed(t, http.MethodGet, base+"/api/v1/files/list?"+query, token)
+		if status != http.StatusOK {
+			t.Fatalf("page %d answered %d: %s", page, status, body)
+		}
+		var got struct {
+			Entries []struct {
+				Name string `json:"name"`
+			} `json:"entries"`
+			Next string `json:"next"`
+		}
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("parsing page %d: %v", page, err)
+		}
+		for _, e := range got.Entries {
+			seen[e.Name]++
+		}
+		if got.Next == "" {
+			break
+		}
+		cursor = got.Next
+	}
+
+	if len(seen) != 10 {
+		t.Errorf("the walk saw %d distinct names, want 10", len(seen))
+	}
+	for name, times := range seen {
+		if times != 1 {
+			t.Errorf("%q appeared %d times", name, times)
+		}
+	}
+}
+
+// engineWithManyFiles serves a share holding ten files, enough that a window
+// is a slice of the directory rather than all of it.
+func engineWithManyFiles(t *testing.T) (base, token, share string) {
+	t.Helper()
+	ctx := context.Background()
+
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+
+	id, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password")))
+	if err != nil {
+		t.Fatalf("creating the account: %v", err)
+	}
+
+	host := t.TempDir()
+	for i := range 10 {
+		name := filepath.Join(host, "file-0"+strconv.Itoa(i)+".txt")
+		if werr := os.WriteFile(name, []byte("x"), 0o600); werr != nil {
+			t.Fatalf("writing: %v", werr)
+		}
+	}
+
+	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "docs", Host: host})
+	if err != nil {
+		t.Fatalf("creating the share: %v", err)
+	}
+	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+		User: &id, Share: sh.ID, Allow: acl.Read | acl.Download,
+		Inherit: true, Label: sh.Name,
+	}); gerr != nil {
+		t.Fatalf("granting: %v", gerr)
+	}
+	if rerr := e.Core.ReloadGrants(ctx); rerr != nil {
+		t.Fatalf("reloading grants: %v", rerr)
+	}
+
+	tok, err := e.Auth.CreateAppPassword(ctx, id, "test",
+		auth.Scope{Perms: uint16(acl.Read | acl.Download)}, 0)
+	if err != nil {
+		t.Fatalf("minting: %v", err)
+	}
+	return serve(t, e), tok, sh.Name
 }
 
 // The virtual root shows the granted share, so the listing and the resolve

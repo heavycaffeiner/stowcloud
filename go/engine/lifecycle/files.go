@@ -37,7 +37,17 @@ func (e *Engine) filesList(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 
-	page, err := e.Core.List(c.UserContext(), r, core.Cursor(c.Query("cursor")))
+	// The order and the window are the caller's, because the grid fetches the
+	// rows it is about to draw rather than a fixed page. Core bounds the limit
+	// and reads an unknown sort key as the default: a listing is a read, and
+	// refusing one over a spelling takes the folder away instead of showing it
+	// in an order nobody asked for.
+	opt := core.ListOptions{
+		Sort:  core.ParseSortKey(c.Query("sort")),
+		Desc:  c.Query("order") == "desc",
+		Limit: c.QueryInt("limit"),
+	}
+	page, err := e.Core.ListSorted(c.UserContext(), r, core.Cursor(c.Query("cursor")), opt)
 	if err != nil {
 		return fail(c, err)
 	}
