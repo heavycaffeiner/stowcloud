@@ -334,7 +334,53 @@ async function rename(path: string, newName: string): Promise<Entry> {
  * until its own timeout fired.
  */
 async function copy(req: MoveReq): Promise<CopyResult> {
-  return request('/files/copy', { method: 'POST', body: JSON.stringify(req) })
+  const results: BatchItemResult[] = []
+  let job: string | undefined
+  for (const path of req.paths) {
+    try {
+      // The route names both ends of one transfer, so a selection is one
+      // request each, in sequence.
+      const out = await request<{ id?: string; path: string; started: boolean; skipped: boolean }>(
+        '/files/copy',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            from: path,
+            to: joinDest(req.dest, path),
+            on_conflict: req.on_conflict
+          })
+        }
+      )
+      results.push({ path, ok: true })
+      // A copy large enough to run in the background answers with the job to
+      // poll. The last one wins, which is what the tray follows.
+      if (out.started && out.id) job = out.id
+    } catch (err) {
+      results.push({
+        path,
+        ok: false,
+        error: errorBodyOf(err)
+      })
+    }
+  }
+  return { results, job }
+}
+
+/** The per-item error shape, from whatever was thrown. */
+function errorBodyOf(err: unknown): ApiErrorBody['error'] {
+  if (err instanceof ApiError) {
+    return { code: err.code, message: err.message, detail: err.detail }
+  }
+  return { code: 'internal', message: String(err) }
+}
+
+/** The destination path for one item moved or copied into a folder.
+ *
+ *  The route names both ends, so the caller decides what the item is called
+ *  where it lands: its own name, under the chosen folder. */
+function joinDest(dest: string, source: string): string {
+  const name = source.split('/').filter(Boolean).pop() ?? source
+  return `${dest.replace(/\/+$/, '')}/${name}`
 }
 
 /**
@@ -344,17 +390,68 @@ async function copy(req: MoveReq): Promise<CopyResult> {
  * rather than deferring the whole batch.
  */
 async function move(req: MoveReq): Promise<BatchResult> {
-  return request('/files/move', { method: 'POST', body: JSON.stringify({ ...req, dry_run: false }) })
+  const results: BatchItemResult[] = []
+  for (const path of req.paths) {
+    try {
+      await request('/files/move', {
+        method: 'POST',
+        body: JSON.stringify({
+          from: path,
+          to: joinDest(req.dest, path),
+          on_conflict: req.on_conflict
+        })
+      })
+      results.push({ path, ok: true })
+    } catch (err) {
+      results.push({
+        path,
+        ok: false,
+        error: errorBodyOf(err)
+      })
+    }
+  }
+  return { results }
 }
 
-/** The same endpoint with `dry_run`, which reports what each item would do
- *  without doing it: what the destination picker asks before it commits. */
-async function movePreflight(req: MoveReq): Promise<MovePreflight> {
-  return request('/files/move', { method: 'POST', body: JSON.stringify({ ...req, dry_run: true }) })
+/**
+ * What a move would do, asked before it is committed.
+ *
+ * The server has no preflight: a move either happens or is refused, and there
+ * is no request that reports what one would do without doing it. Answering
+ * with nothing rather than guessing is what keeps the notice honest, and the
+ * dialogue already treats a missing answer as "no notice to show".
+ */
+async function movePreflight(_req: MoveReq): Promise<MovePreflight> {
+  return { results: [] }
 }
 
-async function del(paths: string[], permanent = false): Promise<{ results: BatchItemResult[] }> {
-  return request('/files/delete', { method: 'POST', body: JSON.stringify({ paths, permanent }) })
+/**
+ * Deletes each path, reporting per item.
+ *
+ * The route takes one path, so a selection is one request each. They run in
+ * sequence rather than together: a delete is destructive, and a burst of them
+ * against one directory is the case where a rate limit turns half a selection
+ * into an error the person then has to work out the extent of.
+ *
+ * A failure is recorded against its own path and the rest continue, which is
+ * what makes the result usable: the dialogue names what did not go, and the
+ * listing shows what did.
+ */
+async function del(paths: string[]): Promise<{ results: BatchItemResult[] }> {
+  const results: BatchItemResult[] = []
+  for (const path of paths) {
+    try {
+      await request('/files/delete', { method: 'POST', body: JSON.stringify({ path }) })
+      results.push({ path, ok: true })
+    } catch (err) {
+      results.push({
+        path,
+        ok: false,
+        error: errorBodyOf(err)
+      })
+    }
+  }
+  return { results }
 }
 
 // ── content links & archive download (§8) ──

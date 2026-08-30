@@ -8,6 +8,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { httpApi } from './http'
 
+/** A 204, which carries no body: the Response constructor refuses one. */
+function noContent(): Response {
+  return new Response(null, { status: 204 })
+}
+
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
@@ -23,66 +28,95 @@ afterEach(() => {
 })
 
 describe('httpApi job wrappers', () => {
-  it('del() returns the { job } envelope', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(202, { job: 'J-1' }))
+  // These four take one path pair per request, because that is what the
+  // routes accept. A selection is a sequence of them, and each item's outcome
+  // is recorded against its own path so a partial failure names what did not
+  // go rather than failing the whole selection.
+
+  it('del() deletes each path and reports per item', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(noContent())
+      .mockResolvedValueOnce(noContent())
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await httpApi.delete(['/a', '/b'])
 
-    expect(result).toEqual({ job: 'J-1' })
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(result.results.map((r) => [r.path, r.ok])).toEqual([
+      ['/a', true],
+      ['/b', true]
+    ])
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).path).toBe('/a')
   })
 
-  it('copy() returns the per-item results alongside the job', async () => {
-    const body = { results: [{ path: '/b/a', ok: true }], job: 'J-4' }
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(202, body))
+  // One refusal does not lose the rest. The dialogue names the path that
+  // failed, which it cannot do if the whole call rejects.
+  it('del() records a failure against its own path and continues', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(403, { error: { code: 'fs.denied', message: 'no' } }))
+      .mockResolvedValueOnce(noContent())
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await httpApi.delete(['/denied', '/fine'])
+
+    expect(result.results[0]).toMatchObject({ path: '/denied', ok: false })
+    expect(result.results[0].error?.code).toBe('fs.denied')
+    expect(result.results[1]).toMatchObject({ path: '/fine', ok: true })
+  })
+
+  it('copy() names both ends and carries the job back', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(202, { id: 'J-4', path: 'b/a', started: true, skipped: false }))
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await httpApi.copy({ paths: ['/a'], dest: '/b', on_conflict: 'fail' })
 
-    expect(result).toEqual(body)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(result.results).toEqual([{ path: '/a', ok: true }])
+    expect(result.job).toBe('J-4')
+    const sent = JSON.parse(fetchMock.mock.calls[0][1].body as string)
+    // The item keeps its own name under the chosen folder.
+    expect(sent).toMatchObject({ from: '/a', to: '/b/a', on_conflict: 'fail' })
   })
 
-  // The destination is checked before a job exists, so a batch where nothing
-  // started carries no job key. It was typed as always present, and the caller
-  // handed `undefined` to the poller and asked about a job by that name once a
-  // second until its own timeout.
-  it('copy() omits the job when nothing started', async () => {
-    const body = { results: [{ path: '/b/a', ok: true, skipped: true }] }
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(jsonResponse(202, body)))
+  // Nothing started means no job to poll. It was typed as always present, and
+  // the caller polled a job named `undefined` once a second until it gave up.
+  it('copy() carries no job when nothing started', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(jsonResponse(200, { path: 'b/a', started: false, skipped: true }))
+    )
 
     const result = await httpApi.copy({ paths: ['/a'], dest: '/b', on_conflict: 'skip' })
 
     expect(result.job).toBeUndefined()
-    expect(result.results[0].skipped).toBe(true)
+    expect(result.results[0].ok).toBe(true)
   })
 
-  it('move() returns the { job } envelope and never asks for a dry run', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(202, { job: 'J-5' }))
+  it('move() names both ends', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { path: 'b/a', copied: false, skipped: false }))
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await httpApi.move({ paths: ['/a'], dest: '/b', on_conflict: 'fail' })
 
-    expect(result).toEqual({ job: 'J-5' })
+    expect(result.results).toEqual([{ path: '/a', ok: true }])
     const [url, init] = fetchMock.mock.calls[0]
     expect(String(url)).toContain('/files/move')
-    // `dry_run` is forced, not merely defaulted: the same endpoint answers a
-    // preflight object instead of `202 { job }` when it is set, so a caller
-    // leaking it through would get an envelope with no job in it.
-    expect(JSON.parse(init.body as string).dry_run).toBe(false)
+    expect(JSON.parse(init.body as string)).toMatchObject({ from: '/a', to: '/b/a' })
   })
 
-  it('movePreflight() asks the same endpoint for a dry run', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(jsonResponse(200, { results: [{ path: '/a', ok: true, will_copy: true }] }))
+  // The server has no dry run. Answering with nothing rather than guessing is
+  // what keeps the picker's notice honest: it shows one only when it has one.
+  it('movePreflight() asks nothing and reports nothing', async () => {
+    const fetchMock = vi.fn()
     vi.stubGlobal('fetch', fetchMock)
 
     const result = await httpApi.movePreflight({ paths: ['/a'], dest: '/b', on_conflict: 'fail' })
 
-    expect(result).toEqual({ results: [{ path: '/a', ok: true, will_copy: true }] })
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).dry_run).toBe(true)
+    expect(result.results).toEqual([])
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('archive() reads the streamed zip out of the response body', async () => {
