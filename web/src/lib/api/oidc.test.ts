@@ -90,12 +90,12 @@ describe('startOidcLogin', () => {
   }
 
   it('navigates to the start route with no query when there is no returnTo', () => {
-    expect(captureNavigation(() => startOidcLogin())).toBe('/api/auth/oidc/start')
-    expect(captureNavigation(() => startOidcLogin(null))).toBe('/api/auth/oidc/start')
+    expect(captureNavigation(() => startOidcLogin())).toBe('/api/v1/auth/oidc/start')
+    expect(captureNavigation(() => startOidcLogin(null))).toBe('/api/v1/auth/oidc/start')
   })
 
   it('percent-encodes returnTo so a path with a query survives the round trip', () => {
     const href = captureNavigation(() => startOidcLogin('/b/Docs?sort=name&order=desc'))
-    expect(href).toBe('/api/auth/oidc/start?returnTo=%2Fb%2FDocs%3Fsort%3Dname%26order%3Ddesc')
+    expect(href).toBe('/api/v1/auth/oidc/start?returnTo=%2Fb%2FDocs%3Fsort%3Dname%26order%3Ddesc')
   })
 })

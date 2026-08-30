@@ -44,6 +44,85 @@ func IdentityViewOf(id int64, login, display string, admin bool, csrf string) Id
 	}
 }
 
+// RootView is one folder the caller can reach, as the interface lists it.
+//
+// A folder whose disk did not come back stays in the list with a reason rather
+// than disappearing: one that vanishes reads as somebody having deleted it,
+// when what happened is hardware that needs looking at.
+type RootView struct {
+	Label string   `json:"label"`
+	Perms []string `json:"perms"`
+
+	SharedExternally bool `json:"shared_externally"`
+	TrashEnabled     bool `json:"trash_enabled"`
+
+	BrokenReason string `json:"broken_reason,omitempty"`
+}
+
+// LimitsView is what a client needs in order to plan an upload before it
+// starts one: the chunk size to use, and the floor it may not shrink below
+// when the server refuses a chunk as too large.
+type LimitsView struct {
+	ChunkSize int64 `json:"chunk_size"`
+	ChunkMin  int64 `json:"chunk_min"`
+
+	// MaxFileSize is null where the deployment sets no ceiling. Zero is a real
+	// limit that would refuse everything, so it cannot stand for "no limit".
+	MaxFileSize *int64 `json:"max_file_size"`
+
+	Parallel int `json:"parallel"`
+}
+
+// FeaturesView says which surfaces this deployment actually serves, so the
+// interface draws the screens that lead somewhere.
+type FeaturesView struct {
+	WebDAV  bool `json:"webdav"`
+	SMB     bool `json:"smb"`
+	Preview bool `json:"preview"`
+	Trash   bool `json:"trash"`
+	Shares  bool `json:"shares"`
+
+	// Search names the tier in use: "walk" reads directories on demand, the
+	// others answer from an index.
+	Search string `json:"search"`
+}
+
+// WhoAmIView is what `GET /auth/session` answers.
+//
+// It embeds the identity rather than nesting it, so the fields a login answers
+// keep their spelling here. The rest is what the interface cannot work out for
+// itself: which folders exist, what an upload may do, and which screens lead
+// somewhere on this deployment.
+type WhoAmIView struct {
+	IdentityView
+
+	// TOTPEnabled and the SMB fields describe the account rather than the
+	// session. The settings screens read them to decide what to offer, and
+	// fetching them separately would mean a screen that can disagree with the
+	// session it was drawn from.
+	TOTPEnabled bool `json:"totp_enabled"`
+
+	SMBOptOut  bool `json:"smb_opt_out"`
+	SMBEnabled bool `json:"smb_enabled"`
+
+	// SMBCredential is what actually works over the protocol right now, with
+	// the deployment's TOTP policy already folded in: the credential row and
+	// the policy can disagree, and a screen saying "SMB uses a separate
+	// password" would then be something a person can only disprove by failing
+	// to connect.
+	SMBCredential string `json:"smb_credential,omitempty"`
+
+	// SMBUnavailableReason is carried only where the credential is none.
+	SMBUnavailableReason string `json:"smb_unavailable_reason,omitempty"`
+
+	// Roots is never null: an account with no grants gets an empty list, which
+	// is the state the interface reports as "no folders yet".
+	Roots []RootView `json:"roots"`
+
+	Limits   LimitsView   `json:"limits"`
+	Features FeaturesView `json:"features"`
+}
+
 // ChallengeView is what the password step answers for an account that has a
 // second factor: the password was right, and a code is still needed.
 //

@@ -13,6 +13,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
 // trashList answers one share's trash.
@@ -22,16 +23,48 @@ func (e *Engine) trashList(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 	}
 
-	r, err := e.resolve(owner, c.Query("path"), acl.Read)
-	if err != nil {
-		return fail(c, err)
+	// Named path: that share's trash. No path: every share this account can
+	// reach, which is the screen a person opens from the navigation, where
+	// there is no share in hand to name.
+	if raw := c.Query("path"); raw != "" {
+		r, err := e.resolve(owner, raw, acl.Read)
+		if err != nil {
+			return fail(c, err)
+		}
+		entries, err := e.Core.TrashList(c.UserContext(), r)
+		if err != nil {
+			return fail(c, err)
+		}
+		return writeJSON(c, fiber.StatusOK, handler.TrashListOf(entries))
 	}
 
-	entries, err := e.Core.TrashList(c.UserContext(), r)
+	all, err := e.trashAcrossRoots(c, owner)
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeJSON(c, fiber.StatusOK, handler.TrashListOf(entries))
+	return writeJSON(c, fiber.StatusOK, handler.TrashListOf(all))
+}
+
+// trashAcrossRoots gathers every reachable share's trash into one listing.
+//
+// A share that cannot be read is skipped rather than failing the request: the
+// screen lists what this account can restore, and one unreadable share is not
+// a reason to show nothing. A share with no trash directory contributes
+// nothing, which is the ordinary case.
+func (e *Engine) trashAcrossRoots(c *fiber.Ctx, owner core.UserID) ([]core.TrashEntry, error) {
+	var out []core.TrashEntry
+	for _, root := range e.Core.Roots(owner) {
+		r, err := e.resolve(owner, "/"+root.Label, acl.Read)
+		if err != nil {
+			continue
+		}
+		entries, err := e.Core.TrashList(c.UserContext(), r)
+		if err != nil {
+			continue
+		}
+		out = append(out, entries...)
+	}
+	return out, nil
 }
 
 // trashRequest names a share and one entry in its trash.

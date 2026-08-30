@@ -66,7 +66,7 @@ describe('httpApi job wrappers', () => {
 
     expect(result).toEqual({ job: 'J-5' })
     const [url, init] = fetchMock.mock.calls[0]
-    expect(String(url)).toContain('/fs/move')
+    expect(String(url)).toContain('/files/move')
     // `dry_run` is forced, not merely defaulted: the same endpoint answers a
     // preflight object instead of `202 { job }` when it is set, so a caller
     // leaking it through would get an envelope with no job in it.
@@ -95,7 +95,7 @@ describe('httpApi job wrappers', () => {
 
     expect(blob.size).toBeGreaterThan(0)
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/fs/archive')
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/files/archive')
   })
 
   it('jobList() fetches GET /api/jobs and returns its jobs array', async () => {

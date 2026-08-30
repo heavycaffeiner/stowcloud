@@ -425,7 +425,7 @@
   }
 
   // ── download ──
-  // Single file: a plain navigation to `GET /api/fs/read?download=1`, which is
+  // Single file: a plain navigation to `GET /api/v1/files/read?download=1`, which is
   // what makes the server send Content-Disposition. Not a fetch: the browser
   // saves the response itself and no blob has to be held in memory.
   // Multi-selection (and any directory): `POST /api/fs/archive` streams the
@@ -463,7 +463,7 @@
     //
     // `?download=1` is what makes the server send Content-Disposition, so the
     // browser saves it instead of rendering it.
-    const url = `/api/fs/read?path=${encodeURIComponent(entry.path)}&download=1`
+    const url = `/api/v1/files/read?path=${encodeURIComponent(entry.path)}&download=1`
     triggerUrlDownload(url, entry.name)
   }
 

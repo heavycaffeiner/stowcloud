@@ -11,6 +11,7 @@ package lifecycle
 import (
 	"encoding/hex"
 	"errors"
+	"math"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -18,9 +19,18 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
+
+// defaultUploadParallel is how many chunks a client is told to send at once.
+//
+// A client-side hint, not a server limit: the server accepts what arrives and
+// the rate limiter decides the rest. Four keeps a single upload from occupying
+// every connection a browser will open to one origin.
+const defaultUploadParallel = 4
 
 // The AMR values a session records: what was actually presented to establish
 // it. A policy asking for a second factor reads this, so a password-only
@@ -187,9 +197,116 @@ func (e *Engine) session(c *fiber.Ctx) error {
 		csrf = middleware.CSRFToken(e.csrfKey(), cookie)
 	}
 
-	return writeJSON(c, fiber.StatusOK, handler.IdentityViewOf(
-		int64(owner), info.LoginName, info.DisplayName, admin, csrf,
-	))
+	// The account's own state, read here so a settings screen and the session
+	// it was drawn from cannot disagree.
+	row, err := e.Auth.UserByID(c.UserContext(), int64(owner))
+	if err != nil {
+		return failKnown(c, err)
+	}
+	smb, err := e.Auth.SMBStateOf(c.UserContext(), int64(owner))
+	if err != nil {
+		return failKnown(c, err)
+	}
+
+	view := handler.WhoAmIView{
+		IdentityView: handler.IdentityViewOf(
+			int64(owner), info.LoginName, info.DisplayName, admin, csrf,
+		),
+		TOTPEnabled:   row.TOTPEnabled,
+		SMBOptOut:     smb.OptOut,
+		SMBEnabled:    smb.Enabled,
+		SMBCredential: string(smb.Credential),
+		Roots:         e.rootViews(owner),
+		Limits:        e.limitsView(),
+		Features:      e.featuresView(),
+	}
+	// Carried only where there is no usable credential, which is the one case
+	// it explains.
+	if smb.Credential == auth.SMBCredentialNone {
+		view.SMBUnavailableReason = string(smb.Reason)
+	}
+	return writeJSON(c, fiber.StatusOK, view)
+}
+
+// rootViews lists the folders this account can reach.
+//
+// Never nil: an account with no grants answers an empty list, which the
+// interface reports as a deployment with no folders yet. A nil would decode as
+// null and every caller iterating it would have to test the field first.
+func (e *Engine) rootViews(owner core.UserID) []handler.RootView {
+	roots := e.Core.Roots(owner)
+	out := make([]handler.RootView, 0, len(roots))
+	for _, r := range roots {
+		out = append(out, handler.RootView{
+			Label:            r.Label,
+			Perms:            core.PermNames(r.Perms),
+			SharedExternally: r.SharedExternally,
+			TrashEnabled:     r.TrashEnabled,
+			BrokenReason:     r.BrokenReason,
+		})
+	}
+	return out
+}
+
+// limitsView reports what an upload may do, read from the running engine
+// rather than from configuration: an operator who changed the chunk size gets
+// the value in force, not the one the process started with.
+func (e *Engine) limitsView() handler.LimitsView {
+	if e.Upload == nil {
+		// No resumable transfer on this deployment. The floor and the default
+		// are still reported, because a client plans against them before it
+		// discovers the route is absent.
+		return handler.LimitsView{
+			ChunkSize: limits.UploadChunkSizeDefault,
+			ChunkMin:  limits.UploadChunkMinDefault,
+			Parallel:  defaultUploadParallel,
+		}
+	}
+	minBytes, defaultBytes := e.Upload.Settings().Snapshot()
+	return handler.LimitsView{
+		ChunkSize: chunkBytes(defaultBytes),
+		ChunkMin:  chunkBytes(minBytes),
+		Parallel:  defaultUploadParallel,
+	}
+}
+
+// chunkBytes narrows a configured size for the wire. A value past the signed
+// range cannot be a real chunk size, and reporting a negative one would have a
+// client plan an upload against nonsense.
+func chunkBytes(v uint64) int64 {
+	if v > math.MaxInt64 {
+		return math.MaxInt64
+	}
+	return int64(v)
+}
+
+// featuresView says which screens lead somewhere on this deployment.
+func (e *Engine) featuresView() handler.FeaturesView {
+	return handler.FeaturesView{
+		// Both are surfaces this engine does not serve yet. Reported as absent
+		// rather than as present-and-broken: the interface hides the screen,
+		// which is honest, where drawing it would offer a route that 404s.
+		WebDAV: false,
+		SMB:    e.smb != nil,
+
+		Preview: e.Preview != nil,
+		Trash:   true,
+		Shares:  true,
+
+		// The name tier when an index is open, the walk otherwise. Content
+		// search is not a tier this engine serves, so it is never reported:
+		// naming it would put a search mode in the interface that answers
+		// filename matches.
+		Search: searchTierName(e.Search.HasIndex()),
+	}
+}
+
+// searchTierName names the tier a query would run on right now.
+func searchTierName(hasIndex bool) string {
+	if hasIndex {
+		return "name"
+	}
+	return "walk"
 }
 
 // logout revokes the session and clears the cookie.

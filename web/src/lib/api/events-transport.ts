@@ -1,5 +1,5 @@
 // web/src/lib/api/events-transport.ts — WebSocket transport for
-// `GET /api/events` (`go/internal/httpapi/ws/ws.go`). Split out
+// `GET /api/v1/events` (`go/internal/httpapi/ws/ws.go`). Split out
 // from `state/events.ts` the same way `upload/transport.ts` is split from
 // `state/upload-tray.svelte.ts`: this file only knows how to open a socket
 // and shuttle JSON frames. Reconnection policy, which paths are "wanted",
@@ -20,7 +20,7 @@ export interface EventsTransport {
   close(): void
 }
 
-/** Same-origin `ws`/`wss` URL for `/api/events`, derived from the page's own
+/** Same-origin `ws`/`wss` URL for `/api/v1/events`, derived from the page's own
  *  origin so this works unmodified behind both plain `http` dev and TLS-
  *  terminating Tailscale `wss` in production, and through `vite dev`'s proxy
  *  (`vite.config.ts` sets `ws: true` for every `/api` path precisely so this
@@ -30,11 +30,11 @@ export interface EventsTransport {
 function wsUrl(): string {
   const rawBase = (import.meta.env.VITE_API_BASE ?? '') as string
   if (rawBase) {
-    return rawBase.replace(/^http/, 'ws') + '/api/events'
+    return rawBase.replace(/^http/, 'ws') + '/api/v1/events'
   }
   const proto = typeof location !== 'undefined' && location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = typeof location !== 'undefined' ? location.host : '127.0.0.1'
-  return `${proto}//${host}/api/events`
+  return `${proto}//${host}/api/v1/events`
 }
 
 class WsEventsTransport implements EventsTransport {

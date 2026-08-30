@@ -107,7 +107,10 @@
   function openEdit(s: AdminShare): void {
     editTarget = s
     editName = s.name
-    editHostPath = s.host_path
+    // Blank, because the server never sends the current path back. Leaving it
+    // empty says "type a new one", which is the only thing this field can
+    // truthfully offer.
+    editHostPath = ''
     editError = null
   }
 
@@ -266,7 +269,11 @@
                 <span class="sc-shares__name">{s.name}</span>
               {/snippet}
               {#snippet supporting()}
-                <span class="sc-shares__path">{s.host_path}</span>
+                <!-- No host path. The server does not send where a share lives
+                     on its disk: that is the layout of the machine, and it is
+                     the first thing worth knowing to anyone trying to reach
+                     past the shares they were given. Editing one sends a new
+                     path rather than correcting what was echoed back. -->
                 {#if s.broken_reason}
                   <!-- The row stays, with the reason on it. A share dropped
                        from the list is indistinguishable from one somebody

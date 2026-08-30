@@ -277,10 +277,15 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # src rather than src/lib/api: the resumable upload transport is a sibling
   # directory, so a narrower path saw none of its calls, and the screens under
   # routes/ build URLs of their own that no .ts file names.
+  #
+  # Aimed at the engine's table, which is what the client now calls: every
+  # path it sends carries the /api/v1 prefix. Pointing this at the old table
+  # would pass only by comparing the client against a surface it no longer
+  # talks to.
   run "routecheck (the client's paths are mounted)" \
       ingo_host go run ./tools/routecheck \
         -client-dir ../web/src \
-        -routes internal/server/routes.go \
+        -routes engine/http/server/v1table.go \
         -allow routes.allow \
         -server-only routes.server-only
   # routecheck proves the paths exist. This proves the bodies match: the

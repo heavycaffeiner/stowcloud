@@ -21,6 +21,12 @@ type ShareView struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 
+	// No host path appears here, deliberately. Where a share lives on the
+	// server's disk is configuration, and a client that learns it learns the
+	// layout of the machine: the first thing worth knowing to anyone trying to
+	// reach past the shares they were given. An administrator who needs to
+	// change it sends a new one rather than editing what was echoed back.
+
 	// Trash says whether a delete in this share is undoable, which is what a
 	// confirmation dialogue needs in order to tell the truth.
 	Trash bool `json:"trash"`
