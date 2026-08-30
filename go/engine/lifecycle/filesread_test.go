@@ -365,6 +365,116 @@ func upload(t *testing.T, base, token, path string, content []byte) (int, []byte
 	return resp.StatusCode, readAll(t, resp)
 }
 
+// A conditional write is refused once the file has moved underneath it.
+//
+// This is the whole defence against two people editing one file: the second
+// save carries the token the first reader saw, and the server refuses rather
+// than writing over an edit nobody has seen. Without it the last save silently
+// wins and the earlier one is gone with no trace that it existed.
+func TestAConditionalWriteIsRefusedAfterTheFileChanges(t *testing.T) {
+	base, token, share, host := contentShareAt(t, everyPerm(), []byte("original"))
+	path := "/" + share + "/doc.bin"
+
+	// The token this editor is holding.
+	status, body := authed(t, http.MethodGet,
+		base+"/api/v1/files/stat?path="+urlEscape(path), token)
+	if status != http.StatusOK {
+		t.Fatalf("stat answered %d: %s", status, body)
+	}
+	var before struct {
+		ETag string `json:"etag"`
+	}
+	if err := json.Unmarshal(body, &before); err != nil {
+		t.Fatalf("stat does not parse: %v", err)
+	}
+	if before.ETag == "" {
+		t.Fatal("stat carries no token, so nothing can be conditioned on it")
+	}
+
+	// Somebody else saves first.
+	if code, rb := upload(t, base, token, path, []byte("somebody else's edit")); code != http.StatusOK {
+		t.Fatalf("the intervening write answered %d: %s", code, rb)
+	}
+
+	// The first editor's save, still carrying the old token.
+	code, rb := uploadIfMatch(t, base, token, path, []byte("my edit"), before.ETag)
+	if code == http.StatusOK {
+		t.Fatal("a stale conditional write succeeded, erasing the edit it never saw")
+	}
+
+	// And the file still holds what the other editor wrote, so the refusal
+	// protected the bytes rather than only answering a status.
+	got, gerr := os.ReadFile(filepath.Join(host, "doc.bin"))
+	if gerr != nil {
+		t.Fatalf("reading the file back: %v", gerr)
+	}
+	if string(got) != "somebody else's edit" {
+		t.Errorf("the file holds %q after a refused write: %s", got, rb)
+	}
+}
+
+// A conditional write is refused even when the token is the current one, and
+// the refusal names what the file is now.
+//
+// This looks wrong and is deliberate. Every file token here is weak, because
+// the filesystem exposes no change version to derive a strong one from, and a
+// weak token cannot satisfy If-Match. Rather than pretend a comparison it
+// cannot make, the server refuses and hands back the current token so a
+// conflict screen can show it. Dropping the condition is the only way past,
+// which puts the decision with the person doing the overwrite.
+func TestEveryConditionalWriteIsRefusedAndReportsTheCurrentToken(t *testing.T) {
+	base, token, share := contentShare(t, everyPerm(), []byte("original"))
+	path := "/" + share + "/doc.bin"
+
+	status, body := authed(t, http.MethodGet,
+		base+"/api/v1/files/stat?path="+urlEscape(path), token)
+	if status != http.StatusOK {
+		t.Fatalf("stat answered %d", status)
+	}
+	var cur struct {
+		ETag string `json:"etag"`
+	}
+	if err := json.Unmarshal(body, &cur); err != nil {
+		t.Fatalf("stat does not parse: %v", err)
+	}
+
+	code, rb := uploadIfMatch(t, base, token, path, []byte("my edit"), cur.ETag)
+	if code != http.StatusPreconditionFailed {
+		t.Fatalf("a conditional write answered %d, want 412: %s", code, rb)
+	}
+
+	// Dropping the condition is what gets through, which is the deliberate
+	// escape: an unconditional write is somebody choosing to overwrite.
+	if plain, pb := upload(t, base, token, path, []byte("my edit")); plain != http.StatusOK {
+		t.Fatalf("the unconditional retry answered %d: %s", plain, pb)
+	}
+}
+
+// uploadIfMatch is upload with a change token attached.
+func uploadIfMatch(t *testing.T, base, token, path string, content []byte, etag string) (int, []byte) {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodPost,
+		base+"/api/v1/files/write?path="+urlEscape(path), bytes.NewReader(content))
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	req.SetBasicAuth("ignored", token)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("If-Match", `"`+etag+`"`)
+
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("requesting: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+	return resp.StatusCode, readAll(t, resp)
+}
+
 // A move relocates the entry: gone from one place, present at the other.
 func TestMovingAFile(t *testing.T) {
 	want := payload()

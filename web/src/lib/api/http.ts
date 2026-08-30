@@ -428,12 +428,40 @@ async function folderSize(path: string): Promise<FolderSize> {
  * `GET /api/v1/files/recent` — every file this account wrote through this server inside
  * the window, newest first. Exact: there is no walk to truncate.
  */
+/** One recent write as the wire sends it: a bare list, with the addressable
+ *  path under `path` and the size as a decimal string. */
+interface WireRecent {
+  path: string
+  name: string
+  op: RecentHit['op']
+  size: string
+  at_ns: string
+  mtime_ns: string
+}
+
 async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }> {
-  // An instant, not a day count. A day count has to be resolved against
-  // somebody's clock, and the two ends of this wire are in different time
-  // zones often enough that the same request meant two different windows
-  // depending on which side did the arithmetic.
-  return request(`/files/recent${qs({ limit: opts.limit, since: opts.since, scope: opts.scope })}`)
+  // `path` narrows to a subtree, which is what the server calls the scope.
+  const rows = await request<WireRecent[]>(
+    `/files/recent${qs({ limit: opts.limit, since: opts.since, path: opts.scope })}`
+  )
+  return {
+    hits: (rows ?? []).map((w) => {
+      // The server sends one addressable path. The share label is its first
+      // segment, which is the one place that split is safe: the server built
+      // the string from the label and the rest, in that order.
+      const cut = w.path.indexOf('/')
+      return {
+        vpath: w.path,
+        share: cut < 0 ? w.path : w.path.slice(0, cut),
+        subpath: cut < 0 ? '' : w.path.slice(cut + 1),
+        name: w.name,
+        size: Number(w.size ?? 0),
+        mtime_ns: w.mtime_ns,
+        at_ns: w.at_ns,
+        op: w.op
+      }
+    })
+  }
 }
 
 // ── long-running jobs ──
@@ -574,13 +602,24 @@ async function readFile(path: string): Promise<ReadFileResponse> {
  * at all, made because somebody chose to.
  */
 async function writeFile(path: string, content: string, ifMatch?: string): Promise<Entry> {
-  // POST. The PUT alias for this handler is gone: one operation, one spelling.
-  return entryFromWire(
-    await request<WireEntry>('/files/write', {
-      method: 'POST',
-      body: JSON.stringify({ path, content, if_match: ifMatch })
-    })
-  )
+  // The body is the file itself and the path is a query parameter. A JSON
+  // envelope holding both would carry the whole file in memory twice, once
+  // encoded and once not.
+  //
+  // The condition travels as If-Match, where a conditional write belongs, so
+  // nothing has to invent a field name for it.
+  const headers = new Headers({ 'Content-Type': 'application/octet-stream' })
+  if (csrfToken) headers.set('Sc-Csrf', csrfToken)
+  if (ifMatch) headers.set('If-Match', ifMatch)
+
+  const res = await fetch(`${BASE}/files/write${qs({ path })}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: content
+  })
+  if (!res.ok) throw errorFrom(res, await res.json().catch(() => ({})))
+  return entryFromWire((await res.json()) as WireEntry)
 }
 
 // ── settings ──

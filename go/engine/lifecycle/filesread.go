@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"strconv"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -212,7 +213,7 @@ func (e *Engine) filesWrite(c *fiber.Ctx) error {
 	// created by any other, and a second answer would differ by which route
 	// happened to make it.
 	opts := vfs.DurableOpts{Mode: r.Root().Policy().ModeFile}
-	entry, err := e.Core.CreateFile(c.UserContext(), r, opts, nil,
+	entry, err := e.Core.CreateFile(c.UserContext(), r, opts, ifMatchOf(c),
 		func(f *vfs.File) error {
 			// WriteAt rather than a copy: vfs.File is positional, so a write
 			// does not depend on a shared offset.
@@ -223,6 +224,30 @@ func (e *Engine) filesWrite(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 	return writeJSON(c, fiber.StatusOK, handler.EntryOf(entry, e.vpath(owner, r, entry)))
+}
+
+// ifMatchOf reads the change token a write is conditioned on.
+//
+// Absent means unconditional, which is right for a new file: there is no
+// version to condition on. Present, the write is refused when the file has
+// moved underneath, which is the whole defence against two people editing the
+// same file and the second save erasing the first.
+//
+// The header's quoting and weak marker are stripped here, because the token
+// the store compares is the value inside them and a caller echoing back what
+// it was given should not have to know that.
+func ifMatchOf(c *fiber.Ctx) *core.Token {
+	raw := strings.TrimSpace(c.Get(fiber.HeaderIfMatch))
+	if raw == "" {
+		return nil
+	}
+	raw = strings.TrimPrefix(raw, "W/")
+	raw = strings.Trim(raw, `"`)
+	if raw == "" {
+		return nil
+	}
+	token := core.Token(raw)
+	return &token
 }
 
 // transferRequest names both ends of a copy or a move.
@@ -371,9 +396,19 @@ func (e *Engine) filesRecent(c *fiber.Ctx) error {
 		return writeJSON(c, fiber.StatusOK, []handler.RecentView{})
 	}
 
+	// A nanosecond instant rather than a day count, because a day count has to
+	// be resolved against somebody's clock and the two ends of this wire are
+	// frequently in different zones: the same request would mean two different
+	// windows depending on which side did the arithmetic. Unparseable reads as
+	// no window, which is what an absent one means.
+	since, perr := strconv.ParseInt(c.Query("since"), 10, 64)
+	if perr != nil || since < 0 {
+		since = 0
+	}
 	hits, err := e.Core.Recent(c.UserContext(), owner, core.RecentQuery{
-		Limit: recentLimit(c.Query("limit")),
-		Scope: c.Query("path"),
+		SinceNs: since,
+		Limit:   recentLimit(c.Query("limit")),
+		Scope:   c.Query("path"),
 	})
 	if err != nil {
 		return fail(c, err)
