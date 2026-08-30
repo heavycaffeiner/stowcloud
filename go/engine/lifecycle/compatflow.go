@@ -36,9 +36,9 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"time"
-
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
+	"time"
 )
 
 // The flow's lifetimes.
@@ -81,11 +81,6 @@ type FlowTokens struct {
 	PollEndpoint string
 }
 
-// FlowRecord is one stored flow, as the durable half holds it.
-//
-// What is stored is derived: a digest of each token rather than either token
-// itself, so reading this table says which sign-ins are under way without
-// giving anyone the means to finish one.
 // flowExpired reports whether the row's flow has run past the twenty minutes
 // a client might reasonably take to walk from the app to a browser and back.
 func flowExpired(row state.LoginFlowRow, nowNs int64) bool {
@@ -117,7 +112,7 @@ func NewLoginFlow(st *state.DB, cred FlowCredential, now func() int64) (*LoginFl
 		return nil, errors.New("the login flow needs a credential source")
 	}
 	if now == nil {
-		now = func() int64 { return time.Now().UnixNano() }
+		now = clock.System().Nanos
 	}
 	return &LoginFlow{state: st, cred: cred, now: now}, nil
 }
