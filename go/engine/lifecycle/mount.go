@@ -65,6 +65,11 @@ func (e *Engine) Mount() (*fiber.App, error) {
 	if err := server.Register(app, table, handlers); err != nil {
 		return nil, fmt.Errorf("registering routes: %w", err)
 	}
+
+	// The public link surface, after the chain and outside the table: these
+	// paths carry no API version because a short URL is the product feature,
+	// and the token in the path is the whole of the authority.
+	e.mountPublicLinks(app)
 	return app, nil
 }
 

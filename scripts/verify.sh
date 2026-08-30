@@ -282,10 +282,15 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # path it sends carries the /api/v1 prefix. Pointing this at the old table
   # would pass only by comparing the client against a surface it no longer
   # talks to.
+  #
+  # Two files, because two things mount routes: the versioned table, and the
+  # public link surface, whose five paths carry no version and are registered
+  # in code. A check that read only the table reported all five as screens
+  # that cannot work, when they answer.
   run "routecheck (the client's paths are mounted)" \
       ingo_host go run ./tools/routecheck \
         -client-dir ../web/src \
-        -routes engine/http/server/v1table.go \
+        -routes engine/http/server/v1table.go,engine/lifecycle/publiclink.go \
         -allow routes.allow \
         -server-only routes.server-only
   # routecheck proves the paths exist. This proves the bodies match: the

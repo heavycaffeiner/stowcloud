@@ -50,9 +50,16 @@ func main() {
 	// Before any path is normalised: the prefix decides what every relative
 	// path becomes.
 	clientBase = findClientBase(*clientDir)
-	routes, err := os.ReadFile(filepath.Clean(*routesPath))
-	if err != nil {
-		fail("reading the route table: %v", err)
+	// A comma-separated list, because more than one file mounts routes: the
+	// versioned table, and the surfaces registered in code beside it.
+	var routes []byte
+	for _, name := range strings.Split(*routesPath, ",") {
+		part, rerr := os.ReadFile(filepath.Clean(strings.TrimSpace(name)))
+		if rerr != nil {
+			fail("reading the route table: %v", rerr)
+		}
+		routes = append(routes, part...)
+		routes = append(routes, '\n')
 	}
 	allowed := readAllow(*allowPath)
 
@@ -346,8 +353,29 @@ func mountedPaths(src string) map[call]bool {
 		// into every row.
 		out[call{method: m[1], path: normalise(enginePrefix + m[2])}] = true
 	}
+
+	// Routes registered directly on the router, which is how a surface outside
+	// the versioned table mounts itself. The path is absolute there, and the
+	// framework's own `:name` parameters become the same placeholder a table
+	// pattern's braces do.
+	fiberForm := regexp.MustCompile(`app\.(Get|Post|Put|Patch|Delete|Head|Options)\(\s*([A-Za-z]+\+)?"(/[^"]*)"`)
+	for _, m := range fiberForm.FindAllStringSubmatch(src, -1) {
+		path := m[3]
+		if m[2] != "" {
+			// The path is joined to a constant naming the mount prefix. The
+			// public link surface is the only one, and its prefix is where a
+			// short URL lives.
+			path = publicLinkPrefix + path
+		}
+		out[call{method: strings.ToUpper(m[1]), path: normalise(path)}] = true
+	}
 	return out
 }
+
+// publicLinkPrefix is where the public link surface mounts. Its routes are
+// registered against a constant rather than a literal, so the prefix is named
+// here to reassemble them.
+const publicLinkPrefix = "/s"
 
 // enginePrefix is where the engine's table is mounted. Its rows carry paths
 // relative to it, and the client sends the whole thing.
@@ -480,6 +508,12 @@ func normalise(p string) string {
 	// segment.
 	segs := strings.Split(p, "/")
 	for i, s := range segs {
+		// `:name` is the router's own spelling for the same thing a table
+		// writes as `{name}`, and a surface registered in code uses it.
+		if strings.HasPrefix(s, ":") && len(s) > 1 {
+			segs[i] = "{}"
+			continue
+		}
 		if strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") {
 			segs[i] = "{}"
 		}

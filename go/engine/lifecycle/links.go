@@ -41,12 +41,44 @@ type createLinkRequest struct {
 	Label    string  `json:"label,omitempty"`
 	Note     string  `json:"note,omitempty"`
 
+	// Perms is what the visitor may do, by name. Omitted means reading and
+	// downloading, which is what most links are for.
+	//
+	// It has to be settable, because a drop link is the opposite shape: create
+	// and not read, so whoever holds it can put a file in and cannot see what
+	// is already there. A fixed permission set cannot express one.
+	Perms []string `json:"perms,omitempty"`
+
 	// Raw, so an omitted cap is distinguishable from a cap of zero. The
 	// service spells unlimited as -1 and treats 0 as a real limit meaning no
 	// downloads at all, so a plain int32 field mints a link nobody can open
 	// whenever the client leaves the cap out. It did exactly that.
 	Expires json.RawMessage `json:"expires_ns,omitempty"`
 	MaxDown json.RawMessage `json:"max_downloads,omitempty"`
+}
+
+// linkPerms reads the requested permission set.
+//
+// An empty request is reading and downloading: the ordinary link, and what
+// every caller that does not care should get. A named set is narrowed to what
+// a link may carry at all, because a visitor holding a URL is not the account
+// that made it: rename, move and delete are the owner's, and sharing a link
+// that can re-share is a way to hand out authority nobody granted.
+func linkPerms(names []string) (acl.Perms, bool) {
+	if len(names) == 0 {
+		return acl.Read | acl.Download, true
+	}
+	requested, ok := permsOf(names)
+	if !ok {
+		return 0, false
+	}
+	allowed := requested & (acl.Read | acl.Download | acl.Create)
+	if allowed == 0 {
+		// A link that permits nothing is one nobody can open, which is a
+		// mistake rather than a configuration.
+		return 0, false
+	}
+	return allowed, true
 }
 
 // unlimitedDownloads is what the service reads as "no cap". Zero is a real
@@ -89,10 +121,13 @@ func (e *Engine) linksCreate(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.Malformed})
 	}
 
+	perms, ok := linkPerms(req.Perms)
+	if !ok {
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
+
 	link, token, err := e.Core.CreateLink(c.UserContext(), r, core.LinkSpec{
-		// The link grants reading and downloading and nothing else. A visitor
-		// holding a URL is not the account that made it.
-		Perms:    acl.Read | acl.Download,
+		Perms:    perms,
 		Password: req.Password,
 		Expires:  expires,
 		MaxDown:  maxDown,

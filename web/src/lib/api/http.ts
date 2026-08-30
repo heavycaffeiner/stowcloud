@@ -63,7 +63,9 @@ import {
   type UploadSettingsResp,
   type WatchSettingsReq,
   type Kind,
-  permsFromNames
+  type Perms,
+  permsFromNames,
+  permNamesOf
 } from './types'
 import type { ListOpts, SearchDone, SearchHit } from './mock'
 import { noteUnauthorized } from '../state/auth.svelte'
@@ -474,16 +476,64 @@ async function trashPurge(ids: string[]): Promise<BatchResult> {
 
 // ── share links, owner side ──
 
+/**
+ * One link as the wire sends it: string ids and counts, permissions by name,
+ * and `note` where the app has no field for one.
+ */
+interface WireLink {
+  id: string
+  path: string
+  perms: string[]
+  expires_ns?: string
+  max_downloads?: string
+  downloads: string
+  label?: string
+  has_password: boolean
+  created_ns: string
+}
+
+function linkFromWire(w: WireLink, token?: string): ShareLinkInfo {
+  return {
+    id: Number(w.id),
+    path: w.path,
+    perms: permsFromNames(w.perms),
+    // Absent means "never", which the app spells as null. Zero would be a real
+    // instant in 1970 and read as long expired.
+    expires_ns: w.expires_ns ?? null,
+    max_downloads: w.max_downloads !== undefined ? Number(w.max_downloads) : null,
+    downloads: Number(w.downloads ?? 0),
+    label: w.label ?? null,
+    has_password: w.has_password,
+    created_ns: w.created_ns,
+    token
+  }
+}
+
 async function sharesList(path?: string): Promise<ShareLinkInfo[]> {
-  return request(`/links${qs({ path })}`)
+  const rows = await request<WireLink[]>(`/links${qs({ path })}`)
+  return (rows ?? []).map((r) => linkFromWire(r))
 }
 
 async function shareCreate(req: ShareLinkCreateReq): Promise<ShareLinkInfo> {
-  return request('/links', { method: 'POST', body: JSON.stringify(req) })
+  // Permissions go out as the names the server reads. A drop link is the one
+  // that matters here: create without read, which is what lets somebody put a
+  // file in without seeing what is already there.
+  const body = { ...req, perms: req.perms ? permNamesOf(req.perms as Perms) : undefined }
+  const out = await request<{ link: WireLink; token?: string }>('/links', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+  return linkFromWire(out.link, out.token)
 }
 
 async function shareUpdate(id: number, patch: ShareLinkPatchReq): Promise<ShareLinkInfo> {
-  return request(`/links/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+  const body = {
+    ...patch,
+    perms: patch.perms ? permNamesOf(patch.perms as Perms) : undefined
+  }
+  return linkFromWire(
+    await request<WireLink>(`/links/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+  )
 }
 
 async function shareDelete(id: number): Promise<void> {

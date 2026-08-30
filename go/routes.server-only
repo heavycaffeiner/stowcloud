@@ -10,16 +10,16 @@
 # and a check that failed on them is one people learn to silence.
 
 # The container runtime's health probe, which has no credential and no screen.
-/api/health
+/api/v1/system/health
 
 # The change channel. The client opens it as a WebSocket rather than through
 # the request helper, so it is a socket the check cannot see as a call.
-/api/events
+/api/v1/events
 
 # The browser's own navigation, not a call the client makes: signing in through
 # a provider is a redirect out and a redirect back.
-/api/auth/oidc/start
-/api/auth/oidc/callback
+/api/v1/auth/oidc/start
+/api/v1/auth/oidc/callback
 
 # Public share links. A visitor follows the URL; nothing in the interface
 # fetches these.
@@ -28,19 +28,19 @@
 
 # The resumable upload protocol's discovery request. A client sends it to learn
 # which version to speak, and this client already knows.
-/api/uploads
-/api/uploads/{id}
+/api/v1/uploads
+/api/v1/uploads/{id}
 
 # The second spelling of a route the client calls under one verb. Both are
 # mounted because other callers send the other one, and dropping either turns a
 # working request into "method not allowed".
-/api/fs/write
-/api/jobs/{id}/cancel
-/api/fs/link
-/api/fs/link/{id}
+/api/v1/files/write
+/api/v1/jobs/{id}/cancel
+/api/v1/links
+/api/v1/links/{id}
 
 # The SMB apply. There is no button for it in the shipped interface, and there
 # does not need to be one now: every write that changes what SMB should serve
 # republishes on its own. It stays mounted as the operator's apply-now, for
 # forcing a push after editing the configuration file by hand.
-/api/admin/smb/apply
+/api/v1/admin/smb/apply
