@@ -175,7 +175,7 @@ TOKEN=$(grep -oE 'setup token \(valid[^)]*\): [a-f0-9]+' "$DIR/log" | tail -1 | 
 # "misdirected request" instead of an answer.
 SETUP_REQUIRED=$(curl -sk --max-time 5 \
   --resolve "$TSNAME:$PORT:127.0.0.1" \
-  "https://$TSNAME:$PORT/api/setup" 2>/dev/null)
+  "https://$TSNAME:$PORT/api/v1/system/setup" 2>/dev/null)
 
 echo
 echo "  https://$TSNAME:$PORT/"

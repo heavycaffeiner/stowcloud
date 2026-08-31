@@ -199,7 +199,7 @@ jobs:
       - name: Wait for the server to come up
         run: |
           for i in $(seq 1 30); do
-            if curl -fsSk https://127.0.0.1:8443/api/health >/dev/null 2>&1; then
+            if curl -fsSk https://127.0.0.1:8443/api/v1/system/health >/dev/null 2>&1; then
               echo "up after ${i}s"
               exit 0
             fi
@@ -221,7 +221,7 @@ jobs:
         # does now.
         run: |
           code=$(curl -sS --max-time 5 -o /tmp/plain.out -w '%{http_code}' \
-            http://127.0.0.1:8443/api/health || true)
+            http://127.0.0.1:8443/api/v1/system/health || true)
           echo "status: ${code}"
           cat /tmp/plain.out
           case "$code" in
@@ -233,22 +233,22 @@ jobs:
           fi
           echo "plain HTTP refused with no application content, as intended"
 
-      - name: GET /api/health
+      - name: GET /api/v1/system/health
         run: |
-          out=$(curl -fsSk https://127.0.0.1:8443/api/health)
+          out=$(curl -fsSk https://127.0.0.1:8443/api/v1/system/health)
           echo "$out"
-          echo "$out" | grep -q '"status"' || { echo "unexpected /api/health body"; exit 1; }
+          echo "$out" | grep -q '"status"' || { echo "unexpected health body"; exit 1; }
 
       - name: GET / serves the SPA document
         run: |
           out=$(curl -fsSk https://127.0.0.1:8443/)
           echo "$out" | grep -qi '<html' || { echo "/ did not return an HTML document"; echo "$out"; exit 1; }
 
-      - name: GET /api/setup proves a fresh deployment can bootstrap
+      - name: The setup route proves a fresh deployment can bootstrap
         run: |
-          out=$(curl -fsSk https://127.0.0.1:8443/api/setup)
+          out=$(curl -fsSk https://127.0.0.1:8443/api/v1/system/setup)
           echo "$out"
-          echo "$out" | grep -q '"required":true' || { echo "unexpected /api/setup body — a fresh container should report setup required"; exit 1; }
+          echo "$out" | grep -q '"required":true' || { echo "unexpected setup body: a fresh container should report setup required"; exit 1; }
 
       # What `-k` above gives up, done where the certificate can actually be
       # read: inside the container, by the binary that generated it. The
@@ -272,20 +272,20 @@ jobs:
         run: |
           token=$(docker logs sc-smoke 2>&1 | grep -oE 'setup token[^:]*: [a-f0-9]+' | tail -1 | awk '{print $NF}')
           [ -n "$token" ] || { echo "the container printed no setup token"; exit 1; }
-          curl -fsSk -X POST https://127.0.0.1:8443/api/setup \
+          curl -fsSk -X POST https://127.0.0.1:8443/api/v1/system/setup \
             -H 'content-type: application/json' \
             -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\",\"app_hosts\":[\"127.0.0.1\",\"localhost\"],\"trusted_proxies\":[]}" >/dev/null
-          curl -fsSk -c /tmp/jar -X POST https://127.0.0.1:8443/api/auth/login \
+          curl -fsSk -c /tmp/jar -X POST https://127.0.0.1:8443/api/v1/auth/login \
             -H 'content-type: application/json' \
-            -d '{"username":"ci","password":"ci-smoke-password-1"}' >/dev/null
-          csrf=$(curl -fsSk -b /tmp/jar https://127.0.0.1:8443/api/auth/session |
+            -d '{"login":"ci","password":"ci-smoke-password-1"}' >/dev/null
+          csrf=$(curl -fsSk -b /tmp/jar https://127.0.0.1:8443/api/v1/auth/session |
             grep -oE '"csrf":"[^"]+"' | head -1 | cut -d'"' -f4)
           # A fresh deployment serves nothing until somebody says what to
           # serve, so the share is created here rather than declared anywhere.
-          curl -fsSk -b /tmp/jar -X POST https://127.0.0.1:8443/api/admin/shares \
+          curl -fsSk -b /tmp/jar -X POST https://127.0.0.1:8443/api/v1/admin/shares \
             -H 'content-type: application/json' -H "sc-csrf: ${csrf}" \
-            -d '{"name":"files","host_path":"/shares/files"}' >/dev/null
-          out=$(curl -fsSk -b /tmp/jar 'https://127.0.0.1:8443/api/fs/list?path=/files')
+            -d '{"name":"files","host":"/shares/files"}' >/dev/null
+          out=$(curl -fsSk -b /tmp/jar 'https://127.0.0.1:8443/api/v1/files/list?path=/files')
           echo "$out"
           echo "$out" | grep -q '"dir_etag"' || { echo "the share does not list"; exit 1; }
 
@@ -562,9 +562,9 @@ jobs:
       - name: The server comes up and reports healthy
         run: |
           for i in $(seq 1 60); do
-            if curl -fsSk https://127.0.0.1:8443/api/health >/dev/null 2>&1; then
+            if curl -fsSk https://127.0.0.1:8443/api/v1/system/health >/dev/null 2>&1; then
               echo "up after ${i}s"
-              curl -fsSk https://127.0.0.1:8443/api/health
+              curl -fsSk https://127.0.0.1:8443/api/v1/system/health
               exit 0
             fi
             sleep 1
@@ -575,18 +575,18 @@ jobs:
       # A share that lists, an upload that publishes, and the bytes read back.
       # Each of these was broken at some point while the container still
       # started and reported healthy, which is why the smoke test goes this far
-      # rather than stopping at a 200 from /api/health.
+      # rather than stopping at a 200 from the health route.
       - name: A file uploaded through the API comes back out
         run: |
           token=$(docker compose -f compose.buildver.yml logs sc 2>&1 \
             | grep -oE 'setup token[^:]*: [a-f0-9]+' | tail -1 | awk '{print $NF}')
           [ -n "$token" ] || { echo "no setup token in the log"; exit 1; }
           base=https://127.0.0.1:8443
-          curl -fsSk -X POST "$base/api/setup" -H 'content-type: application/json' \
+          curl -fsSk -X POST "$base/api/v1/system/setup" -H 'content-type: application/json' \
             -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-compose-password-1\"}" >/dev/null
-          curl -fsSk -c /tmp/jar -X POST "$base/api/auth/login" -H 'content-type: application/json' \
-            -d '{"username":"ci","password":"ci-compose-password-1"}' >/dev/null
-          csrf=$(curl -fsSk -b /tmp/jar "$base/api/auth/session" | sed -n 's/.*"csrf":"\([a-f0-9]*\)".*/\1/p')
+          curl -fsSk -c /tmp/jar -X POST "$base/api/v1/auth/login" -H 'content-type: application/json' \
+            -d '{"login":"ci","password":"ci-compose-password-1"}' >/dev/null
+          csrf=$(curl -fsSk -b /tmp/jar "$base/api/v1/auth/session" | sed -n 's/.*"csrf":"\([a-f0-9]*\)".*/\1/p')
           [ -n "$csrf" ] || { echo "no csrf token in the session"; exit 1; }
 
           printf 'uploaded by ci\n' > /tmp/proof.txt
@@ -597,17 +597,17 @@ jobs:
             -H "origin: $base" -H "Sc-Csrf: $csrf" \
             -H "upload-length: ${size}" \
             -H "upload-metadata: filename ${name},dest ${dest}" \
-            -X POST "$base/api/uploads" | grep -i '^location:' | tr -d '\r' | awk '{print $2}')
+            -X POST "$base/api/v1/uploads" | grep -i '^location:' | tr -d '\r' | awk '{print $2}')
           [ -n "$loc" ] || { echo "the creation named no session"; exit 1; }
           curl -fsSk -b /tmp/jar -H "origin: $base" -H "Sc-Csrf: $csrf" \
             -H 'content-type: application/offset+octet-stream' -H 'upload-offset: 0' \
             --data-binary @/tmp/proof.txt -X PATCH "${base}${loc}" -o /dev/null
 
-          listed=$(curl -fsSk -b /tmp/jar "$base/api/fs/list?path=/files")
+          listed=$(curl -fsSk -b /tmp/jar "$base/api/v1/files/list?path=/files")
           echo "$listed"
           echo "$listed" | grep -q 'proof.txt' \
             || { echo "the upload never reached the destination"; exit 1; }
-          got=$(curl -fsSk -b /tmp/jar "$base/api/fs/read?path=/files/proof.txt")
+          got=$(curl -fsSk -b /tmp/jar "$base/api/v1/files/read?path=/files/proof.txt")
           [ "$got" = "uploaded by ci" ] \
             || { echo "read back ${got}, want the bytes that were sent"; exit 1; }
 
