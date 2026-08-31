@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "vite dev",
-    "build": "npm run lint:css && npm run lint:i18n && vite build",
+    "build": "pnpm lint:css && pnpm lint:i18n && vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
@@ -42,10 +42,7 @@
     "vite-plugin-functions-mixins": "^0.4.1",
     "vitest": "^4.1.10"
   },
-  "//overrides": "GHSA-pxg6-pf52-xh8x (cookie < 0.7.0 accepts out-of-bounds characters in a name/path/domain). @sveltejs/kit is on ^0.6.0 as of 2.70.2, the latest, with no fixed release — pinning the transitive copy is the only way to clear it. ^0.7.2 rather than 1.x/2.x: 0.7.0 is the fix release and keeps the 0.x API kit was written against.",
-  "overrides": {
-    "cookie": "^0.7.2"
-  },
+  "//overrides": "The cookie pin for GHSA-pxg6-pf52-xh8x lives in pnpm-workspace.yaml, which is where this project's package manager reads overrides from. Stated there rather than here so there is one copy to keep correct.",
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
     "@codemirror/language": "^6.12.4",

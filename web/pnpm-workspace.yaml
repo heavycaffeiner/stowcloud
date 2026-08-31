@@ -1,3 +1,14 @@
+# pnpm reads overrides and build approvals from here, not from package.json:
+# the npm `overrides` block beside this one is invisible to it, so the pin has
+# to be stated in both places or one manager silently resolves the vulnerable
+# version.
+
+# GHSA-pxg6-pf52-xh8x: cookie below 0.7.0 accepts out-of-bounds characters in
+# a name, path or domain. @sveltejs/kit still depends on ^0.6.0, so pinning
+# the transitive copy is the only way to clear it.
+overrides:
+  cookie: ^0.7.2
+
 # esbuild ships a platform binary and its install script is what puts that
 # binary in place, so vite cannot build without it. Approved explicitly, since
 # pnpm refuses to run any dependency's install script until it is named here.

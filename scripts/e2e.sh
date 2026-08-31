@@ -17,13 +17,13 @@ if ! command -v node >/dev/null 2>&1; then
   exit 0
 fi
 if [ ! -d web/node_modules ]; then
-  echo "SKIP: no web/node_modules; run npm ci in web/" >&2
+  echo "SKIP: no web/node_modules; run pnpm install in web/" >&2
   exit 0
 fi
-# npm ci does not fetch a browser: Playwright downloads one separately. Without
-# this check a missing browser surfaced as an uncaught exception from a launch
-# deep in the suite, printing Playwright's own "just installed" banner and
-# reading as a product failure.
+# The install does not fetch a browser: Playwright downloads one separately.
+# Without this check a missing browser surfaced as an uncaught exception from
+# a launch deep in the suite, printing Playwright's own "just installed"
+# banner and reading as a product failure.
 # A launch rather than a path check: chromium.launch() resolves to the headless
 # shell, which is a different download from the one executablePath() names, so
 # testing that path reports missing on a machine where the suite runs.
@@ -34,12 +34,12 @@ chromium.launch().then(b => b.close()).then(
   () => process.exit(1),
 );
 ' 2>/dev/null); then
-  echo "SKIP: no browser; run: cd web && npx playwright install chromium" >&2
+  echo "SKIP: no browser; run: cd web && pnpm exec playwright install chromium" >&2
   exit 0
 fi
 
 echo "==> building the frontend"
-(cd web && npm run build >/dev/null)
+(cd web && pnpm build >/dev/null)
 
 echo "==> building the binary"
 BIN=$(mktemp -d)/sc-engine

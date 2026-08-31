@@ -14,7 +14,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-BUNDLE_DIR=go/internal/httpapi/spa/build
+BUNDLE_DIR=go/engine/http/spa/build
 
 # The binary below is built for the shipping target and then run, so this only
 # works where the host is that target. Elsewhere it built a Linux binary and
@@ -25,7 +25,7 @@ if [ "$(uname -s)" != Linux ]; then
 fi
 
 echo "==> building the frontend"
-(cd web && npm run build >/dev/null)
+(cd web && pnpm build >/dev/null)
 
 WANT=$(grep -o 'app/immutable/entry/app[A-Za-z0-9._-]*\.js' "$BUNDLE_DIR/index.html" | head -1)
 if [ -z "$WANT" ]; then

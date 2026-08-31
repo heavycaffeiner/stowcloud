@@ -474,23 +474,20 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # what is outside it. Test code is excluded: a test that proves the two
   # intents differ has to name both.
   #
-  # Counted per tree while the two coexist: each holds one upload engine, so
-  # one site each is the rule and two in either is the defect. A comment
-  # naming the intent is not a call site, so the count is of the calls.
+  # One upload engine, so one site is the rule and two is the defect. A
+  # comment naming the intent is not a call site, so the count is of the
+  # calls.
   rw_sites() { go_code 'OpenRead\([^)]*IntentReadWrite' | grep -v '_test\.go:' | grep -E "$1"; }
+  RW_FOUND=$(rw_sites '^go/engine/')
   RW_HITS=""
-  for tree in '^go/internal/' '^go/engine/'; do
-    found=$(rw_sites "$tree")
-    [ "$(printf '%s' "$found" | grep -c .)" -le 1 ] || RW_HITS="$RW_HITS$found"$'\n'
-  done
-  RW_HITS=$(printf '%s' "$RW_HITS" | sed '/^$/d')
-  grep_gate "IntentReadWrite has at most one call site per tree" "$RW_HITS" \
+  [ "$(printf '%s' "$RW_FOUND" | grep -c .)" -le 1 ] || RW_HITS="$RW_FOUND"
+  grep_gate "IntentReadWrite has at most one call site" "$RW_HITS" \
     "Only the upload finalizer may take a writable descriptor on a read path."
 
   # D14. SQL is parameters only. Every statement is a package-level constant.
   SQL_HITS=$(go_code 'fmt\.Sprintf\(|fmt\.Sprint\(|strings\.Builder' \
-             | grep '^go/internal/store/' || true)
-  grep_gate "D14: no built SQL in internal/store" "$SQL_HITS" \
+             | grep '^go/engine/store/' || true)
+  grep_gate "D14: no built SQL in the store" "$SQL_HITS" \
     "Bind parameters. A query built from parts is an injection waiting for input."
 
   # D19. Closes F8, where two files carried thirteen per cent of the tree with
@@ -555,10 +552,10 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     # empty to the caller's test.
     printf '%s' "$hits" | grep -v '^[[:space:]]*$' || true
   }
-  if [ -d go/internal/compat ] || [ -d go/engine/http/compat ]; then
+  if [ -d go/engine/http/compat ]; then
     NC_HITS=$(go_compat_isolation)
     grep_gate "compat isolation (import graph, seam, text)" "$NC_HITS" \
-      "Compat wire vocabulary belongs behind internal/compat/ncport."
+      "Compat wire vocabulary belongs behind the compat layer."
     # G4: the stripped build, which is stronger than the feature flag it
     # replaces: with no tag the packages are not compiled at all.
     run "go build (compat stripped)" ingo go build ./...
@@ -580,19 +577,20 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     fi
   else
     skipped "compat isolation (import graph, seam, text)" \
-            "go/internal/compat does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
+            "go/engine/http/compat does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
   fi
 
   # The single-binary build. `//go:embed` reads the bundle with a real
-  # dependency edge: rebuilding after `npm run build` picks up the new files or
-  # fails to compile, so there is no stale-bundle hazard to clean around. The bundle lives inside the embedding package because //go:embed
-  # cannot name a path outside it, and refuses a symlink that points out.
-  if [ -f go/internal/httpapi/spa/build/index.html ]; then
+  # dependency edge: rebuilding the frontend picks up the new files or fails
+  # to compile, so there is no stale-bundle hazard to clean around. The bundle
+  # lives inside the embedding package because //go:embed cannot name a path
+  # outside it, and refuses a symlink that points out.
+  if [ -f go/engine/http/spa/build/index.html ]; then
     run "go build -tags embed_ui" ingo go build -tags embed_ui ./...
     # And the served bundle is the one that was built, which is the property
     # the dependency edge exists for. It needs node, so it only runs where the
     # frontend can be rebuilt.
-    if command -v npm >/dev/null 2>&1; then
+    if command -v pnpm >/dev/null 2>&1; then
       run "the embedded bundle is the built one" bash scripts/embed-check.sh
       # A real browser against the shipped interface. It is the only check here
       # that asks whether a request arrives rather than whether a function is
@@ -600,10 +598,10 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
       # with the whole suite green.
       run "the interface signs in and reaches its surfaces" bash scripts/e2e.sh
     else
-      skipped "the embedded bundle is the built one" "no npm" "${VERIFY_REQUIRE_UI:-0}"
+      skipped "the embedded bundle is the built one" "no pnpm" "${VERIFY_REQUIRE_UI:-0}"
     fi
   else
-    skipped "go build -tags embed_ui" "no built frontend; run: cd web && npm run build" \
+    skipped "go build -tags embed_ui" "no built frontend; run: cd web && pnpm build" \
             "${VERIFY_REQUIRE_UI:-0}"
   fi
 else

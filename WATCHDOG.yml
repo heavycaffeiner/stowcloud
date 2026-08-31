@@ -1,3 +1,0 @@
-advisors:
-  - name: default
-    model: hyun-router/claude-opus-5:high

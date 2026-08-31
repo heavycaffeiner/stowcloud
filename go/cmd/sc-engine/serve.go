@@ -28,8 +28,10 @@ func runServeCmd(args []string) int {
 	out := log.New(os.Stderr, "", 0)
 	var (
 		dataDir = ".dev/data"
-		addr    = "0.0.0.0:8443"
-		plain   = false
+		// Empty rather than an address: run resolves the stored bind when
+		// nothing is passed, and a default here would silently outrank it.
+		addr  = ""
+		plain = false
 	)
 	i := 0
 	for i < len(args) {

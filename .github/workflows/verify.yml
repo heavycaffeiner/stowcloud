@@ -40,8 +40,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # 24, not 22, for the same reason Dockerfile's NODE_IMAGE moved: node 22
-  # bundles npm 10.9.8, which cannot `npm ci` a lockfile npm 11 wrote.
+  # 24, not 22: jsdom 30 declares 24.15.0 as a floor, and corepack ships the
+  # pnpm this lockfile was written by.
   NODE_VERSION: "24"
   # The toolchain CI compiles with, which is not the same statement go/go.mod
   # makes. That directive is the dependency floor, currently 1.25, which is the
@@ -74,31 +74,32 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+
+      - name: Enable pnpm
+        run: corepack enable
 
       # Each before the build, so a failing unit test is reported as a failing
       # unit test and a type error as a type error, rather than as whatever the
       # build does next. `vite build` strips types with esbuild without
-      # checking them, so without `npm run check` nothing in CI ever reads the
+      # checking them, so without `pnpm check` nothing in CI ever reads the
       # types in `web/`.
       - name: Build frontend
         run: |
           cd web
-          npm ci
-          npm run test
-          npm run check
-          npm run build
+          pnpm install --frozen-lockfile
+          pnpm test
+          pnpm check
+          pnpm build
 
-      # The end-to-end step drives a real browser, and npm ci does not fetch
-      # one: Playwright downloads it separately, into a cache this runner does
-      # not have. Without this the step failed asking to be run by hand.
+      # The end-to-end step drives a real browser, and the install does not
+      # fetch one: Playwright downloads it separately, into a cache this runner
+      # does not have. Without this the step failed asking to be run by hand.
       #
       # --with-deps because the runner has no shared libraries chromium needs.
       - name: Install the browser the end-to-end step drives
         run: |
           cd web
-          npx playwright install --with-deps chromium
+          pnpm exec playwright install --with-deps chromium
 
       # Enforces the frontend byte budgets. Deliberately
       # no Lighthouse pass (see check-bundle-size.mjs's header): a shared
@@ -107,7 +108,7 @@ jobs:
       - name: Check frontend bundle-size budgets
         run: |
           cd web
-          npm run check:bundle-size
+          pnpm check:bundle-size
 
       - name: bash scripts/verify.sh
         env:
@@ -145,23 +146,25 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: web/package-lock.json
+
+      - name: Enable pnpm
+        shell: bash
+        run: corepack enable
 
       - name: Build frontend
         shell: bash
         run: |
           cd web
-          npm ci
-          npm run test
-          npm run check
-          npm run build
+          pnpm install --frozen-lockfile
+          pnpm test
+          pnpm check
+          pnpm build
 
       - name: Check frontend bundle-size budgets
         shell: bash
         run: |
           cd web
-          npm run check:bundle-size
+          pnpm check:bundle-size
 
       # No VERIFY_REQUIRE_RACE here: the race step depends on whether the image
       # happens to carry a compiler, and the Linux job requires it. The tool

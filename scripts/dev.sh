@@ -89,9 +89,9 @@ fi
 
 echo "==> building the frontend"
 if [ -d web/node_modules ]; then
-  (cd web && npm run build) >/dev/null || { echo "the frontend build failed" >&2; exit 1; }
+  (cd web && pnpm build) >/dev/null || { echo "the frontend build failed" >&2; exit 1; }
 else
-  echo "no web/node_modules; run npm ci in web/ for the interface" >&2
+  echo "no web/node_modules; run pnpm install in web/ for the interface" >&2
 fi
 
 echo "==> building the binary"

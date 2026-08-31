@@ -63,7 +63,7 @@ func main() {
 	}
 
 	var (
-		addr    = flag.String("addr", "127.0.0.1:8081", "listen address")
+		addr    = flag.String("addr", "", "listen address; overrides the stored one")
 		dataDir = flag.String("data", ".dev/data", "data directory")
 		plain   = flag.Bool("plain", false, "serve HTTP instead of HTTPS")
 	)
@@ -74,6 +74,10 @@ func main() {
 		os.Exit(1)
 	}
 }
+
+// defaultListen is where the server binds when neither the flag nor the
+// stored setting names an address.
+const defaultListen = "127.0.0.1:8081"
 
 func run(addr, dataDir string, plain bool) error {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -110,6 +114,17 @@ func run(addr, dataDir string, plain bool) error {
 		os.Exit(code)
 	}
 	logger.Info("hardening", "status", jailStatus.String())
+
+	// The flag wins, then the stored setting, then the compiled default. The
+	// stored one exists so an operator can move a deployment that is bound
+	// somewhere unreachable, which only works if starting it without an
+	// address actually uses what they stored.
+	if addr == "" {
+		addr = values.Listen
+	}
+	if addr == "" {
+		addr = defaultListen
+	}
 
 	// No worker is named, which leaves the pool re-executing this binary with
 	// the subcommand handled at the top of main.

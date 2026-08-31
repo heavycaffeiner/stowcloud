@@ -94,12 +94,12 @@ ARG PGID=1000
 # ----------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS frontend
 WORKDIR /src/web
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN corepack enable && pnpm install --frozen-lockfile
 COPY web/ ./
-RUN npm run build \
-    && test -f ../go/internal/httpapi/spa/build/index.html \
-    && test -d ../go/internal/httpapi/spa/build/app
+RUN pnpm build \
+    && test -f ../go/engine/http/spa/build/index.html \
+    && test -d ../go/engine/http/spa/build/app
 
 # ----------------------------------------------------------------------------
 # Stage: builder
@@ -116,7 +116,7 @@ RUN go mod download
 COPY go/ ./
 # The frontend lands in the package that embeds it, which is the only
 # arrangement where the dependency edge exists.
-COPY --from=frontend /src/go/internal/httpapi/spa/build ./internal/httpapi/spa/build
+COPY --from=frontend /src/go/engine/http/spa/build ./engine/http/spa/build
 
 # The tag is what turns the embed on. A build without it links a server that
 # serves no frontend, which is the correct behaviour for a build that has no

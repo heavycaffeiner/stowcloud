@@ -91,7 +91,7 @@ for (const p of crates) {
 for (const name of JS_RUNTIME.sort()) {
   const dir = join(NM, name)
   const pj = join(dir, 'package.json')
-  if (!existsSync(pj)) throw new Error(`${name}: not installed — run npm ci in web/ first`)
+  if (!existsSync(pj)) throw new Error(`${name}: not installed, run pnpm install in web/ first`)
   const j = JSON.parse(readFileSync(pj, 'utf8'))
   const files = licenseTexts(dir)
   const repo = typeof j.repository === 'string' ? j.repository : j.repository?.url || ''

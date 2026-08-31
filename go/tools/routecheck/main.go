@@ -32,7 +32,7 @@ import (
 func main() {
 	var (
 		clientDir      = flag.String("client-dir", "web/src/lib/api", "the frontend's API client directory")
-		routesPath     = flag.String("routes", "go/internal/server/routes.go", "the server's route table")
+		routesPath     = flag.String("routes", "go/engine/http/server/v1table.go", "the server's route table")
 		allowPath      = flag.String("allow", "go/routes.allow", "paths the client may call that the server need not mount")
 		serverOnlyPath = flag.String("server-only", "go/routes.server-only",
 			"routes the server mounts for callers other than the web client")

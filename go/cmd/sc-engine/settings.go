@@ -103,7 +103,7 @@ func runSettingsGet(args []string) int {
 	out := log.New(os.Stderr, "", 0)
 	dataDir := dataDirArg(args)
 	if dataDir == "" {
-		out.Println("usage: sc-engine settings get -data DIR")
+		out.Println("usage: sc-engine settings get [-data DIR]")
 		return 2
 	}
 
@@ -151,10 +151,14 @@ func settingsArgs(args []string) (section, dataDir string) {
 	return section, dataDir
 }
 
-// dataDirArg extracts the -data value from a flat argument list.
+// dataDirArg extracts the data directory from a flat argument list.
+//
+// Both spellings, because every other subcommand takes both and an operator
+// who typed --data-dir at `settings set` should not be told the directory is
+// missing when they type the same thing at `settings get`.
 func dataDirArg(args []string) string {
 	for i, arg := range args {
-		if arg == "-data" && i+1 < len(args) {
+		if (arg == "-data" || arg == "--data-dir") && i+1 < len(args) {
 			return args[i+1]
 		}
 	}
