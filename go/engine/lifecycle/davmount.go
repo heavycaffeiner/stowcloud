@@ -161,6 +161,15 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		// handler refuse: half-serving the collection would be the worse
 		// answer, and a 405 says exactly what is missing.
 		if rest, ok := strings.CutPrefix(path, DavUploadPrefix); ok {
+			// The assembly member first, because it is not a chunk and the
+			// parser would refuse it as a name that is not a number. A client
+			// publishes a transfer by moving that member rather than the
+			// collection, so this is the shape every real assembly arrives in;
+			// both mean the collection itself.
+			session, member, found := strings.Cut(strings.TrimPrefix(rest, "/"), "/")
+			if found && e.davIsAssemblyMember(member) {
+				rest = "/" + session
+			}
 			up, uerr := dav.ParseUploadPath(rest)
 			if uerr != nil {
 				// The dav package's own writer, since the refusal is the

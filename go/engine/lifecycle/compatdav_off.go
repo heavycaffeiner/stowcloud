@@ -19,6 +19,8 @@ func (e *Engine) davAliases() []DavAlias { return nil }
 
 func (e *Engine) davUploadHeaders() dav.UploadHeaders { return dav.UploadHeaders{} }
 
+func (e *Engine) davIsAssemblyMember(string) bool { return false }
+
 func (e *Engine) davVendorProps() func(
 	ctx context.Context, res core.Resolved, e core.Entry, want []xml.Name,
 ) []dav.Prop {

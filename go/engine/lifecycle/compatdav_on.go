@@ -35,6 +35,16 @@ func (e *Engine) davAliases() []DavAlias {
 	}
 }
 
+// davIsAssemblyMember reports whether an uploads member names the assembly
+// target rather than a chunk.
+//
+// The client MOVEs that member to publish a transfer, so the name is its
+// vocabulary and stays behind this seam: the mount asks whether a member
+// means assembly and never learns what it is spelled.
+func (e *Engine) davIsAssemblyMember(member string) bool {
+	return compat.IsAssembly(member)
+}
+
 // davUploadHeaders names the headers the chunked upload collection reads.
 //
 // They are the other product's vocabulary, named here so that package reads

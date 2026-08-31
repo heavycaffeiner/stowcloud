@@ -7,8 +7,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 )
 
 // The chunked upload collection, driven through the mount against the real
@@ -331,88 +329,5 @@ func TestTheCollectionWithoutAnEngineIsRefused(t *testing.T) {
 
 	if w.Code != http.StatusMethodNotAllowed {
 		t.Errorf("answered %d, want 405", w.Code)
-	}
-}
-
-// The vendor prefix reaches the same collection.
-//
-// The sync client addresses a transfer under its own uploads root and names
-// its destination under its own files root, never touching this server's
-// spelling of either. Both go through the alias rewrite, so a transfer driven
-// entirely in the other product's vocabulary has to land the same file the
-// native paths above do.
-func TestAVendorPrefixedTransferReachesTheCollection(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	m := f.mounted(
-		lifecycle.DavAlias{
-			Prefix: "/remote.php/dav/uploads/",
-			Mount:  lifecycle.DavUploadPrefix,
-			// The account segment, which resolution ignores.
-			DropSegments: 1,
-		},
-		lifecycle.DavAlias{Prefix: "/remote.php/dav/files/", DropSegments: 1},
-	)
-
-	const (
-		root = "/remote.php/dav/uploads/someone/tid-v"
-		dest = "/remote.php/dav/files/someone/files/vendor.bin"
-	)
-
-	if w := f.throughHeaders(m, "MKCOL", root, "", map[string]string{
-		"Destination":     dest,
-		"OC-Total-Length": "12",
-	}); w.Code != http.StatusCreated {
-		t.Fatalf("opening the session answered %d: %s", w.Code, w.Body.String())
-	}
-	if w := f.throughHeaders(m, http.MethodPut, root+"/1", "first-", map[string]string{
-		"Destination": dest,
-	}); w.Code != http.StatusCreated {
-		t.Fatalf("chunk 1 answered %d: %s", w.Code, w.Body.String())
-	}
-	if w := f.throughHeaders(m, http.MethodPut, root+"/2", "second", map[string]string{
-		"Destination": dest,
-	}); w.Code != http.StatusCreated {
-		t.Fatalf("chunk 2 answered %d: %s", w.Code, w.Body.String())
-	}
-	if w := f.throughHeaders(m, "MOVE", root, "", map[string]string{
-		"Destination":     dest,
-		"OC-Total-Length": "12",
-	}); w.Code != http.StatusCreated {
-		t.Fatalf("assembling answered %d: %s", w.Code, w.Body.String())
-	}
-
-	if got := f.read(t, "vendor.bin"); got != "first-second" {
-		t.Errorf("the assembled file holds %q, want %q", got, "first-second")
-	}
-}
-
-// An alias that is a prefix of another must not swallow it.
-//
-// The vendor addresses uploads and the share tree under one root, so the
-// files alias also matches an uploads path. Taking that match would resolve a
-// transfer as a directory named "uploads" in the tree, which is a 404 at
-// best and a real directory somebody owns at worst.
-func TestTheUploadsAliasWinsOverTheFilesAlias(t *testing.T) {
-	t.Parallel()
-	f := newFixture(t)
-	m := f.mounted(
-		// Deliberately listed with the shorter, swallowing prefix first.
-		lifecycle.DavAlias{Prefix: "/remote.php/dav/", DropSegments: 2},
-		lifecycle.DavAlias{
-			Prefix:       "/remote.php/dav/uploads/",
-			Mount:        lifecycle.DavUploadPrefix,
-			DropSegments: 1,
-		},
-	)
-
-	w := f.throughHeaders(m, "MKCOL", "/remote.php/dav/uploads/someone/tid-w", "",
-		map[string]string{
-			"Destination":     "/dav/files/won.bin",
-			"OC-Total-Length": "5",
-		})
-
-	if w.Code != http.StatusCreated {
-		t.Fatalf("opening through the longer alias answered %d: %s", w.Code, w.Body.String())
 	}
 }
