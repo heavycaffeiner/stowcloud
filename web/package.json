@@ -4,10 +4,12 @@
   "private": true,
   "license": "AGPL-3.0-or-later",
   "type": "module",
-  "//engines": "jsdom 30 declares `^22.22.2 || ^24.15.0 || >=26.0.0`, so 24.15.0 is a real floor now rather than a preference. CI's NODE_VERSION is \"24\", which setup-node floats to the newest 24.x (24.18.1, the Active LTS), and the Dockerfile pins node:24-alpine — both satisfy it. Stated here so a developer on an older 24.x gets a warning at install time instead of an unexplained vitest failure.",
+  "//engines": "jsdom 30 declares `^22.22.2 || ^24.15.0 || >=26.0.0`, so 24.15.0 is a real floor now rather than a preference. CI's NODE_VERSION is \"24\", which setup-node floats to the newest 24.x (24.18.1, the Active LTS), and the Dockerfile pins node:24-alpine. Both satisfy it. Stated here so a developer on an older 24.x gets a warning at install time instead of an unexplained vitest failure.",
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
+  "//packageManager": "Pinned because corepack otherwise installs whatever pnpm it happens to bundle, and the overrides this project's security pins live in are read from pnpm-workspace.yaml, which older pnpm does not consult. An image built with the wrong one resolves the vulnerable transitive dependency and says nothing.",
+  "packageManager": "pnpm@11.22.0",
   "scripts": {
     "dev": "vite dev",
     "build": "pnpm lint:css && pnpm lint:i18n && vite build",

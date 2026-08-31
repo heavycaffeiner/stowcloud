@@ -263,10 +263,12 @@ Docker를 20.10.0 이상으로 올리고, `EACCES`는 파일시스템 권한이�
  uid가 닿지 못하는 마운트 디렉터리가 원인이며, `ENOSYS`는 커널이 5.6
 미만인 경우입니다.
 
-실제 배포된 컨테이너 안에서 커널이 무엇을 제공하는지 보려면:
+실제 배포된 컨테이너 안에서 커널이 무엇을 제공하는지 보려면, 서버가 시작하며
+남기는 hardening 로그를 읽습니다. 적용된 정책과, 거부된 경우 커널에 무엇이
+없었는지를 함께 알려줍니다.
 
 ```sh
-docker compose exec sc /stowcloud caps
+docker compose logs sc | grep hardening
 ```
 
 ## 어떻게 만들어졌나
@@ -301,8 +303,8 @@ compose 파일이 필요한 것을 담고 있고, 배포 관점에서 무엇이 
 <summary><b>소스에서 빌드하기</b></summary>
 
 ```sh
-cd web && npm ci && npm run build && cd ..          # 프론트엔드가 먼저
-cd go && CGO_ENABLED=0 go build -tags embed_ui ./cmd/stowcloud
+cd web && pnpm install && pnpm build && cd ..        # 프론트엔드가 먼저
+cd go && CGO_ENABLED=0 go build -tags embed_ui ./cmd/sc-engine
 bash scripts/verify.sh                              # CI가 돌리는 검사
 ```
 
