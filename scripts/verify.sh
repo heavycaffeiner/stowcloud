@@ -485,8 +485,10 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     "Only the upload finalizer may take a writable descriptor on a read path."
 
   # D14. SQL is parameters only. Every statement is a package-level constant.
+  # Tests are excluded: they build fixture strings rather than statements, and
+  # a seeded row named with Sprintf is not a query.
   SQL_HITS=$(go_code 'fmt\.Sprintf\(|fmt\.Sprint\(|strings\.Builder' \
-             | grep '^go/engine/store/' || true)
+             | grep '^go/engine/store/' | grep -v '_test\.go:' || true)
   grep_gate "D14: no built SQL in the store" "$SQL_HITS" \
     "Bind parameters. A query built from parts is an injection waiting for input."
 
@@ -512,6 +514,10 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
       grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' "$1" 2>/dev/null \
         | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true
     }
+    # Initialised before the loops append to it: under `set -u` an unset name
+    # aborts the function, which reported this gate as passing without it
+    # having looked at anything.
+    hits=""
     if [ -d go/engine ]; then
       for d in kit store service infra; do
         [ -d "go/engine/$d" ] || continue

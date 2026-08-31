@@ -45,13 +45,13 @@ async function api(method, path, body, csrf) {
 
 try {
   await page.goto(BASE, { waitUntil: 'domcontentloaded' })
-  const login = await api('POST', '/api/auth/login', { username: USER, password: PASSWORD })
+  const login = await api('POST', '/api/v1/auth/login', { login: USER, password: PASSWORD })
   check('signed in', login.status === 200, `status ${login.status}`)
-  const session = await api('GET', '/api/auth/session')
+  const session = await api('GET', '/api/v1/auth/session')
   const csrf = session.body?.csrf ?? ''
 
   // The share the server was configured with.
-  const shares = await api('GET', '/api/admin/shares')
+  const shares = await api('GET', '/api/v1/admin/shares')
   const shareList = Array.isArray(shares.body) ? shares.body : (shares.body?.shares ?? [])
   check('the configured share is listed', shareList.length > 0,
     JSON.stringify(shares.body).slice(0, 120))
@@ -64,8 +64,8 @@ try {
   // in account the wrong subject for this test, which is about what a grant
   // does rather than about what setup did.
   const member = `grant-probe-${Date.now()}`
-  const madeUser = await api('POST', '/api/admin/users',
-    { name: member, password: 'grant-probe-password' }, csrf)
+  const madeUser = await api('POST', '/api/v1/admin/users',
+    { login: member, password: 'grant-probe-password' }, csrf)
   check('a second account is created', madeUser.status === 201,
     `status ${madeUser.status} ${JSON.stringify(madeUser.body).slice(0, 120)}`)
   const memberID = madeUser.body?.id
@@ -92,10 +92,10 @@ try {
     )
   await memberPage.evaluate(
     async ([u, p]) => {
-      await fetch('/api/auth/login', {
+      await fetch('/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: u, password: p })
+        body: JSON.stringify({ login: u, password: p })
       })
     },
     [member, 'grant-probe-password']
@@ -103,19 +103,19 @@ try {
 
   // Without a grant, the share is not readable. That is the existence rule
   // working, not a missing share.
-  const before = await memberApi('GET', `/api/fs/list?path=${shareName}`)
+  const before = await memberApi('GET', `/api/v1/files/list?path=${shareName}`)
   check('an ungranted share is not readable', before.status === 404, `status ${before.status}`)
 
   // The grant, written through the surface the admin screen uses.
   const created = await api(
     'POST',
-    '/api/admin/grants',
+    '/api/v1/admin/grants',
     {
-      // The shape the admin screen sends. It used to be a bare `user` here,
-      // which the handler read and the screen never sent, so this asserted a
-      // spelling nothing in the interface used.
-      principal: { kind: 'user', id: memberID },
-      share: shareID,
+      // Flat, and the ids are strings: the subject is `user` or `group`, one
+      // or the other, and the response projects them back as a principal
+      // object for the screen to render.
+      user: String(memberID),
+      share: String(shareID),
       subpath: '',
       allow: ['read', 'write', 'create', 'delete', 'download'],
       deny: [],
@@ -129,7 +129,7 @@ try {
 
   // The point of the whole test: the grant is live in the process answering
   // requests, without a restart.
-  const after = await memberApi('GET', `/api/fs/list?path=${shareName}`)
+  const after = await memberApi('GET', `/api/v1/files/list?path=${shareName}`)
   check('the granted share lists immediately, with no restart', after.status === 200,
     `status ${after.status}`)
   check('the listing reports whether its change token is exact',
@@ -148,9 +148,9 @@ try {
   }
 
   // Removing it takes the access away again, also without a restart.
-  const removed = await api('DELETE', `/api/admin/grants/${created.body?.id}`, null, csrf)
+  const removed = await api('DELETE', `/api/v1/admin/grants/${created.body?.id}`, null, csrf)
   check('the grant is removed', removed.status === 204, `status ${removed.status}`)
-  const afterRemoval = await memberApi('GET', `/api/fs/list?path=${shareName}`)
+  const afterRemoval = await memberApi('GET', `/api/v1/files/list?path=${shareName}`)
   check('access is gone immediately', afterRemoval.status === 404, `status ${afterRemoval.status}`)
   await memberCtx.close()
 } finally {

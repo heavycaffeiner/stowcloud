@@ -73,7 +73,10 @@ if ! kill -0 "$SERVER" 2>/dev/null; then
   exit 1
 fi
 
-TOKEN=$(grep -oE 'setup token \(valid[^)]*\): [a-f0-9]+' "$DIR/log" | tail -1 | awk '{print $NF}' || true)
+# From the file the server publishes it in, not the log: the token is kept out
+# of the log on purpose, so scraping there silently yields an empty string and
+# every check past sign-in fails as though the credential were wrong.
+TOKEN=$(cat "$DIR/data/setup-token" 2>/dev/null || true)
 
 # The browser addresses the server by a name it serves. Addressed by its
 # loopback address it answers a misdirected request, which is the host guard

@@ -151,7 +151,10 @@ interface WireListResponse {
   total: number
   dir_etag: string
   dir_etag_weak: boolean
-  next?: string
+  // `cursor`, which is what the server sends. Read as `next` it was always
+  // undefined, so the pager stopped after the first page of every directory
+  // larger than one page.
+  cursor?: string
 }
 
 /**
@@ -180,7 +183,7 @@ function entryFromWire(w: WireEntry): Entry {
   }
 }
 
-/** Widens one page, and maps `next` onto the cursor the app carries. */
+/** Widens one page, carrying the cursor the server ended it with. */
 function listFromWire(w: WireListResponse): ListResponse {
   return {
     entries: (w.entries ?? []).map(entryFromWire),
@@ -188,7 +191,7 @@ function listFromWire(w: WireListResponse): ListResponse {
     total: w.total ?? 0,
     // Absent on the final page. The app's field is nullable, so the end of the
     // walk is a null rather than an empty string that reads as a real cursor.
-    cursor: w.next ? w.next : null,
+    cursor: w.cursor ? w.cursor : null,
     dir_etag: w.dir_etag ?? '',
     dir_etag_weak: w.dir_etag_weak ?? false
   }

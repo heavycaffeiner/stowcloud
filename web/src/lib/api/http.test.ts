@@ -265,3 +265,42 @@ describe('the wire entry widening', () => {
     expect(entry.size).toBe(9007199254740992)
   })
 })
+
+// The pager's whole contract is this one field. The client read it under a
+// name the server does not send, so the cursor was always null and the grid
+// stopped after the first page of any directory bigger than one page. Nothing
+// caught it: routecheck compares paths, not bodies, and a first page looks
+// exactly like a complete listing.
+describe('the listing cursor', () => {
+  async function pageWith(extra: Record<string, unknown>) {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      jsonResponse(200, {
+        entries: [],
+        dirs: 0,
+        total: 9,
+        dir_etag: 'd',
+        dir_etag_weak: false,
+        ...extra
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    return httpApi.list('/Files', {})
+  }
+
+  it('carries the cursor the server ended the page with', async () => {
+    const page = await pageWith({ cursor: 'opaque-cursor-value' })
+    expect(page.cursor).toBe('opaque-cursor-value')
+  })
+
+  it('reports the final page as null rather than undefined', async () => {
+    const page = await pageWith({})
+    // The pager reads null as "stop". Undefined is a third state it does not
+    // handle, so the absence has to become an explicit null here.
+    expect(page.cursor).toBeNull()
+  })
+
+  it('does not read an empty cursor as a real one', async () => {
+    const page = await pageWith({ cursor: '' })
+    expect(page.cursor).toBeNull()
+  })
+})
