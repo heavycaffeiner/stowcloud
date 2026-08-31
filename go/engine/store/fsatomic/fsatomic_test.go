@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -78,6 +79,11 @@ func TestReplaceFileDurableMissingDirectoryRefuses(t *testing.T) {
 }
 
 func TestReplaceFileDurableConcurrentReplacesNeverTearTheFile(t *testing.T) {
+	// Linux-only: Windows refuses to rename over a file another handle has
+	// open, so concurrent replacement is not a contract it can offer.
+	if runtime.GOOS != "linux" {
+		t.Skip("rename-over-open is POSIX; this server is Linux-only")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "index.db")
 	if err := os.WriteFile(path, []byte("initial"), 0o600); err != nil {
@@ -140,6 +146,12 @@ func TestReplaceFileDurableConcurrentReplacesNeverTearTheFile(t *testing.T) {
 // once the rename has detached its name. A reader that opens by name after
 // the replace sees only the new content.
 func TestReplaceFileDurableIsAtomicToConcurrentReaders(t *testing.T) {
+	// Linux-only, for the reason the comment above gives: the old inode
+	// surviving under a reader's descriptor is POSIX behaviour, and Windows
+	// refuses the rename outright while the reader holds the file open.
+	if runtime.GOOS != "linux" {
+		t.Skip("unlink-on-open-handle is POSIX; this server is Linux-only")
+	}
 	dir := t.TempDir()
 	path := filepath.Join(dir, "cache.entry")
 	if err := os.WriteFile(path, []byte("before"), 0o600); err != nil {

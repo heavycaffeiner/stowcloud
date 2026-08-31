@@ -74,13 +74,7 @@ func TestReplaceFilesDurableAllUnitsLandAndEachDirectorySyncsOnce(t *testing.T) 
 		if string(got) != contents[i] {
 			t.Errorf("unit %d holds %q, want %q", i, got, contents[i])
 		}
-		st, serr := os.Stat(u.Path)
-		if serr != nil {
-			t.Fatal(serr)
-		}
-		if got := st.Mode().Perm(); got != os.FileMode(u.Mode) {
-			t.Errorf("unit %d mode %04o, want %04o", i, got, u.Mode)
-		}
+		assertMode(t, u.Path, os.FileMode(u.Mode), i)
 	}
 
 	if len(counts) != 3 {

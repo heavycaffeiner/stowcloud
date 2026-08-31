@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
@@ -97,8 +98,12 @@ func TestAMissingKeyFileIsNotAnError(t *testing.T) {
 }
 
 // The key file is the operator's own; it must not become readable to a
-// neighbour of the data directory.
+// neighbour of the data directory. Linux-only: Windows has no POSIX
+// permission bits and reports 0666 for every regular file.
 func TestAGeneratedKeyFileIsPrivate(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("permission bits are POSIX; this server is Linux-only")
+	}
 	f := newFixture(t)
 	info, err := os.Stat(filepath.Join(f.dir, "master.key"))
 	if err != nil {

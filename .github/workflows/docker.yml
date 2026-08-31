@@ -277,8 +277,13 @@ jobs:
       # listing with the share table and the grants both looking correct.
       - name: A share created from the API is reachable through the sandbox
         run: |
-          token=$(docker logs sc-smoke 2>&1 | grep -oE 'setup token[^:]*: [a-f0-9]+' | tail -1 | awk '{print $NF}')
-          [ -n "$token" ] || { echo "the container printed no setup token"; exit 1; }
+          # The token is written to a file in the data directory and never
+          # logged: a log line carrying it would put the one credential that
+          # creates the administrator into whatever collects logs. The data
+          # directory is bind-mounted, so the host reads it there. sudo
+          # because the file is 0600 owned by the service account's uid.
+          token=$(sudo cat /tmp/sc-data/setup-token | tr -d '[:space:]')
+          [ -n "$token" ] || { echo "the container published no setup token"; exit 1; }
           curl -fsSk -X POST https://127.0.0.1:8443/api/v1/system/setup \
             -H 'content-type: application/json' \
             -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\",\"app_hosts\":[\"127.0.0.1\",\"localhost\"],\"trusted_proxies\":[]}" >/dev/null
@@ -585,9 +590,16 @@ jobs:
       # rather than stopping at a 200 from the health route.
       - name: A file uploaded through the API comes back out
         run: |
-          token=$(docker compose -f compose.buildver.yml logs sc 2>&1 \
-            | grep -oE 'setup token[^:]*: [a-f0-9]+' | tail -1 | awk '{print $NF}')
-          [ -n "$token" ] || { echo "no setup token in the log"; exit 1; }
+          # The token is written into the data directory and never logged, so
+          # it is read from the named volume through the container. The file
+          # is 0600 owned by the service account, so the exec runs as the uid
+          # the image was built with rather than a literal that would rot if
+          # the default ever changed.
+          uid=$(docker compose -f compose.buildver.yml exec -T sc printenv PUID | tr -d '[:space:]')
+          gid=$(docker compose -f compose.buildver.yml exec -T sc printenv PGID | tr -d '[:space:]')
+          token=$(docker compose -f compose.buildver.yml exec -T --user "${uid}:${gid}" sc \
+            cat /var/lib/stowcloud/setup-token | tr -d '[:space:]')
+          [ -n "$token" ] || { echo "no setup token in the data directory"; exit 1; }
           base=https://127.0.0.1:8443
           curl -fsSk -X POST "$base/api/v1/system/setup" -H 'content-type: application/json' \
             -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-compose-password-1\"}" >/dev/null
