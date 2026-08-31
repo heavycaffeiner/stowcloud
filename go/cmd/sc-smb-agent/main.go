@@ -20,8 +20,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/clock"
-	"github.com/heavycaffeiner/stowcloud/go/internal/smbagent"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
+	smbagent "github.com/heavycaffeiner/stowcloud/go/engine/service/smb/agent"
 )
 
 // pollInterval is long enough not to spin, short enough that a scope change
@@ -74,7 +74,10 @@ func run() int {
 	agent := smbagent.NewAgent(paths, mode, log, clock.System())
 
 	if *once {
-		report := agent.Apply()
+		// A one-shot run has no signal loop to inherit from, and the pass
+		// below is the whole process. Background is the honest context for
+		// it: nothing outside is in a position to cancel.
+		report := agent.Apply(context.Background())
 		// Under supervision the daemon is this process's child, so exiting
 		// without stopping it leaves an orphan holding the port that the next
 		// start then cannot bind. Under a service manager the daemon is not
@@ -108,7 +111,7 @@ func run() int {
 
 	// The first apply is what starts the daemon, so it happens before the
 	// socket: an apply-now that arrives during startup would otherwise race it.
-	smbagent.LogReport(log, agent.Apply(), "startup")
+	smbagent.LogReport(log, agent.Apply(ctx), "startup")
 
 	if mode.Kind == smbagent.ModeSupervise {
 		// After the first apply, because the log path is the one the candidate
@@ -122,7 +125,7 @@ func run() int {
 		agent.StartFail2ban()
 	}
 
-	smbagent.ServeInBackground(ctx, *socket, agent, paths.ConfigDir, log)
+	smbagent.ServeInBackground(ctx, *socket, agent, paths.ConfigDir, clock.System(), log)
 
 	poll(ctx, agent, mode, log)
 	log.Info("stopping")
@@ -147,7 +150,7 @@ func poll(ctx context.Context, agent *smbagent.Agent, mode smbagent.Mode, log *s
 
 		if now := agent.Fingerprint(); now != last {
 			last = now
-			smbagent.LogReport(log, agent.Apply(), "poll")
+			smbagent.LogReport(log, agent.Apply(ctx), "poll")
 			continue
 		}
 
@@ -162,7 +165,7 @@ func poll(ctx context.Context, agent *smbagent.Agent, mode smbagent.Mode, log *s
 		wantedUp := agent.Last().Smbd != smbagent.ActionStopped
 		if mode.Kind == smbagent.ModeSupervise && wantedUp && !agent.SmbdRunning() {
 			log.Warn("the daemon is not running; starting it again")
-			smbagent.LogReport(log, agent.Apply(), "poll")
+			smbagent.LogReport(log, agent.Apply(ctx), "poll")
 		}
 	}
 }

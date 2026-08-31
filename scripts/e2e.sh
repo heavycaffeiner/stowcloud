@@ -17,13 +17,13 @@ if ! command -v node >/dev/null 2>&1; then
   exit 0
 fi
 if [ ! -d web/node_modules ]; then
-  echo "SKIP: no web/node_modules; run npm ci in web/" >&2
+  echo "SKIP: no web/node_modules; run pnpm install in web/" >&2
   exit 0
 fi
-# npm ci does not fetch a browser: Playwright downloads one separately. Without
-# this check a missing browser surfaced as an uncaught exception from a launch
-# deep in the suite, printing Playwright's own "just installed" banner and
-# reading as a product failure.
+# The install does not fetch a browser: Playwright downloads one separately.
+# Without this check a missing browser surfaced as an uncaught exception from
+# a launch deep in the suite, printing Playwright's own "just installed"
+# banner and reading as a product failure.
 # A launch rather than a path check: chromium.launch() resolves to the headless
 # shell, which is a different download from the one executablePath() names, so
 # testing that path reports missing on a machine where the suite runs.
@@ -34,16 +34,16 @@ chromium.launch().then(b => b.close()).then(
   () => process.exit(1),
 );
 ' 2>/dev/null); then
-  echo "SKIP: no browser; run: cd web && npx playwright install chromium" >&2
+  echo "SKIP: no browser; run: cd web && pnpm exec playwright install chromium" >&2
   exit 0
 fi
 
 echo "==> building the frontend"
-(cd web && npm run build >/dev/null)
+(cd web && pnpm build >/dev/null)
 
 echo "==> building the binary"
-BIN=$(mktemp -d)/stowcloud
-(cd go && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/stowcloud)
+BIN=$(mktemp -d)/sc-engine
+(cd go && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
 
 DIR=$(mktemp -d)
 mkdir -p "$DIR/data" "$DIR/share/sub"
@@ -62,7 +62,7 @@ echo '{"per_sec":2000,"burst":5000}' | seed rate
 echo '{"hardening":"off"}' | seed security
 
 echo "==> serving"
-"$BIN" serve --data-dir "$DIR/data" > "$DIR/log" 2>&1 &
+"$BIN" -data "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 sleep 6
@@ -73,7 +73,10 @@ if ! kill -0 "$SERVER" 2>/dev/null; then
   exit 1
 fi
 
-TOKEN=$(grep -oE 'setup token \(valid[^)]*\): [a-f0-9]+' "$DIR/log" | tail -1 | awk '{print $NF}' || true)
+# From the file the server publishes it in, not the log: the token is kept out
+# of the log on purpose, so scraping there silently yields an empty string and
+# every check past sign-in fails as though the credential were wrong.
+TOKEN=$(cat "$DIR/data/setup-token" 2>/dev/null || true)
 
 # The browser addresses the server by a name it serves. Addressed by its
 # loopback address it answers a misdirected request, which is the host guard

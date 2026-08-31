@@ -49,51 +49,63 @@ async function api(method, path, body, csrf) {
 
 try {
   await page.goto(BASE, { waitUntil: 'domcontentloaded' })
-  const login = await api('POST', '/api/auth/login', { username: USER, password: PASSWORD })
+  const login = await api('POST', '/api/v1/auth/login', { login: USER, password: PASSWORD })
   check('signed in', login.status === 200, `status ${login.status}`)
-  const session = await api('GET', '/api/auth/session')
+  const session = await api('GET', '/api/v1/auth/session')
   const csrf = session.body?.csrf ?? ''
 
-  // The session carries the single-sign-on block the settings screen reads. It
-  // has to be present and say "not linked" rather than be absent, or the screen
-  // cannot tell "no link" from "this build has no such field".
-  check('the session reports the single-sign-on link',
-    typeof session.body?.oidc?.linked === 'boolean',
-    JSON.stringify(session.body?.oidc))
-
   // ---- recency ----
-  const recent = await api('GET', '/api/recent?limit=20')
+  // A bare list, not an envelope: the journal answers what this account wrote
+  // and there is nothing else to carry alongside it.
+  const recent = await api('GET', '/api/v1/files/recent?limit=20')
   check('recency answers', recent.status === 200, `status ${recent.status}`)
-  check('recency answers with a list', Array.isArray(recent.body?.hits),
+  check('recency answers with a list', Array.isArray(recent.body),
     JSON.stringify(recent.body).slice(0, 120))
 
-  // A window and a scope are both accepted, which is what the screen sends.
-  const windowed = await api('GET', '/api/recent?since=2020-01-01T00:00:00Z&limit=5')
+  // The window is a nanosecond instant, not a date: a day count would have to
+  // be resolved against somebody's clock, and the two ends of this wire are
+  // frequently in different zones.
+  const windowed = await api('GET', '/api/v1/files/recent?since=1600000000000000000&limit=5')
   check('recency accepts a window', windowed.status === 200, `status ${windowed.status}`)
+  check('a window still answers a list', Array.isArray(windowed.body),
+    JSON.stringify(windowed.body).slice(0, 120))
 
-  // A window this server cannot read is refused rather than quietly ignored: a
-  // request that silently returned everything would look like an empty window.
-  const badWindow = await api('GET', '/api/recent?since=last-tuesday')
-  check('an unreadable window is refused', badWindow.status === 400,
+  // An unreadable window reads as no window rather than a refusal: a listing
+  // is a read, and refusing one over a spelling takes the screen away instead
+  // of showing it unfiltered.
+  const badWindow = await api('GET', '/api/v1/files/recent?since=last-tuesday')
+  check('an unreadable window falls back to no window', badWindow.status === 200,
     `status ${badWindow.status}`)
 
   // ---- the index ----
-  const estimate = await api('GET', '/api/admin/index/estimate')
+  const estimate = await api('GET', '/api/v1/admin/index/estimate')
   check('the index estimate answers', estimate.status === 200, `status ${estimate.status}`)
-  check('the estimate carries a size', typeof estimate.body?.index_bytes === 'number',
+  // A decimal string, because a large corpus runs past what a JavaScript
+  // number holds exactly and the figure an operator plans against would round.
+  check('the estimate carries a size', typeof estimate.body?.index_bytes === 'string',
     JSON.stringify(estimate.body).slice(0, 160))
   check('the estimate says how much it measured',
-    ['high', 'medium', 'low'].includes(estimate.body?.confidence),
+    ['measured', 'modelled'].includes(estimate.body?.confidence),
     `confidence=${estimate.body?.confidence}`)
+  check('the estimate shows its working', typeof estimate.body?.formula === 'string',
+    JSON.stringify(estimate.body).slice(0, 160))
 
-  // The build is a job every time, because it walks every share by definition.
-  const build = await api('POST', '/api/admin/index/build', null, csrf)
-  check('the index build is accepted', build.status === 202 || build.status === 501,
+  // The build is refused outright where the index is switched off, which is
+  // the default. That is a configuration state, not a fault, and it says which
+  // one rather than failing anonymously.
+  const build = await api('POST', '/api/v1/admin/index/build', null, csrf)
+  check('the index build says whether it can run',
+    build.status === 202 || build.status === 503,
     `status ${build.status} ${JSON.stringify(build.body).slice(0, 120)}`)
+  if (build.status === 503) {
+    check('a disabled index says so by name',
+      build.body?.error?.detail?.reason_key === 'search.index_disabled',
+      JSON.stringify(build.body).slice(0, 160))
+  }
   if (build.status === 202) {
     check('the build answers a job id', build.body?.job !== undefined,
       JSON.stringify(build.body))
-    const job = await api('GET', `/api/jobs/${build.body?.job}`)
+    const job = await api('GET', `/api/v1/jobs/${build.body?.job}`)
     check('the build job is readable', job.status === 200, `status ${job.status}`)
     // Underscore, which is the spelling the client switches on. It was a
     // hyphen on the wire and matched no branch there.
@@ -104,7 +116,7 @@ try {
   // ---- single sign-on ----
   // Reachable with no credential by necessity: the login screen asks before
   // anyone has signed in.
-  const oidcConfig = await api('GET', '/api/auth/oidc/config')
+  const oidcConfig = await api('GET', '/api/v1/auth/oidc/config')
   check('the single-sign-on config answers', oidcConfig.status === 200,
     `status ${oidcConfig.status}`)
   check('it says whether a provider is configured',
@@ -115,48 +127,47 @@ try {
     oidcConfig.body?.issuer === undefined && oidcConfig.body?.client_id === undefined,
     JSON.stringify(oidcConfig.body))
 
-  // These are navigations, not fetches. The flow works by sending the browser
-  // somewhere, so what matters is where the browser ends up: a fetch reports
-  // an opaque redirect and proves nothing about the destination.
-  //
-  // With no provider configured the start sends the person back with a
-  // symbolic code rather than an error page they cannot act on.
-  await page.goto(`${BASE}/api/auth/oidc/start`, { waitUntil: 'domcontentloaded' })
-  check('a deployment with no provider says so where the browser lands',
-    page.url().includes('oidc_error=oidc.disabled'), `landed on ${page.url()}`)
+  // With no provider configured the start refuses rather than redirecting:
+  // there is nowhere to send the browser, and a symbolic code in a query
+  // string would be a redirect to a flow that does not exist.
+  const startNoProvider = await api('GET', '/api/v1/auth/oidc/start')
+  check('a deployment with no provider refuses to start a flow',
+    startNoProvider.status === 503,
+    `status ${startNoProvider.status} ${JSON.stringify(startNoProvider.body).slice(0, 120)}`)
 
   // An open redirect is what this route would be if it trusted the caller's
-  // destination. The browser has to land back on this server.
+  // destination. These are navigations, not fetches: what matters is where the
+  // browser ends up, and a fetch reports an opaque redirect that proves
+  // nothing about the destination.
   await page.goto(
-    `${BASE}/api/auth/oidc/start?returnTo=${encodeURIComponent('https://evil.example.com/')}`,
+    `${BASE}/api/v1/auth/oidc/start?return_to=${encodeURIComponent('https://evil.example.com/')}`,
     { waitUntil: 'domcontentloaded' }
   )
   check('a destination somewhere else is refused', page.url().startsWith(BASE),
     `landed on ${page.url()}`)
 
   await page.goto(
-    `${BASE}/api/auth/oidc/start?returnTo=${encodeURIComponent('//evil.example.com/')}`,
+    `${BASE}/api/v1/auth/oidc/start?return_to=${encodeURIComponent('//evil.example.com/')}`,
     { waitUntil: 'domcontentloaded' }
   )
   check('a scheme-relative destination is refused', page.url().startsWith(BASE),
     `landed on ${page.url()}`)
 
-  // The callback with nothing to work from lands the person back here too,
-  // rather than on a status a browser renders as a failure.
-  await page.goto(`${BASE}/api/auth/oidc/callback`, { waitUntil: 'domcontentloaded' })
+  // The callback with nothing to work from stays on this server rather than
+  // sending the browser somewhere a stored flow might have named.
+  await page.goto(`${BASE}/api/v1/auth/oidc/callback`, { waitUntil: 'domcontentloaded' })
   check('the callback lands the browser back here', page.url().startsWith(BASE),
     `landed on ${page.url()}`)
-  check('the callback says why it could not proceed',
-    page.url().includes('oidc_error='), `landed on ${page.url()}`)
 
   // Back to the app, since the navigations above left the page elsewhere.
   await page.goto(BASE, { waitUntil: 'domcontentloaded' })
 
-  // The administrator's view of an account's link.
-  const adminLink = await api('GET', `/api/admin/users/${session.body?.user?.id}/oidc`)
+  // The administrator's view of an account's link. The session carries the id
+  // at the top level, not under a `user` object.
+  const adminLink = await api('GET', `/api/v1/admin/users/${session.body?.id}/oidc`)
   check('the admin link view answers', adminLink.status === 200, `status ${adminLink.status}`)
   check('an unlinked account reports no identity',
-    adminLink.body?.linked === false && adminLink.body?.subject === null,
+    adminLink.body?.linked === false,
     JSON.stringify(adminLink.body))
 
   // ---- the change channel ----
@@ -165,7 +176,7 @@ try {
   const events = await page.evaluate(
     (base) =>
       new Promise((resolve) => {
-        const url = base.replace('https://', 'wss://') + '/api/events'
+        const url = base.replace('https://', 'wss://') + '/api/v1/events'
         const sock = new WebSocket(url)
         const done = (v) => {
           try {
@@ -183,7 +194,7 @@ try {
 
   // ---- SMB ----
   // Not configured here, so the apply says so rather than pretending it ran.
-  const smb = await api('POST', '/api/admin/smb/apply', null, csrf)
+  const smb = await api('POST', '/api/v1/admin/smb/apply', null, csrf)
   check('the SMB apply answers about this deployment',
     smb.status === 503 || smb.status === 200 || smb.status === 502,
     `status ${smb.status} ${JSON.stringify(smb.body).slice(0, 140)}`)
@@ -192,32 +203,41 @@ try {
   //
   // Each of these answered "method not allowed" from a route that existed,
   // which is invisible to a check that compares paths and ignores verbs.
-  const groups = await api('GET', '/api/admin/groups')
+  const groups = await api('GET', '/api/v1/admin/groups')
   check('groups list', groups.status === 200, `status ${groups.status}`)
 
-  const madeGroup = await api('POST', '/api/admin/groups', { name: `e2e-${Date.now()}` }, csrf)
+  const madeGroup = await api('POST', '/api/v1/admin/groups', { name: `e2e-${Date.now()}` }, csrf)
   check('a group is created', madeGroup.status === 201 || madeGroup.status === 200,
     `status ${madeGroup.status}`)
   const groupID = madeGroup.body?.id
   if (groupID !== undefined) {
-    const renamed = await api('PATCH', `/api/admin/groups/${groupID}`,
+    const renamed = await api('PATCH', `/api/v1/admin/groups/${groupID}`,
       { name: `e2e-renamed-${Date.now()}` }, csrf)
-    check('a group is renamed', renamed.status === 200,
+    check('a group is renamed', renamed.status === 204,
       `status ${renamed.status} ${JSON.stringify(renamed.body).slice(0, 120)}`)
-    check('the rename answers the whole group', Array.isArray(renamed.body?.members),
-      JSON.stringify(renamed.body).slice(0, 120))
-    const deleted = await api('DELETE', `/api/admin/groups/${groupID}`, null, csrf)
+    // The rename answers no body, so the screen re-reads the list. What
+    // proves the write landed is the list, not the response.
+    const afterRename = await api('GET', '/api/v1/admin/groups')
+    const rows = Array.isArray(afterRename.body)
+      ? afterRename.body
+      : (afterRename.body?.groups ?? [])
+    check('the rename is visible in the list',
+      rows.some((g) => String(g.id) === String(groupID) && g.name.startsWith('e2e-renamed-')),
+      JSON.stringify(afterRename.body).slice(0, 160))
+    const deleted = await api('DELETE', `/api/v1/admin/groups/${groupID}`, null, csrf)
     check('a group is deleted', deleted.status === 204, `status ${deleted.status}`)
   }
 
-  // Cancelling a job: the client sends DELETE and only POST-to-cancel was
-  // mounted.
-  const cancelled = await api('DELETE', '/api/jobs/999999', null, csrf)
-  check('cancelling a job is not a method error',
-    cancelled.status !== 405, `status ${cancelled.status}`)
+  // Cancelling a job. One spelling now: the client posts to the action rather
+  // than deleting the job, and the DELETE alias is gone. A job nobody owns is
+  // a 404, and what this asserts is that the route is mounted at all.
+  const cancelled = await api('POST', '/api/v1/jobs/999999/cancel', null, csrf)
+  check('cancelling a job reaches a handler rather than a method refusal',
+    cancelled.status === 404,
+    `status ${cancelled.status}`)
 
   // ---- archives ----
-  const shares = await api('GET', '/api/admin/shares')
+  const shares = await api('GET', '/api/v1/admin/shares')
   const shareList = Array.isArray(shares.body) ? shares.body : (shares.body?.shares ?? [])
   const shareID = shareList[0]?.id
   const shareName = shareList[0]?.name
@@ -225,12 +245,13 @@ try {
   if (shareID !== undefined) {
     const grant = await api(
       'POST',
-      '/api/admin/grants',
+      '/api/v1/admin/grants',
       {
-        // The shape the admin screen sends.
-        principal: { kind: 'user', id: session.body?.user?.id },
-        share: shareID,
-        subpath: '/',
+        // Flat, with string ids: the subject is `user` or `group`, and the
+        // session carries the id at the top level.
+        user: String(session.body?.id),
+        share: String(shareID),
+        subpath: '',
         allow: ['read', 'download'],
         deny: [],
         inherit: true,
@@ -250,7 +271,7 @@ try {
   const search = await page.evaluate(
     (base) =>
       new Promise((resolve) => {
-        const es = new EventSource(`${base}/api/search/stream?q=txt`, { withCredentials: true })
+        const es = new EventSource(`${base}/api/v1/search/stream?q=txt`, { withCredentials: true })
         const hits = []
         const done = (v) => {
           es.close()
@@ -279,7 +300,7 @@ try {
   if (shareName) {
     const archive = await page.evaluate(
       async ([token, path]) => {
-        const res = await fetch('/api/fs/archive', {
+        const res = await fetch('/api/v1/files/archive', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Sc-Csrf': token },
           body: JSON.stringify({ paths: [path], name: 'test' })
@@ -308,7 +329,7 @@ try {
       `disposition ${archive.disposition}`)
   }
   if (grantID !== null && grantID !== undefined) {
-    await api('DELETE', `/api/admin/grants/${grantID}`, null, csrf)
+    await api('DELETE', `/api/v1/admin/grants/${grantID}`, null, csrf)
   }
 } finally {
   await browser.close()

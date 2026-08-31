@@ -5,9 +5,11 @@
 # Blank lines and lines starting with # are ignored.
 #
 # The parent proposal's table says why each one is not the standard library.
-# The ones it commits to that have not arrived yet, and the phase that brings
-# each: x/crypto, x/sync, klauspost/compress (9), BurntSushi/toml (5), a
-# pure-Go BLAKE3 (6), x/image (9).
+# The one it commits to that has not arrived: x/sync.
+#
+# An entry here is a module the tree actually imports. Listing one it does not
+# makes the gate fail closed on a dependency nobody took, which is how the
+# TOML parser sat here for phases after every setting moved into the database.
 
 golang.org/x/sys
 
@@ -31,10 +33,6 @@ modernc.org/sqlite
 # is why it is one entry here and one direct dependency rather than two.
 lukechampine.com/blake3
 
-# sc.toml, the one config file the product reads. It enters the module graph
-# with Phase 5, which is the phase that parses it.
-github.com/BurntSushi/toml
-
 # BMP, TIFF and WebP decoding for the preview worker. The standard library
 # covers JPEG, PNG and GIF; these three are what x/image adds, and all of them
 # are pure Go, which is what keeps the decoders out of a C library and
@@ -48,8 +46,30 @@ golang.org/x/image
 # was expected to need it first.
 github.com/klauspost/compress
 
-# The change channel for /api/events. The dependency decision was reopened
+# The change channel for /api/v1/events. The dependency decision was reopened
 # because the protocol carries client frames (sub/unsub), so a hand-rolled
 # frame layer would re-implement control-frame handling, close codes and
 # fragmentation that a maintained module already owns.
+#
+# It serves the old tree only. gorilla upgrades over net/http, and the engine
+# runs on fasthttp, which exposes no Hijacker for gorilla to take the socket
+# through. This entry leaves with internal/.
 github.com/gorilla/websocket
+
+# The same change channel on the engine's transport. It is the gorilla API
+# over fasthttp rather than a second protocol implementation, which is what
+# makes the wire frames and the authorization behaviour carry across unchanged.
+#
+# Confined to engine/http and the assembly by the layer gate, which matches
+# the whole gofiber organization rather than the framework's own path: this
+# module serves requests, and that is what the rule is about.
+github.com/gofiber/contrib/websocket
+
+# The presentation layer's HTTP engine, replacing the hand-rolled net/http
+# stack. Settled as D2 before phase 3 began, and importable only under
+# engine/http, which the layer gate enforces.
+#
+# Its transport (fasthttp, bytebufferpool, tcplisten) arrives with it but is
+# not listed: this file names direct modules, and nothing here imports those
+# three by name.
+github.com/gofiber/fiber/v2

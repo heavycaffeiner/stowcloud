@@ -61,13 +61,17 @@ import {
   type SMBOutcome,
   type UploadSettingsReq,
   type UploadSettingsResp,
-  type WatchSettingsReq
+  type WatchSettingsReq,
+  type Kind,
+  type Perms,
+  permsFromNames,
+  permNamesOf
 } from './types'
 import type { ListOpts, SearchDone, SearchHit } from './mock'
 import { noteUnauthorized } from '../state/auth.svelte'
 import { normalizePath } from './path-utils'
 
-const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api'
+const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 
 let csrfToken = ''
 export function setCsrfToken(t: string): void {
@@ -108,8 +112,8 @@ function errorFrom(res: Response, body: unknown): ApiError {
   //
   // Gated on `code`, not just `status`: `auth.invalid_credentials` is also
   // a 401, but it means "this specific re-confirmation was wrong" (a bad
-  // *current* password on `/auth/password`, a bad TOTP code on
-  // `/auth/totp/enroll`), not "the session cookie is gone". The settings
+  // *current* password on `/account/password`, a bad TOTP code on
+  // `/account/totp/enroll`), not "the session cookie is gone". The settings
   // screens for those actions (`PasswordSection`/`TotpSection`) need that
   // error to stay a rejected promise they show inline — bouncing the whole
   // app to the login screen because someone mistyped their *current*
@@ -117,6 +121,80 @@ function errorFrom(res: Response, body: unknown): ApiError {
   // failure" this task explicitly rules out.
   if (res.status === 401 && errBody.code === 'auth.required') noteUnauthorized()
   return err
+}
+
+/**
+ * The listing shapes as they arrive, before the app's own shapes are built.
+ *
+ * Two fields differ from what the app reads, and both differ for a reason.
+ * `size` is a decimal string because a file past 2^53 bytes loses exactness as
+ * a JavaScript number, and a size that comes back wrong is a download that
+ * comes back wrong. `perms` is the granted names only, so absent means denied.
+ */
+interface WireEntry {
+  name: string
+  path: string
+  kind: Kind
+  is_dir: boolean
+  size: string
+  mtime_ns: string
+  btime_ns?: string
+  etag: string
+  etag_weak: boolean
+  perms: string[]
+  preview?: { available: boolean }
+}
+
+interface WireListResponse {
+  entries: WireEntry[]
+  dirs: number
+  total: number
+  dir_etag: string
+  dir_etag_weak: boolean
+  // `cursor`, which is what the server sends. Read as `next` it was always
+  // undefined, so the pager stopped after the first page of every directory
+  // larger than one page.
+  cursor?: string
+}
+
+/**
+ * Widens one wire entry into the shape the app reads.
+ *
+ * The size is parsed with Number rather than kept as a string because every
+ * consumer formats or compares it arithmetically. Past 2^53 that loses the
+ * exact byte count, which is why the wire carries the string; nothing in this
+ * interface displays a number that large without rounding it anyway.
+ */
+function entryFromWire(w: WireEntry): Entry {
+  return {
+    name: w.name,
+    path: w.path,
+    kind: w.kind,
+    size: Number(w.size ?? 0),
+    mtime_ns: w.mtime_ns ?? '0',
+    etag: w.etag ?? '',
+    etag_weak: w.etag_weak ?? false,
+    perms: permsFromNames(w.perms),
+    // Dropping these two was invisible in the list, which reads neither, and
+    // total in the grid: no entry claimed a thumbnail, so no card ever asked
+    // for one and every image showed the generic type icon.
+    ...(w.btime_ns === undefined ? {} : { btime_ns: w.btime_ns }),
+    ...(w.preview === undefined ? {} : { preview: { available: w.preview.available === true } })
+  }
+}
+
+/** Widens one page, carrying the cursor the server ended it with. */
+function listFromWire(w: WireListResponse): ListResponse {
+  return {
+    entries: (w.entries ?? []).map(entryFromWire),
+    dirs: w.dirs ?? 0,
+    total: w.total ?? 0,
+    // Absent on the final page. The app's field is nullable, so the end of the
+    // walk is a null rather than an empty string that reads as a real cursor.
+    cursor: w.cursor ? w.cursor : null,
+    dir_etag: w.dir_etag ?? '',
+    dir_etag_weak: w.dir_etag_weak ?? false
+  }
 }
 
 function qs(params: Record<string, string | number | undefined>): string {
@@ -128,14 +206,79 @@ function qs(params: Record<string, string | number | undefined>): string {
   return s ? `?${s}` : ''
 }
 
+/**
+ * The session, as the wire sends it: the identity's fields sit at the top
+ * level rather than under a `user` object, and permissions are name arrays.
+ */
+interface WireSession {
+  id: string
+  login: string
+  display?: string
+  admin: boolean
+  csrf: string
+  totp_enabled: boolean
+  smb_opt_out: boolean
+  smb_enabled: boolean
+  smb_credential?: SessionInfo['user']['smb_credential']
+  smb_unavailable_reason?: SessionInfo['user']['smb_unavailable_reason']
+  roots: Array<{
+    label: string
+    perms: string[]
+    shared_externally: boolean
+    trash_enabled: boolean
+    broken_reason?: string
+  }>
+  limits: SessionInfo['limits']
+  features: SessionInfo['features']
+}
+
 async function session(): Promise<SessionInfo> {
-  const s = await request<SessionInfo>('/auth/session')
-  setCsrfToken(s.csrf)
+  const w = await request<WireSession>('/auth/session')
+  setCsrfToken(w.csrf)
+
+  const s: SessionInfo = {
+    user: {
+      // The wire carries the id as a decimal string, because an account id
+      // past 2^53 is not exact as a JavaScript number. Nothing here does
+      // arithmetic on it, so it is parsed once for the shape the app reads.
+      id: Number(w.id),
+      name: w.login,
+      display_name: w.display ?? '',
+      is_admin: w.admin,
+      totp_enabled: w.totp_enabled,
+      smb_opt_out: w.smb_opt_out,
+      smb_enabled: w.smb_enabled,
+      smb_credential: w.smb_credential,
+      smb_unavailable_reason: w.smb_unavailable_reason
+    },
+    roots: (w.roots ?? []).map((r) => ({
+      label: r.label,
+      perms: permsFromNames(r.perms),
+      // Not on the wire. The kind a share was created as is an operator's
+      // concern; what the interface needs from a root is what it may do
+      // there, which `perms` already says.
+      share_kind: 'Normal',
+      shared_externally: r.shared_externally,
+      trash_enabled: r.trash_enabled,
+      broken_reason: r.broken_reason
+    })),
+    csrf: w.csrf,
+    limits: w.limits,
+    features: w.features,
+    // The engine serves no OIDC link state on the session yet. Reported as
+    // unlinked rather than omitted, so the settings screen renders its
+    // "not linked" state instead of failing on a missing object.
+    oidc: { linked: false }
+  }
   return s
 }
 
 async function login(username: string, password: string): Promise<LoginResult> {
-  return request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) })
+  // `login`, not `username`: the field the handler decodes. A body with the
+  // wrong key decodes as an empty login, which is refused as a bad credential
+  // rather than as a malformed request, so the screen would say the password
+  // was wrong no matter what was typed.
+  return request('/auth/login', { method: 'POST', body: JSON.stringify({ login: username, password }) })
 }
 
 async function loginTotp(challenge: string, code: string): Promise<LoginResult> {
@@ -146,50 +289,52 @@ async function logout(): Promise<void> {
   await request('/auth/logout', { method: 'POST' })
 }
 
+/**
+ * A directory page.
+ *
+ * Paging is a cursor walk, not a random-access window. The server orders the
+ * whole directory and cuts the page the cursor names, so an offset into a
+ * listing has nothing to index: there is no server-side listing session to
+ * hold one. `next` is absent on the final page, which is what ends the walk.
+ */
 async function list(path: string, opts: ListOpts): Promise<ListResponse> {
-  if (opts.listing) {
-    // A scroll-driven window. `offset` takes precedence over `cursor`: both
-    // are an index into the sorted listing, and a window is a random-access
-    // slice rather than a walk from the front.
-    //
-    // `dir_etag` is the token the client last saw. The server compares it and
-    // answers `stale` when the directory moved, which is what tells the
-    // caller its cached offsets no longer name the rows it thinks they do.
-    return request(
-      `/fs/list${qs({
-        listing: opts.listing,
-        cursor: opts.cursor,
-        offset: opts.offset,
-        limit: opts.limit,
-        sort: opts.sort,
-        order: opts.order,
-        dir_etag: opts.dirEtag
-      })}`,
-      { signal: opts.signal }
-    )
-  }
-  return request(`/fs/list${qs({ path, sort: opts.sort, order: opts.order, offset: opts.offset, limit: opts.limit })}`, {
-    signal: opts.signal
-  })
+  const page = await request<WireListResponse>(
+    `/files/list${qs({
+      path,
+      cursor: opts.cursor,
+      limit: opts.limit,
+      sort: opts.sort,
+      order: opts.order
+    })}`,
+    { signal: opts.signal }
+  )
+  return listFromWire(page)
 }
 
 async function stat(path: string): Promise<Entry> {
-  return request(`/fs/stat${qs({ path })}`)
+  return entryFromWire(await request<WireEntry>(`/files/stat${qs({ path })}`))
 }
 
 async function mkdir(path: string): Promise<Entry> {
-  return request('/fs/mkdir', { method: 'POST', body: JSON.stringify({ path }) })
+  return entryFromWire(
+    await request<WireEntry>('/files/mkdir', { method: 'POST', body: JSON.stringify({ path }) })
+  )
 }
 
 async function rename(path: string, newName: string): Promise<Entry> {
   // `new_name`, which is what the handler decodes. It sent `name`, so every
   // rename decoded as an empty new name and came back 422 invalid_name with
   // an empty component: the dialogue closed on nothing.
-  return request('/fs/rename', { method: 'POST', body: JSON.stringify({ path, new_name: newName }) })
+  return entryFromWire(
+    await request<WireEntry>('/files/rename', {
+      method: 'POST',
+      body: JSON.stringify({ path, new_name: newName })
+    })
+  )
 }
 
 /**
- * `POST /api/fs/copy` answers per-item results and, when at least one item
+ * `POST /api/v1/files/copy` answers per-item results and, when at least one item
  * actually started, the job to poll.
  *
  * `job` is absent when nothing started: every item was refused, or every item
@@ -198,33 +343,130 @@ async function rename(path: string, newName: string): Promise<Entry> {
  * until its own timeout fired.
  */
 async function copy(req: MoveReq): Promise<CopyResult> {
-  return request('/fs/copy', { method: 'POST', body: JSON.stringify(req) })
+  const results: BatchItemResult[] = []
+  let job: string | undefined
+  for (const path of req.paths) {
+    try {
+      // The route names both ends of one transfer, so a selection is one
+      // request each, in sequence.
+      const out = await request<{ id?: string; path: string; started: boolean; skipped: boolean }>(
+        '/files/copy',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            from: path,
+            to: joinDest(req.dest, path),
+            on_conflict: req.on_conflict
+          })
+        }
+      )
+      results.push({ path, ok: true })
+      // A copy large enough to run in the background answers with the job to
+      // poll. The last one wins, which is what the tray follows.
+      if (out.started && out.id) job = out.id
+    } catch (err) {
+      results.push({
+        path,
+        ok: false,
+        error: errorBodyOf(err)
+      })
+    }
+  }
+  return { results, job }
+}
+
+/** The per-item error shape, from whatever was thrown. */
+function errorBodyOf(err: unknown): ApiErrorBody['error'] {
+  if (err instanceof ApiError) {
+    return { code: err.code, message: err.message, detail: err.detail }
+  }
+  return { code: 'internal', message: String(err) }
+}
+
+/** The destination path for one item moved or copied into a folder.
+ *
+ *  The route names both ends, so the caller decides what the item is called
+ *  where it lands: its own name, under the chosen folder. */
+function joinDest(dest: string, source: string): string {
+  const name = source.split('/').filter(Boolean).pop() ?? source
+  return `${dest.replace(/\/+$/, '')}/${name}`
 }
 
 /**
- * `POST /api/fs/move` answers inline, not with a job: a move is a rename
+ * `POST /api/v1/files/move` answers inline, not with a job: a move is a rename
  * within one filesystem, which finishes in the request. Only the cross-device
  * case copies bytes, and the server reports that per item as `will_copy`
  * rather than deferring the whole batch.
  */
 async function move(req: MoveReq): Promise<BatchResult> {
-  return request('/fs/move', { method: 'POST', body: JSON.stringify({ ...req, dry_run: false }) })
+  const results: BatchItemResult[] = []
+  for (const path of req.paths) {
+    try {
+      await request('/files/move', {
+        method: 'POST',
+        body: JSON.stringify({
+          from: path,
+          to: joinDest(req.dest, path),
+          on_conflict: req.on_conflict
+        })
+      })
+      results.push({ path, ok: true })
+    } catch (err) {
+      results.push({
+        path,
+        ok: false,
+        error: errorBodyOf(err)
+      })
+    }
+  }
+  return { results }
 }
 
-/** The same endpoint with `dry_run`, which reports what each item would do
- *  without doing it: what the destination picker asks before it commits. */
-async function movePreflight(req: MoveReq): Promise<MovePreflight> {
-  return request('/fs/move', { method: 'POST', body: JSON.stringify({ ...req, dry_run: true }) })
+/**
+ * What a move would do, asked before it is committed.
+ *
+ * The server has no preflight: a move either happens or is refused, and there
+ * is no request that reports what one would do without doing it. Answering
+ * with nothing rather than guessing is what keeps the notice honest, and the
+ * dialogue already treats a missing answer as "no notice to show".
+ */
+async function movePreflight(_req: MoveReq): Promise<MovePreflight> {
+  return { results: [] }
 }
 
-async function del(paths: string[], permanent = false): Promise<{ results: BatchItemResult[] }> {
-  return request('/fs/delete', { method: 'POST', body: JSON.stringify({ paths, permanent }) })
+/**
+ * Deletes each path, reporting per item.
+ *
+ * The route takes one path, so a selection is one request each. They run in
+ * sequence rather than together: a delete is destructive, and a burst of them
+ * against one directory is the case where a rate limit turns half a selection
+ * into an error the person then has to work out the extent of.
+ *
+ * A failure is recorded against its own path and the rest continue, which is
+ * what makes the result usable: the dialogue names what did not go, and the
+ * listing shows what did.
+ */
+async function del(paths: string[]): Promise<{ results: BatchItemResult[] }> {
+  const results: BatchItemResult[] = []
+  for (const path of paths) {
+    try {
+      await request('/files/delete', { method: 'POST', body: JSON.stringify({ path }) })
+      results.push({ path, ok: true })
+    } catch (err) {
+      results.push({
+        path,
+        ok: false,
+        error: errorBodyOf(err)
+      })
+    }
+  }
+  return { results }
 }
 
 // ── content links & archive download (§8) ──
 
 /**
- * `POST /api/fs/archive` streams the ZIP itself. The server never stores one,
+ * `POST /api/v1/files/archive` streams the ZIP itself. The server never stores one,
  * so there is no job to poll and no second request for the bytes: they arrive
  * as this response's body, and the caller saves it.
  *
@@ -234,7 +476,7 @@ async function del(paths: string[], permanent = false): Promise<{ results: Batch
 async function archive(paths: string[], name?: string): Promise<Blob> {
   const headers = new Headers({ 'Content-Type': 'application/json' })
   if (csrfToken) headers.set('Sc-Csrf', csrfToken)
-  const res = await fetch(`${BASE}/fs/archive`, {
+  const res = await fetch(`${BASE}/files/archive`, {
     method: 'POST',
     credentials: 'include',
     headers,
@@ -248,18 +490,34 @@ async function archive(paths: string[], name?: string): Promise<Blob> {
 }
 
 /**
- * `GET /api/fs/archive/list` — every entry in a ZIP archive.
+ * `GET /api/v1/files/archive/list` — every entry in a ZIP archive.
  *
  * Nothing in the result is openable: opening an entry means extraction, which
  * this server does not do. A path the caller cannot list and a file that is
  * not a zip are the same `404`.
  */
 async function archiveList(path: string): Promise<ArchiveListing> {
-  return request(`/fs/archive/list${qs({ path })}`)
+  const w = await request<{
+    entries: Array<{ name: string; is_dir: boolean; size: string; compressed: string; mtime_ns?: string }>
+    truncated?: boolean
+    skipped?: number
+    total_uncompressed: string
+  }>(`/files/archive/list${qs({ path })}`)
+  return {
+    entries: (w.entries ?? []).map((e) => ({
+      name: e.name,
+      size: Number(e.size ?? 0),
+      kind: e.is_dir ? ('dir' as const) : ('file' as const)
+    })),
+    truncated: w.truncated === true,
+    // The wire reports what it packed rather than a ceiling it was given.
+    limit: (w.entries ?? []).length,
+    skipped: w.skipped
+  }
 }
 
 /**
- * `GET /api/fs/size` — one folder's recursive size, on demand.
+ * `GET /api/v1/files/size` — one folder's recursive size, on demand.
  *
  * Deliberately not folded into `stat`, which every selection already calls:
  * a size column on a listing row would start one tree walk per row. A folder
@@ -268,7 +526,7 @@ async function archiveList(path: string): Promise<ArchiveListing> {
  * caller cannot read.
  */
 /**
- * `GET /api/fs/thumb` — the URL of a re-encoded thumbnail, by path.
+ * `GET /api/v1/files/thumbnail` — the URL of a re-encoded thumbnail, by path.
  *
  * A URL rather than a fetch: the <img> does the loading, so nothing here holds
  * the bytes and the browser's own cache applies. Same origin, so the session
@@ -281,23 +539,54 @@ async function archiveList(path: string): Promise<ArchiveListing> {
  */
 function thumbUrl(path: string, dim: number): string {
   const size = dim <= 256 ? 'small' : dim <= 512 ? 'medium' : 'large'
-  return `${BASE}/fs/thumb${qs({ path, size })}`
+  return `${BASE}/files/thumbnail${qs({ path, size })}`
 }
 
 async function folderSize(path: string): Promise<FolderSize> {
-  return request(`/fs/size${qs({ path })}`)
+  // Decimal strings, because a folder's rollup can exceed what a JavaScript
+  // number holds exactly.
+  const w = await request<{ size: string; count: string }>(`/files/size${qs({ path })}`)
+  return { bytes: Number(w.size ?? 0), files: Number(w.count ?? 0) }
 }
 
 /**
- * `GET /api/recent` — every file this account wrote through this server inside
+ * `GET /api/v1/files/recent` — every file this account wrote through this server inside
  * the window, newest first. Exact: there is no walk to truncate.
  */
+/** One recent write as the wire sends it: a bare list, with the addressable
+ *  path under `path` and the size as a decimal string. */
+interface WireRecent {
+  path: string
+  name: string
+  op: RecentHit['op']
+  size: string
+  at_ns: string
+  mtime_ns: string
+}
+
 async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }> {
-  // An instant, not a day count. A day count has to be resolved against
-  // somebody's clock, and the two ends of this wire are in different time
-  // zones often enough that the same request meant two different windows
-  // depending on which side did the arithmetic.
-  return request(`/recent${qs({ limit: opts.limit, since: opts.since, scope: opts.scope })}`)
+  // `path` narrows to a subtree, which is what the server calls the scope.
+  const rows = await request<WireRecent[]>(
+    `/files/recent${qs({ limit: opts.limit, since: opts.since, path: opts.scope })}`
+  )
+  return {
+    hits: (rows ?? []).map((w) => {
+      // The server sends one addressable path. The share label is its first
+      // segment, which is the one place that split is safe: the server built
+      // the string from the label and the rest, in that order.
+      const cut = w.path.indexOf('/')
+      return {
+        vpath: w.path,
+        share: cut < 0 ? w.path : w.path.slice(0, cut),
+        subpath: cut < 0 ? '' : w.path.slice(cut + 1),
+        name: w.name,
+        size: Number(w.size ?? 0),
+        mtime_ns: w.mtime_ns,
+        at_ns: w.at_ns,
+        op: w.op
+      }
+    })
+  }
 }
 
 // ── long-running jobs ──
@@ -307,25 +596,71 @@ async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }
 // `state/jobs.ts::pollJob` (REST poll plus the WS `job` push) to show live
 // progress and calls `jobCancel` on user request.
 
-/** `GET /api/jobs` — every non-terminal job the caller owns. `JobTray` calls
+/** `GET /api/v1/jobs` — every non-terminal job the caller owns. `JobTray` calls
  *  this once on mount to re-attach across a refresh or a server restart
  *  (`go/internal/httpapi/handler/admin_ops.go`). */
+/**
+ * One long operation as the wire sends it.
+ *
+ * Counts are decimal strings, and the fields the app calls `done`, `current`
+ * and `pending` are `progress`, `message` and an absence here. A job that
+ * never listed what it had not reached yet cannot say so, so `pending` is
+ * empty rather than invented.
+ */
+interface WireJob {
+  id: string
+  kind: JobStatus['kind']
+  state: JobStatus['state']
+  progress: string
+  total: string
+  message?: string
+  results?: BatchItemResult[]
+  attempting?: string[]
+}
+
+function jobFromWire(w: WireJob): JobStatus {
+  return {
+    id: w.id,
+    kind: w.kind,
+    state: w.state,
+    done: Number(w.progress ?? 0),
+    total: Number(w.total ?? 0),
+    // The wire carries one message rather than a running item name, and an
+    // empty one is "nothing to say" rather than an item called "".
+    current: w.message ? w.message : null,
+    // Per-item failures live in results; there is no separate error list.
+    errors: (w.results ?? []).filter((r) => !r.ok).map((r) => r.error?.message ?? ''),
+    results: w.results ?? [],
+    attempting: w.attempting ?? [],
+    pending: []
+  }
+}
+
 async function jobList(): Promise<JobListResponse> {
-  return request('/jobs')
+  const rows = await request<WireJob[]>('/jobs')
+  return { jobs: (rows ?? []).map(jobFromWire) }
 }
 
 async function jobStatus(id: string): Promise<JobStatus> {
-  return request(`/jobs/${encodeURIComponent(id)}`)
+  return jobFromWire(await request<WireJob>(`/jobs/${encodeURIComponent(id)}`))
 }
 
+/** One spelling for a cancel: the DELETE alias is gone, and cancelling is an
+ *  action on the job rather than a deletion of it. */
 async function jobCancel(id: string): Promise<void> {
-  await request(`/jobs/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  await request(`/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
 }
 
 // ── trash ──
 
 async function trashList(): Promise<TrashEntry[]> {
-  return request('/trash')
+  const rows = await request<Array<{ id: string; name: string; size: string; deleted_at_ns: string }>>('/trash')
+  return (rows ?? []).map((w) => ({
+    id: w.id,
+    name: w.name,
+    size: Number(w.size ?? 0),
+    deleted_at_ns: w.deleted_at_ns
+  }))
 }
 
 async function trashRestore(ids: string[]): Promise<BatchResult> {
@@ -338,26 +673,74 @@ async function trashPurge(ids: string[]): Promise<BatchResult> {
 
 // ── share links, owner side ──
 
+/**
+ * One link as the wire sends it: string ids and counts, permissions by name,
+ * and `note` where the app has no field for one.
+ */
+interface WireLink {
+  id: string
+  path: string
+  perms: string[]
+  expires_ns?: string
+  max_downloads?: string
+  downloads: string
+  label?: string
+  has_password: boolean
+  created_ns: string
+}
+
+function linkFromWire(w: WireLink, token?: string): ShareLinkInfo {
+  return {
+    id: Number(w.id),
+    path: w.path,
+    perms: permsFromNames(w.perms),
+    // Absent means "never", which the app spells as null. Zero would be a real
+    // instant in 1970 and read as long expired.
+    expires_ns: w.expires_ns ?? null,
+    max_downloads: w.max_downloads !== undefined ? Number(w.max_downloads) : null,
+    downloads: Number(w.downloads ?? 0),
+    label: w.label ?? null,
+    has_password: w.has_password,
+    created_ns: w.created_ns,
+    token
+  }
+}
+
 async function sharesList(path?: string): Promise<ShareLinkInfo[]> {
-  return request(`/shares${qs({ path })}`)
+  const rows = await request<WireLink[]>(`/links${qs({ path })}`)
+  return (rows ?? []).map((r) => linkFromWire(r))
 }
 
 async function shareCreate(req: ShareLinkCreateReq): Promise<ShareLinkInfo> {
-  return request('/shares', { method: 'POST', body: JSON.stringify(req) })
+  // Permissions go out as the names the server reads. A drop link is the one
+  // that matters here: create without read, which is what lets somebody put a
+  // file in without seeing what is already there.
+  const body = { ...req, perms: req.perms ? permNamesOf(req.perms as Perms) : undefined }
+  const out = await request<{ link: WireLink; token?: string }>('/links', {
+    method: 'POST',
+    body: JSON.stringify(body)
+  })
+  return linkFromWire(out.link, out.token)
 }
 
 async function shareUpdate(id: number, patch: ShareLinkPatchReq): Promise<ShareLinkInfo> {
-  return request(`/shares/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+  const body = {
+    ...patch,
+    perms: patch.perms ? permNamesOf(patch.perms as Perms) : undefined
+  }
+  return linkFromWire(
+    await request<WireLink>(`/links/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+  )
 }
 
 async function shareDelete(id: number): Promise<void> {
-  await request(`/shares/${id}`, { method: 'DELETE' })
+  await request(`/links/${id}`, { method: 'DELETE' })
 }
 
 // ── text editor (`/edit/[...path]`) ──
 
 /**
- * `GET /api/fs/read` streams the file's own bytes, not a JSON envelope around
+ * `GET /api/v1/files/read` streams the file's own bytes, not a JSON envelope around
  * them. This went through `request()`, which parses JSON: every text preview
  * and every open of the editor threw on the first byte of the file, and the
  * card showed its failure state for a file that had been read perfectly well.
@@ -368,13 +751,13 @@ async function shareDelete(id: number): Promise<void> {
  * is conditional, so nothing here can silently rewrite bytes it misread.
  */
 async function readFile(path: string): Promise<ReadFileResponse> {
-  const res = await fetch(`${BASE}/fs/read${qs({ path })}`, { credentials: 'include' })
+  const res = await fetch(`${BASE}/files/read${qs({ path })}`, { credentials: 'include' })
   if (!res.ok) throw errorFrom(res, await res.json().catch(() => ({})))
   return { content: await res.text() }
 }
 
 /**
- * `PUT /api/fs/write`.
+ * `POST /api/v1/files/write`.
  *
  * Omitting `ifMatch` writes without a condition. Two callers do it, and both
  * on purpose: a brand-new file has no version to condition on, and the
@@ -388,31 +771,54 @@ async function readFile(path: string): Promise<ReadFileResponse> {
  * at all, made because somebody chose to.
  */
 async function writeFile(path: string, content: string, ifMatch?: string): Promise<Entry> {
-  return request('/fs/write', {
-    method: 'PUT',
-    body: JSON.stringify({ path, content, if_match: ifMatch })
+  // The body is the file itself and the path is a query parameter. A JSON
+  // envelope holding both would carry the whole file in memory twice, once
+  // encoded and once not.
+  //
+  // The condition travels as If-Match, where a conditional write belongs, so
+  // nothing has to invent a field name for it.
+  const headers = new Headers({ 'Content-Type': 'application/octet-stream' })
+  if (csrfToken) headers.set('Sc-Csrf', csrfToken)
+  if (ifMatch) headers.set('If-Match', ifMatch)
+
+  const res = await fetch(`${BASE}/files/write${qs({ path })}`, {
+    method: 'POST',
+    credentials: 'include',
+    headers,
+    body: content
   })
+  if (!res.ok) throw errorFrom(res, await res.json().catch(() => ({})))
+  return entryFromWire((await res.json()) as WireEntry)
 }
 
 // ── settings ──
 
-async function changePassword(currentPassword: string, newPassword: string, revokeOtherSessions: boolean): Promise<void> {
-  await request('/auth/password', {
+async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  await request('/account/password', {
     method: 'POST',
-    body: JSON.stringify({
-      current_password: currentPassword,
-      new_password: newPassword,
-      revoke_other_sessions: revokeOtherSessions
-    })
+    // `current` and `new`, which is what every route taking a password proof
+    // decodes.
+    //
+    // `revokeOtherSessions` is not sent and not honoured: the server does not
+    // touch other sessions on a password change. The checkbox that sets it is
+    // hidden for that reason rather than sending a field nothing reads, which
+    // would tick a box and change nothing.
+    body: JSON.stringify({ current: currentPassword, new: newPassword })
   })
 }
 
 async function totpSetup(): Promise<{ secret: string; otpauth_url: string }> {
-  return request('/auth/totp/setup', { method: 'POST' })
+  return request('/account/totp/setup', { method: 'POST' })
 }
 
 async function totpEnroll(password: string, secret: string, code: string): Promise<{ recovery_codes: string[] }> {
-  return request('/auth/totp/enroll', { method: 'POST', body: JSON.stringify({ password, secret, code }) })
+  // `current`, like every other route taking a password proof. Sent as
+  // `password` the field decoded to empty and the server answered "wrong
+  // password" whatever the user typed, so the factor could never be enabled.
+  return request('/account/totp/enroll', {
+    method: 'POST',
+    body: JSON.stringify({ current: password, secret, code })
+  })
 }
 
 /**
@@ -422,7 +828,10 @@ async function totpEnroll(password: string, secret: string, code: string): Promi
  * the account password as an SMB credential, so it restores what preceded it.
  */
 async function totpDisable(password: string): Promise<{ smb_password_replaced: boolean }> {
-  return request('/auth/totp/disable', { method: 'POST', body: JSON.stringify({ password }) })
+  return request('/account/totp/disable', {
+    method: 'POST',
+    body: JSON.stringify({ current: password })
+  })
 }
 
 /**
@@ -433,7 +842,7 @@ async function totpDisable(password: string): Promise<{ smb_password_replaced: b
  * with no re-confirmation, the same as `session()` above.
  */
 async function recoveryCodesRemaining(): Promise<{ remaining: number }> {
-  return request('/auth/totp/recovery-codes')
+  return request('/account/totp/recovery-codes')
 }
 
 /**
@@ -444,15 +853,47 @@ async function recoveryCodesRemaining(): Promise<{ remaining: number }> {
  * them again later (only `recoveryCodesRemaining`'s count survives).
  */
 async function reissueRecoveryCodes(password: string): Promise<{ recovery_codes: string[] }> {
-  return request('/auth/totp/recovery-codes', { method: 'POST', body: JSON.stringify({ password }) })
+  return request('/account/totp/recovery-codes', {
+    method: 'POST',
+    body: JSON.stringify({ current: password })
+  })
 }
+
+/** One app password as the wire sends it: string ids, and the scope as the
+ *  permission names it was minted with. */
+interface WireAppPassword {
+  id: string
+  name: string
+  perms: string[]
+  shares: string[]
+  created_ns: string
+  expires_ns?: string
+  last_used_ns?: string
+}
+
+/** The permissions that change something. A credential holding none of them
+ *  is what the screen calls read-only. */
+const WRITING_PERMS = ['write', 'create', 'delete', 'rename', 'move', 'share']
 
 async function listAppPasswords(): Promise<AppPasswordInfo[]> {
-  return request('/auth/app-passwords')
+  const rows = await request<WireAppPassword[]>('/account/app-passwords')
+  return (rows ?? []).map((w) => ({
+    id: Number(w.id),
+    name: w.name,
+    created_ns: w.created_ns,
+    // Absent means never used and never expires. Zero is a real instant for
+    // both, so it cannot stand for either.
+    last_used_ns: w.last_used_ns ?? null,
+    expires_ns: w.expires_ns ?? null,
+    read_only: (w.perms ?? []).every((p) => !WRITING_PERMS.includes(p))
+  }))
 }
 
-async function createAppPassword(name: string): Promise<{ id: number; token: string }> {
-  return request('/auth/app-passwords', { method: 'POST', body: JSON.stringify({ name }) })
+async function createAppPassword(name: string, currentPassword: string): Promise<{ token: string }> {
+  return request('/account/app-passwords', {
+    method: 'POST',
+    body: JSON.stringify({ name, current: currentPassword })
+  })
 }
 
 /**
@@ -475,19 +916,20 @@ async function createAppPassword(name: string): Promise<{ id: number; token: str
  */
 async function createScopedAppPassword(
   name: string,
+  currentPassword: string,
   opts: { readOnly?: boolean; shares?: string[] } = {}
-): Promise<{ id: number; token: string }> {
+): Promise<{ token: string }> {
   const scope: Record<string, unknown> = {}
-  if (opts.readOnly) scope.perms = { read: true, download: true }
+  // Permission names, the same vocabulary every other route uses.
+  if (opts.readOnly) scope.perms = ['read', 'download']
   if (opts.shares?.length) scope.shares = opts.shares
-  return request('/auth/app-passwords', {
-    method: 'POST',
-    body: JSON.stringify(Object.keys(scope).length ? { name, scope } : { name })
-  })
+  const body: Record<string, unknown> = { name, current: currentPassword }
+  if (Object.keys(scope).length) body.scope = scope
+  return request('/account/app-passwords', { method: 'POST', body: JSON.stringify(body) })
 }
 
 async function revokeAppPassword(id: number): Promise<void> {
-  await request(`/auth/app-passwords/${id}`, { method: 'DELETE' })
+  await request(`/account/app-passwords/${id}`, { method: 'DELETE' })
 }
 
 /**
@@ -499,23 +941,51 @@ async function revokeAppPassword(id: number): Promise<void> {
  * working until the device reports it is done, and the server retires it then.
  */
 async function wipeAppPassword(id: number): Promise<void> {
-  await request(`/auth/app-passwords/${id}/wipe`, { method: 'POST' })
-}
-
-async function listSessions(): Promise<ActiveSession[]> {
-  return request('/auth/sessions')
-}
-
-async function revokeSession(idHash: string): Promise<void> {
-  await request(`/auth/sessions/${encodeURIComponent(idHash)}`, { method: 'DELETE' })
-}
-
-async function updateSmbSettings(optOut: boolean, enabled: boolean): Promise<void> {
-  await request('/auth/smb', { method: 'POST', body: JSON.stringify({ opt_out: optOut, enabled }) })
+  await request(`/account/app-passwords/${id}/wipe`, { method: 'POST' })
 }
 
 /**
- * `POST /api/auth/smb/password`. Sets an SMB-only password.
+ * One live session as the wire sends it.
+ *
+ * `handle` is a digest of the stored digest: enough to name a session for
+ * revocation, and not enough to resume one. The app calls the same value
+ * `id_hash`.
+ */
+interface WireSession {
+  handle: string
+  created_ns: string
+  last_seen_ns: string
+  absolute_ns: string
+  ip?: string
+  ua?: string
+  current: boolean
+}
+
+async function listSessions(): Promise<ActiveSession[]> {
+  const rows = await request<WireSession[]>('/account/sessions')
+  return (rows ?? []).map((w) => ({
+    id_hash: w.handle,
+    created_ns: w.created_ns,
+    last_seen_ns: w.last_seen_ns,
+    absolute_expiry_ns: w.absolute_ns,
+    // Absent where the client presented neither, which the screen shows as an
+    // unknown device rather than an empty line.
+    ip_first: w.ip ?? null,
+    ua_first: w.ua ?? null,
+    current: w.current
+  }))
+}
+
+async function revokeSession(idHash: string): Promise<void> {
+  await request(`/account/sessions/${encodeURIComponent(idHash)}`, { method: 'DELETE' })
+}
+
+async function updateSmbSettings(optOut: boolean, enabled: boolean): Promise<void> {
+  await request('/account/smb', { method: 'POST', body: JSON.stringify({ opt_out: optOut, enabled }) })
+}
+
+/**
+ * `POST /api/v1/account/smb/password`. Sets an SMB-only password.
  *
  * `currentPassword` is the account password, re-confirmed for the same reason
  * enabling TOTP and linking SSO re-confirm it: a live session alone must not
@@ -529,14 +999,14 @@ async function setSmbPassword(
   currentPassword: string,
   smbPassword: string
 ): Promise<{ smb_toggles_cleared: boolean }> {
-  return request('/auth/smb/password', {
+  return request('/account/smb/password', {
     method: 'POST',
-    body: JSON.stringify({ current_password: currentPassword, smb_password: smbPassword })
+    body: JSON.stringify({ current: currentPassword, new: smbPassword })
   })
 }
 
 /**
- * `DELETE /api/auth/smb/password`.
+ * `DELETE /api/v1/account/smb/password`.
  *
  * `reverted_to_account_password` is `false` for an account that is
  * TOTP-enrolled, OIDC-linked or opted out, which is the case where clearing
@@ -545,21 +1015,21 @@ async function setSmbPassword(
 async function clearSmbPassword(
   currentPassword: string
 ): Promise<{ reverted_to_account_password: boolean }> {
-  return request('/auth/smb/password', {
+  return request('/account/smb/password', {
     method: 'DELETE',
-    body: JSON.stringify({ current_password: currentPassword })
+    body: JSON.stringify({ current: currentPassword })
   })
 }
 
 // ── single sign-on, self-service (`docs/proposals/stowcloud-0-oidc-login.md`
 // §4.3.2) ──
 //
-// `GET /api/auth/oidc/config` and `/start` are not here: they have to work
+// `GET /api/v1/auth/oidc/config` and `/start` are not here: they have to work
 // before there is a session, so they live in the standalone `api/oidc.ts`
 // alongside the login screen's own bundle.
 
 /**
- * `POST /api/auth/oidc/link/start`. Re-confirms `password`, records a
+ * `POST /api/v1/account/oidc-link/start`. Re-confirms `password`, records a
  * link-mode flow, and answers the URL to send the browser to.
  *
  * The password is what makes this a `POST` with a body rather than the plain
@@ -578,25 +1048,26 @@ async function clearSmbPassword(
  * be TOCTOU against the whole IdP round trip.
  */
 async function oidcLinkStart(password: string, returnTo?: string): Promise<{ authorize_url: string }> {
-  return request('/auth/oidc/link/start', {
+  return request('/account/oidc-link/start', {
     method: 'POST',
-    // `return_to`, which is the key the server decodes. It was camelCase here,
-    // so the value never arrived and a finished link flow landed on the root
-    // instead of the screen it started from.
-    body: JSON.stringify(returnTo ? { password, return_to: returnTo } : { password })
+    // `current` and `return_to`, which are the keys the server decodes.
+    body: JSON.stringify(returnTo ? { current: password, return_to: returnTo } : { current: password })
   })
 }
 
 /**
- * `DELETE /api/auth/oidc/link`. Removes the identity, re-derives the SMB NT
+ * `DELETE /api/v1/account/oidc-link`. Removes the identity, re-derives the SMB NT
  * hash from this password, and revokes every session the IdP issued.
  *
- * The password is not only re-confirmation. §4.3.6 deletes the account
- * password's NT hash when the identity is attached, and the plaintext is the
- * only thing that can put it back, which is why the admin unlink cannot.
+ * The password is not only re-confirmation. Attaching the identity deletes
+ * the account password's NT hash, and the plaintext is the only thing that
+ * can put it back, which is why the admin unlink cannot.
  */
 async function oidcUnlink(password: string): Promise<{ smb_password_replaced: boolean }> {
-  return request('/auth/oidc/link', { method: 'DELETE', body: JSON.stringify({ password }) })
+  return request('/account/oidc-link', {
+    method: 'DELETE',
+    body: JSON.stringify({ current: password })
+  })
 }
 
 // ── admin: single sign-on links (§5-1's three admin routes) ──
@@ -609,8 +1080,23 @@ async function adminUnlinkUserOidc(id: number): Promise<AdminOidcUnlinkResult> {
   return request(`/admin/users/${id}/oidc`, { method: 'DELETE' })
 }
 
+/** Storage as the wire sends it: byte counts are decimal strings, because a
+ *  volume past 2^53 bytes is not exact as a JavaScript number. */
+interface WireStorage {
+  db_bytes: string
+  shares: Array<{ share: string; label: string; total_bytes: string; free_bytes: string }>
+}
+
 async function adminStorage(): Promise<StorageReport> {
-  return request('/admin/storage')
+  const w = await request<WireStorage>('/admin/storage')
+  return {
+    db_bytes: Number(w.db_bytes ?? 0),
+    shares: (w.shares ?? []).map((s) => ({
+      label: s.label,
+      free_bytes: Number(s.free_bytes ?? 0),
+      total_bytes: Number(s.total_bytes ?? 0)
+    }))
+  }
 }
 
 async function adminIndexEstimate(): Promise<IndexEstimate> {
@@ -618,14 +1104,26 @@ async function adminIndexEstimate(): Promise<IndexEstimate> {
 }
 
 async function adminIndexSettings(): Promise<IndexSettings> {
-  return request('/admin/index/settings')
+  // Read off the described form, which is what the settings route answers.
+  // There is no endpoint for this field alone.
+  const snap = await request<{ fields: Array<{ key: string; value: unknown }> }>('/admin/settings')
+  const field = (snap.fields ?? []).find((f) => f.key === 'search.name_index_enabled')
+  return { name_enabled: field?.value === true }
 }
 
 async function adminSetIndexSettings(nameEnabled: boolean): Promise<IndexSettings> {
-  return request('/admin/index/settings', { method: 'PATCH', body: JSON.stringify({ name_enabled: nameEnabled }) })
+  // The index switch lives in the search section, under the name the server
+  // reads it by. There is no `index` section: writing to one is refused, and
+  // the field name differs too, so a save aimed at either would report success
+  // and change nothing.
+  await request('/admin/settings/search', {
+    method: 'PATCH',
+    body: JSON.stringify({ name_index_enabled: nameEnabled })
+  })
+  return { name_enabled: nameEnabled }
 }
 
-/** `POST /api/admin/index/build` — always crosses the
+/** `POST /api/v1/admin/index/build` — always crosses the
  *  job threshold (a build walks the whole share by design, `go/internal/search`'s
  *  `CrawlThrottle`), so unlike `copy`/`del`/`archive` there is no inline-result
  *  branch here: the server answers `202 { job }` every time. */
@@ -633,11 +1131,11 @@ async function adminBuildIndex(): Promise<{ job: string }> {
   return request('/admin/index/build', { method: 'POST' })
 }
 
-/** `PATCH /api/admin/upload-settings` — sets the
- *  server-global chunk floor/default every account's `GET /api/auth/session`
+/** `PATCH /api/v1/admin/settings/upload` — sets the
+ *  server-global chunk floor/default every account's `GET /api/v1/auth/session`
  *  reads, persisted across restarts. */
 async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSettingsResp> {
-  return request('/admin/upload-settings', { method: 'PATCH', body: JSON.stringify(req) })
+  return request('/admin/settings/upload', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 // ── admin: server settings (`go/internal/httpapi/handler/settings.go`) — parity
@@ -645,49 +1143,49 @@ async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSet
 // restart-required where not. ──
 
 async function adminGetServerSettings(): Promise<SettingsSnapshot> {
-  return request('/admin/server-settings')
+  return request('/admin/settings')
 }
 
 async function adminSetSmbSettings(req: SmbSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/server-settings/smb', { method: 'PATCH', body: JSON.stringify(req) })
+  return request('/admin/settings/smb', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 async function adminSetSearchSettings(req: SearchSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/server-settings/search', { method: 'PATCH', body: JSON.stringify(req) })
+  return request('/admin/settings/search', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 async function adminSetArchiveSettings(req: ArchiveSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/server-settings/archive', { method: 'PATCH', body: JSON.stringify(req) })
+  return request('/admin/settings/archive', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 async function adminSetRateSettings(req: RateSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/server-settings/rate', { method: 'PATCH', body: JSON.stringify(req) })
+  return request('/admin/settings/rate', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 async function adminSetNetworkSettings(req: NetworkSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/server-settings/network', { method: 'PATCH', body: JSON.stringify(req) })
+  return request('/admin/settings/network', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 async function adminSetDbSettings(req: DbSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/server-settings/db', { method: 'PATCH', body: JSON.stringify(req) })
+  return request('/admin/settings/db', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 async function adminSetSymlinkPolicySettings(req: SymlinkPolicyReq): Promise<ApplyOutcome> {
-  return request('/admin/server-settings/symlink-policy', { method: 'PATCH', body: JSON.stringify(req) })
+  return request('/admin/settings/symlink-policy', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 async function adminSetHomesSettings(req: HomesSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/server-settings/homes', { method: 'PATCH', body: JSON.stringify(req) })
+  return request('/admin/settings/homes', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 async function adminSetWatchSettings(req: WatchSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/server-settings/watch', { method: 'PATCH', body: JSON.stringify(req) })
+  return request('/admin/settings/watch', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 /** All of it restart-required, and two of the ten `oidc.*` settings are
  *  missing from the body on purpose. See `OidcSettingsReq`. */
 async function adminSetOidcSettings(req: OidcSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/server-settings/oidc', { method: 'PATCH', body: JSON.stringify(req) })
+  return request('/admin/settings/oidc', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 /** Rejects with `422` and a Korean reason whenever the change would leave the
@@ -695,17 +1193,59 @@ async function adminSetOidcSettings(req: OidcSettingsReq): Promise<ApplyOutcome>
  *  `master_key_file` that is a different key. The reason is meant to be shown
  *  verbatim. */
 async function adminSetPathsSettings(req: PathsSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/server-settings/paths', { method: 'PATCH', body: JSON.stringify(req) })
+  return request('/admin/settings/paths', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
 // ── admin: user management ──
 
+/**
+ * One account as the admin routes send it.
+ *
+ * The names are the server's own vocabulary, which is shorter than the app's:
+ * `login` rather than `name`, and the flags carry no `_enabled` suffix. Ids
+ * and byte counts are decimal strings, for the same 2^53 reason as everywhere
+ * else on this API.
+ */
+interface WireAdminUser {
+  id: string
+  login: string
+  display?: string
+  admin: boolean
+  disabled: boolean
+  totp: boolean
+  smb: boolean
+  created_ns: string
+  quota_bytes?: string | null
+  usage_bytes: string
+}
+
+function adminUserFromWire(w: WireAdminUser): AdminUser {
+  return {
+    id: Number(w.id),
+    name: w.login,
+    display_name: w.display ?? '',
+    is_admin: w.admin,
+    disabled: w.disabled,
+    totp_enabled: w.totp,
+    smb_enabled: w.smb,
+    created_ns: w.created_ns,
+    quota_bytes: w.quota_bytes ?? null,
+    usage_bytes: w.usage_bytes ?? '0'
+  }
+}
+
 async function adminListUsers(): Promise<AdminUser[]> {
-  return request('/admin/users')
+  const rows = await request<WireAdminUser[]>('/admin/users')
+  return (rows ?? []).map(adminUserFromWire)
 }
 
 async function adminCreateUser(name: string, password: string): Promise<AdminUser> {
-  return request('/admin/users', { method: 'POST', body: JSON.stringify({ name, password }) })
+  return adminUserFromWire(
+    await request<WireAdminUser>('/admin/users', {
+      method: 'POST',
+      body: JSON.stringify({ login: name, password })
+    })
+  )
 }
 
 async function adminSetUserDisabled(id: number, disabled: boolean): Promise<AdminUser> {
@@ -721,7 +1261,7 @@ async function adminDeleteUser(id: number): Promise<void> {
   await request(`/admin/users/${id}`, { method: 'DELETE' })
 }
 
-/** `PATCH /api/admin/users/{id}` with a password. An administrator resetting an
+/** `PATCH /api/v1/admin/users/{id}` with a password. An administrator resetting an
  *  account they do not have the current password for, which is the only way
  *  back in for somebody who forgot theirs: there is no mail to send a reset
  *  link with. Every session the old password opened is ended server-side. */
@@ -730,23 +1270,52 @@ async function adminSetUserPassword(id: number, password: string): Promise<Admin
 }
 
 // ── admin: grant management ──
-// GET /api/admin/shares, GET/POST /api/admin/grants,
-// PATCH/DELETE /api/admin/grants/{id}. The deny-by-default model this
+// GET /api/v1/admin/shares, GET/POST /api/v1/admin/grants,
+// PATCH/DELETE /api/v1/admin/grants/{id}. The deny-by-default model this
 // product is built around: a user has no access to anything until an admin
 // grants a specific folder, so these four routes are what turns "created a
 // user" into "and here is what they can see".
 
-async function adminListShares(): Promise<AdminShare[]> {
-  return request('/admin/shares')
+/** One share as the admin routes send it: string ids, and `broken` for the
+ *  reason the app calls `broken_reason`. */
+interface WireAdminShare {
+  id: string
+  name: string
+  trash: boolean
+  shared_externally?: boolean
+  broken?: string
+  smb?: AdminShare['smb']
 }
 
-/** `POST /api/admin/shares` — register a new folder share ("there is no setting to add folders"). */
+function adminShareFromWire(w: WireAdminShare): AdminShare {
+  return {
+    id: Number(w.id),
+    name: w.name,
+    trash_enabled: w.trash,
+    broken_reason: w.broken,
+    smb: w.smb
+  }
+}
+
+async function adminListShares(): Promise<AdminShare[]> {
+  const rows = await request<WireAdminShare[]>('/admin/shares')
+  return (rows ?? []).map(adminShareFromWire)
+}
+
+/** `POST /api/v1/admin/shares` — register a new folder share ("there is no setting to add folders"). */
 async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
-  return request('/admin/shares', { method: 'POST', body: JSON.stringify(req) })
+  return adminShareFromWire(
+    await request<WireAdminShare>('/admin/shares', { method: 'POST', body: JSON.stringify(req) })
+  )
 }
 
 async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<AdminShare> {
-  return request(`/admin/shares/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+  return adminShareFromWire(
+    await request<WireAdminShare>(`/admin/shares/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch)
+    })
+  )
 }
 
 async function adminDeleteShare(id: number): Promise<{ smb?: SMBOutcome }> {
@@ -755,7 +1324,7 @@ async function adminDeleteShare(id: number): Promise<{ smb?: SMBOutcome }> {
   return (await request<{ smb?: SMBOutcome } | undefined>(`/admin/shares/${id}`, { method: 'DELETE' })) ?? {}
 }
 
-/** `POST /api/admin/shares/{id}/retry` — re-open a share whose disk came
+/** `POST /api/v1/admin/shares/{id}/retry` — re-open a share whose disk came
  *  back. Its own route because the ordinary repair is a remount that changes
  *  nothing about the share: making somebody retype a path that was always
  *  right, to prove it, is a screen built around the implementation. */
@@ -763,11 +1332,50 @@ async function adminRetryShare(id: number): Promise<AdminShare> {
   return request(`/admin/shares/${id}/retry`, { method: 'POST' })
 }
 
-/** `opts.userId`/`opts.groupId` narrow to one principal's grants — used by
- *  the per-user grant editor; omitted, this is the deployment's whole grant
- *  table. */
+/**
+ * One grant as the wire sends it.
+ *
+ * The principal is two optional fields rather than a tagged object: exactly
+ * one of `user` and `group` is present, and which one it is says the kind.
+ */
+interface WireGrant {
+  id: string
+  user?: string
+  group?: string
+  share: string
+  subpath?: string
+  allow: AdminGrant['allow']
+  deny: AdminGrant['deny']
+  inherit: boolean
+  label?: string
+  created_ns: string
+}
+
+function grantFromWire(w: WireGrant): AdminGrant {
+  return {
+    id: Number(w.id),
+    principal: w.group !== undefined
+      ? { kind: 'group', id: Number(w.group) }
+      : { kind: 'user', id: Number(w.user ?? 0) },
+    share: Number(w.share),
+    subpath: w.subpath ?? '',
+    allow: w.allow ?? [],
+    deny: w.deny ?? [],
+    inherit: w.inherit,
+    // The app distinguishes "no label" from an empty one, and the wire omits
+    // the field rather than sending an empty string.
+    label: w.label ?? null,
+    created_ns: w.created_ns
+  }
+}
+
+/** `opts.userId`/`opts.groupId` narrow to one principal's grants, used by the
+ *  per-user grant editor; omitted, this is the whole grant table. */
 async function adminListGrants(opts: { userId?: number; groupId?: number; share?: number } = {}): Promise<AdminGrant[]> {
-  return request(`/admin/grants${qs({ user: opts.userId, group: opts.groupId, share: opts.share })}`)
+  const rows = await request<WireGrant[]>(
+    `/admin/grants${qs({ user: opts.userId, group: opts.groupId, share: opts.share })}`
+  )
+  return (rows ?? []).map(grantFromWire)
 }
 
 async function adminCreateGrant(req: CreateGrantReq): Promise<AdminGrant> {
@@ -783,11 +1391,24 @@ async function adminDeleteGrant(id: number): Promise<void> {
 }
 
 // ── admin: group management ──
-// GET/POST /api/admin/groups, PATCH/DELETE /api/admin/groups/{id},
-// POST /api/admin/groups/{id}/members, DELETE /api/admin/groups/{id}/members/{user}.
+// GET/POST /api/v1/admin/groups, PATCH/DELETE /api/v1/admin/groups/{id},
+// POST /api/v1/admin/groups/{id}/members, DELETE /api/v1/admin/groups/{id}/members/{user}.
+
+/** Groups carry string ids and a string member list, for the same 2^53
+ *  reason every other id on this API does. */
+interface WireGroup {
+  id: string
+  name: string
+  members: string[]
+}
+
+function groupFromWire(w: WireGroup): AdminGroup {
+  return { id: Number(w.id), name: w.name, members: (w.members ?? []).map(Number) }
+}
 
 async function adminListGroups(): Promise<AdminGroup[]> {
-  return request('/admin/groups')
+  const rows = await request<WireGroup[]>('/admin/groups')
+  return (rows ?? []).map(groupFromWire)
 }
 
 async function adminCreateGroup(req: CreateGroupReq): Promise<AdminGroup> {
@@ -810,12 +1431,28 @@ async function adminRemoveGroupMember(id: number, userId: number): Promise<void>
   await request(`/admin/groups/${id}/members/${userId}`, { method: 'DELETE' })
 }
 
-/** `GET /api/admin/audit[?actor=&event=&since_ns=&until_ns=&before=&limit=]`
+/** `GET /api/v1/admin/audit[?actor=&event=&since_ns=&until_ns=&before=&limit=]`
  * Every filter field is optional and unfiltered when
  *  omitted; `query.before` is the previous page's `AuditPage.next` for
  *  cursor pagination. */
+/** One audit row as the wire sends it. The cursor value is `id`, and it and
+ *  the actor are decimal strings: paging on a rounded id skips or repeats a
+ *  page. */
+interface WireAudit {
+  id: string
+  ts_ns: string
+  actor?: string
+  actor_name?: string
+  event: string
+  target?: string
+  ip?: string
+  ua?: string
+  ok: boolean
+  detail?: string
+}
+
 async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
-  return request(
+  const page = await request<{ rows: WireAudit[]; next?: string }>(
     `/admin/audit${qs({
       actor: query.actor,
       event: query.event,
@@ -825,6 +1462,22 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
       limit: query.limit
     })}`
   )
+  return {
+    rows: (page.rows ?? []).map((w) => ({
+      rowid: Number(w.id),
+      ts_ns: w.ts_ns,
+      // Absent means the event had no actor, which is not the same as an
+      // actor whose name is blank.
+      actor: w.actor !== undefined ? Number(w.actor) : null,
+      actor_name: w.actor_name ?? null,
+      event: w.event,
+      target: w.target ?? null,
+      ip: w.ip ?? null,
+      ok: w.ok,
+      detail: w.detail ?? null
+    })),
+    next: page.next !== undefined ? Number(page.next) : null
+  }
 }
 
 /** The real `hit` SSE event (`sc-http::routes::hit_json`) is flat --
@@ -841,7 +1494,9 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
  *  which reads just `.path`) needs them, so they're synthesized placeholders
  *  rather than guesses at real values. */
 interface RawSearchHit {
+  /** The share's numeric id. Not a label, so it is never part of a path. */
   share: string
+  /** The whole virtual path, label included. */
   path: string
   name: string
   is_dir: boolean
@@ -852,13 +1507,16 @@ interface RawSearchHit {
 
 function toSearchHit(raw: RawSearchHit): SearchHit {
   return {
-    // `/{label}/sub/path` is the virtual path the whole UI navigates in.
-    // The wire shape keeps the share separate from the share-relative path,
-    // so this is where the two are put back together.
-    path: raw.share ? normalizePath(`/${raw.share}/${raw.path}`) : normalizePath(raw.path),
+    // `path` is already the whole virtual path the interface navigates in.
+    // `share` beside it is the share's numeric id, not its label: joining the
+    // two produced `/1000001/Files/Docs/readme.txt`, which resolves to
+    // nothing, so every result was a dead link.
+    path: normalizePath(raw.path),
     entry: {
       name: raw.name,
-      path: raw.share ? `${raw.share}/${raw.path}` : raw.path,
+      // The same complete path, which is what a download or a preview reached
+      // from a result addresses the file by.
+      path: normalizePath(raw.path),
       kind: raw.is_dir ? 'dir' : 'file',
       size: raw.size ?? 0,
       mtime_ns: raw.mtime_ns ?? '0',
@@ -878,7 +1536,7 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
 }
 
 /**
- * `GET /api/search/stream`. The `done` event carries `{truncated, tier}`:
+ * `GET /api/v1/search/stream`. The `done` event carries `{truncated, tier}`:
  * truncated means the walk hit its deadline, so what arrived is a prefix of
  * the matches and not all of them. Discarding it made a cut-short search
  * render identically to a complete one.

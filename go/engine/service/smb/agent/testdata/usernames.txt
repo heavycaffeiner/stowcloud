@@ -1,0 +1,62 @@
+# Account-name vectors, shared by auth's canonical rule and the SMB agent's copy
+# of it.
+#
+# The two packages sit in the same tier and may not import each other, so the
+# parity that keeps them from drifting is proved through this file rather than
+# through a shared function. Each side reads it and asserts its own rule agrees
+# with the verdict recorded here.
+#
+# Format: a verdict, a tab, then the name with Go escaping. A line starting with
+# a hash is a comment; the name is never empty except in the one vector that
+# tests emptiness, which is written as an empty quoted string.
+
+valid	"alice"
+valid	"bob"
+valid	"a"
+valid	"_svc"
+valid	"user-1"
+valid	"a_b-c9"
+valid	"x9"
+valid	"_"
+valid	"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+valid	"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+invalid	""
+invalid	"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+invalid	"Alice"
+invalid	"ALICE"
+invalid	"aliceB"
+invalid	"1alice"
+invalid	"-alice"
+invalid	"9"
+invalid	"-"
+invalid	".alice"
+invalid	"/alice"
+invalid	"al ice"
+invalid	"al:ice"
+invalid	"al\tice"
+invalid	"al,ice"
+invalid	"-oProxyCommand=x"
+invalid	"--help"
+invalid	"-x"
+invalid	"alice\u00ff"
+invalid	"ali\u20acce"
+invalid	"\u00e1lice"
+invalid	"alice."
+invalid	"alice$"
+invalid	"alice+"
+invalid	"alice="
+invalid	"alice*"
+invalid	"alice'"
+invalid	"alice\""
+invalid	"alice`"
+invalid	"alice;"
+invalid	"alice|"
+invalid	"alice&"
+invalid	"alice("
+invalid	"alice)"
+invalid	"a.b@c"
+invalid	"alice@example"
+invalid	"alice+tag"
+valid	"root"
+valid	"nobody"
+valid	"smbguest"

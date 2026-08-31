@@ -178,6 +178,11 @@ jobs:
           # endpoint rather than refusing to start. The container runtime's
           # default seccomp profile is the thing under test here.
           echo '{"hardening":"preferred"}' | seed security
+          # The settings the server will actually load. Printed because a
+          # seed that wrote and a server that reads are two different
+          # things, and when they disagree the refusal downstream says
+          # nothing about which one was wrong.
+          docker run --rm -v /tmp/sc-data:/var/lib/stowcloud sc:core-ci settings get
 
       - name: Run the container
         run: |
@@ -199,7 +204,7 @@ jobs:
       - name: Wait for the server to come up
         run: |
           for i in $(seq 1 30); do
-            if curl -fsSk https://127.0.0.1:8443/api/health >/dev/null 2>&1; then
+            if curl -fsSk https://127.0.0.1:8443/api/v1/system/health >/dev/null 2>&1; then
               echo "up after ${i}s"
               exit 0
             fi
@@ -219,36 +224,43 @@ jobs:
         # An earlier build redirected instead, and this asserted the 308. That
         # is a friendlier answer and a weaker one; refusing is what this server
         # does now.
+        #
+        # A TLS listener may also drop the connection outright rather than
+        # answer, which curl reports as status 000 and no body file. That is
+        # the strongest form of the refusal being asserted, so the body is
+        # only read when there is one.
         run: |
           code=$(curl -sS --max-time 5 -o /tmp/plain.out -w '%{http_code}' \
-            http://127.0.0.1:8443/api/health || true)
+            http://127.0.0.1:8443/api/v1/system/health || true)
           echo "status: ${code}"
-          cat /tmp/plain.out
           case "$code" in
             2*|3*) echo "a plaintext request was answered"; exit 1 ;;
           esac
-          if grep -qi '<html\|"status"' /tmp/plain.out; then
-            echo "a plaintext request received application content"
-            exit 1
+          if [ -s /tmp/plain.out ]; then
+            cat /tmp/plain.out
+            if grep -qi '<html\|"status"' /tmp/plain.out; then
+              echo "a plaintext request received application content"
+              exit 1
+            fi
           fi
           echo "plain HTTP refused with no application content, as intended"
 
-      - name: GET /api/health
+      - name: GET /api/v1/system/health
         run: |
-          out=$(curl -fsSk https://127.0.0.1:8443/api/health)
+          out=$(curl -fsSk https://127.0.0.1:8443/api/v1/system/health)
           echo "$out"
-          echo "$out" | grep -q '"status"' || { echo "unexpected /api/health body"; exit 1; }
+          echo "$out" | grep -q '"status"' || { echo "unexpected health body"; exit 1; }
 
       - name: GET / serves the SPA document
         run: |
           out=$(curl -fsSk https://127.0.0.1:8443/)
           echo "$out" | grep -qi '<html' || { echo "/ did not return an HTML document"; echo "$out"; exit 1; }
 
-      - name: GET /api/setup proves a fresh deployment can bootstrap
+      - name: The setup route proves a fresh deployment can bootstrap
         run: |
-          out=$(curl -fsSk https://127.0.0.1:8443/api/setup)
+          out=$(curl -fsSk https://127.0.0.1:8443/api/v1/system/setup)
           echo "$out"
-          echo "$out" | grep -q '"required":true' || { echo "unexpected /api/setup body — a fresh container should report setup required"; exit 1; }
+          echo "$out" | grep -q '"required":true' || { echo "unexpected setup body: a fresh container should report setup required"; exit 1; }
 
       # What `-k` above gives up, done where the certificate can actually be
       # read: inside the container, by the binary that generated it. The
@@ -268,26 +280,77 @@ jobs:
       # a server that works. The sandbox is built before the shares are
       # registered, and a domain that did not grant their paths denies every
       # listing with the share table and the grants both looking correct.
-      - name: A share created from the API is reachable through the sandbox
+      - name: The share named at setup is reachable through the sandbox
         run: |
-          token=$(docker logs sc-smoke 2>&1 | grep -oE 'setup token[^:]*: [a-f0-9]+' | tail -1 | awk '{print $NF}')
-          [ -n "$token" ] || { echo "the container printed no setup token"; exit 1; }
-          curl -fsSk -X POST https://127.0.0.1:8443/api/setup \
+          # The token is written to a file in the data directory and never
+          # logged: a log line carrying it would put the one credential that
+          # creates the administrator into whatever collects logs. The data
+          # directory is bind-mounted, so the host reads it there. sudo
+          # because the file is 0600 owned by the service account's uid.
+          token=$(sudo cat /tmp/sc-data/setup-token | tr -d '[:space:]')
+          [ -n "$token" ] || { echo "the container published no setup token"; exit 1; }
+          # Status and body rather than -f: a refusal here carries the reason
+          # in the body, and -f discards it and reports only the exit code.
+          # The share is named here rather than created afterwards. Setup
+          # grants the account every share that exists when it runs, so a
+          # share created later carries no grant and its path resolves to
+          # nothing: that is the "first share" the screen asks for.
+          code=$(curl -sSk -o /tmp/setup.out -w '%{http_code}' \
+            -X POST https://127.0.0.1:8443/api/v1/system/setup \
             -H 'content-type: application/json' \
-            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\",\"app_hosts\":[\"127.0.0.1\",\"localhost\"],\"trusted_proxies\":[]}" >/dev/null
-          curl -fsSk -c /tmp/jar -X POST https://127.0.0.1:8443/api/auth/login \
-            -H 'content-type: application/json' \
-            -d '{"username":"ci","password":"ci-smoke-password-1"}' >/dev/null
-          csrf=$(curl -fsSk -b /tmp/jar https://127.0.0.1:8443/api/auth/session |
-            grep -oE '"csrf":"[^"]+"' | head -1 | cut -d'"' -f4)
-          # A fresh deployment serves nothing until somebody says what to
-          # serve, so the share is created here rather than declared anywhere.
-          curl -fsSk -b /tmp/jar -X POST https://127.0.0.1:8443/api/admin/shares \
-            -H 'content-type: application/json' -H "sc-csrf: ${csrf}" \
-            -d '{"name":"files","host_path":"/shares/files"}' >/dev/null
-          out=$(curl -fsSk -b /tmp/jar 'https://127.0.0.1:8443/api/fs/list?path=/files')
-          echo "$out"
-          echo "$out" | grep -q '"dir_etag"' || { echo "the share does not list"; exit 1; }
+            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\",\"app_hosts\":[\"127.0.0.1\",\"localhost\"],\"trusted_proxies\":[],\"first_share\":{\"name\":\"files\",\"host\":\"/shares/files\"}}")
+          echo "setup: ${code}"
+          cat /tmp/setup.out || true
+          case "$code" in
+            2*) ;;
+            *) echo "the setup route refused"; docker logs sc-smoke; exit 1 ;;
+          esac
+          # Origin on every cookie-bearing mutation from here on. The setup
+          # response set a session cookie, and a mutating request carrying one
+          # is refused without an Origin naming an app host: that is the CSRF
+          # rule, and curl is not a browser, so it sends what a browser would
+          # have sent.
+          origin='https://127.0.0.1:8443'
+          # Each request reports its own status and body. Without that a
+          # refusal anywhere in the sequence arrives as one curl exit code
+          # with nothing saying which call produced it.
+          say() {
+            echo "$1: $2"
+            if [ -s /tmp/step.out ]; then cat /tmp/step.out; fi
+            case "$2" in
+              2*) return 0 ;;
+              *) echo "the $1 request failed"; docker logs sc-smoke; exit 1 ;;
+            esac
+          }
+          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -c /tmp/jar \
+            -X POST https://127.0.0.1:8443/api/v1/auth/login \
+            -H 'content-type: application/json' -H "origin: ${origin}" \
+            -d '{"login":"ci","password":"ci-smoke-password-1"}')
+          say login "$code"
+          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
+            https://127.0.0.1:8443/api/v1/auth/session)
+          say session "$code"
+          csrf=$(grep -oE '"csrf":"[^"]+"' /tmp/step.out | head -1 | cut -d'"' -f4)
+          [ -n "$csrf" ] || { echo "no csrf token in the session"; exit 1; }
+          # The sandbox is installed at boot from the shares stored then, and
+          # a Landlock domain cannot be widened afterwards. The domain grants
+          # each share's parent, so a second share added later is reachable
+          # without a restart, but the first one on a deployment that booted
+          # with none is not: nothing had put /shares in the domain. A
+          # restart is what a deployment does here, and proves the share
+          # survives one.
+          docker restart sc-smoke >/dev/null
+          for i in $(seq 1 30); do
+            if curl -fsSk https://127.0.0.1:8443/api/v1/system/health >/dev/null 2>&1; then
+              echo "back up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
+            'https://127.0.0.1:8443/api/v1/files/list?path=/files')
+          say list "$code"
+          grep -q '"dir_etag"' /tmp/step.out || { echo "the share does not list"; exit 1; }
 
       - name: Wait for Docker's own HEALTHCHECK to report healthy
         # Proves the Dockerfile's HEALTHCHECK instruction itself, not just
@@ -562,9 +625,9 @@ jobs:
       - name: The server comes up and reports healthy
         run: |
           for i in $(seq 1 60); do
-            if curl -fsSk https://127.0.0.1:8443/api/health >/dev/null 2>&1; then
+            if curl -fsSk https://127.0.0.1:8443/api/v1/system/health >/dev/null 2>&1; then
               echo "up after ${i}s"
-              curl -fsSk https://127.0.0.1:8443/api/health
+              curl -fsSk https://127.0.0.1:8443/api/v1/system/health
               exit 0
             fi
             sleep 1
@@ -575,39 +638,97 @@ jobs:
       # A share that lists, an upload that publishes, and the bytes read back.
       # Each of these was broken at some point while the container still
       # started and reported healthy, which is why the smoke test goes this far
-      # rather than stopping at a 200 from /api/health.
+      # rather than stopping at a 200 from the health route.
       - name: A file uploaded through the API comes back out
         run: |
-          token=$(docker compose -f compose.buildver.yml logs sc 2>&1 \
-            | grep -oE 'setup token[^:]*: [a-f0-9]+' | tail -1 | awk '{print $NF}')
-          [ -n "$token" ] || { echo "no setup token in the log"; exit 1; }
+          # The token is written into the data directory and never logged, so
+          # it is read from the named volume through the container. The file
+          # is 0600 owned by the service account, so the exec runs as the uid
+          # the image was built with rather than a literal that would rot if
+          # the default ever changed.
+          uid=$(docker compose -f compose.buildver.yml exec -T sc printenv PUID | tr -d '[:space:]')
+          gid=$(docker compose -f compose.buildver.yml exec -T sc printenv PGID | tr -d '[:space:]')
+          token=$(docker compose -f compose.buildver.yml exec -T --user "${uid}:${gid}" sc \
+            cat /var/lib/stowcloud/setup-token | tr -d '[:space:]')
+          [ -n "$token" ] || { echo "no setup token in the data directory"; exit 1; }
           base=https://127.0.0.1:8443
-          curl -fsSk -X POST "$base/api/setup" -H 'content-type: application/json' \
-            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-compose-password-1\"}" >/dev/null
-          curl -fsSk -c /tmp/jar -X POST "$base/api/auth/login" -H 'content-type: application/json' \
-            -d '{"username":"ci","password":"ci-compose-password-1"}' >/dev/null
-          csrf=$(curl -fsSk -b /tmp/jar "$base/api/auth/session" | sed -n 's/.*"csrf":"\([a-f0-9]*\)".*/\1/p')
+          # Each request reports its own status and body, so a refusal names
+          # the call that produced it rather than arriving as one exit code.
+          say() {
+            echo "$1: $2"
+            if [ -s /tmp/step.out ]; then cat /tmp/step.out; echo; fi
+            case "$2" in
+              2*) return 0 ;;
+              *) echo "the $1 request failed"
+                 docker compose -f compose.buildver.yml logs sc
+                 exit 1 ;;
+            esac
+          }
+          # The share is named at setup, which is what grants it: setup grants
+          # the account every share that exists when it runs, and one created
+          # afterwards carries no grant, so its path resolves to nothing.
+          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' \
+            -X POST "$base/api/v1/system/setup" -H 'content-type: application/json' \
+            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-compose-password-1\",\"app_hosts\":[\"127.0.0.1\",\"localhost\"],\"trusted_proxies\":[],\"first_share\":{\"name\":\"files\",\"host\":\"/shares/files\"}}")
+          say setup "$code"
+          # Origin because the setup response set a session cookie: a mutating
+          # request carrying one is refused without an Origin naming an app
+          # host, which is the CSRF rule a browser satisfies for free.
+          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -c /tmp/jar \
+            -X POST "$base/api/v1/auth/login" -H 'content-type: application/json' \
+            -H "origin: $base" \
+            -d '{"login":"ci","password":"ci-compose-password-1"}')
+          say login "$code"
+          # The sandbox is installed at boot from the shares stored then and
+          # cannot be widened afterwards, so the first share on a deployment
+          # that booted with none is unreachable until a restart. That is
+          # what a deployment does at this point, and it proves the share and
+          # the session both survive one.
+          docker compose -f compose.buildver.yml restart sc >/dev/null
+          for i in $(seq 1 60); do
+            if curl -fsSk "$base/api/v1/system/health" >/dev/null 2>&1; then
+              echo "back up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          # The session, and the token bound to it, are read after the restart
+          # rather than before: a token minted against the previous process is
+          # refused, and reading it here proves the session survived.
+          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
+            "$base/api/v1/auth/session")
+          say session "$code"
+          csrf=$(sed -n 's/.*"csrf":"\([a-f0-9]*\)".*/\1/p' /tmp/step.out)
           [ -n "$csrf" ] || { echo "no csrf token in the session"; exit 1; }
 
           printf 'uploaded by ci\n' > /tmp/proof.txt
           size=$(stat -c%s /tmp/proof.txt)
           name=$(printf 'proof.txt' | base64 -w0)
           dest=$(printf '/files' | base64 -w0)
-          loc=$(curl -fsSk -D- -o /dev/null -b /tmp/jar \
+          # Tus-Resumable on both calls: the server refuses a request that
+          # names no protocol version with a 412 before it looks at anything
+          # else, which is the version negotiation the standard asks for.
+          code=$(curl -sSk -D/tmp/step.hdr -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
             -H "origin: $base" -H "Sc-Csrf: $csrf" \
+            -H 'tus-resumable: 1.0.0' \
             -H "upload-length: ${size}" \
             -H "upload-metadata: filename ${name},dest ${dest}" \
-            -X POST "$base/api/uploads" | grep -i '^location:' | tr -d '\r' | awk '{print $2}')
+            -X POST "$base/api/v1/uploads")
+          say create "$code"
+          loc=$(grep -i '^location:' /tmp/step.hdr | tr -d '\r' | awk '{print $2}')
           [ -n "$loc" ] || { echo "the creation named no session"; exit 1; }
-          curl -fsSk -b /tmp/jar -H "origin: $base" -H "Sc-Csrf: $csrf" \
+          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
+            -H "origin: $base" -H "Sc-Csrf: $csrf" \
+            -H 'tus-resumable: 1.0.0' \
             -H 'content-type: application/offset+octet-stream' -H 'upload-offset: 0' \
-            --data-binary @/tmp/proof.txt -X PATCH "${base}${loc}" -o /dev/null
+            --data-binary @/tmp/proof.txt -X PATCH "${base}${loc}")
+          say patch "$code"
 
-          listed=$(curl -fsSk -b /tmp/jar "$base/api/fs/list?path=/files")
+          listed=$(curl -fsSk -b /tmp/jar "$base/api/v1/files/list?path=/files")
           echo "$listed"
           echo "$listed" | grep -q 'proof.txt' \
             || { echo "the upload never reached the destination"; exit 1; }
-          got=$(curl -fsSk -b /tmp/jar "$base/api/fs/read?path=/files/proof.txt")
+          got=$(curl -fsSk -b /tmp/jar "$base/api/v1/files/read?path=/files/proof.txt")
           [ "$got" = "uploaded by ci" ] \
             || { echo "read back ${got}, want the bytes that were sent"; exit 1; }
 

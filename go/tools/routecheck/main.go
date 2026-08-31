@@ -32,7 +32,7 @@ import (
 func main() {
 	var (
 		clientDir      = flag.String("client-dir", "web/src/lib/api", "the frontend's API client directory")
-		routesPath     = flag.String("routes", "go/internal/server/routes.go", "the server's route table")
+		routesPath     = flag.String("routes", "go/engine/http/server/v1table.go", "the server's route table")
 		allowPath      = flag.String("allow", "go/routes.allow", "paths the client may call that the server need not mount")
 		serverOnlyPath = flag.String("server-only", "go/routes.server-only",
 			"routes the server mounts for callers other than the web client")
@@ -47,9 +47,19 @@ func main() {
 	if err != nil {
 		fail("reading the client: %v", err)
 	}
-	routes, err := os.ReadFile(filepath.Clean(*routesPath))
-	if err != nil {
-		fail("reading the route table: %v", err)
+	// Before any path is normalised: the prefix decides what every relative
+	// path becomes.
+	clientBase = findClientBase(*clientDir)
+	// A comma-separated list, because more than one file mounts routes: the
+	// versioned table, and the surfaces registered in code beside it.
+	var routes []byte
+	for _, name := range strings.Split(*routesPath, ",") {
+		part, rerr := os.ReadFile(filepath.Clean(strings.TrimSpace(name)))
+		if rerr != nil {
+			fail("reading the route table: %v", rerr)
+		}
+		routes = append(routes, part...)
+		routes = append(routes, '\n')
 	}
 	allowed := readAllow(*allowPath)
 
@@ -235,8 +245,10 @@ func clientPaths(src string) ([]call, map[string]bool) {
 			p := normalise(src[loc[2]:loc[3]])
 			// The helper's own body is the one fetch whose path is the
 			// argument every other call already supplied, so it normalises to
-			// a bare placeholder rather than a route.
-			if p == "" || p == "/api{}" || p == "/api" || p == "/s" {
+			// a bare placeholder rather than a route. Compared against the
+			// discovered base rather than a literal, which is what kept this
+			// from recognising the helper once the base moved.
+			if p == "" || p == clientBase+"{}" || p == clientBase || p == "/s" {
 				continue
 			}
 			// A URL builder inside a call this loop already matched would be
@@ -320,13 +332,77 @@ func methodOf(src string, from int) string {
 }
 
 // mountedPaths pulls every method and pattern the route table registers.
+//
+// Two spellings, because the two trees declare a route differently: the old
+// table is a slice of structs with Method and Pattern fields, and the engine's
+// is a sequence of add(method, path, name, body) calls. Reading both lets one
+// check cover whichever tree the client is pointed at, rather than passing
+// when aimed at a table nothing serves.
 func mountedPaths(src string) map[call]bool {
-	route := regexp.MustCompile(`Method:\s*"([A-Z]+)",\s*Pattern:\s*"([^"]+)"`)
 	out := map[call]bool{}
-	for _, m := range route.FindAllStringSubmatch(src, -1) {
+
+	structForm := regexp.MustCompile(`Method:\s*"([A-Z]+)",\s*Pattern:\s*"([^"]+)"`)
+	for _, m := range structForm.FindAllStringSubmatch(src, -1) {
 		out[call{method: m[1], path: normalise(m[2])}] = true
 	}
+
+	addForm := regexp.MustCompile(`add\("([A-Z]+)",\s*"(/[^"]*)"`)
+	for _, m := range addForm.FindAllStringSubmatch(src, -1) {
+		// The engine's table declares paths relative to its own mount, so the
+		// prefix the client sends is added back here rather than being written
+		// into every row.
+		out[call{method: m[1], path: normalise(enginePrefix + m[2])}] = true
+	}
+
+	// Routes registered directly on the router, which is how a surface outside
+	// the versioned table mounts itself. The path is absolute there, and the
+	// framework's own `:name` parameters become the same placeholder a table
+	// pattern's braces do.
+	fiberForm := regexp.MustCompile(`app\.(Get|Post|Put|Patch|Delete|Head|Options)\(\s*([A-Za-z]+\+)?"(/[^"]*)"`)
+	for _, m := range fiberForm.FindAllStringSubmatch(src, -1) {
+		path := m[3]
+		if m[2] != "" {
+			// The path is joined to a constant naming the mount prefix. The
+			// public link surface is the only one, and its prefix is where a
+			// short URL lives.
+			path = publicLinkPrefix + path
+		}
+		out[call{method: strings.ToUpper(m[1]), path: normalise(path)}] = true
+	}
 	return out
+}
+
+// publicLinkPrefix is where the public link surface mounts. Its routes are
+// registered against a constant rather than a literal, so the prefix is named
+// here to reassemble them.
+const publicLinkPrefix = "/s"
+
+// enginePrefix is where the engine's table is mounted. Its rows carry paths
+// relative to it, and the client sends the whole thing.
+const enginePrefix = "/api/v1"
+
+// clientBase is what the client prepends to every relative path, discovered
+// from its own source so this cannot drift from it.
+var clientBase = "/api"
+
+// baseDecl matches the client's BASE assignment, whose string literal is the
+// prefix every relative path in that file is joined to.
+var baseDecl = regexp.MustCompile(`const BASE = [^\n]*\+ '([^']+)'`)
+
+// findClientBase reads the API prefix out of the client's own source.
+//
+// Silent when it finds nothing, keeping the default: a client that stopped
+// declaring one is a change this tool should not guess at, and the paths it
+// then reports as unmounted say so plainly.
+func findClientBase(dir string) string {
+	raw, err := os.ReadFile(filepath.Clean(filepath.Join(dir, "lib", "api", "http.ts")))
+	if err != nil {
+		return "/api"
+	}
+	if m := baseDecl.FindSubmatch(raw); m != nil {
+		return string(m[1])
+	}
+	return "/api"
 }
 
 // unusedRoutes is every mounted route no client call reaches.
@@ -420,13 +496,24 @@ func normalise(p string) string {
 	// The client's own base is the API prefix, so its paths are relative to it
 	// and the table's are absolute. A public share link is the exception: it is
 	// served from the origin, so its path is already absolute.
-	if !strings.HasPrefix(p, "/api") && !strings.HasPrefix(p, "/s/") {
-		p = "/api" + p
+	//
+	// The prefix is read from the client rather than assumed. It was "/api"
+	// here while the client sent "/api/v1", which made every call look
+	// unmounted and every route unused: the check reported a hundred failures
+	// that were all one stale constant.
+	if !strings.HasPrefix(p, clientBase) && !strings.HasPrefix(p, "/s/") {
+		p = clientBase + p
 	}
 	// A named wildcard on the server and a value on the client are the same
 	// segment.
 	segs := strings.Split(p, "/")
 	for i, s := range segs {
+		// `:name` is the router's own spelling for the same thing a table
+		// writes as `{name}`, and a surface registered in code uses it.
+		if strings.HasPrefix(s, ":") && len(s) > 1 {
+			segs[i] = "{}"
+			continue
+		}
 		if strings.HasPrefix(s, "{") && strings.HasSuffix(s, "}") {
 			segs[i] = "{}"
 		}

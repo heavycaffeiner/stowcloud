@@ -208,48 +208,48 @@ function sortedEntriesOf(path: string, sort: SortKey, order: Order): Entry[] {
 export interface ListOpts {
   sort?: SortKey
   order?: Order
-  listing?: string
-  cursor?: string
   /**
-   * Random-access window start. Both this and `cursor` are an index into the
-   * sorted listing; this one takes precedence, because a window is a slice
-   * and not a walk from the front.
+   * The page to fetch, taken from the previous page's `cursor`.
+   *
+   * Opaque, and only ever a value the server handed out. There is no offset
+   * beside it: the server orders the whole directory and cuts the page this
+   * names, so a caller cannot ask for a slice starting at an arbitrary row.
    */
-  offset?: number
+  cursor?: string
   limit?: number
-  /** The directory token the caller last saw. The server answers `stale` when
-   *  the directory has moved since, which invalidates cached offsets. */
-  dirEtag?: string
   /** Lets the caller cancel a windowed fetch for a range it has scrolled past. */
   signal?: AbortSignal
 }
 
+/**
+ * A directory page, paged the way the server pages: a cursor walk.
+ *
+ * The cursor is an opaque index here, which is enough for a mock. What it is
+ * not is a random-access offset the caller may compute: the real server does
+ * not accept one, so accepting one here would let the app drift into using a
+ * window the backend cannot serve.
+ */
 async function list(path: string, opts: ListOpts): Promise<ListResponse> {
   await delay(30, opts.signal)
   const limit = Math.min(opts.limit ?? 200, 2000)
   const sort = opts.sort ?? 'name'
   const order = opts.order ?? 'asc'
 
-  // `listing` names the same directory `path` does, so either is enough.
-  const dir = normalizePath(opts.listing ?? path)
+  const dir = normalizePath(path)
   const entries = sortedEntriesOf(dir, sort, order)
   const etag = dirEtagFor(dir)
 
-  // Both are an index into the sorted listing; a window's offset wins.
-  const offset = opts.offset ?? (opts.cursor ? Number(opts.cursor) || 0 : 0)
+  const offset = opts.cursor ? Number(opts.cursor) || 0 : 0
   const page = entries.slice(offset, offset + limit)
   const next = offset + page.length
 
   return {
-    listing: dir,
     total: entries.length,
     dirs: entries.filter((e) => e.kind === 'dir').length,
     cursor: next < entries.length ? String(next) : null,
     entries: page,
     dir_etag: etag,
-    dir_etag_weak: true,
-    // Only ever true, and only when the caller named a token to compare.
-    ...(opts.dirEtag && opts.dirEtag !== etag ? { stale: true } : {})
+    dir_etag_weak: true
   }
 }
 
@@ -1025,7 +1025,10 @@ let mockSessions: ActiveSession[] = [
   }
 ]
 
-async function changePassword(currentPassword: string, newPassword: string, revokeOtherSessions: boolean): Promise<void> {
+// No `revokeOtherSessions`: the real route does not honour one, so a mock
+// that swept sessions here would demonstrate behaviour the server does not
+// have.
+async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   await delay(80)
   if (currentPassword !== mockAuthState.password) {
     throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
@@ -1038,9 +1041,6 @@ async function changePassword(currentPassword: string, newPassword: string, revo
     })
   }
   mockAuthState.password = newPassword
-  if (revokeOtherSessions) {
-    mockSessions = mockSessions.filter((s) => s.current)
-  }
 }
 
 async function totpSetup(): Promise<{ secret: string; otpauth_url: string }> {
@@ -1378,7 +1378,7 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       // opened relative to the directory, which is what the server says about
       // both.
       settingsField('bind', mockBind, false),
-      settingsField('data_dir', '/var/lib/stowcloud', false, /* i18n */ 'settings.readonly_data_dir'),
+      settingsField('data_dir', s.paths.data_dir, false, /* i18n */ 'settings.readonly_data_dir'),
       settingsField('app_hosts', s.network.app_hosts, false),
       settingsField('trusted_proxies', s.network.trusted_proxies, false),
       settingsField('db.size_guard', s.db.size_guard, true),
@@ -1404,9 +1404,8 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       settingsField('watch.backend', s.watch.backend, true),
       settingsField('watch.hot_set_max', s.watch.hot_set_max, true),
       settingsField('watch.full_threshold', s.watch.full_threshold, true),
-      settingsField('data_dir', s.paths.data_dir, true),
-      settingsField('master_key_file', s.paths.master_key_file, true),
-      settingsField('smb.config_dir', s.paths.smb_config_dir, true),
+      settingsField('master_key_file', s.paths.master_key_file, false),
+      settingsField('smb.config_dir', s.paths.smb_config_dir, false),
       settingsField('oidc.enabled', s.oidc.enabled, true),
       settingsField('oidc.issuer', s.oidc.issuer, true),
       settingsField('oidc.client_id', s.oidc.client_id, true),
@@ -1892,14 +1891,25 @@ async function adminDeleteUser(id: number): Promise<void> {
 // demo the grant-creation screen's share picker.
 // There is one kind of share: every one was created from this screen, because
 // nothing else can declare one.
-let mockShares: AdminShare[] = [
-  { id: 1_000_001, name: 'Documents', host_path: '/srv/documents', trash_enabled: false },
-  { id: 1_000_002, name: 'Photos', host_path: '/srv/photos', trash_enabled: true },
-  { id: 1_000_003, name: 'Videos', host_path: '/srv/videos', trash_enabled: false },
-  { id: 1_000_004, name: 'Music', host_path: '/srv/music', trash_enabled: false },
-  { id: 1_000_005, name: 'Team', host_path: '/srv/team', trash_enabled: false },
-  { id: 1_000_006, name: 'Archive', host_path: '/srv/archive', trash_enabled: true }
+/** A share plus the host path the mock keeps but never answers with.
+ *
+ *  The server holds the same rule: where a share lives on its disk decides
+ *  overlap at creation and is otherwise configuration a client never sees. */
+type MockShare = AdminShare & { readonly hostPath: string }
+
+let mockShares: MockShare[] = [
+  { id: 1_000_001, name: 'Documents', hostPath: '/srv/documents', trash_enabled: false },
+  { id: 1_000_002, name: 'Photos', hostPath: '/srv/photos', trash_enabled: true },
+  { id: 1_000_003, name: 'Videos', hostPath: '/srv/videos', trash_enabled: false },
+  { id: 1_000_004, name: 'Music', hostPath: '/srv/music', trash_enabled: false },
+  { id: 1_000_005, name: 'Team', hostPath: '/srv/team', trash_enabled: false },
+  { id: 1_000_006, name: 'Archive', hostPath: '/srv/archive', trash_enabled: true }
 ]
+
+/** Drops the host path, which is what the server sends. */
+function shareOf(s: MockShare): AdminShare {
+  return { id: s.id, name: s.name, trash_enabled: s.trash_enabled, broken_reason: s.broken_reason }
+}
 let nextShareId = 1_000_007 // mirrors `go/internal/core`'s share id base, past the seeded ones
 
 // One grant of each shape the row can take: inherited against path-only, a
@@ -1916,7 +1926,7 @@ let nextGrantId = 5
 
 async function adminListShares(): Promise<AdminShare[]> {
   await delay(15)
-  return mockShares.slice()
+  return mockShares.map(shareOf)
 }
 
 /** No real filesystem to check `host_path` against in mock mode, so this
@@ -1933,12 +1943,12 @@ async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
   if (mockShares.some((s) => s.name === name)) {
     throw new ApiError(422, { code: 'fs.invalid_name', message: `a share named '${name}' already exists` })
   }
-  if (mockShares.some((s) => s.host_path === req.host_path)) {
+  if (mockShares.some((s) => s.hostPath === req.host_path)) {
     throw new ApiError(422, { code: 'fs.invalid_name', message: `overlaps existing share` })
   }
-  const share: AdminShare = { id: nextShareId++, name, host_path: req.host_path, trash_enabled: false }
+  const share: MockShare = { id: nextShareId++, name, hostPath: req.host_path, trash_enabled: false }
   mockShares = [...mockShares, share]
-  return share
+  return shareOf(share)
 }
 
 /** An edit is stored on the share's own row and reapplied at startup, so
@@ -1956,14 +1966,14 @@ async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<Admi
   if (mockShares.some((s) => s.id !== id && s.name === nextName)) {
     throw new ApiError(422, { code: 'fs.invalid_name', message: `a share named '${nextName}' already exists` })
   }
-  const updated: AdminShare = {
+  const updated: MockShare = {
     ...share,
     name: nextName,
-    host_path: patch.host_path ?? share.host_path,
+    hostPath: patch.host_path ?? share.hostPath,
     trash_enabled: patch.trash_enabled ?? share.trash_enabled
   }
   mockShares = mockShares.map((s) => (s.id === id ? updated : s))
-  return updated
+  return shareOf(updated)
 }
 
 async function adminDeleteShare(id: number): Promise<{ smb?: SMBOutcome }> {
@@ -1986,9 +1996,9 @@ async function adminRetryShare(id: number): Promise<AdminShare> {
   if (!share) {
     throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
   }
-  const healed: AdminShare = { ...share, broken_reason: undefined }
+  const healed: MockShare = { ...share, broken_reason: undefined }
   mockShares = mockShares.map((s) => (s.id === id ? healed : s))
-  return healed
+  return shareOf(healed)
 }
 
 async function adminListGrants(opts: { userId?: number; groupId?: number; share?: number } = {}): Promise<AdminGrant[]> {

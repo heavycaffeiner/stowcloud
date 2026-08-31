@@ -285,10 +285,12 @@ a seccomp profile, so upgrade Docker to 20.10.0 or newer; `EACCES` is a
 filesystem permission, usually a mounted directory the running uid cannot
 reach; `ENOSYS` is a kernel below 5.6.
 
-To see what the kernel actually offers inside the container that is deployed:
+To see what the kernel actually offers inside the container that is deployed,
+read the hardening line the server logs as it starts. It names the policy that
+was applied and, where one was refused, which capability the kernel lacked:
 
 ```sh
-docker compose exec sc /stowcloud caps
+docker compose logs sc | grep hardening
 ```
 
 ## How it is built
@@ -324,8 +326,8 @@ describe the code in this repository.
 <summary><b>Building from source</b></summary>
 
 ```sh
-cd web && npm ci && npm run build && cd ..          # frontend first
-cd go && CGO_ENABLED=0 go build -tags embed_ui ./cmd/stowcloud
+cd web && pnpm install && pnpm build && cd ..        # frontend first
+cd go && CGO_ENABLED=0 go build -tags embed_ui ./cmd/sc-engine
 bash scripts/verify.sh                              # the gate CI runs
 ```
 

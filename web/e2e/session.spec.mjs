@@ -89,13 +89,13 @@ try {
     violations.join(' | '))
 
   console.log('first run')
-  const setupState = await api(page, 'GET', '/api/setup')
+  const setupState = await api(page, 'GET', '/api/v1/system/setup')
   check('the setup question answers the field the client reads',
     typeof setupState.body?.required === 'boolean',
     JSON.stringify(setupState.body))
 
   if (setupState.body?.required && TOKEN) {
-    const created = await api(page, 'POST', '/api/setup', {
+    const created = await api(page, 'POST', '/api/v1/system/setup', {
       token: TOKEN,
       username: USER,
       password: PASSWORD,
@@ -110,25 +110,23 @@ try {
   }
 
   console.log('signing in')
-  const noSession = await api(page, 'GET', '/api/auth/session')
+  const noSession = await api(page, 'GET', '/api/v1/auth/session')
   check('no credential is refused as required rather than invalid',
     noSession.status === 401 && noSession.body?.error?.code === 'auth.required',
     JSON.stringify(noSession.body))
 
-  const login = await api(page, 'POST', '/api/auth/login', {
-    username: USER,
-    password: PASSWORD
-  })
+  // The wrong password first, while there is no session. Once one exists this
+  // is a state-changing request from an authenticated caller, so CSRF refuses
+  // it with a 403 before the credential is ever read, and the check would be
+  // asserting the guard rather than the refusal it names.
+  const wrong = await api(page, 'POST', '/api/v1/auth/login', { login: USER, password: 'not-the-password' })
+  check('a wrong password is refused', wrong.status === 401, `status ${wrong.status}`)
+
+  const login = await api(page, 'POST', '/api/v1/auth/login', { login: USER, password: PASSWORD })
   check('signing in succeeds on the path the client calls', login.status === 200,
     `status ${login.status} ${JSON.stringify(login.body)}`)
 
-  const wrong = await api(page, 'POST', '/api/auth/login', {
-    username: USER,
-    password: 'not-the-password'
-  })
-  check('a wrong password is refused', wrong.status === 401, `status ${wrong.status}`)
-
-  const session = await api(page, 'GET', '/api/auth/session')
+  const session = await api(page, 'GET', '/api/v1/auth/session')
   check('the session is established', session.status === 200, `status ${session.status}`)
   const csrf = session.body?.csrf ?? ''
   check('the session carries a token for state-changing requests', csrf.length > 0)
@@ -136,57 +134,84 @@ try {
   console.log('the first share')
   // A fresh deployment serves nothing: no file declares a folder, so the
   // first share is one the administrator creates from the interface.
-  const existing = await api(page, 'GET', '/api/admin/shares')
+  const existing = await api(page, 'GET', '/api/v1/admin/shares')
   const already = (Array.isArray(existing.body) ? existing.body : (existing.body?.shares ?? []))
     .some((s) => s.name === 'docs')
   if (!already && SHARE) {
-    const made = await api(page, 'POST', '/api/admin/shares',
-      { name: 'docs', host_path: SHARE }, csrf)
+    const made = await api(page, 'POST', '/api/v1/admin/shares',
+      { name: 'docs', host: SHARE }, csrf)
     check('the first share is created from the interface', made.status === 201,
       `status ${made.status} ${JSON.stringify(made.body).slice(0, 160)}`)
   }
 
   console.log('browsing')
-  // Creating a share grants it to whoever created it, so this account can read
-  // it at once. Without that a fresh deployment is a dead end: a share is only
-  // reachable through a grant and the first run has none.
-  const list = await api(page, 'GET', '/api/fs/list?path=docs')
-  check('the administrator can read the share they created', list.status === 200,
-    `status ${list.status}`)
+  // A share grants nobody by design: access comes from an explicit grant, so
+  // creating one and reading it are two steps. The first run used to be a dead
+  // end here, and the grant below is what the admin screen sends.
+  //
+  // The label matters: it is the name the share is addressed by. Without one
+  // the root projects the grant as share-<id>, so every path a person types
+  // is a 404 against a share that is definitely there.
+  const shareRow = (await api(page, 'GET', '/api/v1/admin/shares')).body
+  const docs = (Array.isArray(shareRow) ? shareRow : (shareRow?.shares ?? []))
+    .find((s) => s.name === 'docs')
+  check('the share this run browses exists', docs !== undefined,
+    JSON.stringify(shareRow).slice(0, 160))
+  if (docs) {
+    const granted = await api(page, 'POST', '/api/v1/admin/grants', {
+      user: String(session.body?.user?.id ?? 1),
+      share: String(docs.id),
+      allow: ['read', 'download', 'write', 'create', 'delete'],
+      inherit: true,
+      label: 'docs'
+    }, csrf)
+    check('the grant is stored', granted.status === 201,
+      `status ${granted.status} ${JSON.stringify(granted.body).slice(0, 160)}`)
+  }
+
+  const list = await api(page, 'GET', '/api/v1/files/list?path=docs')
+  check('the granted share is readable', list.status === 200, `status ${list.status}`)
+  check('the listing carries the rows it found',
+    Array.isArray(list.body?.entries) && list.body.entries.length > 0,
+    JSON.stringify(list.body).slice(0, 160))
 
   // The client's own path spelling is rooted, and it has to be accepted: its
   // URLs are rooted, so this is what every request the interface makes looks
   // like. It answered 422 for the whole of the port, which is a server that
   // cannot list a directory.
-  const rooted = await api(page, 'GET', '/api/fs/list?path=/docs')
+  const rooted = await api(page, 'GET', '/api/v1/files/list?path=/docs')
   check('a rooted path is the same path', rooted.status === 200, `status ${rooted.status}`)
 
-  // The windowed fetch the virtual scroller makes: it names the directory as
-  // `listing`, not `path`, and asks for a slice by index. It was refused as a
-  // malformed path for the whole of the port, so every row past the first page
-  // stayed a placeholder no matter how far anybody scrolled.
-  const windowed = await api(page, 'GET',
-    `/api/fs/list?listing=${encodeURIComponent(list.body?.listing ?? 'docs')}&offset=0&limit=1`)
-  check('a windowed fetch addresses the listing it was handed',
-    windowed.status === 200, `status ${windowed.status}`)
-  check('the window is the size that was asked for',
-    windowed.body?.entries?.length === 1, `entries=${windowed.body?.entries?.length}`)
-  // The token the client last saw. A matching one is not stale; the response
-  // omits the flag rather than sending false.
-  const fresh = await api(page, 'GET',
-    `/api/fs/list?listing=${encodeURIComponent(list.body?.listing ?? 'docs')}&offset=0&limit=1` +
-    `&dir_etag=${encodeURIComponent(list.body?.dir_etag ?? '')}`)
-  check('an unchanged directory is not reported stale',
-    fresh.status === 200 && !fresh.body?.stale, `stale=${fresh.body?.stale}`)
-  const moved = await api(page, 'GET',
-    `/api/fs/list?listing=${encodeURIComponent(list.body?.listing ?? 'docs')}&offset=0&limit=1&dir_etag=not-the-one`)
-  check('a directory that moved under the window says so',
-    moved.status === 200 && moved.body?.stale === true, `stale=${moved.body?.stale}`)
+  // The window the grid draws. It asks for a bounded page and follows the
+  // cursor the previous page ended with, which is null on the last one: an
+  // absent cursor and a null one have to stay distinguishable, because the
+  // pager reads null as "stop".
+  const firstPage = await api(page, 'GET', '/api/v1/files/list?path=docs&limit=1')
+  check('a bounded page is the size that was asked for',
+    firstPage.body?.entries?.length === 1,
+    `entries=${firstPage.body?.entries?.length}`)
+  check('the page reports the total behind it',
+    typeof firstPage.body?.total === 'number', JSON.stringify(firstPage.body).slice(0, 160))
+  if (firstPage.body?.cursor) {
+    const nextPage = await api(page, 'GET',
+      `/api/v1/files/list?path=docs&limit=1&cursor=${encodeURIComponent(firstPage.body.cursor)}`)
+    check('the cursor walks to the next page', nextPage.status === 200,
+      `status ${nextPage.status}`)
+    check('the second page is not the first',
+      nextPage.body?.entries?.[0]?.name !== firstPage.body?.entries?.[0]?.name,
+      `both pages start at ${nextPage.body?.entries?.[0]?.name}`)
+  }
+
+  // The change token the client conditions on, which is what lets it skip a
+  // redraw when nothing moved.
+  check('the listing carries a change token',
+    typeof list.body?.dir_etag === 'string' && list.body.dir_etag.length > 0,
+    `dir_etag=${list.body?.dir_etag}`)
 
   // The existence rule: a path that does not exist and one this account may
   // not see answer identically, so a stranger cannot probe for what is there.
-  const missing = await api(page, 'GET', '/api/fs/list?path=docs/no-such-directory')
-  const outside = await api(page, 'GET', '/api/fs/list?path=secret/anything')
+  const missing = await api(page, 'GET', '/api/v1/files/list?path=docs/no-such-directory')
+  const outside = await api(page, 'GET', '/api/v1/files/list?path=secret/anything')
   check('a missing path and a forbidden one are indistinguishable',
     missing.status === 404 &&
       outside.status === 404 &&
@@ -195,19 +220,18 @@ try {
 
   console.log('the surfaces the admin screens call')
   const surfaces = [
-    ['GET', '/api/admin/users'],
-    ['GET', '/api/admin/groups'],
-    ['GET', '/api/admin/grants'],
-    ['GET', '/api/admin/storage'],
-    ['GET', '/api/admin/audit'],
-    ['GET', '/api/admin/shares'],
-    ['GET', '/api/admin/server-settings'],
-    ['GET', '/api/admin/index/settings'],
-    ['GET', '/api/auth/app-passwords'],
-    ['GET', '/api/auth/totp/recovery-codes'],
-    ['GET', '/api/jobs'],
-    ['GET', '/api/shares'],
-    ['GET', '/api/health']
+    ['GET', '/api/v1/admin/users'],
+    ['GET', '/api/v1/admin/groups'],
+    ['GET', '/api/v1/admin/grants'],
+    ['GET', '/api/v1/admin/storage'],
+    ['GET', '/api/v1/admin/audit'],
+    ['GET', '/api/v1/admin/shares'],
+    ['GET', '/api/v1/admin/settings'],
+    ['GET', '/api/v1/account/app-passwords'],
+    ['GET', '/api/v1/account/totp/recovery-codes'],
+    ['GET', '/api/v1/jobs'],
+    ['GET', '/api/v1/links'],
+    ['GET', '/api/v1/system/health']
   ]
   for (const [method, path] of surfaces) {
     const r = await api(page, method, path)
@@ -222,7 +246,7 @@ try {
 
   console.log('a state-changing request needs its token')
   const noToken = await page.evaluate(async () => {
-    const res = await fetch('/api/admin/groups', {
+    const res = await fetch('/api/v1/admin/groups', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'forged' })
@@ -237,7 +261,7 @@ try {
   const group = `e2e-group-${Date.now()}`
   const withToken = await page.evaluate(
     async ([token, name]) => {
-      const res = await fetch('/api/admin/groups', {
+      const res = await fetch('/api/v1/admin/groups', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Sc-Csrf': token },
         body: JSON.stringify({ name })
@@ -252,7 +276,7 @@ try {
   console.log('signing out')
   const out = await page.evaluate(
     async ([token]) => {
-      const res = await fetch('/api/auth/logout', {
+      const res = await fetch('/api/v1/auth/logout', {
         method: 'POST',
         headers: { 'Sc-Csrf': token }
       })
@@ -261,7 +285,7 @@ try {
     [csrf]
   )
   check('signing out succeeds', out === 200 || out === 204, `status ${out}`)
-  const after = await api(page, 'GET', '/api/auth/session')
+  const after = await api(page, 'GET', '/api/v1/auth/session')
   check('the session is gone afterwards', after.status === 401, `status ${after.status}`)
 } finally {
   await browser.close()

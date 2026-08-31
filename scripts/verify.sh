@@ -262,7 +262,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # The two in-tree analysers and the text scan. They run for the host's own
   # OS because `go run` has to execute what it built, and each one is pointed
   # at the shipping target from the inside.
-  run "vetgo (D7: one goroutine spawn)"        ingo_host go run ./tools/vetgo ./cmd ./internal
+  run "vetgo (D7: one goroutine spawn)"        ingo_host go run ./tools/vetgo ./cmd ./engine
   # The client and the route table are two halves of one contract, and nothing
   # else here checks that they agree. A route the frontend calls and the server
   # does not mount is a screen that cannot work, and it was invisible to every
@@ -277,10 +277,20 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # src rather than src/lib/api: the resumable upload transport is a sibling
   # directory, so a narrower path saw none of its calls, and the screens under
   # routes/ build URLs of their own that no .ts file names.
+  #
+  # Aimed at the engine's table, which is what the client now calls: every
+  # path it sends carries the /api/v1 prefix. Pointing this at the old table
+  # would pass only by comparing the client against a surface it no longer
+  # talks to.
+  #
+  # Two files, because two things mount routes: the versioned table, and the
+  # public link surface, whose five paths carry no version and are registered
+  # in code. A check that read only the table reported all five as screens
+  # that cannot work, when they answer.
   run "routecheck (the client's paths are mounted)" \
       ingo_host go run ./tools/routecheck \
         -client-dir ../web/src \
-        -routes internal/server/routes.go \
+        -routes engine/http/server/v1table.go,engine/lifecycle/publiclink.go \
         -allow routes.allow \
         -server-only routes.server-only
   # routecheck proves the paths exist. This proves the bodies match: the
@@ -288,10 +298,50 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # by a person clicking something that then did nothing.
   run "contractcheck (the client's fields are sent)" \
       ingo_host go run ./tools/contractcheck \
-        ../web/src/lib/api/types.ts ./internal/httpapi/handler
+        ../web/src/lib/api/types.ts ./engine/http/handler
+  # contractcheck compares response shapes. This compares the settings surface,
+  # where the drift runs the other way: the section handler stores the client's
+  # JSON object unchanged, on purpose, so a field name only the client knows is
+  # saved happily and read by nobody. The save reports success and the control
+  # never does anything.
+  #
+  # Found by writing "concurrent" where the loader reads "max_concurrent_fast"
+  # and watching the value store and vanish.
+  run "settingscheck (a stored setting is read)" \
+      ingo_host go run ./tools/settingscheck \
+        ../web/src/lib/api/types.ts ./engine/service/settings/runtimecfg/load.go
+  # freshscan keeps the engine's comments from being the old tree's. This keeps
+  # the phase documents from describing a tree that moved on: each numbered
+  # deliberate change names what it is about, and a rename leaves the prose
+  # describing something that is not there.
+  #
+  # Every built phase: 0 (foundation), 1 (core) and 2. The audit documents
+  # describe the old tree on purpose, and phase 3's describe what is not built
+  # yet, so both would report their own subject matter as missing.
+  #
+  # Foundation and core were left out when this gate was written and were the
+  # only areas nothing checked. Adding them brought 175 change entries under
+  # the gate and found six documents naming the old tree's spelling of a
+  # symbol; each was checked by hand and is recorded in the tool's ignore list
+  # with what replaced it.
+  #
+  # http joined once its packages existed. It found a defect in the tool: an
+  # identifier with a slash was assumed to be a file path, so a route path was
+  # reported missing while sitting in the route table. Four of its six findings
+  # were that bug.
+  run "speccheck (the phase documents match the engine)" bash -c '
+    cd go
+    fail=0
+    for area in foundation core auth oidc upload search preview settings smb http; do
+      if ! go run ./tools/speccheck "../docs/refactor/$area" ./engine; then fail=1; fi
+    done
+    exit $fail'
   run "vetsecret (D12: no secret to a verb)"   ingo_host go run ./tools/vetsecret ./...
-  run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./internal ./tools
-
+  run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./tools ./engine
+  # The tier rule over the rebuilt engine, by the import graph. A package's
+  # tier is its first path element under engine/, and an import is legal only
+  # when the importing tier lists the imported one.
+  run "layercheck (the engine's tiers hold)" ingo_host go run ./tools/layercheck ./engine
   FMT=$(cd go && gofmt -l . 2>/dev/null)
   grep_gate "gofmt" "$FMT" "Run: cd go && gofmt -w ."
 
@@ -346,12 +396,25 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
 
   # D1. Exceptions are countable, and the count is committed, so one being
   # added shows up in the diff beside the reason it was added for.
-  NOLINT_WANT=$(grep -vE '^[[:space:]]*(#|$)' go/nolint.budget | head -1 | tr -d '[:space:]')
-  NOLINT_HAVE=$(grep -rIo '//nolint:[a-zA-Z,]*' go --include='*.go' 2>/dev/null | wc -l | tr -d '[:space:]')
+  #
+  # Two counts while the two trees coexist. The old tree's is frozen and may
+  # only go down; the engine's starts at zero, so an exception there is a diff
+  # to the second number rather than a rounding error inside the first.
+  nolint_count() {
+    grep -rIno '//nolint:[a-zA-Z,]*' go --include='*.go' 2>/dev/null \
+      | grep -c "$@" | tr -d '[:space:]'
+  }
+  NOLINT_WANT=$(grep -vE '^[[:space:]]*(#|$)' go/nolint.budget | sed -n 1p | tr -d '[:space:]')
+  NOLINT_WANT_ENGINE=$(grep -vE '^[[:space:]]*(#|$)' go/nolint.budget | sed -n 2p | tr -d '[:space:]')
+  NOLINT_HAVE=$(nolint_count -v '^go/engine/')
+  NOLINT_HAVE_ENGINE=$(nolint_count '^go/engine/')
   NOLINT_HITS=""
   [ "$NOLINT_WANT" = "$NOLINT_HAVE" ] || \
-    NOLINT_HITS="go/nolint.budget says $NOLINT_WANT, the tree has $NOLINT_HAVE"
-  grep_gate "//nolint count matches go/nolint.budget" "$NOLINT_HITS" \
+    NOLINT_HITS="the old tree: go/nolint.budget says $NOLINT_WANT, it has $NOLINT_HAVE"
+  [ "$NOLINT_WANT_ENGINE" = "$NOLINT_HAVE_ENGINE" ] || \
+    NOLINT_HITS="$NOLINT_HITS"$'\n'"the engine: go/nolint.budget says $NOLINT_WANT_ENGINE, it has $NOLINT_HAVE_ENGINE"
+  NOLINT_HITS=$(printf '%s' "$NOLINT_HITS" | sed '/^$/d')
+  grep_gate "//nolint counts match go/nolint.budget" "$NOLINT_HITS" \
     "Every exception carries a reason on its line. Update the budget deliberately."
 
   # Three rules that are about a call appearing outside the one package that
@@ -362,8 +425,10 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
 
   # D8. One clock. F10 was a now_ns that unwrapped duration_since(UNIX_EPOCH),
   # which aborts the process on a machine whose RTC has not been set.
-  CLOCK_HITS=$(go_code 'time\.Now\(' | grep -v '^go/internal/clock/')
-  grep_gate "D8: time.Now only in internal/clock" "$CLOCK_HITS" \
+  # One per tree while the two coexist; the old entry goes with the old tree.
+  CLOCK_HITS=$(go_code 'time\.Now\(' \
+               | grep -vE '^go/(internal/clock|engine/kit/clock)/')
+  grep_gate "D8: time.Now only in the clock packages" "$CLOCK_HITS" \
     "Take a clock.Clock. Nothing else reads the wall clock."
 
   # D9. crypto/rand only.
@@ -371,25 +436,36 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   grep_gate "D9: no math/rand" "$RAND_HITS" \
     "crypto/rand. A predictable token is a token."
 
-  # D11. A raw rename is callable from internal/vfs and nowhere else. That is
-  # all this proves: the package holds four operations with different contracts
-  # -- WriteDurable for staged share content, ShareRoot.Rename for a namespace
-  # move, PublishNew for an already-complete database with no clobber, and
-  # ReplaceFileDurable for a trusted private control file -- and no grep can
-  # tell which one a caller should have taken.
-  RENAME_HITS=$(go_code 'os\.Rename\(|unix\.Renameat2?\(' | grep -v '^go/internal/vfs/')
-  grep_gate "D11: rename only from internal/vfs" "$RENAME_HITS" \
-    "Take the operation in internal/vfs whose contract matches, and add one there if none does."
+  # D11. A raw rename is callable from the packages that own a rename contract
+  # and nowhere else. That is all this proves: each holds operations with
+  # different contracts (WriteDurable for staged share content, ShareRoot.Rename
+  # for a namespace move, ReplaceFileDurable for a trusted private control
+  # file) and no grep can tell which one a caller should have taken.
+  #
+  # The engine splits the two: share content renames live in engine/infra/vfs,
+  # control-file renames in engine/store/fsatomic, which is the move that took
+  # control-file writing out of the filesystem-security package.
+  RENAME_HITS=$(go_code 'os\.Rename\(|unix\.Renameat2?\(' \
+                | grep -vE '^go/(internal/vfs|engine/infra/vfs|engine/store/fsatomic)/')
+  grep_gate "D11: rename only from the packages that own it" "$RENAME_HITS" \
+    "Take the operation whose contract matches: vfs for share content, fsatomic for a control file."
 
   # Every descriptor is an *os.File and every use of a raw one keeps the file
   # alive across the call. (*os.File).Fd takes the descriptor out of the
   # runtime's view for the duration, so nothing keeps the owner reachable and a
-  # finalizer is free to close it underneath the syscall. Two helpers do the
-  # keepalive; this is what stops a third site doing it by hand and forgetting.
+  # finalizer is free to close it underneath the syscall. A helper per owning
+  # package does the keepalive; this is what stops another site doing it by
+  # hand and forgetting.
+  #
+  # The engine's list is longer than the old tree's because the rebuild split
+  # ownership: vfs and fsatomic each hold a withFd helper for the files they
+  # open, preview owns one for the socket it passes descriptors over, and jail
+  # calls the three landlock syscalls directly since each takes a descriptor
+  # alongside a packed struct no wrapper covers.
   FD_HITS=$(go_code '\.Fd\(\)' \
-            | grep -vE '^go/internal/(vfs/open\.go|jail/landlock\.go):')
+            | grep -vE '^go/(internal/(vfs/open\.go|jail/landlock\.go)|engine/infra/vfs/root\.go|engine/infra/jail/landlock\.go|engine/store/fsatomic/dir_linux\.go|engine/service/preview/transport\.go):')
   grep_gate "raw descriptors only through a keepalive helper" "$FD_HITS" \
-    "Use withFd or withFd2 in internal/vfs; internal/jail/landlock.go is the other named site."
+    "Use the withFd helpers where the descriptor's owner lives; every other site goes through them."
 
   # F5. IntentReadWrite has exactly one call site, the upload engine's lazy
   # reopen of a part file. A second one is a read path holding a writable
@@ -397,18 +473,23 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # internal/vfs is where it is declared and dispatched on, so the count is of
   # what is outside it. Test code is excluded: a test that proves the two
   # intents differ has to name both.
-  RW_SITES=$(go_code 'IntentReadWrite' | grep -v '_test\.go:' \
-             | grep -vc '^go/internal/vfs/')
+  #
+  # One upload engine, so one site is the rule and two is the defect. A
+  # comment naming the intent is not a call site, so the count is of the
+  # calls.
+  rw_sites() { go_code 'OpenRead\([^)]*IntentReadWrite' | grep -v '_test\.go:' | grep -E "$1"; }
+  RW_FOUND=$(rw_sites '^go/engine/')
   RW_HITS=""
-  [ "${RW_SITES:-0}" -le 1 ] || RW_HITS=$(go_code 'IntentReadWrite' \
-    | grep -v '_test\.go:' | grep -v '^go/internal/vfs/')
+  [ "$(printf '%s' "$RW_FOUND" | grep -c .)" -le 1 ] || RW_HITS="$RW_FOUND"
   grep_gate "IntentReadWrite has at most one call site" "$RW_HITS" \
     "Only the upload finalizer may take a writable descriptor on a read path."
 
   # D14. SQL is parameters only. Every statement is a package-level constant.
+  # Tests are excluded: they build fixture strings rather than statements, and
+  # a seeded row named with Sprintf is not a query.
   SQL_HITS=$(go_code 'fmt\.Sprintf\(|fmt\.Sprint\(|strings\.Builder' \
-             | grep '^go/internal/store/' || true)
-  grep_gate "D14: no built SQL in internal/store" "$SQL_HITS" \
+             | grep '^go/engine/store/' | grep -v '_test\.go:' || true)
+  grep_gate "D14: no built SQL in the store" "$SQL_HITS" \
     "Bind parameters. A query built from parts is an injection waiting for input."
 
   # D19. Closes F8, where two files carried thirteen per cent of the tree with
@@ -422,33 +503,65 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # replaces reads source, so a constant defined elsewhere or a string built
   # from parts passes it while doing exactly what it exists to prevent.
   go_compat_isolation() {
-    local hits="" core=""
-    for d in core dav auth acl store upload vfs preview search httpapi watch smb; do
-      [ -d "go/internal/$d" ] && core="$core ./internal/$d/..."
-    done
-    # G1: no core package imports the compat layer, transitively.
-    if [ -n "$core" ]; then
-      # shellcheck disable=SC2086
-      hits="$hits$(ingo go list -deps $core 2>/dev/null | grep 'internal/compat' || true)"
+    # G6: the same two rules over the rebuilt engine. Vendor vocabulary lives
+    # only under engine/http/compat, and that package imports no service,
+    # store or infra type: its ports are declared for assembly to implement.
+    #
+    # Code only, not comments. A package may name the compatibility layer to
+    # explain why a boundary exists without being on the wrong side of it, and
+    # the middleware's own tests declare a protocol path as fixture data.
+    engine_vendor() {
+      grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' "$1" 2>/dev/null \
+        | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true
+    }
+    # Initialised before the loops append to it: under `set -u` an unset name
+    # aborts the function, which reported this gate as passing without it
+    # having looked at anything.
+    hits=""
+    if [ -d go/engine ]; then
+      for d in kit store service infra; do
+        [ -d "go/engine/$d" ] || continue
+        hits="$hits$(engine_vendor "go/engine/$d")"
+      done
+      for d in apierr archive dav emergency handler route; do
+        [ -d "go/engine/http/$d" ] || continue
+        hits="$hits$(engine_vendor "go/engine/http/$d")"
+      done
+      # server names the prefixes because it is what mounts them. The
+      # interface fallback has to know which paths belong to another protocol
+      # so it never answers an HTML page where a sync client expected a
+      # multistatus, and that list is the reservation. Only the fallback and
+      # its declaration may say so; a vendor name anywhere else under server
+      # is the assembly learning a protocol it should be handed.
+      if [ -d go/engine/http/server ]; then
+        hits="$hits$(engine_vendor go/engine/http/server \
+                     | grep -vE '^go/engine/http/server/(fallback|preflight)' || true)"
+      fi
+      # middleware declares protocol paths as data supplied by whoever mounts
+      # a protocol, so its own fixtures name one. Only its non-test files are
+      # scanned: a shipped path there would be the layer knowing a vendor.
+      if [ -d go/engine/http/middleware ]; then
+        hits="$hits$(grep -rIn --include='*.go' -iE '\bocs\b|remote\.php|nextcloud' \
+                     go/engine/http/middleware 2>/dev/null \
+                     | grep -v '_test\.go:' \
+                     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
+      fi
+      if [ -d go/engine/http/compat ]; then
+        hits="$hits$(ingo go list -tags compat_nc -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' \
+                     ./engine/http/compat/... 2>/dev/null \
+                     | grep 'stowcloud/go/engine/' \
+                     | grep -vE 'engine/http/(dav|apierr)$|engine/kit/' || true)"
+      fi
     fi
-    # G2: the layer imports the seam and nothing else from the tree.
-    hits="$hits$(ingo go list -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' ./internal/compat/nc/... \
-                 2>/dev/null | grep 'stowcloud/go/internal/' | grep -v 'internal/compat/ncport$' || true)"
-    # G3: the seam carries no vendor vocabulary.
-    hits="$hits$(grep -rIn -iE '\boc[:_-]|\bocs\b|remote\.php|nextcloud' \
-                 go/internal/compat/ncport/ 2>/dev/null || true)"
-    # G5: the text scan, kept and narrowed, because it catches a core package
-    # that learned the vocabulary without importing anything.
-    for d in core dav auth acl store upload vfs preview search httpapi watch smb; do
-      [ -d "go/internal/$d" ] || continue
-      hits="$hits$(grep -rIn -iE '\boc[:_-]|\bocs\b|remote\.php' "go/internal/$d" 2>/dev/null || true)"
-    done
-    printf '%s' "$hits"
+    # Blank lines only means no hit. Several of the scans above end with a
+    # newline whether or not they matched, and a whitespace-only string is not
+    # empty to the caller's test.
+    printf '%s' "$hits" | grep -v '^[[:space:]]*$' || true
   }
-  if [ -d go/internal/compat ]; then
+  if [ -d go/engine/http/compat ]; then
     NC_HITS=$(go_compat_isolation)
     grep_gate "compat isolation (import graph, seam, text)" "$NC_HITS" \
-      "Compat wire vocabulary belongs behind internal/compat/ncport."
+      "Compat wire vocabulary belongs behind the compat layer."
     # G4: the stripped build, which is stronger than the feature flag it
     # replaces: with no tag the packages are not compiled at all.
     run "go build (compat stripped)" ingo go build ./...
@@ -462,27 +575,28 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     # and go reports that as an error: a gate step failing because the code it
     # names does not exist on this OS says nothing about the code.
     if [ "$HOST" = linux ]; then
-      run "go test -tags compat_nc"    ingo_host go test -tags compat_nc ./internal/compat/...
-      run "fuzz seed corpus (compat)"  ingo_host go test -tags compat_nc -run '^Fuzz' -count=1 ./internal/compat/...
+      run "go test -tags compat_nc"    ingo_host go test -tags compat_nc ./engine/http/compat/...
+      run "fuzz seed corpus (compat)"  ingo_host go test -tags compat_nc -run '^Fuzz' -count=1 ./engine/...
     else
       skipped "go test -tags compat_nc" "the compat layer is Linux only" 0
       skipped "fuzz seed corpus (compat)" "the compat layer is Linux only" 0
     fi
   else
     skipped "compat isolation (import graph, seam, text)" \
-            "go/internal/compat does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
+            "go/engine/http/compat does not exist yet" "${VERIFY_REQUIRE_COMPAT:-0}"
   fi
 
   # The single-binary build. `//go:embed` reads the bundle with a real
-  # dependency edge: rebuilding after `npm run build` picks up the new files or
-  # fails to compile, so there is no stale-bundle hazard to clean around. The bundle lives inside the embedding package because //go:embed
-  # cannot name a path outside it, and refuses a symlink that points out.
-  if [ -f go/internal/httpapi/spa/build/index.html ]; then
+  # dependency edge: rebuilding the frontend picks up the new files or fails
+  # to compile, so there is no stale-bundle hazard to clean around. The bundle
+  # lives inside the embedding package because //go:embed cannot name a path
+  # outside it, and refuses a symlink that points out.
+  if [ -f go/engine/http/spa/build/index.html ]; then
     run "go build -tags embed_ui" ingo go build -tags embed_ui ./...
     # And the served bundle is the one that was built, which is the property
     # the dependency edge exists for. It needs node, so it only runs where the
     # frontend can be rebuilt.
-    if command -v npm >/dev/null 2>&1; then
+    if command -v pnpm >/dev/null 2>&1; then
       run "the embedded bundle is the built one" bash scripts/embed-check.sh
       # A real browser against the shipped interface. It is the only check here
       # that asks whether a request arrives rather than whether a function is
@@ -490,10 +604,10 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
       # with the whole suite green.
       run "the interface signs in and reaches its surfaces" bash scripts/e2e.sh
     else
-      skipped "the embedded bundle is the built one" "no npm" "${VERIFY_REQUIRE_UI:-0}"
+      skipped "the embedded bundle is the built one" "no pnpm" "${VERIFY_REQUIRE_UI:-0}"
     fi
   else
-    skipped "go build -tags embed_ui" "no built frontend; run: cd web && npm run build" \
+    skipped "go build -tags embed_ui" "no built frontend; run: cd web && pnpm build" \
             "${VERIFY_REQUIRE_UI:-0}"
   fi
 else

@@ -4,7 +4,7 @@
 // never needs a live backend during frontend development either.
 
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
-const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api'
+const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 
 // The session cookie is `__Host-sc_sid` (auth) and state-changing requests
 // additionally need the `Sc-Csrf` header — the same

@@ -2,13 +2,50 @@
 
 export type Kind = 'file' | 'dir' | 'symlink' | 'other'
 
-/** `go/internal/httpapi/handler/fs.go` — the wire shape of every
- *  `perms` object the server emits (an `Entry`'s, a session root's, a share
- *  link's): always exactly these eight keys. The previous version of this
- *  interface had only five (missing `rename`/`move`/`download`) — harmless
- *  as long as nothing read those fields, but the download feature needs
- *  `perms.download` to decide whether to offer the action at all, which is
- *  what surfaced the gap. */
+/** The eight permission names, in the order the server emits them. */
+export const PERM_NAMES = [
+  'read',
+  'write',
+  'create',
+  'delete',
+  'rename',
+  'move',
+  'share',
+  'download'
+] as const
+
+/** Widens the wire's granted-names array into the object the app reads.
+ *
+ *  Absent means denied: the server sends only what it granted, so anything
+ *  missing from the array is false rather than unknown. An unrecognised name
+ *  is ignored rather than refused, because a server that grows a ninth
+ *  permission should not break a listing on an older client. */
+export function permsFromNames(names: readonly string[] | null | undefined): Perms {
+  const held = new Set(names ?? [])
+  return {
+    read: held.has('read'),
+    write: held.has('write'),
+    create: held.has('create'),
+    delete: held.has('delete'),
+    rename: held.has('rename'),
+    move: held.has('move'),
+    share: held.has('share'),
+    download: held.has('download')
+  }
+}
+
+/** Narrows the app's object back to the array the server accepts. */
+export function permNamesOf(perms: Perms): string[] {
+  return PERM_NAMES.filter((name) => perms[name])
+}
+
+/** The permission set a caller holds at a path, as the app reads it.
+ *
+ *  All eight keys are always present, so a caller can ask `perms.download`
+ *  without testing for the field first. This is the app's shape, not the
+ *  wire's: the server sends only the names it granted, as an array, and
+ *  `permsFromNames` widens that at the boundary. Keeping the object here is
+ *  what lets every call site stay a plain property read. */
 export interface Perms {
   read: boolean
   write: boolean
@@ -46,6 +83,9 @@ export interface Entry {
    */
   size: number
   mtime_ns: string
+  /** Absent where the filesystem has no birth time to report. Zero is a real
+   *  timestamp, so it cannot stand for "unknown". */
+  btime_ns?: string
   etag: string
   /**
    * The change token is advisory rather than exact.
@@ -88,7 +128,6 @@ export type SortKey = 'name' | 'size' | 'mtime' | 'kind'
 export type Order = 'asc' | 'desc'
 
 export interface ListResponse {
-  listing: string
   total: number
   /**
    * How many of `total` are directories. The server sorts folders ahead of
@@ -102,12 +141,18 @@ export interface ListResponse {
    * directory holding a few thousand subfolders.
    */
   dirs: number
+  /**
+   * The next page's cursor, or null on the final page.
+   *
+   * A walk, not an index: the server orders the whole directory and cuts the
+   * page this names. There is no offset into a listing, because there is no
+   * listing session on the server to offset into.
+   */
   cursor: string | null
   entries: Entry[]
   dir_etag: string
   /** The same advisory rule as `Entry.etag_weak`, for the directory token. */
   dir_etag_weak: boolean
-  stale?: boolean
 }
 
 export interface ApiErrorBody {
@@ -316,7 +361,6 @@ export const ALL_GRANT_PERMS: GrantPermName[] = [
 export interface AdminShare {
   id: number
   name: string
-  host_path: string
   /** Off by default for every share. */
   trash_enabled: boolean
   /** Why this share cannot be served right now, or absent when it can. A
@@ -909,7 +953,7 @@ export type ClientMsg = { t: 'sub'; paths: string[] } | { t: 'unsub'; paths: str
 
 // ── text editor (`/edit/[...path]`) ──
 
-/** `GET /api/fs/read` response shape. No etag on purpose — the server
+/** `GET /api/v1/files/read` response shape. No etag on purpose — the server
  *  derives it fresh from `stat` at write time (`AppError::precondition`), so
  *  the editor calls `api.stat(path)` alongside this to get one to send back
  *  as `If-Match`. */
@@ -946,6 +990,9 @@ export type SettingRange =
   | { kind: 'bool' }
   | { kind: 'string'; max_len?: number }
   | { kind: 'string_list'; max_items?: number }
+  /** A string with a fixed set of accepted values. The server sends the set,
+   *  so a client never offers an option the save would refuse. */
+  | { kind: 'choice'; choices: string[] }
 
 export interface SettingsField {
   key: string

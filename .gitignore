@@ -4,16 +4,25 @@ node_modules
 web/.svelte-kit
 # The frontend builds into the embedding Go package: //go:embed cannot name a
 # path outside its own package directory, and refuses a symlink out of one.
-go/internal/httpapi/spa/build/
+# Contents are ignored but the directory itself is kept (a .gitkeep), because
+# //go:embed all:build needs the directory to exist at compile time.
+go/engine/http/spa/build/*
+!go/engine/http/spa/build/.gitkeep
 # Where it used to build, kept ignored so an old checkout does not commit one.
 web/build
 *.qcow2
 *.log
 .env
 /.demo
-# The development server's scratch tree: its data directory, its shares, the
-# binary it builds and its log. scripts/dev.sh makes it.
-/.dev
+# The development server's scratch tree: its data directory holding a master
+# key and a TLS private key, its shares, the binary it builds and its log.
+# scripts/dev.sh makes one at the repository root and `go run` makes another
+# under go/, so the pattern is unanchored: an anchored rule covered only the
+# first and let the second's private key be committed.
+.dev/
+# `go build ./cmd/sc-engine` from inside go/ drops the binary beside the source.
+/go/sc-engine
+/go/stowcloud
 # Runtime state the testbed compose stack creates beside its own file.
 /deploy/testbed/data
 /deploy/testbed/secrets
@@ -31,3 +40,10 @@ web/.tmp-*
 # Gate tooling and cross-compiled test binaries: build products, not source.
 /go/.tools/
 /go/.testbin/
+
+# SQLite files a hand-run server leaves wherever it was pointed. Three of these
+# reached a commit from a manual boot inside the package directory; the tests
+# themselves use temp dirs and never write here.
+*.db
+*.db-wal
+*.db-shm

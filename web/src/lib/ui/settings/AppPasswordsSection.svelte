@@ -22,6 +22,9 @@
   let createOpen = $state(false)
   let newName = $state('')
   let newReadOnly = $state(false)
+  // The server re-confirms the account password before minting a credential:
+  // a session alone should not be enough to create one that outlives it.
+  let newCurrent = $state('')
   let creating = $state(false)
   let createError = $state<string | null>(null)
   let issuedToken = $state<string | null>(null)
@@ -49,6 +52,7 @@
   function openCreate(): void {
     newName = ''
     newReadOnly = false
+    newCurrent = ''
     createError = null
     createOpen = true
   }
@@ -58,13 +62,13 @@
   }
 
   async function confirmCreate(): Promise<void> {
-    if (!newName.trim()) return
+    if (!newName.trim() || !newCurrent) return
     creating = true
     createError = null
     try {
       const res = newReadOnly
-        ? await api.createScopedAppPassword(newName.trim(), { readOnly: true })
-        : await api.createAppPassword(newName.trim())
+        ? await api.createScopedAppPassword(newName.trim(), newCurrent, { readOnly: true })
+        : await api.createAppPassword(newName.trim(), newCurrent)
       issuedToken = res.token
       createOpen = false
       await load()
@@ -185,12 +189,18 @@
   <p>{t('app_password.use_one_where_your_account')}</p>
   <TextField label={t('common.name')} placeholder={t('app_password.e_g_rclone_backup')} bind:value={newName} error={createError} autofocus />
   <Checkbox bind:checked={newReadOnly} label={t('app_password.read_only_download_only_no')} />
+  <TextField
+    type="password"
+    label={t('common.current_password')}
+    bind:value={newCurrent}
+    autocomplete="current-password"
+  />
   <p class="sc-app-passwords__scope-hint">
     {t('app_password.read_only_recommended_anywhere_only')}
   </p>
   {#snippet actions()}
     <Button variant="text" onclick={closeCreate}>{t('common.cancel')}</Button>
-    <Button variant="filled" disabled={!newName.trim()} loading={creating} onclick={confirmCreate}>
+    <Button variant="filled" disabled={!newName.trim() || !newCurrent} loading={creating} onclick={confirmCreate}>
       {t('common.create')}
     </Button>
   {/snippet}

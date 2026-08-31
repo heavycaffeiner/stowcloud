@@ -7,7 +7,7 @@ import (
 	"log"
 	"log/slog"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 )
 
 type creds struct {

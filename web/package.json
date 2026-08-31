@@ -4,13 +4,15 @@
   "private": true,
   "license": "AGPL-3.0-or-later",
   "type": "module",
-  "//engines": "jsdom 30 declares `^22.22.2 || ^24.15.0 || >=26.0.0`, so 24.15.0 is a real floor now rather than a preference. CI's NODE_VERSION is \"24\", which setup-node floats to the newest 24.x (24.18.1, the Active LTS), and the Dockerfile pins node:24-alpine — both satisfy it. Stated here so a developer on an older 24.x gets a warning at install time instead of an unexplained vitest failure.",
+  "//engines": "jsdom 30 declares `^22.22.2 || ^24.15.0 || >=26.0.0`, so 24.15.0 is a real floor now rather than a preference. CI's NODE_VERSION is \"24\", which setup-node floats to the newest 24.x (24.18.1, the Active LTS), and the Dockerfile pins node:24-alpine. Both satisfy it. Stated here so a developer on an older 24.x gets a warning at install time instead of an unexplained vitest failure.",
   "engines": {
     "node": "^22.22.2 || ^24.15.0 || >=26.0.0"
   },
+  "//packageManager": "Pinned because corepack otherwise installs whatever pnpm it happens to bundle, and the overrides this project's security pins live in are read from pnpm-workspace.yaml, which older pnpm does not consult. An image built with the wrong one resolves the vulnerable transitive dependency and says nothing.",
+  "packageManager": "pnpm@11.22.0",
   "scripts": {
     "dev": "vite dev",
-    "build": "npm run lint:css && npm run lint:i18n && vite build",
+    "build": "pnpm lint:css && pnpm lint:i18n && vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
@@ -23,6 +25,7 @@
   },
   "devDependencies": {
     "@fontsource-variable/google-sans-flex": "^5.3.0",
+    "@iconify/types": "^2.0.0",
     "@ktibow/material-color-utilities-nightly": "^0.4.1772748028000",
     "@sveltejs/adapter-static": "^3.0.10",
     "@sveltejs/kit": "^2.70.2",
@@ -42,10 +45,7 @@
     "vite-plugin-functions-mixins": "^0.4.1",
     "vitest": "^4.1.10"
   },
-  "//overrides": "GHSA-pxg6-pf52-xh8x (cookie < 0.7.0 accepts out-of-bounds characters in a name/path/domain). @sveltejs/kit is on ^0.6.0 as of 2.70.2, the latest, with no fixed release — pinning the transitive copy is the only way to clear it. ^0.7.2 rather than 1.x/2.x: 0.7.0 is the fix release and keeps the 0.x API kit was written against.",
-  "overrides": {
-    "cookie": "^0.7.2"
-  },
+  "//overrides": "The cookie pin for GHSA-pxg6-pf52-xh8x lives in pnpm-workspace.yaml, which is where this project's package manager reads overrides from. Stated there rather than here so there is one copy to keep correct.",
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
     "@codemirror/language": "^6.12.4",

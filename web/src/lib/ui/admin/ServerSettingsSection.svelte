@@ -70,6 +70,32 @@
   // form, which is the group it decides.
   const PATH_KEYS = ['data_dir', 'smb.config_dir']
 
+  /**
+   * The human name for a reported field.
+   *
+   * These two lists are read-only: they say what the server is running on
+   * rather than offering a control, so they have no form label of their own.
+   * Showing the settings key instead put `oidc.allow_private_endpoints` on
+   * screen, which is the name the two programs use for it and not one anybody
+   * reads. A key with no catalogue entry falls back to itself, which is worse
+   * than a translation and better than a blank row.
+   */
+  //   /* i18n */ 'field.oidc_enabled'
+  //   /* i18n */ 'field.oidc_issuer'
+  //   /* i18n */ 'field.oidc_client_id'
+  //   /* i18n */ 'field.oidc_display_name'
+  //   /* i18n */ 'field.oidc_ca_cert_file'
+  //   /* i18n */ 'field.oidc_allow_private_endpoints'
+  //   /* i18n */ 'field.smb_config_dir'
+  //   /* i18n */ 'field.data_dir'
+  function fieldLabel(key: string): string {
+    // Catalogue keys carry one dot, so a settings key's own dots become
+    // underscores: `smb.config_dir` is looked up as `field.smb_config_dir`.
+    const name = `field.${key.replaceAll('.', '_')}`
+    const label = t(name)
+    return label === name ? key : label
+  }
+
   // What the server says an empty value means, for the two fields where empty
   // is a setting rather than a gap. Nothing renders when it sent no key.
   // The keys the server can send that no call site here shows literally:
@@ -107,6 +133,10 @@
     if (v === null || v === undefined) return t('server.none')
     if (Array.isArray(v)) return v.length ? v.join(', ') : t('server.empty')
     if (typeof v === 'boolean') return v ? t('server.on') : t('server.off')
+    // An unset string rendered as itself is a row with a label and nothing
+    // beside it, which reads as a value that failed to load rather than one
+    // nobody has set.
+    if (v === '') return t('server.empty')
     return String(v)
   }
 
@@ -816,7 +846,7 @@
     <dl class="sc-server-settings__other">
       {#each snapshot.fields.filter((f) => f.key.startsWith('oidc.')) as f (f.key)}
         <div>
-          <dt>{f.key}</dt>
+          <dt>{fieldLabel(f.key)}</dt>
           <dd>
             {formatValue(f.value)}
             {#if f.readonly_reason_key}
@@ -832,7 +862,7 @@
     <dl class="sc-server-settings__other">
       {#each snapshot.fields.filter((f) => PATH_KEYS.includes(f.key)) as f (f.key)}
         <div>
-          <dt>{f.key}</dt>
+          <dt>{fieldLabel(f.key)}</dt>
           <dd>
             {formatValue(f.value)}
             {#if f.readonly_reason_key}

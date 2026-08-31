@@ -11,9 +11,9 @@ import { t } from '../i18n'
 import type { OidcConfig } from './types'
 
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
-const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api'
+const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 
-/** What the mock backend answers for `GET /api/auth/oidc/config`.
+/** What the mock backend answers for `GET /api/v1/auth/oidc/config`.
  *
  *  Enabled, so both screens render their single-sign-on surface under
  *  `VITE_API_MOCK=1` and can be worked on without a server. There is no
@@ -23,7 +23,7 @@ const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api'
 const MOCK_CONFIG: OidcConfig = { enabled: true, display_name: 'Mock IdP' }
 
 /**
- * `GET /api/auth/oidc/config`, unauthenticated by necessity: the login
+ * `GET /api/v1/auth/oidc/config`, unauthenticated by necessity: the login
  * screen has to decide whether to draw the button before anybody has a
  * credential.
  *
@@ -51,7 +51,7 @@ export async function fetchOidcConfig(): Promise<OidcConfig> {
 }
 
 /**
- * Hands the browser to `GET /api/auth/oidc/start`, which answers a `302` to
+ * Hands the browser to `GET /api/v1/auth/oidc/start`, which answers a `302` to
  * the provider.
  *
  * A full navigation, never `fetch`: an XHR follows the redirect in the

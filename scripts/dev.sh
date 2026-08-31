@@ -89,14 +89,14 @@ fi
 
 echo "==> building the frontend"
 if [ -d web/node_modules ]; then
-  (cd web && npm run build) >/dev/null || { echo "the frontend build failed" >&2; exit 1; }
+  (cd web && pnpm build) >/dev/null || { echo "the frontend build failed" >&2; exit 1; }
 else
-  echo "no web/node_modules; run npm ci in web/ for the interface" >&2
+  echo "no web/node_modules; run pnpm install in web/ for the interface" >&2
 fi
 
 echo "==> building the binary"
-BIN="$PWD/$DIR/stowcloud"
-(cd go && CGO_ENABLED=0 go build -tags embed_ui -o "$BIN" ./cmd/stowcloud) \
+BIN="$PWD/$DIR/sc-engine"
+(cd go && CGO_ENABLED=0 go build -tags embed_ui -o "$BIN" ./cmd/sc-engine) \
   || { echo "the build failed" >&2; exit 1; }
 
 # Written every run: the tailnet name can change, and a stale host list is a
@@ -141,7 +141,7 @@ echo "==> serving"
 # Truncated, so the readiness check below reads this run rather than matching
 # a "listening" line the previous one left behind.
 : > "$DIR/log"
-"$BIN" serve --data-dir "$PWD/$DIR/data" >> "$DIR/log" 2>&1 &
+"$BIN" -data "$PWD/$DIR/data" >> "$DIR/log" 2>&1 &
 SERVER=$!
 echo "$SERVER" > "$DIR/pid"
 
@@ -175,7 +175,7 @@ TOKEN=$(grep -oE 'setup token \(valid[^)]*\): [a-f0-9]+' "$DIR/log" | tail -1 | 
 # "misdirected request" instead of an answer.
 SETUP_REQUIRED=$(curl -sk --max-time 5 \
   --resolve "$TSNAME:$PORT:127.0.0.1" \
-  "https://$TSNAME:$PORT/api/setup" 2>/dev/null)
+  "https://$TSNAME:$PORT/api/v1/system/setup" 2>/dev/null)
 
 echo
 echo "  https://$TSNAME:$PORT/"

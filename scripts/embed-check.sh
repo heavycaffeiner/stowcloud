@@ -14,7 +14,7 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
-BUNDLE_DIR=go/internal/httpapi/spa/build
+BUNDLE_DIR=go/engine/http/spa/build
 
 # The binary below is built for the shipping target and then run, so this only
 # works where the host is that target. Elsewhere it built a Linux binary and
@@ -25,7 +25,7 @@ if [ "$(uname -s)" != Linux ]; then
 fi
 
 echo "==> building the frontend"
-(cd web && npm run build >/dev/null)
+(cd web && pnpm build >/dev/null)
 
 WANT=$(grep -o 'app/immutable/entry/app[A-Za-z0-9._-]*\.js' "$BUNDLE_DIR/index.html" | head -1)
 if [ -z "$WANT" ]; then
@@ -35,8 +35,8 @@ fi
 echo "    built bundle: $WANT"
 
 echo "==> building the binary with the embed tag"
-BIN=$(mktemp -d)/stowcloud
-(cd go && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/stowcloud)
+BIN=$(mktemp -d)/sc-engine
+(cd go && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
 
 # The tag is what turns the embed on. A build without it serves no interface at
 # all, which is correct for a build with no bundle and would quietly pass a
@@ -63,7 +63,7 @@ echo '{"bind":"127.0.0.1:18500","app_hosts":["localhost"]}' \
 echo '{"hardening":"off"}' \
   | "$BIN" settings set security --data-dir "$DIR/data" >/dev/null
 
-"$BIN" serve --data-dir "$DIR/data" > "$DIR/log" 2>&1 &
+"$BIN" -data "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 sleep 4

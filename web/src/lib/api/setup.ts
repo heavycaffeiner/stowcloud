@@ -46,7 +46,7 @@ export interface SetupResult {
 }
 
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
-const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api'
+const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 
 // Mock-only bridge to mock.ts's login(): sessionStorage is used instead of a
 // direct import so this module stays standalone (see header comment) while
@@ -80,7 +80,7 @@ async function mockCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
 }
 
 async function httpCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
-  const res = await fetch(`${BASE}/setup`, {
+  const res = await fetch(`${BASE}/system/setup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
     credentials: 'include',
@@ -102,7 +102,7 @@ export function createInitialAdmin(req: SetupCreateAdminReq): Promise<SetupResul
 }
 
 /**
- * `GET /api/setup` → `{"required": bool}`. Unauthenticated and deliberately
+ * `GET /api/v1/system/setup` → `{"required": bool}`. Unauthenticated and deliberately
  * one field: it says only whether an account exists, which a junk `POST`
  * already reveals by answering `410` rather than `403`. It goes false forever
  * once the first account is created.
@@ -119,7 +119,7 @@ export function createInitialAdmin(req: SetupCreateAdminReq): Promise<SetupResul
 export async function setupRequired(): Promise<boolean> {
   if (IS_MOCK) return false
   try {
-    const res = await fetch(`${BASE}/setup`, {
+    const res = await fetch(`${BASE}/system/setup`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
       credentials: 'include'

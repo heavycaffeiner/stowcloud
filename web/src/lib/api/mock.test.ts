@@ -10,13 +10,13 @@ describe('mockApi', () => {
     expect(res.total).toBeGreaterThan(0)
   })
 
-  it('paginates the 100,000-entry /bench directory via listing + cursor', async () => {
+  it('paginates the 100,000-entry /bench directory by walking the cursor', async () => {
     const first = await mockApi.list('/home/bench', { limit: 200 })
     expect(first.total).toBe(100_000)
     expect(first.entries).toHaveLength(200)
     expect(first.cursor).toBeTruthy()
 
-    const second = await mockApi.list('/home/bench', { listing: first.listing, cursor: first.cursor! })
+    const second = await mockApi.list('/home/bench', { cursor: first.cursor! })
     expect(second.entries).toHaveLength(200)
     // no overlap between pages
     const firstNames = new Set(first.entries.map((e) => e.name))
@@ -68,18 +68,17 @@ describe('mockApi', () => {
     expect(results[0].error?.code).toBe('fs.not_found')
   })
 
-  it('reports a window as stale when the directory moved under it', async () => {
+  it('changes the directory token when the directory moves under it', async () => {
     const first = await mockApi.list('/home/Documents', { limit: 1 })
     await mockApi.mkdir('/home/Documents/폴더-후속')
-    // The window sends the token it last saw; a different one now means the
-    // offsets it cached no longer name the rows it thinks they do.
-    const second = await mockApi.list('/home/Documents', {
-      listing: first.listing,
-      offset: 0,
-      limit: 1,
-      dirEtag: first.dir_etag
-    })
-    expect(second.stale).toBe(true)
+    const second = await mockApi.list('/home/Documents', { limit: 1 })
+
+    // The token is how a caller notices the directory moved. There is no
+    // staleness flag any more, because there is no server-side listing
+    // session to invalidate: a walk that started before the change simply
+    // continues, and the token is what says the page it walked may be old.
+    expect(second.dir_etag).not.toBe(first.dir_etag)
+    expect(second.total).toBe(first.total + 1)
   })
 })
 
@@ -192,7 +191,9 @@ describe('mockApi admin share management', () => {
     const created = await mockApi.adminCreateShare({ name: 'Books', host_path: '/srv/books' })
     const updated = await mockApi.adminUpdateShare(created.id, { name: 'Ebooks', host_path: '/srv/ebooks' })
     expect(updated.name).toBe('Ebooks')
-    expect(updated.host_path).toBe('/srv/ebooks')
+    // The host path is never answered: it is the server's disk layout, and
+    // a client that learns it learns where to try reaching past its shares.
+    expect('host_path' in updated).toBe(false)
   })
 
   it('is off by default and toggleable', async () => {

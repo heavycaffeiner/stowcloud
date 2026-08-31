@@ -17,10 +17,24 @@ func TestReportsEveryGoStatementInTheFixture(t *testing.T) {
 	}
 }
 
-func TestAcceptsTheOneSpawningPackage(t *testing.T) {
+func TestAcceptsEverySpawningPackage(t *testing.T) {
 	out, n := run(t, filepath.Join("testdata", "good"))
 	if n != 0 {
-		t.Fatalf("reported %d go statements in internal/task:\n%s", n, out)
+		t.Fatalf("reported %d go statements in the spawn packages:\n%s", n, out)
+	}
+}
+
+// Both trees are covered while they coexist. The fixture holds one package per
+// tree, so dropping either from the allowed set fails here.
+func TestAcceptsBothTreesIndependently(t *testing.T) {
+	for _, pkg := range []string{
+		filepath.Join("testdata", "good", "internal", "task"),
+		filepath.Join("testdata", "good", "engine", "kit", "task"),
+	} {
+		out, n := run(t, pkg)
+		if n != 0 {
+			t.Fatalf("reported %d go statements in %s:\n%s", n, pkg, out)
+		}
 	}
 }
 

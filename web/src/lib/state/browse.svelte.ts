@@ -105,7 +105,28 @@ export class BrowseState {
    *  unloaded gap" true even after scrolling far away and back. */
   #lru: number[] = []
 
-  #listing: string | null = null
+  /**
+   * The cursor for the page after the highest row loaded so far, or null once
+   * the directory has been walked to its end.
+   *
+   * Paging is a walk rather than a random-access window: the server orders the
+   * whole directory and cuts the page a cursor names, and there is no offset
+   * into a listing to ask for. A window past what is loaded is reached by
+   * walking forward from here, which is why this is kept beside the row cache
+   * rather than derived from it.
+   */
+  #nextCursor: string | null = null
+  /** True once the walk has reached the final page, so it is not restarted. */
+  #walkComplete = false
+  /**
+   * How far the walk has advanced, as an absolute row index.
+   *
+   * Counted rather than derived from the row cache: eviction drops rows the
+   * walk has already passed, so scanning the cache for its first gap would
+   * report a position the cursor has long moved beyond and every later page
+   * would be applied on top of rows it does not belong to.
+   */
+  #walked = 0
   #anchor: string | null = null
   #generation = 0
   #windowAbort: AbortController | null = null
@@ -173,7 +194,9 @@ export class BrowseState {
       this.total = res.total
       this.dirs = clampDirs(res.dirs, res.total)
       this.dirEtag = res.dir_etag
-      this.#listing = res.listing
+      this.#nextCursor = res.cursor
+      this.#walkComplete = res.cursor === null
+      this.#walked = res.entries.length
       this.#applyPage(0, res.entries)
       this.focusedIndex = res.entries.length > 0 ? 0 : null
     } catch (err) {
@@ -213,7 +236,6 @@ export class BrowseState {
   }
 
   async #ensureWindows(ranges: Array<{ start: number; end: number }>): Promise<void> {
-    if (!this.#listing) return
     const wanted = ranges.filter((r) => r.end > r.start && !this.#rangeLoaded(r.start, r.end))
     if (wanted.length === 0) return
 
@@ -227,7 +249,12 @@ export class BrowseState {
     const gen = this.#generation
     this.loadingWindow = true
     try {
-      await Promise.all(wanted.map((r) => this.#fetchRange(r.start, r.end, ac, gen)))
+      // One walk, not one request per range. The ranges are positions in a
+      // sequence the server only hands out in order, so the furthest one
+      // decides how far to walk and every range in between is filled by the
+      // same pages on the way past.
+      const furthest = wanted.reduce((max, r) => Math.max(max, r.end), 0)
+      await this.#walkTo(furthest, ac, gen)
     } finally {
       if (ac === this.#windowAbort) this.loadingWindow = false
     }
@@ -240,32 +267,42 @@ export class BrowseState {
     return true
   }
 
-  async #fetchRange(start: number, end: number, ac: AbortController, gen: number): Promise<void> {
+  /**
+   * Walks forward until `target` rows are loaded, or the directory ends.
+   *
+   * Each page is applied at the index the walk has reached, so the sparse
+   * cache stays keyed by absolute position even though the server never sees
+   * an offset. A page that comes back short of its limit means the end, which
+   * ends the walk without a further request.
+   */
+  async #walkTo(target: number, ac: AbortController, gen: number): Promise<void> {
     try {
-      const res = await api.list(this.path, {
-        listing: this.#listing!,
-        offset: start,
-        limit: end - start,
-        sort: this.sort.key,
-        order: this.sort.order,
-        // The token this window's offsets were computed against. The server
-        // answers `stale` when the directory has moved since.
-        dirEtag: this.dirEtag ?? undefined,
-        signal: ac.signal
-      })
-      if (ac.signal.aborted || gen !== this.#generation) return
-      if (res.stale) {
-        // Server discarded our session (dir changed underneath us). Adopt
-        // the fresh session and drop the (now positionally untrustworthy)
-        // cache, except rows backing the current selection — selection is
-        // kept by name, never index, so those survive regardless.
+      while (!this.#walkComplete && this.#walked < target) {
+        const cursor = this.#nextCursor
+        if (cursor === null) {
+          this.#walkComplete = true
+          return
+        }
+        const res = await api.list(this.path, {
+          cursor,
+          limit: PAGE_LIMIT,
+          sort: this.sort.key,
+          order: this.sort.order,
+          signal: ac.signal
+        })
+        if (ac.signal.aborted || gen !== this.#generation) return
+
         this.total = res.total
         this.dirs = clampDirs(res.dirs, res.total)
         this.dirEtag = res.dir_etag
-        this.#listing = res.listing
-        this.#dropUnselectedRows()
+        this.#applyPage(this.#walked, res.entries)
+        this.#walked += res.entries.length
+        this.#nextCursor = res.cursor
+        if (res.cursor === null || res.entries.length === 0) {
+          this.#walkComplete = true
+          return
+        }
       }
-      this.#applyPage(start, res.entries)
     } catch (err) {
       if (ac.signal.aborted) return
       // A failed windowed fetch shouldn't nuke the whole page — the
@@ -307,7 +344,12 @@ export class BrowseState {
       this.total = res.total
       this.dirs = clampDirs(res.dirs, res.total)
       this.dirEtag = res.dir_etag
-      this.#listing = res.listing
+      this.#nextCursor = res.cursor
+      this.#walkComplete = res.cursor === null
+      // The refresh re-reads from the front, so the walk restarts there too.
+      // Leaving the old position would apply the next page beyond rows this
+      // response has just replaced.
+      this.#walked = res.entries.length
 
       const freshNames = new Set(res.entries.map((e) => e.name))
       // A name we can't verify this round (it was cached beyond the

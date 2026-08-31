@@ -117,7 +117,7 @@ jobs:
       - name: Confirm the shipping build is static
         run: |
           cd go
-          CGO_ENABLED=0 GOOS=linux go build -o /tmp/stowcloud ./cmd/stowcloud
+          CGO_ENABLED=0 GOOS=linux go build -o /tmp/stowcloud ./cmd/sc-engine
           file /tmp/stowcloud
           ! go version -m /tmp/stowcloud | grep -q 'CGO_ENABLED=1'
 
