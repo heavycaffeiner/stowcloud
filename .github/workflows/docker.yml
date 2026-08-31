@@ -280,7 +280,7 @@ jobs:
       # a server that works. The sandbox is built before the shares are
       # registered, and a domain that did not grant their paths denies every
       # listing with the share table and the grants both looking correct.
-      - name: A share created from the API is reachable through the sandbox
+      - name: The share named at setup is reachable through the sandbox
         run: |
           # The token is written to a file in the data directory and never
           # logged: a log line carrying it would put the one credential that
@@ -291,10 +291,14 @@ jobs:
           [ -n "$token" ] || { echo "the container published no setup token"; exit 1; }
           # Status and body rather than -f: a refusal here carries the reason
           # in the body, and -f discards it and reports only the exit code.
+          # The share is named here rather than created afterwards. Setup
+          # grants the account every share that exists when it runs, so a
+          # share created later carries no grant and its path resolves to
+          # nothing: that is the "first share" the screen asks for.
           code=$(curl -sSk -o /tmp/setup.out -w '%{http_code}' \
             -X POST https://127.0.0.1:8443/api/v1/system/setup \
             -H 'content-type: application/json' \
-            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\",\"app_hosts\":[\"127.0.0.1\",\"localhost\"],\"trusted_proxies\":[]}")
+            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\",\"app_hosts\":[\"127.0.0.1\",\"localhost\"],\"trusted_proxies\":[],\"first_share\":{\"name\":\"files\",\"host\":\"/shares/files\"}}")
           echo "setup: ${code}"
           cat /tmp/setup.out || true
           case "$code" in
@@ -328,17 +332,10 @@ jobs:
           say session "$code"
           csrf=$(grep -oE '"csrf":"[^"]+"' /tmp/step.out | head -1 | cut -d'"' -f4)
           [ -n "$csrf" ] || { echo "no csrf token in the session"; exit 1; }
-          # A fresh deployment serves nothing until somebody says what to
-          # serve, so the share is created here rather than declared anywhere.
           code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
-            -X POST https://127.0.0.1:8443/api/v1/admin/shares \
-            -H 'content-type: application/json' -H "sc-csrf: ${csrf}" \
-            -H "origin: ${origin}" \
-            -d '{"name":"files","host":"/shares/files"}')
-          say share "$code"
-          out=$(curl -fsSk -b /tmp/jar 'https://127.0.0.1:8443/api/v1/files/list?path=/files')
-          echo "$out"
-          echo "$out" | grep -q '"dir_etag"' || { echo "the share does not list"; exit 1; }
+            'https://127.0.0.1:8443/api/v1/files/list?path=/files')
+          say list "$code"
+          grep -q '"dir_etag"' /tmp/step.out || { echo "the share does not list"; exit 1; }
 
       - name: Wait for Docker's own HEALTHCHECK to report healthy
         # Proves the Dockerfile's HEALTHCHECK instruction itself, not just
@@ -640,8 +637,11 @@ jobs:
             cat /var/lib/stowcloud/setup-token | tr -d '[:space:]')
           [ -n "$token" ] || { echo "no setup token in the data directory"; exit 1; }
           base=https://127.0.0.1:8443
+          # The share is named at setup, which is what grants it: setup grants
+          # the account every share that exists when it runs, and one created
+          # afterwards carries no grant, so its path resolves to nothing.
           curl -fsSk -X POST "$base/api/v1/system/setup" -H 'content-type: application/json' \
-            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-compose-password-1\"}" >/dev/null
+            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-compose-password-1\",\"first_share\":{\"name\":\"files\",\"host\":\"/shares/files\"}}" >/dev/null
           # Origin because the setup response set a session cookie: a mutating
           # request carrying one is refused without an Origin naming an app
           # host, which is the CSRF rule a browser satisfies for free.

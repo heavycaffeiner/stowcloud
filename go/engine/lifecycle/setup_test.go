@@ -343,6 +343,42 @@ func TestTheFirstAdministratorIsGrantedTheExistingShares(t *testing.T) {
 	}
 }
 
+// A share named on the setup form is granted to the administrator it
+// creates, in the same request.
+//
+// The grant pass runs over the shares that exist when it runs, and this one
+// is registered after it: without a second pass the deployment lands with a
+// share the only account cannot reach, and the first thing anybody does
+// after finishing the form answers 404.
+func TestTheShareNamedAtSetupIsGrantedToTheAdministrator(t *testing.T) {
+	base, dataDir, _ := bootUnconfigured(t)
+	host := t.TempDir()
+
+	resp := postJSON(t, base+"/api/v1/system/setup", map[string]any{
+		"token": setupToken(t, dataDir), "username": "root",
+		"password": loginPassword, "app_hosts": []string{hostOf(t, base)},
+		"first_share": map[string]string{"name": "files", "host": host},
+	})
+	if resp.status != http.StatusOK {
+		t.Fatalf("completing setup answered %d: %v", resp.status, resp.body)
+	}
+
+	signIn := postJSON(t, base+"/api/v1/auth/login",
+		map[string]string{"login": "root", "password": loginPassword})
+	if signIn.sessionCookie() == nil {
+		t.Fatalf("the administrator could not sign in: %v", signIn.body)
+	}
+
+	// The share's own path, not the root listing: a root that lists it and a
+	// path that resolves are different questions, and the second is the one
+	// a client asks next.
+	status, raw := withCookie(t, http.MethodGet,
+		base+"/api/v1/files/list?path=/files", signIn.sessionCookie())
+	if status != http.StatusOK {
+		t.Fatalf("listing the share named at setup answered %d: %s", status, raw)
+	}
+}
+
 // The account password is what the created administrator signs in with, so a
 // setup that stored something else would be undetectable until first use.
 func TestTheSetupPasswordIsTheOneStored(t *testing.T) {
