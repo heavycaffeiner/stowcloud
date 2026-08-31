@@ -669,7 +669,7 @@ jobs:
           # afterwards carries no grant, so its path resolves to nothing.
           code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' \
             -X POST "$base/api/v1/system/setup" -H 'content-type: application/json' \
-            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-compose-password-1\",\"first_share\":{\"name\":\"files\",\"host\":\"/shares/files\"}}")
+            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-compose-password-1\",\"app_hosts\":[\"127.0.0.1\",\"localhost\"],\"trusted_proxies\":[],\"first_share\":{\"name\":\"files\",\"host\":\"/shares/files\"}}")
           say setup "$code"
           # Origin because the setup response set a session cookie: a mutating
           # request carrying one is refused without an Origin naming an app
