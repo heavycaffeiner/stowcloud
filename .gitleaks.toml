@@ -1,14 +1,13 @@
 # Scanner policy.
 #
-# There is no allowlist, and that is the point worth writing down: nothing in
-# this tree commits key material. The OIDC tests need RSA and ECDSA keys to
+# No key material is committed here. The OIDC tests need RSA and ECDSA keys to
 # sign with, and Go's standard library generates them at test time, so there is
-# no committed blob for a scanner to trip over and no path to exempt.
+# no committed blob for a scanner to trip over.
 #
-# An earlier revision carried a path allowlist for three committed DER files.
-# Those are gone, and the allowlist went with them rather than being left
-# pointing at paths that no longer exist: an exemption nobody can see the
-# subject of is one that quietly covers whatever is put there next.
+# The two allowlists below exempt files that hold no secret at all: one is
+# prose, the other a constant published in the specification it implements.
+# Each names a single path, so an exemption cannot quietly grow to cover
+# whatever is put beside it later. Nothing here exempts a directory.
 #
 # This governs gitleaks only. GitHub's own secret scanning does not read it.
 
@@ -22,3 +21,12 @@ useDefault = true
 [[allowlists]]
 description = "the dependency allow-list is prose, not values"
 paths = ['''^go/deps\.allow$''']
+
+# The TOTP reference vector is the shared secret printed in RFC 6238's own
+# appendix: the ASCII digits "12345678901234567890" in Base32. It is a
+# published constant that every implementation checks itself against, and the
+# high-entropy rule reads its Base32 spelling as a credential. Scoped to the
+# one test file that carries it.
+[[allowlists]]
+description = "the TOTP reference vector is published, not a credential"
+paths = ['''^go/engine/service/auth/totpvector_test\.go$''']
