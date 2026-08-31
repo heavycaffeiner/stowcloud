@@ -232,6 +232,14 @@ func lockDiscovery(locks []Lock) []Element {
 				Children: []Element{{Name: davName("href"), Text: l.Token}},
 			},
 			Element{
+				// The lockroot carries the share-relative path the lock was
+				// taken under, which is the form the lock table keys on and
+				// the only one this rendering can name: the mount prefix
+				// lives with the request this document is answering, and
+				// threading it here would mean handing the resource's own
+				// URL through every lock lookup. Clients read the token from
+				// locktoken and match the lock on that; lockroot is the
+				// display value.
 				Name:     davName("lockroot"),
 				Children: []Element{{Name: davName("href"), Text: l.Path}},
 			},
