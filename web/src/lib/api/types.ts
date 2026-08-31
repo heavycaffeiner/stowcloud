@@ -83,6 +83,9 @@ export interface Entry {
    */
   size: number
   mtime_ns: string
+  /** Absent where the filesystem has no birth time to report. Zero is a real
+   *  timestamp, so it cannot stand for "unknown". */
+  btime_ns?: string
   etag: string
   /**
    * The change token is advisory rather than exact.

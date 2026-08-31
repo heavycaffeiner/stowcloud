@@ -1025,7 +1025,10 @@ let mockSessions: ActiveSession[] = [
   }
 ]
 
-async function changePassword(currentPassword: string, newPassword: string, revokeOtherSessions: boolean): Promise<void> {
+// No `revokeOtherSessions`: the real route does not honour one, so a mock
+// that swept sessions here would demonstrate behaviour the server does not
+// have.
+async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   await delay(80)
   if (currentPassword !== mockAuthState.password) {
     throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
@@ -1038,9 +1041,6 @@ async function changePassword(currentPassword: string, newPassword: string, revo
     })
   }
   mockAuthState.password = newPassword
-  if (revokeOtherSessions) {
-    mockSessions = mockSessions.filter((s) => s.current)
-  }
 }
 
 async function totpSetup(): Promise<{ secret: string; otpauth_url: string }> {

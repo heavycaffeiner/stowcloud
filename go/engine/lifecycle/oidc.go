@@ -81,16 +81,43 @@ func (e *Engine) accountOIDCLinkStart(c *fiber.Ctx) error {
 	if !ok {
 		return refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 	}
+
+	// The proof comes before the provider check, not after: whether a
+	// provider is configured is a fact about the deployment, and answering
+	// it to a caller who has not proved the password tells an unlocked
+	// browser something the account holder never authorised.
+	//
+	// Attaching an identity mints a permanent second way into the account, so
+	// a live session alone must not be enough: whoever is holding an unlocked
+	// browser could otherwise leave themselves a way back in. This is the
+	// same proof detaching one already demands.
+	var req linkStartRequest
+	if err := decodeBody(c, &req); err != nil {
+		return refuse(c, apierr.Classified{Class: apierr.Malformed})
+	}
+	if proved, rerr := e.reconfirm(c, int64(owner), req.Current); !proved {
+		return rerr
+	}
+
 	client := e.oidc()
 	if client == nil {
 		return refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
 	}
 
-	returnTo, err := handler.SafeReturnTo(c.Query("return_to"))
+	// From the body, where the client sends it. Read from the query the value
+	// was always empty, so a finished link flow landed on the root instead of
+	// the screen it started from.
+	returnTo, err := handler.SafeReturnTo(req.ReturnTo)
 	if err != nil {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 	}
 	return e.beginOIDCFlow(c, client, int64(owner), returnTo)
+}
+
+// linkStartRequest is the proof plus where to come back to.
+type linkStartRequest struct {
+	Current  string `json:"current"`
+	ReturnTo string `json:"return_to"`
 }
 
 // beginOIDCFlow mints the flow, stores it and answers with the provider URL.

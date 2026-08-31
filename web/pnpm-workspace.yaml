@@ -1,0 +1,5 @@
+# esbuild ships a platform binary and its install script is what puts that
+# binary in place, so vite cannot build without it. Approved explicitly, since
+# pnpm refuses to run any dependency's install script until it is named here.
+allowBuilds:
+  esbuild: true

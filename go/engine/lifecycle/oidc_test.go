@@ -167,6 +167,33 @@ func TestDetachingASignOnLinkNeedsThePassword(t *testing.T) {
 	}
 }
 
+// Attaching a provider link needs the account's own password too.
+//
+// Detaching is guarded above for a reason that applies at least as strongly
+// here: attaching mints a second, permanent way into the account, so somebody
+// who walked past an unlocked screen could leave themselves a way back in
+// after the session is gone.
+func TestAttachingASignOnLinkNeedsThePassword(t *testing.T) {
+	base, _, _ := bootForLogin(t)
+	cookie, csrf := signedIn(t, base)
+
+	// No provider is configured here, so a request that got past the proof
+	// would be refused for that instead. The two refusals are different
+	// statuses, and what this asserts is that the proof is the one that
+	// answers: an unauthenticated body must never reach the provider check.
+	status, body := mutate(t, http.MethodPost, base+"/api/v1/account/oidc-link/start",
+		cookie, csrf, map[string]string{"current": "not-the-password"})
+	if status != http.StatusUnauthorized {
+		t.Fatalf("a wrong password answered %d, want 401: %v", status, body)
+	}
+
+	status, body = mutate(t, http.MethodPost, base+"/api/v1/account/oidc-link/start",
+		cookie, csrf, map[string]string{})
+	if status != http.StatusUnauthorized {
+		t.Fatalf("a session alone answered %d, want 401: %v", status, body)
+	}
+}
+
 // An administrator reads whether an account is linked, and the answer carries
 // no token.
 func TestReadingAnAccountsSignOnLink(t *testing.T) {

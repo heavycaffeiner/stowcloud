@@ -809,7 +809,13 @@ async function totpSetup(): Promise<{ secret: string; otpauth_url: string }> {
 }
 
 async function totpEnroll(password: string, secret: string, code: string): Promise<{ recovery_codes: string[] }> {
-  return request('/account/totp/enroll', { method: 'POST', body: JSON.stringify({ password, secret, code }) })
+  // `current`, like every other route taking a password proof. Sent as
+  // `password` the field decoded to empty and the server answered "wrong
+  // password" whatever the user typed, so the factor could never be enabled.
+  return request('/account/totp/enroll', {
+    method: 'POST',
+    body: JSON.stringify({ current: password, secret, code })
+  })
 }
 
 /**
@@ -819,7 +825,10 @@ async function totpEnroll(password: string, secret: string, code: string): Promi
  * the account password as an SMB credential, so it restores what preceded it.
  */
 async function totpDisable(password: string): Promise<{ smb_password_replaced: boolean }> {
-  return request('/account/totp/disable', { method: 'POST', body: JSON.stringify({ password }) })
+  return request('/account/totp/disable', {
+    method: 'POST',
+    body: JSON.stringify({ current: password })
+  })
 }
 
 /**
@@ -841,7 +850,10 @@ async function recoveryCodesRemaining(): Promise<{ remaining: number }> {
  * them again later (only `recoveryCodesRemaining`'s count survives).
  */
 async function reissueRecoveryCodes(password: string): Promise<{ recovery_codes: string[] }> {
-  return request('/account/totp/recovery-codes', { method: 'POST', body: JSON.stringify({ password }) })
+  return request('/account/totp/recovery-codes', {
+    method: 'POST',
+    body: JSON.stringify({ current: password })
+  })
 }
 
 /** One app password as the wire sends it: string ids, and the scope as the
@@ -1035,10 +1047,8 @@ async function clearSmbPassword(
 async function oidcLinkStart(password: string, returnTo?: string): Promise<{ authorize_url: string }> {
   return request('/account/oidc-link/start', {
     method: 'POST',
-    // `return_to`, which is the key the server decodes. It was camelCase here,
-    // so the value never arrived and a finished link flow landed on the root
-    // instead of the screen it started from.
-    body: JSON.stringify(returnTo ? { password, return_to: returnTo } : { password })
+    // `current` and `return_to`, which are the keys the server decodes.
+    body: JSON.stringify(returnTo ? { current: password, return_to: returnTo } : { current: password })
   })
 }
 
@@ -1046,12 +1056,15 @@ async function oidcLinkStart(password: string, returnTo?: string): Promise<{ aut
  * `DELETE /api/v1/account/oidc-link`. Removes the identity, re-derives the SMB NT
  * hash from this password, and revokes every session the IdP issued.
  *
- * The password is not only re-confirmation. §4.3.6 deletes the account
- * password's NT hash when the identity is attached, and the plaintext is the
- * only thing that can put it back, which is why the admin unlink cannot.
+ * The password is not only re-confirmation. Attaching the identity deletes
+ * the account password's NT hash, and the plaintext is the only thing that
+ * can put it back, which is why the admin unlink cannot.
  */
 async function oidcUnlink(password: string): Promise<{ smb_password_replaced: boolean }> {
-  return request('/account/oidc-link', { method: 'DELETE', body: JSON.stringify({ password }) })
+  return request('/account/oidc-link', {
+    method: 'DELETE',
+    body: JSON.stringify({ current: password })
+  })
 }
 
 // ── admin: single sign-on links (§5-1's three admin routes) ──
