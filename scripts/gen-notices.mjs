@@ -2,27 +2,29 @@
 // Regenerate THIRD-PARTY-NOTICES.md from the two dependency trees that end up
 // inside the shipped binary. Run from the repo root:
 //
-//   cargo metadata --format-version 1 --locked > .notices-meta.json
 //   node scripts/gen-notices.mjs
-//   rm .notices-meta.json
 //
-// Hand-maintaining this list is not possible: 348 Rust crates and 62 npm
+// Hand-maintaining this list is not possible: tens of Go modules and npm
 // packages, each with its own copyright line, and MIT/BSD/ISC all require the
 // notice to travel with the copy. The file is generated so it can be true.
 //
-// Scope. Rust: every non-workspace package in the resolved graph — the release
-// binary is statically linked, so the graph is the artifact. npm: only what the
-// browser actually downloads, which is *not* the same as `dependencies`. Vite
-// compiles with rollup/esbuild/postcss/the svelte compiler and ships none of
-// them, so the shipped set is listed explicitly below rather than derived.
+// Scope. Go: the modules owning packages the shipped binary actually links,
+// asked of the toolchain with the tags the image builds with, so a module that
+// only serves tests or another build never appears. npm: only what the browser
+// downloads, which is not the same as `dependencies`. Vite compiles with
+// rollup/esbuild/postcss/the svelte compiler and ships none of them, so the
+// shipped set is listed explicitly below rather than derived.
 
 import { readFileSync, readdirSync, existsSync, writeFileSync } from 'node:fs'
-import { join, dirname } from 'node:path'
+import { join } from 'node:path'
 import { createHash } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 
-const META = '.notices-meta.json'
 const OUT = 'THIRD-PARTY-NOTICES.md'
 const NM = 'web/node_modules'
+// The tags the image builds with. Without them the graph is a different
+// binary's, and the notice would describe something nobody ships.
+const BUILD_TAGS = 'embed_ui compat_nc'
 
 // Packages whose code or data reaches the browser. Everything else in
 // `web/package.json` is a build tool.
@@ -69,21 +71,38 @@ function intern(text, user) {
 
 const rows = [] // {eco, name, version, license, url, texts:[id]}
 
-// --- Rust ------------------------------------------------------------------
-const meta = JSON.parse(readFileSync(META, 'utf8'))
-const crates = meta.packages
-  .filter((p) => (p.source || '').length > 0)
-  .sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version))
-for (const p of crates) {
-  const dir = dirname(p.manifest_path)
+// --- Go --------------------------------------------------------------------
+// The linked set, not the module requirement list: `go list -deps` answers
+// which packages the binary actually pulls in, and the module each belongs to.
+// A module required by go.mod but linked by nothing is not redistributed and
+// is not listed.
+const goList = execFileSync('go', [
+  'list', '-deps', '-tags', BUILD_TAGS,
+  '-f', '{{if .Module}}{{.Module.Path}}\t{{.Module.Version}}\t{{.Module.Dir}}{{end}}',
+  './cmd/sc-engine',
+], { cwd: 'go', encoding: 'utf8', env: { ...process.env, CGO_ENABLED: '0' } })
+
+const OWN = 'github.com/heavycaffeiner/stowcloud/go'
+const modules = new Map()
+for (const line of goList.split('\n')) {
+  if (!line.trim()) continue
+  const [path, version, dir] = line.split('\t')
+  if (!path || path === OWN) continue
+  modules.set(path, { version: version || '(main)', dir: dir || '' })
+}
+
+for (const [path, { version, dir }] of [...modules].sort((a, b) => a[0].localeCompare(b[0]))) {
+  if (!dir) throw new Error(`${path}: no module directory; run go mod download first`)
   const files = licenseTexts(dir)
   rows.push({
-    eco: 'rust',
-    name: p.name,
-    version: p.version,
-    license: p.license || (p.license_file ? `see ${p.license_file}` : 'NOT DECLARED'),
-    url: p.repository || `https://crates.io/crates/${p.name}`,
-    texts: files.map((f) => intern(f.text, `${p.name} ${p.version}`)),
+    eco: 'go',
+    name: path,
+    version,
+    // Go declares no licence field, so the shipped text is the only
+    // statement of terms and its absence is reported rather than guessed.
+    license: files.length ? 'see text' : 'NOT DECLARED',
+    url: `https://pkg.go.dev/${path}`,
+    texts: files.map((f) => intern(f.text, `${path} ${version}`)),
   })
 }
 
@@ -110,22 +129,22 @@ const undeclared = rows.filter((r) => !r.texts.length)
 const out = []
 out.push('# Third-party notices')
 out.push('')
-out.push('Stowcloud ships as one binary. The Rust dependency graph is statically')
-out.push('linked into it and the built frontend — including the webfont — is embedded')
-out.push('by `rust_embed` at compile time, so everything listed here is *redistributed*,')
-out.push('not merely used at build time. MIT, BSD, ISC and Apache-2.0 all require their')
-out.push('notice to travel with the copy; this file is that notice.')
+out.push('Stowcloud ships as one binary. The Go dependency graph is linked into')
+out.push('it and the built frontend is embedded by `//go:embed` at compile time, so')
+out.push('everything listed here is *redistributed*, not merely used at build time.')
+out.push('MIT, BSD, ISC and Apache-2.0 all require their notice to travel with the')
+out.push('copy; this file is that notice.')
 out.push('')
-out.push('Generated by `scripts/gen-notices.mjs`. Do not edit by hand — regenerate it')
+out.push('Generated by `scripts/gen-notices.mjs`. Do not edit by hand: regenerate it')
 out.push('when a dependency is added, removed, or bumped.')
 out.push('')
-out.push(`Components: ${rows.filter((r) => r.eco === 'rust').length} Rust crates, ` +
+out.push(`Components: ${rows.filter((r) => r.eco === 'go').length} Go modules, ` +
          `${rows.filter((r) => r.eco === 'npm').length} npm packages. ` +
          `Distinct licence texts: ${pool.size}.`)
 out.push('')
 if (undeclared.length) {
-  out.push('> **No licence file shipped in the package** (the SPDX expression in its')
-  out.push('> manifest is the only statement of terms): ' +
+  out.push('> **No licence file shipped in the package.** Whatever terms the')
+  out.push('> project states elsewhere are the only statement: ' +
            undeclared.map((r) => `\`${r.name} ${r.version}\``).join(', ') + '.')
   out.push('')
 }
@@ -134,13 +153,13 @@ out.push('')
 out.push('---')
 out.push('')
 
-for (const [eco, title] of [['rust', 'Rust crates (statically linked)'], ['npm', 'npm packages (embedded frontend)']]) {
+for (const [eco, title] of [['go', 'Go modules (linked into the binary)'], ['npm', 'npm packages (embedded frontend)']]) {
   out.push(`## ${title}`)
   out.push('')
   out.push('| Package | Version | Licence | Texts |')
   out.push('|---|---|---|---|')
   for (const r of rows.filter((x) => x.eco === eco)) {
-    const t = r.texts.length ? r.texts.map((i) => `[#${i}](#licence-text-${i})`).join(', ') : '—'
+    const t = r.texts.length ? r.texts.map((i) => `[#${i}](#licence-text-${i})`).join(', ') : 'none'
     out.push(`| [${r.name}](${r.url}) | ${r.version} | ${r.license} | ${t} |`)
   }
   out.push('')
