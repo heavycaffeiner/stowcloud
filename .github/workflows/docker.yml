@@ -178,6 +178,11 @@ jobs:
           # endpoint rather than refusing to start. The container runtime's
           # default seccomp profile is the thing under test here.
           echo '{"hardening":"preferred"}' | seed security
+          # The settings the server will actually load. Printed because a
+          # seed that wrote and a server that reads are two different
+          # things, and when they disagree the refusal downstream says
+          # nothing about which one was wrong.
+          docker run --rm -v /tmp/sc-data:/var/lib/stowcloud sc:core-ci settings get
 
       - name: Run the container
         run: |
@@ -284,9 +289,18 @@ jobs:
           # because the file is 0600 owned by the service account's uid.
           token=$(sudo cat /tmp/sc-data/setup-token | tr -d '[:space:]')
           [ -n "$token" ] || { echo "the container published no setup token"; exit 1; }
-          curl -fsSk -X POST https://127.0.0.1:8443/api/v1/system/setup \
+          # Status and body rather than -f: a refusal here carries the reason
+          # in the body, and -f discards it and reports only the exit code.
+          code=$(curl -sSk -o /tmp/setup.out -w '%{http_code}' \
+            -X POST https://127.0.0.1:8443/api/v1/system/setup \
             -H 'content-type: application/json' \
-            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\",\"app_hosts\":[\"127.0.0.1\",\"localhost\"],\"trusted_proxies\":[]}" >/dev/null
+            -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-smoke-password-1\",\"app_hosts\":[\"127.0.0.1\",\"localhost\"],\"trusted_proxies\":[]}")
+          echo "setup: ${code}"
+          cat /tmp/setup.out || true
+          case "$code" in
+            2*) ;;
+            *) echo "the setup route refused"; docker logs sc-smoke; exit 1 ;;
+          esac
           curl -fsSk -c /tmp/jar -X POST https://127.0.0.1:8443/api/v1/auth/login \
             -H 'content-type: application/json' \
             -d '{"login":"ci","password":"ci-smoke-password-1"}' >/dev/null
