@@ -20,8 +20,14 @@ import (
 
 // davAliases are the alternative mount points the sync clients address, with
 // the segment that names the account dropped rather than checked.
+//
+// The uploads prefixes come first only for readability; the matcher takes the
+// longest match, because "/remote.php/dav/uploads/" sits under the same root
+// as the files tree and the shorter prefix would swallow it.
 func (e *Engine) davAliases() []DavAlias {
 	return []DavAlias{
+		{Prefix: "/remote.php/dav/uploads/", Mount: DavUploadPrefix, DropSegments: 1},
+		{Prefix: "/index.php/remote.php/dav/uploads/", Mount: DavUploadPrefix, DropSegments: 1},
 		{Prefix: "/remote.php/dav/files/", DropSegments: 1},
 		{Prefix: "/index.php/remote.php/dav/files/", DropSegments: 1},
 		{Prefix: "/remote.php/webdav/", DropSegments: 0},

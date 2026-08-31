@@ -40,6 +40,11 @@ const DavUploadPrefix = "/dav-uploads"
 type DavAlias struct {
 	// Prefix is the path the other client addresses this server with.
 	Prefix string
+	// Mount is the local prefix the rewrite lands on. The share tree and the
+	// chunked upload collection are separate mounts, and the other product
+	// addresses both under one prefix of its own, so the alias has to say
+	// which one it means.
+	Mount string
 	// DropSegments is how many segments after the prefix name something other
 	// than a file, such as the account the client believes it is browsing.
 	//
@@ -155,7 +160,7 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		// use. A deployment with no upload engine matches anyway and lets the
 		// handler refuse: half-serving the collection would be the worse
 		// answer, and a 405 says exactly what is missing.
-		if rest, ok := strings.CutPrefix(r.URL.EscapedPath(), DavUploadPrefix); ok {
+		if rest, ok := strings.CutPrefix(path, DavUploadPrefix); ok {
 			up, uerr := dav.ParseUploadPath(rest)
 			if uerr != nil {
 				// The dav package's own writer, since the refusal is the
@@ -244,24 +249,42 @@ func davIsRoot(path string) bool {
 // The prefix was the whole difference. Method, body and credential belong to
 // the protocol and pass through untouched. A path matching no alias reports
 // false.
+//
+// Longest prefix first, because one alias can be a prefix of another: the
+// vendor addresses chunked uploads under the same root as the share tree, and
+// the shorter match would send a transfer into the tree as a directory named
+// "uploads".
 func davAlias(urlPath string, aliases []DavAlias) (string, bool) {
-	for _, a := range aliases {
-		rest, ok := strings.CutPrefix(urlPath, a.Prefix)
-		if !ok {
+	best := -1
+	for i, a := range aliases {
+		if !strings.HasPrefix(urlPath, a.Prefix) {
 			continue
 		}
-		for range a.DropSegments {
-			rest = strings.TrimPrefix(rest, "/")
-			i := strings.IndexByte(rest, '/')
-			if i < 0 {
-				rest = ""
-				break
-			}
-			rest = rest[i:]
+		if best < 0 || len(a.Prefix) > len(aliases[best].Prefix) {
+			best = i
 		}
-		return DavPrefix + rest, true
 	}
-	return "", false
+	if best < 0 {
+		return "", false
+	}
+
+	a := aliases[best]
+	rest := strings.TrimPrefix(urlPath, a.Prefix)
+	for range a.DropSegments {
+		rest = strings.TrimPrefix(rest, "/")
+		i := strings.IndexByte(rest, '/')
+		if i < 0 {
+			rest = ""
+			break
+		}
+		rest = rest[i:]
+	}
+
+	mount := a.Mount
+	if mount == "" {
+		mount = DavPrefix
+	}
+	return mount + rest, true
 }
 
 // resolveDav turns a mount-relative URL into a resolution.
