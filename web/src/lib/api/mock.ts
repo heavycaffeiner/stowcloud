@@ -1378,7 +1378,7 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       // opened relative to the directory, which is what the server says about
       // both.
       settingsField('bind', mockBind, false),
-      settingsField('data_dir', '/var/lib/stowcloud', false, /* i18n */ 'settings.readonly_data_dir'),
+      settingsField('data_dir', s.paths.data_dir, false, /* i18n */ 'settings.readonly_data_dir'),
       settingsField('app_hosts', s.network.app_hosts, false),
       settingsField('trusted_proxies', s.network.trusted_proxies, false),
       settingsField('db.size_guard', s.db.size_guard, true),
@@ -1404,9 +1404,8 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       settingsField('watch.backend', s.watch.backend, true),
       settingsField('watch.hot_set_max', s.watch.hot_set_max, true),
       settingsField('watch.full_threshold', s.watch.full_threshold, true),
-      settingsField('data_dir', s.paths.data_dir, true),
-      settingsField('master_key_file', s.paths.master_key_file, true),
-      settingsField('smb.config_dir', s.paths.smb_config_dir, true),
+      settingsField('master_key_file', s.paths.master_key_file, false),
+      settingsField('smb.config_dir', s.paths.smb_config_dir, false),
       settingsField('oidc.enabled', s.oidc.enabled, true),
       settingsField('oidc.issuer', s.oidc.issuer, true),
       settingsField('oidc.client_id', s.oidc.client_id, true),

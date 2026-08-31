@@ -19,6 +19,17 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
 )
 
+// deployDataDir is where the subcommands read and write when nothing names a
+// directory.
+//
+// The image runs `serve`, `settings` and `healthcheck` with no --data-dir and
+// a working directory of /, so a relative default resolves against the root
+// of a read-only filesystem: the seed cannot write it and the server cannot
+// create it. One value here means the three subcommands cannot disagree about
+// where a deployment's state lives. The local development directory stays the
+// flag default in main, where a checkout is the working directory.
+const deployDataDir = "/var/lib/stowcloud"
+
 // runServeCmd is the `serve` spelling of the default behaviour: it accepts
 // the flags a deployment's entrypoint spells out longhand, so the container
 // command line reads the same way it always has.
@@ -27,7 +38,7 @@ import (
 func runServeCmd(args []string) int {
 	out := log.New(os.Stderr, "", 0)
 	var (
-		dataDir = ".dev/data"
+		dataDir = deployDataDir
 		// Empty rather than an address: run resolves the stored bind when
 		// nothing is passed, and a default here would silently outrank it.
 		addr  = ""
@@ -79,7 +90,7 @@ const (
 // material a healthcheck cannot account for.
 func runHealthcheck(args []string) int {
 	errOut := log.New(os.Stderr, "", 0)
-	var dataDir string
+	dataDir := deployDataDir
 	i := 0
 	for i < len(args) {
 		if args[i] == "-data" || args[i] == "--data-dir" {
@@ -90,11 +101,6 @@ func runHealthcheck(args []string) int {
 			continue
 		}
 		i++
-	}
-	if dataDir == "" {
-		out := log.New(os.Stderr, "", 0)
-		out.Println("usage: sc-engine healthcheck [-data DIR]")
-		return healthExitNoAnswer
 	}
 
 	// Where to dial and what name to ask under. The settings live in a

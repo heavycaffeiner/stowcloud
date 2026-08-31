@@ -14,9 +14,12 @@ web/build
 *.log
 .env
 /.demo
-# The development server's scratch tree: its data directory, its shares, the
-# binary it builds and its log. scripts/dev.sh makes it.
-/.dev
+# The development server's scratch tree: its data directory holding a master
+# key and a TLS private key, its shares, the binary it builds and its log.
+# scripts/dev.sh makes one at the repository root and `go run` makes another
+# under go/, so the pattern is unanchored: an anchored rule covered only the
+# first and let the second's private key be committed.
+.dev/
 # `go build ./cmd/sc-engine` from inside go/ drops the binary beside the source.
 /go/sc-engine
 /go/stowcloud

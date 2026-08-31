@@ -63,7 +63,7 @@ func settingsUsage() int {
 func runSettingsSet(args []string) int {
 	out := log.New(os.Stderr, "", 0)
 	section, dataDir := settingsArgs(args)
-	if section == "" || dataDir == "" {
+	if section == "" {
 		return settingsUsage()
 	}
 
@@ -102,10 +102,6 @@ func runSettingsSet(args []string) int {
 func runSettingsGet(args []string) int {
 	out := log.New(os.Stderr, "", 0)
 	dataDir := dataDirArg(args)
-	if dataDir == "" {
-		out.Println("usage: sc-engine settings get [-data DIR]")
-		return 2
-	}
 
 	stateFile, err := dbfile.Open(context.Background(), state.Spec(filepath.Join(dataDir, "state.db")))
 	if err != nil {
@@ -136,6 +132,7 @@ func runSettingsGet(args []string) int {
 // directory, in either order. The section is the first argument that is not
 // the -data flag or its value.
 func settingsArgs(args []string) (section, dataDir string) {
+	dataDir = deployDataDir
 	for i := 0; i < len(args); i++ {
 		if args[i] == "-data" || args[i] == "--data-dir" {
 			if i+1 < len(args) {
@@ -162,5 +159,5 @@ func dataDirArg(args []string) string {
 			return args[i+1]
 		}
 	}
-	return ""
+	return deployDataDir
 }

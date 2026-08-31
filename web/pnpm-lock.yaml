@@ -39,6 +39,9 @@ importers:
       '@fontsource-variable/google-sans-flex':
         specifier: ^5.3.0
         version: 5.3.1
+      '@iconify/types':
+        specifier: ^2.0.0
+        version: 2.0.0
       '@ktibow/material-color-utilities-nightly':
         specifier: ^0.4.1772748028000
         version: 0.4.1772748028000
