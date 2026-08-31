@@ -665,6 +665,19 @@ jobs:
             -d '{"login":"ci","password":"ci-compose-password-1"}' >/dev/null
           csrf=$(curl -fsSk -b /tmp/jar "$base/api/v1/auth/session" | sed -n 's/.*"csrf":"\([a-f0-9]*\)".*/\1/p')
           [ -n "$csrf" ] || { echo "no csrf token in the session"; exit 1; }
+          # The sandbox is installed at boot from the shares stored then and
+          # cannot be widened afterwards, so the first share on a deployment
+          # that booted with none is unreachable until a restart. That is
+          # what a deployment does at this point, and it proves the share and
+          # the session both survive one.
+          docker compose -f compose.buildver.yml restart sc >/dev/null
+          for i in $(seq 1 60); do
+            if curl -fsSk "$base/api/v1/system/health" >/dev/null 2>&1; then
+              echo "back up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
 
           printf 'uploaded by ci\n' > /tmp/proof.txt
           size=$(stat -c%s /tmp/proof.txt)
