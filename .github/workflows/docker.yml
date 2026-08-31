@@ -307,18 +307,35 @@ jobs:
           # rule, and curl is not a browser, so it sends what a browser would
           # have sent.
           origin='https://127.0.0.1:8443'
-          curl -fsSk -c /tmp/jar -X POST https://127.0.0.1:8443/api/v1/auth/login \
+          # Each request reports its own status and body. Without that a
+          # refusal anywhere in the sequence arrives as one curl exit code
+          # with nothing saying which call produced it.
+          say() {
+            echo "$1: $2"
+            if [ -s /tmp/step.out ]; then cat /tmp/step.out; fi
+            case "$2" in
+              2*) return 0 ;;
+              *) echo "the $1 request failed"; docker logs sc-smoke; exit 1 ;;
+            esac
+          }
+          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -c /tmp/jar \
+            -X POST https://127.0.0.1:8443/api/v1/auth/login \
             -H 'content-type: application/json' -H "origin: ${origin}" \
-            -d '{"login":"ci","password":"ci-smoke-password-1"}' >/dev/null
-          csrf=$(curl -fsSk -b /tmp/jar https://127.0.0.1:8443/api/v1/auth/session |
-            grep -oE '"csrf":"[^"]+"' | head -1 | cut -d'"' -f4)
+            -d '{"login":"ci","password":"ci-smoke-password-1"}')
+          say login "$code"
+          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
+            https://127.0.0.1:8443/api/v1/auth/session)
+          say session "$code"
+          csrf=$(grep -oE '"csrf":"[^"]+"' /tmp/step.out | head -1 | cut -d'"' -f4)
           [ -n "$csrf" ] || { echo "no csrf token in the session"; exit 1; }
           # A fresh deployment serves nothing until somebody says what to
           # serve, so the share is created here rather than declared anywhere.
-          curl -fsSk -b /tmp/jar -X POST https://127.0.0.1:8443/api/v1/admin/shares \
+          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
+            -X POST https://127.0.0.1:8443/api/v1/admin/shares \
             -H 'content-type: application/json' -H "sc-csrf: ${csrf}" \
             -H "origin: ${origin}" \
-            -d '{"name":"files","host":"/shares/files"}' >/dev/null
+            -d '{"name":"files","host":"/shares/files"}')
+          say share "$code"
           out=$(curl -fsSk -b /tmp/jar 'https://127.0.0.1:8443/api/v1/files/list?path=/files')
           echo "$out"
           echo "$out" | grep -q '"dir_etag"' || { echo "the share does not list"; exit 1; }
