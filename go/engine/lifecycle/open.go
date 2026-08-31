@@ -35,6 +35,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/watch"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/instance"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/journal"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
@@ -94,6 +95,10 @@ type Engine struct {
 	// service has no Open to reach this line, and construction then stops
 	// before a server could answer a begin request it could not deliver on.
 	Flow *LoginFlow
+	// lock is the data directory's ownership lock, taken at Open and held
+	// until Close. Unexported: releasing it early would invite a second
+	// server into a directory this one still has open.
+	lock *instance.Lock
 	// Upload is the resumable transfer engine. May be nil: a deployment
 	// without one serves everything except a resumable upload.
 	Upload *upload.Engine
@@ -193,6 +198,17 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		}
 		return nil, err
 	}
+
+	// The data directory is one server's, and the lock is what says so. Taken
+	// before anything is opened, because two processes writing these
+	// databases is a real shape: an emergency repair run opens the same files
+	// to fix them, and a repair applied to a document a running server then
+	// overwrites is worse than a refusal.
+	lock, lockErr := instance.Take(opt.DataDir)
+	if lockErr != nil {
+		return nil, fmt.Errorf("the data directory is in use: %w", lockErr)
+	}
+	e.lock = lock
 
 	stateFile, err := dbfile.Open(ctx, state.Spec(filepath.Join(opt.DataDir, "state.db")))
 	if err != nil {
@@ -425,7 +441,21 @@ func reloadMemberships(ctx context.Context, e *Engine, logger *slog.Logger) {
 // Every error is joined rather than the first returned: a caller shutting down
 // wants to know about all of them, and stopping at the first leaves the rest
 // open.
-func (e *Engine) Close() error {
+func (e *Engine) Close() (err error) {
+	// The data-directory lock last: everything above closes files the lock
+	// declares this process owns, and dropping it first would invite a second
+	// server into a directory this one is still draining. A release failure
+	// joins the returned error, so a lock that could not be dropped is visible
+	// rather than a silent invite.
+	defer func() {
+		if e.lock != nil {
+			if lerr := e.lock.Release(); lerr != nil {
+				err = errors.Join(err, fmt.Errorf("releasing the data-directory lock: %w", lerr))
+			}
+			e.lock = nil
+		}
+	}()
+
 	// The sockets and the watcher first. They hold no database file, but they
 	// hold goroutines that read one, and closing a database out from under a
 	// live reader is the failure this ordering avoids.

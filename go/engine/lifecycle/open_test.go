@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
@@ -124,5 +125,56 @@ func TestClosingTwiceIsSafe(t *testing.T) {
 	}
 	if err := e.Close(); err != nil {
 		t.Errorf("the second close: %v", err)
+	}
+}
+
+// A second engine on the same data directory is refused rather than admitted:
+// the state spans several WAL databases with no snapshot across them, so two
+// servers reading and writing them would combine one instant's user with
+// another instant's grants.
+func TestASecondEngineOnTheSameDataDirectoryIsRefused(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("the first engine: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := first.Close(); cerr != nil {
+			t.Errorf("closing the first engine: %v", cerr)
+		}
+	})
+
+	_, err = lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err == nil {
+		t.Fatal("a second engine opened the same data directory")
+	}
+	if !strings.Contains(err.Error(), "in use") {
+		t.Errorf("the refusal does not name the directory as in use: %v", err)
+	}
+}
+
+// Closing releases the lock, so the directory can be opened again by the next
+// process. A lock that survived its own Close would be one that needed a
+// reboot to clear.
+func TestClosingReleasesTheDataDirectory(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("the first engine: %v", err)
+	}
+	if cerr := first.Close(); cerr != nil {
+		t.Fatalf("closing the first engine: %v", cerr)
+	}
+
+	second, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("reopening the same directory: %v", err)
+	}
+	if err := second.Close(); err != nil {
+		t.Errorf("closing the second engine: %v", err)
 	}
 }
