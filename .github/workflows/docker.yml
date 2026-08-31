@@ -219,17 +219,24 @@ jobs:
         # An earlier build redirected instead, and this asserted the 308. That
         # is a friendlier answer and a weaker one; refusing is what this server
         # does now.
+        #
+        # A TLS listener may also drop the connection outright rather than
+        # answer, which curl reports as status 000 and no body file. That is
+        # the strongest form of the refusal being asserted, so the body is
+        # only read when there is one.
         run: |
           code=$(curl -sS --max-time 5 -o /tmp/plain.out -w '%{http_code}' \
             http://127.0.0.1:8443/api/v1/system/health || true)
           echo "status: ${code}"
-          cat /tmp/plain.out
           case "$code" in
             2*|3*) echo "a plaintext request was answered"; exit 1 ;;
           esac
-          if grep -qi '<html\|"status"' /tmp/plain.out; then
-            echo "a plaintext request received application content"
-            exit 1
+          if [ -s /tmp/plain.out ]; then
+            cat /tmp/plain.out
+            if grep -qi '<html\|"status"' /tmp/plain.out; then
+              echo "a plaintext request received application content"
+              exit 1
+            fi
           fi
           echo "plain HTTP refused with no application content, as intended"
 

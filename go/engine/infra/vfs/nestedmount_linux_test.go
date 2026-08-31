@@ -64,6 +64,16 @@ func TestNestedMountOfAnUnsupportedFilesystemFailsClosed(t *testing.T) {
 		t.Skipf("this host does not allow building the boundary:\n%s", output)
 	}
 	if err != nil {
+		// A host that refuses the clone itself never gets far enough to
+		// print the skip marker: creating a user namespace is what the
+		// child needs before it can report anything, and a kernel or an
+		// AppArmor profile that forbids unprivileged userns rejects the
+		// exec with EPERM. That is the same "this host cannot build the
+		// boundary" outcome the marker stands for, so it is skipped for
+		// the same reason rather than failing the suite.
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("this host does not allow an unprivileged user namespace:\n%s", output)
+		}
 		t.Fatalf("the child failed: %v\n%s", err, output)
 	}
 	if !strings.Contains(output, nestedMountProved) {
