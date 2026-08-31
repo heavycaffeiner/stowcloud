@@ -679,11 +679,6 @@ jobs:
             -H "origin: $base" \
             -d '{"login":"ci","password":"ci-compose-password-1"}')
           say login "$code"
-          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
-            "$base/api/v1/auth/session")
-          say session "$code"
-          csrf=$(sed -n 's/.*"csrf":"\([a-f0-9]*\)".*/\1/p' /tmp/step.out)
-          [ -n "$csrf" ] || { echo "no csrf token in the session"; exit 1; }
           # The sandbox is installed at boot from the shares stored then and
           # cannot be widened afterwards, so the first share on a deployment
           # that booted with none is unreachable until a restart. That is
@@ -697,22 +692,37 @@ jobs:
             fi
             sleep 1
           done
+          # The session, and the token bound to it, are read after the restart
+          # rather than before: a token minted against the previous process is
+          # refused, and reading it here proves the session survived.
+          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
+            "$base/api/v1/auth/session")
+          say session "$code"
+          csrf=$(sed -n 's/.*"csrf":"\([a-f0-9]*\)".*/\1/p' /tmp/step.out)
+          [ -n "$csrf" ] || { echo "no csrf token in the session"; exit 1; }
 
           printf 'uploaded by ci\n' > /tmp/proof.txt
           size=$(stat -c%s /tmp/proof.txt)
           name=$(printf 'proof.txt' | base64 -w0)
           dest=$(printf '/files' | base64 -w0)
+          # Tus-Resumable on both calls: the server refuses a request that
+          # names no protocol version with a 412 before it looks at anything
+          # else, which is the version negotiation the standard asks for.
           code=$(curl -sSk -D/tmp/step.hdr -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
             -H "origin: $base" -H "Sc-Csrf: $csrf" \
+            -H 'tus-resumable: 1.0.0' \
             -H "upload-length: ${size}" \
             -H "upload-metadata: filename ${name},dest ${dest}" \
             -X POST "$base/api/v1/uploads")
           say create "$code"
           loc=$(grep -i '^location:' /tmp/step.hdr | tr -d '\r' | awk '{print $2}')
           [ -n "$loc" ] || { echo "the creation named no session"; exit 1; }
-          curl -fsSk -b /tmp/jar -H "origin: $base" -H "Sc-Csrf: $csrf" \
+          code=$(curl -sSk -o /tmp/step.out -w '%{http_code}' -b /tmp/jar \
+            -H "origin: $base" -H "Sc-Csrf: $csrf" \
+            -H 'tus-resumable: 1.0.0' \
             -H 'content-type: application/offset+octet-stream' -H 'upload-offset: 0' \
-            --data-binary @/tmp/proof.txt -X PATCH "${base}${loc}" -o /dev/null
+            --data-binary @/tmp/proof.txt -X PATCH "${base}${loc}")
+          say patch "$code"
 
           listed=$(curl -fsSk -b /tmp/jar "$base/api/v1/files/list?path=/files")
           echo "$listed"
