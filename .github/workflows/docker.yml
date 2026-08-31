@@ -301,15 +301,23 @@ jobs:
             2*) ;;
             *) echo "the setup route refused"; docker logs sc-smoke; exit 1 ;;
           esac
+          # Origin on every cookie-bearing mutation from here on. The setup
+          # response set a session cookie, and a mutating request carrying one
+          # is refused without an Origin naming an app host: that is the CSRF
+          # rule, and curl is not a browser, so it sends what a browser would
+          # have sent.
+          origin='https://127.0.0.1:8443'
           curl -fsSk -c /tmp/jar -X POST https://127.0.0.1:8443/api/v1/auth/login \
-            -H 'content-type: application/json' \
+            -H 'content-type: application/json' -H "origin: ${origin}" \
             -d '{"login":"ci","password":"ci-smoke-password-1"}' >/dev/null
           csrf=$(curl -fsSk -b /tmp/jar https://127.0.0.1:8443/api/v1/auth/session |
             grep -oE '"csrf":"[^"]+"' | head -1 | cut -d'"' -f4)
+          [ -n "$csrf" ] || { echo "no csrf token in the session"; exit 1; }
           # A fresh deployment serves nothing until somebody says what to
           # serve, so the share is created here rather than declared anywhere.
           curl -fsSk -b /tmp/jar -X POST https://127.0.0.1:8443/api/v1/admin/shares \
             -H 'content-type: application/json' -H "sc-csrf: ${csrf}" \
+            -H "origin: ${origin}" \
             -d '{"name":"files","host":"/shares/files"}' >/dev/null
           out=$(curl -fsSk -b /tmp/jar 'https://127.0.0.1:8443/api/v1/files/list?path=/files')
           echo "$out"
@@ -617,7 +625,11 @@ jobs:
           base=https://127.0.0.1:8443
           curl -fsSk -X POST "$base/api/v1/system/setup" -H 'content-type: application/json' \
             -d "{\"token\":\"${token}\",\"username\":\"ci\",\"password\":\"ci-compose-password-1\"}" >/dev/null
+          # Origin because the setup response set a session cookie: a mutating
+          # request carrying one is refused without an Origin naming an app
+          # host, which is the CSRF rule a browser satisfies for free.
           curl -fsSk -c /tmp/jar -X POST "$base/api/v1/auth/login" -H 'content-type: application/json' \
+            -H "origin: $base" \
             -d '{"login":"ci","password":"ci-compose-password-1"}' >/dev/null
           csrf=$(curl -fsSk -b /tmp/jar "$base/api/v1/auth/session" | sed -n 's/.*"csrf":"\([a-f0-9]*\)".*/\1/p')
           [ -n "$csrf" ] || { echo "no csrf token in the session"; exit 1; }
