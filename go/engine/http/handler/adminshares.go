@@ -69,6 +69,11 @@ type GrantView struct {
 	User  string `json:"user,omitempty"`
 	Group string `json:"group,omitempty"`
 
+	// Principal is the same fact in the shape the admin screen's filters
+	// read: a kind beside the id, so the screen can tell a user grant from a
+	// group grant without a second lookup.
+	Principal *GrantPrincipalView `json:"principal,omitempty"`
+
 	Share   string `json:"share"`
 	Subpath string `json:"subpath,omitempty"`
 
@@ -97,9 +102,11 @@ func GrantOf(g core.Grant) GrantView {
 	}
 	if g.User != nil {
 		v.User = strconv.FormatInt(*g.User, 10)
+		v.Principal = &GrantPrincipalView{Kind: "user", ID: *g.User}
 	}
 	if g.Group != nil {
 		v.Group = strconv.FormatInt(*g.Group, 10)
+		v.Principal = &GrantPrincipalView{Kind: "group", ID: *g.Group}
 	}
 	return v
 }
@@ -182,4 +189,11 @@ func StorageOf(dbBytes int64, shares []ShareUsage) StorageView {
 		out.Shares = append(out.Shares, v)
 	}
 	return out
+}
+
+// GrantPrincipalView names who a grant is for, in the shape the admin
+// screen's filters read.
+type GrantPrincipalView struct {
+	Kind string `json:"kind"`
+	ID   int64  `json:"id"`
 }

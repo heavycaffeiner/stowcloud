@@ -120,8 +120,8 @@ func TestPageCountsDescribeTheWholeDirectory(t *testing.T) {
 	if p.Dirs != 7 || p.Total != 500 {
 		t.Errorf("the counts are dirs=%d total=%d", p.Dirs, p.Total)
 	}
-	if p.Next != "2" {
-		t.Errorf("the cursor is %q", p.Next)
+	if p.Cursor == nil || *p.Cursor != "2" {
+		t.Errorf("the cursor is %v, want 2", p.Cursor)
 	}
 }
 

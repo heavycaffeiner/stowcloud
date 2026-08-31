@@ -29,7 +29,7 @@ import (
 )
 
 // secretPackage is the package whose type must not reach a formatting verb.
-const secretPackage = "github.com/heavycaffeiner/stowcloud/go/internal/secret"
+const secretPackage = "github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 
 // secretType and accessor are the two things this looks for.
 const (

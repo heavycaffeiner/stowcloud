@@ -95,8 +95,8 @@ else
 fi
 
 echo "==> building the binary"
-BIN="$PWD/$DIR/stowcloud"
-(cd go && CGO_ENABLED=0 go build -tags embed_ui -o "$BIN" ./cmd/stowcloud) \
+BIN="$PWD/$DIR/sc-engine"
+(cd go && CGO_ENABLED=0 go build -tags embed_ui -o "$BIN" ./cmd/sc-engine) \
   || { echo "the build failed" >&2; exit 1; }
 
 # Written every run: the tailnet name can change, and a stale host list is a
@@ -141,7 +141,7 @@ echo "==> serving"
 # Truncated, so the readiness check below reads this run rather than matching
 # a "listening" line the previous one left behind.
 : > "$DIR/log"
-"$BIN" serve --data-dir "$PWD/$DIR/data" >> "$DIR/log" 2>&1 &
+"$BIN" -data "$PWD/$DIR/data" >> "$DIR/log" 2>&1 &
 SERVER=$!
 echo "$SERVER" > "$DIR/pid"
 

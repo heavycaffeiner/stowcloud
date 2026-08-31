@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/heavycaffeiner/stowcloud/go/internal/secret"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 )
 
 // The redaction, asked for explicitly, which is the point of the rule.

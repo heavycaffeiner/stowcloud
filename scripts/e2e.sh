@@ -42,8 +42,8 @@ echo "==> building the frontend"
 (cd web && npm run build >/dev/null)
 
 echo "==> building the binary"
-BIN=$(mktemp -d)/stowcloud
-(cd go && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/stowcloud)
+BIN=$(mktemp -d)/sc-engine
+(cd go && CGO_ENABLED=0 GOOS=linux go build -tags embed_ui -o "$BIN" ./cmd/sc-engine)
 
 DIR=$(mktemp -d)
 mkdir -p "$DIR/data" "$DIR/share/sub"
@@ -62,7 +62,7 @@ echo '{"per_sec":2000,"burst":5000}' | seed rate
 echo '{"hardening":"off"}' | seed security
 
 echo "==> serving"
-"$BIN" serve --data-dir "$DIR/data" > "$DIR/log" 2>&1 &
+"$BIN" -data "$DIR/data" > "$DIR/log" 2>&1 &
 SERVER=$!
 trap 'kill "$SERVER" 2>/dev/null || true' EXIT
 sleep 6

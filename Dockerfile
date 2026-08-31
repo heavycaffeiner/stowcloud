@@ -149,7 +149,7 @@ RUN mkdir -p /out && \
       go build -tags "embed_ui compat_nc" \
         -trimpath \
         -ldflags="-s -w -buildid=" \
-        -o /out/stowcloud ./cmd/stowcloud && \
+        -o /out/stowcloud ./cmd/sc-engine && \
     # A binary that turned out dynamic is a binary the runtime base cannot run,
     # and the failure would otherwise arrive as a missing-file error at start.
     ! go version -m /out/stowcloud | grep -q 'CGO_ENABLED=1'

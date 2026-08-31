@@ -81,9 +81,11 @@ type PageView struct {
 	DirETag     string `json:"dir_etag"`
 	DirETagWeak bool   `json:"dir_etag_weak"`
 
-	// Next is absent on the final page, so its presence is what a client
-	// tests rather than comparing counts.
-	Next string `json:"next,omitempty"`
+	// Cursor is the next page's cursor, and it is null rather than absent on
+	// the final page: the client's pager reads null as "stop", and an absent
+	// field would decode to undefined, which is a third state the pager does
+	// not handle. A pointer carries that distinction in the encoding itself.
+	Cursor *string `json:"cursor,omitempty"`
 }
 
 // EntryOf projects one entry, addressed by the path the caller sent it.
@@ -127,7 +129,10 @@ func PageOf(p core.Page, vpathOf func(core.Entry) string) PageView {
 		Total:       p.Total,
 		DirETag:     p.DirEtag,
 		DirETagWeak: p.DirEtagWeak,
-		Next:        string(p.Next),
+	}
+	if p.Next != "" {
+		cursor := string(p.Next)
+		out.Cursor = &cursor
 	}
 	for _, e := range p.Entries {
 		out.Entries = append(out.Entries, EntryOf(e, vpathOf(e)))

@@ -29,11 +29,15 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/jail"
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview/worker"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/fsatomic"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
 // The wind-down budget. Long enough for an in-flight upload to finish its
@@ -42,12 +46,20 @@ import (
 const shutdownBudget = 20 * time.Second
 
 func main() {
-	// The decoder runs as this same binary re-executed, which is what the
-	// pool's default expects: it has no argv to put a path in, and its socket
-	// arrives on a fixed descriptor. Checked before the flags, because it takes
-	// none and must not be confused by one.
-	if len(os.Args) > 1 && os.Args[1] == "preview-worker" {
-		os.Exit(runPreviewWorker())
+	// The subcommands run without a listener. The decoder re-exec is one of
+	// them: it arrives with no argv to parse, which is why the dispatch
+	// precedes the flags rather than following them.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "settings":
+			os.Exit(runSettings(os.Args[2:]))
+		case "serve":
+			os.Exit(runServeCmd(os.Args[2:]))
+		case "healthcheck":
+			os.Exit(runHealthcheck(os.Args[2:]))
+		case "preview-worker":
+			os.Exit(runPreviewWorker())
+		}
 	}
 
 	var (
@@ -74,8 +86,30 @@ func run(addr, dataDir string, plain bool) error {
 		return fmt.Errorf("creating the data directory: %w", mkErr)
 	}
 
+	// The atomic path resolver is checked before anything is opened: under a
+	// hardening policy that refuses a racy resolver, saying so now beats
+	// failing later at every write.
+	if rerr := vfs.RequireResolver(vfs.Probe()); rerr != nil {
+		return rerr
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// The settings and the share hosts are read before anything else opens,
+	// because the sandbox is built from them: its domain has to name the data
+	// directory and every share's parent before the first file is opened, and
+	// a Landlock domain cannot be widened once it is installed.
+	values, shareHosts := bootSettings(abs, logger)
+	domain := jailSpec(values, abs, shareHosts)
+	jailStatus, jerr := jail.Apply(values.Hardening, domain)
+	if jerr != nil {
+		code := jail.Refuse(os.Stderr, jailStatus)
+		slog.Error("the sandbox could not be applied; a required policy this kernel cannot satisfy is a stored setting, and it is the one most likely to put a deployment in a restart loop",
+			"status", jailStatus.String())
+		os.Exit(code)
+	}
+	logger.Info("hardening", "status", jailStatus.String())
 
 	// No worker is named, which leaves the pool re-executing this binary with
 	// the subcommand handled at the top of main.
@@ -135,6 +169,78 @@ func run(addr, dataDir string, plain bool) error {
 		<-served
 		return nil
 	}
+}
+
+// bootSettings reads the stored settings and the registered share hosts from
+// the state database, in one brief open that closes before the engine is
+// constructed. The sandbox is built from what it returns, which is why this
+// runs first: a Landlock domain cannot be widened after it is installed, so
+// the share hosts have to be known before the databases below are opened for
+// the engine proper.
+func bootSettings(dataDir string, log *slog.Logger) (runtimecfg.Values, []string) {
+	ctx := context.Background()
+
+	stateFile, err := dbfile.Open(ctx, state.Spec(filepath.Join(dataDir, "state.db")))
+	if err != nil {
+		return runtimecfg.Defaults(), nil
+	}
+	defer func() {
+		if cerr := stateFile.Close(); cerr != nil {
+			log.Warn("closing the settings probe", "error", cerr)
+		}
+	}()
+	st := state.New(stateFile)
+
+	values := runtimecfg.Load(ctx, st, runtimecfg.Defaults(), log)
+
+	var hosts []string
+	if rows, lerr := st.ListShares(ctx); lerr == nil {
+		for _, row := range rows {
+			hosts = append(hosts, row.Host)
+		}
+	}
+	return values, hosts
+}
+
+// jailSpec builds the sandbox domain from what this process touches: the data
+// directory, the SMB sidecar's config directory and control socket when one is
+// configured, and the parent directory of every registered share.
+//
+// Each share's parent is granted rather than the share itself, which is what
+// lets a folder added from the admin screen work without a restart: a Landlock
+// domain cannot be widened once it is installed, so a share added later could
+// never be reached. The parent boundary is deliberate, and "/" is never
+// granted, which is the one thing this sandbox exists to prevent.
+func jailSpec(values runtimecfg.Values, dataDir string, shareHosts []string) jail.Spec {
+	spec := jail.Spec{ExceptExec: true}
+	spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dataDir})
+
+	if values.SMB.Enabled && values.SMBConfigDir != "" {
+		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: values.SMBConfigDir})
+	}
+	if sock := values.SMBSocket; values.SMB.Enabled && sock != "" {
+		if dir := filepath.Dir(sock); dir != "" && dir != "/" {
+			spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dir})
+		}
+	}
+
+	seen := map[string]bool{}
+	for _, host := range shareHosts {
+		if host == "" {
+			continue
+		}
+		clean := filepath.Clean(host)
+		parent := filepath.Dir(clean)
+		if parent == "/" || parent == "." || parent == clean {
+			parent = clean
+		}
+		if seen[parent] {
+			continue
+		}
+		seen[parent] = true
+		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: parent})
+	}
+	return spec
 }
 
 // runPreviewWorker is the jailed decoder, and it is never run by hand.

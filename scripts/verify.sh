@@ -262,7 +262,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # The two in-tree analysers and the text scan. They run for the host's own
   # OS because `go run` has to execute what it built, and each one is pointed
   # at the shipping target from the inside.
-  run "vetgo (D7: one goroutine spawn)"        ingo_host go run ./tools/vetgo ./cmd ./internal ./engine
+  run "vetgo (D7: one goroutine spawn)"        ingo_host go run ./tools/vetgo ./cmd ./engine
   # The client and the route table are two halves of one contract, and nothing
   # else here checks that they agree. A route the frontend calls and the server
   # does not mount is a screen that cannot work, and it was invisible to every
@@ -298,7 +298,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # by a person clicking something that then did nothing.
   run "contractcheck (the client's fields are sent)" \
       ingo_host go run ./tools/contractcheck \
-        ../web/src/lib/api/types.ts ./internal/httpapi/handler
+        ../web/src/lib/api/types.ts ./engine/http/handler
   # contractcheck compares response shapes. This compares the settings surface,
   # where the drift runs the other way: the section handler stores the client's
   # JSON object unchanged, on purpose, so a field name only the client knows is
@@ -309,7 +309,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # and watching the value store and vanish.
   run "settingscheck (a stored setting is read)" \
       ingo_host go run ./tools/settingscheck \
-        ../web/src/lib/api/types.ts ./internal/runtimecfg/runtimecfg.go
+        ../web/src/lib/api/types.ts ./engine/service/settings/runtimecfg/load.go
   # freshscan keeps the engine's comments from being the old tree's. This keeps
   # the phase documents from describing a tree that moved on: each numbered
   # deliberate change names what it is about, and a rename leaves the prose
@@ -337,18 +337,11 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     done
     exit $fail'
   run "vetsecret (D12: no secret to a verb)"   ingo_host go run ./tools/vetsecret ./...
-  run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./internal ./tools ./engine
+  run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./tools ./engine
   # The tier rule over the rebuilt engine, by the import graph. A package's
   # tier is its first path element under engine/, and an import is legal only
   # when the importing tier lists the imported one.
   run "layercheck (the engine's tiers hold)" ingo_host go run ./tools/layercheck ./engine
-  # The rebuild reads the old tree as a description of behavior and writes its
-  # own prose. A carried comment is a provenance failure and, more often, a
-  # stale one: it describes the system it was written for, not the one it was
-  # moved into.
-  run "freshscan (the engine's prose is its own)" \
-      ingo_host go run ./tools/freshscan ./internal ./engine
-
   FMT=$(cd go && gofmt -l . 2>/dev/null)
   grep_gate "gofmt" "$FMT" "Run: cd go && gofmt -w ."
 
@@ -511,27 +504,6 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # replaces reads source, so a constant defined elsewhere or a string built
   # from parts passes it while doing exactly what it exists to prevent.
   go_compat_isolation() {
-    local hits="" core=""
-    for d in core dav auth acl store upload vfs preview search httpapi watch smb; do
-      [ -d "go/internal/$d" ] && core="$core ./internal/$d/..."
-    done
-    # G1: no core package imports the compat layer, transitively.
-    if [ -n "$core" ]; then
-      # shellcheck disable=SC2086
-      hits="$hits$(ingo go list -deps $core 2>/dev/null | grep 'internal/compat' || true)"
-    fi
-    # G2: the layer imports the seam and nothing else from the tree.
-    hits="$hits$(ingo go list -f '{{range .Imports}}{{.}}{{"\n"}}{{end}}' ./internal/compat/nc/... \
-                 2>/dev/null | grep 'stowcloud/go/internal/' | grep -v 'internal/compat/ncport$' || true)"
-    # G3: the seam carries no vendor vocabulary.
-    hits="$hits$(grep -rIn -iE '\boc[:_-]|\bocs\b|remote\.php|nextcloud' \
-                 go/internal/compat/ncport/ 2>/dev/null || true)"
-    # G5: the text scan, kept and narrowed, because it catches a core package
-    # that learned the vocabulary without importing anything.
-    for d in core dav auth acl store upload vfs preview search httpapi watch smb; do
-      [ -d "go/internal/$d" ] || continue
-      hits="$hits$(grep -rIn -iE '\boc[:_-]|\bocs\b|remote\.php' "go/internal/$d" 2>/dev/null || true)"
-    done
     # G6: the same two rules over the rebuilt engine. Vendor vocabulary lives
     # only under engine/http/compat, and that package imports no service,
     # store or infra type: its ports are declared for assembly to implement.
@@ -600,8 +572,8 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     # and go reports that as an error: a gate step failing because the code it
     # names does not exist on this OS says nothing about the code.
     if [ "$HOST" = linux ]; then
-      run "go test -tags compat_nc"    ingo_host go test -tags compat_nc ./internal/compat/...
-      run "fuzz seed corpus (compat)"  ingo_host go test -tags compat_nc -run '^Fuzz' -count=1 ./internal/compat/...
+      run "go test -tags compat_nc"    ingo_host go test -tags compat_nc ./engine/http/compat/...
+      run "fuzz seed corpus (compat)"  ingo_host go test -tags compat_nc -run '^Fuzz' -count=1 ./engine/...
     else
       skipped "go test -tags compat_nc" "the compat layer is Linux only" 0
       skipped "fuzz seed corpus (compat)" "the compat layer is Linux only" 0

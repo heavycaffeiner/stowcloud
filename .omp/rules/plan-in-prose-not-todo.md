@@ -1,7 +1,7 @@
 ---
 name: plan-in-prose-not-todo
 description: "Multi-step work must be tracked with the todo tool, not narrated as a numbered plan in prose"
-condition: ["(?:계획|순서|구현\\s*순서)\\s*[:：]\\s*\\n?\\s*1[.)]", "(?:^|\\n)\\s*1[.)][^\\n]{8,}\\n\\s*2[.)]\\s[^\\n]{8,}"]
+condition: ["(?i)(?:계획|플랜|순서|절차|단계|방안|접근|작업\\s*순서|구현\\s*순서|진행\\s*순서|plan|steps?|approach|outline|roadmap|sequence|procedure|order of work)\\s*[:：]\\s*\\n?\\s*(?:1[.)]|첫)", "(?:^|\\n)\\s*1[.)]\\s[^\\n]{8,}\\n\\s*2[.)]\\s[^\\n]{8,}", "\\b1[.)]\\s+\\S[^\\n]{6,}?\\s+2[.)]\\s+\\S", "(?:첫째|첫\\s*번째)[^\\n]{0,80}(?:둘째|두\\s*번째)", "(?:^|\\n)\\s*[-*]\\s*\\[\\s\\]\\s+\\S"]
 scope: "text"
 ---
 

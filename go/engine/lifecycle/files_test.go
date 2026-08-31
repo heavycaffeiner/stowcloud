@@ -379,7 +379,7 @@ func TestACursorWalksEveryEntryExactlyOnce(t *testing.T) {
 			Entries []struct {
 				Name string `json:"name"`
 			} `json:"entries"`
-			Next string `json:"next"`
+			Next string `json:"cursor"`
 		}
 		if err := json.Unmarshal(body, &got); err != nil {
 			t.Fatalf("parsing page %d: %v", page, err)

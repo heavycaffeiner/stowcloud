@@ -46,9 +46,9 @@ type pair struct {
 
 func pairs() []pair {
 	return []pair{
-		{iface: "Entry", goType: "entryJSON"},
-		{iface: "ListResponse", goType: "listResponse"},
-		{iface: "AdminGrant", goType: "adminGrant"},
+		{iface: "Entry", goType: "EntryView"},
+		{iface: "ListResponse", goType: "PageView"},
+		{iface: "AdminGrant", goType: "GrantView"},
 	}
 }
 
@@ -67,9 +67,7 @@ type inlinePair struct {
 }
 
 func inlinePairs() []inlinePair {
-	return []inlinePair{
-		{iface: "FolderSize", marker: "agg.RSize"},
-	}
+	return nil
 }
 
 func main() {

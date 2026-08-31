@@ -460,5 +460,5 @@
 # be reporting a negative volume. The test that checks the probe needed a
 # second one until the arithmetic was split from the syscall, which let the
 # test hand over a volume rather than read one.
-296
+23
 108
