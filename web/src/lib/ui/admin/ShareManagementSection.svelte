@@ -11,7 +11,7 @@
   // *which folders exist* as shares in the first place. A share still needs
   // a grant before anyone but an admin can see it.
   import { t } from '../../i18n'
-  import { api, ApiError, type AdminShare, type SMBOutcome } from '../../api/client'
+  import { api, ApiError, type AdminShare, type SMBOutcome, type UpdateShareReq } from '../../api/client'
   import { describeApiError } from '../../api/error-text'
   import Button from '../Button.svelte'
   import { smbOutcomeText } from '../../api/smb-text'
@@ -107,9 +107,10 @@
   function openEdit(s: AdminShare): void {
     editTarget = s
     editName = s.name
-    // Blank, because the server never sends the current path back. Leaving it
-    // empty says "type a new one", which is the only thing this field can
-    // truthfully offer.
+    // Blank, and optional. The server never sends the current path back, so
+    // there is nothing truthful to prefill; leaving it empty means "keep the
+    // one it has". Requiring it made renaming a folder impossible without
+    // retyping a disk path nothing on this screen can show.
     editHostPath = ''
     editError = null
   }
@@ -126,13 +127,14 @@
       editError = t('folder_share.enter_name')
       return
     }
-    if (editHostPath.trim() === '') {
-      editError = t('folder_share.enter_server_path')
-      return
-    }
+    // Only the fields that changed. A patch naming nothing else leaves the
+    // path as it is, which is what the server does with an absent one.
+    const patch: UpdateShareReq = { name: editName.trim() }
+    if (editHostPath.trim() !== '') patch.host = editHostPath.trim()
+
     editing = true
     try {
-      const updated = await api.adminUpdateShare(editTarget.id, { name: editName.trim(), host: editHostPath.trim() })
+      const updated = await api.adminUpdateShare(editTarget.id, patch)
       noteSMB(updated)
       shares = shares.map((s) => (s.id === updated.id ? updated : s))
       editTarget = null
@@ -349,7 +351,11 @@
   {#if editTarget}
     <form class="sc-shares__form" onsubmit={(e) => (e.preventDefault(), submitEdit())}>
       <TextField label={t('common.name')} bind:value={editName} autocomplete="off" />
-      <TextField label={t('folder_share.server_path')} bind:value={editHostPath} autocomplete="off" />
+      <TextField
+        label={t('folder_share.server_path_optional')}
+        bind:value={editHostPath}
+        autocomplete="off"
+      />
       {#if editError}<p class="sc-shares__error" role="alert">{editError}</p>{/if}
     </form>
   {/if}

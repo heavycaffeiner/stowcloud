@@ -264,6 +264,7 @@
   "folder_share.removes_every_user_permission_granted": "{name}을(를) 제거합니다. 이 공유에 부여된 모든 사용자 권한도 함께 사라지며, 되돌릴 수 없습니다. 서버의 실제 파일은 지워지지 않습니다.",
   "folder_share.retry": "다시 시도",
   "folder_share.server_path": "서버 경로",
+  "folder_share.server_path_optional": "서버 경로 (비워두면 그대로 둡니다)",
   "folder_share.the_folder_is_still_unavailable": "폴더를 여전히 사용할 수 없습니다.",
   "folder_share.trash": "{name} 휴지통",
   "folder_share.use_trash": "휴지통 사용",
