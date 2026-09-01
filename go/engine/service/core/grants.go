@@ -37,8 +37,13 @@ type GrantFilter = state.GrantFilter
 type Grant = state.GrantRow
 
 // CreateGrant persists one grant and reloads the evaluator.
-func (c *Core) CreateGrant(ctx context.Context, spec GrantSpec) (int64, error) {
-	id, err := c.state.PersistGrant(ctx, state.GrantRow{
+//
+// The stored row is returned, not just its id: the screen renders the grant it
+// just created, and an id alone leaves it with a row whose permission lists
+// are missing. Reading them back would be a second query for values this
+// already holds.
+func (c *Core) CreateGrant(ctx context.Context, spec GrantSpec) (Grant, error) {
+	row := state.GrantRow{
 		User:    spec.User,
 		Group:   spec.Group,
 		Share:   int64(spec.Share),
@@ -47,14 +52,18 @@ func (c *Core) CreateGrant(ctx context.Context, spec GrantSpec) (int64, error) {
 		Deny:    uint16(spec.Deny),
 		Inherit: spec.Inherit,
 		Label:   spec.Label,
-	}, c.clk.Nanos())
+	}
+	created := c.clk.Nanos()
+	id, err := c.state.PersistGrant(ctx, row, created)
 	if err != nil {
-		return 0, err
+		return Grant{}, err
 	}
 	if rerr := c.ReloadGrants(ctx); rerr != nil {
-		return 0, rerr
+		return Grant{}, rerr
 	}
-	return id, nil
+	row.ID = id
+	row.CreatedNs = created
+	return row, nil
 }
 
 // ListGrants reads the stored grants a filter selects. It is a read, so no

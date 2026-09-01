@@ -44,7 +44,8 @@ type createShareRequest struct {
 
 // adminSharesCreate registers one.
 func (e *Engine) adminSharesCreate(c *fiber.Ctx) error {
-	if _, ok, written := e.admin(c); !ok {
+	admin, ok, written := e.admin(c)
+	if !ok {
 		return written
 	}
 
@@ -65,7 +66,32 @@ func (e *Engine) adminSharesCreate(c *fiber.Ctx) error {
 	// change is ever reported under, and the symptom is a folder that updates
 	// for everybody except the person who just created it.
 	e.watchShare(share)
+
+	// The administrator who registered it can reach it. Access is granted
+	// separately from registration by design, and everybody else still needs
+	// a grant, but a folder that is invisible to the person who just added it
+	// reads as the registration having failed. Setup does the same for the
+	// shares that exist when it runs.
+	if gerr := e.grantShareTo(c, admin, share); gerr != nil {
+		e.logger.Warn("the new share was registered without a grant for its creator",
+			"share", int64(share.ID), "error", gerr)
+	}
 	return writeJSON(c, fiber.StatusCreated, handler.ShareOf(share))
+}
+
+// grantShareTo gives one account full access to one share.
+//
+// The same permission set setup writes, and the share's own name as the
+// label, so the two paths produce grants a reader cannot tell apart.
+func (e *Engine) grantShareTo(c *fiber.Ctx, user int64, share core.ShareDef) error {
+	_, err := e.Core.CreateGrant(c.UserContext(), core.GrantSpec{
+		User:    &user,
+		Share:   share.ID,
+		Allow:   acl.Read | acl.Write | acl.Create | acl.Delete | acl.Rename | acl.Move | acl.Share | acl.Download,
+		Inherit: true,
+		Label:   share.Name,
+	})
+	return err
 }
 
 // updateShareRequest carries only what changes. Pointers separate an absent
@@ -216,13 +242,24 @@ func (e *Engine) adminGrantsCreate(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 	}
 
-	id, err := e.Core.CreateGrant(c.UserContext(), spec)
+	// An unlabelled grant over a whole share takes the share's own name. The
+	// screen draws the label, and without one the listing falls back to a
+	// generated placeholder naming the share's id rather than the folder
+	// somebody picked.
+	if spec.Label == "" && spec.Subpath == "" {
+		if def, found := e.Core.Share(spec.Share); found {
+			spec.Label = def.Name
+		}
+	}
+
+	grant, err := e.Core.CreateGrant(c.UserContext(), spec)
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeJSON(c, fiber.StatusCreated, map[string]string{
-		"id": strconv.FormatInt(id, 10),
-	})
+	// The whole grant, because the screen appends it to the list it is already
+	// showing. An id alone left every rendered row reading permission arrays
+	// that were not there.
+	return writeJSON(c, fiber.StatusCreated, handler.GrantOf(grant))
 }
 
 // grantSpecOf validates a request into a spec.

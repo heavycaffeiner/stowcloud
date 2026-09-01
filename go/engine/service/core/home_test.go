@@ -336,13 +336,14 @@ func TestGrantWrappersReloadTheEvaluator(t *testing.T) {
 	writeFile(t, host, "note.txt", "body")
 
 	holder := int64(2)
-	id, err := c.CreateGrant(ctx, GrantSpec{
+	grant, err := c.CreateGrant(ctx, GrantSpec{
 		User: &holder, Share: 10, Label: "Documents",
 		Allow: acl.Read, Inherit: true,
 	})
 	if err != nil {
 		t.Fatalf("CreateGrant: %v", err)
 	}
+	id := grant.ID
 	// The reload is what makes the grant serve traffic now rather than after
 	// a restart.
 	if _, rerr := c.Resolve(2, vpath(t, "Documents/note.txt"), acl.Read); rerr != nil {

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -48,6 +49,81 @@ func TestTheShareListingHidesHostPaths(t *testing.T) {
 	}
 	if len(rows) != 1 || stringField(rows[0], "name") != "docs" {
 		t.Fatalf("the listing does not show the share: %s", raw)
+	}
+}
+
+// A share the administrator registers is one they can open.
+//
+// Registration and access are separate by design: everybody else still needs
+// a grant. But a folder that is invisible to the person who just added it
+// reads as the registration having failed, and the only way out was to hand
+// yourself a grant from another screen.
+func TestANewShareIsReachableByTheAdministratorWhoAddedIt(t *testing.T) {
+	base, cookie, csrf, _, _ := adminEngine(t)
+
+	host := t.TempDir()
+	if err := os.WriteFile(filepath.Join(host, "note.txt"), []byte("body"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	status, created := mutate(t, http.MethodPost, base+"/api/v1/admin/shares", cookie, csrf,
+		map[string]string{"name": "docs", "host": host})
+	if status != http.StatusCreated {
+		t.Fatalf("creating a share answered %d: %v", status, created)
+	}
+
+	// The session reports it as a root, which is what the folder switcher draws.
+	code, raw := withCookie(t, http.MethodGet, base+"/api/v1/auth/session", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("the session answered %d: %s", code, raw)
+	}
+	if !strings.Contains(string(raw), `"label":"docs"`) {
+		t.Errorf("the new share is not among the account's roots: %s", raw)
+	}
+
+	// And its contents list, which is what the person does next.
+	code, listed := withCookie(t, http.MethodGet, base+"/api/v1/files/list?path=/docs", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("listing the new share answered %d: %s", code, listed)
+	}
+	if !strings.Contains(string(listed), "note.txt") {
+		t.Errorf("the listing does not show the file that is there: %s", listed)
+	}
+}
+
+// Creating a grant answers with the grant, not with its id.
+//
+// The screen appends the response to the list it is already showing, and every
+// row reads the permission arrays. An id alone left those undefined, which
+// threw while rendering and left the dialog spinning.
+func TestCreatingAGrantAnswersTheWholeGrant(t *testing.T) {
+	base, cookie, csrf, _, _ := adminEngine(t)
+
+	host := t.TempDir()
+	status, created := mutate(t, http.MethodPost, base+"/api/v1/admin/shares", cookie, csrf,
+		map[string]string{"name": "docs", "host": host})
+	if status != http.StatusCreated {
+		t.Fatalf("creating a share answered %d: %v", status, created)
+	}
+	shareID := fmt.Sprint(created["id"])
+
+	status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/grants", cookie, csrf,
+		map[string]any{
+			"user": "1", "share": shareID, "subpath": "",
+			"allow": []string{"read", "download"}, "deny": []string{},
+			"inherit": true, "label": "docs",
+		})
+	if status != http.StatusCreated {
+		t.Fatalf("creating a grant answered %d: %v", status, body)
+	}
+
+	for _, field := range []string{"allow", "deny"} {
+		if _, present := body[field]; !present {
+			t.Errorf("the response has no %q, which the screen reads as a list: %v", field, body)
+		}
+	}
+	if got := fmt.Sprint(body["share"]); got != shareID {
+		t.Errorf("the response names share %q, want %q", got, shareID)
 	}
 }
 
@@ -137,9 +213,9 @@ func TestCreatingAGrant(t *testing.T) {
 		t.Fatalf("creating a grant answered %d: %v", status, created)
 	}
 
-	rows := listGrants(t, base, cookie)
+	rows := grantsFor(t, base, cookie, user)
 	if len(rows) != 1 {
-		t.Fatalf("%d grants listed, want 1", len(rows))
+		t.Fatalf("%d grants listed for the account, want 1", len(rows))
 	}
 
 	// Names rather than a bitmask, and exactly the ones asked for. A grant
@@ -151,6 +227,87 @@ func TestCreatingAGrant(t *testing.T) {
 	}
 	if got := stringsField(t, rows[0], "deny"); len(got) != 0 {
 		t.Errorf("the grant denies %v, though none was requested", got)
+	}
+}
+
+// A grant with no label of its own reads as the folder's name.
+//
+// The folder switcher draws the label. Without one the listing fell back to a
+// placeholder built from the share's id, so a share called "Share" appeared
+// as "share-1000001" to the person who had just named it.
+func TestAnUnlabelledGrantReadsAsTheShareName(t *testing.T) {
+	base, cookie, csrf, plainCookie, _ := adminEngine(t)
+
+	share := makeShare(t, base, cookie, csrf, "Photos")
+	user := accountID(t, base, cookie, loginName)
+
+	// No label, and the whole share rather than a subpath: the case with
+	// nothing else to name it after.
+	status, created := mutate(t, http.MethodPost, base+"/api/v1/admin/grants", cookie, csrf,
+		map[string]any{
+			"user": user, "share": share, "subpath": "",
+			"allow": []string{"read", "download"}, "inherit": true,
+		})
+	if status != http.StatusCreated {
+		t.Fatalf("creating the grant answered %d: %v", status, created)
+	}
+
+	code, raw := withCookie(t, http.MethodGet, base+"/api/v1/auth/session", plainCookie)
+	if code != http.StatusOK {
+		t.Fatalf("the session answered %d: %s", code, raw)
+	}
+	if !strings.Contains(string(raw), `"label":"Photos"`) {
+		t.Errorf("the root is not labelled with the share's name: %s", raw)
+	}
+	if strings.Contains(string(raw), `"label":"share-`) {
+		t.Errorf("the root carries a generated placeholder: %s", raw)
+	}
+}
+
+// A root the session lists is a root that opens.
+//
+// The label is both what the switcher draws and what a browse path names, so
+// the listing and the resolver have to agree on it. They did not: the listing
+// substituted the share's name over the generated placeholder and the
+// resolver still matched the placeholder, so clicking the folder that had
+// just been shown answered 404 with nothing on screen explaining it.
+func TestAListedRootCanBeOpened(t *testing.T) {
+	base, cookie, csrf, plainCookie, _ := adminEngine(t)
+
+	share := makeShare(t, base, cookie, csrf, "Photos")
+	user := accountID(t, base, cookie, loginName)
+
+	// No label: the case where the listing has to supply one.
+	if status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/grants", cookie, csrf,
+		map[string]any{
+			"user": user, "share": share, "subpath": "",
+			"allow": []string{"read", "download"}, "inherit": true,
+		}); status != http.StatusCreated {
+		t.Fatalf("creating the grant answered %d: %v", status, body)
+	}
+
+	code, raw := withCookie(t, http.MethodGet, base+"/api/v1/auth/session", plainCookie)
+	if code != http.StatusOK {
+		t.Fatalf("the session answered %d: %s", code, raw)
+	}
+	var session struct {
+		Roots []struct {
+			Label string `json:"label"`
+		} `json:"roots"`
+	}
+	if err := json.Unmarshal(raw, &session); err != nil {
+		t.Fatal(err)
+	}
+	if len(session.Roots) != 1 {
+		t.Fatalf("%d roots listed, want 1: %s", len(session.Roots), raw)
+	}
+
+	// Exactly the path the client builds from the label it was given.
+	label := session.Roots[0].Label
+	status, body := withCookie(t, http.MethodGet,
+		base+"/api/v1/files/list?path="+urlEscape("/"+label), plainCookie)
+	if status != http.StatusOK {
+		t.Fatalf("the listed root %q does not open: %d %s", label, status, body)
 	}
 }
 
@@ -179,6 +336,23 @@ func listGrants(t *testing.T, base string, cookie *http.Cookie) []map[string]any
 		t.Fatal(err)
 	}
 	return rows
+}
+
+// grantsFor reads the grants belonging to one account.
+//
+// Registering a share grants its creator, so the listing always holds the
+// administrator's own grants too. A test that counted every row would be
+// asserting on a share it did not create.
+func grantsFor(t *testing.T, base string, cookie *http.Cookie, user string) []map[string]any {
+	t.Helper()
+
+	var out []map[string]any
+	for _, row := range listGrants(t, base, cookie) {
+		if fmt.Sprint(row["user"]) == user {
+			out = append(out, row)
+		}
+	}
+	return out
 }
 
 // stringsField reads a string list out of a decoded body.
@@ -223,8 +397,8 @@ func TestAnUnknownPermissionRefusesTheGrant(t *testing.T) {
 
 	// Nothing was stored, so the caller is not left with a partial grant they
 	// did not ask for.
-	if rows := listGrants(t, base, cookie); len(rows) != 0 {
-		t.Errorf("%d grants exist after a refused create: %v", len(rows), rows)
+	if rows := grantsFor(t, base, cookie, user); len(rows) != 0 {
+		t.Errorf("%d grants exist for the account after a refused create: %v", len(rows), rows)
 	}
 }
 
@@ -255,8 +429,8 @@ func TestAGrantNamesExactlyOneSubject(t *testing.T) {
 			t.Errorf("a grant naming %s was stored: %v", name, got)
 		}
 	}
-	if rows := listGrants(t, base, cookie); len(rows) != 0 {
-		t.Errorf("%d grants exist after refusals", len(rows))
+	if rows := grantsFor(t, base, cookie, user); len(rows) != 0 {
+		t.Errorf("%d grants exist for the account after refusals", len(rows))
 	}
 }
 
@@ -287,7 +461,7 @@ func TestRevokingAGrantTakesEffectNow(t *testing.T) {
 		t.Fatalf("the granted account cannot list the share: %d %s", code, raw)
 	}
 
-	id := stringField(listGrants(t, base, cookie)[0], "id")
+	id := stringField(grantsFor(t, base, cookie, user)[0], "id")
 	if status, body := mutate(t, http.MethodDelete,
 		fmt.Sprintf("%s/api/v1/admin/grants/%s", base, id), cookie, csrf, nil); status != http.StatusNoContent {
 		t.Fatalf("revoking answered %d: %v", status, body)
@@ -322,7 +496,7 @@ func TestNarrowingAGrantTakesEffectNow(t *testing.T) {
 	}
 
 	// Down to nothing usable, keeping the row.
-	id := stringField(listGrants(t, base, cookie)[0], "id")
+	id := stringField(grantsFor(t, base, cookie, user)[0], "id")
 	if status, body := mutate(t, http.MethodPatch,
 		fmt.Sprintf("%s/api/v1/admin/grants/%s", base, id), cookie, csrf,
 		map[string]any{"allow": []string{}, "inherit": true, "label": "docs"}); status != http.StatusNoContent {
@@ -362,7 +536,7 @@ func TestADeniedPermissionIsRemovedOnUpdate(t *testing.T) {
 	// Read stays in the allow set and is denied alongside it. Deny wins, so
 	// the listing has to stop working; a path that dropped deny would leave
 	// it working and report success.
-	id := stringField(listGrants(t, base, cookie)[0], "id")
+	id := stringField(grantsFor(t, base, cookie, user)[0], "id")
 	status, body := mutate(t, http.MethodPatch,
 		fmt.Sprintf("%s/api/v1/admin/grants/%s", base, id), cookie, csrf,
 		map[string]any{
@@ -381,9 +555,9 @@ func TestADeniedPermissionIsRemovedOnUpdate(t *testing.T) {
 
 	// And the stored grant reports the deny, so an administrator reopening
 	// the screen sees the restriction they applied.
-	rows := listGrants(t, base, cookie)
+	rows := grantsFor(t, base, cookie, user)
 	if len(rows) != 1 {
-		t.Fatalf("%d grants listed", len(rows))
+		t.Fatalf("%d grants listed for the account", len(rows))
 	}
 	if got := stringsField(t, rows[0], "deny"); len(got) != 1 || got[0] != "read" {
 		t.Errorf("the grant denies %v, want read", got)
