@@ -8,10 +8,34 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 )
+
+// saidBuffer collects a worker's stderr.
+//
+// os/exec copies a child's stderr on a goroutine of its own, so a test reading
+// what the worker said while it is still running races that writer. The lock
+// is what lets a failure message quote the output at the moment it fails,
+// rather than only after the pool is closed.
+type saidBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *saidBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *saidBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
 
 // The allow list covers a real decode, which the shipped filter cannot report.
 //
@@ -36,7 +60,7 @@ func TestTheAllowListCoversARealDecode(t *testing.T) {
 	// Captured rather than inherited: a worker refused a syscall names it on
 	// its own stderr, and that is the whole diagnostic. Left on the parent's
 	// it reached the terminal locally and vanished in CI.
-	var said bytes.Buffer
+	var said saidBuffer
 	p, err := preview.NewPool(preview.PoolOptions{
 		Workers: 1,
 		Exe:     buildJailedWorker(t),
@@ -69,6 +93,49 @@ func TestTheAllowListCoversARealDecode(t *testing.T) {
 			t.Fatalf("decoding %dx%d: status %v: %s\nthe worker said:\n%s",
 				size, size, resp.Status, resp.Err, said.String())
 		}
+	}
+}
+
+// The capture that carries the diagnostic works.
+//
+// The proof above reports what a dying worker said, and reports nothing if the
+// pipe between them breaks. That failure is silent: the test still fails, on
+// "exit status 2" with no cause, which is the state this whole diagnostic
+// exists to leave behind. So the pipe is exercised directly, with the runtime
+// asked to write a line every worker produces regardless of the decode.
+func TestAWorkerSaysWhyItDied(t *testing.T) {
+	var said saidBuffer
+	p, err := preview.NewPool(preview.PoolOptions{
+		Workers: 1,
+		Exe:     buildJailedWorker(t),
+		Args:    []string{},
+		// schedtrace writes to stderr on a fixed interval, so the worker is
+		// certain to produce something whether or not it dies.
+		Env:    []string{"GODEBUG=schedtrace=1"},
+		Stderr: &said,
+	})
+	if err != nil {
+		t.Fatalf("NewPool: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := p.Close(); cerr != nil {
+			t.Errorf("closing the pool: %v", cerr)
+		}
+	})
+
+	in, out := sourceFile(t, 64, 64), outputFile(t)
+	if _, gerr := p.Generate(t.Context(), preview.Request{
+		Kind:      preview.JobImage,
+		Preset:    preview.PresetSmall,
+		Flags:     preview.FlagStripEXIF,
+		MaxPixels: 1 << 20,
+	}, preview.PlainSource{F: in}, out); gerr != nil {
+		t.Fatalf("decoding: %v", gerr)
+	}
+
+	if !strings.Contains(said.String(), "SCHED") {
+		t.Errorf("nothing the worker wrote reached the capture, so a refused"+
+			" syscall would report no cause; got %q", said.String())
 	}
 }
 
