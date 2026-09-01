@@ -295,7 +295,21 @@ func jailSpec(values runtimecfg.Values, dataDir string, roots []string, shareHos
 	return spec
 }
 
-// shareRoots picks the mounts a folder may be registered under.
+// namedShareDirs are the directories a deployment puts served data in when
+// it has no bind mounts to discover: bare metal, a VM, or any runtime whose
+// root is a single filesystem. There the mount table has no row for any of
+// these, because they are all part of "/", so without this list nothing
+// outside the data directory could ever be granted on such a host.
+//
+// The obvious alternative, granting every child of "/", was rejected: on a
+// normal host that set is /etc, /usr, /var and /root among others, which is
+// every path this sandbox exists to keep out.
+func namedShareDirs() []string {
+	return []string{"/srv", "/mnt", "/media", "/data", "/home", "/opt"}
+}
+
+// shareRoots picks the mounts a folder may be registered under, plus
+// whichever of namedShareDirs exist on this host.
 //
 // A mount qualifies when all four hold: its filesystem type is on vfs's
 // allow-list, its point is not "/" itself, it does not sit under /proc,
@@ -341,6 +355,19 @@ func shareRoots(mounts []mountinfo.Mount) []string {
 
 		out = append(out, point)
 	}
+
+	// The named-directory source: granted only when the directory is
+	// actually present, using the same stat the mount rule applies above.
+	// A deployment without /srv does not get a grant for a path that
+	// is not there.
+	for _, dir := range namedShareDirs() {
+		info, err := os.Stat(dir)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		out = append(out, filepath.Clean(dir))
+	}
+
 	slices.Sort(out)
 	return slices.Compact(out)
 }

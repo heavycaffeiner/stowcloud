@@ -202,6 +202,7 @@ func TestRejectionKindNamesWhyTheShareWouldNotOpen(t *testing.T) {
 	}{
 		{"missing", vfs.ErrNotFound, "missing"},
 		{"unreadable", vfs.ErrDenied, "unreadable"},
+		{"sandbox denied", vfs.ErrSandboxDenied, "ungranted"},
 		{"anything else", errors.New("i/o error"), "unavailable"},
 		{
 			"an admission refusal",

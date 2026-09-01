@@ -104,6 +104,51 @@ func TestAShareThatWillNotRegisterLeavesNoDanglingRow(t *testing.T) {
 	}
 }
 
+// CreateShare tells a genuinely missing path apart from one the sandbox
+// refuses, reporting the distinct token for each. A real Landlock domain
+// is not driven here: a directory whose own mode denies reading reproduces
+// the same OpenShareRoot-succeeds/proveReadable-fails asymmetry
+// RegisterShareRoot classifies, and RejectionKind reports it as "ungranted"
+// rather than folding it into the generic "unreadable". A truly absent
+// path still reports "missing", proving the new case did not swallow it.
+func TestCreateShareNamesASandboxRefusalApartFromAMissingPath(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses the mode bit this test depends on")
+	}
+	c, _ := newCore(t)
+	ctx := context.Background()
+
+	parent := t.TempDir()
+	denied := filepath.Join(parent, "denied")
+	if err := os.Mkdir(denied, 0o000); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := os.Chmod(denied, 0o755); cerr != nil {
+			t.Errorf("restoring the directory mode: %v", cerr)
+		}
+	})
+
+	_, err := c.CreateShare(ctx, ShareSpec{Name: "denied", Host: denied})
+	var broken *ShareBrokenError
+	if !errors.As(err, &broken) {
+		t.Fatalf("CreateShare over a denied directory returned %v, want a ShareBrokenError", err)
+	}
+	if broken.Reason != "ungranted" {
+		t.Fatalf("the reason is %q, want ungranted", broken.Reason)
+	}
+
+	_, err = c.CreateShare(ctx, ShareSpec{
+		Name: "missing", Host: filepath.Join(parent, "nothing-here"),
+	})
+	if !errors.As(err, &broken) {
+		t.Fatalf("CreateShare over a missing directory returned %v, want a ShareBrokenError", err)
+	}
+	if broken.Reason != "missing" {
+		t.Fatalf("the reason is %q, want missing", broken.Reason)
+	}
+}
+
 func TestUpdateShareAppliesOnlyThePatchedFields(t *testing.T) {
 	c, st := newCore(t)
 	ctx := context.Background()

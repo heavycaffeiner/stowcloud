@@ -316,6 +316,12 @@ func (c *Core) labelledRoots(user UserID) []acl.RootEntry {
 // RejectionKind is the health surface's token for why a share would not
 // register. It is exported because the assembly layer registers shares too
 // and carries the same tokens onto the health surface.
+//
+// "ungranted" is checked before the general vfs.ErrDenied case: a directory
+// this build's own O_PATH open resolved, only to have the real read-open
+// refused, is proof the sandbox itself withheld the path rather than the
+// directory being genuinely unreadable. Folding the two together told an
+// operator to check a mode and an owner that were already fine.
 func RejectionKind(err error) string {
 	var adm *vfs.AdmissionError
 	switch {
@@ -323,6 +329,8 @@ func RejectionKind(err error) string {
 		return adm.Type.String()
 	case errors.Is(err, vfs.ErrNotFound):
 		return "missing"
+	case errors.Is(err, vfs.ErrSandboxDenied):
+		return "ungranted"
 	case errors.Is(err, vfs.ErrDenied):
 		return "unreadable"
 	default:

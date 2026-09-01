@@ -43,13 +43,29 @@ func TestShareRootsAppliesEachRule(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := shareRoots([]mountinfo.Mount{c.mount})
+			// namedShareDirs are granted independent of any mount rule, and
+			// this host may have some of them for real; strip them so this
+			// table keeps testing only the four mount rules.
+			got := withoutNamedShareDirs(shareRoots([]mountinfo.Mount{c.mount}))
 			admitted := len(got) == 1 && got[0] == filepath.Clean(c.mount.Point)
 			if admitted != c.want {
 				t.Errorf("shareRoots(%+v) = %v, want admitted=%v", c.mount, got, c.want)
 			}
 		})
 	}
+}
+
+// withoutNamedShareDirs drops whatever namedShareDirs contributed, so a
+// mount-rule assertion is not thrown off by directories real on the host
+// running the test.
+func withoutNamedShareDirs(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if !slices.Contains(namedShareDirs(), p) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // Two mounts reported for the same point collapse to one entry, and the
@@ -67,11 +83,84 @@ func TestShareRootsDedupesAndSorts(t *testing.T) {
 	want := []string{a, b}
 	slices.Sort(want)
 
-	got := shareRoots(mounts)
+	got := withoutNamedShareDirs(shareRoots(mounts))
 	if !slices.Equal(got, want) {
 		t.Fatalf("shareRoots = %v, want %v", got, want)
 	}
 	if !slices.IsSorted(got) {
 		t.Errorf("shareRoots did not return a sorted result: %v", got)
+	}
+}
+
+// namedShareDirs covers the single-root host: no bind mounts are reported at
+// all, and the result still has to contain whichever named directories are
+// actually present on this machine, since that is the only source that can
+// grant anything there.
+func TestShareRootsGrantsNamedDirsWithNoMounts(t *testing.T) {
+	got := shareRoots(nil)
+
+	var present []string
+	for _, dir := range namedShareDirs() {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			present = append(present, dir)
+		}
+	}
+	slices.Sort(present)
+
+	if !slices.Equal(got, present) {
+		t.Fatalf("shareRoots(nil) = %v, want %v", got, present)
+	}
+}
+
+// A named directory that does not exist on this host must not appear, even
+// though it is on the list; existence is checked, not assumed.
+func TestShareRootsOmitsMissingNamedDir(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "does-not-exist")
+	for _, dir := range namedShareDirs() {
+		if dir == missing {
+			t.Fatalf("fixture collides with a real named dir: %s", dir)
+		}
+	}
+
+	got := shareRoots(nil)
+	if slices.Contains(got, missing) {
+		t.Errorf("shareRoots(nil) contains a directory that was never created: %v", got)
+	}
+}
+
+// Nothing outside the two sources is ever admitted, regardless of how this
+// particular machine is laid out.
+func TestShareRootsRefusesPathsOutsideBothSources(t *testing.T) {
+	got := shareRoots(nil)
+	for _, refused := range []string{"/etc", "/usr", "/boot", "/var"} {
+		if slices.Contains(got, refused) {
+			t.Errorf("shareRoots(nil) admitted %s, which neither source names", refused)
+		}
+	}
+}
+
+// A mount point and a named directory that name the same path must collapse
+// to a single entry, same as two mounts reported for the same point do.
+func TestShareRootsDedupesMountAndNamedDir(t *testing.T) {
+	var namedDir string
+	for _, dir := range namedShareDirs() {
+		if info, err := os.Stat(dir); err == nil && info.IsDir() {
+			namedDir = dir
+			break
+		}
+	}
+	if namedDir == "" {
+		t.Skip("no named share directory exists on this host to overlap a mount with")
+	}
+
+	got := shareRoots([]mountinfo.Mount{{Point: namedDir, FsType: "ext4"}})
+	count := 0
+	for _, p := range got {
+		if p == namedDir {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("shareRoots reported %s %d times, want exactly once: %v", namedDir, count, got)
 	}
 }

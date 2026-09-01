@@ -275,3 +275,52 @@ func TestScratchRootRefusesWhatAShareRefuses(t *testing.T) {
 		t.Fatal("a nonexistent directory registered as a share")
 	}
 }
+
+// A directory this process can resolve via O_PATH but cannot really open
+// reproduces, at the syscall level, exactly the asymmetry a Landlock domain
+// that permits resolving a path but not reading it would produce:
+// OpenShareRoot succeeds and proveReadable fails with EACCES. Driving an
+// actual Landlock domain inside a unit test is not practical, so this test
+// reaches the same code path with a directory whose own mode denies
+// reading rather than a running sandbox. RegisterShareRoot cannot tell the
+// two apart by design; the point here is only that classifyUnreadable
+// renames the asymmetry, whichever produced it.
+func TestRegisterShareRootNamesTheOpenProveAsymmetry(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses the mode bit this test depends on")
+	}
+	parent := t.TempDir()
+	dir := filepath.Join(parent, "denied")
+	if err := os.Mkdir(dir, 0o000); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := os.Chmod(dir, 0o755); cerr != nil {
+			t.Errorf("restoring the directory mode: %v", cerr)
+		}
+	})
+
+	_, _, err := RegisterShareRoot(1, dir, DefaultSharePolicy())
+	if err == nil {
+		t.Fatal("a directory with mode 0000 registered")
+	}
+	if !errors.Is(err, ErrSandboxDenied) {
+		t.Fatalf("RegisterShareRoot(%q) = %v, want ErrSandboxDenied", dir, err)
+	}
+	if !errors.Is(err, ErrDenied) {
+		t.Fatalf("RegisterShareRoot(%q) = %v, want it to still unwrap to ErrDenied", dir, err)
+	}
+}
+
+// classifyUnreadable passes through anything that is not itself a
+// permission denial: a directory that vanished between OpenShareRoot and
+// proveReadable is still ErrNotFound, not a sandbox refusal invented on top
+// of it.
+func TestClassifyUnreadablePassesThroughNonDenialErrors(t *testing.T) {
+	if got := classifyUnreadable(ErrNotFound); !errors.Is(got, ErrNotFound) {
+		t.Fatalf("classifyUnreadable(ErrNotFound) = %v, want it unwrapped to ErrNotFound", got)
+	}
+	if errors.Is(classifyUnreadable(ErrNotFound), ErrSandboxDenied) {
+		t.Fatal("classifyUnreadable invented a sandbox refusal for a missing path")
+	}
+}

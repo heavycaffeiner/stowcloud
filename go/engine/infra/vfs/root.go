@@ -157,10 +157,34 @@ func RegisterShareRoot(id ShareID, host string, policy SharePolicy) (*ShareRoot,
 		return nil, Admission{}, errors.Join(err, closeFailed(r.anchor))
 	}
 	if rerr := proveReadable(host); rerr != nil {
-		return nil, Admission{}, errors.Join(rerr, closeFailed(r.anchor))
+		return nil, Admission{}, errors.Join(classifyUnreadable(rerr), closeFailed(r.anchor))
 	}
 	r.admitted[r.dev] = struct{}{}
 	return r, adm, nil
+}
+
+// ErrSandboxDenied names a proveReadable failure that follows a successful
+// OpenShareRoot: the anchor's O_PATH open is a reference the domain permits
+// without granting any access right at all, so reaching this point already
+// proved the directory resolvable, and only the real read-open was
+// refused. It wraps ErrDenied, so a caller matching only the general
+// sentinel still finds it; RejectionKind (core/registry.go) reports it
+// under its own token so the message names the sandbox instead of
+// repeating "permission denied" on a directory nothing is wrong with.
+var ErrSandboxDenied = errors.New("vfs: the sandbox does not grant this path")
+
+// classifyUnreadable tells a sandbox refusal apart from a directory that is
+// genuinely unreadable, using only what OpenShareRoot and proveReadable
+// already produced: no shelling out, no reading /proc. A permission denial
+// reaching this point followed a successful O_PATH open, which is the
+// asymmetry a domain that admits resolution but not reading produces; an
+// error this is not, such as the directory having vanished in the interval,
+// passes through unchanged.
+func classifyUnreadable(err error) error {
+	if errors.Is(err, ErrDenied) {
+		return fmt.Errorf("%w: %w", ErrSandboxDenied, err)
+	}
+	return err
 }
 
 // proveReadable opens the root the way a listing will.

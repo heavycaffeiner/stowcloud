@@ -102,6 +102,12 @@ about them:
 Folders anywhere under a mounted directory can be added and removed from the
 admin screen without restarting.
 
+Running the binary directly, without a container, there is no mount table to
+read, so the sandbox instead grants a fixed set of directories: `/srv`,
+`/mnt`, `/media`, `/data`, `/home` and `/opt`, each only when it exists. A
+folder anywhere under one of them can be added from the admin screen. A path
+outside all of them is refused when it is added, not later.
+
 The server has to be able to read and write it. Rather than changing who owns
 your files, tell the server which uid to be. `PUID` and `PGID` in the compose
 file are the uid and gid it runs as, and the default of 1000 is what a
