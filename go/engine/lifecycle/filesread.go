@@ -340,6 +340,13 @@ func (e *Engine) filesCopy(c *fiber.Ctx) error {
 
 // transferEnds decodes the body and resolves both ends.
 //
+// The destination is resolved as its parent plus the name being created,
+// never as a whole path. A copy or a move names where the entry is going,
+// which by definition does not exist yet: resolving it directly answered
+// not-found, and the existence rule rendered that as 404. Every copy to a new
+// name failed that way, which is every duplicate and every transfer into a
+// folder, while a destination that happened to exist worked.
+//
 // The bool says whether the caller may proceed and the error is the written
 // response, in that order. An error alone cannot work: refuse and fail both
 // write the refusal and return nil, so a caller testing the error for nil
@@ -357,11 +364,52 @@ func (e *Engine) transferEnds(
 	if err != nil {
 		return req, core.Resolved{}, core.Resolved{}, false, fail(c, err)
 	}
-	to, err = e.resolve(owner, req.To, acl.Write|acl.Create)
+	to, err = e.resolveDest(owner, req.To)
 	if err != nil {
 		return req, core.Resolved{}, core.Resolved{}, false, fail(c, err)
 	}
 	return req, from, to, true, nil
+}
+
+// resolveDest resolves a path that is about to be created.
+//
+// The parent has to exist and take a write; the leaf is the name being
+// minted, so it is validated as creatable rather than looked up. A caller
+// naming an existing directory as the destination gets it resolved directly,
+// which is what makes "copy into this folder" work alongside "copy to this
+// new name".
+func (e *Engine) resolveDest(owner core.UserID, raw string) (core.Resolved, error) {
+	if r, err := e.resolve(owner, raw, acl.Write|acl.Create); err == nil {
+		return r, nil
+	}
+
+	parent, name, ok := splitDest(raw)
+	if !ok {
+		return core.Resolved{}, core.ErrNotFound
+	}
+	pr, err := e.resolve(owner, parent, acl.Write|acl.Create)
+	if err != nil {
+		return core.Resolved{}, err
+	}
+	leaf, jerr := pr.Path().Join(name)
+	if jerr != nil {
+		// A name this tree will not create: refused as the malformed input it
+		// is rather than reported as an absent parent.
+		return core.Resolved{}, core.ErrNotFound
+	}
+	return e.Core.ResolveUnder(pr, leaf, acl.Write|acl.Create)
+}
+
+// splitDest cuts a destination into the parent to resolve and the name to
+// create. A path with no separator names something directly under a share
+// root, whose parent is that root.
+func splitDest(raw string) (parent, name string, ok bool) {
+	trimmed := strings.TrimSuffix(raw, "/")
+	i := strings.LastIndex(trimmed, "/")
+	if i < 0 || i == len(trimmed)-1 {
+		return "", "", false
+	}
+	return trimmed[:i], trimmed[i+1:], true
 }
 
 // filesSize answers a subtree's recursive rollup.

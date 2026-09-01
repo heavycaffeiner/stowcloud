@@ -552,6 +552,92 @@ func TestAnUnknownConflictPolicyIsRefused(t *testing.T) {
 	}
 }
 
+// Duplicating an entry copies it beside itself.
+//
+// A duplicate names the source as its own destination and lets the rename
+// policy pick the free name. The self-containment guard ran against the
+// requested path rather than the one the rename settled on, so it refused
+// every duplicate before the rename happened: the button answered 404 and
+// nothing was written.
+func TestDuplicatingAFile(t *testing.T) {
+	want := payload()
+	base, token, share := contentShare(t, everyPerm(), want)
+
+	status, body := post(t, base+"/api/v1/files/copy", token, map[string]string{
+		"from":        "/" + share + "/doc.bin",
+		"to":          "/" + share + "/doc.bin",
+		"on_conflict": "rename",
+	})
+	if status != http.StatusAccepted && status != http.StatusOK {
+		t.Fatalf("duplicating answered %d: %v", status, body)
+	}
+
+	// The copy is a job, so the listing is read once it has settled.
+	var names []string
+	// Waits for the duplicate itself. Waiting for "more than one entry" broke
+	// the moment the fixture grew a second one: the loop left on the first
+	// poll and read the listing before the copy had written anything.
+	var duplicate string
+	for range 200 {
+		names = listNames(t, base, token, "/"+share)
+		duplicate = ""
+		for _, n := range names {
+			if n != "doc.bin" && strings.HasPrefix(n, "doc") {
+				duplicate = n
+			}
+		}
+		if duplicate != "" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if duplicate == "" {
+		t.Fatalf("the duplicate is not in the listing: %v", names)
+	}
+	// Named after the original rather than left as a bare suffix, which is
+	// what a person looks for in the folder afterwards.
+	if duplicate != "doc (2).bin" {
+		t.Errorf("the duplicate is called %q, want %q", duplicate, "doc (2).bin")
+	}
+
+	// And it holds the original's bytes, which is the whole point.
+	code, _, got := download(t, base, token, "/"+share+"/"+duplicate, "")
+	if code != http.StatusOK {
+		t.Fatalf("reading the duplicate answered %d", code)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("the duplicate holds %d bytes, want %d", len(got), len(want))
+	}
+
+	// The original is still there: a duplicate adds, never moves.
+	if code, _, orig := download(t, base, token, "/"+share+"/doc.bin", ""); code != http.StatusOK || !bytes.Equal(orig, want) {
+		t.Error("the original did not survive its own duplicate")
+	}
+}
+
+// listNames reads one directory's entry names.
+func listNames(t *testing.T, base, token, path string) []string {
+	t.Helper()
+
+	status, raw := authed(t, http.MethodGet, base+"/api/v1/files/list?path="+urlEscape(path), token)
+	if status != http.StatusOK {
+		t.Fatalf("listing %s answered %d: %s", path, status, raw)
+	}
+	var page struct {
+		Entries []struct {
+			Name string `json:"name"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(raw, &page); err != nil {
+		t.Fatal(err)
+	}
+	out := make([]string, 0, len(page.Entries))
+	for _, e := range page.Entries {
+		out = append(out, e.Name)
+	}
+	return out
+}
+
 // A copy is accepted as a job and leaves both files in place.
 func TestCopyingAFile(t *testing.T) {
 	want := payload()

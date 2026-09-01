@@ -295,9 +295,6 @@ func (c *Core) StartCopy(
 	if err != nil {
 		return CopyStart{}, mapVFSErr(err)
 	}
-	if err = RefuseSelfDescendant(from, to); err != nil {
-		return CopyStart{}, err
-	}
 
 	dest, _, done, err := c.applyConflict(ctx, to, policy, nil)
 	if err != nil {
@@ -305,6 +302,15 @@ func (c *Core) StartCopy(
 	}
 	if done {
 		return CopyStart{Dest: dest, Skipped: true}, nil
+	}
+
+	// Checked against the destination the policy settled on, not the one the
+	// request named. A duplicate asks to copy an entry onto itself and lets
+	// the rename pick the free name beside it; testing the requested path
+	// refused that before the rename ever ran, so the duplicate action was a
+	// 404 on every file.
+	if err = RefuseSelfDescendant(from, dest); err != nil {
+		return CopyStart{}, err
 	}
 
 	// A single named item, so a copy interrupted partway can report what it was
