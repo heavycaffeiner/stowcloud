@@ -475,13 +475,13 @@ describe('mockApi trash', () => {
 })
 
 describe('mockApi download (archive)', () => {
-  it('archive answers a streamed zip response', async () => {
-    // The response is the archive, as the real server sends it: written while
-    // the walk runs, so the caller pipes it rather than collecting it.
-    const res = await mockApi.archive(['/home/Photos/휴가-2026-07-01.jpg', '/home/Photos/가족사진.png'])
-    expect(res.headers.get('Content-Type')).toBe('application/zip')
-    expect(res.bodyUsed).toBe(false)
-    expect((await res.blob()).size).toBeGreaterThan(0)
+  it('archive answers a ticket pointing at the fetch route', async () => {
+    // The real server names the selection and builds nothing until the
+    // navigation collects it, so there is no size to report.
+    const ticket = await mockApi.archive(['/home/Photos/휴가-2026-07-01.jpg', '/home/Photos/가족사진.png'])
+    expect(ticket.token.length).toBeGreaterThan(0)
+    expect(ticket.url).toContain('/files/archive/fetch')
+    expect(ticket.url).toContain(encodeURIComponent(ticket.token))
   })
 
   it('archive rejects an empty selection', async () => {

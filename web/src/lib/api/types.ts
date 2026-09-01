@@ -286,6 +286,18 @@ export interface IndexSettings {
   name_enabled: boolean
 }
 
+/** `POST /api/v1/files/archive` — where to fetch a selection.
+ *
+ *  No size: nothing is built until the fetch asks for it, so there is no
+ *  figure to report and the download declares no length either. */
+export interface ArchiveTicket {
+  token: string
+  name: string
+  /** Absolute from the site root, built by the server so a client does not
+   *  assemble the route and get it wrong. */
+  url: string
+}
+
 /** `PATCH /api/admin/upload-settings` — the
  *  admin-write half of `SessionInfo.limits.chunk_min`/`chunk_size`: this
  *  changes the server-global, persisted value every account's

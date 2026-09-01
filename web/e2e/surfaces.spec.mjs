@@ -300,16 +300,20 @@ try {
   if (shareName) {
     const archive = await page.evaluate(
       async ([token, path]) => {
-        // One step: the response is the archive, written as the walk runs.
-        // That is what lets a folder of any size download without the server
-        // holding it, and why there is no length to declare.
-        const res = await fetch('/api/v1/files/archive', {
+        // Two steps, and neither holds an archive. The post names the
+        // selection; the get walks it into the response, which is what a
+        // browser navigates to so the bytes land as they arrive.
+        const prep = await fetch('/api/v1/files/archive', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Sc-Csrf': token },
           body: JSON.stringify({ paths: [path], name: 'test' })
         })
+        const ticket = await prep.json()
+        const res = await fetch(ticket.url)
         const buf = await res.arrayBuffer()
         return {
+          prepStatus: prep.status,
+          hasSize: 'size' in ticket,
           status: res.status,
           disposition: res.headers.get('content-disposition'),
           type: res.headers.get('content-type'),
@@ -320,6 +324,10 @@ try {
       },
       [csrf, shareName]
     )
+    check('a selection is accepted', archive.prepStatus === 200, `status ${archive.prepStatus}`)
+    // Nothing is built at mint, so there is no size to report. A ticket
+    // carrying one would mean the server built the archive to measure it.
+    check('the ticket promises no size', archive.hasSize === false)
     check('an archive is produced', archive.status === 200, `status ${archive.status}`)
     check('it is served as an archive', archive.type === 'application/zip',
       `type ${archive.type}`)

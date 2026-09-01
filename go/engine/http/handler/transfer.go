@@ -186,6 +186,19 @@ func ArchiveListingOf(l preview.ArchiveListing) ArchiveListingView {
 	return out
 }
 
+// ArchiveTicketView points a client at a selection it can fetch.
+//
+// No size and no length: nothing is built until the fetch asks, so there is no
+// figure to report and the download that follows declares none either.
+type ArchiveTicketView struct {
+	Token string `json:"token"`
+	Name  string `json:"name"`
+
+	// URL is where to get it, absolute from the site root. Built by the
+	// server so a client does not assemble the route itself and get it wrong.
+	URL string `json:"url"`
+}
+
 // IndexEstimateView is what building a name index would cost.
 type IndexEstimateView struct {
 	// IndexBytes is the estimate, as a decimal string: a large corpus runs

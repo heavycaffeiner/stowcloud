@@ -80,6 +80,18 @@ const (
 	ArchivePackedBytes   = 32 << 30
 )
 
+// ArchiveTicketTTL is how long a named selection waits to be fetched.
+//
+// It spans a browser turning a response into a navigation, not a person
+// deciding whether to keep the file. Nothing is built or held while it waits,
+// so a short life costs a caller only a re-post.
+const ArchiveTicketTTL = 5 * time.Minute
+
+// ArchiveTicketsHeld bounds how many selections are named at once. A ticket
+// is a path list rather than an archive, so this stops unbounded minting
+// rather than protecting memory an archive would occupy.
+const ArchiveTicketsHeld = 4096
+
 // ConcurrentRequestsDefault is the default ceiling on requests served at
 // once, and a configurable one. Refuses with 503.
 const ConcurrentRequestsDefault = 512

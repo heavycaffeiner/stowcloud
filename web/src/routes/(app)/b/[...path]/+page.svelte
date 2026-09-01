@@ -40,7 +40,7 @@
     supportsDirectoryPicker
   } from '../../../../lib/upload/directory-picker'
   import { formatBytes } from '../../../../lib/format/bytes'
-  import { saveStream, triggerUrlDownload } from '../../../../lib/format/download'
+  import { triggerUrlDownload } from '../../../../lib/format/download'
   import { jobTray } from '../../../../lib/state/job-tray.svelte'
   import { JobFailedError } from '../../../../lib/state/jobs'
 
@@ -437,11 +437,12 @@
     const paths = entries.map((e) => joinPath(browse.path, e.name))
     const filename = entries.length === 1 ? `${entries[0].name}.zip` : 'archive.zip'
     try {
-      // The response is the archive, written by the server as it walks. The
-      // request is passed rather than awaited here: saveStream opens the file
-      // picker first, while the click that started this still counts as a
-      // user activation.
-      await saveStream(() => api.archive(paths, filename), filename)
+      // A plain navigation, so the browser owns the transfer: bytes land as
+      // they arrive rather than collecting in the tab, and the download shows
+      // up in the browser's own list. Nothing is held server-side either; the
+      // fetch walks the selection into the response.
+      const ticket = await api.archive(paths, filename)
+      triggerUrlDownload(ticket.url, ticket.name)
     } catch (err) {
       if (err instanceof ApiError && err.code === 'rate.limited') {
         // the server caps concurrent archive streams

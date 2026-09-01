@@ -241,6 +241,7 @@ func Table() []route.Route {
 	add("POST", "/files/copy", "files.copy", route.BodyJSON)
 	add("POST", "/files/rename", "files.rename", route.BodyJSON)
 	add("POST", "/files/archive", "files.archive", route.BodyJSON)
+	add("GET", "/files/archive/fetch", "files.archive.fetch", route.BodyNone)
 	add("GET", "/files/archive/list", "files.archive.list", route.BodyNone)
 	add("GET", "/files/recent", "files.recent", route.BodyNone)
 

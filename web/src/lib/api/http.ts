@@ -16,6 +16,7 @@ import {
   type AppPasswordInfo,
   type ApplyOutcome,
   type ArchiveListing,
+  type ArchiveTicket,
   type ArchiveSettingsReq,
   type RateSettingsReq,
   type AuditPage,
@@ -466,18 +467,19 @@ async function del(paths: string[]): Promise<{ results: BatchItemResult[] }> {
 // ── content links & archive download (§8) ──
 
 /**
- * `POST /api/v1/files/archive` streams the ZIP as its own response body.
+ * `POST /api/v1/files/archive` validates the selection and answers where to
+ * fetch it.
  *
- * The server never holds one: the walk writes into the response as it goes,
- * so a folder of any size costs it nothing to serve. That is also why there
- * is no Content-Length and no resume, which a stream cannot offer.
- *
- * The response body is returned rather than collected. `res.blob()` would put
- * the whole archive in the tab's memory before anything reached the disk,
- * which is what took the tab out on a large folder; the caller pipes it
- * instead.
+ * Two steps, and the server holds no archive between them: the ticket names
+ * the paths, and the fetch walks them into the response. The split exists
+ * because this request cannot be the download. It is a POST carrying a path
+ * list and a CSRF header, so a browser cannot navigate to it, and reading its
+ * body means holding the whole archive in the tab before a byte reaches the
+ * disk. The `GET` the ticket points at is a plain navigation the browser
+ * owns: bytes land progressively, at no cost to the tab, and the download
+ * appears in the browser's own list.
  */
-async function archive(paths: string[], name?: string): Promise<Response> {
+async function archive(paths: string[], name?: string): Promise<ArchiveTicket> {
   const headers = new Headers({ 'Content-Type': 'application/json' })
   if (csrfToken) headers.set('Sc-Csrf', csrfToken)
   const res = await fetch(`${BASE}/files/archive`, {
@@ -490,7 +492,7 @@ async function archive(paths: string[], name?: string): Promise<Response> {
     const body = await res.json().catch(() => ({}))
     throw errorFrom(res, body)
   }
-  return res
+  return (await res.json()) as ArchiveTicket
 }
 
 /**

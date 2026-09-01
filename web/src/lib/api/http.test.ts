@@ -119,19 +119,19 @@ describe('httpApi job wrappers', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('archive() hands back the streamed response rather than collecting it', async () => {
+  it('archive() answers the ticket without reading any archive', async () => {
+    const ticket = { token: 't', name: 'a.zip', url: '/api/v1/files/archive/fetch?token=t' }
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(new Response(new Blob(['PK...']), { status: 200, headers: { 'Content-Type': 'application/zip' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(ticket), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const res = await httpApi.archive(['/home/a.txt'], 'a.zip')
+    const got = await httpApi.archive(['/home/a.txt'], 'a.zip')
 
-    // Unread: the caller pipes the body to disk, because a folder can be any
-    // size and collecting it first is what took the tab out.
-    expect(res.bodyUsed).toBe(false)
-    expect(res.headers.get('Content-Type')).toBe('application/zip')
+    // One request: the bytes come from the navigation the url names, which
+    // the browser owns, not from a second fetch the tab has to buffer.
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(got.url).toBe(ticket.url)
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/files/archive')
   })
 

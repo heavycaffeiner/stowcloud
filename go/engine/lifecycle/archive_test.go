@@ -6,6 +6,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -115,15 +116,45 @@ func postRaw(t *testing.T, url, token string, body any) (int, http.Header, []byt
 	return resp.StatusCode, resp.Header, readAll(t, resp)
 }
 
-// fetchArchive asks for an archive and returns it.
+// fetchArchive asks for an archive and follows the ticket to its bytes.
 //
-// One step: the response is the zip. There is no ticket to follow, because
-// the archive is written into the response as it is built rather than held
-// and handed over afterwards.
+// Two steps, because that is the surface: the post names the selection and
+// the get streams it. A test asserting on the archive itself does not care
+// which request produced the bytes, so it goes through here.
 func fetchArchive(t *testing.T, base, token string, body any) (int, http.Header, []byte) {
 	t.Helper()
 
-	return postRaw(t, base+"/api/v1/files/archive", token, body)
+	status, header, raw := postRaw(t, base+"/api/v1/files/archive", token, body)
+	if status != http.StatusOK {
+		return status, header, raw
+	}
+
+	var ticket struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(raw, &ticket); err != nil {
+		t.Fatalf("the ticket does not decode: %s", raw)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, base+ticket.URL, nil)
+	if err != nil {
+		t.Fatalf("building the fetch: %v", err)
+	}
+	req.SetBasicAuth("ignored", token)
+	res, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("fetching the archive: %v", err)
+	}
+	defer func() {
+		if cerr := res.Body.Close(); cerr != nil {
+			t.Errorf("closing the fetch: %v", cerr)
+		}
+	}()
+	got, rerr := io.ReadAll(res.Body)
+	if rerr != nil {
+		t.Fatalf("reading the archive: %v", rerr)
+	}
+	return res.StatusCode, res.Header, got
 }
 
 // The archive arrives as a stream rather than as a length the client waits
@@ -153,6 +184,44 @@ func TestAnArchiveIsStreamed(t *testing.T) {
 	}
 	if _, err := zip.NewReader(bytes.NewReader(body), int64(len(body))); err != nil {
 		t.Fatalf("the stream is not a readable archive: %v", err)
+	}
+}
+
+// A ticket is not a link anybody can follow.
+//
+// It is a capability, and it lands in a browser's history and download list.
+// Without a credential on the fetch, sharing that history would share the
+// files.
+func TestAnArchiveTicketNeedsACredential(t *testing.T) {
+	base, token, share := contentShare(t, everyPerm(), []byte("private"))
+
+	status, _, raw := postRaw(t, base+"/api/v1/files/archive", token,
+		map[string]any{"paths": []string{"/" + share}, "name": "mine.zip"})
+	if status != http.StatusOK {
+		t.Fatalf("archiving answered %d: %s", status, raw)
+	}
+	var ticket struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(raw, &ticket); err != nil {
+		t.Fatalf("the ticket does not decode: %s", raw)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, base+ticket.URL, nil)
+	if err != nil {
+		t.Fatalf("building the fetch: %v", err)
+	}
+	res, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("fetching the archive: %v", err)
+	}
+	defer func() {
+		if cerr := res.Body.Close(); cerr != nil {
+			t.Errorf("closing the fetch: %v", cerr)
+		}
+	}()
+	if res.StatusCode == http.StatusOK {
+		t.Error("an archive was fetched with no credential")
 	}
 }
 

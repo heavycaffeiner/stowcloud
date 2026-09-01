@@ -24,6 +24,7 @@ import {
   type AppPasswordInfo,
   type ApplyOutcome,
   type ArchiveListing,
+  type ArchiveTicket,
   type ArchiveSettingsReq,
   type RateSettingsReq,
   type AuditPage,
@@ -567,14 +568,18 @@ function findEntryById(id: number): { entry: Entry; dirPath: string } | null {
   return null
 }
 
-/** Mock counterpart of `http.ts`'s `archive`. The real server streams the zip
- *  as the response body, so this answers a Response the caller pipes rather
- *  than a blob it collects. */
-async function archive(paths: string[], _name?: string): Promise<Response> {
+/** Mock counterpart of `http.ts`'s `archive`. The real server validates the
+ *  selection and answers where to fetch it; nothing is built until that
+ *  navigation, so the ticket carries no size. */
+async function archive(paths: string[], name?: string): Promise<ArchiveTicket> {
   await delay(120)
   if (paths.length === 0) throw new ApiError(422, { code: 'fs.invalid_name', message: 'paths must not be empty' })
-  const body = `mock zip archive of:\n${paths.join('\n')}\n`
-  return new Response(body, { headers: { 'Content-Type': 'application/zip' } })
+  const token = `mock-archive-${paths.length}`
+  return {
+    token,
+    name: name ?? 'archive.zip',
+    url: `/api/v1/files/archive/fetch?token=${encodeURIComponent(token)}`
+  }
 }
 
 /** A fixed listing for any `.zip`, since the mock stores no archive bytes. */

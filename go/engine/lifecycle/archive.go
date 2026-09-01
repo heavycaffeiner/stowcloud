@@ -10,8 +10,11 @@ package lifecycle
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
@@ -38,18 +41,18 @@ type archiveRequest struct {
 	Name string `json:"name"`
 }
 
-// filesArchive streams a zip of the named subtrees.
+// filesArchive validates a selection and answers where to fetch it.
 //
-// Streamed rather than built first. Building gave a length and a resumable
-// range, at the cost of holding the whole archive: bounded per download, per
-// account and in total, and every folder over the bound fell back to a stream
-// anyway. Two paths, two sets of failures, and the one an operator meets on a
-// large folder was the fallback. One path is the honest answer.
+// Two steps, and neither holds an archive. The POST cannot be the download:
+// its body is the only place bytes could go, and reading a POST body means
+// collecting the whole archive in the tab before any of it reaches the disk,
+// which is what a folder download has to avoid. The GET that follows is a
+// navigation the browser owns, so the bytes land as they arrive.
 //
-// Everything that can refuse happens before the first byte. Once the response
-// is committed there is no status left: the client has been told 200 and is
-// already saving a file, so a failure can only end the stream and be
-// recorded.
+// Everything that can refuse happens here, before any token exists: an
+// unreadable path, too many roots, a name that is not one. The fetch
+// re-resolves anyway, so a grant revoked between the two requests is caught
+// there too.
 func (e *Engine) filesArchive(c *fiber.Ctx) error {
 	owner, ok := ownerOf(c)
 	if !ok {
@@ -67,11 +70,61 @@ func (e *Engine) filesArchive(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
 	}
 
-	// Every path is resolved before anything is written, so a selection
-	// holding one unreadable entry is refused rather than delivered as a
-	// partial archive the person believes is complete.
-	roots := make([]core.Resolved, 0, len(req.Paths))
+	// Every path is resolved before a token is minted, so a selection holding
+	// one unreadable entry is refused now rather than delivered as a partial
+	// archive the person believes is complete.
 	for _, p := range req.Paths {
+		if _, err := e.resolve(owner, p, acl.Read|acl.Download); err != nil {
+			return fail(c, err)
+		}
+	}
+
+	name, ok := archiveFilename(req.Name)
+	if !ok {
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
+
+	token, terr := archiveToken()
+	if terr != nil {
+		return fail(c, terr)
+	}
+	if !e.Archives.Put(token, &archive.Ticket{Name: name, Paths: req.Paths, Owner: int64(owner)}) {
+		return refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
+	}
+
+	return writeJSON(c, fiber.StatusOK, handler.ArchiveTicketView{
+		Token: token,
+		Name:  name,
+		URL:   "/api/v1/files/archive/fetch?token=" + url.QueryEscape(token),
+	})
+}
+
+// filesArchiveFetch streams the archive a ticket names.
+//
+// The walk runs into the response as it goes, so a selection of any size costs
+// the server nothing to serve. The price is a download with no declared length
+// and no resume, which is the trade for being able to download a folder at
+// all.
+//
+// Everything that can refuse happens before the first byte. Once the response
+// is committed there is no status left: the client has been told 200 and is
+// already saving a file, so a failure can only end the stream and be recorded.
+func (e *Engine) filesArchiveFetch(c *fiber.Ctx) error {
+	owner, ok := ownerOf(c)
+	if !ok {
+		return refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+	}
+
+	t, ok := e.Archives.Get(c.Query("token"), int64(owner))
+	if !ok {
+		return refuse(c, apierr.Classified{Class: apierr.NotFound})
+	}
+
+	// Re-resolved rather than resolved once at mint: a grant revoked in
+	// between must refuse the download, not serve it on the strength of a
+	// check that passed a minute ago.
+	roots := make([]core.Resolved, 0, len(t.Paths))
+	for _, p := range t.Paths {
 		r, err := e.resolve(owner, p, acl.Read|acl.Download)
 		if err != nil {
 			return fail(c, err)
@@ -79,11 +132,19 @@ func (e *Engine) filesArchive(c *fiber.Ctx) error {
 		roots = append(roots, r)
 	}
 
-	name, ok := archiveFilename(req.Name)
-	if !ok {
-		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	return e.streamArchive(c, roots, t.Name)
+}
+
+// archiveToken mints a fetch ticket.
+//
+// From crypto/rand because the ticket is a capability: a guessable one would
+// let somebody fetch an archive built for another account.
+func archiveToken() (string, error) {
+	var raw [32]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
 	}
-	return e.streamArchive(c, roots, name)
+	return base64.RawURLEncoding.EncodeToString(raw[:]), nil
 }
 
 // streamArchive writes the zip into a committed response.
