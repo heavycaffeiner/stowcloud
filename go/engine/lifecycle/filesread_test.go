@@ -13,7 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
@@ -571,10 +573,47 @@ func TestCopyingAFile(t *testing.T) {
 		t.Fatal("the copy reports no job id, so a client cannot poll it")
 	}
 
+	// The job writes after the request returns, so waiting is what keeps the
+	// temporary directory from being removed underneath it: an unwaited copy
+	// leaves the cleanup racing a live writer, and the databases close while
+	// the journal is still being written.
+	awaitJobToken(t, base, token, stringField(view, "id"))
+
 	// The source is untouched. A copy that removed it would be a move.
 	if code, _, _ := download(t, base, token, "/"+share+"/doc.bin", ""); code != http.StatusOK {
 		t.Error("the source is gone after a copy")
 	}
+}
+
+// awaitJobToken polls one job until it leaves the running state, using an app
+// password rather than a session.
+//
+// A test that starts a job and returns leaves the runner writing into a
+// t.TempDir the framework is about to remove, which fails the test with a
+// cleanup error naming a directory that is merely still in use.
+func awaitJobToken(t *testing.T, base, token, id string) {
+	t.Helper()
+	if id == "" {
+		return
+	}
+	clk := clock.System()
+	deadline := clk.Now().Add(20 * time.Second)
+	for clk.Now().Before(deadline) {
+		status, raw := authed(t, http.MethodGet, base+"/api/v1/jobs/"+id, token)
+		if status != http.StatusOK {
+			// The job row is gone, which means it finished and was swept.
+			return
+		}
+		var job map[string]any
+		if err := json.Unmarshal(raw, &job); err != nil {
+			t.Fatalf("decoding the job: %v", err)
+		}
+		if state, isString := job["state"].(string); !isString || state != "running" {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatal("the job never left the running state")
 }
 
 // The rollup reports what is beneath a directory.

@@ -163,41 +163,41 @@ describe('mockApi admin share management', () => {
   // setting to add folders".
 
   it('creates a share and it appears in the list', async () => {
-    const created = await mockApi.adminCreateShare({ name: 'Recipes', host_path: '/srv/recipes' })
+    const created = await mockApi.adminCreateShare({ name: 'Recipes', host: '/srv/recipes' })
     expect(created.id).toBeGreaterThan(0)
     const shares = await mockApi.adminListShares()
     expect(shares.some((s) => s.id === created.id)).toBe(true)
   })
 
   it('refuses an empty name', async () => {
-    await expect(mockApi.adminCreateShare({ name: '  ', host_path: '/srv/x' })).rejects.toMatchObject({
+    await expect(mockApi.adminCreateShare({ name: '  ', host: '/srv/x' })).rejects.toMatchObject({
       code: 'fs.invalid_name'
     })
   })
 
   it('refuses a duplicate name', async () => {
-    await expect(mockApi.adminCreateShare({ name: 'Documents', host_path: '/srv/other' })).rejects.toMatchObject({
+    await expect(mockApi.adminCreateShare({ name: 'Documents', host: '/srv/other' })).rejects.toMatchObject({
       code: 'fs.invalid_name'
     })
   })
 
   it('refuses a host path already used by another share', async () => {
-    await expect(mockApi.adminCreateShare({ name: 'Other Docs', host_path: '/srv/documents' })).rejects.toMatchObject({
+    await expect(mockApi.adminCreateShare({ name: 'Other Docs', host: '/srv/documents' })).rejects.toMatchObject({
       code: 'fs.invalid_name'
     })
   })
 
   it('renames and repoints a share', async () => {
-    const created = await mockApi.adminCreateShare({ name: 'Books', host_path: '/srv/books' })
-    const updated = await mockApi.adminUpdateShare(created.id, { name: 'Ebooks', host_path: '/srv/ebooks' })
+    const created = await mockApi.adminCreateShare({ name: 'Books', host: '/srv/books' })
+    const updated = await mockApi.adminUpdateShare(created.id, { name: 'Ebooks', host: '/srv/ebooks' })
     expect(updated.name).toBe('Ebooks')
     // The host path is never answered: it is the server's disk layout, and
     // a client that learns it learns where to try reaching past its shares.
-    expect('host_path' in updated).toBe(false)
+    expect('host' in updated).toBe(false)
   })
 
   it('is off by default and toggleable', async () => {
-    const created = await mockApi.adminCreateShare({ name: 'Backups', host_path: '/srv/backups' })
+    const created = await mockApi.adminCreateShare({ name: 'Backups', host: '/srv/backups' })
     expect(created.trash_enabled).toBe(false)
     const on = await mockApi.adminUpdateShare(created.id, { trash_enabled: true })
     expect(on.trash_enabled).toBe(true)
@@ -206,7 +206,7 @@ describe('mockApi admin share management', () => {
   })
 
   it('deletes a share and it stops being listed', async () => {
-    const created = await mockApi.adminCreateShare({ name: 'Scratch', host_path: '/srv/scratch' })
+    const created = await mockApi.adminCreateShare({ name: 'Scratch', host: '/srv/scratch' })
     await mockApi.adminDeleteShare(created.id)
     const shares = await mockApi.adminListShares()
     expect(shares.some((s) => s.id === created.id)).toBe(false)

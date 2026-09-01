@@ -23,7 +23,7 @@ export interface SetupCreateAdminReq {
   bind?: string
   /** The folder to start serving. Omitted lands on the empty home, which
    *  offers the same thing one click later. */
-  first_share?: { name: string; host_path: string }
+  first_share?: { name: string; host: string }
 }
 
 /** What setup noticed and did not refuse over. The one that matters is a host

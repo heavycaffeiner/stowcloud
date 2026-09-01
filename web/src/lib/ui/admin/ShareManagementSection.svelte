@@ -85,7 +85,7 @@
     }
     adding = true
     try {
-      const created = await api.adminCreateShare({ name: addName.trim(), host_path: addHostPath.trim() })
+      const created = await api.adminCreateShare({ name: addName.trim(), host: addHostPath.trim() })
       noteSMB(created)
       shares = [...shares, created]
       addOpen = false
@@ -132,7 +132,7 @@
     }
     editing = true
     try {
-      const updated = await api.adminUpdateShare(editTarget.id, { name: editName.trim(), host_path: editHostPath.trim() })
+      const updated = await api.adminUpdateShare(editTarget.id, { name: editName.trim(), host: editHostPath.trim() })
       noteSMB(updated)
       shares = shares.map((s) => (s.id === updated.id ? updated : s))
       editTarget = null

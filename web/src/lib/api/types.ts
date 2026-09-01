@@ -353,7 +353,7 @@ export const ALL_GRANT_PERMS: GrantPermName[] = [
 
 /** A share this deployment has registered (`go/internal/core`) —
  *  used both by the grant-creation screen's picker (which only reads
- *  `id`/`name`) and by the share management screen, which is why `host_path` is here — an admin adding/editing a
+ *  `id`/`name`) and by the share management screen, which is why the host path is here — an admin adding/editing a
  *  folder share has to see and set where it points on the host. This is a
  *  deliberate, narrow exception to `sc-vfs`'s "never leak a host path" rule:
  *  that rule is about request-handling responses/errors/logs to non-admins,
@@ -417,7 +417,10 @@ export interface SmbApplyReport {
 /** `POST /api/admin/shares` body. */
 export interface CreateShareReq {
   name: string
-  host_path: string
+  /** Where the folder lives on the server's disk. The wire calls this `host`;
+   *  an earlier spelling of `host_path` was refused by the decoder, which does
+   *  not accept unknown fields, so no share could be created from the screen. */
+  host: string
 }
 
 /** `PATCH /api/admin/shares/{id}` body — all fields optional, so a rename
@@ -425,7 +428,7 @@ export interface CreateShareReq {
  *  together with or without a trash toggle. */
 export interface UpdateShareReq {
   name?: string
-  host_path?: string
+  host?: string
   trash_enabled?: boolean
 }
 

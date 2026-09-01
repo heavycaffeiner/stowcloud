@@ -1937,9 +1937,9 @@ async function adminListShares(): Promise<AdminShare[]> {
   return mockShares.map(shareOf)
 }
 
-/** No real filesystem to check `host_path` against in mock mode, so this
+/** No real filesystem to check `host` against in mock mode, so this
  *  only reproduces the checks that don't need one: empty/duplicate name and
- *  an overlapping `host_path` — the real backend's nonexistent-path/
+ *  an overlapping host path — the real backend's nonexistent-path/
  *  not-a-directory/unreadable checks (`go/internal/core/root.go`)
  *  have no mock equivalent. */
 async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
@@ -1951,10 +1951,10 @@ async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
   if (mockShares.some((s) => s.name === name)) {
     throw new ApiError(422, { code: 'fs.invalid_name', message: `a share named '${name}' already exists` })
   }
-  if (mockShares.some((s) => s.hostPath === req.host_path)) {
+  if (mockShares.some((s) => s.hostPath === req.host)) {
     throw new ApiError(422, { code: 'fs.invalid_name', message: `overlaps existing share` })
   }
-  const share: MockShare = { id: nextShareId++, name, hostPath: req.host_path, trash_enabled: false }
+  const share: MockShare = { id: nextShareId++, name, hostPath: req.host, trash_enabled: false }
   mockShares = [...mockShares, share]
   return shareOf(share)
 }
@@ -1977,7 +1977,7 @@ async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<Admi
   const updated: MockShare = {
     ...share,
     name: nextName,
-    hostPath: patch.host_path ?? share.hostPath,
+    hostPath: patch.host ?? share.hostPath,
     trash_enabled: patch.trash_enabled ?? share.trash_enabled
   }
   mockShares = mockShares.map((s) => (s.id === id ? updated : s))

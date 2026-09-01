@@ -74,9 +74,33 @@ func inlinePairs() []inlinePair {
 	return nil
 }
 
+// sendPair is one client request body and the Go struct that decodes it.
+//
+// The other direction from pair: here the client is the sender, and a field it
+// puts on the wire that the struct has no tag for is refused outright, because
+// the decoder disallows unknown fields. That is a 400 on a button press, with
+// nothing on screen naming the field.
+type sendPair struct {
+	iface  string
+	goType string
+	// skip names fields the client sends that this struct deliberately does
+	// not decode, with the reason.
+	skip map[string]string
+}
+
+func sendPairs() []sendPair {
+	return []sendPair{
+		// The share screen sent host_path and the handler decoded host, so no
+		// folder could be added: the request was refused before it reached a
+		// line that could explain why.
+		{iface: "CreateShareReq", goType: "createShareRequest"},
+		{iface: "UpdateShareReq", goType: "updateShareRequest"},
+	}
+}
+
 func main() {
-	if len(os.Args) != 3 {
-		say(os.Stderr, "usage: contractcheck <types.ts> <handler-dir>"+"\n")
+	if len(os.Args) != 4 {
+		say(os.Stderr, "usage: contractcheck <types.ts> <handler-dir> <request-dir>"+"\n")
 		os.Exit(2)
 	}
 	ts, err := os.ReadFile(os.Args[1])
@@ -87,6 +111,13 @@ func main() {
 	goSrc, err := readGo(os.Args[2])
 	if err != nil {
 		say(os.Stderr, "contractcheck: reading the handlers: %v\n", err)
+		os.Exit(2)
+	}
+	// The request structs live with the handlers that decode them rather than
+	// with the views, so they are read from their own directory.
+	reqSrc, err := readGo(os.Args[3])
+	if err != nil {
+		say(os.Stderr, "contractcheck: reading the request decoders: %v\n", err)
 		os.Exit(2)
 	}
 
@@ -147,13 +178,47 @@ func main() {
 			bad += len(missing)
 		}
 	}
+	// The other direction: a field the client sends that the decoder has no
+	// tag for is refused, because it disallows unknown fields. Optional
+	// fields count too, since sending one is what trips the refusal.
+	for _, p := range sendPairs() {
+		send, ok := allFields(string(ts), p.iface)
+		if !ok {
+			say(os.Stdout, "contractcheck: no interface %s in the client types\n", p.iface)
+			bad++
+			continue
+		}
+		decoded, ok := jsonFields(reqSrc, p.goType)
+		if !ok {
+			say(os.Stdout, "contractcheck: no struct %s in the request decoders\n", p.goType)
+			bad++
+			continue
+		}
+		var unknown []string
+		for _, f := range send {
+			if _, taken := decoded[f]; taken {
+				continue
+			}
+			if _, allowed := p.skip[f]; allowed {
+				continue
+			}
+			unknown = append(unknown, f)
+		}
+		sort.Strings(unknown)
+		if len(unknown) > 0 {
+			say(os.Stdout, "%s sends %s, and %s does not decode it: the request is refused\n",
+				p.iface, strings.Join(unknown, ", "), p.goType)
+			bad += len(unknown)
+		}
+	}
 
 	if bad > 0 {
-		say(os.Stdout, "\ncontractcheck: %d field(s) the client reads and the server never sends.\n", bad)
-		say(os.Stdout, "Add the field, or record it in the pair's skip map with the reason."+"\n")
+		say(os.Stdout, "\ncontractcheck: %d field(s) the two sides disagree on.\n", bad)
+		say(os.Stdout, "Match the name, or record it in the pair's skip map with the reason."+"\n")
 		os.Exit(1)
 	}
-	say(os.Stdout, "contractcheck: %d contract(s), no drift.\n", len(pairs())+len(inlinePairs()))
+	say(os.Stdout, "contractcheck: %d contract(s), no drift.\n",
+		len(pairs())+len(inlinePairs())+len(sendPairs()))
 }
 
 // readGo concatenates every .go file in a directory, which is enough: this
@@ -198,6 +263,24 @@ func requiredFields(ts, iface string) ([]string, bool) {
 		if f[2] == "?" {
 			continue // optional: the server may omit it
 		}
+		out = append(out, f[1])
+	}
+	return out, true
+}
+
+// allFields returns every field name of one interface, optional included.
+//
+// Optional matters in the sending direction: a field the client omits is fine,
+// and one it sends that the decoder does not know refuses the whole request.
+func allFields(ts, iface string) ([]string, bool) {
+	re := regexp.MustCompile(`(?s)export interface ` + iface + ` \{(.*?)\n\}`)
+	m := re.FindStringSubmatch(ts)
+	if m == nil {
+		return nil, false
+	}
+	body := tsLineNote.ReplaceAllString(tsComment.ReplaceAllString(m[1], ""), "")
+	var out []string
+	for _, f := range tsField.FindAllStringSubmatch(body, -1) {
 		out = append(out, f[1])
 	}
 	return out, true

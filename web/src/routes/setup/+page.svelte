@@ -130,7 +130,7 @@
         app_hosts: toList(appHosts),
         trusted_proxies: toList(trustedProxies),
         bind: bind.trim() || undefined,
-        first_share: shareName.trim() ? { name: shareName.trim(), host_path: sharePath.trim() } : undefined
+        first_share: shareName.trim() ? { name: shareName.trim(), host: sharePath.trim() } : undefined
       })
       warnings = result.warnings
       bindFailed = result.bind_failed === true

@@ -298,7 +298,7 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # by a person clicking something that then did nothing.
   run "contractcheck (the client's fields are sent)" \
       ingo_host go run ./tools/contractcheck \
-        ../web/src/lib/api/types.ts ./engine/http/handler
+        ../web/src/lib/api/types.ts ./engine/http/handler ./engine/lifecycle
   # contractcheck compares response shapes. This compares the settings surface,
   # where the drift runs the other way: the section handler stores the client's
   # JSON object unchanged, on purpose, so a field name only the client knows is
