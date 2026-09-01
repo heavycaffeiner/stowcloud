@@ -22,7 +22,7 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
-    image: stowcloud:core-dev
+    image: stowcloud:dev
     restart: unless-stopped
 
     # The uid the server runs as; see docker-compose.yml.
@@ -70,7 +70,7 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile.smb
-    image: stowcloud:smb-dev
+    image: stowcloud-smb-daemon:dev
     restart: unless-stopped
 
     cap_drop: [ALL]

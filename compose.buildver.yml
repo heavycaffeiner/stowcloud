@@ -1,14 +1,10 @@
 # Stowcloud, built from this working tree instead of pulled.
 #
 #   docker compose -f compose.buildver.yml up -d --build
+#   docker compose -f compose.buildver.yml exec sc cat /var/lib/stowcloud/setup-token
 #
-# Same layout and same hardening as docker-compose.yml; the difference is the
-# `build:` blocks and a separate project name, so this can run beside a
-# released stack without the two fighting over container names or volumes.
-#
-# The setup token is in the log:
-#
-#   docker compose -f compose.buildver.yml logs sc | grep 'setup token'
+# Same layout and hardening as docker-compose.yml, under its own project name
+# so it can run beside a released stack.
 
 name: stowcloud-build
 
@@ -17,12 +13,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # The frontend bundle is embedded in the binary, so a change under web/
-    # needs --build rather than a restart.
-    image: stowcloud:core-dev
+    # The frontend is embedded in the binary, so a change under web/ needs
+    # --build rather than a restart.
+    image: stowcloud:dev
     restart: unless-stopped
 
-    # The uid the server runs as; see docker-compose.yml.
     environment:
       PUID: 1000
       PGID: 1000
@@ -31,20 +26,12 @@ services:
     tmpfs:
       - /tmp:size=64m
     cap_drop: [ALL]
-    # Handed back so the entrypoint can become the service account: SETUID and
-    # SETGID for the drop itself, CHOWN to hand over the data directory when
-    # PUID names a uid that does not already own it. The server runs without
-    # them; they are spent before it starts.
-    #
-    # Starting the container with `user: "1000:1000"` instead skips all three,
-    # and skips PUID/PGID with them.
     cap_add: [SETUID, SETGID, CHOWN]
     security_opt:
       - no-new-privileges:true
 
     ports:
-      # Loopback only. A development build is not something to publish to the
-      # LAN by accident, and the released file is the one that does that.
+      # Loopback only. The released file is the one that publishes to the LAN.
       - "127.0.0.1:8443:8443"
 
     volumes:
@@ -66,16 +53,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.smb
-    image: stowcloud:smb-dev
+    image: stowcloud-smb-daemon:dev
     restart: unless-stopped
 
-    # Bridged rather than host networking, unlike the released file. A
-    # development stack should not claim the host's port 445, and \\NAME
-    # resolution is the only thing given up: the address still mounts.
-    #
-    # Set SC_SMB_BIND_IP to the host address to serve on. It is deliberately
-    # not defaulted to 0.0.0.0: that would put SMB on every interface of the
-    # machine you are developing on.
+    # Bridged rather than host networking: a development stack should not claim
+    # the host's port 445. Only \\NAME resolution is given up. Set
+    # SC_SMB_BIND_IP to serve on a real address.
     ports:
       - "${SC_SMB_BIND_IP:-127.0.0.1}:445:445"
 

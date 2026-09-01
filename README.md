@@ -19,7 +19,7 @@ on that machine.
 </picture>
 
 > Every screenshot on this page comes from `docker compose up` of
-> `ghcr.io/heavycaffeiner/stowcloud:core` at revision `d82d880`, the image
+> `ghcr.io/heavycaffeiner/stowcloud:stable` at revision `d82d880`, the image
 > this repository's CI built and published, running on a Rocky Linux 10 host
 > and browsing real files on its disk. Nothing is mocked and nothing was
 > staged in a design tool.

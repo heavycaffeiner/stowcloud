@@ -1,31 +1,25 @@
 name: docker
 
-# Builds the `sc:core` and `sc:smb` images, actually runs both, and (on master
-# only) publishes what passed to GHCR. The running part is the verification
-# this repo's own dev machine cannot do (no Docker on that Windows box; see the
-# deploy-work report this workflow accompanies). GitHub's runners ship Docker
-# preinstalled, so this is the first place any of this gets proven for real
-# rather than dry-read.
+# Builds the server and the SMB sidecar images, actually runs both, and (on
+# master only) publishes what passed to GHCR. GitHub's runners ship Docker
+# preinstalled, so this is where any of this gets proven for real.
 #
 # Nothing is published that has not first been built and smoke-tested in this
 # same run: every `publish-*` job `needs:` the job that proved its image. A
 # pull request runs the proving half and stops there — a fork's token has no
 # write access to this registry, and an unreviewed branch has no business
-# moving the `:core` tag.
+# moving a channel tag.
 #
 # ---------------------------------------------------------------------------
-# Two channels
+# Two packages, two channels
 # ---------------------------------------------------------------------------
-# A push to master publishes the nightly channel, `:core-nightly` and
-# `:smb-nightly`. A pushed `v*` tag publishes the stable channel: `:core-stable`
-# and `:smb-stable`, the version-stamped `:core-<version>`, and the bare
-# `:core` / `:smb` that README and every existing deployment already pull. The
-# bare tags keep being written so a self-hoster who never reads this file still
-# tracks releases rather than silently freezing on whatever they last pulled.
+# The server is `stowcloud` and the sidecar is `stowcloud-smb-daemon`, each its
+# own GHCR package. A push to master publishes `:nightly`. A pushed `v*` tag
+# publishes `:stable`, `:latest` as its alias, and the bare version `:0.5.0`.
 #
-# Both channels also write `:core-<sha>` / `:smb-<sha>`. That is the tag to pin
-# to once a deployment matters: a channel tag moves under you, a commit-stamped
-# one cannot.
+# Both channels also write `:<sha>`. That is the tag to pin to once a
+# deployment matters: a channel tag moves under you, a commit-stamped one
+# cannot.
 #
 # A `v*` tag also publishes the GitHub release, from
 # `docs/releases/<tag>.md` in the tagged commit. Cutting one is therefore:
@@ -82,6 +76,9 @@ env:
   # rather than hardcoding means a fork publishes to its own namespace instead
   # of failing against one it cannot write to.
   IMAGE: ghcr.io/${{ github.repository }}
+  # The sidecar is its own package rather than a tag prefix on the first, so
+  # each carries its own channel tags and its own version history.
+  SMB_IMAGE: ghcr.io/${{ github.repository }}-smb-daemon
   # `image.source` is what links a GHCR package back to its repository, and
   # under AGPL-3.0 it is also the source offer travelling with the artifact —
   # `revision` pins which commit that offer refers to.
@@ -600,13 +597,10 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           load: true
-          tags: stowcloud:core-dev
+          tags: stowcloud:dev
           cache-from: type=gha,scope=core-amd64
 
-      # The sidecar too, because the compose file starts both. It used to sit
-      # behind a profile and never came up in this job; now that the switch in
-      # the interface is the only thing gating SMB, a `compose up` that could
-      # not start it is exactly the failure this job exists to catch.
+      # The sidecar too, because the compose file starts both.
       - name: Build the sidecar the compose file will run
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -614,7 +608,7 @@ jobs:
           file: ./Dockerfile.smb
           platforms: linux/amd64
           load: true
-          tags: stowcloud:smb-dev
+          tags: stowcloud-smb-daemon:dev
           cache-from: type=gha,scope=smb-amd64
 
       - name: docker compose up -d
@@ -832,31 +826,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The channel tags and an immutable one, written together. Which channel
-      # depends on what was pushed; the commit-stamped tag is written either
-      # way, and is what makes "which build is this" answerable after a channel
-      # tag has moved on.
+      # The channel tags and an immutable one, written together. A tag push is
+      # a release and gets stable, latest and the bare version; anything else
+      # is nightly. The commit-stamped tag is written either way, and is what
+      # makes "which build is this" answerable after a channel tag has moved.
       - name: Staple both architectures into the pulled tags
         run: |
           cd /tmp/digests
-          # Both legs, or none: a one-entry list would publish `:core` as a
+          # Both legs, or none: a one-entry list would publish the channel as a
           # single-architecture image and silently drop arm64 for everyone
           # already pulling it.
           count=$(ls -1 | wc -l)
           [ "$count" -eq 2 ] || { echo "expected 2 digests, found ${count}:"; ls -la; exit 1; }
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            channel="-t ${IMAGE}:core-stable -t ${IMAGE}:core -t ${IMAGE}:core-${GITHUB_REF_NAME#v}"
+            channel="-t ${IMAGE}:stable -t ${IMAGE}:latest -t ${IMAGE}:${GITHUB_REF_NAME#v}"
           else
-            channel="-t ${IMAGE}:core-nightly"
+            channel="-t ${IMAGE}:nightly"
           fi
           echo "publishing ${channel}"
           docker buildx imagetools create \
             $channel \
-            -t "${IMAGE}:core-${GITHUB_SHA}" \
+            -t "${IMAGE}:${GITHUB_SHA}" \
             $(printf "${IMAGE}@sha256:%s " *)
 
       - name: Show what a `docker pull` will now resolve to
-        run: docker buildx imagetools inspect "${IMAGE}:core-${GITHUB_SHA}"
+        run: docker buildx imagetools inspect "${IMAGE}:${GITHUB_SHA}"
 
   publish-smb:
     name: publish sc:smb (${{ matrix.arch }}, by digest)
@@ -895,7 +889,7 @@ jobs:
           build-args: |
             ALPINE_DIGEST=${{ matrix.alpine }}
           labels: ${{ env.LABELS }}
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.SMB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=smb-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=smb-${{ matrix.arch }}
 
@@ -939,18 +933,18 @@ jobs:
           count=$(ls -1 | wc -l)
           [ "$count" -eq 2 ] || { echo "expected 2 digests, found ${count}:"; ls -la; exit 1; }
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
-            channel="-t ${IMAGE}:smb-stable -t ${IMAGE}:smb -t ${IMAGE}:smb-${GITHUB_REF_NAME#v}"
+            channel="-t ${SMB_IMAGE}:stable -t ${SMB_IMAGE}:latest -t ${SMB_IMAGE}:${GITHUB_REF_NAME#v}"
           else
-            channel="-t ${IMAGE}:smb-nightly"
+            channel="-t ${SMB_IMAGE}:nightly"
           fi
           echo "publishing ${channel}"
           docker buildx imagetools create \
             $channel \
-            -t "${IMAGE}:smb-${GITHUB_SHA}" \
-            $(printf "${IMAGE}@sha256:%s " *)
+            -t "${SMB_IMAGE}:${GITHUB_SHA}" \
+            $(printf "${SMB_IMAGE}@sha256:%s " *)
 
       - name: Show what a `docker pull` will now resolve to
-        run: docker buildx imagetools inspect "${IMAGE}:smb-${GITHUB_SHA}"
+        run: docker buildx imagetools inspect "${SMB_IMAGE}:${GITHUB_SHA}"
 
   # ---------------------------------------------------------------------------
   # The GitHub release

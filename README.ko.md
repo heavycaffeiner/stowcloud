@@ -19,7 +19,7 @@
 </picture>
 
 > 이 문서의 스크린샷은 전부 이 저장소의 CI가 빌드해서 게시한 이미지
-> `ghcr.io/heavycaffeiner/stowcloud:core`(리비전 `d82d880`)를
+> `ghcr.io/heavycaffeiner/stowcloud:stable`(리비전 `d82d880`)를
 > `docker compose up`으로 띄운 화면입니다. Rocky Linux 10 호스트에서 그 디스크의
 > 실제 파일을 열어 찍었습니다. 목업도 아니고 디자인 도구로 꾸민 것도 아닙니다.
 

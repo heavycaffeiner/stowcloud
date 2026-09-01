@@ -1,134 +1,67 @@
-# Stowcloud, released images.
+# Stowcloud.
 #
 #   docker compose up -d
+#   docker compose exec sc cat /var/lib/stowcloud/setup-token
 #
-# Then open https://localhost:8443 and use the setup token from the log:
-#
-#   docker compose logs sc | grep 'setup token'
-#
-# The certificate is generated on first run and signed by nobody, so the
-# browser warns once. That is the expected state for an address with no public
-# name; put a reverse proxy in front for a real certificate.
-#
-# Files go in ./shares. Everything else lives in a named volume, and every
-# other setting is on the admin screen rather than in a file.
+# Then open https://localhost:8443. The certificate is self-signed on first
+# run, so the browser warns once.
 
 services:
   sc:
-    image: ghcr.io/heavycaffeiner/stowcloud:core-stable
+    image: ghcr.io/heavycaffeiner/stowcloud:stable
     restart: unless-stopped
 
-    # Read-only root with a small tmpfs. The server writes only to its data
-    # directory, which is the volume below.
     read_only: true
     tmpfs:
       - /tmp:size=64m
     cap_drop: [ALL]
-    # Handed back so the entrypoint can become the service account: SETUID and
-    # SETGID for the drop itself, CHOWN to hand over the data directory when
-    # PUID names a uid that does not already own it. The server runs without
-    # them; they are spent before it starts.
-    #
-    # Starting the container with `user: "1000:1000"` instead skips all three,
-    # and skips PUID/PGID with them.
+    # Spent by the entrypoint becoming the service account, before the server
+    # starts. Starting with `user: "1000:1000"` skips them and PUID/PGID both.
     cap_add: [SETUID, SETGID, CHOWN]
     security_opt:
-      # Docker's default seccomp profile allows openat2 from 20.10.0 on. An
-      # older profile refuses it, and this server resolves every path with it
-      # and will not start without it. Upgrade rather than granting anything
-      # here.
       - no-new-privileges:true
 
-    # The uid the server runs as. 1000:1000 is what a single-admin machine's
-    # own files usually carry, so a bind mount of a folder you already own
-    # needs no preparation. Set these to the owner of the folders you mount
-    # below: `stat -c '%u:%g' /srv/my-files` prints the pair.
-    #
-    # The entrypoint applies them and drops privileges before the server
-    # starts; the server itself never runs as root.
+    # The uid the server runs as. Match it to the owner of any folder you bind
+    # mount below: `stat -c '%u:%g' /srv/my-files`.
     environment:
       PUID: 1000
       PGID: 1000
 
     ports:
-      # TLS, always. There is no plaintext listener to publish by mistake.
-      # Change the left side to 127.0.0.1:8443 to keep it off the LAN.
+      # TLS only. Use 127.0.0.1:8443:8443 to keep it off the LAN.
       - "8443:8443"
 
     volumes:
-      # The store, the master key and the certificate. A named volume so it
-      # needs no host-side preparation: the image ships this directory owned by
-      # the uid the server runs as, and the volume inherits that.
       - sc-data:/var/lib/stowcloud
-
-      # The folder being served. A named volume, so this starts with no host
-      # preparation at all: a bind mount whose source does not exist yet is
-      # created root-owned, and the server does not run as root.
-      #
-      # To serve a directory you already have, replace this with a bind mount
-      # and make sure it is readable and writable by uid 1000:
-      #
-      #   - /srv/my-files:/shares/files:z
-      #
-      # Lowercase z, never uppercase: the exclusive label would cut off
-      # anything else on the host that uses the same directory.
+      # To serve a folder you already have: - /srv/my-files:/shares/files:z
       - sc-files:/shares/files
-
-      # Where the server renders the SMB configuration. Harmless when SMB is
-      # off, and the sidecar reads the same volume.
       - sc-smb-config:/config/smb
       - sc-smb-control:/run/sc-smb
 
-    # Uploads in flight get this long to finish before the process is killed.
     stop_grace_period: 30s
 
     healthcheck:
-      # The same binary under a different argument, so the probe cannot
-      # disagree with the server about its own state. It exits zero for
-      # degraded as well as ok: degraded is a configuration state, and
-      # restarting does not fix one.
       test: [CMD, /entrypoint.sh, healthcheck]
       interval: 30s
       timeout: 5s
       start_period: 10s
       retries: 3
 
-  # Windows and macOS file sharing. It starts with the stack and sits idle: the
-  # daemon stays stopped until SMB is turned on from the admin screen, and the
-  # agent in here picks that up over the shared socket and starts it without a
-  # `docker compose up`.
-  #
-  # It used to sit behind a `profiles: [smb]`, which meant turning SMB on in
-  # the interface did nothing until somebody also brought a second container
-  # up from a shell. The switch in the interface is the switch.
-  #
-  # The server renders the configuration and this container applies it, which
-  # is why they share two directories.
+  # Windows and macOS file sharing. Starts with the stack and sits idle; the
+  # daemon runs only while SMB is on in the admin screen, which this picks up
+  # over the shared socket.
   sc-smb:
-    image: ghcr.io/heavycaffeiner/stowcloud:smb-stable
+    image: ghcr.io/heavycaffeiner/stowcloud-smb-daemon:stable
     restart: unless-stopped
 
-    # Name service is broadcast and does not cross a bridge, so \\NAME only
-    # resolves when this shares the host's network. It also means another SMB
-    # server already on port 445 wins and this fails to start.
-    #
-    # For a bridged sidecar instead, drop this and publish 445 on a specific
-    # LAN address. The name stops working; the address still mounts.
+    # Name service is broadcast and does not cross a bridge, so \\NAME resolves
+    # only on the host's network. Another SMB server on port 445 wins.
     network_mode: host
 
     cap_drop: [ALL]
-    # Dropping everything strips these from root too, and smbd needs them back:
-    # to bind its privileged port, to become the service account per
-    # connection, and to read a credential file owned by another uid.
-    #
-    # DAC_OVERRIDE and CHOWN are for the control socket rather than for Samba.
-    # The socket is created in a directory the server owns, and root without
-    # them can neither write a directory belonging to another uid nor hand the
-    # socket back: the agent falls back to the poll loop and every change takes
-    # up to a minute instead of arriving at once, and the socket it does create
-    # is opened to everything that can reach the directory rather than to the
-    # server alone. A named volume starts root-owned and needs neither; a bind
-    # mount of a host directory needs both.
+    # smbd binds a privileged port, becomes the service account per connection
+    # and reads a credential file owned by another uid. The last three are for
+    # the control socket, which lives in a directory the server owns.
     cap_add: [NET_BIND_SERVICE, SETUID, SETGID, DAC_READ_SEARCH, DAC_OVERRIDE, CHOWN]
     security_opt:
       - no-new-privileges:true
@@ -136,9 +69,8 @@ services:
     volumes:
       - sc-smb-config:/config/smb:ro
       - sc-smb-control:/run/sc-smb
-      # Every share the server knows has to exist here under the same path, or
-      # the client is told the network name is invalid while the server side
-      # looks correct. Whatever the service above mounts, mount here too.
+      # Every share has to exist here under the same path, or the client is
+      # told the network name is invalid. Mount whatever sc mounts.
       - sc-files:/shares/files
 
     healthcheck:
@@ -150,13 +82,6 @@ services:
 
 volumes:
   sc-data:
-  # The served files. Reachable from the host with `docker compose cp`, or
-  # swap it for a bind mount as described above.
   sc-files:
-  # The rendered SMB configuration. The server writes it, the sidecar reads it,
-  # and republishing is how a revoked credential stops working over SMB.
   sc-smb-config:
-  # The sidecar's control socket. Root-owned, which an empty named volume is
-  # and an operator-made directory is not, and it keeps the socket off the host
-  # filesystem so only these two containers can reach it.
   sc-smb-control:
