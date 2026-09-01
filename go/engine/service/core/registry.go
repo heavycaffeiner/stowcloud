@@ -271,7 +271,7 @@ func (c *Core) Roots(user UserID) []acl.RootEntry {
 		c.warn("creating a home directory failed; listing the other shares anyway",
 			"user", int64(user), "error", err)
 	}
-	roots := c.acl.Roots(int64(user))
+	roots := c.labelledRoots(user)
 	for i := range roots {
 		id, err := num.Narrow[uint32](roots[i].Share)
 		if err != nil {
@@ -284,6 +284,31 @@ func (c *Core) Roots(user UserID) []acl.RootEntry {
 		roots[i].TrashEnabled = def.TrashEnabled
 		roots[i].SharedExternally = def.SharedExternally
 		roots[i].BrokenReason = def.BrokenReason
+	}
+	return roots
+}
+
+// labelledRoots is the caller's roots as they are named everywhere.
+//
+// The evaluator holds grants, not share definitions, so an unlabelled grant
+// over a share's whole root arrives carrying a generated placeholder. The
+// share's own name is substituted here, once, because every reader of a label
+// has to agree: the switcher drew the folder's name while the resolver still
+// matched the placeholder, so clicking the folder the listing had just shown
+// answered 404.
+func (c *Core) labelledRoots(user UserID) []acl.RootEntry {
+	roots := c.acl.Roots(int64(user))
+	for i := range roots {
+		if roots[i].Label != acl.GeneratedRootLabel(roots[i].Share) {
+			continue
+		}
+		id, err := num.Narrow[uint32](roots[i].Share)
+		if err != nil {
+			continue
+		}
+		if def, ok := c.Share(ShareID(id)); ok && def.Name != "" {
+			roots[i].Label = def.Name
+		}
 	}
 	return roots
 }

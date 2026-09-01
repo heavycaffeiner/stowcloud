@@ -156,8 +156,29 @@ func RegisterShareRoot(id ShareID, host string, policy SharePolicy) (*ShareRoot,
 	if err != nil {
 		return nil, Admission{}, errors.Join(err, closeFailed(r.anchor))
 	}
+	if rerr := proveReadable(host); rerr != nil {
+		return nil, Admission{}, errors.Join(rerr, closeFailed(r.anchor))
+	}
 	r.admitted[r.dev] = struct{}{}
 	return r, adm, nil
+}
+
+// proveReadable opens the root the way a listing will.
+//
+// The anchor above is O_PATH, which asks the kernel for a reference rather
+// than for read access, and a sandbox that will refuse every later read
+// grants it. Registration then succeeded and every listing answered
+// not-found, with nothing anywhere saying why: the folder was in the
+// listing, its properties were readable, and opening it did nothing.
+//
+// Doing the real open here turns that into a refusal at the moment somebody
+// registers the folder, which is when they can still act on it.
+func proveReadable(host string) error {
+	fd, err := unix.Open(host, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return mapErrno("read share root "+host, err)
+	}
+	return closeFailed(os.NewFile(uintptr(fd), host))
 }
 
 // OpenScratchRoot opens a directory that is not a share: server-owned

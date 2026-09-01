@@ -139,7 +139,7 @@ func (c *Core) Resolve(user UserID, p vfs.Vpath, need acl.Perms) (Resolved, erro
 // winning. The projection already disambiguated duplicate labels with a
 // " (2)" suffix, so the first match is the only match.
 func (c *Core) rootFor(user UserID, label string) (acl.RootEntry, bool) {
-	for _, r := range c.acl.Roots(int64(user)) {
+	for _, r := range c.labelledRoots(user) {
 		if r.Label == label {
 			return r, true
 		}
@@ -247,7 +247,7 @@ func (c *Core) EntryAt(r Resolved, st vfs.Stat) Entry {
 // Unlike Resolve, this does not strip the grant subpath: its callers pass
 // paths in the same projected coordinate space the label roots.
 func (c *Core) VpathFor(user UserID, share ShareID, p vfs.SharePath) (vfs.Vpath, error) {
-	for _, r := range c.acl.Roots(int64(user)) {
+	for _, r := range c.labelledRoots(user) {
 		narrowed, err := num.Narrow[uint32](r.Share)
 		if err != nil {
 			continue

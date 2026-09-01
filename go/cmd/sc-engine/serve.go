@@ -30,6 +30,15 @@ import (
 // flag default in main, where a checkout is the working directory.
 const deployDataDir = "/var/lib/stowcloud"
 
+// deploySharesRoot is where the image expects new shares to be created.
+//
+// Granted to the sandbox at startup whether or not a share lives under it, so
+// the first folder somebody registers is readable straight away. Without it
+// the domain holds no share parent on a fresh deployment: the registration
+// succeeded and every listing answered not-found until the container
+// restarted.
+const deploySharesRoot = "/shares"
+
 // runServeCmd is the `serve` spelling of the default behaviour: it accepts
 // the flags a deployment's entrypoint spells out longhand, so the container
 // command line reads the same way it always has.
@@ -39,6 +48,7 @@ func runServeCmd(args []string) int {
 	out := log.New(os.Stderr, "", 0)
 	var (
 		dataDir = deployDataDir
+		shares  = deploySharesRoot
 		// Empty rather than an address: run resolves the stored bind when
 		// nothing is passed, and a default here would silently outrank it.
 		addr  = ""
@@ -61,6 +71,13 @@ func runServeCmd(args []string) int {
 			}
 			addr = args[i+1]
 			i++
+		case "--shares", "-shares":
+			if i+1 >= len(args) {
+				out.Println("sc-engine serve: --shares needs a directory")
+				return 2
+			}
+			shares = args[i+1]
+			i++
 		case "--plain":
 			plain = true
 			i++
@@ -69,7 +86,7 @@ func runServeCmd(args []string) int {
 			return 2
 		}
 	}
-	if err := run(addr, dataDir, plain); err != nil {
+	if err := run(addr, dataDir, shares, plain); err != nil {
 		return 1
 	}
 	return 0

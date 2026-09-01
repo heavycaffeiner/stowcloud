@@ -264,6 +264,15 @@ type RootEntry struct {
 	BrokenReason     string
 }
 
+// GeneratedRootLabel is the placeholder a root gets when its grant carries no
+// label and names the share's whole root.
+//
+// Exported because the core replaces it with the share's own name: one
+// spelling, so the substitution cannot miss by disagreeing about the format.
+func GeneratedRootLabel(share int64) string {
+	return fmt.Sprintf("share-%d", share)
+}
+
 // Roots lists one entry per grant record that names the user and whose Allow
 // includes Read.
 //
@@ -288,7 +297,12 @@ func (e *Evaluator) Roots(user int64) []RootEntry {
 			if name := g.Subpath.Name(); name != "" {
 				base = name
 			} else {
-				base = fmt.Sprintf("share-%d", g.Share)
+				// The share's whole root with no label of its own. This layer
+				// holds grants, not share definitions, so it cannot name the
+				// folder: the id keeps the entry addressable and the core
+				// substitutes the share's own name, which is what a person
+				// recognises.
+				base = GeneratedRootLabel(g.Share)
 			}
 		}
 		seen[base]++

@@ -91,9 +91,13 @@ func (c *Core) CreateShare(ctx context.Context, spec ShareSpec) (Share, error) {
 	def := ShareDef{ID: id, Name: spec.Name, Host: spec.Host, Policy: policy}
 	if rerr := c.RegisterShare(ctx, def); rerr != nil {
 		c.rollbackShareRow(ctx, rowid, int64(id))
-		// The registration failure is what the caller can act on; the
-		// rollback's own error is not.
-		return Share{}, rerr
+		// Named as a share problem rather than passed through raw. A refused
+		// registration is an admission verdict, which nothing above this
+		// classifies, so it reached the screen as a bare 500: the folder was
+		// not created and the reason went only to this process's memory.
+		c.warn("a share was refused and its row rolled back",
+			"name", spec.Name, "error", rerr)
+		return Share{}, &ShareBrokenError{Share: spec.Name, Reason: RejectionKind(rerr)}
 	}
 	return def, nil
 }
@@ -135,7 +139,8 @@ func (c *Core) UpdateShare(ctx context.Context, id ShareID, patch SharePatch) (S
 		// caused the failure, and refusing the write would make a repointed
 		// path unfixable when the old path is also gone.
 		c.RegisterBroken(def, err)
-		return Share{}, err
+		c.warn("a share edit left it unservable", "name", def.Name, "error", err)
+		return Share{}, &ShareBrokenError{Share: def.Name, Reason: RejectionKind(err)}
 	}
 	def.BrokenReason = ""
 	return def, nil
@@ -277,7 +282,7 @@ func (c *Core) UserScanSources(user UserID) []ScanSource {
 // A caller rendering a search hit has already checked that it can; an empty
 // answer there means the grant went away between the search and the render.
 func (c *Core) ShareLabel(user UserID, share ShareID) string {
-	for _, r := range c.acl.Roots(int64(user)) {
+	for _, r := range c.labelledRoots(user) {
 		narrowed, err := num.Narrow[uint32](r.Share)
 		if err != nil {
 			continue

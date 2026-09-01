@@ -66,10 +66,15 @@ func main() {
 		addr    = flag.String("addr", "", "listen address; overrides the stored one")
 		dataDir = flag.String("data", ".dev/data", "data directory")
 		plain   = flag.Bool("plain", false, "serve HTTP instead of HTTPS")
+		// Granted to the sandbox whether or not a share lives under it yet.
+		// Without this the domain holds no share parent on a fresh
+		// deployment, so the first folder somebody registers is one the
+		// process cannot read until it restarts.
+		sharesRoot = flag.String("shares", "", "directory new shares are created under; granted to the sandbox at startup")
 	)
 	flag.Parse()
 
-	if err := run(*addr, *dataDir, *plain); err != nil {
+	if err := run(*addr, *dataDir, *sharesRoot, *plain); err != nil {
 		slog.Error("sc-engine failed", "error", err)
 		os.Exit(1)
 	}
@@ -79,7 +84,7 @@ func main() {
 // stored setting names an address.
 const defaultListen = "127.0.0.1:8081"
 
-func run(addr, dataDir string, plain bool) error {
+func run(addr, dataDir, sharesRoot string, plain bool) error {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	abs, err := filepath.Abs(dataDir)
@@ -105,7 +110,7 @@ func run(addr, dataDir string, plain bool) error {
 	// directory and every share's parent before the first file is opened, and
 	// a Landlock domain cannot be widened once it is installed.
 	values, shareHosts := bootSettings(abs, logger)
-	domain := jailSpec(values, abs, shareHosts)
+	domain := jailSpec(values, abs, sharesRoot, shareHosts)
 	jailStatus, jerr := jail.Apply(values.Hardening, domain)
 	if jerr != nil {
 		code := jail.Refuse(os.Stderr, jailStatus)
@@ -218,15 +223,22 @@ func bootSettings(dataDir string, log *slog.Logger) (runtimecfg.Values, []string
 }
 
 // jailSpec builds the sandbox domain from what this process touches: the data
-// directory, the SMB sidecar's config directory and control socket when one is
-// configured, and the parent directory of every registered share.
+// directory, the directory new shares are created under, the SMB sidecar's
+// config directory and control socket when one is configured, and the parent
+// directory of every registered share.
 //
 // Each share's parent is granted rather than the share itself, which is what
 // lets a folder added from the admin screen work without a restart: a Landlock
 // domain cannot be widened once it is installed, so a share added later could
 // never be reached. The parent boundary is deliberate, and "/" is never
 // granted, which is the one thing this sandbox exists to prevent.
-func jailSpec(values runtimecfg.Values, dataDir string, shareHosts []string) jail.Spec {
+//
+// The shares root is granted whether or not anything lives under it. Without
+// it a fresh deployment holds no share parent at all, so the first folder
+// somebody registers is one this process cannot read: the registration
+// succeeded, the folder appeared in the listing, and opening it answered
+// not-found until the container was restarted.
+func jailSpec(values runtimecfg.Values, dataDir, sharesRoot string, shareHosts []string) jail.Spec {
 	spec := jail.Spec{ExceptExec: true}
 	spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dataDir})
 
@@ -240,6 +252,17 @@ func jailSpec(values runtimecfg.Values, dataDir string, shareHosts []string) jai
 	}
 
 	seen := map[string]bool{}
+	grant := func(dir string) {
+		if dir == "" || dir == "/" || dir == "." || seen[dir] {
+			return
+		}
+		seen[dir] = true
+		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dir})
+	}
+
+	if sharesRoot != "" {
+		grant(filepath.Clean(sharesRoot))
+	}
 	for _, host := range shareHosts {
 		if host == "" {
 			continue
@@ -249,11 +272,7 @@ func jailSpec(values runtimecfg.Values, dataDir string, shareHosts []string) jai
 		if parent == "/" || parent == "." || parent == clean {
 			parent = clean
 		}
-		if seen[parent] {
-			continue
-		}
-		seen[parent] = true
-		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: parent})
+		grant(parent)
 	}
 	return spec
 }
