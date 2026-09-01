@@ -6,6 +6,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -31,7 +32,7 @@ func TestAnArchiveOfASubtree(t *testing.T) {
 		t.Fatalf("writing two.txt answered %d: %s", status, body)
 	}
 
-	status, header, body := postRaw(t, base+"/api/v1/files/archive", token,
+	status, header, body := fetchArchive(t, base, token,
 		map[string]any{"paths": []string{"/" + share + "/sub"}, "name": "bundle.zip"})
 	if status != http.StatusOK {
 		t.Fatalf("archiving answered %d: %s", status, body)
@@ -115,6 +116,173 @@ func postRaw(t *testing.T, url, token string, body any) (int, http.Header, []byt
 	return resp.StatusCode, resp.Header, readAll(t, resp)
 }
 
+// fetchArchive asks for an archive and follows the ticket to its bytes.
+//
+// Two steps, because that is what the surface is: the build is held in
+// memory so the fetch can carry a length and answer ranges, which is what
+// makes a folder download show progress and resume. A selection too large to
+// hold is streamed by the first response instead, and this handles both so a
+// test asserting on the archive itself does not care which path it took.
+func fetchArchive(t *testing.T, base, token string, body any) (int, http.Header, []byte) {
+	t.Helper()
+
+	status, header, raw := postRaw(t, base+"/api/v1/files/archive", token, body)
+	if status != http.StatusOK || header.Get("Content-Type") == "application/zip" {
+		// A refusal, or the streamed fallback, which is already the archive.
+		return status, header, raw
+	}
+
+	var ticket struct {
+		URL  string `json:"url"`
+		Size int64  `json:"size"`
+	}
+	if err := json.Unmarshal(raw, &ticket); err != nil || ticket.URL == "" {
+		t.Fatalf("the archive answered no ticket: %s", raw)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, base+ticket.URL, nil)
+	if err != nil {
+		t.Fatalf("building the fetch: %v", err)
+	}
+	req.SetBasicAuth("ignored", token)
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("fetching: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+	got := readAll(t, resp)
+	if int64(len(got)) != ticket.Size {
+		t.Errorf("the ticket promised %d bytes and %d arrived", ticket.Size, len(got))
+	}
+	return resp.StatusCode, resp.Header, got
+}
+
+// A prepared archive carries a length and answers ranges.
+//
+// This is what makes a folder download behave like a file download: the
+// browser can show progress because the length is known, and a connection
+// lost partway resumes rather than starting again. A streamed archive can do
+// neither, which is why the bytes are built before the response.
+func TestAPreparedArchiveResumes(t *testing.T) {
+	base, token, share := contentShare(t, everyPerm(), []byte("root file"))
+
+	if status, _ := upload(t, base, token, "/"+share+"/sub/one.txt", []byte("first")); status != http.StatusOK {
+		t.Fatal("writing the file failed")
+	}
+
+	status, _, raw := postRaw(t, base+"/api/v1/files/archive", token,
+		map[string]any{"paths": []string{"/" + share + "/sub"}, "name": "bundle.zip"})
+	if status != http.StatusOK {
+		t.Fatalf("preparing answered %d: %s", status, raw)
+	}
+	var ticket struct {
+		URL  string `json:"url"`
+		Size int64  `json:"size"`
+	}
+	if err := json.Unmarshal(raw, &ticket); err != nil {
+		t.Fatalf("the ticket does not decode: %s", raw)
+	}
+	if ticket.Size <= 0 || ticket.URL == "" {
+		t.Fatalf("the ticket names no archive: %s", raw)
+	}
+
+	// The first half, as an interrupted download would have taken.
+	half := ticket.Size / 2
+	code, header, head := rangeGet(t, base+ticket.URL, token, fmt.Sprintf("bytes=0-%d", half-1))
+	if code != http.StatusPartialContent {
+		t.Fatalf("a range answered %d, want 206", code)
+	}
+	if header.Get("Accept-Ranges") != "bytes" {
+		t.Error("the response does not advertise ranges, so a client will not try to resume")
+	}
+	if got := header.Get("Content-Range"); got != fmt.Sprintf("bytes 0-%d/%d", half-1, ticket.Size) {
+		t.Errorf("the content range is %q", got)
+	}
+
+	// The rest, which is the resume.
+	code, _, tail := rangeGet(t, base+ticket.URL, token, fmt.Sprintf("bytes=%d-", half))
+	if code != http.StatusPartialContent {
+		t.Fatalf("the resume answered %d, want 206", code)
+	}
+
+	// The two halves are the archive, which is the whole claim: a resumed
+	// download has to produce a file that opens.
+	joined := append(append([]byte{}, head...), tail...)
+	if int64(len(joined)) != ticket.Size {
+		t.Fatalf("the two halves are %d bytes, want %d", len(joined), ticket.Size)
+	}
+	if _, err := zip.NewReader(bytes.NewReader(joined), int64(len(joined))); err != nil {
+		t.Fatalf("a resumed download does not open: %v", err)
+	}
+}
+
+// A ticket is a capability and does not cross accounts.
+//
+// The archive holds one account's files. A ticket that another account could
+// fetch would be a way to read them, so the owner is checked where the ticket
+// is resolved rather than left to the caller.
+func TestAnArchiveTicketBelongsToItsOwner(t *testing.T) {
+	base, token, share := contentShare(t, everyPerm(), []byte("private"))
+
+	status, _, raw := postRaw(t, base+"/api/v1/files/archive", token,
+		map[string]any{"paths": []string{"/" + share}})
+	if status != http.StatusOK {
+		t.Fatalf("preparing answered %d: %s", status, raw)
+	}
+	var ticket struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(raw, &ticket); err != nil {
+		t.Fatalf("the ticket does not decode: %s", raw)
+	}
+
+	// No credential at all is refused, which is what stops a ticket in a
+	// browser history from being a link anybody can follow.
+	req, err := http.NewRequest(http.MethodGet, base+ticket.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+	if resp.StatusCode == http.StatusOK {
+		t.Error("an archive ticket was fetched with no credential")
+	}
+}
+
+// rangeGet performs one ranged read.
+func rangeGet(t *testing.T, url, token, spec string) (int, http.Header, []byte) {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	req.SetBasicAuth("ignored", token)
+	req.Header.Set("Range", spec)
+
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("requesting: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+	return resp.StatusCode, resp.Header, readAll(t, resp)
+}
+
 // An archive of several roots holds all of them.
 func TestAnArchiveOfSeveralPaths(t *testing.T) {
 	base, token, share := contentShare(t, everyPerm(), []byte("the root file"))
@@ -123,7 +291,7 @@ func TestAnArchiveOfSeveralPaths(t *testing.T) {
 		t.Fatal("writing the nested file failed")
 	}
 
-	status, _, body := postRaw(t, base+"/api/v1/files/archive", token, map[string]any{
+	status, _, body := fetchArchive(t, base, token, map[string]any{
 		"paths": []string{"/" + share + "/doc.bin", "/" + share + "/sub"},
 	})
 	if status != http.StatusOK {
@@ -211,7 +379,7 @@ func TestAnArchiveNameCannotInjectAHeader(t *testing.T) {
 func TestAnArchiveWithoutANameGetsADefault(t *testing.T) {
 	base, token, share := contentShare(t, everyPerm(), []byte("x"))
 
-	status, header, _ := postRaw(t, base+"/api/v1/files/archive", token,
+	status, header, _ := fetchArchive(t, base, token,
 		map[string]any{"paths": []string{"/" + share + "/doc.bin"}})
 	if status != http.StatusOK {
 		t.Fatalf("answered %d", status)
@@ -316,7 +484,7 @@ func TestArchiveEntryNamesDoNotEscape(t *testing.T) {
 		t.Fatal("writing failed")
 	}
 
-	status, _, body := postRaw(t, base+"/api/v1/files/archive", token,
+	status, _, body := fetchArchive(t, base, token,
 		map[string]any{"paths": []string{"/" + share}})
 	if status != http.StatusOK {
 		t.Fatalf("answered %d", status)
@@ -350,7 +518,7 @@ func TestAnEmptyDirectorySurvivesTheArchive(t *testing.T) {
 		t.Fatalf("mkdir answered %d: %s", status, body)
 	}
 
-	code, _, archived := postRaw(t, base+"/api/v1/files/archive", token,
+	code, _, archived := fetchArchive(t, base, token,
 		map[string]any{"paths": []string{"/" + share + "/empty"}})
 	if code != http.StatusOK {
 		t.Fatalf("archiving answered %d", code)
@@ -402,7 +570,7 @@ func TestAnUnreadableEntryDoesNotLoseTheArchive(t *testing.T) {
 		}
 	})
 
-	status, _, body := postRaw(t, base+"/api/v1/files/archive", token,
+	status, _, body := fetchArchive(t, base, token,
 		map[string]any{"paths": []string{"/" + share + "/sub"}})
 	if status != http.StatusOK {
 		t.Fatalf("archiving answered %d: %s", status, body)

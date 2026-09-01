@@ -186,6 +186,25 @@ func ArchiveListingOf(l preview.ArchiveListing) ArchiveListingView {
 	return out
 }
 
+// ArchiveTicketView points a client at a prepared archive.
+//
+// The archive is built and held before this is answered, so the size is the
+// real one: the client knows what it is about to download, and the fetch it
+// follows with carries a Content-Length and answers ranges.
+type ArchiveTicketView struct {
+	Token string `json:"token"`
+	Name  string `json:"name"`
+
+	// Size is the built archive's length in bytes. A number rather than a
+	// decimal string: it is bounded by what this server will hold in memory,
+	// far inside what a JavaScript number holds exactly.
+	Size int64 `json:"size"`
+
+	// URL is where to get it, absolute from the site root. Built by the
+	// server so a client does not assemble the route itself and get it wrong.
+	URL string `json:"url"`
+}
+
 // IndexEstimateView is what building a name index would cost.
 type IndexEstimateView struct {
 	// IndexBytes is the estimate, as a decimal string: a large corpus runs
