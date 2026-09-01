@@ -88,6 +88,12 @@ type sendPair struct {
 	skip map[string]string
 }
 
+// sendPairs is every request body whose field names reach the wire unchanged.
+//
+// The test for membership is the request site, not the name: the type has to
+// be JSON.stringify'd directly, or spread into a literal that renames nothing.
+// A type the client translates before sending would be compared against a
+// shape the server never receives, which is a contract nobody implements.
 func sendPairs() []sendPair {
 	return []sendPair{
 		// The share screen sent host_path and the handler decoded host, so no
@@ -96,22 +102,26 @@ func sendPairs() []sendPair {
 		{iface: "CreateShareReq", goType: "createShareRequest"},
 		{iface: "UpdateShareReq", goType: "updateShareRequest"},
 
-		// The rest of the request bodies a screen sends, so the next rename
-		// fails the build rather than a button.
 		{iface: "CreateGroupReq", goType: "groupRequest"},
 		{iface: "UpdateGroupReq", goType: "groupRequest"},
 		{iface: "UpdateGrantReq", goType: "updateGrantRequest"},
+
+		// The link bodies are spread into a literal that rewrites one value
+		// and no names: perms goes out as the permission names the server
+		// reads rather than the bitmask the screen holds. Every key is the
+		// type's own, so comparing names is exactly right.
 		{iface: "ShareLinkCreateReq", goType: "createLinkRequest"},
 		{iface: "ShareLinkPatchReq", goType: "updateLinkRequest"},
 
-		// CreateGrantReq is deliberately absent: the client holds a
-		// `{kind, id}` principal and a numeric share, and adminCreateGrant
-		// translates both into the `user`/`group` strings the wire names. A
-		// pair here would compare the shape before that translation.
+		// Absent, because the client rewrites the field names before sending:
 		//
-		// MoveReq is absent for the same reason: it is the argument to
-		// copy() and move(), which send one `{from, to, on_conflict}` per
-		// path rather than the batch the type describes.
+		//   CreateGrantReq — adminCreateGrant turns a `{kind, id}` principal
+		//   into the wire's `user` or `group` string and stringifies share.
+		//
+		//   MoveReq — copy() and move() send one `{from, to, on_conflict}`
+		//   per path rather than the batch the type describes.
+		//
+		// A pair for either would compare the shape before the translation.
 	}
 }
 
