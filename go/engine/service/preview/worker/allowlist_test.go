@@ -15,27 +15,21 @@ import (
 // The allow list covers a real decode, which the shipped filter cannot report.
 //
 // A kill prints nothing: a worker missing a syscall dies exactly as a crashed
-// decoder does, so the filter is checked here under SIGSYS instead, where an
-// unlisted call names itself. The trap is a diagnostic and never a deployment:
-// a process that survives its own filter is not sandboxed. What ships is the
-// kill, proved by the tests around this one.
+// decoder does, so the filter is checked here under SIGSYS instead, where the
+// runtime names the call before it goes. The trap is a diagnostic and never a
+// deployment: a process that survives its own filter is not sandboxed. What
+// ships is the kill, proved by the tests around this one.
 //
-// Built with the race detector, which the shipped worker is not. That runtime
-// issues strictly more, so a decode clean under it is clean under the plain
-// one, and the growing sizes are what push the heap into whatever the list is
-// missing.
+// The worker is built the way it ships. An earlier version built it with the
+// race detector, reasoning that a runtime issuing strictly more makes a
+// stricter proof. It makes a false one: the detector's shadow memory calls
+// mprotect, which the shipped worker never issues, so the test failed over a
+// syscall no deployment can reach. Satisfying it would have widened the real
+// filter to admit a call only a test needed.
 func TestTheAllowListCoversARealDecode(t *testing.T) {
-	bin := filepath.Join(t.TempDir(), "raceworker")
-	//nolint:gosec // G204: the arguments are this test's own constants.
-	build := exec.Command("go", "build", "-race", "-o", bin,
-		"github.com/heavycaffeiner/stowcloud/go/engine/service/preview/worker/jailedworker")
-	if out, berr := build.CombinedOutput(); berr != nil {
-		t.Skipf("the race worker could not be built: %s", out)
-	}
-
 	p, err := preview.NewPool(preview.PoolOptions{
 		Workers: 1,
-		Exe:     bin,
+		Exe:     buildJailedWorker(t),
 		Args:    []string{},
 		Env:     []string{"SC_PREVIEW_TRAP=1"},
 	})

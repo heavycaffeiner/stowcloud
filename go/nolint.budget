@@ -461,11 +461,8 @@
 # second one until the arithmetic was split from the syscall, which let the
 # test hand over a volume rather than read one.
 #
-# 109: the allow-list proof's build command. G204 reads the subprocess; every
-# argument is this test's own constant, and it builds the same worker the
-# neighbouring proofs build.
-#
-# 111: the clone guard's build and disassemble commands. G204 again, same
-# argument: the test names the package it compiles and the symbol it reads.
+# 110: the clone guard's build and disassemble commands. G204 reads the
+# subprocess; the test names the package it compiles and the symbol it reads,
+# both this file's own constants.
 23
-111
+110
