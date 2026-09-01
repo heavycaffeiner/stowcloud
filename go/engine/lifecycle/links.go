@@ -184,6 +184,10 @@ type updateLinkRequest struct {
 	Expires  json.RawMessage `json:"expires_ns,omitempty"`
 	MaxDown  json.RawMessage `json:"max_downloads,omitempty"`
 
+	// Perms narrows or widens what the link grants, within what its owner
+	// holds. Absent leaves it alone.
+	Perms []string `json:"perms,omitempty"`
+
 	Label *string `json:"label,omitempty"`
 	Note  *string `json:"note,omitempty"`
 }
@@ -222,12 +226,19 @@ func (e *Engine) linksUpdate(c *fiber.Ctx) error {
 
 // linkPatchOf reads the three-state fields.
 //
-// Permissions are not patchable. A link grants reading and downloading and
-// nothing else, decided when it is minted; letting an update widen that would
-// make the URL a writable capability, which is not what anyone handing one out
-// intends.
+// The permission set is passed through as asked. Narrowing to what the link
+// already carries happens in the service, which is where the link is read:
+// deciding it here would need a second read and a window between the two.
 func linkPatchOf(req updateLinkRequest) (core.LinkPatch, bool) {
 	patch := core.LinkPatch{Label: req.Label, Note: req.Note}
+
+	if len(req.Perms) > 0 {
+		requested, ok := linkPerms(req.Perms)
+		if !ok {
+			return core.LinkPatch{}, false
+		}
+		patch.Perms = &requested
+	}
 
 	password, ok := tristate[string](req.Password)
 	if !ok {

@@ -490,12 +490,20 @@ func (c *Core) UpdateLink(ctx context.Context, owner UserID, id int64, patch Lin
 		if patch.Perms.IsEmpty() {
 			return Link{}, errf(ErrDenied, "a share link must grant at least one permission")
 		}
+		// Narrowing only, and a widening request is refused rather than
+		// quietly reduced: a caller told the update succeeded would believe
+		// the link now carries what it asked for. A URL already handed out
+		// must not gain a capability afterwards.
+		if !link.Perms.Has(*patch.Perms) {
+			return Link{}, ErrDenied
+		}
 		vp, verr := c.VpathFor(owner, link.Share, link.Path)
 		if verr != nil {
 			return Link{}, verr
 		}
 		// Resolving asks the evaluator what this account may do there right
-		// now, which is the whole point of re-checking.
+		// now, which is the whole point of re-checking: a link outlives the
+		// grant that justified it.
 		r, rerr := c.Resolve(owner, vp, acl.Share)
 		if rerr != nil {
 			return Link{}, rerr

@@ -95,6 +95,23 @@ func sendPairs() []sendPair {
 		// line that could explain why.
 		{iface: "CreateShareReq", goType: "createShareRequest"},
 		{iface: "UpdateShareReq", goType: "updateShareRequest"},
+
+		// The rest of the request bodies a screen sends, so the next rename
+		// fails the build rather than a button.
+		{iface: "CreateGroupReq", goType: "groupRequest"},
+		{iface: "UpdateGroupReq", goType: "groupRequest"},
+		{iface: "UpdateGrantReq", goType: "updateGrantRequest"},
+		{iface: "ShareLinkCreateReq", goType: "createLinkRequest"},
+		{iface: "ShareLinkPatchReq", goType: "updateLinkRequest"},
+
+		// CreateGrantReq is deliberately absent: the client holds a
+		// `{kind, id}` principal and a numeric share, and adminCreateGrant
+		// translates both into the `user`/`group` strings the wire names. A
+		// pair here would compare the shape before that translation.
+		//
+		// MoveReq is absent for the same reason: it is the argument to
+		// copy() and move(), which send one `{from, to, on_conflict}` per
+		// path rather than the batch the type describes.
 	}
 }
 
