@@ -47,6 +47,9 @@ const (
 	// ProbeCountDescriptors reports the highest descriptor this process still
 	// holds, so the suite can assert the seal closed what the worker inherited.
 	ProbeCountDescriptors
+	// ProbeThread tries adding an OS thread, which the filter admits so the
+	// runtime can grow its scheduler under load.
+	ProbeThread
 )
 
 func (p Probe) String() string {
@@ -65,6 +68,8 @@ func (p Probe) String() string {
 		return "report rlimits"
 	case ProbeCountDescriptors:
 		return "count descriptors"
+	case ProbeThread:
+		return "add a thread"
 	}
 	return "unknown"
 }
@@ -129,6 +134,8 @@ func RunProbe(p Probe) (ProbeOutcome, string) {
 		return probeLimits()
 	case ProbeCountDescriptors:
 		return probeDescriptors()
+	case ProbeThread:
+		return probeThread()
 	}
 	return OutcomeSucceeded, "an unknown probe did nothing"
 }
@@ -170,8 +177,9 @@ func probeSocket() (ProbeOutcome, string) {
 
 func probeFork() (ProbeOutcome, string) {
 	// clone directly, because fork has no Go form and the runtime would never
-	// issue a bare one. This is the call the filter is meant to kill; where it
-	// is not killed, RLIMIT_NPROC gives EAGAIN.
+	// issue a bare one. SIGCHLD and no CLONE_THREAD is a new process, which
+	// the filter kills: it is the only thing standing between a decoder and a
+	// fork, so a pass here is the whole claim.
 	pid, _, errno := unix.Syscall6(unix.SYS_CLONE,
 		uintptr(unix.SIGCHLD), 0, 0, 0, 0, 0)
 	if errno != 0 {
@@ -185,6 +193,45 @@ func probeFork() (ProbeOutcome, string) {
 	}
 	return OutcomeSucceeded, fmt.Sprintf("clone returned pid %d", pid)
 }
+
+// probeThread issues the clone the runtime makes when it needs an OS thread,
+// which the filter's CLONE_THREAD gate exists to permit.
+//
+// A bare clone rather than a goroutine. `go func` with LockOSThread parks on
+// whatever thread already exists whenever one is idle, so it reports success
+// with clone fully blocked and proves nothing.
+//
+// CLONE_THREAD alone, which the kernel refuses with EINVAL because it requires
+// CLONE_SIGHAND. That refusal is the point: the flag the filter inspects is
+// set, so a filter that allows it lets the call reach the kernel, and no task
+// is ever created. The working set with a null stack does not fail: it makes a
+// task sharing this one's stack with no Go stack or TLS of its own, which
+// crashes the runtime with "bad g in signal handler" on the first signal.
+//
+// A filter that refuses kills the process before the kernel reads any
+// argument, so reaching an errno at all is the proof. EAGAIN is the one
+// failure: a thread ceiling with no room kills the runtime as surely as the
+// filter would. The jail sets no such ceiling now, so this catches one being
+// reintroduced.
+func probeThread() (ProbeOutcome, string) {
+	_, _, errno := unix.Syscall6(unix.SYS_CLONE, uintptr(cloneThread), 0, 0, 0, 0, 0)
+	switch errno {
+	case unix.EINVAL:
+		return OutcomeSucceeded, "clone reached the kernel and was refused on its flags"
+	case unix.EAGAIN:
+		return OutcomeRefused, "clone: EAGAIN, the thread ceiling has no room"
+	case 0:
+		// Never reached: CLONE_THREAD without CLONE_SIGHAND cannot succeed.
+		// Reported rather than ignored, because a kernel that accepted this
+		// just made a task on somebody else's stack.
+		return OutcomeRefused, "clone unexpectedly succeeded"
+	default:
+		return OutcomeSucceeded, fmt.Sprintf("clone reached the kernel: %v", errno)
+	}
+}
+
+// cloneThread is CLONE_THREAD, the flag the worker's filter gates on.
+const cloneThread = 0x00010000
 
 func probeSpin() (ProbeOutcome, string) {
 	// Consumes CPU so the parent's deadline has something to cut short.

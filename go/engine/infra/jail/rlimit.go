@@ -16,11 +16,20 @@ import (
 // in-process pixel ceiling has always been said to have. An in-process bound is
 // enforced by the decoder itself, and a decoder exploit is precisely the
 // situation where that enforcement stops mattering.
+//
+// RLIMIT_NPROC is deliberately absent. It reads as a per-process bound on
+// children and is neither: the kernel counts every task the *user* owns,
+// across every process on the machine, and a thread counts the same as a
+// process. A worker set to zero could not add an OS thread and died with
+// "fatal error: newosproc" the first time its scheduler wanted one; any
+// non-zero value is measured against the rest of the user's machine, so it
+// bounds nothing about this worker. Forking is refused by the seccomp gate,
+// which kills any clone without CLONE_THREAD, and that is a bound on the
+// worker itself.
 type Limits struct {
 	AddressSpaceBytes uint64
 	CPUSeconds        uint64
 	OpenFiles         uint64
-	ChildProcesses    uint64
 }
 
 func DefaultLimits() Limits {
@@ -28,7 +37,6 @@ func DefaultLimits() Limits {
 		AddressSpaceBytes: defaultAddressSpaceBytes,
 		CPUSeconds:        10,
 		OpenFiles:         16,
-		ChildProcesses:    0,
 	}
 }
 
@@ -62,7 +70,6 @@ func ApplyLimits(l Limits) error {
 		{"RLIMIT_AS", unix.RLIMIT_AS, l.AddressSpaceBytes},
 		{"RLIMIT_CPU", unix.RLIMIT_CPU, l.CPUSeconds},
 		{"RLIMIT_NOFILE", unix.RLIMIT_NOFILE, l.OpenFiles},
-		{"RLIMIT_NPROC", unix.RLIMIT_NPROC, l.ChildProcesses},
 		// Core dumps disabled, since a decoder's address space contains
 		// somebody's file.
 		{"RLIMIT_CORE", unix.RLIMIT_CORE, 0},

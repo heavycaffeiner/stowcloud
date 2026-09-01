@@ -311,9 +311,9 @@ func TestDefaultLimitsBoundTheDecoder(t *testing.T) {
 	if l.AddressSpaceBytes == 0 {
 		t.Error("no address-space bound, which is the backstop the comments claim")
 	}
-	if l.ChildProcesses != 0 {
-		t.Errorf("the worker may create %d processes, want 0", l.ChildProcesses)
-	}
+	// No thread bound here on purpose: RLIMIT_NPROC counts every task the user
+	// owns machine-wide, so it cannot say anything about this worker. Forking
+	// is the seccomp gate's job.
 	if l.OpenFiles == 0 || l.CPUSeconds == 0 {
 		t.Errorf("an unbounded limit in %+v", l)
 	}

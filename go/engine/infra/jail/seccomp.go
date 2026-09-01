@@ -32,10 +32,29 @@ const (
 
 // Field offsets in struct seccomp_data. The syscall number is at 0 and the
 // arch at 4, and reading the arch first is what makes a number mean anything.
+//
+// args starts at 16, each argument being 8 bytes little-endian. offArg0Lo is
+// the low half of the first, which is where clone's flags live: every flag
+// this filter cares about sits below 2^32.
 const (
-	offNr   = 0
-	offArch = 4
+	offNr     = 0
+	offArch   = 4
+	offArg0Lo = 16
 )
+
+// bpfAnd masks the accumulator, which is how an argument is tested for a flag
+// rather than compared whole.
+const (
+	bpfAlu = 0x04
+	bpfAnd = 0x50
+
+	opAnd = bpfAlu | bpfAnd | bpfK
+)
+
+// cloneThread is CLONE_THREAD. A clone carrying it adds an OS thread to this
+// process; one without it makes a new process, which is what the worker must
+// never be able to do.
+const cloneThread = 0x00010000
 
 // The two AUDIT_ARCH values for which this build holds a verified syscall
 // mapping.
@@ -146,15 +165,20 @@ func deniedSyscalls() []int {
 //     capturing the wait without its setup because the poller was already
 //     running before that trace started.
 //
-// clone is deliberately excluded, and the measurement is what makes exclusion
-// viable. Every clone the trace recorded carried CLONE_THREAD, meaning the
-// runtime was adding an OS thread rather than forking. A worker unable to clone
-// is equally unable to fork, which is the property this list secures.
+// clone is admitted only with CLONE_THREAD, checked as an argument rather than
+// listed here. An earlier version omitted it entirely, on the argument that
+// GOMAXPROCS(1) meant no thread started after the filter was installed. That
+// is false: schedtrace shows a worker starting with six threads and reaching
+// seven while serving jobs, and on a loaded machine the scheduler asks for one
+// with no idle thread to reuse. The worker then died mid-decode, which reached
+// the parent as a bad system call and nothing else.
+//
+// Gating on the flag keeps what the omission was protecting. A clone without
+// CLONE_THREAD is a new process, and that still kills.
 //
 // GOMAXPROCS=1 does not imply a single OS thread. It caps goroutines executing
 // Go code rather than threads, and the runtime keeps roughly five for its own
-// purposes. What makes clone's absence workable is that none of them starts
-// after the filter is installed, not that they are absent.
+// purposes.
 func allowedSyscalls() []int {
 	return []int{
 		unix.SYS_READ,
@@ -280,12 +304,27 @@ func assembleFor(kind FilterKind, goarch string) ([]unix.SockFilter, error) {
 		return nil, fmt.Errorf("unknown seccomp filter kind %d", kind)
 	}
 
+	// The worker filters admit clone only when it carries CLONE_THREAD, so the
+	// runtime may add an OS thread while fork stays impossible. Four extra
+	// instructions: compare the number, load the flags, mask them, and branch
+	// on the result.
+	//
+	// The list alone cannot express this. A bare clone entry would admit fork,
+	// which is the property the omission secures, and omitting it entirely
+	// kills a worker whose runtime wants a thread at the wrong moment.
+	gateClone := kind != FilterProcess
+	gate := 0
+	if gateClone {
+		gate = 4
+	}
+
 	prologue := 3
 	if rejectX32 {
 		prologue = 4
 	}
 	n := len(list)
-	unmatchedIdx := prologue + n
+	cloneIdx := prologue + n
+	unmatchedIdx := cloneIdx + gate
 	matchedIdx := unmatchedIdx + 1
 	refuseIdx := matchedIdx + 1
 
@@ -325,6 +364,28 @@ func assembleFor(kind FilterKind, goarch string) ([]unix.SockFilter, error) {
 		}
 		// A non-match falls through to the following compare and never jumps.
 		prog = append(prog, jump(opJumpEqual, number, off, 0))
+	}
+
+	if gateClone {
+		// Not clone: fall through to the default action, four ahead.
+		notClone, cerr := offsetTo(unmatchedIdx, cloneIdx)
+		if cerr != nil {
+			return nil, cerr
+		}
+		cloneNr, nerr := num.Narrow[uint32](unix.SYS_CLONE)
+		if nerr != nil {
+			return nil, fmt.Errorf("clone syscall number: %w", nerr)
+		}
+		prog = append(prog, jump(opJumpEqual, cloneNr, 0, notClone))
+		prog = append(prog, stmt(opLoad, offArg0Lo))
+		prog = append(prog, stmt(opAnd, cloneThread))
+		// The mask survives only for a thread. A clone without the bit is a
+		// new process, which lands on the default action and dies.
+		threaded, terr := offsetTo(matchedIdx, cloneIdx+3)
+		if terr != nil {
+			return nil, terr
+		}
+		prog = append(prog, jump(opJumpEqual, cloneThread, threaded, 0))
 	}
 
 	prog = append(prog, stmt(opReturn, unmatched))

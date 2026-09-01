@@ -184,10 +184,26 @@ func TestAJailedWorkerCannotReachTheNetwork(t *testing.T) {
 	refusedOrKilled(t, worker.ProbeCreateSocket, "created a socket")
 }
 
-// No clone and no execve, so no new process. A worker that cannot clone cannot
-// fork either, which is the property the list is for.
+// No fork, still. clone is on the list but gated on CLONE_THREAD, so a clone
+// asking for a process rather than a thread dies exactly as before.
 func TestAJailedWorkerCannotFork(t *testing.T) {
 	refusedOrKilled(t, worker.ProbeFork, "forked")
+}
+
+// A thread is allowed, which is what the gate buys.
+//
+// GOMAXPROCS(1) does not stop the runtime from wanting an OS thread: it keeps
+// several, and under load the scheduler asks for another. Refusing that kills
+// the worker mid-job, which is a decode failure with no cause an operator can
+// read.
+func TestAJailedWorkerCanAddAThread(t *testing.T) {
+	outcome, detail, err := probe(t, jailedPool(t), worker.ProbeThread)
+	if err != nil {
+		t.Fatalf("the jailed worker could not add a thread: %v", err)
+	}
+	if outcome != worker.OutcomeSucceeded {
+		t.Errorf("adding a thread reported %v: %s", outcome, detail)
+	}
 }
 
 // ApplyLimits is wired, so the in-process pixel ceiling has the kernel backstop
@@ -209,9 +225,8 @@ func TestAJailedWorkerReportsItsResourceLimits(t *testing.T) {
 	if nofile := fieldOf(t, detail, "nofile"); nofile != want.OpenFiles {
 		t.Errorf("RLIMIT_NOFILE is %d, want %d", nofile, want.OpenFiles)
 	}
-	if nproc := fieldOf(t, detail, "nproc"); nproc != want.ChildProcesses {
-		t.Errorf("RLIMIT_NPROC is %d, want %d", nproc, want.ChildProcesses)
-	}
+	// nproc is not asserted: the jail no longer sets it, because the kernel
+	// counts it per user across the machine rather than per process.
 }
 
 // SealDescriptors is wired, so nothing the worker inherited past its control
