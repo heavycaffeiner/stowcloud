@@ -78,6 +78,13 @@ func TestTheAllowListCoversARealDecode(t *testing.T) {
 // breaks it the way the last one did: a worker that dies mid-decode with
 // nothing to read. This reads the number out of the runtime's own thread
 // spawner, so the upgrade that changes it fails here instead.
+//
+// Reading the binary rather than driving load until a thread starts. Load does
+// not reliably start one: with 64 concurrent jobs against a single worker,
+// measured over ten runs, two peaked below the six threads the worker already
+// had and never cloned at all. A test that catches the switch eight times in
+// ten is not one to put a sandbox behind. It also costs 0.3s against the trap
+// test's 1.9s, because it compiles once and never decodes.
 func TestTheRuntimeStartsThreadsWithClone(t *testing.T) {
 	bin := filepath.Join(t.TempDir(), "worker")
 	//nolint:gosec // G204: the arguments are this test's own constants.
