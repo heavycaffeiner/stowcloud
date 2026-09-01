@@ -19,6 +19,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
@@ -350,6 +351,88 @@ func (e *Engine) uploadsAbort(c *fiber.Ctx) error {
 func (e *Engine) uploads(c *fiber.Ctx) (*upload.Engine, bool) {
 	_ = c
 	return e.Upload, e.Upload != nil
+}
+
+// uploadSettingsRequest is the administrator's chunk configuration.
+//
+// Pointers throughout: a patch names what it changes, so a screen saving the
+// chunk sizes must not silently turn the spool off, and one toggling the
+// spool must not reset the sizes to whatever it last rendered.
+type uploadSettingsRequest struct {
+	ChunkMin     *int64 `json:"chunk_min"`
+	ChunkDefault *int64 `json:"chunk_default"`
+	CacheEnabled *bool  `json:"cache_enabled"`
+}
+
+// uploadSettingsPatch applies the server-global chunk bounds and the spool
+// switch.
+//
+// Its own route rather than a section of the settings document: both values
+// live in the upload engine's tables, and it owns the clamping that keeps a
+// live bound from falling under the compiled-in floor.
+func (e *Engine) uploadSettingsPatch(c *fiber.Ctx) error {
+	if _, ok, written := e.admin(c); !ok {
+		return written
+	}
+	engine, ok := e.uploads(c)
+	if !ok {
+		// No spool, so there is nothing to configure. Reported rather than
+		// silently accepted: a save that stored nothing must not come back
+		// looking like one that did.
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
+
+	var req uploadSettingsRequest
+	if err := decodeBody(c, &req); err != nil {
+		return refuse(c, apierr.Classified{Class: apierr.Malformed})
+	}
+
+	// Narrowed through the checked helper rather than converted: a negative
+	// bound cannot be a byte count, and an unchecked conversion would turn
+	// one into an enormous ceiling.
+	var minBytes, defaultBytes *uint64
+	if req.ChunkMin != nil {
+		v, err := num.Narrow[uint64](*req.ChunkMin)
+		if err != nil {
+			return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		}
+		minBytes = &v
+	}
+	if req.ChunkDefault != nil {
+		v, err := num.Narrow[uint64](*req.ChunkDefault)
+		if err != nil {
+			return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+		}
+		defaultBytes = &v
+	}
+	if minBytes != nil || defaultBytes != nil {
+		if err := engine.ApplySettings(c.UserContext(), minBytes, defaultBytes); err != nil {
+			return fail(c, err)
+		}
+	}
+
+	// After the bounds, so a request carrying both reports the spool state it
+	// ends on rather than the one it started from.
+	if req.CacheEnabled != nil && *req.CacheEnabled != engine.CacheEnabled() {
+		if err := engine.SetCacheEnabled(c.UserContext(), *req.CacheEnabled); err != nil {
+			return fail(c, err)
+		}
+	}
+
+	storedMin, storedDefault := engine.Settings().Snapshot()
+	// Both are bounded by the chunk ceiling, far inside the signed range, so
+	// a narrowing failure here is a stored value nothing should have written.
+	viewMin, minErr := num.Narrow[int64](storedMin)
+	viewDefault, defErr := num.Narrow[int64](storedDefault)
+	if minErr != nil || defErr != nil {
+		return failKnown(c, minErr)
+	}
+	return writeJSON(c, fiber.StatusOK, handler.UploadSettingsView{
+		ChunkMin:       viewMin,
+		ChunkDefault:   viewDefault,
+		CacheEnabled:   engine.CacheEnabled(),
+		CacheAvailable: engine.CacheAvailable(),
+	})
 }
 
 // sessionIDOf reads the path's session id.

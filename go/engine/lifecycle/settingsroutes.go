@@ -59,6 +59,15 @@ func (e *Engine) adminSettingsPatch(c *fiber.Ctx) error {
 	}
 
 	section := c.Params("section")
+
+	// The chunk bounds and the spool switch live in the upload engine's own
+	// tables rather than in the settings document, so they are applied
+	// through it rather than merged and reloaded. Without this the section
+	// was simply unknown, and every save from the upload screen answered 422.
+	if section == "upload" {
+		return e.uploadSettingsPatch(c)
+	}
+
 	if !check.Known(section) {
 		// Named rather than silently ignored: a client writing to a section
 		// this build does not have has to learn that, or it reports a change
@@ -110,7 +119,12 @@ func (e *Engine) adminSettingsPatch(c *fiber.Ctx) error {
 	// Re-read rather than applied from the patch: the stored document is what
 	// a restart would load, so reloading from it is what makes the running
 	// server and the next start agree.
-	restart := restartRequired(section)
+	//
+	// Judged by the fields this patch actually names. By section, an operator
+	// changing the sign-on provider or the protocol's second-factor policy
+	// was told to restart and the reload never ran, so the change sat stored
+	// and inert until the container went down.
+	restart := catalogue.RestartRequiredFor(section, body)
 	if !restart {
 		e.loadSettings(c.UserContext())
 	}
@@ -180,25 +194,4 @@ func (e *Engine) extractSecrets(c *fiber.Ctx, section string, body map[string]an
 		return false, failKnown(c, err)
 	}
 	return true, nil
-}
-
-// restartRequired reports whether a section is decided once, when the process
-// builds what sits under the sandbox.
-//
-// The database file, the homes share and the credential publisher are all
-// assembled at startup; the watcher takes its bounds when it starts; the
-// sandbox cannot be widened in a running process at all; and the sign-on
-// client pins its provider when it is built. Each of those is a restart.
-//
-// Everything else is read per request by the chain, so reloading the document
-// is enough. Reporting a section as live when it is not is the defect this
-// distinction exists to prevent: an administrator then spends an afternoon on
-// a setting that was never in effect.
-func restartRequired(section string) bool {
-	switch section {
-	case "db", "paths", "homes", "smb", "watch", "security", "oidc":
-		return true
-	default:
-		return false
-	}
 }

@@ -57,12 +57,6 @@ var section = map[string]string{
 // reason it is not a defect. An entry here is a decision somebody made; an
 // absence is a defect.
 var allowed = map[string]string{
-	// Not settings at all: a confirmation flag on the request, consumed by the
-	// handler and never stored as part of the section's document.
-	"homes.force": "a request flag the handler consumes, not a stored setting",
-	"smb.force":   "a request flag the handler consumes, not a stored setting",
-	"watch.force": "a request flag the handler consumes, not a stored setting",
-
 	// Read through a different path than the settings loader.
 	"symlink-policy.policy": "per-share, read from the share row rather than the settings document",
 	"watch.backend":         "reported read-only by the snapshot; the running backend is detected, not configured",

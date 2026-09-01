@@ -263,6 +263,51 @@ func TestStartupOnlyFieldsAreMarkedRestartRequired(t *testing.T) {
 	}
 }
 
+// A patch is judged by the fields it names, not by its section.
+//
+// Sections are mixed: oidc rebuilds its provider when settings load, and
+// smb.totp_policy reaches the auth service directly, while their neighbours
+// are assembled at startup. Judging by section reported both as needing a
+// restart and skipped the reload, so the change sat stored and inert until
+// the container went down. That is the defect an operator sees as "some
+// settings only apply after a restart".
+func TestARestartIsJudgedByTheFieldsAPatchNames(t *testing.T) {
+	cases := []struct {
+		section string
+		body    map[string]any
+		want    bool
+		why     string
+	}{
+		{"oidc", map[string]any{"issuer": "https://id.example"}, false,
+			"the provider is rebuilt when settings load"},
+		{"smb", map[string]any{"totp_policy": "block"}, false,
+			"the policy reaches the auth service directly"},
+		{"smb", map[string]any{"enabled": true}, true,
+			"the publisher is assembled at startup"},
+		{"smb", map[string]any{"totp_policy": "block", "enabled": true}, true,
+			"one startup-only field in the patch is enough"},
+		{"rate", map[string]any{"per_sec": 25}, false,
+			"the limiter is updated in place"},
+		{"network", map[string]any{"app_hosts": []string{"x"}}, false,
+			"the host lists are read per request"},
+		{"network", map[string]any{"bind": ":8443"}, true,
+			"the listener is bound once"},
+		{"symlink-policy", map[string]any{"policy": "deny"}, false,
+			"read from the share row, not the settings document"},
+		{"smb", map[string]any{"totp_policy": "block", "force": true}, false,
+			"force is a request flag, not a stored setting"},
+		{"smb", map[string]any{"invented_field": 1}, true,
+			"an unknown field cannot be shown to apply live"},
+	}
+
+	for _, c := range cases {
+		if got := RestartRequiredFor(c.section, c.body); got != c.want {
+			t.Errorf("%s %v needs a restart: %v, want %v (%s)",
+				c.section, c.body, got, c.want, c.why)
+		}
+	}
+}
+
 // No key is described twice. A duplicate renders two controls for one setting,
 // and whichever is saved second wins.
 func TestNoKeyIsDescribedTwice(t *testing.T) {

@@ -106,6 +106,67 @@ func TestASaveSaysWhetherItIsLive(t *testing.T) {
 	}
 }
 
+// The upload screen's save reaches a route that exists.
+//
+// The chunk bounds and the spool switch live in the upload engine's own
+// tables, not in the settings document, so the section allow-list did not
+// name them. Every save from that screen answered 422 with a generic refusal
+// and the numbers on it never changed.
+func TestTheUploadSettingsSectionIsSavable(t *testing.T) {
+	base, cookie, csrf, _, _ := adminEngine(t)
+
+	const megabyte = 1 << 20
+	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/upload",
+		cookie, csrf, map[string]any{"chunk_min": 8 * megabyte, "chunk_default": 16 * megabyte})
+	if status != http.StatusOK {
+		t.Fatalf("saving the upload settings answered %d: %v", status, body)
+	}
+
+	// The screen reads all four back and renders them, so all four have to be
+	// there. An absent one read as undefined and showed as NaN megabytes.
+	for _, field := range []string{"chunk_min", "chunk_default", "cache_enabled", "cache_available"} {
+		if _, present := body[field]; !present {
+			t.Errorf("the response has no %q: %v", field, body)
+		}
+	}
+	if got := fmt.Sprint(body["chunk_min"]); got != fmt.Sprint(float64(8*megabyte)) {
+		t.Errorf("the floor came back as %v, want %d", body["chunk_min"], 8*megabyte)
+	}
+
+	// And every account learns the new numbers, which is the whole point of a
+	// server-global bound.
+	code, raw := withCookie(t, http.MethodGet, base+"/api/v1/auth/session", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("the session answered %d: %s", code, raw)
+	}
+	if !strings.Contains(string(raw), `"chunk_min":8388608`) {
+		t.Errorf("the session still advertises the old floor: %s", raw)
+	}
+}
+
+// A patch is judged by the fields it names, not by its section.
+//
+// The sign-on provider is rebuilt whenever settings load, so changing it is
+// live. Judged by section it was reported as needing a restart and the reload
+// was skipped, so the change sat stored and inert until the container went
+// down. That is what an operator sees as "some settings only apply after a
+// restart".
+func TestAProviderChangeAppliesWithoutARestart(t *testing.T) {
+	base, cookie, csrf, _, _ := adminEngine(t)
+
+	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/oidc",
+		cookie, csrf, map[string]any{"display_name": "Company sign-in"})
+	if status != http.StatusOK {
+		t.Fatalf("saving answered %d: %v", status, body)
+	}
+	if boolField(body, "restart_required") {
+		t.Error("a provider field that is rebuilt on load asks for a restart")
+	}
+	if !boolField(body, "applied") {
+		t.Error("a provider field that is rebuilt on load is not reported as applied")
+	}
+}
+
 // A live save reaches the running server, not just the database.
 //
 // This is the claim the "applied" field makes, so it is checked by observing

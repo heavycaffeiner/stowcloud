@@ -232,6 +232,63 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 	return Snapshot{Fields: fields}
 }
 
+// RestartRequiredFor reports whether a patch needs a restart to take effect.
+//
+// Per field rather than per section, because the two disagree: every oidc
+// field is rebuilt when settings load, and smb.totp_policy reaches the auth
+// service directly, while their neighbours in the same sections are assembled
+// once at startup. Judging by section reported both as needing a restart, so
+// a provider change sat stored and inert until somebody restarted the
+// container.
+//
+// A field this build does not know is a restart: an unknown key cannot be
+// shown to apply live, and the safe direction is telling an operator to
+// restart for a change that was already live rather than reporting a dead
+// change as in effect.
+func RestartRequiredFor(section string, body map[string]any) bool {
+	// Read somewhere other than the settings document, so reloading it would
+	// apply nothing and a restart would change nothing either. symlink-policy
+	// is per share and read from the share row; paths is builtin and
+	// read-only. Both take effect as soon as they are written.
+	if section == "symlink-policy" || section == "paths" {
+		return false
+	}
+
+	known := restartByKey()
+	for name := range body {
+		if name == "force" {
+			// A confirmation flag the handler consumes, not a stored setting.
+			continue
+		}
+		key := section + "." + name
+		if section == networkSection {
+			// The network fields are stored under their bare names, which is
+			// also how the catalogue spells them.
+			key = name
+		}
+		restart, found := known[key]
+		if !found || restart {
+			return true
+		}
+	}
+	return false
+}
+
+// restartByKey is every field's restart property, keyed as the catalogue
+// spells it.
+//
+// Built from the catalogue itself so the two cannot drift: a field added
+// above is judged by the flag written beside it rather than by a second list
+// somebody has to remember to update.
+func restartByKey() map[string]bool {
+	fields := Of(runtimecfg.Defaults(), map[string]any{}).Fields
+	out := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		out[f.Key] = f.RestartRequired
+	}
+	return out
+}
+
 // indexEnabled reads the name index switch out of the stored document.
 //
 // Read here rather than taken from the resolved values because nothing

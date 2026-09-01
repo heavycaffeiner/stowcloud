@@ -49,6 +49,24 @@ type UploadSessionView struct {
 	Terminal bool `json:"terminal"`
 }
 
+// UploadSettingsView is the server-global chunk configuration an
+// administrator reads and writes.
+//
+// The byte counts are numbers rather than decimal strings: both are bounded
+// by the chunk ceiling, far inside what a JavaScript number holds exactly,
+// and the screen does arithmetic on them to show megabytes.
+type UploadSettingsView struct {
+	ChunkMin     int64 `json:"chunk_min"`
+	ChunkDefault int64 `json:"chunk_default"`
+
+	// CacheEnabled is the switch; CacheAvailable is whether this deployment
+	// has a spool for it to mean anything. A deployment with no data
+	// directory has none, and the screen shows the switch disabled rather
+	// than offering one that does nothing.
+	CacheEnabled   bool `json:"cache_enabled"`
+	CacheAvailable bool `json:"cache_available"`
+}
+
 // UploadSessionOf projects one session.
 func UploadSessionOf(s upload.Session) UploadSessionView {
 	v := UploadSessionView{
