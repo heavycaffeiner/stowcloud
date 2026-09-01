@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 )
 
 // bounded builds a store with small bounds, so a test states the rule rather
@@ -162,6 +163,49 @@ func TestAnExpiredArchiveReleasesItsBytes(t *testing.T) {
 	s.clk = clock.Fixed(now.Add(2 * time.Hour))
 	if _, ok := s.Get("t", 1); ok {
 		t.Error("an expired archive is still fetchable")
+	}
+	if got := s.HeldBytes(); got != 0 {
+		t.Errorf("the store still holds %d bytes after expiry", got)
+	}
+}
+
+// A download slower than the TTL keeps its archive.
+//
+// The TTL bounds how long an archive nobody collects is kept, not how long a
+// transfer may take. Without the refresh, a large archive on a slow link had
+// its own resume answered not-found partway through: the first request
+// started the clock and the second arrived after it ran out.
+func TestFetchingExtendsTheDeadline(t *testing.T) {
+	s := bounded(t, 100, 1_000, 100)
+
+	now := time.Unix(1_700_000_000, 0)
+	s.clk = clock.Fixed(now)
+
+	res, err := s.Reserve(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perr := s.Put("t", &Held{Name: "a.zip", Bytes: make([]byte, 100), Owner: 1}, res); perr != nil {
+		t.Fatal(perr)
+	}
+
+	// Two fetches, each most of a TTL after the last: a transfer that outlives
+	// the window several times over, which is any large archive on a slow
+	// link.
+	step := limits.ArchiveTicketTTL - time.Minute
+	for i := range 5 {
+		now = now.Add(step)
+		s.clk = clock.Fixed(now)
+		if _, ok := s.Get("t", 1); !ok {
+			t.Fatalf("the archive expired mid-transfer on fetch %d", i+1)
+		}
+	}
+
+	// And it still expires once nobody is fetching it, so the refresh did not
+	// turn the hold into a leak.
+	s.clk = clock.Fixed(now.Add(2 * limits.ArchiveTicketTTL))
+	if _, ok := s.Get("t", 1); ok {
+		t.Error("an archive nobody fetched is still held")
 	}
 	if got := s.HeldBytes(); got != 0 {
 		t.Errorf("the store still holds %d bytes after expiry", got)

@@ -209,11 +209,16 @@ func (s *Store) Put(token string, h *Held, res *Reservation) error {
 	return nil
 }
 
-// Get returns a held archive for one owner.
+// Get returns a held archive for one owner, and extends its deadline.
 //
 // The owner is compared here rather than by the caller: a ticket is a
 // capability, and the one place that resolves tickets is the one place that
 // can be sure the check is not skipped.
+//
+// Fetching pushes the deadline out, because the TTL bounds how long an
+// archive nobody collects is kept, not how long a transfer may take. Without
+// this a download slower than the TTL, which is any large archive on a slow
+// link, had its own resume answered not-found partway through.
 func (s *Store) Get(token string, owner int64) (*Held, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -226,6 +231,7 @@ func (s *Store) Get(token string, owner int64) (*Held, bool) {
 		// token names a real archive.
 		return nil, false
 	}
+	h.expires = s.clk.Now().Add(limits.ArchiveTicketTTL)
 	return h, true
 }
 

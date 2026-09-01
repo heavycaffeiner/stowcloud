@@ -10,14 +10,17 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
-// ShareView is one registered share, as the administrative screen sees it.
+// ShareView is one registered share, as the screen that configures them sees
+// it.
 //
-// Every route that answers with one of these is administrator-only and
-// session-only: an app password cannot reach them. That is what makes the
-// host path safe to send here and nowhere else. It is absent from every
-// surface an ordinary account reads, where a client learning the server's
-// layout would be the first thing worth knowing to somebody trying to reach
-// past the shares they were given.
+// Two surfaces answer with one: the administrative routes, which are
+// administrator-only and session-only, and the first-run setup route, which
+// spends a one-time token nobody but the person at the console holds and
+// closes for good once an administrator exists. Both are the operator
+// configuring their own deployment, which is what makes the host path safe
+// to send here. It is absent from every surface an ordinary account reads,
+// where a client learning the server's layout would be the first thing worth
+// knowing to somebody trying to reach past the shares they were given.
 type ShareView struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
