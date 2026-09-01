@@ -5,6 +5,8 @@ package worker_test
 import (
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
@@ -61,5 +63,55 @@ func TestTheAllowListCoversARealDecode(t *testing.T) {
 		if resp.Status != preview.StatusOK {
 			t.Fatalf("decoding %dx%d: status %v: %s", size, size, resp.Status, resp.Err)
 		}
+	}
+}
+
+// The runtime still starts threads with clone rather than clone3.
+//
+// The filter admits clone by inspecting CLONE_THREAD in its arguments. clone3
+// cannot be gated that way at all: its flags live in a struct in userspace,
+// which seccomp cannot read, so a filter can only take the number or leave it.
+// Taking it would admit fork, which is the whole property; leaving it kills a
+// worker whose runtime has switched.
+//
+// So a toolchain that moves the scheduler to clone3 breaks the jail, and it
+// breaks it the way the last one did: a worker that dies mid-decode with
+// nothing to read. This reads the number out of the runtime's own thread
+// spawner, so the upgrade that changes it fails here instead.
+func TestTheRuntimeStartsThreadsWithClone(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "worker")
+	//nolint:gosec // G204: the arguments are this test's own constants.
+	build := exec.Command("go", "build", "-o", bin,
+		"github.com/heavycaffeiner/stowcloud/go/engine/service/preview/worker/jailedworker")
+	if out, berr := build.CombinedOutput(); berr != nil {
+		t.Skipf("the worker could not be built: %s", out)
+	}
+
+	//nolint:gosec // G204: the arguments are this test's own constants.
+	dump := exec.Command("go", "tool", "objdump", "-s", "runtime.clone", bin)
+	out, derr := dump.Output()
+	if derr != nil {
+		t.Skipf("this build cannot be disassembled: %v", derr)
+	}
+	// The number reaches the kernel in a register the ABI fixes, and the
+	// disassembly names it differently per architecture: amd64 loads AX in
+	// hex, arm64 loads R8 in decimal. Both spellings are here because the
+	// filter ships on both.
+	var wantClone, clone3 string
+	switch runtime.GOARCH {
+	case "amd64":
+		wantClone, clone3 = "$0x38, AX", "$0x1b3, AX"
+	case "arm64":
+		wantClone, clone3 = "$220, R8", "$435, R8"
+	default:
+		t.Skipf("no known clone encoding for %s", runtime.GOARCH)
+	}
+
+	body := string(out)
+	if strings.Contains(body, clone3) {
+		t.Error("the runtime issues clone3, whose flags live in a userspace struct the filter cannot read")
+	}
+	if !strings.Contains(body, wantClone) {
+		t.Errorf("runtime.clone does not issue clone; the filter's gate no longer describes it:\n%s", body)
 	}
 }

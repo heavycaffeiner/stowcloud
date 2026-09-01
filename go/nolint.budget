@@ -464,5 +464,8 @@
 # 109: the allow-list proof's build command. G204 reads the subprocess; every
 # argument is this test's own constant, and it builds the same worker the
 # neighbouring proofs build.
+#
+# 111: the clone guard's build and disassemble commands. G204 again, same
+# argument: the test names the package it compiles and the symbol it reads.
 23
-109
+111
