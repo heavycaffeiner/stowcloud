@@ -16,6 +16,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/route"
@@ -65,6 +66,11 @@ func (e *Engine) Mount() (*fiber.App, error) {
 	// reaches when the chain's own configuration is what is broken, so a door
 	// behind that chain would be unreachable exactly when it is needed.
 	e.mountEmergency(app)
+
+	// Route metadata first, so the chain knows what it is guarding. It is
+	// attached by a pass-through registration rather than by the route's own
+	// handler, which runs too late for any step to read.
+	server.Announce(app, table)
 
 	// The chain goes on before the routes. Fiber runs what was mounted in
 	// mount order, so a step registered after a route never sees a request
@@ -330,15 +336,36 @@ func writeJSON(c *fiber.Ctx, status int, v any) error {
 
 // writeError renders a failure as JSON rather than the framework's HTML page.
 //
-// The body says only that the request failed. What went wrong is logged, not
-// returned: an error string built from an internal failure names paths, table
-// columns and library internals to whoever sent the request.
+// A refusal the chain raised carries a status and nothing else, and the client
+// reads `error.code` to decide what to say. Rendering those as a bare string
+// left the sign-in screen with a 401 it could not tell from a server fault, so
+// the statuses the chain actually raises are mapped to the same classified
+// body a handler would have written.
+//
+// Anything else says only that the request failed. What went wrong is logged,
+// not returned: an error string built from an internal failure names paths,
+// table columns and library internals to whoever sent the request.
 func writeError(c *fiber.Ctx, err error) error {
 	status := fiber.StatusInternalServerError
 
 	var fe *fiber.Error
 	if errors.As(err, &fe) {
 		status = fe.Code
+	}
+
+	switch status {
+	case fiber.StatusUnauthorized:
+		return refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+	case fiber.StatusForbidden:
+		return refuse(c, apierr.Classified{Class: apierr.Denied})
+	case fiber.StatusMisdirectedRequest, fiber.StatusTooManyRequests,
+		fiber.StatusRequestEntityTooLarge:
+		// Raised by the boundary, the limiter and the body bound. Each already
+		// carries its meaning in the status; the body names it too so a client
+		// branches on one thing rather than two.
+		return writeJSON(c, status, map[string]any{
+			"error": map[string]string{"code": "request_refused", "message": "request refused"},
+		})
 	}
 	return writeJSON(c, status, map[string]string{"error": "request_failed"})
 }

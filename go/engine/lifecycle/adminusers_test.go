@@ -121,7 +121,7 @@ func concretePath(pattern string) string {
 // able to create accounts. The chain decides this, not the handlers, so it is
 // checked separately from the identity gate above.
 func TestAnAppPasswordCannotReachAdmin(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, token, _ := bootWithUser(t)
 
 	status, body := authed(t, http.MethodGet, base+"/api/v1/admin/users", token)
 	if status == http.StatusOK {

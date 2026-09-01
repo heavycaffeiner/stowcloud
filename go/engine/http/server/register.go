@@ -52,6 +52,34 @@ func Register(app *fiber.App, table []route.Route, h Handlers) error {
 	return nil
 }
 
+// Announce attaches every route's metadata before the chain runs.
+//
+// Fiber matches in mount order, and the chain is mounted before the routes so
+// that no route can answer without passing it. That ordering means the route's
+// own handler sets its requirement too late for any step to read: a step sees
+// the metadata only after c.Next() has already run the handler it was meant to
+// guard. Steps that need to know what they are guarding, rather than only what
+// the credential proved, read it from here.
+//
+// app.Use rather than app.Add, so this matches without becoming a route. A
+// registered route makes every path it covers "found", which turns the 404 for
+// an address nothing serves into a 500 from a handler with nothing after it.
+//
+// Built from the same table and the same path translation as the routes
+// themselves, so there is no second list to disagree with the first.
+func Announce(app *fiber.App, table []route.Route) {
+	for _, r := range table {
+		meta := r
+		method := meta.Method
+		app.Use(FiberPath(meta.Path), func(c *fiber.Ctx) error {
+			if c.Method() == method {
+				middleware.SetRequirement(c, meta.Requirement, meta.Body, meta.Name)
+			}
+			return c.Next()
+		})
+	}
+}
+
 // checkHandlers reports every route with no handler and every handler naming
 // no route.
 //

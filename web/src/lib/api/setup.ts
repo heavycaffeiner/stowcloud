@@ -7,7 +7,7 @@
 // `createInitialAdmin` is THE seam: it is the only function in the entire
 // frontend that knows this request shape.
 import { t } from '../i18n'
-import { ApiError, type ApiErrorBody } from './types'
+import { ApiError, type ApiErrorBody, type SetupFinding } from './types'
 
 export interface SetupCreateAdminReq {
   token: string
@@ -29,13 +29,13 @@ export interface SetupCreateAdminReq {
 /** What setup noticed and did not refuse over. The one that matters is a host
  *  list that does not contain the address the operator is browsing from: it is
  *  correct behind a proxy and a lockout otherwise, and no rule can tell the
- *  two apart. */
-export interface SetupFinding {
-  level: 'block' | 'warn' | 'ok'
-  field?: string
-  reason_key: string
-  reason_params?: Record<string, string>
-}
+ *  two apart.
+ *
+ *  Declared in types.ts, where the contract check reads it against the Go
+ *  struct that answers it. Re-exported here because this module is the seam
+ *  every setup caller imports from.
+ */
+export type { SetupFinding } from './types'
 
 export interface SetupResult {
   warnings: SetupFinding[]
@@ -72,7 +72,7 @@ async function mockCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
   if (req.app_hosts.length > 0 && !req.app_hosts.some((h) => h.toLowerCase() === self.toLowerCase())) {
     return {
       warnings: [
-        { level: 'warn', field: 'app_hosts', reason_key: 'settings.would_lock_you_out', reason_params: { host: self } }
+        { section: 'network', field: 'app_hosts', reason: 'settings.would_lock_you_out', args: { host: self }, blocking: false }
       ]
     }
   }
@@ -90,7 +90,12 @@ async function httpCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
   const body = await res.json().catch(() => ({}))
   if (res.ok) {
     const done = body as { warnings?: SetupFinding[]; bind_failed?: boolean }
-    return { warnings: done.warnings ?? [], bind_failed: done.bind_failed }
+    // `settings.check_passed` is what the checker emits when it found nothing
+    // to say: it is the absence of a warning, not one. Counted as a warning it
+    // stops this screen on every successful setup, and the person has to press
+    // the button a second time to get past a panel reporting that all is well.
+    const warnings = (done.warnings ?? []).filter((w) => w.reason !== 'settings.check_passed')
+    return { warnings, bind_failed: done.bind_failed }
   }
   const err = (body as ApiErrorBody).error ?? { code: 'internal', message: res.statusText }
   throw new ApiError(res.status, err)

@@ -152,15 +152,16 @@ func TestEveryDeclaredRouteAnswers(t *testing.T) {
 	}{
 		{"/api/v1/system/health", http.StatusOK},
 		{"/api/v1/jobs", http.StatusUnauthorized},
-		// Bound and demanding an upgrade: a plain GET on the change channel
-		// is a client that has not upgraded, which is said rather than left
-		// on a stream that will never carry a frame.
+		// Bound and credential-gated: the change channel is bookkeeping a
+		// caller does about its own work, so it takes any credential and
+		// refuses a request carrying none. The upgrade is demanded after
+		// that, of a caller the route will actually serve.
 		//
 		// This entry has moved every time the route it named was bound, from
 		// auth/oidc/config to system/setup to here. A route named as an
 		// example of one shape has to move when it stops being that shape, or
 		// the test quietly asserts the opposite of what it says.
-		{"/api/v1/events", http.StatusUpgradeRequired},
+		{"/api/v1/events", http.StatusUnauthorized},
 	}
 
 	for _, c := range cases {
@@ -511,7 +512,7 @@ func TestEveryRouteHasExactlyOneHandler(t *testing.T) {
 // binding from a misspelled one, which falls through to the default and looks
 // served while doing nothing.
 func TestABoundRouteIsNotTheDefault(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, token, _ := bootWithUser(t)
 
 	// Every route bound so far that takes no path parameter and no share.
 	bound := []string{

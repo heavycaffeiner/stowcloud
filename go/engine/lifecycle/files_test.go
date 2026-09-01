@@ -25,7 +25,7 @@ import (
 // handler asks it rather than doing its own thing: every one of these reaches
 // the route as a query parameter a caller controls entirely.
 func TestNoPathEscapesTheVirtualRoot(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, token, _ := bootWithUser(t)
 
 	escapes := []string{
 		"/../etc/passwd",
@@ -56,7 +56,7 @@ func TestNoPathEscapesTheVirtualRoot(t *testing.T) {
 // An unparseable path and an absent one answer identically, byte for byte.
 // A difference between them is a way to probe what exists.
 func TestAMalformedPathIsIndistinguishableFromAnAbsentOne(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, token, _ := bootWithUser(t)
 
 	malformed, malformedBody := authed(t, http.MethodGet,
 		base+"/api/v1/files/list?path="+urlEscape("/../escape"), token)
@@ -75,7 +75,7 @@ func TestAMalformedPathIsIndistinguishableFromAnAbsentOne(t *testing.T) {
 // with no grants is nothing. An empty listing is an empty array, not null: a
 // client iterating a null gets a runtime error rather than zero rows.
 func TestTheVirtualRootListsThisAccountsShares(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, token, _ := bootWithUser(t)
 
 	for _, path := range []string{"", "/"} {
 		t.Run("path="+path, func(t *testing.T) {
@@ -105,7 +105,7 @@ func TestTheVirtualRootListsThisAccountsShares(t *testing.T) {
 // listing and the resolve have to agree: one showing what the other refuses is
 // a client that can see a name it cannot open.
 func TestAnUngrantedShareIsNeitherListedNorReachable(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, token, _ := bootWithUser(t)
 
 	status, body := authed(t, http.MethodGet,
 		base+"/api/v1/files/list?path="+urlEscape("/somebody-elses-share"), token)
@@ -123,7 +123,7 @@ func TestAnUngrantedShareIsNeitherListedNorReachable(t *testing.T) {
 // Both read routes need a credential. A file listing served anonymously is
 // every file on the deployment served anonymously.
 func TestTheFileRoutesNeedACredential(t *testing.T) {
-	base, _ := bootWithUser(t)
+	base, _, _ := bootWithUser(t)
 
 	for _, path := range []string{"/api/v1/files/list", "/api/v1/files/stat"} {
 		t.Run(path, func(t *testing.T) {

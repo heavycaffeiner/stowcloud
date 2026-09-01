@@ -286,6 +286,16 @@ func bodyLimitHandler(c *fiber.Ctx) error {
 
 // csrfHandler checks the token on a mutating cookie-authenticated request.
 func csrfHandler(c *fiber.Ctx, d Deps) error {
+	// A public route is one a caller reaches without a session, and the login
+	// is the example: it is where a session comes from. A browser still
+	// attaches whatever cookie it already holds, so requiring a token here
+	// refuses the sign-in of anyone whose previous session has not been
+	// cleared, with a 403 the screen has no way to satisfy. The route's own
+	// declaration decides, not the presence of a cookie the caller did not
+	// choose to send.
+	if m, ok := metaOf(c); ok && m.req.Access == route.AccessPublic {
+		return c.Next()
+	}
 	p := principalOf(c)
 	if !CSRFRequired(c.Method(), p.Kind) {
 		return c.Next()

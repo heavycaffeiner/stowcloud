@@ -36,7 +36,7 @@ describe('createInitialAdmin (mock)', () => {
     await createInitialAdmin({ token: 'DEV-TOKEN', username: 'root', password: 'longenoughpw', app_hosts: ['localhost'], trusted_proxies: [] })
 
     const result = await mockApi.login('root', 'longenoughpw')
-    expect(result.status).toBe('ok')
+    expect(result.required).toBeUndefined()
   })
 
   it('does not let a different password through for the created account', async () => {

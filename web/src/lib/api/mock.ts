@@ -827,21 +827,29 @@ function mockSetupAdmin(): { username: string; password: string } | null {
   }
 }
 
+// The shapes here are the ones the server sends: a session on success, and
+// `required: "totp"` with a challenge when a code is next. A mock that
+// answers in some other shape is a screen tested against a contract nothing
+// implements, which is how the first-run sign-in shipped broken.
+function mockSession(id: string, login: string, admin: boolean): LoginResult {
+  return { id, login, admin, csrf: randomId('csrf') }
+}
+
 async function login(username: string, password: string): Promise<LoginResult> {
   await delay(150)
   const created = mockSetupAdmin()
   if (created && created.username === username && created.password === password) {
     mockAuthState.loggedIn = true
-    return { status: 'ok', user: { id: 1, name: username } }
+    return mockSession('1', username, true)
   }
   if (username === DEMO_USER.name && password === mockAuthState.password) {
     mockAuthState.loggedIn = true
-    return { status: 'ok', user: { id: 1, name: username } }
+    return mockSession('1', username, true)
   }
   if (username === DEMO_TOTP_USER.name && password === DEMO_TOTP_USER.password) {
     const challenge = randomId('chal')
     mockAuthState.pendingChallenge = challenge
-    return { status: 'totp_required', challenge }
+    return { required: 'totp', challenge, expires_in_seconds: 300 }
   }
   throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
 }
@@ -851,7 +859,7 @@ async function loginTotp(challenge: string, code: string): Promise<LoginResult> 
   if (mockAuthState.pendingChallenge && challenge === mockAuthState.pendingChallenge && code === DEMO_TOTP_USER.code) {
     mockAuthState.loggedIn = true
     mockAuthState.pendingChallenge = null
-    return { status: 'ok', user: { id: 2, name: DEMO_TOTP_USER.name } }
+    return mockSession('2', DEMO_TOTP_USER.name, false)
   }
   throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
 }

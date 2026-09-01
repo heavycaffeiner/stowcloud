@@ -643,9 +643,33 @@ export interface AuthUser {
   name: string
 }
 
-/** `POST /api/auth/login` / `POST /api/auth/login/totp` response, tagged on
- *  `status` (`go/internal/httpapi/handler/session.go`). */
-export type LoginResult = { status: 'ok'; user: AuthUser } | { status: 'totp_required'; challenge: string }
+/** One check result from `POST /api/v1/system/setup` and the settings saves.
+ *
+ *  The key and its arguments rather than a rendered sentence: the client owns
+ *  the wording and the language. `settings.check_passed` is what the checker
+ *  emits when it found nothing to say, so it is the absence of a finding
+ *  rather than one. */
+export interface SetupFinding {
+  section: string
+  field?: string
+  reason: string
+  args?: Record<string, string>
+  blocking: boolean
+}
+
+/** `POST /api/v1/auth/login` and `.../login/totp`.
+ *
+ *  Neither response carries a `status` field. A password that verified with no
+ *  second factor answers with the session itself, and one that needs a code
+ *  answers with `required: "totp"` and the challenge. The discriminator is the
+ *  presence of `required`, which is how the two are told apart.
+ *
+ *  An earlier version declared `{ status: 'ok' } | { status: 'totp_required' }`,
+ *  a shape no response has ever had, so `status === 'ok'` was never true and
+ *  the first-run screen concluded its own sign-in had failed. */
+export type LoginResult =
+  | { required?: undefined; id: string; login: string; admin: boolean; csrf: string }
+  | { required: 'totp'; challenge: string; expires_in_seconds: number }
 
 /**
  * What a move or a copy does when the destination name is taken.

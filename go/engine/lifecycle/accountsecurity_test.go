@@ -153,14 +153,25 @@ func TestMintingAnAppPassword(t *testing.T) {
 		t.Fatal("no token, so the credential that was just created cannot be used")
 	}
 
-	// It is a real credential: it authenticates a request on its own.
-	code, out := authed(t, http.MethodGet, base+"/api/v1/auth/session", token)
+	// It is a real credential: it authenticates a file request on its own.
+	// The file surfaces are what an app password is for; the account and auth
+	// families are session-only, because a token handed to a device must not
+	// be able to mint another one or read the session list.
+	code, out := authed(t, http.MethodGet, base+"/api/v1/files/list?path=/", token)
 	if code != http.StatusOK {
 		t.Fatalf("the minted token does not authenticate: %d %s", code, out)
 	}
 
-	// And the listing never shows it again, because only its digest is kept.
-	code, listed := authed(t, http.MethodGet, base+"/api/v1/account/app-passwords", token)
+	// And it cannot reach account management, which is the boundary the token
+	// exists inside rather than an accident of routing.
+	code, _ = authed(t, http.MethodGet, base+"/api/v1/account/app-passwords", token)
+	if code != http.StatusUnauthorized {
+		t.Errorf("an app password reached the account listing: %d", code)
+	}
+
+	// The listing never shows the token again, because only its digest is
+	// kept. Read with the session, which is what the screen holds.
+	code, listed := withCookie(t, http.MethodGet, base+"/api/v1/account/app-passwords", cookie)
 	if code != http.StatusOK {
 		t.Fatalf("listing answered %d", code)
 	}
@@ -500,22 +511,17 @@ func markedHandle(t *testing.T, base string, cookie *http.Cookie) string {
 	return ""
 }
 
-// An app password's listing marks nothing: it has no session row to be.
-func TestAnAppPasswordMarksNoSession(t *testing.T) {
-	base, token := bootWithUser(t)
+// An app password cannot read the session list.
+//
+// It is a filesystem credential handed to a device. The account family is the
+// browser's own surface, and a token that could read the session list could
+// also revoke the session that created it.
+func TestAnAppPasswordCannotReachTheSessionList(t *testing.T) {
+	base, token, _ := bootWithUser(t)
 
 	code, listed := authed(t, http.MethodGet, base+"/api/v1/account/sessions", token)
-	if code != http.StatusOK {
-		t.Fatalf("listing answered %d: %s", code, listed)
-	}
-	var rows []map[string]any
-	if err := json.Unmarshal(listed, &rows); err != nil {
-		t.Fatal(err)
-	}
-	for _, row := range rows {
-		if boolField(row, "current") {
-			t.Error("an app password's listing marks a session as the one it is using")
-		}
+	if code != http.StatusUnauthorized {
+		t.Fatalf("an app password reached the session list: %d %s", code, listed)
 	}
 }
 
@@ -588,7 +594,7 @@ func TestAnExpiringCredentialWorksUntilItLapses(t *testing.T) {
 	}
 
 	token := stringField(body, "token")
-	if code, out := authed(t, http.MethodGet, base+"/api/v1/auth/session", token); code != http.StatusOK {
+	if code, out := authed(t, http.MethodGet, base+"/api/v1/files/list?path=/", token); code != http.StatusOK {
 		t.Errorf("a credential with 30 days left does not authenticate: %d %s", code, out)
 	}
 }

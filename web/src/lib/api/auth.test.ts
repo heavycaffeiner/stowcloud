@@ -24,7 +24,7 @@ describe('mockApi auth', () => {
     await expect(mockApi.session()).rejects.toMatchObject({ code: 'auth.required' })
 
     const result = await mockApi.login('demo', 'password12')
-    expect(result.status).toBe('ok')
+    expect(result.required).toBeUndefined()
     const s = await mockApi.session()
     expect(s.user.name).toBe('demo')
   })
@@ -36,12 +36,12 @@ describe('mockApi auth', () => {
 
     it('challenges instead of logging in directly', async () => {
       const result = await mockApi.login('totp-demo', 'password12')
-      expect(result.status).toBe('totp_required')
+      expect(result.required).toBe('totp')
     })
 
     it('rejects a wrong code without completing the login', async () => {
       const first = await mockApi.login('totp-demo', 'password12')
-      if (first.status !== 'totp_required') throw new Error('expected a challenge')
+      if (first.required !== 'totp') throw new Error('expected a challenge')
       await expect(mockApi.loginTotp(first.challenge, '000000')).rejects.toMatchObject({
         code: 'auth.invalid_credentials'
       })
@@ -50,9 +50,9 @@ describe('mockApi auth', () => {
 
     it('completes the login with the right code', async () => {
       const first = await mockApi.login('totp-demo', 'password12')
-      if (first.status !== 'totp_required') throw new Error('expected a challenge')
+      if (first.required !== 'totp') throw new Error('expected a challenge')
       const second = await mockApi.loginTotp(first.challenge, '123456')
-      expect(second.status).toBe('ok')
+      expect(second.required).toBeUndefined()
       const s = await mockApi.session()
       expect(s.user.name).toBe('demo')
     })

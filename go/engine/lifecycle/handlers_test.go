@@ -16,9 +16,13 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 )
 
-// bootWithUser serves an engine holding one account, and returns the base URL
-// and an app password for it.
-func bootWithUser(t *testing.T) (string, string) {
+// bootWithUser serves an engine holding one account, and returns the base URL,
+// an app password for it, and a session cookie for the same account.
+//
+// Both credentials, because the two surfaces take different ones: the file
+// routes are permission-scoped and reachable with the app password, and the
+// account family is the browser's own and takes the session.
+func bootWithUser(t *testing.T) (string, string, *http.Cookie) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -42,7 +46,14 @@ func bootWithUser(t *testing.T) (string, string) {
 		t.Fatalf("minting an app password: %v", err)
 	}
 
-	return serve(t, e), token
+	base := serve(t, e)
+	resp := postJSON(t, base+"/api/v1/auth/login",
+		map[string]string{"login": "alice", "password": "a-long-enough-password"})
+	cookie := resp.sessionCookie()
+	if cookie == nil {
+		t.Fatalf("the account could not sign in: %v", resp.body)
+	}
+	return base, token, cookie
 }
 
 // authed performs a request carrying an app password.
@@ -81,7 +92,7 @@ func authed(t *testing.T, method, url, token string) (int, []byte) {
 // runs: the chain resolves the app password, the route metadata admits it, the
 // handler calls the core and the projection encodes the answer.
 func TestAnAuthenticatedRequestReachesTheService(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, token, _ := bootWithUser(t)
 
 	status, body := authed(t, http.MethodGet, base+"/api/v1/jobs", token)
 	if status != http.StatusOK {
@@ -105,7 +116,7 @@ func TestAnAuthenticatedRequestReachesTheService(t *testing.T) {
 // The same route with no credential is refused, and says which kind of refusal
 // it is. A client reading this knows to authenticate rather than to retry.
 func TestAnUnauthenticatedRequestIsRefused(t *testing.T) {
-	base, _ := bootWithUser(t)
+	base, _, _ := bootWithUser(t)
 
 	status, body := get(t, base+"/api/v1/jobs")
 	if status != http.StatusUnauthorized {
@@ -128,7 +139,7 @@ func TestAnUnauthenticatedRequestIsRefused(t *testing.T) {
 // A wrong credential is refused exactly as a missing one is. The difference
 // between them is information about which tokens exist.
 func TestAWrongCredentialIsRefusedTheSameWay(t *testing.T) {
-	base, _ := bootWithUser(t)
+	base, _, _ := bootWithUser(t)
 
 	missing, missingBody := get(t, base+"/api/v1/jobs")
 	wrong, wrongBody := authed(t, http.MethodGet, base+"/api/v1/jobs", "not-a-real-token")
@@ -144,7 +155,7 @@ func TestAWrongCredentialIsRefusedTheSameWay(t *testing.T) {
 // A job that does not exist and a job belonging to someone else answer the
 // same way. Telling them apart says whether another account has that id.
 func TestAnAbsentJobIsIndistinguishableFromAForeignOne(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, token, _ := bootWithUser(t)
 
 	absent, absentBody := authed(t, http.MethodGet, base+"/api/v1/jobs/999999", token)
 	if absent != http.StatusNotFound {
@@ -165,7 +176,7 @@ func TestAnAbsentJobIsIndistinguishableFromAForeignOne(t *testing.T) {
 // Cancelling a job nobody owns is refused rather than reported as done. A
 // client told a cancel succeeded stops watching.
 func TestCancellingAnAbsentJobIsRefused(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, token, _ := bootWithUser(t)
 
 	status, body := authed(t, http.MethodPost, base+"/api/v1/jobs/999999/cancel", token)
 	if status == http.StatusNoContent || status == http.StatusOK {
@@ -180,11 +191,13 @@ func TestCancellingAnAbsentJobIsRefused(t *testing.T) {
 // so no listing can return one, and a test that reads the bytes is what keeps
 // a future field from carrying one by accident.
 func TestNoCredentialListingCarriesACredential(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, token, cookie := bootWithUser(t)
 
 	for _, path := range []string{"/api/v1/account/sessions", "/api/v1/account/app-passwords"} {
 		t.Run(path, func(t *testing.T) {
-			status, body := authed(t, http.MethodGet, base+path, token)
+			// Read with the session: the account family is the browser's own
+			// surface, and an app password is refused there by design.
+			status, body := withCookie(t, http.MethodGet, base+path, cookie)
 			if status != http.StatusOK {
 				t.Fatalf("answered %d: %s", status, body)
 			}
@@ -206,9 +219,9 @@ func TestNoCredentialListingCarriesACredential(t *testing.T) {
 // An app password lists itself, so the listing is real rather than empty for a
 // reason that would also hide a leak.
 func TestAnAppPasswordAppearsInItsOwnListing(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, _, cookie := bootWithUser(t)
 
-	status, body := authed(t, http.MethodGet, base+"/api/v1/account/app-passwords", token)
+	status, body := withCookie(t, http.MethodGet, base+"/api/v1/account/app-passwords", cookie)
 	if status != http.StatusOK {
 		t.Fatalf("answered %d: %s", status, body)
 	}
@@ -260,8 +273,18 @@ func TestOneAccountNeverSeesAnothersCredentials(t *testing.T) {
 	}
 
 	base := serve(t, e)
+	_ = aliceToken
 
-	status, body := authed(t, http.MethodGet, base+"/api/v1/account/app-passwords", aliceToken)
+	// Read with alice's session: the account family is the browser's own
+	// surface, and an app password is refused there by design.
+	resp := postJSON(t, base+"/api/v1/auth/login",
+		map[string]string{"login": "alice", "password": "a-long-enough-password"})
+	aliceCookie := resp.sessionCookie()
+	if aliceCookie == nil {
+		t.Fatalf("alice could not sign in: %v", resp.body)
+	}
+
+	status, body := withCookie(t, http.MethodGet, base+"/api/v1/account/app-passwords", aliceCookie)
 	if status != http.StatusOK {
 		t.Fatalf("answered %d: %s", status, body)
 	}
@@ -321,15 +344,25 @@ func TestRevokingAnothersCredentialIsRefused(t *testing.T) {
 
 	base := serve(t, e)
 
-	status, body := authed(t, http.MethodDelete,
-		base+"/api/v1/account/app-passwords/"+strconv.FormatInt(bobID, 10), aliceToken)
+	_ = aliceToken
+	resp := postJSON(t, base+"/api/v1/auth/login",
+		map[string]string{"login": "alice", "password": "a-long-enough-password"})
+	aliceCookie := resp.sessionCookie()
+	if aliceCookie == nil {
+		t.Fatalf("alice could not sign in: %v", resp.body)
+	}
+	aliceCSRF := resp.field("csrf")
+
+	status, body := mutate(t, http.MethodDelete,
+		base+"/api/v1/account/app-passwords/"+strconv.FormatInt(bobID, 10), aliceCookie, aliceCSRF, nil)
 	if status == http.StatusNoContent || status == http.StatusOK {
 		t.Fatalf("alice revoked bob's credential: %d %s", status, body)
 	}
 
 	// And bob's credential still works, which is what makes the refusal real
-	// rather than a status code over a completed deletion.
-	after, afterBody := authed(t, http.MethodGet, base+"/api/v1/account/app-passwords", bobToken)
+	// rather than a status code over a completed deletion. Proven on the file
+	// surface, which is what an app password is for.
+	after, afterBody := authed(t, http.MethodGet, base+"/api/v1/files/list?path=/", bobToken)
 	if after != http.StatusOK {
 		t.Errorf("bob's credential stopped working: %d %s", after, afterBody)
 	}
@@ -339,7 +372,7 @@ func TestRevokingAnothersCredentialIsRefused(t *testing.T) {
 // bound set rather than one route, because the check is per handler and a
 // handler added later would be the one that forgot.
 func TestEveryCredentialledRouteRefusesAnonymously(t *testing.T) {
-	base, _ := bootWithUser(t)
+	base, _, _ := bootWithUser(t)
 
 	paths := []string{
 		"/api/v1/jobs",

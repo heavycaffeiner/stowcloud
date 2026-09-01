@@ -650,7 +650,7 @@ func TestTheRecentListing(t *testing.T) {
 // An empty recent listing encodes as an array, never null. A client iterating
 // a null gets a runtime error rather than zero rows.
 func TestAnEmptyRecentListingIsAnArray(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, token, _ := bootWithUser(t)
 
 	status, body := authed(t, http.MethodGet, base+"/api/v1/files/recent", token)
 	if status != http.StatusOK {

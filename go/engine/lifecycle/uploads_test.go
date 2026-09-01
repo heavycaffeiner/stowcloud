@@ -74,7 +74,7 @@ func metadataFor(pairs map[string]string) string {
 // this to find out whether resumable uploads exist here before it has
 // anything to present.
 func TestUploadDiscoveryIsPublic(t *testing.T) {
-	base, _ := bootWithUser(t)
+	base, _, _ := bootWithUser(t)
 
 	status, header, body := tusRequest(t, http.MethodOptions,
 		base+"/api/v1/uploads", "", nil, nil)
@@ -453,7 +453,7 @@ func crc32cOf(b []byte) []byte {
 // A client that guessed would compute a digest for every chunk and have every
 // one refused, with nothing saying which algorithm to use instead.
 func TestDiscoveryNamesTheChecksumAlgorithms(t *testing.T) {
-	base, _ := bootWithUser(t)
+	base, _, _ := bootWithUser(t)
 
 	_, header, _ := tusRequest(t, http.MethodOptions, base+"/api/v1/uploads", "", nil, nil)
 	got := header.Get("Tus-Checksum-Algorithm")

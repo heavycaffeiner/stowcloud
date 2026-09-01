@@ -699,8 +699,12 @@ func TestALogoutWhoseRevokeFailsIsReported(t *testing.T) {
 	if status == http.StatusNoContent || status == http.StatusOK {
 		t.Fatalf("a logout that could not revoke answered %d: the session is still live and the caller was told otherwise", status)
 	}
-	if status != http.StatusInternalServerError {
-		t.Errorf("answered %d, want a server fault: %s", status, body)
+	// Either refusal is honest. With storage gone the session cannot be read
+	// back, so the request is unauthenticated before the handler runs; if it
+	// does reach the handler, the revoke fails and that is a server fault.
+	// What must not happen is a success over a session that is still live.
+	if status != http.StatusInternalServerError && status != http.StatusUnauthorized {
+		t.Errorf("answered %d, want a refusal: %s", status, body)
 	}
 }
 
@@ -746,19 +750,17 @@ func TestTheReportedCSRFTokenAuthorizesAMutation(t *testing.T) {
 // cookie would be a value that validates for nobody: a client that trusted it
 // would send it and be refused.
 func TestAnAppPasswordGetsNoCSRFToken(t *testing.T) {
-	base, token := bootWithUser(t)
+	base, token, _ := bootWithUser(t)
 
+	// The session route is session-only, so an app password cannot read a
+	// view at all: there is no token to hand out because there is no answer.
+	// That is a stronger form of the same guarantee.
 	status, body := authed(t, http.MethodGet, base+"/api/v1/auth/session", token)
-	if status != http.StatusOK {
-		t.Fatalf("answered %d: %s", status, body)
+	if status != http.StatusUnauthorized {
+		t.Fatalf("an app password read the session view: %d %s", status, body)
 	}
-
-	var view map[string]any
-	if err := json.Unmarshal(body, &view); err != nil {
-		t.Fatal(err)
-	}
-	if csrf := stringField(view, "csrf"); csrf != "" {
-		t.Errorf("an app password was handed a CSRF token %q, which validates for no session", csrf)
+	if strings.Contains(string(body), "csrf") {
+		t.Errorf("the refusal carries a CSRF token: %s", body)
 	}
 }
 

@@ -122,7 +122,7 @@
     submitting = true
     try {
       const result = await api.login(username.trim(), password)
-      if (result.status === 'totp_required') {
+      if (result.required === 'totp') {
         challenge = result.challenge
         step = 'totp'
       } else {
@@ -141,10 +141,10 @@
     errorMsg = null
     submitting = true
     try {
-      const result = await api.loginTotp(challenge, code.trim())
-      if (result.status === 'ok') {
-        await afterLogin()
-      }
+      // The code step answers with the session itself. Nothing else reaches
+      // here: a wrong code throws, which the catch below renders.
+      await api.loginTotp(challenge, code.trim())
+      await afterLogin()
     } catch (err) {
       errorMsg = messageFor(err)
     } finally {

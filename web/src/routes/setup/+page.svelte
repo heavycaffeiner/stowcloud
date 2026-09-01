@@ -53,7 +53,7 @@
   /* i18n */ 'settings.would_lock_you_out'
   /* i18n */ 'settings.proxy_range_is_everything'
   function warningText(f: SetupFinding): string {
-    return t(f.reason_key, f.reason_params ?? {})
+    return t(f.reason, f.args ?? {})
   }
 
   const strength = $derived(scorePasswordStrength(password))
@@ -87,14 +87,14 @@
    *  step rather than a bounce through the login screen. */
   async function enter(): Promise<void> {
     const login = await api.login(username.trim(), password)
-    if (login.status === 'ok') {
+    if (login.required !== 'totp') {
       await completeLogin()
       await goto('/b/')
       return
     }
     // TOTP is never enabled on a freshly created account, but if the backend
     // somehow disagrees, don't strand the user: send them to the normal login
-    // flow, which handles the totp_required step.
+    // flow, which handles the second-factor step.
     doneButLoginFailed = true
   }
 
@@ -209,7 +209,7 @@
       {#if warnings.length > 0 || bindFailed}
         <div class="sc-auth-card__warning" role="status">
           {#if bindFailed}<p>{t('setup.bind_failed_still_on_old_address')}</p>{/if}
-          {#each warnings as w, i (w.reason_key + i)}
+          {#each warnings as w, i (w.reason + i)}
             <p>{warningText(w)}</p>
           {/each}
         </div>

@@ -49,6 +49,10 @@ func pairs() []pair {
 		{iface: "Entry", goType: "EntryView"},
 		{iface: "ListResponse", goType: "PageView"},
 		{iface: "AdminGrant", goType: "GrantView"},
+		// The first-run screen reads these. It described `level` and
+		// `reason_key`, which no response has ever carried, so every read was
+		// undefined and the screen stopped on a panel with nothing in it.
+		{iface: "SetupFinding", goType: "FindingView"},
 	}
 }
 
