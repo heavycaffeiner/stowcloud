@@ -22,29 +22,22 @@ func TestTheServeArgumentsParse(t *testing.T) {
 		{
 			name: "nothing takes the defaults",
 			args: nil,
-			want: serveArgs{DataDir: deployDataDir, Shares: []string{deploySharesRoot}},
+			want: serveArgs{DataDir: deployDataDir},
 		},
 		{
 			name: "a value flag does not swallow the next one",
 			args: []string{"--data-dir", "/d", "--plain"},
-			want: serveArgs{DataDir: "/d", Plain: true, Shares: []string{deploySharesRoot}},
+			want: serveArgs{DataDir: "/d", Plain: true},
 		},
 		{
 			name: "a bare switch does not skip what follows",
-			args: []string{"--plain", "--shares", "/mnt"},
-			want: serveArgs{DataDir: deployDataDir, Plain: true, Shares: []string{"/mnt"}},
+			args: []string{"--plain", "--addr", ":9000"},
+			want: serveArgs{DataDir: deployDataDir, Plain: true, Addr: ":9000"},
 		},
 		{
 			name: "every flag together",
-			args: []string{"--addr", ":9000", "--data-dir", "/d", "--shares", "/mnt", "--plain"},
-			want: serveArgs{Addr: ":9000", DataDir: "/d", Plain: true, Shares: []string{"/mnt"}},
-		},
-		{
-			// A deployment can mount folders in more than one place, and the
-			// sandbox has to name every one before it is installed.
-			name: "shares repeats",
-			args: []string{"--shares", "/mnt/a", "--shares", "/mnt/b"},
-			want: serveArgs{DataDir: deployDataDir, Shares: []string{"/mnt/a", "/mnt/b"}},
+			args: []string{"--addr", ":9000", "--data-dir", "/d", "--plain"},
+			want: serveArgs{Addr: ":9000", DataDir: "/d", Plain: true},
 		},
 	}
 
@@ -66,7 +59,6 @@ func TestAServeFlagWithoutItsValueIsRefused(t *testing.T) {
 	for _, args := range [][]string{
 		{"--data-dir"},
 		{"--addr"},
-		{"--shares"},
 		{"--plain", "--data-dir"},
 	} {
 		if _, err := parseServeArgs(args); err == nil {

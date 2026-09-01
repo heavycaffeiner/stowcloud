@@ -253,6 +253,45 @@ func (t FsType) String() string {
 	}
 }
 
+// ParseFsType maps the fstype name the kernel spells in /proc mount tables
+// back to the magic number FsType.String reports it as. It lives here,
+// beside String, so the name and the magic number stay one vocabulary
+// instead of a copy growing stale in whatever package reads mount tables.
+//
+// A name this build has no case for comes back as FsType(0), which
+// AdmitFsType already refuses through its default case: an unclassified
+// filesystem stays refused, never silently admitted for lack of a name.
+func ParseFsType(name string) FsType {
+	switch name {
+	case "ext4":
+		return FsExt4
+	case "btrfs":
+		return FsBtrfs
+	case "xfs":
+		return FsXfs
+	case "zfs":
+		return FsZfs
+	case "f2fs":
+		return FsF2fs
+	case "tmpfs":
+		return FsTmpfs
+	case "overlay":
+		return FsOverlay
+	case "fuse":
+		return FsFuse
+	case "nfs":
+		return FsNfs
+	case "cifs":
+		return FsCifs
+	case "squashfs":
+		return FsSquashfs
+	case "ntfs":
+		return FsNtfs
+	default:
+		return FsType(0)
+	}
+}
+
 // DirEntry is one name read out of a directory.
 type DirEntry struct {
 	Name string

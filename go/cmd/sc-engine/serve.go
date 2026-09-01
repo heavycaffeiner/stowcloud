@@ -31,15 +31,6 @@ import (
 // flag default in main, where a checkout is the working directory.
 const deployDataDir = "/var/lib/stowcloud"
 
-// deploySharesRoot is where the image expects new shares to be created.
-//
-// Granted to the sandbox at startup whether or not a share lives under it, so
-// the first folder somebody registers is readable straight away. Without it
-// the domain holds no share parent on a fresh deployment: the registration
-// succeeded and every listing answered not-found until the container
-// restarted.
-const deploySharesRoot = "/shares"
-
 // serveArgs is the deploy command line, parsed.
 type serveArgs struct {
 	// Addr is empty rather than an address: run resolves the stored bind
@@ -47,11 +38,6 @@ type serveArgs struct {
 	Addr    string
 	DataDir string
 	Plain   bool
-
-	// Shares are the directories folders may be registered under, granted to
-	// the sandbox at startup. Never empty: a deployment with nowhere to put a
-	// folder is one where the first folder added needs a restart.
-	Shares []string
 }
 
 // parseServeArgs reads the flags a deployment's entrypoint spells out
@@ -87,13 +73,6 @@ func parseServeArgs(args []string) (serveArgs, error) {
 			}
 			out.Addr = v
 			i += 2
-		case "--shares", "-shares":
-			v, ok := value()
-			if !ok {
-				return serveArgs{}, fmt.Errorf("%s needs a directory", flag)
-			}
-			out.Shares = append(out.Shares, v)
-			i += 2
 		case "--plain":
 			out.Plain = true
 			i++
@@ -102,11 +81,6 @@ func parseServeArgs(args []string) (serveArgs, error) {
 		}
 	}
 
-	if len(out.Shares) == 0 {
-		// The image's own mount point, so a deployment that passes nothing
-		// still has somewhere folders can be added without a restart.
-		out.Shares = []string{deploySharesRoot}
-	}
 	return out, nil
 }
 
@@ -114,14 +88,14 @@ func parseServeArgs(args []string) (serveArgs, error) {
 // the flags a deployment's entrypoint spells out longhand, so the container
 // command line reads the same way it always has.
 //
-//	serve --data-dir DIR [--addr HOST:PORT] [--shares DIR]... [--plain]
+//	serve --data-dir DIR [--addr HOST:PORT] [--plain]
 func runServeCmd(args []string) int {
 	parsed, err := parseServeArgs(args)
 	if err != nil {
 		log.New(os.Stderr, "", 0).Printf("sc-engine serve: %v\n", err)
 		return 2
 	}
-	if rerr := run(parsed.Addr, parsed.DataDir, parsed.Shares, parsed.Plain); rerr != nil {
+	if rerr := run(parsed.Addr, parsed.DataDir, parsed.Plain); rerr != nil {
 		return 1
 	}
 	return 0
