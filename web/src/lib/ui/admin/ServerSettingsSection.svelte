@@ -26,12 +26,8 @@
     SearchSettingsReq,
     ArchiveSettingsReq,
     NetworkSettingsReq,
-    OidcSettingsReq,
-    DbSettingsReq,
-    SymlinkPolicyReq,
     HomesSettingsReq,
-    WatchSettingsReq,
-    PathsSettingsReq
+    WatchSettingsReq
   } from '../../api/types'
   import { SelectOutlined } from 'm3-svelte'
   import Button from '../Button.svelte'
@@ -122,11 +118,15 @@
       .filter(Boolean)
   }
 
+  // The server answers three separate facts: stored, applied, and whether a
+  // restart is needed. This used to compare `applied` against strings the
+  // server has never sent, so every save reported itself as immediate,
+  // including the ones sitting inert until the container went down.
   function outcomeText(o: ApplyOutcome): string {
-    if (o.applied === 'serve_restarted') return t('server.listener_moved_to_the_new_address')
-    if (o.applied === 'engine_restart') return t('server.server_is_restarting_to_apply')
-    if (o.applied === 'reserved') return t('server.change_takes_full_effect_only')
-    return t('server.change_took_effect_immediately')
+    if (o.restart_required) return t('server.change_takes_full_effect_only')
+    if (o.applied) return t('server.change_took_effect_immediately')
+    if (o.stored) return t('server.change_takes_full_effect_only')
+    return t('common.could_not_save_settings')
   }
 
   function formatValue(v: unknown): string {
@@ -243,50 +243,39 @@
 
 
 
-  // ── the restart a save takes ──
+  // ── the restart a save needs ──
   //
-  // Three sections are decided when the process builds what is under the
-  // sandbox, so saving one restarts it. The restart is not a button any more:
-  // the save takes it. What is left is the one question the server cannot
-  // answer for itself, which is whether interrupting the work in flight is
-  // acceptable. The counts come from the refusal itself rather than from a
-  // separately polled snapshot, which could be stale by the time somebody
-  // reacts to it.
+  // Some sections are decided when the process builds what is under the
+  // sandbox, so a change there is stored and waits for the next start. The
+  // server does not restart itself: it reports what a restart would interrupt
+  // and leaves the decision, because whether losing three uploads is
+  // acceptable is not something it can answer.
+  //
+  // The counts come from the save's own response rather than a separately
+  // polled snapshot, which could be stale by the time somebody reads it.
 
   let busyOpen = $state(false)
   let busyCounts = $state<{ uploads: number; jobs: number } | null>(null)
-  let busyRetry = $state<(() => Promise<void>) | null>(null)
 
-  /** Runs a save, and on a busy refusal offers to take the restart anyway.
-   *  retry is the same save with force set. */
+  /** Runs a save and surfaces what a pending restart would interrupt. */
   async function saving(
     run: () => Promise<ApplyOutcome>,
-    retry: () => Promise<void>,
     fallback: string,
     set: (o: ApplyOutcome | null, err: string | null) => void
   ): Promise<void> {
     try {
-      set(await run(), null)
+      const outcome = await run()
+      set(outcome, null)
+      const uploads = outcome.active_uploads ?? 0
+      const jobs = outcome.active_jobs ?? 0
+      if (outcome.restart_required && uploads + jobs > 0) {
+        busyCounts = { uploads, jobs }
+        busyOpen = true
+      }
       await load()
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'restart.busy') {
-        busyCounts = {
-          uploads: err.reasonNumber('active_uploads') ?? 0,
-          jobs: err.reasonNumber('running_jobs') ?? 0
-        }
-        busyRetry = retry
-        busyOpen = true
-        return
-      }
       set(null, describeApiError(err, fallback))
     }
-  }
-
-  async function confirmBusy(): Promise<void> {
-    busyOpen = false
-    const retry = busyRetry
-    busyRetry = null
-    if (retry) await retry()
   }
 
   // ── SMB ──
@@ -326,18 +315,6 @@
     smbSaving = true
     await saving(
       () => api.adminSetSmbSettings(req),
-      () => saveSmbForced(req),
-      t('server.could_not_save_smb_settings'),
-      (o, e) => ((smbOutcome = o), (smbError = e))
-    )
-    smbSaving = false
-  }
-
-  async function saveSmbForced(req: SmbSettingsReq): Promise<void> {
-    smbSaving = true
-    await saving(
-      () => api.adminSetSmbSettings({ ...req, force: true }),
-      async () => {},
       t('server.could_not_save_smb_settings'),
       (o, e) => ((smbOutcome = o), (smbError = e))
     )
@@ -466,18 +443,6 @@
     homesSaving = true
     await saving(
       () => api.adminSetHomesSettings(req),
-      () => saveHomesForced(req),
-      t('server.could_not_save_home_folder'),
-      (o, e) => ((homesOutcome = o), (homesError = e))
-    )
-    homesSaving = false
-  }
-
-  async function saveHomesForced(req: HomesSettingsReq): Promise<void> {
-    homesSaving = true
-    await saving(
-      () => api.adminSetHomesSettings({ ...req, force: true }),
-      async () => {},
       t('server.could_not_save_home_folder'),
       (o, e) => ((homesOutcome = o), (homesError = e))
     )
@@ -506,18 +471,6 @@
     watchSaving = true
     await saving(
       () => api.adminSetWatchSettings(req),
-      () => saveWatchForced(req),
-      t('server.could_not_save_file_watch'),
-      (o, e) => ((watchOutcome = o), (watchError = e))
-    )
-    watchSaving = false
-  }
-
-  async function saveWatchForced(req: WatchSettingsReq): Promise<void> {
-    watchSaving = true
-    await saving(
-      () => api.adminSetWatchSettings({ ...req, force: true }),
-      async () => {},
       t('server.could_not_save_file_watch'),
       (o, e) => ((watchOutcome = o), (watchError = e))
     )
@@ -876,6 +829,8 @@
   {/if}
 </section>
 
+<!-- The save is already stored. This reports what the restart it is waiting
+     for would interrupt, because the operator is the one who takes it. -->
 <ConfirmDialog
   open={busyOpen}
   title={t('server.work_still_progress')}
@@ -883,10 +838,9 @@
     uploads: busyCounts?.uploads ?? 0,
     jobs: busyCounts?.jobs ?? 0
   })}
-  confirmLabel={t('server.restart_anyway')}
-  danger
-  onclose={() => ((busyOpen = false), (busyRetry = null))}
-  onconfirm={confirmBusy}
+  confirmLabel={t('common.ok')}
+  onclose={() => (busyOpen = false)}
+  onconfirm={() => (busyOpen = false)}
 />
 
 <style>
@@ -961,10 +915,6 @@
   .sc-server-settings__other dd {
     margin: 0;
     @apply --m3-body-medium;
-  }
-  .sc-server-settings__source {
-    color: var(--m3c-on-surface-variant);
-    @apply --m3-body-small;
   }
   .sc-server-settings__reason {
     color: var(--m3c-on-surface-variant);

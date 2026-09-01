@@ -103,18 +103,36 @@
     }
   }
 
-  async function startEnroll(): Promise<void> {
+  /** Opens the dialog without a secret in it.
+   *
+   *  The secret is minted by `POST /account/totp/setup`, which re-confirms the
+   *  password: enrolling a second factor is a credential change, and the
+   *  server will not hand one out on a session cookie alone. Asking for it
+   *  before the field existed answered 400 every time, so the dialog opened on
+   *  "could not start setup" and the factor could never be turned on. */
+  function startEnroll(): void {
     enrollError = null
     enrollPassword = ''
     enrollCode = ''
-    setupLoading = true
+    setupSecret = ''
+    setupUrl = ''
     enrollOpen = true
+  }
+
+  /** Mints the secret against the password just typed. */
+  async function revealSecret(): Promise<void> {
+    if (!enrollPassword || setupSecret) return
+    enrollError = null
+    setupLoading = true
     try {
-      const setup = await api.totpSetup()
+      const setup = await api.totpSetup(enrollPassword)
       setupSecret = setup.secret
-      setupUrl = setup.otpauth_url
-    } catch {
-      enrollError = t('totp.could_not_start_setup_try')
+      setupUrl = setup.uri
+    } catch (err) {
+      enrollError =
+        err instanceof ApiError && err.code === 'auth.invalid_credentials'
+          ? t('common.incorrect_password')
+          : t('totp.could_not_start_setup_try')
     } finally {
       setupLoading = false
     }
@@ -221,33 +239,43 @@
 </div>
 
 <Dialog open={enrollOpen} title={t('totp.set_up_two_factor_authentication')} onclose={closeEnroll}>
+  <!-- The password comes first because the server mints the secret against
+       it: enrolling a factor is a credential change, not a read. -->
+  <TextField
+    type="password"
+    label={t('common.current_password')}
+    bind:value={enrollPassword}
+    autocomplete="current-password"
+  />
   {#if setupLoading}
     <p>{t('totp.loading_setup_details')}</p>
-  {:else}
+  {:else if setupSecret}
     <p>{t('totp.add_key_below_authenticator_app')}</p>
     <div class="sc-totp__secret-row">
       <code class="sc-totp__secret">{setupSecret}</code>
       <Button variant="text" onclick={copySecret}>{t('common.copy')}</Button>
     </div>
     <p class="sc-totp__url">{setupUrl}</p>
-    <TextField
-      type="password"
-      label={t('common.current_password')}
-      bind:value={enrollPassword}
-      autocomplete="current-password"
-    />
     <TextField label={t('totp.6_digit_code')} bind:value={enrollCode} error={enrollError} />
+  {:else if enrollError}
+    <p class="sc-totp__smb-warning">{enrollError}</p>
   {/if}
   {#snippet actions()}
     <Button variant="text" onclick={closeEnroll}>{t('common.cancel')}</Button>
-    <Button
-      variant="filled"
-      disabled={setupLoading || !enrollPassword || enrollCode.length !== 6}
-      loading={enrolling}
-      onclick={confirmEnroll}
-    >
-      {t('totp.enable')}
-    </Button>
+    {#if setupSecret}
+      <Button
+        variant="filled"
+        disabled={enrollCode.length !== 6}
+        loading={enrolling}
+        onclick={confirmEnroll}
+      >
+        {t('totp.enable')}
+      </Button>
+    {:else}
+      <Button variant="filled" disabled={!enrollPassword} loading={setupLoading} onclick={revealSecret}>
+        {t('common.continue')}
+      </Button>
+    {/if}
   {/snippet}
 </Dialog>
 

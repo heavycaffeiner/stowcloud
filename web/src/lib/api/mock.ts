@@ -24,6 +24,7 @@ import {
   type AppPasswordInfo,
   type ApplyOutcome,
   type ArchiveListing,
+  type ArchiveTicket,
   type ArchiveSettingsReq,
   type RateSettingsReq,
   type AuditPage,
@@ -567,9 +568,11 @@ function findEntryById(id: number): { entry: Entry; dirPath: string } | null {
   return null
 }
 
-/** Mock counterpart of `http.ts`'s `archive`: the real server streams the zip
- *  as the response body, so this hands back a blob rather than a job id. */
-async function archive(paths: string[], _name?: string): Promise<Blob> {
+/** Mock counterpart of `http.ts`'s `archive`. The real server prepares the
+ *  archive and answers a ticket, falling back to streaming the bytes when it
+ *  is too large to hold; this takes the streaming half, which the caller
+ *  handles by saving the blob. */
+async function archive(paths: string[], _name?: string): Promise<ArchiveTicket | Blob> {
   await delay(120)
   if (paths.length === 0) throw new ApiError(422, { code: 'fs.invalid_name', message: 'paths must not be empty' })
   const body = `mock zip archive of:\n${paths.join('\n')}\n`
@@ -1051,14 +1054,14 @@ async function changePassword(currentPassword: string, newPassword: string): Pro
   mockAuthState.password = newPassword
 }
 
-async function totpSetup(): Promise<{ secret: string; otpauth_url: string }> {
+async function totpSetup(_currentPassword: string): Promise<{ secret: string; uri: string }> {
   await delay(30)
   // A real base32 secret so a user who copies it into an authenticator app
   // gets a working (if mock-unverified) entry — only the *server-side*
   // check is stubbed out below.
   const secret = 'JBSWY3DPEHPK3PXP'
   mockAuthState.pendingTotpSecret = secret
-  return { secret, otpauth_url: `otpauth://totp/Stowcloud:demo?secret=${secret}&issuer=Stowcloud` }
+  return { secret, uri: `otpauth://totp/Stowcloud:demo?secret=${secret}&issuer=Stowcloud` }
 }
 
 async function totpEnroll(password: string, secret: string, code: string): Promise<{ recovery_codes: string[] }> {
@@ -1482,24 +1485,24 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
   }
 }
 
+/** The outcome shape the server answers: stored, applied and restart-required
+ *  are three separate facts, not one enum. */
+function outcome(restartRequired: boolean): ApplyOutcome {
+  return {
+    stored: true,
+    applied: !restartRequired,
+    restart_required: restartRequired,
+    findings: []
+  }
+}
+
 async function adminSetSmbSettings(req: SmbSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
   const enabledChanged = mockServerSettings.smb.enabled !== req.enabled
   mockServerSettings.smb = { ...mockServerSettings.smb, ...req }
   mockOverriddenSections.add('smb')
-  return { applied: enabledChanged ? 'engine_restart' : 'live' }
+  return outcome(enabledChanged)
 }
-
-/** The groups this process cannot move while running, matching the server. */
-const RESTART_REQUIRED_SECTIONS = new Set<SettingsSectionId>([
-  'db',
-  'paths',
-  'homes',
-  'smb',
-  'watch',
-  'symlink-policy',
-  'oidc'
-])
 
 /** Zero rejects every search from every user the moment it is applied, so the
  *  real bridge refuses it where it is typed and so does this. */
@@ -1507,7 +1510,7 @@ async function adminSetSearchSettings(req: SearchSettingsReq): Promise<ApplyOutc
   await delay(30)
   mockServerSettings.search = { ...req }
   mockOverriddenSections.add('search')
-  return { applied: 'live' }
+  return outcome(false)
 }
 
 function mustBeAtLeastOne(field: string): ApiError {
@@ -1527,7 +1530,7 @@ async function adminSetArchiveSettings(req: ArchiveSettingsReq): Promise<ApplyOu
   if (req.max_concurrent < 1) throw mustBeAtLeastOne('archive.max_concurrent')
   mockServerSettings.archive = { ...req }
   mockOverriddenSections.add('archive')
-  return { applied: 'live' }
+  return outcome(false)
 }
 
 async function adminSetRateSettings(req: RateSettingsReq): Promise<ApplyOutcome> {
@@ -1536,7 +1539,7 @@ async function adminSetRateSettings(req: RateSettingsReq): Promise<ApplyOutcome>
   if (req.burst < 1) throw mustBeAtLeastOne('rate.burst')
   mockServerSettings.rate = { ...req }
   mockOverriddenSections.add('rate')
-  return { applied: 'live' }
+  return outcome(false)
 }
 
 let mockBind = '0.0.0.0:8443'
@@ -1557,33 +1560,32 @@ async function adminSetNetworkSettings(req: NetworkSettingsReq): Promise<ApplyOu
   // before dropping the old one, so this is live rather than a restart.
   if (req.bind && req.bind !== mockBind) {
     mockBind = req.bind
-    return { applied: 'serve_restarted' }
+    return outcome(true)
   }
   // Both fields are live holders the request chain reads, so a save moves
-  // them at once. It answered restart-required, which is what the three
-  // fields this request no longer carries would have needed.
-  return { applied: 'live' }
+  // them at once.
+  return outcome(false)
 }
 
 async function adminSetDbSettings(req: DbSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
   mockServerSettings.db = { ...req }
   mockOverriddenSections.add('db')
-  return { applied: 'engine_restart' }
+  return outcome(true)
 }
 
 async function adminSetSymlinkPolicySettings(req: SymlinkPolicyReq): Promise<ApplyOutcome> {
   await delay(30)
   mockServerSettings.symlink_policy = req.policy
   mockOverriddenSections.add('symlink-policy')
-  return { applied: 'engine_restart' }
+  return outcome(false)
 }
 
 async function adminSetHomesSettings(req: HomesSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
   mockServerSettings.homes = { ...req }
   mockOverriddenSections.add('homes')
-  return { applied: 'engine_restart' }
+  return outcome(true)
 }
 
 async function adminSetWatchSettings(req: WatchSettingsReq): Promise<ApplyOutcome> {
@@ -1601,7 +1603,7 @@ async function adminSetWatchSettings(req: WatchSettingsReq): Promise<ApplyOutcom
   }
   mockServerSettings.watch = { ...req }
   mockOverriddenSections.add('watch')
-  return { applied: 'engine_restart' }
+  return outcome(true)
 }
 
 /** Reproduces the two refusals a browser could not have made for itself: a
@@ -1653,7 +1655,8 @@ async function adminSetOidcSettings(req: OidcSettingsReq): Promise<ApplyOutcome>
   }
   mockServerSettings.oidc = { ...req, smb_policy: 'block' }
   mockOverriddenSections.add('oidc')
-  return { applied: 'engine_restart' }
+  // The provider is rebuilt when settings load, so a change here is live.
+  return outcome(false)
 }
 
 /** The real server also refuses paths that do not exist, a `data_dir` without
@@ -1680,7 +1683,8 @@ async function adminSetPathsSettings(req: PathsSettingsReq): Promise<ApplyOutcom
     smb_config_dir: req.smb_config_dir
   }
   mockOverriddenSections.add('paths')
-  return { applied: 'engine_restart' }
+  // Builtin and read-only: nothing reloads it and nothing restarts into it.
+  return outcome(false)
 }
 
 async function adminIndexEstimate(): Promise<IndexEstimate> {

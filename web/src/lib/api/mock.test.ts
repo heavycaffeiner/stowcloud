@@ -475,8 +475,12 @@ describe('mockApi trash', () => {
 
 describe('mockApi download (archive)', () => {
   it('archive answers the zip bytes themselves', async () => {
-    const blob = await mockApi.archive(['/home/Photos/휴가-2026-07-01.jpg', '/home/Photos/가족사진.png'])
-    expect(blob).toBeInstanceOf(Blob)
+    // The mock takes the streaming half of the contract, which the caller
+    // saves as a blob. A real server prepares the archive and answers a
+    // ticket instead, and the caller navigates to it.
+    const result = await mockApi.archive(['/home/Photos/휴가-2026-07-01.jpg', '/home/Photos/가족사진.png'])
+    expect(result).toBeInstanceOf(Blob)
+    const blob = result as Blob
     expect(blob.type).toBe('application/zip')
     expect(blob.size).toBeGreaterThan(0)
   })

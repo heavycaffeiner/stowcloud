@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 import { mockApi } from './mock'
 
 async function enrollTotp(): Promise<{ recovery_codes: string[] }> {
-  const setup = await mockApi.totpSetup()
+  const setup = await mockApi.totpSetup('password12')
   return mockApi.totpEnroll('password12', setup.secret, '123456')
 }
 

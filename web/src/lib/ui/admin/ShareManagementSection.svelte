@@ -425,11 +425,6 @@
     font-weight: 500;
     color: var(--m3c-on-surface);
   }
-  .sc-shares__path {
-    color: var(--m3c-on-surface-variant);
-    @apply --m3-body-small;
-    font-family: var(--sc-font-mono, monospace);
-  }
   /* The error colour, plus the word itself: a row marked only by colour says
      nothing to a reader who cannot see the difference. */
   .sc-shares__smb {

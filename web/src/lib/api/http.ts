@@ -16,6 +16,7 @@ import {
   type AppPasswordInfo,
   type ApplyOutcome,
   type ArchiveListing,
+  type ArchiveTicket,
   type ArchiveSettingsReq,
   type RateSettingsReq,
   type AuditPage,
@@ -466,14 +467,21 @@ async function del(paths: string[]): Promise<{ results: BatchItemResult[] }> {
 // ── content links & archive download (§8) ──
 
 /**
- * `POST /api/v1/files/archive` streams the ZIP itself. The server never stores one,
- * so there is no job to poll and no second request for the bytes: they arrive
- * as this response's body, and the caller saves it.
+ * `POST /api/v1/files/archive` prepares the ZIP and answers where to get it.
  *
- * Not a plain navigation, because the request is a POST carrying the path list
- * and needs the CSRF header a form submission cannot send.
+ * Two steps on purpose. The build used to arrive as this response's body and
+ * was collected with `res.blob()`, so nothing appeared until the whole archive
+ * was in the tab's memory: no progress for a folder that takes a minute, and a
+ * large one took the tab with it. The prepared archive is held by the server
+ * with a known length, so the fetch that follows is a plain navigation the
+ * browser owns: it shows progress, it goes to the downloads list, and a
+ * connection lost partway resumes instead of starting again.
+ *
+ * An archive too large for the server to hold comes back as the ZIP itself,
+ * which is the old behaviour and cannot be resumed. `url` absent is how the
+ * caller tells the two apart.
  */
-async function archive(paths: string[], name?: string): Promise<Blob> {
+async function archive(paths: string[], name?: string): Promise<ArchiveTicket | Blob> {
   const headers = new Headers({ 'Content-Type': 'application/json' })
   if (csrfToken) headers.set('Sc-Csrf', csrfToken)
   const res = await fetch(`${BASE}/files/archive`, {
@@ -486,7 +494,8 @@ async function archive(paths: string[], name?: string): Promise<Blob> {
     const body = await res.json().catch(() => ({}))
     throw errorFrom(res, body)
   }
-  return res.blob()
+  if (res.headers.get('Content-Type') === 'application/zip') return res.blob()
+  return (await res.json()) as ArchiveTicket
 }
 
 /**
@@ -807,8 +816,16 @@ async function changePassword(currentPassword: string, newPassword: string): Pro
   })
 }
 
-async function totpSetup(): Promise<{ secret: string; otpauth_url: string }> {
-  return request('/account/totp/setup', { method: 'POST' })
+/** `POST /api/v1/account/totp/setup` mints a secret without enrolling it.
+ *
+ *  It re-confirms the password: enrolling a factor is a credential change, and
+ *  the server will not hand a secret out on a session cookie alone. Calling it
+ *  with no body answered 400, so setup could never start. */
+async function totpSetup(currentPassword: string): Promise<{ secret: string; uri: string }> {
+  return request('/account/totp/setup', {
+    method: 'POST',
+    body: JSON.stringify({ current: currentPassword })
+  })
 }
 
 async function totpEnroll(password: string, secret: string, code: string): Promise<{ recovery_codes: string[] }> {
@@ -1437,7 +1454,14 @@ async function adminDeleteGroup(id: number): Promise<void> {
 }
 
 async function adminAddGroupMember(id: number, userId: number): Promise<void> {
-  await request(`/admin/groups/${id}/members`, { method: 'POST', body: JSON.stringify({ user: userId }) })
+  // A decimal string, which is how every id crosses this API: the handler
+  // decodes `user` as a string and parses it. Sending a JSON number was
+  // refused as a malformed body, so adding somebody to a group answered 400
+  // with nothing on screen naming the field.
+  await request(`/admin/groups/${id}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ user: String(userId) })
+  })
 }
 
 async function adminRemoveGroupMember(id: number, userId: number): Promise<void> {

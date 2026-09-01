@@ -286,6 +286,20 @@ export interface IndexSettings {
   name_enabled: boolean
 }
 
+/** `POST /api/v1/files/archive` — where to fetch a prepared archive.
+ *
+ *  The server builds it and holds it, so `size` is the real length and the
+ *  fetch at `url` carries it. That is what makes the download show progress
+ *  and resume; a streamed archive has neither. */
+export interface ArchiveTicket {
+  token: string
+  name: string
+  size: number
+  /** Absolute from the site root, built by the server so a client does not
+   *  assemble the route and get it wrong. */
+  url: string
+}
+
 /** `PATCH /api/admin/upload-settings` — the
  *  admin-write half of `SessionInfo.limits.chunk_min`/`chunk_size`: this
  *  changes the server-global, persisted value every account's
@@ -1058,16 +1072,21 @@ export type SettingsSectionId =
   | 'paths'
   | 'oidc'
   | 'rate'
+  | 'security'
 
 /** One thing the server learned by trying the change rather than describing
- *  it. `block` refuses the save, `warn` is saved and reported, `ok` is a
- *  probe that came back clean and is worth showing. */
+ *  it. `blocking` refuses the save; anything else is saved and reported. */
 export interface SettingsFinding {
-  level: 'block' | 'warn' | 'ok'
+  /** The group the finding is about. */
+  section: string
   /** The input to put this beside, absent when it is about the whole group. */
   field?: string
-  reason_key: string
-  reason_params?: Record<string, string>
+  /** A catalogue key, not a sentence: the server has no idea which language
+   *  the reader picked. */
+  reason: string
+  /** Placeholders for the key above. */
+  args?: Record<string, string>
+  blocking: boolean
 }
 
 export interface SettingsSnapshot {
@@ -1117,25 +1136,30 @@ export interface SmbOvergrant {
   detail: string[]
 }
 
-/** What applying a patch tells the caller — whether it already took effect
- *  or needs the restart flow. */
-/** What a save did. Four outcomes, because they are four different things to
- *  tell somebody who just pressed save: in effect now; in effect now and the
- *  listener moved to do it; stored and the process is going down to pick it
- *  up; stored and this build has nothing wired to apply it. */
-export type Applied = 'live' | 'serve_restarted' | 'engine_restart' | 'reserved'
-
+/** What a save did.
+ *
+ *  Stored and applied are separate facts: a save can reach the database and
+ *  fail to reach the running process, and somebody told only "saved" would
+ *  believe the change is live. `restart_required` is the third outcome, not a
+ *  failure to apply, and folding it into either of the others loses it. */
 export interface ApplyOutcome {
-  applied: Applied
+  /** The change reached the database. */
+  stored: boolean
+  /** The running process took it. */
+  applied: boolean
+  /** It needs a restart to take effect. */
+  restart_required: boolean
+  /** What a restart would interrupt, present only when one is required, so
+   *  the operator decides rather than the server deciding for them. */
+  active_uploads?: number
+  active_jobs?: number
+  findings: SettingsFinding[]
 }
 
-/** `PATCH /api/admin/server-settings/smb` body (`SmbPatch`). The publisher is
- *  assembled once, so saving this section restarts the process to pick it up;
- *  `force` takes that restart with work still in flight. */
+/** `PATCH /api/v1/admin/settings/smb` body. The publisher is assembled once,
+ *  so this section is stored and waits for the next start; the response says
+ *  what a restart would interrupt and the operator takes it. */
 export interface SmbSettingsReq {
-  /** Take the restart even with uploads or jobs running. Absent means the
-   *  save is refused with `409 restart.busy` and the counts. */
-  force?: boolean
   enabled: boolean
   workgroup: string
   /** NetBIOS name clients can open `\\NAME\share` by. Required, like every
@@ -1209,7 +1233,6 @@ export interface SymlinkPolicyReq {
 export interface HomesSettingsReq {
   enabled: boolean
   root: string | null
-  force?: boolean
 }
 
 /** `PATCH /api/admin/server-settings/watch` body (`WatchPatch`). The watcher
@@ -1218,7 +1241,6 @@ export interface WatchSettingsReq {
   backend: 'auto' | 'hotset' | 'inotify_full' | 'fanotify'
   hot_set_max: number
   full_threshold: number
-  force?: boolean
 }
 
 /** `PATCH /api/admin/server-settings/oidc` body (`OidcPatch`): the eight

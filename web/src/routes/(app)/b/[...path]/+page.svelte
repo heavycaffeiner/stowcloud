@@ -437,8 +437,17 @@
     const paths = entries.map((e) => joinPath(browse.path, e.name))
     const filename = entries.length === 1 ? `${entries[0].name}.zip` : 'archive.zip'
     try {
-      const blob = await api.archive(paths, filename)
-      triggerBlobDownload(blob, filename)
+      const prepared = await api.archive(paths, filename)
+      if (prepared instanceof Blob) {
+        // Too large for the server to hold, so it streamed the bytes. No
+        // progress and no resume, but the archive is here.
+        triggerBlobDownload(prepared, filename)
+        return
+      }
+      // A plain navigation, so the browser owns the transfer: it shows
+      // progress, it lands in the downloads list, and a lost connection
+      // resumes rather than starting over.
+      triggerUrlDownload(prepared.url, prepared.name)
     } catch (err) {
       if (err instanceof ApiError && err.code === 'rate.limited') {
         // the server caps concurrent archive streams
@@ -538,7 +547,13 @@
    *  taken, what now" about a name the user did not choose is a dialog with
    *  one sensible answer, and the point of the action is a second copy. */
   function duplicate(onConflict: OnConflict = 'rename'): void {
-    if (!contextEntry) return
+    // The same target rule every other action here follows: the right-clicked
+    // row when there is one, the selection otherwise. Reading only
+    // `contextEntry` meant the selection bar's own button did nothing on the
+    // menu path and sent an empty name on the bar path, which the server took
+    // as the folder itself and duplicated into a file called " (2)".
+    const targets = contextEntry ? [contextEntry] : browse.selected
+    if (targets.length === 0) return
     // The one menu action that forgot this. `Menu` only dismisses on a click
     // *outside* itself, so an item's own click leaves it open -- and duplicate
     // is the one that raises a modal on the same click, so the stale menu sat
@@ -548,7 +563,8 @@
     // Captured now, not read back off `contextEntry` once the job settles --
     // the context menu can be pointed at a different entry by then, since
     // this doesn't await the job.
-    void transfer([joinPath(browse.path, contextEntry.name)], browse.path, 'copy', onConflict)
+    const paths = targets.map((e) => joinPath(browse.path, e.name))
+    void transfer(paths, browse.path, 'copy', onConflict)
   }
 
   /** Says how many items were left alone because their destination was taken.
@@ -866,9 +882,13 @@
     items[next]?.focus()
   }
   function openInEditor(): void {
-    if (!contextEntry || contextEntry.kind === 'dir') return
+    // The right-clicked row when there is one, the selection otherwise: the
+    // same rule the other actions here follow. Reading only `contextEntry`
+    // meant the selection bar's own button did nothing at all.
+    const target = contextEntry ?? browse.selected[0]
+    if (!target || target.kind === 'dir') return
     menuOpen = false
-    goto(`/edit${joinPath(browse.path, contextEntry.name)}`)
+    goto(`/edit${joinPath(browse.path, target.name)}`)
   }
 </script>
 

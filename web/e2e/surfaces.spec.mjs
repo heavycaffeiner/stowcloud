@@ -300,19 +300,43 @@ try {
   if (shareName) {
     const archive = await page.evaluate(
       async ([token, path]) => {
-        const res = await fetch('/api/v1/files/archive', {
+        // Two steps: the archive is prepared and held so the fetch that
+        // follows carries a length and answers ranges, which is what makes a
+        // folder download show progress and resume. A selection too large to
+        // hold is streamed by the first response instead.
+        const prep = await fetch('/api/v1/files/archive', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Sc-Csrf': token },
           body: JSON.stringify({ paths: [path], name: 'test' })
         })
-        const buf = await res.arrayBuffer()
-        const head = new Uint8Array(buf.slice(0, 4))
+        if (prep.headers.get('content-type') === 'application/zip') {
+          const buf = await prep.arrayBuffer()
+          return {
+            status: prep.status,
+            mode: 'streamed',
+            disposition: prep.headers.get('content-disposition'),
+            type: prep.headers.get('content-type'),
+            signature: Array.from(new Uint8Array(buf.slice(0, 4)))
+          }
+        }
+        const ticket = await prep.json()
+        const got = await fetch(ticket.url)
+        const buf = await got.arrayBuffer()
+
+        // The second half of the resume: the tail alone, which a browser asks
+        // for after a dropped connection.
+        const tail = await fetch(ticket.url, { headers: { Range: `bytes=${ticket.size - 4}-` } })
         return {
-          status: res.status,
-          disposition: res.headers.get('content-disposition'),
-          type: res.headers.get('content-type'),
+          status: got.status,
+          mode: 'held',
+          disposition: got.headers.get('content-disposition'),
+          type: got.headers.get('content-type'),
+          length: got.headers.get('content-length'),
+          ranges: got.headers.get('accept-ranges'),
+          size: ticket.size,
           bytes: buf.byteLength,
-          signature: Array.from(head)
+          signature: Array.from(new Uint8Array(buf.slice(0, 4))),
+          resumeStatus: tail.status
         }
       },
       [csrf, shareName]
@@ -327,6 +351,15 @@ try {
       `signature ${archive.signature}`)
     check('the download is named', (archive.disposition ?? '').includes('.zip'),
       `disposition ${archive.disposition}`)
+    if (archive.mode === 'held') {
+      // A held archive is the one a browser can show progress for and resume.
+      check('the archive declares its length', archive.length === String(archive.size),
+        `length ${archive.length} against size ${archive.size}`)
+      check('the archive accepts ranges', archive.ranges === 'bytes',
+        `accept-ranges ${archive.ranges}`)
+      check('an interrupted download resumes', archive.resumeStatus === 206,
+        `range answered ${archive.resumeStatus}`)
+    }
   }
   if (grantID !== null && grantID !== undefined) {
     await api('DELETE', `/api/v1/admin/grants/${grantID}`, null, csrf)
