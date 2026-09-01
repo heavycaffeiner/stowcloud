@@ -3,6 +3,7 @@
 package worker_test
 
 import (
+	"bytes"
 	"os/exec"
 	"path/filepath"
 	"runtime"
@@ -15,10 +16,15 @@ import (
 // The allow list covers a real decode, which the shipped filter cannot report.
 //
 // A kill prints nothing: a worker missing a syscall dies exactly as a crashed
-// decoder does, so the filter is checked here under SIGSYS instead, where the
-// runtime names the call before it goes. The trap is a diagnostic and never a
-// deployment: a process that survives its own filter is not sandboxed. What
-// ships is the kill, proved by the tests around this one.
+// decoder does. The worker runs here with the refusal turned into ENOSYS
+// instead, which the runtime reports through its ordinary error paths, so the
+// failure arrives as an exit the parent reads rather than as a stack on a
+// stderr the harness may drop. That is not hypothetical: the SIGSYS variant
+// named a missing syscall locally and printed nothing at all in CI, where the
+// same failure read "bad system call" and no more.
+//
+// Neither mode ships. What ships is the kill, proved by the tests around this
+// one; a worker that survives its own filter is not sandboxed.
 //
 // The worker is built the way it ships. An earlier version built it with the
 // race detector, reasoning that a runtime issuing strictly more makes a
@@ -27,11 +33,16 @@ import (
 // syscall no deployment can reach. Satisfying it would have widened the real
 // filter to admit a call only a test needed.
 func TestTheAllowListCoversARealDecode(t *testing.T) {
+	// Captured rather than inherited: a worker refused a syscall names it on
+	// its own stderr, and that is the whole diagnostic. Left on the parent's
+	// it reached the terminal locally and vanished in CI.
+	var said bytes.Buffer
 	p, err := preview.NewPool(preview.PoolOptions{
 		Workers: 1,
 		Exe:     buildJailedWorker(t),
 		Args:    []string{},
-		Env:     []string{"SC_PREVIEW_TRAP=1"},
+		Env:     []string{"SC_PREVIEW_ERRNO=1"},
+		Stderr:  &said,
 	})
 	if err != nil {
 		t.Fatalf("NewPool: %v", err)
@@ -52,10 +63,11 @@ func TestTheAllowListCoversARealDecode(t *testing.T) {
 			MaxPixels: 1 << 22,
 		}, preview.PlainSource{F: in}, out)
 		if gerr != nil {
-			t.Fatalf("decoding %dx%d: %v", size, size, gerr)
+			t.Fatalf("decoding %dx%d: %v\nthe worker said:\n%s", size, size, gerr, said.String())
 		}
 		if resp.Status != preview.StatusOK {
-			t.Fatalf("decoding %dx%d: status %v: %s", size, size, resp.Status, resp.Err)
+			t.Fatalf("decoding %dx%d: status %v: %s\nthe worker said:\n%s",
+				size, size, resp.Status, resp.Err, said.String())
 		}
 	}
 }

@@ -104,6 +104,21 @@ const (
 	// Also never shipped, for the same reason: a trap that a handler absorbs is
 	// not a sandbox.
 	FilterWorkerTrap
+
+	// FilterWorkerErrno is the allow-list answering ENOSYS instead of killing.
+	//
+	// SIGSYS names the call only in a runtime stack on stderr, and a worker's
+	// stderr does not reliably survive the harness above it: the trap that
+	// diagnosed one missing syscall locally printed nothing at all in CI, where
+	// the failure read "bad system call" and no more. An errno travels
+	// differently. The runtime turns a refused mmap into a fatal error naming
+	// mmap, and a refused anything into a Go error carrying the number, both of
+	// which arrive as an ordinary exit the parent can read.
+	//
+	// Never shipped either, and for a sharper reason than the others: a
+	// decoder that gets ENOSYS may carry on with a fallback, so the process
+	// survives a call the sandbox was meant to stop.
+	FilterWorkerErrno
 )
 
 // archProfileFor uses a table instead of a build tag, because an architecture
@@ -300,6 +315,13 @@ func assembleFor(kind FilterKind, goarch string) ([]unix.SockFilter, error) {
 		list = allowedSyscalls()
 		matched = unix.SECCOMP_RET_ALLOW
 		unmatched = unix.SECCOMP_RET_TRAP
+	case FilterWorkerErrno:
+		// The same list, with an unlisted call failing as ENOSYS. The caller
+		// sees an ordinary syscall error, which the runtime reports naming the
+		// call rather than dying without a word.
+		list = allowedSyscalls()
+		matched = unix.SECCOMP_RET_ALLOW
+		unmatched = unix.SECCOMP_RET_ERRNO | uint32(unix.ENOSYS)
 	default:
 		return nil, fmt.Errorf("unknown seccomp filter kind %d", kind)
 	}

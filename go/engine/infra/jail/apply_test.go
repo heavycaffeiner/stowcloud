@@ -202,7 +202,7 @@ func TestAssembleChecksTheArchBeforeTheNumber(t *testing.T) {
 // whose default action is ALLOW: pointing the mismatch at the default would
 // wave through exactly the task the check exists to catch.
 func TestAnUnexpectedArchIsKilledUnderEveryFilter(t *testing.T) {
-	for _, kind := range []FilterKind{FilterProcess, FilterWorker, FilterWorkerAudit, FilterWorkerTrap} {
+	for _, kind := range []FilterKind{FilterProcess, FilterWorker, FilterWorkerAudit, FilterWorkerTrap, FilterWorkerErrno} {
 		prog, err := assembleFor(kind, "amd64")
 		if err != nil {
 			t.Fatalf("assembleFor(%d): %v", kind, err)

@@ -44,6 +44,10 @@ const jobDescriptors = 2
 // read from the environment because the worker parses no arguments.
 const trapEnv = "SC_PREVIEW_TRAP"
 
+// errnoEnv fails an unlisted call with ENOSYS instead of killing. Diagnostic
+// only, and read from the environment for the same reason as the trap.
+const errnoEnv = "SC_PREVIEW_ERRNO"
+
 // Run constitutes the worker's entire life: install the jail, then serve jobs
 // until the socket closes.
 //
@@ -92,14 +96,21 @@ func Run(policy jail.Policy) (jail.Status, error) {
 	// returning an error, because a decoder reaching a syscall it does not need
 	// is already running something nobody wrote.
 	//
-	// The trap variant replaces the kill with SIGSYS, which the runtime surfaces
-	// as a stack naming the call. A kill prints nothing whatsoever, so a filter
-	// missing an entry is indistinguishable from a crashed decoder. A trap the
-	// process survives is not a sandbox, so this is never enabled in a
-	// deployment.
+	// The trap variant replaces the kill with SIGSYS, which the runtime prints
+	// as a stack naming the call. The errno variant fails the call with ENOSYS
+	// instead, which the runtime reports through its ordinary error paths and
+	// which therefore survives a harness that drops the worker's stderr: the
+	// trap diagnosed a missing syscall locally and printed nothing whatsoever
+	// in CI, where the same failure read "bad system call" and no more.
+	//
+	// Neither ships. A trap a handler absorbs is not a sandbox, and a decoder
+	// handed ENOSYS may fall back and carry on past the call meant to stop it.
 	filter := jail.FilterWorker
-	if os.Getenv(trapEnv) == "1" {
+	switch {
+	case os.Getenv(trapEnv) == "1":
 		filter = jail.FilterWorkerTrap
+	case os.Getenv(errnoEnv) == "1":
+		filter = jail.FilterWorkerErrno
 	}
 	if serr := jail.InstallSeccomp(filter); serr != nil {
 		return st, serr

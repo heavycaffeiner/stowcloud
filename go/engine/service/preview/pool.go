@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -66,6 +67,11 @@ type PoolOptions struct {
 	// deliberate: the worker reads no configuration, and an inherited
 	// environment would be somewhere to put a path.
 	Env []string
+	// Stderr receives the worker's diagnostics. Nil sends them to this
+	// process's own stderr, which is what a deployment wants; a test that has
+	// to read what a dying worker said supplies a file, because a harness
+	// between the two does not reliably carry it.
+	Stderr io.Writer
 }
 
 // Source identifies the file a worker decodes.
@@ -209,6 +215,9 @@ func (p *Pool) start(s *slot) error {
 	cmd.ExtraFiles = []*os.File{child}
 	cmd.Stdout = nil
 	cmd.Stderr = os.Stderr
+	if p.opt.Stderr != nil {
+		cmd.Stderr = p.opt.Stderr
+	}
 
 	if serr := cmd.Start(); serr != nil {
 		closeFile(parent)
