@@ -5,6 +5,7 @@ package lifecycle_test
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -222,6 +223,50 @@ func TestAnArchiveTicketNeedsACredential(t *testing.T) {
 	}()
 	if res.StatusCode == http.StatusOK {
 		t.Error("an archive was fetched with no credential")
+	}
+}
+
+// A ticket does not outlive the grant it was minted under.
+//
+// The mint checks permission and the fetch happens later, so without a second
+// check a revocation between them would be a window in which a token still
+// reads files the account may no longer reach. The fetch re-resolves for
+// exactly this.
+func TestARevokedGrantRefusesTheFetch(t *testing.T) {
+	base, token, share, _, e, grant := contentShareGrant(t, everyPerm(), []byte("private"))
+
+	status, _, raw := postRaw(t, base+"/api/v1/files/archive", token,
+		map[string]any{"paths": []string{"/" + share}, "name": "mine.zip"})
+	if status != http.StatusOK {
+		t.Fatalf("archiving answered %d: %s", status, raw)
+	}
+	var ticket struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(raw, &ticket); err != nil {
+		t.Fatalf("the ticket does not decode: %s", raw)
+	}
+
+	if err := e.Core.DeleteGrant(context.Background(), grant); err != nil {
+		t.Fatalf("revoking the grant: %v", err)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, base+ticket.URL, nil)
+	if err != nil {
+		t.Fatalf("building the fetch: %v", err)
+	}
+	req.SetBasicAuth("ignored", token)
+	res, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("fetching the archive: %v", err)
+	}
+	defer func() {
+		if cerr := res.Body.Close(); cerr != nil {
+			t.Errorf("closing the fetch: %v", cerr)
+		}
+	}()
+	if res.StatusCode == http.StatusOK {
+		t.Error("a revoked account still fetched the archive")
 	}
 }
 

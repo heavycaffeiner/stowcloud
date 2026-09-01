@@ -32,6 +32,15 @@ func contentShare(t *testing.T, perms acl.Perms, content []byte) (base, token, s
 // contentShareAt is contentShare plus the host directory, for a test that has
 // to act on the files themselves rather than through the API.
 func contentShareAt(t *testing.T, perms acl.Perms, content []byte) (base, token, share, host string) {
+	b, tok, sh, h, _, _ := contentShareGrant(t, perms, content)
+	return b, tok, sh, h
+}
+
+// contentShareGrant is contentShareAt plus the engine and the grant's id, for
+// a test that has to change what the account may reach while the server runs.
+func contentShareGrant(t *testing.T, perms acl.Perms, content []byte) (
+	base, token, share, host string, e *lifecycle.Engine, grant int64,
+) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -62,9 +71,10 @@ func contentShareAt(t *testing.T, perms acl.Perms, content []byte) (base, token,
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+	g, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
 		User: &id, Share: sh.ID, Allow: perms, Inherit: true, Label: sh.Name,
-	}); gerr != nil {
+	})
+	if gerr != nil {
 		t.Fatal(gerr)
 	}
 
@@ -73,7 +83,7 @@ func contentShareAt(t *testing.T, perms acl.Perms, content []byte) (base, token,
 	if err != nil {
 		t.Fatal(err)
 	}
-	return serve(t, e), appPW, sh.Name, host
+	return serve(t, e), appPW, sh.Name, host, e, g.ID
 }
 
 // download performs a read, optionally with a Range header, and returns the
