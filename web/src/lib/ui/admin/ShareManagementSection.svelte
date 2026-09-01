@@ -107,11 +107,9 @@
   function openEdit(s: AdminShare): void {
     editTarget = s
     editName = s.name
-    // Blank, and optional. The server never sends the current path back, so
-    // there is nothing truthful to prefill; leaving it empty means "keep the
-    // one it has". Requiring it made renaming a folder impossible without
-    // retyping a disk path nothing on this screen can show.
-    editHostPath = ''
+    // The path it currently points at, so an edit starts from what is true
+    // and a rename does not mean retyping a disk path from memory.
+    editHostPath = s.host
     editError = null
   }
 
@@ -127,10 +125,15 @@
       editError = t('folder_share.enter_name')
       return
     }
-    // Only the fields that changed. A patch naming nothing else leaves the
-    // path as it is, which is what the server does with an absent one.
+    if (editHostPath.trim() === '') {
+      editError = t('folder_share.enter_server_path')
+      return
+    }
+
+    // Only what changed. Sending the path back unaltered would re-register
+    // the share for no reason, which drops and re-opens its root.
     const patch: UpdateShareReq = { name: editName.trim() }
-    if (editHostPath.trim() !== '') patch.host = editHostPath.trim()
+    if (editHostPath.trim() !== editTarget.host) patch.host = editHostPath.trim()
 
     editing = true
     try {
@@ -271,11 +274,12 @@
                 <span class="sc-shares__name">{s.name}</span>
               {/snippet}
               {#snippet supporting()}
-                <!-- No host path. The server does not send where a share lives
-                     on its disk: that is the layout of the machine, and it is
-                     the first thing worth knowing to anyone trying to reach
-                     past the shares they were given. Editing one sends a new
-                     path rather than correcting what was echoed back. -->
+                <!-- Where the share points, which only an administrator sees:
+                     these routes are administrator-only and session-only. It
+                     is on the row because an operator with several folders
+                     cannot tell them apart by name alone, and because a path
+                     nobody can read is one nobody can correct. -->
+                <span class="sc-shares__path">{s.host}</span>
                 {#if s.broken_reason}
                   <!-- The row stays, with the reason on it. A share dropped
                        from the list is indistinguishable from one somebody
@@ -351,11 +355,7 @@
   {#if editTarget}
     <form class="sc-shares__form" onsubmit={(e) => (e.preventDefault(), submitEdit())}>
       <TextField label={t('common.name')} bind:value={editName} autocomplete="off" />
-      <TextField
-        label={t('folder_share.server_path_optional')}
-        bind:value={editHostPath}
-        autocomplete="off"
-      />
+      <TextField label={t('folder_share.server_path')} bind:value={editHostPath} autocomplete="off" />
       {#if editError}<p class="sc-shares__error" role="alert">{editError}</p>{/if}
     </form>
   {/if}
@@ -440,6 +440,13 @@
     background: var(--m3c-surface-container-highest);
     color: var(--m3c-on-surface);
     @apply --m3-body-small;
+  }
+  .sc-shares__path {
+    display: block;
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
+    font-family: var(--sc-font-mono, monospace);
+    overflow-wrap: anywhere;
   }
   .sc-shares__broken {
     display: block;

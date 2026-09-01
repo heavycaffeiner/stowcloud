@@ -191,9 +191,10 @@ describe('mockApi admin share management', () => {
     const created = await mockApi.adminCreateShare({ name: 'Books', host: '/srv/books' })
     const updated = await mockApi.adminUpdateShare(created.id, { name: 'Ebooks', host: '/srv/ebooks' })
     expect(updated.name).toBe('Ebooks')
-    // The host path is never answered: it is the server's disk layout, and
-    // a client that learns it learns where to try reaching past its shares.
-    expect('host' in updated).toBe(false)
+    // The administrative routes answer the host path, which is what lets the
+    // edit dialog show where a share points instead of asking for it again.
+    // It stays off every surface an ordinary account reads.
+    expect(updated.host).toBe('/srv/ebooks')
   })
 
   it('is off by default and toggleable', async () => {

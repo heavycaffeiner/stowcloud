@@ -216,6 +216,12 @@ type IndexEstimateView struct {
 	// itself is unsure of.
 	Confidence string `json:"confidence"`
 
+	// BuildSecs is processor time. A build runs only while the server is
+	// otherwise idle, so it finishes later than this. A number rather than a
+	// decimal string: it is seconds, not a byte count, and nothing here runs
+	// past what a JavaScript number holds exactly.
+	BuildSecs float64 `json:"build_secs"`
+
 	// Formula records the derivation term by term, so a wrong estimate shows
 	// which term was wrong to somebody checking the arithmetic.
 	Formula string `json:"formula"`
@@ -235,6 +241,7 @@ func IndexEstimateOf(r search.ScanResult, e search.IndexEstimate) IndexEstimateV
 	return IndexEstimateView{
 		IndexBytes: strconv.FormatUint(e.IndexBytes, 10),
 		Confidence: e.Confidence.String(),
+		BuildSecs:  e.BuildSeconds,
 		Formula:    e.Formula,
 		Files:      strconv.FormatUint(r.Stats.Files, 10),
 		NameBytes:  strconv.FormatUint(r.Stats.NameBytesTotal, 10),

@@ -1117,7 +1117,21 @@ async function adminStorage(): Promise<StorageReport> {
 }
 
 async function adminIndexEstimate(): Promise<IndexEstimate> {
-  return request('/admin/index/estimate')
+  // The byte count and the file count cross as decimal strings, because a
+  // large corpus runs past what a JavaScript number holds exactly. The screen
+  // formats them, so they are converted once here rather than at each use.
+  const w = await request<{
+    index_bytes: string
+    files: string
+    build_secs: number
+    confidence: string
+  }>('/admin/index/estimate')
+  return {
+    files: Number(w.files ?? 0),
+    index_bytes: Number(w.index_bytes ?? 0),
+    build_secs: w.build_secs ?? 0,
+    confidence: w.confidence
+  }
 }
 
 async function adminIndexSettings(): Promise<IndexSettings> {
@@ -1298,6 +1312,7 @@ async function adminSetUserPassword(id: number, password: string): Promise<Admin
 interface WireAdminShare {
   id: string
   name: string
+  host: string
   trash: boolean
   shared_externally?: boolean
   broken?: string
@@ -1308,6 +1323,7 @@ function adminShareFromWire(w: WireAdminShare): AdminShare {
   return {
     id: Number(w.id),
     name: w.name,
+    host: w.host,
     trash_enabled: w.trash,
     broken_reason: w.broken,
     smb: w.smb

@@ -17,13 +17,16 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
-// The share listing never carries a host path.
+// The administrative listing carries the host path; nothing else does.
 //
-// Where a share lives on the server's disk is configuration. A client that
-// learns it learns the layout of the machine, which is the first thing worth
-// knowing to anyone trying to reach past the shares they were given.
-func TestTheShareListingHidesHostPaths(t *testing.T) {
-	base, cookie, csrf, _, _ := adminEngine(t)
+// The administrator typed the path and is the only account that can change
+// it, so a screen offering an edit has to show it: renaming a folder
+// otherwise meant retyping a path from memory with nothing to check against.
+// Every surface an ordinary account reads still omits it, because a client
+// that learns the server's layout learns the first thing worth knowing to
+// anyone trying to reach past the shares they were given.
+func TestTheAdminListingCarriesTheHostPath(t *testing.T) {
+	base, cookie, csrf, plainCookie, _ := adminEngine(t)
 
 	host := t.TempDir()
 	status, created := mutate(t, http.MethodPost, base+"/api/v1/admin/shares", cookie, csrf,
@@ -31,24 +34,37 @@ func TestTheShareListingHidesHostPaths(t *testing.T) {
 	if status != http.StatusCreated {
 		t.Fatalf("creating a share answered %d: %v", status, created)
 	}
-
-	// The create response, which is the one most likely to echo its input.
-	assertNoHostPath(t, fmt.Sprint(created), host)
+	if got := stringField(created, "host"); got != host {
+		t.Errorf("the create answered host %q, want %q", got, host)
+	}
 
 	code, raw := withCookie(t, http.MethodGet, base+"/api/v1/admin/shares", cookie)
 	if code != http.StatusOK {
 		t.Fatalf("listing answered %d: %s", code, raw)
 	}
-	assertNoHostPath(t, string(raw), host)
-
-	// The share is really there, so the absence above is not the absence of
-	// the whole share.
 	var rows []map[string]any
 	if err := json.Unmarshal(raw, &rows); err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || stringField(rows[0], "name") != "docs" {
-		t.Fatalf("the listing does not show the share: %s", raw)
+	if len(rows) != 1 || stringField(rows[0], "host") != host {
+		t.Fatalf("the listing does not carry the host path: %s", raw)
+	}
+
+	// An ordinary account cannot reach the administrative surface at all, and
+	// the surfaces it can reach do not name the path.
+	if code, _ := withCookie(t, http.MethodGet, base+"/api/v1/admin/shares", plainCookie); code != http.StatusForbidden {
+		t.Errorf("an ordinary account read the share listing: %d", code)
+	}
+	sessionCode, session := withCookie(t, http.MethodGet, base+"/api/v1/auth/session", plainCookie)
+	if sessionCode != http.StatusOK {
+		t.Fatalf("the session answered %d", sessionCode)
+	}
+	assertNoHostPath(t, string(session), host)
+
+	listCode, listing := withCookie(t, http.MethodGet,
+		base+"/api/v1/files/list?path="+urlEscape("/docs"), plainCookie)
+	if listCode == http.StatusOK {
+		assertNoHostPath(t, string(listing), host)
 	}
 }
 

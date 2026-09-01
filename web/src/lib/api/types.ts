@@ -375,6 +375,11 @@ export const ALL_GRANT_PERMS: GrantPermName[] = [
 export interface AdminShare {
   id: number
   name: string
+  /** Where the share points on the server's disk. Sent only by the
+   *  administrative routes, which are administrator-only and session-only, so
+   *  an app password never sees it and neither does any surface an ordinary
+   *  account reads. */
+  host: string
   /** Off by default for every share. */
   trash_enabled: boolean
   /** Why this share cannot be served right now, or absent when it can. A

@@ -9,6 +9,7 @@ package lifecycle
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -254,7 +255,8 @@ func (e *Engine) filesArchiveFetch(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 	}
 
-	held, ok := e.Archives.Get(c.Query("ticket"), int64(owner))
+	ticket := c.Query("ticket")
+	held, ok := e.Archives.Get(ticket, int64(owner))
 	if !ok {
 		// Expired, already collected, or never existed. All the same answer:
 		// distinguishing them would confirm that a guessed ticket names a
@@ -269,8 +271,24 @@ func (e *Engine) filesArchiveFetch(c *fiber.Ctx) error {
 	// resume.
 	c.Set(fiber.HeaderAcceptRanges, "bytes")
 
+	// A validator, without which a browser will not resume at all. Chrome
+	// sends If-Range on a resumed download and starts over when the response
+	// carries nothing to compare against, which is what made a folder
+	// download restart from zero however many bytes had arrived. Strong
+	// rather than weak: the held bytes never change, and the ticket names
+	// exactly one build of exactly one selection.
+	etag := `"` + ticket + `"`
+	c.Set(fiber.HeaderETag, etag)
+
 	total := int64(len(held.Bytes))
-	start, end, status := archiveRange(c.Get(fiber.HeaderRange), total)
+	rangeHeader := c.Get(fiber.HeaderRange)
+	// An If-Range naming something else is the client asking for the whole
+	// file rather than a range it can no longer trust.
+	if ifRange := c.Get(fiber.HeaderIfRange); ifRange != "" && ifRange != etag {
+		rangeHeader = ""
+	}
+
+	start, end, status := archiveRange(rangeHeader, total)
 	switch status {
 	case fiber.StatusRequestedRangeNotSatisfiable:
 		c.Set(fiber.HeaderContentRange, fmt.Sprintf("bytes */%d", total))
@@ -280,16 +298,24 @@ func (e *Engine) filesArchiveFetch(c *fiber.Ctx) error {
 	}
 	c.Status(status)
 
-	// Not dropped here. A resume is a second request for an archive whose
-	// first delivery did not finish, and this handler cannot tell a completed
-	// transfer from one the client abandoned partway: the write is buffered
-	// and a disconnect looks the same. Releasing on the first response made
-	// every resume answer not-found, which is the case the hold exists for.
+	// Streamed with its length declared. fasthttp copies a body stream
+	// through its own buffer, so the client receives the archive
+	// progressively rather than in one jump, and the declared length is what
+	// lets a browser draw a progress bar and resume an interrupted transfer.
 	//
-	// The TTL reclaims instead. It is short, and the bytes are bounded per
-	// archive, per account and in total, so the cost of holding them for a
-	// few minutes is one the store already accounts for.
-	return c.Send(held.Bytes[start : end+1])
+	// SetBodyStream rather than SetBodyStreamWriter: the writer form declares
+	// a length of -1, which answers Transfer-Encoding: chunked. A response
+	// with no length is exactly the unresumable one this whole path exists to
+	// replace.
+	//
+	// Nothing is dropped after delivery. A resume is a second request for an
+	// archive whose first delivery did not finish, and this handler cannot
+	// tell a completed transfer from one the client abandoned partway. The
+	// TTL reclaims instead: it is short, and the bytes are bounded per
+	// archive, per account and in total.
+	body := held.Bytes[start : end+1]
+	c.Context().Response.SetBodyStream(bytes.NewReader(body), len(body))
+	return nil
 }
 
 // archiveRange reads one byte range against a known length.

@@ -1693,7 +1693,7 @@ async function adminIndexEstimate(): Promise<IndexEstimate> {
     files: 214_882,
     index_bytes: 5_372_000,
     build_secs: 42,
-    confidence: 'medium'
+    confidence: 'measured'
   }
 }
 
@@ -1903,25 +1903,19 @@ async function adminDeleteUser(id: number): Promise<void> {
 // demo the grant-creation screen's share picker.
 // There is one kind of share: every one was created from this screen, because
 // nothing else can declare one.
-/** A share plus the host path the mock keeps but never answers with.
+/** A share as the administrative routes answer it.
  *
- *  The server holds the same rule: where a share lives on its disk decides
- *  overlap at creation and is otherwise configuration a client never sees. */
-type MockShare = AdminShare & { readonly hostPath: string }
-
-let mockShares: MockShare[] = [
-  { id: 1_000_001, name: 'Documents', hostPath: '/srv/documents', trash_enabled: false },
-  { id: 1_000_002, name: 'Photos', hostPath: '/srv/photos', trash_enabled: true },
-  { id: 1_000_003, name: 'Videos', hostPath: '/srv/videos', trash_enabled: false },
-  { id: 1_000_004, name: 'Music', hostPath: '/srv/music', trash_enabled: false },
-  { id: 1_000_005, name: 'Team', hostPath: '/srv/team', trash_enabled: false },
-  { id: 1_000_006, name: 'Archive', hostPath: '/srv/archive', trash_enabled: true }
+ *  The host path is part of the answer: those routes are administrator-only
+ *  and session-only, and the screen cannot offer an edit for a path it cannot
+ *  show. It stays off every surface an ordinary account reads. */
+let mockShares: AdminShare[] = [
+  { id: 1_000_001, name: 'Documents', host: '/srv/documents', trash_enabled: false },
+  { id: 1_000_002, name: 'Photos', host: '/srv/photos', trash_enabled: true },
+  { id: 1_000_003, name: 'Videos', host: '/srv/videos', trash_enabled: false },
+  { id: 1_000_004, name: 'Music', host: '/srv/music', trash_enabled: false },
+  { id: 1_000_005, name: 'Team', host: '/srv/team', trash_enabled: false },
+  { id: 1_000_006, name: 'Archive', host: '/srv/archive', trash_enabled: true }
 ]
-
-/** Drops the host path, which is what the server sends. */
-function shareOf(s: MockShare): AdminShare {
-  return { id: s.id, name: s.name, trash_enabled: s.trash_enabled, broken_reason: s.broken_reason }
-}
 let nextShareId = 1_000_007 // mirrors `go/internal/core`'s share id base, past the seeded ones
 
 // One grant of each shape the row can take: inherited against path-only, a
@@ -1938,7 +1932,7 @@ let nextGrantId = 5
 
 async function adminListShares(): Promise<AdminShare[]> {
   await delay(15)
-  return mockShares.map(shareOf)
+  return mockShares
 }
 
 /** No real filesystem to check `host` against in mock mode, so this
@@ -1955,12 +1949,12 @@ async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
   if (mockShares.some((s) => s.name === name)) {
     throw new ApiError(422, { code: 'fs.invalid_name', message: `a share named '${name}' already exists` })
   }
-  if (mockShares.some((s) => s.hostPath === req.host)) {
+  if (mockShares.some((s) => s.host === req.host)) {
     throw new ApiError(422, { code: 'fs.invalid_name', message: `overlaps existing share` })
   }
-  const share: MockShare = { id: nextShareId++, name, hostPath: req.host, trash_enabled: false }
+  const share: AdminShare = { id: nextShareId++, name, host: req.host, trash_enabled: false }
   mockShares = [...mockShares, share]
-  return shareOf(share)
+  return share
 }
 
 /** An edit is stored on the share's own row and reapplied at startup, so
@@ -1978,14 +1972,14 @@ async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<Admi
   if (mockShares.some((s) => s.id !== id && s.name === nextName)) {
     throw new ApiError(422, { code: 'fs.invalid_name', message: `a share named '${nextName}' already exists` })
   }
-  const updated: MockShare = {
+  const updated: AdminShare = {
     ...share,
     name: nextName,
-    hostPath: patch.host ?? share.hostPath,
+    host: patch.host ?? share.host,
     trash_enabled: patch.trash_enabled ?? share.trash_enabled
   }
   mockShares = mockShares.map((s) => (s.id === id ? updated : s))
-  return shareOf(updated)
+  return updated
 }
 
 async function adminDeleteShare(id: number): Promise<{ smb?: SMBOutcome }> {
@@ -2008,9 +2002,9 @@ async function adminRetryShare(id: number): Promise<AdminShare> {
   if (!share) {
     throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
   }
-  const healed: MockShare = { ...share, broken_reason: undefined }
+  const healed: AdminShare = { ...share, broken_reason: undefined }
   mockShares = mockShares.map((s) => (s.id === id ? healed : s))
-  return shareOf(healed)
+  return healed
 }
 
 async function adminListGrants(opts: { userId?: number; groupId?: number; share?: number } = {}): Promise<AdminGrant[]> {

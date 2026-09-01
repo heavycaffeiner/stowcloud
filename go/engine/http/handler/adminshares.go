@@ -10,22 +10,23 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
-// ShareView is one registered share.
+// ShareView is one registered share, as the administrative screen sees it.
 //
-// There is no host path here, and adding one would be a mistake rather than a
-// feature: where a share lives on the server's disk is configuration, and a
-// client that learns it learns the layout of the machine. The absence is the
-// enforcement, since a field that does not exist cannot be filled in by
-// accident.
+// Every route that answers with one of these is administrator-only and
+// session-only: an app password cannot reach them. That is what makes the
+// host path safe to send here and nowhere else. It is absent from every
+// surface an ordinary account reads, where a client learning the server's
+// layout would be the first thing worth knowing to somebody trying to reach
+// past the shares they were given.
 type ShareView struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 
-	// No host path appears here, deliberately. Where a share lives on the
-	// server's disk is configuration, and a client that learns it learns the
-	// layout of the machine: the first thing worth knowing to anyone trying to
-	// reach past the shares they were given. An administrator who needs to
-	// change it sends a new one rather than editing what was echoed back.
+	// Host is where the share lives on the server's disk. The administrator
+	// typed it and is the only one who can change it, and a screen that
+	// cannot show it cannot offer an edit: renaming a folder meant retyping a
+	// path from memory with nothing to check it against.
+	Host string `json:"host"`
 
 	// Trash says whether a delete in this share is undoable, which is what a
 	// confirmation dialogue needs in order to tell the truth.
@@ -46,6 +47,7 @@ func ShareOf(s core.Share) ShareView {
 	return ShareView{
 		ID:               strconv.FormatInt(int64(s.ID), 10),
 		Name:             s.Name,
+		Host:             s.Host,
 		Trash:            s.TrashEnabled,
 		SharedExternally: s.SharedExternally,
 		Broken:           s.BrokenReason,

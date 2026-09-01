@@ -68,11 +68,25 @@ type CorpusStats struct {
 type IndexEstimate struct {
 	IndexBytes uint64
 	Confidence Confidence
+	// BuildSeconds is processor time, not wall clock: a build runs only while
+	// the server is otherwise idle, so it finishes later than this. Derived
+	// from the file count rather than measured, because the cost is dominated
+	// by reading and trigramming each name.
+	BuildSeconds float64
 	// Formula records the term-by-term derivation, so a wrong estimate reveals
 	// which term was wrong. An operator verifying the arithmetic needs the
 	// terms, while everyone else only wanted a size.
 	Formula string
 }
+
+// indexFilesPerSecond is what one core gets through when building the name
+// index.
+//
+// A round number from the shape of the work rather than a benchmark: each
+// file costs a name read and its trigrams, and the build is bounded by that
+// rather than by the disk. Deliberately conservative, so the figure an
+// operator plans against is not one the build overruns.
+const indexFilesPerSecond = 20_000
 
 // EstimateNameIndex computes the index size for a corpus.
 //
@@ -135,8 +149,9 @@ func EstimateNameIndex(stats CorpusStats, blockSize uint32) IndexEstimate {
 
 	total := uint64(HeaderBytes) + blockDirBytes + dictBytes + postingBytes + blockBytes
 	return IndexEstimate{
-		IndexBytes: total,
-		Confidence: confidence,
+		IndexBytes:   total,
+		Confidence:   confidence,
+		BuildSeconds: float64(stats.Files) / indexFilesPerSecond,
 		Formula: fmt.Sprintf(
 			"%d files in %d blocks; blocks %d B (%d raw x %.2f); blockdir %d B; "+
 				"dict %d B (%d trigrams x %d); postings %d B (%s); total %d B",

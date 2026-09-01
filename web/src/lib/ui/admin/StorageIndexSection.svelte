@@ -39,11 +39,15 @@
   /** How much of the folder tree the estimate actually counted, in a sentence.
    *  The server sends a code so that this screen owns the wording; an unknown
    *  code means the server is newer than this build, and saying nothing is
-   *  better than inventing a claim about accuracy. */
+   *  better than inventing a claim about accuracy.
+   *
+   *  `measured` is the posting term derived from sampled blocks, `modelled`
+   *  the analytic fallback. These are the two the server has ever sent; the
+   *  high/medium/low this once listed matched nothing, so the sentence never
+   *  appeared. */
   const ACCURACY: Record<string, string> = {
-    high: /* i18n */ 'storage.accuracy_counted_everything',
-    medium: /* i18n */ 'storage.accuracy_counted_most',
-    low: /* i18n */ 'storage.accuracy_counted_a_sample'
+    measured: /* i18n */ 'storage.accuracy_counted_everything',
+    modelled: /* i18n */ 'storage.accuracy_counted_a_sample'
   }
 
   async function loadStorage(): Promise<void> {
