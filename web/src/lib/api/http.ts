@@ -1378,8 +1378,21 @@ async function adminListGrants(opts: { userId?: number; groupId?: number; share?
   return (rows ?? []).map(grantFromWire)
 }
 
+/** The wire names the subject with one of two string fields and takes the
+ *  share id as a string, the same way `WireGrant` sends them back. The screen
+ *  holds a `{ kind, id }` principal and a numeric share, so the translation
+ *  happens here rather than in the component. */
 async function adminCreateGrant(req: CreateGrantReq): Promise<AdminGrant> {
-  return request('/admin/grants', { method: 'POST', body: JSON.stringify(req) })
+  const { principal, share, label, ...rest } = req
+  return request('/admin/grants', {
+    method: 'POST',
+    body: JSON.stringify({
+      ...rest,
+      [principal.kind]: String(principal.id),
+      share: String(share),
+      label: label ?? ''
+    })
+  })
 }
 
 async function adminUpdateGrant(id: number, patch: UpdateGrantReq): Promise<AdminGrant> {
