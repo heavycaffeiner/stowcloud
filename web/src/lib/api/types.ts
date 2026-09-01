@@ -286,20 +286,6 @@ export interface IndexSettings {
   name_enabled: boolean
 }
 
-/** `POST /api/v1/files/archive` — where to fetch a prepared archive.
- *
- *  The server builds it and holds it, so `size` is the real length and the
- *  fetch at `url` carries it. That is what makes the download show progress
- *  and resume; a streamed archive has neither. */
-export interface ArchiveTicket {
-  token: string
-  name: string
-  size: number
-  /** Absolute from the site root, built by the server so a client does not
-   *  assemble the route and get it wrong. */
-  url: string
-}
-
 /** `PATCH /api/admin/upload-settings` — the
  *  admin-write half of `SessionInfo.limits.chunk_min`/`chunk_size`: this
  *  changes the server-global, persisted value every account's

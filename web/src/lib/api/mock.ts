@@ -24,7 +24,6 @@ import {
   type AppPasswordInfo,
   type ApplyOutcome,
   type ArchiveListing,
-  type ArchiveTicket,
   type ArchiveSettingsReq,
   type RateSettingsReq,
   type AuditPage,
@@ -568,15 +567,14 @@ function findEntryById(id: number): { entry: Entry; dirPath: string } | null {
   return null
 }
 
-/** Mock counterpart of `http.ts`'s `archive`. The real server prepares the
- *  archive and answers a ticket, falling back to streaming the bytes when it
- *  is too large to hold; this takes the streaming half, which the caller
- *  handles by saving the blob. */
-async function archive(paths: string[], _name?: string): Promise<ArchiveTicket | Blob> {
+/** Mock counterpart of `http.ts`'s `archive`. The real server streams the zip
+ *  as the response body, so this answers a Response the caller pipes rather
+ *  than a blob it collects. */
+async function archive(paths: string[], _name?: string): Promise<Response> {
   await delay(120)
   if (paths.length === 0) throw new ApiError(422, { code: 'fs.invalid_name', message: 'paths must not be empty' })
   const body = `mock zip archive of:\n${paths.join('\n')}\n`
-  return new Blob([body], { type: 'application/zip' })
+  return new Response(body, { headers: { 'Content-Type': 'application/zip' } })
 }
 
 /** A fixed listing for any `.zip`, since the mock stores no archive bytes. */

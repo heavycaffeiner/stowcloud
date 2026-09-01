@@ -40,7 +40,7 @@
     supportsDirectoryPicker
   } from '../../../../lib/upload/directory-picker'
   import { formatBytes } from '../../../../lib/format/bytes'
-  import { triggerBlobDownload, triggerUrlDownload } from '../../../../lib/format/download'
+  import { saveStream, triggerUrlDownload } from '../../../../lib/format/download'
   import { jobTray } from '../../../../lib/state/job-tray.svelte'
   import { JobFailedError } from '../../../../lib/state/jobs'
 
@@ -437,17 +437,11 @@
     const paths = entries.map((e) => joinPath(browse.path, e.name))
     const filename = entries.length === 1 ? `${entries[0].name}.zip` : 'archive.zip'
     try {
-      const prepared = await api.archive(paths, filename)
-      if (prepared instanceof Blob) {
-        // Too large for the server to hold, so it streamed the bytes. No
-        // progress and no resume, but the archive is here.
-        triggerBlobDownload(prepared, filename)
-        return
-      }
-      // A plain navigation, so the browser owns the transfer: it shows
-      // progress, it lands in the downloads list, and a lost connection
-      // resumes rather than starting over.
-      triggerUrlDownload(prepared.url, prepared.name)
+      // The response is the archive, written by the server as it walks. The
+      // request is passed rather than awaited here: saveStream opens the file
+      // picker first, while the click that started this still counts as a
+      // user activation.
+      await saveStream(() => api.archive(paths, filename), filename)
     } catch (err) {
       if (err instanceof ApiError && err.code === 'rate.limited') {
         // the server caps concurrent archive streams

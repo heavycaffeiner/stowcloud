@@ -184,8 +184,6 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.filesArchive
 		case "files.archive.list":
 			out[r.Name] = e.filesArchiveList
-		case "files.archive.fetch":
-			out[r.Name] = e.filesArchiveFetch
 		case "links.list":
 			out[r.Name] = e.linksList
 		case "links.create":

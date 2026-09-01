@@ -475,15 +475,13 @@ describe('mockApi trash', () => {
 })
 
 describe('mockApi download (archive)', () => {
-  it('archive answers the zip bytes themselves', async () => {
-    // The mock takes the streaming half of the contract, which the caller
-    // saves as a blob. A real server prepares the archive and answers a
-    // ticket instead, and the caller navigates to it.
-    const result = await mockApi.archive(['/home/Photos/휴가-2026-07-01.jpg', '/home/Photos/가족사진.png'])
-    expect(result).toBeInstanceOf(Blob)
-    const blob = result as Blob
-    expect(blob.type).toBe('application/zip')
-    expect(blob.size).toBeGreaterThan(0)
+  it('archive answers a streamed zip response', async () => {
+    // The response is the archive, as the real server sends it: written while
+    // the walk runs, so the caller pipes it rather than collecting it.
+    const res = await mockApi.archive(['/home/Photos/휴가-2026-07-01.jpg', '/home/Photos/가족사진.png'])
+    expect(res.headers.get('Content-Type')).toBe('application/zip')
+    expect(res.bodyUsed).toBe(false)
+    expect((await res.blob()).size).toBeGreaterThan(0)
   })
 
   it('archive rejects an empty selection', async () => {

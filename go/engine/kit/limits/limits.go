@@ -80,37 +80,6 @@ const (
 	ArchivePackedBytes   = 32 << 30
 )
 
-// ArchiveHeldBytes is the largest archive this server will hold in memory so
-// a download can be resumed, ArchiveHeldPerOwnerBytes what one account may
-// hold at once, and ArchiveHeldTotalBytes the ceiling across every held
-// archive.
-//
-// Held rather than spooled to disk: a temporary zip per download fills the
-// data volume, and the volume filling takes the database down with it. RAM
-// is the bounded resource, so the bound is stated rather than discovered.
-//
-// Three bounds because one does not survive several people downloading at
-// once. Per archive stops a single folder from being the whole budget; per
-// owner stops one account from spending it all and leaving everybody else on
-// the unresumable path; the total is what actually protects the machine.
-//
-// Deliberately conservative. An archive over its bound is streamed instead,
-// which cannot be resumed but costs nothing to hold, so exceeding a bound
-// degrades the feature rather than the server. All three count compressed
-// bytes, which is what is actually kept.
-const (
-	ArchiveHeldBytes         = 256 << 20
-	ArchiveHeldPerOwnerBytes = 512 << 20
-	ArchiveHeldTotalBytes    = 1 << 30
-)
-
-// ArchiveTicketTTL is how long a prepared archive waits to be fetched.
-//
-// Short, because the bytes sit in memory: it spans a browser turning a
-// response into a download, not a person deciding whether to keep it. A
-// resume the browser starts later re-prepares rather than finding it held.
-const ArchiveTicketTTL = 10 * time.Minute
-
 // ConcurrentRequestsDefault is the default ceiling on requests served at
 // once, and a configurable one. Refuses with 503.
 const ConcurrentRequestsDefault = 512

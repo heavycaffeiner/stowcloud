@@ -37,7 +37,7 @@ rebuild is nearly a replacement. Package by package it is not that simple.
 
 ### 1. Every route is bound
 
-The engine binds 88 of the 88 routes its own table names. This section listed
+The engine binds 87 of the 87 routes its own table names. This section listed
 the services `lifecycle.Open` never constructed; every one of them is
 constructed now.
 

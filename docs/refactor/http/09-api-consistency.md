@@ -131,8 +131,7 @@ below; the old spelling is the behavioral reference for the new one.
 | `POST /api/v1/files/move` | `POST /api/fs/move` | batch, preflight in body |
 | `POST /api/v1/files/copy` | `POST /api/fs/copy` | batch |
 | `POST /api/v1/files/rename` | `POST /api/fs/rename` | |
-| `POST /api/v1/files/archive` | `POST /api/fs/archive` | prepares and answers a ticket |
-| `GET /api/v1/files/archive/fetch` | | new: fetches a prepared archive, ranged |
+| `POST /api/v1/files/archive` | `POST /api/fs/archive` | streams the zip as its response |
 | `GET /api/v1/files/archive/list` | `GET /api/fs/archive/list` | zip listing |
 | `GET /api/v1/files/recent` | `GET /api/recent` | moved into its category |
 

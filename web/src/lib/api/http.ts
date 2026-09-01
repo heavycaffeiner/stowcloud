@@ -16,7 +16,6 @@ import {
   type AppPasswordInfo,
   type ApplyOutcome,
   type ArchiveListing,
-  type ArchiveTicket,
   type ArchiveSettingsReq,
   type RateSettingsReq,
   type AuditPage,
@@ -467,21 +466,18 @@ async function del(paths: string[]): Promise<{ results: BatchItemResult[] }> {
 // ── content links & archive download (§8) ──
 
 /**
- * `POST /api/v1/files/archive` prepares the ZIP and answers where to get it.
+ * `POST /api/v1/files/archive` streams the ZIP as its own response body.
  *
- * Two steps on purpose. The build used to arrive as this response's body and
- * was collected with `res.blob()`, so nothing appeared until the whole archive
- * was in the tab's memory: no progress for a folder that takes a minute, and a
- * large one took the tab with it. The prepared archive is held by the server
- * with a known length, so the fetch that follows is a plain navigation the
- * browser owns: it shows progress, it goes to the downloads list, and a
- * connection lost partway resumes instead of starting again.
+ * The server never holds one: the walk writes into the response as it goes,
+ * so a folder of any size costs it nothing to serve. That is also why there
+ * is no Content-Length and no resume, which a stream cannot offer.
  *
- * An archive too large for the server to hold comes back as the ZIP itself,
- * which is the old behaviour and cannot be resumed. `url` absent is how the
- * caller tells the two apart.
+ * The response body is returned rather than collected. `res.blob()` would put
+ * the whole archive in the tab's memory before anything reached the disk,
+ * which is what took the tab out on a large folder; the caller pipes it
+ * instead.
  */
-async function archive(paths: string[], name?: string): Promise<ArchiveTicket | Blob> {
+async function archive(paths: string[], name?: string): Promise<Response> {
   const headers = new Headers({ 'Content-Type': 'application/json' })
   if (csrfToken) headers.set('Sc-Csrf', csrfToken)
   const res = await fetch(`${BASE}/files/archive`, {
@@ -494,8 +490,7 @@ async function archive(paths: string[], name?: string): Promise<ArchiveTicket | 
     const body = await res.json().catch(() => ({}))
     throw errorFrom(res, body)
   }
-  if (res.headers.get('Content-Type') === 'application/zip') return res.blob()
-  return (await res.json()) as ArchiveTicket
+  return res
 }
 
 /**

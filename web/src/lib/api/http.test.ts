@@ -119,15 +119,18 @@ describe('httpApi job wrappers', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
-  it('archive() reads the streamed zip out of the response body', async () => {
+  it('archive() hands back the streamed response rather than collecting it', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(new Response(new Blob(['PK...']), { status: 200, headers: { 'Content-Type': 'application/zip' } }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const blob = await httpApi.archive(['/home/a.txt'], 'a.zip')
+    const res = await httpApi.archive(['/home/a.txt'], 'a.zip')
 
-    expect(blob.size).toBeGreaterThan(0)
+    // Unread: the caller pipes the body to disk, because a folder can be any
+    // size and collecting it first is what took the tab out.
+    expect(res.bodyUsed).toBe(false)
+    expect(res.headers.get('Content-Type')).toBe('application/zip')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/files/archive')
   })

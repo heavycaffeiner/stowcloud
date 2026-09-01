@@ -20,7 +20,6 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/heavycaffeiner/stowcloud/go/engine/http/archive"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
 
@@ -103,11 +102,6 @@ type Engine struct {
 	// Upload is the resumable transfer engine. May be nil: a deployment
 	// without one serves everything except a resumable upload.
 	Upload *upload.Engine
-
-	// Archives holds built folder downloads so their transfers can be
-	// resumed. Never nil: the bound lives in the store, and a deployment
-	// without one would silently lose resumability rather than say so.
-	Archives *archive.Store
 
 	// Search answers filename queries. Never nil: the walking tier needs no
 	// index and no subprocess, so every deployment has one.
@@ -399,10 +393,6 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	} else {
 		e.Upload = up
 	}
-
-	// Holds built folder downloads. Nothing can fail here: it is a bounded
-	// map, and the bound is the whole point.
-	e.Archives = archive.NewStore(clk)
 
 	// The device login rides on the auth service's own credential mint, so
 	// the plaintext of a delivered password exists once and never rests in
