@@ -20,8 +20,13 @@ web/build
 # under go/, so the pattern is unanchored: an anchored rule covered only the
 # first and let the second's private key be committed.
 .dev/
-# `go build ./cmd/sc-engine` from inside go/ drops the binary beside the source.
+# `go build ./cmd/<name>` or `./tools/<name>` from inside go/ drops the binary
+# beside the source. One entry per command, because a bare `/go/*` would hide a
+# new directory.
+/go/differ
+/go/enginedrive
 /go/sc-engine
+/go/sc-smb-agent
 /go/stowcloud
 # Runtime state the testbed compose stack creates beside its own file.
 /deploy/testbed/data

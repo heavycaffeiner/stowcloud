@@ -18,11 +18,9 @@ on that machine.
   <img alt="The Stowcloud file browser listing a folder of images: a navigation rail, the folder list, a breadcrumb marking the folder as shared with other services, and the file table" src="docs/screenshots/browse-light.png">
 </picture>
 
-> Every screenshot on this page comes from `docker compose up` of
-> `ghcr.io/heavycaffeiner/stowcloud:stable` at revision `d82d880`, the image
-> this repository's CI built and published, running on a Rocky Linux 10 host
-> and browsing real files on its disk. Nothing is mocked and nothing was
-> staged in a design tool.
+> Every screenshot on this page comes from the image this repository builds,
+> brought up with `docker compose up` and browsing real files on the host's
+> disk. Nothing is mocked and nothing was staged in a design tool.
 
 ## The problem it solves
 
@@ -345,8 +343,8 @@ dynamic loader and no libc to match, so the runtime image needs neither.
 The SMB sidecar is a second binary, `go/cmd/sc-smb-agent`. It runs as root
 beside the Samba daemon and applies what the server renders, which the server
 cannot do itself: it runs unprivileged, in a network namespace that cannot see
-the host's devices. `Dockerfile.smb` builds it, and `smb-agent/` holds the
-deployment material.
+the host's devices. `Dockerfile.smb` builds it, and `deploy/smb/native/`
+holds the material for installing it on a bare-metal host.
 
 </details>
 

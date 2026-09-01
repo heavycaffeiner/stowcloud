@@ -18,10 +18,9 @@
   <img alt="Stowcloud 파일 브라우저가 이미지 폴더를 보여 주는 화면. 왼쪽 내비게이션, 폴더 목록, 다른 서비스와 공유 중임을 표시한 경로 표시줄, 파일 표" src="docs/screenshots/browse-light.png">
 </picture>
 
-> 이 문서의 스크린샷은 전부 이 저장소의 CI가 빌드해서 게시한 이미지
-> `ghcr.io/heavycaffeiner/stowcloud:stable`(리비전 `d82d880`)를
-> `docker compose up`으로 띄운 화면입니다. Rocky Linux 10 호스트에서 그 디스크의
-> 실제 파일을 열어 찍었습니다. 목업도 아니고 디자인 도구로 꾸민 것도 아닙니다.
+> 이 문서의 스크린샷은 전부 이 저장소가 빌드하는 이미지를 `docker compose up`으로
+> 띄우고 호스트 디스크의 실제 파일을 열어 찍은 화면입니다. 목업도 아니고 디자인
+> 도구로 꾸민 것도 아닙니다.
 
 ## 어떤 문제를 푸는가
 
@@ -322,8 +321,8 @@ cgo는 꺼져 있고, 그것이 정적 바이너리의 전부입니다. 꺼져 �
 SMB 사이드카는 별도 바이너리입니다. `go/cmd/sc-smb-agent`에 있습니다. Samba 데몬
 옆에서 root로 돌면서 서버가 렌더링한 것을 적용합니다. 서버는 권한 없이, 호스트의
 장치를 볼 수 없는 네트워크 네임스페이스에서 돌기 때문에 스스로 할 수 없는
-일입니다. `Dockerfile.smb`가 이것을 빌드하고, `smb-agent/`에는 배포용 자료가
-있습니다.
+일입니다. `Dockerfile.smb`가 이것을 빌드하고, `deploy/smb/native/`에는
+베어메탈 호스트에 설치할 자료가 있습니다.
 
 </details>
 

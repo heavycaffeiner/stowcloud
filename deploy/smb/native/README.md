@@ -1,7 +1,8 @@
 # The SMB sidecar agent
 
 The privileged half of SMB publishing. Its source is `go/cmd/sc-smb-agent` and
-`go/internal/smbagent`; this directory holds the deployment material.
+`go/engine/service/smb/agent`; this directory holds the deployment material for
+a bare-metal host.
 
 ## What it does
 
@@ -22,8 +23,8 @@ case, and this program is what expands it.
 ## The two things both halves agree on
 
 The control protocol and the classification of what counts as an internal
-network. Both are one definition in one module, not a copy on each side:
-`go/internal/smbagent/wire.go` and `go/internal/smb/bind.go`.
+network. Both are one definition in one package, not a copy on each side:
+`go/engine/service/smb/agent/wire.go` and `scope_linux.go` beside it.
 
 They were vendored while this was a separate program, kept in step by both
 sides' tests rather than by the compiler. They are not vendored now, because a
@@ -47,7 +48,7 @@ cd go && CGO_ENABLED=0 go build ./cmd/sc-smb-agent
 ```
 
 `Dockerfile.smb` builds it into the sidecar image, statically linked, and that
-is how it ships. `deploy/smb/native/install.sh` installs it on a bare-metal
+is how it ships. `install.sh` in this directory installs it on a bare-metal
 host.
 
 ## Running it by hand
