@@ -88,6 +88,21 @@ under `volumes:` with a bind mount:
       - /srv/my-files:/shares/files:z
 ```
 
+Mounting somewhere other than `/shares` works too, with one extra line. The
+sandbox is built before the server reads its own database, so it has to be
+told where folders may live before any of them exist; a directory it was
+never told about is refused when you try to add it rather than failing later:
+
+```yaml
+    command: ["serve", "--shares", "/mnt/photos", "--shares", "/mnt/video"]
+    volumes:
+      - /srv/photos:/mnt/photos:z
+      - /srv/video:/mnt/video:z
+```
+
+Folders anywhere under a directory named that way can be added and removed
+from the admin screen without restarting.
+
 The server has to be able to read and write it. Rather than changing who owns
 your files, tell the server which uid to be. `PUID` and `PGID` in the compose
 file are the uid and gid it runs as, and the default of 1000 is what a

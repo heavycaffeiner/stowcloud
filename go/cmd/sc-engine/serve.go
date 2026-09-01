@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -39,54 +40,88 @@ const deployDataDir = "/var/lib/stowcloud"
 // restarted.
 const deploySharesRoot = "/shares"
 
+// serveArgs is the deploy command line, parsed.
+type serveArgs struct {
+	// Addr is empty rather than an address: run resolves the stored bind
+	// when nothing is passed, and a default here would silently outrank it.
+	Addr    string
+	DataDir string
+	Plain   bool
+
+	// Shares are the directories folders may be registered under, granted to
+	// the sandbox at startup. Never empty: a deployment with nowhere to put a
+	// folder is one where the first folder added needs a restart.
+	Shares []string
+}
+
+// parseServeArgs reads the flags a deployment's entrypoint spells out
+// longhand.
+//
+// A flag taking a value advances past both itself and the value. Advancing by
+// one left the value to be read as the next flag, so every deployment passing
+// --data-dir was told its own directory was an unknown argument.
+func parseServeArgs(args []string) (serveArgs, error) {
+	out := serveArgs{DataDir: deployDataDir}
+
+	i := 0
+	for i < len(args) {
+		flag := args[i]
+		value := func() (string, bool) {
+			if i+1 >= len(args) {
+				return "", false
+			}
+			return args[i+1], true
+		}
+		switch flag {
+		case "--data-dir", "-data":
+			v, ok := value()
+			if !ok {
+				return serveArgs{}, fmt.Errorf("%s needs a directory", flag)
+			}
+			out.DataDir = v
+			i += 2
+		case "--addr", "-addr":
+			v, ok := value()
+			if !ok {
+				return serveArgs{}, fmt.Errorf("%s needs an address", flag)
+			}
+			out.Addr = v
+			i += 2
+		case "--shares", "-shares":
+			v, ok := value()
+			if !ok {
+				return serveArgs{}, fmt.Errorf("%s needs a directory", flag)
+			}
+			out.Shares = append(out.Shares, v)
+			i += 2
+		case "--plain":
+			out.Plain = true
+			i++
+		default:
+			return serveArgs{}, fmt.Errorf("unknown argument %q", flag)
+		}
+	}
+
+	if len(out.Shares) == 0 {
+		// The image's own mount point, so a deployment that passes nothing
+		// still has somewhere folders can be added without a restart.
+		out.Shares = []string{deploySharesRoot}
+	}
+	return out, nil
+}
+
 // runServeCmd is the `serve` spelling of the default behaviour: it accepts
 // the flags a deployment's entrypoint spells out longhand, so the container
 // command line reads the same way it always has.
 //
-//	serve --data-dir DIR [--addr HOST:PORT] [--plain]
+//	serve --data-dir DIR [--addr HOST:PORT] [--shares DIR]... [--plain]
 func runServeCmd(args []string) int {
-	out := log.New(os.Stderr, "", 0)
-	var (
-		dataDir = deployDataDir
-		shares  = deploySharesRoot
-		// Empty rather than an address: run resolves the stored bind when
-		// nothing is passed, and a default here would silently outrank it.
-		addr  = ""
-		plain = false
-	)
-	i := 0
-	for i < len(args) {
-		switch args[i] {
-		case "--data-dir", "-data":
-			if i+1 >= len(args) {
-				out.Println("sc-engine serve: --data-dir needs a directory")
-				return 2
-			}
-			dataDir = args[i+1]
-			i++
-		case "--addr", "-addr":
-			if i+1 >= len(args) {
-				out.Println("sc-engine serve: --addr needs an address")
-				return 2
-			}
-			addr = args[i+1]
-			i++
-		case "--shares", "-shares":
-			if i+1 >= len(args) {
-				out.Println("sc-engine serve: --shares needs a directory")
-				return 2
-			}
-			shares = args[i+1]
-			i++
-		case "--plain":
-			plain = true
-			i++
-		default:
-			out.Printf("sc-engine serve: unknown argument %q\n", args[i])
-			return 2
-		}
+	parsed, err := parseServeArgs(args)
+	if err != nil {
+		log.New(os.Stderr, "", 0).Printf("sc-engine serve: %v\n", err)
+		return 2
 	}
-	if err := run(addr, dataDir, shares, plain); err != nil {
+	if rerr := run(parsed.Addr, parsed.DataDir, parsed.Shares, parsed.Plain); rerr != nil {
 		return 1
 	}
 	return 0

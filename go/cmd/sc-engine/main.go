@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -66,25 +67,44 @@ func main() {
 		addr    = flag.String("addr", "", "listen address; overrides the stored one")
 		dataDir = flag.String("data", ".dev/data", "data directory")
 		plain   = flag.Bool("plain", false, "serve HTTP instead of HTTPS")
-		// Granted to the sandbox whether or not a share lives under it yet.
-		// Without this the domain holds no share parent on a fresh
-		// deployment, so the first folder somebody registers is one the
+		// Where folders may live. Granted whether or not a share sits under
+		// one yet, because the sandbox is built before any of them exist: a
+		// folder registered under a directory this never named is one the
 		// process cannot read until it restarts.
-		sharesRoot = flag.String("shares", "", "directory new shares are created under; granted to the sandbox at startup")
+		sharesRoots pathList
 	)
+	flag.Var(&sharesRoots, "shares",
+		"a directory folders may be registered under; repeat for more than one")
 	flag.Parse()
 
-	if err := run(*addr, *dataDir, *sharesRoot, *plain); err != nil {
+	if err := run(*addr, *dataDir, sharesRoots, *plain); err != nil {
 		slog.Error("sc-engine failed", "error", err)
 		os.Exit(1)
 	}
+}
+
+// pathList collects a repeated directory flag.
+//
+// A list rather than one value because a deployment can mount folders in more
+// than one place, and the sandbox has to name every one of them before it is
+// installed.
+type pathList []string
+
+func (p *pathList) String() string { return strings.Join(*p, ",") }
+
+func (p *pathList) Set(v string) error {
+	if v == "" {
+		return errors.New("a shares directory cannot be empty")
+	}
+	*p = append(*p, v)
+	return nil
 }
 
 // defaultListen is where the server binds when neither the flag nor the
 // stored setting names an address.
 const defaultListen = "127.0.0.1:8081"
 
-func run(addr, dataDir, sharesRoot string, plain bool) error {
+func run(addr, dataDir string, sharesRoots []string, plain bool) error {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
 	abs, err := filepath.Abs(dataDir)
@@ -110,7 +130,7 @@ func run(addr, dataDir, sharesRoot string, plain bool) error {
 	// directory and every share's parent before the first file is opened, and
 	// a Landlock domain cannot be widened once it is installed.
 	values, shareHosts := bootSettings(abs, logger)
-	domain := jailSpec(values, abs, sharesRoot, shareHosts)
+	domain := jailSpec(values, abs, sharesRoots, shareHosts)
 	jailStatus, jerr := jail.Apply(values.Hardening, domain)
 	if jerr != nil {
 		code := jail.Refuse(os.Stderr, jailStatus)
@@ -238,7 +258,7 @@ func bootSettings(dataDir string, log *slog.Logger) (runtimecfg.Values, []string
 // somebody registers is one this process cannot read: the registration
 // succeeded, the folder appeared in the listing, and opening it answered
 // not-found until the container was restarted.
-func jailSpec(values runtimecfg.Values, dataDir, sharesRoot string, shareHosts []string) jail.Spec {
+func jailSpec(values runtimecfg.Values, dataDir string, sharesRoots []string, shareHosts []string) jail.Spec {
 	spec := jail.Spec{ExceptExec: true}
 	spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dataDir})
 
@@ -260,8 +280,10 @@ func jailSpec(values runtimecfg.Values, dataDir, sharesRoot string, shareHosts [
 		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dir})
 	}
 
-	if sharesRoot != "" {
-		grant(filepath.Clean(sharesRoot))
+	for _, root := range sharesRoots {
+		if root != "" {
+			grant(filepath.Clean(root))
+		}
 	}
 	for _, host := range shareHosts {
 		if host == "" {
