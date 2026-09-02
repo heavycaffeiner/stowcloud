@@ -28,6 +28,9 @@ afterEach(() => {
 })
 
 describe('selectionMeasure', () => {
+  // Synchronously done, not measuring. Falling through to the timer here
+  // would show a spinner for the settle delay and then report the number the
+  // listing already had, which is a wait bought for nothing.
   it('reports a files-only selection without walking anything', () => {
     selectionMeasure.retarget([], { bytes: 2048, files: 2 })
     expect(selectionMeasure.state).toEqual({ kind: 'done', bytes: 2048, files: 2 })
