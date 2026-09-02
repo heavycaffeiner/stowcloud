@@ -51,6 +51,24 @@ func TestTheUsernameRuleRefusesWhatTheOlderScreensAdmitted(t *testing.T) {
 	}
 }
 
+// A home directory is named after its account, and the homes tree keeps a
+// ".template" directory beside them whose contents seed every new home. An
+// account able to take that name would be handed the seed directory as its
+// own home, files and all.
+//
+// The rule refuses it today because a dot is not in the character set at any
+// position, and the leading-character rule refuses it a second time. Both are
+// asserted here, in the package that owns the rule, because the package that
+// relies on it may not import this one.
+func TestTheHomesTemplateNameIsRefused(t *testing.T) {
+	for _, name := range []string{".template", ".", ".x"} {
+		if err := auth.ValidUsername(name); !errors.Is(err, auth.ErrNameInvalid) {
+			t.Errorf("ValidUsername(%q) = %v, want a refusal: an account with this name would take the homes template as its own home",
+				name, err)
+		}
+	}
+}
+
 // A validation message that echoes what was typed is a reflection primitive.
 func TestTheUsernameRefusalDoesNotEchoTheInput(t *testing.T) {
 	const hostile = "<script>alert(1)</script>"

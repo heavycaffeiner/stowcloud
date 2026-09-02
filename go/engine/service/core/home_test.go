@@ -295,8 +295,8 @@ func TestTheTemplateIsNotReachableAsAHome(t *testing.T) {
 		t.Fatalf("ensureHome: %v", err)
 	}
 
-	// Homes are named by numeric user id, and .template is not a number, so
-	// no grant scopes anybody to it.
+	// The template is not a name any account can hold, so no grant scopes
+	// anybody to it. The auth package pins that, owning the rule.
 	r, err := c.Resolve(1, vpath(t, "Home"), acl.Read)
 	if err != nil {
 		t.Fatalf("resolving the home: %v", err)
