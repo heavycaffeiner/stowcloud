@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 )
@@ -133,9 +134,20 @@ func TestAWorkerSaysWhyItDied(t *testing.T) {
 		t.Fatalf("decoding: %v", gerr)
 	}
 
-	if !strings.Contains(said.String(), "SCHED") {
-		t.Errorf("nothing the worker wrote reached the capture, so a refused"+
-			" syscall would report no cause; got %q", said.String())
+	// Polled rather than read once. The worker writes on its own schedule and
+	// the copy crosses a pipe and a goroutine, so a single read straight after
+	// the decode raced that delivery and failed on a capture that was about to
+	// arrive.
+	deadline := time.After(10 * time.Second)
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	for !strings.Contains(said.String(), "SCHED") {
+		select {
+		case <-deadline:
+			t.Fatalf("nothing the worker wrote reached the capture, so a refused"+
+				" syscall would report no cause; got %q", said.String())
+		case <-tick.C:
+		}
 	}
 }
 
