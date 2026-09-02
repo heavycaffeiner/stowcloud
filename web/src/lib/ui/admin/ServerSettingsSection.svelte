@@ -987,6 +987,11 @@
     gap: 16px;
     max-width: 480px;
   }
+  /* A hint inside the form is spaced by the form's own gap. Its own margins
+     add to that: the paragraph's default top margin made a 16px gap 28.  */
+  .sc-server-settings__form > .sc-admin-section__hint {
+    margin: 0;
+  }
   /* `.field`, not `.sc-field` — see UploadSettingsSection for the same
      migration leftover. */
   .sc-server-settings__form :global(.field) {
