@@ -82,8 +82,9 @@ func TestRequiredRefusesAFailedSeccompStep(t *testing.T) {
 	}
 }
 
-// Preferred records the degradation and keeps running, which is the bare-metal
-// answer: an older kernel is a legitimate state the operator may not control.
+// Preferred records the degradation and keeps running, which is the answer for
+// a kernel older than the sandbox needs: a legitimate state the operator may
+// not control.
 func TestPreferredRecordsAndContinues(t *testing.T) {
 	f := &fakeSteps{available: false, availableErr: errors.New("no ABI here")}
 	st, err := apply(Preferred, Spec{}, f.steps())

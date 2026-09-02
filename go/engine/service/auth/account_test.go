@@ -62,6 +62,7 @@ func TestEveryCredentialChangeRepublishesAndNotifies(t *testing.T) {
 		name string
 		run  func() error
 	}{
+		{"a new account", func() error { _, err := f.svc.CreateUser(ctx, "carol", "Carol", pw(testPassword)); return err }},
 		{"a password change", func() error { return f.svc.SetPassword(ctx, id, pw("another long password")) }},
 		{"a separate password", func() error { return f.svc.SetSMBPassword(ctx, id, pw(testPassword)) }},
 		{"clearing it", func() error { _, err := f.svc.ClearSMBPassword(ctx, id); return err }},

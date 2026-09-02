@@ -88,7 +88,7 @@ func TestPublishWritesTheSetAndReports(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// No socket configured is a bare-metal deployment, which is legitimate.
+	// No socket configured is a deployment without the SMB container.
 	if !report.OK || report.Smbd != agent.ActionUnchanged {
 		t.Errorf("the report is %+v", report)
 	}

@@ -32,7 +32,7 @@ this table is a documented defect, not a silent loss.
 | `Rebuild`, `WritePasswd`, `Import`, `PassdbNames`, `Prune`, `MissingPassdb` | 02 |
 | `Device`, `Scope`, `Compute`, `Devices`, `Detect` | 03 |
 | `Policy`, `ReadPolicy`, `Candidate`, `Section`/`Sections`, `NetbiosWanted`, `BoundInterfaces` | 03 |
-| `Mode`/`ModeKind`, `DetectMode`, `Smbd`, `NewSmbd`, `NeedsRestart` | 03 |
+| `Smbd`, `NewSmbd`, `NeedsRestart` | 03 |
 | `Paths`, `DefaultPaths`, `Agent`, `NewAgent`, `LogReport` | 03 |
 
 ## Refuse, never escape

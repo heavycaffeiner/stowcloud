@@ -39,10 +39,8 @@ func run() int {
 	stateDir := flagEnv("state-dir", "SC_SMB_STATE_DIR", "/var/lib/sc-smb-agent", "scratch space for the candidate configuration")
 	smbConf := flagEnv("smb-conf", "SC_SMB_CONF", "/etc/samba/smb.conf", "what the daemon reads")
 	passdb := flagEnv("passdb", "SC_SMB_PASSDB", "/var/lib/samba/private/passdb.tdb", "the credential database")
-	supervise := flag.Bool("supervise", false,
-		"own the daemon process rather than asking a service manager; the default uses a service manager when one is there, which is what a bare-metal install wants and what a container does not have")
 	once := flag.Bool("once", false,
-		"apply once and exit, printing the report; the operator's apply-now, and how a test harness drives this on a host with no service manager")
+		"apply once and exit, printing the report: the operator's apply-now")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel()}))
@@ -67,25 +65,17 @@ func run() int {
 		log.Warn("the log directory could not be created", "error", err)
 	}
 
-	mode := smbagent.DetectMode()
-	if *supervise {
-		mode = smbagent.Mode{Kind: smbagent.ModeSupervise}
-	}
-	agent := smbagent.NewAgent(paths, mode, log, clock.System())
+	agent := smbagent.NewAgent(paths, log, clock.System())
 
 	if *once {
 		// A one-shot run has no signal loop to inherit from, and the pass
 		// below is the whole process. Background is the honest context for
 		// it: nothing outside is in a position to cancel.
 		report := agent.Apply(context.Background())
-		// Under supervision the daemon is this process's child, so exiting
-		// without stopping it leaves an orphan holding the port that the next
-		// start then cannot bind. Under a service manager the daemon is not
-		// ours to stop, and leaving it running is the whole point of an apply.
-		if mode.Kind == smbagent.ModeSupervise {
-			if serr := agent.Shutdown(); serr != nil {
-				log.Warn("the daemon did not stop", "error", serr)
-			}
+		// The daemon is this process's child, so exiting without stopping it
+		// leaves an orphan holding the port the next start cannot then bind.
+		if serr := agent.Shutdown(); serr != nil {
+			log.Warn("the daemon did not stop", "error", serr)
 		}
 		body, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
@@ -101,7 +91,7 @@ func run() int {
 		return 0
 	}
 
-	log.Info("starting", "mode", modeName(mode), "config_dir", paths.ConfigDir)
+	log.Info("starting", "config_dir", paths.ConfigDir)
 
 	// A signal has to leave the loop rather than end the process, or a
 	// supervised daemon outlives the agent that owns it and the next start
@@ -113,21 +103,19 @@ func run() int {
 	// socket: an apply-now that arrives during startup would otherwise race it.
 	smbagent.LogReport(log, agent.Apply(ctx), "startup")
 
-	if mode.Kind == smbagent.ModeSupervise {
-		// After the first apply, because the log path is the one the candidate
-		// pointed the daemon at, and the ban daemon treats a missing log file
-		// as a hard configuration error for the whole of itself.
-		if f, err := os.OpenFile("/var/log/samba/log.smbd", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640); err == nil { //nolint:gosec // G302 wants stricter: the ban daemon tails this as its own user, and a file it cannot read is a jail that never starts.
-			if cerr := f.Close(); cerr != nil {
-				log.Warn("the daemon log file could not be closed", "error", cerr)
-			}
+	// After the first apply, because the log path is the one the candidate
+	// pointed the daemon at, and the ban daemon treats a missing log file
+	// as a hard configuration error for the whole of itself.
+	if f, err := os.OpenFile("/var/log/samba/log.smbd", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o640); err == nil { //nolint:gosec // G302 wants stricter: the ban daemon tails this as its own user, and a file it cannot read is a jail that never starts.
+		if cerr := f.Close(); cerr != nil {
+			log.Warn("the daemon log file could not be closed", "error", cerr)
 		}
-		agent.StartFail2ban()
 	}
+	agent.StartFail2ban()
 
 	smbagent.ServeInBackground(ctx, *socket, agent, paths.ConfigDir, clock.System(), log)
 
-	poll(ctx, agent, mode, log)
+	poll(ctx, agent, log)
 	log.Info("stopping")
 	if err := agent.Shutdown(); err != nil {
 		log.Warn("the daemon did not stop cleanly", "error", err)
@@ -136,7 +124,7 @@ func run() int {
 }
 
 // poll watches for a change nobody announced.
-func poll(ctx context.Context, agent *smbagent.Agent, mode smbagent.Mode, log *slog.Logger) {
+func poll(ctx context.Context, agent *smbagent.Agent, log *slog.Logger) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 
@@ -154,8 +142,8 @@ func poll(ctx context.Context, agent *smbagent.Agent, mode smbagent.Mode, log *s
 			continue
 		}
 
-		// A supervised daemon that died takes the whole service with it, and
-		// nothing else is watching.
+		// A daemon that died takes the whole service with it, and nothing else
+		// is watching: this agent is its parent.
 		//
 		// Guarded on the last apply having wanted it up. Without that, a
 		// deployment with SMB turned off (no rendered configuration, so the
@@ -163,7 +151,7 @@ func poll(ctx context.Context, agent *smbagent.Agent, mode smbagent.Mode, log *s
 		// tears down again every couple of seconds, an import and an account
 		// file rewrite included.
 		wantedUp := agent.Last().Smbd != smbagent.ActionStopped
-		if mode.Kind == smbagent.ModeSupervise && wantedUp && !agent.SmbdRunning() {
+		if wantedUp && !agent.SmbdRunning() {
 			log.Warn("the daemon is not running; starting it again")
 			smbagent.LogReport(log, agent.Apply(ctx), "poll")
 		}
@@ -190,11 +178,4 @@ func logLevel() slog.Level {
 	default:
 		return slog.LevelInfo
 	}
-}
-
-func modeName(m smbagent.Mode) string {
-	if m.Kind == smbagent.ModeSupervise {
-		return "supervising the daemon"
-	}
-	return "service manager, unit " + m.Unit
 }

@@ -841,8 +841,9 @@ func TestTheApplyRouteNeedsAnAdministrator(t *testing.T) {
 // With a directory configured and no agent socket, an apply renders the files
 // and reports the daemon as unchanged.
 //
-// That is the bare-metal shape: the files are written and something else
-// applies them, so there is no socket to ask and nothing to report failing.
+// That is a deployment without the SMB container: the files are written and
+// nothing applies them, so there is no socket to ask and nothing to report
+// failing.
 func TestAnApplyRendersTheConfigurationWithoutAnAgent(t *testing.T) {
 	e, configDir := bootWithSidecar(t)
 	base := serve(t, e)

@@ -4,7 +4,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -18,51 +17,9 @@ import (
 // Process lifecycle control for the daemon: the Daemon interface's
 // implementation.
 //
-// Two control modes, matching two deployment patterns. In containers this
-// agent runs as init and supervises the daemon directly. On bare metal a
-// service manager controls it and this agent issues commands there. The
-// distinction shapes every operation here and nothing else in the package.
-
-// ModeKind identifies which authority manages the daemon.
-type ModeKind int
-
-const (
-	// ModeSupervise means this agent manages it: the daemon is spawned as a
-	// direct child and this process replaces it when needed. Used in containers
-	// where no external service manager exists.
-	ModeSupervise ModeKind = iota
-	// ModeService delegates to a service manager with a specific unit name.
-	// Used on bare metal.
-	ModeService
-)
-
-// Mode describes daemon control strategy.
-type Mode struct {
-	Kind ModeKind
-	Unit string
-}
-
-// DetectMode selects the appropriate control strategy.
-//
-// Tries two common systemd unit names (distributions differ), then checks for
-// another init system, falling back to direct supervision if neither is
-// present.
-func DetectMode() Mode {
-	if which("systemctl") {
-		for _, unit := range []string{"smb", "smbd"} {
-			cmd := exec.Command("systemctl", "cat", unit+".service") //nolint:gosec // G204 complains about a variable argument: unit comes from the two-element literal slice above.
-			cmd.Stdout, cmd.Stderr = nil, nil
-			if err := cmd.Run(); err == nil {
-				return Mode{Kind: ModeService, Unit: unit}
-			}
-		}
-		return Mode{Kind: ModeService, Unit: "smbd"}
-	}
-	if which("rc-service") {
-		return Mode{Kind: ModeService, Unit: "samba"}
-	}
-	return Mode{Kind: ModeSupervise}
-}
+// This agent runs as the daemon's parent and manages it directly: spawned as a
+// child, signalled here, replaced here. There is no service manager to delegate
+// to, because the only deployment is the container this agent ships in.
 
 func which(bin string) bool {
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
@@ -79,16 +36,15 @@ func which(bin string) bool {
 // Smbd manages the daemon and optionally the NetBIOS name service when
 // configuration requests it.
 type Smbd struct {
-	mode Mode
-	log  *slog.Logger
-	// Set exclusively in supervision mode.
+	log *slog.Logger
+	// The daemon this agent spawned, and the name service beside it.
 	child *exec.Cmd
 	nmbd  *exec.Cmd
 }
 
 // NewSmbd constructs a controller.
-func NewSmbd(mode Mode, log *slog.Logger) *Smbd {
-	return &Smbd{mode: mode, log: log}
+func NewSmbd(log *slog.Logger) *Smbd {
+	return &Smbd{log: log}
 }
 
 // alive checks whether a subprocess remains active, harvesting it if
@@ -110,22 +66,13 @@ func alive(cmd *exec.Cmd) bool {
 	return pid == 0
 }
 
-// Running checks daemon state according to available information.
-// In supervision mode, the check is direct; with a service manager, this
-// reports what that manager claims.
+// Running reports whether the daemon this agent spawned is still alive.
 func (s *Smbd) Running() bool {
-	if s.mode.Kind == ModeSupervise {
-		return alive(s.child)
-	}
-	ok, err := service(s.mode.Unit, "is-active")
-	return err == nil && ok
+	return alive(s.child)
 }
 
 // Start launches the daemon.
 func (s *Smbd) Start() error {
-	if s.mode.Kind == ModeService {
-		return require(s.mode.Unit, "start")
-	}
 	cmd := exec.Command("smbd", "--foreground", "--no-process-group")
 	// Output passes through intentionally: daemon diagnostics appear in
 	// container logs.
@@ -148,19 +95,11 @@ func (s *Smbd) Reload() error {
 	if err == nil {
 		return nil
 	}
-	// Service managers can reload daemons whose control sockets are unreachable
-	// from here. Supervised instances have no alternative channel.
-	if s.mode.Kind == ModeService {
-		return require(s.mode.Unit, "reload")
-	}
 	return fmt.Errorf("reloading the configuration: %w: %s", err, strings.TrimSpace(string(out)))
 }
 
 // Restart replaces the process, which rebinds all listening sockets.
 func (s *Smbd) Restart() error {
-	if s.mode.Kind == ModeService {
-		return require(s.mode.Unit, "restart")
-	}
 	if err := s.Stop(); err != nil {
 		return err
 	}
@@ -170,9 +109,6 @@ func (s *Smbd) Restart() error {
 // Stop terminates both the daemon and name service.
 func (s *Smbd) Stop() error {
 	s.Nmbd(false)
-	if s.mode.Kind == ModeService {
-		return require(s.mode.Unit, "stop")
-	}
 	if s.child != nil {
 		kill(s.child)
 		s.child = nil
@@ -247,36 +183,6 @@ func (s *Smbd) StartFail2ban() {
 	if err := cmd.Run(); err != nil {
 		s.log.Warn("the ban daemon did not start; continuing without it", "error", err)
 	}
-}
-
-func service(unit, action string) (bool, error) {
-	var cmd *exec.Cmd
-	switch {
-	case which("systemctl"):
-		cmd = exec.Command("systemctl", action, unit) //nolint:gosec // G204 objects to variable arguments: both derive from internal mode detection, never external input.
-	default:
-		cmd = exec.Command("rc-service", unit, action) //nolint:gosec // G204 same rationale as above.
-	}
-	if err := cmd.Run(); err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			// Non-zero exit conveys state, not command failure.
-			return false, nil
-		}
-		return false, fmt.Errorf("asking the service manager to %s %s: %w", action, unit, err)
-	}
-	return true, nil
-}
-
-func require(unit, action string) error {
-	ok, err := service(unit, action)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("the service manager could not %s the %s service", action, unit)
-	}
-	return nil
 }
 
 // Testparm validates candidate configuration before promotion.

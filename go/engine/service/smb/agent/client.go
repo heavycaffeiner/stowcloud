@@ -20,9 +20,8 @@ import (
 
 // ErrNotListening reports that nothing is there.
 //
-// That is not a fault in itself. A bare-metal deployment may run the agent on a
-// poll with no socket, and a deployment without an SMB sidecar at all is a
-// legitimate configuration.
+// That is not a fault in itself: a deployment running without the SMB
+// container names no socket, which is a legitimate configuration.
 var ErrNotListening = errors.New("no SMB agent is listening")
 
 // ErrProtocol reports an answer this version cannot interpret.

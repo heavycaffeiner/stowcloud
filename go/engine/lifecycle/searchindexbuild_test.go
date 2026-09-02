@@ -210,3 +210,36 @@ func TestTheIndexIsNotOpenedWhenTheSettingIsOff(t *testing.T) {
 		t.Error("an index was opened on a deployment that did not ask for one")
 	}
 }
+
+// Turning the setting off through a live save detaches the index rather than
+// leaving it running under a setting that now says off.
+func TestASaveDetachesTheIndexWhenTheSettingGoesOff(t *testing.T) {
+	base, _, cookie, csrf, e := indexEngine(t)
+
+	if !e.Search.HasIndex() {
+		t.Fatal("the index was not attached by indexEngine's setup")
+	}
+
+	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/search",
+		cookie, csrf, map[string]any{"name_index_enabled": false})
+	if status != http.StatusOK {
+		t.Fatalf("turning the index off answered %d: %v", status, body)
+	}
+	if restart, ok := body["restart_required"].(bool); ok && restart {
+		t.Error("the save asked for a restart, which this setting no longer needs")
+	}
+
+	if e.Search.HasIndex() {
+		t.Error("the index is still attached after a save turned it off")
+	}
+
+	// Turning it back on reattaches, so the toggle is not a one-way trip.
+	status, body = mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/search",
+		cookie, csrf, map[string]any{"name_index_enabled": true})
+	if status != http.StatusOK {
+		t.Fatalf("turning the index back on answered %d: %v", status, body)
+	}
+	if !e.Search.HasIndex() {
+		t.Error("the index did not reattach after a save turned it back on")
+	}
+}

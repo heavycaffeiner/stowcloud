@@ -231,8 +231,8 @@ func Disable(ctx context.Context, d Deps) (agent.Report, error) {
 // push requests an apply of the set that was just written.
 func push(ctx context.Context, d Deps) (agent.Report, error) {
 	if d.Socket == "" {
-		// Without a sidecar the files are written and something else applies
-		// them, which describes a bare-metal deployment.
+		// No sidecar named, which is a deployment running without the SMB
+		// container. The files are rendered and nothing applies them.
 		return agent.Report{OK: true, Smbd: agent.ActionUnchanged}, nil
 	}
 

@@ -206,8 +206,7 @@ func prepareSocketDir(dir string) error {
 // can be managed.
 //
 // The recipient is whoever owns the rendered configuration directory, because
-// that is the process writing there, which by construction is the server. On
-// bare metal both sides share a user and nothing needs doing.
+// that is the process writing there, which by construction is the server.
 //
 // Inside a container the hand-over cannot happen at all. Having dropped every
 // capability, this sidecar cannot give a file away, leaving a narrowly-moded

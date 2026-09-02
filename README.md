@@ -363,8 +363,7 @@ dynamic loader and no libc to match, so the runtime image needs neither.
 The SMB sidecar is a second binary, `go/cmd/sc-smb-agent`. It runs as root
 beside the Samba daemon and applies what the server renders, which the server
 cannot do itself: it runs unprivileged, in a network namespace that cannot see
-the host's devices. `Dockerfile.smb` builds it, and `deploy/smb/native/`
-holds the material for installing it on a bare-metal host.
+the host's devices. `Dockerfile.smb` builds it.
 
 </details>
 

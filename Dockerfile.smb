@@ -189,11 +189,10 @@ VOLUME ["/run/sc-smb"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD smbd -b >/dev/null 2>&1 && pgrep -f /sc-smb-agent >/dev/null
 
-# `--supervise`: there is no service manager in here, so the agent owns the
-# smbd process. That ownership is what lets it *replace* smbd when the
-# interface list changes, which a reload cannot do — smbd binds its listening
-# sockets once, at startup.
+# The agent owns the smbd process. That ownership is what lets it replace smbd
+# when the interface list changes, which a reload cannot do: smbd binds its
+# listening sockets once, at startup.
 #
 # tini stays PID 1 for reaping; the agent is its child and forwards nothing,
 # it just stops its own children on SIGTERM.
-ENTRYPOINT ["/sbin/tini", "--", "/sc-smb-agent", "--supervise"]
+ENTRYPOINT ["/sbin/tini", "--", "/sc-smb-agent"]

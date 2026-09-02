@@ -74,15 +74,10 @@ why `settle` exists.
 start, a changed bind line means restart, an identical promoted
 candidate means nothing, anything else means reload.
 
-Two ownership modes, detected at startup (`DetectMode`):
-
-- **Supervise**: the agent spawns the daemon as its own child. The
-  agent is its container's init, so it must reap (a crashed daemon
-  lingers as a zombie otherwise) and must kill the whole process
-  group (the daemon forks a child per connection, and those hold the
-  listening port across a restart).
-- **Service**: a service manager owns the unit; the agent asks it.
-  Unit-name probing covers the distributions' disagreement.
+The agent spawns the daemon as its own child. It is its container's init, so it
+must reap (a crashed daemon lingers as a zombie otherwise) and must kill the
+whole process group (the daemon forks a child per connection, and those hold
+the listening port across a restart).
 
 `nmbd` runs only while the promoted configuration wants a name, and
 its failure is a log line, never fatal: name service is broadcast, it
@@ -136,10 +131,9 @@ exist in this container, a daemon that did not settle.
 
 The scope fold, the policy reading, the candidate transformation, the
 read-backs, the settle decision and the fingerprint, each with the tests
-this document lists. The daemon control itself (`DetectMode`, the
-supervise and service modes, `nmbd`, `fail2ban`) and the apply pass that
-drives them are wiring over a live `smbd` and a service manager, and land
-with phase 3's assembly, where there is a process to supervise. `Daemon`
+this document lists. The daemon control itself (`nmbd`, `fail2ban`) and the
+apply pass that drives them are wiring over a live `smbd`, and land with phase
+3's assembly, where there is a process to supervise. `Daemon`
 is the interface they satisfy, and `Tell` is the seam they attach to.
 
 ## Tests

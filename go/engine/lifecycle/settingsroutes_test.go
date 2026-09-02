@@ -89,9 +89,11 @@ func TestASaveSaysWhetherItIsLive(t *testing.T) {
 		t.Error("a live section asks for a restart")
 	}
 
-	// The watcher takes its bounds when it starts, so this one is pinned.
-	pinned, pinnedBody := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/watch",
-		cookie, csrf, map[string]any{"hot_set_max": 4096})
+	// Landlock and seccomp cannot be undone by the process that installed
+	// them, so this section is pinned even though every other bound in this
+	// batch became live.
+	pinned, pinnedBody := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/security",
+		cookie, csrf, map[string]any{"hardening": "preferred"})
 	if pinned != http.StatusOK {
 		t.Fatalf("the pinned section answered %d: %v", pinned, pinnedBody)
 	}
@@ -289,8 +291,8 @@ func TestTheOutcomeAlwaysCarriesFindings(t *testing.T) {
 func TestARestartRequiredSaveReportsActiveWork(t *testing.T) {
 	base, cookie, csrf, _, _ := adminEngine(t)
 
-	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/watch",
-		cookie, csrf, map[string]any{"hot_set_max": 4096})
+	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/security",
+		cookie, csrf, map[string]any{"hardening": "preferred"})
 	if status != http.StatusOK {
 		t.Fatalf("saving answered %d: %v", status, body)
 	}
@@ -375,8 +377,8 @@ func TestTheActiveWorkCountsAreReal(t *testing.T) {
 		t.Fatal("the administrator did not sign in")
 	}
 
-	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/watch",
-		cookie, signIn.field("csrf"), map[string]any{"hot_set_max": 4096})
+	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/security",
+		cookie, signIn.field("csrf"), map[string]any{"hardening": "preferred"})
 	if status != http.StatusOK {
 		t.Fatalf("saving answered %d: %v", status, body)
 	}

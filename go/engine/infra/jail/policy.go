@@ -23,8 +23,8 @@ const (
 	// default in the shipped image.
 	Required Policy = iota
 	// Preferred records an unapplied step as a named degradation and continues.
-	// This is the default for a bare-metal install, where an older kernel is a
-	// legitimate condition the operator may not govern.
+	// This is for a host whose kernel is older than the sandbox needs, which
+	// the operator may not govern.
 	Preferred
 	// Off attempts nothing and reports as much, giving an operator a way to
 	// accept the absence deliberately without editing code.

@@ -77,8 +77,8 @@ type Agent struct {
 }
 
 // NewAgent makes one.
-func NewAgent(paths Paths, mode Mode, log *slog.Logger, clk clock.Clock) *Agent {
-	return &Agent{paths: paths, log: log, clock: clk, smbd: NewSmbd(mode, log)}
+func NewAgent(paths Paths, log *slog.Logger, clk clock.Clock) *Agent {
+	return &Agent{paths: paths, log: log, clock: clk, smbd: NewSmbd(log)}
 }
 
 // Last returns the most recent apply result, used by status queries.
