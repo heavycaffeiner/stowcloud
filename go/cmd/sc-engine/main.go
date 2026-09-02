@@ -149,6 +149,10 @@ func run(addr, dataDir string, plain bool) error {
 	eng, err := lifecycle.Open(ctx, lifecycle.Options{
 		DataDir: abs,
 		Logger:  logger,
+		// What was actually installed above, not what the document says: a
+		// restart compares the two to tell a change it can apply from one the
+		// kernel will not let it.
+		Hardening: values.Hardening,
 	})
 	if err != nil {
 		return fmt.Errorf("opening the engine: %w", err)
@@ -208,6 +212,29 @@ func run(addr, dataDir string, plain bool) error {
 			return
 		}
 		logger.Info("the listener moved", "url", scheme+"://"+next)
+	})
+
+	// A restart replaces this process image rather than exiting: the engine is
+	// its container's only process, so an exit takes the container down and
+	// whether it comes back is a policy the operator may not have set.
+	//
+	// Drained first, so an upload mid-write is not cut off, and the databases
+	// are closed so the new image opens files nobody is still writing.
+	eng.OnRestart(func() {
+		logger.Info("restarting")
+		if serr := srv.Shutdown(); serr != nil {
+			logger.Error("the listener did not drain; restarting anyway", "error", serr)
+		}
+		if cerr := eng.Close(); cerr != nil {
+			logger.Error("the engine did not close cleanly; restarting anyway", "error", cerr)
+		}
+		// Only a failure returns. The old image has already drained, so there
+		// is nothing to keep serving with: say why, and leave the exit code to
+		// whatever supervises this.
+		if xerr := lifecycle.ExecSelf(); xerr != nil {
+			logger.Error("the process could not replace itself", "error", xerr)
+			os.Exit(1)
+		}
 	})
 
 	<-ctx.Done()

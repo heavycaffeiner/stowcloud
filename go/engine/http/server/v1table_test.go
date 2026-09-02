@@ -319,6 +319,7 @@ func TestEveryMutatingRouteDeclaresItsBody(t *testing.T) {
 func bodylessActions() []string {
 	return []string{
 		"auth.logout",
+		"admin.system.restart",
 		"account.app-passwords.wipe",
 		"account.totp.setup",
 		"account.smb.password.delete",

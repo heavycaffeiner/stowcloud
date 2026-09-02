@@ -219,6 +219,7 @@ half to match rather than the reverse.
 | `GET /api/v1/admin/index/estimate` | `GET /api/admin/index/estimate` | |
 | `GET /api/v1/admin/settings` | `GET /api/admin/server-settings` and `GET /api/admin/index/settings` | whole snapshot, index section included |
 | `PATCH /api/v1/admin/settings/{section}` | `PATCH /api/admin/server-settings/{section}` | |
+| `POST /api/v1/admin/system/restart` | none | replaces the process image so a restart-required save takes effect without the operator stopping the container |
 
 The generic section route owns `upload` and `index` too. In particular,
 `PATCH /api/v1/admin/settings/upload` replaces

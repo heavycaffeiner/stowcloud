@@ -24,6 +24,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/jail"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
@@ -74,6 +75,13 @@ type Options struct {
 	// subcommand, so a thumbnail would fail at the first exec with nothing
 	// pointing at why.
 	PreviewWorker string
+
+	// Hardening is the sandbox policy this process actually installed, which
+	// the caller applied before the engine existed. A restart compares the
+	// stored policy against it: the kernel lets an installed sandbox be
+	// narrowed and never widened, so a save that loosens it cannot be served
+	// by replacing the image.
+	Hardening jail.Policy
 }
 
 // Engine is a constructed set of services, and the files they hold open.
@@ -165,12 +173,31 @@ type Engine struct {
 	guardMu   sync.Mutex
 	guardStop context.CancelFunc
 
+	// searchUpdater keeps the attached name index current from watcher
+	// events, nil when no index is attached. searchUpdaterStop halts it.
+	// Both are read and swapped together under searchUpdaterMu, so a toggle
+	// takes effect atomically with respect to the event path that reads the
+	// pointer once per watcher event.
+	searchUpdaterMu   sync.Mutex
+	searchUpdater     *svc.Updater
+	searchUpdaterStop context.CancelFunc
+
 	// onBind is told when a settings save moved the listen address. The
 	// listener belongs to the process that started this engine, so the change
 	// is handed out rather than applied here.
 	bindMu    sync.Mutex
 	onBind    func(addr string)
 	boundAddr string
+
+	// onRestart replaces the process image. Same reason as onBind: the image
+	// belongs to the process, not to an engine mounted on it.
+	restartMu sync.Mutex
+	onRestart func()
+
+	// hardening is the sandbox policy this process actually installed, kept so
+	// a restart can tell a tightening change from one the kernel will not let
+	// it apply.
+	hardening jail.Policy
 }
 
 // Open constructs the engine.
@@ -194,9 +221,10 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	}
 
 	e := &Engine{
-		clock:   clk,
-		dataDir: opt.DataDir,
-		logger:  logger,
+		clock:     clk,
+		hardening: opt.Hardening,
+		dataDir:   opt.DataDir,
+		logger:    logger,
 		// Until settings are loaded, no proxy is trusted and no host is
 		// named. An empty host list is what first boot looks like, and the
 		// boundary admits only a private client in that state.
@@ -368,10 +396,9 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// so it is built unconditionally. Its bounds come from the settings below.
 	e.Search = svc.New(svc.Options{Clock: clk, CPUs: runtime.NumCPU()})
 
-	// The name index, when the operator asked for one. Attached rather than
-	// required: without it every query walks, which is the tier search is
-	// built on and the reason an index is an escalation.
-	e.openSearchIndex(ctx)
+	// The name index, when the operator asked for one, is attached inside
+	// loadSettings below rather than here: that is the same call a save
+	// makes, so boot and a later toggle go through one path instead of two.
 
 	// Thumbnails, whose decoder runs as a separate jailed process. Absence is
 	// a degradation rather than a failure: a pool that cannot start, or a
@@ -484,6 +511,11 @@ func (e *Engine) Close() (err error) {
 			e.lock = nil
 		}
 	}()
+
+	// The search updater first, since it reads events off the watcher this
+	// closes next: stopping it after would leave a goroutine consuming a
+	// channel that is about to go away underneath it.
+	e.stopSearchUpdater()
 
 	// The sockets and the watcher first. They hold no database file, but they
 	// hold goroutines that read one, and closing a database out from under a

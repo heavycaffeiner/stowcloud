@@ -238,6 +238,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminSettingsGet
 		case "admin.settings.patch":
 			out[r.Name] = e.adminSettingsPatch
+		case "admin.system.restart":
+			out[r.Name] = e.systemRestart
 		case "admin.storage":
 			out[r.Name] = e.adminStorage
 		case "admin.index.estimate":
