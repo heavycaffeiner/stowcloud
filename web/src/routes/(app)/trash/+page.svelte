@@ -176,7 +176,7 @@
               onchange={() => toggle(entry.id)}
             />
             <span class="sc-trash__name" title={entry.name}>{entry.name}</span>
-            <span class="sc-trash__meta">{formatBytes(entry.size)}</span>
+            {#if !entry.is_dir}<span class="sc-trash__meta">{formatBytes(entry.size)}</span>{/if}
             <span class="sc-trash__meta">{t('trash.deleted', { date: formatDateNs(entry.deleted_at_ns) })}</span>
             <div class="sc-trash__row-actions">
               <IconButton label={t('trash.restore')} disabled={busy} onclick={() => restore([entry.id])}><Icon icon={icons.restore} /></IconButton>

@@ -149,7 +149,14 @@ export class BrowseState {
     }
     return out
   })
-  readonly totalSelectedSize = $derived(this.selected.reduce((a, e) => a + e.size, 0))
+  /** Files only. A directory entry's own size is the bytes its inode spends on
+   *  the listing, a number like 18 B that says nothing about what is inside,
+   *  so adding it to a total reads as a wrong answer rather than a partial
+   *  one. What a folder holds is what the details panel computes on request. */
+  readonly totalSelectedSize = $derived(
+    this.selected.reduce((a, e) => (e.kind === 'dir' ? a : a + e.size), 0)
+  )
+  readonly selectedFolderCount = $derived(this.selected.filter((e) => e.kind === 'dir').length)
   readonly focusedName = $derived(
     this.focusedIndex !== null ? (this.#rows.get(this.focusedIndex)?.name ?? null) : null
   )

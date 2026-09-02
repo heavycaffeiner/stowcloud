@@ -15,9 +15,9 @@
   // focus goes in, Tab stays in, Escape closes.
   import { formatDateNs, t } from '../i18n'
   import { formatBytes } from '../format/bytes'
-  import { api, ApiError, type Entry } from '../api/client'
-  import type { FolderSize } from '../api/types'
+  import type { Entry } from '../api/client'
   import type { BrowseState } from '../state/browse.svelte'
+  import { selectionMeasure } from '../state/measure.svelte'
   import { uiState } from '../state/ui.svelte'
   import { Icon } from 'm3-svelte'
   import { icons } from '../icons'
@@ -68,9 +68,11 @@
 
   const fields = $derived.by((): Field[] => {
     if (many) {
+      // No size row here: the measurement below reports it, whether or not the
+      // selection holds a folder. Two rows would be two answers to one
+      // question, and the subtotal would be the wrong one.
       return [
         { key: 'count', label: t('details.items'), value: String(selection.length) },
-        { key: 'size', label: t('details.total_size'), value: formatBytes(browse.totalSelectedSize) },
         { key: 'location', label: t('details.location'), value: location }
       ]
     }
@@ -95,59 +97,30 @@
     ]
   })
 
-  // ── recursive folder size, on demand ──
+  // ── recursive folder size ──
   //
-  // Nothing fetches on selection alone, because arrowing down a list would then
-  // walk one tree per keypress, and this is deliberately not a listing column:
-  // opening a directory of a thousand subfolders would start a thousand walks.
-  // The number is per folder, when the user asks, the way every file manager's
-  // folder-properties dialog works.
+  // Held in shared state and driven by the browse page, which is mounted
+  // whether or not this panel is: the selection toolbar shows the same number.
+  // Two drivers would alternate keys on every selection change and cancel each
+  // other's pending walk.
   //
-  // Keyed on the path so stepping to another folder clears the answer rather
-  // than showing the previous folder's size under the new folder's name.
-  const sizeTarget = $derived.by((): string | null => {
-    // The virtual root is not a folder any grant names, so there is nothing to
-    // measure while the browse page is above every share.
+  // These two describe the same target the page targeted, and exist only so
+  // the retry button has something to re-run.
+  const sizeTargets = $derived.by((): string[] => {
     const here = location.replace(/^\/+/, '').replace(/\/+$/, '')
-    if (one?.kind === 'dir') return here ? `${here}/${one.name}` : one.name
-    if (selection.length === 0) return here || null
-    return null
-  })
-  let sizeLoading = $state(false)
-  let sizeResult = $state<FolderSize | null>(null)
-  let sizeError = $state<string | null>(null)
-
-  // Depends on `sizeTarget` alone, so pointing the panel at another folder
-  // clears the answer rather than showing the previous folder's size under the
-  // new folder's name.
-  $effect(() => {
-    void sizeTarget
-    sizeResult = null
-    sizeError = null
-    sizeLoading = false
+    if (selection.length === 0) return here ? [here] : []
+    return selection.filter((e) => e.kind === 'dir').map((e) => (here ? `${here}/${e.name}` : e.name))
   })
 
-  async function loadSize(): Promise<void> {
-    const target = sizeTarget
-    if (!target) return
-    sizeLoading = true
-    sizeError = null
-    try {
-      const res = await api.folderSize(target)
-      // The user can navigate away while a cold walk runs; a late answer for a
-      // folder nobody is looking at any more is dropped rather than shown.
-      if (sizeTarget !== target) return
-      sizeResult = res
-    } catch (err) {
-      if (sizeTarget !== target) return
-      sizeError =
-        err instanceof ApiError && err.code === 'acl.denied'
-          ? t('details.size_hidden_by_permissions')
-          : t('details.could_not_measure')
-    } finally {
-      if (sizeTarget === target) sizeLoading = false
-    }
-  }
+  /** What the folders' sizes are added to: the files in the same selection,
+   *  whose sizes the listing already carries. */
+  const sizeBase = $derived(
+    many
+      ? { bytes: browse.totalSelectedSize, files: selection.length - browse.selectedFolderCount }
+      : { bytes: 0, files: 0 }
+  )
+
+  const measured = $derived(selectionMeasure.state)
 
   const title = $derived(many ? t('details.multiple_selected', { count: selection.length }) : (one?.name ?? folderName))
   const titleIcon = $derived(many ? icons.check : one ? (one.kind === 'dir' ? icons.folder : icons.file) : icons.folder)
@@ -215,13 +188,24 @@
       <dt class="sc-details__label">{field.label}</dt>
       <dd class="sc-details__value"><bdi>{field.value}</bdi></dd>
     {/each}
-    {#if sizeTarget}
-      <dt class="sc-details__label">{t('details.total_size')}</dt>
+    {#if measured.kind !== 'idle'}
+      <dt class="sc-details__label">{many ? t('details.download_size') : t('details.total_size')}</dt>
       <dd class="sc-details__value">
-        {#if sizeResult}
-          {formatBytes(sizeResult.bytes)}
-          <span class="sc-details__size-note">{t('details.size_file_count', { count: sizeResult.files })}</span>
-        {:else if sizeLoading}
+        {#if measured.kind === 'done'}
+          {formatBytes(measured.bytes)}
+          <span class="sc-details__size-note">
+            {t('details.size_file_count', { count: measured.files })}
+          </span>
+        {:else if measured.kind === 'failed'}
+          <span class="sc-details__size-note" role="alert">
+            {measured.reason === 'denied'
+              ? t('details.size_hidden_by_permissions')
+              : t('details.could_not_measure')}
+          </span>
+          <Button variant="text" onclick={() => selectionMeasure.retry(sizeTargets, sizeBase)}>
+            {t('common.retry')}
+          </Button>
+        {:else}
           <!-- The screen never blocks on this: a cold walk on rotational
                storage is minutes, and the user can navigate away and come back
                to a cached answer. -->
@@ -229,10 +213,6 @@
             <ProgressCircular size={16} />
             {t('details.measuring')}
           </span>
-        {:else if sizeError}
-          <span class="sc-details__size-note" role="alert">{sizeError}</span>
-        {:else}
-          <Button variant="text" onclick={loadSize}>{t('details.measure')}</Button>
         {/if}
       </dd>
     {/if}

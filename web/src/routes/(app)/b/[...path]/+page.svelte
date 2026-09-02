@@ -8,6 +8,7 @@
   import { authState } from '../../../../lib/state/auth.svelte'
   import { browse } from '../../../../lib/state/browse.svelte'
   import { setDetails, uiState } from '../../../../lib/state/ui.svelte'
+  import { selectionMeasure } from '../../../../lib/state/measure.svelte'
   import { t } from '../../../../lib/i18n'
   import { uploadTray } from '../../../../lib/state/upload-tray.svelte'
   import Breadcrumb from '../../../../lib/ui/Breadcrumb.svelte'
@@ -97,6 +98,28 @@
 
   uploadTray.onFileDone((dest) => {
     if (normalizePath(dest) === browse.path) void browse.refresh()
+  })
+
+  // Driven here rather than inside the details panel, which is mounted only
+  // while it is open: the selection toolbar shows the same number and needs it
+  // whether or not that panel exists.
+  $effect(() => {
+    const here = browse.path.replace(/^\/+/, '').replace(/\/+$/, '')
+    // Nothing selected measures the folder being looked at, which is what the
+    // details panel reports for a directory with no selection in it. The
+    // virtual root is above every share and is not a folder to walk.
+    if (browse.selected.length === 0) {
+      selectionMeasure.retarget(here ? [here] : [], { bytes: 0, files: 0 })
+      return
+    }
+    const folders = browse.selected.filter((e) => e.kind === 'dir')
+    selectionMeasure.retarget(
+      folders.map((e) => (here ? `${here}/${e.name}` : e.name)),
+      {
+        bytes: browse.totalSelectedSize,
+        files: browse.selected.length - browse.selectedFolderCount
+      }
+    )
   })
 
   interface Crumb {
@@ -1045,9 +1068,21 @@
         <Icon icon={icons.close} />
       </IconButton>
       <span class="sc-browse__selection-count">
-        {uiState.compact
-          ? t('common.item_count', { count: browse.selection.size })
-          : t('browse.selected', { count: browse.selection.size, size: formatBytes(browse.totalSelectedSize) })}
+        {#if uiState.compact}
+          {t('common.item_count', { count: browse.selection.size })}
+        {:else if selectionMeasure.state.kind === 'done'}
+          {t('browse.selected', {
+            count: browse.selection.size,
+            size: formatBytes(selectionMeasure.state.bytes)
+          })}
+        {:else if selectionMeasure.state.kind === 'measuring'}
+          <!-- A folder's total needs a walk, and a cold one takes long enough
+               that a bare count would read as the answer. -->
+          {t('common.item_count', { count: browse.selection.size })}
+          <span class="sc-browse__selection-measuring" role="status">{t('details.measuring')}</span>
+        {:else}
+          {t('common.item_count', { count: browse.selection.size })}
+        {/if}
       </span>
       <span class="sc-browse__selection-gap"></span>
       <IconButton label={t('browse.select_all')} onclick={() => browse.selectAll()}>
@@ -1517,6 +1552,10 @@
   .sc-browse__selection-count {
     flex-shrink: 0;
     white-space: nowrap;
+  }
+  .sc-browse__selection-measuring {
+    margin-inline-start: 0.5ch;
+    opacity: 0.7;
   }
   .sc-browse__selection-bar-inner :global(button) {
     flex-shrink: 0;
