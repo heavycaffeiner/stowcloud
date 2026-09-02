@@ -71,6 +71,24 @@ func effective(t *testing.T, tool, conf, section, name string) string {
 	return strings.TrimSpace(string(out))
 }
 
+// dump returns the whole configuration as the daemon resolves it.
+//
+// Whole rather than one directive, because the question here is whether a
+// directive survives at all, and asking for one the parser discarded is an
+// error rather than an empty answer.
+func dump(t *testing.T, tool, body string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "hand.conf")
+	if werr := os.WriteFile(path, []byte(body), 0o600); werr != nil {
+		t.Fatal(werr)
+	}
+	out, err := testparmRun(tool, "-s", path).Output()
+	if err != nil {
+		t.Fatalf("testparm could not read the configuration: %v", err)
+	}
+	return string(out)
+}
+
 func sampleShares() []smb.ShareDef {
 	return []smb.ShareDef{{
 		Name: "docs", Path: "/srv/docs",
@@ -186,21 +204,41 @@ func TestTheDialectAliasIsNotADowngrade(t *testing.T) {
 // The account lists are what stand between one account and another's files, so
 // a share whose lists the daemon does not resolve is a share with no access
 // control at all.
+//
+// Two halves. The daemon reads an empty list as no restriction, which is the
+// fact that makes this dangerous; and the renderer never writes one, which is
+// what keeps the fact harmless.
 func TestAShareWithNoAccountListIsNotServed(t *testing.T) {
 	tool := testparmPath(t)
 
-	// A share the publisher would never emit, to prove the parser reads an
-	// empty list the way the publisher assumes: as everyone.
-	conf := render(t, sampleConfig(), []smb.ShareDef{{
+	// Written by hand, because the renderer will not produce it. This is the
+	// file that would open the share to every account that can authenticate:
+	// the daemon does not read "valid users =" as an empty list, it discards
+	// the line, and a share with no such line restricts nobody.
+	handWritten := "[global]\n" +
+		"  workgroup = WORKGROUP\n" +
+		"  security = user\n" +
+		"[open]\n" +
+		"  path = /srv/open\n" +
+		"  valid users =\n"
+	dumped := dump(t, tool, handWritten)
+	if strings.Contains(dumped, "valid users") {
+		t.Fatalf("the daemon kept the empty account list, so the danger this guards is not what it was thought to be:\n%s", dumped)
+	}
+
+	// The renderer's answer to the same share: no block at all.
+	out, res, err := smb.Render(sampleConfig(), []smb.ShareDef{{
 		Name: "open", Path: "/srv/open", ModeFile: 0o664, ModeDir: 0o775,
 	}})
-
-	got := effective(t, tool, conf, "open", "valid users")
-	if got != "" {
-		t.Fatalf("an empty account list resolved to %q, so the assumption behind omitting such shares is wrong", got)
+	if err != nil {
+		t.Fatalf("rendering: %v", err)
 	}
-	// This is why publish omits a share with no grant rather than rendering an
-	// empty list: to the daemon, empty admits every account.
+	if strings.Contains(string(out), "[open]") {
+		t.Error("a share naming no account was published, which admits every account that can authenticate")
+	}
+	if len(res.Withheld) != 1 || res.Withheld[0].Name != "open" {
+		t.Errorf("the withheld share was not reported: %+v", res.Withheld)
+	}
 }
 
 // The renderer's refusals are the other half. A workgroup carrying a newline

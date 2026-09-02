@@ -111,9 +111,20 @@ type DroppedName struct {
 	Reason string
 }
 
+// WithheldShare is a share left out of the file entirely.
+type WithheldShare struct {
+	Name   string
+	Reason string
+}
+
 // Result is what a render produced beside the bytes.
 type Result struct {
 	Dropped []DroppedName
+
+	// Withheld names the shares that were not written. A share reaching the
+	// renderer with nobody able to open it cannot be published: this format
+	// reads an empty account list as no restriction at all.
+	Withheld []WithheldShare
 }
 
 // Validate is the dry run both settings checkers call.
@@ -154,8 +165,12 @@ func Render(cfg Config, shares []ShareDef) ([]byte, Result, error) {
 	var res Result
 	out := renderGlobal(cfg)
 	for _, s := range shares {
-		block, dropped := renderShare(s)
+		block, dropped, withheld := renderShare(s)
 		res.Dropped = append(res.Dropped, dropped...)
+		if withheld != "" {
+			res.Withheld = append(res.Withheld, WithheldShare{Name: s.Name, Reason: withheld})
+			continue
+		}
 		out += "\n" + block
 	}
 	for _, d := range res.Dropped {
@@ -164,6 +179,11 @@ func Render(cfg Config, shares []ShareDef) ([]byte, Result, error) {
 			slog.String("field", d.Field),
 			slog.String("name", d.Name),
 			slog.String("reason", d.Reason))
+	}
+	for _, w := range res.Withheld {
+		slog.Warn("a share was left out of the SMB configuration, because publishing it with no account list would open it to every account that can authenticate",
+			slog.String("share", w.Name),
+			slog.String("reason", w.Reason))
 	}
 	return []byte(out), res, nil
 }
@@ -339,7 +359,13 @@ func networkScope(cfg Config) (note, ifaces, hostsAllow string) {
 }
 
 // renderShare writes one block, dropping the account names it cannot write.
-func renderShare(s ShareDef) (string, []DroppedName) {
+//
+// An empty block is not written. "valid users" with nothing after it is not an
+// empty list in this format: Samba discards the directive, and the share it
+// belonged to becomes reachable by every account that can authenticate. A
+// share whose names were all dropped as unwritable would publish itself to
+// everybody, which is the opposite of what dropping them was for.
+func renderShare(s ShareDef) (string, []DroppedName, string) {
 	modeFile, modeDir := s.ModeFile, s.ModeDir
 	if modeFile == 0 {
 		modeFile = defaultModeFile
@@ -372,6 +398,14 @@ func renderShare(s ShareDef) (string, []DroppedName) {
 	read := keep("read list", s.ReadList)
 	write := keep("write list", s.WriteList)
 
+	if len(valid) == 0 {
+		reason := "the share names no account"
+		if len(s.ValidUsers) > 0 {
+			reason = "every account naming this share was unwritable"
+		}
+		return "", dropped, reason
+	}
+
 	out := "" +
 		"[" + s.Name + "]\n" +
 		"  path = " + s.Path + "\n" +
@@ -396,7 +430,7 @@ func renderShare(s ShareDef) (string, []DroppedName) {
 		out += "  level2 oplocks = no\n"
 		out += "  kernel oplocks = no\n"
 	}
-	return out, dropped
+	return out, dropped, ""
 }
 
 // User describes a single SMB-enabled account in the form the sidecar's account

@@ -99,7 +99,16 @@ func FuzzRenderNeverInjects(f *testing.F) {
 			// A refusal is the designed answer for anything unrepresentable.
 			return
 		}
-
+		if len(res.Withheld) > 0 {
+			// The account was unwritable, so the share names nobody and is not
+			// published at all. There is no block to check the shape of, and
+			// the absence is itself the property: an empty account list would
+			// admit every account that can authenticate.
+			if strings.Contains(string(out), "["+shareName+"]") {
+				t.Errorf("a withheld share was published anyway\n%s", out)
+			}
+			return
+		}
 		sections, directives := directivesIn(string(out))
 
 		// The file holds exactly the sections it was given: [global] and the one
