@@ -464,5 +464,9 @@
 # 110: the clone guard's build and disassemble commands. G204 reads the
 # subprocess; the test names the package it compiles and the symbol it reads,
 # both this file's own constants.
+#
+# 112: the jail proof's diagnostic re-run. Two errcheck suppressions, on the
+# failure path of another test: the pool close and the decode whose error is
+# not the answer, the worker's own words are.
 23
-110
+112

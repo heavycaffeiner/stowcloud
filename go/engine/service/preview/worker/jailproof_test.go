@@ -85,6 +85,52 @@ func jailedPool(t *testing.T) *preview.Pool {
 	return p
 }
 
+// whyItDied re-runs one decode with the refusal turned into ENOSYS, so a
+// failure above can say which syscall the filter is missing.
+//
+// The shipped filter kills, and a kill prints nothing: a worker missing a
+// syscall dies exactly as a crashed decoder does. Diagnosing the last one
+// meant disassembling two binaries. This runs the same worker again under the
+// diagnostic filter and hands back whatever the runtime said on its way out.
+func whyItDied(t *testing.T) string {
+	t.Helper()
+	var said saidBuffer
+	p, err := preview.NewPool(preview.PoolOptions{
+		Workers: 1,
+		Exe:     buildJailedWorker(t),
+		Args:    []string{},
+		Env:     []string{"SC_PREVIEW_ERRNO=1"},
+		Stderr:  &said,
+	})
+	if err != nil {
+		return "the diagnostic pool could not be built: " + err.Error()
+	}
+	defer func() {
+		//nolint:errcheck // this is the failure path of another test.
+		_ = p.Close()
+	}()
+
+	// Growing sizes and repeated jobs, because which decode reaches the
+	// missing call is exactly what is unknown here: one is a heap that never
+	// grew, and the runtime builds its poller lazily on a later job.
+	for _, size := range []int{32, 256, 1024, 2048} {
+		for range 4 {
+			in, out := sourceFile(t, size, size), outputFile(t)
+			//nolint:errcheck // the worker's own words are the answer, not this error.
+			_, _ = p.Generate(t.Context(), preview.Request{
+				Kind:      preview.JobImage,
+				Preset:    preview.PresetMedium,
+				Flags:     preview.FlagStripEXIF,
+				MaxPixels: 1 << 24,
+			}, preview.PlainSource{F: in}, out)
+			if said.String() != "" {
+				return said.String()
+			}
+		}
+	}
+	return "the worker said nothing under the diagnostic filter either"
+}
+
 func sourceFile(t *testing.T, w, h int) *os.File {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, w, h))
@@ -264,7 +310,8 @@ func TestAJailedWorkerSurvivesManyJobs(t *testing.T) {
 			MaxPixels: 1 << 20,
 		}, preview.PlainSource{F: in}, out)
 		if err != nil {
-			t.Fatalf("job %d failed: %v", i, err)
+			t.Fatalf("job %d failed: %v\nunder the diagnostic filter the worker said:\n%s",
+				i, err, whyItDied(t))
 		}
 		if resp.Status != preview.StatusOK {
 			t.Fatalf("job %d: status %v: %s", i, resp.Status, resp.Err)
@@ -285,7 +332,8 @@ func TestAJailedWorkerDecodesGrowingImages(t *testing.T) {
 			MaxPixels: 1 << 24,
 		}, preview.PlainSource{F: in}, out)
 		if err != nil {
-			t.Fatalf("a %dx%d source killed the worker: %v", size, size, err)
+			t.Fatalf("a %dx%d source killed the worker: %v\nunder the diagnostic filter the worker said:\n%s",
+				size, size, err, whyItDied(t))
 		}
 		if resp.Status != preview.StatusOK {
 			t.Fatalf("a %dx%d source: status %v: %s", size, size, resp.Status, resp.Err)
