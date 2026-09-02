@@ -163,6 +163,16 @@ func (g *Guard) Blocked() bool {
 	return false
 }
 
+// Unblock releases every file this guard measures.
+//
+// For a guard being switched off. A block is the guard's decision, so it has
+// to be withdrawn with the guard: left standing, it would outlive the setting
+// that caused it, and an operator raising a ceiling to recover a full
+// deployment would find writes still refused with nothing left to explain it.
+func (g *Guard) Unblock() {
+	g.setBlocked(false)
+}
+
 // Run keeps sampling until the context is done, and returns straight away when
 // nothing was configured, which is how a deployment runs by default.
 //

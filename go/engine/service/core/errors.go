@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
 )
 
 // The domain's whole error vocabulary. None of these chooses a wire status;
@@ -28,6 +29,16 @@ var (
 	// comparison. It always arrives wrapped by PreconditionError, which
 	// carries the current token.
 	ErrPrecondition = errors.New("precondition failed")
+
+	// ErrWritesBlocked is the size guard refusing a write, re-exported from
+	// the store so the protocol layer can classify it: http may import this
+	// tier and not that one.
+	//
+	// An alias rather than a new value, so errors.Is matches whichever one a
+	// caller happens to hold. Without it the refusal reached a screen as an
+	// internal error, and an operator who had set a ceiling saw their own
+	// configuration working as an unexplained fault.
+	ErrWritesBlocked = dbfile.ErrWritesBlocked
 
 	// ErrConflict is an operation that conflicts with current state when no
 	// validator was supplied. It is what opens the conflict dialogue on the

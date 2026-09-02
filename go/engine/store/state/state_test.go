@@ -160,9 +160,6 @@ func TestTheSizeGuardCoversEveryInsertPathAndNothingElse(t *testing.T) {
 				Ident: ident.Ident{Share: 1, Dev: 2, Ino: 3}, ID: 9,
 			})
 		},
-		"MergeSettings": func(_ *testing.T, d *state.DB) error {
-			return d.MergeSettings(ctx, "network", map[string]any{"bind": ":8080"})
-		},
 		"PersistGrant": func(t *testing.T, d *state.DB) error {
 			seedUser(t, d, 1, "u")
 			_, err := d.PersistGrant(ctx, state.GrantRow{
@@ -233,6 +230,15 @@ func TestTheSizeGuardCoversEveryInsertPathAndNothingElse(t *testing.T) {
 		act  func(t *testing.T, d *state.DB, seeded int64) error
 	}
 	ungated := map[string]ungatedCase{
+		// The recovery path. The guard is switched off through this call, so
+		// gating it would leave an operator whose volume filled with no way
+		// to raise the ceiling from the interface that set it.
+		"MergeSettings": {
+			seed: func(_ *testing.T, _ *state.DB) int64 { return 0 },
+			act: func(_ *testing.T, d *state.DB, _ int64) error {
+				return d.MergeSettings(ctx, "network", map[string]any{"bind": ":8080"})
+			},
+		},
 		"UpdateShare": {
 			seed: func(t *testing.T, d *state.DB) int64 { return seedShare(t, d) },
 			act: func(_ *testing.T, d *state.DB, id int64) error {

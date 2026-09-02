@@ -28,7 +28,21 @@ func sentinels() []classifier {
 	out = append(out, authSentinels()...)
 	out = append(out, uploadSentinels()...)
 	out = append(out, previewSentinels()...)
+	out = append(out, storeSentinels()...)
 	return out
+}
+
+// storeSentinels is the database layer, reached through the service tier.
+//
+// One entry: the size guard's refusal. Everything else the store raises is a
+// fault rather than a decision, and reporting a fault to a caller names
+// tables and paths. This one is a decision an operator made, and reporting it
+// as an internal error left them with a screen that failed for no stated
+// reason while the setting they had set was working exactly as configured.
+func storeSentinels() []classifier {
+	return []classifier{
+		{core.ErrWritesBlocked, SubsystemUnavailable, "store.writes_blocked"},
+	}
 }
 
 // coreSentinels is the filesystem domain.

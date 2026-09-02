@@ -47,12 +47,13 @@ func (d *DB) Settings(ctx context.Context) (map[string]any, error) {
 // makes every field the caller did not mention disappear. A caller clearing
 // a field sends it explicitly, which is the difference between "set this to
 // empty" and "I am not talking about this one".
+//
+// The size guard does not apply here. Blocking a settings save would trap the
+// operator: the guard is switched off through this very call, so a full volume
+// would be unrecoverable from the interface that configured it. The document
+// is one row updated in place, and the only growth it can cause is the
+// singleton insert on a fresh database.
 func (d *DB) MergeSettings(ctx context.Context, section string, value any) error {
-	// The first call on a fresh database inserts the singleton row, so this
-	// path can grow the file even though every later call updates in place.
-	if err := d.f.EnsureWritable(); err != nil {
-		return err
-	}
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		merged := map[string]any{}
 		var raw string
