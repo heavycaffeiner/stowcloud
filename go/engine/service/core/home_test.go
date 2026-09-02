@@ -38,7 +38,7 @@ func homeGrants(t *testing.T, st *state.DB) []state.GrantRow {
 	return rows
 }
 
-func TestEnableHomesRegistersTheReservedShareAndRefusesTwice(t *testing.T) {
+func TestEnableHomesRegistersTheReservedShareAndIsRepeatable(t *testing.T) {
 	c, _, host := homed(t)
 	ctx := context.Background()
 
@@ -59,8 +59,94 @@ func TestEnableHomesRegistersTheReservedShareAndRefusesTwice(t *testing.T) {
 		t.Fatalf("the homes host has mode %o, want %o", perm, homeHostMode)
 	}
 
-	if err := c.EnableHomes(ctx, host); err == nil {
-		t.Fatal("enabling homes twice succeeded")
+	// Repeatable, because a settings save applies homes again and must not
+	// fail on a deployment that already has them.
+	if err := c.EnableHomes(ctx, host); err != nil {
+		t.Fatalf("applying homes a second time: %v", err)
+	}
+
+	// And re-pointable: an operator moving the root gets the new one without
+	// a restart.
+	moved := filepath.Join(t.TempDir(), "elsewhere")
+	if err := c.EnableHomes(ctx, moved); err != nil {
+		t.Fatalf("moving the homes root: %v", err)
+	}
+	if got, _ := c.Share(homeShareID); got.Host != moved {
+		t.Errorf("the homes share still points at %q, want %q", got.Host, moved)
+	}
+
+	// Turning them off withdraws the share.
+	c.DisableHomes()
+	if _, still := c.Share(homeShareID); still {
+		t.Error("the homes share survived being disabled")
+	}
+}
+
+// A home is named after the account, not its row id.
+//
+// The tree is administered from outside this server as often as through it: a
+// shell on the host, a mount over SMB, a backup listing. A directory called
+// "7" tells whoever is looking nothing about whose files are inside it.
+func TestAHomeIsNamedAfterItsAccount(t *testing.T) {
+	c, st := newCore(t)
+	seedUser(t, st, 7, "ada")
+	host := filepath.Join(t.TempDir(), "homes")
+	if err := c.EnableHomes(context.Background(), host); err != nil {
+		t.Fatalf("EnableHomes: %v", err)
+	}
+	if err := c.AttachHomeNames(func(_ context.Context, id int64) (string, error) {
+		if id == 7 {
+			return "ada", nil
+		}
+		return "", errors.New("no such account")
+	}); err != nil {
+		t.Fatalf("AttachHomeNames: %v", err)
+	}
+
+	if err := c.ensureHome(context.Background(), 7); err != nil {
+		t.Fatalf("ensureHome: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(host, "ada")); err != nil {
+		t.Errorf("the home is not named after the account: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(host, "7")); err == nil {
+		t.Error("the home was named by row id")
+	}
+
+	// The grant has to name the same directory, or the account resolves to a
+	// subpath that does not exist.
+	rows := homeGrants(t, st)
+	if len(rows) != 1 {
+		t.Fatalf("home grants: %d, want 1", len(rows))
+	}
+	if rows[0].Subpath != "ada" {
+		t.Errorf("the grant is scoped to %q, want %q", rows[0].Subpath, "ada")
+	}
+}
+
+// A name the lookup cannot supply falls back to the id rather than failing.
+//
+// The home is what an account reaches its own files through, so losing it over
+// a name lookup would be a worse answer than an ugly directory name.
+func TestAHomeFallsBackToTheIDWhenTheNameIsUnavailable(t *testing.T) {
+	c, st := newCore(t)
+	seedUser(t, st, 7, "ada")
+	host := filepath.Join(t.TempDir(), "homes")
+	if err := c.EnableHomes(context.Background(), host); err != nil {
+		t.Fatalf("EnableHomes: %v", err)
+	}
+	if err := c.AttachHomeNames(func(context.Context, int64) (string, error) {
+		return "", errors.New("the account service is unavailable")
+	}); err != nil {
+		t.Fatalf("AttachHomeNames: %v", err)
+	}
+
+	if err := c.ensureHome(context.Background(), 7); err != nil {
+		t.Fatalf("ensureHome: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(host, "7")); err != nil {
+		t.Errorf("no home was created when the name was unavailable: %v", err)
 	}
 }
 

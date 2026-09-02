@@ -73,6 +73,13 @@ type Core struct {
 	// implementation lives in the store layer.
 	quota QuotaSink
 
+	// homeName resolves an account's login name, which is what a home
+	// directory is called on disk. Nil names homes by numeric id, which is
+	// what a deployment with no account service would have to fall back to.
+	// Attached after construction because the account service is built
+	// alongside this one and neither can be first.
+	homeName func(context.Context, int64) (string, error)
+
 	sharesMu sync.RWMutex
 	shares   map[ShareID]*shareEntry
 
