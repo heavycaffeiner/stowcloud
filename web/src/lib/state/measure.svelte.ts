@@ -37,13 +37,28 @@ class SelectionMeasure {
    * base directly, since there is nothing to walk.
    */
   retarget(paths: string[], base: { bytes: number; files: number }): void {
-    const key = paths.length > 0 ? paths.join('\u0000') : null
+    // The base is part of the key, not just the paths. Adding a file to a
+    // selection leaves the folders untouched, and keying on those alone
+    // dropped the retarget and left the previous total on screen without the
+    // file in it.
+    const key =
+      paths.length > 0 || base.files > 0
+        ? `${base.bytes}:${base.files}\u0000${paths.join('\u0000')}`
+        : null
     if (key === this.#key) return
     this.#key = key
     this.#cancelTimer()
 
+    // Nothing selected at all.
     if (key === null) {
-      this.state = base.files > 0 ? { kind: 'done', ...base } : { kind: 'idle' }
+      this.state = { kind: 'idle' }
+      return
+    }
+
+    // Files only: the listing already carries every size, so there is nothing
+    // to walk and nothing to wait for.
+    if (paths.length === 0) {
+      this.state = { kind: 'done', ...base }
       return
     }
 
