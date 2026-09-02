@@ -129,6 +129,14 @@ func (e *Engine) adminSettingsPatch(c *fiber.Ctx) error {
 		e.loadSettings(c.UserContext())
 	}
 
+	// The file-sharing settings reach the sidecar here rather than through the
+	// reload above, which also runs at startup where the boot publish already
+	// covers it. The agent acts on the switch: on renders the shares and
+	// starts the daemon, off tears it down and prunes the credentials.
+	if section == "smb" {
+		e.publishSMBSettings(c.UserContext())
+	}
+
 	out := handler.ApplyOutcomeOf(true, !restart, restart, findings)
 	if restart {
 		// What a restart would interrupt, so the operator decides rather than

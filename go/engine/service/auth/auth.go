@@ -102,8 +102,12 @@ type Service struct {
 	rotateMu sync.Mutex
 
 	renderPassdb func([]SMBCredential) ([]byte, error)
-	passdbPath   string
 	renderPasswd func([]SMBCredential, uint32) ([]byte, error)
+
+	// passdbMu guards the credential file's location, which a settings save
+	// can change while the server runs.
+	passdbMu   sync.RWMutex
+	passdbPath string
 
 	policyMu      sync.RWMutex
 	smbTOTPPolicy TOTPPolicy

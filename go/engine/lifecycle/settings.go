@@ -77,17 +77,6 @@ func (e *Engine) loadSettings(ctx context.Context) {
 	// per client, and replacing it would discard every one of them, handing a
 	// full burst to whoever was being throttled at that moment.
 	e.limiter.SetLimits(values.RatePerSec, float64(values.RateBurst))
-
-	// The file-sharing switch and everything the sidecar renders from. Pushed
-	// rather than stored and forgotten: the agent starts the daemon when the
-	// switch is on and stops it, pruning the credentials, when it is off, so
-	// this is what makes the toggle take effect without a restart.
-	//
-	// Synchronous, because an administrator turning sharing off is entitled to
-	// know it reached the daemon before the screen says saved. Detached from
-	// the request, because a browser navigating away must not cancel a push
-	// that revokes access.
-	e.publishSMBSettings(ctx)
 }
 
 // parsePrefixes reads the operator's proxy list into the form the client

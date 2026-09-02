@@ -297,6 +297,18 @@ func renderGlobal(cfg Config) string {
 		"  ntlm auth = ntlmv2-only\n" +
 		"  lanman auth = no\n" +
 		"  raw NTLMv2 auth = no\n" +
+		// Stated rather than left to Samba's default. The default resolves to
+		// the same mode here, so this changes nothing the daemon does; it
+		// stops the deployment's authentication resting on a default that a
+		// future release could move.
+		"  security = user\n" +
+		// "access based share enum" is deliberately absent. It filters the
+		// share list by what the connecting user may read on disk, and every
+		// connection here is forced to one service account, so the filter
+		// answers the same for everybody: measured against a real daemon it
+		// hid every share from the account that owned them. The share list is
+		// therefore readable by anyone who can authenticate; opening a share
+		// is not, which the account lists decide.
 		netbios +
 		"  smb ports = 445\n" +
 		"  load printers = no\n" +

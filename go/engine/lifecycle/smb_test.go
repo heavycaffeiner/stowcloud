@@ -575,6 +575,79 @@ func TestTurningFileSharingOffReachesTheSidecar(t *testing.T) {
 	}
 }
 
+// A server that boots with sharing off still writes credentials once it is on.
+//
+// This is the defect an operator meets as "SMB accepts nobody". The credential
+// file's path was decided when the process started and the switch was part of
+// that decision, so a deployment that booted with sharing off held an empty
+// path forever: every password a person set was stored, the screen reported it
+// as set, and the file the daemon authenticates against was never written.
+// Only a restart repaired it, and turning sharing on is exactly the moment
+// nobody expects to need one.
+func TestEnablingSharingLaterStillWritesCredentials(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	configDir := filepath.Join(t.TempDir(), "smb")
+
+	// Configured but off, which is what makes the path empty at startup.
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	if merr := first.State.MergeSettings(ctx, "smb", map[string]any{
+		"enabled": false, "config_dir": configDir, "workgroup": "WORKGROUP",
+	}); merr != nil {
+		t.Fatalf("saving the settings: %v", merr)
+	}
+	if _, cerr := first.Auth.CreateAdmin(ctx, "root", "Root", pwOf(loginPassword)); cerr != nil {
+		t.Fatalf("creating the administrator: %v", cerr)
+	}
+	if cerr := first.Close(); cerr != nil {
+		t.Fatalf("closing: %v", cerr)
+	}
+
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("reopening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+	base := serve(t, e)
+
+	admin := postJSON(t, base+"/api/v1/auth/login",
+		map[string]string{"login": "root", "password": loginPassword})
+	cookie, csrf := admin.sessionCookie(), admin.field("csrf")
+	if cookie == nil {
+		t.Fatalf("the administrator did not sign in: %d %v", admin.status, admin.body)
+	}
+
+	if status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/smb",
+		cookie, csrf, map[string]any{"enabled": true}); status != http.StatusOK {
+		t.Fatalf("turning sharing on answered %d: %v", status, body)
+	}
+
+	if status, body := mutate(t, http.MethodPost, base+"/api/v1/account/smb/password",
+		cookie, csrf, map[string]any{
+			"current": loginPassword, "new": "a-long-enough-smb-password",
+		}); status != http.StatusOK {
+		t.Fatalf("setting the SMB password answered %d: %v", status, body)
+	}
+
+	// The file the daemon reads. Absent, every account it names is one that
+	// cannot authenticate, which is what the sidecar reports and what a person
+	// meets as a password the server accepted and the mount refuses.
+	body, rerr := os.ReadFile(filepath.Join(configDir, "smbpasswd"))
+	if rerr != nil {
+		t.Fatalf("the credential file was not written after sharing was enabled: %v", rerr)
+	}
+	if !strings.Contains(string(body), "root:") {
+		t.Errorf("the credential file does not carry the account:\n%s", body)
+	}
+}
+
 // readCredentialFile returns the rendered credential file's contents.
 func readCredentialFile(t *testing.T, configDir string) string {
 	t.Helper()

@@ -118,6 +118,14 @@ func (p *smbPublisher) Publish(ctx context.Context) (agent.Report, error) {
 	defer p.mu.Unlock()
 
 	s := smbSettingsOf(ctx, p.engine)
+
+	// Auth writes the credential file on every credential change, so it needs
+	// the path this push is using. It was fixed at startup, and a server that
+	// booted with sharing off then held an empty one forever: credentials were
+	// stored and never written, and the daemon reported every account as
+	// having none.
+	p.engine.Auth.SetPassdbPath(passdbPathOf(s))
+
 	return publish.Publish(ctx, publish.Deps{
 		Shares:     func() []publish.Share { return publishShares(p.engine.Core.Shares()) },
 		Accounts:   p.engine.Auth,
@@ -357,10 +365,16 @@ func (e *Engine) adminSMBApply(c *fiber.Ctx) error {
 // passdbPathOf is where the credential file goes, and empty when this
 // deployment publishes none.
 //
-// Empty is what stops every credential change writing a file nobody reads. It
-// is also what makes the seam's nil check meaningful rather than decorative.
+// The switch is deliberately not consulted. It used to be, and the path was
+// then decided once at startup: a server that booted with sharing off held an
+// empty path forever, so turning sharing on stored credentials that were never
+// written and every account was told it had none. Only a restart fixed it.
+//
+// The directory is the honest condition. Publishing while the switch is off
+// writes a file the agent has already been told to tear down, and the teardown
+// removes it.
 func passdbPathOf(s smbSettings) string {
-	if !s.Config.Enabled || s.ConfigDir == "" {
+	if s.ConfigDir == "" {
 		return ""
 	}
 	return filepath.Join(s.ConfigDir, passdbFile)

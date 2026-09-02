@@ -271,6 +271,22 @@ func (s *Service) PublishPassdb(ctx context.Context) error {
 	return s.renderPassdbFile(ctx)
 }
 
+// SetPassdbPath points the credential file at a directory chosen after
+// startup.
+//
+// File sharing can be configured while the server runs, and the path used to
+// be fixed when this service was built. A deployment that booted with sharing
+// off held an empty path forever: every credential a person set was stored and
+// never written, and the daemon reported them as having none.
+//
+// Empty still means write nothing, which is the state of a deployment with no
+// sidecar.
+func (s *Service) SetPassdbPath(path string) {
+	s.passdbMu.Lock()
+	defer s.passdbMu.Unlock()
+	s.passdbPath = path
+}
+
 // PublishPasswdEntries writes the account file the credential file is paired
 // with, at the path the caller names.
 //
@@ -324,7 +340,11 @@ func (s *Service) republishCredentials(ctx context.Context) error {
 
 // renderPassdbFile writes the credential file, when this deployment has one.
 func (s *Service) renderPassdbFile(ctx context.Context) error {
-	if s.renderPassdb == nil || s.passdbPath == "" {
+	s.passdbMu.RLock()
+	path := s.passdbPath
+	s.passdbMu.RUnlock()
+
+	if s.renderPassdb == nil || path == "" {
 		return nil
 	}
 	creds, err := s.SMBCredentials(ctx)
@@ -335,7 +355,7 @@ func (s *Service) renderPassdbFile(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return fsatomic.ReplaceFileDurable(s.passdbPath, 0o600, func(f *os.File) error {
+	return fsatomic.ReplaceFileDurable(path, 0o600, func(f *os.File) error {
 		_, werr := f.Write(b)
 		return werr
 	})
