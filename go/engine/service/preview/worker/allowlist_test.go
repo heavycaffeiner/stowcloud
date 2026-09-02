@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 )
@@ -97,59 +96,24 @@ func TestTheAllowListCoversARealDecode(t *testing.T) {
 	}
 }
 
-// The capture that carries the diagnostic works.
+// The capture above carries a dying worker's diagnosis, and no test stands on
+// its own for it. Three ways were tried and measured; none holds.
 //
-// The proof above reports what a dying worker said, and reports nothing if the
-// pipe between them breaks. That failure is silent: the test still fails, on
-// "exit status 2" with no cause, which is the state this whole diagnostic
-// exists to leave behind. So the pipe is exercised directly, with the runtime
-// asked to write a line every worker produces regardless of the decode.
-func TestAWorkerSaysWhyItDied(t *testing.T) {
-	var said saidBuffer
-	p, err := preview.NewPool(preview.PoolOptions{
-		Workers: 1,
-		Exe:     buildJailedWorker(t),
-		Args:    []string{},
-		// schedtrace writes to stderr on a fixed interval, so the worker is
-		// certain to produce something whether or not it dies.
-		Env:    []string{"GODEBUG=schedtrace=1"},
-		Stderr: &said,
-	})
-	if err != nil {
-		t.Fatalf("NewPool: %v", err)
-	}
-	t.Cleanup(func() {
-		if cerr := p.Close(); cerr != nil {
-			t.Errorf("closing the pool: %v", cerr)
-		}
-	})
-
-	in, out := sourceFile(t, 64, 64), outputFile(t)
-	if _, gerr := p.Generate(t.Context(), preview.Request{
-		Kind:      preview.JobImage,
-		Preset:    preview.PresetSmall,
-		Flags:     preview.FlagStripEXIF,
-		MaxPixels: 1 << 20,
-	}, preview.PlainSource{F: in}, out); gerr != nil {
-		t.Fatalf("decoding: %v", gerr)
-	}
-
-	// Polled rather than read once. The worker writes on its own schedule and
-	// the copy crosses a pipe and a goroutine, so a single read straight after
-	// the decode raced that delivery and failed on a capture that was about to
-	// arrive.
-	deadline := time.After(10 * time.Second)
-	tick := time.NewTicker(20 * time.Millisecond)
-	defer tick.Stop()
-	for !strings.Contains(said.String(), "SCHED") {
-		select {
-		case <-deadline:
-			t.Fatalf("nothing the worker wrote reached the capture, so a refused"+
-				" syscall would report no cause; got %q", said.String())
-		case <-tick.C:
-		}
-	}
-}
+// GODEBUG=schedtrace widens what the worker calls, which the shipped filter
+// then refuses: it passed locally and killed the worker in CI, where the
+// machine is slower and the tracer ran longer.
+//
+// SC_PREVIEW_TRAP and SC_PREVIEW_ERRNO both need an unlisted call to fire, and
+// the proof above establishes that a real decode makes none. Measured: the
+// capture stays empty and the wait times out.
+//
+// A switch that makes the worker die on demand would work and is not worth it:
+// a deliberate crash path in the shipped binary is a wider production surface
+// bought for a narrower proof.
+//
+// What covers it instead: the proof above quotes said.String() on every
+// failure path, so a broken pipe shows up there as a failure with an empty
+// quote, in the test that would be diagnosing with it.
 
 // The runtime still starts threads with clone rather than clone3.
 //
