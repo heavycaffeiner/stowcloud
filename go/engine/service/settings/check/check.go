@@ -440,8 +440,21 @@ func checkSMB(in Input) []Finding {
 	if v, ok := in.Body["service_user"].(string); ok && v != "" {
 		cfg.ServiceUser = v
 	}
+	if v, ok := in.Body["allow_public_bind"].(bool); ok {
+		cfg.AllowPublicBind = v
+	}
+	if v, present, err := stringList(in.Body, "interfaces"); err != nil {
+		out = append(out, blocking(in.Section, "interfaces", keyMustBeAtLeastOne, "field", "interfaces"))
+	} else if present {
+		cfg.Interfaces = v
+	}
 	if err := smb.Validate(cfg); err != nil {
-		out = append(out, blocking(in.Section, "workgroup", keySMBRenderFailed, "error", err.Error()))
+		field := "workgroup"
+		var bindErr *smb.BindError
+		if errors.As(err, &bindErr) {
+			field = "interfaces"
+		}
+		out = append(out, blocking(in.Section, field, keySMBRenderFailed, "error", err.Error()))
 	}
 
 	return append(out, probeSMBDir(in)...)

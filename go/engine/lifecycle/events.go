@@ -64,7 +64,7 @@ func (e *Engine) startEvents(ctx context.Context, cfg watchSettings) {
 		Unsubscribe: e.unpinForEvents,
 		Clock:       e.clock,
 		Logger:      e.logger,
-	}, adaptEvents(ctx, events))
+	}, e.adaptEvents(ctx, events))
 }
 
 // watchShare tells the watcher where a share lives on disk.
@@ -90,11 +90,16 @@ func (e *Engine) watchShare(def core.ShareDef) {
 //
 // The goroutine ends when the source channel closes, which is what the
 // watcher's own shutdown does.
-func adaptEvents(ctx context.Context, in <-chan watch.InvalEvent) <-chan server.EventSource {
+func (e *Engine) adaptEvents(ctx context.Context, in <-chan watch.InvalEvent) <-chan server.EventSource {
 	out := make(chan server.EventSource, eventQueue)
 	task.Go(ctx, "event translation", func() {
 		defer close(out)
 		for ev := range in {
+			// Offered before the broker sees it: an update that lands the
+			// index sooner than the socket fan-out costs nothing, whereas the
+			// reverse would leave the index a step behind every client that
+			// requeries off the push it just received.
+			e.offerToSearchUpdater(uint32(ev.Share), ev.Dir, ev.All)
 			select {
 			case out <- server.EventSource{
 				Share: uint32(ev.Share),

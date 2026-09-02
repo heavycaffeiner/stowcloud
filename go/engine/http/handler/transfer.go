@@ -216,6 +216,11 @@ type IndexEstimateView struct {
 	// past what a JavaScript number holds exactly.
 	BuildSecs float64 `json:"build_secs"`
 
+	// RateMeasured says BuildSecs came from what the last completed build on
+	// this deployment actually measured rather than the compiled-in guess,
+	// so a client can tell an operator which kind of number they are seeing.
+	RateMeasured bool `json:"build_rate_measured"`
+
 	// Formula records the derivation term by term, so a wrong estimate shows
 	// which term was wrong to somebody checking the arithmetic.
 	Formula string `json:"formula"`
@@ -233,12 +238,13 @@ type IndexEstimateView struct {
 // IndexEstimateOf projects a scan and its estimate.
 func IndexEstimateOf(r search.ScanResult, e search.IndexEstimate) IndexEstimateView {
 	return IndexEstimateView{
-		IndexBytes: strconv.FormatUint(e.IndexBytes, 10),
-		Confidence: e.Confidence.String(),
-		BuildSecs:  e.BuildSeconds,
-		Formula:    e.Formula,
-		Files:      strconv.FormatUint(r.Stats.Files, 10),
-		NameBytes:  strconv.FormatUint(r.Stats.NameBytesTotal, 10),
-		Partial:    r.Partial,
+		IndexBytes:   strconv.FormatUint(e.IndexBytes, 10),
+		Confidence:   e.Confidence.String(),
+		BuildSecs:    e.BuildSeconds,
+		RateMeasured: e.RateMeasured,
+		Formula:      e.Formula,
+		Files:        strconv.FormatUint(r.Stats.Files, 10),
+		NameBytes:    strconv.FormatUint(r.Stats.NameBytesTotal, 10),
+		Partial:      r.Partial,
 	}
 }

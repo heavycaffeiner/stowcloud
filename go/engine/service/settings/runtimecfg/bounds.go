@@ -45,9 +45,7 @@ func BoundServiceGID() Bound { return Bound{Min: 1, Max: 1<<32 - 1} }
 // a setting that stores successfully and is never read back.
 const (
 	FieldSearchConcurrentFast = "search.max_concurrent_fast"
-	FieldSearchConcurrentSlow = "search.max_concurrent_slow"
 	FieldSearchDeadlineFast   = "search.walk_deadline_fast_ms"
-	FieldSearchDeadlineSlow   = "search.walk_deadline_slow_ms"
 	FieldArchiveMaxConcurrent = "archive.max_concurrent"
 	FieldWatchHotSet          = "watch.hot_set_max"
 	FieldWatchFullThreshold   = "watch.full_threshold"
@@ -66,9 +64,7 @@ const (
 func Bounds() map[string]Bound {
 	return map[string]Bound{
 		FieldSearchConcurrentFast: BoundSearchConcurrent(),
-		FieldSearchConcurrentSlow: BoundSearchConcurrent(),
 		FieldSearchDeadlineFast:   BoundSearchDeadlineMs(),
-		FieldSearchDeadlineSlow:   BoundSearchDeadlineMs(),
 		FieldArchiveMaxConcurrent: BoundArchiveEntries(),
 		FieldWatchHotSet:          BoundWatchHotSet(),
 		FieldWatchFullThreshold:   BoundWatchFullThreshold(),

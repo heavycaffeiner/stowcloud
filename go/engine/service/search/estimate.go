@@ -69,18 +69,22 @@ type IndexEstimate struct {
 	IndexBytes uint64
 	Confidence Confidence
 	// BuildSeconds is processor time, not wall clock: a build runs only while
-	// the server is otherwise idle, so it finishes later than this. Derived
-	// from the file count rather than measured, because the cost is dominated
-	// by reading and trigramming each name.
+	// the server is otherwise idle, so it finishes later than this.
 	BuildSeconds float64
+	// RateMeasured says BuildSeconds came from what the last completed build
+	// on this deployment actually measured, rather than the compiled-in
+	// guess. A caller with somewhere to show it can then tell an operator
+	// which kind of number they are planning against.
+	RateMeasured bool
 	// Formula records the term-by-term derivation, so a wrong estimate reveals
 	// which term was wrong. An operator verifying the arithmetic needs the
 	// terms, while everyone else only wanted a size.
 	Formula string
 }
 
-// indexFilesPerSecond is what one core gets through when building the name
-// index.
+// indexFilesPerSecond is the compiled-in guess for what one core gets through
+// when building the name index, used until a real build on this deployment has
+// measured the actual rate.
 //
 // A round number from the shape of the work rather than a benchmark: each
 // file costs a name read and its trigrams, and the build is bounded by that
@@ -88,7 +92,9 @@ type IndexEstimate struct {
 // operator plans against is not one the build overruns.
 const indexFilesPerSecond = 20_000
 
-// EstimateNameIndex computes the index size for a corpus.
+// EstimateNameIndex computes the index size for a corpus. measuredRate is the
+// entries-per-second the last completed build on this deployment measured, or
+// zero when none has completed; zero falls back to the compiled-in guess.
 //
 //	blocks         = ceil(files / block_size)
 //	block_bytes   ~= (name_bytes_total + 3 x files) x sample_compress_ratio
@@ -96,7 +102,7 @@ const indexFilesPerSecond = 20_000
 //	dict_bytes     = 12 x distinct_trigrams
 //	posting_bytes ~= sum of df x varint width across unpruned trigrams
 //	index_bytes   ~= header + blockdir + dict + postings + blocks
-func EstimateNameIndex(stats CorpusStats, blockSize uint32) IndexEstimate {
+func EstimateNameIndex(stats CorpusStats, blockSize uint32, measuredRate uint64) IndexEstimate {
 	bs := uint64(blockSize)
 	if bs == 0 {
 		bs = 1
@@ -147,11 +153,19 @@ func EstimateNameIndex(stats CorpusStats, blockSize uint32) IndexEstimate {
 		postingNote = "analytic occupancy model, not sampled: treat as a lower-confidence bound"
 	}
 
+	rate := float64(indexFilesPerSecond)
+	rateMeasured := false
+	if measuredRate > 0 {
+		rate = float64(measuredRate)
+		rateMeasured = true
+	}
+
 	total := uint64(HeaderBytes) + blockDirBytes + dictBytes + postingBytes + blockBytes
 	return IndexEstimate{
 		IndexBytes:   total,
 		Confidence:   confidence,
-		BuildSeconds: float64(stats.Files) / indexFilesPerSecond,
+		BuildSeconds: float64(stats.Files) / rate,
+		RateMeasured: rateMeasured,
 		Formula: fmt.Sprintf(
 			"%d files in %d blocks; blocks %d B (%d raw x %.2f); blockdir %d B; "+
 				"dict %d B (%d trigrams x %d); postings %d B (%s); total %d B",

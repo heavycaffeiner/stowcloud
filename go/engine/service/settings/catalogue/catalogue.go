@@ -146,31 +146,34 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 		// Search and archive reach the running service through its own setter,
 		// so a change applies without a restart.
 		intField("search.max_concurrent_fast", int64(values.SearchConcurrentSSD), false),
-		intField("search.max_concurrent_slow", int64(values.SearchConcurrentRot), false),
 		intField("search.walk_deadline_fast_ms", values.SearchDeadlineSSD.Milliseconds(), false),
-		intField("search.walk_deadline_slow_ms", values.SearchDeadlineRot.Milliseconds(), false),
 		intField("archive.max_concurrent", int64(values.ArchiveMaxConcurrent), false),
 
-		// The name index is opened at startup, so switching it on takes a
-		// restart before a build has anywhere to go. It is not part of the
-		// resolved values, being read straight from the document by whoever
-		// opens the index, so its own present state is passed in.
-		boolean("search.name_index_enabled", indexEnabled(stored), true),
+		// A save opens or detaches the index and its updater immediately: on
+		// attaches a freshly opened index and starts the updater that keeps it
+		// current, off detaches it and stops the updater. A query already in
+		// flight against the old index holds its own reference and finishes
+		// unaffected. Not part of the resolved values, being read straight
+		// from the document by whoever opens the index, so its own present
+		// state is passed in.
+		boolean("search.name_index_enabled", indexEnabled(stored), false),
 
 		// The limiter holds a bucket per client and is updated in place.
 		intField("rate.per_sec", int64(values.RatePerSec), false),
 		intField("rate.burst", int64(values.RateBurst), false),
 
-		// The watcher reads both when it starts, so a change waits for one.
+		// A settings save applies both to the running watcher's live bounds:
+		// lowering the hot-set cap evicts down to it immediately rather than
+		// waiting for the next change to a directory.
 		//
 		// Unset resolves to the watcher's own default rather than being shown
 		// as zero. Zero is not a threshold the watcher uses: it substitutes its
 		// default, so displaying the raw value would tell an operator the
 		// server rescans everything on the first change, which it does not.
 		intField("watch.hot_set_max",
-			positiveOr(int64(values.WatchHotSetMax), defaultWatchHotSet), true),
+			positiveOr(int64(values.WatchHotSetMax), defaultWatchHotSet), false),
 		intField("watch.full_threshold",
-			positiveOr(int64(values.WatchFullThreshold), defaultWatchFullThreshold), true),
+			positiveOr(int64(values.WatchFullThreshold), defaultWatchFullThreshold), false),
 
 		// The host lists and the proxy ranges are read per request, so they
 		// take effect at once. The bind address and the canonical URL are
@@ -197,7 +200,12 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 		boolean("homes.enabled", values.HomesEnabled, false),
 		str("homes.root", values.HomesRoot, false, ""),
 
-		// The sandbox is applied before anything serves.
+		// The sandbox is applied before anything serves, and cannot be undone
+		// by the process that installed it: Landlock exposes create_ruleset,
+		// add_rule and restrict_self, with no syscall that removes a ruleset
+		// once in force, and seccomp's filter is one-way the same way. A
+		// weaker policy chosen after the fact is not something this process
+		// can grant itself; only a fresh process starts unconfined.
 		choice("security.hardening", values.Hardening.String(),
 			[]string{"required", "preferred", "off"}, true),
 
@@ -217,10 +225,16 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 		boolean("smb.allow_public_bind", values.SMB.AllowPublicBind, false),
 		str("smb.service_user", values.SMB.ServiceUser, false, ""),
 		intField("smb.service_gid", int64(values.SMBServiceGID), false),
-		// These two decide whether there is a sidecar to talk to at all, which
-		// is read once when the publisher is built.
-		str("smb.config_dir", values.SMBConfigDir, true, ""),
-		str("smb.agent_socket", values.SMBSocket, true, ""),
+		// interfaces reaches the sidecar through the same publish path as
+		// enabled, restricting which addresses it binds.
+		list("smb.interfaces", values.SMB.Interfaces, false, ""),
+		// These two decide whether there is a sidecar to talk to at all. They
+		// are already live: settingsroutes publishes on every smb-section
+		// save regardless of this flag, and the publisher re-reads the
+		// document fresh on each call rather than holding a value from
+		// startup.
+		str("smb.config_dir", values.SMBConfigDir, false, ""),
+		str("smb.agent_socket", values.SMBSocket, false, ""),
 		// The policy reaches the auth service directly. Two values, and an
 		// unrecognised one is read as blocking: the names are the contract
 		// rather than a suggestion, so the screen offers exactly them.
@@ -235,6 +249,7 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 		str("oidc.client_id", oidcString(values, func(o *runtimecfg.OIDC) string { return o.ClientID }), false, ""),
 		str("oidc.display_name", values.OIDCDisplayName, false, ""),
 		str("oidc.ca_cert_file", oidcString(values, func(o *runtimecfg.OIDC) string { return o.CACertFile }), false, ""),
+		list("oidc.scopes", oidcScopes(values), false, ""),
 		boolean("oidc.allow_private_endpoints",
 			values.OIDC != nil && values.OIDC.AllowPrivateEndpoints, false),
 	}
@@ -243,12 +258,12 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 
 // RestartRequiredFor reports whether a patch needs a restart to take effect.
 //
-// Per field rather than per section, because the two disagree: every oidc
-// field is rebuilt when settings load, and smb.totp_policy reaches the auth
-// service directly, while their neighbours in the same sections are assembled
-// once at startup. Judging by section reported both as needing a restart, so
-// a provider change sat stored and inert until somebody restarted the
-// container.
+// Per field rather than per section: judging by section once reported an
+// entire section as needing a restart because one field in it did, which
+// stranded a provider change stored and inert until somebody restarted the
+// container. Today only security.hardening carries the flag, alone in its
+// own section, but the grain stays per field so a future live field placed
+// beside it does not inherit a restart it does not need.
 //
 // A field this build does not know is a restart: an unknown key cannot be
 // shown to apply live, and the safe direction is telling an operator to
@@ -320,6 +335,15 @@ func oidcString(values runtimecfg.Values, get func(*runtimecfg.OIDC) string) str
 		return ""
 	}
 	return get(values.OIDC)
+}
+
+// oidcScopes reads the scope list, answering nil where no provider is
+// configured. A nil provider is the ordinary case, not a failure.
+func oidcScopes(values runtimecfg.Values) []string {
+	if values.OIDC == nil {
+		return nil
+	}
+	return values.OIDC.Scopes
 }
 
 // The watcher's own fallbacks, for the two fields it substitutes when they

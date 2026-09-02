@@ -10,6 +10,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync/atomic"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 )
@@ -32,6 +33,13 @@ var ErrNotArchive = errors.New("preview: not a readable archive")
 // maxArchiveNameBytes bounds a member name before it is kept. A name is only
 // ever displayed, so this is a bound on what a client is asked to render.
 const maxArchiveNameBytes = 4096
+
+// archiveMaxListed is the live bound on how many entries a listing keeps, an
+// operator's adjustment of the compiled-in default. A package-level atomic
+// rather than a field on some archive-specific type, because ListArchive is a
+// bare function with no service to hold one: the setting is process-wide, the
+// same way the compiled-in constant it replaces was.
+var archiveMaxListed atomic.Int64 //nolint:gochecknoglobals // ListArchive is a bare function with no service to hold this; the bound it replaces was a compiled-in constant, equally process-wide.
 
 // ArchiveEntry describes a single member as the central directory records it.
 type ArchiveEntry struct {
@@ -61,6 +69,25 @@ type ArchiveListing struct {
 	TotalUncompressed uint64
 }
 
+// SetMaxListed applies an operator's change to how many entries a listing
+// keeps, without a restart. Zero or negative restores the compiled-in
+// default, the same convention SetBounds uses elsewhere in this tree.
+func SetMaxListed(n int) {
+	if n <= 0 {
+		n = limits.ArchiveEntriesListed
+	}
+	archiveMaxListed.Store(int64(n))
+}
+
+// maxListed is the bound ListArchive enforces: the operator's setting once
+// one has been stored, the compiled-in default otherwise.
+func maxListed() int64 {
+	if n := archiveMaxListed.Load(); n > 0 {
+		return n
+	}
+	return limits.ArchiveEntriesListed
+}
+
 // ListArchive parses a zip's central directory.
 //
 // r is accessed via pread, so listing loads nothing: archive/zip seeks to the
@@ -83,7 +110,7 @@ func ListArchive(ctx context.Context, r io.ReaderAt, size int64) (ArchiveListing
 		if cerr := ctx.Err(); cerr != nil {
 			return ArchiveListing{}, cerr
 		}
-		if len(out.Entries) >= limits.ArchiveEntriesListed {
+		if int64(len(out.Entries)) >= maxListed() {
 			// Truncated rather than rejected, so a caller can still display what
 			// exists while the flag prevents it appearing complete.
 			out.Truncated = true

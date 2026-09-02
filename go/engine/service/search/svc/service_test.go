@@ -155,9 +155,9 @@ func TestAnIncompleteIndexFallsBackAndTheWalkStillFinds(t *testing.T) {
 // send rather than a directory read. The source below has no root at all, so
 // anything that tried to read a directory would fail rather than answer.
 func TestTheGateRefusesWithoutTouchingADirectory(t *testing.T) {
-	svc := New(Options{Storage: StorageSSD})
+	svc := New(Options{})
 	// Fill every slot so the next query has nowhere to go.
-	for range StorageSSD.Concurrency() {
+	for range limits.ConcurrentSearches {
 		svc.slots <- struct{}{}
 	}
 
@@ -173,7 +173,7 @@ func TestTheGateRefusesWithoutTouchingADirectory(t *testing.T) {
 func TestTheGateReleasesItsSlot(t *testing.T) {
 	svc := New(Options{})
 	src, _ := corpus(t, 1, "report.pdf")
-	for range StorageSSD.Concurrency() + 2 {
+	for range limits.ConcurrentSearches + 2 {
 		if _, err := svc.Query(t.Context(), []search.Source{src}, QueryOptions{Query: "report"}); err != nil {
 			t.Fatalf("query: %v", err)
 		}
@@ -352,37 +352,13 @@ func TestIndexHitsResolveMetadataOnlyOnRequest(t *testing.T) {
 	}
 }
 
-// One knob moves two numbers, because a walk on NVMe and a walk on a spinning
-// disk are different machines.
-func TestTheStorageClassMovesBothNumbersTogether(t *testing.T) {
-	if StorageSSD.Concurrency() <= StorageRotational.Concurrency() {
-		t.Error("rotational media should allow fewer concurrent searches")
-	}
-	if StorageSSD.Deadline() >= StorageRotational.Deadline() {
-		t.Error("rotational media should be given a longer deadline")
-	}
-	if StorageSSD.Threads(8) <= StorageRotational.Threads(8) {
-		t.Error("rotational media should use fewer threads")
-	}
-	// The thread count is bounded at both ends regardless of the reported CPUs.
-	if got := StorageSSD.Threads(0); got < 1 {
-		t.Errorf("zero CPUs produced %d threads", got)
-	}
-	if got := StorageSSD.Threads(1024); got > 16 {
-		t.Errorf("many CPUs produced %d threads, want a bound", got)
-	}
-	if TierWalk.String() != "walk" || TierIndex.String() != "index" {
-		t.Error("the tier does not name itself")
-	}
-}
-
 // The bounds an administrator sets are the ones the next query uses: a setting
 // that is stored and not read is a screen reporting a change that happened
 // nowhere.
 func TestSetBoundsIsReadBackAndMovesTheDeadline(t *testing.T) {
-	svc := New(Options{Storage: StorageSSD})
-	if got := svc.walkDeadline(); got != StorageSSD.Deadline() {
-		t.Errorf("default deadline is %v, want %v", got, StorageSSD.Deadline())
+	svc := New(Options{})
+	if got := svc.walkDeadline(); got != limits.SearchWalkDeadline {
+		t.Errorf("default deadline is %v, want %v", got, limits.SearchWalkDeadline)
 	}
 
 	svc.SetBounds(3, 250*time.Millisecond)
@@ -394,9 +370,9 @@ func TestSetBoundsIsReadBackAndMovesTheDeadline(t *testing.T) {
 		t.Errorf("the deadline did not move: %v", got)
 	}
 
-	// Zero returns the field to the storage class's own default.
+	// Zero returns the field to the compiled-in default.
 	svc.SetBounds(0, 0)
-	if got := svc.walkDeadline(); got != StorageSSD.Deadline() {
+	if got := svc.walkDeadline(); got != limits.SearchWalkDeadline {
 		t.Errorf("zero did not restore the default: %v", got)
 	}
 }

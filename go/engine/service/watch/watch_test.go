@@ -260,6 +260,38 @@ func TestAnIgnoredWatchIsForgotten(t *testing.T) {
 	}
 }
 
+// Lowering hot_set_max live evicts the excess immediately, through the same
+// path that also releases the kernel watch, rather than waiting for churn to
+// touch a fresh key.
+func TestLoweringTheHotSetCapEvictsPromptly(t *testing.T) {
+	w, _, root := start(t, Config{HotSetMax: 8, FullThreshold: 50_000})
+
+	dirs := []string{"a", "b", "c", "d"}
+	for _, d := range dirs {
+		if err := os.Mkdir(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+		w.Touch(testShare, safePath(t, d))
+	}
+	if got := w.Stats().Registered; got != len(dirs) {
+		t.Fatalf("registered is %d before lowering the cap, want %d", got, len(dirs))
+	}
+
+	w.SetBounds(2, 50_000)
+
+	if got := w.Stats().Registered; got != 2 {
+		t.Errorf("registered is %d immediately after lowering the cap, want 2", got)
+	}
+	// Eviction went through unregister, so the kernel watch for a dropped
+	// directory is gone rather than merely absent from the hot set.
+	w.mu.Lock()
+	remaining := len(w.keyToWd)
+	w.mu.Unlock()
+	if remaining != 2 {
+		t.Errorf("%d kernel watches remain, want 2", remaining)
+	}
+}
+
 // N rapid writes to one directory produce one event per window, not one per
 // write.
 func TestDebounceCoalescesABurst(t *testing.T) {

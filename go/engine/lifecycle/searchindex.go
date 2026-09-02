@@ -33,7 +33,14 @@ func (e *Engine) adminIndexEstimate(c *fiber.Ctx) error {
 		return failKnown(c, err)
 	}
 
-	estimate := search.EstimateNameIndex(result.Stats, indexBlockSize)
+	// A measurement from this deployment's own disk and corpus beats the
+	// compiled-in guess; an unreadable rate falls back to it the same way an
+	// unset one does.
+	rate, rerr := e.State.IndexBuildRate(c.UserContext())
+	if rerr != nil {
+		rate = 0
+	}
+	estimate := search.EstimateNameIndex(result.Stats, indexBlockSize, rate)
 	return writeJSON(c, fiber.StatusOK, handler.IndexEstimateOf(result, estimate))
 }
 

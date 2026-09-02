@@ -49,42 +49,10 @@ func (t Tier) String() string {
 	return "walk"
 }
 
-// StorageClass adjusts two numbers, because walking an NVMe array and walking a
-// cold rotational one are distinct operations sharing a single name.
-type StorageClass int
-
-const (
-	StorageSSD StorageClass = iota
-	StorageRotational
-)
-
-// Concurrency gives how many searches may run simultaneously on this storage.
-//
-// A lower figure on rotational media grants more throughput rather than less:
-// four concurrent seek-bound walks across one array complete later than two do,
-// and they drag the interactive requests down with them.
-func (s StorageClass) Concurrency() int {
-	if s == StorageRotational {
-		return limits.ConcurrentSearchesRotational
-	}
-	return limits.ConcurrentSearchesSSD
-}
-
-// Deadline bounds how long a walk may run here. The longer value on rotational
-// media acknowledges that the work genuinely does take longer.
-func (s StorageClass) Deadline() time.Duration {
-	if s == StorageRotational {
-		return limits.SearchWalkDeadlineRotational
-	}
-	return limits.SearchWalkDeadlineSSD
-}
-
-// Threads sets the walk's worker count for this storage. Rotational media
-// thrashes on seeks when over-parallelised.
-func (s StorageClass) Threads(cpus int) int {
-	if s == StorageRotational {
-		return 2
-	}
+// threadsFor sets the walk's worker count from the reported CPU count, bounded
+// at both ends so a container with an inflated or absent count still gets a
+// sane worker pool.
+func threadsFor(cpus int) int {
 	if cpus < 1 {
 		cpus = 4
 	}
@@ -96,9 +64,8 @@ func (s StorageClass) Threads(cpus int) int {
 
 // Options holds the service's configuration.
 type Options struct {
-	Clock   clock.Clock
-	Storage StorageClass
-	CPUs    int
+	Clock clock.Clock
+	CPUs  int
 	// Index is optional, and nil disables it, which is the default. Enabling it
 	// is an escalation taken once measurement shows the walk is insufficient.
 	Index *index.NameIndex
@@ -106,9 +73,8 @@ type Options struct {
 
 // Service answers queries.
 type Service struct {
-	clk     clock.Clock
-	storage StorageClass
-	cpus    int
+	clk  clock.Clock
+	cpus int
 
 	mu    sync.Mutex
 	ix    *index.NameIndex
@@ -120,8 +86,8 @@ type Service struct {
 	// stored and never read makes the screen report a change that happened
 	// nowhere.
 	//
-	// Zero selects the storage class's own default, so a build that never
-	// configures them behaves exactly as before.
+	// Zero selects the compiled-in default, so a build that never configures
+	// them behaves exactly as before.
 	concurrency int
 	deadline    time.Duration
 }
@@ -132,13 +98,13 @@ func New(o Options) *Service {
 	if clk == nil {
 		clk = clock.System()
 	}
-	s := &Service{clk: clk, storage: o.Storage, cpus: o.CPUs, ix: o.Index}
-	s.slots = make(chan struct{}, o.Storage.Concurrency())
+	s := &Service{clk: clk, cpus: o.CPUs, ix: o.Index}
+	s.slots = make(chan struct{}, limits.ConcurrentSearches)
 	return s
 }
 
 // SetBounds adjusts the query bounds, which is what the settings screen's search
-// section drives. Zero leaves a field at the storage class's default.
+// section drives. Zero leaves a field at the compiled-in default.
 //
 // The concurrency gate is not resized. It is a buffered channel established at
 // construction, and swapping it while queries are in flight would lose the slots
@@ -151,7 +117,7 @@ func (s *Service) SetBounds(concurrency int, deadline time.Duration) {
 }
 
 // Bounds is what the settings screen last set, for a screen that reads back
-// what it wrote. Zero in a field means the storage class's default applies.
+// what it wrote. Zero in a field means the compiled-in default applies.
 func (s *Service) Bounds() (concurrency int, deadline time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -167,7 +133,7 @@ func (s *Service) walkDeadline() time.Duration {
 	if d > 0 {
 		return d
 	}
-	return s.storage.Deadline()
+	return limits.SearchWalkDeadline
 }
 
 // SetIndex attaches or detaches the index while running, which is what the
@@ -278,7 +244,7 @@ func (s *Service) walk(
 		Needle:       needle,
 		Limit:        opt.Limit,
 		Scope:        opt.Scope,
-		Threads:      s.storage.Threads(s.cpus),
+		Threads:      threadsFor(s.cpus),
 		WithMetadata: opt.WithMetadata,
 		NowNs:        s.clk.Now().UnixNano(),
 	})

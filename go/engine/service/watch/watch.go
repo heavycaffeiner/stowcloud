@@ -75,6 +75,12 @@ type Watcher struct {
 	shares  map[vfs.ShareID]share
 	pending map[key]time.Time
 
+	// fullThreshold is read outside w.mu by the flush loop on every tick, so it
+	// is its own atomic rather than a field the hot-set lock also guards: that
+	// would either force the emit path under the lock or leave this one field
+	// reading it unlocked while everything else in the struct did not.
+	fullThreshold atomic.Int64
+
 	overflow atomic.Bool
 	degraded atomic.Int64
 
@@ -110,6 +116,7 @@ func Start(ctx context.Context, cfg Config, clk clock.Clock, sink chan<- InvalEv
 		pending: make(map[key]time.Time),
 		stop:    make(chan struct{}),
 	}
+	w.fullThreshold.Store(int64(cfg.FullThreshold))
 
 	w.wg.Add(3)
 	task.Go(ctx, "watch: read events", func() { defer w.wg.Done(); w.readLoop() })
@@ -178,6 +185,25 @@ func (w *Watcher) Stats() Stats {
 		Pinned:     w.hot.stickyCount(),
 		Degraded:   w.degraded.Load(),
 		Shares:     len(w.shares),
+	}
+}
+
+// SetBounds applies an operator's change to the two live bounds without
+// rebuilding the watcher, which would drop every kernel watch and pinned
+// subscription currently held.
+//
+// A lowered hotSetMax evicts down to the new cap immediately, through the
+// same path evictFor uses, so a directory falls back to lazy revalidation
+// and its kernel watch is released rather than sitting registered until
+// unrelated churn happens to touch a fresh key.
+func (w *Watcher) SetBounds(hotSetMax, fullThreshold int) {
+	w.fullThreshold.Store(int64(fullThreshold))
+
+	w.mu.Lock()
+	evicted := w.hot.setCap(hotSetMax)
+	w.mu.Unlock()
+	for _, e := range evicted {
+		w.unregister(e)
 	}
 }
 
@@ -457,7 +483,7 @@ func (w *Watcher) flushLoop() {
 		pendingLen := len(w.pending)
 		w.mu.Unlock()
 
-		if overflowed || pendingLen > w.cfg.FullThreshold {
+		if overflowed || int64(pendingLen) > w.fullThreshold.Load() {
 			w.invalidateEverything(overflowed, pendingLen)
 			continue
 		}
@@ -493,7 +519,7 @@ func (w *Watcher) invalidateEverything(kernelOverflow bool, pendingLen int) {
 	slog.Warn("the watch queue overflowed; invalidating whole shares instead of directories",
 		slog.Bool("kernel overflow", kernelOverflow),
 		slog.Int("pending", pendingLen),
-		slog.Int("threshold", w.cfg.FullThreshold))
+		slog.Int64("threshold", w.fullThreshold.Load()))
 
 	for _, id := range ids {
 		w.emit(InvalEvent{Share: id, All: true})

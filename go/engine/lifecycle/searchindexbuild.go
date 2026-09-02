@@ -15,6 +15,7 @@ package lifecycle
 import (
 	"context"
 	"math"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -32,13 +33,19 @@ import (
 // fixed name so a restart finds what the last build wrote.
 const indexDirName = "index"
 
-// openSearchIndex attaches a name index to the search service when the
-// operator has asked for one.
+// openSearchIndex attaches or detaches the name index against what the
+// operator has currently asked for, and starts or stops the updater that
+// keeps an attached index current from watcher events.
 //
 // The setting is what decides, not the directory's existence: an index left on
 // disk after being switched off must not come back at the next restart, and an
 // operator who switched it on before building expects the next build to have
 // somewhere to go.
+//
+// Called at boot and again from loadSettings on every save, so a switch flips
+// live: on opens the index and starts its updater, off drops the reference and
+// stops the updater. A query already holding the old index finishes against
+// it regardless, since Query takes its own local reference.
 func (e *Engine) openSearchIndex(ctx context.Context) {
 	on, err := e.State.IndexNameEnabled(ctx)
 	if err != nil {
@@ -56,6 +63,12 @@ func (e *Engine) openSearchIndex(ctx context.Context) {
 		return
 	}
 	if !on {
+		// Detach rather than leave whatever was attached running. A caller
+		// re-invoking this at save time is what makes disabling the setting
+		// take hold immediately instead of being a silent no-op that leaves
+		// the live index and its updater in place.
+		e.Search.SetIndex(nil)
+		e.stopSearchUpdater()
 		return
 	}
 
@@ -71,6 +84,58 @@ func (e *Engine) openSearchIndex(ctx context.Context) {
 			"dir", indexDir(e.dataDir))
 	}
 	e.Search.SetIndex(ix)
+	e.startSearchUpdater(ctx)
+}
+
+// startSearchUpdater starts the goroutine that keeps the attached index
+// current from watcher events, stopping and replacing any updater already
+// running: one updater runs against the currently attached index, never two
+// and never one left over from before a toggle.
+//
+// sources is a closure over the engine's shares rather than a snapshot taken
+// here, so a share created after the index was attached is covered by the
+// next event without restarting the updater.
+func (e *Engine) startSearchUpdater(ctx context.Context) {
+	e.stopSearchUpdater()
+
+	loop, stop := context.WithCancel(context.WithoutCancel(ctx))
+	u := svc.NewUpdater(e.Search, func() []search.Source {
+		return indexSourcesOf(e.Core.ScanSources())
+	}, e.logger)
+
+	e.searchUpdaterMu.Lock()
+	e.searchUpdater = u
+	e.searchUpdaterStop = stop
+	e.searchUpdaterMu.Unlock()
+
+	task.Go(loop, "search index updater", func() { u.Run(loop) })
+}
+
+// stopSearchUpdater halts the running updater, if any. Called before the
+// index it feeds is dropped or replaced, and at shutdown, so an updater never
+// keeps running against an index the search service no longer holds.
+func (e *Engine) stopSearchUpdater() {
+	e.searchUpdaterMu.Lock()
+	stop := e.searchUpdaterStop
+	e.searchUpdater = nil
+	e.searchUpdaterStop = nil
+	e.searchUpdaterMu.Unlock()
+	if stop != nil {
+		stop()
+	}
+}
+
+// offerToSearchUpdater relays one watcher event to the running updater, if
+// any. Safe with no index attached: the updater is nil and this is a no-op,
+// which is the ordinary state for a deployment that never turned the index on.
+func (e *Engine) offerToSearchUpdater(share uint32, dir string, all bool) {
+	e.searchUpdaterMu.Lock()
+	u := e.searchUpdater
+	e.searchUpdaterMu.Unlock()
+	if u == nil {
+		return
+	}
+	u.Offer(svc.Change{Share: share, Dir: dir, All: all})
 }
 
 // indexDir is the one place the index's location is spelled.
@@ -138,6 +203,7 @@ func (e *Engine) runIndexBuild(ctx context.Context, id int64, sources []search.S
 		return !op.Cancellation
 	}
 
+	started := e.clock.Now()
 	progress, err := e.Search.Build(ctx, sources, gate, func(p svc.BuildProgress) {
 		if perr := e.State.SetOpProgress(ctx, id, indexedCount(p.Files), ""); perr != nil {
 			e.logger.Warn("the index build's progress could not be recorded", "error", perr)
@@ -158,6 +224,18 @@ func (e *Engine) runIndexBuild(ctx context.Context, id int64, sources []search.S
 			e.logger.Warn("the index build's failure could not be recorded", "error", ferr)
 		}
 		return
+	}
+
+	// What this build actually measured replaces the compiled-in guess for
+	// every estimate after this one, on this deployment's own disk and
+	// corpus. Skipped for too short an interval: a build that finished in
+	// under a second produces a rate the clock's own resolution cannot
+	// support.
+	if elapsed := e.clock.Now().Sub(started); progress.Files > 0 && elapsed >= time.Second {
+		rate := uint64(float64(progress.Files) / elapsed.Seconds())
+		if rerr := e.State.SetIndexBuildRate(ctx, rate); rerr != nil {
+			e.logger.Warn("the measured build rate could not be recorded", "error", rerr)
+		}
 	}
 
 	// A build that stopped at its bound is finished, and says which. A query

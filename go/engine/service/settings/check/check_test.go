@@ -434,6 +434,36 @@ func TestUnknownSMBPoliciesAndRootGIDAreRefused(t *testing.T) {
 	}
 }
 
+// An interface pin the renderer would refuse is refused here too, through
+// the same dry-validate entry point workgroup uses.
+func TestAPublicInterfacePinIsRefusedHere(t *testing.T) {
+	got := Section(Input{
+		Section: "smb",
+		Body:    map[string]any{"interfaces": []any{"203.0.113.7"}},
+	})
+	f := mustFind(t, got, keySMBRenderFailed)
+	if !f.Blocking {
+		t.Error("a public interface pin was accepted")
+	}
+	if f.Field != "interfaces" {
+		t.Errorf("the refusal named field %q, want interfaces", f.Field)
+	}
+
+	ok := Section(Input{Section: "smb", Body: map[string]any{"interfaces": []any{"192.168.1.10"}}})
+	mustNotFind(t, ok, keySMBRenderFailed)
+}
+
+// A wrong-typed interfaces list is refused, the same as any other list field.
+func TestAWrongTypedInterfacesListIsRefused(t *testing.T) {
+	got := Section(Input{
+		Section: "smb",
+		Body:    map[string]any{"interfaces": "192.168.1.10"},
+	})
+	if !Blocked(got) {
+		t.Errorf("a string where a list belongs was accepted: %v", keysOf(got))
+	}
+}
+
 // The sidecar's directory is only worth probing when SMB is being turned on,
 // and its absence is reported rather than refused: the server runs without a
 // sidecar, and refusing would make the setting unsaveable on a host where the

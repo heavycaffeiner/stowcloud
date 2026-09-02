@@ -286,8 +286,8 @@ func TestTheBoundsTableCoversEveryNumericField(t *testing.T) {
 	// The numeric fields the loader actually reads, named here so a field added
 	// to one and not the other is a failure rather than a silent gap.
 	for _, field := range []string{
-		FieldSearchConcurrentFast, FieldSearchConcurrentSlow,
-		FieldSearchDeadlineFast, FieldSearchDeadlineSlow,
+		FieldSearchConcurrentFast,
+		FieldSearchDeadlineFast,
 		FieldArchiveMaxConcurrent, FieldWatchHotSet, FieldWatchFullThreshold,
 		FieldRatePerSec, FieldRateBurst, FieldSMBServiceGID,
 	} {
@@ -301,9 +301,7 @@ func TestTheBoundsTableCoversEveryNumericField(t *testing.T) {
 	d := Defaults()
 	for field, value := range map[string]int64{
 		FieldSearchConcurrentFast: int64(d.SearchConcurrentSSD),
-		FieldSearchConcurrentSlow: int64(d.SearchConcurrentRot),
 		FieldSearchDeadlineFast:   d.SearchDeadlineSSD.Milliseconds(),
-		FieldSearchDeadlineSlow:   d.SearchDeadlineRot.Milliseconds(),
 		FieldArchiveMaxConcurrent: int64(d.ArchiveMaxConcurrent),
 		FieldWatchHotSet:          int64(d.WatchHotSetMax),
 		FieldRatePerSec:           int64(d.RatePerSec),
@@ -430,8 +428,7 @@ func TestEveryValuesFieldIsReachable(t *testing.T) {
 func fullDocument() map[string]any {
 	return map[string]any{
 		"search": map[string]any{
-			"max_concurrent_fast": float64(8), "max_concurrent_slow": float64(4),
-			"walk_deadline_fast_ms": float64(2000), "walk_deadline_slow_ms": float64(4000),
+			"max_concurrent_fast": float64(8), "walk_deadline_fast_ms": float64(2000),
 		},
 		"archive": map[string]any{"max_concurrent": float64(500)},
 		"watch":   map[string]any{"hot_set_max": float64(1024), "full_threshold": float64(9000)},

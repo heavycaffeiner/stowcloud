@@ -59,7 +59,7 @@ func fieldsTheLoaderReads(t *testing.T) map[string]bool {
 	}
 	// Every read goes through one of the document's typed accessors, each
 	// taking the section and the name as literals.
-	call := regexp.MustCompile(`\.(?:intOf|uintOf|stringOf|boolOf|rawBool|validStrings|strings)\(\s*"([a-z_]+)",\s*"([a-z_]+)"`)
+	call := regexp.MustCompile(`\.(?:intOf|uintOf|stringOf|boolOf|rawBool|validStrings|stringsOf)\(\s*"([a-z_]+)",\s*"([a-z_]+)"`)
 
 	out := map[string]bool{}
 	for _, m := range call.FindAllStringSubmatch(string(raw), -1) {
@@ -238,12 +238,10 @@ func TestStartupOnlyFieldsAreMarkedRestartRequired(t *testing.T) {
 	fields := byKey(Of(runtimecfg.Defaults(), map[string]any{}).Fields)
 
 	for _, key := range []string{
+		// Landlock and seccomp have no syscall that undoes an installed
+		// ruleset, so a weaker policy chosen after the fact cannot be
+		// applied by the process already running under the old one.
 		"security.hardening",
-		"watch.hot_set_max",
-		// Whether there is a sidecar to publish to, read once when the
-		// publisher is built.
-		"smb.agent_socket",
-		"smb.config_dir",
 	} {
 		f, ok := fields[key]
 		if !ok {
@@ -259,9 +257,18 @@ func TestStartupOnlyFieldsAreMarkedRestartRequired(t *testing.T) {
 	// ask for a restart nothing needs. smb.enabled is here because a settings
 	// save publishes to the sidecar; homes.* because a save registers or
 	// withdraws the homes share, which the core accepts at any time.
+	// smb.agent_socket and smb.config_dir are here because a save publishes
+	// to the sidecar regardless of this flag, and the publisher re-reads the
+	// document fresh rather than holding a startup snapshot. watch.hot_set_max
+	// and watch.full_threshold are here because the watcher exposes a live
+	// setter for both bounds. search.name_index_enabled is here because a
+	// save now attaches or detaches the index and its updater directly.
 	for _, key := range []string{
 		"rate.per_sec", "app_hosts", "smb.totp_policy", "smb.enabled",
 		"homes.enabled", "homes.root", "db.size_guard", "bind",
+		"smb.agent_socket", "smb.config_dir",
+		"watch.hot_set_max", "watch.full_threshold",
+		"search.name_index_enabled",
 	} {
 		if f, ok := fields[key]; ok && f.RestartRequired {
 			t.Errorf("%q applies live and is marked as needing a restart", key)
@@ -290,10 +297,10 @@ func TestARestartIsJudgedByTheFieldsAPatchNames(t *testing.T) {
 			"the policy reaches the auth service directly"},
 		{"smb", map[string]any{"enabled": true}, false,
 			"a settings save publishes, and the agent starts or stops the daemon"},
-		{"smb", map[string]any{"config_dir": "/etc/samba"}, true,
-			"whether there is a sidecar at all is read when the publisher is built"},
-		{"smb", map[string]any{"enabled": true, "config_dir": "/etc/samba"}, true,
-			"one startup-only field in the patch is enough"},
+		{"smb", map[string]any{"config_dir": "/etc/samba"}, false,
+			"a save publishes regardless of this flag, and the publisher re-reads the document fresh"},
+		{"smb", map[string]any{"enabled": true, "config_dir": "/etc/samba"}, false,
+			"both fields in the patch apply live"},
 		{"rate", map[string]any{"per_sec": 25}, false,
 			"the limiter is updated in place"},
 		{"network", map[string]any{"app_hosts": []string{"x"}}, false,

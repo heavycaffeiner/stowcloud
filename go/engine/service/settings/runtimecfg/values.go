@@ -43,12 +43,10 @@ import (
 // group fields on the screen; the server needs the values themselves and has no
 // use for ten separate shapes.
 type Values struct {
-	// Search tier limits. All of these reach the running service directly and
-	// none requires a restart.
+	// Search tier limits. Both reach the running service directly and
+	// neither requires a restart.
 	SearchConcurrentSSD  int
-	SearchConcurrentRot  int
 	SearchDeadlineSSD    time.Duration
-	SearchDeadlineRot    time.Duration
 	ArchiveMaxConcurrent int
 
 	// WatchHotSetMax caps how many directories the watcher keeps hot.
@@ -180,10 +178,8 @@ const (
 // here: two copies of a default are two values that drift.
 func Defaults() Values {
 	return Values{
-		SearchConcurrentSSD:  limits.ConcurrentSearchesSSD,
-		SearchConcurrentRot:  limits.ConcurrentSearchesRotational,
-		SearchDeadlineSSD:    limits.SearchWalkDeadlineSSD,
-		SearchDeadlineRot:    limits.SearchWalkDeadlineRotational,
+		SearchConcurrentSSD:  limits.ConcurrentSearches,
+		SearchDeadlineSSD:    limits.SearchWalkDeadline,
 		ArchiveMaxConcurrent: limits.ArchiveEntriesListed,
 		WatchHotSetMax:       defaultWatchHotSet,
 		RatePerSec:           defaultRatePerSec,

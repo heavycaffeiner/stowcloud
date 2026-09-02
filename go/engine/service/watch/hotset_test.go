@@ -239,3 +239,45 @@ func TestACapBelowOneIsRaised(t *testing.T) {
 		}
 	}
 }
+
+// setCap enforces a lowered cap immediately, evicting oldest first, and
+// leaves a raised cap free of eviction.
+func TestSetCapEvictsImmediatelyWhenLowered(t *testing.T) {
+	h := newHotSet(4)
+	for _, dir := range []string{"oldest", "middle", "newest"} {
+		existing := k(1, dir)
+		h.touch(existing)
+		h.markRegistered(existing)
+	}
+
+	evicted := h.setCap(1)
+	for _, e := range evicted {
+		h.markUnregistered(e)
+	}
+	if len(evicted) != 2 {
+		t.Fatalf("evicted %v, want 2 keys dropped", evicted)
+	}
+	if h.registeredCount() != 1 {
+		t.Errorf("registered is %d after lowering the cap, want 1", h.registeredCount())
+	}
+	if slices.Contains(evicted, k(1, "newest")) {
+		t.Error("the most recently touched key was evicted instead of an older one")
+	}
+
+	// Raising the cap evicts nothing.
+	if got := h.setCap(10); got != nil {
+		t.Errorf("raising the cap evicted %v", got)
+	}
+
+	// A pinned key survives even a cap of one.
+	pinned := k(1, "pinned")
+	h.addSticky(pinned)
+	h.markRegistered(pinned)
+	evicted = h.setCap(1)
+	for _, e := range evicted {
+		h.markUnregistered(e)
+	}
+	if !h.isRegistered(pinned) {
+		t.Error("a pinned key was evicted by a lowered cap")
+	}
+}

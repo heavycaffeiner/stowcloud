@@ -147,15 +147,12 @@ const (
 	// response marks it as truncated.
 	SearchResults = 1_000
 
-	// ConcurrentSearchesSSD and ConcurrentSearchesRotational refuse with
-	// 503 once exceeded.
-	ConcurrentSearchesSSD        = 4
-	ConcurrentSearchesRotational = 2
+	// ConcurrentSearches refuses with 503 once exceeded.
+	ConcurrentSearches = 4
 
-	// SearchWalkDeadlineSSD and SearchWalkDeadlineRotational cut a walk off
-	// with a partial result rather than letting it run unbounded.
-	SearchWalkDeadlineSSD        = 3 * time.Second
-	SearchWalkDeadlineRotational = 8 * time.Second
+	// SearchWalkDeadline cuts a walk off with a partial result rather than
+	// letting it run unbounded.
+	SearchWalkDeadline = 3 * time.Second
 
 	// SearchWalkDepth stops descent into a pathologically deep tree. A
 	// symlink escape is already refused by the path layer, so this is about

@@ -475,8 +475,19 @@
 # self-signed on first boot, and issued for a host name rather than for the
 # address being dialled.
 #
+# The service-manager branch of the SMB agent went with the bare-metal
+# deployment, and took three G204 suppressions with it: the systemctl and
+# rc-service invocations, and the unit-name probe.
+#
+# 111: the archive listing's live bound. gochecknoglobals reads a package-level
+# atomic; ListArchive is a bare function with no service to hold one, and the
+# compiled-in constant it replaces was equally process-wide.
+#
+# 112: the restart's exec. G204 reads a variable path, which is
+# /proc/self/exe: this running image, not anything a caller supplies.
+#
 # 24 (the old tree): the listener builder's close on a failed bind. errcheck
 # reads the discarded error; the bind already failed and the listener is going
 # away with it.
 24
-113
+112

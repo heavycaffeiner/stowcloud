@@ -19,6 +19,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/oidc"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
 )
 
@@ -55,14 +56,30 @@ func (e *Engine) loadSettings(ctx context.Context) {
 	e.oidcName = values.OIDCDisplayName
 	e.settingsMu.Unlock()
 
-	// The search bounds an administrator adjusts. Applied through the
-	// service's setter, which leaves the concurrency gate alone: it is a
-	// buffered channel established at construction, and swapping it while
-	// queries are in flight would lose the slots they hold.
+	// The search and archive bounds an administrator adjusts. Applied through
+	// each service's own setter, which leaves the search concurrency gate
+	// alone: it is a buffered channel established at construction, and
+	// swapping it while queries are in flight would lose the slots they hold.
 	if e.Search != nil {
 		concurrency, deadline := values.SearchConcurrentSSD, values.SearchDeadlineSSD
 		e.Search.SetBounds(concurrency, deadline)
 	}
+	preview.SetMaxListed(values.ArchiveMaxConcurrent)
+
+	// The watcher's own setter rather than a rebuild: a rebuild would drop
+	// every live inotify watch and every pinned subscription, the latter
+	// coming from live client WebSocket state that is never replayed, and
+	// force every directory back through a cold addWatch. A lowered
+	// hot_set_max evicts down to the new cap immediately inside the setter.
+	if e.watcher != nil {
+		e.watcher.SetBounds(values.WatchHotSetMax, values.WatchFullThreshold)
+	}
+
+	// The name index. Re-invoked here rather than only at boot, so a save
+	// attaches or detaches it, and its updater, immediately: this is what
+	// makes turning search.name_index_enabled off actually drop the live
+	// index instead of leaving it running under a setting that says off.
+	e.openSearchIndex(ctx)
 
 	// Whether an account with a second factor may reach the file-sharing
 	// protocol. The value was loaded and then dropped, so an operator who set

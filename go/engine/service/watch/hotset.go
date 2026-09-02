@@ -124,12 +124,32 @@ func (h *hotSet) evictFor(k key) []key {
 	if h.isRegistered(k) {
 		return nil
 	}
+	return h.evictWhile(func() bool { return len(h.registered)+1 > h.cap })
+}
+
+// setCap changes the cap and reports which recent keys must be evicted to
+// bring the registered set back under it right away.
+//
+// A lowered cap is enforced here rather than left to evictFor, which only
+// trims on a new key's arrival: without this sweep, excess directories from
+// the old cap would sit registered until unrelated churn happened to touch a
+// fresh one.
+func (h *hotSet) setCap(n int) []key {
+	h.cap = max(n, 1)
+	return h.evictWhile(func() bool { return len(h.registered) > h.cap })
+}
+
+// evictWhile drops recent-half keys, oldest first, while cond holds. Only
+// pinned keys remaining stops it early: slightly overshooting the cap is
+// preferable to discarding a watch a user is actively reading. It does not
+// remove the kernel watch itself; the caller does that and then calls
+// markUnregistered, so a failed removal cannot leave the two views
+// inconsistent.
+func (h *hotSet) evictWhile(cond func() bool) []key {
 	var out []key
-	for len(h.registered)+1 > h.cap {
+	for cond() {
 		back := h.order.Back()
 		if back == nil {
-			// Only pinned keys remain. Slightly overshooting the cap is
-			// preferable to discarding a watch a user is actively reading.
 			break
 		}
 		evicted, ok := back.Value.(key)
