@@ -11,12 +11,30 @@ import {
 } from './chunk-planner'
 import { deleteResumeRecord, getResumeRecord, putResumeRecord, resumeKey } from './idb'
 import { setCsrfToken, UploadHttpError, mockTransport, transport } from './transport'
+import { classifyFailure } from './retry'
 
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
-const MAX_INFLIGHT = 4 // global, per-chunk — not per file
-const MAX_RETRIES = 5
-const BACKOFF_MS = [1000, 2000, 4000, 8000, 8000]
-const PROGRESS_HZ_MS = 100 // ≤10 Hz
+const MAX_INFLIGHT = 4 // global, per-chunk, not per file
+const PROGRESS_HZ_MS = 100 // at most 10 Hz
+
+/**
+ * How many times each chunk has been retried, keyed by file and chunk index.
+ *
+ * Per chunk because MAX_INFLIGHT of them are on the wire together: one dropped
+ * connection fails every chunk in flight, and a single counter shared by the
+ * file read that as one failure per chunk rather than as one outage.
+ */
+const chunkRetries = new Map<string, number>()
+
+/** Drops every chunk's retry count for one file, which its keys are prefixed
+ *  with. Called wherever a file leaves the map, so a long session does not
+ *  accumulate counts for uploads that finished. */
+function forgetChunkRetries(fileId: string): void {
+  const prefix = `${fileId}:`
+  for (const key of chunkRetries.keys()) {
+    if (key.startsWith(prefix)) chunkRetries.delete(key)
+  }
+}
 
 export interface AddItem {
   file: File
@@ -58,7 +76,6 @@ interface FileState {
   lastPostAt: number
   lastPostBytes: number
   rate: number
-  retries: number
 }
 
 const files = new Map<string, FileState>()
@@ -175,8 +192,7 @@ async function addFile(item: AddItem): Promise<void> {
     sentBytes: resumeOffset,
     lastPostAt: 0,
     lastPostBytes: resumeOffset,
-    rate: 0,
-    retries: 0
+    rate: 0
   })
 
   scheduler.addFile({ id, totalSize: item.file.size, chunkSize, resumeOffset })
@@ -214,6 +230,7 @@ async function finalizeIfDone(f: FileState): Promise<boolean> {
     size: f.file.size,
     mtimeNs: String(BigInt(f.file.lastModified) * 1_000_000n)
   })
+  forgetChunkRetries(f.id)
   scheduler.removeFile(f.id)
   files.delete(f.id)
   return true
@@ -231,7 +248,7 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
     const blob = f.file.slice(task.offset, task.offset + task.length)
     await transport.patchChunk(f.sessionId, task.offset, blob, f.abort.signal)
     f.sentBytes = Math.min(f.file.size, f.sentBytes + task.length)
-    f.retries = 0
+    chunkRetries.delete(`${task.fileId}:${task.index}`)
     scheduler.complete(task.fileId, task.index)
     maybePostProgress(f)
     const done = await finalizeIfDone(f)
@@ -247,17 +264,14 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
     if (files.get(task.fileId)?.status !== 'uploading') return
 
     const status = err instanceof UploadHttpError ? err.status : 0
+    // Counted per chunk, not per file. Four chunks are in flight at once and a
+    // dropped connection fails all of them together, so a file-wide counter
+    // spent its whole budget on one outage and gave up on the first.
+    const key = `${task.fileId}:${task.index}`
+    const tries = chunkRetries.get(key) ?? 0
+    const verdict = classifyFailure(status, tries)
 
-    // The session is gone: cancelled here, expired, or swept. Nothing to
-    // resume, so this is terminal rather than retryable.
-    if (status === 404 || status === 410) {
-      f.status = 'error'
-      post({ t: 'error', id: f.id, code: 'upload.failed', message: /* i18n */ 'upload.session_gone' })
-      pump()
-      return
-    }
-
-    if (status === 413) {
+    if (verdict.kind === 'shrink') {
       const next = shrinkChunkSize(f.chunkSize, serverChunkMin)
       if (next === null) {
         f.status = 'error'
@@ -266,39 +280,39 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
         f.chunkSize = next
         storeChunkSize(next)
         post({ t: 'chunk-size-adjusted', id: f.id, size: next })
-        // re-plan remaining bytes at the smaller chunk size
+        // The remaining bytes are re-planned at the smaller size, so the old
+        // chunk indices no longer name anything.
+        forgetChunkRetries(f.id)
         scheduler.removeFile(f.id)
         scheduler.addFile({ id: f.id, totalSize: f.file.size, chunkSize: next, resumeOffset: f.sentBytes })
-        scheduler.requeue(f.id, task) // ensure this byte range is retried too
+        scheduler.requeue(f.id, task)
       }
       pump()
       return
     }
 
-    if (status === 507) {
-      // Quota exceeded — terminal like 413's floor case,
-      // not retryable like a transient network failure.
+    if (verdict.kind === 'give-up') {
       f.status = 'error'
-      post({ t: 'error', id: f.id, code: 'upload.quota_exceeded', message: /* i18n */ 'upload.not_enough_storage_space_finish' })
+      forgetChunkRetries(f.id)
+      const told =
+        verdict.reason === 'session-gone'
+          ? { code: 'upload.failed', message: /* i18n */ 'upload.session_gone' }
+          : verdict.reason === 'quota'
+            ? { code: 'upload.quota_exceeded', message: /* i18n */ 'upload.not_enough_storage_space_finish' }
+            : { code: 'upload.failed', message: /* i18n */ 'upload.upload_failed_out_retries' }
+      post({ t: 'error', id: f.id, code: told.code, message: told.message })
       pump()
       return
     }
 
-    f.retries++
-    if (f.retries > MAX_RETRIES) {
-      f.status = 'error'
-      post({ t: 'error', id: f.id, code: 'upload.failed', message: /* i18n */ 'upload.upload_failed_out_retries' })
-      pump()
-      return
-    }
-    const retryIn = BACKOFF_MS[Math.min(f.retries - 1, BACKOFF_MS.length - 1)]
-    post({ t: 'error', id: f.id, code: 'upload.retry', message: /* i18n */ 'upload.retrying', retryIn })
+    chunkRetries.set(key, tries + 1)
+    post({ t: 'error', id: f.id, code: 'upload.retry', message: /* i18n */ 'upload.retrying', retryIn: verdict.afterMs })
     setTimeout(() => {
       if (files.get(f.id)?.status === 'uploading') {
         scheduler.requeue(task.fileId, task)
         pump()
       }
-    }, retryIn)
+    }, verdict.afterMs)
   } finally {
     inflightRequests--
   }
@@ -348,6 +362,7 @@ self.addEventListener('message', (ev: MessageEvent<Cmd>) => {
         f.abort.abort()
         void transport.deleteSession(f.sessionId).catch(() => {})
         void deleteResumeRecord(resumeKey(f.file.name, f.file.size, f.file.lastModified)).catch(() => {})
+        forgetChunkRetries(cmd.id)
         scheduler.removeFile(cmd.id)
         files.delete(cmd.id)
         post({ t: 'canceled', id: cmd.id })

@@ -41,8 +41,14 @@ const (
 	Unprocessable
 	// BodyTooLarge is the outer bound on a request body.
 	BodyTooLarge
-	// LimitExceeded is a configured structural or resource bound.
+	// LimitExceeded is a configured structural bound the same request would
+	// cross again: a body with too many parts, a walk too deep.
 	LimitExceeded
+	// ResourceExhausted is a bound the caller is momentarily over and which
+	// clears as their other work finishes. Separate from LimitExceeded
+	// because the two want opposite things from a client: this one is worth
+	// waiting out, and a 422 told every client to give up on it instead.
+	ResourceExhausted
 
 	// AuthRequired is no usable credential.
 	AuthRequired
@@ -123,6 +129,7 @@ func (c Class) String() string {
 func classNames() []string {
 	return []string{
 		"internal", "malformed", "unprocessable", "body-too-large", "limit-exceeded",
+		"resource-exhausted",
 		"auth-required", "auth-invalid", "account-disabled", "rate-limited",
 		"hidden", "denied", "not-found", "gone",
 		"conflict", "exists", "not-empty", "precondition", "locked",

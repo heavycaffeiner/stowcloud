@@ -105,6 +105,10 @@ func restTable() map[Class]restEntry {
 		Unprocessable: {http.StatusUnprocessableEntity, "unprocessable", "the request could not be processed"},
 		BodyTooLarge:  {http.StatusRequestEntityTooLarge, "http.body_too_large", "the request is too large"},
 		LimitExceeded: {http.StatusUnprocessableEntity, "limit_exceeded", "a configured limit was exceeded"},
+		// 429 rather than 422: the caller is over a bound that clears as their
+		// own work finishes, so waiting is the right response and giving up is
+		// not.
+		ResourceExhausted: {http.StatusTooManyRequests, "limit_exhausted", "a resource limit is momentarily exhausted"},
 
 		AuthRequired:    {http.StatusUnauthorized, "auth.required", "authentication required"},
 		AuthInvalid:     {http.StatusUnauthorized, "auth.invalid_credentials", "invalid credentials"},

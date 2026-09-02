@@ -8,6 +8,7 @@
 package lifecycle
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
@@ -16,6 +17,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
 )
 
 // jobsList answers the caller's own operations.
@@ -128,6 +130,14 @@ func operationID(c *fiber.Ctx) (core.OperationID, bool) {
 // and not this handler's, so the visibility is stated here rather than left to
 // whatever the service decides next.
 func fail(c *fiber.Ctx, err error) error {
+	// A refusal that names how long to wait says so on the wire. The cache
+	// carries a delay because what the caller waits for is a disk write
+	// already under way, and a client guessing its own interval either hammers
+	// the server or stalls longer than it needs to.
+	var full *upload.CacheFullError
+	if errors.As(err, &full) && full.RetryAfterSeconds > 0 {
+		c.Set(fiber.HeaderRetryAfter, strconv.Itoa(full.RetryAfterSeconds))
+	}
 	return refuse(c, apierr.Classify(err, apierr.VisibilityHidden))
 }
 

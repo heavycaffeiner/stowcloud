@@ -3,6 +3,8 @@
 // vs real the same way api/client.ts does, via VITE_API_MOCK, so the worker
 // never needs a live backend during frontend development either.
 
+import { classifyFailure, retryAfterMs, retryDelay } from './retry'
+
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 
@@ -20,11 +22,66 @@ export function setCsrfToken(t: string): void {
 
 export class UploadHttpError extends Error {
   status: number
-  constructor(status: number, message: string) {
+  /** What the server asked us to wait, when it said. Undefined otherwise. */
+  retryAfterMs?: number
+  constructor(status: number, message: string, retryAfterMs?: number) {
     super(message)
     this.status = status
+    this.retryAfterMs = retryAfterMs
   }
 }
+
+/**
+ * Sends a request, turning a dropped connection into a status of 0.
+ *
+ * fetch rejects rather than resolving when the connection never produced a
+ * response, which is the ordinary failure behind a tunnel that closes idle or
+ * long-running sockets. Callers classify by status, so the two failure shapes
+ * are made one here.
+ */
+async function send(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init)
+  } catch (err) {
+    // An abort is the caller cancelling, not a transport fault: it must not be
+    // retried, so it keeps its own identity.
+    if (err instanceof DOMException && err.name === 'AbortError') throw err
+    throw new UploadHttpError(0, `the connection failed: ${String(err)}`)
+  }
+}
+
+/**
+ * Runs one request until it succeeds or the policy gives up.
+ *
+ * `safe` says whether a retry can repeat the request's effect. A read is
+ * always safe. A create is not: POST /uploads carries no client-chosen key, so
+ * a request the server committed before the connection dropped becomes a
+ * second session on retry, and each one reserves its declared length against
+ * the account's budget until the sweep collects it. A flaky tunnel would
+ * exhaust the budget rather than survive.
+ *
+ * An unsafe request therefore retries only on a refusal the server states,
+ * where nothing was committed by definition: 429 and 503 say "not now", and
+ * a status of 0 says nothing at all.
+ */
+async function withRetry<T>(attempt: () => Promise<T>, safe: boolean): Promise<T> {
+  for (let tries = 0; ; tries++) {
+    try {
+      return await attempt()
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err
+      const status = err instanceof UploadHttpError ? err.status : 0
+      if (!safe && status !== 429 && status !== 503) throw err
+      // Shrinking is the caller's decision: it owns the chunk size.
+      if (classifyFailure(status, tries).kind !== 'retry') throw err
+      const hint = err instanceof UploadHttpError ? err.retryAfterMs : undefined
+      const { promise, resolve } = Promise.withResolvers<void>()
+      setTimeout(resolve, retryDelay(tries, hint))
+      await promise
+    }
+  }
+}
+
 
 export interface CreateSessionParams {
   filename: string
@@ -61,26 +118,38 @@ class HttpTransport implements Transport {
     if (p.relativePath) metaParts.push(`relativePath ${b64(p.relativePath)}`)
     if (p.mtimeNs) metaParts.push(`mtime ${b64(p.mtimeNs)}`)
 
-    const res = await fetch(`${BASE}/uploads`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: {
-        'Tus-Resumable': '1.0.0',
-        'Upload-Length': String(p.totalSize),
-        'Upload-Metadata': metaParts.join(','),
-        'Sc-Random-Access': '1',
-        'Sc-Csrf': csrfToken
+    // A batch of files creates its sessions in one burst, which is exactly
+    // when the server refuses with 429. Retried for that, and only that:
+    // creation is not safe to repeat blindly.
+    return withRetry(async () => {
+      const res = await send(`${BASE}/uploads`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Tus-Resumable': '1.0.0',
+          'Upload-Length': String(p.totalSize),
+          'Upload-Metadata': metaParts.join(','),
+          'Sc-Random-Access': '1',
+          'Sc-Csrf': csrfToken
+        }
+      })
+      if (!res.ok) {
+        throw new UploadHttpError(
+          res.status,
+          `createSession failed: ${res.status}`,
+          retryAfterMs(res.headers.get('Retry-After'))
+        )
       }
-    })
-    if (!res.ok) throw new UploadHttpError(res.status, `createSession failed: ${res.status}`)
-    const location = res.headers.get('Location') ?? ''
-    const id = location.split('/').pop() ?? ''
-    const offset = Number(res.headers.get('Upload-Offset') ?? '0')
-    return { id, offset }
+      const location = res.headers.get('Location') ?? ''
+      return {
+        id: location.split('/').pop() ?? '',
+        offset: Number(res.headers.get('Upload-Offset') ?? '0')
+      }
+    }, false)
   }
 
   async patchChunk(id: string, offset: number, body: Blob, signal?: AbortSignal): Promise<{ offset: number }> {
-    const res = await fetch(`${BASE}/uploads/${id}`, {
+    const res = await send(`${BASE}/uploads/${id}`, {
       method: 'PATCH',
       credentials: 'include',
       headers: {
@@ -95,23 +164,37 @@ class HttpTransport implements Transport {
       // kept sending until every chunk in flight had finished.
       signal
     })
-    if (!res.ok) throw new UploadHttpError(res.status, `patch failed: ${res.status}`)
+    if (!res.ok) {
+      throw new UploadHttpError(
+        res.status,
+        `patch failed: ${res.status}`,
+        retryAfterMs(res.headers.get('Retry-After'))
+      )
+    }
     return { offset: Number(res.headers.get('Upload-Offset') ?? offset) }
   }
 
   async headSession(id: string): Promise<{ offset: number; totalSize: number; chunkSize?: number }> {
-    const res = await fetch(`${BASE}/uploads/${id}`, {
-      method: 'HEAD',
-      credentials: 'include',
-      headers: { 'Tus-Resumable': '1.0.0' }
-    })
-    if (!res.ok) throw new UploadHttpError(res.status, `head failed: ${res.status}`)
-    const chunkSizeHeader = res.headers.get('Sc-Chunk-Size')
-    return {
-      offset: Number(res.headers.get('Upload-Offset') ?? '0'),
-      totalSize: Number(res.headers.get('Upload-Length') ?? '0'),
-      chunkSize: chunkSizeHeader ? Number(chunkSizeHeader) : undefined
-    }
+    return withRetry(async () => {
+      const res = await send(`${BASE}/uploads/${id}`, {
+        method: 'HEAD',
+        credentials: 'include',
+        headers: { 'Tus-Resumable': '1.0.0' }
+      })
+      if (!res.ok) {
+        throw new UploadHttpError(
+          res.status,
+          `head failed: ${res.status}`,
+          retryAfterMs(res.headers.get('Retry-After'))
+        )
+      }
+      const chunkSizeHeader = res.headers.get('Sc-Chunk-Size')
+      return {
+        offset: Number(res.headers.get('Upload-Offset') ?? '0'),
+        totalSize: Number(res.headers.get('Upload-Length') ?? '0'),
+        chunkSize: chunkSizeHeader ? Number(chunkSizeHeader) : undefined
+      }
+    }, true)
   }
 
   async deleteSession(id: string): Promise<void> {

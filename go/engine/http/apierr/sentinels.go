@@ -132,8 +132,11 @@ func uploadSentinels() []classifier {
 
 		{upload.ErrTooLarge, BodyTooLarge, "upload.too_large"},
 		{upload.ErrFragmented, LimitExceeded, "upload.too_fragmented"},
-		{upload.ErrExhausted, LimitExceeded, "upload.limit_exceeded"},
-		{upload.ErrCacheFull, LimitExceeded, "upload.cache_full"},
+		// Both clear as the account's own uploads finish, so they answer 429
+		// and a client waits. As 422 they told every client to give up, which
+		// is what lost files from a batch that briefly crossed the bound.
+		{upload.ErrExhausted, ResourceExhausted, "upload.limit_exceeded"},
+		{upload.ErrCacheFull, ResourceExhausted, "upload.cache_full"},
 		{upload.ErrNoCache, SubsystemUnavailable, "upload.cache_unavailable"},
 	}
 }

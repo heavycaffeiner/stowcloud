@@ -170,6 +170,29 @@ func TestEveryClassHasAName(t *testing.T) {
 	}
 }
 
+// A bound that clears on its own and one that does not answer differently.
+//
+// Both used to be 422, which tells a client the request is wrong and there is
+// nothing to wait for. The account's own uploads finishing is exactly the wait
+// that clears an exhaustion, so a batch of files that briefly crossed the
+// session bound lost its remaining members rather than pausing for them.
+func TestATemporaryBoundAsksTheCallerToWaitAndAPermanentOneDoesNot(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"sessions in flight", &upload.ExhaustedError{Limit: "sessions"}, http.StatusTooManyRequests},
+		{"the spool at its budget", &upload.CacheFullError{RetryAfterSeconds: 3}, http.StatusTooManyRequests},
+		{"a session fragmented past its run cap", upload.ErrFragmented, http.StatusUnprocessableEntity},
+	} {
+		status, body := REST(Classify(c.err, VisibilityHidden))
+		if status != c.want {
+			t.Errorf("%s answered %d, want %d (%s)", c.name, status, c.want, body.Code)
+		}
+	}
+}
+
 // A request error carries a semantic class rather than a status, so the same
 // value renders correctly on any surface. The old tree stored the status, which
 // is what made those errors unusable outside REST.
