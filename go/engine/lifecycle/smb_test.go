@@ -497,6 +497,84 @@ func bootWithSidecar(t *testing.T) (*lifecycle.Engine, string) {
 	return e, configDir
 }
 
+// Turning file sharing off takes effect on the running server.
+//
+// The rendered files are how the setting reaches the daemon: their absence is
+// what the sidecar reads as teardown, stopping it and pruning the credentials.
+// The switch used to be read only when the process started, so an operator who
+// turned sharing off kept serving every share until somebody restarted the
+// container, and the settings screen showed it as off the whole time.
+//
+// Driven through the settings route rather than the engine, because that is
+// where the defect was: the save stored the value and never pushed it.
+func TestTurningFileSharingOffReachesTheSidecar(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	configDir := filepath.Join(t.TempDir(), "smb")
+
+	first, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	if merr := first.State.MergeSettings(ctx, "smb", map[string]any{
+		"enabled": true, "config_dir": configDir, "workgroup": "WORKGROUP",
+	}); merr != nil {
+		t.Fatalf("saving the settings: %v", merr)
+	}
+	if _, cerr := first.Auth.CreateAdmin(ctx, "root", "Root", pwOf(loginPassword)); cerr != nil {
+		t.Fatalf("creating the administrator: %v", cerr)
+	}
+	if cerr := first.Close(); cerr != nil {
+		t.Fatalf("closing: %v", cerr)
+	}
+
+	e, err := lifecycle.Open(ctx, lifecycle.Options{DataDir: dir})
+	if err != nil {
+		t.Fatalf("reopening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+	base := serve(t, e)
+
+	admin := postJSON(t, base+"/api/v1/auth/login",
+		map[string]string{"login": "root", "password": loginPassword})
+	cookie, csrf := admin.sessionCookie(), admin.field("csrf")
+	if cookie == nil {
+		t.Fatalf("the administrator did not sign in: %d %v", admin.status, admin.body)
+	}
+
+	conf := filepath.Join(configDir, "smb.conf")
+	if _, serr := os.Stat(conf); serr != nil {
+		t.Fatalf("the configuration was not rendered at boot: %v", serr)
+	}
+
+	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/smb",
+		cookie, csrf, map[string]any{"enabled": false})
+	if status != http.StatusOK {
+		t.Fatalf("turning sharing off answered %d: %v", status, body)
+	}
+	if restart, ok := body["restart_required"].(bool); ok && restart {
+		t.Error("the save asked for a restart, which is what this removed")
+	}
+	if _, serr := os.Stat(conf); !os.IsNotExist(serr) {
+		t.Errorf("the configuration survived the switch being turned off: %v", serr)
+	}
+
+	// And back on, because a toggle that only goes one way is a switch an
+	// operator cannot undo without the restart this removed.
+	status, body = mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/smb",
+		cookie, csrf, map[string]any{"enabled": true})
+	if status != http.StatusOK {
+		t.Fatalf("turning sharing on answered %d: %v", status, body)
+	}
+	if _, serr := os.Stat(conf); serr != nil {
+		t.Errorf("the configuration did not come back when sharing was turned on: %v", serr)
+	}
+}
+
 // readCredentialFile returns the rendered credential file's contents.
 func readCredentialFile(t *testing.T, configDir string) string {
 	t.Helper()

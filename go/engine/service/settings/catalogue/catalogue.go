@@ -202,14 +202,17 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 		intField("db.max_bytes", byteCount(values.DBGuard.MaxBytes), true),
 		intField("db.min_free_bytes", byteCount(values.DBGuard.MinFreeBytes), true),
 
-		// The file-sharing sidecar reads its configuration when it is
-		// rendered, which happens on a publish rather than on a request.
-		boolean("smb.enabled", values.SMB.Enabled, true),
-		str("smb.server_name", values.SMB.ServerName, true, ""),
-		str("smb.workgroup", values.SMB.Workgroup, true, ""),
-		boolean("smb.allow_public_bind", values.SMB.AllowPublicBind, true),
-		str("smb.service_user", values.SMB.ServiceUser, true, ""),
-		intField("smb.service_gid", int64(values.SMBServiceGID), true),
+		// A settings save publishes to the sidecar, which renders these and
+		// acts on the switch: on starts the daemon, off stops it and prunes
+		// the credentials. So they apply without a restart.
+		boolean("smb.enabled", values.SMB.Enabled, false),
+		str("smb.server_name", values.SMB.ServerName, false, ""),
+		str("smb.workgroup", values.SMB.Workgroup, false, ""),
+		boolean("smb.allow_public_bind", values.SMB.AllowPublicBind, false),
+		str("smb.service_user", values.SMB.ServiceUser, false, ""),
+		intField("smb.service_gid", int64(values.SMBServiceGID), false),
+		// These two decide whether there is a sidecar to talk to at all, which
+		// is read once when the publisher is built.
 		str("smb.config_dir", values.SMBConfigDir, true, ""),
 		str("smb.agent_socket", values.SMBSocket, true, ""),
 		// The policy reaches the auth service directly. Two values, and an

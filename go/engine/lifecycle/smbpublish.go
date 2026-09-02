@@ -48,16 +48,14 @@ const publishTimeout = agent.DefaultTimeout + 5*time.Second
 // smbPublisher pushes the whole rendered set and is the sink every credential
 // change tells.
 //
-// It holds the settings it was built with rather than reading them per call.
-// The section requires a restart, so a value that changed since construction
-// is not yet in effect anywhere, and reading it here would apply half of it.
+// It reads the settings on every push rather than holding the ones it was
+// built with. The file-sharing switch is a value the agent acts on: enabled
+// renders the shares and starts the daemon, disabled tears it down and prunes
+// the credentials. Holding the construction-time copy meant the switch reached
+// the sidecar only at the next start, so turning sharing off left the daemon
+// serving until somebody restarted the container.
 type smbPublisher struct {
 	engine *Engine
-	cfg    smb.Config
-
-	configDir string
-	socket    string
-	gid       uint32
 
 	// mu serializes pushes. Two at once would render the same directory from
 	// two reads of the database, and whichever finished last would win
@@ -65,21 +63,16 @@ type smbPublisher struct {
 	mu sync.Mutex
 }
 
-// smbSettings is what construction needs out of the settings document.
+// smbSettings is what a push needs out of the settings document.
 type smbSettings struct {
-	Config    smb.Config
-	ConfigDir string
-	Socket    string
-	GID       uint32
+	Config     smb.Config
+	ConfigDir  string
+	Socket     string
+	GID        uint32
+	Configured bool
 }
 
 // smbSettingsOf reads the stored document for the file-sharing section.
-//
-// Read here rather than taken from loadSettings because this half is decided
-// once, at construction, while that function runs again on every save. The
-// section requires a restart for exactly this reason: the credential path and
-// the publisher are assembled from it and neither can be replaced under a
-// running server.
 //
 // A document that cannot be read leaves the protocol off. Off is the direction
 // that refuses rather than admits, and a deployment that never configured a
@@ -87,30 +80,27 @@ type smbSettings struct {
 func smbSettingsOf(ctx context.Context, e *Engine) smbSettings {
 	values := runtimecfg.Load(ctx, e.State, runtimecfg.Defaults(), e.logger)
 	return smbSettings{
-		Config:    values.SMB,
-		ConfigDir: values.SMBConfigDir,
-		Socket:    values.SMBSocket,
-		GID:       values.SMBServiceGID,
+		Config:     values.SMB,
+		ConfigDir:  values.SMBConfigDir,
+		Socket:     values.SMBSocket,
+		GID:        values.SMBServiceGID,
+		Configured: values.SMBConfigured,
 	}
 }
 
 // newSMBPublisher builds the publisher, or nil when this deployment has no
-// sidecar.
+// sidecar to talk to at all.
 //
-// Nil is a supported state and the ordinary one: most deployments serve files
-// over the web alone. It is distinct from a publisher that fails, which is a
-// configured sidecar that could not be reached.
+// Nil means the settings hold no file-sharing section, which is most
+// deployments: they serve files over the web alone and there is nothing on the
+// other end of a push. The switch inside that section is not consulted here,
+// because it can be flipped while the server runs and a publisher that did not
+// exist could not carry the change.
 func newSMBPublisher(e *Engine, s smbSettings) *smbPublisher {
-	if !s.Config.Enabled || s.ConfigDir == "" {
+	if !s.Configured || s.ConfigDir == "" {
 		return nil
 	}
-	return &smbPublisher{
-		engine:    e,
-		cfg:       s.Config,
-		configDir: s.ConfigDir,
-		socket:    s.Socket,
-		gid:       s.GID,
-	}
+	return &smbPublisher{engine: e}
 }
 
 // Publish renders the whole set from current state and asks the agent to apply
@@ -118,20 +108,26 @@ func newSMBPublisher(e *Engine, s smbSettings) *smbPublisher {
 //
 // Rebuilt whole rather than diffed. A change that stopped at one surface is
 // then still corrected by the next publish, whatever caused that publish.
+//
+// The settings are re-read here, so flipping the file-sharing switch reaches
+// the sidecar on the next push: enabled renders the shares and starts the
+// daemon, disabled sends the same message the agent reads as teardown, which
+// stops it and prunes the credentials.
 func (p *smbPublisher) Publish(ctx context.Context) (agent.Report, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	s := smbSettingsOf(ctx, p.engine)
 	return publish.Publish(ctx, publish.Deps{
 		Shares:     func() []publish.Share { return publishShares(p.engine.Core.Shares()) },
 		Accounts:   p.engine.Auth,
 		Grants:     func(c context.Context) ([]publish.Grant, error) { return publishGrants(c, p.engine.State) },
 		Names:      p.engine.Auth.NameOf,
-		ConfigDir:  p.configDir,
-		Socket:     p.socket,
-		ServiceGID: p.gid,
+		ConfigDir:  s.ConfigDir,
+		Socket:     s.Socket,
+		ServiceGID: s.GID,
 		Log:        p.engine.logger,
-	}, p.cfg)
+	}, s.Config)
 }
 
 // AccessChanged is the sink auth calls once a credential change has committed.
@@ -151,8 +147,7 @@ func (p *smbPublisher) AccessChanged(ctx context.Context) {
 	report, err := p.Publish(pctx)
 	switch {
 	case err != nil:
-		p.engine.logger.Warn("a change did not reach the SMB sidecar",
-			"error", err, "socket", p.socket)
+		p.engine.logger.Warn("a change did not reach the SMB sidecar", "error", err)
 	case !report.OK:
 		// The files were promoted and something in them needs an operator: a
 		// share path absent where the daemon runs, or an account the import
@@ -242,6 +237,57 @@ func (e *Engine) publishSMBAtBoot(ctx context.Context) {
 	}
 }
 
+// smbPublisherOf reads the publisher under the settings lock.
+//
+// A lock, because a settings save can build one while the server runs: the
+// field is no longer written once at startup and read forever after.
+func (e *Engine) smbPublisherOf() *smbPublisher {
+	e.settingsMu.RLock()
+	defer e.settingsMu.RUnlock()
+	return e.smb
+}
+
+// publishSMBSettings pushes after a settings save.
+//
+// This is what makes the file-sharing switch live. The agent reads an enabled
+// configuration as "render the shares and run the daemon" and a disabled one
+// as teardown: stop it and prune the credentials. Before this the switch was
+// only read when the process started, so turning sharing off left the daemon
+// serving every share until somebody restarted the container.
+//
+// A failure is logged rather than returned. The document has committed and the
+// next push corrects the sidecar, so refusing the save would describe a change
+// that happened as one that did not.
+func (e *Engine) publishSMBSettings(ctx context.Context) {
+	// Built here as well as at boot, because the section can be configured
+	// while the server runs. A publisher that only ever existed from startup
+	// meant the save that first named a sidecar could not reach it, and the
+	// screen asked for a restart to do what the save had already stored.
+	e.settingsMu.Lock()
+	if e.smb == nil {
+		if p := newSMBPublisher(e, smbSettingsOf(ctx, e)); p != nil {
+			e.smb = p
+			e.Auth.SetAccessChangeSink(p)
+		}
+	}
+	p := e.smb
+	e.settingsMu.Unlock()
+
+	if p == nil {
+		return
+	}
+	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishTimeout)
+	defer cancel()
+
+	report, err := p.Publish(pctx)
+	switch {
+	case err != nil:
+		e.logger.Warn("a file-sharing settings change did not reach the SMB sidecar", "error", err)
+	case !report.OK:
+		e.logger.Warn("the SMB sidecar applied the settings change with a warning", "error", report.Error)
+	}
+}
+
 // smbRenderers are the two seams auth publishes its credential facts through.
 //
 // They exist because auth must not name this format and the renderer must not
@@ -278,7 +324,8 @@ func (e *Engine) adminSMBApply(c *fiber.Ctx) error {
 	if _, ok, written := e.admin(c); !ok {
 		return written
 	}
-	if e.smb == nil {
+	p := e.smbPublisherOf()
+	if p == nil {
 		// Nothing to apply to. Said plainly rather than answered with a
 		// success, which would report an apply that never happened.
 		return refuse(c, apierr.Classified{
@@ -294,7 +341,7 @@ func (e *Engine) adminSMBApply(c *fiber.Ctx) error {
 		context.WithoutCancel(c.UserContext()), publishTimeout)
 	defer cancel()
 
-	report, err := e.smb.Publish(ctx)
+	report, err := p.Publish(ctx)
 	if err != nil {
 		// The files are written either way. What failed is getting an answer,
 		// and saying so beats reporting a success nobody confirmed.

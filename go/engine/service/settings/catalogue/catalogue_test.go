@@ -242,7 +242,10 @@ func TestStartupOnlyFieldsAreMarkedRestartRequired(t *testing.T) {
 		"homes.enabled",
 		"security.hardening",
 		"watch.hot_set_max",
-		"smb.enabled",
+		// Whether there is a sidecar to publish to, read once when the
+		// publisher is built.
+		"smb.agent_socket",
+		"smb.config_dir",
 	} {
 		f, ok := fields[key]
 		if !ok {
@@ -255,8 +258,10 @@ func TestStartupOnlyFieldsAreMarkedRestartRequired(t *testing.T) {
 	}
 
 	// And the ones that really are live are not marked, so the screen does not
-	// ask for a restart nothing needs.
-	for _, key := range []string{"rate.per_sec", "app_hosts", "smb.totp_policy"} {
+	// ask for a restart nothing needs. smb.enabled is here because a settings
+	// save publishes to the sidecar, which starts the daemon or tears it down
+	// according to the switch.
+	for _, key := range []string{"rate.per_sec", "app_hosts", "smb.totp_policy", "smb.enabled"} {
 		if f, ok := fields[key]; ok && f.RestartRequired {
 			t.Errorf("%q applies live and is marked as needing a restart", key)
 		}
@@ -282,9 +287,11 @@ func TestARestartIsJudgedByTheFieldsAPatchNames(t *testing.T) {
 			"the provider is rebuilt when settings load"},
 		{"smb", map[string]any{"totp_policy": "block"}, false,
 			"the policy reaches the auth service directly"},
-		{"smb", map[string]any{"enabled": true}, true,
-			"the publisher is assembled at startup"},
-		{"smb", map[string]any{"totp_policy": "block", "enabled": true}, true,
+		{"smb", map[string]any{"enabled": true}, false,
+			"a settings save publishes, and the agent starts or stops the daemon"},
+		{"smb", map[string]any{"config_dir": "/etc/samba"}, true,
+			"whether there is a sidecar at all is read when the publisher is built"},
+		{"smb", map[string]any{"enabled": true, "config_dir": "/etc/samba"}, true,
 			"one startup-only field in the patch is enough"},
 		{"rate", map[string]any{"per_sec": 25}, false,
 			"the limiter is updated in place"},

@@ -287,7 +287,7 @@ func (e *Engine) featuresView() handler.FeaturesView {
 		// rather than as present-and-broken: the interface hides the screen,
 		// which is honest, where drawing it would offer a route that 404s.
 		WebDAV: false,
-		SMB:    e.smb != nil,
+		SMB:    e.smbPublisherOf() != nil,
 
 		Preview: e.Preview != nil,
 		Trash:   true,
