@@ -11,6 +11,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -175,10 +176,30 @@ func (s *Serve) Shutdown() error {
 // successful dial proves the bind and nothing else; a reply proves the app
 // behind it is running. That distinction is the point of this wait, since the
 // swap drops a working listener immediately afterwards.
+//
+// Both schemes are tried, because this package is handed a listener and is not
+// told whether something wrapped it in TLS. Asking only in plaintext is why
+// this was never wired into a deployment: a TLS listener does not answer such
+// a request at all, so every swap reported a listener that never began
+// serving.
+//
+// Certificates are not verified. The question is whether anything is behind
+// the socket, and the deployment's own certificate is routinely one this
+// process would not trust: self-signed on first boot, and issued for a host
+// name rather than for the address being dialled here.
 func confirmServing(ln net.Listener, failed <-chan error) error {
 	deadline := time.After(confirmTimeout)
-	client := &http.Client{Timeout: confirmRequestTimeout}
-	url := "http://" + ln.Addr().String() + "/"
+	client := &http.Client{
+		Timeout: confirmRequestTimeout,
+		Transport: &http.Transport{
+			//nolint:gosec // G402: proving something answers, not trusting it.
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+	urls := []string{
+		"https://" + ln.Addr().String() + "/",
+		"http://" + ln.Addr().String() + "/",
+	}
 
 	for {
 		select {
@@ -192,8 +213,11 @@ func confirmServing(ln net.Listener, failed <-chan error) error {
 		// The path does not exist and the status does not matter: any reply is
 		// a reply, and a 404 is as much proof as a 200 that something is
 		// serving.
-		res, err := client.Get(url) //nolint:noctx // the client's own timeout is the bound.
-		if err == nil {
+		for _, url := range urls {
+			res, err := client.Get(url) //nolint:noctx // the client's own timeout is the bound.
+			if err != nil {
+				continue
+			}
 			if _, derr := io.Copy(io.Discard, res.Body); derr != nil {
 				// A reply that arrived and would not finish reading is still a
 				// reply: the app is serving, which is the question.

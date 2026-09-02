@@ -238,8 +238,6 @@ func TestStartupOnlyFieldsAreMarkedRestartRequired(t *testing.T) {
 	fields := byKey(Of(runtimecfg.Defaults(), map[string]any{}).Fields)
 
 	for _, key := range []string{
-		"bind",
-		"homes.enabled",
 		"security.hardening",
 		"watch.hot_set_max",
 		// Whether there is a sidecar to publish to, read once when the
@@ -259,9 +257,12 @@ func TestStartupOnlyFieldsAreMarkedRestartRequired(t *testing.T) {
 
 	// And the ones that really are live are not marked, so the screen does not
 	// ask for a restart nothing needs. smb.enabled is here because a settings
-	// save publishes to the sidecar, which starts the daemon or tears it down
-	// according to the switch.
-	for _, key := range []string{"rate.per_sec", "app_hosts", "smb.totp_policy", "smb.enabled"} {
+	// save publishes to the sidecar; homes.* because a save registers or
+	// withdraws the homes share, which the core accepts at any time.
+	for _, key := range []string{
+		"rate.per_sec", "app_hosts", "smb.totp_policy", "smb.enabled",
+		"homes.enabled", "homes.root", "db.size_guard", "bind",
+	} {
 		if f, ok := fields[key]; ok && f.RestartRequired {
 			t.Errorf("%q applies live and is marked as needing a restart", key)
 		}
@@ -297,8 +298,8 @@ func TestARestartIsJudgedByTheFieldsAPatchNames(t *testing.T) {
 			"the limiter is updated in place"},
 		{"network", map[string]any{"app_hosts": []string{"x"}}, false,
 			"the host lists are read per request"},
-		{"network", map[string]any{"bind": ":8443"}, true,
-			"the listener is bound once"},
+		{"network", map[string]any{"bind": ":8443"}, false,
+			"a save binds the new address and drains the old one"},
 		{"symlink-policy", map[string]any{"policy": "deny"}, false,
 			"read from the share row, not the settings document"},
 		{"smb", map[string]any{"totp_policy": "block", "force": true}, false,

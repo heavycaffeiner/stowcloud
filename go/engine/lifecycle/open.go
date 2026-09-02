@@ -159,6 +159,18 @@ type Engine struct {
 
 	// files are the open databases, closed in reverse.
 	files []*dbfile.DB
+
+	// guardStop halts the size guard's sampler. Replaced on every settings
+	// save, because the sampler holds the configuration it was started with.
+	guardMu   sync.Mutex
+	guardStop context.CancelFunc
+
+	// onBind is told when a settings save moved the listen address. The
+	// listener belongs to the process that started this engine, so the change
+	// is handed out rather than applied here.
+	bindMu    sync.Mutex
+	onBind    func(addr string)
+	boundAddr string
 }
 
 // Open constructs the engine.
@@ -291,6 +303,14 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		return fail(fmt.Errorf("constructing the core: %w", kerr))
 	}
 	e.Core = coreSvc
+
+	// A home directory is named after its account, so an operator looking at
+	// the tree from a shell or over SMB can tell whose is whose. The lookup is
+	// attached rather than passed to core.New, because auth is built above
+	// this and the two would otherwise each need the other first.
+	if aerr := coreSvc.AttachHomeNames(e.Auth.NameOf); aerr != nil {
+		return fail(fmt.Errorf("attaching the home-name source: %w", aerr))
+	}
 
 	// The master key is opened before anything that mints or reads a secret.
 	// An account cannot be created without it, and a key that cannot decrypt
@@ -469,6 +489,10 @@ func (e *Engine) Close() (err error) {
 	// hold goroutines that read one, and closing a database out from under a
 	// live reader is the failure this ordering avoids.
 	e.closeEvents()
+
+	// The size guard reads those databases on a ticker, so it stops before
+	// they are closed rather than sampling a file that is going away.
+	e.stopSizeGuard()
 
 	var errs []error
 	for i := len(e.files) - 1; i >= 0; i-- {

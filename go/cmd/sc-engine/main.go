@@ -27,14 +27,14 @@ import (
 	"slices"
 	"strings"
 	"syscall"
-	"time"
+
+	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/jail"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/mountinfo"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
-	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview/worker"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
@@ -42,11 +42,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/fsatomic"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
-
-// The wind-down budget. Long enough for an in-flight upload to finish its
-// current write, short enough that a stuck connection does not hold the
-// process forever.
-const shutdownBudget = 20 * time.Second
 
 func main() {
 	// The subcommands run without a listener. The decoder re-exec is one of
@@ -164,49 +159,63 @@ func run(addr, dataDir string, plain bool) error {
 		}
 	}()
 
-	app, err := eng.Mount()
-	if err != nil {
-		return fmt.Errorf("mounting: %w", err)
-	}
-
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("listening on %s: %w", addr, err)
-	}
-
+	// One builder per address, so a rebind constructs its own app and listener
+	// rather than moving a live one. The engine is mounted per generation for
+	// the same reason the supervisor gives: draining the old app must not stop
+	// the new one.
 	scheme := "https"
 	if plain {
 		scheme = "http"
-	} else {
-		cert, terr := devCertificate(abs, addr)
-		if terr != nil {
-			return terr
+	}
+	build := func(a string) (*fiber.App, net.Listener, error) {
+		app, merr := eng.Mount()
+		if merr != nil {
+			return nil, nil, fmt.Errorf("mounting: %w", merr)
 		}
-		ln = tls.NewListener(ln, &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
-		})
+		ln, lerr := net.Listen("tcp", a)
+		if lerr != nil {
+			return nil, nil, fmt.Errorf("listening on %s: %w", a, lerr)
+		}
+		if !plain {
+			cert, terr := devCertificate(abs, a)
+			if terr != nil {
+				//nolint:errcheck // the bind failed; the listener is going away.
+				_ = ln.Close()
+				return nil, nil, terr
+			}
+			ln = tls.NewListener(ln, &tls.Config{
+				Certificates: []tls.Certificate{cert},
+				MinVersion:   tls.VersionTLS12,
+			})
+		}
+		return app, ln, nil
 	}
 
-	logger.Info("serving the engine", "url", scheme+"://"+ln.Addr().String(), "data", abs)
-
-	served := make(chan error, 1)
-	task.Go(ctx, "engine listener", func() { served <- app.Listener(ln) })
-
-	select {
-	case err := <-served:
-		if err != nil && !errors.Is(err, net.ErrClosed) {
-			return fmt.Errorf("serving: %w", err)
-		}
-		return nil
-	case <-ctx.Done():
-		logger.Info("shutting down")
-		if serr := app.ShutdownWithTimeout(shutdownBudget); serr != nil {
-			return fmt.Errorf("shutting down: %w", serr)
-		}
-		<-served
-		return nil
+	srv := server.NewServe(build, logger)
+	if serr := srv.Swap(addr); serr != nil {
+		return fmt.Errorf("serving on %s: %w", addr, serr)
 	}
+	logger.Info("serving the engine",
+		"url", scheme+"://"+srv.Current().Ln.Addr().String(), "data", abs)
+
+	// A saved bind address moves the socket. The old generation keeps
+	// answering until the new one is confirmed serving, so an address that
+	// cannot be bound leaves the server exactly where it was.
+	eng.OnBindChange(addr, func(next string) {
+		if serr := srv.Swap(next); serr != nil {
+			logger.Error("the bind address could not be moved",
+				"address", next, "error", serr)
+			return
+		}
+		logger.Info("the listener moved", "url", scheme+"://"+next)
+	})
+
+	<-ctx.Done()
+	logger.Info("shutting down")
+	if serr := srv.Shutdown(); serr != nil {
+		return fmt.Errorf("shutting down: %w", serr)
+	}
+	return nil
 }
 
 // bootSettings reads the stored settings and the registered share hosts from

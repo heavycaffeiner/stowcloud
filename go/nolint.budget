@@ -468,5 +468,15 @@
 # 112: the jail proof's diagnostic re-run. Two errcheck suppressions, on the
 # failure path of another test: the pool close and the decode whose error is
 # not the answer, the worker's own words are.
-23
-112
+#
+# 113: the listener swap's self-check. G402 reads the skipped verification;
+# the request only asks whether anything answers the socket, and the
+# deployment's own certificate is routinely one this process would not trust:
+# self-signed on first boot, and issued for a host name rather than for the
+# address being dialled.
+#
+# 24 (the old tree): the listener builder's close on a failed bind. errcheck
+# reads the discarded error; the bind already failed and the listener is going
+# away with it.
+24
+113

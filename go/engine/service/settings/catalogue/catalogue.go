@@ -185,22 +185,28 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 		list("allowed_origins", values.AllowedOrigins, false, ""),
 		list("trusted_proxies", values.TrustedProxy, false,
 			"settings.empty_trusted_proxies"),
-		str("bind", values.Listen, true, ""),
+		// A save moves the socket: the process binds the new address, waits
+		// for it to answer a request, and only then drains the old one. A
+		// bind that fails leaves the server where it was.
+		str("bind", values.Listen, false, ""),
 		str("compat_canonical_url", values.CompatCanonicalURL, false, ""),
 
-		// The homes share is registered once, at startup.
-		boolean("homes.enabled", values.HomesEnabled, true),
-		str("homes.root", values.HomesRoot, true, ""),
+		// A settings save registers or withdraws the homes share, and the core
+		// treats a repeat as a re-registration, so both the switch and the
+		// root apply without a restart.
+		boolean("homes.enabled", values.HomesEnabled, false),
+		str("homes.root", values.HomesRoot, false, ""),
 
 		// The sandbox is applied before anything serves.
 		choice("security.hardening", values.Hardening.String(),
 			[]string{"required", "preferred", "off"}, true),
 
-		// The size guard's switch is what applies its numbers, so the numbers
-		// can be set before it is turned on.
-		boolean("db.size_guard", values.DBGuard.Enabled(), true),
-		intField("db.max_bytes", byteCount(values.DBGuard.MaxBytes), true),
-		intField("db.min_free_bytes", byteCount(values.DBGuard.MinFreeBytes), true),
+		// A settings save starts, replaces or stops the sampler, so a change
+		// takes effect on the next sample rather than at the next start. The
+		// switch is what applies the numbers, so they can be set first.
+		boolean("db.size_guard", values.DBGuard.Enabled(), false),
+		intField("db.max_bytes", byteCount(values.DBGuard.MaxBytes), false),
+		intField("db.min_free_bytes", byteCount(values.DBGuard.MinFreeBytes), false),
 
 		// A settings save publishes to the sidecar, which renders these and
 		// acts on the switch: on starts the daemon, off stops it and prunes

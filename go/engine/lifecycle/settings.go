@@ -77,6 +77,49 @@ func (e *Engine) loadSettings(ctx context.Context) {
 	// per client, and replacing it would discard every one of them, handing a
 	// full burst to whoever was being throttled at that moment.
 	e.limiter.SetLimits(values.RatePerSec, float64(values.RateBurst))
+
+	// Home folders. Applied here rather than only at boot, so turning them on
+	// or moving their root takes effect without a restart: the core treats a
+	// second call as a re-registration of the same reserved share.
+	if e.Core != nil {
+		e.applyHomes(ctx, values)
+	}
+
+	// The database size guard. Started, restarted or stopped here, because
+	// the sampler holds the configuration it was given and a change has to
+	// replace the goroutine rather than mutate what it is reading.
+	e.applySizeGuard(ctx, values)
+
+	// The bind address, when it moved. The listener belongs to the process
+	// rather than to this engine, so the change is handed out rather than
+	// applied here: a swap that fails leaves the old socket answering, and
+	// only the caller that owns the supervisor can decide that.
+	e.bindMu.Lock()
+	onBind, was := e.onBind, e.boundAddr
+	e.boundAddr = values.Listen
+	e.bindMu.Unlock()
+
+	if onBind != nil && values.Listen != "" && values.Listen != was {
+		onBind(values.Listen)
+	}
+}
+
+// OnBindChange registers what to do when a settings save moves the listen
+// address.
+//
+// The listener belongs to the process, not to this engine: it was built before
+// Open and it outlives any one mount. So the engine reports the change and the
+// caller decides, which is what lets a failed rebind leave the old socket
+// answering.
+//
+// The address this engine already believes it is on is recorded here, so
+// registering the hook does not immediately fire it for the address the caller
+// just bound.
+func (e *Engine) OnBindChange(current string, fn func(addr string)) {
+	e.bindMu.Lock()
+	defer e.bindMu.Unlock()
+	e.boundAddr = current
+	e.onBind = fn
 }
 
 // parsePrefixes reads the operator's proxy list into the form the client
