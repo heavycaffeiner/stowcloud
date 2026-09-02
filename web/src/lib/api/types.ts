@@ -757,6 +757,9 @@ export interface CopyResult {
 export interface TrashEntry {
   id: string
   name: string
+  /** A directory's own size is its listing's inode bytes, not what it holds,
+   *  so the screen does not show it. */
+  is_dir: boolean
   size: number
   /** When it was moved into the trash. Nanoseconds as a string, same rule as
    *  `Entry.mtime_ns`. Was `deleted_mtime_ns`, which carried the file's own
@@ -1059,7 +1062,10 @@ export interface SettingsField {
    *  NetBIOS name turns the name service off. A catalogue key. Absent on
    *  every other field, where empty just means unset. */
   empty_means_key?: string
-  readonly_reason_key: string | null
+  /** Absent when this build's catalogue does not attach a reason to a
+   *  read-only field, and absent on every editable field. `null` and
+   *  absent are read alike: the screen shows no reason either way. */
+  readonly_reason_key?: string | null
 }
 
 /** The setting groups this server recognises. */
@@ -1159,6 +1165,26 @@ export interface ApplyOutcome {
   findings: SettingsFinding[]
 }
 
+/** `GET /api/v1/system/health` — the container probe's own projection.
+ *  Unauthenticated and unauthenticated-safe: a fixed status plus a fixed
+ *  vocabulary of reason tokens, nothing that names a path or an account.
+ *  Polled by the restart dialog because the socket is expected to drop and
+ *  come back while the process re-execs itself. */
+export interface SystemHealth {
+  status: 'ok' | 'degraded' | 'failing'
+  reasons: string[]
+}
+
+/** `POST /api/v1/admin/system/restart` response. `202` before the process
+ *  goes down, so the counts describe what is already being interrupted by
+ *  the time this is read, not a preview to decide against — the decision
+ *  already happened at the confirm dialog. */
+export interface SystemRestartResult {
+  restarting: boolean
+  active_uploads: number
+  active_jobs: number
+}
+
 /** `PATCH /api/v1/admin/settings/smb` body. The publisher is assembled once,
  *  so this section is stored and waits for the next start; the response says
  *  what a restart would interrupt and the operator takes it. */
@@ -1174,15 +1200,16 @@ export interface SmbSettingsReq {
   allow_public_bind: boolean
   totp_policy: 'require_separate' | 'block'
   service_gid: number
+  /** Pins which addresses the sidecar binds, replacing its own device
+   *  detection. Empty leaves detection in charge. */
+  interfaces: string[]
 }
 
 /** `PATCH /api/admin/server-settings/search` body (`SearchPatch`) — fully
  *  live. */
 export interface SearchSettingsReq {
   max_concurrent_fast: number
-  max_concurrent_slow: number
   walk_deadline_fast_ms: number
-  walk_deadline_slow_ms: number
 }
 
 /** `PATCH /api/admin/server-settings/archive` body (`ArchivePatch`) — fully
@@ -1201,15 +1228,25 @@ export interface RateSettingsReq {
 /**
  * `PATCH /api/admin/server-settings/network` body.
  *
- * The two lists are holders the request chain reads, so a save moves them at
- * once. `bind` is a socket rather than a holder: saving it binds the new
- * address before it drops the old one, so it applies without a restart too,
- * and a refused bind leaves the server reachable where it was.
+ * Every field here is a holder the request chain reads live, so a save
+ * applies at once with no restart. `bind` is the one exception in kind
+ * rather than in timing: saving it moves the socket, binding the new
+ * address before it drops the old one, so a refused bind leaves the server
+ * reachable where it was.
  */
 export interface NetworkSettingsReq {
   /** The host names this server answers on, which is also the origin check
    *  every state-changing request passes. An empty list admits nothing. */
   app_hosts: string[]
+  /** The cookie-free compatibility content origin(s), disjoint from
+   *  `app_hosts`: one TLS name cannot carry both roles. */
+  content_hosts: string[]
+  /** CORS-readable public compatibility responses only. Never widens the
+   *  host guard and never confers credential trust. */
+  allowed_origins: string[]
+  /** The fallback origin used when a request's own is unavailable. Must
+   *  name one of `app_hosts`. */
+  compat_canonical_url: string
   /** CIDR ranges whose `X-Forwarded-For` is believed. Empty trusts no proxy,
    *  so the peer address is the client address. */
   trusted_proxies: string[]
@@ -1217,19 +1254,19 @@ export interface NetworkSettingsReq {
   bind?: string
 }
 
-/** `PATCH /api/admin/server-settings/db` body (`DbPatch`) —
- *  restart-required. */
+/** `PATCH /admin/settings/db` body (`DbPatch`). The switch and both bounds
+ *  reach the running size-guard sampler directly, so a save applies without
+ *  a restart. */
 export interface DbSettingsReq {
   size_guard: boolean
   max_bytes: number
   min_free_bytes: number
 }
 
-/** `PATCH /api/admin/server-settings/symlink-policy` body (`SymlinkPatch`) —
- *  restart-required. */
-export interface SymlinkPolicyReq {
-  policy: 'deny' | 'within_share' | 'follow'
-}
+// symlink-policy has no client request type. `symlinkPolicy` is a per-share
+// row (`AdminShare`'s own creation flow decides it), read from `share_definition`
+// rather than the settings document; a PATCH to `/admin/settings/symlink-policy`
+// stores a value nothing loads. See `go/tools/settingscheck`'s allow-list.
 
 /** `PATCH /api/admin/server-settings/homes` body (`HomesPatch`). The homes
  *  share is registered at startup, so this restarts the process. */
@@ -1238,17 +1275,19 @@ export interface HomesSettingsReq {
   root: string | null
 }
 
-/** `PATCH /api/admin/server-settings/watch` body (`WatchPatch`). The watcher
- *  takes its bounds when it starts, so this restarts the process. */
+/** `PATCH /api/admin/server-settings/watch` body (`WatchPatch`). Both bounds
+ *  reach the running watcher directly, so a save applies without a restart.
+ *  `backend` is not here: this build implements exactly one transport
+ *  (inotify), nothing reads a stored choice, and the catalogue does not
+ *  report the field. */
 export interface WatchSettingsReq {
-  backend: 'auto' | 'hotset' | 'inotify_full' | 'fanotify'
   hot_set_max: number
   full_threshold: number
 }
 
 /** `PATCH /api/admin/server-settings/oidc` body (`OidcPatch`): the eight
- *  rows §6-4 marks UI-editable, all restart-required (the relying party, its
- *  TLS client and its two caches are assembled once at startup).
+ *  rows §6-4 marks UI-editable. The provider is rebuilt when settings load,
+ *  so a save applies without a restart.
  *
  *  The other two `oidc.*` settings are not here on purpose.
  *  `oidc.client_secret_file` is the path to a secret, and
@@ -1273,14 +1312,9 @@ export interface OidcSettingsReq {
   smb_policy: 'block'
 }
 
-/** `PATCH /api/admin/server-settings/paths` body (`PathsPatch`) —
- *  restart-required, and the one group the server can refuse outright: it
- *  will not accept a `data_dir` that does not already hold the databases, nor
- *  a `master_key_file` whose bytes differ from the current key. Both are
- *  relocation settings, not "point somewhere new and start fresh". */
-export interface PathsSettingsReq {
-  data_dir: string
-  /** `null` means `<data_dir>/master.key`. */
-  master_key_file: string | null
-  smb_config_dir: string
-}
+// paths has no client request type either. `data_dir` arrives as a process
+// argument, and `smb.config_dir` is read from the `smb` section (see
+// `SmbSettingsReq`), not from a `paths` section: a write to
+// `/admin/settings/paths` is accepted, stored, and read by nothing. Both
+// stay reported read-only, under `PATH_KEYS` in
+// `ui/admin/ServerSettingsSection.svelte`.

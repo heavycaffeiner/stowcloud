@@ -78,6 +78,8 @@ export type {
   SettingsSource,
   SettingsField,
   SettingsSnapshot,
+  SystemHealth,
+  SystemRestartResult,
   ApplyOutcome,
   SmbSettingsReq,
   SearchSettingsReq,
@@ -85,10 +87,8 @@ export type {
   NetworkSettingsReq,
   OidcSettingsReq,
   DbSettingsReq,
-  SymlinkPolicyReq,
   HomesSettingsReq,
-  WatchSettingsReq,
-  PathsSettingsReq
+  WatchSettingsReq
 } from './types'
 export { ALL_GRANT_PERMS } from './types'
 export { ApiError } from './types'

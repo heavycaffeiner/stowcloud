@@ -38,7 +38,6 @@ import {
   type MoveReq,
   type NetworkSettingsReq,
   type OidcSettingsReq,
-  type PathsSettingsReq,
   type FolderSize,
   type ReadFileResponse,
   type RecentHit,
@@ -47,6 +46,8 @@ import {
   type SessionInfo,
   type SettingsSnapshot,
   type SettingsSectionId,
+  type SystemHealth,
+  type SystemRestartResult,
   type BatchItemResult,
   type CopyResult,
   type ShareLinkCreateReq,
@@ -54,7 +55,6 @@ import {
   type ShareLinkPatchReq,
   type SmbSettingsReq,
   type StorageReport,
-  type SymlinkPolicyReq,
   type TrashEntry,
   type UpdateGrantReq,
   type UpdateGroupReq,
@@ -660,10 +660,14 @@ async function jobCancel(id: string): Promise<void> {
 // ── trash ──
 
 async function trashList(): Promise<TrashEntry[]> {
-  const rows = await request<Array<{ id: string; name: string; size: string; deleted_at_ns: string }>>('/trash')
+  const rows =
+    await request<Array<{ id: string; name: string; is_dir?: boolean; size: string; deleted_at_ns: string }>>(
+      '/trash'
+    )
   return (rows ?? []).map((w) => ({
     id: w.id,
     name: w.name,
+    is_dir: w.is_dir === true,
     size: Number(w.size ?? 0),
     deleted_at_ns: w.deleted_at_ns
   }))
@@ -1174,54 +1178,96 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
   return request('/admin/settings')
 }
 
+/**
+ * A settings save answers `422` for a blocking finding, but the body is
+ * still an `ApplyOutcomeView` (`stored`/`applied`/`restart_required` all
+ * false, `findings` naming what refused it), not the wire error envelope
+ * `request()` otherwise expects. Routed around `request()` so that body
+ * reaches the caller as data instead of being discarded for a generic
+ * "internal error" — a refusal a screen cannot render is a refusal the
+ * operator cannot act on. Any other non-2xx is still a real failure and
+ * throws the ordinary way.
+ */
+async function settingsPatch(path: string, body: unknown): Promise<ApplyOutcome> {
+  const headers = new Headers({ 'Content-Type': 'application/json; charset=utf-8' })
+  if (csrfToken) headers.set('Sc-Csrf', csrfToken)
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PATCH',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify(body)
+  })
+  const parsed = await res.json().catch(() => ({}))
+  if (res.status === 422 && Array.isArray((parsed as Partial<ApplyOutcome>).findings)) {
+    return parsed as ApplyOutcome
+  }
+  if (!res.ok) throw errorFrom(res, parsed)
+  return parsed as ApplyOutcome
+}
+
 async function adminSetSmbSettings(req: SmbSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/settings/smb', { method: 'PATCH', body: JSON.stringify(req) })
+  return settingsPatch('/admin/settings/smb', req)
 }
 
 async function adminSetSearchSettings(req: SearchSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/settings/search', { method: 'PATCH', body: JSON.stringify(req) })
+  return settingsPatch('/admin/settings/search', req)
 }
 
 async function adminSetArchiveSettings(req: ArchiveSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/settings/archive', { method: 'PATCH', body: JSON.stringify(req) })
+  return settingsPatch('/admin/settings/archive', req)
 }
 
 async function adminSetRateSettings(req: RateSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/settings/rate', { method: 'PATCH', body: JSON.stringify(req) })
+  return settingsPatch('/admin/settings/rate', req)
 }
 
 async function adminSetNetworkSettings(req: NetworkSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/settings/network', { method: 'PATCH', body: JSON.stringify(req) })
+  return settingsPatch('/admin/settings/network', req)
 }
 
 async function adminSetDbSettings(req: DbSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/settings/db', { method: 'PATCH', body: JSON.stringify(req) })
-}
-
-async function adminSetSymlinkPolicySettings(req: SymlinkPolicyReq): Promise<ApplyOutcome> {
-  return request('/admin/settings/symlink-policy', { method: 'PATCH', body: JSON.stringify(req) })
+  return settingsPatch('/admin/settings/db', req)
 }
 
 async function adminSetHomesSettings(req: HomesSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/settings/homes', { method: 'PATCH', body: JSON.stringify(req) })
+  return settingsPatch('/admin/settings/homes', req)
 }
 
 async function adminSetWatchSettings(req: WatchSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/settings/watch', { method: 'PATCH', body: JSON.stringify(req) })
+  return settingsPatch('/admin/settings/watch', req)
 }
 
-/** All of it restart-required, and two of the ten `oidc.*` settings are
- *  missing from the body on purpose. See `OidcSettingsReq`. */
+/** The provider is rebuilt when settings load, so a save applies without a
+ *  restart. Two of the ten `oidc.*` settings are missing from the body on
+ *  purpose. See `OidcSettingsReq`. */
 async function adminSetOidcSettings(req: OidcSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/settings/oidc', { method: 'PATCH', body: JSON.stringify(req) })
+  return settingsPatch('/admin/settings/oidc', req)
 }
 
-/** Rejects with `422` and a Korean reason whenever the change would leave the
- *  server unable to restart — an unwritable or unmigrated `data_dir`, a
- *  `master_key_file` that is a different key. The reason is meant to be shown
- *  verbatim. */
-async function adminSetPathsSettings(req: PathsSettingsReq): Promise<ApplyOutcome> {
-  return request('/admin/settings/paths', { method: 'PATCH', body: JSON.stringify(req) })
+// symlink-policy and paths have no client save function: neither is read
+// back by anything server-side (see the comments beside `SmbSettingsReq`
+// in types.ts), so both are reported read-only rather than offered as
+// editors that would store a value nothing ever applies.
+
+// ── admin: self-restart (`go/engine/http/server`'s `syscall.Exec` swap) ──
+
+/** `POST /api/v1/admin/system/restart`. Answers `202` before the process
+ *  goes down: the exec that replaces the process image happens after this
+ *  response is written, so a caller that got an answer here really did reach
+ *  the server and the restart really is underway. */
+async function adminSystemRestart(): Promise<SystemRestartResult> {
+  return request('/admin/system/restart', { method: 'POST' })
+}
+
+/** `GET /api/v1/system/health` — the unauthenticated container probe, reused
+ *  here to detect the process answering again after a restart. Not routed
+ *  through `request()`: that helper's non-2xx path expects the wire error
+ *  envelope, and a health probe answering `503 degraded` is still a real
+ *  answer, not a failure to reach the server, so its body is read directly. */
+async function systemHealth(): Promise<SystemHealth> {
+  const res = await fetch(`${BASE}/system/health`, { credentials: 'include' })
+  const body = await res.json()
+  return body as SystemHealth
 }
 
 // ── admin: user management ──
@@ -1679,11 +1725,11 @@ export const httpApi = {
   adminSetRateSettings,
   adminSetNetworkSettings,
   adminSetDbSettings,
-  adminSetSymlinkPolicySettings,
   adminSetHomesSettings,
   adminSetWatchSettings,
   adminSetOidcSettings,
-  adminSetPathsSettings,
+  adminSystemRestart,
+  systemHealth,
   adminListUsers,
   adminCreateUser,
   adminSetUserDisabled,

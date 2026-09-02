@@ -1,25 +1,26 @@
 <script lang="ts">
   // Server settings: every operator-settable field this deployment has,
-  // reachable from this one screen
-  // (`go/internal/httpapi/handler/settings.go`). There is no config file, so
-  // this is the only place a deployment is configured. Most groups apply live;
-  // the bind address, db/symlink-policy/homes, single sign-on, the sandbox
-  // policy and SMB's own on/off switch need a restart, handled by the restart
-  // section at the bottom.
+  // reachable from this one screen (`go/engine/service/settings/catalogue`).
+  // There is no config file, so this is the only place a deployment is
+  // configured. Most groups apply live; homes, single sign-on's provider,
+  // the sandbox policy and SMB's own on/off switch used to need a restart —
+  // per this batch's field decisions only `security.hardening` still does
+  // (Landlock/seccomp cannot be undone by the process that installed them),
+  // handled by mounting `RestartDialog` whenever a save's own outcome says so.
   //
   // `snapshot.fields` is one flat, dotted-key list keyed by section and
-  // field — this component groups by an explicit key
-  // set per form below, and anything left over (a field this screen doesn't
-  // have a dedicated control for, always because it's `readonly_reason_key`'d —
-  // the server never emits an editable field outside these groups)
-  // renders generically at the bottom instead of being silently dropped.
+  // field. This component groups by an explicit key set per form below
+  // (`EDITABLE_KEYS`); anything left over renders read-only at the bottom
+  // with whatever reason it carries, rather than being silently dropped —
+  // a field this screen cannot edit is still visible, never invisible.
   import { t } from '../../i18n'
-  import { api, ApiError } from '../../api/client'
+  import { api } from '../../api/client'
   import { describeApiError, serverKeyText } from '../../api/error-text'
-  import { BYTES_PER_MB, bytesToMb, formatBytes } from '../../format/bytes'
+  import { BYTES_PER_MB, bytesToMb } from '../../format/bytes'
   import type {
     SettingsSnapshot,
     SettingsField,
+    SettingsFinding,
     SettingsSectionId,
     ApplyOutcome,
     SmbSettingsReq,
@@ -27,7 +28,9 @@
     ArchiveSettingsReq,
     NetworkSettingsReq,
     HomesSettingsReq,
-    WatchSettingsReq
+    WatchSettingsReq,
+    DbSettingsReq,
+    OidcSettingsReq
   } from '../../api/types'
   import { SelectOutlined } from 'm3-svelte'
   import Button from '../Button.svelte'
@@ -35,21 +38,11 @@
   import Switch from '../Switch.svelte'
   import ConfirmDialog from '../ConfirmDialog.svelte'
   import ProgressCircular from '../ProgressCircular.svelte'
+  import RestartDialog from './RestartDialog.svelte'
 
   const SMB_TOTP_OPTIONS = [
     { value: 'require_separate', text: t('server.require_separate_smb_password_default') },
     { value: 'block', text: t('server.smb_not_allowed') }
-  ]
-  const SYMLINK_OPTIONS = [
-    { value: 'deny', text: t('server.deny_default') },
-    { value: 'within_share', text: t('server.allow_only_targets_inside_share') },
-    { value: 'follow', text: t('server.allow_all') }
-  ]
-  const WATCH_BACKEND_OPTIONS = [
-    { value: 'auto', text: t('server.automatic_default') },
-    { value: 'hotset', text: t('server.watch_recently_opened_folders') },
-    { value: 'inotify_full', text: t('server.watch_every_folder') },
-    { value: 'fanotify', text: t('server.watch_whole_filesystem') }
   ]
 
   let snapshot = $state<SettingsSnapshot | null>(null)
@@ -60,29 +53,16 @@
     return snapshot?.fields.find((f) => f.key === key)
   }
 
-  // The paths section: what the process opened before anything could be
-  // configured, reported rather than offered. The bind address is not one of
-  // them any more; it is a setting like the rest and lives with the network
-  // form, which is the group it decides.
-  const PATH_KEYS = ['data_dir', 'smb.config_dir']
-
   /**
    * The human name for a reported field.
    *
-   * These two lists are read-only: they say what the server is running on
-   * rather than offering a control, so they have no form label of their own.
-   * Showing the settings key instead put `oidc.allow_private_endpoints` on
-   * screen, which is the name the two programs use for it and not one anybody
-   * reads. A key with no catalogue entry falls back to itself, which is worse
-   * than a translation and better than a blank row.
+   * A key with no catalogue entry falls back to itself, which is worse than
+   * a translation and better than a blank row.
    */
-  //   /* i18n */ 'field.oidc_enabled'
-  //   /* i18n */ 'field.oidc_issuer'
-  //   /* i18n */ 'field.oidc_client_id'
-  //   /* i18n */ 'field.oidc_display_name'
   //   /* i18n */ 'field.oidc_ca_cert_file'
-  //   /* i18n */ 'field.oidc_allow_private_endpoints'
   //   /* i18n */ 'field.smb_config_dir'
+  //   /* i18n */ 'field.smb_agent_socket'
+  //   /* i18n */ 'field.security_hardening'
   //   /* i18n */ 'field.data_dir'
   function fieldLabel(key: string): string {
     // Catalogue keys carry one dot, so a settings key's own dots become
@@ -97,15 +77,9 @@
   // The keys the server can send that no call site here shows literally:
   //   /* i18n */ 'settings.empty_trusts_no_proxy'
   //   /* i18n */ 'settings.empty_disables_netbios_name'
-  //   /* i18n */ 'settings.readonly_data_dir'
   function emptyNote(key: string): string | null {
     const f = field(key)
     return f?.empty_means_key ? t(f.empty_means_key) : null
-  }
-
-  function sourceLabel(src: SettingsField['source']): string {
-    if (src === 'admin_override') return t('server.admin_override')
-    return t('server.default')
   }
 
   function arrToStr(v: unknown): string {
@@ -119,9 +93,7 @@
   }
 
   // The server answers three separate facts: stored, applied, and whether a
-  // restart is needed. This used to compare `applied` against strings the
-  // server has never sent, so every save reported itself as immediate,
-  // including the ones sitting inert until the container went down.
+  // restart is needed.
   function outcomeText(o: ApplyOutcome): string {
     if (o.restart_required) return t('server.change_takes_full_effect_only')
     if (o.applied) return t('server.change_took_effect_immediately')
@@ -140,6 +112,58 @@
     return String(v)
   }
 
+  // ── the checker's own findings ──
+  //
+  // A save answers with what it learned by trying the change, not just
+  // whether it worked. A blocking finding refused the save outright; an
+  // advisory one saved anyway and is worth reading. `settings.check_passed`
+  // is the checker's "nothing to say" filler and carries no field of its
+  // own — showing it adds nothing a blank list didn't already say, so it is
+  // the one reason filtered out here.
+  function findingsOf(o: ApplyOutcome | null): SettingsFinding[] {
+    return (o?.findings ?? []).filter((f) => f.reason !== 'settings.check_passed')
+  }
+
+  // ── range validation ──
+  //
+  // `SettingsField.range` carries the same bounds the server checks at save
+  // time. Reading it here means a value outside the bound is refused before
+  // the round trip, not after — the server-side check stays, this is only
+  // for the operator's benefit.
+  function rangeError(key: string, raw: string): string | null {
+    const r = field(key)?.range
+    if (!r || r.kind !== 'int') return null
+    const n = Number(raw)
+    if (!Number.isInteger(n) || n < r.min || n > r.max) {
+      return t('server.enter_a_value_between', { min: r.min, max: r.max })
+    }
+    return null
+  }
+  function intRangeAttrs(key: string): { min?: number; max?: number } {
+    const r = field(key)?.range
+    return r && r.kind === 'int' ? { min: r.min, max: r.max } : {}
+  }
+
+  // ── moving focus to a failed save's own error ──
+  //
+  // `role="alert"` announces the text to a screen reader; it does not move
+  // anyone's focus. A keyboard or screen-reader user who just pressed Save
+  // is left exactly where they were, with no indication anything happened
+  // unless they go looking. `tabindex="-1"` makes the paragraph a valid
+  // focus target without adding it to the tab order, and the action moves
+  // focus to it whenever the message actually changes — not on every
+  // re-render, so retrying with the identical refusal does not steal focus
+  // a second time from whatever the operator has since done.
+  function focusOnError(node: HTMLElement, error: string | null) {
+    let last: string | null = null
+    function apply(v: string | null) {
+      if (v && v !== last) node.focus()
+      last = v
+    }
+    apply(error)
+    return { update: apply }
+  }
+
   // ── sections ──
   //
   // Saving is what tries the change. The server renders the SMB
@@ -147,22 +171,6 @@
   // still contains the host this browser is talking to, and refuses the write
   // when one of those fails, naming the field. There is no preview button
   // beside the save: it asked a question the next click answered.
-
-  type Section = { id: SettingsSectionId; name: string }
-
-  const SECTIONS: Section[] = [
-    { id: 'smb', name: 'SMB' },
-    { id: 'search', name: t('common.search') },
-    { id: 'archive', name: t('server.zip_download') },
-    { id: 'network', name: t('server.network') },
-    { id: 'homes', name: t('server.home_folders') },
-    { id: 'watch', name: t('server.file_watching') },
-    { id: 'rate', name: t('server.request_rate') }
-  ]
-
-  function sectionName(id: SettingsSectionId): string {
-    return SECTIONS.find((s) => s.id === id)?.name ?? id
-  }
 
   // The catalogue renders the sentence; a refused save carries only the key
   // and its placeholders. The keys cannot be seen at the call site, so they
@@ -189,75 +197,23 @@
   /* i18n */ 'settings.guard_has_no_bound'
   /* i18n */ 'settings.required_when_enabled'
   /* i18n */ 'settings.issuer_must_be_https'
-  /** The bodies each save sends. Numbers are sent as numbers: the server
-   *  reads them as such, and a numeric string would fail its bound check for
-   *  the wrong reason. */
-  function smbBody(): Record<string, unknown> {
-    return {
-      enabled: smbEnabled,
-      workgroup: smbWorkgroup,
-      server_name: smbServerName,
-      service_user: smbServiceUser,
-      allow_public_bind: smbAllowPublicBind,
-      totp_policy: smbTotpPolicy,
-      service_gid: Number(smbServiceGid)
-    }
-  }
-
-  function searchBody(): Record<string, unknown> {
-    return {
-      max_concurrent_fast: Number(searchMaxFast),
-      max_concurrent_slow: Number(searchMaxSlow),
-      walk_deadline_fast_ms: Number(searchDeadlineFast),
-      walk_deadline_slow_ms: Number(searchDeadlineSlow)
-    }
-  }
-
-  function archiveBody(): Record<string, unknown> {
-    return { max_concurrent: Number(archiveMax) }
-  }
-
-  function rateBody(): Record<string, unknown> {
-    return { per_sec: Number(ratePerSec), burst: Number(rateBurst) }
-  }
-
-  function networkBody(): Record<string, unknown> {
-    return {
-      app_hosts: strToArr(netAppHosts),
-      trusted_proxies: strToArr(netTrustedProxies),
-      bind: netBind.trim()
-    }
-  }
-
-  function homesBody(): Record<string, unknown> {
-    return { enabled: homesEnabled, root: homesRoot.trim() || null }
-  }
-
-  function watchBody(): Record<string, unknown> {
-    return {
-      backend: watchBackend,
-      hot_set_max: Number(watchHotSetMax),
-      full_threshold: Number(watchFullThreshold)
-    }
-  }
-
-
+  /* i18n */ 'settings.canonical_url_not_an_app_host'
+  /* i18n */ 'settings.duplicate_host'
+  /* i18n */ 'settings.host_role_conflict'
+  /* i18n */ 'settings.invalid_origin'
 
   // ── the restart a save needs ──
   //
-  // Some sections are decided when the process builds what is under the
-  // sandbox, so a change there is stored and waits for the next start. The
-  // server does not restart itself: it reports what a restart would interrupt
-  // and leaves the decision, because whether losing three uploads is
-  // acceptable is not something it can answer.
-  //
-  // The counts come from the save's own response rather than a separately
-  // polled snapshot, which could be stale by the time somebody reads it.
+  // Only `security.hardening` needs one now; every other section this
+  // screen edits applies live. When a save's own `ApplyOutcome` reports
+  // `restart_required`, `RestartDialog` (owned by `FrontendRestart`) is
+  // opened with that outcome — it offers the restart itself, polls health
+  // until the process answers again, and calls back here to reload.
 
-  let busyOpen = $state(false)
-  let busyCounts = $state<{ uploads: number; jobs: number } | null>(null)
+  let restartOutcome = $state<ApplyOutcome | null>(null)
+  let restartOpen = $state(false)
 
-  /** Runs a save and surfaces what a pending restart would interrupt. */
+  /** Runs a save and offers a restart when the outcome needs one. */
   async function saving(
     run: () => Promise<ApplyOutcome>,
     fallback: string,
@@ -266,11 +222,9 @@
     try {
       const outcome = await run()
       set(outcome, null)
-      const uploads = outcome.active_uploads ?? 0
-      const jobs = outcome.active_jobs ?? 0
-      if (outcome.restart_required && uploads + jobs > 0) {
-        busyCounts = { uploads, jobs }
-        busyOpen = true
+      if (outcome.restart_required) {
+        restartOutcome = outcome
+        restartOpen = true
       }
       await load()
     } catch (err) {
@@ -287,6 +241,7 @@
   let smbAllowPublicBind = $state(false)
   let smbTotpPolicy = $state<'require_separate' | 'block'>('require_separate')
   let smbServiceGid = $state('')
+  let smbInterfaces = $state('')
   let smbSaving = $state(false)
   let smbError = $state<string | null>(null)
   let smbOutcome = $state<ApplyOutcome | null>(null)
@@ -310,7 +265,8 @@
       service_user: smbServiceUser,
       allow_public_bind: smbAllowPublicBind,
       totp_policy: smbTotpPolicy,
-      service_gid: gid
+      service_gid: gid,
+      interfaces: strToArr(smbInterfaces)
     }
     smbSaving = true
     await saving(
@@ -321,12 +277,10 @@
     smbSaving = false
   }
 
-  // ── search ──
+  // ── search ── (both fields fully live)
 
   let searchMaxFast = $state('')
-  let searchMaxSlow = $state('')
   let searchDeadlineFast = $state('')
-  let searchDeadlineSlow = $state('')
   let searchSaving = $state(false)
   let searchError = $state<string | null>(null)
   let searchOutcome = $state<ApplyOutcome | null>(null)
@@ -334,16 +288,15 @@
   async function saveSearch(): Promise<void> {
     searchError = null
     searchOutcome = null
-    const nums = [searchMaxFast, searchMaxSlow, searchDeadlineFast, searchDeadlineSlow].map(Number)
-    if (nums.some((n) => !Number.isInteger(n) || n < 0)) {
-      searchError = t('server.every_value_must_integer_0')
+    const maxErr = rangeError('search.max_concurrent_fast', searchMaxFast)
+    const deadlineErr = rangeError('search.walk_deadline_fast_ms', searchDeadlineFast)
+    if (maxErr || deadlineErr) {
+      searchError = maxErr ?? deadlineErr
       return
     }
     const req: SearchSettingsReq = {
-      max_concurrent_fast: nums[0],
-      max_concurrent_slow: nums[1],
-      walk_deadline_fast_ms: nums[2],
-      walk_deadline_slow_ms: nums[3]
+      max_concurrent_fast: Number(searchMaxFast),
+      walk_deadline_fast_ms: Number(searchDeadlineFast)
     }
     searchSaving = true
     try {
@@ -366,14 +319,14 @@
   async function saveArchive(): Promise<void> {
     archiveError = null
     archiveOutcome = null
-    const n = Number(archiveMax)
-    if (!Number.isInteger(n) || n < 1) {
-      archiveError = t('server.must_integer_1_or_more')
+    const rerr = rangeError('archive.max_concurrent', archiveMax)
+    if (rerr) {
+      archiveError = rerr
       return
     }
     archiveSaving = true
     try {
-      archiveOutcome = await api.adminSetArchiveSettings({ max_concurrent: n })
+      archiveOutcome = await api.adminSetArchiveSettings({ max_concurrent: Number(archiveMax) })
       await load()
     } catch (err) {
       archiveError = describeApiError(err, t('server.could_not_save_archive_settings'))
@@ -383,14 +336,11 @@
   }
 
   // ── network ──
-  //
-  // Two editable fields, which is what the server actually stores and applies.
-  // The bind address is in this form because it is in this section, and
-  // saving it moves the socket: the server binds the new address before it
-  // drops the old one, so a refused bind leaves the deployment reachable and
-  // the save says so.
 
   let netAppHosts = $state('')
+  let netContentHosts = $state('')
+  let netAllowedOrigins = $state('')
+  let netCanonicalUrl = $state('')
   let netTrustedProxies = $state('')
   let netBind = $state('')
   let netSaving = $state(false)
@@ -410,6 +360,9 @@
     }
     const req: NetworkSettingsReq = {
       app_hosts: hosts,
+      content_hosts: strToArr(netContentHosts),
+      allowed_origins: strToArr(netAllowedOrigins),
+      compat_canonical_url: netCanonicalUrl.trim(),
       trusted_proxies: strToArr(netTrustedProxies),
       bind: netBind.trim() || undefined
     }
@@ -424,7 +377,39 @@
     }
   }
 
-  // ── homes (restart-required) ──
+  // ── database size guard ──
+
+  let dbSizeGuard = $state(false)
+  let dbMaxBytesMb = $state('')
+  let dbMinFreeBytesMb = $state('')
+  let dbSaving = $state(false)
+  let dbError = $state<string | null>(null)
+  let dbOutcome = $state<ApplyOutcome | null>(null)
+
+  async function saveDb(): Promise<void> {
+    dbError = null
+    dbOutcome = null
+    const maxMb = Number(dbMaxBytesMb)
+    const minMb = Number(dbMinFreeBytesMb)
+    if (!Number.isFinite(maxMb) || maxMb < 0 || !Number.isFinite(minMb) || minMb < 0) {
+      dbError = t('server.every_value_must_integer_0')
+      return
+    }
+    const req: DbSettingsReq = {
+      size_guard: dbSizeGuard,
+      max_bytes: Math.round(maxMb * BYTES_PER_MB),
+      min_free_bytes: Math.round(minMb * BYTES_PER_MB)
+    }
+    dbSaving = true
+    await saving(
+      () => api.adminSetDbSettings(req),
+      t('server.could_not_save_db_settings'),
+      (o, e) => ((dbOutcome = o), (dbError = e))
+    )
+    dbSaving = false
+  }
+
+  // ── home folders ──
 
   let homesEnabled = $state(false)
   let homesRoot = $state('')
@@ -449,9 +434,8 @@
     homesSaving = false
   }
 
-  // ── file watching (restart-required) ──
+  // ── file watching ── (both bounds fully live)
 
-  let watchBackend = $state<'auto' | 'hotset' | 'inotify_full' | 'fanotify'>('auto')
   let watchHotSetMax = $state('')
   let watchFullThreshold = $state('')
   let watchSaving = $state(false)
@@ -467,7 +451,7 @@
       watchError = t('server.watch_limit_must_integer_1')
       return
     }
-    const req: WatchSettingsReq = { backend: watchBackend, hot_set_max: hot, full_threshold: full }
+    const req: WatchSettingsReq = { hot_set_max: hot, full_threshold: full }
     watchSaving = true
     await saving(
       () => api.adminSetWatchSettings(req),
@@ -507,21 +491,67 @@
     }
   }
 
+  // ── single sign-on (OIDC) ──
+  //
+  // Applies live: the provider is rebuilt the next time settings load,
+  // which this save triggers itself. `client_secret` is write-only — the
+  // server never echoes it back, so an empty box here means "leave the
+  // stored one alone", not "there is none".
+
+  let oidcEnabled = $state(false)
+  let oidcIssuer = $state('')
+  let oidcClientId = $state('')
+  let oidcClientSecret = $state('')
+  let oidcRedirectUris = $state('')
+  let oidcScopes = $state('')
+  let oidcDisplayName = $state('')
+  let oidcAllowPrivateEndpoints = $state(false)
+  let oidcSaving = $state(false)
+  let oidcError = $state<string | null>(null)
+  let oidcOutcome = $state<ApplyOutcome | null>(null)
+
+  async function saveOidc(): Promise<void> {
+    oidcError = null
+    oidcOutcome = null
+    if (oidcEnabled && (!oidcIssuer.trim() || !oidcClientId.trim())) {
+      oidcError = t('server.enter_workgroup_server_name_service_account')
+      return
+    }
+    const req: OidcSettingsReq & { client_secret?: string } = {
+      enabled: oidcEnabled,
+      issuer: oidcIssuer.trim(),
+      client_id: oidcClientId.trim(),
+      redirect_uris: strToArr(oidcRedirectUris),
+      scopes: strToArr(oidcScopes),
+      display_name: oidcDisplayName,
+      allow_private_endpoints: oidcAllowPrivateEndpoints,
+      smb_policy: 'block'
+    }
+    if (oidcClientSecret.trim()) req.client_secret = oidcClientSecret.trim()
+    oidcSaving = true
+    await saving(
+      () => api.adminSetOidcSettings(req),
+      t('server.could_not_save_oidc_settings'),
+      (o, e) => ((oidcOutcome = o), (oidcError = e))
+    )
+    if (!oidcError) oidcClientSecret = ''
+    oidcSaving = false
+  }
+
   // ── everything else this screen doesn't have a dedicated control for —
   // always read-only (the server never leaves an editable field
-  // out of the groups above), shown with its Korean reason rather than
-  // hidden. ──
+  // out of the groups above), shown with its reason rather than hidden. ──
 
   const EDITABLE_KEYS = new Set([
     'bind',
     'app_hosts',
+    'content_hosts',
     'allowed_origins',
+    'compat_canonical_url',
     'trusted_proxies',
-    'public_origins',
     'db.size_guard',
     'db.max_bytes',
     'db.min_free_bytes',
-    'symlink_policy',
     'homes.enabled',
     'homes.root',
     'smb.enabled',
@@ -531,14 +561,12 @@
     'smb.allow_public_bind',
     'smb.totp_policy',
     'smb.service_gid',
+    'smb.interfaces',
     'search.max_concurrent_fast',
-    'search.max_concurrent_slow',
     'search.walk_deadline_fast_ms',
-    'search.walk_deadline_slow_ms',
     'archive.max_concurrent',
     'rate.per_sec',
     'rate.burst',
-    'watch.backend',
     'watch.hot_set_max',
     'watch.full_threshold',
     'oidc.enabled',
@@ -547,18 +575,31 @@
     'oidc.redirect_uris',
     'oidc.scopes',
     'oidc.display_name',
-    'oidc.allow_private_endpoints',
-    'oidc.smb_policy',
-    'data_dir',
-    'master_key_file',
-    'smb.config_dir'
+    'oidc.allow_private_endpoints'
   ])
 
-  const otherFields = $derived(snapshot?.fields.filter((f) => !EDITABLE_KEYS.has(f.key)) ?? [])
+  // Reported, never editable: what the process opened before anything could
+  // be configured. `data_dir` is a process argument; `smb.config_dir` is
+  // read under the `smb` section but is the sidecar's own mounted
+  // directory, the other side of a container boundary this browser cannot
+  // move by writing a new path. Rendered unconditionally, not gated on
+  // `snapshot.fields` carrying the key: `data_dir` is not a catalogue field
+  // at all (it never was one this build could safely offer), so the reason
+  // has to stand on its own rather than annotate a row that may not exist.
+  const PATH_KEYS = ['data_dir', 'smb.config_dir']
 
-  /** Rows whose saved value is not what the running process is on, because
-   *  the restart has not happened yet. */
-  const pendingFields = $derived(snapshot?.fields.filter((f) => f.running_value !== undefined) ?? [])
+  // Per-share, not per-deployment: `symlink_policy` lives on each share's
+  // own row (`AdminShare`, set from the folder-share screen's own edit
+  // dialog), not in the settings document this screen edits. A control
+  // here would store a value nothing reads. Same treatment as the paths
+  // above: explained regardless of whether the snapshot happens to carry a
+  // synthetic entry for it.
+
+  const otherFields = $derived(
+    (snapshot?.fields ?? []).filter(
+      (f) => !EDITABLE_KEYS.has(f.key) && !PATH_KEYS.includes(f.key) && f.key !== 'symlink_policy'
+    )
+  )
 
   async function load(): Promise<void> {
     loading = true
@@ -572,11 +613,10 @@
       smbAllowPublicBind = Boolean(field('smb.allow_public_bind')?.value)
       smbTotpPolicy = (field('smb.totp_policy')?.value as 'require_separate' | 'block') ?? 'require_separate'
       smbServiceGid = String(field('smb.service_gid')?.value ?? '1000')
+      smbInterfaces = arrToStr(field('smb.interfaces')?.value)
 
       searchMaxFast = String(field('search.max_concurrent_fast')?.value ?? '')
-      searchMaxSlow = String(field('search.max_concurrent_slow')?.value ?? '')
       searchDeadlineFast = String(field('search.walk_deadline_fast_ms')?.value ?? '')
-      searchDeadlineSlow = String(field('search.walk_deadline_slow_ms')?.value ?? '')
 
       archiveMax = String(field('archive.max_concurrent')?.value ?? '')
 
@@ -584,17 +624,29 @@
       rateBurst = String(field('rate.burst')?.value ?? '')
 
       netAppHosts = arrToStr(field('app_hosts')?.value)
+      netContentHosts = arrToStr(field('content_hosts')?.value)
+      netAllowedOrigins = arrToStr(field('allowed_origins')?.value)
+      netCanonicalUrl = String(field('compat_canonical_url')?.value ?? '')
       netTrustedProxies = arrToStr(field('trusted_proxies')?.value)
       netBind = String(field('bind')?.value ?? '')
 
+      dbSizeGuard = Boolean(field('db.size_guard')?.value)
+      dbMaxBytesMb = String(bytesToMb(Number(field('db.max_bytes')?.value ?? 0)))
+      dbMinFreeBytesMb = String(bytesToMb(Number(field('db.min_free_bytes')?.value ?? 0)))
 
       homesEnabled = Boolean(field('homes.enabled')?.value)
       homesRoot = String(field('homes.root')?.value ?? '')
 
-      watchBackend = (field('watch.backend')?.value as typeof watchBackend) ?? 'auto'
       watchHotSetMax = String(field('watch.hot_set_max')?.value ?? '')
       watchFullThreshold = String(field('watch.full_threshold')?.value ?? '')
 
+      oidcEnabled = Boolean(field('oidc.enabled')?.value)
+      oidcIssuer = String(field('oidc.issuer')?.value ?? '')
+      oidcClientId = String(field('oidc.client_id')?.value ?? '')
+      oidcRedirectUris = arrToStr(field('oidc.redirect_uris')?.value)
+      oidcScopes = arrToStr(field('oidc.scopes')?.value)
+      oidcDisplayName = String(field('oidc.display_name')?.value ?? '')
+      oidcAllowPrivateEndpoints = Boolean(field('oidc.allow_private_endpoints')?.value)
     } catch {
       loadError = t('server.could_not_load_server_settings')
     } finally {
@@ -604,6 +656,27 @@
 
   load()
 </script>
+
+{#snippet findingsList(o: ApplyOutcome | null)}
+  {@const findings = findingsOf(o)}
+  {#if findings.length}
+    <ul class="sc-server-settings__findings">
+      {#each findings as f, i (f.section + (f.field ?? '') + f.reason + i)}
+        <li
+          class="sc-server-settings__finding"
+          class:sc-server-settings__finding--block={f.blocking}
+          class:sc-server-settings__finding--ok={!f.blocking}
+        >
+          <span class="sc-server-settings__finding-level">
+            {f.blocking ? t('settings.finding_blocking') : t('settings.finding_advisory')}
+          </span>
+          {#if f.field}<code>{f.field}</code>{/if}
+          {t(f.reason, f.args ?? {})}
+        </li>
+      {/each}
+    </ul>
+  {/if}
+{/snippet}
 
 <section class="sc-admin-section">
   <h3>{t('server.server_settings')}</h3>
@@ -633,31 +706,11 @@
       <div class="sc-admin-section__warning" role="alert">
         <p>{t('server.smb_grants_more_than_configured')}</p>
         <ul>
-          {#each snapshot.smb_overgrants as o (o.share + ' ' + o.user + ' ' + o.key)}
+          {#each snapshot.smb_overgrants as o (o.share + '' + o.user + '' + o.key)}
             <li>{t(o.key, { share: o.share, user: o.user, detail: o.detail.join(', ') })}</li>
           {/each}
         </ul>
       </div>
-    {/if}
-
-    <!-- One badge per row that is waiting, grouped under the form it belongs
-         to. A single global "something is pending" bit would not tell an
-         administrator *which* change is waiting, which is the only useful
-         part. -->
-    {#snippet pendingRows(id: SettingsSectionId)}
-      {@const rows = pendingFields.filter((f) => f.key.split('.')[0] === id)}
-      {#each rows as f (f.key)}
-        <p class="sc-server-settings__pending">
-          <span class="sc-server-settings__badge">{t('server.pending_restart')}</span>
-          {f.key}: {t('server.running_value_is', { value: formatValue(f.running_value) })}
-        </p>
-      {/each}
-    {/snippet}
-
-    {#if pendingFields.length}
-      <p class="sc-admin-section__warning" role="status">
-        {t('server.saved_changes_awaiting_restart', { count: pendingFields.length })}
-      </p>
     {/if}
 
     <h4 class="sc-admin-section__subhead">SMB</h4>
@@ -671,22 +724,21 @@
       <TextField label={t('server.service_account_name')} bind:value={smbServiceUser} />
       <Switch checked={smbAllowPublicBind} onchange={(v) => (smbAllowPublicBind = v)} label={t('server.allow_access_from_outside_private')} />
       <SelectOutlined label={t('server.smb_access_2fa_users')} width="100%" options={SMB_TOTP_OPTIONS} bind:value={smbTotpPolicy} />
-      <TextField label={t('server.service_account_gid')} bind:value={smbServiceGid} />
+      <TextField label={t('server.service_account_gid')} bind:value={smbServiceGid} type="number" {...intRangeAttrs('smb.service_gid')} />
+      <TextField label={t('settings.smb_interfaces')} bind:value={smbInterfaces} />
+      <p class="sc-admin-section__hint">{t('settings.smb_interfaces_hint')}</p>
       <Button variant="filled" onclick={saveSmb} loading={smbSaving}>{t('common.save')}</Button>
-      {@render pendingRows('smb')}
     </div>
     <p class="sc-admin-section__hint">
-      {t('server.only_toggling_enable_smb_needs')}
+      {t('server.all_apply_immediately_no_restart')}
     </p>
-    {#if smbError}<p class="sc-admin-section__error" role="alert">{smbError}</p>{/if}
-    {#if smbOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(smbOutcome)}</p>{/if}
+    {#if smbError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={smbError}>{smbError}</p>{/if}
+    {#if smbOutcome}
+      <p class="sc-admin-section__saved" role="status">{outcomeText(smbOutcome)}</p>
+      {@render findingsList(smbOutcome)}
+    {/if}
 
     <!-- What the agent beside smbd did with the files this server rendered.
-         Everything here is true of that side and unknowable from this one:
-         which addresses smbd ended up bound to, which share paths do not
-         exist over there, which accounts have no passdb entry. Writing the
-         files used to be the end of it, and a share that never reached a
-         client looked exactly like one that did.
          The key comes from the server, so the extractor cannot see it at the
          call site — these are the three it can send:
                       /* i18n */ 'smb.agent_applied'
@@ -712,8 +764,7 @@
           <p>{t('smb.agent_missing_passdb', { users: agent.missing_passdb.join(', ') })}</p>
         {/if}
         <!-- Verbatim, not translated: it comes from testparm, pdbedit or the
-             agent itself, and rewording a diagnostic is how it stops matching
-             what a search finds. -->
+             agent itself. -->
         {#if agent.detail && !agent.ok}
           <p class="sc-server-settings__agent-detail">{agent.detail}</p>
         {/if}
@@ -722,24 +773,28 @@
 
     <h4 class="sc-admin-section__subhead">{t('common.search')}</h4>
     <div class="sc-server-settings__form">
-      <TextField label={t('server.concurrent_fast_searches')} bind:value={searchMaxFast} />
-      <TextField label={t('server.concurrent_slow_searches')} bind:value={searchMaxSlow} />
-      <TextField label={t('server.fast_search_timeout_ms')} bind:value={searchDeadlineFast} />
-      <TextField label={t('server.slow_search_timeout_ms')} bind:value={searchDeadlineSlow} />
+      <TextField label={t('server.concurrent_fast_searches')} bind:value={searchMaxFast} type="number" {...intRangeAttrs('search.max_concurrent_fast')} />
+      <TextField label={t('server.fast_search_timeout_ms')} bind:value={searchDeadlineFast} type="number" {...intRangeAttrs('search.walk_deadline_fast_ms')} />
       <Button variant="filled" onclick={saveSearch} loading={searchSaving}>{t('common.save')}</Button>
     </div>
     <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
-    {#if searchError}<p class="sc-admin-section__error" role="alert">{searchError}</p>{/if}
-    {#if searchOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(searchOutcome)}</p>{/if}
+    {#if searchError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={searchError}>{searchError}</p>{/if}
+    {#if searchOutcome}
+      <p class="sc-admin-section__saved" role="status">{outcomeText(searchOutcome)}</p>
+      {@render findingsList(searchOutcome)}
+    {/if}
 
     <h4 class="sc-admin-section__subhead">{t('server.zip_download')}</h4>
     <div class="sc-server-settings__form">
-      <TextField label={t('server.concurrent_zip_streams')} bind:value={archiveMax} />
+      <TextField label={t('server.concurrent_zip_streams')} bind:value={archiveMax} type="number" {...intRangeAttrs('archive.max_concurrent')} />
       <Button variant="filled" onclick={saveArchive} loading={archiveSaving}>{t('common.save')}</Button>
     </div>
     <p class="sc-admin-section__hint">{t('server.applies_immediately_no_restart_needed')}</p>
-    {#if archiveError}<p class="sc-admin-section__error" role="alert">{archiveError}</p>{/if}
-    {#if archiveOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(archiveOutcome)}</p>{/if}
+    {#if archiveError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={archiveError}>{archiveError}</p>{/if}
+    {#if archiveOutcome}
+      <p class="sc-admin-section__saved" role="status">{outcomeText(archiveOutcome)}</p>
+      {@render findingsList(archiveOutcome)}
+    {/if}
 
     <h4 class="sc-admin-section__subhead">{t('server.network')}</h4>
     <div class="sc-server-settings__form">
@@ -754,8 +809,26 @@
       <Button variant="filled" onclick={saveNetwork} loading={netSaving}>{t('common.save')}</Button>
     </div>
     <p class="sc-admin-section__hint">{t('server.applies_immediately_no_restart_needed')}</p>
-    {#if netError}<p class="sc-admin-section__error" role="alert">{netError}</p>{/if}
-    {#if netOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(netOutcome)}</p>{/if}
+    {#if netError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={netError}>{netError}</p>{/if}
+    {#if netOutcome}
+      <p class="sc-admin-section__saved" role="status">{outcomeText(netOutcome)}</p>
+      {@render findingsList(netOutcome)}
+    {/if}
+
+    <h4 class="sc-admin-section__subhead">{t('server.database')}</h4>
+    <p class="sc-admin-section__hint">{t('settings.db_size_guard_hint')}</p>
+    <div class="sc-server-settings__form">
+      <Switch checked={dbSizeGuard} onchange={(v) => (dbSizeGuard = v)} label={t('settings.db_size_guard')} />
+      <TextField label={t('settings.db_max_bytes')} bind:value={dbMaxBytesMb} type="number" min={0} />
+      <TextField label={t('settings.db_min_free_bytes')} bind:value={dbMinFreeBytesMb} type="number" min={0} />
+      <Button variant="filled" onclick={saveDb} loading={dbSaving}>{t('common.save')}</Button>
+    </div>
+    <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
+    {#if dbError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={dbError}>{dbError}</p>{/if}
+    {#if dbOutcome}
+      <p class="sc-admin-section__saved" role="status">{outcomeText(dbOutcome)}</p>
+      {@render findingsList(dbOutcome)}
+    {/if}
 
     <h4 class="sc-admin-section__subhead">{t('server.home_folders')}</h4>
     <p class="sc-admin-section__hint">{t('server.home_folders_hint')}</p>
@@ -763,84 +836,108 @@
       <Switch checked={homesEnabled} onchange={(v) => (homesEnabled = v)} label={t('server.enable_home_folders')} />
       <TextField label={t('server.homes_root_path')} bind:value={homesRoot} />
       <Button variant="filled" onclick={saveHomes} loading={homesSaving}>{t('common.save')}</Button>
-      {@render pendingRows('homes')}
     </div>
-    <p class="sc-admin-section__hint">{t('server.takes_effect_after_restart_when')}</p>
-    {#if homesError}<p class="sc-admin-section__error" role="alert">{homesError}</p>{/if}
-    {#if homesOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(homesOutcome)}</p>{/if}
+    <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
+    {#if homesError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={homesError}>{homesError}</p>{/if}
+    {#if homesOutcome}
+      <p class="sc-admin-section__saved" role="status">{outcomeText(homesOutcome)}</p>
+      {@render findingsList(homesOutcome)}
+    {/if}
 
     <h4 class="sc-admin-section__subhead">{t('server.request_rate')}</h4>
     <p class="sc-admin-section__hint">{t('server.what_the_request_rate_is_for')}</p>
     <div class="sc-server-settings__form">
-      <TextField label={t('server.requests_per_second')} bind:value={ratePerSec} />
-      <TextField label={t('server.burst_allowance')} bind:value={rateBurst} />
+      <TextField label={t('server.requests_per_second')} bind:value={ratePerSec} type="number" {...intRangeAttrs('rate.per_sec')} />
+      <TextField label={t('server.burst_allowance')} bind:value={rateBurst} type="number" {...intRangeAttrs('rate.burst')} />
       <Button variant="filled" onclick={saveRate} loading={rateSaving}>{t('common.save')}</Button>
     </div>
     <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
-    {#if rateError}<p class="sc-admin-section__error" role="alert">{rateError}</p>{/if}
-    {#if rateOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(rateOutcome)}</p>{/if}
+    {#if rateError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={rateError}>{rateError}</p>{/if}
+    {#if rateOutcome}
+      <p class="sc-admin-section__saved" role="status">{outcomeText(rateOutcome)}</p>
+      {@render findingsList(rateOutcome)}
+    {/if}
 
     <h4 class="sc-admin-section__subhead">{t('server.file_watching')}</h4>
     <p class="sc-admin-section__hint">{t('server.what_file_watching_is_for')}</p>
     <div class="sc-server-settings__form">
-      <SelectOutlined label={t('server.watch_mode')} width="100%" options={WATCH_BACKEND_OPTIONS} bind:value={watchBackend} />
-      <TextField label={t('server.maximum_folders_watched_at_once')} bind:value={watchHotSetMax} />
-      <TextField label={t('server.changes_before_a_full_rescan')} bind:value={watchFullThreshold} />
+      <TextField label={t('server.maximum_folders_watched_at_once')} bind:value={watchHotSetMax} type="number" {...intRangeAttrs('watch.hot_set_max')} />
+      <TextField label={t('server.changes_before_a_full_rescan')} bind:value={watchFullThreshold} type="number" {...intRangeAttrs('watch.full_threshold')} />
       <Button variant="filled" onclick={saveWatch} loading={watchSaving}>{t('common.save')}</Button>
-      {@render pendingRows('watch')}
     </div>
-    <p class="sc-admin-section__hint">
-      {t('server.takes_effect_after_restart_when')}
-    </p>
-    {#if watchError}<p class="sc-admin-section__error" role="alert">{watchError}</p>{/if}
-    {#if watchOutcome}<p class="sc-admin-section__saved" role="status">{outcomeText(watchOutcome)}</p>{/if}
+    <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
+    {#if watchError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={watchError}>{watchError}</p>{/if}
+    {#if watchOutcome}
+      <p class="sc-admin-section__saved" role="status">{outcomeText(watchOutcome)}</p>
+      {@render findingsList(watchOutcome)}
+    {/if}
 
     <h4 class="sc-admin-section__subhead">{t('settings.single_sign_on')}</h4>
-    <dl class="sc-server-settings__other">
-      {#each snapshot.fields.filter((f) => f.key.startsWith('oidc.')) as f (f.key)}
-        <div>
-          <dt>{fieldLabel(f.key)}</dt>
-          <dd>
-            {formatValue(f.value)}
-            {#if f.readonly_reason_key}
-              <br /><span class="sc-server-settings__reason">{serverKeyText(f.readonly_reason_key)}</span>
-            {/if}
-          </dd>
-        </div>
-      {/each}
-    </dl>
+    <p class="sc-admin-section__hint">{t('server.single_sign_on_hint')}</p>
+    <div class="sc-server-settings__form">
+      <Switch checked={oidcEnabled} onchange={(v) => (oidcEnabled = v)} label={t('settings.oidc_enable')} />
+      <TextField label={t('settings.oidc_issuer')} bind:value={oidcIssuer} />
+      <TextField label={t('settings.oidc_client_id')} bind:value={oidcClientId} />
+      <TextField label={t('common.password')} type="password" bind:value={oidcClientSecret} placeholder={t('settings.secret_is_write_only')} />
+      <TextField label={t('settings.oidc_redirect_uris')} bind:value={oidcRedirectUris} />
+      <TextField label={t('settings.oidc_scopes')} bind:value={oidcScopes} />
+      <TextField label={t('settings.oidc_display_name')} bind:value={oidcDisplayName} />
+      <Switch checked={oidcAllowPrivateEndpoints} onchange={(v) => (oidcAllowPrivateEndpoints = v)} label={t('settings.oidc_allow_private_endpoints')} />
+      <Button variant="filled" onclick={saveOidc} loading={oidcSaving}>{t('common.save')}</Button>
+    </div>
     <p class="sc-admin-section__hint">{t('server.connected_accounts_cannot_use_smb')}</p>
+    {#if oidcError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={oidcError}>{oidcError}</p>{/if}
+    {#if oidcOutcome}
+      <p class="sc-admin-section__saved" role="status">{outcomeText(oidcOutcome)}</p>
+      {@render findingsList(oidcOutcome)}
+    {/if}
 
     <h4 class="sc-admin-section__subhead">{t('server.storage_paths')}</h4>
     <dl class="sc-server-settings__other">
-      {#each snapshot.fields.filter((f) => PATH_KEYS.includes(f.key)) as f (f.key)}
+      {#each PATH_KEYS as key (key)}
         <div>
-          <dt>{fieldLabel(f.key)}</dt>
+          <dt>{fieldLabel(key)}</dt>
           <dd>
-            {formatValue(f.value)}
-            {#if f.readonly_reason_key}
-              <br /><span class="sc-server-settings__reason">{serverKeyText(f.readonly_reason_key)}</span>
-            {/if}
+            {formatValue(field(key)?.value)}
+            <br /><span class="sc-server-settings__reason">{t('settings.paths_readonly_reason')}</span>
           </dd>
         </div>
       {/each}
+      <div>
+        <dt>{fieldLabel('symlink_policy')}</dt>
+        <dd>
+          <span class="sc-server-settings__reason">{t('settings.readonly_per_share_symlink_policy')}</span>
+        </dd>
+      </div>
     </dl>
 
+    {#if otherFields.length}
+      <h4 class="sc-admin-section__subhead">{t('settings.settings_sections')}</h4>
+      <dl class="sc-server-settings__other">
+        {#each otherFields as f (f.key)}
+          <div>
+            <dt>{fieldLabel(f.key)}</dt>
+            <dd>
+              {formatValue(f.value)}
+              {#if f.readonly_reason_key}
+                <br /><span class="sc-server-settings__reason">{serverKeyText(f.readonly_reason_key)}</span>
+              {/if}
+            </dd>
+          </div>
+        {/each}
+      </dl>
+    {/if}
   {/if}
 </section>
 
-<!-- The save is already stored. This reports what the restart it is waiting
-     for would interrupt, because the operator is the one who takes it. -->
-<ConfirmDialog
-  open={busyOpen}
-  title={t('server.work_still_progress')}
-  message={t('server.uploads_jobs_running_right_now', {
-    uploads: busyCounts?.uploads ?? 0,
-    jobs: busyCounts?.jobs ?? 0
-  })}
-  confirmLabel={t('common.ok')}
-  onclose={() => (busyOpen = false)}
-  onconfirm={() => (busyOpen = false)}
+<RestartDialog
+  open={restartOpen}
+  outcome={restartOutcome}
+  onclose={() => (restartOpen = false)}
+  onrestarted={() => {
+    restartOpen = false
+    load()
+  }}
 />
 
 <style>
@@ -852,9 +949,6 @@
     @apply --m3-title-medium;
   }
   .sc-admin-section__subhead {
-    /* 32 above, 8 below. The subhead starts a new settings group, and at 24
-       the space before it was only twice the 12px that separates a field from
-       its own hint, so the groups ran together. */
     margin: 32px 0 8px;
     @apply --m3-title-small;
   }
@@ -877,6 +971,10 @@
     color: var(--m3c-error);
     @apply --m3-body-medium;
   }
+  .sc-admin-section__error:focus {
+    outline: 2px solid var(--m3c-error);
+    outline-offset: 2px;
+  }
   .sc-admin-section__saved {
     margin: 8px 0 0;
     color: var(--m3c-primary);
@@ -894,10 +992,6 @@
   .sc-server-settings__form :global(.field) {
     width: 100%;
   }
-  /* SelectOutlined's own `width` prop sets `width` on the `<select>`, whose
-     containing block is the shrink-to-fit `.m3-container`; under this form's
-     `align-items: flex-start` that resolves back to the widest option's text.
-     The container is what has to be told to fill the column. */
   .sc-server-settings__form :global(.m3-container:has(> select)) {
     width: 100%;
   }
@@ -920,14 +1014,6 @@
     color: var(--m3c-on-surface-variant);
     @apply --m3-body-small;
   }
-  .sc-server-settings__pending {
-    margin: 0;
-    color: var(--m3c-on-surface-variant);
-    @apply --m3-body-small;
-  }
-  /* What the dry run found. The level is spelled out in the text beside each
-     item, so the colour is reinforcement rather than the only carrier. */
-  /* What an empty field means, shown only while it is empty. */
   .sc-server-settings__empty-note {
     margin: 0;
     grid-column: 1 / -1;
@@ -951,11 +1037,13 @@
     overflow-wrap: anywhere;
     @apply --m3-body-small;
   }
+  /* Blocking and advisory are told apart by the label text
+     (`settings.finding_blocking`/`settings.finding_advisory`), not by the
+     border colour alone: colour is reinforcement for a sighted operator who
+     can tell red from grey, the label is what a colourblind operator or a
+     screen reader gets instead. */
   .sc-server-settings__finding--block {
     border-left-color: var(--m3c-error);
-  }
-  .sc-server-settings__finding--warn {
-    border-left-color: var(--m3c-tertiary, var(--m3c-outline));
   }
   .sc-server-settings__finding--ok {
     border-left-color: var(--m3c-primary);
@@ -968,24 +1056,11 @@
     font-family: var(--m3-font-mono, ui-monospace, monospace);
     margin-right: 4px;
   }
-  /* A diagnostic from another program: monospace so a path or a directive in
-     it reads as the literal string it is, and wrapping so a long testparm
-     line stays inside the card. */
   .sc-server-settings__agent-detail {
     margin: 8px 0 0;
     font-family: var(--m3-font-mono, ui-monospace, monospace);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     @apply --m3-body-small;
-  }
-  /* The badge carries its own text. Colour alone would leave a row's pending
-     state invisible to anyone who cannot see the difference. */
-  .sc-server-settings__badge {
-    display: inline-block;
-    padding: 4px 8px;
-    border-radius: var(--m3-shape-extra-small);
-    background: var(--m3c-tertiary-container);
-    color: var(--m3c-on-tertiary-container);
-    @apply --m3-label-small;
   }
 </style>

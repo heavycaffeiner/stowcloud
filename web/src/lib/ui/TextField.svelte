@@ -15,8 +15,13 @@
     /** `date` binds `YYYY-MM-DD` and draws the browser's own calendar, which
      *  is localised for free — m3-svelte ships a `DateField` instead, but its
      *  docked picker hardcodes English ("Clear/Cancel/OK", an `SMTWTFS`
-     *  weekday row) with nothing to translate it through. */
-    type?: 'text' | 'search' | 'password' | 'date'
+     *  weekday row) with nothing to translate it through. `number` draws the
+     *  browser's own spinner and rejects non-numeric keystrokes; pair it with
+     *  `min`/`max` for a declared bound so the control refuses out-of-range
+     *  input before a submit ever reaches the server. */
+    type?: 'text' | 'search' | 'password' | 'date' | 'number'
+    min?: number
+    max?: number
     id?: string
     autofocus?: boolean
     autocomplete?: HTMLInputAttributes['autocomplete']
@@ -30,6 +35,8 @@
     variant = 'outlined',
     error = null,
     type = 'text',
+    min,
+    max,
     id,
     autofocus = false,
     autocomplete,
@@ -67,6 +74,8 @@
     label={label ?? ''}
     error={!!error}
     {type}
+    {min}
+    {max}
     placeholder={focused ? placeholder : undefined}
     {autocomplete}
     {onkeydown}

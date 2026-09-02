@@ -23,6 +23,7 @@ import { t } from '../i18n'
  *  allowlist also makes this fail closed: an unrecognized key falls back to
  *  the caller's own message instead of rendering as a raw dotted string. */
 const SERVER_KEYS = new Set<string>([
+  /* i18n */ 'system.hardening_cannot_loosen',
   /* i18n */ 'settings.unknown_totp_policy',
   /* i18n */ 'settings.unknown_watch_backend',
   /* i18n */ 'settings.path_must_be_absolute',

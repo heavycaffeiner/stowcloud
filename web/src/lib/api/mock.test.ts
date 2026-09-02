@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockApi } from './mock'
 
 describe('mockApi', () => {
@@ -575,5 +575,34 @@ describe('mockApi jobs', () => {
 
   it('jobCancel on an unknown id is fs.not_found', async () => {
     await expect(mockApi.jobCancel('J-does-not-exist')).rejects.toMatchObject({ code: 'fs.not_found' })
+  })
+})
+
+// The dialog's whole waiting path hangs off this: a confirmed restart drops
+// the socket for a bounded stretch and then answers again, exactly the shape
+// `RestartDialog.svelte` polls for.
+describe('mockApi system restart', () => {
+  it('reports restarting with interruption counts', async () => {
+    const res = await mockApi.adminSystemRestart()
+    expect(res.restarting).toBe(true)
+    expect(res.active_uploads).toBeGreaterThanOrEqual(0)
+    expect(res.active_jobs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('health rejects while the simulated outage is in effect, then answers ok once it elapses', async () => {
+    vi.useFakeTimers()
+    try {
+      const restarting = mockApi.adminSystemRestart()
+      await vi.advanceTimersByTimeAsync(30) // mock.ts's own delay() before it takes effect
+      await restarting
+
+      await expect(mockApi.systemHealth()).rejects.toBeTruthy()
+
+      await vi.advanceTimersByTimeAsync(5_000) // past the simulated outage window
+      const health = await mockApi.systemHealth()
+      expect(health).toEqual({ status: 'ok', reasons: [] })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

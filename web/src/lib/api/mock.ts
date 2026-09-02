@@ -54,7 +54,6 @@ import {
   type NetworkSettingsReq,
   type OidcSettingsReq,
   type Order,
-  type PathsSettingsReq,
   type SearchSettingsReq,
   type SessionInfo,
   type SettingsField,
@@ -68,7 +67,8 @@ import {
   type SmbUnavailableReason,
   type SortKey,
   type StorageReport,
-  type SymlinkPolicyReq,
+  type SystemHealth,
+  type SystemRestartResult,
   type TrashEntry,
   type UpdateGrantReq,
   type UpdateGroupReq,
@@ -511,7 +511,13 @@ async function trashList(): Promise<TrashEntry[]> {
   await delay(20)
   return [...mockTrash.values()]
     .sort((a, b) => Number(BigInt(b.deletedNs) - BigInt(a.deletedNs)))
-    .map((row) => ({ id: row.id, name: row.entry.name, size: row.entry.size, deleted_at_ns: row.deletedNs }))
+    .map((row) => ({
+      id: row.id,
+      name: row.entry.name,
+      is_dir: row.entry.kind === 'dir',
+      size: row.entry.size,
+      deleted_at_ns: row.deletedNs
+    }))
 }
 
 async function trashRestore(ids: string[]): Promise<BatchResult> {
@@ -1296,32 +1302,27 @@ const mockServerSettings = {
     service_user: 'sc-smb',
     allow_public_bind: false,
     totp_policy: 'require_separate' as 'require_separate' | 'block',
-    service_gid: 1000
+    service_gid: 1000,
+    interfaces: [] as string[]
   },
   search: {
     max_concurrent_fast: 4,
-    max_concurrent_slow: 2,
-    walk_deadline_fast_ms: 100,
-    walk_deadline_slow_ms: 500
+    walk_deadline_fast_ms: 100
   },
   archive: { max_concurrent: 2 },
   rate: { per_sec: 20, burst: 40 },
   network: {
     app_hosts: ['nas.local'] as string[],
+    content_hosts: [] as string[],
+    allowed_origins: [] as string[],
+    compat_canonical_url: '',
     trusted_proxies: [] as string[]
   },
   db: { size_guard: true, max_bytes: 5_000_000_000, min_free_bytes: 1_000_000_000 },
-  symlink_policy: 'deny' as 'deny' | 'within_share' | 'follow',
   homes: { enabled: false, root: null as string | null },
   watch: {
-    backend: 'auto' as 'auto' | 'hotset' | 'inotify_full' | 'fanotify',
     hot_set_max: 4096,
     full_threshold: 50_000
-  },
-  paths: {
-    data_dir: '/var/lib/stowcloud',
-    master_key_file: null as string | null,
-    smb_config_dir: '/etc/stowcloud/smb'
   },
   oidc: {
     enabled: false,
@@ -1350,11 +1351,11 @@ mockFileSettings.smb.server_name = 'STOWCLOUD'
  *  group's source. */
 const MOCK_SECTION_OF: Record<string, SettingsSectionId> = {
   app_hosts: 'network',
+  content_hosts: 'network',
+  allowed_origins: 'network',
+  compat_canonical_url: 'network',
   trusted_proxies: 'network',
-  symlink_policy: 'symlink-policy',
-  data_dir: 'paths',
-  master_key_file: 'paths',
-  'smb.config_dir': 'paths'
+  'smb.config_dir': 'smb'
 }
 
 function sectionOf(key: string): SettingsSectionId | undefined {
@@ -1392,42 +1393,53 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       // opened relative to the directory, which is what the server says about
       // both.
       settingsField('bind', mockBind, false),
-      settingsField('data_dir', s.paths.data_dir, false, /* i18n */ 'settings.readonly_data_dir'),
+      settingsField('data_dir', '/var/lib/stowcloud', false, /* i18n */ 'settings.readonly_data_dir'),
       settingsField('app_hosts', s.network.app_hosts, false),
+      settingsField('content_hosts', s.network.content_hosts, false),
+      settingsField('allowed_origins', s.network.allowed_origins, false),
+      settingsField('compat_canonical_url', s.network.compat_canonical_url, false),
       settingsField('trusted_proxies', s.network.trusted_proxies, false),
-      settingsField('db.size_guard', s.db.size_guard, true),
-      settingsField('db.max_bytes', s.db.max_bytes, true),
-      settingsField('db.min_free_bytes', s.db.min_free_bytes, true),
-      settingsField('symlink_policy', s.symlink_policy, true),
-      settingsField('homes.enabled', s.homes.enabled, true),
-      settingsField('homes.root', s.homes.root, true),
-      settingsField('smb.enabled', s.smb.enabled, true),
+      settingsField('db.size_guard', s.db.size_guard, false),
+      settingsField('db.max_bytes', s.db.max_bytes, false),
+      settingsField('db.min_free_bytes', s.db.min_free_bytes, false),
+      // Per-share, read from the share row, not the settings document: see
+      // `PathsSettingsReq`'s replacement comment in types.ts.
+      {
+        key: 'symlink_policy',
+        value: 'deny',
+        source: 'builtin_default',
+        restart_required: false,
+        readonly_reason_key: 'settings.readonly_per_share_symlink_policy'
+      },
+      settingsField('homes.enabled', s.homes.enabled, false),
+      settingsField('homes.root', s.homes.root, false),
+      settingsField('smb.enabled', s.smb.enabled, false),
       settingsField('smb.workgroup', s.smb.workgroup, false),
       settingsField('smb.server_name', s.smb.server_name, false),
       settingsField('smb.service_user', s.smb.service_user, false),
       settingsField('smb.allow_public_bind', s.smb.allow_public_bind, false),
       settingsField('smb.totp_policy', s.smb.totp_policy, false),
       settingsField('smb.service_gid', s.smb.service_gid, false),
+      settingsField('smb.interfaces', s.smb.interfaces, false),
       settingsField('search.max_concurrent_fast', s.search.max_concurrent_fast, false),
-      settingsField('search.max_concurrent_slow', s.search.max_concurrent_slow, false),
       settingsField('search.walk_deadline_fast_ms', s.search.walk_deadline_fast_ms, false),
-      settingsField('search.walk_deadline_slow_ms', s.search.walk_deadline_slow_ms, false),
       settingsField('archive.max_concurrent', s.archive.max_concurrent, false),
       settingsField('rate.per_sec', s.rate.per_sec, false),
       settingsField('rate.burst', s.rate.burst, false),
-      settingsField('watch.backend', s.watch.backend, true),
-      settingsField('watch.hot_set_max', s.watch.hot_set_max, true),
-      settingsField('watch.full_threshold', s.watch.full_threshold, true),
-      settingsField('master_key_file', s.paths.master_key_file, false),
-      settingsField('smb.config_dir', s.paths.smb_config_dir, false),
-      settingsField('oidc.enabled', s.oidc.enabled, true),
-      settingsField('oidc.issuer', s.oidc.issuer, true),
-      settingsField('oidc.client_id', s.oidc.client_id, true),
-      settingsField('oidc.redirect_uris', s.oidc.redirect_uris, true),
-      settingsField('oidc.scopes', s.oidc.scopes, true),
-      settingsField('oidc.display_name', s.oidc.display_name, true),
-      settingsField('oidc.allow_private_endpoints', s.oidc.allow_private_endpoints, true),
-      settingsField('oidc.smb_policy', s.oidc.smb_policy, true),
+      settingsField('watch.hot_set_max', s.watch.hot_set_max, false),
+      settingsField('watch.full_threshold', s.watch.full_threshold, false),
+      // `data_dir` is a process argument and `smb.config_dir` is read under
+      // the `smb` section (loaded above); this second entry is what the real
+      // catalogue reports for the sidecar's own mounted directory.
+      settingsField('smb.config_dir', '/etc/stowcloud/smb', false),
+      settingsField('oidc.enabled', s.oidc.enabled, false),
+      settingsField('oidc.issuer', s.oidc.issuer, false),
+      settingsField('oidc.client_id', s.oidc.client_id, false),
+      settingsField('oidc.redirect_uris', s.oidc.redirect_uris, false),
+      settingsField('oidc.scopes', s.oidc.scopes, false),
+      settingsField('oidc.display_name', s.oidc.display_name, false),
+      settingsField('oidc.allow_private_endpoints', s.oidc.allow_private_endpoints, false),
+      settingsField('oidc.smb_policy', s.oidc.smb_policy, false),
       // The two the process settles before anything is configurable. They carry their reason
       // here the same way the real bridge writes it, so the screen's
       // read-only list is not empty under the mock.
@@ -1489,13 +1501,15 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
 }
 
 /** The outcome shape the server answers: stored, applied and restart-required
- *  are three separate facts, not one enum. */
-function outcome(restartRequired: boolean): ApplyOutcome {
+ *  are three separate facts, not one enum. `findings` defaults empty; a
+ *  caller that wants to demonstrate the advisory/blocking display passes
+ *  its own list. */
+function outcome(restartRequired: boolean, findings: ApplyOutcome['findings'] = []): ApplyOutcome {
   return {
     stored: true,
     applied: !restartRequired,
     restart_required: restartRequired,
-    findings: []
+    findings
   }
 }
 
@@ -1572,15 +1586,15 @@ async function adminSetNetworkSettings(req: NetworkSettingsReq): Promise<ApplyOu
 
 async function adminSetDbSettings(req: DbSettingsReq): Promise<ApplyOutcome> {
   await delay(30)
+  if (req.size_guard && req.max_bytes <= 0 && req.min_free_bytes <= 0) {
+    throw new ApiError(422, {
+      code: 'fs.invalid_name',
+      message: 'invalid name',
+      detail: { reason_key: 'settings.guard_has_no_bound', reason_params: {} }
+    })
+  }
   mockServerSettings.db = { ...req }
   mockOverriddenSections.add('db')
-  return outcome(true)
-}
-
-async function adminSetSymlinkPolicySettings(req: SymlinkPolicyReq): Promise<ApplyOutcome> {
-  await delay(30)
-  mockServerSettings.symlink_policy = req.policy
-  mockOverriddenSections.add('symlink-policy')
   return outcome(false)
 }
 
@@ -1606,7 +1620,28 @@ async function adminSetWatchSettings(req: WatchSettingsReq): Promise<ApplyOutcom
   }
   mockServerSettings.watch = { ...req }
   mockOverriddenSections.add('watch')
-  return outcome(true)
+  // The one advisory this section really produces: the server compares the
+  // requested hot set against what the kernel will grant, and says which side
+  // of it the value landed on. Saved either way, which is what makes it an
+  // advisory rather than a refusal.
+  const kernelLimit = 524_288
+  return outcome(false, [
+    req.hot_set_max > kernelLimit
+      ? {
+          section: 'watch',
+          field: 'hot_set_max',
+          reason: 'settings.above_kernel_watch_limit',
+          args: { value: String(req.hot_set_max), limit: String(kernelLimit) },
+          blocking: false
+        }
+      : {
+          section: 'watch',
+          field: 'hot_set_max',
+          reason: 'settings.within_kernel_watch_limit',
+          args: { limit: String(kernelLimit) },
+          blocking: false
+        }
+  ])
 }
 
 /** Reproduces the two refusals a browser could not have made for itself: a
@@ -1662,32 +1697,32 @@ async function adminSetOidcSettings(req: OidcSettingsReq): Promise<ApplyOutcome>
   return outcome(false)
 }
 
-/** The real server also refuses paths that do not exist, a `data_dir` without
- *  `auth.db`, and a `master_key_file` holding different bytes — all
- *  filesystem checks the mock has no way to make. Absoluteness is the one
- *  refusal it can reproduce, so it is the one it reproduces. */
-async function adminSetPathsSettings(req: PathsSettingsReq): Promise<ApplyOutcome> {
+
+// ── admin: self-restart ──
+//
+// Simulates the real shape: the socket drops for a bounded stretch (the
+// process re-execing itself) and then answers again. `systemHealth` rejects
+// during the outage the same way a real dropped connection rejects `fetch`,
+// so the dialog's "a failed poll is expected, not an error" path is
+// exercised against this backend too, not just documented for the real one.
+const MOCK_RESTART_OUTAGE_MS = 4_000
+let mockServerDownUntil = 0
+
+async function adminSystemRestart(): Promise<SystemRestartResult> {
   await delay(30)
-  const abs = (p: string) => p.startsWith('/')
-  if (!abs(req.data_dir) || !abs(req.smb_config_dir) || (req.master_key_file && !abs(req.master_key_file))) {
-    throw new ApiError(422, {
-      code: 'fs.invalid_name',
-      message: 'invalid name',
-      detail: {
-        reason: 'data_dir: must be an absolute path',
-        reason_key: 'settings.path_must_be_absolute',
-        reason_params: { field: 'data_dir', path: req.data_dir }
-      }
-    })
+  mockServerDownUntil = Date.now() + MOCK_RESTART_OUTAGE_MS
+  // Fixed rather than derived from `mockJobs`: every mock job is already
+  // `done` by the time it exists (see `makeMockJob`'s comment), so there is
+  // never a "really running" count to read here either. Nonzero so the
+  // dialog's interruption message has something to show in dev mode.
+  return { restarting: true, active_uploads: 2, active_jobs: 1 }
+}
+
+async function systemHealth(): Promise<SystemHealth> {
+  if (Date.now() < mockServerDownUntil) {
+    throw new TypeError('Failed to fetch')
   }
-  mockServerSettings.paths = {
-    data_dir: req.data_dir,
-    master_key_file: req.master_key_file,
-    smb_config_dir: req.smb_config_dir
-  }
-  mockOverriddenSections.add('paths')
-  // Builtin and read-only: nothing reloads it and nothing restarts into it.
-  return outcome(false)
+  return { status: 'ok', reasons: [] }
 }
 
 async function adminIndexEstimate(): Promise<IndexEstimate> {
@@ -2469,11 +2504,11 @@ export const mockApi = {
   adminSetRateSettings,
   adminSetNetworkSettings,
   adminSetDbSettings,
-  adminSetSymlinkPolicySettings,
   adminSetHomesSettings,
   adminSetWatchSettings,
   adminSetOidcSettings,
-  adminSetPathsSettings,
+  adminSystemRestart,
+  systemHealth,
   adminListUsers,
   adminCreateUser,
   adminSetUserDisabled,
