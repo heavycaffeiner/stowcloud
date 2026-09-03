@@ -486,8 +486,12 @@
 # 112: the restart's exec. G204 reads a variable path, which is
 # /proc/self/exe: this running image, not anything a caller supplies.
 #
+# 113: the Nextcloud WebDAV trashbin listing. G705 reads writing an XML response
+# body to http.ResponseWriter; every field in the response document is
+# XML-escaped and write errors are logged.
+#
 # 24 (the old tree): the listener builder's close on a failed bind. errcheck
 # reads the discarded error; the bind already failed and the listener is going
 # away with it.
 24
-112
+113

@@ -9,6 +9,8 @@ package lifecycle
 import (
 	"context"
 	"encoding/xml"
+	"path/filepath"
+	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/compat"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
@@ -28,6 +30,8 @@ func (e *Engine) davAliases() []DavAlias {
 	return []DavAlias{
 		{Prefix: "/remote.php/dav/uploads/", Mount: DavUploadPrefix, DropSegments: 1},
 		{Prefix: "/index.php/remote.php/dav/uploads/", Mount: DavUploadPrefix, DropSegments: 1},
+		{Prefix: "/remote.php/dav/trashbin/", Mount: DavTrashPrefix, DropSegments: 1},
+		{Prefix: "/index.php/remote.php/dav/trashbin/", Mount: DavTrashPrefix, DropSegments: 1},
 		{Prefix: "/remote.php/dav/files/", DropSegments: 1},
 		{Prefix: "/index.php/remote.php/dav/files/", DropSegments: 1},
 		{Prefix: "/remote.php/webdav/", DropSegments: 0},
@@ -82,7 +86,7 @@ func (e *Engine) davVendorProps() func(
 		Shared:     func(compat.PropEntry) bool { return false },
 	})
 
-	return func(ctx context.Context, _ core.Resolved, entry core.Entry, want []xml.Name) []dav.Prop {
+	return func(ctx context.Context, res core.Resolved, entry core.Entry, want []xml.Name) []dav.Prop {
 		// The file id is resolved here, where the entry's identity lives: the
 		// recorded override wins, and otherwise the id is the pure
 		// derivation the allocation policy answers for a first candidate.
@@ -91,12 +95,39 @@ func (e *Engine) davVendorProps() func(
 			e.logger.Warn("an entry reached property emission without a file id",
 				"name", entry.Name, "error", ferr)
 		}
+
+		isFav := false
+		for _, w := range want {
+			if w.Local == "favorite" || w.Local == "is-favorite" {
+				if favs, ferr := e.State.Favorites(ctx, int64(res.User())); ferr == nil {
+					for _, f := range favs {
+						if f.Ident.Equal(entry.Ident) {
+							isFav = true
+							break
+						}
+					}
+				}
+				break
+			}
+		}
+
 		return source.Props(compat.PropEntry{
-			IsDir:  entry.IsDir,
-			Size:   entry.Size,
-			Perms:  permBitsOf(entry.Perms),
-			FileID: fileID,
+			IsDir:      entry.IsDir,
+			Size:       entry.Size,
+			Perms:      permBitsOf(entry.Perms),
+			FileID:     fileID,
+			HasPreview: !entry.IsDir && isPreviewable(entry.Name),
+			Favorite:   isFav,
 		}, want)
+	}
+}
+
+func isPreviewable(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".svg":
+		return true
+	default:
+		return false
 	}
 }
 

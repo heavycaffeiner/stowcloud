@@ -10,6 +10,7 @@ package lifecycle
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -17,9 +18,11 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/compat"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
 )
 
 // The mount points another product's clients address. Data, not constants in
@@ -43,28 +46,49 @@ const (
 // per route is what the handler does with the principal it is handed, not
 // whether the chain looked for one.
 func (e *Engine) mountCompatTagged(app *fiber.App) {
-	// Unauthenticated discovery. A client reads both before it has any
-	// credential, and a refusal at either reads as a server that is broken
-	// rather than one that wants a sign-in.
-	app.Get(compatStatusPath, e.compatStatus)
-	app.Get(compatWalledPath, func(c *fiber.Ctx) error {
-		// The captive-portal probe. Deliberately empty and 204: the Android
-		// client reads anything else as "no internet" and parks every upload
-		// as pending without ever issuing a request.
+	app.Get("/status.php", e.compatStatus)
+	app.Get("/index.php/status.php", e.compatStatus)
+
+	walled := func(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNoContent)
-	})
+	}
+	app.Get("/index.php/204", walled)
+	app.Get("/204", walled)
 
 	app.All(compatOCSv1Prefix+"*", e.compatOCS(compat.V1))
+	app.All("/index.php"+compatOCSv1Prefix+"*", e.compatOCS(compat.V1))
 	app.All(compatOCSv2Prefix+"*", e.compatOCS(compat.V2))
+	app.All("/index.php"+compatOCSv2Prefix+"*", e.compatOCS(compat.V2))
 
-	// Login flow v2. There is deliberately no GET on the grant route: a GET
-	// that approves is a credential issued to whoever can make a logged-in
-	// browser load an image tag. The consent page is what a browser opens;
-	// the approval is the POST that page makes.
-	app.Post(compatLoginBegin, e.compatLoginBegin)
-	app.Post(compatLoginPoll, e.compatLoginPoll)
-	app.Post(compatLoginGrant, e.compatLoginGrant)
-	app.Get(compatLoginConsent, e.compatLoginConsent)
+	app.Post("/login/v2", e.compatLoginBegin)
+	app.Post("/index.php/login/v2", e.compatLoginBegin)
+	app.Post("/login/v2/poll", e.compatLoginPoll)
+	app.Post("/index.php/login/v2/poll", e.compatLoginPoll)
+	app.Post("/login/v2/grant", e.compatLoginGrant)
+	app.Post("/index.php/login/v2/grant", e.compatLoginGrant)
+	app.Get("/login/v2/flow/:token", e.compatLoginConsent)
+	app.Get("/index.php/login/v2/flow/:token", e.compatLoginConsent)
+
+	// Previews and thumbnails
+	app.Get("/core/preview", e.compatPreview)
+	app.Get("/index.php/core/preview", e.compatPreview)
+	app.Get("/core/preview.png", e.compatPreview)
+	app.Get("/index.php/core/preview.png", e.compatPreview)
+	app.Get("/apps/files/api/v1/thumbnail/*", e.compatThumbnailByPath)
+	app.Get("/index.php/apps/files/api/v1/thumbnail/*", e.compatThumbnailByPath)
+	app.Get("/apps/files_trashbin/preview", e.compatPreview)
+	app.Get("/index.php/apps/files_trashbin/preview", e.compatPreview)
+	app.Get("/avatar/*", func(c *fiber.Ctx) error { return c.SendStatus(fiber.StatusNotFound) })
+	app.Get("/index.php/avatar/*", func(c *fiber.Ctx) error { return c.SendStatus(fiber.StatusNotFound) })
+
+	// Direct stream URL
+	app.Get("/remote.php/direct/:claim", e.compatDirectStream)
+	app.Get("/index.php/remote.php/direct/:claim", e.compatDirectStream)
+
+	// Additional app stubs
+	emptyObj := func(c *fiber.Ctx) error { return c.Status(fiber.StatusOK).JSON(fiber.Map{}) }
+	app.All("/apps/richdocuments/assets", emptyObj)
+	app.All("/index.php/apps/richdocuments/assets", emptyObj)
 }
 
 // compatStatus answers the pre-sign-in probe.
@@ -87,6 +111,13 @@ func (e *Engine) compatStatus(c *fiber.Ctx) error {
 // compatOCS dispatches one OCS request under one envelope version.
 func (e *Engine) compatOCS(version compat.Version) fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		c.Set("Access-Control-Allow-Origin", "*")
+		c.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, OCS-APIREQUEST")
+		if c.Method() == fiber.MethodOptions {
+			return c.SendStatus(fiber.StatusOK)
+		}
+
 		format := compat.NegotiateFormat(c.Query("format"), c.Get("Accept"))
 
 		data, written, ocsErr := e.compatRouteOCS(c, version)
@@ -107,7 +138,8 @@ func (e *Engine) compatOCS(version compat.Version) fiber.Handler {
 func (e *Engine) compatRouteOCS(
 	c *fiber.Ctx, version compat.Version,
 ) (data compat.Val, written bool, ocsErr *compat.OCSError) {
-	route := "/" + strings.TrimPrefix(c.Path(), versionPrefix(version))
+	p := strings.TrimPrefix(c.Path(), "/index.php")
+	route := "/" + strings.TrimPrefix(strings.TrimPrefix(p, versionPrefix(version)), "/")
 
 	switch {
 	// --- unauthenticated, so a client can read them before signing in ---
@@ -119,11 +151,21 @@ func (e *Engine) compatRouteOCS(
 		return compat.List(), true, nil
 	case c.Method() == fiber.MethodGet && route == "/apps/user_status/api/v1/statuses":
 		return compat.List(), true, nil
+	case c.Method() == fiber.MethodGet && route == "/apps/user_status/api/v1/user_status":
+		return compat.Object(compat.P("status", compat.Str("online")), compat.P("message", compat.Str("")), compat.P("icon", compat.Str(""))), true, nil
+	case c.Method() == fiber.MethodGet && route == "/apps/user_status/api/v1/predefined_statuses":
+		return compat.List(), true, nil
 	case c.Method() == fiber.MethodGet && route == "/core/navigation/apps":
 		return compat.List(), true, nil
 	case c.Method() == fiber.MethodGet && route == "/core/autocomplete/get":
 		return compat.List(), true, nil
+	case c.Method() == fiber.MethodGet && route == "/apps/files/api/v1/templates":
+		return compat.List(), true, nil
+	case c.Method() == fiber.MethodGet && route == "/apps/files/api/v1/direct_editing":
+		return compat.Object(), true, nil
 	case strings.HasPrefix(route, "/apps/provisioning_api/api/v1/config"):
+		return compat.Object(), true, nil
+	case strings.HasPrefix(route, "/apps/richdocuments/"):
 		return compat.Object(), true, nil
 	}
 
@@ -147,6 +189,9 @@ func (e *Engine) compatRouteOCS(
 	case c.Method() == fiber.MethodGet && route == "/search/providers/files/search":
 		return e.compatSearch(c, user)
 
+	case c.Method() == fiber.MethodGet && route == "/apps/files/api/v1/recent":
+		return e.compatRecent(c, user)
+
 	case c.Method() == fiber.MethodGet && route == "/apps/files/api/v1/favorites":
 		return e.compatFavorites(c, user)
 
@@ -155,6 +200,17 @@ func (e *Engine) compatRouteOCS(
 
 	case c.Method() == fiber.MethodDelete && route == "/core/apppassword":
 		return e.compatRevokeAppPassword(c, user)
+
+	case c.Method() == fiber.MethodGet && route == "/apps/files_sharing/api/v1/shares":
+		return e.compatListShares(c, user)
+	case c.Method() == fiber.MethodPost && route == "/apps/files_sharing/api/v1/shares":
+		return e.compatCreateShare(c, user)
+	case c.Method() == fiber.MethodGet && strings.HasPrefix(route, "/apps/files_sharing/api/v1/shares/"):
+		return e.compatGetShare(c, user, strings.TrimPrefix(route, "/apps/files_sharing/api/v1/shares/"))
+	case c.Method() == fiber.MethodPut && strings.HasPrefix(route, "/apps/files_sharing/api/v1/shares/"):
+		return e.compatUpdateShare(c, user, strings.TrimPrefix(route, "/apps/files_sharing/api/v1/shares/"))
+	case c.Method() == fiber.MethodDelete && strings.HasPrefix(route, "/apps/files_sharing/api/v1/shares/"):
+		return e.compatDeleteShare(c, user, strings.TrimPrefix(route, "/apps/files_sharing/api/v1/shares/"))
 	}
 
 	return compat.Val{}, false, compat.NotFound("no such OCS endpoint")
@@ -290,23 +346,73 @@ func (e *Engine) compatFreeSpace(c *fiber.Ctx, user core.UserID) (uint64, error)
 	return space.Available, nil
 }
 
-// compatSearch answers the unified-search provider.
 func (e *Engine) compatSearch(
 	c *fiber.Ctx, user core.UserID,
 ) (compat.Val, bool, *compat.OCSError) {
 	limit := compat.ParamInt(c.Query("limit"))
+	if limit <= 0 {
+		limit = 25
+	}
+	if limit > 100 {
+		limit = 100
+	}
 	cursor := compat.ParamInt(c.Query("cursor"))
+	if cursor < 0 {
+		cursor = 0
+	}
+	queryLimit := cursor + limit + 1
+	if queryLimit > limits.SearchResults {
+		queryLimit = limits.SearchResults
+	}
+	term := strings.TrimSpace(c.Query("term"))
+	if term == "" {
+		return compat.SearchPage("Files", nil, -1), true, nil
+	}
+	if e.Search == nil {
+		return compat.Val{}, false, compat.ServerError("search is unavailable")
+	}
 
-	// The unified-search endpoint needs a bounded, non-streaming query
-	// returning entries. The engine's search is a stream over the walk, and
-	// a buffer-the-whole-stream wrapper here would be a second answer to how
-	// much one query may cost. Empty until that seam exists is the honest
-	// shape, and the provider list is what tells the client a search exists
-	// at all.
-	_ = limit
-	_ = cursor
-	_ = user
-	return compat.SearchPage("Files", nil, -1), true, nil
+	results, err := e.Search.Query(c.UserContext(),
+		searchSourcesOf(e.Core.UserScanSources(user), user, e.Core),
+		svc.QueryOptions{Query: term, Limit: queryLimit},
+	)
+	if err != nil {
+		return compat.Val{}, false, compat.ServerError("search failed")
+	}
+	if cursor >= len(results.Hits) {
+		return compat.SearchPage("Files", nil, -1), true, nil
+	}
+
+	end := cursor + limit
+	if end > len(results.Hits) {
+		end = len(results.Hits)
+	}
+	entries := make([]compat.Val, 0, end-cursor)
+	origin := compatOriginOf(c)
+	for _, hit := range results.Hits[cursor:end] {
+		path := "/" + strings.TrimPrefix(hit.Path, "/")
+		r, rerr := e.resolve(user, strings.TrimPrefix(path, "/"), acl.Read)
+		if rerr != nil {
+			continue
+		}
+		st, serr := r.Root().Stat(r.Path())
+		if serr != nil {
+			continue
+		}
+		entry := e.Core.EntryAt(r, st)
+		fid, ferr := e.compatFileID(c.UserContext(), entry)
+		if ferr != nil {
+			continue
+		}
+		thumbURL := fmt.Sprintf("%s/index.php/core/preview?fileId=%d&x=64&y=64", origin, fid)
+		entries = append(entries, compat.SearchEntry(hit.Name, path, fid, thumbURL, origin))
+	}
+
+	next := -1
+	if end < len(results.Hits) || (results.Truncated && queryLimit < limits.SearchResults) {
+		next = end
+	}
+	return compat.SearchPage("Files", entries, next), true, nil
 }
 
 // compatFavorites answers the starred list.
@@ -322,37 +428,6 @@ func (e *Engine) compatFavorites(
 		out = append(out, compat.Favorite(r.Path))
 	}
 	return compat.List(out...), true, nil
-}
-
-// compatDirect answers the direct-URL request an external player opens.
-//
-// The endpoint needs an id-to-path lookup under the caller's own tree, which
-// the engine's identity registry does not expose as a query yet. Rather than
-// a second index answering the same question differently, the endpoint is
-// honest about absence: the client falls back to its normal download path,
-// which is what it does for any file with no preview, and nothing here
-// pretends a URL was minted.
-func (e *Engine) compatDirect(
-	c *fiber.Ctx, user core.UserID,
-) (compat.Val, bool, *compat.OCSError) {
-	return compat.Val{}, false, compat.NotFound("File not found")
-}
-
-// compatRevokeAppPassword ends the credential that made this request.
-//
-// Both mobile apps call this when the account is removed from the device.
-// Without it the credential the login flow issued outlives the account entry
-// on the phone that holds it.
-//
-// Not served yet: the chain resolves a credential to a principal and drops
-// the row id on the way, and this endpoint's whole job is naming that row. A
-// revocation that guessed would end somebody else's credential; refusing
-// until the id crosses the boundary leaves the caller's credential working
-// and revocable from the account screen.
-func (e *Engine) compatRevokeAppPassword(
-	c *fiber.Ctx, user core.UserID,
-) (compat.Val, bool, *compat.OCSError) {
-	return compat.Val{}, false, compat.NotFound("no such OCS endpoint")
 }
 
 // compatLoginBegin starts a device login.
@@ -432,26 +507,31 @@ func (e *Engine) compatLoginGrant(c *fiber.Ctx) error {
 // compatOriginOf is the base URL this request arrived on.
 //
 // Empty when the host header is absent, which leaves the flow's URLs without
-// a host rather than inventing one.
 func compatOriginOf(c *fiber.Ctx) string {
 	host := c.Hostname()
 	if host == "" {
 		return ""
 	}
-	return "https://" + host
+	scheme := c.Protocol()
+	if scheme == "" {
+		scheme = "http"
+	}
+	return scheme + "://" + host
 }
 
-// compatWiring is what the capabilities document derives its promises from.
 func (e *Engine) compatWiring() compat.Wiring {
 	present := map[compat.Port]bool{
-		compat.PortFiles:       true,
-		compat.PortAccount:     true,
-		compat.PortSearch:      true,
-		compat.PortFavorites:   true,
-		compat.PortTrash:       true,
-		compat.PortUploads:     e.Upload != nil,
-		compat.PortAppPassword: true,
-		compat.PortLoginFlow:   e.Flow != nil,
+		compat.PortFiles:         true,
+		compat.PortAccount:       true,
+		compat.PortSearch:        e.Search != nil,
+		compat.PortFavorites:     true,
+		compat.PortTrash:         true,
+		compat.PortUploads:       e.Upload != nil,
+		compat.PortAppPassword:   true,
+		compat.PortLoginFlow:     e.Flow != nil,
+		compat.PortSharing:       true,
+		compat.PortLinks:         true,
+		compat.PortContentOrigin: e.Preview != nil,
 	}
 	return compat.Wiring{Present: present}
 }

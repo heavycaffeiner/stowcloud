@@ -36,6 +36,9 @@ type Principal struct {
 	// Mask is the app password's permission mask. A session has every bit,
 	// because a session is the account itself rather than a delegation of it.
 	Mask acl.Perms
+	// AppPasswordID identifies the verified app password. Sessions leave it
+	// zero because no app credential issued the request.
+	AppPasswordID int64
 }
 
 // Scope reports whether this principal may reach a route with this

@@ -11,6 +11,7 @@ package lifecycle
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -21,9 +22,9 @@ import (
 	"sync"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/archive"
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
-
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/jail"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
@@ -154,7 +155,7 @@ type Engine struct {
 	appHosts   middleware.Hosts
 	trusted    []netip.Prefix
 	csrf       []byte
-
+	claimKey   handler.ClaimKey
 	// The provider client, rebuilt when the settings change. Nil is off, and
 	// off is the ordinary state: a deployment without single sign-on is one
 	// where people use passwords.
@@ -458,6 +459,11 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		return nil, fmt.Errorf("building the device login: %w", ferr)
 	}
 	e.Flow = flow
+	claimBytes := make([]byte, 32)
+	if _, rerr := rand.Read(claimBytes); rerr != nil {
+		return fail(fmt.Errorf("generating direct claim key: %w", rerr))
+	}
+	e.claimKey = handler.ClaimKey{Version: 1, Key: claimBytes}
 
 	return e, nil
 }

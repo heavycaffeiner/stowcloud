@@ -105,50 +105,56 @@ func (s *Service) mintAppPassword(
 }
 
 // VerifyAppPassword resolves a presented token to its principal and scope.
+func (s *Service) VerifyAppPassword(ctx context.Context, token string) (Principal, Scope, error) {
+	principal, scope, _, err := s.VerifyAppPasswordID(ctx, token)
+	return principal, scope, err
+}
+
+// VerifyAppPasswordID resolves a presented token and returns its credential id.
 //
 // Every refusal is one answer: a token that folds to nothing, a digest with
 // no row, a requested wipe, an expiry passed, an owner missing or disabled.
 // Distinguishing them would say which of those a presented string was.
-func (s *Service) VerifyAppPassword(ctx context.Context, token string) (Principal, Scope, error) {
+func (s *Service) VerifyAppPasswordID(ctx context.Context, token string) (Principal, Scope, int64, error) {
 	folded, err := crockfordFold(token)
 	if err != nil {
-		return Principal{}, Scope{}, ErrCredentials
+		return Principal{}, Scope{}, 0, ErrCredentials
 	}
 	hash := sha256.Sum256([]byte(folded))
 	gen := s.Generation()
-	if p, scope, ok := s.cache.tokenLookup(hash, gen); ok {
-		return p, scope, nil
+	if p, scope, id, ok := s.cache.tokenLookup(hash, gen); ok {
+		return p, scope, id, nil
 	}
 
 	row, err := s.store.AppPasswordByHash(ctx, hash[:])
 	if errors.Is(err, state.ErrNoSuchAppPassword) {
-		return Principal{}, Scope{}, ErrCredentials
+		return Principal{}, Scope{}, 0, ErrCredentials
 	}
 	if err != nil {
-		return Principal{}, Scope{}, err
+		return Principal{}, Scope{}, 0, err
 	}
 	if row.WipeWanted {
-		return Principal{}, Scope{}, ErrCredentials
+		return Principal{}, Scope{}, 0, ErrCredentials
 	}
 	if row.ExpiresNs != nil && s.now() > *row.ExpiresNs {
-		return Principal{}, Scope{}, ErrCredentials
+		return Principal{}, Scope{}, 0, ErrCredentials
 	}
 
 	acct, err := s.store.AccountByID(ctx, row.User)
 	if errors.Is(err, state.ErrNoSuchAccount) {
-		return Principal{}, Scope{}, ErrCredentials
+		return Principal{}, Scope{}, 0, ErrCredentials
 	}
 	if err != nil {
-		return Principal{}, Scope{}, err
+		return Principal{}, Scope{}, 0, err
 	}
 	if acct.Disabled {
-		return Principal{}, Scope{}, ErrCredentials
+		return Principal{}, Scope{}, 0, ErrCredentials
 	}
 
 	principal := principalOf(acct)
 	scope := Scope{Perms: row.ScopePerms, Shares: row.Shares}
-	s.cache.tokenStore(hash, principal, scope, gen)
-	return principal, scope, nil
+	s.cache.tokenStore(hash, principal, scope, row.ID, gen)
+	return principal, scope, row.ID, nil
 }
 
 // RevokeAppPassword destroys one and bumps the generation, so the bypass

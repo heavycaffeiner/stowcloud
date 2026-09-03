@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -374,4 +376,109 @@ func ParseFileID(raw string) (uint64, error) {
 		n = next
 	}
 	return n, nil
+}
+
+// PreviewQuery is a parsed thumbnail request.
+type PreviewQuery struct {
+	FileID    *uint64
+	Path      string
+	Width     int
+	Height    int
+	ForceIcon bool
+}
+
+const (
+	previewDefaultSize = 64
+	previewMaxSize     = 4096
+)
+
+func clampSize(raw string) int {
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 {
+		return previewDefaultSize
+	}
+	if n > previewMaxSize {
+		return previewMaxSize
+	}
+	return n
+}
+
+// ParsePreviewQuery reads a thumbnail query.
+func ParsePreviewQuery(get func(string) string) PreviewQuery {
+	out := PreviewQuery{
+		Path:      get("file"),
+		Width:     clampSize(get("x")),
+		Height:    clampSize(get("y")),
+		ForceIcon: get("forceIcon") == "1",
+	}
+	if raw := get("fileId"); raw != "" {
+		if id, err := ParseFileID(raw); err == nil {
+			out.FileID = &id
+		}
+	}
+	return out
+}
+
+// RecentQuery describes a request for recently modified files.
+type RecentQuery struct {
+	Since time.Time
+	Limit int
+}
+
+// ParseRecentQuery reads recent entries query parameters.
+func ParseRecentQuery(rawLimit, rawSince string, now time.Time) (RecentQuery, error) {
+	q := RecentQuery{Limit: 30, Since: now.Add(-14 * 24 * time.Hour)}
+	if rawLimit != "" {
+		n, err := strconv.Atoi(rawLimit)
+		if err != nil || n <= 0 {
+			return RecentQuery{}, fmt.Errorf("invalid limit: %s", rawLimit)
+		}
+		if n > 200 {
+			n = 200
+		}
+		q.Limit = n
+	}
+	if rawSince != "" {
+		if t, err := time.Parse(time.RFC3339, rawSince); err == nil {
+			q.Since = t
+		} else if secs, serr := strconv.ParseInt(rawSince, 10, 64); serr == nil {
+			q.Since = time.Unix(secs, 0)
+		} else {
+			return RecentQuery{}, fmt.Errorf("invalid timestamp: %s", rawSince)
+		}
+	}
+	return q, nil
+}
+
+// SearchEntry formats one unified search or recent file entry for the OCS response.
+func SearchEntry(name, path string, fileID uint64, thumbURL, baseDirURL string) Val {
+	parent := "/"
+	if i := strings.LastIndexByte(path, '/'); i > 0 {
+		parent = path[:i]
+	}
+	fidStr := ""
+	if fileID > 0 {
+		fidStr = strconv.FormatUint(fileID, 10)
+	}
+	resURL := ""
+	if baseDirURL != "" {
+		resURL = strings.TrimRight(baseDirURL, "/") + "/apps/files/?dir=" + parent
+	}
+	return Map(
+		P("thumbnailUrl", Str(thumbURL)),
+		P("title", Str(name)),
+		P("subline", Str(parent)),
+		P("resourceUrl", Str(resURL)),
+		P("icon", Str("")),
+		P("rounded", Bool(false)),
+		P("attributes", Map(
+			P("fileId", Str(fidStr)),
+			P("path", Str(path)),
+		)),
+	)
+}
+
+// DirectURL formats the direct media streaming response.
+func DirectURL(url string) Val {
+	return Map(P("url", Str(url)))
 }

@@ -108,12 +108,12 @@ func (p PermBits) Has(want PermBits) bool { return p&want == want }
 // PropEntry is what one hit carries into the renderer: the fields the
 // vocabulary touches and nothing else.
 type PropEntry struct {
-	IsDir bool
-	Size  uint64
-	Perms PermBits
-	// FileID is the durable id the entry's journal key is built from.
-	// Resolved by the caller, because the lookup belongs to the assembly.
-	FileID uint64
+	IsDir      bool
+	Size       uint64
+	Perms      PermBits
+	FileID     uint64
+	HasPreview bool
+	Favorite   bool
 }
 
 // PropSource renders the vendor properties for one entry.
@@ -124,19 +124,18 @@ type PropEntry struct {
 // forbids.
 type PropSource struct {
 	instanceID func() string
-	// shared answers whether the entry is behind a share link. A source that
-	// cannot answer still renders: the flag costs one letter, not the entry.
-	shared func(PropEntry) bool
-	warn   func(msg string, args ...any)
+	shared     func(PropEntry) bool
+	favorite   func(PropEntry) bool
+	warn       func(msg string, args ...any)
 }
 
 // PropSourceDeps carries the source's reach, as functions, so the assembly
 // decides where each answer comes from.
 type PropSourceDeps struct {
 	InstanceID func() string
-	// Shared is optional: unset renders every entry as not shared.
-	Shared func(PropEntry) bool
-	Warn   func(msg string, args ...any)
+	Shared     func(PropEntry) bool
+	Favorite   func(PropEntry) bool
+	Warn       func(msg string, args ...any)
 }
 
 // NewPropSource fills the defaults a caller should not have to think about:
@@ -151,6 +150,7 @@ func NewPropSource(d PropSourceDeps) *PropSource {
 	return &PropSource{
 		instanceID: d.InstanceID,
 		shared:     d.Shared,
+		favorite:   d.Favorite,
 		warn:       d.Warn,
 	}
 }
@@ -225,6 +225,20 @@ func (s *PropSource) Props(e PropEntry, want []xml.Name) []dav.Prop {
 		// empty one rather than a missing property.
 		out = append(out, dav.Prop{Name: xml.Name{Space: NSOwnCloud, Local: "share-types"}})
 	}
+	if asked(NSOwnCloud, "favorite") {
+		fav := "0"
+		if e.Favorite {
+			fav = "1"
+		}
+		add(NSOwnCloud, "favorite", fav)
+	}
+	if asked(NSNextcloudX, "is-favorite") {
+		fav := "0"
+		if e.Favorite {
+			fav = "1"
+		}
+		add(NSNextcloudX, "is-favorite", fav)
+	}
 	if asked(NSNextcloudX, "is-encrypted") {
 		// This deployment holds no encrypted folders, and the client shows a
 		// lock badge from exactly this field. A value that read as encrypted
@@ -232,8 +246,8 @@ func (s *PropSource) Props(e PropEntry, want []xml.Name) []dav.Prop {
 		// anything being wrong the user could see.
 		add(NSNextcloudX, "is-encrypted", "0")
 	}
-	if asked(NSNextcloudX, "has-preview") {
-		add(NSNextcloudX, "has-preview", strconv.FormatBool(!e.IsDir))
+	if asked(NSNextcloudX, "has-preview") || asked(NSOwnCloud, "has-preview") {
+		add(NSNextcloudX, "has-preview", strconv.FormatBool(e.HasPreview))
 	}
 	return out
 }

@@ -5,11 +5,12 @@ package lifecycle
 import (
 	"context"
 	"fmt"
-
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/ident"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
+	"strings"
 )
 
 // Joining the WebDAV property surface to the rows that hold it.
@@ -63,6 +64,22 @@ func (p *DavProps) SetProps(ctx context.Context, key dav.ResourceKey, ops []dav.
 		rows = append(rows, state.DavPropOp{
 			NS: o.NS, Name: o.Name, Value: o.Value, Remove: o.Remove,
 		})
+	}
+	favPath := ""
+	if pStr, ok := ctx.Value(keyDavPath).(string); ok {
+		favPath = strings.TrimPrefix(pStr, "/dav/files/")
+		favPath = strings.TrimPrefix(favPath, "/dav/")
+		favPath = strings.TrimPrefix(favPath, "/")
+	}
+	if princ, pok := ctx.Value(middleware.KeyCredential).(middleware.Principal); pok && princ.UserID != 0 {
+		for _, o := range ops {
+			if (o.NS == "http://owncloud.org/ns" || o.NS == "http://nextcloud.org/ns") && (o.Name == "favorite" || o.Name == "is-favorite") {
+				on := !o.Remove && o.Value == "1"
+				if ferr := p.db.SetFavorite(ctx, princ.UserID, state.Favorite{Ident: id, Path: favPath}, on); ferr != nil {
+					return ferr
+				}
+			}
+		}
 	}
 	return p.db.SetDavProps(ctx, id, rows)
 }

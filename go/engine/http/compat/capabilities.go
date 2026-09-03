@@ -270,7 +270,19 @@ func Capabilities(w Wiring, version string) Val {
 			P("pollinterval", Int(60)),
 			P("webdav-root", Str("remote.php/webdav")),
 		)),
+		P("dav", Map(
+			P("chunking", Str("1.0")),
+		)),
+		P("theming", Map(
+			P("name", Str("Stowcloud")),
+			P("slogan", Str("Cloud Storage")),
+			P("color", Str("#1a73e8")),
+			P("text-color", Str("#ffffff")),
+		)),
 		P("files", Map(files...)),
+	}
+	if on[FeatureTrash] {
+		caps = append(caps, P("files_trashbin", Bool(true)))
 	}
 
 	// Sharing appears only when something can serve it. An empty sharing block
@@ -297,9 +309,14 @@ func Capabilities(w Wiring, version string) Val {
 		}
 		caps = append(caps, P("files_sharing", Map(sharing...)))
 	}
-
 	return Map(
-		P("version", Map(P("string", Str(version)))),
+		P("version", Map(
+			P("string", Str(version)),
+			P("major", Int(31)),
+			P("minor", Int(0)),
+			P("micro", Int(4)),
+			P("edition", Str("")),
+		)),
 		P("capabilities", Map(caps...)),
 	)
 }

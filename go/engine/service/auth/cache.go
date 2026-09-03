@@ -59,6 +59,7 @@ type connEntry struct {
 type tokenEntry struct {
 	principal Principal
 	scope     Scope
+	id        int64
 	gen       int64
 	inserted  time.Time
 }
@@ -175,24 +176,24 @@ func (c *caches) connStore(hash [32]byte, p Principal, gen int64) {
 }
 
 // tokenLookup is the app-password bypass.
-func (c *caches) tokenLookup(hash [32]byte, gen int64) (Principal, Scope, bool) {
+func (c *caches) tokenLookup(hash [32]byte, gen int64) (Principal, Scope, int64, bool) {
 	c.token.mu.Lock()
 	defer c.token.mu.Unlock()
 	e, present := c.token.peek(hash)
 	if !present {
-		return Principal{}, Scope{}, false
+		return Principal{}, Scope{}, 0, false
 	}
 	if e.gen != gen || c.clk.Now().Sub(e.inserted) > tokenTTL {
 		c.token.remove(hash)
-		return Principal{}, Scope{}, false
+		return Principal{}, Scope{}, 0, false
 	}
-	return e.principal, e.scope, true
+	return e.principal, e.scope, e.id, true
 }
 
-func (c *caches) tokenStore(hash [32]byte, p Principal, scope Scope, gen int64) {
+func (c *caches) tokenStore(hash [32]byte, p Principal, scope Scope, id, gen int64) {
 	c.token.mu.Lock()
 	defer c.token.mu.Unlock()
-	c.token.put(hash, tokenEntry{principal: p, scope: scope, gen: gen, inserted: c.clk.Now()})
+	c.token.put(hash, tokenEntry{principal: p, scope: scope, id: id, gen: gen, inserted: c.clk.Now()})
 }
 
 // lru is a bounded map evicted in insertion order, guarded by its own mutex.

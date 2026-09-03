@@ -106,14 +106,15 @@ func (e *Engine) ResolvePrincipal(c middleware.Credential) (middleware.Principal
 		}, true
 
 	case middleware.CredentialBasicApp, middleware.CredentialBearerApp:
-		p, scope, err := e.Auth.VerifyAppPassword(ctx, string(c.Token))
+		p, scope, id, err := e.Auth.VerifyAppPasswordID(ctx, string(c.Token))
 		if err != nil || p.Disabled {
 			return middleware.Principal{}, false
 		}
 		return middleware.Principal{
-			UserID: p.UserID,
-			Kind:   c.Kind,
-			Mask:   acl.Perms(scope.Perms),
+			UserID:        p.UserID,
+			Kind:          c.Kind,
+			Mask:          acl.Perms(scope.Perms),
+			AppPasswordID: id,
 		}, true
 
 	case middleware.CredentialNone:

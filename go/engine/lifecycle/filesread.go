@@ -10,12 +10,13 @@ package lifecycle
 
 import (
 	"errors"
+	"github.com/gofiber/fiber/v2"
 	"io"
 	"log/slog"
+	"mime"
+	"path/filepath"
 	"strconv"
 	"strings"
-
-	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
@@ -106,8 +107,11 @@ func (e *Engine) sendStream(
 
 	// Every header before the first byte. The status is written with the
 	// first write, so anything set afterwards lands on a response the client
-	// has already started reading.
-	c.Set(fiber.HeaderContentType, fiber.MIMEOctetStream)
+	contentType := mime.TypeByExtension(filepath.Ext(entry.Name))
+	if contentType == "" {
+		contentType = fiber.MIMEOctetStream
+	}
+	c.Set(fiber.HeaderContentType, contentType)
 	c.Set(fiber.HeaderAcceptRanges, "bytes")
 	if entry.ETag != "" {
 		c.Set(fiber.HeaderETag, etagHeader(entry))

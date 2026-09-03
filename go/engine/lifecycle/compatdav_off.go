@@ -5,6 +5,7 @@ package lifecycle
 import (
 	"context"
 	"encoding/xml"
+	"net/http"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
@@ -26,3 +27,4 @@ func (e *Engine) davVendorProps() func(
 ) []dav.Prop {
 	return nil
 }
+func (e *Engine) serveDavTrash(http.ResponseWriter, *http.Request, core.UserID, string) {}

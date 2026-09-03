@@ -8,12 +8,12 @@
 package lifecycle
 
 import (
+	"context"
 	"errors"
-	"net/http"
-	"strings"
-
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/adaptor"
+	"net/http"
+	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
@@ -33,10 +33,14 @@ const DavPrefix = "/dav"
 // named "uploads" would collide with it.
 const DavUploadPrefix = "/dav-uploads"
 
+// DavTrashPrefix is where the compatibility trash collection lives.
+const DavTrashPrefix = "/dav-trash"
+
+type davContextKey string
+
+const keyDavPath davContextKey = "dav_path"
+
 // DavAlias is an alternative mount point addressing the same tree.
-//
-// Data rather than constants because the names belong to another product's
-// protocol, and the layer gate keeps that vocabulary out of this package.
 type DavAlias struct {
 	// Prefix is the path the other client addresses this server with.
 	Prefix string
@@ -90,7 +94,7 @@ const davDefaultInfinity = 10_000
 func (e *Engine) mountDav(app *fiber.App) {
 	bridge := adaptor.HTTPHandler(e.DavHandler(e.newDavHandler(), e.davAliases()))
 
-	prefixes := []string{DavPrefix, DavUploadPrefix}
+	prefixes := []string{DavPrefix, DavUploadPrefix, DavTrashPrefix}
 	for _, a := range e.davAliases() {
 		prefixes = append(prefixes, strings.TrimSuffix(a.Prefix, "/"))
 	}
@@ -113,7 +117,12 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		// one first means it never gets that far. Restricted to the root,
 		// because an OPTIONS aimed at a path speaks about that resource, and
 		// answering that to a stranger tells them whether a file is there.
-		if r.Method == http.MethodOptions && davIsRoot(r.URL.EscapedPath()) {
+		path := r.URL.EscapedPath()
+		if rewritten, aliased := davAlias(path, aliases); aliased {
+			path = rewritten
+		}
+
+		if r.Method == http.MethodOptions && (davIsRoot(r.URL.EscapedPath()) || davIsRoot(path)) {
 			h.MountOptions(w)
 			return
 		}
@@ -129,17 +138,9 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 			return
 		}
 
-		// EscapedPath rather than Path: Path has already been percent-decoded,
-		// and the splitter decodes each segment itself. Decoding twice makes a
-		// file whose name holds a literal percent unreachable, because the
-		// second pass reads its escape as a malformed one.
-		path := r.URL.EscapedPath()
-		if rewritten, aliased := davAlias(path, aliases); aliased {
-			path = rewritten
-		}
+		r = r.WithContext(context.WithValue(r.Context(), keyDavPath, path))
 
 		// Nothing on disk corresponds to the virtual root, so resolution has
-		// nothing to work from: it is built out of the caller's grants. A sync
 		// client lists it to confirm the account it has just signed in as, and
 		// a 404 at that moment reads as a server that cannot be reached, right
 		// after a sign-in that succeeded.
@@ -193,6 +194,10 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 				return
 			}
 			h.ServeUpload(w, r, target.Resolved, up)
+			return
+		}
+		if rest, ok := strings.CutPrefix(path, DavTrashPrefix); ok {
+			e.serveDavTrash(w, r, user, rest)
 			return
 		}
 
