@@ -1,15 +1,15 @@
 <script lang="ts">
   // Menu.svelte: Material 3 adaptive menu and mobile bottom sheet.
-  // On mobile (compact viewport), renders as a Material 3 Bottom Sheet with backdrop scrim,
-  // drag handle, and full-width touch-friendly action rows.
+  // On mobile (compact viewport), renders as a Material 3 Bottom Sheet modal dialog in the
+  // browser top-layer, guaranteeing full-screen width, viewport anchoring, and escape
+  // from any ancestor clipping or transform contexts (including the sidebar drawer).
   // On desktop, renders as a fixed-position floating dropdown with exact pixel alignment
   // to caller coordinates, 4px grid snapping, and boundary clamping.
   import type { Snippet } from 'svelte'
-  import { fade, fly, scale } from 'svelte/transition'
+  import { fade, scale } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import { Menu } from 'm3-svelte'
   import { uiState } from '../state/ui.svelte'
-  import { t } from '../i18n'
 
   interface Props {
     open: boolean
@@ -23,6 +23,7 @@
   let { open, onclose, x, y, align = 'start', children }: Props = $props()
   const anchored = $derived(x !== undefined && y !== undefined)
   let el: HTMLDivElement | undefined = $state()
+  let sheetDialogEl: HTMLDialogElement | undefined = $state()
 
   // Exact desktop coordinate derivations snapped to 4px grid
   let rightOffset = $derived.by(() => {
@@ -52,6 +53,23 @@
     return reduceMotion() ? 0 : ms
   }
 
+  // Mobile BottomSheet modal dialog lifecycle in browser top-layer
+  $effect(() => {
+    if (!open || !uiState.compact || !sheetDialogEl) return
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    sheetDialogEl.showModal?.()
+    return () => {
+      sheetDialogEl?.close?.()
+      trigger?.focus()
+    }
+  })
+
+  function onDialogClick(e: MouseEvent): void {
+    if (e.target === sheetDialogEl) {
+      onclose()
+    }
+  }
+
   // Desktop outside-click listener (capture phase)
   $effect(() => {
     if (!open || uiState.compact) return
@@ -68,7 +86,7 @@
   })
 
   function onWindowKeydown(e: KeyboardEvent) {
-    if (open && e.key === 'Escape') onclose()
+    if (open && !uiState.compact && e.key === 'Escape') onclose()
   }
 </script>
 
@@ -76,20 +94,18 @@
 
 {#if open}
   {#if uiState.compact}
-    <!-- Mobile Material 3 Bottom Sheet -->
-    <div
-      class="sc-sheet-backdrop"
-      role="presentation"
-      onclick={onclose}
-      in:fade={{ duration: animDuration(150) }}
-      out:fade={{ duration: animDuration(100) }}
-    ></div>
-    <div
+    <!-- Mobile Material 3 Bottom Sheet Modal Dialog (Top-Layer) -->
+    <dialog
+      bind:this={sheetDialogEl}
       class="sc-sheet"
       role="menu"
       tabindex="-1"
-      in:fly={{ y: 200, duration: animDuration(200), easing: cubicOut }}
-      out:fly={{ y: 200, duration: animDuration(150) }}
+      onclick={onDialogClick}
+      onclose={() => onclose()}
+      oncancel={(e) => {
+        e.preventDefault()
+        onclose()
+      }}
     >
       <div class="sc-sheet-handle-wrap" aria-hidden="true">
         <div class="sc-sheet-handle"></div>
@@ -97,7 +113,7 @@
       <div class="sc-sheet-content">
         {@render children()}
       </div>
-    </div>
+    </dialog>
   {:else}
     <!-- Desktop Floating Dropdown Menu -->
     <div
@@ -135,29 +151,56 @@
     width: 100%;
   }
 
-  /* Mobile Bottom Sheet Styles */
-  .sc-sheet-backdrop {
+  /* Mobile Bottom Sheet Styles (Top-Layer Dialog) */
+  dialog.sc-sheet {
     position: fixed;
-    inset: 0;
-    z-index: 50;
-    background: color-mix(in srgb, var(--m3c-scrim) 32%, transparent);
-  }
-  .sc-sheet {
-    position: fixed;
-    left: 0;
-    right: 0;
+    top: auto;
     bottom: 0;
-    z-index: 51;
+    inset-inline: 0;
+    margin: 0;
+    width: 100vw;
+    max-width: 100vw;
+    padding: 0;
+    border: none;
     background: var(--m3c-surface-container-low);
     border-radius: 16px 16px 0 0;
     box-shadow: var(--m3-elevation-3);
-    padding: 0;
-    max-height: calc(80vh - 16px);
-    max-height: calc(80dvh - 16px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    max-height: calc(80vh - 16px);
+    max-height: calc(80dvh - 16px);
+    translate: 0 0;
+    transition:
+      translate var(--m3-duration) var(--m3-easing),
+      display var(--m3-duration) allow-discrete,
+      overlay var(--m3-duration) allow-discrete;
   }
+  dialog.sc-sheet:not([open]) {
+    display: none;
+    translate: 0 100%;
+  }
+  @starting-style {
+    dialog.sc-sheet[open] {
+      translate: 0 100%;
+    }
+  }
+  dialog.sc-sheet::backdrop {
+    background: color-mix(in srgb, var(--m3c-scrim) 32%, transparent);
+    transition:
+      background-color var(--m3-duration) var(--m3-easing),
+      display var(--m3-duration) allow-discrete,
+      overlay var(--m3-duration) allow-discrete;
+  }
+  dialog.sc-sheet:not([open])::backdrop {
+    background: color-mix(in srgb, var(--m3c-scrim) 0%, transparent);
+  }
+  @starting-style {
+    dialog.sc-sheet[open]::backdrop {
+      background: color-mix(in srgb, var(--m3c-scrim) 0%, transparent);
+    }
+  }
+
   .sc-sheet-handle-wrap {
     padding: 8px 0;
     margin-bottom: 4px;
