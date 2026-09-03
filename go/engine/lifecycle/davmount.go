@@ -144,14 +144,22 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		// client lists it to confirm the account it has just signed in as, and
 		// a 404 at that moment reads as a server that cannot be reached, right
 		// after a sign-in that succeeded.
-		if r.Method == "PROPFIND" && davIsRoot(path) {
-			roots := e.Core.Roots(user)
-			children := make([]dav.RootChild, 0, len(roots))
-			for _, rt := range roots {
-				children = append(children, dav.RootChild{Label: rt.Label})
+		if davIsRoot(path) {
+			if r.Method == "PROPFIND" {
+				roots := e.Core.Roots(user)
+				children := make([]dav.RootChild, 0, len(roots))
+				for _, rt := range roots {
+					children = append(children, dav.RootChild{Label: rt.Label})
+				}
+				h.RootPropfind(w, r, children)
+				return
 			}
-			h.RootPropfind(w, r, children)
-			return
+			if r.Method == http.MethodHead || r.Method == http.MethodGet {
+				w.Header().Set("DAV", "1, 2")
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.WriteHeader(http.StatusOK)
+				return
+			}
 		}
 
 		// The chunked upload collection lives under its own prefix, outside the
@@ -271,7 +279,8 @@ func davIsRoot(path string) bool {
 func davAlias(urlPath string, aliases []DavAlias) (string, bool) {
 	best := -1
 	for i, a := range aliases {
-		if !strings.HasPrefix(urlPath, a.Prefix) {
+		prefixNoSlash := strings.TrimSuffix(a.Prefix, "/")
+		if urlPath != prefixNoSlash && !strings.HasPrefix(urlPath, a.Prefix) {
 			continue
 		}
 		if best < 0 || len(a.Prefix) > len(aliases[best].Prefix) {
@@ -283,7 +292,10 @@ func davAlias(urlPath string, aliases []DavAlias) (string, bool) {
 	}
 
 	a := aliases[best]
-	rest := strings.TrimPrefix(urlPath, a.Prefix)
+	rest := ""
+	if strings.HasPrefix(urlPath, a.Prefix) {
+		rest = strings.TrimPrefix(urlPath, a.Prefix)
+	}
 	for range a.DropSegments {
 		rest = strings.TrimPrefix(rest, "/")
 		i := strings.IndexByte(rest, '/')

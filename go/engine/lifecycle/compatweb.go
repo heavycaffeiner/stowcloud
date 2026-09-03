@@ -100,10 +100,10 @@ func (e *Engine) compatStatus(c *fiber.Ctx) error {
 		"installed":       true,
 		"maintenance":     false,
 		"needsDbUpgrade":  false,
-		"version":         compatVersionString,
+		"version":         compatVersionString + ".1",
 		"versionstring":   compatVersionString,
 		"edition":         "",
-		"productname":     "Stowcloud",
+		"productname":     "Nextcloud",
 		"extendedSupport": false,
 	})
 }

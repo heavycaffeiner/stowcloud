@@ -167,6 +167,106 @@ func TestTheCapabilitiesDocumentAnswersUnauthenticated(t *testing.T) {
 	}
 }
 
+func TestCompatWebdavDiscoveryAndRootAccess(t *testing.T) {
+	t.Parallel()
+	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	if openErr != nil {
+		t.Fatalf("opening engine: %v", openErr)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing engine: %v", cerr)
+		}
+	})
+	ctx := context.Background()
+	uid, aerr := e.Auth.CreateAdmin(ctx, "alice", "Alice", pwOf(loginPassword))
+	if aerr != nil {
+		t.Fatalf("creating admin: %v", aerr)
+	}
+	base := serveCompatEngine(t, e)
+	dav := davAuth(t, e, base, uid)
+	client := compatClient()
+	t.Cleanup(client.CloseIdleConnections)
+	aliases := []string{
+		"/remote.php/webdav",
+		"/remote.php/webdav/",
+		"/index.php/remote.php/webdav",
+		"/index.php/remote.php/webdav/",
+		"/remote.php/dav",
+		"/remote.php/dav/",
+		"/index.php/remote.php/dav",
+		"/index.php/remote.php/dav/",
+	}
+
+	for _, p := range aliases {
+		optReq, err := http.NewRequest(http.MethodOptions, base+p, nil)
+		if err != nil {
+			t.Fatalf("building OPTIONS %s: %v", p, err)
+		}
+		optResp, err := client.Do(optReq)
+		if err != nil || optResp.StatusCode != http.StatusOK {
+			t.Fatalf("OPTIONS %s answered %d, want 200", p, optResp.StatusCode)
+		}
+		if cerr := optResp.Body.Close(); cerr != nil {
+			t.Errorf("closing OPTIONS response: %v", cerr)
+		}
+
+		headAnon, err := http.NewRequest(http.MethodHead, base+p, nil)
+		if err != nil {
+			t.Fatalf("building anonymous HEAD %s: %v", p, err)
+		}
+		headAnonResp, err := client.Do(headAnon)
+		if err != nil || headAnonResp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("anonymous HEAD %s answered %d, want 401", p, headAnonResp.StatusCode)
+		}
+		if !strings.Contains(headAnonResp.Header.Get("WWW-Authenticate"), "Basic") {
+			t.Fatalf("anonymous HEAD %s missing Basic auth header: %q",
+				p, headAnonResp.Header.Get("WWW-Authenticate"))
+		}
+		if cerr := headAnonResp.Body.Close(); cerr != nil {
+			t.Errorf("closing anonymous HEAD response: %v", cerr)
+		}
+
+		propAnon, err := http.NewRequest("PROPFIND", base+p, nil)
+		if err != nil {
+			t.Fatalf("building anonymous PROPFIND %s: %v", p, err)
+		}
+		propAnonResp, err := client.Do(propAnon)
+		if err != nil || propAnonResp.StatusCode != http.StatusUnauthorized {
+			t.Fatalf("anonymous PROPFIND %s answered %d, want 401", p, propAnonResp.StatusCode)
+		}
+		if cerr := propAnonResp.Body.Close(); cerr != nil {
+			t.Errorf("closing anonymous PROPFIND response: %v", cerr)
+		}
+
+		headAuth, err := http.NewRequest(http.MethodHead, base+p, nil)
+		if err != nil {
+			t.Fatalf("building authenticated HEAD %s: %v", p, err)
+		}
+		headAuth.Header.Set("Authorization", dav)
+		headAuthResp, err := client.Do(headAuth)
+		if err != nil || headAuthResp.StatusCode != http.StatusOK {
+			t.Fatalf("authenticated HEAD %s answered %d, want 200", p, headAuthResp.StatusCode)
+		}
+		if cerr := headAuthResp.Body.Close(); cerr != nil {
+			t.Errorf("closing authenticated HEAD response: %v", cerr)
+		}
+
+		propAuth, err := http.NewRequest("PROPFIND", base+p, nil)
+		if err != nil {
+			t.Fatalf("building authenticated PROPFIND %s: %v", p, err)
+		}
+		propAuth.Header.Set("Authorization", dav)
+		propAuthResp, err := client.Do(propAuth)
+		if err != nil || propAuthResp.StatusCode != http.StatusMultiStatus {
+			t.Fatalf("authenticated PROPFIND %s answered %d, want 207", p, propAuthResp.StatusCode)
+		}
+		if cerr := propAuthResp.Body.Close(); cerr != nil {
+			t.Errorf("closing authenticated PROPFIND response: %v", cerr)
+		}
+	}
+}
+
 // The stub endpoints answer an empty success, which is what stops a client
 // retrying in a loop or showing an error banner.
 func TestTheStubEndpointsAnswerEmpty(t *testing.T) {

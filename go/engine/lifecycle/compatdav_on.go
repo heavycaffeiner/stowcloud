@@ -34,6 +34,8 @@ func (e *Engine) davAliases() []DavAlias {
 		{Prefix: "/index.php/remote.php/dav/trashbin/", Mount: DavTrashPrefix, DropSegments: 1},
 		{Prefix: "/remote.php/dav/files/", DropSegments: 1},
 		{Prefix: "/index.php/remote.php/dav/files/", DropSegments: 1},
+		{Prefix: "/remote.php/dav/", DropSegments: 0},
+		{Prefix: "/index.php/remote.php/dav/", DropSegments: 0},
 		{Prefix: "/remote.php/webdav/", DropSegments: 0},
 		{Prefix: "/index.php/remote.php/webdav/", DropSegments: 0},
 	}
