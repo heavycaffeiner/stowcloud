@@ -35,6 +35,14 @@
   const isAncestor = $derived(!isActive && (currentPath === path || currentPath.startsWith(`${path}/`)))
   const indent = $derived(depth * 16 + 8)
 
+  // Auto-expand ancestors of the active path so navigating via the file table
+  // or breadcrumbs immediately reveals the folder's position in the tree.
+  $effect(() => {
+    if (isAncestor && !expanded) {
+      expanded = true
+      void loadChildren()
+    }
+  })
   async function loadChildren(): Promise<void> {
     if (children !== null || loading) return
     loading = true
@@ -60,6 +68,10 @@
 
   function open(): void {
     onnavigate(path)
+    if (!expanded) {
+      expanded = true
+      void loadChildren()
+    }
   }
 </script>
 
@@ -109,9 +121,10 @@
   .sc-tree-row {
     display: flex;
     align-items: center;
-    height: 32px;
-    border-radius: var(--m3-shape-small);
+    height: 40px;
+    border-radius: var(--m3-shape-full);
     color: var(--m3c-on-surface);
+    transition: background-color var(--m3-duration-fast) var(--m3-easing), color var(--m3-duration-fast) var(--m3-easing);
   }
   .sc-tree-row--ancestor {
     background: color-mix(in srgb, var(--m3c-secondary-container) 40%, transparent);
@@ -119,18 +132,27 @@
   .sc-tree-row--active {
     background: var(--m3c-secondary-container);
     color: var(--m3c-on-secondary-container);
+    font-weight: 600;
+  }
+  .sc-tree-row--active :global(svg) {
+    color: var(--m3c-primary);
   }
   .sc-tree-row__twisty {
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 0 0 20px;
-    width: 20px;
-    height: 20px;
+    flex: 0 0 24px;
+    width: 24px;
+    height: 24px;
     border: none;
+    border-radius: var(--m3-shape-full);
     background: transparent;
     color: var(--m3c-on-surface-variant);
     cursor: pointer;
+    transition: background-color var(--m3-duration-fast) var(--m3-easing);
+  }
+  .sc-tree-row__twisty:hover {
+    background: color-mix(in srgb, currentColor 8%, transparent);
   }
   .sc-tree-row__twisty-icon {
     display: inline-flex;

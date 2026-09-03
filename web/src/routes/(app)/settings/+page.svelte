@@ -13,13 +13,13 @@
   import { currentLocale, setLocale, t } from '../../../lib/i18n'
   import { goto, replaceState } from '$app/navigation'
   import { page } from '$app/state'
-  import { ConnectedButtons, Tabs } from 'm3-svelte'
+  import { ConnectedButtons, Icon, Tabs } from 'm3-svelte'
+  import { icons } from '../../../lib/icons'
   import { api } from '../../../lib/api/client'
   import { fetchOidcConfig } from '../../../lib/api/oidc'
   import type { OidcConfig } from '../../../lib/api/types'
   import { authState, setAnonymous } from '../../../lib/state/auth.svelte'
   import Button from '../../../lib/ui/Button.svelte'
-  import Divider from '../../../lib/ui/Divider.svelte'
   import { setTheme, uiState } from '../../../lib/state/ui.svelte'
   import { syncTabHash } from '../../../lib/state/tab-hash'
 
@@ -45,10 +45,10 @@
   )
 
   const tabs = $derived([
-    { name: t('settings.account'), value: 'account' },
-    { name: t('settings.security'), value: 'security' },
-    ...(features?.smb ? [{ name: t('settings.connections'), value: 'connections' }] : []),
-    { name: t('settings.appearance'), value: 'appearance' }
+    { name: t('settings.account'), value: 'account', icon: icons.admin },
+    { name: t('settings.security'), value: 'security', icon: icons.lock },
+    ...(features?.smb ? [{ name: t('settings.connections'), value: 'connections', icon: icons['folder-tree'] }] : []),
+    { name: t('settings.appearance'), value: 'appearance', icon: icons.settings }
   ])
 
   const TAB_VALUES = ['account', 'security', 'connections', 'appearance']
@@ -128,31 +128,58 @@
 
   <div class="sc-settings__inner">
     {#if tab === 'account'}
-      <section>
-        <h2>{t('settings.account')}</h2>
-        {#if user}
-          <p class="sc-settings__account-name">{user.display_name || user.name}</p>
-        {/if}
+      <section class="sc-settings__card">
+        <div class="sc-settings__card-head">
+          <div class="sc-settings__avatar">
+            {((user?.display_name || user?.name || 'U')[0] ?? 'U').toUpperCase()}
+          </div>
+          <div class="sc-settings__card-meta">
+            <h2>{t('settings.account')}</h2>
+            {#if user}
+              <p class="sc-settings__account-name">{user.display_name || user.name}</p>
+              {#if user.display_name && user.name && user.display_name !== user.name}
+                <p class="sc-settings__username">@{user.name}</p>
+              {/if}
+            {/if}
+          </div>
+          <span class="sc-settings__badge">
+            {user?.is_admin ? t('common.administrator') : t('common.user_2')}
+          </span>
+        </div>
         <div class="sc-settings__row">
-          <Button variant="outlined" onclick={doLogout} disabled={loggingOut}>{t('common.sign_out')}</Button>
+          <Button variant="outlined" onclick={doLogout} disabled={loggingOut}>
+            {#snippet icon()}<Icon icon={icons.close} size={18} />{/snippet}
+            {t('common.sign_out')}
+          </Button>
         </div>
       </section>
-      <Divider />
 
-      <section>
-        <h2>{t('common.password')}</h2>
-        <p class="sc-settings__hint">{t('settings.at_least_10_characters_changing')}</p>
+      <section class="sc-settings__card">
+        <div class="sc-settings__card-head">
+          <div class="sc-settings__card-icon">
+            <Icon icon={icons.lock} size={20} />
+          </div>
+          <div class="sc-settings__card-meta">
+            <h2>{t('common.password')}</h2>
+            <p class="sc-settings__hint">{t('settings.at_least_10_characters_changing')}</p>
+          </div>
+        </div>
         {#await import('../../../lib/ui/settings/PasswordSection.svelte') then mod}
           {@const PasswordSection = mod.default}
           <PasswordSection onchanged={refreshSession} />
         {/await}
       </section>
     {:else if tab === 'security'}
-      <section>
-        <h2>{t('settings.two_factor_authentication')}</h2>
-        <p class="sc-settings__hint">
-          {t('settings.asks_6_digit_code_from')}
-        </p>
+      <section class="sc-settings__card">
+        <div class="sc-settings__card-head">
+          <div class="sc-settings__card-icon">
+            <Icon icon={icons.lock} size={20} />
+          </div>
+          <div class="sc-settings__card-meta">
+            <h2>{t('settings.two_factor_authentication')}</h2>
+            <p class="sc-settings__hint">{t('settings.asks_6_digit_code_from')}</p>
+          </div>
+        </div>
         {#await import('../../../lib/ui/settings/TotpSection.svelte') then mod}
           {@const TotpSection = mod.default}
           <TotpSection
@@ -162,14 +189,18 @@
           />
         {/await}
       </section>
-      <Divider />
 
       {#if ssoVisible && ssoConfig}
-        <section>
-          <h2>{t('settings.single_sign_on')}</h2>
-          <p class="sc-settings__hint">
-            {t('settings.sign_your_organisations_identity_provider')}
-          </p>
+        <section class="sc-settings__card">
+          <div class="sc-settings__card-head">
+            <div class="sc-settings__card-icon">
+              <Icon icon={icons.link} size={20} />
+            </div>
+            <div class="sc-settings__card-meta">
+              <h2>{t('settings.single_sign_on')}</h2>
+              <p class="sc-settings__hint">{t('settings.sign_your_organisations_identity_provider')}</p>
+            </div>
+          </div>
           {#await import('../../../lib/ui/settings/OidcSection.svelte') then mod}
             {@const OidcSection = mod.default}
             <OidcSection
@@ -183,35 +214,50 @@
             />
           {/await}
         </section>
-        <Divider />
       {/if}
 
-      <section>
-        <h2>{t('settings.app_passwords')}</h2>
-        <p class="sc-settings__hint">
-          {t('settings.use_one_where_your_account')}
-        </p>
+      <section class="sc-settings__card">
+        <div class="sc-settings__card-head">
+          <div class="sc-settings__card-icon">
+            <Icon icon={icons.admin} size={20} />
+          </div>
+          <div class="sc-settings__card-meta">
+            <h2>{t('settings.app_passwords')}</h2>
+            <p class="sc-settings__hint">{t('settings.use_one_where_your_account')}</p>
+          </div>
+        </div>
         {#await import('../../../lib/ui/settings/AppPasswordsSection.svelte') then mod}
           {@const AppPasswordsSection = mod.default}
           <AppPasswordsSection />
         {/await}
       </section>
-      <Divider />
 
-      <section>
-        <h2>{t('settings.active_sessions')}</h2>
-        <p class="sc-settings__hint">{t('settings.devices_currently_signed_account_sign')}</p>
+      <section class="sc-settings__card">
+        <div class="sc-settings__card-head">
+          <div class="sc-settings__card-icon">
+            <Icon icon={icons.recent} size={20} />
+          </div>
+          <div class="sc-settings__card-meta">
+            <h2>{t('settings.active_sessions')}</h2>
+            <p class="sc-settings__hint">{t('settings.devices_currently_signed_account_sign')}</p>
+          </div>
+        </div>
         {#await import('../../../lib/ui/settings/SessionsSection.svelte') then mod}
           {@const SessionsSection = mod.default}
           <SessionsSection />
         {/await}
       </section>
     {:else if tab === 'connections' && features?.smb}
-      <section>
-        <h2>SMB</h2>
-        <p class="sc-settings__hint">
-          {t('settings.mount_as_network_drive_file')}
-        </p>
+      <section class="sc-settings__card">
+        <div class="sc-settings__card-head">
+          <div class="sc-settings__card-icon">
+            <Icon icon={icons['folder-tree']} size={20} />
+          </div>
+          <div class="sc-settings__card-meta">
+            <h2>SMB</h2>
+            <p class="sc-settings__hint">{t('settings.mount_as_network_drive_file')}</p>
+          </div>
+        </div>
         {#await import('../../../lib/ui/settings/SmbSection.svelte') then mod}
           {@const SmbSection = mod.default}
           <SmbSection
@@ -226,16 +272,17 @@
         {/await}
       </section>
     {:else}
-      <section>
-        <h2>{t('settings.theme')}</h2>
+      <section class="sc-settings__card">
+        <div class="sc-settings__card-head">
+          <div class="sc-settings__card-icon">
+            <Icon icon={icons.settings} size={20} />
+          </div>
+          <div class="sc-settings__card-meta">
+            <h2>{t('settings.theme')}</h2>
+            <p class="sc-settings__hint">{t('settings.choosing_system_follows_your_device')}</p>
+          </div>
+        </div>
         <div class="sc-settings__row">
-          <!-- MD3's connected button group is the control for a single choice
-               out of a small set. It replaces three loose buttons whose only
-               signal of the current choice was `filled` vs `outlined` -- a
-               screen reader read three identical buttons and never said which
-               one was on, which `pressed` now answers. `square` because the
-               group owns the outer rounding; without it every segment keeps
-               its own full radius and the group is three pills, not a bar. -->
           <ConnectedButtons role="group" aria-label={t('settings.theme')}>
             <Button
               square
@@ -257,19 +304,20 @@
             >
           </ConnectedButtons>
         </div>
-        <p class="sc-settings__hint">
-          {t('settings.choosing_system_follows_your_device')}
-        </p>
       </section>
-      <Divider />
 
-      <section>
-        <h2>{t('settings.language')}</h2>
+      <section class="sc-settings__card">
+        <div class="sc-settings__card-head">
+          <div class="sc-settings__card-icon">
+            <Icon icon={icons.info} size={20} />
+          </div>
+          <div class="sc-settings__card-meta">
+            <h2>{t('settings.language')}</h2>
+            <p class="sc-settings__hint">{t('settings.language_choice_stays_this_browser')}</p>
+          </div>
+        </div>
         <div class="sc-settings__row">
           <ConnectedButtons role="group" aria-label={t('settings.language')}>
-            <!-- Each option is written in its own language, never translated:
-                 someone stuck in a language they cannot read has to be able to
-                 find their way out of it. -->
             <Button
               square
               variant={currentLocale() === 'ko' ? 'filled' : 'tonal'}
@@ -284,9 +332,6 @@
             >
           </ConnectedButtons>
         </div>
-        <p class="sc-settings__hint">
-          {t('settings.language_choice_stays_this_browser')}
-        </p>
       </section>
     {/if}
   </div>
@@ -392,5 +437,75 @@
   .sc-settings__account-name {
     margin: 0 0 8px;
     @apply --m3-body-large;
+  }
+  .sc-settings__card {
+    display: flex;
+    flex-direction: column;
+    padding: 24px;
+    border-radius: var(--m3-shape-large);
+    border: 1px solid var(--m3c-outline-variant);
+    background: var(--m3c-surface-container-low);
+  }
+  .sc-settings__card-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .sc-settings__card-icon {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--m3-shape-small);
+    background: var(--m3c-surface-container-highest);
+    color: var(--m3c-primary);
+  }
+  .sc-settings__card-meta {
+    flex: 1;
+    min-width: 0;
+  }
+  .sc-settings__badge {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding-inline: 8px;
+    border-radius: var(--m3-shape-full);
+    background: var(--m3c-secondary-container);
+    color: var(--m3c-on-secondary-container);
+    @apply --m3-label-small;
+    white-space: nowrap;
+  }
+  .sc-settings__avatar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--m3-shape-full);
+    background: var(--m3c-primary);
+    color: var(--m3c-on-primary);
+    @apply --m3-title-medium;
+    font-weight: 600;
+  }
+  .sc-settings__username {
+    margin: 0;
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
+  }
+  @media (max-width: 599.98px) {
+    .sc-settings__inner {
+      gap: 16px;
+    }
+    .sc-settings__card {
+      padding: 16px;
+    }
+    .sc-settings__card-head {
+      gap: 12px;
+    }
   }
 </style>
