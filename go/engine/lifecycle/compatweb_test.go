@@ -1307,4 +1307,18 @@ func TestNextcloudAndroidPostLoginFlow(t *testing.T) {
 	if cerr := moveResp.Body.Close(); cerr != nil {
 		t.Errorf("closing move response: %v", cerr)
 	}
+
+	// 14. Post-login: Direct small-file PUT to a share path
+	smallReq, err := http.NewRequest(http.MethodPut, delivery.Server+"/remote.php/dav/files/"+delivery.LoginName+"/files/small.txt", strings.NewReader("small file content"))
+	if err != nil {
+		t.Fatalf("building small PUT: %v", err)
+	}
+	smallReq.Header.Set("Authorization", basicAuth)
+	smallResp, err := client.Do(smallReq)
+	if err != nil || (smallResp.StatusCode != http.StatusCreated && smallResp.StatusCode != http.StatusNoContent) {
+		t.Fatalf("direct small-file PUT: err=%v status=%d", err, smallResp.StatusCode)
+	}
+	if cerr := smallResp.Body.Close(); cerr != nil {
+		t.Errorf("closing small PUT response: %v", cerr)
+	}
 }
