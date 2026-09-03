@@ -480,26 +480,40 @@ func (e *Engine) compatLoginPoll(c *fiber.Ctx) error {
 func (e *Engine) compatLoginGrant(c *fiber.Ctx) error {
 	user, ok := compatUser(c)
 	if !ok {
+		e.logger.Warn("login grant refused: no authenticated user session")
 		return fiber.NewError(fiber.StatusUnauthorized, "sign in first")
 	}
 
-	// The name the client records as the account it signed in as. Read from
-	// the account service rather than the credential: the chain's principal
-	// carries the id and not the name, and a delivery naming an empty login
-	// leaves the app showing an account with no name.
 	login := ""
 	if info, ierr := e.Auth.AccountInfo(c.UserContext(), int64(user)); ierr == nil {
 		login = info.LoginName
 	}
 
-	switch err := e.Flow.Approve(c.UserContext(), c.FormValue("token"), int64(user), login); {
-	case err == nil:
+	tok := c.FormValue("token")
+	if tok == "" {
+		tok = c.Query("token")
+	}
+	if tok == "" {
+		var req struct {
+			Token string `json:"token"`
+		}
+		if perr := c.BodyParser(&req); perr == nil {
+			tok = req.Token
+		}
+	}
+	if tok == "" {
+		e.logger.Warn("login grant refused: empty token")
+		return fiber.NewError(fiber.StatusBadRequest, "missing token")
+	}
+
+	switch err := e.Flow.Approve(c.UserContext(), tok, int64(user), login); {
+	case err == nil, errors.Is(err, ErrFlowApproved):
 		return c.SendStatus(fiber.StatusOK)
-	case errors.Is(err, ErrFlowApproved):
-		return fiber.NewError(fiber.StatusConflict, "this flow is already approved")
 	case errors.Is(err, ErrFlowUnknown):
-		return fiber.NewError(fiber.StatusNotFound)
+		e.logger.Warn("login grant refused: flow unknown or expired", "user", user)
+		return fiber.NewError(fiber.StatusNotFound, "flow unknown or expired")
 	default:
+		e.logger.Warn("login grant failed", "user", user, "error", err)
 		return fiber.NewError(fiber.StatusInternalServerError, "the approval failed")
 	}
 }

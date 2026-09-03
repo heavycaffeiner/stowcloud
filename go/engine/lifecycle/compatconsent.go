@@ -58,28 +58,57 @@ button:disabled { opacity: .6; cursor: default; }
 <p>An app on your device asked to connect to this account. Approving gives it
 its own password, which you can revoke later without changing your own.</p>
 <p>If you did not just start this yourself, close this page.</p>
-<form id="sc-form">
-  <button type="submit">Approve</button>
-</form>
+<p id="sc-status" style="margin-top:1rem;color:#dc2626;display:none;"></p>
+<button id="sc-approve" type="button">Approve</button>
 </main>
 <script nonce="{{.Nonce}}">
-document.getElementById('sc-form').addEventListener('submit', async function (e) {
-  e.preventDefault();
+document.getElementById('sc-approve').addEventListener('click', async function () {
   var main = document.getElementById('sc-main');
-  var button = e.target.querySelector('button');
+  var button = document.getElementById('sc-approve');
+  var status = document.getElementById('sc-status');
   button.disabled = true;
-  var res = await fetch('/index.php/login/v2/grant', {
-    method: 'POST',
-    headers: {
-      'Sc-Csrf': main.dataset.csrf,
-      'Content-Type': 'application/x-www-form-urlencoded'
-    },
-    body: new URLSearchParams({ token: main.dataset.token }),
-    credentials: 'same-origin'
-  });
-  main.textContent = res.ok
-    ? 'Approved. You can close this page and return to the app.'
-    : 'That did not work. The request may have expired; start again from the app.';
+  if (status) status.style.display = 'none';
+
+  var grantUrl = window.location.pathname.replace(/\/flow\/.*$/, '/grant');
+  if (!grantUrl || grantUrl === window.location.pathname) {
+    grantUrl = '/index.php/login/v2/grant';
+  }
+
+  try {
+    var res = await fetch(grantUrl, {
+      method: 'POST',
+      headers: {
+        'Sc-Csrf': main.dataset.csrf,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: 'token=' + encodeURIComponent(main.dataset.token),
+      credentials: 'same-origin'
+    });
+    if (res.ok) {
+      main.textContent = 'Approved. You can close this page and return to the app.';
+    } else {
+      button.disabled = false;
+      var detail = '';
+      try { detail = await res.text(); } catch (_) {}
+      var msg = 'That did not work. The request may have expired; start again from the app.';
+      if (res.status === 401) {
+        window.location.href = '/login?returnTo=' + encodeURIComponent(window.location.pathname);
+        return;
+      }
+      if (status) {
+        status.textContent = msg + (detail ? ' (' + res.status + ': ' + detail.slice(0, 100) + ')' : ' (' + res.status + ')');
+        status.style.display = 'block';
+      } else {
+        main.textContent = msg;
+      }
+    }
+  } catch (err) {
+    button.disabled = false;
+    if (status) {
+      status.textContent = 'Network error. Please try again.';
+      status.style.display = 'block';
+    }
+  }
 });
 </script>
 </body>
@@ -116,10 +145,15 @@ func (e *Engine) compatLoginConsent(c *fiber.Ctx) error {
 	// widening the policy every other page is served under.
 	c.Set(fiber.HeaderContentSecurityPolicy,
 		"default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-"+nonce+"'; "+
-			"connect-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'")
+			"connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 
 	return consentLoginPage().Execute(c.Response().BodyWriter(), map[string]string{
-		"Token": c.Params("token"),
+		"Token": func() string {
+			if t := c.Params("token"); t != "" {
+				return t
+			}
+			return c.Query("token")
+		}(),
 		// Derived from the cookie the request presented, which is the same
 		// input the chain's own CSRF check verifies against. A token derived
 		// from anything else would be one the grant route refuses.

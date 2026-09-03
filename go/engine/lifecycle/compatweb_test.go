@@ -6,6 +6,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
+	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"io"
 	"net"
 	"net/http"
@@ -13,12 +19,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
-	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
-	"github.com/heavycaffeiner/stowcloud/go/engine/kit/task"
-	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
 // The compatibility surface, served over a real engine.
@@ -425,6 +425,119 @@ func TestTheLoginFlowDeliversOneCredential(t *testing.T) {
 	}
 	if again.StatusCode != 404 {
 		t.Errorf("the second poll answered %d, want 404", again.StatusCode)
+	}
+}
+
+func TestLoginFlowGrantEndToEnd(t *testing.T) {
+	t.Parallel()
+	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	if openErr != nil {
+		t.Fatalf("opening engine: %v", openErr)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing engine: %v", cerr)
+		}
+	})
+	ctx := context.Background()
+	_, cerr := e.Auth.CreateAdmin(ctx, "alice", "Alice", pwOf(loginPassword))
+	if cerr != nil {
+		t.Fatalf("creating user: %v", cerr)
+	}
+	base := serveCompatEngine(t, e)
+	client := compatClient()
+	t.Cleanup(client.CloseIdleConnections)
+
+	// 1. Begin flow (as mobile client)
+	resp, err := client.Post(base+"/index.php/login/v2", "application/x-www-form-urlencoded", strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("POST /login/v2: %v", err)
+	}
+	var begun struct {
+		Poll struct {
+			Token    string `json:"token"`
+			Endpoint string `json:"endpoint"`
+		} `json:"poll"`
+		Login string `json:"login"`
+	}
+	if derr := json.NewDecoder(resp.Body).Decode(&begun); derr != nil {
+		t.Fatalf("decoding begin: %v", derr)
+	}
+	if cerr := resp.Body.Close(); cerr != nil {
+		t.Errorf("closing begin response: %v", cerr)
+	}
+
+	// 2. Sign in as alice to get session cookie
+	loginBody := fmt.Sprintf(`{"login":"alice","password":%q}`, loginPassword)
+	loginResp, err := client.Post(base+"/api/v1/auth/login", "application/json", strings.NewReader(loginBody))
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	var sessionCookie *http.Cookie
+	for _, c := range loginResp.Cookies() {
+		if c.Name == "__Host-sc_sid" {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("missing __Host-sc_sid cookie")
+	}
+	var loginData struct {
+		CSRF string `json:"csrf"`
+	}
+	if derr := json.NewDecoder(loginResp.Body).Decode(&loginData); derr != nil {
+		t.Fatalf("decoding login response: %v", derr)
+	}
+	if cerr := loginResp.Body.Close(); cerr != nil {
+		t.Errorf("closing login response: %v", cerr)
+	}
+
+	// 3. Load consent page
+	consentReq, err := http.NewRequest(http.MethodGet, begun.Login, nil)
+	if err != nil {
+		t.Fatalf("building consent request: %v", err)
+	}
+	consentReq.AddCookie(sessionCookie)
+	consentResp, err := client.Do(consentReq)
+	if err != nil {
+		t.Fatalf("GET consent: %v", err)
+	}
+	consentHTML, err := io.ReadAll(consentResp.Body)
+	if err != nil {
+		t.Fatalf("reading consent HTML: %v", err)
+	}
+	if cerr := consentResp.Body.Close(); cerr != nil {
+		t.Errorf("closing consent response: %v", cerr)
+	}
+	if consentResp.StatusCode != http.StatusOK {
+		t.Fatalf("GET consent status = %d, body = %s", consentResp.StatusCode, consentHTML)
+	}
+
+	// Extract token and csrf from consent page
+	loginTok := loginTokenOf(begun.Login)
+
+	// 4. Submit approval to /index.php/login/v2/grant
+	form := url.Values{"token": {loginTok}}
+	grantReq, err := http.NewRequest(http.MethodPost, base+"/index.php/login/v2/grant", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("building grant request: %v", err)
+	}
+	grantReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	grantReq.Header.Set("Sc-Csrf", loginData.CSRF)
+	grantReq.AddCookie(sessionCookie)
+	grantResp, err := client.Do(grantReq)
+	if err != nil {
+		t.Fatalf("POST grant: %v", err)
+	}
+	grantBody, err := io.ReadAll(grantResp.Body)
+	if err != nil {
+		t.Fatalf("reading grant body: %v", err)
+	}
+	if cerr := grantResp.Body.Close(); cerr != nil {
+		t.Errorf("closing grant response: %v", cerr)
+	}
+	if grantResp.StatusCode != http.StatusOK {
+		t.Fatalf("grant failed with status %d: %s", grantResp.StatusCode, grantBody)
 	}
 }
 
