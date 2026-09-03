@@ -10,7 +10,7 @@ import {
   type ChunkDescriptor
 } from './chunk-planner'
 import { deleteResumeRecord, getResumeRecord, putResumeRecord, resumeKey } from './idb'
-import { setCsrfToken, UploadHttpError, mockTransport, transport } from './transport'
+import { setCsrfToken, UploadHttpError, mockTransport, transport, type CreatedSession } from './transport'
 import { classifyFailure } from './retry'
 
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
@@ -108,76 +108,92 @@ function storeChunkSize(size: number): void {
     /* ignore (e.g. no localStorage in this worker context) */
   }
 }
+let creatingSessions = 0
+const pendingSessionCreations: (() => void)[] = []
+
+async function acquireSessionSlot(): Promise<void> {
+  if (creatingSessions < 4) {
+    creatingSessions++
+    return
+  }
+  return new Promise<void>((resolve) => {
+    pendingSessionCreations.push(resolve)
+  })
+}
+
+function releaseSessionSlot(): void {
+  const next = pendingSessionCreations.shift()
+  if (next) {
+    next()
+  } else {
+    creatingSessions--
+  }
+}
+
 
 async function addFile(item: AddItem): Promise<void> {
   const id = `f-${Math.random().toString(36).slice(2, 10)}`
   // Posted before any await so a `createSession` failure below has a tray
-  // row to attach its error to — `UploadTrayState#patch` is a no-op against
+  // row to attach its error to: `UploadTrayState#patch` is a no-op against
   // an id it has never seen `queued` for, which would otherwise swallow the
   // failure silently instead of showing it.
   post({ t: 'queued', id, name: item.file.name, dest: item.dest, total: item.file.size })
   const key = resumeKey(item.file.name, item.file.size, item.file.lastModified)
-  const existing = await getResumeRecord(key).catch(() => undefined)
 
+  await acquireSessionSlot()
   let sessionId: string
   let resumeOffset = 0
   let chunkSize = loadStoredChunkSize()
 
-  if (existing) {
-    try {
-      const head = await transport.headSession(existing.sessionId)
-      sessionId = existing.sessionId
-      resumeOffset = head.offset
-      // The session's chunk size is fixed server-side at creation
-      // and can't change — trust `Sc-Chunk-Size` over
-      // the IDB record, which can be stale (e.g. if a 413 shrink was
-      // recorded locally after this session was already created, or the
-      // server's config changed since). Falls back to the IDB value only
-      // against an older server that doesn't send the header yet.
-      chunkSize = head.chunkSize ?? existing.chunkSize
-    } catch {
-      // session expired/gone server-side — start fresh below
+  try {
+    const existing = await getResumeRecord(key).catch(() => undefined)
+    if (existing) {
+      try {
+        const head = await transport.headSession(existing.sessionId)
+        sessionId = existing.sessionId
+        resumeOffset = head.offset
+        chunkSize = head.chunkSize ?? existing.chunkSize
+      } catch {
+        sessionId = ''
+      }
+    } else {
       sessionId = ''
     }
-  } else {
-    sessionId = ''
-  }
 
-  if (!sessionId) {
-    let created: Awaited<ReturnType<typeof transport.createSession>>
-    try {
-      created = await transport.createSession({
-        filename: item.file.name,
-        totalSize: item.file.size,
-        chunkSize,
+    if (!sessionId) {
+      let created: CreatedSession
+      try {
+        created = await transport.createSession({
+          filename: item.file.name,
+          totalSize: item.file.size,
+          chunkSize,
+          dest: item.dest,
+          relativePath: item.relativePath,
+          mtimeNs: String(BigInt(item.file.lastModified) * 1_000_000n)
+        })
+      } catch (err) {
+        const status = err instanceof UploadHttpError ? err.status : 0
+        post({
+          t: 'error',
+          id,
+          code: status === 507 ? 'upload.quota_exceeded' : 'upload.failed',
+          message: status === 507 ? /* i18n */ 'upload.not_enough_storage_space_start' : /* i18n */ 'upload.could_not_start_upload'
+        })
+        return
+      }
+      sessionId = created.id
+      resumeOffset = created.offset
+      await putResumeRecord({
+        key,
+        sessionId,
         dest: item.dest,
-        relativePath: item.relativePath,
-        mtimeNs: String(BigInt(item.file.lastModified) * 1_000_000n)
+        chunkSize,
+        totalSize: item.file.size,
+        updatedAt: Date.now()
       })
-    } catch (err) {
-      // Session creation has no retry loop of its own (unlike sendChunk) —
-      // surface a terminal error instead of leaving this file silently stuck.
-      const status = err instanceof UploadHttpError ? err.status : 0
-      post({
-        t: 'error',
-        id,
-        code: status === 507 ? 'upload.quota_exceeded' : 'upload.failed',
-        // Catalogue keys, not display text: this worker has no locale state,
-        // so `UploadTray.svelte` runs them through `t()` at the render site.
-        message: status === 507 ? /* i18n */ 'upload.not_enough_storage_space_start' : /* i18n */ 'upload.could_not_start_upload'
-      })
-      return
     }
-    sessionId = created.id
-    resumeOffset = created.offset
-    await putResumeRecord({
-      key,
-      sessionId,
-      dest: item.dest,
-      chunkSize,
-      totalSize: item.file.size,
-      updatedAt: Date.now()
-    })
+  } finally {
+    releaseSessionSlot()
   }
 
   files.set(id, {
@@ -196,9 +212,14 @@ async function addFile(item: AddItem): Promise<void> {
   })
 
   scheduler.addFile({ id, totalSize: item.file.size, chunkSize, resumeOffset })
+  if (item.file.size === 0) {
+    void finalizeIfDone(files.get(id)!).then((done) => {
+      if (done) pump()
+    })
+    return
+  }
   pump()
 }
-
 function maybePostProgress(f: FileState, force = false): void {
   const now = Date.now()
   if (!force && now - f.lastPostAt < PROGRESS_HZ_MS) return
@@ -240,6 +261,7 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
   const f = files.get(task.fileId)
   if (!f || f.status !== 'uploading') {
     scheduler.complete(task.fileId, task.index)
+    pump()
     return
   }
 
@@ -251,8 +273,7 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
     chunkRetries.delete(`${task.fileId}:${task.index}`)
     scheduler.complete(task.fileId, task.index)
     maybePostProgress(f)
-    const done = await finalizeIfDone(f)
-    if (!done) pump()
+    await finalizeIfDone(f)
   } catch (err) {
     scheduler.complete(task.fileId, task.index)
 
@@ -287,7 +308,6 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
         scheduler.addFile({ id: f.id, totalSize: f.file.size, chunkSize: next, resumeOffset: f.sentBytes })
         scheduler.requeue(f.id, task)
       }
-      pump()
       return
     }
 
@@ -301,7 +321,6 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
             ? { code: 'upload.quota_exceeded', message: /* i18n */ 'upload.not_enough_storage_space_finish' }
             : { code: 'upload.failed', message: /* i18n */ 'upload.upload_failed_out_retries' }
       post({ t: 'error', id: f.id, code: told.code, message: told.message })
-      pump()
       return
     }
 
@@ -315,6 +334,7 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
     }, verdict.afterMs)
   } finally {
     inflightRequests--
+    pump()
   }
 }
 

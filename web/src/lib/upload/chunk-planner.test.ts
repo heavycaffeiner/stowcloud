@@ -115,4 +115,34 @@ describe('ChunkScheduler', () => {
     const retried = sched.next()
     expect(retried?.index).toBe(t.index)
   })
+
+  it('drains every file when multiple single-chunk files are scheduled', () => {
+    const sched = new ChunkScheduler(4)
+    sched.addFile({ id: 'f1', totalSize: 10, chunkSize: 10, resumeOffset: 0 })
+    sched.addFile({ id: 'f2', totalSize: 10, chunkSize: 10, resumeOffset: 0 })
+    sched.addFile({ id: 'f3', totalSize: 10, chunkSize: 10, resumeOffset: 0 })
+    sched.addFile({ id: 'f4', totalSize: 10, chunkSize: 10, resumeOffset: 0 })
+    sched.addFile({ id: 'f5', totalSize: 10, chunkSize: 10, resumeOffset: 0 })
+    sched.addFile({ id: 'f6', totalSize: 10, chunkSize: 10, resumeOffset: 0 })
+
+    const completed: string[] = []
+    let inflight = 0
+    function pump() {
+      while (inflight < 4) {
+        const task = sched.next()
+        if (!task) break
+        inflight++
+        // Simulate chunk completion
+        sched.complete(task.fileId, task.index)
+        if (sched.isFileDone(task.fileId)) {
+          completed.push(task.fileId)
+          sched.removeFile(task.fileId)
+        }
+        inflight--
+        pump()
+      }
+    }
+    pump()
+    expect(completed.sort()).toEqual(['f1', 'f2', 'f3', 'f4', 'f5', 'f6'])
+  })
 })

@@ -92,8 +92,13 @@ export interface CreateSessionParams {
   mtimeNs?: string
 }
 
+export interface CreatedSession {
+  id: string
+  offset: number
+}
+
 export interface Transport {
-  createSession(p: CreateSessionParams): Promise<{ id: string; offset: number }>
+  createSession(p: CreateSessionParams): Promise<CreatedSession>
   patchChunk(id: string, offset: number, body: Blob, signal?: AbortSignal): Promise<{ offset: number }>
   /** `chunkSize` is the session's server-fixed chunk size (`Sc-Chunk-Size`,
    * ) — undefined only if the backend predates the
