@@ -11,9 +11,9 @@ package lifecycle
 import (
 	"errors"
 	"fmt"
-	"strings"
-
 	"github.com/gofiber/fiber/v2"
+	"net/netip"
+	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/compat"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
@@ -147,13 +147,15 @@ func (e *Engine) compatRouteOCS(
 		return compat.Capabilities(e.compatWiring(), compatVersionString), true, nil
 
 	// --- endpoints that exist only so a client stops asking ---
-	case c.Method() == fiber.MethodGet && route == "/apps/notifications/api/v2/notifications":
+	case strings.HasPrefix(route, "/apps/notifications/"):
+		if strings.HasSuffix(route, "/push") {
+			return compat.Object(), true, nil
+		}
 		return compat.List(), true, nil
-	case c.Method() == fiber.MethodGet && route == "/apps/user_status/api/v1/statuses":
-		return compat.List(), true, nil
-	case c.Method() == fiber.MethodGet && route == "/apps/user_status/api/v1/user_status":
-		return compat.Object(compat.P("status", compat.Str("online")), compat.P("message", compat.Str("")), compat.P("icon", compat.Str(""))), true, nil
-	case c.Method() == fiber.MethodGet && route == "/apps/user_status/api/v1/predefined_statuses":
+	case strings.HasPrefix(route, "/apps/user_status/"):
+		if route == "/apps/user_status/api/v1/user_status" {
+			return compat.Object(compat.P("status", compat.Str("online")), compat.P("message", compat.Str("")), compat.P("icon", compat.Str(""))), true, nil
+		}
 		return compat.List(), true, nil
 	case c.Method() == fiber.MethodGet && route == "/core/navigation/apps":
 		return compat.List(), true, nil
@@ -331,19 +333,29 @@ func compatQuotaOf(info auth.AccountInfo, free uint64) compat.Quota {
 // a filesystem rather than of an account, and the home is where a client's
 // default upload goes.
 func (e *Engine) compatFreeSpace(c *fiber.Ctx, user core.UserID) (uint64, error) {
+	for _, rt := range e.Core.Roots(user) {
+		vp, err := vfs.ParseVpath("/" + rt.Label + "/")
+		if err != nil {
+			continue
+		}
+		r, rerr := e.Core.Resolve(user, vp, acl.Read)
+		if rerr != nil {
+			continue
+		}
+		space, serr := e.Core.FreeSpace(c.UserContext(), r)
+		if serr == nil && space.Available > 0 {
+			return space.Available, nil
+		}
+	}
 	vp, err := vfs.ParseVpath("/files/")
-	if err != nil {
-		return 0, err
+	if err == nil {
+		if r, rerr := e.Core.Resolve(user, vp, acl.Read); rerr == nil {
+			if space, serr := e.Core.FreeSpace(c.UserContext(), r); serr == nil {
+				return space.Available, nil
+			}
+		}
 	}
-	r, rerr := e.Core.Resolve(user, vp, acl.Read)
-	if rerr != nil {
-		return 0, rerr
-	}
-	space, serr := e.Core.FreeSpace(c.UserContext(), r)
-	if serr != nil {
-		return 0, serr
-	}
-	return space.Available, nil
+	return 0, nil
 }
 
 func (e *Engine) compatSearch(
@@ -388,7 +400,7 @@ func (e *Engine) compatSearch(
 		end = len(results.Hits)
 	}
 	entries := make([]compat.Val, 0, end-cursor)
-	origin := compatOriginOf(c)
+	origin := e.compatOriginOf(c)
 	for _, hit := range results.Hits[cursor:end] {
 		path := "/" + strings.TrimPrefix(hit.Path, "/")
 		r, rerr := e.resolve(user, strings.TrimPrefix(path, "/"), acl.Read)
@@ -437,7 +449,7 @@ func (e *Engine) compatFavorites(
 // declared name is sent back to that name rather than to whichever the
 // configuration lists first.
 func (e *Engine) compatLoginBegin(c *fiber.Ctx) error {
-	tokens, err := e.Flow.Begin(c.UserContext(), compatOriginOf(c))
+	tokens, err := e.Flow.Begin(c.UserContext(), e.compatOriginOf(c))
 	if err != nil {
 		return fiber.NewError(fiber.StatusInternalServerError, "the login flow could not be started")
 	}
@@ -453,7 +465,7 @@ func (e *Engine) compatLoginBegin(c *fiber.Ctx) error {
 // A pending flow answers 404: that is the "not yet" the client polls against,
 // not an error.
 func (e *Engine) compatLoginPoll(c *fiber.Ctx) error {
-	delivery, err := e.Flow.Poll(c.UserContext(), c.FormValue("token"), compatOriginOf(c))
+	delivery, err := e.Flow.Poll(c.UserContext(), c.FormValue("token"), e.compatOriginOf(c))
 	switch {
 	case err == nil:
 		return compat.WriteBareJSON(c, compat.LoginPollJSON(compat.LoginDelivery{
@@ -521,14 +533,54 @@ func (e *Engine) compatLoginGrant(c *fiber.Ctx) error {
 // compatOriginOf is the base URL this request arrived on.
 //
 // Empty when the host header is absent, which leaves the flow's URLs without
-func compatOriginOf(c *fiber.Ctx) string {
-	host := c.Hostname()
+func (e *Engine) isPeerTrusted(c *fiber.Ctx) bool {
+	rawIP := c.Context().RemoteIP()
+	if rawIP == nil {
+		return false
+	}
+	addr, err := netip.ParseAddr(rawIP.String())
+	if err != nil {
+		return false
+	}
+	for _, prefix := range e.trustedPrefixes() {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e *Engine) compatOriginOf(c *fiber.Ctx) string {
+	host := string(c.Request().Host())
+	if host == "" {
+		host = c.Hostname()
+	}
+
+	trusted := e.isPeerTrusted(c)
+	if trusted {
+		if xfh := c.Get("X-Forwarded-Host"); xfh != "" {
+			if !strings.ContainsAny(xfh, "/\\@") {
+				host = xfh
+			}
+		} else if xfp := c.Get("X-Forwarded-Port"); xfp != "" && !strings.Contains(host, ":") {
+			if xfp != "80" && xfp != "443" {
+				host = host + ":" + xfp
+			}
+		}
+	}
 	if host == "" {
 		return ""
 	}
-	scheme := c.Protocol()
-	if scheme == "" {
-		scheme = "http"
+
+	scheme := "http"
+	if c.Context().IsTLS() || c.Protocol() == "https" {
+		scheme = "https"
+	} else if trusted {
+		if strings.EqualFold(c.Get("X-Forwarded-Proto"), "https") ||
+			strings.EqualFold(c.Get("X-Forwarded-Ssl"), "on") ||
+			strings.EqualFold(c.Get("Front-End-Https"), "on") {
+			scheme = "https"
+		}
 	}
 	return scheme + "://" + host
 }

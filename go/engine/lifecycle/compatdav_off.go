@@ -28,3 +28,17 @@ func (e *Engine) davVendorProps() func(
 	return nil
 }
 func (e *Engine) serveDavTrash(http.ResponseWriter, *http.Request, core.UserID, string) {}
+
+func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop, []dav.RootChild) {
+	roots := e.Core.Roots(user)
+	children := make([]dav.RootChild, 0, len(roots))
+	for _, rt := range roots {
+		children = append(children, dav.RootChild{
+			Label: rt.Label,
+			Props: []dav.Prop{
+				{Name: xml.Name{Space: "DAV:", Local: "displayname"}, Value: rt.Label},
+			},
+		})
+	}
+	return nil, children
+}

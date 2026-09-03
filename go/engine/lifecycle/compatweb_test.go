@@ -196,6 +196,12 @@ func TestCompatWebdavDiscoveryAndRootAccess(t *testing.T) {
 		"/remote.php/dav/",
 		"/index.php/remote.php/dav",
 		"/index.php/remote.php/dav/",
+		"/remote.php/dav/files/admin",
+		"/remote.php/dav/files/admin/",
+		"/remote.php/dav/files/admin//",
+		"/index.php/remote.php/dav/files/admin",
+		"/index.php/remote.php/dav/files/admin/",
+		"/index.php/remote.php/dav/files/admin//",
 	}
 
 	for _, p := range aliases {
@@ -258,8 +264,24 @@ func TestCompatWebdavDiscoveryAndRootAccess(t *testing.T) {
 		}
 		propAuth.Header.Set("Authorization", dav)
 		propAuthResp, err := client.Do(propAuth)
-		if err != nil || propAuthResp.StatusCode != http.StatusMultiStatus {
+		if err != nil {
+			t.Fatalf("authenticated PROPFIND %s: %v", p, err)
+		}
+		if propAuthResp.StatusCode != http.StatusMultiStatus {
 			t.Fatalf("authenticated PROPFIND %s answered %d, want 207", p, propAuthResp.StatusCode)
+		}
+		propBody, rerr := io.ReadAll(propAuthResp.Body)
+		if rerr != nil {
+			t.Fatalf("reading PROPFIND body: %v", rerr)
+		}
+		if !strings.Contains(string(propBody), "resourcetype") {
+			t.Errorf("PROPFIND %s missing resourcetype in body: %s", p, string(propBody))
+		}
+		if !strings.Contains(string(propBody), "getetag") {
+			t.Errorf("PROPFIND %s missing getetag in body: %s", p, string(propBody))
+		}
+		if !strings.Contains(string(propBody), "permissions") {
+			t.Errorf("PROPFIND %s missing permissions in body: %s", p, string(propBody))
 		}
 		if cerr := propAuthResp.Body.Close(); cerr != nil {
 			t.Errorf("closing authenticated PROPFIND response: %v", cerr)
@@ -409,6 +431,9 @@ func TestTheLoginFlowDeliversOneCredential(t *testing.T) {
 	}
 	if out.AppPassword == "" || out.LoginName == "" {
 		t.Errorf("the delivery is incomplete: %+v", out)
+	}
+	if out.Server != base {
+		t.Errorf("out.Server = %q, want %q", out.Server, base)
 	}
 	if delivered.StatusCode != 200 {
 		t.Errorf("the delivery answered %d, want 200", delivered.StatusCode)
@@ -939,5 +964,231 @@ func TestTheUploadsAliasWinsOverTheFilesAlias(t *testing.T) {
 
 	if w.Code != http.StatusCreated {
 		t.Fatalf("opening through the longer alias answered %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestNextcloudAndroidPostLoginFlow(t *testing.T) {
+	t.Parallel()
+	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	if openErr != nil {
+		t.Fatalf("opening engine: %v", openErr)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing engine: %v", cerr)
+		}
+	})
+
+	ctx := context.Background()
+	dir := t.TempDir()
+	if rerr := e.Core.RegisterShare(ctx, core.ShareDef{
+		ID: 1, Name: "files", Host: dir, Policy: vfs.DefaultSharePolicy(),
+	}); rerr != nil {
+		t.Fatalf("registering the share: %v", rerr)
+	}
+	uid, aerr := e.Auth.CreateAdmin(ctx, "alice", "Alice", pwOf(loginPassword))
+	if aerr != nil {
+		t.Fatalf("creating admin: %v", aerr)
+	}
+	if gerr := e.Core.GrantEveryShare(ctx, uid); gerr != nil {
+		t.Fatalf("granting: %v", gerr)
+	}
+
+	base := serveCompatEngine(t, e)
+	client := compatClient()
+	t.Cleanup(client.CloseIdleConnections)
+
+	// 1. Begin login flow v2 as Android app does
+	resp, err := client.Post(base+"/index.php/login/v2", "application/x-www-form-urlencoded", strings.NewReader(""))
+	if err != nil {
+		t.Fatalf("begin flow: %v", err)
+	}
+	var begun struct {
+		Poll struct {
+			Token    string `json:"token"`
+			Endpoint string `json:"endpoint"`
+		} `json:"poll"`
+		Login string `json:"login"`
+	}
+	if derr := json.NewDecoder(resp.Body).Decode(&begun); derr != nil {
+		t.Fatalf("decoding begin: %v", derr)
+	}
+	if cerr := resp.Body.Close(); cerr != nil {
+		t.Errorf("closing begin response: %v", cerr)
+	}
+
+	loginTok := loginTokenOf(begun.Login)
+	if loginTok == "" {
+		t.Fatalf("could not extract login token from %q", begun.Login)
+	}
+
+	// 2. Sign in as alice to get session cookie and CSRF
+	loginBody := fmt.Sprintf(`{"login":"alice","password":%q}`, loginPassword)
+	loginResp, err := client.Post(base+"/api/v1/auth/login", "application/json", strings.NewReader(loginBody))
+	if err != nil {
+		t.Fatalf("login: %v", err)
+	}
+	var sessionCookie *http.Cookie
+	for _, c := range loginResp.Cookies() {
+		if c.Name == "__Host-sc_sid" {
+			sessionCookie = c
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("missing __Host-sc_sid cookie")
+	}
+	var loginData struct {
+		CSRF string `json:"csrf"`
+	}
+	if derr := json.NewDecoder(loginResp.Body).Decode(&loginData); derr != nil {
+		t.Fatalf("decoding login response: %v", derr)
+	}
+	if cerr := loginResp.Body.Close(); cerr != nil {
+		t.Errorf("closing login response: %v", cerr)
+	}
+
+	// 3. Submit approval
+	form := url.Values{"token": {loginTok}}
+	grantReq, err := http.NewRequest(http.MethodPost, base+"/index.php/login/v2/grant", strings.NewReader(form.Encode()))
+	if err != nil {
+		t.Fatalf("building grant request: %v", err)
+	}
+	grantReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	grantReq.Header.Set("Sc-Csrf", loginData.CSRF)
+	grantReq.AddCookie(sessionCookie)
+	grantResp, err := client.Do(grantReq)
+	if err != nil {
+		t.Fatalf("posting grant: %v", err)
+	}
+	if grantResp.StatusCode != http.StatusOK {
+		t.Fatalf("grant status %d, want 200", grantResp.StatusCode)
+	}
+	if cerr := grantResp.Body.Close(); cerr != nil {
+		t.Errorf("closing grant response: %v", cerr)
+	}
+
+	// 4. Poll credentials
+	pollForm := url.Values{"token": {begun.Poll.Token}}
+	pollResp, err := client.Post(begun.Poll.Endpoint, "application/x-www-form-urlencoded", strings.NewReader(pollForm.Encode()))
+	if err != nil {
+		t.Fatalf("polling: %v", err)
+	}
+	if pollResp.StatusCode != http.StatusOK {
+		t.Fatalf("poll status %d, want 200", pollResp.StatusCode)
+	}
+	var delivery struct {
+		Server      string `json:"server"`
+		LoginName   string `json:"loginName"`
+		AppPassword string `json:"appPassword"`
+	}
+	if derr := json.NewDecoder(pollResp.Body).Decode(&delivery); derr != nil {
+		t.Fatalf("decoding delivery: %v", derr)
+	}
+	if cerr := pollResp.Body.Close(); cerr != nil {
+		t.Errorf("closing poll response: %v", cerr)
+	}
+
+	if delivery.Server != base {
+		t.Errorf("delivery server = %q, want %q", delivery.Server, base)
+	}
+	if delivery.LoginName != "alice" {
+		t.Errorf("delivery loginName = %q, want alice", delivery.LoginName)
+	}
+	if delivery.AppPassword == "" {
+		t.Fatal("empty app password delivered")
+	}
+
+	basicAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte(delivery.LoginName+":"+delivery.AppPassword))
+
+	// 5. Post-login: check status.php with new credentials
+	statusReq, err := http.NewRequest(http.MethodGet, delivery.Server+"/status.php", nil)
+	if err != nil {
+		t.Fatalf("status request: %v", err)
+	}
+	statusReq.Header.Set("Authorization", basicAuth)
+	statusResp, err := client.Do(statusReq)
+	if err != nil || statusResp.StatusCode != http.StatusOK {
+		t.Fatalf("status.php: err=%v status=%d", err, statusResp.StatusCode)
+	}
+	if cerr := statusResp.Body.Close(); cerr != nil {
+		t.Errorf("closing status response: %v", cerr)
+	}
+
+	// 6. Post-login: check capabilities with new credentials
+	capsReq, err := http.NewRequest(http.MethodGet, delivery.Server+"/ocs/v2.php/cloud/capabilities", nil)
+	if err != nil {
+		t.Fatalf("capabilities request: %v", err)
+	}
+	capsReq.Header.Set("Authorization", basicAuth)
+	capsResp, err := client.Do(capsReq)
+	if err != nil || capsResp.StatusCode != http.StatusOK {
+		t.Fatalf("capabilities: err=%v status=%d", err, capsResp.StatusCode)
+	}
+	if cerr := capsResp.Body.Close(); cerr != nil {
+		t.Errorf("closing caps response: %v", cerr)
+	}
+	// 7. Post-login: get user info
+	userReq, err := http.NewRequest(http.MethodGet, delivery.Server+"/ocs/v2.php/cloud/user", nil)
+	if err != nil {
+		t.Fatalf("user request: %v", err)
+	}
+	userReq.Header.Set("Authorization", basicAuth)
+	userResp, err := client.Do(userReq)
+	if err != nil || userResp.StatusCode != http.StatusOK {
+		t.Fatalf("user info: err=%v status=%d", err, userResp.StatusCode)
+	}
+	if cerr := userResp.Body.Close(); cerr != nil {
+		t.Errorf("closing user response: %v", cerr)
+	}
+
+	// 8. Post-login: PROPFIND root with double-slash (Android client pattern: /remote.php/dav/files/<user>//)
+	// Depth: 0 check
+	rootPropReq0, err := http.NewRequest("PROPFIND", delivery.Server+"/remote.php/dav/files/"+delivery.LoginName+"//", nil)
+	if err != nil {
+		t.Fatalf("root prop 0 request: %v", err)
+	}
+	rootPropReq0.Header.Set("Authorization", basicAuth)
+	rootPropReq0.Header.Set("Depth", "0")
+	rootPropResp0, err := client.Do(rootPropReq0)
+	if err != nil || rootPropResp0.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("PROPFIND root depth 0: err=%v status=%d", err, rootPropResp0.StatusCode)
+	}
+	body0, err := io.ReadAll(rootPropResp0.Body)
+	if err != nil {
+		t.Fatalf("reading body0: %v", err)
+	}
+	if cerr := rootPropResp0.Body.Close(); cerr != nil {
+		t.Errorf("closing body0: %v", cerr)
+	}
+	if !strings.Contains(string(body0), "getetag") {
+		t.Errorf("root depth 0 missing getetag: %s", string(body0))
+	}
+	if !strings.Contains(string(body0), "permissions") {
+		t.Errorf("root depth 0 missing permissions: %s", string(body0))
+	}
+
+	// 9. Post-login: PROPFIND root with Depth: 1 (lists shares)
+	rootPropReq1, err := http.NewRequest("PROPFIND", delivery.Server+"/remote.php/dav/files/"+delivery.LoginName+"//", nil)
+	if err != nil {
+		t.Fatalf("root prop 1 request: %v", err)
+	}
+	rootPropReq1.Header.Set("Authorization", basicAuth)
+	rootPropReq1.Header.Set("Depth", "1")
+	rootPropResp1, err := client.Do(rootPropReq1)
+	if err != nil || rootPropResp1.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("PROPFIND root depth 1: err=%v status=%d", err, rootPropResp1.StatusCode)
+	}
+	body1, err := io.ReadAll(rootPropResp1.Body)
+	if err != nil {
+		t.Fatalf("reading body1: %v", err)
+	}
+	if cerr := rootPropResp1.Body.Close(); cerr != nil {
+		t.Errorf("closing body1: %v", cerr)
+	}
+	if !strings.Contains(string(body1), "files") {
+		t.Errorf("root depth 1 missing files share: %s", string(body1))
+	}
+	if !strings.Contains(string(body1), "fileid") {
+		t.Errorf("root depth 1 missing fileid: %s", string(body1))
 	}
 }

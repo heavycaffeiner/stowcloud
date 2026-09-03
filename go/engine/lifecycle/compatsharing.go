@@ -169,7 +169,7 @@ func (e *Engine) formatLinkShare(ctx context.Context, c *fiber.Ctx, l core.Link)
 
 	url := ""
 	if tokStr != "" {
-		url = fmt.Sprintf("%s/s/%s", compatOriginOf(c), tokStr)
+		url = fmt.Sprintf("%s/s/%s", e.compatOriginOf(c), tokStr)
 	}
 
 	return compat.Share{

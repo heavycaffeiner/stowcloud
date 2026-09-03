@@ -118,6 +118,9 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		// because an OPTIONS aimed at a path speaks about that resource, and
 		// answering that to a stranger tells them whether a file is there.
 		path := r.URL.EscapedPath()
+		for strings.Contains(path, "//") {
+			path = strings.ReplaceAll(path, "//", "/")
+		}
 		if rewritten, aliased := davAlias(path, aliases); aliased {
 			path = rewritten
 		}
@@ -146,12 +149,8 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		// after a sign-in that succeeded.
 		if davIsRoot(path) {
 			if r.Method == "PROPFIND" {
-				roots := e.Core.Roots(user)
-				children := make([]dav.RootChild, 0, len(roots))
-				for _, rt := range roots {
-					children = append(children, dav.RootChild{Label: rt.Label})
-				}
-				h.RootPropfind(w, r, children)
+				baseProps, children := e.davRootProps(r.Context(), user)
+				h.RootPropfind(w, r, baseProps, children)
 				return
 			}
 			if r.Method == http.MethodHead || r.Method == http.MethodGet {
@@ -263,7 +262,10 @@ func davUser(r *http.Request) (core.UserID, bool) {
 // trailing slash or leave it off, and either way it means the same place.
 func davIsRoot(path string) bool {
 	rest := strings.TrimPrefix(path, DavPrefix)
-	return rest == "" || rest == "/"
+	for len(rest) > 0 && rest[0] == '/' {
+		rest = rest[1:]
+	}
+	return rest == ""
 }
 
 // davAlias maps one of the alternative mount points back onto this server's.
@@ -305,10 +307,15 @@ func davAlias(urlPath string, aliases []DavAlias) (string, bool) {
 		}
 		rest = rest[i:]
 	}
-
 	mount := a.Mount
 	if mount == "" {
 		mount = DavPrefix
+	}
+	for strings.Contains(rest, "//") {
+		rest = strings.ReplaceAll(rest, "//", "/")
+	}
+	if strings.HasSuffix(mount, "/") && strings.HasPrefix(rest, "/") {
+		rest = rest[1:]
 	}
 	return mount + rest, true
 }

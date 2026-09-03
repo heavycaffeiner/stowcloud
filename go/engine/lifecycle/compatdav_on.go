@@ -9,15 +9,17 @@ package lifecycle
 import (
 	"context"
 	"encoding/xml"
-	"path/filepath"
-	"strings"
-
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/compat"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
+	"net/http"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 )
 
 // davAliases are the alternative mount points the sync clients address, with
@@ -180,4 +182,88 @@ func permBitsOf(p acl.Perms) compat.PermBits {
 		out |= compat.PermWrite
 	}
 	return out
+}
+
+func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop, []dav.RootChild) {
+	id, err := e.State.InstanceID(ctx)
+	if err != nil {
+		id = "stowcloud"
+	}
+
+	roots := e.Core.Roots(user)
+	children := make([]dav.RootChild, 0, len(roots))
+	for _, rt := range roots {
+		label := rt.Label
+		props := []dav.Prop{
+			{
+				Name:     xml.Name{Space: "DAV:", Local: "resourcetype"},
+				Children: []dav.Element{{Name: xml.Name{Space: "DAV:", Local: "collection"}}},
+			},
+			{Name: xml.Name{Space: "DAV:", Local: "getcontenttype"}, Value: "httpd/unix-directory"},
+			{Name: xml.Name{Space: "DAV:", Local: "displayname"}, Value: label},
+		}
+
+		etag := `"` + label + `"`
+		mtime := e.clock.Now().UTC().Format(http.TimeFormat)
+		permStr := "RGDNVCK"
+		fidStr := "0"
+		davID := compat.DavID(0, id)
+
+		if res, rerr := e.resolve(user, "/"+label, acl.Read); rerr == nil {
+			if st, serr := res.Root().Stat(res.Path()); serr == nil {
+				entry := e.Core.EntryAt(res, st)
+				if fid, ferr := e.compatFileID(ctx, entry); ferr == nil {
+					fidStr = strconv.FormatUint(fid, 10)
+					davID = compat.DavID(fid, id)
+				}
+				perms := permBitsOf(entry.Perms)
+				permStr = compat.DavPermissions(perms, true, false)
+				etag = `"` + entry.ETag + `"`
+				if entry.MTimeNs > 0 {
+					mtime = time.Unix(0, entry.MTimeNs).UTC().Format(http.TimeFormat)
+				}
+			}
+		}
+
+		props = append(props,
+			dav.Prop{Name: xml.Name{Space: "DAV:", Local: "getetag"}, Value: etag},
+			dav.Prop{Name: xml.Name{Space: "DAV:", Local: "getlastmodified"}, Value: mtime},
+			dav.Prop{Name: xml.Name{Space: compat.NSOwnCloud, Local: "permissions"}, Value: permStr},
+			dav.Prop{Name: xml.Name{Space: compat.NSNextcloudX, Local: "permissions"}, Value: permStr},
+			dav.Prop{Name: xml.Name{Space: compat.NSOwnCloud, Local: "id"}, Value: davID},
+			dav.Prop{Name: xml.Name{Space: compat.NSNextcloudX, Local: "id"}, Value: davID},
+			dav.Prop{Name: xml.Name{Space: compat.NSOwnCloud, Local: "fileid"}, Value: fidStr},
+			dav.Prop{Name: xml.Name{Space: compat.NSNextcloudX, Local: "fileid"}, Value: fidStr},
+			dav.Prop{Name: xml.Name{Space: compat.NSOwnCloud, Local: "size"}, Value: "0"},
+			dav.Prop{Name: xml.Name{Space: compat.NSOwnCloud, Local: "has-preview"}, Value: "false"},
+			dav.Prop{Name: xml.Name{Space: compat.NSOwnCloud, Local: "favorite"}, Value: "0"},
+			dav.Prop{Name: xml.Name{Space: compat.NSNextcloudX, Local: "favorite"}, Value: "0"},
+		)
+
+		children = append(children, dav.RootChild{
+			Label: label,
+			Props: props,
+		})
+	}
+
+	rootDavID := compat.DavID(1, id)
+	baseProps := []dav.Prop{
+		{
+			Name:     xml.Name{Space: "DAV:", Local: "resourcetype"},
+			Children: []dav.Element{{Name: xml.Name{Space: "DAV:", Local: "collection"}}},
+		},
+		{Name: xml.Name{Space: "DAV:", Local: "getcontenttype"}, Value: "httpd/unix-directory"},
+		{Name: xml.Name{Space: "DAV:", Local: "getetag"}, Value: `"root"`},
+		{Name: xml.Name{Space: "DAV:", Local: "displayname"}, Value: ""},
+		{Name: xml.Name{Space: "DAV:", Local: "getlastmodified"}, Value: e.clock.Now().UTC().Format(http.TimeFormat)},
+		{Name: xml.Name{Space: compat.NSOwnCloud, Local: "permissions"}, Value: "RGDNV"},
+		{Name: xml.Name{Space: compat.NSNextcloudX, Local: "permissions"}, Value: "RGDNV"},
+		{Name: xml.Name{Space: compat.NSOwnCloud, Local: "id"}, Value: rootDavID},
+		{Name: xml.Name{Space: compat.NSNextcloudX, Local: "id"}, Value: rootDavID},
+		{Name: xml.Name{Space: compat.NSOwnCloud, Local: "fileid"}, Value: "1"},
+		{Name: xml.Name{Space: compat.NSNextcloudX, Local: "fileid"}, Value: "1"},
+		{Name: xml.Name{Space: compat.NSOwnCloud, Local: "size"}, Value: "0"},
+	}
+
+	return baseProps, children
 }

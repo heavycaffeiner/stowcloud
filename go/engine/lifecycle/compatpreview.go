@@ -123,7 +123,7 @@ func (e *Engine) compatDirect(
 		return compat.Val{}, false, compat.ServerError("could not mint direct URL")
 	}
 
-	directURL := compatOriginOf(c) + "/remote.php/direct/" + token
+	directURL := e.compatOriginOf(c) + "/remote.php/direct/" + token
 	return compat.DirectURL(directURL), true, nil
 }
 
@@ -301,7 +301,7 @@ func (e *Engine) compatRecent(
 		thumbURL := ""
 		if fid > 0 {
 			thumbURL = fmt.Sprintf("%s/index.php/core/preview?fileId=%d&x=64&y=64",
-				compatOriginOf(c), fid)
+				e.compatOriginOf(c), fid)
 		}
 
 		entries = append(entries, compat.SearchEntry(
@@ -309,7 +309,7 @@ func (e *Engine) compatRecent(
 			"/"+hit.Vpath.String(),
 			fid,
 			thumbURL,
-			compatOriginOf(c),
+			e.compatOriginOf(c),
 		))
 	}
 
