@@ -75,6 +75,8 @@ func Section(in Input) []Finding {
 		out = append(out, checkDB(in)...)
 	case "oidc":
 		out = append(out, checkOIDC(in)...)
+	case "thumbnail":
+		out = append(out, checkThumbnail(in)...)
 	}
 	if len(out) == 0 {
 		out = append(out, advisory(in.Section, "", keyCheckPassed))
@@ -553,4 +555,38 @@ func numberOr(body map[string]any, key string, fallback float64) float64 {
 		return v
 	}
 	return fallback
+}
+
+func checkThumbnail(in Input) []Finding {
+	dir, ok := in.Body["dir"].(string)
+	if !ok || dir == "" {
+		return nil
+	}
+	if !filepath.IsAbs(dir) {
+		return []Finding{blocking(in.Section, "dir", keyPathMustBeAbsolute)}
+	}
+	info, err := os.Stat(dir)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		parent := filepath.Dir(dir)
+		if _, perr := os.Stat(parent); perr != nil {
+			return []Finding{blocking(in.Section, "dir", keyDirDoesNotExist,
+				"field", "dir", "path", parent)}
+		}
+		if werr := probeWritable(parent); werr != nil {
+			return []Finding{blocking(in.Section, "dir", keyDirNotWritable,
+				"field", "dir", "path", parent, "error", werr.Error())}
+		}
+		return []Finding{advisory(in.Section, "dir", keyDirWillBeCreated, "path", dir)}
+	case err != nil:
+		return []Finding{blocking(in.Section, "dir", keyDirNotWritable,
+			"field", "dir", "path", dir, "error", err.Error())}
+	case !info.IsDir():
+		return []Finding{blocking(in.Section, "dir", keyPathIsNotADirectory, "path", dir)}
+	}
+	if werr := probeWritable(dir); werr != nil {
+		return []Finding{blocking(in.Section, "dir", keyDirNotWritable,
+			"field", "dir", "path", dir, "error", werr.Error())}
+	}
+	return []Finding{advisory(in.Section, "dir", keyDirIsWritable, "path", dir)}
 }

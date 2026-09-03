@@ -111,6 +111,12 @@ type Values struct {
 	// read of the settings table.
 	OIDC            *OIDC
 	OIDCDisplayName string
+
+	// ThumbnailEnabled controls whether the preview service generates thumbnails.
+	ThumbnailEnabled bool
+
+	// ThumbnailDir overrides where thumbnails are stored. Empty uses <dataDir>/thumbs.
+	ThumbnailDir string
 }
 
 // OIDC is the administrator-editable provider configuration, secret excluded.
@@ -190,6 +196,8 @@ func Defaults() Values {
 		SMBTOTPPolicy:        DefaultSMBTOTPPolicy,
 		SMBServiceGID:        DefaultSMBServiceGID,
 		SMBConfigDir:         DefaultSMBConfigDir,
+		ThumbnailEnabled:     true,
+		ThumbnailDir:         "",
 	}
 }
 

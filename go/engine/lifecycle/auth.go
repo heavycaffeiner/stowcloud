@@ -289,7 +289,7 @@ func (e *Engine) featuresView() handler.FeaturesView {
 		WebDAV: false,
 		SMB:    e.smbPublisherOf() != nil,
 
-		Preview: e.Preview != nil,
+		Preview: e.thumbnailEnabled(),
 		Trash:   true,
 		Shares:  true,
 

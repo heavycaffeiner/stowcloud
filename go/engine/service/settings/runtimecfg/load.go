@@ -49,7 +49,13 @@ func Load(ctx context.Context, st Store, base Values, log *slog.Logger) Values {
 	loadDBGuard(doc, &out)
 	loadOIDC(doc, &out)
 	loadSMB(doc, &out)
+	loadThumbnail(doc, &out)
 	return out
+}
+
+func loadThumbnail(d document, out *Values) {
+	d.boolOf("thumbnail", "enabled", func(v bool) { out.ThumbnailEnabled = v })
+	d.stringOf("thumbnail", "dir", func(v string) { out.ThumbnailDir = v })
 }
 
 // document is the stored settings as typed sections.

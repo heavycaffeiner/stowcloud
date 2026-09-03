@@ -302,6 +302,9 @@ func jailSpec(values runtimecfg.Values, dataDir string, roots []string, shareHos
 			spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dir})
 		}
 	}
+	if values.ThumbnailDir != "" {
+		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: filepath.Clean(values.ThumbnailDir)})
+	}
 
 	seen := map[string]bool{}
 	grant := func(dir string) {

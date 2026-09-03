@@ -17,7 +17,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -31,9 +30,8 @@ import (
 
 // filesThumbnail answers with a thumbnail of the addressed file.
 func (e *Engine) filesThumbnail(c *fiber.Ctx) error {
-	if e.Preview == nil {
-		// A deployment that runs no decoder. Absent rather than broken: the
-		// listing says the same thing, so a client reading it never asks.
+	if !e.thumbnailEnabled() {
+		// A deployment that runs no decoder or has thumbnails disabled.
 		return refuse(c, apierr.Classified{Class: apierr.NotFound})
 	}
 
@@ -182,7 +180,7 @@ func presetOf(s string) (preview.Preset, error) {
 // no room for a cache. Refusing to boot over it would take down a server that
 // can still serve every file it holds.
 func openPreview(
-	dataDir, worker string, c *core.Core, clk clock.Clock, log *slog.Logger,
+	thumbsDir, worker string, c *core.Core, clk clock.Clock, log *slog.Logger,
 ) *preview.Service {
 	opt := preview.PoolOptions{Clock: clk}
 	if worker != "" {
@@ -198,7 +196,7 @@ func openPreview(
 		return nil
 	}
 
-	cache, cerr := preview.NewCache(filepath.Join(dataDir, "thumbs"))
+	cache, cerr := preview.NewCache(thumbsDir)
 	if cerr != nil {
 		log.Warn("thumbnails are unavailable: the cache directory did not open",
 			"error", cerr)

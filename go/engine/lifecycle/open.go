@@ -34,6 +34,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/oidc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/upload"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/watch"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
@@ -123,7 +124,11 @@ type Engine struct {
 
 	// Preview generates thumbnails. Nil is a deployment running no decoder,
 	// which the thumbnail route reports as absence.
-	Preview *preview.Service
+	Preview       *preview.Service
+	previewWorker string
+	thumbnailMu   sync.RWMutex
+	thumbnailOn   bool
+	thumbnailDir  string
 
 	// smb pushes the rendered file-sharing configuration to the sidecar. Nil
 	// is a deployment with no sidecar, which is the ordinary case and not a
@@ -405,8 +410,17 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	// a degradation rather than a failure: a pool that cannot start, or a
 	// cache directory that cannot be created, leaves a deployment serving
 	// every file and no thumbnail of one.
-	e.Preview = openPreview(opt.DataDir, opt.PreviewWorker, coreSvc, clk, logger)
-
+	e.previewWorker = opt.PreviewWorker
+	values := runtimecfg.Load(ctx, e.State, runtimecfg.Defaults(), logger)
+	thumbsDir := filepath.Join(opt.DataDir, "thumbs")
+	if values.ThumbnailDir != "" {
+		thumbsDir = values.ThumbnailDir
+	}
+	e.thumbnailOn = values.ThumbnailEnabled
+	e.thumbnailDir = values.ThumbnailDir
+	if values.ThumbnailEnabled {
+		e.Preview = openPreview(thumbsDir, opt.PreviewWorker, coreSvc, clk, logger)
+	}
 	// The operator's settings, before anything serves. The chain reads the
 	// host lists and the proxy ranges per request, so leaving them at their
 	// zero values would run a configured deployment as though nothing had
@@ -540,4 +554,10 @@ func (e *Engine) Close() (err error) {
 	}
 	e.files = nil
 	return errors.Join(errs...)
+}
+
+func (e *Engine) thumbnailEnabled() bool {
+	e.thumbnailMu.RLock()
+	defer e.thumbnailMu.RUnlock()
+	return e.thumbnailOn && e.Preview != nil
 }

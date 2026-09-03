@@ -252,6 +252,11 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 		list("oidc.scopes", oidcScopes(values), false, ""),
 		boolean("oidc.allow_private_endpoints",
 			values.OIDC != nil && values.OIDC.AllowPrivateEndpoints, false),
+
+		// Thumbnail generation can be toggled live; changing the storage
+		// directory requires a restart so Landlock can grant the new path.
+		boolean("thumbnail.enabled", values.ThumbnailEnabled, false),
+		str("thumbnail.dir", values.ThumbnailDir, true, "settings.empty_default_thumbs_dir"),
 	}
 	return Snapshot{Fields: fields}
 }

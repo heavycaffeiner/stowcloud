@@ -452,6 +452,9 @@ func fullDocument() map[string]any {
 			"totp_policy": "block", "config_dir": "/config/smb",
 			"agent_socket": "/run/smb.sock", "interfaces": []any{"192.168.1.10"},
 		},
+		"thumbnail": map[string]any{
+			"enabled": true, "dir": "/var/thumbs",
+		},
 	}
 }
 

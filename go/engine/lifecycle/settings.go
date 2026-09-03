@@ -15,6 +15,7 @@ import (
 	"io"
 	"log/slog"
 	"net/netip"
+	"path/filepath"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
@@ -106,6 +107,7 @@ func (e *Engine) loadSettings(ctx context.Context) {
 	// the sampler holds the configuration it was given and a change has to
 	// replace the goroutine rather than mutate what it is reading.
 	e.applySizeGuard(ctx, values)
+	e.applyThumbnailSettings(ctx, values)
 
 	// The bind address, when it moved. The listener belongs to the process
 	// rather than to this engine, so the change is handed out rather than
@@ -198,5 +200,23 @@ func smbTOTPPolicyOf(name string, e *Engine) auth.TOTPPolicy {
 		e.logger.Warn("the stored SMB second-factor policy was not understood; "+
 			"enrolled accounts are blocked from the protocol", "policy", name)
 		return auth.TOTPBlock
+	}
+}
+
+func (e *Engine) applyThumbnailSettings(ctx context.Context, values runtimecfg.Values) {
+	e.thumbnailMu.Lock()
+	defer e.thumbnailMu.Unlock()
+	e.thumbnailOn = values.ThumbnailEnabled
+	e.thumbnailDir = values.ThumbnailDir
+
+	if !values.ThumbnailEnabled {
+		return
+	}
+	if e.Preview == nil && e.Core != nil {
+		thumbsDir := filepath.Join(e.dataDir, "thumbs")
+		if values.ThumbnailDir != "" {
+			thumbsDir = values.ThumbnailDir
+		}
+		e.Preview = openPreview(thumbsDir, e.previewWorker, e.Core, e.clock, e.logger)
 	}
 }

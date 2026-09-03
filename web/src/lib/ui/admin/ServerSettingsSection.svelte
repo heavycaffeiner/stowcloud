@@ -30,7 +30,8 @@
     HomesSettingsReq,
     WatchSettingsReq,
     DbSettingsReq,
-    OidcSettingsReq
+    OidcSettingsReq,
+    ThumbnailSettingsReq
   } from '../../api/types'
   import { Icon, SelectOutlined } from 'm3-svelte'
   import { icons } from '../../icons'
@@ -65,6 +66,8 @@
   //   /* i18n */ 'field.smb_agent_socket'
   //   /* i18n */ 'field.security_hardening'
   //   /* i18n */ 'field.data_dir'
+  //   /* i18n */ 'field.thumbnail_enabled'
+  //   /* i18n */ 'field.thumbnail_dir'
   function fieldLabel(key: string): string {
     // Catalogue keys carry one dot, so a settings key's own dots become
     // underscores: `smb.config_dir` is looked up as `field.smb_config_dir`.
@@ -78,6 +81,7 @@
   // The keys the server can send that no call site here shows literally:
   //   /* i18n */ 'settings.empty_trusts_no_proxy'
   //   /* i18n */ 'settings.empty_disables_netbios_name'
+  //   /* i18n */ 'settings.empty_default_thumbs_dir'
   function emptyNote(key: string): string | null {
     const f = field(key)
     return f?.empty_means_key ? t(f.empty_means_key) : null
@@ -308,6 +312,30 @@
     } finally {
       searchSaving = false
     }
+  }
+
+  // ── thumbnails ──
+
+  let thumbnailEnabled = $state(true)
+  let thumbnailDir = $state('')
+  let thumbnailSaving = $state(false)
+  let thumbnailError = $state<string | null>(null)
+  let thumbnailOutcome = $state<ApplyOutcome | null>(null)
+
+  async function saveThumbnail(): Promise<void> {
+    thumbnailError = null
+    thumbnailOutcome = null
+    const req: ThumbnailSettingsReq = {
+      enabled: thumbnailEnabled,
+      dir: thumbnailDir.trim() || undefined
+    }
+    thumbnailSaving = true
+    await saving(
+      () => api.adminSetThumbnailSettings(req),
+      t('server.could_not_save_thumbnail_settings'),
+      (o, e) => ((thumbnailOutcome = o), (thumbnailError = e))
+    )
+    thumbnailSaving = false
   }
 
   // ── archive ──
@@ -576,9 +604,10 @@
     'oidc.redirect_uris',
     'oidc.scopes',
     'oidc.display_name',
-    'oidc.allow_private_endpoints'
+    'oidc.allow_private_endpoints',
+    'thumbnail.enabled',
+    'thumbnail.dir'
   ])
-
   // Reported, never editable: what the process opened before anything could
   // be configured. `data_dir` is a process argument; `smb.config_dir` is
   // read under the `smb` section but is the sidecar's own mounted
@@ -620,6 +649,9 @@
       searchDeadlineFast = String(field('search.walk_deadline_fast_ms')?.value ?? '')
 
       archiveMax = String(field('archive.max_concurrent')?.value ?? '')
+
+      thumbnailEnabled = field('thumbnail.enabled')?.value !== false
+      thumbnailDir = String(field('thumbnail.dir')?.value ?? '')
 
       ratePerSec = String(field('rate.per_sec')?.value ?? '')
       rateBurst = String(field('rate.burst')?.value ?? '')
@@ -818,6 +850,30 @@
         {#if archiveOutcome}
           <p class="sc-admin-section__saved" role="status">{outcomeText(archiveOutcome)}</p>
           {@render findingsList(archiveOutcome)}
+        {/if}
+      </div>
+    </div>
+
+    <!-- Thumbnails -->
+    <div class="sc-admin-card">
+      <div class="sc-admin-card-head">
+        <div class="sc-admin-card-icon">
+          <Icon icon={icons.image} size={20} />
+        </div>
+        <div class="sc-admin-card-meta">
+          <h4 class="sc-admin-card-title">{t('server.thumbnail_settings')}</h4>
+          <p class="sc-admin-card-subtitle">{t('server.thumbnail_enabled_description')}</p>
+        </div>
+      </div>
+      <div class="sc-server-settings__form">
+        <Switch checked={thumbnailEnabled} onchange={(v) => (thumbnailEnabled = v)} label={t('server.thumbnail_enabled')} />
+        <TextField label={t('server.thumbnail_storage_dir')} bind:value={thumbnailDir} />
+        <p class="sc-admin-section__hint">{t('server.thumbnail_storage_dir_description')}</p>
+        <Button variant="filled" onclick={saveThumbnail} loading={thumbnailSaving}>{t('common.save')}</Button>
+        {#if thumbnailError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={thumbnailError}>{thumbnailError}</p>{/if}
+        {#if thumbnailOutcome}
+          <p class="sc-admin-section__saved" role="status">{outcomeText(thumbnailOutcome)}</p>
+          {@render findingsList(thumbnailOutcome)}
         {/if}
       </div>
     </div>

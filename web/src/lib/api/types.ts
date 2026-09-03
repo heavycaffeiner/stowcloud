@@ -1263,6 +1263,13 @@ export interface DbSettingsReq {
   min_free_bytes: number
 }
 
+/** `PATCH /admin/settings/thumbnail` body. Controls whether thumbnails are generated
+ *  and overrides the storage directory. */
+export interface ThumbnailSettingsReq {
+  enabled: boolean
+  dir?: string
+}
+
 // symlink-policy has no client request type. `symlinkPolicy` is a per-share
 // row (`AdminShare`'s own creation flow decides it), read from `share_definition`
 // rather than the settings document; a PATCH to `/admin/settings/symlink-policy`

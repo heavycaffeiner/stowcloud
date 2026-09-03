@@ -545,7 +545,7 @@ func (e *Engine) compatWiring() compat.Wiring {
 		compat.PortLoginFlow:     e.Flow != nil,
 		compat.PortSharing:       true,
 		compat.PortLinks:         true,
-		compat.PortContentOrigin: e.Preview != nil,
+		compat.PortContentOrigin: e.thumbnailEnabled(),
 	}
 	return compat.Wiring{Present: present}
 }

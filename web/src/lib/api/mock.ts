@@ -39,6 +39,7 @@ import {
   type CreateGroupReq,
   type CreateShareReq,
   type DbSettingsReq,
+  type ThumbnailSettingsReq,
   type Entry,
   type HomesSettingsReq,
   type IndexEstimate,
@@ -1249,6 +1250,10 @@ async function adminStorage(): Promise<StorageReport> {
       { label: 'home', free_bytes: 400_000_000_000, total_bytes: 500_000_000_000 }
     ]
   }
+}
+
+async function adminSetThumbnailSettings(_req: ThumbnailSettingsReq): Promise<ApplyOutcome> {
+  return { stored: true, applied: true, restart_required: false, findings: [] }
 }
 
 /** `PATCH /api/admin/upload-settings` — mirrors
@@ -2478,6 +2483,7 @@ export const mockApi = {
   totpEnroll,
   totpDisable,
   recoveryCodesRemaining,
+  adminSetThumbnailSettings,
   reissueRecoveryCodes,
   listAppPasswords,
   createAppPassword,

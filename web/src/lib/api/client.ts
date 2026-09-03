@@ -88,7 +88,8 @@ export type {
   OidcSettingsReq,
   DbSettingsReq,
   HomesSettingsReq,
-  WatchSettingsReq
+  WatchSettingsReq,
+  ThumbnailSettingsReq
 } from './types'
 export { ALL_GRANT_PERMS } from './types'
 export { ApiError } from './types'

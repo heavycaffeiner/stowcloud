@@ -26,6 +26,7 @@ import {
   type CreateGroupReq,
   type CreateShareReq,
   type DbSettingsReq,
+  type ThumbnailSettingsReq,
   type Entry,
   type HomesSettingsReq,
   type IndexEstimate,
@@ -1244,6 +1245,10 @@ async function adminSetOidcSettings(req: OidcSettingsReq): Promise<ApplyOutcome>
   return settingsPatch('/admin/settings/oidc', req)
 }
 
+async function adminSetThumbnailSettings(req: ThumbnailSettingsReq): Promise<ApplyOutcome> {
+  return settingsPatch('/admin/settings/thumbnail', req)
+}
+
 // symlink-policy and paths have no client save function: neither is read
 // back by anything server-side (see the comments beside `SmbSettingsReq`
 // in types.ts), so both are reported read-only rather than offered as
@@ -1728,6 +1733,7 @@ export const httpApi = {
   adminSetHomesSettings,
   adminSetWatchSettings,
   adminSetOidcSettings,
+  adminSetThumbnailSettings,
   adminSystemRestart,
   systemHealth,
   adminListUsers,

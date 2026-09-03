@@ -205,7 +205,7 @@ func (e *Engine) compatPreview(c *fiber.Ctx) error {
 		return c.SendStatus(fiber.StatusNotFound)
 	}
 
-	if err != nil || e.Preview == nil {
+	if err != nil || !e.thumbnailEnabled() {
 		return c.SendStatus(fiber.StatusNotFound)
 	}
 
@@ -247,7 +247,7 @@ func (e *Engine) compatThumbnailByPath(c *fiber.Ctx) error {
 	}
 
 	r, err := e.resolve(user, tail, acl.Read|acl.Download)
-	if err != nil || e.Preview == nil {
+	if err != nil || !e.thumbnailEnabled() {
 		return c.SendStatus(fiber.StatusNotFound)
 	}
 

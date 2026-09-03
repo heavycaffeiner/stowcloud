@@ -184,7 +184,7 @@ func Sections() []string {
 	return []string{
 		"network", "db", "symlink-policy", "homes", "smb",
 		"search", "archive", "watch", "paths", "oidc",
-		"rate", "security",
+		"rate", "security", "thumbnail",
 	}
 }
 

@@ -348,3 +348,73 @@ func TestAThumbnailNeedsACredential(t *testing.T) {
 		t.Error("a thumbnail was served without a credential")
 	}
 }
+
+func TestThumbnailSettingCanBeToggledOff(t *testing.T) {
+	ctx := context.Background()
+	e, err := lifecycle.Open(ctx, lifecycle.Options{
+		DataDir:       t.TempDir(),
+		PreviewWorker: jailedWorker(t),
+	})
+	if err != nil {
+		t.Fatalf("opening: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
+	if e.Preview == nil {
+		t.Skip("this host builds no decoder pool, so there is nothing to drive")
+	}
+
+	_, err = e.Auth.CreateAdmin(ctx, "admin", "Admin", secret.New([]byte("admin-password-123")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	userID, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := t.TempDir()
+	if werr := os.WriteFile(filepath.Join(host, "photo.png"), samplePNG(t, 64, 64), 0o600); werr != nil {
+		t.Fatal(werr)
+	}
+	sh, err := e.Core.CreateShare(ctx, core.ShareSpec{Name: "pics", Host: host})
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder := int64(userID)
+	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
+		User: &holder, Share: sh.ID, Allow: everyPerm(), Inherit: true,
+	}); gerr != nil {
+		t.Fatal(gerr)
+	}
+	appPW, _, err := e.Auth.CreateSyncCredential(ctx, int64(userID), "sync")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := serve(t, e)
+
+	status, _, _ := thumbnail(t, base, appPW, "/pics/photo.png", "")
+	if status != http.StatusOK {
+		t.Fatalf("thumbnail failed before toggle: %d", status)
+	}
+
+	// Sign in as admin to toggle settings
+	loginResp := postJSON(t, base+"/api/v1/auth/login",
+		map[string]string{"login": "admin", "password": "admin-password-123"})
+	cookie := loginResp.sessionCookie()
+	csrf := loginResp.field("csrf")
+
+	code, resp := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/thumbnail",
+		cookie, csrf, map[string]any{"enabled": false})
+	if code != http.StatusOK {
+		t.Fatalf("patching settings failed: %d %+v", code, resp)
+	}
+
+	statusAfter, _, _ := thumbnail(t, base, appPW, "/pics/photo.png", "")
+	if statusAfter != http.StatusNotFound {
+		t.Errorf("thumbnail was served after being disabled: %d, want 404", statusAfter)
+	}
+}
