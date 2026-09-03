@@ -514,7 +514,7 @@
     width: 100%;
     padding: 0;
     border: none;
-    box-shadow: var(--m3-elevation-2);
+    box-shadow: var(--m3-elevation-3);
     translate: 0 0;
     transition:
       translate var(--m3-duration) var(--m3-easing),
