@@ -14,6 +14,32 @@ export const CHUNK_SIZE_DEFAULT = 10 * 1024 * 1024 // 10 MB
 // key so both agree on what "the next session" starts from).
 export const CHUNK_SIZE_STORAGE_KEY = 'sc.chunk_size'
 
+export const UPLOAD_CONCURRENCY_STORAGE_KEY = 'sc.upload_concurrency'
+export const DEFAULT_CONCURRENCY = 4
+export const MIN_CONCURRENCY = 1
+export const MAX_CONCURRENCY = 16
+
+export function loadStoredConcurrency(): number {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(UPLOAD_CONCURRENCY_STORAGE_KEY) : null
+    if (!raw) return DEFAULT_CONCURRENCY
+    const n = Number(raw)
+    if (!Number.isFinite(n)) return DEFAULT_CONCURRENCY
+    return Math.max(MIN_CONCURRENCY, Math.min(MAX_CONCURRENCY, Math.round(n)))
+  } catch {
+    return DEFAULT_CONCURRENCY
+  }
+}
+
+export function storeConcurrency(value: number): void {
+  try {
+    const clamped = Math.max(MIN_CONCURRENCY, Math.min(MAX_CONCURRENCY, Math.round(value)))
+    localStorage.setItem(UPLOAD_CONCURRENCY_STORAGE_KEY, String(clamped))
+  } catch {
+    /* ignore */
+  }
+}
+
 export interface ChunkDescriptor {
   index: number
   offset: number
@@ -80,6 +106,10 @@ export class ChunkScheduler {
   get maxInflight(): number {
     return this.#maxInflight
   }
+  setMaxInflight(maxInflight: number): void {
+    this.#maxInflight = Math.max(1, maxInflight)
+  }
+
 
   get totalInflight(): number {
     let n = 0

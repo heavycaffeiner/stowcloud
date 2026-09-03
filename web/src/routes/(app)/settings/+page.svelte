@@ -22,8 +22,15 @@
   import Button from '../../../lib/ui/Button.svelte'
   import { setTheme, uiState } from '../../../lib/state/ui.svelte'
   import { syncTabHash } from '../../../lib/state/tab-hash'
+  import { uploadTray } from '../../../lib/state/upload-tray.svelte'
+  import { loadStoredConcurrency } from '../../../lib/upload/chunk-planner'
 
   let loggingOut = $state(false)
+  let concurrency = $state(loadStoredConcurrency())
+  function setUploadConcurrency(val: number): void {
+    concurrency = val
+    uploadTray.setConcurrency(val)
+  }
 
   const user = $derived(authState.session?.user ?? null)
   const features = $derived(authState.session?.features ?? null)
@@ -330,6 +337,32 @@
               pressed={currentLocale() === 'en'}
               onclick={() => setLocale('en')}>English</Button
             >
+          </ConnectedButtons>
+        </div>
+      </section>
+
+      <section class="sc-settings__card">
+        <div class="sc-settings__card-head">
+          <div class="sc-settings__card-icon">
+            <Icon icon={icons.upload} size={20} />
+          </div>
+          <div class="sc-settings__card-meta">
+            <h2>{t('settings.upload_concurrency')}</h2>
+            <p class="sc-settings__hint">{t('settings.upload_concurrency_hint')}</p>
+          </div>
+        </div>
+        <div class="sc-settings__row">
+          <ConnectedButtons role="group" aria-label={t('settings.upload_concurrency')}>
+            {#each [1, 2, 4, 8] as count}
+              <Button
+                square
+                variant={concurrency === count ? 'filled' : 'tonal'}
+                pressed={concurrency === count}
+                onclick={() => setUploadConcurrency(count)}
+              >
+                {count}
+              </Button>
+            {/each}
           </ConnectedButtons>
         </div>
       </section>

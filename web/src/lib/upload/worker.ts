@@ -6,6 +6,10 @@ import {
   CHUNK_SIZE_MIN,
   CHUNK_SIZE_STORAGE_KEY,
   ChunkScheduler,
+  DEFAULT_CONCURRENCY,
+  loadStoredConcurrency,
+  MAX_CONCURRENCY,
+  MIN_CONCURRENCY,
   shrinkChunkSize,
   type ChunkDescriptor
 } from './chunk-planner'
@@ -14,7 +18,7 @@ import { setCsrfToken, UploadHttpError, mockTransport, transport, type CreatedSe
 import { classifyFailure } from './retry'
 
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
-const MAX_INFLIGHT = 4 // global, per-chunk, not per file
+let maxInflight = loadStoredConcurrency()
 const PROGRESS_HZ_MS = 100 // at most 10 Hz
 
 /**
@@ -53,7 +57,7 @@ export type Cmd =
   // an admin's `[upload]` config instead of this file's own hardcoded
   // constants. Same separate-module-realm reason `csrf` exists as a Cmd.
   | { t: 'limits'; chunkMin: number; chunkDefault: number }
-
+  | { t: 'concurrency'; maxInflight: number }
 export type Evt =
   | { t: 'progress'; id: string; sent: number; total: number; rate: number; etaSec: number }
   | { t: 'done'; id: string; dest: string; name: string; size: number; mtimeNs: string }
@@ -79,7 +83,7 @@ interface FileState {
 }
 
 const files = new Map<string, FileState>()
-const scheduler = new ChunkScheduler(MAX_INFLIGHT)
+const scheduler = new ChunkScheduler(maxInflight)
 let inflightRequests = 0
 
 // Server-reported floor/default, updated by the `limits` Cmd. Start from
@@ -339,7 +343,7 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
 }
 
 function pump(): void {
-  while (inflightRequests < MAX_INFLIGHT) {
+  while (inflightRequests < maxInflight) {
     const task = scheduler.next()
     if (!task) break
     void sendChunk(task)
@@ -358,6 +362,11 @@ self.addEventListener('message', (ev: MessageEvent<Cmd>) => {
       break
     case 'add':
       for (const item of cmd.items) void addFile(item)
+      break
+    case 'concurrency':
+      maxInflight = Math.max(MIN_CONCURRENCY, Math.min(MAX_CONCURRENCY, Math.round(cmd.maxInflight)))
+      scheduler.setMaxInflight(maxInflight)
+      pump()
       break
     case 'pause': {
       const f = files.get(cmd.id)

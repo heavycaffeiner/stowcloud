@@ -3,6 +3,7 @@
 // because it is instantiated once at the app root, not per-page.
 import { api } from '../api/client'
 import { bytesToMb } from '../format/bytes'
+import { loadStoredConcurrency, storeConcurrency } from '../upload/chunk-planner'
 import type { AddItem, Cmd, Evt } from '../upload/worker'
 import { authState } from './auth.svelte'
 
@@ -123,6 +124,7 @@ export class UploadTrayState {
     if (limits) {
       w.postMessage({ t: 'limits', chunkMin: limits.chunk_min, chunkDefault: limits.chunk_size } satisfies Cmd)
     }
+    w.postMessage({ t: 'concurrency', maxInflight: loadStoredConcurrency() } satisfies Cmd)
     w.postMessage(cmd)
   }
 
@@ -158,6 +160,11 @@ export class UploadTrayState {
 
   clearFinished(): void {
     this.items = this.items.filter((x) => x.status !== 'done' && x.status !== 'canceled')
+  }
+
+  setConcurrency(val: number): void {
+    storeConcurrency(val)
+    this.#send({ t: 'concurrency', maxInflight: loadStoredConcurrency() })
   }
 }
 

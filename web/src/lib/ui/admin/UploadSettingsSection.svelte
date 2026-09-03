@@ -19,7 +19,15 @@
   import { api } from '../../api/client'
   import { describeApiError } from '../../api/error-text'
   import { BYTES_PER_MB, bytesToMb, formatBytes } from '../../format/bytes'
-  import { CHUNK_SIZE_MIN, CHUNK_SIZE_STORAGE_KEY } from '../../upload/chunk-planner'
+  import {
+    CHUNK_SIZE_MIN,
+    CHUNK_SIZE_STORAGE_KEY,
+    DEFAULT_CONCURRENCY,
+    loadStoredConcurrency,
+    MAX_CONCURRENCY,
+    MIN_CONCURRENCY
+  } from '../../upload/chunk-planner'
+  import { uploadTray } from '../../state/upload-tray.svelte'
   import Button from '../Button.svelte'
   import Checkbox from '../Checkbox.svelte'
   import TextField from '../TextField.svelte'
@@ -142,6 +150,32 @@
     error = null
     saved = false
   }
+
+  let concurrencyInput = $state(String(loadStoredConcurrency()))
+  let concurrencyError = $state<string | null>(null)
+  let concurrencySaved = $state(false)
+  let activeConcurrency = $state(loadStoredConcurrency())
+
+  function saveConcurrency(): void {
+    concurrencyError = null
+    concurrencySaved = false
+    const n = Number(concurrencyInput)
+    if (!Number.isFinite(n) || n < MIN_CONCURRENCY || n > MAX_CONCURRENCY || !Number.isInteger(n)) {
+      concurrencyError = t('upload_settings.concurrency_must_between', { min: MIN_CONCURRENCY, max: MAX_CONCURRENCY })
+      return
+    }
+    uploadTray.setConcurrency(n)
+    activeConcurrency = n
+    concurrencySaved = true
+  }
+
+  function resetConcurrency(): void {
+    uploadTray.setConcurrency(DEFAULT_CONCURRENCY)
+    activeConcurrency = DEFAULT_CONCURRENCY
+    concurrencyInput = String(DEFAULT_CONCURRENCY)
+    concurrencyError = null
+    concurrencySaved = false
+  }
 </script>
 
 <section class="sc-admin-section">
@@ -194,6 +228,25 @@
     <p class="sc-admin-section__upload-current">{t('upload_settings.current_override', { size: formatBytes(overrideBytes) })}</p>
   {:else}
     <p class="sc-admin-section__upload-current">{t('upload_settings.currently_using_server_default')}</p>
+  {/if}
+
+  <h4 class="sc-admin-section__subhead">{t('upload_settings.concurrency_limit')}</h4>
+  <p class="sc-admin-section__hint">
+    {t('upload_settings.concurrency_limit_hint')}
+  </p>
+  <div class="sc-admin-section__upload-form">
+    <TextField label={t('upload_settings.concurrency_limit')} bind:value={concurrencyInput} error={concurrencyError} placeholder={String(DEFAULT_CONCURRENCY)} />
+    <div class="sc-admin-section__upload-actions">
+      <Button variant="filled" onclick={saveConcurrency}>{t('common.save')}</Button>
+      <Button variant="text" onclick={resetConcurrency} disabled={activeConcurrency === DEFAULT_CONCURRENCY}>{t('upload_settings.reset_concurrency_default')}</Button>
+    </div>
+  </div>
+  {#if concurrencySaved}
+    <p class="sc-admin-section__upload-saved" role="status">
+      {t('upload_settings.concurrency_saved')}
+    </p>
+  {:else}
+    <p class="sc-admin-section__upload-current">{t('upload_settings.current_concurrency', { count: activeConcurrency })}</p>
   {/if}
 </section>
 
