@@ -41,14 +41,10 @@ func TestAChunkedUploadAssemblesInNameOrder(t *testing.T) {
 	}); w.Code != http.StatusCreated {
 		t.Fatalf("opening the session answered %d: %s", w.Code, w.Body.String())
 	}
-	if w := f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-a/2", "second", map[string]string{
-		"Destination": "/dav/files/out.bin",
-	}); w.Code != http.StatusCreated {
+	if w := f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-a/2", "second", nil); w.Code != http.StatusCreated {
 		t.Fatalf("chunk 2 answered %d", w.Code)
 	}
-	if w := f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-a/1", "first-", map[string]string{
-		"Destination": "/dav/files/out.bin",
-	}); w.Code != http.StatusCreated {
+	if w := f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-a/1", "first-", nil); w.Code != http.StatusCreated {
 		t.Fatalf("chunk 1 answered %d", w.Code)
 	}
 	if w := f.throughHeaders(m, "MOVE", uploadRoot+"/tid-a", "", map[string]string{
@@ -75,9 +71,7 @@ func TestTheAssembledResponseCarriesAnETag(t *testing.T) {
 		"Destination":     "/dav/files/out.bin",
 		"OC-Total-Length": "8",
 	})
-	f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-e/1", "contents", map[string]string{
-		"Destination": "/dav/files/out.bin",
-	})
+	f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-e/1", "contents", nil)
 	w := f.throughHeaders(m, "MOVE", uploadRoot+"/tid-e", "", map[string]string{
 		"Destination":     "/dav/files/out.bin",
 		"OC-Total-Length": "8",
@@ -102,9 +96,7 @@ func TestAssemblingShortOfTheDeclaredLengthIsRefused(t *testing.T) {
 		"Destination":     "/dav/files/out.bin",
 		"OC-Total-Length": "100",
 	})
-	f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-s/1", "short", map[string]string{
-		"Destination": "/dav/files/out.bin",
-	})
+	f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-s/1", "short", nil)
 	w := f.throughHeaders(m, "MOVE", uploadRoot+"/tid-s", "", map[string]string{
 		"Destination":     "/dav/files/out.bin",
 		"OC-Total-Length": "100",
@@ -129,9 +121,7 @@ func TestAPaddedChunkNameIsRefused(t *testing.T) {
 		"Destination":     "/dav/files/out.bin",
 		"OC-Total-Length": "1",
 	})
-	w := f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-p/01", "x", map[string]string{
-		"Destination": "/dav/files/out.bin",
-	})
+	w := f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-p/01", "x", nil)
 
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("a padded name answered %d, want 400", w.Code)
@@ -149,12 +139,8 @@ func TestTheCollectionListsTheChunksItHolds(t *testing.T) {
 		"Destination":     "/dav/files/out.bin",
 		"OC-Total-Length": "6",
 	})
-	f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-l/1", "one", map[string]string{
-		"Destination": "/dav/files/out.bin",
-	})
-	f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-l/2", "two", map[string]string{
-		"Destination": "/dav/files/out.bin",
-	})
+	f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-l/1", "one", nil)
+	f.throughHeaders(m, http.MethodPut, uploadRoot+"/tid-l/2", "two", nil)
 
 	w := f.throughHeaders(m, "PROPFIND", uploadRoot+"/tid-l", allprop, map[string]string{
 		"Destination": "/dav/files/out.bin",

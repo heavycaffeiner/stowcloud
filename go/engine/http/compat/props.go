@@ -110,6 +110,7 @@ func (p PermBits) Has(want PermBits) bool { return p&want == want }
 type PropEntry struct {
 	IsDir      bool
 	Size       uint64
+	DirSize    *uint64
 	Perms      PermBits
 	FileID     uint64
 	HasPreview bool
@@ -207,15 +208,10 @@ func (s *PropSource) Props(e PropEntry, want []xml.Name) []dav.Prop {
 		add(NSOwnCloud, "permissions", DavPermissions(e.Perms, e.IsDir, shared))
 	}
 	if asked(NSOwnCloud, "size") {
-		// For a file this is the plain size. For a directory it is the
-		// recursive rollup, which this server does not compute, so the
-		// property is omitted rather than invented: falling back to the
-		// directory's own stat size once announced a folder holding a
-		// terabyte as four kilobytes, a number plausible enough that nobody
-		// reads it as an error. An empty element would be worse still, since
-		// a client casts the value unguarded and fails the whole listing.
 		if !e.IsDir {
 			add(NSOwnCloud, "size", strconv.FormatUint(e.Size, 10))
+		} else if e.DirSize != nil {
+			add(NSOwnCloud, "size", strconv.FormatUint(*e.DirSize, 10))
 		}
 	}
 	if asked(NSOwnCloud, "share-types") {

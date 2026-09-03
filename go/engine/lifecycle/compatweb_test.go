@@ -1191,4 +1191,120 @@ func TestNextcloudAndroidPostLoginFlow(t *testing.T) {
 	if !strings.Contains(string(body1), "fileid") {
 		t.Errorf("root depth 1 missing fileid: %s", string(body1))
 	}
+
+	// 10. Post-login: REPORT on root for favorites (<oc:filter-files>)
+	favReportXML := `<?xml version="1.0"?>
+<oc:filter-files xmlns:d="DAV:" xmlns:oc="http://nextcloud.org/ns">
+  <d:prop><d:getetag/><oc:fileid/><oc:size/></d:prop>
+  <oc:is-favorite>1</oc:is-favorite>
+</oc:filter-files>`
+	reportReq, err := http.NewRequest("REPORT", delivery.Server+"/remote.php/dav/files/"+delivery.LoginName+"//", strings.NewReader(favReportXML))
+	if err != nil {
+		t.Fatalf("building REPORT: %v", err)
+	}
+	reportReq.Header.Set("Authorization", basicAuth)
+	reportReq.Header.Set("Content-Type", "application/xml; charset=utf-8")
+	reportResp, err := client.Do(reportReq)
+	if err != nil || reportResp.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("REPORT on root: err=%v status=%d", err, reportResp.StatusCode)
+	}
+	if cerr := reportResp.Body.Close(); cerr != nil {
+		t.Errorf("closing report response: %v", cerr)
+	}
+
+	// 11. Post-login: Share link creation, expiration check, and deletion
+	shareForm := url.Values{
+		"path":       {"/files"},
+		"shareType":  {"3"},
+		"expireDate": {"2026-12-31"},
+	}
+	shareCreateReq, err := http.NewRequest(http.MethodPost, delivery.Server+"/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json", strings.NewReader(shareForm.Encode()))
+	if err != nil {
+		t.Fatalf("building share create: %v", err)
+	}
+	shareCreateReq.Header.Set("Authorization", basicAuth)
+	shareCreateReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	shareCreateReq.Header.Set("OCS-APIRequest", "true")
+	shareCreateResp, err := client.Do(shareCreateReq)
+	if err != nil || shareCreateResp.StatusCode != http.StatusOK {
+		t.Fatalf("create share: err=%v status=%d", err, shareCreateResp.StatusCode)
+	}
+	var shareCreated struct {
+		OCS struct {
+			Data struct {
+				ID         string `json:"id"`
+				URL        string `json:"url"`
+				Expiration string `json:"expiration"`
+			} `json:"data"`
+		} `json:"ocs"`
+	}
+	if derr := json.NewDecoder(shareCreateResp.Body).Decode(&shareCreated); derr != nil {
+		t.Fatalf("decoding created share: %v", derr)
+	}
+	if cerr := shareCreateResp.Body.Close(); cerr != nil {
+		t.Errorf("closing share create response: %v", cerr)
+	}
+	if shareCreated.OCS.Data.ID == "" {
+		t.Fatal("created share has empty ID")
+	}
+	if shareCreated.OCS.Data.Expiration == "" || strings.HasPrefix(shareCreated.OCS.Data.Expiration, "1970") {
+		t.Errorf("unexpected share expiration: %q", shareCreated.OCS.Data.Expiration)
+	}
+
+	// 12. Delete the created share link
+	shareDelReq, err := http.NewRequest(http.MethodDelete, delivery.Server+"/ocs/v2.php/apps/files_sharing/api/v1/shares/"+shareCreated.OCS.Data.ID+"?format=json", nil)
+	if err != nil {
+		t.Fatalf("building share delete: %v", err)
+	}
+	shareDelReq.Header.Set("Authorization", basicAuth)
+	shareDelReq.Header.Set("OCS-APIRequest", "true")
+	shareDelResp, err := client.Do(shareDelReq)
+	if err != nil || shareDelResp.StatusCode != http.StatusOK {
+		t.Fatalf("delete share: err=%v status=%d", err, shareDelResp.StatusCode)
+	}
+	if cerr := shareDelResp.Body.Close(); cerr != nil {
+		t.Errorf("closing share delete response: %v", cerr)
+	}
+
+	// 13. Post-login: Chunked upload v2 with NO Destination header on chunk PUT
+	mkcolReq, err := http.NewRequest("MKCOL", delivery.Server+"/remote.php/dav/uploads/"+delivery.LoginName+"/test-tid", nil)
+	if err != nil {
+		t.Fatalf("building MKCOL: %v", err)
+	}
+	mkcolReq.Header.Set("Authorization", basicAuth)
+	mkcolReq.Header.Set("Destination", delivery.Server+"/remote.php/dav/files/"+delivery.LoginName+"/files/test-upload.txt")
+	mkcolReq.Header.Set("OC-Total-Length", "5")
+	mkcolResp, err := client.Do(mkcolReq)
+	if err != nil || mkcolResp.StatusCode != http.StatusCreated {
+		t.Fatalf("MKCOL upload session: err=%v status=%d", err, mkcolResp.StatusCode)
+	}
+	if cerr := mkcolResp.Body.Close(); cerr != nil {
+		t.Errorf("closing mkcol response: %v", cerr)
+	}
+	chunkReq, err := http.NewRequest(http.MethodPut, delivery.Server+"/remote.php/dav/uploads/"+delivery.LoginName+"/test-tid/1", strings.NewReader("hello"))
+	if err != nil {
+		t.Fatalf("building chunk PUT: %v", err)
+	}
+	chunkReq.Header.Set("Authorization", basicAuth)
+	chunkResp, err := client.Do(chunkReq)
+	if err != nil || chunkResp.StatusCode != http.StatusCreated {
+		t.Fatalf("chunk PUT: err=%v status=%d", err, chunkResp.StatusCode)
+	}
+	if cerr := chunkResp.Body.Close(); cerr != nil {
+		t.Errorf("closing chunk response: %v", cerr)
+	}
+	moveReq, err := http.NewRequest("MOVE", delivery.Server+"/remote.php/dav/uploads/"+delivery.LoginName+"/test-tid/.file", nil)
+	if err != nil {
+		t.Fatalf("building MOVE: %v", err)
+	}
+	moveReq.Header.Set("Authorization", basicAuth)
+	moveReq.Header.Set("Destination", delivery.Server+"/remote.php/dav/files/"+delivery.LoginName+"/files/test-upload.txt")
+	moveReq.Header.Set("OC-Total-Length", "5")
+	moveResp, err := client.Do(moveReq)
+	if err != nil || moveResp.StatusCode != http.StatusCreated {
+		t.Fatalf("MOVE assembly: err=%v status=%d", err, moveResp.StatusCode)
+	}
+	if cerr := moveResp.Body.Close(); cerr != nil {
+		t.Errorf("closing move response: %v", cerr)
+	}
 }

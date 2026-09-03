@@ -11,6 +11,7 @@ import (
 	"encoding/xml"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/compat"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
@@ -101,8 +102,9 @@ func (e *Engine) davVendorProps() func(
 		}
 
 		isFav := false
+		var dirSize *uint64
 		for _, w := range want {
-			if w.Local == "favorite" || w.Local == "is-favorite" {
+			if !isFav && (w.Local == "favorite" || w.Local == "is-favorite") {
 				if favs, ferr := e.State.Favorites(ctx, int64(res.User())); ferr == nil {
 					for _, f := range favs {
 						if f.Ident.Equal(entry.Ident) {
@@ -111,13 +113,21 @@ func (e *Engine) davVendorProps() func(
 						}
 					}
 				}
-				break
+			}
+			if entry.IsDir && w.Local == "size" {
+				if sp, sperr := entry.Path.Safe(); sperr == nil {
+					if agg, aerr := e.Core.Aggregate(ctx, res.Share(), sp); aerr == nil {
+						s := agg.RSize
+						dirSize = &s
+					}
+				}
 			}
 		}
 
 		return source.Props(compat.PropEntry{
 			IsDir:      entry.IsDir,
 			Size:       entry.Size,
+			DirSize:    dirSize,
 			Perms:      permBitsOf(entry.Perms),
 			FileID:     fileID,
 			HasPreview: !entry.IsDir && isPreviewable(entry.Name),
@@ -209,7 +219,11 @@ func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop
 		fidStr := "0"
 		davID := compat.DavID(0, id)
 
+		var shareSize uint64
 		if res, rerr := e.resolve(user, "/"+label, acl.Read); rerr == nil {
+			if agg, aerr := e.Core.Aggregate(ctx, res.Share(), res.Path()); aerr == nil {
+				shareSize = agg.RSize
+			}
 			if st, serr := res.Root().Stat(res.Path()); serr == nil {
 				entry := e.Core.EntryAt(res, st)
 				if fid, ferr := e.compatFileID(ctx, entry); ferr == nil {
@@ -234,7 +248,7 @@ func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop
 			dav.Prop{Name: xml.Name{Space: compat.NSNextcloudX, Local: "id"}, Value: davID},
 			dav.Prop{Name: xml.Name{Space: compat.NSOwnCloud, Local: "fileid"}, Value: fidStr},
 			dav.Prop{Name: xml.Name{Space: compat.NSNextcloudX, Local: "fileid"}, Value: fidStr},
-			dav.Prop{Name: xml.Name{Space: compat.NSOwnCloud, Local: "size"}, Value: "0"},
+			dav.Prop{Name: xml.Name{Space: compat.NSOwnCloud, Local: "size"}, Value: strconv.FormatUint(shareSize, 10)},
 			dav.Prop{Name: xml.Name{Space: compat.NSOwnCloud, Local: "has-preview"}, Value: "false"},
 			dav.Prop{Name: xml.Name{Space: compat.NSOwnCloud, Local: "favorite"}, Value: "0"},
 			dav.Prop{Name: xml.Name{Space: compat.NSNextcloudX, Local: "favorite"}, Value: "0"},
@@ -266,4 +280,86 @@ func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop
 	}
 
 	return baseProps, children
+}
+
+func (e *Engine) davSources() []dav.QuerySource {
+	return []dav.QuerySource{&compatQuerySource{engine: e}}
+}
+
+type compatQuerySource struct {
+	engine *Engine
+}
+
+func (s *compatQuerySource) Namespaces() []string {
+	return []string{compat.NSOwnCloud, compat.NSNextcloudX}
+}
+
+func (s *compatQuerySource) Query(
+	ctx context.Context, res core.Resolved, leaves []dav.Leaf, want []xml.Name,
+) ([]core.Entry, error) {
+	user := res.User()
+	if user == 0 {
+		return nil, nil
+	}
+
+	isFav := false
+	for _, leaf := range leaves {
+		if leaf.Name.Local == "favorite" || leaf.Name.Local == "is-favorite" {
+			isFav = true
+			break
+		}
+	}
+
+	if isFav {
+		favs, err := s.engine.State.Favorites(ctx, int64(user))
+		if err != nil {
+			return nil, nil
+		}
+		var out []core.Entry
+		for _, f := range favs {
+			path := "/" + strings.TrimPrefix(f.Path, "/")
+			vp, perr := vfs.ParseVpath(path)
+			if perr != nil {
+				continue
+			}
+			r, rerr := s.engine.Core.Resolve(user, vp, acl.Read)
+			if rerr != nil {
+				continue
+			}
+			if res.Share() != 0 && r.Share() != res.Share() {
+				continue
+			}
+			st, serr := r.Root().Stat(r.Path())
+			if serr != nil {
+				continue
+			}
+			out = append(out, s.engine.Core.EntryAt(r, st))
+		}
+		return out, nil
+	}
+
+	since := s.engine.clock.Now().Add(-14 * 24 * time.Hour).UnixNano()
+	hits, err := s.engine.Core.Recent(ctx, user, core.RecentQuery{
+		SinceNs: since,
+		Limit:   50,
+	})
+	if err != nil {
+		return nil, nil
+	}
+	var out []core.Entry
+	for _, hit := range hits {
+		r, rerr := s.engine.resolve(user, hit.Vpath.String(), acl.Read)
+		if rerr != nil {
+			continue
+		}
+		if res.Share() != 0 && r.Share() != res.Share() {
+			continue
+		}
+		st, serr := r.Root().Stat(r.Path())
+		if serr != nil {
+			continue
+		}
+		out = append(out, s.engine.Core.EntryAt(r, st))
+	}
+	return out, nil
 }

@@ -208,11 +208,11 @@ func (e *Engine) compatRouteOCS(
 	case c.Method() == fiber.MethodPost && route == "/apps/files_sharing/api/v1/shares":
 		return e.compatCreateShare(c, user)
 	case c.Method() == fiber.MethodGet && strings.HasPrefix(route, "/apps/files_sharing/api/v1/shares/"):
-		return e.compatGetShare(c, user, strings.TrimPrefix(route, "/apps/files_sharing/api/v1/shares/"))
+		return e.compatGetShare(c, user, strings.Trim(strings.TrimPrefix(route, "/apps/files_sharing/api/v1/shares/"), "/"))
 	case c.Method() == fiber.MethodPut && strings.HasPrefix(route, "/apps/files_sharing/api/v1/shares/"):
-		return e.compatUpdateShare(c, user, strings.TrimPrefix(route, "/apps/files_sharing/api/v1/shares/"))
+		return e.compatUpdateShare(c, user, strings.Trim(strings.TrimPrefix(route, "/apps/files_sharing/api/v1/shares/"), "/"))
 	case c.Method() == fiber.MethodDelete && strings.HasPrefix(route, "/apps/files_sharing/api/v1/shares/"):
-		return e.compatDeleteShare(c, user, strings.TrimPrefix(route, "/apps/files_sharing/api/v1/shares/"))
+		return e.compatDeleteShare(c, user, strings.Trim(strings.TrimPrefix(route, "/apps/files_sharing/api/v1/shares/"), "/"))
 	}
 
 	return compat.Val{}, false, compat.NotFound("no such OCS endpoint")

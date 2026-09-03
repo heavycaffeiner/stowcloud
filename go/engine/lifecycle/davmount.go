@@ -74,6 +74,7 @@ func (e *Engine) newDavHandler() *dav.Handler {
 		KeyOf:           DavKeyOf,
 		Uploads:         NewDavUploads(e.Upload),
 		UploadHeaders:   e.davUploadHeaders(),
+		Sources:         e.davSources(),
 		VendorProps:     e.davVendorProps(),
 		InfinityEntries: davDefaultInfinity,
 		Logger:          e.logger,
@@ -153,6 +154,20 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 				h.RootPropfind(w, r, baseProps, children)
 				return
 			}
+			if r.Method == "REPORT" || r.Method == "SEARCH" {
+				scopes := make([]dav.RootScope, 0, len(e.Core.Roots(user)))
+				for _, rt := range e.Core.Roots(user) {
+					vp, perr := vfs.ParseVpath("/" + rt.Label)
+					if perr != nil {
+						continue
+					}
+					if res, rerr := e.Core.Resolve(user, vp, acl.Read); rerr == nil {
+						scopes = append(scopes, dav.RootScope{Label: rt.Label, Resolved: res})
+					}
+				}
+				h.RootQuery(w, r, scopes)
+				return
+			}
 			if r.Method == http.MethodHead || r.Method == http.MethodGet {
 				w.Header().Set("DAV", "1, 2")
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -195,12 +210,41 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 			// there. Clients that name the file only at the end send the
 			// header from the start; one that omits it has named nothing to
 			// upload into.
-			target, terr := e.davDestination(user, r, aliases)
-			if terr != nil {
-				apierr.Write(w, terr, apierr.VisibilityHidden)
+			var target core.Resolved
+			if r.Method == "MKCOL" || r.Method == "MOVE" || r.Header.Get("Destination") != "" {
+				dest, terr := e.davDestination(user, r, aliases)
+				if terr != nil {
+					apierr.Write(w, terr, apierr.VisibilityHidden)
+					return
+				}
+				target = dest.Resolved
+			} else if e.Upload != nil {
+				alias, aerr := e.Upload.LookupAlias(r.Context(), up.Session, user)
+				if aerr != nil {
+					apierr.Write(w, core.ErrNotFound, apierr.VisibilityHidden)
+					return
+				}
+				sp, sperr := vfs.ParseSharePath(alias.Dest)
+				if sperr != nil {
+					apierr.Write(w, core.ErrNotFound, apierr.VisibilityHidden)
+					return
+				}
+				vp, verr := e.Core.VpathFor(user, alias.Share, sp)
+				if verr != nil {
+					apierr.Write(w, core.ErrNotFound, apierr.VisibilityHidden)
+					return
+				}
+				res, rerr := e.Core.Resolve(user, vp, acl.Write|acl.Create)
+				if rerr != nil {
+					apierr.Write(w, rerr, apierr.VisibilityHidden)
+					return
+				}
+				target = res
+			} else {
+				w.WriteHeader(http.StatusMethodNotAllowed)
 				return
 			}
-			h.ServeUpload(w, r, target.Resolved, up)
+			h.ServeUpload(w, r, target, up)
 			return
 		}
 		if rest, ok := strings.CutPrefix(path, DavTrashPrefix); ok {

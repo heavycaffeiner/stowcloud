@@ -121,7 +121,11 @@ func parseExpirationDate(s string) (int64, error) {
 	if s == "" {
 		return 0, nil
 	}
-	for _, layout := range []string{"2006-01-02", "2006-01-02 15:04:05", time.RFC3339} {
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		endOfDay := time.Date(t.Year(), t.Month(), t.Day(), 23, 59, 59, 999999999, time.UTC)
+		return endOfDay.UnixNano(), nil
+	}
+	for _, layout := range []string{"2006-01-02 15:04:05", time.RFC3339} {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t.UnixNano(), nil
 		}
@@ -533,23 +537,15 @@ func (e *Engine) compatUpdateShare(
 func (e *Engine) compatDeleteShare(
 	c *fiber.Ctx, user core.UserID, idStr string,
 ) (compat.Val, bool, *compat.OCSError) {
+	idStr = strings.Trim(idStr, "/ \t")
+	e.logger.Debug("compat delete share", "idStr", idStr, "user", user)
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		return compat.Val{}, false, compat.NotFound("invalid share id")
 	}
 
 	ctx := c.UserContext()
-	links, lerr := e.Core.ListLinks(ctx, user, nil)
-	if lerr != nil {
-		return compat.Val{}, false, compat.ServerError("could not read shares")
-	}
-	for _, link := range links {
-		if link.ID != id || link.Owner != user {
-			continue
-		}
-		if derr := e.Core.DeleteLink(ctx, user, id); derr != nil {
-			return compat.Val{}, false, compat.ServerError("could not delete link")
-		}
+	if derr := e.Core.DeleteLink(ctx, user, id); derr == nil {
 		return compat.Object(), true, nil
 	}
 

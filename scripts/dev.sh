@@ -96,7 +96,7 @@ fi
 
 echo "==> building the binary"
 BIN="$PWD/$DIR/sc-engine"
-(cd go && CGO_ENABLED=0 go build -tags embed_ui -o "$BIN" ./cmd/sc-engine) \
+(cd go && CGO_ENABLED=0 go build -tags "embed_ui compat_nc" -o "$BIN" ./cmd/sc-engine) \
   || { echo "the build failed" >&2; exit 1; }
 
 # Written every run: the tailnet name can change, and a stale host list is a

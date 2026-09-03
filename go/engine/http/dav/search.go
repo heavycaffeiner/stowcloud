@@ -107,6 +107,64 @@ func (h *Handler) runQuery(w http.ResponseWriter, r *http.Request, res core.Reso
 	h.closeMultistatus(r, m)
 }
 
+// RootScope carries one share root and its label for root queries.
+type RootScope struct {
+	Label    string
+	Resolved core.Resolved
+}
+
+// RootQuery answers SEARCH or REPORT against the virtual root across every share.
+func (h *Handler) RootQuery(w http.ResponseWriter, r *http.Request, roots []RootScope) {
+	parsed, perr := ParseReport(http.MaxBytesReader(w, r.Body, h.limits.Bytes), h.limits)
+	if perr != nil {
+		h.fail(w, r, perr)
+		return
+	}
+
+	src := h.queryFor(parsed.Root.Space)
+	if src == nil {
+		h.fail(w, r, ErrNoQuerySource)
+		return
+	}
+
+	want := parsed.Props
+	if len(want) == 0 {
+		want = []xml.Name{davName("getetag")}
+	}
+
+	req := PropFind{Mode: ModeNamed, Names: want}
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.WriteHeader(http.StatusMultiStatus)
+
+	m := NewMultistatus(w, requestedNamespaces(req))
+	segs, serr := SplitPath(r.URL.EscapedPath())
+	if serr != nil {
+		h.fail(w, r, serr)
+		return
+	}
+
+	for _, scope := range roots {
+		hits, err := src.Query(r.Context(), scope.Resolved, parsed.Leaves, want)
+		if err != nil {
+			continue
+		}
+		base := append(append([]string{}, segs...), scope.Label)
+		for _, e := range hits {
+			parts := append([]string{}, base...)
+			rel := strings.TrimPrefix(e.Path.String(), "/")
+			if rel != "" {
+				parts = append(parts, strings.Split(rel, "/")...)
+			}
+			href := EncodeHref(parts, e.IsDir)
+			if werr := h.writeEntry(r.Context(), m, req, scope.Resolved, e, href); werr != nil {
+				h.log(r).Warn("the query result could not be written", "error", werr)
+				break
+			}
+		}
+	}
+	h.closeMultistatus(r, m)
+}
+
 // searchMethods names what the registered sources make available. SEARCH and
 // REPORT share the same machinery and the same sources, so they appear
 // together: advertising one without the other invites a request the server
