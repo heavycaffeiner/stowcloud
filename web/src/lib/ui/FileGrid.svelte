@@ -50,6 +50,7 @@
   import { Checkbox, Icon } from 'm3-svelte'
   import { icons, type IconName } from '../icons'
   import Thumbnail from './Thumbnail.svelte'
+  import { isVideoFile } from './media-utils'
   import { indicesInRect, type Rect } from './marquee'
 
   interface Props {
@@ -140,7 +141,9 @@
     }
   })
 
-  const columns = $derived(Math.max(1, Math.floor((viewportW + CARD.gap) / (CARD.w + CARD.gap))))
+  const availableW = $derived(Math.max(CARD.w, viewportW - 32))
+  const columns = $derived(Math.max(1, Math.floor((availableW + CARD.gap) / (CARD.w + CARD.gap))))
+  const cardW = $derived(Math.max(120, Math.floor((availableW - (columns - 1) * CARD.gap) / columns)))
   const folderCount = $derived(Math.min(browse.dirs, browse.total))
   const fileCount = $derived(Math.max(0, browse.total - folderCount))
   const folderRowH = $derived(CARD.folderH + CARD.gap)
@@ -317,7 +320,7 @@
     // 16px of `padding-inline` on `.sc-file-grid__window`, and the cards are
     // laid out from there on a `CARD.w + CARD.gap` pitch.
     const left = (viewportEl?.getBoundingClientRect().left ?? 0) + window.scrollX + 16
-    const common = { left, columnPitch: CARD.w + CARD.gap, cellWidth: CARD.w, columns }
+    const common = { left, columnPitch: cardW + CARD.gap, cellWidth: cardW, columns }
     const hits = [
       ...indicesInRect(rect, {
         ...common,
@@ -476,7 +479,7 @@
   )
 
   function iconName(entry: Entry): IconName {
-    return entry.kind === 'dir' ? 'folder' : entry.preview?.available ? 'image' : 'file'
+    return entry.kind === 'dir' ? 'folder' : isVideoFile(entry.name) ? 'video' : entry.preview?.available ? 'image' : 'file'
   }
 
   /** Longest edge asked of the server's re-encoder. One value for every
@@ -540,7 +543,7 @@
                     role="gridcell"
                     aria-colindex={col + 1}
                     aria-selected={browse.selection.has(entry.name)}
-                    style:width="{CARD.w}px"
+                    style:width="{cardW}px"
                     onclick={(e) => onCardClick(e, entry)}
                     ondblclick={() => onopen(entry)}
                     oncontextmenu={(e) => {
@@ -590,7 +593,7 @@
                     </button>
                   </div>
                 {:else}
-                  <div class="sc-file-grid__card sc-file-grid__card--folder sc-file-grid__skeleton" style:width="{CARD.w}px" aria-busy="true">
+                  <div class="sc-file-grid__card sc-file-grid__card--folder sc-file-grid__skeleton" style:width="{cardW}px" aria-busy="true">
                     <span class="sc-file-grid__skeleton-line"></span>
                   </div>
                 {/if}
@@ -632,7 +635,7 @@
                     role="gridcell"
                     aria-colindex={col + 1}
                     aria-selected={browse.selection.has(entry.name)}
-                    style:width="{CARD.w}px"
+                    style:width="{cardW}px"
                     onclick={(e) => onCardClick(e, entry)}
                     ondblclick={() => onopen(entry)}
                     oncontextmenu={(e) => {
@@ -682,7 +685,7 @@
                     <span class="sc-file-grid__meta">{formatBytes(entry.size)}</span>
                   </div>
                 {:else}
-                  <div class="sc-file-grid__card sc-file-grid__card--file sc-file-grid__skeleton" style:width="{CARD.w}px" aria-busy="true">
+                  <div class="sc-file-grid__card sc-file-grid__card--file sc-file-grid__skeleton" style:width="{cardW}px" aria-busy="true">
                     <span class="sc-file-grid__skeleton-line"></span>
                     <span class="sc-file-grid__skeleton-block"></span>
                   </div>

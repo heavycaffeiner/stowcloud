@@ -1096,7 +1096,7 @@
           expanded={sortOpen}
           onclick={openSort}
         >
-          <Icon icon={icons.list} />
+          <Icon icon={icons.sort} />
         </IconButton>
         <IconButton label={t('browse.more')} selected={overflowOpen} expanded={overflowOpen} onclick={openOverflow}><Icon icon={icons['more-vert']} /></IconButton>
         {#if !uiState.compact}

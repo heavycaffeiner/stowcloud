@@ -4,6 +4,7 @@
   import { formatDateNs, t } from '../i18n'
   import { Checkbox, Icon } from 'm3-svelte'
   import { icons } from '../icons'
+  import { isVideoFile } from './media-utils'
 
   interface Props {
     entry: Entry
@@ -23,7 +24,15 @@
   }
 
   let { entry, rowIndex, selected, focused, domId, onclick, ondblclick, oncontextmenu, ontogglecheck }: Props = $props()
-  const iconName = $derived(entry.kind === 'dir' ? 'folder' : entry.preview?.available ? 'image' : 'file')
+  const iconName = $derived(
+    entry.kind === 'dir'
+      ? 'folder'
+      : isVideoFile(entry.name)
+        ? 'video'
+        : entry.preview?.available
+          ? 'image'
+          : 'file'
+  )
 
   // Rows are intentionally NOT individually focusable — FileTable.svelte owns
   // the single tab stop and roving "virtual focus" via aria-activedescendant

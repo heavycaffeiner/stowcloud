@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest'
-
-const IMAGE_EXT: Record<string, true> = {
-  jpg: true, jpeg: true, png: true, gif: true, webp: true, svg: true,
-  bmp: true, ico: true, avif: true, tif: true, tiff: true
-}
-const VIDEO_EXT: Record<string, true> = {
-  mp4: true, webm: true, ogg: true, mov: true, mkv: true, avi: true,
-  m4v: true, flv: true, wmv: true, '3gp': true
-}
+import { isVideoFile, isImageFile, extensionOf, VIDEO_EXT, IMAGE_EXT } from './media-utils'
 const TEXT_EXT: Record<string, true> = {
   txt: true, md: true, markdown: true, log: true, csv: true, tsv: true, json: true, yaml: true, yml: true, toml: true, ini: true, conf: true,
   cfg: true, xml: true, html: true, htm: true, css: true, scss: true, js: true, ts: true, jsx: true, tsx: true, svelte: true, vue: true, rs: true,
@@ -15,10 +7,6 @@ const TEXT_EXT: Record<string, true> = {
   sql: true, env: true, gitignore: true, dockerfile: true, makefile: true
 }
 
-function extensionOf(name: string): string {
-  const i = name.lastIndexOf('.')
-  return i <= 0 ? name.toLowerCase() : name.slice(i + 1).toLowerCase()
-}
 
 function classify(name: string, previewAvailable = false): 'image' | 'video' | 'archive' | 'text' | 'none' {
   const ext = extensionOf(name)
@@ -56,5 +44,20 @@ describe('preview media classification', () => {
   it('classifies unknown binary files as none', () => {
     expect(classify('program.exe')).toBe('none')
     expect(classify('firmware.bin')).toBe('none')
+  })
+})
+
+describe('Thumbnail isVideoFile helper', () => {
+  it('detects video extensions correctly', () => {
+    for (const ext of Object.keys(VIDEO_EXT)) {
+      expect(isVideoFile(`file.${ext}`)).toBe(true)
+      expect(isVideoFile(`file.${ext.toUpperCase()}`)).toBe(true)
+    }
+  })
+
+  it('returns false for non-video files', () => {
+    for (const name of ['photo.jpg', 'doc.pdf', 'script.py', 'archive.zip', 'file']) {
+      expect(isVideoFile(name)).toBe(false)
+    }
   })
 })

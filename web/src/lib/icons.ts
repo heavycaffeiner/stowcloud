@@ -44,6 +44,8 @@ import iconTrash from '@ktibow/iconset-material-symbols/delete-sweep-outline'
 import iconUpload from '@ktibow/iconset-material-symbols/upload-file-outline'
 import iconUploadFolder from '@ktibow/iconset-material-symbols/drive-folder-upload-outline'
 import iconWarning from '@ktibow/iconset-material-symbols/warning-outline'
+import iconSort from '@ktibow/iconset-material-symbols/sort'
+import iconMovie from '@ktibow/iconset-material-symbols/movie-outline'
 
 export {
   iconAccountTree,
@@ -78,7 +80,9 @@ export {
   iconTrash,
   iconUpload,
   iconUploadFolder,
-  iconWarning
+  iconWarning,
+  iconSort,
+  iconMovie
 }
 
 /** Runtime lookup. Keys are the names the old inline icon set used. */
@@ -117,7 +121,9 @@ export const icons = {
   trash: iconTrash,
   upload: iconUpload,
   'upload-folder': iconUploadFolder,
-  warning: iconWarning
+  warning: iconWarning,
+  sort: iconSort,
+  video: iconMovie
 } satisfies Record<string, IconifyIcon>
 
 export type IconName = keyof typeof icons
