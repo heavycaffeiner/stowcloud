@@ -874,20 +874,12 @@
     const btn = e.currentTarget as HTMLElement
     overflowTriggerEl = btn
     const rect = btn.getBoundingClientRect()
-    // `Menu.svelte` positions itself with `position: absolute; left: auto`
-    // and grows *rightward* from its static position -- it has no notion of
-    // right-edge anchoring, so a wrapper `right:` offset (the first attempt
-    // here) doesn't constrain it at all and it overflowed straight past a
-    // 390px viewport. Anchor by `left` instead, same as the context menu
-    // below already does, offset so the menu's *right* edge lands under the
-    // kebab button -- 200px is a hair over Menu's own 160px `min-width` so
-    // a longer label than currently exists still resolves inside the
-    // viewport instead of clipping past it before its real width is known.
+    // Pass button rect.right with align="end" so Menu right-aligns directly to this coordinate.
     overflowLeft = rect.right
     overflowTop = rect.bottom + 4
     overflowOpen = true
     // Move focus into the menu the same way `focusSearch` already does for
-    // the search field -- a `queueMicrotask` so it runs after the `{#if}`
+    // the search field: a `queueMicrotask` so it runs after the `{#if}`
     // that mounts the menu has actually rendered it.
     queueMicrotask(() => overflowMenuEl?.querySelector<HTMLButtonElement>('button')?.focus())
   }
@@ -900,9 +892,9 @@
   }
   // ARIA menu roving-focus: Tab already reaches every item in DOM order
   // (they're plain buttons), but a `role="menu"` is conventionally also
-  // arrow-key navigable, and nothing upstream (Menu.svelte) provides that --
-  // it wasn't needed until items with genuine keyboard users (not just a
-  // mouse-driven context menu) moved in here.
+    // arrow-key navigable, and nothing upstream (Menu.svelte) provides that:
+    // it was not needed until items with genuine keyboard users (not just a
+    // mouse-driven context menu) moved in here.
   function onOverflowKeydown(e: KeyboardEvent): void {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
     e.preventDefault()
