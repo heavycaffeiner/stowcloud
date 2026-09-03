@@ -892,9 +892,9 @@
   }
   // ARIA menu roving-focus: Tab already reaches every item in DOM order
   // (they're plain buttons), but a `role="menu"` is conventionally also
-    // arrow-key navigable, and nothing upstream (Menu.svelte) provides that:
-    // it was not needed until items with genuine keyboard users (not just a
-    // mouse-driven context menu) moved in here.
+  // arrow-key navigable, and nothing upstream (Menu.svelte) provides that:
+  // it was not needed until items with genuine keyboard users (not just a
+  // mouse-driven context menu) moved in here.
   function onOverflowKeydown(e: KeyboardEvent): void {
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
     e.preventDefault()
