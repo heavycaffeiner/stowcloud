@@ -841,7 +841,7 @@
     const btn = e.currentTarget as HTMLElement
     sortTriggerEl = btn
     const rect = btn.getBoundingClientRect()
-    sortLeft = Math.max(8, Math.min(rect.right - 200, window.innerWidth - 208))
+    sortLeft = rect.right
     sortTop = rect.bottom + 4
     sortOpen = true
     queueMicrotask(() => sortMenuEl?.querySelector<HTMLButtonElement>('button')?.focus())
@@ -883,7 +883,7 @@
     // kebab button -- 200px is a hair over Menu's own 160px `min-width` so
     // a longer label than currently exists still resolves inside the
     // viewport instead of clipping past it before its real width is known.
-    overflowLeft = Math.max(8, Math.min(rect.right - 200, window.innerWidth - 208))
+    overflowLeft = rect.right
     overflowTop = rect.bottom + 4
     overflowOpen = true
     // Move focus into the menu the same way `focusSearch` already does for
@@ -1110,7 +1110,7 @@
   {/if}
   </div>
 
-  <Menu open={sortOpen} onclose={closeSort} x={sortLeft} y={sortTop}>
+  <Menu open={sortOpen} onclose={closeSort} x={sortLeft} y={sortTop} align="end">
     <div bind:this={sortMenuEl} role="none">
       {#each sortKeys as s (s.key)}
         <MenuItem onclick={() => chooseSort(s.key)}>
@@ -1125,7 +1125,7 @@
     </div>
   </Menu>
 
-  <Menu open={overflowOpen} onclose={closeOverflow} x={overflowLeft} y={overflowTop}>
+  <Menu open={overflowOpen} onclose={closeOverflow} x={overflowLeft} y={overflowTop} align="end">
       <div bind:this={overflowMenuEl} role="none" onkeydown={onOverflowKeydown}>
         {#if uiState.compact}
           <MenuItem onclick={() => { browse.refresh(); closeOverflow() }}>{t('common.refresh')}</MenuItem>

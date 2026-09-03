@@ -1,11 +1,12 @@
 <script lang="ts">
   // NavigationDrawer.svelte: Google AI Studio / Material 3 style clean navigation sidebar.
-  // Features structured sections (FILES / ACTIONS / SYSTEM), 8px rounded rectangle items,
-  // integrated root share exploration, direct action triggers, and refined typography.
+  // Features a flat full-width "+ Add" action button with dropdown, structured sections,
+  // 8px rounded rectangle items, right-aligned collapse chevrons, and refined typography.
   import { t } from '../i18n'
   import type { IconifyIcon } from '@iconify/types'
   import IconButton from './IconButton.svelte'
-  import { Icon } from 'm3-svelte'
+  import { Icon, MenuItem } from 'm3-svelte'
+  import Menu from './Menu.svelte'
   import { icons } from '../icons'
   import { goto } from '$app/navigation'
 
@@ -47,6 +48,9 @@
 
   let dialogEl: HTMLDialogElement | undefined = $state()
   let filesExpanded = $state(true)
+  let addMenuOpen = $state(false)
+  let addMenuX = $state(0)
+  let addMenuY = $state(0)
 
   $effect(() => {
     if (!overlay || !dialogEl) return
@@ -62,7 +66,19 @@
     if (e.target === dialogEl) onclose?.()
   }
 
+  function toggleAddMenu(e: MouseEvent): void {
+    if (addMenuOpen) {
+      addMenuOpen = false
+      return
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    addMenuX = rect.left
+    addMenuY = rect.bottom + 4
+    addMenuOpen = true
+  }
+
   function triggerAction(action: 'folder' | 'file' | 'upload-folder'): void {
+    addMenuOpen = false
     if (overlay) onclose?.()
     if (!location.pathname.startsWith('/b')) {
       void goto('/b').then(() => {
@@ -74,12 +90,12 @@
   }
 
   function handleFilesClick(): void {
+    filesExpanded = !filesExpanded
     if (items.length > 0 && !active) {
       onselect?.(items[0])
-    } else {
+    } else if (activeNav !== 'files') {
       onnavselect?.({ id: 'files', label: t('nav.files'), icon: icons.home, href: '/b' })
     }
-    if (overlay) onclose?.()
   }
 
   function handleNavClick(item: NavItem): void {
@@ -97,38 +113,54 @@
   {/if}
 
   <div class="sc-nav-drawer__body">
+    <!-- Full-width flat Add button with dropdown menu -->
+    <div class="sc-nav-drawer__action-wrap">
+      <button
+        type="button"
+        class="sc-nav-drawer__add-btn"
+        aria-haspopup="true"
+        aria-expanded={addMenuOpen}
+        onclick={toggleAddMenu}
+      >
+        <span class="sc-nav-drawer__add-icon"><Icon icon={icons.add} size={20} /></span>
+        <span class="sc-nav-drawer__add-text">{t('common.add')} +</span>
+      </button>
+      <Menu open={addMenuOpen} onclose={() => (addMenuOpen = false)} x={addMenuX} y={addMenuY}>
+        <MenuItem icon={icons.folder} onclick={() => triggerAction('folder')}>
+          {t('common.new_folder')}
+        </MenuItem>
+        <MenuItem icon={icons.upload} onclick={() => triggerAction('file')}>
+          {t('common.upload')}
+        </MenuItem>
+        <MenuItem icon={icons['upload-folder']} onclick={() => triggerAction('upload-folder')}>
+          {t('browse.upload_folder')}
+        </MenuItem>
+      </Menu>
+    </div>
+
     <!-- Section 1: FILES -->
     <div class="sc-nav-drawer__section-title">{t('nav.files')}</div>
     <ul class="sc-nav-drawer__list">
       <li class="sc-nav-drawer__entry">
-        <div
+        <button
+          type="button"
           class="sc-nav-drawer__item"
           class:sc-nav-drawer__item--active={activeNav === 'files' && !active}
+          onclick={handleFilesClick}
         >
+          <span class="sc-nav-drawer__item-icon"><Icon icon={icons.home} size={20} /></span>
+          <span class="sc-nav-drawer__item-label">{t('nav.files')}</span>
           {#if items.length > 0}
-            <button
-              type="button"
-              class="sc-nav-drawer__twisty"
-              class:sc-nav-drawer__twisty--expanded={filesExpanded}
-              aria-label={t('nav.switch_folder')}
-              onclick={(e) => {
-                e.stopPropagation()
-                filesExpanded = !filesExpanded
-              }}
+            <span
+              class="sc-nav-drawer__twisty-right"
+              class:sc-nav-drawer__twisty-right--expanded={filesExpanded}
+              title={t('nav.switch_folder')}
+              aria-hidden="true"
             >
               <Icon icon={icons['chevron-right']} size={16} />
-            </button>
+            </span>
           {/if}
-          <button
-            type="button"
-            class="sc-nav-drawer__item-btn"
-            class:sc-nav-drawer__item-btn--with-twisty={items.length > 0}
-            onclick={handleFilesClick}
-          >
-            <span class="sc-nav-drawer__item-icon"><Icon icon={icons.home} size={20} /></span>
-            <span class="sc-nav-drawer__item-label">{t('nav.files')}</span>
-          </button>
-        </div>
+        </button>
 
         {#if filesExpanded && items.length > 0}
           <ul class="sc-nav-drawer__sublist">
@@ -178,42 +210,7 @@
       </li>
     </ul>
 
-    <!-- Section 2: ACTIONS -->
-    <div class="sc-nav-drawer__section-title">{t('common.add')}</div>
-    <ul class="sc-nav-drawer__list">
-      <li class="sc-nav-drawer__entry">
-        <button
-          type="button"
-          class="sc-nav-drawer__item"
-          onclick={() => triggerAction('folder')}
-        >
-          <span class="sc-nav-drawer__item-icon"><Icon icon={icons.add} size={20} /></span>
-          <span class="sc-nav-drawer__item-label">{t('common.new_folder')}</span>
-        </button>
-      </li>
-      <li class="sc-nav-drawer__entry">
-        <button
-          type="button"
-          class="sc-nav-drawer__item"
-          onclick={() => triggerAction('file')}
-        >
-          <span class="sc-nav-drawer__item-icon"><Icon icon={icons.upload} size={20} /></span>
-          <span class="sc-nav-drawer__item-label">{t('common.upload')}</span>
-        </button>
-      </li>
-      <li class="sc-nav-drawer__entry">
-        <button
-          type="button"
-          class="sc-nav-drawer__item"
-          onclick={() => triggerAction('upload-folder')}
-        >
-          <span class="sc-nav-drawer__item-icon"><Icon icon={icons['upload-folder']} size={20} /></span>
-          <span class="sc-nav-drawer__item-label">{t('browse.upload_folder')}</span>
-        </button>
-      </li>
-    </ul>
-
-    <!-- Section 3: MANAGE -->
+    <!-- Section 2: SYSTEM -->
     <div class="sc-nav-drawer__section-title">{t('common.settings')}</div>
     <ul class="sc-nav-drawer__list">
       {#if navItems.some((n) => n.id === 'admin')}
@@ -309,6 +306,42 @@
     flex-direction: column;
     padding: 0;
   }
+  .sc-nav-drawer__action-wrap {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    flex: none;
+  }
+  .sc-nav-drawer__add-btn {
+    width: 100%;
+    height: 40px;
+    padding: 0 16px;
+    border-radius: var(--m3-shape-small);
+    border: 1px solid var(--m3c-outline-variant);
+    background: var(--m3c-surface-container);
+    color: var(--m3c-on-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    @apply --m3-label-large;
+    font-weight: 600;
+    font-size: 14px;
+    transition: background var(--m3-duration-fast) var(--m3-easing), border-color var(--m3-duration-fast) var(--m3-easing);
+  }
+  .sc-nav-drawer__add-btn:hover {
+    background: var(--m3c-surface-container-high);
+    border-color: var(--m3c-outline);
+  }
+  .sc-nav-drawer__add-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--m3c-primary);
+  }
+  .sc-nav-drawer__add-text {
+    white-space: nowrap;
+  }
   .sc-nav-drawer__section-title {
     margin: 16px 16px 8px;
     font-size: 11px;
@@ -363,44 +396,17 @@
   .sc-nav-drawer__item--active:hover {
     background: var(--m3c-surface-container-high);
   }
-  .sc-nav-drawer__twisty {
-    width: 24px;
-    height: 24px;
-    margin: 0;
-    padding: 0;
+  .sc-nav-drawer__twisty-right {
     display: flex;
     align-items: center;
     justify-content: center;
-    border: none;
-    background: transparent;
-    border-radius: var(--m3-shape-small);
-    cursor: pointer;
+    margin-left: auto;
     color: inherit;
     flex: none;
     transition: rotate var(--m3-duration-fast) var(--m3-easing);
   }
-  .sc-nav-drawer__twisty--expanded {
+  .sc-nav-drawer__twisty-right--expanded {
     rotate: 90deg;
-  }
-  .sc-nav-drawer__item-btn {
-    flex: 1;
-    height: 100%;
-    border: none;
-    background: transparent;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 0;
-    border-radius: var(--m3-shape-small);
-    cursor: pointer;
-    color: inherit;
-    text-align: left;
-    font-weight: inherit;
-    font-size: 14px;
-    overflow: hidden;
-  }
-  .sc-nav-drawer__item-btn--with-twisty {
-    padding-inline-start: 0;
   }
   .sc-nav-drawer__item-icon {
     display: flex;
@@ -409,6 +415,8 @@
     flex: none;
   }
   .sc-nav-drawer__item-label {
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
