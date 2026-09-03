@@ -310,7 +310,6 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
         forgetChunkRetries(f.id)
         scheduler.removeFile(f.id)
         scheduler.addFile({ id: f.id, totalSize: f.file.size, chunkSize: next, resumeOffset: f.sentBytes })
-        scheduler.requeue(f.id, task)
       }
       return
     }

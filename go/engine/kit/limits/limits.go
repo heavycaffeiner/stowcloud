@@ -18,9 +18,13 @@ import (
 // request body is trusted.
 
 const (
+	// ServerBodyLimit is the outer framework-level body ceiling for Fiber.
+	// Large enough to allow upload chunks through; route-specific middleware
+	// enforces the tighter bounds (RequestBody, RequestBodyXML).
+	ServerBodyLimit = 128 << 20
+
 	// RequestBody is the general request body ceiling. Refuses with 413.
 	RequestBody = 1 << 20
-
 	// RequestBodyXML is lower than RequestBody because an XML body is parsed
 	// in memory instead of streamed to disk. Refuses with 413.
 	RequestBodyXML = 256 << 10

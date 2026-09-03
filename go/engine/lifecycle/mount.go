@@ -21,6 +21,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/route"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 )
 
 // Mount builds the Fiber application over a constructed engine.
@@ -56,6 +57,7 @@ func (e *Engine) Mount() (*fiber.App, error) {
 	app := fiber.New(fiber.Config{
 		DisableStartupMessage: true,
 		RequestMethods:        methods,
+		BodyLimit:             limits.ServerBodyLimit,
 		// The framework's own error page is HTML. Every failure this server
 		// produces is a JSON body a client can read, so the default is
 		// replaced rather than left to leak a page into an API response.
