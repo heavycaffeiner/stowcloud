@@ -359,8 +359,8 @@
       {#each ALL_GRANT_PERMS as p (p)}
         <div class="sc-grants__permgrid-row">
           <span>{PERM_LABEL[p]}</span>
-          <Checkbox checked={addAllow.has(p)} label={t('grant.allow_2', { perm: PERM_LABEL[p] })} onchange={() => (addAllow = togglePerm(addAllow, p))} />
-          <Checkbox checked={addDeny.has(p)} label={t('grant.deny_2', { perm: PERM_LABEL[p] })} onchange={() => (addDeny = togglePerm(addDeny, p))} />
+          <Checkbox hideLabel checked={addAllow.has(p)} label={t('grant.allow_2', { perm: PERM_LABEL[p] })} onchange={() => (addAllow = togglePerm(addAllow, p))} />
+          <Checkbox hideLabel checked={addDeny.has(p)} label={t('grant.deny_2', { perm: PERM_LABEL[p] })} onchange={() => (addDeny = togglePerm(addDeny, p))} />
         </div>
       {/each}
     </div>
@@ -393,8 +393,8 @@
         {#each ALL_GRANT_PERMS as p (p)}
           <div class="sc-grants__permgrid-row">
             <span>{PERM_LABEL[p]}</span>
-            <Checkbox checked={editAllow.has(p)} label={t('grant.allow_2', { perm: PERM_LABEL[p] })} onchange={() => (editAllow = togglePerm(editAllow, p))} />
-            <Checkbox checked={editDeny.has(p)} label={t('grant.deny_2', { perm: PERM_LABEL[p] })} onchange={() => (editDeny = togglePerm(editDeny, p))} />
+            <Checkbox hideLabel checked={editAllow.has(p)} label={t('grant.allow_2', { perm: PERM_LABEL[p] })} onchange={() => (editAllow = togglePerm(editAllow, p))} />
+            <Checkbox hideLabel checked={editDeny.has(p)} label={t('grant.deny_2', { perm: PERM_LABEL[p] })} onchange={() => (editDeny = togglePerm(editDeny, p))} />
           </div>
         {/each}
       </div>
@@ -547,6 +547,10 @@
     color: var(--m3c-on-surface-variant);
     @apply --m3-body-small;
     background: var(--m3c-surface-container-highest);
+  }
+  .sc-grants__permgrid-row :global(.row) {
+    justify-content: center;
+    width: 100%;
   }
   .sc-grants__permgrid-row + .sc-grants__permgrid-row {
     border-top: 1px solid var(--m3c-outline-variant);

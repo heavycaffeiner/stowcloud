@@ -32,7 +32,8 @@
     DbSettingsReq,
     OidcSettingsReq
   } from '../../api/types'
-  import { SelectOutlined } from 'm3-svelte'
+  import { Icon, SelectOutlined } from 'm3-svelte'
+  import { icons } from '../../icons'
   import Button from '../Button.svelte'
   import TextField from '../TextField.svelte'
   import Switch from '../Switch.svelte'
@@ -713,223 +714,313 @@
       </div>
     {/if}
 
-    <h4 class="sc-admin-section__subhead">SMB</h4>
-    <div class="sc-server-settings__form">
-      <Switch checked={smbEnabled} onchange={(v) => (smbEnabled = v)} label={t('server.enable_smb')} />
-      <TextField label={t('server.workgroup')} bind:value={smbWorkgroup} />
-      <TextField label={t('server.smb_server_name')} bind:value={smbServerName} />
-      {#if !smbServerName.trim() && emptyNote('smb.server_name')}
-        <p class="sc-server-settings__empty-note">{emptyNote('smb.server_name')}</p>
-      {/if}
-      <TextField label={t('server.service_account_name')} bind:value={smbServiceUser} />
-      <Switch checked={smbAllowPublicBind} onchange={(v) => (smbAllowPublicBind = v)} label={t('server.allow_access_from_outside_private')} />
-      <SelectOutlined label={t('server.smb_access_2fa_users')} width="100%" options={SMB_TOTP_OPTIONS} bind:value={smbTotpPolicy} />
-      <TextField label={t('server.service_account_gid')} bind:value={smbServiceGid} type="number" {...intRangeAttrs('smb.service_gid')} />
-      <TextField label={t('settings.smb_interfaces')} bind:value={smbInterfaces} />
-      <p class="sc-admin-section__hint">{t('settings.smb_interfaces_hint')}</p>
-      <Button variant="filled" onclick={saveSmb} loading={smbSaving}>{t('common.save')}</Button>
-    </div>
-    <p class="sc-admin-section__hint">
-      {t('server.all_apply_immediately_no_restart')}
-    </p>
-    {#if smbError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={smbError}>{smbError}</p>{/if}
-    {#if smbOutcome}
-      <p class="sc-admin-section__saved" role="status">{outcomeText(smbOutcome)}</p>
-      {@render findingsList(smbOutcome)}
-    {/if}
-
-    <!-- What the agent beside smbd did with the files this server rendered.
-         The key comes from the server, so the extractor cannot see it at the
-         call site — these are the three it can send:
-                      /* i18n */ 'smb.agent_applied'
-                      /* i18n */ 'smb.agent_problem'
-                      /* i18n */ 'smb.agent_unreachable' -->
-    {#if snapshot.smb_agent}
-      {@const agent = snapshot.smb_agent}
-      <div
-        class={agent.ok ? 'sc-admin-section__hint' : 'sc-admin-section__warning'}
-        role={agent.ok ? 'status' : 'alert'}
-      >
-        <p>
-          {t(agent.key, {
-            shares: agent.shares.length,
-            interfaces: agent.interfaces,
-            smbd: agent.smbd
-          })}
-        </p>
-        {#if agent.missing_paths.length}
-          <p>{t('smb.agent_missing_paths', { paths: agent.missing_paths.join(', ') })}</p>
-        {/if}
-        {#if agent.missing_passdb.length}
-          <p>{t('smb.agent_missing_passdb', { users: agent.missing_passdb.join(', ') })}</p>
-        {/if}
-        <!-- Verbatim, not translated: it comes from testparm, pdbedit or the
-             agent itself. -->
-        {#if agent.detail && !agent.ok}
-          <p class="sc-server-settings__agent-detail">{agent.detail}</p>
-        {/if}
-      </div>
-    {/if}
-
-    <h4 class="sc-admin-section__subhead">{t('common.search')}</h4>
-    <div class="sc-server-settings__form">
-      <TextField label={t('server.concurrent_fast_searches')} bind:value={searchMaxFast} type="number" {...intRangeAttrs('search.max_concurrent_fast')} />
-      <TextField label={t('server.fast_search_timeout_ms')} bind:value={searchDeadlineFast} type="number" {...intRangeAttrs('search.walk_deadline_fast_ms')} />
-      <Button variant="filled" onclick={saveSearch} loading={searchSaving}>{t('common.save')}</Button>
-    </div>
-    <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
-    {#if searchError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={searchError}>{searchError}</p>{/if}
-    {#if searchOutcome}
-      <p class="sc-admin-section__saved" role="status">{outcomeText(searchOutcome)}</p>
-      {@render findingsList(searchOutcome)}
-    {/if}
-
-    <h4 class="sc-admin-section__subhead">{t('server.zip_download')}</h4>
-    <div class="sc-server-settings__form">
-      <TextField label={t('server.concurrent_zip_streams')} bind:value={archiveMax} type="number" {...intRangeAttrs('archive.max_concurrent')} />
-      <Button variant="filled" onclick={saveArchive} loading={archiveSaving}>{t('common.save')}</Button>
-    </div>
-    <p class="sc-admin-section__hint">{t('server.applies_immediately_no_restart_needed')}</p>
-    {#if archiveError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={archiveError}>{archiveError}</p>{/if}
-    {#if archiveOutcome}
-      <p class="sc-admin-section__saved" role="status">{outcomeText(archiveOutcome)}</p>
-      {@render findingsList(archiveOutcome)}
-    {/if}
-
-    <h4 class="sc-admin-section__subhead">{t('server.network')}</h4>
-    <div class="sc-server-settings__form">
-      <TextField label={t('server.app_hosts_comma_separated')} bind:value={netAppHosts} />
-      <p class="sc-admin-section__hint">{t('server.app_hosts_hint')}</p>
-      <TextField label={t('server.trusted_proxies_comma_separated')} bind:value={netTrustedProxies} />
-      {#if !netTrustedProxies.trim() && emptyNote('trusted_proxies')}
-        <p class="sc-server-settings__empty-note">{emptyNote('trusted_proxies')}</p>
-      {/if}
-      <TextField label={t('server.bind_address')} bind:value={netBind} />
-      <p class="sc-admin-section__hint">{t('server.bind_address_hint')}</p>
-      <Button variant="filled" onclick={saveNetwork} loading={netSaving}>{t('common.save')}</Button>
-    </div>
-    <p class="sc-admin-section__hint">{t('server.applies_immediately_no_restart_needed')}</p>
-    {#if netError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={netError}>{netError}</p>{/if}
-    {#if netOutcome}
-      <p class="sc-admin-section__saved" role="status">{outcomeText(netOutcome)}</p>
-      {@render findingsList(netOutcome)}
-    {/if}
-
-    <h4 class="sc-admin-section__subhead">{t('server.database')}</h4>
-    <p class="sc-admin-section__hint">{t('settings.db_size_guard_hint')}</p>
-    <div class="sc-server-settings__form">
-      <Switch checked={dbSizeGuard} onchange={(v) => (dbSizeGuard = v)} label={t('settings.db_size_guard')} />
-      <TextField label={t('settings.db_max_bytes')} bind:value={dbMaxBytesMb} type="number" min={0} />
-      <TextField label={t('settings.db_min_free_bytes')} bind:value={dbMinFreeBytesMb} type="number" min={0} />
-      <Button variant="filled" onclick={saveDb} loading={dbSaving}>{t('common.save')}</Button>
-    </div>
-    <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
-    {#if dbError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={dbError}>{dbError}</p>{/if}
-    {#if dbOutcome}
-      <p class="sc-admin-section__saved" role="status">{outcomeText(dbOutcome)}</p>
-      {@render findingsList(dbOutcome)}
-    {/if}
-
-    <h4 class="sc-admin-section__subhead">{t('server.home_folders')}</h4>
-    <p class="sc-admin-section__hint">{t('server.home_folders_hint')}</p>
-    <div class="sc-server-settings__form">
-      <Switch checked={homesEnabled} onchange={(v) => (homesEnabled = v)} label={t('server.enable_home_folders')} />
-      <TextField label={t('server.homes_root_path')} bind:value={homesRoot} />
-      <Button variant="filled" onclick={saveHomes} loading={homesSaving}>{t('common.save')}</Button>
-    </div>
-    <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
-    {#if homesError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={homesError}>{homesError}</p>{/if}
-    {#if homesOutcome}
-      <p class="sc-admin-section__saved" role="status">{outcomeText(homesOutcome)}</p>
-      {@render findingsList(homesOutcome)}
-    {/if}
-
-    <h4 class="sc-admin-section__subhead">{t('server.request_rate')}</h4>
-    <p class="sc-admin-section__hint">{t('server.what_the_request_rate_is_for')}</p>
-    <div class="sc-server-settings__form">
-      <TextField label={t('server.requests_per_second')} bind:value={ratePerSec} type="number" {...intRangeAttrs('rate.per_sec')} />
-      <TextField label={t('server.burst_allowance')} bind:value={rateBurst} type="number" {...intRangeAttrs('rate.burst')} />
-      <Button variant="filled" onclick={saveRate} loading={rateSaving}>{t('common.save')}</Button>
-    </div>
-    <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
-    {#if rateError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={rateError}>{rateError}</p>{/if}
-    {#if rateOutcome}
-      <p class="sc-admin-section__saved" role="status">{outcomeText(rateOutcome)}</p>
-      {@render findingsList(rateOutcome)}
-    {/if}
-
-    <h4 class="sc-admin-section__subhead">{t('server.file_watching')}</h4>
-    <p class="sc-admin-section__hint">{t('server.what_file_watching_is_for')}</p>
-    <div class="sc-server-settings__form">
-      <TextField label={t('server.maximum_folders_watched_at_once')} bind:value={watchHotSetMax} type="number" {...intRangeAttrs('watch.hot_set_max')} />
-      <TextField label={t('server.changes_before_a_full_rescan')} bind:value={watchFullThreshold} type="number" {...intRangeAttrs('watch.full_threshold')} />
-      <Button variant="filled" onclick={saveWatch} loading={watchSaving}>{t('common.save')}</Button>
-    </div>
-    <p class="sc-admin-section__hint">{t('server.all_apply_immediately_no_restart')}</p>
-    {#if watchError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={watchError}>{watchError}</p>{/if}
-    {#if watchOutcome}
-      <p class="sc-admin-section__saved" role="status">{outcomeText(watchOutcome)}</p>
-      {@render findingsList(watchOutcome)}
-    {/if}
-
-    <h4 class="sc-admin-section__subhead">{t('settings.single_sign_on')}</h4>
-    <p class="sc-admin-section__hint">{t('server.single_sign_on_hint')}</p>
-    <div class="sc-server-settings__form">
-      <Switch checked={oidcEnabled} onchange={(v) => (oidcEnabled = v)} label={t('settings.oidc_enable')} />
-      <TextField label={t('settings.oidc_issuer')} bind:value={oidcIssuer} />
-      <TextField label={t('settings.oidc_client_id')} bind:value={oidcClientId} />
-      <TextField label={t('common.password')} type="password" bind:value={oidcClientSecret} placeholder={t('settings.secret_is_write_only')} />
-      <TextField label={t('settings.oidc_redirect_uris')} bind:value={oidcRedirectUris} />
-      <TextField label={t('settings.oidc_scopes')} bind:value={oidcScopes} />
-      <TextField label={t('settings.oidc_display_name')} bind:value={oidcDisplayName} />
-      <Switch checked={oidcAllowPrivateEndpoints} onchange={(v) => (oidcAllowPrivateEndpoints = v)} label={t('settings.oidc_allow_private_endpoints')} />
-      <Button variant="filled" onclick={saveOidc} loading={oidcSaving}>{t('common.save')}</Button>
-    </div>
-    <p class="sc-admin-section__hint">{t('server.connected_accounts_cannot_use_smb')}</p>
-    {#if oidcError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={oidcError}>{oidcError}</p>{/if}
-    {#if oidcOutcome}
-      <p class="sc-admin-section__saved" role="status">{outcomeText(oidcOutcome)}</p>
-      {@render findingsList(oidcOutcome)}
-    {/if}
-
-    <h4 class="sc-admin-section__subhead">{t('server.storage_paths')}</h4>
-    <dl class="sc-server-settings__other">
-      {#each PATH_KEYS as key (key)}
-        <div>
-          <dt>{fieldLabel(key)}</dt>
-          <dd>
-            {formatValue(field(key)?.value)}
-            <br /><span class="sc-server-settings__reason">{t('settings.paths_readonly_reason')}</span>
-          </dd>
+    <!-- 1. SMB -->
+    <div class="sc-admin-card">
+      <div class="sc-admin-card-head">
+        <div class="sc-admin-card-icon">
+          <Icon icon={icons.folder} size={20} />
         </div>
-      {/each}
-      <div>
-        <dt>{fieldLabel('symlink_policy')}</dt>
-        <dd>
-          <span class="sc-server-settings__reason">{t('settings.readonly_per_share_symlink_policy')}</span>
-        </dd>
+        <div class="sc-admin-card-meta">
+          <h4 class="sc-admin-card-title">SMB</h4>
+          <p class="sc-admin-card-subtitle">{t('server.all_apply_immediately_no_restart')}</p>
+        </div>
       </div>
-    </dl>
+      <div class="sc-server-settings__form">
+        <Switch checked={smbEnabled} onchange={(v) => (smbEnabled = v)} label={t('server.enable_smb')} />
+        <TextField label={t('server.workgroup')} bind:value={smbWorkgroup} />
+        <TextField label={t('server.smb_server_name')} bind:value={smbServerName} />
+        {#if !smbServerName.trim() && emptyNote('smb.server_name')}
+          <p class="sc-server-settings__empty-note">{emptyNote('smb.server_name')}</p>
+        {/if}
+        <TextField label={t('server.service_account_name')} bind:value={smbServiceUser} />
+        <Switch checked={smbAllowPublicBind} onchange={(v) => (smbAllowPublicBind = v)} label={t('server.allow_access_from_outside_private')} />
+        <SelectOutlined label={t('server.smb_access_2fa_users')} width="100%" options={SMB_TOTP_OPTIONS} bind:value={smbTotpPolicy} />
+        <TextField label={t('server.service_account_gid')} bind:value={smbServiceGid} type="number" {...intRangeAttrs('smb.service_gid')} />
+        <TextField label={t('settings.smb_interfaces')} bind:value={smbInterfaces} />
+        <p class="sc-admin-section__hint">{t('settings.smb_interfaces_hint')}</p>
+        <Button variant="filled" onclick={saveSmb} loading={smbSaving}>{t('common.save')}</Button>
+        {#if smbError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={smbError}>{smbError}</p>{/if}
+        {#if smbOutcome}
+          <p class="sc-admin-section__saved" role="status">{outcomeText(smbOutcome)}</p>
+          {@render findingsList(smbOutcome)}
+        {/if}
+      </div>
+      <!-- What the agent beside smbd did with the files this server rendered.
+           The key comes from the server, so the extractor cannot see it at the
+           call site:
+                        /* i18n */ 'smb.agent_applied'
+                        /* i18n */ 'smb.agent_problem'
+                        /* i18n */ 'smb.agent_unreachable' -->
+      {#if snapshot.smb_agent}
+        {@const agent = snapshot.smb_agent}
+        <div
+          class={agent.ok ? 'sc-admin-section__hint' : 'sc-admin-section__warning'}
+          role={agent.ok ? 'status' : 'alert'}
+        >
+          <p>
+            {t(agent.key, {
+              shares: agent.shares.length,
+              interfaces: agent.interfaces,
+              smbd: agent.smbd
+            })}
+          </p>
+          {#if agent.missing_paths.length}
+            <p>{t('smb.agent_missing_paths', { paths: agent.missing_paths.join(', ') })}</p>
+          {/if}
+          {#if agent.missing_passdb.length}
+            <p>{t('smb.agent_missing_passdb', { users: agent.missing_passdb.join(', ') })}</p>
+          {/if}
+          {#if agent.detail && !agent.ok}
+            <p class="sc-server-settings__agent-detail">{agent.detail}</p>
+          {/if}
+        </div>
+      {/if}
+    </div>
 
-    {#if otherFields.length}
-      <h4 class="sc-admin-section__subhead">{t('settings.settings_sections')}</h4>
+    <!-- 2. Search -->
+    <div class="sc-admin-card">
+      <div class="sc-admin-card-head">
+        <div class="sc-admin-card-icon">
+          <Icon icon={icons.search} size={20} />
+        </div>
+        <div class="sc-admin-card-meta">
+          <h4 class="sc-admin-card-title">{t('common.search')}</h4>
+          <p class="sc-admin-card-subtitle">{t('server.all_apply_immediately_no_restart')}</p>
+        </div>
+      </div>
+      <div class="sc-server-settings__form">
+        <TextField label={t('server.concurrent_fast_searches')} bind:value={searchMaxFast} type="number" {...intRangeAttrs('search.max_concurrent_fast')} />
+        <TextField label={t('server.fast_search_timeout_ms')} bind:value={searchDeadlineFast} type="number" {...intRangeAttrs('search.walk_deadline_fast_ms')} />
+        <Button variant="filled" onclick={saveSearch} loading={searchSaving}>{t('common.save')}</Button>
+        {#if searchError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={searchError}>{searchError}</p>{/if}
+        {#if searchOutcome}
+          <p class="sc-admin-section__saved" role="status">{outcomeText(searchOutcome)}</p>
+          {@render findingsList(searchOutcome)}
+        {/if}
+      </div>
+    </div>
+
+    <!-- 3. Zip download -->
+    <div class="sc-admin-card">
+      <div class="sc-admin-card-head">
+        <div class="sc-admin-card-icon">
+          <Icon icon={icons.download} size={20} />
+        </div>
+        <div class="sc-admin-card-meta">
+          <h4 class="sc-admin-card-title">{t('server.zip_download')}</h4>
+          <p class="sc-admin-card-subtitle">{t('server.applies_immediately_no_restart_needed')}</p>
+        </div>
+      </div>
+      <div class="sc-server-settings__form">
+        <TextField label={t('server.concurrent_zip_streams')} bind:value={archiveMax} type="number" {...intRangeAttrs('archive.max_concurrent')} />
+        <Button variant="filled" onclick={saveArchive} loading={archiveSaving}>{t('common.save')}</Button>
+        {#if archiveError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={archiveError}>{archiveError}</p>{/if}
+        {#if archiveOutcome}
+          <p class="sc-admin-section__saved" role="status">{outcomeText(archiveOutcome)}</p>
+          {@render findingsList(archiveOutcome)}
+        {/if}
+      </div>
+    </div>
+
+    <!-- 4. Network -->
+    <div class="sc-admin-card">
+      <div class="sc-admin-card-head">
+        <div class="sc-admin-card-icon">
+          <Icon icon={icons.link} size={20} />
+        </div>
+        <div class="sc-admin-card-meta">
+          <h4 class="sc-admin-card-title">{t('server.network')}</h4>
+          <p class="sc-admin-card-subtitle">{t('server.applies_immediately_no_restart_needed')}</p>
+        </div>
+      </div>
+      <div class="sc-server-settings__form">
+        <TextField label={t('server.app_hosts_comma_separated')} bind:value={netAppHosts} />
+        <p class="sc-admin-section__hint">{t('server.app_hosts_hint')}</p>
+        <TextField label={t('server.trusted_proxies_comma_separated')} bind:value={netTrustedProxies} />
+        {#if !netTrustedProxies.trim() && emptyNote('trusted_proxies')}
+          <p class="sc-server-settings__empty-note">{emptyNote('trusted_proxies')}</p>
+        {/if}
+        <TextField label={t('server.bind_address')} bind:value={netBind} />
+        <p class="sc-admin-section__hint">{t('server.bind_address_hint')}</p>
+        <Button variant="filled" onclick={saveNetwork} loading={netSaving}>{t('common.save')}</Button>
+        {#if netError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={netError}>{netError}</p>{/if}
+        {#if netOutcome}
+          <p class="sc-admin-section__saved" role="status">{outcomeText(netOutcome)}</p>
+          {@render findingsList(netOutcome)}
+        {/if}
+      </div>
+    </div>
+
+    <!-- 5. Database -->
+    <div class="sc-admin-card">
+      <div class="sc-admin-card-head">
+        <div class="sc-admin-card-icon">
+          <Icon icon={icons['folder-tree']} size={20} />
+        </div>
+        <div class="sc-admin-card-meta">
+          <h4 class="sc-admin-card-title">{t('server.database')}</h4>
+          <p class="sc-admin-card-subtitle">{t('settings.db_size_guard_hint')}</p>
+        </div>
+      </div>
+      <div class="sc-server-settings__form">
+        <Switch checked={dbSizeGuard} onchange={(v) => (dbSizeGuard = v)} label={t('settings.db_size_guard')} />
+        <TextField label={t('settings.db_max_bytes')} bind:value={dbMaxBytesMb} type="number" min={0} />
+        <TextField label={t('settings.db_min_free_bytes')} bind:value={dbMinFreeBytesMb} type="number" min={0} />
+        <Button variant="filled" onclick={saveDb} loading={dbSaving}>{t('common.save')}</Button>
+        {#if dbError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={dbError}>{dbError}</p>{/if}
+        {#if dbOutcome}
+          <p class="sc-admin-section__saved" role="status">{outcomeText(dbOutcome)}</p>
+          {@render findingsList(dbOutcome)}
+        {/if}
+      </div>
+    </div>
+
+    <!-- 6. Home folders -->
+    <div class="sc-admin-card">
+      <div class="sc-admin-card-head">
+        <div class="sc-admin-card-icon">
+          <Icon icon={icons.home} size={20} />
+        </div>
+        <div class="sc-admin-card-meta">
+          <h4 class="sc-admin-card-title">{t('server.home_folders')}</h4>
+          <p class="sc-admin-card-subtitle">{t('server.home_folders_hint')}</p>
+        </div>
+      </div>
+      <div class="sc-server-settings__form">
+        <Switch checked={homesEnabled} onchange={(v) => (homesEnabled = v)} label={t('server.enable_home_folders')} />
+        <TextField label={t('server.homes_root_path')} bind:value={homesRoot} />
+        <Button variant="filled" onclick={saveHomes} loading={homesSaving}>{t('common.save')}</Button>
+        {#if homesError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={homesError}>{homesError}</p>{/if}
+        {#if homesOutcome}
+          <p class="sc-admin-section__saved" role="status">{outcomeText(homesOutcome)}</p>
+          {@render findingsList(homesOutcome)}
+        {/if}
+      </div>
+    </div>
+
+    <!-- 7. Request rate -->
+    <div class="sc-admin-card">
+      <div class="sc-admin-card-head">
+        <div class="sc-admin-card-icon">
+          <Icon icon={icons.refresh} size={20} />
+        </div>
+        <div class="sc-admin-card-meta">
+          <h4 class="sc-admin-card-title">{t('server.request_rate')}</h4>
+          <p class="sc-admin-card-subtitle">{t('server.what_the_request_rate_is_for')}</p>
+        </div>
+      </div>
+      <div class="sc-server-settings__form">
+        <TextField label={t('server.requests_per_second')} bind:value={ratePerSec} type="number" {...intRangeAttrs('rate.per_sec')} />
+        <TextField label={t('server.burst_allowance')} bind:value={rateBurst} type="number" {...intRangeAttrs('rate.burst')} />
+        <Button variant="filled" onclick={saveRate} loading={rateSaving}>{t('common.save')}</Button>
+        {#if rateError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={rateError}>{rateError}</p>{/if}
+        {#if rateOutcome}
+          <p class="sc-admin-section__saved" role="status">{outcomeText(rateOutcome)}</p>
+          {@render findingsList(rateOutcome)}
+        {/if}
+      </div>
+    </div>
+
+    <!-- 8. File watching -->
+    <div class="sc-admin-card">
+      <div class="sc-admin-card-head">
+        <div class="sc-admin-card-icon">
+          <Icon icon={icons.info} size={20} />
+        </div>
+        <div class="sc-admin-card-meta">
+          <h4 class="sc-admin-card-title">{t('server.file_watching')}</h4>
+          <p class="sc-admin-card-subtitle">{t('server.what_file_watching_is_for')}</p>
+        </div>
+      </div>
+      <div class="sc-server-settings__form">
+        <TextField label={t('server.maximum_folders_watched_at_once')} bind:value={watchHotSetMax} type="number" {...intRangeAttrs('watch.hot_set_max')} />
+        <TextField label={t('server.changes_before_a_full_rescan')} bind:value={watchFullThreshold} type="number" {...intRangeAttrs('watch.full_threshold')} />
+        <Button variant="filled" onclick={saveWatch} loading={watchSaving}>{t('common.save')}</Button>
+        {#if watchError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={watchError}>{watchError}</p>{/if}
+        {#if watchOutcome}
+          <p class="sc-admin-section__saved" role="status">{outcomeText(watchOutcome)}</p>
+          {@render findingsList(watchOutcome)}
+        {/if}
+      </div>
+    </div>
+
+    <!-- 9. Single sign-on -->
+    <div class="sc-admin-card">
+      <div class="sc-admin-card-head">
+        <div class="sc-admin-card-icon">
+          <Icon icon={icons.lock} size={20} />
+        </div>
+        <div class="sc-admin-card-meta">
+          <h4 class="sc-admin-card-title">{t('settings.single_sign_on')}</h4>
+          <p class="sc-admin-card-subtitle">{t('server.single_sign_on_hint')}</p>
+        </div>
+      </div>
+      <div class="sc-server-settings__form">
+        <Switch checked={oidcEnabled} onchange={(v) => (oidcEnabled = v)} label={t('settings.oidc_enable')} />
+        <TextField label={t('settings.oidc_issuer')} bind:value={oidcIssuer} />
+        <TextField label={t('settings.oidc_client_id')} bind:value={oidcClientId} />
+        <TextField label={t('common.password')} type="password" bind:value={oidcClientSecret} placeholder={t('settings.secret_is_write_only')} />
+        <TextField label={t('settings.oidc_redirect_uris')} bind:value={oidcRedirectUris} />
+        <TextField label={t('settings.oidc_scopes')} bind:value={oidcScopes} />
+        <TextField label={t('settings.oidc_display_name')} bind:value={oidcDisplayName} />
+        <Switch checked={oidcAllowPrivateEndpoints} onchange={(v) => (oidcAllowPrivateEndpoints = v)} label={t('settings.oidc_allow_private_endpoints')} />
+        <p class="sc-admin-section__hint">{t('server.connected_accounts_cannot_use_smb')}</p>
+        <Button variant="filled" onclick={saveOidc} loading={oidcSaving}>{t('common.save')}</Button>
+        {#if oidcError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={oidcError}>{oidcError}</p>{/if}
+        {#if oidcOutcome}
+          <p class="sc-admin-section__saved" role="status">{outcomeText(oidcOutcome)}</p>
+          {@render findingsList(oidcOutcome)}
+        {/if}
+      </div>
+    </div>
+
+    <!-- 10. Storage paths -->
+    <div class="sc-admin-card">
+      <div class="sc-admin-card-head">
+        <div class="sc-admin-card-icon">
+          <Icon icon={icons.info} size={20} />
+        </div>
+        <div class="sc-admin-card-meta">
+          <h4 class="sc-admin-card-title">{t('server.storage_paths')}</h4>
+          <p class="sc-admin-card-subtitle">{t('settings.paths_readonly_reason')}</p>
+        </div>
+      </div>
       <dl class="sc-server-settings__other">
-        {#each otherFields as f (f.key)}
+        {#each PATH_KEYS as key (key)}
           <div>
-            <dt>{fieldLabel(f.key)}</dt>
+            <dt>{fieldLabel(key)}</dt>
             <dd>
-              {formatValue(f.value)}
-              {#if f.readonly_reason_key}
-                <br /><span class="sc-server-settings__reason">{serverKeyText(f.readonly_reason_key)}</span>
-              {/if}
+              {formatValue(field(key)?.value)}
             </dd>
           </div>
         {/each}
+        <div>
+          <dt>{fieldLabel('symlink_policy')}</dt>
+          <dd>
+            <span class="sc-server-settings__reason">{t('settings.readonly_per_share_symlink_policy')}</span>
+          </dd>
+        </div>
       </dl>
-    {/if}
+
+      {#if otherFields.length}
+        <h5 class="sc-admin-section__subhead">{t('settings.settings_sections')}</h5>
+        <dl class="sc-server-settings__other">
+          {#each otherFields as f (f.key)}
+            <div>
+              <dt>{fieldLabel(f.key)}</dt>
+              <dd>
+                {formatValue(f.value)}
+                {#if f.readonly_reason_key}
+                  <br /><span class="sc-server-settings__reason">{serverKeyText(f.readonly_reason_key)}</span>
+                {/if}
+              </dd>
+            </div>
+          {/each}
+        </dl>
+      {/if}
+    </div>
   {/if}
 </section>
-
 <RestartDialog
   open={restartOpen}
   outcome={restartOutcome}
@@ -941,6 +1032,55 @@
 />
 
 <style>
+  .sc-admin-card {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 24px;
+    padding: 24px;
+    border-radius: var(--m3-shape-large);
+    border: 1px solid var(--m3c-outline-variant);
+    background: var(--m3c-surface-container-low);
+    gap: 16px;
+  }
+  .sc-admin-card-head {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .sc-admin-card-icon {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--m3-shape-full);
+    background: var(--m3c-surface-container-highest);
+    color: var(--m3c-primary);
+  }
+  .sc-admin-card-meta {
+    flex: 1;
+    min-width: 0;
+  }
+  .sc-admin-card-title {
+    margin: 0;
+    @apply --m3-title-medium;
+    font-weight: 600;
+  }
+  .sc-admin-card-subtitle {
+    margin: 4px 0 0;
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
+  }
+  @media (max-width: 599.98px) {
+    .sc-admin-card {
+      padding: 16px;
+      gap: 12px;
+    }
+    .sc-admin-card-head {
+      gap: 12px;
+    }
+  }
   .sc-admin-section {
     margin-block: 24px;
   }

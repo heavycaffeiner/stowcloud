@@ -46,6 +46,10 @@
     align-items: center;
     gap: 0.5rem;
     cursor: pointer;
+    flex-shrink: 0;
+  }
+  .row :global(.m3-container) {
+    flex-shrink: 0;
   }
   .row > span {
     @apply --m3-body-medium;

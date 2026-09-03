@@ -33,14 +33,6 @@
       "expires": "2027-08-10"
     },
     {
-      "id": "nav-drawer-icon-column",
-      "layer": "static",
-      "check": "spacing-scale",
-      "selector": "src/lib/ui/NavigationDrawer.svelte#.sc-nav-drawer__list :global(.m3-container.extra-large > .content)#padding-inline-start",
-      "reason": "52px is m3-svelte's own icon column metric for the extra-large NavCMLXItem. Moving it to a scale value would misalign our labels against every framework-rendered row beside them.",
-      "expires": "2027-08-10"
-    },
-    {
       "id": "sr-only-live-regions",
       "layer": "runtime",
       "check": "grid-snap",
@@ -87,14 +79,6 @@
       "check": "padding-asymmetry",
       "selector": ".sc-file-grid__row, .sc-file-grid__group, .sc-file-grid__meta",
       "reason": "Card captions and section labels bind upward to what they describe and separate downward from what follows, so their block padding is intentionally one-sided. Same reasoning as the static waivers on the same selectors.",
-      "expires": "2027-08-10"
-    },
-    {
-      "id": "m3-nav-and-dialog-padding",
-      "layer": "runtime",
-      "check": "padding-asymmetry",
-      "selector": ".m3-container > .rail, .m3-container.extra-large > .content, dialog.m3-container",
-      "reason": "m3-svelte's own navigation rail, drawer item and dialog padding. Their values are the framework's MD3 metrics; changing them means forking the component.",
       "expires": "2027-08-10"
     },
     {
@@ -230,14 +214,6 @@
       "check": "padding-asymmetry",
       "selector": ".sc-tree-row",
       "reason": "A folder tree row indents by depth on the leading side only. Matching that on the trailing side would push the label out of the row instead of showing where it sits in the hierarchy.",
-      "expires": "2027-08-10"
-    },
-    {
-      "id": "m3-button-cross-axis",
-      "layer": "runtime",
-      "check": "sibling-edges",
-      "selector": "button.m3-container",
-      "reason": "m3-svelte centres a button's icon and label on their optical centres rather than on a shared edge, so its two children agree on neither start, end nor centre by our measure. The button's own box is on the grid.",
       "expires": "2027-08-10"
     }
   ]

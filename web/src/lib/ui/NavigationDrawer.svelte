@@ -1,50 +1,58 @@
 <script lang="ts">
-  // NavigationDrawer.svelte — names this in the
-  // component inventory ("navigation" group) and §3 pairs it with NavigationRail
-  // for the ≥905px layout, but nothing built it: the rail listed every
-  // granted root directly, which is fine at two grants and wrong by
-  // construction past a handful (a NavigationBar/Rail is a fixed small set
-  // of destinations, not one item per grant -- see
-  // `web/src/routes/(app)/+layout.svelte`).
-  //
-  // This is where root-switching moved to. Two presentations, exactly
-  // mirroring FileTree.svelte's proven overlay/standard split (same native
-  // `<dialog>` technique for free light-dismiss + focus trap + Escape, same
-  // slide-from-edge motion) rather than inventing a second one:
-  //  - `overlay` (compact, <905px): a modal drawer over the whole app,
-  //    opened by tapping the bottom bar's "Files" item.
-  //  - standard (≥905px): a plain flex sibling next to NavigationRail,
-  //    open by default so switching roots still costs the one click it did
-  //    before this change, not two.
+  // NavigationDrawer.svelte: Google Drive style unified navigation sidebar.
+  // Combines brand title, "+ New" action button, primary destinations,
+  // and expandable root shares into one clean Material 3 drawer.
   import { t } from '../i18n'
   import type { IconifyIcon } from '@iconify/types'
   import IconButton from './IconButton.svelte'
-  import { Icon, NavCMLXItem } from 'm3-svelte'
+  import { Icon, MenuItem } from 'm3-svelte'
+  import Menu from './Menu.svelte'
   import { icons } from '../icons'
+  import { goto } from '$app/navigation'
+  import { page } from '$app/state'
 
-  interface DrawerItem {
+  export interface NavItem {
+    id: string
+    label: string
+    icon: IconifyIcon
+    href?: string
+  }
+  export interface RootItem {
     id: string
     label: string
     icon: IconifyIcon
   }
+  //   /* i18n */ 'nav.folders'
   interface Props {
-    items: DrawerItem[]
-    active: string
-    onselect: (item: DrawerItem) => void
-    /** MD3 modal vs. standard navigation drawer --
-     *  same breakpoint signal FileTree.svelte's `overlay` prop reads. */
+    navItems?: NavItem[]
+    activeNav?: string
+    items?: RootItem[]
+    active?: string
+    onselect?: (item: RootItem) => void
+    onnavselect?: (item: NavItem) => void
     overlay?: boolean
     onclose?: () => void
   }
-  let { items, active, onselect, overlay = false, onclose }: Props = $props()
+
+  let {
+    navItems = [],
+    activeNav = 'files',
+    items = [],
+    active = '',
+    onselect,
+    onnavselect,
+    overlay = false,
+    onclose
+  }: Props = $props()
 
   let dialogEl: HTMLDialogElement | undefined = $state()
+  let filesExpanded = $state(true)
+  let newMenuOpen = $state(false)
+  let newMenuX = $state(0)
+  let newMenuY = $state(0)
 
   $effect(() => {
     if (!overlay || !dialogEl) return
-    // Same rationale as FileTree.svelte: `showModal()` never restores focus
-    // on its own, so the trigger (the bottom bar's "Files" item) has to be
-    // remembered and refocused by hand on close.
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
     dialogEl.showModal()
     return () => {
@@ -56,29 +64,209 @@
   function onDialogClick(e: MouseEvent): void {
     if (e.target === dialogEl) onclose?.()
   }
+
+  function toggleNewMenu(e: MouseEvent): void {
+    if (newMenuOpen) {
+      newMenuOpen = false
+      return
+    }
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    newMenuX = rect.left
+    newMenuY = rect.bottom + 4
+    newMenuOpen = true
+  }
+
+  function triggerNew(action: 'folder' | 'file' | 'upload-folder'): void {
+    newMenuOpen = false
+    if (overlay) onclose?.()
+    if (!page.url.pathname.startsWith('/b')) {
+      void goto('/b').then(() => {
+        setTimeout(() => window.dispatchEvent(new CustomEvent(`sc:${action}`)), 100)
+      })
+    } else {
+      window.dispatchEvent(new CustomEvent(`sc:${action}`))
+    }
+  }
+
+  function handleFilesClick(): void {
+    if (items.length > 0 && !active) {
+      onselect?.(items[0])
+    } else {
+      onnavselect?.({ id: 'files', label: t('nav.files'), icon: icons.home, href: '/b' })
+    }
+    if (overlay) onclose?.()
+  }
+
+  function handleNavClick(item: NavItem): void {
+    onnavselect?.(item)
+    if (overlay) onclose?.()
+  }
 </script>
 
-{#snippet list()}
+{#snippet content()}
+  <!-- Top brand header (desktop only, overlay has its own header) -->
+  {#if !overlay}
+    <div class="sc-nav-drawer__brand">
+      <span class="sc-nav-drawer__logo"><Icon icon={icons.home} size={24} /></span>
+      <span class="sc-nav-drawer__app-name">Stowcloud</span>
+    </div>
+  {/if}
+
+  <!-- Google Drive "+ New" Extended FAB button -->
+  <div class="sc-nav-drawer__new-wrap">
+    <button
+      type="button"
+      class="sc-nav-drawer__new-btn"
+      onclick={toggleNewMenu}
+      aria-haspopup="true"
+      aria-expanded={newMenuOpen}
+    >
+      <span class="sc-nav-drawer__new-icon"><Icon icon={icons.add} size={24} /></span>
+      <span class="sc-nav-drawer__new-text">{t('common.add')}</span>
+    </button>
+  </div>
+
+  <Menu open={newMenuOpen} onclose={() => (newMenuOpen = false)} x={newMenuX} y={newMenuY}>
+    <MenuItem icon={icons.folder} onclick={() => triggerNew('folder')}>
+      {t('common.new_folder')}
+    </MenuItem>
+    <MenuItem icon={icons.upload} onclick={() => triggerNew('file')}>
+      {t('common.upload')}
+    </MenuItem>
+    <MenuItem icon={icons['upload-folder']} onclick={() => triggerNew('upload-folder')}>
+      {t('browse.upload_folder')}
+    </MenuItem>
+  </Menu>
+
+  <!-- Main Navigation Destinations -->
   <ul class="sc-nav-drawer__list">
-    {#each items as item (item.id)}
-      <li>
-        <!-- MD3's navigation-drawer item is exactly `NavCMLXItem`'s
-             `extra-large` variant (56dp, horizontal, full-shape
-             `secondary-container` pill), so the framework draws it.
-             `disabled={false}` overrides its own `disabled={selected}` -- on a
-             phone, re-picking the root you're already in is how this modal
-             drawer gets dismissed. -->
-        <NavCMLXItem
-          variant="extra-large"
-          icon={item.icon}
-          text={item.label}
-          selected={item.id === active}
-          disabled={false}
-          onclick={() => onselect(item)}
-          aria-current={item.id === active ? 'page' : undefined}
-        />
+    <!-- Files destination with expandable root shares -->
+    <li class="sc-nav-drawer__entry">
+      <div
+        class="sc-nav-drawer__item"
+        class:sc-nav-drawer__item--active={activeNav === 'files'}
+      >
+        {#if items.length > 0}
+          <button
+            type="button"
+            class="sc-nav-drawer__twisty"
+            class:sc-nav-drawer__twisty--expanded={filesExpanded}
+            aria-label={t('nav.switch_folder')}
+            onclick={(e) => {
+              e.stopPropagation()
+              filesExpanded = !filesExpanded
+            }}
+          >
+            <Icon icon={icons['chevron-right']} size={16} />
+          </button>
+        {/if}
+        <button
+          type="button"
+          class="sc-nav-drawer__item-btn"
+          class:sc-nav-drawer__item-btn--with-twisty={items.length > 0}
+          onclick={handleFilesClick}
+        >
+          <span class="sc-nav-drawer__item-icon"><Icon icon={icons.home} size={20} /></span>
+          <span class="sc-nav-drawer__item-label">{t('nav.files')}</span>
+        </button>
+      </div>
+
+      {#if filesExpanded && items.length > 0}
+        <ul class="sc-nav-drawer__sublist">
+          {#each items as root (root.id)}
+            <li>
+              <button
+                type="button"
+                class="sc-nav-drawer__subitem"
+                class:sc-nav-drawer__subitem--active={active === root.id}
+                onclick={() => {
+                  onselect?.(root)
+                  if (overlay) onclose?.()
+                }}
+              >
+                <span class="sc-nav-drawer__indent" aria-hidden="true"></span>
+                <span class="sc-nav-drawer__item-icon"><Icon icon={icons.folder} size={18} /></span>
+                <span class="sc-nav-drawer__subitem-label sc-filename">{root.label}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </li>
+
+    <!-- Recent -->
+    <li class="sc-nav-drawer__entry">
+      <div
+        class="sc-nav-drawer__item"
+        class:sc-nav-drawer__item--active={activeNav === 'recent'}
+      >
+        <button
+          type="button"
+          class="sc-nav-drawer__item-btn"
+          onclick={() => handleNavClick({ id: 'recent', label: t('nav.recent'), icon: icons.recent, href: '/recent' })}
+        >
+          <span class="sc-nav-drawer__item-icon"><Icon icon={icons.recent} size={20} /></span>
+          <span class="sc-nav-drawer__item-label">{t('nav.recent')}</span>
+        </button>
+      </div>
+    </li>
+
+    <!-- Trash -->
+    <li class="sc-nav-drawer__entry">
+      <div
+        class="sc-nav-drawer__item"
+        class:sc-nav-drawer__item--active={activeNav === 'trash'}
+      >
+        <button
+          type="button"
+          class="sc-nav-drawer__item-btn"
+          onclick={() => handleNavClick({ id: 'trash', label: t('common.trash'), icon: icons.trash, href: '/trash' })}
+        >
+          <span class="sc-nav-drawer__item-icon"><Icon icon={icons.trash} size={20} /></span>
+          <span class="sc-nav-drawer__item-label">{t('common.trash')}</span>
+        </button>
+      </div>
+    </li>
+
+    <li class="sc-nav-drawer__divider-entry" role="separator">
+      <hr class="sc-nav-drawer__divider" />
+    </li>
+
+    <!-- Admin (if present in navItems) -->
+    {#if navItems.some((n) => n.id === 'admin')}
+      <li class="sc-nav-drawer__entry">
+        <div
+          class="sc-nav-drawer__item"
+          class:sc-nav-drawer__item--active={activeNav === 'admin'}
+        >
+          <button
+            type="button"
+            class="sc-nav-drawer__item-btn"
+            onclick={() => handleNavClick({ id: 'admin', label: t('nav.admin'), icon: icons.admin, href: '/admin' })}
+          >
+            <span class="sc-nav-drawer__item-icon"><Icon icon={icons.admin} size={20} /></span>
+            <span class="sc-nav-drawer__item-label">{t('nav.admin')}</span>
+          </button>
+        </div>
       </li>
-    {/each}
+    {/if}
+
+    <!-- Settings -->
+    <li class="sc-nav-drawer__entry">
+      <div
+        class="sc-nav-drawer__item"
+        class:sc-nav-drawer__item--active={activeNav === 'settings'}
+      >
+        <button
+          type="button"
+          class="sc-nav-drawer__item-btn"
+          onclick={() => handleNavClick({ id: 'settings', label: t('common.settings'), icon: icons.settings, href: '/settings' })}
+        >
+          <span class="sc-nav-drawer__item-icon"><Icon icon={icons.settings} size={20} /></span>
+          <span class="sc-nav-drawer__item-label">{t('common.settings')}</span>
+        </button>
+      </div>
+    </li>
   </ul>
 {/snippet}
 
@@ -86,23 +274,23 @@
   <dialog
     bind:this={dialogEl}
     class="sc-nav-drawer sc-nav-drawer--overlay"
-    aria-label={t('nav.switch_folder')}
+    aria-label={t('common.main_menu')}
     onclick={onDialogClick}
     onclose={() => onclose?.()}
     oncancel={() => onclose?.()}
   >
     <div class="sc-nav-drawer__overlay-header">
-      <span class="sc-nav-drawer__title">{t('nav.folders')}</span>
+      <div class="sc-nav-drawer__brand">
+        <span class="sc-nav-drawer__logo"><Icon icon={icons.home} size={24} /></span>
+        <span class="sc-nav-drawer__app-name">Stowcloud</span>
+      </div>
       <IconButton label={t('common.close')} onclick={() => onclose?.()}><Icon icon={icons.close} /></IconButton>
     </div>
-    {@render list()}
+    {@render content()}
   </dialog>
 {:else}
-  <nav class="sc-nav-drawer" aria-label={t('nav.switch_folder')}>
-    <div class="sc-nav-drawer__header">
-      <span class="sc-nav-drawer__title">{t('nav.folders')}</span>
-    </div>
-    {@render list()}
+  <nav class="sc-nav-drawer" aria-label={t('common.main_menu')}>
+    {@render content()}
   </nav>
 {/if}
 
@@ -112,152 +300,225 @@
     overflow-y: auto;
     background: var(--m3c-surface-container-low);
     border-right: 1px solid var(--m3c-outline-variant);
-    /* Was `flex: 0 0 280px; height: 100%` -- a flex-row sibling of `<main>`,
-       matching NavigationRail.svelte's own (now-fixed) mistake. See that
-       file's comment for the full reasoning: a plain flex sibling sits in
-       normal document flow and scrolls away with a long list the instant
-       the document itself became the scroller. `position: fixed`, pinned
-       just right of the rail (`left`), fixes it the same way.
-       The `overlay` variant below already overrides `position`/`left`/
-       `height` (`.sc-nav-drawer--overlay`, later in this file, wins the
-       cascade for those on the combined-class element), so this only ever
-       applies to the standard (docked, ≥905px) drawer. */
     position: fixed;
     top: 0;
-    left: var(--sc-nav-rail-width);
+    left: 0;
     height: 100vh;
     height: 100dvh;
-    z-index: 1;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
   }
-  .sc-nav-drawer__header,
+  .sc-nav-drawer__brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 64px;
+    padding-inline: 16px;
+    flex: none;
+  }
+  .sc-nav-drawer__logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--m3c-primary);
+  }
+  .sc-nav-drawer__app-name {
+    @apply --m3-title-medium;
+    font-weight: 600;
+    color: var(--m3c-on-surface);
+  }
   .sc-nav-drawer__overlay-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 56px;
+    height: 64px;
     padding-inline: 16px;
-  }
-  .sc-nav-drawer__overlay-header {
-    position: sticky;
-    top: 0;
-    /* `box-shadow`, not `border-bottom`: a border sits inside the border box,
-       so the `height: 56px` above left 55px of content and centred the 40px
-       close button on a half pixel. A shadow paints outside the box and costs
-       no layout height. FileTree.svelte's overlay header does the same. */
     box-shadow: 0 1px 0 var(--m3c-outline-variant);
     background: var(--m3c-surface-container-low);
+    flex: none;
   }
-  .sc-nav-drawer__title {
-    @apply --m3-title-small;
+  .sc-nav-drawer__new-wrap {
+    padding: 16px;
+    flex: none;
+  }
+  .sc-nav-drawer__new-btn {
+    height: 56px;
+    padding: 0 16px;
+    border-radius: 16px;
+    border: none;
+    background: var(--m3c-surface-container-high);
+    color: var(--m3c-on-surface);
+    box-shadow: var(--m3-elevation-1);
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    @apply --m3-label-large;
     font-weight: 600;
-    color: var(--m3c-on-surface-variant);
+    font-size: 14px;
+    transition: background var(--m3-duration-fast) var(--m3-easing), box-shadow var(--m3-duration-fast) var(--m3-easing);
+  }
+  .sc-nav-drawer__new-btn:hover {
+    background: var(--m3c-surface-container-highest);
+    box-shadow: var(--m3-elevation-2);
+  }
+  .sc-nav-drawer__new-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--m3c-primary);
+  }
+  .sc-nav-drawer__new-text {
+    white-space: nowrap;
   }
   .sc-nav-drawer__list {
     list-style: none;
     margin: 0;
-    /* No inline padding: `NavCMLXItem`'s extra-large variant insets its own
-       pill by 20px, so adding more here would double-inset it. */
     padding: 8px 0;
     display: flex;
     flex-direction: column;
-  }
-  /* `NavCMLXItem` renders its label as a bare text node inside a flex box, so
-     the run of text becomes an *anonymous* flex item — unreachable by any
-     selector, and `text-overflow` is not inherited, so it kept its initial
-     `clip` and a long root label was cut mid-glyph.
-     Making `.content` a block container puts the label back in normal inline
-     flow, where `text-overflow` does apply; the icon is the only other child,
-     so it goes out of flow at the inline start it already sat at (16px, the
-     framework's own `padding-inline`) and `line-height` takes over the
-     vertical centring the flex box was doing.
-     `flex: 1` while we are here: the framework shrink-wraps the pill, but
-     MD3's navigation-drawer active indicator spans the track. `min-width: 0`
-     because a flex item's `auto` minimum is its longest unbreakable run —
-     which for `white-space: nowrap` is the whole label, i.e. exactly the
-     shrink the ellipsis needs.
-     Matched through `.extra-large` — the variant this drawer passes — because
-     the framework's own rule for these two declarations is nested
-     (`.m3-container .content`, four classes once Svelte has scoped both ends)
-     and a plainer selector here loses the cascade to it. */
-  .sc-nav-drawer__list :global(.m3-container.extra-large > .content) {
-    display: block;
+    gap: 4px;
     flex: 1;
-    min-width: 0;
-    padding-inline-start: 52px;
-    line-height: 3.5rem;
-    /* The UA stylesheet centres text in a `<button>`; a shrink-wrapped flex
-       item had nowhere to centre it, a full-width block does. */
-    text-align: start;
+  }
+  .sc-nav-drawer__entry {
+    margin: 0;
+  }
+  .sc-nav-drawer__item {
+    height: 48px;
+    margin: 0 12px;
+    border-radius: var(--m3-shape-full);
+    display: flex;
+    align-items: center;
+    position: relative;
+    overflow: hidden;
+    color: var(--m3c-on-surface-variant);
+    transition: background var(--m3-duration-fast) var(--m3-easing);
+  }
+  .sc-nav-drawer__item:hover {
+    background: var(--m3c-surface-container-highest);
+  }
+  .sc-nav-drawer__item--active {
+    background: var(--m3c-secondary-container);
+    color: var(--m3c-on-secondary-container);
+    font-weight: 600;
+  }
+  .sc-nav-drawer__item--active:hover {
+    background: var(--m3c-secondary-container);
+  }
+  .sc-nav-drawer__twisty {
+    width: 32px;
+    height: 32px;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    border-radius: var(--m3-shape-full);
+    cursor: pointer;
+    color: inherit;
+    flex: none;
+    transition: rotate var(--m3-duration-fast) var(--m3-easing);
+  }
+  .sc-nav-drawer__twisty--expanded {
+    rotate: 90deg;
+  }
+  .sc-nav-drawer__item-btn {
+    flex: 1;
+    height: 100%;
+    border: none;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+    border-radius: var(--m3-shape-full);
+    cursor: pointer;
+    color: inherit;
+    text-align: left;
+    @apply --m3-label-large;
+    overflow: hidden;
+  }
+  .sc-nav-drawer__item-btn--with-twisty {
+    padding: 0 12px;
+  }
+  .sc-nav-drawer__item-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+  .sc-nav-drawer__item-label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* `NavCMLXItem` renders a `<button>`, and a button's `auto` width is
-     shrink-to-fit even once `display: flex` has made it block-level — so
-     without this the item grew past the 280px track instead of the label
-     truncating inside it, and the drawer got a horizontal scrollbar. */
-  .sc-nav-drawer__list :global(.m3-container) {
-    width: 100%;
+  .sc-nav-drawer__sublist {
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
-  .sc-nav-drawer__list :global(.m3-container.extra-large > .content > .icon) {
-    position: absolute;
-    inset-inline-start: 16px;
-    inset-block: 0;
+  .sc-nav-drawer__indent {
+    width: 16px;
+    flex: none;
   }
-
+  .sc-nav-drawer__subitem {
+    height: 40px;
+    margin: 0 12px;
+    padding: 0 12px;
+    border-radius: var(--m3-shape-full);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    width: calc(100% - 24px);
+    color: var(--m3c-on-surface-variant);
+    @apply --m3-body-medium;
+    text-align: left;
+    transition: background var(--m3-duration-fast) var(--m3-easing);
+  }
+  .sc-nav-drawer__subitem:hover {
+    background: var(--m3c-surface-container-highest);
+  }
+  .sc-nav-drawer__subitem--active {
+    background: var(--m3c-primary-container-subtle);
+    color: var(--m3c-primary);
+    font-weight: 600;
+  }
+  .sc-nav-drawer__subitem-label {
+    flex: 1;
+    min-width: 0;
+  }
+  .sc-nav-drawer__divider-entry {
+    margin: 8px 0;
+  }
+  .sc-nav-drawer__divider {
+    width: 224px;
+    margin: 0 auto;
+    border: none;
+    border-top: 1px solid var(--m3c-outline-variant);
+  }
   .sc-nav-drawer--overlay {
     position: fixed;
-    /* Stop above the bottom NavigationBar instead of running the full
-       height behind it -- a `<dialog>` paints in the top layer, above
-       everything, so a full-height overlay hid the bar's own content while
-       still leaving its row of the screen visually claimed by both at once
-       (the bar's icons showed through the undimmed strip to its right).
-       Same bar-height formula NavigationBar.svelte uses for its own height,
-       so the two agree on who owns the bottom of the screen without either
-       hardcoding the other's size. */
     top: 0;
     bottom: calc(var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px));
-    /* `.sc-nav-drawer` (the class this shares with the standard variant)
-       sets `height: 100%` for its own flex-sibling layout. Left alone here,
-       that over-constrains an absolutely-positioned box that also has
-       `top` and `bottom` set -- per CSS's abspos sizing rules, an explicit
-       height wins and `bottom` above is silently dropped from the solved
-       layout (though it still reports back from `getComputedStyle`, which
-       is what made this look correct until it was actually measured). Auto
-       height is what lets both insets hold at once. */
-    height: auto;
     inset-inline-start: 0;
     margin: 0;
-    /* MD3 modal navigation drawer: capped at 360dp, and the scrim behind it
-       has to stay a usable dismiss target -- `min(320px, 85vw)` had neither
-       property in any way that helped: 320px alone still measured ~83% of
-       a real phone's width (leaving only a ~65px sliver of scrim), and the
-       85vw term never bound anything narrower than that on a phone-sized
-       viewport. 280px matches the *standard* (>=905px) drawer's own fixed
-       width one component down in this file -- same panel size in both
-       presentations, just modal vs. docked -- and reserving 56px of
-       viewport for the scrim (MD3's usual minimum reveal for a modal
-       drawer) keeps a real tap target even on the narrowest phones where
-       280px alone wouldn't leave one. Comfortably inside the 360dp cap
-       either way. */
     max-width: min(var(--sc-nav-drawer-width), calc(100vw - 56px));
     width: 100%;
     padding: 0;
-    /* A `<dialog>` ships a UA-default border (Chrome: 3px solid, colour
-       `currentColor` -- inherited page text colour, near-white in dark
-       theme) that nothing here was resetting; only `border-right` was ever
-       overridden for the side that touches the flush edge. The other three
-       sides kept rendering that default -- the "bright 2-3px strip" the
-       drawer's top edge showed above an otherwise dark UI was this, not a
-       backdrop or background gap. */
     border: none;
     box-shadow: var(--m3-elevation-2);
-    /* Same MD3 modal-drawer slide-in-from-edge as FileTree.svelte, same
-       `@starting-style` + `allow-discrete` technique so the exit animates
-       too instead of the hard cut a native `<dialog>` gives for free. */
     translate: 0 0;
     transition:
-      translate var(--m3-easing),
+      translate var(--m3-duration) var(--m3-easing),
       display var(--m3-duration) allow-discrete,
       overlay var(--m3-duration) allow-discrete;
   }
@@ -272,7 +533,7 @@
   .sc-nav-drawer--overlay::backdrop {
     background: color-mix(in srgb, var(--m3c-scrim) 32%, transparent);
     transition:
-      background-color var(--m3-easing),
+      background-color var(--m3-duration) var(--m3-easing),
       display var(--m3-duration) allow-discrete,
       overlay var(--m3-duration) allow-discrete;
   }

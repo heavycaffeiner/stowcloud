@@ -30,18 +30,18 @@
   import { replaceState } from '$app/navigation'
   import { page } from '$app/state'
   import { VariableTabs } from 'm3-svelte'
+  import { icons } from '../../../lib/icons'
   import { authState } from '../../../lib/state/auth.svelte'
   import { syncTabHash } from '../../../lib/state/tab-hash'
-
   const user = $derived(authState.session?.user ?? null)
   const isAdmin = $derived(user?.is_admin ?? false)
 
   const tabs = [
-    { name: t('common.user_2'), value: 'users' },
-    { name: t('common.share'), value: 'shares' },
-    { name: t('common.storage'), value: 'storage' },
-    { name: t('admin.server'), value: 'server' },
-    { name: t('common.audit_log'), value: 'audit' }
+    { name: t('common.user_2'), value: 'users', icon: icons.admin },
+    { name: t('common.share'), value: 'shares', icon: icons.folder },
+    { name: t('common.storage'), value: 'storage', icon: icons.grid },
+    { name: t('admin.server'), value: 'server', icon: icons.settings },
+    { name: t('common.audit_log'), value: 'audit', icon: icons.recent }
   ]
 
   const TAB_VALUES = tabs.map((t) => t.value)

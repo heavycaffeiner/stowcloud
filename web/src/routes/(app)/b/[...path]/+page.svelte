@@ -353,6 +353,20 @@
    *  real bite out of a phone/tablet width (§3). */
   let treeOpen = $state(false)
 
+  $effect(() => {
+    const onNewFolder = () => { newFolderOpen = true }
+    const onUploadFile = () => { onUploadClick() }
+    const onUploadDir = () => { onUploadFolderClick() }
+    window.addEventListener('sc:folder', onNewFolder)
+    window.addEventListener('sc:file', onUploadFile)
+    window.addEventListener('sc:upload-folder', onUploadDir)
+    return () => {
+      window.removeEventListener('sc:folder', onNewFolder)
+      window.removeEventListener('sc:file', onUploadFile)
+      window.removeEventListener('sc:upload-folder', onUploadDir)
+    }
+  })
+
   function openContextMenu(entry: Entry, e: MouseEvent): void {
     // Right-clicking a row that is not in the selection makes it the selection,
     // which is what every file manager does and what keeps this menu and the
@@ -1160,7 +1174,7 @@
       <FileTree
         currentPath={path}
         onnavigate={(p) => goto(`/b${p}`)}
-        overlay={uiState.compact}
+        overlay={true}
         onclose={() => (treeOpen = false)}
       />
     {/if}

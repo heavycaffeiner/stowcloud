@@ -323,3 +323,22 @@ Mobile interactions across viewports below 905px and below 600px are refined to 
    - No mock-only, fabricated, or non-functional settings exist in the interface.
    - Data displayed across the application is strictly verified against real HTTP endpoints (`web/src/lib/api/http.ts`) rather than client-side mock artifacts (`mock.ts`).
    - No view introduces controls or displays that rely on mock-only data shapes.
+
+### 4.5 Admin Server Settings Alignment and Clean Architecture
+
+1. Eradication of Obsolete Configuration References:
+   - All references to `sc.toml` across interface copy, tooltips, and locale catalogs have been eliminated.
+   - Server configuration is grounded entirely on the database-backed v1 settings endpoints (`GET /api/v1/admin/settings` and `PATCH /api/v1/admin/settings/{section}`).
+   - Path read-only hints accurately describe process arguments and container mounts rather than file editing.
+
+2. Material 3 Admin Cards Architecture:
+   - Admin server settings are reorganized into dedicated M3 container cards (`.sc-admin-card`) with 40px icon badges, clean headers, 16px responsive padding below 600px, and inline save outcomes.
+   - Sections include SMB, Search, Zip Download, Network, Database & Size Guard, Home Folders, Request Rate Limiting, File Watching, Single Sign-On (OIDC), and Runtime Storage Paths.
+   - Navigation tabs on `/admin` are enhanced with contextual Material Symbols (`admin`, `folder`, `grid`, `settings`, `recent`).
+
+3. Unified Google Drive Navigation Drawer:
+   - The cramped multi-sidebar layout (96px rail beside a 280px drawer beside a 240px docked tree) is replaced by a single unified 256px Navigation Drawer.
+   - Header displays the brand logo and title.
+   - Prominent Material 3 Extended FAB "+ New" button offers immediate folder creation and file/folder upload across the application.
+   - "Files" destination integrates expandable root folder shares directly inside the sidebar with active pill indicators and folder icons.
+   - Browse file views dedicate full width to file table and grid presentations without duplicate docked panels.

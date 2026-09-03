@@ -9,7 +9,6 @@
   import { goto } from '$app/navigation'
   import { Snackbar as M3Snackbar } from 'm3-svelte'
   import { icons } from '../../lib/icons'
-  import NavigationRail from '../../lib/ui/NavigationRail.svelte'
   import NavigationBar from '../../lib/ui/NavigationBar.svelte'
   import NavigationDrawer from '../../lib/ui/NavigationDrawer.svelte'
   import ProgressCircular from '../../lib/ui/ProgressCircular.svelte'
@@ -152,17 +151,21 @@
     if (authState.screen === 'login') void goto('/login', { replaceState: true })
     else if (authState.screen === 'first-run') void goto('/setup', { replaceState: true })
   })
-
   function navigateTo(id: string) {
     if (id === 'files') {
-      // Not a route -- "Files" reveals the root list rather than jumping to
-      // one root, since there's no single canonical destination it could
-      // navigate to that wouldn't strand the other grants again.
-      setDrawerOpen(!drawerOpen)
+      if (uiState.compact) {
+        setDrawerOpen(!drawerOpen)
+        return
+      }
+      if (rootItems.length > 0) {
+        void goto(`/b/${encodeURIComponent(rootItems[0].id)}`)
+      } else {
+        void goto('/b')
+      }
       return
     }
     const item = navItems.find((n) => n.id === id)
-    if (item && 'href' in item && item.href) goto(item.href)
+    if (item && 'href' in item && item.href) void goto(item.href)
   }
 
   // The tray stack and the browse page's FAB are both fixed to the bottom
@@ -209,22 +212,34 @@
 {#if authState.screen === 'browser'}
   <div class="sc-app-shell" class:sc-app-shell--compact={uiState.compact}>
     {#if !uiState.compact}
-      <NavigationRail items={navItems} active={activeNav} onselect={navigateTo} />
-      {#if drawerOpen}
-        <NavigationDrawer items={rootItems} active={currentRoot ?? ''} onselect={selectRoot} onclose={() => setDrawerOpen(false)} />
-      {/if}
+      <NavigationDrawer
+        {navItems}
+        {activeNav}
+        items={rootItems}
+        active={currentRoot ?? ''}
+        onselect={selectRoot}
+        onnavselect={(item) => navigateTo(item.id)}
+      />
     {/if}
     <main
       class="sc-app-shell__main"
-      class:sc-app-shell__main--rail={!uiState.compact}
-      class:sc-app-shell__main--drawer-open={!uiState.compact && drawerOpen}
+      class:sc-app-shell__main--drawer={!uiState.compact}
     >
       {@render children()}
     </main>
     {#if uiState.compact}
       <NavigationBar items={navItems} active={activeNav} onselect={navigateTo} />
       {#if drawerOpen}
-        <NavigationDrawer items={rootItems} active={currentRoot ?? ''} onselect={selectRoot} overlay onclose={() => (drawerOpen = false)} />
+        <NavigationDrawer
+          {navItems}
+          {activeNav}
+          items={rootItems}
+          active={currentRoot ?? ''}
+          onselect={selectRoot}
+          onnavselect={(item) => navigateTo(item.id)}
+          overlay
+          onclose={() => (drawerOpen = false)}
+        />
       {/if}
     {/if}
   </div>
@@ -323,23 +338,10 @@
        the reservation can't drift from it. */
     padding-bottom: calc(var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px));
   }
-  .sc-app-shell__main--rail {
-    /* Standard (≥905px) width: `NavigationRail` is `position: fixed` for
-       the exact same reason `NavigationBar` is (see that component's own
-       comment) -- once the document can scroll past one screen, a rail
-       that's merely a flex sibling scrolls away with everything else
-       instead of staying put, which a real device has no way to reveal
-       again short of scrolling all the way back up. Fixed takes it out of
-       flow, so this reserves its `--sc-nav-rail-width` the same way the
-       compact rule above reserves the bottom bar's height. */
-    padding-left: var(--sc-nav-rail-width);
-  }
-  .sc-app-shell__main--drawer-open {
-    /* `NavigationDrawer`'s standard (docked) variant is `position: fixed`
-       too, immediately right of the rail -- same reasoning, same fix. Its
-       width replaces (not adds to) the rail's own reservation above since
-       the drawer already starts past the rail's right edge. */
-    padding-left: calc(var(--sc-nav-rail-width) + var(--sc-nav-drawer-width));
+  .sc-app-shell__main--drawer {
+    /* Standard (>=905px) width: Google Drive unified sidebar docked at left: 0
+       with width var(--sc-nav-drawer-width), so main reserves only this width. */
+    padding-left: var(--sc-nav-drawer-width);
   }
   .sc-tray-stack {
     /* Carries the fixed/right/bottom/z-index that used to live directly on

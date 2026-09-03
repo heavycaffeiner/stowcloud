@@ -46,57 +46,56 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Brand theme. Generated once from seed #3F6C4F with m3-svelte's own
-   `genCSS` (SchemeTonalSpot, contrast 0) — the framework's documented static
-   snippet, not a build step. Regenerate by hand if the brand colour changes.
+   Brand theme. Generated from seed #0B57D0 (Google Material You) with
+   m3-svelte's genCSS (SchemeTonalSpot, contrast 0).
    --------------------------------------------------------------------------- */
 :root {
   color-scheme: light dark;
 }
 @layer tokens {
   :root {
-    --m3c-surface: light-dark(#f6fbf3, #0f1511);
-    --m3c-surface-dim: light-dark(#d6dbd4, #0f1511);
-    --m3c-surface-bright: light-dark(#f6fbf3, #353b36);
-    --m3c-surface-container-lowest: light-dark(#fff, #0a0f0c);
-    --m3c-surface-container-low: light-dark(#f0f5ee, #181d19);
-    --m3c-surface-container: light-dark(#eaefe8, #1c211d);
-    --m3c-surface-container-high: light-dark(#e5eae2, #262b27);
-    --m3c-surface-container-highest: light-dark(#dfe4dd, #313631);
-    --m3c-on-surface: light-dark(#181d19, #dfe4dd);
-    --m3c-on-surface-variant: light-dark(#414942, #c0c9c0);
-    --m3c-outline: light-dark(#717971, #8a938b);
-    --m3c-outline-variant: light-dark(#c0c9c0, #414942);
-    --m3c-inverse-surface: light-dark(#2c322d, #dfe4dd);
-    --m3c-inverse-on-surface: light-dark(#edf2eb, #2c322d);
-    --m3c-primary: light-dark(#2b6a46, #94d5a9);
-    --m3c-primary-dim: light-dark(#1e5e3b, #aff1c3);
-    --m3c-on-primary: light-dark(#fff, #00391e);
-    --m3c-primary-container: light-dark(#aff1c3, #0d5130);
-    --m3c-on-primary-container: light-dark(#0d5130, #aff1c3);
-    --m3c-primary-fixed: #aff1c3;
-    --m3c-primary-fixed-dim: #94d5a9;
-    --m3c-on-primary-fixed: #00210f;
-    --m3c-on-primary-fixed-variant: #0d5130;
-    --m3c-inverse-primary: light-dark(#94d5a9, #2b6a46);
-    --m3c-secondary: light-dark(#4f6354, #b5ccb9);
-    --m3c-secondary-dim: light-dark(#435748, #d1e8d5);
-    --m3c-on-secondary: light-dark(#fff, #213527);
-    --m3c-secondary-container: light-dark(#d1e8d5, #374b3d);
-    --m3c-on-secondary-container: light-dark(#374b3d, #d1e8d5);
-    --m3c-secondary-fixed: #d1e8d5;
-    --m3c-secondary-fixed-dim: #b5ccb9;
-    --m3c-on-secondary-fixed: #0c1f13;
-    --m3c-on-secondary-fixed-variant: #374b3d;
-    --m3c-tertiary: light-dark(#3b6470, #a3cddb);
-    --m3c-tertiary-dim: light-dark(#2e5864, #beeaf7);
-    --m3c-on-tertiary: light-dark(#fff, #033640);
-    --m3c-tertiary-container: light-dark(#beeaf7, #214c58);
-    --m3c-on-tertiary-container: light-dark(#214c58, #beeaf7);
-    --m3c-tertiary-fixed: #beeaf7;
-    --m3c-tertiary-fixed-dim: #a3cddb;
-    --m3c-on-tertiary-fixed: #001f26;
-    --m3c-on-tertiary-fixed-variant: #214c58;
+    --m3c-surface: light-dark(#faf8ff, #121318);
+    --m3c-surface-dim: light-dark(#dad9e0, #121318);
+    --m3c-surface-bright: light-dark(#faf8ff, #38393f);
+    --m3c-surface-container-lowest: light-dark(#fff, #0d0e13);
+    --m3c-surface-container-low: light-dark(#f4f3fa, #1a1b21);
+    --m3c-surface-container: light-dark(#eeedf4, #1e1f25);
+    --m3c-surface-container-high: light-dark(#e8e7ef, #282a2f);
+    --m3c-surface-container-highest: light-dark(#e2e2e9, #33343a);
+    --m3c-on-surface: light-dark(#1a1b21, #e2e2e9);
+    --m3c-on-surface-variant: light-dark(#45464f, #c5c6d0);
+    --m3c-outline: light-dark(#757780, #8f909a);
+    --m3c-outline-variant: light-dark(#c5c6d0, #45464f);
+    --m3c-inverse-surface: light-dark(#2f3036, #e2e2e9);
+    --m3c-inverse-on-surface: light-dark(#f1f0f7, #2f3036);
+    --m3c-primary: light-dark(#0b57d0, #a8c7fa);
+    --m3c-primary-dim: light-dark(#0842a0, #b2c5ff);
+    --m3c-on-primary: light-dark(#fff, #062e6f);
+    --m3c-primary-container: light-dark(#d3e3fd, #0842a0);
+    --m3c-on-primary-container: light-dark(#041e49, #d3e3fd);
+    --m3c-primary-fixed: #dae2ff;
+    --m3c-primary-fixed-dim: #b2c5ff;
+    --m3c-on-primary-fixed: #001847;
+    --m3c-on-primary-fixed-variant: #304578;
+    --m3c-inverse-primary: light-dark(#a8c7fa, #0b57d0);
+    --m3c-secondary: light-dark(#00639b, #7fcfff);
+    --m3c-secondary-dim: light-dark(#004a77, #dce2f9);
+    --m3c-on-secondary: light-dark(#fff, #003355);
+    --m3c-secondary-container: light-dark(#c2e7ff, #004a77);
+    --m3c-on-secondary-container: light-dark(#001d35, #c2e7ff);
+    --m3c-secondary-fixed: #dce2f9;
+    --m3c-secondary-fixed-dim: #c0c6dd;
+    --m3c-on-secondary-fixed: #151b2c;
+    --m3c-on-secondary-fixed-variant: #404659;
+    --m3c-tertiary: light-dark(#735471, #e1bbdd);
+    --m3c-tertiary-dim: light-dark(#664965, #f5cef1);
+    --m3c-on-tertiary: light-dark(#fff, #412741);
+    --m3c-tertiary-container: light-dark(#fed7f9, #5a3d59);
+    --m3c-on-tertiary-container: light-dark(#5a3d59, #fed7f9);
+    --m3c-tertiary-fixed: #fed7f9;
+    --m3c-tertiary-fixed-dim: #e1bbdd;
+    --m3c-on-tertiary-fixed: #2b122b;
+    --m3c-on-tertiary-fixed-variant: #5a3d59;
     --m3c-error: light-dark(#ba1a1a, #ffb4ab);
     --m3c-error-dim: light-dark(#a80710, #ff554a);
     --m3c-on-error: light-dark(#fff, #690005);
@@ -104,13 +103,13 @@
     --m3c-on-error-container: light-dark(#93000a, #ffdad6);
     --m3c-shadow: #000;
     --m3c-scrim: #000;
-    --m3c-on-on-primary: light-dark(#306e49, #7ebe93);
-    --m3c-primary-container-subtle: light-dark(#a7e9bb, #004324);
-    --m3c-on-primary-container-subtle: light-dark(#165735, #8aca9f);
-    --m3c-secondary-container-subtle: light-dark(#c9e0cd, #2a3e30);
-    --m3c-on-secondary-container-subtle: light-dark(#3d5143, #abc2af);
-    --m3c-tertiary-container-subtle: light-dark(#b6e1ef, #103f49);
-    --m3c-on-tertiary-container-subtle: light-dark(#28525e, #99c3d0);
+    --m3c-on-on-primary: light-dark(#0b57d0, #a8c7fa);
+    --m3c-primary-container-subtle: light-dark(#ced9ff, #22376a);
+    --m3c-on-primary-container-subtle: light-dark(#364b7f, #a6bbf6);
+    --m3c-secondary-container-subtle: light-dark(#c2e7ff, #003355);
+    --m3c-on-secondary-container-subtle: light-dark(#001d35, #c2e7ff);
+    --m3c-tertiary-container-subtle: light-dark(#f5cef1, #4b304b);
+    --m3c-on-tertiary-container-subtle: light-dark(#60435f, #d6b1d2);
     --m3c-error-container-subtle: light-dark(#ffcfc9, #790006);
     --m3c-on-error-container-subtle: light-dark(#9e000b, #ffa49a);
   }
@@ -158,13 +157,13 @@
 
   /* The two nav components are `position: fixed` (see their own comments), so
      four other rules have to reserve their space by hand. These mirror
-     m3-svelte's own numbers — `NavCMLXItem`'s compact height is `4rem`, and
-     `NavigationRail`'s container is `96px` — in the framework's own units, so
+     m3-svelte's own numbers: `NavCMLXItem`'s compact height is `4rem`, and
+     `NavigationRail`'s container is `96px`, in the framework's own units, so
      a browser font-size change moves the bar and its reservations together
      instead of splitting them apart. */
   --sc-nav-bar-height: 4rem;
   --sc-nav-rail-width: 96px;
-  --sc-nav-drawer-width: 280px;
+  --sc-nav-drawer-width: 256px;
 
   /* MD3 window-class margins: 16dp compact, 24dp medium and up. Every
      full-page pane used to hard-code `padding: 32px`, which on a 390px phone
@@ -301,8 +300,8 @@ a {
        gap before the value starts. */
     padding-inline-end: 32px;
   }
-  /* Both pseudo-elements of `.layer` are free — the state layer lives on the
-     `<select>`, not here — and it is already stretched over the field and
+  /* Both pseudo-elements of `.layer` are free: the state layer lives on the
+     `<select>`, not here, and it is already stretched over the field and
      already `pointer-events: none`. */
   .m3-container:has(> select) > .layer::after {
     content: '';
@@ -323,6 +322,16 @@ a {
   }
 }
 
+/* Select and picker boundary constraints: prevent top-layer dropdowns
+   from expanding past the container or viewport. */
+::picker(select) {
+  max-width: min(360px, calc(100vw - 32px));
+  box-sizing: border-box;
+}
+.m3-container:has(> select) {
+  max-width: 100%;
+  box-sizing: border-box;
+}
 /* File names ellipsize at the FRONT so the extension survives truncation. */
 .sc-filename {
   direction: rtl;
