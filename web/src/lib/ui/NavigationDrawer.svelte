@@ -1,15 +1,13 @@
 <script lang="ts">
-  // NavigationDrawer.svelte: Google Drive style unified navigation sidebar.
-  // Combines brand title, "+ New" action button, primary destinations,
-  // and expandable root shares into one clean Material 3 drawer.
+  // NavigationDrawer.svelte: Google AI Studio / Material 3 style clean navigation sidebar.
+  // Features structured sections (FILES / ACTIONS / SYSTEM), 8px rounded rectangle items,
+  // integrated root share exploration, direct action triggers, and refined typography.
   import { t } from '../i18n'
   import type { IconifyIcon } from '@iconify/types'
   import IconButton from './IconButton.svelte'
-  import { Icon, MenuItem } from 'm3-svelte'
-  import Menu from './Menu.svelte'
+  import { Icon } from 'm3-svelte'
   import { icons } from '../icons'
   import { goto } from '$app/navigation'
-  import { page } from '$app/state'
 
   export interface NavItem {
     id: string
@@ -22,7 +20,9 @@
     label: string
     icon: IconifyIcon
   }
+
   //   /* i18n */ 'nav.folders'
+
   interface Props {
     navItems?: NavItem[]
     activeNav?: string
@@ -47,9 +47,6 @@
 
   let dialogEl: HTMLDialogElement | undefined = $state()
   let filesExpanded = $state(true)
-  let newMenuOpen = $state(false)
-  let newMenuX = $state(0)
-  let newMenuY = $state(0)
 
   $effect(() => {
     if (!overlay || !dialogEl) return
@@ -65,21 +62,9 @@
     if (e.target === dialogEl) onclose?.()
   }
 
-  function toggleNewMenu(e: MouseEvent): void {
-    if (newMenuOpen) {
-      newMenuOpen = false
-      return
-    }
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    newMenuX = rect.left
-    newMenuY = rect.bottom + 4
-    newMenuOpen = true
-  }
-
-  function triggerNew(action: 'folder' | 'file' | 'upload-folder'): void {
-    newMenuOpen = false
+  function triggerAction(action: 'folder' | 'file' | 'upload-folder'): void {
     if (overlay) onclose?.()
-    if (!page.url.pathname.startsWith('/b')) {
+    if (!location.pathname.startsWith('/b')) {
       void goto('/b').then(() => {
         setTimeout(() => window.dispatchEvent(new CustomEvent(`sc:${action}`)), 100)
       })
@@ -104,170 +89,160 @@
 </script>
 
 {#snippet content()}
-  <!-- Top brand header (desktop only, overlay has its own header) -->
+  <!-- Top brand header (desktop: clean text title without home icon, overlay has close button) -->
   {#if !overlay}
     <div class="sc-nav-drawer__brand">
-      <span class="sc-nav-drawer__logo"><Icon icon={icons.home} size={24} /></span>
       <span class="sc-nav-drawer__app-name">Stowcloud</span>
     </div>
   {/if}
 
-  <!-- Google Drive "+ New" Extended FAB button -->
-  <div class="sc-nav-drawer__new-wrap">
-    <button
-      type="button"
-      class="sc-nav-drawer__new-btn"
-      onclick={toggleNewMenu}
-      aria-haspopup="true"
-      aria-expanded={newMenuOpen}
-    >
-      <span class="sc-nav-drawer__new-icon"><Icon icon={icons.add} size={24} /></span>
-      <span class="sc-nav-drawer__new-text">{t('common.add')}</span>
-    </button>
-  </div>
-
-  <Menu open={newMenuOpen} onclose={() => (newMenuOpen = false)} x={newMenuX} y={newMenuY}>
-    <MenuItem icon={icons.folder} onclick={() => triggerNew('folder')}>
-      {t('common.new_folder')}
-    </MenuItem>
-    <MenuItem icon={icons.upload} onclick={() => triggerNew('file')}>
-      {t('common.upload')}
-    </MenuItem>
-    <MenuItem icon={icons['upload-folder']} onclick={() => triggerNew('upload-folder')}>
-      {t('browse.upload_folder')}
-    </MenuItem>
-  </Menu>
-
-  <!-- Main Navigation Destinations -->
-  <ul class="sc-nav-drawer__list">
-    <!-- Files destination with expandable root shares -->
-    <li class="sc-nav-drawer__entry">
-      <div
-        class="sc-nav-drawer__item"
-        class:sc-nav-drawer__item--active={activeNav === 'files'}
-      >
-        {#if items.length > 0}
+  <div class="sc-nav-drawer__body">
+    <!-- Section 1: FILES -->
+    <div class="sc-nav-drawer__section-title">{t('nav.files')}</div>
+    <ul class="sc-nav-drawer__list">
+      <li class="sc-nav-drawer__entry">
+        <div
+          class="sc-nav-drawer__item"
+          class:sc-nav-drawer__item--active={activeNav === 'files' && !active}
+        >
+          {#if items.length > 0}
+            <button
+              type="button"
+              class="sc-nav-drawer__twisty"
+              class:sc-nav-drawer__twisty--expanded={filesExpanded}
+              aria-label={t('nav.switch_folder')}
+              onclick={(e) => {
+                e.stopPropagation()
+                filesExpanded = !filesExpanded
+              }}
+            >
+              <Icon icon={icons['chevron-right']} size={16} />
+            </button>
+          {/if}
           <button
             type="button"
-            class="sc-nav-drawer__twisty"
-            class:sc-nav-drawer__twisty--expanded={filesExpanded}
-            aria-label={t('nav.switch_folder')}
-            onclick={(e) => {
-              e.stopPropagation()
-              filesExpanded = !filesExpanded
-            }}
+            class="sc-nav-drawer__item-btn"
+            class:sc-nav-drawer__item-btn--with-twisty={items.length > 0}
+            onclick={handleFilesClick}
           >
-            <Icon icon={icons['chevron-right']} size={16} />
+            <span class="sc-nav-drawer__item-icon"><Icon icon={icons.home} size={20} /></span>
+            <span class="sc-nav-drawer__item-label">{t('nav.files')}</span>
           </button>
+        </div>
+
+        {#if filesExpanded && items.length > 0}
+          <ul class="sc-nav-drawer__sublist">
+            {#each items as root (root.id)}
+              <li>
+                <button
+                  type="button"
+                  class="sc-nav-drawer__subitem"
+                  class:sc-nav-drawer__subitem--active={active === root.id}
+                  onclick={() => {
+                    onselect?.(root)
+                    if (overlay) onclose?.()
+                  }}
+                >
+                  <span class="sc-nav-drawer__indent" aria-hidden="true"></span>
+                  <span class="sc-nav-drawer__item-icon"><Icon icon={icons.folder} size={18} /></span>
+                  <span class="sc-nav-drawer__subitem-label sc-filename">{root.label}</span>
+                </button>
+              </li>
+            {/each}
+          </ul>
         {/if}
+      </li>
+
+      <li class="sc-nav-drawer__entry">
         <button
           type="button"
-          class="sc-nav-drawer__item-btn"
-          class:sc-nav-drawer__item-btn--with-twisty={items.length > 0}
-          onclick={handleFilesClick}
-        >
-          <span class="sc-nav-drawer__item-icon"><Icon icon={icons.home} size={20} /></span>
-          <span class="sc-nav-drawer__item-label">{t('nav.files')}</span>
-        </button>
-      </div>
-
-      {#if filesExpanded && items.length > 0}
-        <ul class="sc-nav-drawer__sublist">
-          {#each items as root (root.id)}
-            <li>
-              <button
-                type="button"
-                class="sc-nav-drawer__subitem"
-                class:sc-nav-drawer__subitem--active={active === root.id}
-                onclick={() => {
-                  onselect?.(root)
-                  if (overlay) onclose?.()
-                }}
-              >
-                <span class="sc-nav-drawer__indent" aria-hidden="true"></span>
-                <span class="sc-nav-drawer__item-icon"><Icon icon={icons.folder} size={18} /></span>
-                <span class="sc-nav-drawer__subitem-label sc-filename">{root.label}</span>
-              </button>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-    </li>
-
-    <!-- Recent -->
-    <li class="sc-nav-drawer__entry">
-      <div
-        class="sc-nav-drawer__item"
-        class:sc-nav-drawer__item--active={activeNav === 'recent'}
-      >
-        <button
-          type="button"
-          class="sc-nav-drawer__item-btn"
+          class="sc-nav-drawer__item"
+          class:sc-nav-drawer__item--active={activeNav === 'recent'}
           onclick={() => handleNavClick({ id: 'recent', label: t('nav.recent'), icon: icons.recent, href: '/recent' })}
         >
           <span class="sc-nav-drawer__item-icon"><Icon icon={icons.recent} size={20} /></span>
           <span class="sc-nav-drawer__item-label">{t('nav.recent')}</span>
         </button>
-      </div>
-    </li>
+      </li>
 
-    <!-- Trash -->
-    <li class="sc-nav-drawer__entry">
-      <div
-        class="sc-nav-drawer__item"
-        class:sc-nav-drawer__item--active={activeNav === 'trash'}
-      >
+      <li class="sc-nav-drawer__entry">
         <button
           type="button"
-          class="sc-nav-drawer__item-btn"
+          class="sc-nav-drawer__item"
+          class:sc-nav-drawer__item--active={activeNav === 'trash'}
           onclick={() => handleNavClick({ id: 'trash', label: t('common.trash'), icon: icons.trash, href: '/trash' })}
         >
           <span class="sc-nav-drawer__item-icon"><Icon icon={icons.trash} size={20} /></span>
           <span class="sc-nav-drawer__item-label">{t('common.trash')}</span>
         </button>
-      </div>
-    </li>
+      </li>
+    </ul>
 
-    <li class="sc-nav-drawer__divider-entry" role="separator">
-      <hr class="sc-nav-drawer__divider" />
-    </li>
-
-    <!-- Admin (if present in navItems) -->
-    {#if navItems.some((n) => n.id === 'admin')}
+    <!-- Section 2: ACTIONS -->
+    <div class="sc-nav-drawer__section-title">{t('common.add')}</div>
+    <ul class="sc-nav-drawer__list">
       <li class="sc-nav-drawer__entry">
-        <div
+        <button
+          type="button"
           class="sc-nav-drawer__item"
-          class:sc-nav-drawer__item--active={activeNav === 'admin'}
+          onclick={() => triggerAction('folder')}
         >
+          <span class="sc-nav-drawer__item-icon"><Icon icon={icons.add} size={20} /></span>
+          <span class="sc-nav-drawer__item-label">{t('common.new_folder')}</span>
+        </button>
+      </li>
+      <li class="sc-nav-drawer__entry">
+        <button
+          type="button"
+          class="sc-nav-drawer__item"
+          onclick={() => triggerAction('file')}
+        >
+          <span class="sc-nav-drawer__item-icon"><Icon icon={icons.upload} size={20} /></span>
+          <span class="sc-nav-drawer__item-label">{t('common.upload')}</span>
+        </button>
+      </li>
+      <li class="sc-nav-drawer__entry">
+        <button
+          type="button"
+          class="sc-nav-drawer__item"
+          onclick={() => triggerAction('upload-folder')}
+        >
+          <span class="sc-nav-drawer__item-icon"><Icon icon={icons['upload-folder']} size={20} /></span>
+          <span class="sc-nav-drawer__item-label">{t('browse.upload_folder')}</span>
+        </button>
+      </li>
+    </ul>
+
+    <!-- Section 3: MANAGE -->
+    <div class="sc-nav-drawer__section-title">{t('common.settings')}</div>
+    <ul class="sc-nav-drawer__list">
+      {#if navItems.some((n) => n.id === 'admin')}
+        <li class="sc-nav-drawer__entry">
           <button
             type="button"
-            class="sc-nav-drawer__item-btn"
+            class="sc-nav-drawer__item"
+            class:sc-nav-drawer__item--active={activeNav === 'admin'}
             onclick={() => handleNavClick({ id: 'admin', label: t('nav.admin'), icon: icons.admin, href: '/admin' })}
           >
             <span class="sc-nav-drawer__item-icon"><Icon icon={icons.admin} size={20} /></span>
             <span class="sc-nav-drawer__item-label">{t('nav.admin')}</span>
           </button>
-        </div>
-      </li>
-    {/if}
+        </li>
+      {/if}
 
-    <!-- Settings -->
-    <li class="sc-nav-drawer__entry">
-      <div
-        class="sc-nav-drawer__item"
-        class:sc-nav-drawer__item--active={activeNav === 'settings'}
-      >
+      <li class="sc-nav-drawer__entry">
         <button
           type="button"
-          class="sc-nav-drawer__item-btn"
+          class="sc-nav-drawer__item"
+          class:sc-nav-drawer__item--active={activeNav === 'settings'}
           onclick={() => handleNavClick({ id: 'settings', label: t('common.settings'), icon: icons.settings, href: '/settings' })}
         >
           <span class="sc-nav-drawer__item-icon"><Icon icon={icons.settings} size={20} /></span>
           <span class="sc-nav-drawer__item-label">{t('common.settings')}</span>
         </button>
-      </div>
-    </li>
-  </ul>
+      </li>
+    </ul>
+  </div>
 {/snippet}
 
 {#if overlay}
@@ -280,10 +255,7 @@
     oncancel={() => onclose?.()}
   >
     <div class="sc-nav-drawer__overlay-header">
-      <div class="sc-nav-drawer__brand">
-        <span class="sc-nav-drawer__logo"><Icon icon={icons.home} size={24} /></span>
-        <span class="sc-nav-drawer__app-name">Stowcloud</span>
-      </div>
+      <span class="sc-nav-drawer__app-name">Stowcloud</span>
       <IconButton label={t('common.close')} onclick={() => onclose?.()}><Icon icon={icons.close} /></IconButton>
     </div>
     {@render content()}
@@ -316,12 +288,6 @@
     padding-inline: 16px;
     flex: none;
   }
-  .sc-nav-drawer__logo {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--m3c-primary);
-  }
   .sc-nav-drawer__app-name {
     @apply --m3-title-medium;
     font-weight: 600;
@@ -330,54 +296,37 @@
   .sc-nav-drawer__overlay-header {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     height: 56px;
     padding-inline: 16px;
     box-shadow: 0 1px 0 var(--m3c-outline-variant);
     background: var(--m3c-surface-container-low);
     flex: none;
   }
-  .sc-nav-drawer__new-wrap {
-    padding: 16px;
-    flex: none;
-  }
-  .sc-nav-drawer__new-btn {
-    height: 48px;
-    padding: 0 16px;
-    border-radius: 16px;
-    border: none;
-    background: var(--m3c-surface-container-high);
-    color: var(--m3c-on-surface);
-    box-shadow: var(--m3-elevation-1);
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
-    cursor: pointer;
-    @apply --m3-label-large;
-    font-weight: 600;
-    font-size: 14px;
-    transition: background var(--m3-duration-fast) var(--m3-easing), box-shadow var(--m3-duration-fast) var(--m3-easing);
-  }
-  .sc-nav-drawer__new-btn:hover {
-    background: var(--m3c-surface-container-highest);
-    box-shadow: var(--m3-elevation-2);
-  }
-  .sc-nav-drawer__new-icon {
+  .sc-nav-drawer__body {
+    flex: 1;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--m3c-primary);
+    flex-direction: column;
+    padding: 0;
   }
-  .sc-nav-drawer__new-text {
-    white-space: nowrap;
+  .sc-nav-drawer__section-title {
+    margin: 16px 16px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--m3c-on-surface-variant);
+  }
+  .sc-nav-drawer__section-title:first-child {
+    margin-top: 0;
   }
   .sc-nav-drawer__list {
     list-style: none;
     margin: 0;
-    padding: 8px 0;
+    padding: 0;
     display: flex;
     flex-direction: column;
     gap: 4px;
-    flex: 1;
   }
   .sc-nav-drawer__entry {
     margin: 0;
@@ -385,24 +334,34 @@
   .sc-nav-drawer__item {
     height: 40px;
     margin: 0 12px;
-    border-radius: var(--m3-shape-full);
+    padding: 0 12px;
+    border-radius: var(--m3-shape-small);
     display: flex;
     align-items: center;
+    gap: 12px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    width: calc(100% - 24px);
+    color: var(--m3c-on-surface-variant);
+    font-weight: 500;
+    font-size: 14px;
+    text-align: left;
     position: relative;
     overflow: hidden;
-    color: var(--m3c-on-surface-variant);
     transition: background var(--m3-duration-fast) var(--m3-easing);
   }
   .sc-nav-drawer__item:hover {
-    background: var(--m3c-surface-container-highest);
+    background: var(--m3c-surface-container);
+    color: var(--m3c-on-surface);
   }
   .sc-nav-drawer__item--active {
-    background: var(--m3c-secondary-container);
-    color: var(--m3c-on-secondary-container);
+    background: var(--m3c-surface-container-high);
+    color: var(--m3c-on-surface);
     font-weight: 600;
   }
   .sc-nav-drawer__item--active:hover {
-    background: var(--m3c-secondary-container);
+    background: var(--m3c-surface-container-high);
   }
   .sc-nav-drawer__twisty {
     width: 24px;
@@ -414,7 +373,7 @@
     justify-content: center;
     border: none;
     background: transparent;
-    border-radius: var(--m3-shape-full);
+    border-radius: var(--m3-shape-small);
     cursor: pointer;
     color: inherit;
     flex: none;
@@ -431,16 +390,17 @@
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 0 16px;
-    border-radius: var(--m3-shape-full);
+    padding: 0;
+    border-radius: var(--m3-shape-small);
     cursor: pointer;
     color: inherit;
     text-align: left;
-    @apply --m3-label-large;
+    font-weight: inherit;
+    font-size: 14px;
     overflow: hidden;
   }
   .sc-nav-drawer__item-btn--with-twisty {
-    padding: 0 12px;
+    padding-inline-start: 0;
   }
   .sc-nav-drawer__item-icon {
     display: flex;
@@ -466,10 +426,10 @@
     flex: none;
   }
   .sc-nav-drawer__subitem {
-    height: 40px;
+    height: 36px;
     margin: 0 12px;
     padding: 0 12px;
-    border-radius: var(--m3-shape-full);
+    border-radius: var(--m3-shape-small);
     display: flex;
     align-items: center;
     gap: 8px;
@@ -478,30 +438,23 @@
     cursor: pointer;
     width: calc(100% - 24px);
     color: var(--m3c-on-surface-variant);
-    @apply --m3-body-medium;
+    font-size: 13px;
+    font-weight: 500;
     text-align: left;
     transition: background var(--m3-duration-fast) var(--m3-easing);
   }
   .sc-nav-drawer__subitem:hover {
-    background: var(--m3c-surface-container-highest);
+    background: var(--m3c-surface-container);
+    color: var(--m3c-on-surface);
   }
   .sc-nav-drawer__subitem--active {
-    background: var(--m3c-primary-container-subtle);
-    color: var(--m3c-primary);
+    background: var(--m3c-surface-container-high);
+    color: var(--m3c-on-surface);
     font-weight: 600;
   }
   .sc-nav-drawer__subitem-label {
     flex: 1;
     min-width: 0;
-  }
-  .sc-nav-drawer__divider-entry {
-    margin: 8px 0;
-  }
-  .sc-nav-drawer__divider {
-    width: 224px;
-    margin: 0 auto;
-    border: none;
-    border-top: 1px solid var(--m3c-outline-variant);
   }
   .sc-nav-drawer--overlay {
     position: fixed;
