@@ -803,6 +803,7 @@
   "tree.no_subfolders": "No subfolders",
   "upload.canceled": "Cancelled",
   "upload.chunk_size_adjusted_mb": "Chunk size adjusted to {size} MB.",
+  "upload.conflict": "The upload offset conflicted with the server state.",
   "upload.could_not_start_upload": "Could not start the upload",
   "upload.failed_upload": "{name} failed to upload.",
   "upload.finished_uploading": "{name} finished uploading.",

@@ -30,6 +30,7 @@ const (
 	UploadMetadata = "Upload-Metadata"
 	UploadChecksum = "Upload-Checksum"
 	UploadExpires  = "Upload-Expires"
+	ScRandomAccess = "Sc-Random-Access"
 )
 
 // TusProtocolVersion is the one version this server speaks.

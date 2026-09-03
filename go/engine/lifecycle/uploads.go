@@ -130,8 +130,9 @@ func (e *Engine) uploadsCreate(c *fiber.Ctx) error {
 	}
 
 	spec := upload.SessionSpec{
-		IfMatch: c.Get(fiber.HeaderIfMatch),
-		Meta:    uploadMetaOf(meta),
+		IfMatch:      c.Get(fiber.HeaderIfMatch),
+		Meta:         uploadMetaOf(meta),
+		RandomAccess: c.Get(handler.ScRandomAccess) == "1",
 	}
 	if !length.Deferred {
 		total := length.Value

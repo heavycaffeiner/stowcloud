@@ -20,7 +20,7 @@ const RETRY_AFTER_CEILING_MS = 60_000
 export type RetryVerdict =
   | { kind: 'retry'; afterMs: number }
   | { kind: 'shrink' }
-  | { kind: 'give-up'; reason: 'session-gone' | 'quota' | 'too-large' | 'out-of-retries' }
+  | { kind: 'give-up'; reason: 'session-gone' | 'quota' | 'too-large' | 'conflict' | 'out-of-retries' }
 
 /**
  * Decides what to do about a failed request.
@@ -41,6 +41,9 @@ export function classifyFailure(status: number, retriesSoFar: number): RetryVerd
   // A proxy refused the body's size. A smaller chunk is a different request,
   // so this is not spent from the retry budget.
   if (status === 413) return { kind: 'shrink' }
+
+  // A state conflict (e.g. duplicate file or offset conflict on non-random-access).
+  if (status === 409) return { kind: 'give-up', reason: 'conflict' }
 
   // Anything the server refused outright, other than the cases above, is a
   // refusal rather than a fault: 400, 401, 403 and their neighbours mean the

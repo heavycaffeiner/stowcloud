@@ -803,6 +803,7 @@
   "tree.no_subfolders": "하위 폴더 없음",
   "upload.canceled": "취소됨",
   "upload.chunk_size_adjusted_mb": "청크 크기를 {size} MB로 조정했습니다.",
+  "upload.conflict": "서버의 업로드 오프셋과 일치하지 않아 충돌이 발생했습니다.",
   "upload.could_not_start_upload": "업로드를 시작하지 못했습니다",
   "upload.failed_upload": "{name} 업로드 실패.",
   "upload.finished_uploading": "{name} 업로드가 완료되었습니다.",

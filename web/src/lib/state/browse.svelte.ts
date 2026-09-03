@@ -173,6 +173,10 @@ export class BrowseState {
     return this.#rows.get(index)
   }
 
+  hasEntry(name: string): boolean {
+    return this.#index.has(name)
+  }
+
   async open(path: string): Promise<void> {
     const gen = ++this.#generation
     this.path = path

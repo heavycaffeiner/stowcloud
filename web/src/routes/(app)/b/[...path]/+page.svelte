@@ -697,9 +697,88 @@
   function onUploadClick(): void {
     fileInputEl?.click()
   }
+  function getUniqueUploadName(name: string, isTaken: (candidate: string) => boolean): string {
+    if (!isTaken(name)) return name
+    const dot = name.lastIndexOf('.')
+    const base = dot > 0 ? name.slice(0, dot) : name
+    const ext = dot > 0 ? name.slice(dot) : ''
+    let count = 1
+    while (isTaken(`${base} (${count})${ext}`)) {
+      count++
+    }
+    return `${base} (${count})${ext}`
+  }
+
+  function handleUploadFiles(fileList: FileList | File[]): void {
+    const rawFiles = Array.from(fileList)
+    if (rawFiles.length === 0) return
+
+    const conflicts = rawFiles.filter((f) => browse.hasEntry(f.name))
+    if (conflicts.length === 0) {
+      uploadTray.addFiles(rawFiles, browse.path)
+      return
+    }
+
+    conflictName = conflicts.length === 1 ? conflicts[0].name : `${conflicts[0].name} (+${conflicts.length - 1})`
+    conflictRetry = (action: OnConflict) => {
+      conflictOpen = false
+      if (action === 'overwrite') {
+        uploadTray.addFiles(rawFiles, browse.path)
+      } else if (action === 'skip') {
+        const conflictNames = new Set(conflicts.map((c) => c.name))
+        const remaining = rawFiles.filter((f) => !conflictNames.has(f.name))
+        if (remaining.length > 0) uploadTray.addFiles(remaining, browse.path)
+      } else if (action === 'rename') {
+        const taken = new Set<string>()
+        const renamed = rawFiles.map((f) => {
+          if (!browse.hasEntry(f.name)) return f
+          const newName = getUniqueUploadName(f.name, (n) => browse.hasEntry(n) || taken.has(n))
+          taken.add(newName)
+          return new File([f], newName, { type: f.type, lastModified: f.lastModified })
+        })
+        uploadTray.addFiles(renamed, browse.path)
+      }
+    }
+    conflictOpen = true
+  }
+
+  function handleUploadEntries(entries: { file: File; relativePath: string }[]): void {
+    if (entries.length === 0) return
+    const conflicts = entries.filter((e) => !e.relativePath && browse.hasEntry(e.file.name))
+    if (conflicts.length === 0) {
+      uploadTray.addEntries(entries, browse.path)
+      return
+    }
+
+    conflictName = conflicts.length === 1 ? conflicts[0].file.name : `${conflicts[0].file.name} (+${conflicts.length - 1})`
+    conflictRetry = (action: OnConflict) => {
+      conflictOpen = false
+      if (action === 'overwrite') {
+        uploadTray.addEntries(entries, browse.path)
+      } else if (action === 'skip') {
+        const conflictNames = new Set(conflicts.map((c) => c.file.name))
+        const remaining = entries.filter((e) => e.relativePath || !conflictNames.has(e.file.name))
+        if (remaining.length > 0) uploadTray.addEntries(remaining, browse.path)
+      } else if (action === 'rename') {
+        const taken = new Set<string>()
+        const renamed = entries.map((e) => {
+          if (e.relativePath || !browse.hasEntry(e.file.name)) return e
+          const newName = getUniqueUploadName(e.file.name, (n) => browse.hasEntry(n) || taken.has(n))
+          taken.add(newName)
+          return {
+            file: new File([e.file], newName, { type: e.file.type, lastModified: e.file.lastModified }),
+            relativePath: e.relativePath
+          }
+        })
+        uploadTray.addEntries(renamed, browse.path)
+      }
+    }
+    conflictOpen = true
+  }
+
   function onUploadFilesChange(e: Event): void {
     const input = e.currentTarget as HTMLInputElement
-    if (input.files) uploadTray.addFiles(input.files, browse.path)
+    if (input.files) handleUploadFiles(input.files)
     input.value = ''
   }
 
@@ -707,7 +786,7 @@
     if (supportsDirectoryPicker()) {
       try {
         const files = await pickDirectory()
-        uploadTray.addEntries(files, browse.path)
+        handleUploadEntries(files)
       } catch {
         /* user canceled the picker */
       }
@@ -717,7 +796,7 @@
   }
   function onDirInputChange(e: Event): void {
     const input = e.currentTarget as HTMLInputElement
-    uploadTray.addEntries(filesFromWebkitDirectoryInput(input), browse.path)
+    handleUploadEntries(filesFromWebkitDirectoryInput(input))
     input.value = ''
   }
 
@@ -726,7 +805,7 @@
     dragOver = false
     if (!e.dataTransfer) return
     const files = await pickedFilesFromDataTransfer(e.dataTransfer)
-    uploadTray.addEntries(files, browse.path)
+    handleUploadEntries(files)
   }
 
   function focusSearch(): void {

@@ -322,7 +322,9 @@ async function sendChunk(task: ChunkDescriptor & { fileId: string }): Promise<vo
           ? { code: 'upload.failed', message: /* i18n */ 'upload.session_gone' }
           : verdict.reason === 'quota'
             ? { code: 'upload.quota_exceeded', message: /* i18n */ 'upload.not_enough_storage_space_finish' }
-            : { code: 'upload.failed', message: /* i18n */ 'upload.upload_failed_out_retries' }
+            : verdict.reason === 'conflict'
+              ? { code: 'upload.conflict', message: /* i18n */ 'upload.conflict' }
+              : { code: 'upload.failed', message: /* i18n */ 'upload.upload_failed_out_retries' }
       post({ t: 'error', id: f.id, code: told.code, message: told.message })
       return
     }
