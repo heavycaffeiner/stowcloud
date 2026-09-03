@@ -506,17 +506,15 @@
   .sc-nav-drawer--overlay {
     position: fixed;
     top: 0;
-    bottom: 0;
-    height: 100vh;
-    height: 100dvh;
+    bottom: calc(var(--sc-nav-bar-height) + env(safe-area-inset-bottom, 0px));
+    height: auto;
     inset-inline-start: 0;
     margin: 0;
-    max-width: min(300px, calc(100vw - 56px));
+    max-width: min(var(--sc-nav-drawer-width), calc(100vw - 56px));
     width: 100%;
     padding: 0;
     border: none;
-    box-shadow: var(--m3-elevation-3);
-    z-index: 50;
+    box-shadow: var(--m3-elevation-2);
     translate: 0 0;
     transition:
       translate var(--m3-duration) var(--m3-easing),
