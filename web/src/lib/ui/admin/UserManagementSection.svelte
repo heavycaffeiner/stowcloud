@@ -425,6 +425,14 @@
       flex-direction: column;
       align-items: flex-start;
     }
+    .sc-user-mgmt__quota {
+      inline-size: auto;
+    }
+    .sc-user-mgmt__list :global(.sc-list-item__trailing) {
+      justify-content: flex-start;
+      margin-left: 0;
+      width: 100%;
+    }
   }
   .sc-user-mgmt__hint {
     max-width: 560px;

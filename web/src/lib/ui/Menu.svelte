@@ -1,8 +1,8 @@
 <script lang="ts">
   // Positioning + dismissal shell around m3-svelte's Menu.
   // Uses capture-phase pointerdown listener so that clicks anywhere outside
-  // the menu dismiss it reliably, even when nested elements stop propagation.
-  // Clamps coordinates to the viewport to prevent off-screen overflow.
+  // the menu dismiss it reliably, while allowing trigger buttons to toggle.
+  // Uses unscaled offset dimensions so positioning is exact without scale drift.
   import type { Snippet } from 'svelte'
   import { fade, scale } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
@@ -19,30 +19,27 @@
   let { open, onclose, x, y, children }: Props = $props()
   const anchored = $derived(x !== undefined && y !== undefined)
   let el: HTMLDivElement | undefined = $state()
+
   let posX = $state(0)
   let posY = $state(0)
 
-  // Synchronize and clamp positions to viewport bounds
+  // Clamp position to viewport bounds using unscaled dimensions
   $effect(() => {
-    if (x !== undefined) posX = x
-    if (y !== undefined) posY = y
-  })
-
-  $effect(() => {
-    if (!open || !el || !anchored || x === undefined || y === undefined) return
-    const rect = el.getBoundingClientRect()
+    if (!open || x === undefined || y === undefined) return
     const pad = 8
+    const width = el?.offsetWidth ?? 180
+    const height = el?.offsetHeight ?? 200
     const maxRight = window.innerWidth - pad
     const maxBottom = window.innerHeight - pad
 
     let nextX = x
     let nextY = y
 
-    if (nextX + rect.width > maxRight) {
-      nextX = Math.max(pad, maxRight - rect.width)
+    if (nextX + width > maxRight) {
+      nextX = Math.max(pad, maxRight - width)
     }
-    if (nextY + rect.height > maxBottom) {
-      nextY = Math.max(pad, maxBottom - rect.height)
+    if (nextY + height > maxBottom) {
+      nextY = Math.max(pad, maxBottom - height)
     }
 
     posX = Math.round(nextX)
@@ -54,9 +51,15 @@
   $effect(() => {
     if (!open) return
     function onPointerDownCapture(e: PointerEvent) {
-      if (el && !el.contains(e.target as Node)) {
-        onclose()
+      const target = e.target as Element | null
+      if (el && el.contains(target as Node)) return
+
+      // If clicking the trigger that owns this open menu, let its click handler toggle it closed.
+      if (target?.closest('[aria-expanded="true"]')) {
+        return
       }
+
+      onclose()
     }
     window.addEventListener('pointerdown', onPointerDownCapture, true)
     return () => {

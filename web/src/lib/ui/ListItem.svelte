@@ -91,15 +91,10 @@
   }
   .sc-list-item__trailing {
     display: inline-flex;
-    /* Without this the group stretches every child to the tallest one, which is
-       a 40px icon button. A caller's own wrapper is then a 40px block holding a
-       32px switch, and a block does not centre what it contains, so the switch
-       sat 4px above every control beside it. */
+    flex-wrap: wrap;
     align-items: center;
-    flex-shrink: 0;
-    /* No effect while it shares the line with a growing text column; once it
-     * wraps to a line of its own it is what keeps it right-aligned under the
-     * row rather than drifting to the left edge. */
+    gap: 8px;
     margin-left: auto;
+    max-width: 100%;
   }
 </style>

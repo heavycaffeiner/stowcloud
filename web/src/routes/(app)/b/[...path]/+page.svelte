@@ -833,8 +833,10 @@
   ]
 
   function openSort(e: MouseEvent): void {
-    // Same reasoning as openOverflow: without this the click that opens the
-    // menu reaches Menu's own light-dismiss and closes it in the same tick.
+    if (sortOpen) {
+      closeSort()
+      return
+    }
     e.stopPropagation()
     const btn = e.currentTarget as HTMLElement
     sortTriggerEl = btn
@@ -864,12 +866,10 @@
   }
 
   function openOverflow(e: MouseEvent): void {
-    // Without this, the same click that opens the menu keeps bubbling after
-    // Svelte's synchronous DOM flush has already mounted it -- Menu.svelte's
-    // own `<svelte:window onclick>` light-dismiss then sees a click outside
-    // the (now-existing) menu element and closes it in the same tick it
-    // opened. The existing right-click context menu below never hit this
-    // because a `contextmenu` event doesn't also fire `click`.
+    if (overflowOpen) {
+      closeOverflow()
+      return
+    }
     e.stopPropagation()
     const btn = e.currentTarget as HTMLElement
     overflowTriggerEl = btn
@@ -1027,7 +1027,7 @@
         >
           <Icon icon={icons.list} />
         </IconButton>
-        <IconButton label={t('browse.more')} selected={overflowOpen} onclick={openOverflow}><Icon icon={icons['more-vert']} /></IconButton>
+        <IconButton label={t('browse.more')} selected={overflowOpen} expanded={overflowOpen} onclick={openOverflow}><Icon icon={icons['more-vert']} /></IconButton>
         {#if !uiState.compact}
           <Button variant="text" onclick={onUploadFolderClick}>
             {#snippet icon()}<Icon icon={icons['upload-folder']} size={18} />{/snippet}
