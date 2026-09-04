@@ -245,12 +245,17 @@ func (h *Handler) uploadAssemble(
 		return
 	}
 
-	// Required here, unlike at open: assembly writes exactly this many bytes
-	// and a missing length would publish whatever happened to have arrived.
-	total, err := h.uploadTotal(r, true)
+	// Optional at assembly: if omitted (like Nextcloud Android client), all
+	// received chunks are assembled. If sent, it enforces that the assembled
+	// length matches exactly.
+	total, err := h.uploadTotal(r, false)
 	if err != nil {
 		h.fail(w, r, err)
 		return
+	}
+	var declared uint64
+	if total != nil {
+		declared = *total
 	}
 	mtime, merr := h.uploadMTime(r)
 	if merr != nil {
@@ -266,7 +271,7 @@ func (h *Handler) uploadAssemble(
 		return
 	}
 
-	entry, aerr := h.uploads.Assemble(r.Context(), res, up.Session, *total, mtime)
+	entry, aerr := h.uploads.Assemble(r.Context(), res, up.Session, declared, mtime)
 	if aerr != nil {
 		h.fail(w, r, aerr)
 		return

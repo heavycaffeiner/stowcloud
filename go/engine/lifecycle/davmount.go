@@ -122,8 +122,10 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		for strings.Contains(path, "//") {
 			path = strings.ReplaceAll(path, "//", "/")
 		}
+		isAliased := false
 		if rewritten, aliased := davAlias(path, aliases); aliased {
 			path = rewritten
+			isAliased = true
 		}
 
 		if r.Method == http.MethodOptions && (davIsRoot(r.URL.EscapedPath()) || davIsRoot(path)) {
@@ -190,8 +192,16 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 			// collection, so this is the shape every real assembly arrives in;
 			// both mean the collection itself.
 			session, member, found := strings.Cut(strings.TrimPrefix(rest, "/"), "/")
-			if found && e.davIsAssemblyMember(member) {
-				rest = "/" + session
+			if found {
+				if e.davIsAssemblyMember(member) {
+					rest = "/" + session
+				} else if isAliased && isDigits(member) {
+					trimmed := strings.TrimLeft(member, "0")
+					if trimmed == "" {
+						trimmed = "0"
+					}
+					rest = "/" + session + "/" + trimmed
+				}
 			}
 			up, uerr := dav.ParseUploadPath(rest)
 			if uerr != nil {
@@ -425,4 +435,16 @@ func (e *Engine) davDestination(
 		Resolved:  res,
 		Overwrite: dav.Overwrite(r.Header.Get("Overwrite")),
 	}, nil
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := range len(s) {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }

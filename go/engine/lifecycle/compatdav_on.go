@@ -138,7 +138,7 @@ func (e *Engine) davVendorProps() func(
 
 func isPreviewable(name string) bool {
 	switch strings.ToLower(filepath.Ext(name)) {
-	case ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp", ".svg":
+	case ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp":
 		return true
 	default:
 		return false
@@ -214,7 +214,11 @@ func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop
 		}
 
 		etag := `"` + label + `"`
-		mtime := e.clock.Now().UTC().Format(http.TimeFormat)
+		now := time.Now()
+		if e.clock != nil {
+			now = e.clock.Now()
+		}
+		mtime := now.UTC().Format(http.TimeFormat)
 		permStr := "RGDNVCK"
 		fidStr := "0"
 		davID := compat.DavID(0, id)
@@ -261,6 +265,10 @@ func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop
 	}
 
 	rootDavID := compat.DavID(1, id)
+	rootMtime := time.Now().UTC().Format(http.TimeFormat)
+	if e.clock != nil {
+		rootMtime = e.clock.Now().UTC().Format(http.TimeFormat)
+	}
 	baseProps := []dav.Prop{
 		{
 			Name:     xml.Name{Space: "DAV:", Local: "resourcetype"},
@@ -269,7 +277,7 @@ func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop
 		{Name: xml.Name{Space: "DAV:", Local: "getcontenttype"}, Value: "httpd/unix-directory"},
 		{Name: xml.Name{Space: "DAV:", Local: "getetag"}, Value: `"root"`},
 		{Name: xml.Name{Space: "DAV:", Local: "displayname"}, Value: ""},
-		{Name: xml.Name{Space: "DAV:", Local: "getlastmodified"}, Value: e.clock.Now().UTC().Format(http.TimeFormat)},
+		{Name: xml.Name{Space: "DAV:", Local: "getlastmodified"}, Value: rootMtime},
 		{Name: xml.Name{Space: compat.NSOwnCloud, Local: "permissions"}, Value: "RGDNV"},
 		{Name: xml.Name{Space: compat.NSNextcloudX, Local: "permissions"}, Value: "RGDNV"},
 		{Name: xml.Name{Space: compat.NSOwnCloud, Local: "id"}, Value: rootDavID},
@@ -291,7 +299,7 @@ type compatQuerySource struct {
 }
 
 func (s *compatQuerySource) Namespaces() []string {
-	return []string{compat.NSOwnCloud, compat.NSNextcloudX}
+	return []string{"DAV:", compat.NSOwnCloud, compat.NSNextcloudX, "http://nextcloud.com/ns"}
 }
 
 func (s *compatQuerySource) Query(
@@ -303,10 +311,30 @@ func (s *compatQuerySource) Query(
 	}
 
 	isFav := false
+	isMedia := false
 	for _, leaf := range leaves {
-		if leaf.Name.Local == "favorite" || leaf.Name.Local == "is-favorite" {
+		local := leaf.Name.Local
+		if local == "favorite" || local == "is-favorite" {
 			isFav = true
 			break
+		}
+		if local == "getcontenttype" && (strings.HasPrefix(leaf.Value, "image/") || strings.HasPrefix(leaf.Value, "video/")) {
+			isMedia = true
+		}
+		if local == "literal" {
+			if leaf.Value == "yes" || leaf.Value == "1" {
+				isFav = true
+			} else if strings.HasPrefix(leaf.Value, "image/") || strings.HasPrefix(leaf.Value, "video/") {
+				isMedia = true
+			}
+		}
+	}
+	if !isFav && !isMedia {
+		for _, prop := range want {
+			if prop.Local == "favorite" || prop.Local == "is-favorite" {
+				isFav = true
+				break
+			}
 		}
 	}
 
@@ -338,28 +366,46 @@ func (s *compatQuerySource) Query(
 		return out, nil
 	}
 
-	since := s.engine.clock.Now().Add(-14 * 24 * time.Hour).UnixNano()
+	if isMedia {
+		page, err := s.engine.Core.List(ctx, res, "")
+		if err != nil {
+			return nil, nil
+		}
+		var out []core.Entry
+		for _, entry := range page.Entries {
+			if !entry.IsDir && isPreviewable(entry.Name) {
+				out = append(out, entry)
+			}
+		}
+		return out, nil
+	}
+
+	// Recent / filter-files query: list recent entries
+	now := time.Now()
+	if s.engine.clock != nil {
+		now = s.engine.clock.Now()
+	}
+	since := now.Add(-14 * 24 * time.Hour).UnixNano()
 	hits, err := s.engine.Core.Recent(ctx, user, core.RecentQuery{
 		SinceNs: since,
 		Limit:   50,
 	})
-	if err != nil {
-		return nil, nil
-	}
 	var out []core.Entry
-	for _, hit := range hits {
-		r, rerr := s.engine.resolve(user, hit.Vpath.String(), acl.Read)
-		if rerr != nil {
-			continue
+	if err == nil && len(hits) > 0 {
+		for _, hit := range hits {
+			r, rerr := s.engine.resolve(user, hit.Vpath.String(), acl.Read)
+			if rerr != nil {
+				continue
+			}
+			if res.Share() != 0 && r.Share() != res.Share() {
+				continue
+			}
+			st, serr := r.Root().Stat(r.Path())
+			if serr != nil {
+				continue
+			}
+			out = append(out, s.engine.Core.EntryAt(r, st))
 		}
-		if res.Share() != 0 && r.Share() != res.Share() {
-			continue
-		}
-		st, serr := r.Root().Stat(r.Path())
-		if serr != nil {
-			continue
-		}
-		out = append(out, s.engine.Core.EntryAt(r, st))
 	}
 	return out, nil
 }

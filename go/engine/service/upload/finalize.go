@@ -221,9 +221,12 @@ func (e *Engine) Assemble(
 	if herr != nil {
 		return core.Entry{}, herr
 	}
-	if head != total {
+	if total > 0 && head != total {
 		return core.Entry{}, fmt.Errorf("%w: %d bytes assembled against a declared total of %d",
 			ErrBadRequest, head, total)
+	}
+	if total == 0 {
+		total = head
 	}
 
 	// Assembly produces a contiguous file by construction, so the set reduces to

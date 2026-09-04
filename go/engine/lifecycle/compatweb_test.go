@@ -1212,6 +1212,69 @@ func TestNextcloudAndroidPostLoginFlow(t *testing.T) {
 		t.Errorf("closing report response: %v", cerr)
 	}
 
+	// 10b. Post-login: OPTIONS /remote.php/dav must advertise SEARCH in Allow header
+	davOptReq, err := http.NewRequest(http.MethodOptions, delivery.Server+"/remote.php/dav", nil)
+	if err != nil {
+		t.Fatalf("building dav OPTIONS: %v", err)
+	}
+	davOptReq.Header.Set("Authorization", basicAuth)
+	davOptResp, err := client.Do(davOptReq)
+	if err != nil || davOptResp.StatusCode != http.StatusOK {
+		t.Fatalf("OPTIONS /remote.php/dav: err=%v status=%d", err, davOptResp.StatusCode)
+	}
+	if !strings.Contains(davOptResp.Header.Get("Allow"), "SEARCH") {
+		t.Fatalf("OPTIONS /remote.php/dav Allow header missing SEARCH: %q", davOptResp.Header.Get("Allow"))
+	}
+	if cerr := davOptResp.Body.Close(); cerr != nil {
+		t.Errorf("closing dav options response: %v", cerr)
+	}
+
+	// 10c. Post-login: SEARCH /remote.php/dav with NcSearchMethod XML body (<d:searchrequest>)
+	searchXML := `<?xml version="1.0" encoding="utf-8"?>
+<d:searchrequest xmlns:d="DAV:" xmlns:oc="http://nextcloud.com/ns">
+  <d:basicsearch>
+    <d:select><d:prop><d:getetag/><oc:id/><oc:size/></d:prop></d:select>
+    <d:from><d:scope><d:href>/files/` + delivery.LoginName + `</d:href><d:depth>infinity</d:depth></d:scope></d:from>
+    <d:where><d:eq><d:prop><oc:favorite/></d:prop><d:literal>yes</d:literal></d:eq></d:where>
+  </d:basicsearch>
+</d:searchrequest>`
+	searchReq, err := http.NewRequest("SEARCH", delivery.Server+"/remote.php/dav", strings.NewReader(searchXML))
+	if err != nil {
+		t.Fatalf("building SEARCH: %v", err)
+	}
+	searchReq.Header.Set("Authorization", basicAuth)
+	searchReq.Header.Set("Content-Type", "text/xml")
+	searchResp, err := client.Do(searchReq)
+	if err != nil || searchResp.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("SEARCH on /remote.php/dav: err=%v status=%d", err, searchResp.StatusCode)
+	}
+	if cerr := searchResp.Body.Close(); cerr != nil {
+		t.Errorf("closing search response: %v", cerr)
+	}
+
+	// 10d. Post-login: SEARCH /remote.php/dav for media (Gallery/Photo search)
+	mediaSearchXML := `<?xml version="1.0" encoding="utf-8"?>
+<d:searchrequest xmlns:d="DAV:" xmlns:oc="http://nextcloud.com/ns">
+  <d:basicsearch>
+    <d:select><d:prop><d:getetag/><oc:id/><oc:size/></d:prop></d:select>
+    <d:from><d:scope><d:href>/files/` + delivery.LoginName + `</d:href><d:depth>infinity</d:depth></d:scope></d:from>
+    <d:where><d:like><d:prop><d:getcontenttype/></d:prop><d:literal>image/%</d:literal></d:like></d:where>
+  </d:basicsearch>
+</d:searchrequest>`
+	mediaSearchReq, err := http.NewRequest("SEARCH", delivery.Server+"/remote.php/dav", strings.NewReader(mediaSearchXML))
+	if err != nil {
+		t.Fatalf("building media SEARCH: %v", err)
+	}
+	mediaSearchReq.Header.Set("Authorization", basicAuth)
+	mediaSearchReq.Header.Set("Content-Type", "text/xml")
+	mediaSearchResp, err := client.Do(mediaSearchReq)
+	if err != nil || mediaSearchResp.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("media SEARCH on /remote.php/dav: err=%v status=%d", err, mediaSearchResp.StatusCode)
+	}
+	if cerr := mediaSearchResp.Body.Close(); cerr != nil {
+		t.Errorf("closing media search response: %v", cerr)
+	}
+
 	// 11. Post-login: Share link creation, expiration check, and deletion
 	shareForm := url.Values{
 		"path":       {"/files"},
