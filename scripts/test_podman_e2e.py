@@ -509,7 +509,10 @@ def main():
         assert "test.png" not in favourites, f"favourites search returned an unstarred file: {favourites}"
         print("  favourite filter OK.")
 
-        # Get Web login session
+        # Get Web login session. The image and video content endpoints below
+        # are native /api/v1/* calls, which now admit only the browser session:
+        # the cookie and CSRF token from this login carry every subsequent
+        # native call, the same as the compat surfaces already carry their own.
         login_body = json.dumps({"login": "admin", "password": "Password123!"}).encode("utf-8")
         web_login = urllib.request.Request(
             f"{base_url}/api/v1/auth/login",
@@ -518,7 +521,8 @@ def main():
         )
         with urllib.request.urlopen(web_login, context=ctx) as resp:
             cookie = resp.headers.get("Set-Cookie")
-            assert cookie
+            web_csrf = json.loads(resp.read().decode("utf-8")).get("csrf", "")
+            assert cookie and web_csrf
 
         # Test content endpoint for image
         img_req = urllib.request.Request(

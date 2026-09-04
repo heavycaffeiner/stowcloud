@@ -15,17 +15,17 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
 // shareWith serves an engine whose account holds one share with exactly the
-// named permissions, and returns the base URL, a token and the share name.
+// named permissions, and returns the base URL, a session for the account and
+// the share name.
 //
 // The permissions are the point: each write route needs a different one, and a
 // route that resolved with the wrong permission would be served by an account
 // that was never granted it.
-func shareWith(t *testing.T, perms acl.Perms) (base, token, share string) {
+func shareWith(t *testing.T, perms acl.Perms) (base string, sess session, share string) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -62,16 +62,12 @@ func shareWith(t *testing.T, perms acl.Perms) (base, token, share string) {
 		t.Fatalf("reloading: %v", rerr)
 	}
 
-	// The credential carries every bit, so what refuses a request is the
-	// grant rather than the token's own scope. Testing both at once would
-	// not say which one refused.
-	tok, err := e.Auth.CreateAppPassword(ctx, id, "test",
-		auth.Scope{Perms: uint16(everyPerm())}, 0)
-	if err != nil {
-		t.Fatalf("minting: %v", err)
-	}
-
-	return serve(t, e), tok, sh.Name
+	// A session, because the native API admits nothing else. What refuses a
+	// request here is the grant, which is the point of the fixture: a session
+	// carries every permission the account has, so the grant is the only
+	// thing narrowing it.
+	served := serve(t, e)
+	return served, signIn(t, served, "alice", "a-long-enough-password"), sh.Name
 }
 
 // everyPerm is the full mask.
@@ -80,8 +76,8 @@ func everyPerm() acl.Perms {
 		acl.Rename | acl.Move | acl.Share | acl.Download
 }
 
-// post sends a JSON body with a credential.
-func post(t *testing.T, url, token string, body any) (int, []byte) {
+// post sends a JSON body with a browser session.
+func post(t *testing.T, url string, sess session, body any) (int, []byte) {
 	t.Helper()
 
 	encoded, err := json.Marshal(body)
@@ -94,7 +90,7 @@ func post(t *testing.T, url, token string, body any) (int, []byte) {
 		t.Fatalf("building: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth("ignored", token)
+	sess.attach(req)
 
 	resp, err := testClient().Do(req)
 	if err != nil {
@@ -157,15 +153,15 @@ func TestEachWriteRouteNeedsItsOwnPermission(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			// Without the bit: refused.
-			base, token, _ := shareWith(t, c.granted)
-			status, body := post(t, base+c.route, token, c.body)
+			base, sess, _ := shareWith(t, c.granted)
+			status, body := post(t, base+c.route, sess, c.body)
 			if status < 400 {
 				t.Errorf("%s succeeded without %v: %d %s", c.route, c.missing, status, body)
 			}
 
 			// With it: served. Otherwise the refusal above could be anything.
-			base2, token2, _ := shareWith(t, everyPerm())
-			ok, okBody := post(t, base2+c.route, token2, c.body)
+			base2, sess2, _ := shareWith(t, everyPerm())
+			ok, okBody := post(t, base2+c.route, sess2, c.body)
 			if ok >= 400 {
 				t.Errorf("%s was refused with every permission: %d %s", c.route, ok, okBody)
 			}
@@ -176,9 +172,9 @@ func TestEachWriteRouteNeedsItsOwnPermission(t *testing.T) {
 // A write actually writes. Without this the permission tests above could pass
 // against a route that refuses everything.
 func TestMkdirCreatesARealDirectory(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
+	base, sess, share := shareWith(t, everyPerm())
 
-	status, body := post(t, base+"/api/v1/files/mkdir", token,
+	status, body := post(t, base+"/api/v1/files/mkdir", sess,
 		map[string]string{"path": "/" + share + "/created"})
 	if status != http.StatusCreated {
 		t.Fatalf("mkdir answered %d: %s", status, body)
@@ -186,7 +182,7 @@ func TestMkdirCreatesARealDirectory(t *testing.T) {
 
 	// And the listing shows it, which is the client's own view of the write.
 	listStatus, listBody := authed(t, http.MethodGet,
-		base+"/api/v1/files/list?path="+urlEscape("/"+share), token)
+		base+"/api/v1/files/list?path="+urlEscape("/"+share), sess)
 	if listStatus != http.StatusOK {
 		t.Fatalf("the listing answered %d: %s", listStatus, listBody)
 	}
@@ -197,16 +193,16 @@ func TestMkdirCreatesARealDirectory(t *testing.T) {
 
 // A delete removes the entry from the listing.
 func TestDeleteRemovesTheEntry(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
+	base, sess, share := shareWith(t, everyPerm())
 
-	status, body := post(t, base+"/api/v1/files/delete", token,
+	status, body := post(t, base+"/api/v1/files/delete", sess,
 		map[string]string{"path": "/" + share + "/existing.txt"})
 	if status != http.StatusNoContent {
 		t.Fatalf("delete answered %d: %s", status, body)
 	}
 
 	_, listBody := authed(t, http.MethodGet,
-		base+"/api/v1/files/list?path="+urlEscape("/"+share), token)
+		base+"/api/v1/files/list?path="+urlEscape("/"+share), sess)
 	if strings.Contains(string(listBody), "existing.txt") {
 		t.Errorf("the deleted entry is still listed: %s", listBody)
 	}
@@ -215,13 +211,13 @@ func TestDeleteRemovesTheEntry(t *testing.T) {
 // A write to a path outside every held share is refused, and refused the same
 // way a missing one is.
 func TestAWriteOutsideTheSharesIsRefused(t *testing.T) {
-	base, token, _ := shareWith(t, everyPerm())
+	base, sess, _ := shareWith(t, everyPerm())
 
 	escapes := []string{"/../etc/newdir", "/work/../../tmp/newdir", "/nothing/newdir"}
 
 	for _, path := range escapes {
 		t.Run(path, func(t *testing.T) {
-			status, body := post(t, base+"/api/v1/files/mkdir", token,
+			status, body := post(t, base+"/api/v1/files/mkdir", sess,
 				map[string]string{"path": path})
 			if status < 400 {
 				t.Errorf("%q was created: %d %s", path, status, body)
@@ -240,8 +236,10 @@ func TestTheWriteRoutesNeedACredential(t *testing.T) {
 		"/api/v1/files/rename",
 	} {
 		t.Run(route, func(t *testing.T) {
-			status, body := post(t, base+route, "", map[string]string{"path": "/work/x"})
-			if status != http.StatusUnauthorized {
+			status, body := post(t, base+route, session{}, map[string]string{"path": "/work/x"})
+			// The refusal is disguised as a missing address, so a stranger
+			// cannot tell a real route from one that was never mounted.
+			if status != http.StatusNotFound {
 				t.Errorf("%s answered %d anonymously: %s", route, status, body)
 			}
 		})
@@ -251,7 +249,7 @@ func TestTheWriteRoutesNeedACredential(t *testing.T) {
 // A body that is not JSON is refused as malformed rather than acted on with
 // zero values. A mkdir with an empty path is a request nobody made.
 func TestAMalformedBodyIsRefused(t *testing.T) {
-	base, token, _ := shareWith(t, everyPerm())
+	base, sess, _ := shareWith(t, everyPerm())
 
 	req, err := http.NewRequest(http.MethodPost, base+"/api/v1/files/mkdir",
 		strings.NewReader("this is not json"))
@@ -259,7 +257,7 @@ func TestAMalformedBodyIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.SetBasicAuth("ignored", token)
+	sess.attach(req)
 
 	resp, err := testClient().Do(req)
 	if err != nil {
@@ -320,15 +318,10 @@ func TestADeleteGoesToTheTrashWhereTheShareHasOne(t *testing.T) {
 		t.Fatal(rerr)
 	}
 
-	token, err := e.Auth.CreateAppPassword(ctx, id, "test",
-		auth.Scope{Perms: uint16(everyPerm())}, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	base := serve(t, e)
+	sess := signIn(t, base, "alice", "a-long-enough-password")
 
-	status, body := post(t, base+"/api/v1/files/delete", token,
+	status, body := post(t, base+"/api/v1/files/delete", sess,
 		map[string]string{"path": "/" + sh.Name + "/doomed.txt"})
 	if status != http.StatusNoContent {
 		t.Fatalf("delete answered %d: %s", status, body)
@@ -364,7 +357,7 @@ func vpathOf(t *testing.T, s string) vfs.Vpath {
 // would make a mkdir with an empty path into a request nobody sent, and the
 // refusal is what keeps a malformed request from becoming a well-formed one.
 func TestAMalformedBodyNeverReachesTheService(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
+	base, sess, share := shareWith(t, everyPerm())
 
 	bodies := []string{"this is not json", "{", "[]", `{"path":`, ""}
 
@@ -376,7 +369,7 @@ func TestAMalformedBodyNeverReachesTheService(t *testing.T) {
 				t.Fatal(err)
 			}
 			req.Header.Set("Content-Type", "application/json")
-			req.SetBasicAuth("ignored", token)
+			sess.attach(req)
 
 			resp, err := testClient().Do(req)
 			if err != nil {
@@ -393,7 +386,7 @@ func TestAMalformedBodyNeverReachesTheService(t *testing.T) {
 
 	// And nothing was created by any of them.
 	_, listBody := authed(t, http.MethodGet,
-		base+"/api/v1/files/list?path="+urlEscape("/"+share), token)
+		base+"/api/v1/files/list?path="+urlEscape("/"+share), sess)
 
 	var page struct {
 		Entries []struct {

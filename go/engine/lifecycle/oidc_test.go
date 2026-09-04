@@ -81,9 +81,9 @@ func TestSignOnConfigRevealsNothingAboutTheProvider(t *testing.T) {
 
 // Starting a flow with no provider configured is refused, not crashed.
 func TestStartingSignOnWithNoProviderIsRefused(t *testing.T) {
-	base, token, _ := bootWithUser(t)
+	base, _, sess := bootWithUser(t)
 
-	status, _ := authed(t, http.MethodGet, base+"/api/v1/auth/oidc/start", token)
+	status, _ := authed(t, http.MethodGet, base+"/api/v1/auth/oidc/start", sess)
 	if status == http.StatusOK {
 		t.Error("a sign-on flow started with no provider configured")
 	}

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Active sessions —: IP/UA are display-only
+  // Active sessions: IP/UA are display-only
   // records, not an authentication condition. Individual sessions can be
   // revoked, and the current session gets a badge.
   import { onMount } from 'svelte'
@@ -76,7 +76,7 @@
             {/snippet}
             {#snippet supporting()}
               <span title={s.ua_first ?? undefined}>{describeUserAgent(s.ua_first)}</span>
-              · {t('session.last_active', { date: formatDateNs(s.last_seen_ns) })}
+              - {t('session.last_active', { date: formatDateNs(s.last_seen_ns) })}
             {/snippet}
             {#snippet trailing()}
               {#if !s.current}

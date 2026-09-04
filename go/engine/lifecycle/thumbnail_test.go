@@ -21,7 +21,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
@@ -84,7 +83,7 @@ func samplePNG(t *testing.T, w, h int) []byte {
 }
 
 // thumbShare serves a share holding one image, with the decoder wired.
-func thumbShare(t *testing.T, perms acl.Perms, img []byte) (base, token, share, host string) {
+func thumbShare(t *testing.T, perms acl.Perms, img []byte) (base string, sess session, share, host string) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -104,8 +103,8 @@ func thumbShare(t *testing.T, perms acl.Perms, img []byte) (base, token, share, 
 		t.Skip("this host builds no decoder pool, so there is nothing to drive")
 	}
 
-	id, err := e.Auth.CreateUser(ctx, "alice", "Alice",
-		secret.New([]byte("a-long-enough-password")))
+	const password = "a-long-enough-password"
+	id, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte(password)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,16 +124,12 @@ func thumbShare(t *testing.T, perms acl.Perms, img []byte) (base, token, share, 
 		t.Fatal(gerr)
 	}
 
-	appPW, err := e.Auth.CreateAppPassword(ctx, id, "test",
-		auth.Scope{Perms: auth.SyncScopePerms}, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return serve(t, e), appPW, sh.Name, host
+	base = serve(t, e)
+	return base, signIn(t, base, "alice", password), sh.Name, host
 }
 
 // thumbnail requests one, at the named size when given.
-func thumbnail(t *testing.T, base, token, path, size string) (int, http.Header, []byte) {
+func thumbnail(t *testing.T, base string, sess session, path, size string) (int, http.Header, []byte) {
 	t.Helper()
 
 	url := base + "/api/v1/files/thumbnail?path=" + urlEscape(path)
@@ -145,8 +140,8 @@ func thumbnail(t *testing.T, base, token, path, size string) (int, http.Header, 
 	if err != nil {
 		t.Fatalf("building: %v", err)
 	}
-	if token != "" {
-		req.SetBasicAuth("ignored", token)
+	if sess.cookie != nil {
+		sess.attach(req)
 	}
 
 	resp, err := testClient().Do(req)
@@ -167,9 +162,9 @@ func thumbnail(t *testing.T, base, token, path, size string) (int, http.Header, 
 // is still bytes: the interface would show a broken image and the route would
 // have reported success.
 func TestAThumbnailIsADecodablePNG(t *testing.T) {
-	base, token, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 400, 300))
+	base, sess, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 400, 300))
 
-	status, header, body := thumbnail(t, base, token, "/"+share+"/photo.png", "")
+	status, header, body := thumbnail(t, base, sess, "/"+share+"/photo.png", "")
 	if status != http.StatusOK {
 		t.Fatalf("answered %d: %s", status, body)
 	}
@@ -228,9 +223,9 @@ func TestAThumbnailIsADecodablePNG(t *testing.T) {
 // came back rotated, mirrored, or of a different file would still decode, so
 // the corner is what proves the pixels are the ones that went in.
 func TestAThumbnailKeepsTheImageOrientation(t *testing.T) {
-	base, token, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 400, 300))
+	base, sess, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 400, 300))
 
-	status, _, body := thumbnail(t, base, token, "/"+share+"/photo.png", "")
+	status, _, body := thumbnail(t, base, sess, "/"+share+"/photo.png", "")
 	if status != http.StatusOK {
 		t.Fatalf("answered %d: %s", status, body)
 	}
@@ -260,14 +255,14 @@ func TestAThumbnailKeepsTheImageOrientation(t *testing.T) {
 
 // A file nothing can decode is refused rather than answered with a broken image.
 func TestAThumbnailOfAnUndecodableFileIsRefused(t *testing.T) {
-	base, token, share, host := thumbShare(t, everyPerm(), samplePNG(t, 64, 64))
+	base, sess, share, host := thumbShare(t, everyPerm(), samplePNG(t, 64, 64))
 
 	if werr := os.WriteFile(filepath.Join(host, "notes.txt"),
 		[]byte("this is not an image"), 0o600); werr != nil {
 		t.Fatal(werr)
 	}
 
-	status, _, _ := thumbnail(t, base, token, "/"+share+"/notes.txt", "")
+	status, _, _ := thumbnail(t, base, sess, "/"+share+"/notes.txt", "")
 	if status == http.StatusOK {
 		t.Error("a text file produced a thumbnail")
 	}
@@ -280,9 +275,9 @@ func TestAThumbnailOfAnUndecodableFileIsRefused(t *testing.T) {
 func TestAThumbnailNeedsTheFilesPermission(t *testing.T) {
 	// Listing without downloading: the grant shows the name and withholds the
 	// bytes, which is exactly the case a thumbnail would leak.
-	base, token, share, _ := thumbShare(t, acl.Read, samplePNG(t, 200, 200))
+	base, sess, share, _ := thumbShare(t, acl.Read, samplePNG(t, 200, 200))
 
-	status, _, _ := thumbnail(t, base, token, "/"+share+"/photo.png", "")
+	status, _, _ := thumbnail(t, base, sess, "/"+share+"/photo.png", "")
 	if status == http.StatusOK {
 		t.Error("an account that cannot download the file received a thumbnail of it")
 	}
@@ -290,14 +285,14 @@ func TestAThumbnailNeedsTheFilesPermission(t *testing.T) {
 
 // A thumbnail is not served for a path outside the share.
 func TestAThumbnailCannotEscapeTheShare(t *testing.T) {
-	base, token, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 64, 64))
+	base, sess, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 64, 64))
 
 	for _, p := range []string{
 		"/" + share + "/../../etc/passwd",
 		"/" + share + "/%2e%2e%2f%2e%2e%2fetc%2fpasswd",
 		"/../etc/passwd",
 	} {
-		status, _, _ := thumbnail(t, base, token, p, "")
+		status, _, _ := thumbnail(t, base, sess, p, "")
 		if status == http.StatusOK {
 			t.Errorf("%q produced a thumbnail", p)
 		}
@@ -306,9 +301,9 @@ func TestAThumbnailCannotEscapeTheShare(t *testing.T) {
 
 // An unknown size is refused rather than rounded to the nearest.
 func TestAnUnknownThumbnailSizeIsRefused(t *testing.T) {
-	base, token, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 200, 200))
+	base, sess, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 200, 200))
 
-	status, _, _ := thumbnail(t, base, token, "/"+share+"/photo.png", "enormous")
+	status, _, _ := thumbnail(t, base, sess, "/"+share+"/photo.png", "enormous")
 	if status == http.StatusOK {
 		t.Error("a size nobody defined was accepted")
 	}
@@ -316,11 +311,11 @@ func TestAnUnknownThumbnailSizeIsRefused(t *testing.T) {
 
 // The three defined sizes differ, so asking for one is not asking for another.
 func TestTheThumbnailSizesDiffer(t *testing.T) {
-	base, token, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 800, 600))
+	base, sess, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 800, 600))
 
 	seen := make(map[string]image.Point, 3)
 	for _, size := range []string{"small", "medium", "large"} {
-		status, _, body := thumbnail(t, base, token, "/"+share+"/photo.png", size)
+		status, _, body := thumbnail(t, base, sess, "/"+share+"/photo.png", size)
 		if status != http.StatusOK {
 			t.Fatalf("%s answered %d", size, status)
 		}
@@ -343,12 +338,24 @@ func TestTheThumbnailSizesDiffer(t *testing.T) {
 func TestAThumbnailNeedsACredential(t *testing.T) {
 	base, _, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 64, 64))
 
-	status, _, _ := thumbnail(t, base, "", "/"+share+"/photo.png", "")
-	if status == http.StatusOK {
-		t.Error("a thumbnail was served without a credential")
+	// The refusal is disguised as a missing address: middleware.scopeHandler
+	// answers every refusal with 404 rather than 401 or 403, so a stranger
+	// probing the surface cannot map which routes exist.
+	status, _, _ := thumbnail(t, base, session{}, "/"+share+"/photo.png", "")
+	if status != http.StatusNotFound {
+		t.Errorf("a thumbnail was served without a credential: %d", status)
 	}
 }
 
+// TestThumbnailSettingCanBeToggledOff proves the admin setting, not the
+// credential, gates the route.
+//
+// Driven with a session rather than the app password this test used to carry.
+// middleware.Scope now refuses every device credential on /api/v1 outright, so
+// a call kept on the app password would answer 404 both before and after the
+// toggle, and the assertion below would say nothing about the setting. The
+// route it exercises is the native API's, which now admits only the browser
+// session, so that is the surface this test is actually about.
 func TestThumbnailSettingCanBeToggledOff(t *testing.T) {
 	ctx := context.Background()
 	e, err := lifecycle.Open(ctx, lifecycle.Options{
@@ -372,7 +379,8 @@ func TestThumbnailSettingCanBeToggledOff(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	userID, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password")))
+	const password = "a-long-enough-password"
+	userID, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte(password)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,13 +398,10 @@ func TestThumbnailSettingCanBeToggledOff(t *testing.T) {
 	}); gerr != nil {
 		t.Fatal(gerr)
 	}
-	appPW, _, err := e.Auth.CreateSyncCredential(ctx, int64(userID), "sync")
-	if err != nil {
-		t.Fatal(err)
-	}
 	base := serve(t, e)
+	sess := signIn(t, base, "alice", password)
 
-	status, _, _ := thumbnail(t, base, appPW, "/pics/photo.png", "")
+	status, _, _ := thumbnail(t, base, sess, "/pics/photo.png", "")
 	if status != http.StatusOK {
 		t.Fatalf("thumbnail failed before toggle: %d", status)
 	}
@@ -413,7 +418,7 @@ func TestThumbnailSettingCanBeToggledOff(t *testing.T) {
 		t.Fatalf("patching settings failed: %d %+v", code, resp)
 	}
 
-	statusAfter, _, _ := thumbnail(t, base, appPW, "/pics/photo.png", "")
+	statusAfter, _, _ := thumbnail(t, base, sess, "/pics/photo.png", "")
 	if statusAfter != http.StatusNotFound {
 		t.Errorf("thumbnail was served after being disabled: %d, want 404", statusAfter)
 	}

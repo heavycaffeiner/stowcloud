@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
@@ -25,14 +24,14 @@ type sseEvent struct {
 
 // readSSE performs a request and collects the events, so a test reads frames
 // rather than a blob of text.
-func readSSE(t *testing.T, url, token string) (int, http.Header, []sseEvent) {
+func readSSE(t *testing.T, url string, sess session) (int, http.Header, []sseEvent) {
 	t.Helper()
 
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		t.Fatalf("building: %v", err)
 	}
-	req.SetBasicAuth("ignored", token)
+	sess.attach(req)
 
 	resp, err := testClient().Do(req)
 	if err != nil {
@@ -62,15 +61,15 @@ func readSSE(t *testing.T, url, token string) (int, http.Header, []sseEvent) {
 
 // A search finds a file and ends with a terminal event.
 func TestSearchingFindsAFile(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
 	for _, name := range []string{"report-january.txt", "report-february.txt", "unrelated.bin"} {
-		if status, body := upload(t, base, token, "/"+share+"/"+name, []byte("x")); status != http.StatusOK {
+		if status, body := upload(t, base, sess, "/"+share+"/"+name, []byte("x")); status != http.StatusOK {
 			t.Fatalf("writing %s answered %d: %s", name, status, body)
 		}
 	}
 
-	status, header, events := readSSE(t, base+"/api/v1/search/stream?q=report", token)
+	status, header, events := readSSE(t, base+"/api/v1/search/stream?q=report", sess)
 	if status != http.StatusOK {
 		t.Fatalf("answered %d", status)
 	}
@@ -121,13 +120,13 @@ func TestSearchingFindsAFile(t *testing.T) {
 // A share-relative fragment would make the client reassemble the path, and a
 // client that got it wrong would open the wrong file.
 func TestASearchHitCarriesTheNavigablePath(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
-	if status, _ := upload(t, base, token, "/"+share+"/sub/findme.txt", []byte("x")); status != http.StatusOK {
+	if status, _ := upload(t, base, sess, "/"+share+"/sub/findme.txt", []byte("x")); status != http.StatusOK {
 		t.Fatal("writing failed")
 	}
 
-	_, _, events := readSSE(t, base+"/api/v1/search/stream?q=findme", token)
+	_, _, events := readSSE(t, base+"/api/v1/search/stream?q=findme", sess)
 
 	var found bool
 	for _, e := range events {
@@ -155,7 +154,7 @@ func TestASearchHitCarriesTheNavigablePath(t *testing.T) {
 
 		// And it is a path this server will actually serve, which is the
 		// claim the field makes.
-		code, _, body := download(t, base, token, path, "")
+		code, _, body := download(t, base, sess, path, "")
 		if code != http.StatusOK {
 			t.Errorf("the hit path %q does not read back: %d %s", path, code, body)
 		}
@@ -171,9 +170,8 @@ func TestASearchHitCarriesTheNavigablePath(t *testing.T) {
 // partway down a tree: a share-level answer would either conceal a readable
 // subtree or list an unreadable one.
 //
-// Both accounts live on one engine. A token from a second engine would be
-// refused as a credential, so a test built that way proves the auth check
-// works and says nothing about the filter.
+// Both accounts live on one engine. A second account's session proves the
+// filter runs on the entry, not on whether the caller is signed in at all.
 func TestSearchOnlyReportsReadableFiles(t *testing.T) {
 	ctx := context.Background()
 
@@ -187,9 +185,8 @@ func TestSearchOnlyReportsReadableFiles(t *testing.T) {
 		}
 	})
 
-	granted, err := e.Auth.CreateUser(ctx, "alice", "Alice", pwOf(loginPassword))
-	if err != nil {
-		t.Fatal(err)
+	if _, cerr := e.Auth.CreateUser(ctx, "alice", "Alice", pwOf(loginPassword)); cerr != nil {
+		t.Fatal(cerr)
 	}
 	if _, cerr := e.Auth.CreateUser(ctx, "bob", "Bob", pwOf(loginPassword)); cerr != nil {
 		t.Fatal(cerr)
@@ -205,33 +202,28 @@ func TestSearchOnlyReportsReadableFiles(t *testing.T) {
 	}
 
 	// Only the first account is granted anything.
+	granted, err := e.Auth.UserIDByName(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
 		User: &granted, Share: sh.ID, Allow: everyPerm(), Inherit: true, Label: sh.Name,
 	}); gerr != nil {
 		t.Fatal(gerr)
 	}
+	if rerr := e.Core.ReloadGrants(ctx); rerr != nil {
+		t.Fatal(rerr)
+	}
 
-	grantedToken, err := e.Auth.CreateAppPassword(ctx, granted, "granted",
-		auth.Scope{Perms: auth.SyncScopePerms}, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bob, err := e.Auth.UserIDByName(ctx, "bob")
-	if err != nil {
-		t.Fatal(err)
-	}
-	deniedToken, err := e.Auth.CreateAppPassword(ctx, bob, "denied",
-		auth.Scope{Perms: auth.SyncScopePerms}, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
 	base := serve(t, e)
+	grantedSess := signIn(t, base, "alice", loginPassword)
+	deniedSess := signIn(t, base, "bob", loginPassword)
 
 	// The granted account finds it, which is what makes the denial below
 	// meaningful rather than a search that finds nothing for anybody.
-	_, _, granted_events := readSSE(t, base+"/api/v1/search/stream?q=secret", grantedToken)
+	_, _, grantedEvents := readSSE(t, base+"/api/v1/search/stream?q=secret", grantedSess)
 	var grantedHits int
-	for _, ev := range granted_events {
+	for _, ev := range grantedEvents {
 		if ev.name == "hit" {
 			grantedHits++
 		}
@@ -240,7 +232,7 @@ func TestSearchOnlyReportsReadableFiles(t *testing.T) {
 		t.Fatal("the granted account found nothing, so this test cannot show a denial")
 	}
 
-	_, _, deniedEvents := readSSE(t, base+"/api/v1/search/stream?q=secret", deniedToken)
+	_, _, deniedEvents := readSSE(t, base+"/api/v1/search/stream?q=secret", deniedSess)
 	for _, ev := range deniedEvents {
 		if ev.name == "hit" {
 			t.Errorf("an account with no grant received a hit: %s", ev.data)
@@ -253,10 +245,10 @@ func TestSearchOnlyReportsReadableFiles(t *testing.T) {
 // A query that matched everything is a way to make one request cost a full
 // scan of the deployment.
 func TestAnEmptySearchQueryIsRefused(t *testing.T) {
-	base, token, _ := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, _ := contentShare(t, everyPerm(), []byte("unused"))
 
 	for _, q := range []string{"", "   ", "%20"} {
-		status, _ := authed(t, http.MethodGet, base+"/api/v1/search/stream?q="+q, token)
+		status, _ := authed(t, http.MethodGet, base+"/api/v1/search/stream?q="+q, sess)
 		if status == http.StatusOK {
 			t.Errorf("the query %q was accepted", q)
 		}
@@ -265,10 +257,10 @@ func TestAnEmptySearchQueryIsRefused(t *testing.T) {
 
 // An oversized query is refused before it reaches the matcher.
 func TestAnOversizedSearchQueryIsRefused(t *testing.T) {
-	base, token, _ := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, _ := contentShare(t, everyPerm(), []byte("unused"))
 
 	status, _ := authed(t, http.MethodGet,
-		base+"/api/v1/search/stream?q="+strings.Repeat("a", 600), token)
+		base+"/api/v1/search/stream?q="+strings.Repeat("a", 600), sess)
 	if status == http.StatusOK {
 		t.Error("a 600-character query was accepted")
 	}
@@ -278,17 +270,12 @@ func TestAnOversizedSearchQueryIsRefused(t *testing.T) {
 func TestSearchNeedsACredential(t *testing.T) {
 	base, _, _ := contentShare(t, everyPerm(), []byte("unused"))
 
-	resp, err := testClient().Get(base + "/api/v1/search/stream?q=anything")
-	if err != nil {
-		t.Fatalf("requesting: %v", err)
-	}
-	defer func() {
-		if cerr := resp.Body.Close(); cerr != nil {
-			t.Errorf("closing: %v", cerr)
-		}
-	}()
-	if resp.StatusCode == http.StatusOK {
-		t.Error("an unauthenticated search was served")
+	// The refusal is disguised as a missing address: middleware.scopeHandler
+	// answers every refusal with 404 rather than 401 or 403, so a stranger
+	// probing the surface cannot map which routes exist.
+	status, body := get(t, base+"/api/v1/search/stream?q=anything")
+	if status != http.StatusNotFound {
+		t.Errorf("an unauthenticated search answered %d: %s", status, body)
 	}
 }
 
@@ -297,9 +284,9 @@ func TestSearchNeedsACredential(t *testing.T) {
 // A client waits for the terminal event. Without one it waits for the
 // connection to close, which looks like a search that never finished.
 func TestASearchMatchingNothingStillEnds(t *testing.T) {
-	base, token, _ := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, _ := contentShare(t, everyPerm(), []byte("unused"))
 
-	_, _, events := readSSE(t, base+"/api/v1/search/stream?q=zzzznothingmatches", token)
+	_, _, events := readSSE(t, base+"/api/v1/search/stream?q=zzzznothingmatches", sess)
 
 	var done int
 	for _, e := range events {
@@ -333,9 +320,8 @@ func TestSearchRespectsAGrantThatStartsPartwayDown(t *testing.T) {
 		}
 	})
 
-	user, err := e.Auth.CreateUser(ctx, "alice", "Alice", pwOf(loginPassword))
-	if err != nil {
-		t.Fatal(err)
+	if _, cerr := e.Auth.CreateUser(ctx, "alice", "Alice", pwOf(loginPassword)); cerr != nil {
+		t.Fatal(cerr)
 	}
 
 	// One file inside the granted subtree and one above it, both matching.
@@ -354,6 +340,10 @@ func TestSearchRespectsAGrantThatStartsPartwayDown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	user, err := e.Auth.UserIDByName(ctx, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
 	// The grant starts at the subdirectory, not at the share root.
 	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
 		User: &user, Share: sh.ID, Subpath: "allowed",
@@ -361,15 +351,14 @@ func TestSearchRespectsAGrantThatStartsPartwayDown(t *testing.T) {
 	}); gerr != nil {
 		t.Fatal(gerr)
 	}
-
-	token, err := e.Auth.CreateAppPassword(ctx, user, "scoped",
-		auth.Scope{Perms: auth.SyncScopePerms}, 0)
-	if err != nil {
-		t.Fatal(err)
+	if rerr := e.Core.ReloadGrants(ctx); rerr != nil {
+		t.Fatal(rerr)
 	}
-	base := serve(t, e)
 
-	_, _, events := readSSE(t, base+"/api/v1/search/stream?q=target", token)
+	base := serve(t, e)
+	sess := signIn(t, base, "alice", loginPassword)
+
+	_, _, events := readSSE(t, base+"/api/v1/search/stream?q=target", sess)
 
 	var inside, outside int
 	for _, ev := range events {
@@ -414,7 +403,7 @@ func TestSearchRespectsAGrantThatStartsPartwayDown(t *testing.T) {
 // saw it. It is legal in a POSIX name, so a share populated by any other
 // means can hold one, and the walk will find it.
 func TestAFileNameCannotSplitTheSearchStream(t *testing.T) {
-	base, token, share, host := contentShareAt(t, everyPerm(), []byte("unused"))
+	base, sess, share, host := contentShareAt(t, everyPerm(), []byte("unused"))
 
 	nasty := "report\ndata: {\"name\":\"injected\"}\n\nevent: done\ndata: {}\n\n.txt"
 	if werr := os.WriteFile(filepath.Join(host, nasty), []byte("x"), 0o600); werr != nil {
@@ -422,7 +411,7 @@ func TestAFileNameCannotSplitTheSearchStream(t *testing.T) {
 	}
 	_ = share // the share name is not needed: the file is placed on the host directly.
 
-	status, _, events := readSSE(t, base+"/api/v1/search/stream?q=report", token)
+	status, _, events := readSSE(t, base+"/api/v1/search/stream?q=report", sess)
 	if status != http.StatusOK {
 		t.Fatalf("answered %d", status)
 	}

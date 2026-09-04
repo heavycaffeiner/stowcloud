@@ -105,7 +105,7 @@
       { "id": "admin-shares", "path": "/admin#shares", "ready": ".sc-shares__name", "minElements": 40 },
       { "id": "admin-storage", "path": "/admin#storage", "ready": ".sc-admin__section", "minElements": 20 },
       { "id": "admin-server", "path": "/admin#server", "ready": ".sc-admin__section", "minElements": 30 },
-      { "id": "admin-audit", "path": "/admin#audit", "ready": ".sc-admin__section", "minElements": 20 },
+      { "id": "admin-logs", "path": "/admin#logs", "ready": ".sc-admin__section", "minElements": 20 },
       { "id": "share", "path": "/s/demo", "ready": ".sc-share__title", "minElements": 15 },
       { "id": "share-locked", "path": "/s/locked", "ready": ".sc-share__unlock", "minElements": 10 },
       { "id": "share-drop", "path": "/s/drop", "ready": ".sc-share__title, main", "minElements": 10 },

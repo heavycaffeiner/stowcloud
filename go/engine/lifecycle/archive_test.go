@@ -22,18 +22,18 @@ import (
 // zip that only its own author can open is not a zip, and the thing a person
 // does with this response is hand it to their operating system.
 func TestAnArchiveOfASubtree(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("root file"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("root file"))
 
 	// Something to put in it, including a nested directory so the entry
 	// names have to carry a path.
-	if status, body := upload(t, base, token, "/"+share+"/sub/one.txt", []byte("first")); status != http.StatusOK {
+	if status, body := upload(t, base, sess, "/"+share+"/sub/one.txt", []byte("first")); status != http.StatusOK {
 		t.Fatalf("writing one.txt answered %d: %s", status, body)
 	}
-	if status, body := upload(t, base, token, "/"+share+"/sub/two.txt", []byte("second")); status != http.StatusOK {
+	if status, body := upload(t, base, sess, "/"+share+"/sub/two.txt", []byte("second")); status != http.StatusOK {
 		t.Fatalf("writing two.txt answered %d: %s", status, body)
 	}
 
-	status, header, body := fetchArchive(t, base, token,
+	status, header, body := fetchArchive(t, base, sess,
 		map[string]any{"paths": []string{"/" + share + "/sub"}, "name": "bundle.zip"})
 	if status != http.StatusOK {
 		t.Fatalf("archiving answered %d: %s", status, body)
@@ -91,7 +91,7 @@ func keysOf(m map[string]string) []string {
 
 // postRaw sends JSON and returns the whole response, body included, so a
 // binary answer survives.
-func postRaw(t *testing.T, url, token string, body any) (int, http.Header, []byte) {
+func postRaw(t *testing.T, url string, sess session, body any) (int, http.Header, []byte) {
 	t.Helper()
 
 	encoded, err := json.Marshal(body)
@@ -102,7 +102,7 @@ func postRaw(t *testing.T, url, token string, body any) (int, http.Header, []byt
 	if err != nil {
 		t.Fatalf("building: %v", err)
 	}
-	req.SetBasicAuth("ignored", token)
+	sess.attach(req)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := testClient().Do(req)
@@ -122,10 +122,10 @@ func postRaw(t *testing.T, url, token string, body any) (int, http.Header, []byt
 // Two steps, because that is the surface: the post names the selection and
 // the get streams it. A test asserting on the archive itself does not care
 // which request produced the bytes, so it goes through here.
-func fetchArchive(t *testing.T, base, token string, body any) (int, http.Header, []byte) {
+func fetchArchive(t *testing.T, base string, sess session, body any) (int, http.Header, []byte) {
 	t.Helper()
 
-	status, header, raw := postRaw(t, base+"/api/v1/files/archive", token, body)
+	status, header, raw := postRaw(t, base+"/api/v1/files/archive", sess, body)
 	if status != http.StatusOK {
 		return status, header, raw
 	}
@@ -141,7 +141,7 @@ func fetchArchive(t *testing.T, base, token string, body any) (int, http.Header,
 	if err != nil {
 		t.Fatalf("building the fetch: %v", err)
 	}
-	req.SetBasicAuth("ignored", token)
+	sess.attach(req)
 	res, err := testClient().Do(req)
 	if err != nil {
 		t.Fatalf("fetching the archive: %v", err)
@@ -166,13 +166,13 @@ func fetchArchive(t *testing.T, base, token string, body any) (int, http.Header,
 // nothing to hold and the browser saves bytes as they arrive. The cost is a
 // download with no declared length, which is the trade this surface takes.
 func TestAnArchiveIsStreamed(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("root file"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("root file"))
 
-	if status, _ := upload(t, base, token, "/"+share+"/sub/one.txt", []byte("first")); status != http.StatusOK {
+	if status, _ := upload(t, base, sess, "/"+share+"/sub/one.txt", []byte("first")); status != http.StatusOK {
 		t.Fatal("writing the file failed")
 	}
 
-	status, header, body := fetchArchive(t, base, token,
+	status, header, body := fetchArchive(t, base, sess,
 		map[string]any{"paths": []string{"/" + share + "/sub"}, "name": "bundle.zip"})
 	if status != http.StatusOK {
 		t.Fatalf("archiving answered %d: %s", status, body)
@@ -194,9 +194,9 @@ func TestAnArchiveIsStreamed(t *testing.T) {
 // Without a credential on the fetch, sharing that history would share the
 // files.
 func TestAnArchiveTicketNeedsACredential(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("private"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("private"))
 
-	status, _, raw := postRaw(t, base+"/api/v1/files/archive", token,
+	status, _, raw := postRaw(t, base+"/api/v1/files/archive", sess,
 		map[string]any{"paths": []string{"/" + share}, "name": "mine.zip"})
 	if status != http.StatusOK {
 		t.Fatalf("archiving answered %d: %s", status, raw)
@@ -233,9 +233,9 @@ func TestAnArchiveTicketNeedsACredential(t *testing.T) {
 // reads files the account may no longer reach. The fetch re-resolves for
 // exactly this.
 func TestARevokedGrantRefusesTheFetch(t *testing.T) {
-	base, token, share, _, e, grant := contentShareGrant(t, everyPerm(), []byte("private"))
+	base, sess, share, _, e, grant := contentShareGrant(t, everyPerm(), []byte("private"))
 
-	status, _, raw := postRaw(t, base+"/api/v1/files/archive", token,
+	status, _, raw := postRaw(t, base+"/api/v1/files/archive", sess,
 		map[string]any{"paths": []string{"/" + share}, "name": "mine.zip"})
 	if status != http.StatusOK {
 		t.Fatalf("archiving answered %d: %s", status, raw)
@@ -255,7 +255,7 @@ func TestARevokedGrantRefusesTheFetch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("building the fetch: %v", err)
 	}
-	req.SetBasicAuth("ignored", token)
+	sess.attach(req)
 	res, err := testClient().Do(req)
 	if err != nil {
 		t.Fatalf("fetching the archive: %v", err)
@@ -272,13 +272,13 @@ func TestARevokedGrantRefusesTheFetch(t *testing.T) {
 
 // An archive of several roots holds all of them.
 func TestAnArchiveOfSeveralPaths(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("the root file"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("the root file"))
 
-	if status, _ := upload(t, base, token, "/"+share+"/sub/nested.txt", []byte("nested")); status != http.StatusOK {
+	if status, _ := upload(t, base, sess, "/"+share+"/sub/nested.txt", []byte("nested")); status != http.StatusOK {
 		t.Fatal("writing the nested file failed")
 	}
 
-	status, _, body := fetchArchive(t, base, token, map[string]any{
+	status, _, body := fetchArchive(t, base, sess, map[string]any{
 		"paths": []string{"/" + share + "/doc.bin", "/" + share + "/sub"},
 	})
 	if status != http.StatusOK {
@@ -315,9 +315,9 @@ func TestAnArchiveOfSeveralPaths(t *testing.T) {
 // A partial archive is worse than none: the person saves it, sees files, and
 // has no way to know which ones are missing.
 func TestAnArchiveWithAnUnreadablePathIsRefused(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("readable"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("readable"))
 
-	status, _, body := postRaw(t, base+"/api/v1/files/archive", token, map[string]any{
+	status, _, body := postRaw(t, base+"/api/v1/files/archive", sess, map[string]any{
 		"paths": []string{"/" + share + "/doc.bin", "/nosuchshare/secret.txt"},
 	})
 	if status == http.StatusOK {
@@ -327,9 +327,9 @@ func TestAnArchiveWithAnUnreadablePathIsRefused(t *testing.T) {
 
 // An empty selection is refused rather than producing an empty zip.
 func TestAnEmptyArchiveSelectionIsRefused(t *testing.T) {
-	base, token, _ := contentShare(t, everyPerm(), []byte("x"))
+	base, sess, _ := contentShare(t, everyPerm(), []byte("x"))
 
-	status, _, _ := postRaw(t, base+"/api/v1/files/archive", token,
+	status, _, _ := postRaw(t, base+"/api/v1/files/archive", sess,
 		map[string]any{"paths": []string{}})
 	if status == http.StatusOK {
 		t.Error("an empty selection produced an archive")
@@ -341,7 +341,7 @@ func TestAnEmptyArchiveSelectionIsRefused(t *testing.T) {
 // The name reaches Content-Disposition. A quote or a newline in it could end
 // the field and start another, which is a header the client never asked for.
 func TestAnArchiveNameCannotInjectAHeader(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("x"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("x"))
 
 	for _, name := range []string{
 		`evil".zip`,
@@ -351,7 +351,7 @@ func TestAnArchiveNameCannotInjectAHeader(t *testing.T) {
 		"a/b.zip",
 		strings.Repeat("a", 300),
 	} {
-		status, header, _ := postRaw(t, base+"/api/v1/files/archive", token,
+		status, header, _ := postRaw(t, base+"/api/v1/files/archive", sess,
 			map[string]any{"paths": []string{"/" + share + "/doc.bin"}, "name": name})
 		if status == http.StatusOK {
 			t.Errorf("the name %q was accepted", name)
@@ -364,9 +364,9 @@ func TestAnArchiveNameCannotInjectAHeader(t *testing.T) {
 
 // An absent name still produces something a person can open.
 func TestAnArchiveWithoutANameGetsADefault(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("x"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("x"))
 
-	status, header, _ := fetchArchive(t, base, token,
+	status, header, _ := fetchArchive(t, base, sess,
 		map[string]any{"paths": []string{"/" + share + "/doc.bin"}})
 	if status != http.StatusOK {
 		t.Fatalf("answered %d", status)
@@ -379,7 +379,7 @@ func TestAnArchiveWithoutANameGetsADefault(t *testing.T) {
 
 // The listing reads an existing zip's own directory.
 func TestListingInsideAnArchive(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
 	// Built with the standard library, so the listing is proven against a zip
 	// this tree did not write.
@@ -401,12 +401,12 @@ func TestListingInsideAnArchive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if status, body := upload(t, base, token, "/"+share+"/bundle.zip", buf.Bytes()); status != http.StatusOK {
+	if status, body := upload(t, base, sess, "/"+share+"/bundle.zip", buf.Bytes()); status != http.StatusOK {
 		t.Fatalf("uploading the zip answered %d: %s", status, body)
 	}
 
 	status, body := authed(t, http.MethodGet,
-		base+"/api/v1/files/archive/list?path="+urlEscape("/"+share+"/bundle.zip"), token)
+		base+"/api/v1/files/archive/list?path="+urlEscape("/"+share+"/bundle.zip"), sess)
 	if status != http.StatusOK {
 		t.Fatalf("listing answered %d: %s", status, body)
 	}
@@ -444,12 +444,12 @@ func TestListingInsideAnArchive(t *testing.T) {
 // Whether a file this account cannot see happens to be a zip is not something
 // the answer should disclose.
 func TestListingANonArchiveIsIndistinguishableFromAbsence(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("not a zip at all"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("not a zip at all"))
 
 	notZip, notZipBody := authed(t, http.MethodGet,
-		base+"/api/v1/files/archive/list?path="+urlEscape("/"+share+"/doc.bin"), token)
+		base+"/api/v1/files/archive/list?path="+urlEscape("/"+share+"/doc.bin"), sess)
 	absent, absentBody := authed(t, http.MethodGet,
-		base+"/api/v1/files/archive/list?path="+urlEscape("/"+share+"/nothing.zip"), token)
+		base+"/api/v1/files/archive/list?path="+urlEscape("/"+share+"/nothing.zip"), sess)
 
 	if notZip != absent {
 		t.Errorf("a non-archive answers %d and an absent file answers %d", notZip, absent)
@@ -465,13 +465,13 @@ func TestListingANonArchiveIsIndistinguishableFromAbsence(t *testing.T) {
 // only guard, but an archive carrying ../ is one that overwrites files
 // outside the directory a person extracted it into.
 func TestArchiveEntryNamesDoNotEscape(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("root"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("root"))
 
-	if status, _ := upload(t, base, token, "/"+share+"/sub/inner.txt", []byte("inner")); status != http.StatusOK {
+	if status, _ := upload(t, base, sess, "/"+share+"/sub/inner.txt", []byte("inner")); status != http.StatusOK {
 		t.Fatal("writing failed")
 	}
 
-	status, _, body := fetchArchive(t, base, token,
+	status, _, body := fetchArchive(t, base, sess,
 		map[string]any{"paths": []string{"/" + share}})
 	if status != http.StatusOK {
 		t.Fatalf("answered %d", status)
@@ -497,15 +497,15 @@ func TestArchiveEntryNamesDoNotEscape(t *testing.T) {
 // slash. Without one the directory vanishes on extraction, and a person who
 // archived a tree gets back a different tree.
 func TestAnEmptyDirectorySurvivesTheArchive(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("root"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("root"))
 
-	status, body := post(t, base+"/api/v1/files/mkdir", token,
+	status, body := post(t, base+"/api/v1/files/mkdir", sess,
 		map[string]string{"path": "/" + share + "/empty"})
 	if status != http.StatusCreated {
 		t.Fatalf("mkdir answered %d: %s", status, body)
 	}
 
-	code, _, archived := fetchArchive(t, base, token,
+	code, _, archived := fetchArchive(t, base, sess,
 		map[string]any{"paths": []string{"/" + share + "/empty"}})
 	if code != http.StatusOK {
 		t.Fatalf("archiving answered %d", code)
@@ -532,14 +532,14 @@ func TestAnEmptyDirectorySurvivesTheArchive(t *testing.T) {
 // archive over one entry means a single stray permission bit makes a folder
 // undownloadable, with nothing saying which file caused it.
 func TestAnUnreadableEntryDoesNotLoseTheArchive(t *testing.T) {
-	base, token, share, host := contentShareAt(t, everyPerm(), []byte("root"))
+	base, sess, share, host := contentShareAt(t, everyPerm(), []byte("root"))
 
 	for name, body := range map[string]string{
 		"sub/readable-one.txt": "first",
 		"sub/readable-two.txt": "second",
 		"sub/locked.txt":       "hidden",
 	} {
-		if status, out := upload(t, base, token, "/"+share+"/"+name, []byte(body)); status != http.StatusOK {
+		if status, out := upload(t, base, sess, "/"+share+"/"+name, []byte(body)); status != http.StatusOK {
 			t.Fatalf("writing %s answered %d: %s", name, status, out)
 		}
 	}
@@ -557,7 +557,7 @@ func TestAnUnreadableEntryDoesNotLoseTheArchive(t *testing.T) {
 		}
 	})
 
-	status, _, body := fetchArchive(t, base, token,
+	status, _, body := fetchArchive(t, base, sess,
 		map[string]any{"paths": []string{"/" + share + "/sub"}})
 	if status != http.StatusOK {
 		t.Fatalf("archiving answered %d: %s", status, body)

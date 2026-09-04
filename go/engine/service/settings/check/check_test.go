@@ -190,6 +190,36 @@ func TestAProxyRangeCoveringEverythingIsReportedNotRefused(t *testing.T) {
 	}
 }
 
+// One proxy is written as its address, which is the form the loader accepts
+// and the header resolver reads back as a single-host prefix.
+//
+// This gate had a prefix-only rule of its own, so the spelling every other
+// layer documents could not be saved: a deployment behind one proxy had no
+// way to trust it, and the client address stayed the proxy's for the audit
+// log and the rate limiter both.
+func TestABareProxyAddressIsAccepted(t *testing.T) {
+	for _, entry := range []string{"192.168.0.126", "10.88.0.1", "::1", "127.0.0.1"} {
+		got := Section(Input{
+			Section: "network",
+			Body:    map[string]any{"trusted_proxies": []any{entry}},
+		})
+		for _, f := range got {
+			if f.Field == "trusted_proxies" && f.Blocking {
+				t.Errorf("the address %q was refused: %+v", entry, f)
+			}
+		}
+	}
+
+	// A spelling that is neither is still refused.
+	got := Section(Input{
+		Section: "network",
+		Body:    map[string]any{"trusted_proxies": []any{"192.168.0.999"}},
+	})
+	if f := mustFind(t, got, keyInvalidCIDR); !f.Blocking {
+		t.Error("an unparseable entry did not refuse the save")
+	}
+}
+
 // The numeric bounds come from one table, so the screen, the checker and the
 // loader cannot disagree about what is acceptable.
 func TestNumbersOutsideTheirBoundAreRefusedWithTheRange(t *testing.T) {

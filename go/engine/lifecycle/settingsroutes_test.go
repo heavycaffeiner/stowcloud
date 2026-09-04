@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
@@ -359,26 +358,15 @@ func TestTheActiveWorkCountsAreReal(t *testing.T) {
 	}); gerr != nil {
 		t.Fatal(gerr)
 	}
-	token, err := e.Auth.CreateAppPassword(ctx, admin, "drive",
-		auth.Scope{Perms: auth.SyncScopePerms}, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
 	base := serve(t, e)
+	sess := signIn(t, base, "root", loginPassword)
 
 	// A session opened and left open, which is exactly what a restart would
 	// interrupt.
-	createUpload(t, base, token, "/docs/inflight.bin", 4096)
-
-	signIn := postJSON(t, base+"/api/v1/auth/login",
-		map[string]string{"login": "root", "password": loginPassword})
-	cookie := signIn.sessionCookie()
-	if cookie == nil {
-		t.Fatal("the administrator did not sign in")
-	}
+	createUpload(t, base, sess, "/docs/inflight.bin", 4096)
 
 	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/security",
-		cookie, signIn.field("csrf"), map[string]any{"hardening": "preferred"})
+		sess.cookie, sess.csrf, map[string]any{"hardening": "preferred"})
 	if status != http.StatusOK {
 		t.Fatalf("saving answered %d: %v", status, body)
 	}

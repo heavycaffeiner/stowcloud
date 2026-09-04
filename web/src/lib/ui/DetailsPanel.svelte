@@ -18,6 +18,7 @@
   import type { Entry } from '../api/client'
   import type { BrowseState } from '../state/browse.svelte'
   import { selectionMeasure } from '../state/measure.svelte'
+  import { useRunesStore } from '../store/core/bridge.svelte'
   import { uiState } from '../state/ui.svelte'
   import { Icon } from 'm3-svelte'
   import { icons } from '../icons'
@@ -120,7 +121,8 @@
       : { bytes: 0, files: 0 }
   )
 
-  const measured = $derived(selectionMeasure.state)
+  const measureHandle = useRunesStore(selectionMeasure.store)
+  const measured = $derived(measureHandle.current.state)
 
   const title = $derived(many ? t('details.multiple_selected', { count: selection.length }) : (one?.name ?? folderName))
   const titleIcon = $derived(many ? icons.check : one ? (one.kind === 'dir' ? icons.folder : icons.file) : icons.folder)

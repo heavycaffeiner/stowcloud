@@ -1,8 +1,5 @@
-// web/src/lib/state/selection.ts — pure selection-model logic.
-// Selection is kept by name, never by index — so a
-// list refresh never strands the selection on the wrong row. Kept as plain
-// functions over a Set<string> so it is trivially unit-testable and so the
-// app layer can wrap it around a SvelteSet for reactivity (browse.svelte.ts).
+// Selection model operations delegating to pure functional selection slice.
+// Kept for compatibility while migrating components to Zustand stores.
 
 export interface SelectionOps {
   /** Replace the whole selection with a single name. */
@@ -15,15 +12,26 @@ export interface SelectionOps {
   selectAll(selection: Set<string>, orderedNames: readonly string[]): void
   clear(selection: Set<string>): void
 }
+import {
+  pureClear,
+  pureReconcile,
+  pureSelectAll,
+  pureSelectOnly,
+  pureSelectRange,
+  pureToggle
+} from '../store/slices/selection.slice'
+
 
 export function selectOnly(selection: Set<string>, name: string): void {
+  const next = pureSelectOnly(selection, name)
   selection.clear()
-  selection.add(name)
+  for (const item of next) selection.add(item)
 }
 
 export function toggle(selection: Set<string>, name: string): void {
-  if (selection.has(name)) selection.delete(name)
-  else selection.add(name)
+  const next = pureToggle(selection, name)
+  selection.clear()
+  for (const item of next) selection.add(item)
 }
 
 export function selectRange(
@@ -32,24 +40,21 @@ export function selectRange(
   anchor: string,
   target: string
 ): void {
-  const ai = orderedNames.indexOf(anchor)
-  const ti = orderedNames.indexOf(target)
-  if (ai === -1 || ti === -1) {
-    selectOnly(selection, target)
-    return
-  }
-  const [lo, hi] = ai <= ti ? [ai, ti] : [ti, ai]
+  const next = pureSelectRange(selection, orderedNames, anchor, target)
   selection.clear()
-  for (let i = lo; i <= hi; i++) selection.add(orderedNames[i])
+  for (const item of next) selection.add(item)
 }
 
 export function selectAll(selection: Set<string>, orderedNames: readonly string[]): void {
+  const next = pureSelectAll(orderedNames)
   selection.clear()
-  for (const n of orderedNames) selection.add(n)
+  for (const item of next) selection.add(item)
 }
 
 export function clear(selection: Set<string>): void {
+  const next = pureClear()
   selection.clear()
+  for (const item of next) selection.add(item)
 }
 
 /**
@@ -59,7 +64,7 @@ export function clear(selection: Set<string>): void {
  * disturbing what the user has selected.
  */
 export function reconcile(selection: Set<string>, stillPresent: ReadonlySet<string>): void {
-  for (const name of selection) {
-    if (!stillPresent.has(name)) selection.delete(name)
-  }
+  const next = pureReconcile(selection, stillPresent)
+  selection.clear()
+  for (const item of next) selection.add(item)
 }

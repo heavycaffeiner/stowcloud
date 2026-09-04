@@ -289,6 +289,15 @@ func checkLockout(in Input, appHosts []string, present bool) []Finding {
 	return []Finding{f}
 }
 
+// checkProxies validates the trusted proxy list.
+//
+// The accepted spellings are the loader's, through the loader's own check: a
+// bare address is a single-host prefix, which is how an operator writes one
+// proxy and what the header resolver reads back. This gate had its own
+// prefix-only rule, so the address form every other layer documents and
+// accepts could not be saved, and a deployment behind one proxy had no way to
+// trust it. The client address then stayed the proxy's, which is what the
+// audit log records and what the rate limiter counts.
 func checkProxies(in Input) []Finding {
 	cidrs, present, err := stringList(in.Body, "trusted_proxies")
 	if err != nil || !present {
@@ -296,15 +305,16 @@ func checkProxies(in Input) []Finding {
 	}
 	var out []Finding
 	for _, c := range cidrs {
-		p, perr := netip.ParsePrefix(strings.TrimSpace(c))
-		if perr != nil {
+		entry := strings.TrimSpace(c)
+		if cerr := runtimecfg.CheckCIDR(entry); cerr != nil {
 			out = append(out, blocking(in.Section, "trusted_proxies", keyInvalidCIDR, "value", c))
 			continue
 		}
 		// A range covering everything means any client can claim any address
 		// through a forwarded header, which decides what the rate limiter
-		// counts and what the audit log records.
-		if p.Bits() == 0 {
+		// counts and what the audit log records. An address names one host
+		// and can never be that range.
+		if p, perr := netip.ParsePrefix(entry); perr == nil && p.Bits() == 0 {
 			out = append(out, advisory(in.Section, "trusted_proxies", keyProxyIsEverything, "value", c))
 		}
 	}

@@ -34,14 +34,20 @@ func sentinels() []classifier {
 
 // storeSentinels is the database layer, reached through the service tier.
 //
-// One entry: the size guard's refusal. Everything else the store raises is a
-// fault rather than a decision, and reporting a fault to a caller names
-// tables and paths. This one is a decision an operator made, and reporting it
+// The size guard's refusal is a decision an operator made, and reporting it
 // as an internal error left them with a screen that failed for no stated
 // reason while the setting they had set was working exactly as configured.
+// A malformed grant is the caller's own mistake to correct. A duplicate
+// grant is neither: the request was well formed and the operator's own
+// prior grant is what it conflicts with, the same shape as the create
+// collisions above classify by, so it takes Conflict rather than
+// Unprocessable. Everything else the store raises is a fault rather than a
+// decision, and reporting a fault to a caller names tables and paths.
 func storeSentinels() []classifier {
 	return []classifier{
 		{core.ErrWritesBlocked, SubsystemUnavailable, "store.writes_blocked"},
+		{core.ErrGrantMalformed, Unprocessable, "admin.invalid_grant"},
+		{core.ErrGrantAlreadyExists, Conflict, "admin.grant_exists"},
 	}
 }
 

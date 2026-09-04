@@ -155,9 +155,9 @@ func TestTheDoorStillRequiresACredentialForSettings(t *testing.T) {
 // every other route would stop working, and mounting it before the chain is
 // exactly the kind of change that could do that.
 func TestMountingTheDoorLeavesTheAPIAlone(t *testing.T) {
-	base, token, _ := bootWithUser(t)
+	base, _, sess := bootWithUser(t)
 
-	status, body := authed(t, http.MethodGet, base+"/api/v1/files/list?path=/", token)
+	status, body := authed(t, http.MethodGet, base+"/api/v1/files/list?path=/", sess)
 	if status != http.StatusOK {
 		t.Fatalf("the ordinary API answered %d behind the door: %s", status, body)
 	}

@@ -1,8 +1,7 @@
 <script lang="ts">
-  // /edit/[...path] —: CodeMirror behind a dynamic
-  // import (see CodeEditor.svelte), backed by `GET /api/fs/read` (size-capped,
-  // the inline-read ceiling in `go/internal/httpapi/handler/fs.go`) and
-  // `PUT /api/fs/write` with `If-Match`.
+  // /edit/[...path]: CodeMirror behind a dynamic
+  // import (see CodeEditor.svelte), backed by GET /api/fs/read (size-capped)
+  // and PUT /api/fs/write with If-Match.
   //
   // `If-Match` is the point, not a detail: this page always sends the etag
   // of the version it actually has open, and a `412 fs.precondition` (two
@@ -22,30 +21,27 @@
   import ProgressCircular from '../../../../lib/ui/ProgressCircular.svelte'
   import Snackbar from '../../../../lib/ui/Snackbar.svelte'
   import { formatBytes } from '../../../../lib/format/bytes'
+  import { describeApiError } from '../../../../lib/api/error-text'
+  import { createEditorStore, isDirty, canSave } from '../../../../lib/store/slices/editor.slice'
+  import { useRunesStore } from '../../../../lib/store/core/bridge.svelte'
 
   const rawPath = $derived(page.params.path ?? '')
   const path = $derived(normalizePath(`/${rawPath}`))
   const fileName = $derived(path.slice(path.lastIndexOf('/') + 1) || path)
   const parentPath = $derived(parentOf(path))
 
-  let loading = $state(true)
-  let loadError = $state<string | null>(null)
-  let entry = $state<Entry | null>(null)
-  let etag = $state<string | null>(null)
-  let originalContent = $state('')
-  let content = $state('')
-  let saving = $state(false)
-  let snackbarMsg = $state<string | null>(null)
-  let conflictOpen = $state(false)
-  let conflictEtag = $state('')
-  // Whether the token this save was refused against is an advisory one. The
-  // dialog then says the file may have changed rather than asserting it did,
-  // because with an advisory token the refusal does not prove a change.
-  let conflictWeak = $state(false)
+  const editorStore = createEditorStore()
+  const snap = useRunesStore(editorStore)
 
-  const dirty = $derived(content !== originalContent)
+  const entry = $derived(snap.current.entry)
+  const content = $derived(snap.current.content)
+  const loading = $derived(snap.current.status === 'loading')
+  const loadError = $derived(snap.current.errorMessage)
+  const saving = $derived(snap.current.isSaving)
+  const dirty = $derived(isDirty(snap.current))
   const readOnly = $derived(entry ? !entry.perms.write : true)
-
+  const conflict = $derived(snap.current.conflict)
+  let snackbarMsg = $state<string | null>(null)
   let loadedPath = ''
   $effect(() => {
     if (path !== loadedPath) {
@@ -55,56 +51,48 @@
   })
 
   async function load(p: string): Promise<void> {
-    loading = true
-    loadError = null
-    entry = null
+    editorStore.dispatch({ type: 'LOAD_START' })
     try {
-      // `stat` first, deliberately sequential rather than `Promise.all`-ed
-      // with `readFile`: a directory must never reach the server's
-      // `GET /api/fs/read` at all here, because that returns a generic
-      // `fs.invalid_name` ("directory" buried in `detail.reason`) that reads
-      // like a broken path, not "you can't edit a folder". `stat` alone lets
-      // this page recognize a directory itself and say so plainly.
       const statRes = await api.stat(p)
       if (statRes.kind === 'dir') {
-        loadError = t('editor.folder_cannot_opened_editor')
+        editorStore.dispatch({ type: 'LOAD_ERROR', message: t('editor.folder_cannot_opened_editor') })
         return
       }
       const readRes = await api.readFile(p)
-      entry = statRes
-      etag = statRes.etag
-      originalContent = readRes.content
-      content = readRes.content
+      editorStore.dispatch({ type: 'LOAD_SUCCESS', entry: statRes, content: readRes.content })
     } catch (err) {
-      loadError = err instanceof ApiError ? err.message : t('editor.could_not_load_file')
-    } finally {
-      loading = false
+      editorStore.dispatch({
+        type: 'LOAD_ERROR',
+        message: describeApiError(err, t('editor.could_not_load_file'))
+      })
     }
   }
 
   function onContentChange(text: string): void {
-    content = text
+    editorStore.dispatch({ type: 'SET_CONTENT', content: text })
   }
-
   async function save(): Promise<void> {
-    if (readOnly || saving || !dirty) return
-    saving = true
+    if (!canSave(snap.current)) return
+    editorStore.dispatch({ type: 'SAVE_START' })
     try {
-      const updated = await api.writeFile(path, content, etag ?? undefined)
-      entry = updated
-      etag = updated.etag
-      originalContent = content
+      const updated = await api.writeFile(path, snap.current.content, snap.current.etag ?? undefined)
+      editorStore.dispatch({ type: 'SAVE_SUCCESS', updated, content: snap.current.content })
       snackbarMsg = t('common.saved')
     } catch (err) {
       if (err instanceof ApiError && err.code === 'fs.precondition') {
-        conflictEtag = String(err.detail?.current_etag ?? '')
-        conflictWeak = entry?.etag_weak ?? false
-        conflictOpen = true
+        editorStore.dispatch({
+          type: 'SAVE_CONFLICT',
+          currentEtag: String(err.detail?.current_etag ?? ''),
+          isWeak: entry?.etag_weak ?? false
+        })
       } else {
-        snackbarMsg = err instanceof ApiError ? err.message : t('common.could_not_save')
+        const msg = describeApiError(err, t('common.could_not_save'))
+        editorStore.dispatch({
+          type: 'SAVE_ERROR',
+          message: msg
+        })
+        snackbarMsg = msg
       }
-    } finally {
-      saving = false
     }
   }
 
@@ -119,33 +107,33 @@
    *  This is the only request in the editor that omits the condition, and it
    *  is sent only because somebody asked for it. */
   async function overwriteAfterConflict(): Promise<void> {
-    conflictOpen = false
-    saving = true
+    editorStore.dispatch({ type: 'DISMISS_CONFLICT' })
+    editorStore.dispatch({ type: 'SAVE_START' })
     try {
-      const updated = await api.writeFile(path, content)
-      entry = updated
-      etag = updated.etag
-      originalContent = content
+      const updated = await api.writeFile(path, snap.current.content)
+      editorStore.dispatch({ type: 'SAVE_SUCCESS', updated, content: snap.current.content })
       snackbarMsg = t('editor.overwritten')
     } catch (err) {
-      // A second conflict inside a few hundred milliseconds (a third writer,
-      // or the server refusing outright) shows plainly rather than looping the
-      // dialog silently. It cannot be the advisory-token case any more: the
-      // request above carried no condition at all.
       if (err instanceof ApiError && err.code === 'fs.precondition') {
-        conflictEtag = String(err.detail?.current_etag ?? '')
-        conflictOpen = true
+        editorStore.dispatch({
+          type: 'SAVE_CONFLICT',
+          currentEtag: String(err.detail?.current_etag ?? ''),
+          isWeak: false
+        })
       } else {
-        snackbarMsg = err instanceof ApiError ? err.message : t('common.could_not_save')
+        const msg = describeApiError(err, t('common.could_not_save'))
+        editorStore.dispatch({
+          type: 'SAVE_ERROR',
+          message: msg
+        })
+        snackbarMsg = msg
       }
-    } finally {
-      saving = false
     }
   }
 
   /** EditConflictDialog: discard my edits, adopt the latest content+etag. */
   async function reloadAfterConflict(): Promise<void> {
-    conflictOpen = false
+    editorStore.dispatch({ type: 'DISMISS_CONFLICT' })
     await load(path)
     snackbarMsg = t('editor.reloaded_newer_version')
   }
@@ -162,7 +150,7 @@
 </script>
 
 <svelte:head>
-  <title>{fileName} · Stowcloud</title>
+  <title>{fileName} - Stowcloud</title>
 </svelte:head>
 
 <svelte:window onbeforeunload={onWindowBeforeUnload} />
@@ -197,10 +185,10 @@
 </div>
 
 <EditConflictDialog
-  weak={conflictWeak}
-  open={conflictOpen}
+  weak={conflict?.isWeak ?? false}
+  open={conflict !== null}
   name={fileName}
-  onclose={() => (conflictOpen = false)}
+  onclose={() => editorStore.dispatch({ type: 'DISMISS_CONFLICT' })}
   onreload={reloadAfterConflict}
   onoverwrite={overwriteAfterConflict}
 />

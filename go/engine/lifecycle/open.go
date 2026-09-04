@@ -31,6 +31,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/logbook"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/oidc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
@@ -113,6 +114,12 @@ type Engine struct {
 	// Upload is the resumable transfer engine. May be nil: a deployment
 	// without one serves everything except a resumable upload.
 	Upload *upload.Engine
+
+	// Logs is the durable log store, which the admin dashboard queries. Nil
+	// is a deployment whose data directory could not take it, which costs
+	// the dashboard and nothing else: every other logger still writes to the
+	// console.
+	Logs *logbook.Sink
 
 	// Archives names selections a browser is about to fetch. Never nil: a
 	// folder download is minted here before the navigation that collects it.
@@ -220,6 +227,19 @@ func (e *Engine) clk() clock.Clock {
 	return e.clock
 }
 
+// log is the engine's logger.
+//
+// An accessor for the reason clk is one: an Engine assembled field by field
+// carries none, and a line written on a refusal path would panic instead of
+// reporting the refusal. The default is construction's own for a nil
+// Options.Logger.
+func (e *Engine) log() *slog.Logger {
+	if e.logger == nil {
+		return slog.Default()
+	}
+	return e.logger
+}
+
 // Open constructs the engine.
 //
 // The order is the dependency order and not a preference: the evaluator is
@@ -274,6 +294,29 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		return nil, fmt.Errorf("the data directory is in use: %w", lockErr)
 	}
 	e.lock = lock
+
+	// The log store, opened as early as the lock allows so the rest of boot
+	// is captured rather than only the console. A sink that cannot be opened
+	// is a warning and not a boot failure: a deployment whose disk refused
+	// this directory still serves every request, it just has nothing to show
+	// on the log dashboard.
+	logSink, sinkErr := logbook.Open(logbook.Options{
+		Dir:   filepath.Join(opt.DataDir, "logs"),
+		Clock: clk,
+	})
+	if sinkErr != nil {
+		logger.Warn("the log store is unavailable; the log dashboard has nothing to show",
+			"error", sinkErr)
+	} else {
+		e.Logs = logSink
+		// The sink takes every level regardless of what the console was
+		// configured to show: the console is what an operator watches live,
+		// and the store is what the dashboard filters after the fact, so a
+		// line the console was told to drop must not also be the one line
+		// the store never had.
+		logger = slog.New(logbook.Fanout(logger.Handler(), logSink.Handler(slog.LevelDebug)))
+		e.logger = logger
+	}
 
 	stateFile, err := dbfile.Open(ctx, state.Spec(filepath.Join(opt.DataDir, "state.db")))
 	if err != nil {
@@ -567,6 +610,15 @@ func (e *Engine) Close() (err error) {
 		}
 	}
 	e.files = nil
+
+	// The sink closes last, after everything above that might still log
+	// through it while it shuts down.
+	if e.Logs != nil {
+		if lerr := e.Logs.Close(); lerr != nil {
+			errs = append(errs, fmt.Errorf("closing the log store: %w", lerr))
+		}
+		e.Logs = nil
+	}
 	return errors.Join(errs...)
 }
 

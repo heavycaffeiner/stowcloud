@@ -188,33 +188,23 @@ func watchedShare(t *testing.T, base string, cookie *http.Cookie, name string) (
 		t.Fatalf("the created share carries no id: %s", raw)
 	}
 
-	// A share with no grant resolves for nobody, so a subscribe against it is
-	// refused and the test would be watching a path it cannot see.
-	//
-	// Granted by id rather than over every share: the label is what a client
-	// addresses the share by, so relabelling them all would leave two shares
-	// answering to one name.
-	grantOneShare(t, base, cookie, shareID, name)
+	// No grant is written here. Registering a share grants its creator the
+	// whole tree under the share's own name, which is exactly what a
+	// subscription needs, and asking for a second grant over the same target
+	// is now refused as the duplicate it always was.
+	assertGranted(t, base, cookie, name)
 	return "/" + name, hostDir
 }
 
-// grantOneShare gives the signed-in account everything over one share, under
-// the label a client will address it by.
-func grantOneShare(t *testing.T, base string, cookie *http.Cookie, shareID, label string) {
+// assertGranted proves the signed-in account can resolve the share, which is
+// what a subscription to a path inside it depends on. A fixture that quietly
+// watched a path it could not see would fail somewhere far from the cause.
+func assertGranted(t *testing.T, base string, cookie *http.Cookie, label string) {
 	t.Helper()
 
-	me, err := currentUserID(t, base, cookie)
-	if err != nil {
-		t.Fatalf("reading the session: %v", err)
-	}
-	// Inherited, so the grant covers the tree rather than the root alone.
-	// Without it no subdirectory resolves, and a subscription to one is
-	// refused for a reason that has nothing to do with the subscription.
-	body := `{"share":"` + shareID + `","user":"` + me + `","label":"` + label +
-		`","inherit":true,` +
-		`"allow":["read","download","write","create","delete","rename","move","share"]}`
-	if code, out := hostPost(t, base, "/api/v1/admin/grants", cookie, body); code != http.StatusCreated {
-		t.Fatalf("granting answered %d: %s", code, out)
+	status, raw := hostGet(t, base, "/api/v1/files/list?path="+urlEscape("/"+label), cookie)
+	if status != http.StatusOK {
+		t.Fatalf("the creator cannot list its own share: %d: %s", status, raw)
 	}
 }
 
@@ -325,8 +315,10 @@ func TestTheChangeChannelNeedsACredential(t *testing.T) {
 			t.Errorf("closing: %v", cerr)
 		}
 	}()
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Errorf("an anonymous upgrade answered %d, want 401", resp.StatusCode)
+	// Refused as an address that is not there, like every other route this
+	// credential cannot reach, so a stranger cannot map the surface.
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("an anonymous upgrade answered %d, want 404", resp.StatusCode)
 	}
 }
 

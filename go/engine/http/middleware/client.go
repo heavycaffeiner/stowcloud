@@ -103,7 +103,12 @@ func unmap(a netip.Addr) netip.Addr {
 }
 
 // parseAddr reads one address in any form an operator or a proxy writes:
-// bare, host-port, or bracketed IPv6 with a port.
+// bare, host-port, bracketed IPv6, or bracketed IPv6 with a port.
+//
+// The bracketed-without-port form is what net/http itself writes into
+// X-Forwarded-For for an IPv6 hop when it has no port to add, and
+// ParseAddrPort rejects it for lacking one. Falling through to the peer for
+// that shape was silently treating a well-formed hop as unparseable.
 func parseAddr(s string) (netip.Addr, bool) {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -111,6 +116,11 @@ func parseAddr(s string) (netip.Addr, bool) {
 	}
 	if addr, err := netip.ParseAddr(s); err == nil {
 		return unmap(addr), true
+	}
+	if len(s) >= 2 && s[0] == '[' && s[len(s)-1] == ']' {
+		if addr, err := netip.ParseAddr(s[1 : len(s)-1]); err == nil {
+			return unmap(addr), true
+		}
 	}
 	if ap, err := netip.ParseAddrPort(s); err == nil {
 		return unmap(ap.Addr()), true

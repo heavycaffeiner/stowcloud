@@ -120,6 +120,7 @@ describe('EventsHub.subscribe', () => {
     events.subscribe('/Documents', docs)
     events.subscribe('/Photos', photos)
     fake.handlers?.onMessage({ t: 'inval', path: '/Documents' })
+    events.flush()
     expect(docs).toHaveBeenCalled()
     expect(photos).not.toHaveBeenCalled()
   })
@@ -139,7 +140,7 @@ describe('EventsHub.subscribe', () => {
 })
 
 describe('EventsHub reconnect backoff', () => {
-  it('does not reconnect immediately after a drop — waits at least the first backoff step', () => {
+  it('does not reconnect immediately after a drop: waits at least the first backoff step', () => {
     events.subscribe('/x', vi.fn())
     const before = fake.connectCount
     fake.handlers?.onClose()
@@ -166,6 +167,19 @@ describe('EventsHub message routing', () => {
     const cb = vi.fn()
     events.subscribe('/x', cb)
     fake.handlers?.onMessage({ t: 'inval', path: '/x' })
+    events.flush()
     expect(cb).toHaveBeenCalled()
+  })
+
+  it('coalesces rapid invalidations for the same path into a single callback invocation', () => {
+    open()
+    const cb = vi.fn()
+    events.subscribe('/Documents', cb)
+    for (let i = 0; i < 50; i++) {
+      fake.handlers?.onMessage({ t: 'inval', path: '/Documents' })
+    }
+    expect(cb).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(100)
+    expect(cb).toHaveBeenCalledTimes(1)
   })
 })

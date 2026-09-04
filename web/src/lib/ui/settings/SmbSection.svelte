@@ -3,12 +3,10 @@
   // password are the same password, unless they deliberately separate them,
   // and every path back returns them to being the same.
   //
-  // Three user toggles now:
-  //   smb_enabled  — the "publish" half. The other half (deployment-wide
-  //                  smb.enabled) is an admin setting and can't be changed
-  //                  here.
-  //   smb_opt_out  — refuses NT hash derivation entirely. Turning it on
-  //                  erases the stored credential immediately.
+// Three user toggles now:
+//   smb_enabled: the "publish" half.
+//   smb_opt_out: refuses NT hash derivation entirely. Turning it on
+//                erases the stored credential immediately.
   //   a separate SMB-only password, which is what makes SMB reachable for an
   //   account whose account password stopped being an SMB credential.
   import { t } from '../../i18n'
@@ -18,6 +16,9 @@
   import Dialog from '../Dialog.svelte'
   import Switch from '../Switch.svelte'
   import TextField from '../TextField.svelte'
+  import { useRunesStore } from '../../store/core/bridge.svelte'
+  import { createDialogStore } from '../../store/slices/settings.slice'
+
 
   interface Props {
     optOut: boolean
@@ -92,43 +93,41 @@
   }
 
   function onToggleOptOut(checked: boolean): void {
-    // Opting out removes any stored credential server-side — publishing
+    // Opting out removes any stored credential server-side. Publishing
     // makes no sense on top of that, so reflect it locally too.
     void apply(checked, checked ? false : enabled)
   }
 
   // ── set a separate password ──
-  let setOpen = $state(false)
+  const setModal = createDialogStore()
+  const setSnap = useRunesStore(setModal)
   let setCurrent = $state('')
   let setNew = $state('')
   let setError = $state<string | null>(null)
-  let setting = $state(false)
 
   function openSet(): void {
     setCurrent = ''
     setNew = ''
     setError = null
-    setOpen = true
+    setModal.open()
   }
 
   function closeSet(): void {
-    setOpen = false
-    setCurrent = ''
-    setNew = ''
-    setError = null
+    setModal.close()
   }
 
   async function confirmSet(): Promise<void> {
     setError = null
-    setting = true
+    setModal.submit()
     try {
       const res = await api.setSmbPassword(setCurrent, setNew)
-      setOpen = false
+      setModal.succeed()
       announcement = res.smb_toggles_cleared
         ? `${t('smb.password_set')} ${t('smb.toggles_cleared')}`
         : t('smb.password_set')
       onchanged?.()
     } catch (err) {
+      setModal.fail('')
       if (err instanceof ApiError && err.code === 'auth.invalid_credentials') {
         setError = t('common.incorrect_password')
       } else if (err instanceof ApiError && err.code === 'auth.weak_password') {
@@ -137,40 +136,37 @@
       } else {
         setError = t('smb.could_not_save_password')
       }
-    } finally {
-      setting = false
     }
   }
 
   // ── remove it ──
-  let clearOpen = $state(false)
+  const clearModal = createDialogStore()
+  const clearSnap = useRunesStore(clearModal)
   let clearCurrent = $state('')
   let clearError = $state<string | null>(null)
-  let clearing = $state(false)
 
   function openClear(): void {
     clearCurrent = ''
     clearError = null
-    clearOpen = true
+    clearModal.open()
   }
 
   function closeClear(): void {
-    clearOpen = false
-    clearCurrent = ''
-    clearError = null
+    clearModal.close()
   }
 
   async function confirmClear(): Promise<void> {
     clearError = null
-    clearing = true
+    clearModal.submit()
     try {
       const res = await api.clearSmbPassword(clearCurrent)
-      clearOpen = false
+      clearModal.succeed()
       announcement = res.reverted_to_account_password
         ? t('smb.password_removed_reverted')
         : t('smb.password_removed_no_access')
       onchanged?.()
     } catch (err) {
+      clearModal.fail('')
       if (err instanceof ApiError && err.code === 'auth.invalid_credentials') {
         clearError = t('common.incorrect_password')
       } else if (err instanceof ApiError && err.status === 404) {
@@ -178,8 +174,6 @@
       } else {
         clearError = t('smb.could_not_save_password')
       }
-    } finally {
-      clearing = false
     }
   }
 </script>
@@ -208,7 +202,7 @@
   <p class="sc-smb__announce" aria-live="polite">{announcement}</p>
 </div>
 
-<Dialog open={setOpen} title={t('smb.set_password_title')} onclose={closeSet}>
+<Dialog open={setSnap.current.isOpen} title={t('smb.set_password_title')} onclose={closeSet}>
   <p>{t('smb.set_password_hint')}</p>
   <TextField
     type="password"
@@ -225,13 +219,13 @@
   />
   {#snippet actions()}
     <Button variant="text" onclick={closeSet}>{t('common.cancel')}</Button>
-    <Button variant="filled" disabled={!setCurrent || !setNew} loading={setting} onclick={confirmSet}>
+    <Button variant="filled" disabled={!setCurrent || !setNew} loading={setSnap.current.status === 'submitting'} onclick={confirmSet}>
       {t('common.save')}
     </Button>
   {/snippet}
 </Dialog>
 
-<Dialog open={clearOpen} title={t('smb.remove_password_title')} onclose={closeClear}>
+<Dialog open={clearSnap.current.isOpen} title={t('smb.remove_password_title')} onclose={closeClear}>
   <p>{revertsToAccount ? t('smb.remove_reverts_to_account') : t('smb.remove_ends_access')}</p>
   <TextField
     type="password"
@@ -242,7 +236,7 @@
   />
   {#snippet actions()}
     <Button variant="text" onclick={closeClear}>{t('common.cancel')}</Button>
-    <Button variant="filled" disabled={!clearCurrent} loading={clearing} onclick={confirmClear}>
+    <Button variant="filled" disabled={!clearCurrent} loading={clearSnap.current.status === 'submitting'} onclick={confirmClear}>
       {t('common.remove_2')}
     </Button>
   {/snippet}

@@ -4,7 +4,7 @@
   import { page } from '$app/state'
   import { api, ApiError, type BatchItemResult, type Entry, type OnConflict } from '../../../../lib/api/client'
   import { baseName, joinPath, normalizePath, parentOf } from '../../../../lib/api/path-utils'
-  import { describeApiError } from '../../../../lib/api/error-text'
+  import { batchErrorKey, describeApiError } from '../../../../lib/api/error-text'
   import { authState } from '../../../../lib/state/auth.svelte'
   import { browse } from '../../../../lib/state/browse.svelte'
   import { setDetails, uiState } from '../../../../lib/state/ui.svelte'
@@ -48,10 +48,9 @@
   const rawPath = $derived(page.params.path ?? '')
   const path = $derived(normalizePath(`/${rawPath}`))
 
-  // `/` is not a directory.: the root a user sees is a
-  // projection of their grant list, not a real path — every API path is
-  // `/{label}/...`, and the labels arrive in the session. So
-  // §7 says `/` redirects to the first root.
+  // `/` is not a directory: the root a user sees is a
+  // projection of their grant list, not a real path: every API path is
+  // `/{label}/...`, and the labels arrive in the session.
   //
   // That was never implemented because the mock answered `list('/')` with the
   // roots, so the home screen appeared to work; against the real server it is
@@ -432,7 +431,7 @@
       await api.mkdir(joinPath(browse.path, name))
       await browse.refresh()
     } catch (err) {
-      snackbarMsg = err instanceof Error ? err.message : t('browse.could_not_create_folder')
+      snackbarMsg = describeApiError(err, t('browse.could_not_create_folder'))
     }
   }
 
@@ -451,7 +450,7 @@
       await api.rename(joinPath(browse.path, contextEntry.name), newName)
       await browse.refresh()
     } catch (err) {
-      snackbarMsg = err instanceof Error ? err.message : t('common.could_not_rename')
+      snackbarMsg = describeApiError(err, t('common.could_not_rename'))
     }
   }
 
@@ -486,7 +485,7 @@
         // and 429s over that -- a real state to show, not a silent hang.
         snackbarMsg = t('browse.too_many_zip_downloads_at')
       } else {
-        snackbarMsg = err instanceof ApiError ? err.message : t('browse.zip_download_failed')
+        snackbarMsg = describeApiError(err, t('browse.zip_download_failed'))
       }
     }
   }
@@ -540,13 +539,12 @@
       const { results } = await api.delete(paths)
       const failed = results.filter((r) => !r.ok)
       if (failed.length > 0) {
-        // The first refusal's own message, because "3 of 5 failed" without
-        // saying why is a sentence nobody can act on.
-        snackbarMsg = failed[0].error?.message ?? t('browse.delete_failed')
+        const bKey = batchErrorKey(failed[0].error)
+        snackbarMsg = bKey ? t(bKey.key, bKey.params) : t('browse.delete_failed')
       }
       browse.refresh()
     } catch (err) {
-      snackbarMsg = err instanceof ApiError ? err.message : t('browse.delete_failed')
+      snackbarMsg = describeApiError(err, t('browse.delete_failed'))
     }
   }
 
@@ -680,17 +678,13 @@
           snackbarMsg =
             quota || (err instanceof ApiError && err.code === 'quota.exceeded')
               ? quotaMsg
-              : err instanceof ApiError
-                ? err.message
-                : failMsg
+              : describeApiError(err, failMsg)
         })
     } catch (err) {
       snackbarMsg =
         err instanceof ApiError && err.code === 'quota.exceeded'
           ? quotaMsg
-          : err instanceof ApiError
-            ? err.message
-            : failMsg
+          : describeApiError(err, failMsg)
     }
   }
 

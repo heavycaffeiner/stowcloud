@@ -7,6 +7,26 @@
 // shows the user live progress instead of the UI just hanging.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { httpApi } from './http'
+import { ApiError, type SessionInfo } from './types'
+import { authState, setAuthenticated } from '../state/auth.svelte'
+
+/** A signed-in account, so a refusal has a live session to end. */
+const fakeSession: SessionInfo = {
+  user: {
+    id: 1,
+    name: 'demo',
+    display_name: 'demo account',
+    is_admin: true,
+    totp_enabled: false,
+    smb_opt_out: false,
+    smb_enabled: true
+  },
+  roots: [],
+  csrf: 'csrf-token',
+  limits: { chunk_size: 1, chunk_min: 1, max_file_size: null, parallel: 1 },
+  features: { webdav: true, smb: false, preview: true, trash: true, shares: true, search: 'name' },
+  oidc: { linked: false }
+}
 
 /** A 204, which carries no body: the Response constructor refuses one. */
 function noContent(): Response {
@@ -305,5 +325,42 @@ describe('the listing cursor', () => {
   it('does not read an empty cursor as a real one', async () => {
     const page = await pageWith({ cursor: '' })
     expect(page.cursor).toBeNull()
+  })
+})
+
+// The server hides a route the caller may not reach: a refused API request
+// answers 404 with the chain's unexplained `request_failed`, exactly as an
+// address that does not exist would. Every path this client calls does exist,
+// so that answer means the session is gone and the login screen is the honest
+// thing to show.
+describe('a refusal the server disguised as a missing address', () => {
+  it('flips a live session to the login screen', async () => {
+    setAuthenticated(fakeSession)
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(jsonResponse(404, { error: 'request_failed' })))
+
+    await expect(httpApi.list('/Files', {})).rejects.toThrow()
+    expect(authState.screen).toBe('login')
+  })
+
+  it('reads the bare string body as a code rather than losing it', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(jsonResponse(404, { error: 'request_failed' })))
+
+    const err = await httpApi.list('/Files', {}).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).code).toBe('request_failed')
+  })
+
+  // A real missing file is a different answer. It carries its own reason, and
+  // the screen showing it must keep the error inline instead of signing the
+  // account out from under a mistyped path.
+  it('leaves a genuine not-found alone', async () => {
+    setAuthenticated(fakeSession)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(jsonResponse(404, { error: { code: 'fs.not_found', message: 'not found' } }))
+    )
+
+    await expect(httpApi.list('/Files', {})).rejects.toThrow()
+    expect(authState.screen).toBe('browser')
   })
 })

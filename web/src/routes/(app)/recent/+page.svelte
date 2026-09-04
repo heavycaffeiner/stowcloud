@@ -1,6 +1,5 @@
 <script lang="ts">
-  // /recent — what you did here, newest first.
-  //
+  // /recent: what you did here, newest first.
   // Not "what changed on disk": these shares are also written by Samba and by
   // whatever else has the directory, and an mtime ordering over them is
   // dominated by writers nobody reading this screen has a relationship with.
@@ -10,11 +9,12 @@
   //
   // No virtualization, for the same reason the trash page has none: the row
   // count is capped server-side at 500. A row click navigates to the containing
-  // folder, which is what a search result click already does — opening a
-  // preview would cost a `stat` round trip per row for the full `Entry` the
+  // folder, which is what a search result click already does: opening a
+  // preview would cost a stat round trip per row for the full Entry the
   // dialog needs.
   import { goto } from '$app/navigation'
   import { api, ApiError } from '../../../lib/api/client'
+  import { describeApiError } from '../../../lib/api/error-text'
   import type { RecentHit } from '../../../lib/api/types'
   import { formatDateNs, t } from '../../../lib/i18n'
   import { formatBytes } from '../../../lib/format/bytes'
@@ -34,7 +34,7 @@
       const res = await api.recentList()
       hits = res.hits
     } catch (err) {
-      loadError = err instanceof ApiError ? err.message : t('recent.could_not_load')
+      loadError = describeApiError(err, t('recent.could_not_load'))
     } finally {
       loading = false
     }

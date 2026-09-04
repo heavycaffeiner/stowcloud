@@ -123,7 +123,7 @@ func concretePath(pattern string) string {
 func TestAnAppPasswordCannotReachAdmin(t *testing.T) {
 	base, token, _ := bootWithUser(t)
 
-	status, body := authed(t, http.MethodGet, base+"/api/v1/admin/users", token)
+	status, body := appPasswordAuthed(t, http.MethodGet, base+"/api/v1/admin/users", token)
 	if status == http.StatusOK {
 		t.Fatalf("an app password listed the accounts: %s", body)
 	}

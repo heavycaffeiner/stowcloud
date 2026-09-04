@@ -15,17 +15,30 @@
     /** `date` binds `YYYY-MM-DD` and draws the browser's own calendar, which
      *  is localised for free — m3-svelte ships a `DateField` instead, but its
      *  docked picker hardcodes English ("Clear/Cancel/OK", an `SMTWTFS`
-     *  weekday row) with nothing to translate it through. `number` draws the
-     *  browser's own spinner and rejects non-numeric keystrokes; pair it with
-     *  `min`/`max` for a declared bound so the control refuses out-of-range
-     *  input before a submit ever reaches the server. */
-    type?: 'text' | 'search' | 'password' | 'date' | 'number'
+     *  weekday row) with nothing to translate it through.
+     *  `datetime-local` is the same control with a time beside the date, for
+     *  a range bound where the day alone is too coarse to say. `number` draws
+     *  the browser's own spinner and rejects non-numeric keystrokes; pair it
+     *  with `min`/`max` for a declared bound so the control refuses
+     *  out-of-range input before a submit ever reaches the server. */
+    type?: 'text' | 'search' | 'password' | 'date' | 'datetime-local' | 'number'
     min?: number
     max?: number
     id?: string
+    /** Id of a `<datalist>` to suggest from. For a field whose useful values
+     *  are known but not closed: the suggestions are offered, anything else
+     *  is still accepted. A `<select>` would refuse the values this build has
+     *  not heard of yet. */
+    list?: string
     autofocus?: boolean
     autocomplete?: HTMLInputAttributes['autocomplete']
     onkeydown?: (e: KeyboardEvent) => void
+    /** Reports the field's value as the user edits it. For a caller that
+     *  owns its own state rather than binding: a filter form hands each
+     *  keystroke to a store that debounces it, so `bind:value` would fight
+     *  the store for who holds the value. The value is passed rather than the
+     *  event so no caller has to reach through `currentTarget`. */
+    oninput?: (value: string) => void
   }
 
   let {
@@ -38,9 +51,11 @@
     min,
     max,
     id,
+    list,
     autofocus = false,
     autocomplete,
-    onkeydown
+    onkeydown,
+    oninput
   }: Props = $props()
 
   // The framework renders (and owns the id of) the `<input>`, so autofocus has
@@ -79,6 +94,8 @@
     placeholder={focused ? placeholder : undefined}
     {autocomplete}
     {onkeydown}
+    oninput={oninput ? (e: Event) => oninput((e.currentTarget as HTMLInputElement).value) : undefined}
+    {...list ? { list } : {}}
     {...id ? { id } : {}}
   />
   {#if error}<p class="error" role="alert">{error}</p>{/if}

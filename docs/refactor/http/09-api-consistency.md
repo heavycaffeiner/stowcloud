@@ -213,6 +213,7 @@ half to match rather than the reverse.
 | `DELETE /api/v1/admin/shares/{id}` | `DELETE /api/admin/shares/{id}` | |
 | `POST /api/v1/admin/shares/{id}/retry` | `POST /api/admin/shares/{id}/retry` | |
 | `GET /api/v1/admin/audit` | `GET /api/admin/audit` | |
+| `GET /api/v1/admin/logs` | none | durable log store, for the admin dashboard |
 | `GET /api/v1/admin/storage` | `GET /api/admin/storage` | |
 | `POST /api/v1/admin/smb/apply` | `POST /api/admin/smb/apply` | operator's apply-now |
 | `POST /api/v1/admin/index/build` | `POST /api/admin/index/build` | |

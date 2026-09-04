@@ -15,7 +15,6 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
@@ -25,7 +24,7 @@ import (
 // handler asks it rather than doing its own thing: every one of these reaches
 // the route as a query parameter a caller controls entirely.
 func TestNoPathEscapesTheVirtualRoot(t *testing.T) {
-	base, token, _ := bootWithUser(t)
+	base, _, sess := bootWithUser(t)
 
 	escapes := []string{
 		"/../etc/passwd",
@@ -41,7 +40,7 @@ func TestNoPathEscapesTheVirtualRoot(t *testing.T) {
 	for _, path := range escapes {
 		t.Run(path, func(t *testing.T) {
 			status, body := authed(t, http.MethodGet,
-				base+"/api/v1/files/list?path="+urlEscape(path), token)
+				base+"/api/v1/files/list?path="+urlEscape(path), sess)
 
 			// Not found rather than a parse error: telling a caller their path
 			// was malformed distinguishes it from one that simply is not
@@ -56,12 +55,12 @@ func TestNoPathEscapesTheVirtualRoot(t *testing.T) {
 // An unparseable path and an absent one answer identically, byte for byte.
 // A difference between them is a way to probe what exists.
 func TestAMalformedPathIsIndistinguishableFromAnAbsentOne(t *testing.T) {
-	base, token, _ := bootWithUser(t)
+	base, _, sess := bootWithUser(t)
 
 	malformed, malformedBody := authed(t, http.MethodGet,
-		base+"/api/v1/files/list?path="+urlEscape("/../escape"), token)
+		base+"/api/v1/files/list?path="+urlEscape("/../escape"), sess)
 	absent, absentBody := authed(t, http.MethodGet,
-		base+"/api/v1/files/list?path="+urlEscape("/nothing/here"), token)
+		base+"/api/v1/files/list?path="+urlEscape("/nothing/here"), sess)
 
 	if malformed != absent {
 		t.Errorf("malformed answered %d and absent answered %d", malformed, absent)
@@ -75,12 +74,12 @@ func TestAMalformedPathIsIndistinguishableFromAnAbsentOne(t *testing.T) {
 // with no grants is nothing. An empty listing is an empty array, not null: a
 // client iterating a null gets a runtime error rather than zero rows.
 func TestTheVirtualRootListsThisAccountsShares(t *testing.T) {
-	base, token, _ := bootWithUser(t)
+	base, _, sess := bootWithUser(t)
 
 	for _, path := range []string{"", "/"} {
 		t.Run("path="+path, func(t *testing.T) {
 			status, body := authed(t, http.MethodGet,
-				base+"/api/v1/files/list?path="+urlEscape(path), token)
+				base+"/api/v1/files/list?path="+urlEscape(path), sess)
 			if status != http.StatusOK {
 				t.Fatalf("the root answered %d: %s", status, body)
 			}
@@ -105,16 +104,16 @@ func TestTheVirtualRootListsThisAccountsShares(t *testing.T) {
 // listing and the resolve have to agree: one showing what the other refuses is
 // a client that can see a name it cannot open.
 func TestAnUngrantedShareIsNeitherListedNorReachable(t *testing.T) {
-	base, token, _ := bootWithUser(t)
+	base, _, sess := bootWithUser(t)
 
 	status, body := authed(t, http.MethodGet,
-		base+"/api/v1/files/list?path="+urlEscape("/somebody-elses-share"), token)
+		base+"/api/v1/files/list?path="+urlEscape("/somebody-elses-share"), sess)
 	if status != http.StatusNotFound {
 		t.Errorf("an ungranted share answered %d: %s", status, body)
 	}
 
 	stat, statBody := authed(t, http.MethodGet,
-		base+"/api/v1/files/stat?path="+urlEscape("/somebody-elses-share"), token)
+		base+"/api/v1/files/stat?path="+urlEscape("/somebody-elses-share"), sess)
 	if stat != http.StatusNotFound {
 		t.Errorf("stat on an ungranted share answered %d: %s", stat, statBody)
 	}
@@ -122,13 +121,17 @@ func TestAnUngrantedShareIsNeitherListedNorReachable(t *testing.T) {
 
 // Both read routes need a credential. A file listing served anonymously is
 // every file on the deployment served anonymously.
+//
+// The refusal is 404 rather than 401: middleware.scopeHandler answers every
+// scope refusal as a path that is not there, so a stranger probing the
+// surface cannot map which routes exist from the status code alone.
 func TestTheFileRoutesNeedACredential(t *testing.T) {
 	base, _, _ := bootWithUser(t)
 
 	for _, path := range []string{"/api/v1/files/list", "/api/v1/files/stat"} {
 		t.Run(path, func(t *testing.T) {
 			status, body := get(t, path0(base, path))
-			if status != http.StatusUnauthorized {
+			if status != http.StatusNotFound {
 				t.Errorf("%s answered %d anonymously: %s", path, status, body)
 			}
 		})
@@ -161,8 +164,9 @@ func urlEscape(s string) string {
 }
 
 // engineWithShare serves an engine holding one account with one granted share
-// containing one file, and returns the base URL, a token and the share name.
-func engineWithShare(t *testing.T) (base, token, share string) {
+// containing one file, and returns the base URL, a session and the share
+// name.
+func engineWithShare(t *testing.T) (base string, sess session, share string) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -176,9 +180,8 @@ func engineWithShare(t *testing.T) (base, token, share string) {
 		}
 	})
 
-	id, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password")))
-	if err != nil {
-		t.Fatalf("creating the account: %v", err)
+	if _, cerr := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password"))); cerr != nil {
+		t.Fatalf("creating the account: %v", cerr)
 	}
 
 	// A real directory with a real file, so the listing has something in it
@@ -195,6 +198,10 @@ func engineWithShare(t *testing.T) (base, token, share string) {
 	// The label is the name this share appears under in the virtual root. A
 	// grant with no label falls back to a synthetic one, which is a usable
 	// path but not the one a person would recognise.
+	id, ierr := e.Auth.UserIDByName(ctx, "alice")
+	if ierr != nil {
+		t.Fatalf("reading the account id: %v", ierr)
+	}
 	if _, gerr := e.Core.CreateGrant(ctx, core.GrantSpec{
 		User: &id, Share: sh.ID, Allow: acl.Read | acl.Download,
 		Inherit: true, Label: sh.Name,
@@ -205,22 +212,16 @@ func engineWithShare(t *testing.T) (base, token, share string) {
 		t.Fatalf("reloading grants: %v", rerr)
 	}
 
-	tok, err := e.Auth.CreateAppPassword(ctx, id, "test",
-		auth.Scope{Perms: uint16(acl.Read | acl.Download)}, 0)
-	if err != nil {
-		t.Fatalf("minting: %v", err)
-	}
-
-	return serve(t, e), tok, sh.Name
+	base = serve(t, e)
+	return base, signIn(t, base, "alice", "a-long-enough-password"), sh.Name
 }
 
 // A granted share lists its real contents. Without this every refusal above
-// could be a deployment where nothing is reachable at all.
 func TestAGrantedShareListsItsContents(t *testing.T) {
-	base, token, share := engineWithShare(t)
+	base, sess, share := engineWithShare(t)
 
 	status, body := authed(t, http.MethodGet,
-		base+"/api/v1/files/list?path="+urlEscape("/"+share), token)
+		base+"/api/v1/files/list?path="+urlEscape("/"+share), sess)
 	if status != http.StatusOK {
 		t.Fatalf("a granted share answered %d: %s", status, body)
 	}
@@ -252,10 +253,10 @@ func TestAGrantedShareListsItsContents(t *testing.T) {
 // because the property is that the path resolves, not that it is spelled a
 // particular way.
 func TestEveryListedPathResolvesOnTheNextRequest(t *testing.T) {
-	base, token, share := engineWithShare(t)
+	base, sess, share := engineWithShare(t)
 
 	status, body := authed(t, http.MethodGet,
-		base+"/api/v1/files/list?path="+urlEscape("/"+share), token)
+		base+"/api/v1/files/list?path="+urlEscape("/"+share), sess)
 	if status != http.StatusOK {
 		t.Fatalf("listing answered %d: %s", status, body)
 	}
@@ -275,7 +276,7 @@ func TestEveryListedPathResolvesOnTheNextRequest(t *testing.T) {
 
 	for _, entry := range page.Entries {
 		st, rb := authed(t, http.MethodGet,
-			base+"/api/v1/files/read?path="+urlEscape(entry.Path), token)
+			base+"/api/v1/files/read?path="+urlEscape(entry.Path), sess)
 		if st != http.StatusOK {
 			t.Errorf("reading %q, the path the listing gave for %q, answered %d: %s",
 				entry.Path, entry.Name, st, rb)
@@ -286,10 +287,10 @@ func TestEveryListedPathResolvesOnTheNextRequest(t *testing.T) {
 // Stat's path round-trips too. It is a separate projection call site, and the
 // one the details panel and the preview dialog address a file by.
 func TestStatsPathResolvesOnTheNextRequest(t *testing.T) {
-	base, token, share := engineWithShare(t)
+	base, sess, share := engineWithShare(t)
 
 	status, body := authed(t, http.MethodGet,
-		base+"/api/v1/files/stat?path="+urlEscape("/"+share+"/hello.txt"), token)
+		base+"/api/v1/files/stat?path="+urlEscape("/"+share+"/hello.txt"), sess)
 	if status != http.StatusOK {
 		t.Fatalf("stat answered %d: %s", status, body)
 	}
@@ -302,7 +303,7 @@ func TestStatsPathResolvesOnTheNextRequest(t *testing.T) {
 	}
 
 	st, rb := authed(t, http.MethodGet,
-		base+"/api/v1/files/read?path="+urlEscape(entry.Path), token)
+		base+"/api/v1/files/read?path="+urlEscape(entry.Path), sess)
 	if st != http.StatusOK {
 		t.Errorf("reading %q, the path stat gave, answered %d: %s", entry.Path, st, rb)
 	}
@@ -316,12 +317,12 @@ func TestStatsPathResolvesOnTheNextRequest(t *testing.T) {
 // rows. Core has supported all three since it was written; the route did not
 // pass them.
 func TestAListingSortsAndWindowsAsAsked(t *testing.T) {
-	base, token, share := engineWithManyFiles(t)
+	base, sess, share := engineWithManyFiles(t)
 
 	names := func(query string) []string {
 		t.Helper()
 		status, body := authed(t, http.MethodGet,
-			base+"/api/v1/files/list?path="+urlEscape("/"+share)+"&"+query, token)
+			base+"/api/v1/files/list?path="+urlEscape("/"+share)+"&"+query, sess)
 		if status != http.StatusOK {
 			t.Fatalf("%s answered %d: %s", query, status, body)
 		}
@@ -362,7 +363,7 @@ func TestAListingSortsAndWindowsAsAsked(t *testing.T) {
 
 // A cursor walks the whole directory without repeating or skipping a row.
 func TestACursorWalksEveryEntryExactlyOnce(t *testing.T) {
-	base, token, share := engineWithManyFiles(t)
+	base, sess, share := engineWithManyFiles(t)
 
 	seen := map[string]int{}
 	cursor := ""
@@ -371,7 +372,7 @@ func TestACursorWalksEveryEntryExactlyOnce(t *testing.T) {
 		if cursor != "" {
 			query += "&cursor=" + urlEscape(cursor)
 		}
-		status, body := authed(t, http.MethodGet, base+"/api/v1/files/list?"+query, token)
+		status, body := authed(t, http.MethodGet, base+"/api/v1/files/list?"+query, sess)
 		if status != http.StatusOK {
 			t.Fatalf("page %d answered %d: %s", page, status, body)
 		}
@@ -405,7 +406,7 @@ func TestACursorWalksEveryEntryExactlyOnce(t *testing.T) {
 
 // engineWithManyFiles serves a share holding ten files, enough that a window
 // is a slice of the directory rather than all of it.
-func engineWithManyFiles(t *testing.T) (base, token, share string) {
+func engineWithManyFiles(t *testing.T) (base string, sess session, share string) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -446,20 +447,16 @@ func engineWithManyFiles(t *testing.T) (base, token, share string) {
 		t.Fatalf("reloading grants: %v", rerr)
 	}
 
-	tok, err := e.Auth.CreateAppPassword(ctx, id, "test",
-		auth.Scope{Perms: uint16(acl.Read | acl.Download)}, 0)
-	if err != nil {
-		t.Fatalf("minting: %v", err)
-	}
-	return serve(t, e), tok, sh.Name
+	base = serve(t, e)
+	return base, signIn(t, base, "alice", "a-long-enough-password"), sh.Name
 }
 
 // The virtual root shows the granted share, so the listing and the resolve
 // agree about what this account can reach.
 func TestTheRootShowsAGrantedShare(t *testing.T) {
-	base, token, share := engineWithShare(t)
+	base, sess, share := engineWithShare(t)
 
-	status, body := authed(t, http.MethodGet, base+"/api/v1/files/list?path=%2F", token)
+	status, body := authed(t, http.MethodGet, base+"/api/v1/files/list?path=%2F", sess)
 	if status != http.StatusOK {
 		t.Fatalf("the root answered %d: %s", status, body)
 	}
@@ -471,10 +468,10 @@ func TestTheRootShowsAGrantedShare(t *testing.T) {
 // Stat reads the real file, so the read path is exercised rather than only its
 // refusals.
 func TestStatReadsARealFile(t *testing.T) {
-	base, token, share := engineWithShare(t)
+	base, sess, share := engineWithShare(t)
 
 	status, body := authed(t, http.MethodGet,
-		base+"/api/v1/files/stat?path="+urlEscape("/"+share+"/hello.txt"), token)
+		base+"/api/v1/files/stat?path="+urlEscape("/"+share+"/hello.txt"), sess)
 	if status != http.StatusOK {
 		t.Fatalf("stat answered %d: %s", status, body)
 	}
@@ -499,7 +496,7 @@ func TestStatReadsARealFile(t *testing.T) {
 // is the case the earlier corpus could not reach, because that account had no
 // share to escape from.
 func TestATraversalOutOfAHeldShareIsRefused(t *testing.T) {
-	base, token, share := engineWithShare(t)
+	base, sess, share := engineWithShare(t)
 
 	escapes := []string{
 		"/" + share + "/../..",
@@ -511,7 +508,7 @@ func TestATraversalOutOfAHeldShareIsRefused(t *testing.T) {
 	for _, path := range escapes {
 		t.Run(path, func(t *testing.T) {
 			status, body := authed(t, http.MethodGet,
-				base+"/api/v1/files/list?path="+urlEscape(path), token)
+				base+"/api/v1/files/list?path="+urlEscape(path), sess)
 			if status != http.StatusNotFound {
 				t.Errorf("%q answered %d: %s", path, status, body)
 			}
@@ -535,9 +532,12 @@ func TestAShareGrantedWithoutReadIsNotReadable(t *testing.T) {
 		}
 	})
 
-	id, err := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password")))
-	if err != nil {
-		t.Fatal(err)
+	if _, cerr := e.Auth.CreateUser(ctx, "alice", "Alice", secret.New([]byte("a-long-enough-password"))); cerr != nil {
+		t.Fatal(cerr)
+	}
+	id, ierr := e.Auth.UserIDByName(ctx, "alice")
+	if ierr != nil {
+		t.Fatal(ierr)
 	}
 
 	host := t.TempDir()
@@ -563,16 +563,11 @@ func TestAShareGrantedWithoutReadIsNotReadable(t *testing.T) {
 		t.Fatal(rerr)
 	}
 
-	token, err := e.Auth.CreateAppPassword(ctx, id, "test",
-		auth.Scope{Perms: uint16(acl.Read | acl.Create)}, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	base := serve(t, e)
+	sess := signIn(t, base, "alice", "a-long-enough-password")
 
 	status, body := authed(t, http.MethodGet,
-		base+"/api/v1/files/list?path="+urlEscape("/"+sh.Name), token)
+		base+"/api/v1/files/list?path="+urlEscape("/"+sh.Name), sess)
 	if status == http.StatusOK {
 		t.Errorf("a share denied Read was listed: %s", body)
 	}

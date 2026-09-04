@@ -1,6 +1,5 @@
-// web/src/lib/state/browse.svelte.ts —, §5 /
-// Svelte 5 runes class. No global store library.
-//
+// Directory browse state, backed by Svelte 5 runes and pure functional browse slice.
+
 // Rows are addressed by absolute index within the server's sorted listing
 // and fetched in on-demand windows (whatever FileTable is actually
 // rendering), not as an ever-growing "infinite scroll" prefix. A sparse,
@@ -10,15 +9,18 @@ import { SvelteMap, SvelteSet } from 'svelte/reactivity'
 import { api, ApiError, type Entry, type Order, type SortKey } from '../api/client'
 import { events } from './events'
 import { reconcile, selectAll as selAll, selectOnly as selOnly, selectRange as selRange, toggle as selToggle } from './selection'
-
+import {
+  findEvictionVictims,
+  pureTouchLru,
+  MAX_CACHED_ROWS
+} from '../store/slices/browse.slice'
 export interface Sort {
   key: SortKey
   order: Order
 }
 
 const PAGE_LIMIT = 200
-/** Upper bound on how many rows are ever held in memory at once (task requirement: don't accumulate all 100k rows after a long scroll). */
-const MAX_CACHED_ROWS = 2000
+// MAX_CACHED_ROWS imported from browse.slice.ts
 /** Coalesces rapid scroll events into a single request per "settle" (mirrors the 150ms idle rule applies to thumbnails). */
 const WINDOW_DEBOUNCE_MS = 80
 
@@ -384,7 +386,7 @@ export class BrowseState {
     }
   }
 
-  // ── row cache (sparse, index-addressed, LRU-bounded) ──
+  // Row cache delegating to pure functional cache operations from browse.slice.ts.
 
   #applyPage(offset: number, entries: Entry[]): void {
     entries.forEach((e, i) => this.#setRow(offset + i, e))
@@ -406,29 +408,22 @@ export class BrowseState {
   }
 
   #touchLru(index: number): void {
-    const i = this.#lru.indexOf(index)
-    if (i !== -1) this.#lru.splice(i, 1)
-    this.#lru.push(index)
+    this.#lru = [...pureTouchLru(this.#lru, index)]
   }
 
   #evictIfNeeded(): void {
-    while (this.#rows.size > MAX_CACHED_ROWS) {
-      const victimPos = this.#lru.findIndex((idx) => {
-        const e = this.#rows.get(idx)
-        return e !== undefined && !this.selection.has(e.name)
-      })
-      if (victimPos === -1) break // everything currently cached is selected — nothing safe to evict
-      const idx = this.#lru[victimPos]
-      this.#lru.splice(victimPos, 1)
+    const victims = findEvictionVictims(this.#rows, this.#lru, this.selection, MAX_CACHED_ROWS)
+    for (const idx of victims) {
       const e = this.#rows.get(idx)
       this.#rows.delete(idx)
       if (e) this.#index.delete(e.name)
+      const pos = this.#lru.indexOf(idx)
+      if (pos !== -1) this.#lru.splice(pos, 1)
     }
   }
 
-  /** Drops every cached row that is not part of the current selection. */
   #dropUnselectedRows(): void {
-    for (const [idx, e] of [...this.#rows]) {
+    for (const [idx, e] of this.#rows) {
       if (!this.selection.has(e.name)) {
         this.#rows.delete(idx)
         this.#index.delete(e.name)

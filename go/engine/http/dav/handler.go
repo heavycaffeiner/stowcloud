@@ -156,7 +156,7 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case status >= http.StatusInternalServerError:
 		h.log(r).Error("the request failed", "error", err)
 	case status >= http.StatusBadRequest && writes(r.Method):
-		h.log(r).Warn("the write was refused", "status", status, "error", err)
+		h.log(r).Warn("the write was refused", "status", status, "subsystem", "dav", "error", err)
 	}
 	if werr := WriteError(w, err); werr != nil {
 		h.log(r).Warn("the refusal did not reach the client", "error", werr)

@@ -14,13 +14,12 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
 // trashShare serves an engine whose share has trash enabled and holds one file
 // in a subdirectory, so a restore has somewhere specific to go back to.
-func trashShare(t *testing.T, perms acl.Perms) (base, token, share string) {
+func trashShare(t *testing.T, perms acl.Perms) (base string, sess session, share string) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -64,27 +63,22 @@ func trashShare(t *testing.T, perms acl.Perms) (base, token, share string) {
 		t.Fatal(rerr)
 	}
 
-	tok, err := e.Auth.CreateAppPassword(ctx, id, "test",
-		auth.Scope{Perms: uint16(everyPerm())}, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return serve(t, e), tok, sh.Name
+	served := serve(t, e)
+	return served, signIn(t, served, "alice", "a-long-enough-password"), sh.Name
 }
 
 // trashOne deletes the fixture's file and returns the trash entry's id.
-func trashOne(t *testing.T, base, token, share string) string {
+func trashOne(t *testing.T, base string, sess session, share string) string {
 	t.Helper()
 
-	status, body := post(t, base+"/api/v1/files/delete", token,
+	status, body := post(t, base+"/api/v1/files/delete", sess,
 		map[string]string{"path": "/" + share + "/sub/doc.txt"})
 	if status != http.StatusNoContent {
 		t.Fatalf("delete answered %d: %s", status, body)
 	}
 
 	listStatus, listBody := authed(t, http.MethodGet,
-		base+"/api/v1/trash?path="+urlEscape("/"+share), token)
+		base+"/api/v1/trash?path="+urlEscape("/"+share), sess)
 	if listStatus != http.StatusOK {
 		t.Fatalf("the trash listing answered %d: %s", listStatus, listBody)
 	}
@@ -111,11 +105,11 @@ func trashOne(t *testing.T, base, token, share string) string {
 // destination could move a file anywhere it can write, using a delete as the
 // first half of the move.
 func TestARestoreReturnsTheEntryToItsOrigin(t *testing.T) {
-	base, token, share := trashShare(t, everyPerm())
+	base, sess, share := trashShare(t, everyPerm())
 
-	id := trashOne(t, base, token, share)
+	id := trashOne(t, base, sess, share)
 
-	status, body := post(t, base+"/api/v1/trash/restore", token,
+	status, body := post(t, base+"/api/v1/trash/restore", sess,
 		map[string][]string{"ids": {id}})
 	if status != http.StatusOK {
 		t.Fatalf("restore answered %d: %s", status, body)
@@ -123,13 +117,13 @@ func TestARestoreReturnsTheEntryToItsOrigin(t *testing.T) {
 
 	// Back in the subdirectory it came from, not at the share root.
 	_, subBody := authed(t, http.MethodGet,
-		base+"/api/v1/files/list?path="+urlEscape("/"+share+"/sub"), token)
+		base+"/api/v1/files/list?path="+urlEscape("/"+share+"/sub"), sess)
 	if !strings.Contains(string(subBody), "doc.txt") {
 		t.Errorf("the file did not return to its origin: %s", subBody)
 	}
 
 	_, rootBody := authed(t, http.MethodGet,
-		base+"/api/v1/files/list?path="+urlEscape("/"+share), token)
+		base+"/api/v1/files/list?path="+urlEscape("/"+share), sess)
 	var page struct {
 		Entries []struct {
 			Name string `json:"name"`
@@ -148,9 +142,9 @@ func TestARestoreReturnsTheEntryToItsOrigin(t *testing.T) {
 // The restore request carries no destination. A field a caller could set would
 // be one they could point anywhere they can write.
 func TestARestoreRequestNamesNoDestination(t *testing.T) {
-	base, token, share := trashShare(t, everyPerm())
+	base, sess, share := trashShare(t, everyPerm())
 
-	id := trashOne(t, base, token, share)
+	id := trashOne(t, base, sess, share)
 
 	// A body carrying an extra destination is refused rather than honoured or
 	// ignored: an unknown field means the client and the server disagree about
@@ -160,7 +154,7 @@ func TestARestoreRequestNamesNoDestination(t *testing.T) {
 		"id":   id,
 		"to":   "/" + share + "/elsewhere.txt",
 	}
-	status, body := post(t, base+"/api/v1/trash/restore", token, req)
+	status, body := post(t, base+"/api/v1/trash/restore", sess, req)
 	if status < 400 {
 		t.Errorf("a restore carrying a destination was accepted: %d %s", status, body)
 	}
@@ -168,28 +162,28 @@ func TestARestoreRequestNamesNoDestination(t *testing.T) {
 
 // Purging one entry removes it and leaves the rest.
 func TestPurgingOneEntryLeavesTheRest(t *testing.T) {
-	base, token, share := trashShare(t, everyPerm())
+	base, sess, share := trashShare(t, everyPerm())
 
 	// Two entries, so "removed one" is distinguishable from "emptied".
-	first := trashOne(t, base, token, share)
+	first := trashOne(t, base, sess, share)
 
-	if status, body := post(t, base+"/api/v1/files/mkdir", token,
+	if status, body := post(t, base+"/api/v1/files/mkdir", sess,
 		map[string]string{"path": "/" + share + "/second"}); status != http.StatusCreated {
 		t.Fatalf("mkdir answered %d: %s", status, body)
 	}
-	if status, body := post(t, base+"/api/v1/files/delete", token,
+	if status, body := post(t, base+"/api/v1/files/delete", sess,
 		map[string]string{"path": "/" + share + "/second"}); status != http.StatusNoContent {
 		t.Fatalf("the second delete answered %d: %s", status, body)
 	}
 
-	status, body := post(t, base+"/api/v1/trash/purge", token,
+	status, body := post(t, base+"/api/v1/trash/purge", sess,
 		map[string][]string{"ids": {first}})
 	if status != http.StatusOK {
 		t.Fatalf("purge answered %d: %s", status, body)
 	}
 
 	_, listBody := authed(t, http.MethodGet,
-		base+"/api/v1/trash?path="+urlEscape("/"+share), token)
+		base+"/api/v1/trash?path="+urlEscape("/"+share), sess)
 
 	var entries []map[string]any
 	if err := json.Unmarshal(listBody, &entries); err != nil {
@@ -202,10 +196,10 @@ func TestPurgingOneEntryLeavesTheRest(t *testing.T) {
 
 // An empty trash lists as an empty array, not null.
 func TestAnEmptyTrashListsAsAnArray(t *testing.T) {
-	base, token, share := trashShare(t, everyPerm())
+	base, sess, share := trashShare(t, everyPerm())
 
 	status, body := authed(t, http.MethodGet,
-		base+"/api/v1/trash?path="+urlEscape("/"+share), token)
+		base+"/api/v1/trash?path="+urlEscape("/"+share), sess)
 	if status != http.StatusOK {
 		t.Fatalf("answered %d: %s", status, body)
 	}
@@ -225,8 +219,8 @@ func TestAnEmptyTrashListsAsAnArray(t *testing.T) {
 // Restoring needs Create, because a restore adds a file to the tree. An
 // account that may remove things is not thereby allowed to put them back.
 func TestRestoringNeedsCreate(t *testing.T) {
-	base, token, share := trashShare(t, everyPerm())
-	id := trashOne(t, base, token, share)
+	base, sess, share := trashShare(t, everyPerm())
+	id := trashOne(t, base, sess, share)
 
 	// The same fixture without Create.
 	limited, limitedToken, limitedShare := trashShare(t, everyPerm()&^acl.Create)
@@ -251,7 +245,7 @@ func TestRestoringNeedsCreate(t *testing.T) {
 	}
 
 	// With Create: served, so the refusal above is about that bit.
-	good, goodBody := post(t, base+"/api/v1/trash/restore", token,
+	good, goodBody := post(t, base+"/api/v1/trash/restore", sess,
 		map[string][]string{"ids": {id}})
 	if good != http.StatusOK {
 		t.Errorf("a restore was refused with every permission: %d %s", good, goodBody)
@@ -263,15 +257,17 @@ func TestRestoringNeedsCreate(t *testing.T) {
 func TestTheTrashRoutesNeedACredential(t *testing.T) {
 	base, _, share := trashShare(t, everyPerm())
 
+	// Refused as an address that is not there, so a stranger cannot map the
+	// surface by reading which paths answer differently.
 	status, body := get(t, base+"/api/v1/trash?path="+urlEscape("/"+share))
-	if status != http.StatusUnauthorized {
+	if status != http.StatusNotFound {
 		t.Errorf("the listing answered %d anonymously: %s", status, body)
 	}
 
 	for _, route := range []string{"/api/v1/trash/restore", "/api/v1/trash/purge"} {
 		t.Run(route, func(t *testing.T) {
-			s, b := post(t, base+route, "", map[string]string{"path": "/" + share, "id": "x"})
-			if s != http.StatusUnauthorized {
+			s, b := post(t, base+route, session{}, map[string]string{"path": "/" + share, "id": "x"})
+			if s != http.StatusNotFound {
 				t.Errorf("%s answered %d anonymously: %s", route, s, b)
 			}
 		})
@@ -280,12 +276,12 @@ func TestTheTrashRoutesNeedACredential(t *testing.T) {
 
 // A trash operation on a share this account cannot reach is refused.
 func TestTrashOutsideTheSharesIsRefused(t *testing.T) {
-	base, token, _ := trashShare(t, everyPerm())
+	base, sess, _ := trashShare(t, everyPerm())
 
 	for _, path := range []string{"/../etc", "/nothing", "/bin/../../tmp"} {
 		t.Run(path, func(t *testing.T) {
 			status, body := authed(t, http.MethodGet,
-				base+"/api/v1/trash?path="+urlEscape(path), token)
+				base+"/api/v1/trash?path="+urlEscape(path), sess)
 			if status != http.StatusNotFound {
 				t.Errorf("%q answered %d: %s", path, status, body)
 			}
@@ -297,10 +293,10 @@ func TestTrashOutsideTheSharesIsRefused(t *testing.T) {
 // client told the entry is gone stops showing it, and the next listing brings
 // it back.
 func TestPurgingAnAbsentEntryIsRefused(t *testing.T) {
-	base, token, share := trashShare(t, everyPerm())
-	trashOne(t, base, token, share)
+	base, sess, share := trashShare(t, everyPerm())
+	trashOne(t, base, sess, share)
 
-	status, body := post(t, base+"/api/v1/trash/purge", token,
+	status, body := post(t, base+"/api/v1/trash/purge", sess,
 		map[string][]string{"ids": {"not-a-real-id"}})
 	if status != http.StatusOK {
 		t.Fatalf("answered %d: %s", status, body)
@@ -320,7 +316,7 @@ func TestPurgingAnAbsentEntryIsRefused(t *testing.T) {
 
 	// And the real entry is untouched, so the refusal did not also empty it.
 	_, listBody := authed(t, http.MethodGet,
-		base+"/api/v1/trash?path="+urlEscape("/"+share), token)
+		base+"/api/v1/trash?path="+urlEscape("/"+share), sess)
 	var entries []map[string]any
 	if err := json.Unmarshal(listBody, &entries); err != nil {
 		t.Fatal(err)
@@ -334,9 +330,9 @@ func TestPurgingAnAbsentEntryIsRefused(t *testing.T) {
 // The client names the entries it wants gone; a body that named none of them
 // has asked for nothing, so the answer is an empty result set.
 func TestAnEmptyPurgeBatchIsANoOp(t *testing.T) {
-	base, token, _ := trashShare(t, everyPerm())
+	base, sess, _ := trashShare(t, everyPerm())
 
-	status, body := post(t, base+"/api/v1/trash/purge", token,
+	status, body := post(t, base+"/api/v1/trash/purge", sess,
 		map[string][]string{"ids": {}})
 	if status != http.StatusOK {
 		t.Fatalf("an empty batch answered %d, want 200", status)

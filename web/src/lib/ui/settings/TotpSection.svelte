@@ -1,9 +1,8 @@
 <script lang="ts">
-  // Two-factor auth (TOTP) —: both enabling and
+  // Two-factor auth (TOTP): both enabling and
   // disabling require password re-confirmation. Disabling does not require
-  // re-login or a password reset — the session stays alive and the modal
-  // only asks for one password field (§2.4's "re-authentication is distinct
-  // from re-login").
+  // re-login or a password reset: the session stays alive and the modal
+  // only asks for one password field.
   import { t } from '../../i18n'
   import { api, ApiError } from '../../api/client'
   import Button from '../Button.svelte'
@@ -11,6 +10,9 @@
   import Dialog from '../Dialog.svelte'
   import { Icon } from 'm3-svelte'
   import { icons } from '../../icons'
+  import { useRunesStore } from '../../store/core/bridge.svelte'
+  import { createDialogStore } from '../../store/slices/settings.slice'
+
 
   interface Props {
     enabled: boolean
@@ -23,31 +25,31 @@
   let { enabled, smbDedicated = false, onchanged }: Props = $props()
 
   // ── enroll flow ──
-  let enrollOpen = $state(false)
+  const enrollModal = createDialogStore()
+  const enrollSnap = useRunesStore(enrollModal)
   let setupSecret = $state('')
   let setupUrl = $state('')
   let setupLoading = $state(false)
   let enrollPassword = $state('')
   let enrollCode = $state('')
   let enrollError = $state<string | null>(null)
-  let enrolling = $state(false)
   let recoveryCodes = $state<string[] | null>(null)
 
   // ── disable flow ──
-  let disableOpen = $state(false)
+  const disableModal = createDialogStore()
+  const disableSnap = useRunesStore(disableModal)
   let disablePassword = $state('')
   let disableError = $state<string | null>(null)
-  let disabling = $state(false)
   /** This section's own live region, for the one thing turning TOTP off does
    *  that the user did not come here to do. */
   let smbAnnouncement = $state('')
 
   // ── recovery codes: remaining count + reissue ──
   let recoveryRemaining = $state<number | null>(null)
-  let reissueOpen = $state(false)
+  const reissueModal = createDialogStore()
+  const reissueSnap = useRunesStore(reissueModal)
   let reissuePassword = $state('')
   let reissueError = $state<string | null>(null)
-  let reissuing = $state(false)
 
   // Loads (or reloads) the remaining count whenever TOTP is on -- at mount,
   // right after `confirmEnroll` flips `enabled`, and again after a reissue.
@@ -73,33 +75,29 @@
   function openReissue(): void {
     reissuePassword = ''
     reissueError = null
-    reissueOpen = true
+    reissueModal.open()
   }
 
   function closeReissue(): void {
-    reissueOpen = false
+    reissueModal.close()
     reissuePassword = ''
     reissueError = null
   }
 
   async function confirmReissue(): Promise<void> {
     reissueError = null
-    reissuing = true
+    reissueModal.submit()
     try {
       const res = await api.reissueRecoveryCodes(reissuePassword)
-      // Reuses the same "show once" dialog `confirmEnroll` opens below --
-      // a freshly reissued list is exactly as one-shot as a freshly
-      // enrolled one, so there is no reason for a second display component.
       recoveryCodes = res.recovery_codes
-      reissueOpen = false
+      reissueModal.succeed()
       await loadRecoveryRemaining()
     } catch (err) {
+      reissueModal.fail('')
       reissueError =
         err instanceof ApiError && err.code === 'auth.invalid_credentials'
           ? t('common.incorrect_password')
           : t('totp.could_not_reissue_them_try')
-    } finally {
-      reissuing = false
     }
   }
 
@@ -116,7 +114,7 @@
     enrollCode = ''
     setupSecret = ''
     setupUrl = ''
-    enrollOpen = true
+    enrollModal.open()
   }
 
   /** Mints the secret against the password just typed. */
@@ -139,7 +137,7 @@
   }
 
   function closeEnroll(): void {
-    enrollOpen = false
+    enrollModal.close()
     setupSecret = ''
     setupUrl = ''
     enrollPassword = ''
@@ -149,22 +147,22 @@
 
   async function confirmEnroll(): Promise<void> {
     enrollError = null
-    enrolling = true
+    enrollModal.submit()
     try {
       const res = await api.totpEnroll(enrollPassword, setupSecret, enrollCode)
       recoveryCodes = res.recovery_codes
       recoveryRemaining = res.recovery_codes.length
-      enrollOpen = false
+      enrollModal.succeed()
       onchanged?.()
     } catch (err) {
+      enrollModal.fail('')
       enrollError =
         err instanceof ApiError && err.code === 'auth.invalid_credentials'
           ? t('totp.password_or_verification_code_incorrect')
           : t('totp.could_not_enable_try_again')
-    } finally {
-      enrolling = false
     }
   }
+
 
   function closeRecoveryCodes(): void {
     recoveryCodes = null
@@ -173,30 +171,29 @@
   function openDisable(): void {
     disablePassword = ''
     disableError = null
-    disableOpen = true
+    disableModal.open()
   }
 
   function closeDisable(): void {
-    disableOpen = false
+    disableModal.close()
     disablePassword = ''
     disableError = null
   }
 
   async function confirmDisable(): Promise<void> {
     disableError = null
-    disabling = true
+    disableModal.submit()
     try {
       const res = await api.totpDisable(disablePassword)
-      disableOpen = false
+      disableModal.succeed()
       smbAnnouncement = res.smb_password_replaced ? t('smb.replaced_by_account_password') : ''
       onchanged?.()
     } catch (err) {
+      disableModal.fail('')
       disableError =
         err instanceof ApiError && err.code === 'auth.invalid_credentials'
           ? t('common.incorrect_password')
           : t('totp.could_not_turn_off_try')
-    } finally {
-      disabling = false
     }
   }
 
@@ -204,7 +201,7 @@
     try {
       await navigator.clipboard.writeText(setupSecret)
     } catch {
-      // clipboard API unavailable — the secret is still selectable as text
+      // clipboard API unavailable: the secret is still selectable as text
     }
   }
 </script>
@@ -238,7 +235,7 @@
   <p class="sc-totp__announce" aria-live="polite">{smbAnnouncement}</p>
 </div>
 
-<Dialog open={enrollOpen} title={t('totp.set_up_two_factor_authentication')} onclose={closeEnroll}>
+<Dialog open={enrollSnap.current.isOpen} title={t('totp.set_up_two_factor_authentication')} onclose={closeEnroll}>
   <!-- The password comes first because the server mints the secret against
        it: enrolling a factor is a credential change, not a read. -->
   <TextField
@@ -266,7 +263,7 @@
       <Button
         variant="filled"
         disabled={enrollCode.length !== 6}
-        loading={enrolling}
+        loading={enrollSnap.current.status === 'submitting'}
         onclick={confirmEnroll}
       >
         {t('totp.enable')}
@@ -279,7 +276,7 @@
   {/snippet}
 </Dialog>
 
-<Dialog open={disableOpen} title={t('totp.turn_off_two_factor_authentication_2')} onclose={closeDisable}>
+<Dialog open={disableSnap.current.isOpen} title={t('totp.turn_off_two_factor_authentication_2')} onclose={closeDisable}>
   <p>{t('totp.enter_your_current_password_continue')}</p>
   {#if smbDedicated}
     <p class="sc-totp__smb-warning">{t('smb.dedicated_will_be_replaced')}</p>
@@ -293,13 +290,13 @@
   />
   {#snippet actions()}
     <Button variant="text" onclick={closeDisable}>{t('common.cancel')}</Button>
-    <Button variant="filled" disabled={!disablePassword} loading={disabling} onclick={confirmDisable}>
+    <Button variant="filled" disabled={!disablePassword} loading={disableSnap.current.status === 'submitting'} onclick={confirmDisable}>
       {t('totp.turn_off')}
     </Button>
   {/snippet}
 </Dialog>
 
-<Dialog open={reissueOpen} title={t('totp.reissue_recovery_codes_2')} onclose={closeReissue}>
+<Dialog open={reissueSnap.current.isOpen} title={t('totp.reissue_recovery_codes_2')} onclose={closeReissue}>
   <p class="sc-totp__reissue-warning">
     <Icon icon={icons.warning} size={16} />
     {t('totp.reissuing_invalidates_all_10_recovery')} <strong>{t('totp.at_once')}</strong>{t('totp.cannot_undone_new_codes_shown')}
@@ -313,7 +310,7 @@
   />
   {#snippet actions()}
     <Button variant="text" onclick={closeReissue}>{t('common.cancel')}</Button>
-    <Button variant="filled" disabled={!reissuePassword} loading={reissuing} onclick={confirmReissue}>
+    <Button variant="filled" disabled={!reissuePassword} loading={reissueSnap.current.status === 'submitting'} onclick={confirmReissue}>
       {t('totp.reissue')}
     </Button>
   {/snippet}

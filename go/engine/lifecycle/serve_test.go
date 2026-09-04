@@ -141,34 +141,42 @@ func TestTheEngineServesARealRequest(t *testing.T) {
 
 // Every route the table names is registered. A route the table declares and
 // the server does not answer is one a client discovers and then cannot use.
+//
+// A credential-gated route has to be driven with a session to prove anything
+// now. Anonymously it answers 404, and so does a path that was never mounted,
+// which is the concealment working: this test would pass against a server
+// with no routes at all if it asked anonymously.
 func TestEveryDeclaredRouteAnswers(t *testing.T) {
-	base := boot(t)
+	base, _, sess := bootWithUser(t)
 
-	// One of each shape a route can be in: bound and public, bound and
-	// needing a credential, and registered with no binding yet.
-	cases := []struct {
+	// Public: served to anybody, and the one route that must answer before a
+	// caller has any credential.
+	if status, body := get(t, base+"/api/v1/system/health"); status != http.StatusOK {
+		t.Errorf("the health probe answered %d, want 200: %s", status, body)
+	}
+
+	// Bound and credential-gated. The change channel is bookkeeping a caller
+	// does about its own work, so a session reaches it and the upgrade is
+	// demanded after that, of a caller the route will actually serve.
+	//
+	// The events entry has moved every time the route it named was bound,
+	// from auth/oidc/config to system/setup to here. A route named as an
+	// example of one shape has to move when it stops being that shape, or
+	// the test quietly asserts the opposite of what it says.
+	for _, c := range []struct {
 		path string
 		want int
 	}{
-		{"/api/v1/system/health", http.StatusOK},
-		{"/api/v1/jobs", http.StatusUnauthorized},
-		// Bound and credential-gated: the change channel is bookkeeping a
-		// caller does about its own work, so it takes any credential and
-		// refuses a request carrying none. The upgrade is demanded after
-		// that, of a caller the route will actually serve.
-		//
-		// This entry has moved every time the route it named was bound, from
-		// auth/oidc/config to system/setup to here. A route named as an
-		// example of one shape has to move when it stops being that shape, or
-		// the test quietly asserts the opposite of what it says.
-		{"/api/v1/events", http.StatusUnauthorized},
-	}
-
-	for _, c := range cases {
+		{"/api/v1/jobs", http.StatusOK},
+		{"/api/v1/events", http.StatusUpgradeRequired},
+	} {
 		t.Run(c.path, func(t *testing.T) {
-			status, body := get(t, base+c.path)
+			status, body := authed(t, http.MethodGet, base+c.path, sess)
 			if status != c.want {
 				t.Errorf("%s answered %d, want %d: %s", c.path, status, c.want, body)
+			}
+			if status == http.StatusNotFound {
+				t.Errorf("%s is declared but not registered", c.path)
 			}
 		})
 	}
@@ -512,7 +520,7 @@ func TestEveryRouteHasExactlyOneHandler(t *testing.T) {
 // binding from a misspelled one, which falls through to the default and looks
 // served while doing nothing.
 func TestABoundRouteIsNotTheDefault(t *testing.T) {
-	base, token, _ := bootWithUser(t)
+	base, _, sess := bootWithUser(t)
 
 	// Every route bound so far that takes no path parameter and no share.
 	bound := []string{
@@ -525,7 +533,7 @@ func TestABoundRouteIsNotTheDefault(t *testing.T) {
 
 	for _, path := range bound {
 		t.Run(path, func(t *testing.T) {
-			status, body := authed(t, http.MethodGet, base+path, token)
+			status, body := authed(t, http.MethodGet, base+path, sess)
 			if status == http.StatusNotImplemented {
 				t.Errorf("%s fell through to the default: %s", path, body)
 			}

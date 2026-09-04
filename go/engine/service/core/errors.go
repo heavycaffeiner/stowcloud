@@ -9,6 +9,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
 // The domain's whole error vocabulary. None of these chooses a wire status;
@@ -39,6 +40,23 @@ var (
 	// internal error, and an operator who had set a ceiling saw their own
 	// configuration working as an unexplained fault.
 	ErrWritesBlocked = dbfile.ErrWritesBlocked
+
+	// ErrGrantMalformed is the store refusing a grant that describes nothing,
+	// re-exported for the reason above: the protocol layer classifies it and
+	// may not import the store.
+	//
+	// An administrator describing a grant wrongly is the caller's mistake to
+	// correct, and it reached the screen as an internal error.
+	ErrGrantMalformed = state.ErrGrantMalformed
+
+	// ErrGrantAlreadyExists is the store refusing a second grant for a
+	// subject that already holds one over the same share and subpath,
+	// re-exported for the reason above.
+	//
+	// A duplicate submission is a conflict with the grant already on file,
+	// not a malformed request, and it reached the screen as an internal
+	// error before this was named.
+	ErrGrantAlreadyExists = state.ErrGrantAlreadyExists
 
 	// ErrConflict is an operation that conflicts with current state when no
 	// validator was supplied. It is what opens the conflict dialogue on the

@@ -572,6 +572,32 @@ ALTER TABLE compat_login_flow ADD COLUMN credential_id INTEGER;
 ALTER TABLE compat_login_flow ADD COLUMN delivered_ns INTEGER NOT NULL DEFAULT 0;
 `
 
+// Step 13 refuses a second grant naming the same subject over the same share
+// and subpath with the same reach, rather than letting it insert silently.
+// Before this step a duplicate landed as a second row indistinguishable from
+// the first except by id, and the only symptom was an operator's retry or a
+// client's double submit quietly doubling the rows.
+//
+// The expression substitutes -1 for a NULL principal column because SQLite
+// treats NULL as distinct from every other NULL in a unique index, and a
+// second grant naming the same group would otherwise still collide against
+// nothing: -1 is never a real row id, so both nullable columns still narrow
+// to one comparable value.
+//
+// inherit is part of the key because the two states are different grants, not
+// two spellings of one. "This folder" and "this folder and everything under
+// it" cannot be folded into a single row, and the evaluator reads the flag to
+// decide which of them covers a descendant.
+//
+// The rows already stored are folded first, by foldDuplicateGrants. Creating
+// the index against a database that holds duplicates fails, and the failure
+// is a server that will not start over rows the server itself accepted.
+const schemaV13 = `
+CREATE UNIQUE INDEX grant_subject_target ON "grant"(
+  coalesce(user, -1), coalesce("group", -1), share, subpath, inherit
+);
+`
+
 // migrations is a function instead of a package-level slice so nothing can
 // reassign the list. Position determines version, so a released step is never
 // modified, renumbered or moved.
@@ -593,5 +619,10 @@ func migrations() []dbfile.Migration {
 		{Name: "10: one kind of share", SQL: schemaV10},
 		{Name: "11: configuration secrets at rest", SQL: schemaV11},
 		{Name: "12: login flow delivery state", SQL: schemaV12},
+		{
+			Name:         "13: one grant per subject, share, subpath and reach",
+			SQL:          schemaV13,
+			Precondition: foldDuplicateGrants,
+		},
 	}
 }

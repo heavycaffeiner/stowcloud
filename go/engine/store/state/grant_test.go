@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"path/filepath"
+	"strconv"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
@@ -14,19 +17,19 @@ import (
 // key. An immediately-enforced key would refuse every home grant.
 const homeShare int64 = 999_999
 
-func TestPersistGrantRefusesAGrantThatAppliesToNobody(t *testing.T) {
+func TestPersistGrantRefusesAGrantThatSaysNothing(t *testing.T) {
 	ctx := context.Background()
 	d, _ := open(t)
 	seedUser(t, d, 1, "u")
 	seedGroup(t, d, 1, "g")
 
 	for name, g := range map[string]state.GrantRow{
-		"neither principal": {Share: 5, Allow: 1},
-		"both principals":   {User: id64(1), Group: id64(1), Share: 5, Allow: 1},
-		"no share":          {User: id64(1), Allow: 1},
-		"allows nothing":    {User: id64(1), Share: 5},
+		"neither principal":         {Share: 5, Allow: 1},
+		"both principals":           {User: id64(1), Group: id64(1), Share: 5, Allow: 1},
+		"no share":                  {User: id64(1), Allow: 1},
+		"neither allows nor denies": {User: id64(1), Share: 5},
 	} {
-		if _, err := d.PersistGrant(ctx, g, 1); !errors.Is(err, state.ErrNoSuchGrant) {
+		if _, err := d.PersistGrant(ctx, g, 1); !errors.Is(err, state.ErrGrantMalformed) {
 			t.Errorf("%s returned %v, want a refusal", name, err)
 		}
 	}
@@ -38,6 +41,57 @@ func TestPersistGrantRefusesAGrantThatAppliesToNobody(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Errorf("%d grants exist after four refusals", len(got))
+	}
+}
+
+// A grant that only denies is how an inherited allow is carved back out for
+// one subtree. Refusing it made the exception unexpressible, so a folder
+// inside a granted tree could not be closed off.
+func TestPersistGrantStoresADenyOnlyGrant(t *testing.T) {
+	ctx := context.Background()
+	d, _ := open(t)
+	seedUser(t, d, 1, "u")
+
+	id, err := d.PersistGrant(ctx, state.GrantRow{
+		User: id64(1), Share: 5, Subpath: "team/private", Deny: 0b1, Inherit: true,
+	}, 1)
+	if err != nil {
+		t.Fatalf("a deny-only grant was refused: %v", err)
+	}
+
+	got, err := d.ListGrants(ctx, state.GrantFilter{})
+	if err != nil {
+		t.Fatalf("ListGrants: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != id || got[0].Allow != 0 || got[0].Deny != 0b1 {
+		t.Fatalf("the stored grant is %+v", got)
+	}
+}
+
+// A second grant for a subject that already holds one over the same share and
+// subpath is refused by the unique index rather than stored as an
+// indistinguishable duplicate. The first grant survives untouched.
+func TestPersistGrantRefusesADuplicateOverTheSameShareAndSubpath(t *testing.T) {
+	ctx := context.Background()
+	d, _ := open(t)
+	seedUser(t, d, 1, "u")
+
+	g := state.GrantRow{User: id64(1), Share: 5, Subpath: "team/private", Allow: 0b1}
+	id, err := d.PersistGrant(ctx, g, 1)
+	if err != nil {
+		t.Fatalf("PersistGrant: %v", err)
+	}
+
+	if _, derr := d.PersistGrant(ctx, g, 2); !errors.Is(derr, state.ErrGrantAlreadyExists) {
+		t.Fatalf("a duplicate grant returned %v, want ErrGrantAlreadyExists", derr)
+	}
+
+	got, err := d.ListGrants(ctx, state.GrantFilter{})
+	if err != nil {
+		t.Fatalf("ListGrants: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != id {
+		t.Fatalf("after the refusal the grants are %+v, want only the original", got)
 	}
 }
 
@@ -244,8 +298,10 @@ func TestDeleteGrantRemovesExactlyThatRow(t *testing.T) {
 	seedUser(t, d, 1, "u")
 
 	var ids []int64
-	for range 3 {
-		id, err := d.PersistGrant(ctx, state.GrantRow{User: id64(1), Share: 1, Allow: 1}, 1)
+	for i := range 3 {
+		id, err := d.PersistGrant(ctx, state.GrantRow{
+			User: id64(1), Share: 1, Subpath: strconv.Itoa(i), Allow: 1,
+		}, 1)
 		if err != nil {
 			t.Fatalf("PersistGrant: %v", err)
 		}
@@ -282,9 +338,9 @@ func TestDeleteShareTakesEveryGrantNamingIt(t *testing.T) {
 	}
 	shareID := 1_000_000 + rowid
 
-	for range 2 {
+	for i := range 2 {
 		if _, perr := d.PersistGrant(ctx, state.GrantRow{
-			User: id64(1), Share: shareID, Allow: 1,
+			User: id64(1), Share: shareID, Subpath: strconv.Itoa(i), Allow: 1,
 		}, 1); perr != nil {
 			t.Fatalf("PersistGrant: %v", perr)
 		}
@@ -424,6 +480,133 @@ func TestMembershipsRoundTrip(t *testing.T) {
 	for _, p := range pairs {
 		if !seen[p] {
 			t.Errorf("membership %v is missing", p)
+		}
+	}
+}
+
+// A database written before step 13 can hold duplicates, because nothing
+// stopped them. The step folds them onto the first grant instead of refusing
+// to open, and the fold preserves what the evaluator was already answering:
+// the union of the allows and of the denies.
+func TestTheMigrationFoldsDuplicateGrants(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "state.db")
+
+	// One version short of the step, where the unique index does not exist.
+	spec := state.Spec(path)
+	spec.Migrations = spec.Migrations[:len(spec.Migrations)-1]
+	old, err := dbfile.Open(ctx, spec)
+	if err != nil {
+		t.Fatalf("opening one version short of the fold: %v", err)
+	}
+	if werr := old.Write(ctx, func(tx *sql.Tx) error {
+		if _, xerr := tx.ExecContext(ctx,
+			`INSERT INTO user(id, name, pw_hash, created_ns) VALUES (1, 'u', '', 0)`); xerr != nil {
+			return xerr
+		}
+		// Three rows for one subject over one share and subpath: two that
+		// reach only that path, one that reaches the subtree. The first two
+		// fold together and the third must survive on its own.
+		_, xerr := tx.ExecContext(ctx,
+			`INSERT INTO "grant"(id, user, share, subpath, allow, deny, inherit, label, created_ns)
+			 VALUES (10, 1, 5, 'team', 1, 0, 0, 'first', 1),
+			        (11, 1, 5, 'team', 2, 8, 0, 'second', 2),
+			        (12, 1, 5, 'team', 4, 0, 1, NULL, 3)`)
+		return xerr
+	}); werr != nil {
+		t.Fatalf("planting the duplicates: %v", werr)
+	}
+	if cerr := old.Close(); cerr != nil {
+		t.Fatalf("closing: %v", cerr)
+	}
+
+	f, err := dbfile.Open(ctx, state.Spec(path))
+	if err != nil {
+		t.Fatalf("the fold did not let the database open: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := f.Close(); cerr != nil {
+			t.Errorf("Close: %v", cerr)
+		}
+	})
+
+	got, err := state.New(f).ListGrants(ctx, state.GrantFilter{})
+	if err != nil {
+		t.Fatalf("ListGrants: %v", err)
+	}
+	rows := map[int64]state.GrantRow{}
+	for _, g := range got {
+		rows[g.ID] = g
+	}
+	if len(rows) != 2 {
+		t.Fatalf("%d grants survived the fold, want 2: %+v", len(rows), got)
+	}
+
+	// The earliest id stands, carrying both allows and the deny the second row
+	// contributed, and it keeps the label it already had.
+	switch kept, ok := rows[10]; {
+	case !ok:
+		t.Fatal("the first grant did not survive the fold")
+	case kept.Allow != 3:
+		t.Errorf("the folded allow is %d, want 3", kept.Allow)
+	case kept.Deny != 8:
+		t.Errorf("the folded deny is %d, want 8", kept.Deny)
+	case kept.Inherit:
+		t.Error("the fold turned a grant over one path into one over a subtree")
+	case kept.Label != "first":
+		t.Errorf("the folded label is %q, want %q", kept.Label, "first")
+	}
+
+	// The inheriting row is a different grant, so it is not folded in. Merging
+	// it would let the first row's bits reach every path underneath.
+	switch sub, ok := rows[12]; {
+	case !ok:
+		t.Fatal("the inheriting grant was folded away")
+	case sub.Allow != 4 || !sub.Inherit:
+		t.Errorf("the inheriting grant reads %+v, want allow 4 and inherit", sub)
+	}
+
+	// And the index the step builds now refuses what it just cleaned up.
+	if _, perr := state.New(f).PersistGrant(ctx, state.GrantRow{
+		User: id64(1), Share: 5, Subpath: "team", Allow: 1,
+	}, 4); !errors.Is(perr, state.ErrGrantAlreadyExists) {
+		t.Errorf("a duplicate after the fold returned %v, want ErrGrantAlreadyExists", perr)
+	}
+}
+
+// Reach is part of a grant's identity, so widening one onto a subtree grant
+// the subject already holds is the same collision a second insert is. It has
+// to read as a refusal: an administrator flipping a switch on a form must not
+// be told the server broke.
+func TestUpdateGrantRefusesWideningOntoAnExistingSubtreeGrant(t *testing.T) {
+	ctx := context.Background()
+	d, _ := open(t)
+	seedUser(t, d, 1, "u")
+
+	narrow, err := d.PersistGrant(ctx, state.GrantRow{
+		User: id64(1), Share: 5, Subpath: "team", Allow: 1,
+	}, 1)
+	if err != nil {
+		t.Fatalf("storing the grant over one folder: %v", err)
+	}
+	if _, err = d.PersistGrant(ctx, state.GrantRow{
+		User: id64(1), Share: 5, Subpath: "team", Allow: 2, Inherit: true,
+	}, 2); err != nil {
+		t.Fatalf("storing the grant over the subtree: %v", err)
+	}
+
+	if uerr := d.UpdateGrant(ctx, narrow, 1, 0, true, ""); !errors.Is(uerr, state.ErrGrantAlreadyExists) {
+		t.Fatalf("widening onto the subtree grant returned %v, want ErrGrantAlreadyExists", uerr)
+	}
+
+	// The refused update leaves the grant as it was, rather than half applied.
+	got, err := d.ListGrants(ctx, state.GrantFilter{User: 1})
+	if err != nil {
+		t.Fatalf("ListGrants: %v", err)
+	}
+	for _, g := range got {
+		if g.ID == narrow && g.Inherit {
+			t.Error("the refused update widened the grant anyway")
 		}
 	}
 }

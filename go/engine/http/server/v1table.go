@@ -295,6 +295,7 @@ func Table() []route.Route {
 	add("DELETE", "/admin/shares/{id}", "admin.shares.delete", route.BodyNone)
 	add("POST", "/admin/shares/{id}/retry", "admin.shares.retry", route.BodyNone)
 	add("GET", "/admin/audit", "admin.audit", route.BodyNone)
+	add("GET", "/admin/logs", "admin.logs.list", route.BodyNone)
 	add("GET", "/admin/storage", "admin.storage", route.BodyNone)
 	add("POST", "/admin/smb/apply", "admin.smb.apply", route.BodyNone)
 	add("POST", "/admin/index/build", "admin.index.build", route.BodyJSON)

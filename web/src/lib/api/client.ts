@@ -73,6 +73,9 @@ export type {
   AuditRow,
   AuditQuery,
   AuditPage,
+  AdminLogRecord,
+  AdminLogQuery,
+  AdminLogPage,
   UploadSettingsReq,
   UploadSettingsResp,
   SettingsSource,
@@ -91,6 +94,6 @@ export type {
   WatchSettingsReq,
   ThumbnailSettingsReq
 } from './types'
-export { ALL_GRANT_PERMS } from './types'
+export { ALL_GRANT_PERMS, ALL_LOG_LEVELS } from './types'
 export { ApiError } from './types'
 export type { ListOpts, SearchHit } from './mock'

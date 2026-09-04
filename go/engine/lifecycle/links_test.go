@@ -12,10 +12,10 @@ import (
 )
 
 // mintLink creates a link over the share and returns the response body.
-func mintLink(t *testing.T, base, token, share string) []byte {
+func mintLink(t *testing.T, base string, sess session, share string) []byte {
 	t.Helper()
 
-	status, body := post(t, base+"/api/v1/links", token,
+	status, body := post(t, base+"/api/v1/links", sess,
 		map[string]any{"path": "/" + share + "/existing.txt", "label": "shared"})
 	if status != http.StatusCreated {
 		t.Fatalf("minting answered %d: %s", status, body)
@@ -27,9 +27,9 @@ func mintLink(t *testing.T, base, token, share string) []byte {
 // anyone holding it reaches the file, so a listing that carried it would put
 // every link's secret behind one read of the listing.
 func TestALinkTokenIsReturnedOnceAndNeverListed(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
+	base, sess, share := shareWith(t, everyPerm())
 
-	minted := mintLink(t, base, token, share)
+	minted := mintLink(t, base, sess, share)
 
 	var created struct {
 		Token string `json:"token"`
@@ -52,7 +52,7 @@ func TestALinkTokenIsReturnedOnceAndNeverListed(t *testing.T) {
 	}
 
 	// And the listing does not carry it.
-	status, listing := authed(t, http.MethodGet, base+"/api/v1/links", token)
+	status, listing := authed(t, http.MethodGet, base+"/api/v1/links", sess)
 	if status != http.StatusOK {
 		t.Fatalf("the listing answered %d: %s", status, listing)
 	}
@@ -71,17 +71,17 @@ func TestALinkTokenIsReturnedOnceAndNeverListed(t *testing.T) {
 // thereby allowed to publish it.
 func TestMintingALinkNeedsShare(t *testing.T) {
 	// Everything except Share.
-	base, token, share := shareWith(t, everyPerm()&^acl.Share)
+	base, sess, share := shareWith(t, everyPerm()&^acl.Share)
 
-	status, body := post(t, base+"/api/v1/links", token,
+	status, body := post(t, base+"/api/v1/links", sess,
 		map[string]any{"path": "/" + share + "/existing.txt"})
 	if status < 400 {
 		t.Errorf("a link was minted without Share: %d %s", status, body)
 	}
 
 	// With Share: served, so the refusal above is about that bit.
-	base2, token2, share2 := shareWith(t, everyPerm())
-	ok, okBody := post(t, base2+"/api/v1/links", token2,
+	base2, sess2, share2 := shareWith(t, everyPerm())
+	ok, okBody := post(t, base2+"/api/v1/links", sess2,
 		map[string]any{"path": "/" + share2 + "/existing.txt"})
 	if ok != http.StatusCreated {
 		t.Errorf("minting was refused with every permission: %d %s", ok, okBody)
@@ -90,11 +90,11 @@ func TestMintingALinkNeedsShare(t *testing.T) {
 
 // The link a person gets back is theirs, and appears in their own listing.
 func TestAMintedLinkAppearsInItsOwnersListing(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
+	base, sess, share := shareWith(t, everyPerm())
 
-	mintLink(t, base, token, share)
+	mintLink(t, base, sess, share)
 
-	status, listing := authed(t, http.MethodGet, base+"/api/v1/links", token)
+	status, listing := authed(t, http.MethodGet, base+"/api/v1/links", sess)
 	if status != http.StatusOK {
 		t.Fatalf("the listing answered %d: %s", status, listing)
 	}
@@ -114,9 +114,9 @@ func TestAMintedLinkAppearsInItsOwnersListing(t *testing.T) {
 // Deleting a link removes it. A revoke that reported success while leaving the
 // link live is how a person believes they unpublished a file.
 func TestDeletingALinkRemovesIt(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
+	base, sess, share := shareWith(t, everyPerm())
 
-	minted := mintLink(t, base, token, share)
+	minted := mintLink(t, base, sess, share)
 
 	var created struct {
 		Link struct {
@@ -130,12 +130,12 @@ func TestDeletingALinkRemovesIt(t *testing.T) {
 		t.Fatalf("the minted link has no id: %s", minted)
 	}
 
-	status, body := authed(t, http.MethodDelete, base+"/api/v1/links/"+created.Link.ID, token)
+	status, body := authed(t, http.MethodDelete, base+"/api/v1/links/"+created.Link.ID, sess)
 	if status != http.StatusNoContent {
 		t.Fatalf("delete answered %d: %s", status, body)
 	}
 
-	_, listing := authed(t, http.MethodGet, base+"/api/v1/links", token)
+	_, listing := authed(t, http.MethodGet, base+"/api/v1/links", sess)
 	var links []map[string]any
 	if err := json.Unmarshal(listing, &links); err != nil {
 		t.Fatal(err)
@@ -150,25 +150,28 @@ func TestDeletingALinkRemovesIt(t *testing.T) {
 func TestTheLinkRoutesNeedACredential(t *testing.T) {
 	base, _, share := shareWith(t, everyPerm())
 
+	// The refusal is disguised as a missing address: middleware.scopeHandler
+	// answers every refusal with 404 rather than 401 or 403, so a stranger
+	// probing the surface cannot map which routes exist.
 	status, body := get(t, base+"/api/v1/links")
-	if status != http.StatusUnauthorized {
+	if status != http.StatusNotFound {
 		t.Errorf("the listing answered %d anonymously: %s", status, body)
 	}
 
-	create, createBody := post(t, base+"/api/v1/links", "",
+	create, createBody := post(t, base+"/api/v1/links", session{},
 		map[string]any{"path": "/" + share + "/existing.txt"})
-	if create != http.StatusUnauthorized {
+	if create != http.StatusNotFound {
 		t.Errorf("minting answered %d anonymously: %s", create, createBody)
 	}
 }
 
 // A link over a path this account cannot reach is refused.
 func TestALinkCannotBeMintedOverAnUnreachablePath(t *testing.T) {
-	base, token, _ := shareWith(t, everyPerm())
+	base, sess, _ := shareWith(t, everyPerm())
 
 	for _, path := range []string{"/../etc/passwd", "/nothing/here", "/work/../../tmp"} {
 		t.Run(path, func(t *testing.T) {
-			status, body := post(t, base+"/api/v1/links", token,
+			status, body := post(t, base+"/api/v1/links", sess,
 				map[string]any{"path": path})
 			if status < 400 {
 				t.Errorf("%q was published: %d %s", path, status, body)
@@ -181,9 +184,9 @@ func TestALinkCannotBeMintedOverAnUnreachablePath(t *testing.T) {
 // A client told a revoke succeeded stops trying, and believes a URL it never
 // unpublished is dead.
 func TestDeletingAnAbsentLinkIsRefused(t *testing.T) {
-	base, token, _ := shareWith(t, everyPerm())
+	base, sess, _ := shareWith(t, everyPerm())
 
-	status, body := authed(t, http.MethodDelete, base+"/api/v1/links/999999", token)
+	status, body := authed(t, http.MethodDelete, base+"/api/v1/links/999999", sess)
 	if status == http.StatusNoContent || status == http.StatusOK {
 		t.Fatalf("deleting an absent link reported success: %d %s", status, body)
 	}
@@ -195,9 +198,9 @@ func TestDeletingAnAbsentLinkIsRefused(t *testing.T) {
 // One account cannot delete another's link. Publishing is the owner's decision
 // and so is withdrawing it.
 func TestOneAccountCannotDeleteAnothersLink(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
+	base, sess, share := shareWith(t, everyPerm())
 
-	minted := mintLink(t, base, token, share)
+	minted := mintLink(t, base, sess, share)
 	var created struct {
 		Link struct {
 			ID string `json:"id"`
@@ -209,23 +212,23 @@ func TestOneAccountCannotDeleteAnothersLink(t *testing.T) {
 
 	// A second deployment's account, which is the strongest form of "not the
 	// owner": a different id in a different database.
-	other, otherToken, _ := shareWith(t, everyPerm())
+	other, otherSess, _ := shareWith(t, everyPerm())
 	_ = other
 
-	status, body := authed(t, http.MethodDelete, base+"/api/v1/links/"+created.Link.ID, otherToken)
+	status, body := authed(t, http.MethodDelete, base+"/api/v1/links/"+created.Link.ID, otherSess)
 	if status == http.StatusNoContent {
 		t.Fatalf("another account's token deleted the link: %d %s", status, body)
 	}
 
 	// And the link is still there.
-	_, listing := authed(t, http.MethodGet, base+"/api/v1/links", token)
+	_, listing := authed(t, http.MethodGet, base+"/api/v1/links", sess)
 	if !strings.Contains(string(listing), created.Link.ID) {
 		t.Errorf("the link is gone after a refused delete: %s", listing)
 	}
 }
 
 // linkID mints a link and returns its id.
-func linkID(t *testing.T, base, token, share string) string {
+func linkID(t *testing.T, base string, sess session, share string) string {
 	t.Helper()
 
 	var created struct {
@@ -233,7 +236,7 @@ func linkID(t *testing.T, base, token, share string) string {
 			ID string `json:"id"`
 		} `json:"link"`
 	}
-	if err := json.Unmarshal(mintLink(t, base, token, share), &created); err != nil {
+	if err := json.Unmarshal(mintLink(t, base, sess, share), &created); err != nil {
 		t.Fatal(err)
 	}
 	if created.Link.ID == "" {
@@ -243,10 +246,10 @@ func linkID(t *testing.T, base, token, share string) string {
 }
 
 // linkByID reads one link out of the listing.
-func linkByID(t *testing.T, base, token, id string) map[string]any {
+func linkByID(t *testing.T, base string, sess session, id string) map[string]any {
 	t.Helper()
 
-	status, body := authed(t, http.MethodGet, base+"/api/v1/links", token)
+	status, body := authed(t, http.MethodGet, base+"/api/v1/links", sess)
 	if status != http.StatusOK {
 		t.Fatalf("listing answered %d: %s", status, body)
 	}
@@ -265,7 +268,7 @@ func linkByID(t *testing.T, base, token, id string) map[string]any {
 
 // patchLink sends an update with a raw JSON body, so a test can send an
 // explicit null that a Go map cannot express distinctly.
-func patchLink(t *testing.T, base, token, id, body string) (int, []byte) {
+func patchLink(t *testing.T, base string, sess session, id, body string) (int, []byte) {
 	t.Helper()
 
 	req, err := http.NewRequest(http.MethodPatch,
@@ -273,7 +276,7 @@ func patchLink(t *testing.T, base, token, id, body string) (int, []byte) {
 	if err != nil {
 		t.Fatalf("building: %v", err)
 	}
-	req.SetBasicAuth("ignored", token)
+	sess.attach(req)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := testClient().Do(req)
@@ -300,15 +303,15 @@ func patchLink(t *testing.T, base, token, id, body string) (int, []byte) {
 
 // An update changes the label without touching anything else.
 func TestUpdatingALinkLabel(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
-	id := linkID(t, base, token, share)
+	base, sess, share := shareWith(t, everyPerm())
+	id := linkID(t, base, sess, share)
 
-	status, body := patchLink(t, base, token, id, `{"label":"renamed"}`)
+	status, body := patchLink(t, base, sess, id, `{"label":"renamed"}`)
 	if status != http.StatusOK {
 		t.Fatalf("updating answered %d: %s", status, body)
 	}
 
-	row := linkByID(t, base, token, id)
+	row := linkByID(t, base, sess, id)
 	if stringField(row, "label") != "renamed" {
 		t.Errorf("the label is %v after a rename", row["label"])
 	}
@@ -320,16 +323,16 @@ func TestUpdatingALinkLabel(t *testing.T) {
 // cosmetic: for a password, "leave it" and "remove it" are opposite decisions
 // about who can open the link.
 func TestAbsentAndNullMeanDifferentThings(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
-	id := linkID(t, base, token, share)
+	base, sess, share := shareWith(t, everyPerm())
+	id := linkID(t, base, sess, share)
 
 	// Give it a password and an expiry to remove later.
-	if status, body := patchLink(t, base, token, id,
+	if status, body := patchLink(t, base, sess, id,
 		`{"password":"a-secret","expires_ns":"4102444800000000000"}`); status != http.StatusOK {
 		t.Fatalf("setting answered %d: %s", status, body)
 	}
 
-	row := linkByID(t, base, token, id)
+	row := linkByID(t, base, sess, id)
 	if !boolField(row, "has_password") {
 		t.Fatal("the password was not set")
 	}
@@ -338,10 +341,10 @@ func TestAbsentAndNullMeanDifferentThings(t *testing.T) {
 	}
 
 	// An update naming neither must leave both in place.
-	if status, body := patchLink(t, base, token, id, `{"label":"still-locked"}`); status != http.StatusOK {
+	if status, body := patchLink(t, base, sess, id, `{"label":"still-locked"}`); status != http.StatusOK {
 		t.Fatalf("the label-only update answered %d: %s", status, body)
 	}
-	row = linkByID(t, base, token, id)
+	row = linkByID(t, base, sess, id)
 	if !boolField(row, "has_password") {
 		t.Error("an update that did not name the password removed it")
 	}
@@ -350,11 +353,11 @@ func TestAbsentAndNullMeanDifferentThings(t *testing.T) {
 	}
 
 	// An explicit null removes them.
-	if status, body := patchLink(t, base, token, id,
+	if status, body := patchLink(t, base, sess, id,
 		`{"password":null,"expires_ns":null}`); status != http.StatusOK {
 		t.Fatalf("clearing answered %d: %s", status, body)
 	}
-	row = linkByID(t, base, token, id)
+	row = linkByID(t, base, sess, id)
 	if boolField(row, "has_password") {
 		t.Error("an explicit null did not remove the password")
 	}
@@ -368,9 +371,9 @@ func TestAbsentAndNullMeanDifferentThings(t *testing.T) {
 // It is a credential in a URL, returned once when the link is minted. A patch
 // response carrying it would put every link's secret behind an ordinary edit.
 func TestAnUpdateNeverReturnsTheToken(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
+	base, sess, share := shareWith(t, everyPerm())
 
-	minted := mintLink(t, base, token, share)
+	minted := mintLink(t, base, sess, share)
 	var created struct {
 		Token string `json:"token"`
 		Link  struct {
@@ -384,7 +387,7 @@ func TestAnUpdateNeverReturnsTheToken(t *testing.T) {
 		t.Fatal("the mint returned no token, so this test cannot look for it")
 	}
 
-	status, body := patchLink(t, base, token, created.Link.ID, `{"label":"renamed"}`)
+	status, body := patchLink(t, base, sess, created.Link.ID, `{"label":"renamed"}`)
 	if status != http.StatusOK {
 		t.Fatalf("updating answered %d: %s", status, body)
 	}
@@ -402,16 +405,16 @@ func TestAnUpdateNeverReturnsTheToken(t *testing.T) {
 // update could add write, a URL handed to somebody would become a way to
 // change the file, which is not what handing one out means.
 func TestAnUpdateCannotWidenALink(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
-	id := linkID(t, base, token, share)
+	base, sess, share := shareWith(t, everyPerm())
+	id := linkID(t, base, sess, share)
 
-	before := stringsOf(t, linkByID(t, base, token, id), "perms")
+	before := stringsOf(t, linkByID(t, base, sess, id), "perms")
 
 	// Whether this is refused or ignored does not matter; what matters is
 	// that the stored permissions do not grow.
-	patchLink(t, base, token, id, `{"perms":["read","write","create","delete"]}`)
+	patchLink(t, base, sess, id, `{"perms":["read","write","create","delete"]}`)
 
-	after := stringsOf(t, linkByID(t, base, token, id), "perms")
+	after := stringsOf(t, linkByID(t, base, sess, id), "perms")
 	if len(after) > len(before) {
 		t.Errorf("the link went from %v to %v", before, after)
 	}
@@ -443,14 +446,14 @@ func stringsOf(t *testing.T, body map[string]any, name string) []string {
 
 // One account cannot edit another's link.
 func TestUpdatingAnothersLinkIsRefused(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
-	linkID(t, base, token, share)
+	base, sess, share := shareWith(t, everyPerm())
+	linkID(t, base, sess, share)
 
 	// A second engine's credential cannot be used here, so the check is that
 	// an id belonging to nobody the caller owns is refused. The service takes
 	// the owner alongside the id, which is what makes this a refusal rather
 	// than a successful edit of a stranger's link.
-	status, _ := patchLink(t, base, token, "999999", `{"label":"stolen"}`)
+	status, _ := patchLink(t, base, sess, "999999", `{"label":"stolen"}`)
 	if status == http.StatusOK {
 		t.Error("an id the caller does not own was updated")
 	}
@@ -463,7 +466,7 @@ func TestUpdatingAnothersLinkIsRefused(t *testing.T) {
 // back makes the two directions disagree: a client that reads a link, edits
 // its label and sends the object back is refused on a field it never touched.
 func TestABigNumberIsAcceptedInBothSpellings(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
+	base, sess, share := shareWith(t, everyPerm())
 
 	// Past 2^53, which is where a JavaScript number stops being exact, and
 	// far enough ahead that the service does not reject it as already past.
@@ -477,14 +480,14 @@ func TestABigNumberIsAcceptedInBothSpellings(t *testing.T) {
 		"number": `{"expires_ns":` + exact + `}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			id := linkID(t, base, token, share)
+			id := linkID(t, base, sess, share)
 
-			status, out := patchLink(t, base, token, id, body)
+			status, out := patchLink(t, base, sess, id, body)
 			if status != http.StatusOK {
 				t.Fatalf("the %s spelling answered %d: %s", name, status, out)
 			}
 
-			row := linkByID(t, base, token, id)
+			row := linkByID(t, base, sess, id)
 			got := stringField(row, "expires_ns")
 			if got != exact {
 				t.Errorf("the %s spelling stored %q, want %q", name, got, exact)
@@ -498,8 +501,8 @@ func TestABigNumberIsAcceptedInBothSpellings(t *testing.T) {
 // Zero is a real instant in 1970, so a link that took it would read as
 // expired for ever while the caller was told the edit succeeded.
 func TestANonNumericExpiryIsRefused(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
-	id := linkID(t, base, token, share)
+	base, sess, share := shareWith(t, everyPerm())
+	id := linkID(t, base, sess, share)
 
 	for _, body := range []string{
 		`{"expires_ns":"soon"}`,
@@ -508,14 +511,14 @@ func TestANonNumericExpiryIsRefused(t *testing.T) {
 		`{"expires_ns":{}}`,
 		`{"max_downloads":"many"}`,
 	} {
-		status, _ := patchLink(t, base, token, id, body)
+		status, _ := patchLink(t, base, sess, id, body)
 		if status == http.StatusOK {
 			t.Errorf("%s was accepted", body)
 		}
 	}
 
 	// And nothing was stored, so the link is still the one that was minted.
-	row := linkByID(t, base, token, id)
+	row := linkByID(t, base, sess, id)
 	if _, present := row["expires_ns"]; present {
 		t.Errorf("a refused update set an expiry: %v", row["expires_ns"])
 	}
@@ -523,18 +526,18 @@ func TestANonNumericExpiryIsRefused(t *testing.T) {
 
 // A download cap past its width is refused rather than wrapping.
 func TestAnOversizedDownloadCapIsRefused(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
-	id := linkID(t, base, token, share)
+	base, sess, share := shareWith(t, everyPerm())
+	id := linkID(t, base, sess, share)
 
 	// Past int32, which is what the cap is stored as. Truncating would turn a
 	// large cap into a small one, or into a negative that never permits a
 	// single download.
-	status, body := patchLink(t, base, token, id, `{"max_downloads":"4294967297"}`)
+	status, body := patchLink(t, base, sess, id, `{"max_downloads":"4294967297"}`)
 	if status == http.StatusOK {
 		t.Errorf("a cap past its width was accepted: %s", body)
 	}
 
-	row := linkByID(t, base, token, id)
+	row := linkByID(t, base, sess, id)
 	if _, present := row["max_downloads"]; present {
 		t.Errorf("a refused update set a cap: %v", row["max_downloads"])
 	}
@@ -547,10 +550,10 @@ func TestAnOversizedDownloadCapIsRefused(t *testing.T) {
 // therefore mints a link nobody can ever open, and the response says the link
 // was created.
 func TestALinkMintedWithoutACapIsNotCappedAtZero(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
-	id := linkID(t, base, token, share)
+	base, sess, share := shareWith(t, everyPerm())
+	id := linkID(t, base, sess, share)
 
-	row := linkByID(t, base, token, id)
+	row := linkByID(t, base, sess, id)
 	if got := stringField(row, "max_downloads"); got == "0" {
 		t.Errorf("a link minted with no cap allows %s downloads, so it can never be opened", got)
 	}
@@ -562,9 +565,9 @@ func TestALinkMintedWithoutACapIsNotCappedAtZero(t *testing.T) {
 // would be the same defect pointing the other way: a link the owner limited
 // to one download would serve for ever.
 func TestAnExplicitDownloadCapIsKept(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
+	base, sess, share := shareWith(t, everyPerm())
 
-	status, body := post(t, base+"/api/v1/links", token, map[string]any{
+	status, body := post(t, base+"/api/v1/links", sess, map[string]any{
 		"path":          "/" + share + "/existing.txt",
 		"max_downloads": 3,
 	})
@@ -581,7 +584,7 @@ func TestAnExplicitDownloadCapIsKept(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	row := linkByID(t, base, token, created.Link.ID)
+	row := linkByID(t, base, sess, created.Link.ID)
 	if got := stringField(row, "max_downloads"); got != "3" {
 		t.Errorf("the cap is %q, want 3", got)
 	}
@@ -593,9 +596,9 @@ func TestAnExplicitDownloadCapIsKept(t *testing.T) {
 // is how a link is disabled without being deleted. The absent case must not
 // swallow it.
 func TestAnExplicitZeroCapIsKept(t *testing.T) {
-	base, token, share := shareWith(t, everyPerm())
+	base, sess, share := shareWith(t, everyPerm())
 
-	status, body := post(t, base+"/api/v1/links", token, map[string]any{
+	status, body := post(t, base+"/api/v1/links", sess, map[string]any{
 		"path":          "/" + share + "/existing.txt",
 		"max_downloads": 0,
 	})
@@ -612,7 +615,7 @@ func TestAnExplicitZeroCapIsKept(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	row := linkByID(t, base, token, created.Link.ID)
+	row := linkByID(t, base, sess, created.Link.ID)
 	if got := stringField(row, "max_downloads"); got != "0" {
 		t.Errorf("an explicit cap of zero came back as %q", got)
 	}

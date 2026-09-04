@@ -19,6 +19,8 @@ import {
   type ArchiveTicket,
   type ArchiveSettingsReq,
   type RateSettingsReq,
+  type AdminLogPage,
+  type AdminLogQuery,
   type AuditPage,
   type AuditQuery,
   type BatchResult,
@@ -105,24 +107,53 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
  * handling, which is the one place a dead session becomes the login screen.
  */
 function errorFrom(res: Response, body: unknown): ApiError {
-  const errBody = (body as ApiErrorBody).error ?? { code: 'internal', message: res.statusText }
-  const err = new ApiError(res.status, errBody)
-  // Task: "make a 401 mean something" — every call goes through this one
-  // function, so this is the single place a dead/missing session turns
-  // into "show the login screen" instead of an inline error string
-  // bubbling up into whatever list/table happened to be rendering.
+  const err = new ApiError(res.status, classifiedOf(body, res.statusText))
+  // Every call goes through this one function, so this is the single place a
+  // dead or missing session turns into "show the login screen" instead of an
+  // inline error string bubbling up into whatever list or table happened to
+  // be rendering.
   //
-  // Gated on `code`, not just `status`: `auth.invalid_credentials` is also
-  // a 401, but it means "this specific re-confirmation was wrong" (a bad
-  // *current* password on `/account/password`, a bad TOTP code on
+  // Gated on `code`, not just `status`: `auth.invalid_credentials` is also a
+  // 401, but it means "this specific re-confirmation was wrong" (a bad
+  // current password on `/account/password`, a bad TOTP code on
   // `/account/totp/enroll`), not "the session cookie is gone". The settings
-  // screens for those actions (`PasswordSection`/`TotpSection`) need that
-  // error to stay a rejected promise they show inline — bouncing the whole
-  // app to the login screen because someone mistyped their *current*
-  // password while already logged in would be exactly the "silent
-  // failure" this task explicitly rules out.
-  if (res.status === 401 && errBody.code === 'auth.required') noteUnauthorized()
+  // screens for those actions need that error to stay a rejected promise they
+  // show inline. Bouncing the whole app to the login screen because someone
+  // mistyped their current password while already signed in would be a silent
+  // failure of its own.
+  if (res.status === 401 && err.code === 'auth.required') noteUnauthorized()
+  // The server hides a route this credential may not reach: it answers as if
+  // the address did not exist, with the chain's unexplained refusal rather
+  // than a reason of its own. Every path this module calls is fixed at build
+  // time and does exist, so the address being absent means the session no
+  // longer reaches it. A real missing file is a different answer, and it
+  // carries a reason key like `fs.not_found`.
+  if (res.status === 404 && err.code === 'request_failed') noteUnauthorized()
   return err
+}
+
+/**
+ * Reads the classified failure out of a response body.
+ *
+ * Two shapes arrive. A handler writes `{"error":{"code","message"}}`, and the
+ * chain writes `{"error":"request_failed"}` for every refusal it will not
+ * explain. Both become one object here, so a caller reads `code` without
+ * knowing which layer refused it. Fields are narrowed rather than asserted:
+ * this is a body from the network, and a shape that does not hold would
+ * otherwise be trusted anyway and read as undefined further along.
+ */
+function classifiedOf(body: unknown, fallbackMessage: string): ApiErrorBody['error'] {
+  const raw = body !== null && typeof body === 'object' && 'error' in body ? body.error : undefined
+  if (typeof raw === 'string') return { code: raw, message: fallbackMessage }
+  if (raw === null || typeof raw !== 'object') return { code: 'internal', message: fallbackMessage }
+
+  const code = 'code' in raw && typeof raw.code === 'string' ? raw.code : 'internal'
+  const message = 'message' in raw && typeof raw.message === 'string' ? raw.message : fallbackMessage
+  const detail =
+    'detail' in raw && raw.detail !== null && typeof raw.detail === 'object'
+      ? Object.fromEntries(Object.entries(raw.detail))
+      : undefined
+  return { code, message, detail }
 }
 
 /**
@@ -1581,6 +1612,52 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
   }
 }
 
+/** `GET /api/v1/admin/logs[?since=&until=&level=&text=&subsystem=&request_id=&limit=&cursor=]`
+ *
+ *  `levels` is sent as the comma separated `level` parameter, and is omitted
+ *  entirely when nothing is selected, which the server reads as every level.
+ *  Sending `level=` empty would be the same thing to this server, but an
+ *  omitted filter is what every other call here does with an unset one.
+ *
+ *  Nothing on this path parses `ts_ns`, `stored_bytes` or `cursor`. The two
+ *  numbers are decimal strings because they outgrow an exact JavaScript
+ *  number, and the cursor is opaque, so all three are handed on untouched and
+ *  formatted only where they are displayed. */
+async function adminListLogs(query: AdminLogQuery = {}): Promise<AdminLogPage> {
+  // Hoisted out of the template: a string literal inside the interpolation
+  // makes the path unreadable to the tool that checks every client call
+  // against the mounted routes.
+  const level = query.levels && query.levels.length > 0 ? query.levels.join(',') : undefined
+  const page = await request<Partial<AdminLogPage>>(
+    `/admin/logs${qs({
+      since: query.since,
+      until: query.until,
+      level,
+      text: query.text,
+      subsystem: query.subsystem,
+      request_id: query.request_id,
+      limit: query.limit,
+      cursor: query.cursor
+    })}`,
+    { signal: query.signal }
+  )
+  return {
+    records: (page.records ?? []).map((r) => ({
+      ts_ns: r.ts_ns ?? '0',
+      level: r.level ?? '',
+      msg: r.msg ?? '',
+      // The server sends these two as empty strings rather than omitting
+      // them; an older one that omits them reads the same way here.
+      subsystem: r.subsystem ?? '',
+      request_id: r.request_id ?? '',
+      attrs: r.attrs ?? {}
+    })),
+    cursor: page.cursor ?? '',
+    stored_bytes: page.stored_bytes ?? '0',
+    segments: page.segments ?? 0
+  }
+}
+
 /** The real `hit` SSE event (`sc-http::routes::hit_json`) is flat --
  *  `{path, name, is_dir, size, mtime_ns, score}` -- not the `SearchHit`
  *  (`{path, entry: Entry}`) shape the UI reads (mock.ts's `searchStream`
@@ -1760,6 +1837,7 @@ export const httpApi = {
   adminAddGroupMember,
   adminRemoveGroupMember,
   adminListAudit,
+  adminListLogs,
   registerUploadedEntry(): void {
     // no-op for the real backend: the server's own state is authoritative;
     // the browse UI calls refresh() after an upload completes instead.

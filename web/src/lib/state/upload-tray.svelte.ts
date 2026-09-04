@@ -1,34 +1,41 @@
-// web/src/lib/state/upload-tray.svelte.ts — UploadTray state, backed by the
-// dedicated upload Worker. Survives route changes
-// because it is instantiated once at the app root, not per-page.
+// UploadTray state, backed by dedicated upload Worker and Zustand upload slice.
 import { api } from '../api/client'
 import { bytesToMb } from '../format/bytes'
 import { loadStoredConcurrency, storeConcurrency } from '../upload/chunk-planner'
 import type { AddItem, Cmd, Evt } from '../upload/worker'
 import { authState } from './auth.svelte'
+import { createUploadStore, type UploadItem, type UploadStore } from '../store/slices/upload.slice'
 
-export interface UploadItem {
-  id: string
-  name: string
-  dest: string
-  total: number
-  sent: number
-  rate: number
-  etaSec: number
-  status: 'queued' | 'uploading' | 'paused' | 'done' | 'error' | 'canceled'
-  /** A msgid, not display text — `UploadTray.svelte` runs it through `t()`.
-   *  The worker that produces most of them is off-thread and has no locale
-   *  state, so it posts the Korean source string and translation happens at
-   *  the one place that renders it. */
-  message?: string
-  messageParams?: Record<string, string | number>
-}
+export type { UploadItem }
 
 export class UploadTrayState {
+  #store: UploadStore = createUploadStore()
   items = $state<UploadItem[]>([])
-  open = $state(false)
+  #open = $state(false)
+
+  get open(): boolean {
+    return this.#open
+  }
+  set open(v: boolean) {
+    this.setOpen(v)
+  }
+
+  setOpen(open: boolean): void {
+    this.#store.dispatch({ type: 'SET_OPEN', open })
+  }
   #worker: Worker | null = null
   #onFileDone: ((dest: string) => void) | null = null
+
+  constructor() {
+    this.#store.subscribe((snap) => {
+      this.items = [...snap.items]
+      this.#open = snap.open
+    })
+  }
+  get store(): UploadStore {
+    return this.#store
+  }
+
 
   #ensureWorker(): Worker {
     if (this.#worker) return this.#worker
@@ -38,25 +45,20 @@ export class UploadTrayState {
     return w
   }
 
-  /** Called by the browser page so a finished upload is reflected without a manual reload. */
   onFileDone(cb: (dest: string) => void): void {
     this.#onFileDone = cb
   }
 
   #patch(id: string, patch: Partial<UploadItem>): void {
-    const i = this.items.findIndex((x) => x.id === id)
-    if (i === -1) return
-    this.items[i] = { ...this.items[i], ...patch }
+    this.#store.dispatch({ type: 'PATCH_ITEM', id, patch })
   }
-
   #handle(evt: Evt): void {
     switch (evt.t) {
       case 'queued':
-        this.items = [
-          ...this.items,
-          { id: evt.id, name: evt.name, dest: evt.dest, total: evt.total, sent: 0, rate: 0, etaSec: Infinity, status: 'uploading' }
-        ]
-        this.open = true
+        this.#store.dispatch({
+          type: 'QUEUE_ITEM',
+          item: { id: evt.id, name: evt.name, dest: evt.dest, total: evt.total, sent: 0, rate: 0, etaSec: Infinity, status: 'uploading' }
+        })
         break
       case 'progress': {
         // A chunk that was already on the wire when pause or cancel was
@@ -155,11 +157,11 @@ export class UploadTrayState {
   }
 
   dismiss(id: string): void {
-    this.items = this.items.filter((x) => x.id !== id)
+    this.#store.dispatch({ type: 'DISMISS_ITEM', id })
   }
 
   clearFinished(): void {
-    this.items = this.items.filter((x) => x.status !== 'done' && x.status !== 'canceled')
+    this.#store.dispatch({ type: 'CLEAR_FINISHED' })
   }
 
   setConcurrency(val: number): void {

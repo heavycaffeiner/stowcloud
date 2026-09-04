@@ -1,20 +1,14 @@
 <script lang="ts">
-  // /trash —: list, restore, and permanently purge
-  // trashed items. `GET/POST /api/trash[/restore|/purge]`
-  // (`go/internal/httpapi/handler/trash.go`) existed and worked before this page did —
-  // grep for "trash" across `web/src/` returned zero files. This is the
-  // first thing in the app that ever calls them.
+  // Trash page: list, restore, and permanently purge trashed items.
   //
-  // Not linked from `NavigationBar`/`NavigationDrawer` yet (those are owned
-  // by a different pass — `web/src/lib/ui/Navigation*.svelte`) beyond the
-  // one entry point this page's own owner *does* get to add: the browse
-  // page's More (overflow) menu, `(app)/b/[...path]/+page.svelte`.
+  // Not linked from NavigationBar or NavigationDrawer yet beyond the
+  // browse page More menu.
   //
-  // No virtualization: a trash listing is `<share>/.sctrash`'s flat
-  // one directory read (`go/internal/httpapi/handler/trash.go`), not the 100k-row directory the
-  // browse view has to handle — a plain list is the right tool here.
+  // No virtualization: a trash listing is a flat directory read,
+  // not the 100k-row directory the browse view handles.
   import { goto } from '$app/navigation'
   import { api, ApiError, type TrashEntry } from '../../../lib/api/client'
+  import { describeApiError } from '../../../lib/api/error-text'
   import { formatDateNs, t } from '../../../lib/i18n'
   import { formatBytes } from '../../../lib/format/bytes'
   import Button from '../../../lib/ui/Button.svelte'
@@ -25,6 +19,8 @@
   import IconButton from '../../../lib/ui/IconButton.svelte'
   import ProgressCircular from '../../../lib/ui/ProgressCircular.svelte'
   import Snackbar from '../../../lib/ui/Snackbar.svelte'
+  import { pureClear, pureSelectAll, pureToggle } from '../../../lib/store/slices/selection.slice'
+
 
   let entries = $state<TrashEntry[]>([])
   let loading = $state(true)
@@ -32,9 +28,7 @@
   let selected = $state<Set<string>>(new Set())
   let snackbarMsg = $state<string | null>(null)
   let purgeOpen = $state(false)
-  /** `null` means "purge whatever's selected" — set to a single id when the
-   *  confirm dialog was opened from one row's own Delete permanently button
-   *  instead of the bulk toolbar action. */
+  // null means purge whatever is selected: set to single id when opened from row
   let purgeSingle = $state<string | null>(null)
   let busy = $state(false)
 
@@ -48,7 +42,7 @@
       const known = new Set(entries.map((e) => e.id))
       selected = new Set([...selected].filter((id) => known.has(id)))
     } catch (err) {
-      loadError = err instanceof ApiError ? err.message : t('trash.could_not_load_trash')
+      loadError = describeApiError(err, t('trash.could_not_load_trash'))
     } finally {
       loading = false
     }
@@ -59,21 +53,16 @@
   })
 
   function toggle(id: string): void {
-    const next = new Set(selected)
-    if (next.has(id)) next.delete(id)
-    else next.add(id)
-    selected = next
+    selected = pureToggle(selected, id) as Set<string>
   }
 
   function selectAll(): void {
-    selected = entries.length === selected.size ? new Set() : new Set(entries.map((e) => e.id))
+    selected = (entries.length === selected.size
+      ? pureClear()
+      : pureSelectAll(entries.map((e) => e.id))) as Set<string>
   }
 
-  /** Summarizes a batch `OpResult[]` the same honest way the browse page's
-   *  own delete/copy flows should (and, for copy, now does — see
-   *  `types.ts`'s `BatchItemResult` doc comment): a result that reports
-   *  success is not evidence by itself when some items in the same batch
-   *  failed, so a partial failure says exactly how many, not just "Done". */
+  /** Summarizes a batch OpResult array with total and failure counts. */
   function summarize(results: { ok: boolean }[], verb: string): string {
     const failed = results.filter((r) => !r.ok).length
     if (failed === 0) return t('trash.items', { count: results.length, verb })
@@ -90,7 +79,7 @@
       selected = new Set([...selected].filter((id) => !ids.includes(id)))
       await load()
     } catch (err) {
-      snackbarMsg = err instanceof ApiError ? err.message : t('trash.could_not_restore')
+      snackbarMsg = describeApiError(err, t('trash.could_not_restore'))
     } finally {
       busy = false
     }
@@ -112,7 +101,7 @@
       selected = new Set([...selected].filter((id) => !ids.includes(id)))
       await load()
     } catch (err) {
-      snackbarMsg = err instanceof ApiError ? err.message : t('trash.could_not_delete_permanently')
+      snackbarMsg = describeApiError(err, t('trash.could_not_delete_permanently'))
     } finally {
       busy = false
       purgeSingle = null

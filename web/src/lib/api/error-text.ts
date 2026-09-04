@@ -18,7 +18,7 @@ import { ApiError } from './types'
 import { t } from '../i18n'
 
 /** Every `reason_key` the server can send, as literals so `i18n-check.mjs`
- *  sees them — they reach `t()` through a variable, and a key nothing names
+ *  sees them: they reach `t()` through a variable, and a key nothing names
  *  at a call site reads to that checker as dead copy. Doubling as an
  *  allowlist also makes this fail closed: an unrecognized key falls back to
  *  the caller's own message instead of rendering as a raw dotted string. */
@@ -48,7 +48,21 @@ const SERVER_KEYS = new Set<string>([
   // A folder whose backing disk is not there. It names the share and the
   // reason, because "not found" for a path that is perfectly good sends a
   // person looking in the wrong place.
-  /* i18n */ 'fs.share_broken'
+  /* i18n */ 'fs.share_broken',
+  /* i18n */ 'settings.would_lock_you_out',
+  /* i18n */ 'settings.proxy_range_is_everything',
+  /* i18n */ 'settings.out_of_range',
+  /* i18n */ 'settings.host_list_empty',
+  /* i18n */ 'settings.invalid_host',
+  /* i18n */ 'settings.host_role_conflict',
+  /* i18n */ 'settings.duplicate_host',
+  /* i18n */ 'settings.invalid_origin',
+  /* i18n */ 'settings.canonical_url_not_an_app_host',
+  /* i18n */ 'settings.path_is_not_a_directory',
+  /* i18n */ 'settings.gid_zero_is_root',
+  /* i18n */ 'settings.smb_render_failed',
+  /* i18n */ 'settings.smb_config_dir_unavailable',
+  /* i18n */ 'settings.above_kernel_watch_limit'
 ])
 
 /** `go/internal/apierr/map.go`'s codes → catalogue key. Only

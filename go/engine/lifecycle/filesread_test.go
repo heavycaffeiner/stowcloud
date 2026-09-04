@@ -19,27 +19,26 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
-	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
 // contentShare serves an engine holding one share with a file of known bytes.
-func contentShare(t *testing.T, perms acl.Perms, content []byte) (base, token, share string) {
-	b, tok, sh, _ := contentShareAt(t, perms, content)
-	return b, tok, sh
+func contentShare(t *testing.T, perms acl.Perms, content []byte) (base string, sess session, share string) {
+	b, sess, sh, _ := contentShareAt(t, perms, content)
+	return b, sess, sh
 }
 
 // contentShareAt is contentShare plus the host directory, for a test that has
 // to act on the files themselves rather than through the API.
-func contentShareAt(t *testing.T, perms acl.Perms, content []byte) (base, token, share, host string) {
-	b, tok, sh, h, _, _ := contentShareGrant(t, perms, content)
-	return b, tok, sh, h
+func contentShareAt(t *testing.T, perms acl.Perms, content []byte) (base string, sess session, share, host string) {
+	b, sess, sh, h, _, _ := contentShareGrant(t, perms, content)
+	return b, sess, sh, h
 }
 
 // contentShareGrant is contentShareAt plus the engine and the grant's id, for
 // a test that has to change what the account may reach while the server runs.
 func contentShareGrant(t *testing.T, perms acl.Perms, content []byte) (
-	base, token, share, host string, e *lifecycle.Engine, grant int64,
+	base string, sess session, share, host string, e *lifecycle.Engine, grant int64,
 ) {
 	t.Helper()
 	ctx := context.Background()
@@ -78,17 +77,13 @@ func contentShareGrant(t *testing.T, perms acl.Perms, content []byte) (
 		t.Fatal(gerr)
 	}
 
-	appPW, err := e.Auth.CreateAppPassword(ctx, id, "test",
-		auth.Scope{Perms: auth.SyncScopePerms}, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return serve(t, e), appPW, sh.Name, host, e, g.ID
+	served := serve(t, e)
+	return served, signIn(t, served, "alice", "a-long-enough-password"), sh.Name, host, e, g.ID
 }
 
 // download performs a read, optionally with a Range header, and returns the
 // whole response.
-func download(t *testing.T, base, token, path, rangeHeader string) (int, http.Header, []byte) {
+func download(t *testing.T, base string, sess session, path, rangeHeader string) (int, http.Header, []byte) {
 	t.Helper()
 
 	req, err := http.NewRequest(http.MethodGet,
@@ -96,7 +91,7 @@ func download(t *testing.T, base, token, path, rangeHeader string) (int, http.He
 	if err != nil {
 		t.Fatalf("building: %v", err)
 	}
-	req.SetBasicAuth("ignored", token)
+	sess.attach(req)
 	if rangeHeader != "" {
 		req.Header.Set("Range", rangeHeader)
 	}
@@ -123,9 +118,9 @@ func download(t *testing.T, base, token, path, rangeHeader string) (int, http.He
 // bytes. Without it the browser renders what it can and otherwise offers to
 // save a file called "read", after the last path segment of the endpoint.
 func TestADownloadIsAnAttachmentNamedAfterTheFile(t *testing.T) {
-	base, token, share := contentShare(t, acl.Read|acl.Download, []byte("payload"))
+	base, sess, share := contentShare(t, acl.Read|acl.Download, []byte("payload"))
 
-	status, header, _ := readWithQuery(t, base, token,
+	status, header, _ := readWithQuery(t, base, sess,
 		"/"+share+"/doc.bin", "download=1")
 	if status != http.StatusOK {
 		t.Fatalf("the download answered %d", status)
@@ -143,9 +138,9 @@ func TestADownloadIsAnAttachmentNamedAfterTheFile(t *testing.T) {
 // Without the parameter there is no attachment header: the same endpoint feeds
 // the text editor and the preview, which render rather than save.
 func TestAPlainReadIsNotAnAttachment(t *testing.T) {
-	base, token, share := contentShare(t, acl.Read|acl.Download, []byte("hello"))
+	base, sess, share := contentShare(t, acl.Read|acl.Download, []byte("hello"))
 
-	status, header, body := readWithQuery(t, base, token, "/"+share+"/doc.bin", "")
+	status, header, body := readWithQuery(t, base, sess, "/"+share+"/doc.bin", "")
 	if status != http.StatusOK {
 		t.Fatalf("the read answered %d", status)
 	}
@@ -158,7 +153,7 @@ func TestAPlainReadIsNotAnAttachment(t *testing.T) {
 }
 
 // readWithQuery reads a path with extra query parameters appended.
-func readWithQuery(t *testing.T, base, token, path, extra string) (int, http.Header, []byte) {
+func readWithQuery(t *testing.T, base string, sess session, path, extra string) (int, http.Header, []byte) {
 	t.Helper()
 
 	url := base + "/api/v1/files/read?path=" + urlEscape(path)
@@ -169,7 +164,7 @@ func readWithQuery(t *testing.T, base, token, path, extra string) (int, http.Hea
 	if err != nil {
 		t.Fatalf("building: %v", err)
 	}
-	req.SetBasicAuth("ignored", token)
+	sess.attach(req)
 
 	resp, err := testClient().Do(req)
 	if err != nil {
@@ -215,9 +210,9 @@ func payload() []byte {
 // A read returns the file's bytes exactly.
 func TestReadingAFile(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), want)
+	base, sess, share := contentShare(t, everyPerm(), want)
 
-	status, header, got := download(t, base, token, "/"+share+"/doc.bin", "")
+	status, header, got := download(t, base, sess, "/"+share+"/doc.bin", "")
 	if status != http.StatusOK {
 		t.Fatalf("answered %d: %s", status, got)
 	}
@@ -238,10 +233,10 @@ func TestReadingAFile(t *testing.T) {
 // A range returns exactly that slice, and says which slice it is.
 func TestReadingARange(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), want)
+	base, sess, share := contentShare(t, everyPerm(), want)
 
 	const from, to = 100, 199
-	status, header, got := download(t, base, token, "/"+share+"/doc.bin",
+	status, header, got := download(t, base, sess, "/"+share+"/doc.bin",
 		fmt.Sprintf("bytes=%d-%d", from, to))
 	if status != http.StatusPartialContent {
 		t.Fatalf("a range answered %d, want 206: %s", status, got)
@@ -266,10 +261,10 @@ func TestReadingARange(t *testing.T) {
 // An open-ended range runs to the end of the file.
 func TestReadingAnOpenEndedRange(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), want)
+	base, sess, share := contentShare(t, everyPerm(), want)
 
 	const from = 4000
-	status, _, got := download(t, base, token, "/"+share+"/doc.bin",
+	status, _, got := download(t, base, sess, "/"+share+"/doc.bin",
 		fmt.Sprintf("bytes=%d-", from))
 	if status != http.StatusPartialContent {
 		t.Fatalf("answered %d", status)
@@ -282,10 +277,10 @@ func TestReadingAnOpenEndedRange(t *testing.T) {
 // A suffix range returns the last N bytes.
 func TestReadingASuffixRange(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), want)
+	base, sess, share := contentShare(t, everyPerm(), want)
 
 	const last = 64
-	status, _, got := download(t, base, token, "/"+share+"/doc.bin",
+	status, _, got := download(t, base, sess, "/"+share+"/doc.bin",
 		fmt.Sprintf("bytes=-%d", last))
 	if status != http.StatusPartialContent {
 		t.Fatalf("answered %d", status)
@@ -299,9 +294,9 @@ func TestReadingASuffixRange(t *testing.T) {
 // again correctly rather than guessing.
 func TestARangePastTheEndIsRefused(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), want)
+	base, sess, share := contentShare(t, everyPerm(), want)
 
-	status, header, body := download(t, base, token, "/"+share+"/doc.bin", "bytes=99999-")
+	status, header, body := download(t, base, sess, "/"+share+"/doc.bin", "bytes=99999-")
 	if status != http.StatusRequestedRangeNotSatisfiable {
 		t.Fatalf("answered %d, want 416: %s", status, body)
 	}
@@ -316,9 +311,9 @@ func TestARangePastTheEndIsRefused(t *testing.T) {
 // went wrong, assembles a file out of what it received and finds the damage
 // later.
 func TestAMultiRangeRequestIsRefused(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), payload())
+	base, sess, share := contentShare(t, everyPerm(), payload())
 
-	status, _, body := download(t, base, token, "/"+share+"/doc.bin", "bytes=0-99,200-299")
+	status, _, body := download(t, base, sess, "/"+share+"/doc.bin", "bytes=0-99,200-299")
 	if status == http.StatusPartialContent || status == http.StatusOK {
 		t.Fatalf("a multi-range request was served as %d with %d bytes", status, len(body))
 	}
@@ -326,9 +321,9 @@ func TestAMultiRangeRequestIsRefused(t *testing.T) {
 
 // Reading needs the Download bit, and a grant without it refuses.
 func TestReadingNeedsTheDownloadPermission(t *testing.T) {
-	base, token, share := contentShare(t, acl.Read, payload())
+	base, sess, share := contentShare(t, acl.Read, payload())
 
-	status, _, body := download(t, base, token, "/"+share+"/doc.bin", "")
+	status, _, body := download(t, base, sess, "/"+share+"/doc.bin", "")
 	if status == http.StatusOK {
 		t.Fatalf("a grant without Download served %d bytes", len(body))
 	}
@@ -336,15 +331,15 @@ func TestReadingNeedsTheDownloadPermission(t *testing.T) {
 
 // A write puts the bytes on disk and a read returns them.
 func TestWritingAFile(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("original"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("original"))
 
 	want := payload()
-	status, body := upload(t, base, token, "/"+share+"/fresh.bin", want)
+	status, body := upload(t, base, sess, "/"+share+"/fresh.bin", want)
 	if status != http.StatusOK {
 		t.Fatalf("writing answered %d: %s", status, body)
 	}
 
-	code, _, got := download(t, base, token, "/"+share+"/fresh.bin", "")
+	code, _, got := download(t, base, sess, "/"+share+"/fresh.bin", "")
 	if code != http.StatusOK {
 		t.Fatalf("reading back answered %d", code)
 	}
@@ -354,7 +349,7 @@ func TestWritingAFile(t *testing.T) {
 }
 
 // upload sends a body to the write route.
-func upload(t *testing.T, base, token, path string, content []byte) (int, []byte) {
+func upload(t *testing.T, base string, sess session, path string, content []byte) (int, []byte) {
 	t.Helper()
 
 	req, err := http.NewRequest(http.MethodPost,
@@ -362,7 +357,7 @@ func upload(t *testing.T, base, token, path string, content []byte) (int, []byte
 	if err != nil {
 		t.Fatalf("building: %v", err)
 	}
-	req.SetBasicAuth("ignored", token)
+	sess.attach(req)
 	req.Header.Set("Content-Type", "application/octet-stream")
 
 	resp, err := testClient().Do(req)
@@ -384,12 +379,12 @@ func upload(t *testing.T, base, token, path string, content []byte) (int, []byte
 // than writing over an edit nobody has seen. Without it the last save silently
 // wins and the earlier one is gone with no trace that it existed.
 func TestAConditionalWriteIsRefusedAfterTheFileChanges(t *testing.T) {
-	base, token, share, host := contentShareAt(t, everyPerm(), []byte("original"))
+	base, sess, share, host := contentShareAt(t, everyPerm(), []byte("original"))
 	path := "/" + share + "/doc.bin"
 
 	// The token this editor is holding.
 	status, body := authed(t, http.MethodGet,
-		base+"/api/v1/files/stat?path="+urlEscape(path), token)
+		base+"/api/v1/files/stat?path="+urlEscape(path), sess)
 	if status != http.StatusOK {
 		t.Fatalf("stat answered %d: %s", status, body)
 	}
@@ -404,12 +399,12 @@ func TestAConditionalWriteIsRefusedAfterTheFileChanges(t *testing.T) {
 	}
 
 	// Somebody else saves first.
-	if code, rb := upload(t, base, token, path, []byte("somebody else's edit")); code != http.StatusOK {
+	if code, rb := upload(t, base, sess, path, []byte("somebody else's edit")); code != http.StatusOK {
 		t.Fatalf("the intervening write answered %d: %s", code, rb)
 	}
 
 	// The first editor's save, still carrying the old token.
-	code, rb := uploadIfMatch(t, base, token, path, []byte("my edit"), before.ETag)
+	code, rb := uploadIfMatch(t, base, sess, path, []byte("my edit"), before.ETag)
 	if code == http.StatusOK {
 		t.Fatal("a stale conditional write succeeded, erasing the edit it never saw")
 	}
@@ -435,11 +430,11 @@ func TestAConditionalWriteIsRefusedAfterTheFileChanges(t *testing.T) {
 // conflict screen can show it. Dropping the condition is the only way past,
 // which puts the decision with the person doing the overwrite.
 func TestEveryConditionalWriteIsRefusedAndReportsTheCurrentToken(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("original"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("original"))
 	path := "/" + share + "/doc.bin"
 
 	status, body := authed(t, http.MethodGet,
-		base+"/api/v1/files/stat?path="+urlEscape(path), token)
+		base+"/api/v1/files/stat?path="+urlEscape(path), sess)
 	if status != http.StatusOK {
 		t.Fatalf("stat answered %d", status)
 	}
@@ -450,20 +445,20 @@ func TestEveryConditionalWriteIsRefusedAndReportsTheCurrentToken(t *testing.T) {
 		t.Fatalf("stat does not parse: %v", err)
 	}
 
-	code, rb := uploadIfMatch(t, base, token, path, []byte("my edit"), cur.ETag)
+	code, rb := uploadIfMatch(t, base, sess, path, []byte("my edit"), cur.ETag)
 	if code != http.StatusPreconditionFailed {
 		t.Fatalf("a conditional write answered %d, want 412: %s", code, rb)
 	}
 
 	// Dropping the condition is what gets through, which is the deliberate
 	// escape: an unconditional write is somebody choosing to overwrite.
-	if plain, pb := upload(t, base, token, path, []byte("my edit")); plain != http.StatusOK {
+	if plain, pb := upload(t, base, sess, path, []byte("my edit")); plain != http.StatusOK {
 		t.Fatalf("the unconditional retry answered %d: %s", plain, pb)
 	}
 }
 
 // uploadIfMatch is upload with a change token attached.
-func uploadIfMatch(t *testing.T, base, token, path string, content []byte, etag string) (int, []byte) {
+func uploadIfMatch(t *testing.T, base string, sess session, path string, content []byte, etag string) (int, []byte) {
 	t.Helper()
 
 	req, err := http.NewRequest(http.MethodPost,
@@ -471,7 +466,7 @@ func uploadIfMatch(t *testing.T, base, token, path string, content []byte, etag 
 	if err != nil {
 		t.Fatalf("building: %v", err)
 	}
-	req.SetBasicAuth("ignored", token)
+	sess.attach(req)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("If-Match", `"`+etag+`"`)
 
@@ -490,9 +485,9 @@ func uploadIfMatch(t *testing.T, base, token, path string, content []byte, etag 
 // A move relocates the entry: gone from one place, present at the other.
 func TestMovingAFile(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), want)
+	base, sess, share := contentShare(t, everyPerm(), want)
 
-	status, body := post(t, base+"/api/v1/files/move", token, map[string]string{
+	status, body := post(t, base+"/api/v1/files/move", sess, map[string]string{
 		"from": "/" + share + "/doc.bin",
 		"to":   "/" + share + "/sub/moved.bin",
 	})
@@ -502,10 +497,10 @@ func TestMovingAFile(t *testing.T) {
 
 	// Both ends, because a move that copied without removing is a move that
 	// silently doubled the data.
-	if code, _, _ := download(t, base, token, "/"+share+"/doc.bin", ""); code == http.StatusOK {
+	if code, _, _ := download(t, base, sess, "/"+share+"/doc.bin", ""); code == http.StatusOK {
 		t.Error("the source still reads after a move")
 	}
-	code, _, got := download(t, base, token, "/"+share+"/sub/moved.bin", "")
+	code, _, got := download(t, base, sess, "/"+share+"/sub/moved.bin", "")
 	if code != http.StatusOK {
 		t.Fatalf("the destination answered %d", code)
 	}
@@ -517,13 +512,13 @@ func TestMovingAFile(t *testing.T) {
 // A move onto a taken name is refused by default, and the destination keeps
 // its own contents.
 func TestAMoveOntoATakenNameIsRefused(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("source"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("source"))
 
-	if status, body := upload(t, base, token, "/"+share+"/sub/taken.bin", []byte("destination")); status != http.StatusOK {
+	if status, body := upload(t, base, sess, "/"+share+"/sub/taken.bin", []byte("destination")); status != http.StatusOK {
 		t.Fatalf("preparing the destination answered %d: %s", status, body)
 	}
 
-	status, body := post(t, base+"/api/v1/files/move", token, map[string]string{
+	status, body := post(t, base+"/api/v1/files/move", sess, map[string]string{
 		"from": "/" + share + "/doc.bin",
 		"to":   "/" + share + "/sub/taken.bin",
 	})
@@ -533,12 +528,12 @@ func TestAMoveOntoATakenNameIsRefused(t *testing.T) {
 
 	// The destination is untouched, which is the thing that matters: a
 	// refusal that had already overwritten would have destroyed data.
-	_, _, got := download(t, base, token, "/"+share+"/sub/taken.bin", "")
+	_, _, got := download(t, base, sess, "/"+share+"/sub/taken.bin", "")
 	if string(got) != "destination" {
 		t.Errorf("the destination now holds %q", got)
 	}
 	// And the source is still there.
-	if code, _, _ := download(t, base, token, "/"+share+"/doc.bin", ""); code != http.StatusOK {
+	if code, _, _ := download(t, base, sess, "/"+share+"/doc.bin", ""); code != http.StatusOK {
 		t.Error("the refused move removed the source")
 	}
 }
@@ -546,9 +541,9 @@ func TestAMoveOntoATakenNameIsRefused(t *testing.T) {
 // An unknown conflict policy is refused rather than quietly treated as the
 // default. The two differ by whether a file survives.
 func TestAnUnknownConflictPolicyIsRefused(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("source"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("source"))
 
-	status, body := post(t, base+"/api/v1/files/move", token, map[string]string{
+	status, body := post(t, base+"/api/v1/files/move", sess, map[string]string{
 		"from":        "/" + share + "/doc.bin",
 		"to":          "/" + share + "/sub/moved.bin",
 		"on_conflict": "obliterate",
@@ -557,7 +552,7 @@ func TestAnUnknownConflictPolicyIsRefused(t *testing.T) {
 		t.Fatalf("an unknown policy was accepted: %s", body)
 	}
 
-	if code, _, _ := download(t, base, token, "/"+share+"/doc.bin", ""); code != http.StatusOK {
+	if code, _, _ := download(t, base, sess, "/"+share+"/doc.bin", ""); code != http.StatusOK {
 		t.Error("the refused move relocated the file anyway")
 	}
 }
@@ -571,9 +566,9 @@ func TestAnUnknownConflictPolicyIsRefused(t *testing.T) {
 // nothing was written.
 func TestDuplicatingAFile(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), want)
+	base, sess, share := contentShare(t, everyPerm(), want)
 
-	status, body := post(t, base+"/api/v1/files/copy", token, map[string]string{
+	status, body := post(t, base+"/api/v1/files/copy", sess, map[string]string{
 		"from":        "/" + share + "/doc.bin",
 		"to":          "/" + share + "/doc.bin",
 		"on_conflict": "rename",
@@ -589,7 +584,7 @@ func TestDuplicatingAFile(t *testing.T) {
 	// poll and read the listing before the copy had written anything.
 	var duplicate string
 	for range 200 {
-		names = listNames(t, base, token, "/"+share)
+		names = listNames(t, base, sess, "/"+share)
 		duplicate = ""
 		for _, n := range names {
 			if n != "doc.bin" && strings.HasPrefix(n, "doc") {
@@ -611,7 +606,7 @@ func TestDuplicatingAFile(t *testing.T) {
 	}
 
 	// And it holds the original's bytes, which is the whole point.
-	code, _, got := download(t, base, token, "/"+share+"/"+duplicate, "")
+	code, _, got := download(t, base, sess, "/"+share+"/"+duplicate, "")
 	if code != http.StatusOK {
 		t.Fatalf("reading the duplicate answered %d", code)
 	}
@@ -620,16 +615,16 @@ func TestDuplicatingAFile(t *testing.T) {
 	}
 
 	// The original is still there: a duplicate adds, never moves.
-	if code, _, orig := download(t, base, token, "/"+share+"/doc.bin", ""); code != http.StatusOK || !bytes.Equal(orig, want) {
+	if code, _, orig := download(t, base, sess, "/"+share+"/doc.bin", ""); code != http.StatusOK || !bytes.Equal(orig, want) {
 		t.Error("the original did not survive its own duplicate")
 	}
 }
 
 // listNames reads one directory's entry names.
-func listNames(t *testing.T, base, token, path string) []string {
+func listNames(t *testing.T, base string, sess session, path string) []string {
 	t.Helper()
 
-	status, raw := authed(t, http.MethodGet, base+"/api/v1/files/list?path="+urlEscape(path), token)
+	status, raw := authed(t, http.MethodGet, base+"/api/v1/files/list?path="+urlEscape(path), sess)
 	if status != http.StatusOK {
 		t.Fatalf("listing %s answered %d: %s", path, status, raw)
 	}
@@ -651,9 +646,9 @@ func listNames(t *testing.T, base, token, path string) []string {
 // A copy is accepted as a job and leaves both files in place.
 func TestCopyingAFile(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), want)
+	base, sess, share := contentShare(t, everyPerm(), want)
 
-	status, body := post(t, base+"/api/v1/files/copy", token, map[string]string{
+	status, body := post(t, base+"/api/v1/files/copy", sess, map[string]string{
 		"from": "/" + share + "/doc.bin",
 		"to":   "/" + share + "/sub/copy.bin",
 	})
@@ -673,10 +668,10 @@ func TestCopyingAFile(t *testing.T) {
 	// temporary directory from being removed underneath it: an unwaited copy
 	// leaves the cleanup racing a live writer, and the databases close while
 	// the journal is still being written.
-	awaitJobToken(t, base, token, stringField(view, "id"))
+	awaitJobToken(t, base, sess, stringField(view, "id"))
 
 	// The source is untouched. A copy that removed it would be a move.
-	if code, _, _ := download(t, base, token, "/"+share+"/doc.bin", ""); code != http.StatusOK {
+	if code, _, _ := download(t, base, sess, "/"+share+"/doc.bin", ""); code != http.StatusOK {
 		t.Error("the source is gone after a copy")
 	}
 }
@@ -687,7 +682,7 @@ func TestCopyingAFile(t *testing.T) {
 // A test that starts a job and returns leaves the runner writing into a
 // t.TempDir the framework is about to remove, which fails the test with a
 // cleanup error naming a directory that is merely still in use.
-func awaitJobToken(t *testing.T, base, token, id string) {
+func awaitJobToken(t *testing.T, base string, sess session, id string) {
 	t.Helper()
 	if id == "" {
 		return
@@ -695,7 +690,7 @@ func awaitJobToken(t *testing.T, base, token, id string) {
 	clk := clock.System()
 	deadline := clk.Now().Add(20 * time.Second)
 	for clk.Now().Before(deadline) {
-		status, raw := authed(t, http.MethodGet, base+"/api/v1/jobs/"+id, token)
+		status, raw := authed(t, http.MethodGet, base+"/api/v1/jobs/"+id, sess)
 		if status != http.StatusOK {
 			// The job row is gone, which means it finished and was swept.
 			return
@@ -715,10 +710,10 @@ func awaitJobToken(t *testing.T, base, token, id string) {
 // The rollup reports what is beneath a directory.
 func TestTheRecursiveSize(t *testing.T) {
 	content := payload()
-	base, token, share := contentShare(t, everyPerm(), content)
+	base, sess, share := contentShare(t, everyPerm(), content)
 
 	status, body := authed(t, http.MethodGet,
-		base+"/api/v1/files/size?path="+urlEscape("/"+share), token)
+		base+"/api/v1/files/size?path="+urlEscape("/"+share), sess)
 	if status != http.StatusOK {
 		t.Fatalf("answered %d: %s", status, body)
 	}
@@ -749,13 +744,13 @@ func TestTheRecursiveSize(t *testing.T) {
 
 // The recent listing reports a write that just happened.
 func TestTheRecentListing(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("x"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("x"))
 
-	if status, body := upload(t, base, token, "/"+share+"/fresh.bin", payload()); status != http.StatusOK {
+	if status, body := upload(t, base, sess, "/"+share+"/fresh.bin", payload()); status != http.StatusOK {
 		t.Fatalf("writing answered %d: %s", status, body)
 	}
 
-	status, body := authed(t, http.MethodGet, base+"/api/v1/files/recent", token)
+	status, body := authed(t, http.MethodGet, base+"/api/v1/files/recent", sess)
 	if status != http.StatusOK {
 		t.Fatalf("answered %d: %s", status, body)
 	}
@@ -785,9 +780,9 @@ func TestTheRecentListing(t *testing.T) {
 // An empty recent listing encodes as an array, never null. A client iterating
 // a null gets a runtime error rather than zero rows.
 func TestAnEmptyRecentListingIsAnArray(t *testing.T) {
-	base, token, _ := bootWithUser(t)
+	base, _, sess := bootWithUser(t)
 
-	status, body := authed(t, http.MethodGet, base+"/api/v1/files/recent", token)
+	status, body := authed(t, http.MethodGet, base+"/api/v1/files/recent", sess)
 	if status != http.StatusOK {
 		t.Fatalf("answered %d: %s", status, body)
 	}
@@ -849,14 +844,10 @@ func TestCopyingFromAShareWithoutMoveRights(t *testing.T) {
 		t.Fatal(gerr)
 	}
 
-	token, err := e.Auth.CreateAppPassword(ctx, id, "test",
-		auth.Scope{Perms: auth.SyncScopePerms}, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
 	base := serve(t, e)
+	sess := signIn(t, base, "alice", "a-long-enough-password")
 
-	status, body := post(t, base+"/api/v1/files/copy", token, map[string]string{
+	status, body := post(t, base+"/api/v1/files/copy", sess, map[string]string{
 		"from": "/reference/doc.bin",
 		"to":   "/mine/copy.bin",
 	})
@@ -866,7 +857,7 @@ func TestCopyingFromAShareWithoutMoveRights(t *testing.T) {
 
 	// A move from the same source has to be refused, which is what proves
 	// the two requirements are actually different rather than both weak.
-	moveStatus, moveBody := post(t, base+"/api/v1/files/move", token, map[string]string{
+	moveStatus, moveBody := post(t, base+"/api/v1/files/move", sess, map[string]string{
 		"from": "/reference/doc.bin",
 		"to":   "/mine/moved.bin",
 	})
@@ -880,13 +871,13 @@ func TestCopyingFromAShareWithoutMoveRights(t *testing.T) {
 // An unbounded limit is a journal scan whose cost grows with how long the
 // account has been used, and it is a query a caller controls entirely.
 func TestTheRecentLimitIsBounded(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("x"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("x"))
 
 	// More writes than the ceiling, so an unbounded limit would return more
 	// rows than the ceiling permits.
 	const writes = 12
 	for i := 0; i < writes; i++ {
-		if status, body := upload(t, base, token,
+		if status, body := upload(t, base, sess,
 			fmt.Sprintf("/%s/f%d.bin", share, i), []byte("y")); status != http.StatusOK {
 			t.Fatalf("write %d answered %d: %s", i, status, body)
 		}
@@ -894,7 +885,7 @@ func TestTheRecentLimitIsBounded(t *testing.T) {
 
 	for _, limit := range []string{"1", "5", "999999", "-1", "0", "abc"} {
 		status, body := authed(t, http.MethodGet,
-			base+"/api/v1/files/recent?limit="+limit, token)
+			base+"/api/v1/files/recent?limit="+limit, sess)
 		if status != http.StatusOK {
 			t.Fatalf("limit=%s answered %d: %s", limit, status, body)
 		}

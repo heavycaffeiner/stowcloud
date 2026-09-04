@@ -126,18 +126,20 @@ func TestSessionRoutesRefuseAnAppPassword(t *testing.T) {
 	}
 }
 
-// A permission route needs every declared bit, not any of them.
-func TestAPermissionRouteNeedsEveryBit(t *testing.T) {
+// A permission route needs every declared bit, and only a session reaches it.
+func TestAPermissionRouteNeedsEveryBitAndASession(t *testing.T) {
 	req := route.Requirement{Access: route.AccessPerms, Perms: acl.Read | acl.Write}
 
+	// A device credential does not reach the interface's own API at all, so
+	// the bits it carries are never consulted.
 	full := Principal{Kind: CredentialBearerApp, Mask: acl.Read | acl.Write | acl.Delete}
-	if err := Scope(req, full); err != nil {
-		t.Errorf("a mask carrying both bits was refused: %v", err)
+	if err := Scope(req, full); !errors.Is(err, ErrSessionRequired) {
+		t.Errorf("an app password carrying both bits returned %v", err)
 	}
 
-	partial := Principal{Kind: CredentialBearerApp, Mask: acl.Read}
+	partial := Principal{Kind: CredentialSessionCookie, Mask: acl.Read}
 	if err := Scope(req, partial); !errors.Is(err, ErrInsufficientPermission) {
-		t.Errorf("a mask carrying one of two bits returned %v", err)
+		t.Errorf("a session carrying one of two bits returned %v", err)
 	}
 
 	// A session carries every bit, so it satisfies any permission route.
@@ -146,16 +148,22 @@ func TestAPermissionRouteNeedsEveryBit(t *testing.T) {
 	}
 }
 
-// Public needs nothing; any-credential needs one of either kind.
+// Public needs nothing. Every other class needs the browser session: the
+// native API is the interface's own surface, and a device credential belongs
+// to the compatibility mount and the file protocol.
 func TestTheOtherAccessClasses(t *testing.T) {
 	none := Principal{Kind: CredentialNone}
 	app := Principal{Kind: CredentialBasicApp}
+	session := Principal{Kind: CredentialSessionCookie, Mask: SessionMask()}
 
 	if err := Scope(route.Requirement{Access: route.AccessPublic}, none); err != nil {
 		t.Errorf("a public route refused an anonymous request: %v", err)
 	}
-	if err := Scope(route.Requirement{Access: route.AccessAnyCredential}, app); err != nil {
-		t.Errorf("any-credential refused an app password: %v", err)
+	if err := Scope(route.Requirement{Access: route.AccessAnyCredential}, session); err != nil {
+		t.Errorf("any-credential refused a session: %v", err)
+	}
+	if err := Scope(route.Requirement{Access: route.AccessAnyCredential}, app); !errors.Is(err, ErrSessionRequired) {
+		t.Errorf("any-credential admitted an app password: %v", err)
 	}
 	if err := Scope(route.Requirement{Access: route.AccessAnyCredential}, none); !errors.Is(err, ErrCredentialRequired) {
 		t.Error("any-credential admitted an anonymous request")
@@ -245,14 +253,22 @@ func TestScopeRefusesThroughTheChain(t *testing.T) {
 	if got := build(route.Requirement{Access: route.AccessPublic}, Principal{Kind: CredentialNone}); got != fiber.StatusOK {
 		t.Errorf("a public route answered %d", got)
 	}
-	if got := build(route.Requirement{Access: route.AccessSession}, Principal{Kind: CredentialNone}); got != fiber.StatusUnauthorized {
-		t.Errorf("a session route with no credential answered %d, want 401", got)
+	// Every refusal answers as a path that is not there, so a stranger with a
+	// word list cannot tell a real route from an absent one.
+	if got := build(route.Requirement{Access: route.AccessSession}, Principal{Kind: CredentialNone}); got != fiber.StatusNotFound {
+		t.Errorf("a session route with no credential answered %d, want 404", got)
 	}
 	if got := build(
 		route.Requirement{Access: route.AccessPerms, Perms: acl.Read | acl.Write},
-		Principal{Kind: CredentialBearerApp, Mask: acl.Read},
-	); got != fiber.StatusForbidden {
-		t.Errorf("an app password missing a bit answered %d, want 403", got)
+		Principal{Kind: CredentialSessionCookie, Mask: acl.Read},
+	); got != fiber.StatusNotFound {
+		t.Errorf("a session missing a bit answered %d, want 404", got)
+	}
+	if got := build(
+		route.Requirement{Access: route.AccessPerms, Perms: acl.Read},
+		Principal{Kind: CredentialBearerApp, Mask: acl.Read | acl.Write},
+	); got != fiber.StatusNotFound {
+		t.Errorf("an app password on the native API answered %d, want 404", got)
 	}
 }
 
@@ -317,9 +333,14 @@ func TestCSRFIsCheckedThroughTheChain(t *testing.T) {
 
 // An app password is not asked for a token, because an Authorization header is
 // not ambient browser authority.
+//
+// Driven through a public route, since the native API admits only the browser
+// session now. The surfaces this rule actually serves are the compatibility
+// mount and the file protocol, which carry no route requirement and so never
+// reach the scope step, but pass through this one.
 func TestAnAppPasswordSkipsCSRFThroughTheChain(t *testing.T) {
 	app := chainWith(t,
-		route.Requirement{Access: route.AccessAnyCredential}, route.BodyNone,
+		route.Requirement{Access: route.AccessPublic}, route.BodyNone,
 		Principal{Kind: CredentialBearerApp, Mask: acl.Read | acl.Write},
 		[]byte("deployment key material"))
 

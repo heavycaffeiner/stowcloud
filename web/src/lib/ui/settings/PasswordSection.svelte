@@ -1,12 +1,12 @@
 <script lang="ts">
-  // Password change —: minimum 10 characters; on
+  // Password change: minimum 10 characters. On
   // change, the Argon2 hash and the NT hash (SMB) are re-derived together
-  // (server side, sc-auth::change_password). Whether other devices get
-  // logged out is the user's own choice — app passwords are never revoked
-  // automatically (to avoid silently breaking a sync client).
+  // (server side, sc-auth::change_password).
   import { t } from '../../i18n'
   import { api, ApiError } from '../../api/client'
   import { scorePasswordStrength } from '../../format/password-strength'
+  import { isErr } from '../../store/core/fp'
+  import { validatePasswordChange } from '../../store/slices/settings.slice'
   import Button from '../Button.svelte'
   import TextField from '../TextField.svelte'
   import ProgressLinear from '../ProgressLinear.svelte'
@@ -40,15 +40,15 @@
     newError = null
     success = false
 
-    if (newPassword.length < MIN_LEN) {
-      newError = t('password.must_at_least_characters', { min: MIN_LEN })
+    const validation = validatePasswordChange(currentPassword, newPassword, confirmPassword, MIN_LEN)
+    if (isErr(validation)) {
+      if (validation.error.type === 'too_short') {
+        newError = t('password.must_at_least_characters', { min: validation.error.min })
+      } else {
+        newError = t('password.new_passwords_do_not_match')
+      }
       return
     }
-    if (newPassword !== confirmPassword) {
-      newError = t('password.new_passwords_do_not_match')
-      return
-    }
-
     submitting = true
     try {
       await api.changePassword(currentPassword, newPassword)

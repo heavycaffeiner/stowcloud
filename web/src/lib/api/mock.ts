@@ -27,6 +27,8 @@ import {
   type ArchiveTicket,
   type ArchiveSettingsReq,
   type RateSettingsReq,
+  type AdminLogPage,
+  type AdminLogQuery,
   type AuditPage,
   type FolderSize,
   type RecentHit,
@@ -2299,6 +2301,125 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
   return { rows, next }
 }
 
+// ── admin: log book ──
+// GET /api/v1/admin/logs. The dashboard is developable against this without a
+// server: the seed spans every level, several subsystems, two request ids and
+// a day of timestamps, so each filter has something to both keep and drop, and
+// it is long enough that the default page size leaves a cursor behind.
+//
+// Timestamps are bigint here and decimal strings on the way out, for the same
+// reason the real server sends strings: a nanosecond value is past 2^53, so a
+// mock that stored them as numbers would page and sort on rounded values and
+// hide exactly the class of defect this contract exists to prevent.
+
+interface MockLogRecord {
+  ts_ns: bigint
+  level: string
+  msg: string
+  subsystem: string
+  request_id: string
+  attrs: Record<string, string>
+}
+
+const logNowNs = BigInt(Date.now()) * 1_000_000n
+const SECOND_NS = 1_000_000_000n
+
+/** Enough records for two pages at the dashboard's own page size, built from
+ *  a small rotation rather than written out one by one: what matters is the
+ *  spread across levels, subsystems and request ids, not 40 hand-picked
+ *  sentences. The first few are literal so a reader sees the shape. */
+const LOG_SEED: [string, string, string, string, Record<string, string>][] = [
+  ['WARN', 'the write was refused', 'dav', '01J000', { method: 'PUT', path: '/dav/x' }],
+  ['ERROR', 'segment rotation failed', 'logbook', '', { segment: '0004.log.zst', errno: 'ENOSPC' }],
+  ['INFO', 'session opened', 'auth', '01J001', { user: 'admin', ip: '127.0.0.1' }],
+  ['DEBUG', 'cache lookup missed', 'index', '01J001', { key: 'name:report', shard: '3' }],
+  ['INFO', 'share created', 'shares', '', { label: 'Documents', id: '7' }],
+  ['WARN', 'client sent an unsupported depth', 'dav', '01J002', { method: 'PROPFIND', depth: 'infinity' }],
+  ['ERROR', 'thumbnail worker exited', 'preview', '', { signal: 'SIGKILL', pid: '4120' }],
+  ['DEBUG', 'chunk accepted', 'upload', '01J002', { chunk: '12', bytes: '5242880' }]
+]
+
+const mockLogs: MockLogRecord[] = Array.from({ length: 240 }, (_, i) => {
+  const [level, msg, subsystem, request_id, attrs] = LOG_SEED[i % LOG_SEED.length]
+  return {
+    // Newest first, one record every 30 seconds back from now, so a time
+    // range narrower than the whole span always cuts the list somewhere.
+    ts_ns: logNowNs - BigInt(i) * 30n * SECOND_NS,
+    level,
+    msg,
+    subsystem,
+    request_id,
+    // A distinct sequence number per record keeps the free-text filter able
+    // to match exactly one record, which is what an empty state needs to be
+    // reachable by typing rather than by luck.
+    attrs: { ...attrs, seq: String(i) }
+  }
+})
+
+/** Stored size and segment count. The seed holds a slice of what a real
+ *  server would have on disk, so the size is the seed's own bytes scaled to
+ *  a full retention budget rather than the 60 KB the fixtures literally
+ *  weigh: the figure a developer checks the formatting against should be the
+ *  order of magnitude they will see in production.
+ *
+ *  Past 2^53 deliberately. The dashboard formats this without ever putting
+ *  it in a number, and a fixture that fits in one would never exercise that. */
+const mockLogSeedBytes = mockLogs.reduce(
+  (n, r) => n + BigInt(JSON.stringify(r, (_, v) => (typeof v === 'bigint' ? v.toString() : v)).length),
+  0n
+)
+const mockLogStoredBytes = mockLogSeedBytes * 3_500n
+const mockLogSegments = 4
+
+function logMatches(r: MockLogRecord, q: AdminLogQuery): boolean {
+  if (q.since !== undefined && q.since !== '' && r.ts_ns < BigInt(q.since)) return false
+  if (q.until !== undefined && q.until !== '' && r.ts_ns > BigInt(q.until)) return false
+  if (q.levels !== undefined && q.levels.length > 0 && !q.levels.includes(r.level)) return false
+  if (q.subsystem !== undefined && q.subsystem !== '' && r.subsystem !== q.subsystem) return false
+  if (q.request_id !== undefined && q.request_id !== '' && r.request_id !== q.request_id) return false
+  if (q.text !== undefined && q.text !== '') {
+    // Message and attribute values, case-insensitively, which is what the
+    // real sink searches. Attribute *names* are deliberately not searched:
+    // they are a schema, and matching them makes every record with a `path`
+    // attribute a hit for the word "path".
+    const needle = q.text.toLowerCase()
+    const hay = [r.msg, ...Object.values(r.attrs)].join(' ').toLowerCase()
+    if (!hay.includes(needle)) return false
+  }
+  return true
+}
+
+async function adminListLogs(query: AdminLogQuery = {}): Promise<AdminLogPage> {
+  // The signal is honoured here too, so an aborted filter change behaves the
+  // same against the mock as against the server: it rejects rather than
+  // resolving into a store that has already moved on.
+  await delay(20, query.signal)
+  const limit = Math.min(Math.max(query.limit ?? 100, 1), 500)
+  const matched = mockLogs.filter((r) => logMatches(r, query))
+  // The cursor is an offset into the filtered walk, and opaque to the caller
+  // by contract. An unreadable one starts at the front rather than refusing,
+  // same as the listing cursor does.
+  const start = query.cursor ? (Number.parseInt(query.cursor, 10) || 0) : 0
+  const slice = matched.slice(start, start + limit)
+  const end = start + slice.length
+  return {
+    records: slice.map((r) => ({
+      ts_ns: r.ts_ns.toString(),
+      level: r.level,
+      msg: r.msg,
+      subsystem: r.subsystem,
+      request_id: r.request_id,
+      attrs: { ...r.attrs }
+    })),
+    // Empty once the walk is exhausted, which is what stops the load-more.
+    cursor: end < matched.length ? String(end) : '',
+    // Both figures ride every page, first or not: the real handler reads its
+    // stats per request rather than only when paging starts.
+    stored_bytes: mockLogStoredBytes.toString(),
+    segments: mockLogSegments
+  }
+}
+
 // ── share links, owner side — mirrors
 // `go/internal/httpapi/handler/shares.go` (
 // `ShareLinkPatch` closely enough to drive the manage-links UI in dev mode:
@@ -2539,6 +2660,7 @@ export const mockApi = {
   adminAddGroupMember,
   adminRemoveGroupMember,
   adminListAudit,
+  adminListLogs,
   /** Called by the upload worker (via the browse UI) once a mock upload finalizes. */
   registerUploadedEntry(destDir: string, entry: Entry): void {
     addOverlayEntry(destDir, entry)

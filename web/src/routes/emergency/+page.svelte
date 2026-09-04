@@ -18,6 +18,7 @@
     type EmergencyFinding
   } from '../../lib/api/emergency'
   import { ApiError } from '../../lib/api/types'
+  import { describeApiError } from '../../lib/api/error-text'
   import Button from '../../lib/ui/Button.svelte'
   import TextField from '../../lib/ui/TextField.svelte'
 
@@ -49,13 +50,7 @@
   }
 
   function messageFor(err: unknown): string {
-    if (!(err instanceof ApiError)) return t('emergency.something_went_wrong')
-    const key = err.detail?.reason_key
-    if (typeof key === 'string') {
-      const params = err.detail?.reason_params
-      return t(key, typeof params === 'object' && params !== null ? (params as Record<string, string>) : {})
-    }
-    return err.message
+    return describeApiError(err, t('emergency.something_went_wrong'))
   }
 
   $effect(() => {

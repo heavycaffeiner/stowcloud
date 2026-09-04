@@ -241,27 +241,17 @@ try {
   const shareList = Array.isArray(shares.body) ? shares.body : (shares.body?.shares ?? [])
   const shareID = shareList[0]?.id
   const shareName = shareList[0]?.name
-  let grantID = null
   if (shareID !== undefined) {
-    const grant = await api(
-      'POST',
-      '/api/v1/admin/grants',
-      {
-        // Flat, with string ids: the subject is `user` or `group`, and the
-        // session carries the id at the top level.
-        user: String(session.body?.id),
-        share: String(shareID),
-        subpath: '',
-        allow: ['read', 'download'],
-        deny: [],
-        inherit: true,
-        label: shareName
-      },
-      csrf
-    )
-    check('the archive suite can grant itself access', grant.status === 201,
-      `status ${grant.status}`)
-    grantID = grant.body?.id
+    // No grant is created here. Registering a share grants its creator the
+    // whole tree under the share's own name, and a second grant naming the
+    // same subject, share, subpath and reach is refused as the duplicate it
+    // is. What the archive and search checks below need is that the access
+    // exists, so that is what this asserts.
+    const grants = await api('GET', '/api/v1/admin/grants')
+    const rows = Array.isArray(grants.body) ? grants.body : (grants.body?.grants ?? [])
+    check('the archive suite already has access to the share',
+      rows.some((g) => String(g.share) === String(shareID)),
+      `${JSON.stringify(grants.body).slice(0, 160)}`)
   }
 
   // ---- the streaming search, which no route served ----
@@ -342,9 +332,6 @@ try {
     // would be a number the response then contradicts.
     check('the archive declares no length', archive.length === null,
       `content-length ${archive.length}`)
-  }
-  if (grantID !== null && grantID !== undefined) {
-    await api('DELETE', `/api/v1/admin/grants/${grantID}`, null, csrf)
   }
 } finally {
   await browser.close()

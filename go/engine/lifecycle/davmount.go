@@ -270,6 +270,11 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		// read, which is what makes this the honest gate.
 		res, err := e.resolveDav(user, path, acl.Read)
 		if err != nil {
+			// Logged here as well as in the protocol handler: a write refused
+			// by resolution never reaches one, and an upload to a path that
+			// names no share is exactly that. Without this the operator
+			// looking for the failed upload finds nothing at all.
+			e.davRefused(r, path, err)
 			apierr.Write(w, err, apierr.VisibilityHidden)
 			return
 		}
@@ -294,6 +299,23 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 			h.ServeMethod(w, r, res)
 		}
 	})
+}
+
+// davRefused records a write that resolution turned away.
+//
+// Reads are left out for the reason the protocol handler leaves them out: a
+// sync client probes for absent paths constantly, and those lines bury the
+// one an operator is looking for.
+func (e *Engine) davRefused(r *http.Request, path string, err error) {
+	if _, served := dav.MethodRequirement(r.Method); !served {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet, http.MethodHead, "PROPFIND", "SEARCH", "REPORT", "OPTIONS":
+		return
+	}
+	e.log().Warn("the write was refused before it reached the protocol",
+		"method", r.Method, "path", path, "subsystem", "dav", "error", err)
 }
 
 // davUser reads the caller the chain authenticated.

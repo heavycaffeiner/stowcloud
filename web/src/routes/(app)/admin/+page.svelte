@@ -21,6 +21,11 @@
   // indicator with `nth-of-type(-n + 5)` rules, so a sixth tab would render
   // with no indicator at all. Another section means regrouping, not appending.
   //
+  // Which is what the server log did: the last tab is "Logs" and holds both
+  // the audit log (who did what) and the server log (what the server itself
+  // recorded). They are the two things an operator opens for the same reason,
+  // and a sixth tab was not available to give the second one.
+  //
   // `VariableTabs`, not `Tabs`: the fixed variant gives every tab an equal
   // share of the width with a 5rem floor, so five of them need 400px and a
   // 360px phone clipped "Audit log" to "Audit" against the right edge with no
@@ -41,7 +46,7 @@
     { name: t('common.share'), value: 'shares', icon: icons.folder },
     { name: t('common.storage'), value: 'storage', icon: icons.grid },
     { name: t('admin.server'), value: 'server', icon: icons.settings },
-    { name: t('common.audit_log'), value: 'audit', icon: icons.recent }
+    { name: t('common.logs'), value: 'logs', icon: icons.recent }
   ]
 
   const TAB_VALUES = tabs.map((t) => t.value)
@@ -136,6 +141,13 @@
           {@const AuditLogSection = mod.default}
           <section class="sc-admin__section">
             <AuditLogSection />
+          </section>
+        {/await}
+
+        {#await import('../../../lib/ui/admin/LogsSection.svelte') then mod}
+          {@const LogsSection = mod.default}
+          <section class="sc-admin__section">
+            <LogsSection />
           </section>
         {/await}
       {/if}

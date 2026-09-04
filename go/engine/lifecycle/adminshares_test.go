@@ -123,9 +123,12 @@ func TestCreatingAGrantAnswersTheWholeGrant(t *testing.T) {
 	}
 	shareID := fmt.Sprint(created["id"])
 
+	// The ordinary account, not the administrator: registering a share grants
+	// its creator the whole tree, so a second grant naming the same subject,
+	// share, subpath and reach is refused as the duplicate it is.
 	status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/grants", cookie, csrf,
 		map[string]any{
-			"user": "1", "share": shareID, "subpath": "",
+			"user": "2", "share": shareID, "subpath": "",
 			"allow": []string{"read", "download"}, "deny": []string{},
 			"inherit": true, "label": "docs",
 		})

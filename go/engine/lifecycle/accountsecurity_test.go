@@ -137,7 +137,8 @@ func TestAWeakPasswordIsRefused(t *testing.T) {
 	}
 }
 
-// Minting an app password returns the token once and it authenticates.
+// Minting an app password returns the token once, it is live on the file
+// protocol, and it is refused on the native API.
 func TestMintingAnAppPassword(t *testing.T) {
 	base, _, _ := bootForLogin(t)
 	cookie, csrf := signedIn(t, base)
@@ -153,19 +154,38 @@ func TestMintingAnAppPassword(t *testing.T) {
 		t.Fatal("no token, so the credential that was just created cannot be used")
 	}
 
-	// It is a real credential: it authenticates a file request on its own.
-	// The file surfaces are what an app password is for; the account and auth
-	// families are session-only, because a token handed to a device must not
-	// be able to mint another one or read the session list.
-	code, out := authed(t, http.MethodGet, base+"/api/v1/files/list?path=/", token)
-	if code != http.StatusOK {
-		t.Fatalf("the minted token does not authenticate: %d %s", code, out)
+	// It is a real credential: it authenticates a real request on its own.
+	// Proven on the DAV mount, which is what an app password is for; the
+	// native API now admits only the browser session, so a device credential
+	// cannot demonstrate liveness there any more.
+	davReq, derr := http.NewRequest("PROPFIND", base+"/dav/", nil)
+	if derr != nil {
+		t.Fatalf("building the dav request: %v", derr)
+	}
+	davReq.SetBasicAuth("ignored", token)
+	davResp, derr2 := testClient().Do(davReq)
+	if derr2 != nil {
+		t.Fatalf("requesting: %v", derr2)
+	}
+	if cerr := davResp.Body.Close(); cerr != nil {
+		t.Errorf("closing: %v", cerr)
+	}
+	if davResp.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("the minted token does not authenticate on dav: %d", davResp.StatusCode)
+	}
+
+	// And it cannot reach the native API at all: the account and auth
+	// families are session-only, and the file routes that used to admit a
+	// device credential now refuse it the same way every other route does.
+	code, _ := appPasswordAuthed(t, http.MethodGet, base+"/api/v1/files/list?path=/", token)
+	if code != http.StatusNotFound {
+		t.Errorf("an app password reached the native API: %d", code)
 	}
 
 	// And it cannot reach account management, which is the boundary the token
 	// exists inside rather than an accident of routing.
-	code, _ = authed(t, http.MethodGet, base+"/api/v1/account/app-passwords", token)
-	if code != http.StatusUnauthorized {
+	code, _ = appPasswordAuthed(t, http.MethodGet, base+"/api/v1/account/app-passwords", token)
+	if code != http.StatusNotFound {
 		t.Errorf("an app password reached the account listing: %d", code)
 	}
 
@@ -519,8 +539,8 @@ func markedHandle(t *testing.T, base string, cookie *http.Cookie) string {
 func TestAnAppPasswordCannotReachTheSessionList(t *testing.T) {
 	base, token, _ := bootWithUser(t)
 
-	code, listed := authed(t, http.MethodGet, base+"/api/v1/account/sessions", token)
-	if code != http.StatusUnauthorized {
+	code, listed := appPasswordAuthed(t, http.MethodGet, base+"/api/v1/account/sessions", token)
+	if code != http.StatusNotFound {
 		t.Fatalf("an app password reached the session list: %d %s", code, listed)
 	}
 }
@@ -593,9 +613,23 @@ func TestAnExpiringCredentialWorksUntilItLapses(t *testing.T) {
 		t.Fatalf("minting answered %d: %v", status, body)
 	}
 
+	// Proven on the DAV mount: the native API admits only the browser
+	// session, so a device credential's liveness cannot be shown there.
 	token := stringField(body, "token")
-	if code, out := authed(t, http.MethodGet, base+"/api/v1/files/list?path=/", token); code != http.StatusOK {
-		t.Errorf("a credential with 30 days left does not authenticate: %d %s", code, out)
+	davReq, derr := http.NewRequest("PROPFIND", base+"/dav/", nil)
+	if derr != nil {
+		t.Fatalf("building the dav request: %v", derr)
+	}
+	davReq.SetBasicAuth("ignored", token)
+	davResp, derr2 := testClient().Do(davReq)
+	if derr2 != nil {
+		t.Fatalf("requesting: %v", derr2)
+	}
+	if cerr := davResp.Body.Close(); cerr != nil {
+		t.Errorf("closing: %v", cerr)
+	}
+	if davResp.StatusCode != http.StatusMultiStatus {
+		t.Errorf("a credential with 30 days left does not authenticate: %d", davResp.StatusCode)
 	}
 }
 

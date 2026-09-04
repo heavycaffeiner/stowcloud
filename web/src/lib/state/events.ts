@@ -1,15 +1,13 @@
-// web/src/lib/state/events.ts — live change notifications (`GET /api/events`,
-// ). Owns the one WebSocket connection the whole app shares:
-// reconnect-with-backoff, re-subscribing every "wanted" path after a
-// reconnect, and the 30s client ping §7 calls for (Cloudflare's own idle
-// timeout is 100s — a connection that never speaks gets dropped by the
-// proxy, which then looks identical to a real server crash from here).
+// Live change notifications (GET /api/events).
+// Owns the one WebSocket connection the whole app shares:
+// reconnect-with-backoff, re-subscribing every "wanted" path after a reconnect,
+// and the 30s client ping calls.
 //
-// Not a `.svelte.ts` — nothing here is read reactively by a component
-// (`BrowseState.refresh()`, the actual UI update, already is reactive; this
-// just decides *when* to call it), so plain class state is enough.
+// Not a .svelte.ts: nothing here is read reactively by a component.
+// BrowseState.refresh(), the actual UI update, is reactive.
 import { eventsTransport } from '../api/events-transport'
 import type { ServerMsg } from '../api/types'
+import { createEventCoalescer, type EventCoalescer } from '../store/slices/events.slice'
 import { authState, noteUnauthorized } from './auth.svelte'
 
 const PING_MS = 30_000
@@ -32,6 +30,13 @@ class EventsHub {
   #connected = false
   #backoffIdx = 0
   #connectedAt = 0
+  #coalescer: EventCoalescer = createEventCoalescer((paths) => {
+    if (authState.screen !== 'browser') return
+    for (const path of paths) {
+      const cbs = this.#wanted.get(path)
+      if (cbs) for (const cb of cbs) cb()
+    }
+  }, 100)
   #reconnectTimer: ReturnType<typeof setTimeout> | null = null
   #pingTimer: ReturnType<typeof setInterval> | null = null
   /** True once a connection attempt is outstanding or live — guards against
@@ -75,11 +80,12 @@ class EventsHub {
     else this.#backoffIdx = Math.min(this.#backoffIdx + 1, BACKOFF_MS.length - 1)
 
     if (authState.screen !== 'browser') {
-      // Logged out — either mid-connection (a `revoked` push, handled in
-      // `#onMessage`) or the session simply expired and the next `sub`/`ping`
-      // round-trip 401'd the socket closed. `events_ws` requires a session,
-      // so reconnecting now would just repeat the same failure forever; stop
-      // for good and let a future `ensureConnected` (post-login) restart.
+      // Logged out: either mid-connection (a revoked push) or the session
+      // simply expired and the next sub/ping round-trip 401'd the socket closed.
+      // events_ws requires a session, so reconnecting now would just repeat the
+      // same failure forever: stop for good and let a future ensureConnected
+      // (post-login) restart.
+      this.#coalescer.cancel()
       this.#started = false
       return
     }
@@ -90,8 +96,7 @@ class EventsHub {
   #onMessage(msg: ServerMsg): void {
     switch (msg.t) {
       case 'inval': {
-        const cbs = this.#wanted.get(msg.path)
-        if (cbs) for (const cb of cbs) cb()
+        this.#coalescer.notify(msg.path)
         break
       }
       case 'pong':
@@ -103,7 +108,7 @@ class EventsHub {
 
   /** Watches one directory's changes. `cb` fires with the new `etag`
    *  whenever the server reports that `path` changed; the caller decides
-   *  what "changed" means to it. Returns an unsubscribe function — call it
+   *  what "changed" means to it. Returns an unsubscribe function: call it
    *  before watching a different path, or the old one keeps refreshing a
    *  directory nobody is looking at anymore. */
   subscribe(path: string, cb: InvalCb): () => void {
@@ -125,17 +130,23 @@ class EventsHub {
     }
   }
 
-  /** Tears the connection down for good — used on logout and by the
-   *  `revoked` handler above. `ensureConnected` after a fresh login starts a
+  /** Tears the connection down for good: used on logout and by the
+   *  revoked handler above. ensureConnected after a fresh login starts a
    *  new one. */
   close(): void {
-    if (this.#reconnectTimer) clearTimeout(this.#reconnectTimer)
-    if (this.#pingTimer) clearInterval(this.#pingTimer)
+    this.#coalescer.cancel()
+    clearTimeout(this.#reconnectTimer!)
+    clearInterval(this.#pingTimer!)
     this.#reconnectTimer = null
     this.#pingTimer = null
     this.#started = false
     this.#connected = false
     eventsTransport.close()
+  }
+
+  /** Flushes any pending coalesced path invalidations immediately. */
+  flush(): void {
+    this.#coalescer.flush()
   }
 }
 

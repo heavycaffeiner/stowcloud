@@ -236,6 +236,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminGroupMemberRemove
 		case "admin.audit":
 			out[r.Name] = e.adminAudit
+		case "admin.logs.list":
+			out[r.Name] = e.adminLogsList
 		case "admin.settings.get":
 			out[r.Name] = e.adminSettingsGet
 		case "admin.settings.patch":
@@ -316,7 +318,17 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 }
 
 // health answers the probe.
+//
+// Only to a client on a private network, which is what the container's own
+// check is: the probe runs inside the deployment and reaches the server over
+// the loopback. To anyone else the address is not there, for the reason the
+// rest of this API is not there to them. Liveness is a small thing to leak,
+// and a surface that answers one stranger answers every scanner.
 func (e *Engine) health(c *fiber.Ctx) error {
+	if !middleware.IsPrivateClient(middleware.ClientOf(c)) {
+		return fiber.NewError(fiber.StatusNotFound)
+	}
+
 	// A degradation is a real state rather than a failure: the server answers
 	// and says what is wrong, so a supervisor does not restart a deployment
 	// whose configuration is the problem.

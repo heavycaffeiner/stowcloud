@@ -1,6 +1,6 @@
 <script lang="ts">
-  // App passwords — List/issue/revoke.
-  // `GET/POST/DELETE /api/auth/app-passwords[/:id]`.
+  // App passwords: List, issue, and revoke.
+  // GET/POST/DELETE /api/auth/app-passwords[/:id].
   import { onMount } from 'svelte'
   import { api, ApiError, type AppPasswordInfo } from '../../api/client'
   import { formatDateNs, t } from '../../i18n'
@@ -14,19 +14,19 @@
   import { icons } from '../../icons'
   import Chip from '../Chip.svelte'
   import ProgressCircular from '../ProgressCircular.svelte'
+  import { useRunesStore } from '../../store/core/bridge.svelte'
+  import { createDialogStore } from '../../store/slices/settings.slice'
+
 
   let passwords = $state<AppPasswordInfo[]>([])
   let loading = $state(true)
   let loadError = $state<string | null>(null)
 
-  let createOpen = $state(false)
+  const createModal = createDialogStore()
+  const createSnap = useRunesStore(createModal)
   let newName = $state('')
   let newReadOnly = $state(false)
-  // The server re-confirms the account password before minting a credential:
-  // a session alone should not be enough to create one that outlives it.
   let newCurrent = $state('')
-  let creating = $state(false)
-  let createError = $state<string | null>(null)
   let issuedToken = $state<string | null>(null)
 
   let revokeTarget = $state<AppPasswordInfo | null>(null)
@@ -46,36 +46,32 @@
       loading = false
     }
   }
-
   onMount(load)
+
 
   function openCreate(): void {
     newName = ''
     newReadOnly = false
     newCurrent = ''
-    createError = null
-    createOpen = true
+    createModal.open()
   }
 
   function closeCreate(): void {
-    createOpen = false
+    createModal.close()
   }
 
   async function confirmCreate(): Promise<void> {
     if (!newName.trim() || !newCurrent) return
-    creating = true
-    createError = null
+    createModal.submit()
     try {
       const res = newReadOnly
         ? await api.createScopedAppPassword(newName.trim(), newCurrent, { readOnly: true })
         : await api.createAppPassword(newName.trim(), newCurrent)
       issuedToken = res.token
-      createOpen = false
+      createModal.succeed()
       await load()
     } catch {
-      createError = t('app_password.could_not_create_app_password')
-    } finally {
-      creating = false
+      createModal.fail(t('app_password.could_not_create_app_password'))
     }
   }
 
@@ -88,7 +84,7 @@
     try {
       await navigator.clipboard.writeText(issuedToken)
     } catch {
-      // clipboard API unavailable — the token is still selectable as text
+      // clipboard API unavailable: the token is still selectable as text
     }
   }
 
@@ -108,7 +104,7 @@
       revokeTarget = null
       await load()
     } catch (err) {
-      // 404 just means it's already gone (e.g. revoked from another tab) —
+      // 404 just means it's already gone (e.g. revoked from another tab):
       // refresh silently instead of leaving a stale row on screen.
       if (err instanceof ApiError && err.status === 404) {
         revokeTarget = null
@@ -165,7 +161,7 @@
             {/snippet}
             {#snippet supporting()}
               {t('app_password.issued', { date: formatDateNs(p.created_ns) })}
-              {#if p.last_used_ns}· {t('app_password.last_used', { date: formatDateNs(p.last_used_ns) })}{:else}· {t('app_password.never_used')}{/if}
+              {#if p.last_used_ns}- {t('app_password.last_used', { date: formatDateNs(p.last_used_ns) })}{:else}- {t('app_password.never_used')}{/if}
             {/snippet}
             {#snippet trailing()}
               <IconButton label={t('app_password.wipe', { name: p.name })} onclick={() => askWipe(p)}><Icon icon={icons.warning} size={18} /></IconButton>
@@ -184,23 +180,37 @@
     </Button>
   </div>
 </div>
-
-<Dialog open={createOpen} title={t('app_password.new_app_password')} onclose={closeCreate}>
+<Dialog open={createSnap.current.isOpen} title={t('app_password.new_app_password')} onclose={closeCreate}>
+  {#if createSnap.current.error}
+    <p class="sc-app-passwords__error">{createSnap.current.error}</p>
+  {/if}
   <p>{t('app_password.use_one_where_your_account')}</p>
-  <TextField label={t('common.name')} placeholder={t('app_password.e_g_rclone_backup')} bind:value={newName} error={createError} autofocus />
-  <Checkbox bind:checked={newReadOnly} label={t('app_password.read_only_download_only_no')} />
+  <TextField
+    label={t('common.name')}
+    bind:value={newName}
+    placeholder={t('app_password.e_g_rclone_backup')}
+  />
   <TextField
     type="password"
     label={t('common.current_password')}
     bind:value={newCurrent}
     autocomplete="current-password"
   />
+  <Checkbox
+    label={t('app_password.read_only_download_only_no')}
+    bind:checked={newReadOnly}
+  />
   <p class="sc-app-passwords__scope-hint">
     {t('app_password.read_only_recommended_anywhere_only')}
   </p>
   {#snippet actions()}
     <Button variant="text" onclick={closeCreate}>{t('common.cancel')}</Button>
-    <Button variant="filled" disabled={!newName.trim() || !newCurrent} loading={creating} onclick={confirmCreate}>
+    <Button
+      variant="filled"
+      disabled={!newName.trim() || !newCurrent}
+      loading={createSnap.current.status === 'submitting'}
+      onclick={confirmCreate}
+    >
       {t('common.create')}
     </Button>
   {/snippet}

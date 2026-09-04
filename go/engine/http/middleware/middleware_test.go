@@ -248,3 +248,120 @@ func TestAnEmptyChainIsRefused(t *testing.T) {
 		t.Fatal("the empty chain was accepted")
 	}
 }
+
+// A forwarded chain whose leftmost entry is a private address is not special:
+// it is just the client the walk finds, the same as any other unroutable
+// public address would be. Private only matters to IsPrivateClient, which
+// runs later and separately.
+func TestALeftmostPrivateAddressResolvesAsTheClient(t *testing.T) {
+	trusted := []netip.Prefix{mustPrefix(t, "10.0.0.0/8")}
+	peer := mustAddr(t, "10.0.0.1")
+	want := mustAddr(t, "192.168.1.50")
+
+	got := ClientAddr(peer, trusted, "", "192.168.1.50, 10.0.0.5")
+	if got != want {
+		t.Errorf("a chain starting with a private address resolved to %v, want %v", got, want)
+	}
+}
+
+// A chain longer than the trusted list still walks correctly: each hop is
+// checked against the list on its own, so the list's length bounds nothing
+// about how many hops the header may carry.
+func TestAChainLongerThanTheTrustedListStillWalks(t *testing.T) {
+	trusted := []netip.Prefix{mustPrefix(t, "10.0.0.0/9"), mustPrefix(t, "172.16.0.0/12")}
+	peer := mustAddr(t, "10.0.0.1")
+	want := mustAddr(t, "198.51.100.9")
+
+	got := ClientAddr(peer, trusted, "", "198.51.100.9, 10.0.0.2, 10.0.0.3, 172.16.0.4")
+	if got != want {
+		t.Errorf("a chain with more hops than trusted entries resolved to %v, want %v", got, want)
+	}
+}
+
+// A hop naming a port is read for its address, the port discarded: the
+// resolver answers "which host", never "which socket".
+func TestAHopNamingAPortIsReadForItsAddress(t *testing.T) {
+	trusted := []netip.Prefix{mustPrefix(t, "10.0.0.0/8")}
+	peer := mustAddr(t, "10.0.0.1")
+	want := mustAddr(t, "198.51.100.4")
+
+	if got := ClientAddr(peer, trusted, "", "198.51.100.4:44321, 10.0.0.2"); got != want {
+		t.Errorf("a hop with a port resolved to %v, want %v", got, want)
+	}
+}
+
+// A bracketed IPv6 hop is read whether or not it carries a port. Without one
+// is what net/http itself writes for an IPv6 hop with nothing to append, and
+// ParseAddrPort alone rejects that shape, which used to fall through to the
+// peer as if the hop were unparseable.
+func TestABracketedIPv6HopIsReadWithOrWithoutAPort(t *testing.T) {
+	trusted := []netip.Prefix{mustPrefix(t, "10.0.0.0/8")}
+	peer := mustAddr(t, "10.0.0.1")
+	want := mustAddr(t, "2001:db8::5")
+
+	if got := ClientAddr(peer, trusted, "", "[2001:db8::5], 10.0.0.2"); got != want {
+		t.Errorf("a bracketed hop with no port resolved to %v, want %v", got, want)
+	}
+	if got := ClientAddr(peer, trusted, "", "[2001:db8::5]:443, 10.0.0.2"); got != want {
+		t.Errorf("a bracketed hop with a port resolved to %v, want %v", got, want)
+	}
+}
+
+// An IPv4-mapped IPv6 hop and its plain IPv4 spelling must land in the same
+// rate-limit bucket, whichever header or family carried it: two spellings of
+// one host, never two buckets.
+func TestAnIPv4MappedHopSharesItsBucketWithPlainIPv4(t *testing.T) {
+	trusted := []netip.Prefix{mustPrefix(t, "10.0.0.0/8")}
+	peer := mustAddr(t, "10.0.0.1")
+	want := mustAddr(t, "198.51.100.4")
+
+	if got := ClientAddr(peer, trusted, "", "::ffff:198.51.100.4, 10.0.0.2"); got != want {
+		t.Errorf("a mapped hop in the forwarded list resolved to %v, want %v", got, want)
+	}
+	if got := ClientAddr(peer, trusted, "::ffff:198.51.100.4", ""); got != want {
+		t.Errorf("a mapped connecting-IP header resolved to %v, want %v", got, want)
+	}
+	if got := ClientAddr(peer, trusted, "", "[::ffff:198.51.100.4]:443, 10.0.0.2"); got != want {
+		t.Errorf("a bracketed mapped hop with a port resolved to %v, want %v", got, want)
+	}
+}
+
+// An empty forwarded header, from a trusted peer, resolves to the peer: there
+// is nothing to walk, so the peer is the closest thing to a client.
+func TestAnEmptyForwardedHeaderResolvesToThePeer(t *testing.T) {
+	trusted := []netip.Prefix{mustPrefix(t, "10.0.0.0/8")}
+	peer := mustAddr(t, "10.0.0.1")
+
+	if got := ClientAddr(peer, trusted, "", ""); got != peer {
+		t.Errorf("an empty header resolved to %v, want the peer %v", got, peer)
+	}
+}
+
+// A header with only separators has no hop to parse, and none of them may
+// silently become the peer's own address treated as a claimed hop: the walk
+// finds nothing and falls back to the peer.
+func TestAHeaderOfOnlySeparatorsFallsBackToThePeer(t *testing.T) {
+	trusted := []netip.Prefix{mustPrefix(t, "10.0.0.0/8")}
+	peer := mustAddr(t, "10.0.0.1")
+
+	for _, forwarded := range []string{",,,", " , , "} {
+		if got := ClientAddr(peer, trusted, "", forwarded); got != peer {
+			t.Errorf("forwarded %q resolved to %v, want the peer %v", forwarded, got, peer)
+		}
+	}
+}
+
+// A peer that is itself untrusted is not granted its claimed address just
+// because that address happens to be on the trusted list. Trust runs from the
+// peer outward hop by hop; it is never read backward out of the header.
+func TestAnUntrustedPeerCannotClaimATrustedAddress(t *testing.T) {
+	trusted := []netip.Prefix{mustPrefix(t, "10.0.0.0/8")}
+	peer := mustAddr(t, "203.0.113.7")
+
+	if got := ClientAddr(peer, trusted, "", "198.51.100.1, 10.0.0.5"); got != peer {
+		t.Errorf("an untrusted peer's forwarded list resolved to %v, want the peer %v", got, peer)
+	}
+	if got := ClientAddr(peer, trusted, "10.0.0.5", ""); got != peer {
+		t.Errorf("an untrusted peer's connecting-IP header resolved to %v, want the peer %v", got, peer)
+	}
+}

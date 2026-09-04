@@ -490,8 +490,12 @@
 # body to http.ResponseWriter; every field in the response document is
 # XML-escaped and write errors are logged.
 #
+# 115: the log store's two file opens. G304 reads a variable path, which is a
+# segment name this store either just generated or read back from its own
+# directory listing; nothing a request supplies reaches either call.
+#
 # 24 (the old tree): the listener builder's close on a failed bind. errcheck
 # reads the discarded error; the bind already failed and the listener is going
 # away with it.
 24
-113
+115

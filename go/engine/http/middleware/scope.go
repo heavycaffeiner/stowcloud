@@ -47,33 +47,28 @@ type Principal struct {
 // The zero Access is not handled permissively: route.Validate refuses a route
 // that declares none, and if one reached here it is refused rather than
 // defaulting into the class that lets anyone in.
+//
+// Only the browser session reaches a route that is not public. This runs for
+// the native API alone, because that is the only surface whose routes carry a
+// requirement: the compatibility mount and the file protocol resolve their
+// own callers. A device credential belongs to those surfaces, and the native
+// API is the interface's own, not a second public one with the same powers.
 func Scope(req route.Requirement, p Principal) error {
+	if req.Access == route.AccessPublic {
+		return nil
+	}
+	if p.Kind == CredentialNone {
+		return ErrCredentialRequired
+	}
+	if p.Kind != CredentialSessionCookie {
+		return ErrSessionRequired
+	}
+
 	switch req.Access {
-	case route.AccessPublic:
-		return nil
-
-	case route.AccessSession:
-		// Admin and self-service. An app password must not satisfy these: a
-		// credential handed to a device would otherwise be able to change the
-		// password that revokes it.
-		if p.Kind != CredentialSessionCookie {
-			if p.Kind == CredentialNone {
-				return ErrCredentialRequired
-			}
-			return ErrSessionRequired
-		}
-		return nil
-
-	case route.AccessAnyCredential:
-		if p.Kind == CredentialNone {
-			return ErrCredentialRequired
-		}
+	case route.AccessSession, route.AccessAnyCredential:
 		return nil
 
 	case route.AccessPerms:
-		if p.Kind == CredentialNone {
-			return ErrCredentialRequired
-		}
 		// Every declared bit, not any of them. A route naming read and write
 		// needs both, since it does both.
 		if !p.Mask.Has(req.Perms) {
@@ -81,7 +76,7 @@ func Scope(req route.Requirement, p Principal) error {
 		}
 		return nil
 
-	case route.AccessUnset:
+	case route.AccessPublic, route.AccessUnset:
 		return ErrCredentialRequired
 
 	default:

@@ -520,6 +520,71 @@ export interface AuditPage {
   next: number | null
 }
 
+/** One record of `GET /api/v1/admin/logs`, newest first.
+ *
+ *  `ts_ns` is a decimal string rather than a number for the same reason
+ *  `Entry.size` is: past 2^53 a JavaScript number stops being exact, and a
+ *  timestamp that comes back rounded sorts and pages wrongly. It stays a
+ *  string until something formats it.
+ *
+ *  `subsystem` and `request_id` are `''` rather than absent when the record
+ *  carries neither, so a caller never has to distinguish the two. `attrs`
+ *  holds whatever the call site logged; a record can carry many, which is why
+ *  the dashboard shows them on demand rather than inline. */
+export interface AdminLogRecord {
+  ts_ns: string
+  /** `DEBUG`, `INFO`, `WARN` or `ERROR`. Widened to `string` on purpose: a
+   *  build newer than this one showing an unknown level is better than the
+   *  record vanishing from a list because its level failed a narrowing. */
+  level: string
+  msg: string
+  subsystem: string
+  request_id: string
+  attrs: Record<string, string>
+}
+
+/** The levels the server records, newest-noisiest last. Order is the one the
+ *  filter renders in, so it is severity order rather than alphabetical. */
+export const ALL_LOG_LEVELS = ['DEBUG', 'INFO', 'WARN', 'ERROR'] as const
+
+/** `GET /api/v1/admin/logs` query. Every field is optional and unfiltered
+ *  when omitted.
+ *
+ *  `since`/`until` are unix nanoseconds as decimal strings, string-typed for
+ *  the same exactness reason as `AdminLogRecord.ts_ns`: a range bound that
+ *  rounds silently moves the window. `levels` crosses the wire as the comma
+ *  separated `level` parameter; empty means every level. `cursor` is the
+ *  previous page's, and is opaque: nothing here may parse or compare it. */
+export interface AdminLogQuery {
+  since?: string
+  until?: string
+  levels?: string[]
+  text?: string
+  subsystem?: string
+  request_id?: string
+  /** 1..500, defaulted by the server to 100 when omitted. */
+  limit?: number
+  cursor?: string
+  /** Cancels a request whose filters the user has already moved past, so a
+   *  dashboard with many concurrent operators does not leave one in flight
+   *  per keystroke. Same field, same purpose as `ListOpts.signal`. */
+  signal?: AbortSignal
+}
+
+/** `GET /api/v1/admin/logs` response. `records` is newest first and empty
+ *  rather than absent when nothing matches; `cursor` is `''` once the walk is
+ *  exhausted, which is what ends the load-more.
+ *
+ *  The two totals ride every page, not only the first, because the server
+ *  reads them fresh per request. `stored_bytes` is a decimal string for the
+ *  2^53 reason above. */
+export interface AdminLogPage {
+  records: AdminLogRecord[]
+  cursor: string
+  stored_bytes: string
+  segments: number
+}
+
 /** One row of `GET /api/admin/grants` (not yet wired server-side — see
  *  `GrantManagementSection.svelte`'s top comment for the exact contract this
  *  type mirrors, `go/internal/acl` for the server shape it

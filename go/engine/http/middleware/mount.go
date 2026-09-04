@@ -198,6 +198,12 @@ func authHandler(c *fiber.Ctx, d Deps) error {
 }
 
 // scopeHandler applies the matched route's requirement.
+//
+// A refusal answers as a path that is not there. The alternative tells anyone
+// who asks which routes exist: 401 on a real one and 404 on the rest maps the
+// whole surface to a stranger with a word list. The interface distinguishes
+// the two by the body it already reads, since a refusal carries the router's
+// generic failure and a missing file carries its own reason.
 func scopeHandler(c *fiber.Ctx) error {
 	m, ok := metaOf(c)
 	if !ok {
@@ -206,10 +212,7 @@ func scopeHandler(c *fiber.Ctx) error {
 		return c.Next()
 	}
 	if err := Scope(m.req, principalOf(c)); err != nil {
-		if errors.Is(err, ErrCredentialRequired) || errors.Is(err, ErrSessionRequired) {
-			return fiber.NewError(fiber.StatusUnauthorized)
-		}
-		return fiber.NewError(fiber.StatusForbidden)
+		return fiber.NewError(fiber.StatusNotFound)
 	}
 	return c.Next()
 }

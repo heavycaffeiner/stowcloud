@@ -145,10 +145,15 @@ func (e *Evaluator) evaluateUnlocked(user, share int64, path Path, want Perms) D
 //
 // Depth decides first: the walk runs from the evaluated path's own depth down
 // to the share root, and within one level a DENY of any wanted bit settles
-// the answer before any ALLOW at that level is considered. Only the first
-// partially-covering ALLOW at a level reduces want; a second grant at the
-// same depth that could cover the remainder is not consulted before the walk
-// moves shallower, so composition happens across depths, not within one.
+// the answer before any ALLOW at that level is considered.
+//
+// Every ALLOW at a level then counts toward what is still wanted. Composition
+// within a level is the same question as composition across levels: a caller
+// holding read from one rule and download from another holds both, and there
+// is no reading of "grant" under which the two rules cancel. Consulting only
+// the first partially-covering ALLOW denied every operation that needs two
+// bits to a caller whose bits came from a user grant and a group grant on the
+// same folder, which is the ordinary shape of a shared team folder.
 func (e *Evaluator) evaluateLocked(user, share int64, path Path, want Perms) Decision {
 	candidates := e.matchingLocked(user, share, path)
 	if len(candidates) == 0 {
@@ -162,13 +167,28 @@ func (e *Evaluator) evaluateLocked(user, share int64, path Path, want Perms) Dec
 		if g := findDeny(level, want); g != nil {
 			return Decision{Allowed: false, By: g.ID}
 		}
-		if g := findAllowAll(level, want); g != nil {
-			return Decision{Allowed: true, By: g.ID}
-		}
-		if g := findAllowAny(level, want); g != nil {
-			want = want.Remove(g.Allow)
-			if want.IsEmpty() {
+		// An ask that names no permission is asking whether the path is
+		// reachable at all, which is how a caller resolves a name before it
+		// knows what it will do with it. Any ALLOW covering this level
+		// answers it. The loop below cannot: nothing intersects an empty set,
+		// so every rule would be skipped and a question that was not about
+		// permissions would come back denied.
+		if want.IsEmpty() {
+			if g := findAnyAllow(level); g != nil {
 				return Decision{Allowed: true, By: g.ID}
+			}
+			continue
+		}
+		for i := range level {
+			if !level[i].Allow.Intersects(want) {
+				continue
+			}
+			want = want.Remove(level[i].Allow)
+			if want.IsEmpty() {
+				// The rule that completed the set names the decision: a
+				// caller asking why it was allowed gets the last rule it
+				// needed rather than the first it matched.
+				return Decision{Allowed: true, By: level[i].ID}
 			}
 		}
 	}
@@ -230,18 +250,13 @@ func findDeny(level []Grant, want Perms) *Grant {
 	return nil
 }
 
-func findAllowAll(level []Grant, want Perms) *Grant {
+// findAnyAllow returns the first rule at this level that grants anything.
+//
+// For the ask that names no permission. A deny-only rule is not an answer to
+// it: it withholds a bit, it does not say the path is reachable.
+func findAnyAllow(level []Grant) *Grant {
 	for i := range level {
-		if level[i].Allow.Has(want) {
-			return &level[i]
-		}
-	}
-	return nil
-}
-
-func findAllowAny(level []Grant, want Perms) *Grant {
-	for i := range level {
-		if level[i].Allow.Intersects(want) {
+		if !level[i].Allow.IsEmpty() {
 			return &level[i]
 		}
 	}

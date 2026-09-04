@@ -16,7 +16,7 @@ import (
 )
 
 // tusRequest sends one protocol request with arbitrary headers and body.
-func tusRequest(t *testing.T, method, url, token string,
+func tusRequest(t *testing.T, method, url string, sess session,
 	headers map[string]string, body []byte,
 ) (int, http.Header, []byte) {
 	t.Helper()
@@ -32,8 +32,8 @@ func tusRequest(t *testing.T, method, url, token string,
 	if err != nil {
 		t.Fatalf("building: %v", err)
 	}
-	if token != "" {
-		req.SetBasicAuth("ignored", token)
+	if sess.cookie != nil {
+		sess.attach(req)
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
@@ -77,7 +77,7 @@ func TestUploadDiscoveryIsPublic(t *testing.T) {
 	base, _, _ := bootWithUser(t)
 
 	status, header, body := tusRequest(t, http.MethodOptions,
-		base+"/api/v1/uploads", "", nil, nil)
+		base+"/api/v1/uploads", session{}, nil, nil)
 	if status != http.StatusNoContent {
 		t.Fatalf("discovery answered %d: %s", status, body)
 	}
@@ -96,9 +96,9 @@ func TestUploadDiscoveryIsPublic(t *testing.T) {
 // right offset while writing the wrong bytes would pass any lesser check.
 func TestAResumableUploadDeliversTheFile(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
-	location := createUpload(t, base, token, "/"+share+"/uploaded.bin", len(want))
+	location := createUpload(t, base, sess, "/"+share+"/uploaded.bin", len(want))
 
 	// Three chunks, so the offset arithmetic is exercised rather than a
 	// single write that happens to be the whole file.
@@ -106,7 +106,7 @@ func TestAResumableUploadDeliversTheFile(t *testing.T) {
 	var sent int
 	for sent < len(want) {
 		end := min(sent+chunk, len(want))
-		status, header, body := tusRequest(t, http.MethodPatch, base+location, token,
+		status, header, body := tusRequest(t, http.MethodPatch, base+location, sess,
 			map[string]string{
 				"Tus-Resumable": "1.0.0",
 				"Upload-Offset": strconv.Itoa(sent),
@@ -126,7 +126,7 @@ func TestAResumableUploadDeliversTheFile(t *testing.T) {
 	}
 
 	// The file is at its destination and identical.
-	code, _, read := download(t, base, token, "/"+share+"/uploaded.bin", "")
+	code, _, read := download(t, base, sess, "/"+share+"/uploaded.bin", "")
 	if code != http.StatusOK {
 		t.Fatalf("reading the uploaded file answered %d: %s", code, read)
 	}
@@ -136,7 +136,7 @@ func TestAResumableUploadDeliversTheFile(t *testing.T) {
 }
 
 // createUpload opens a session and returns its location.
-func createUpload(t *testing.T, base, token, dest string, length int) string {
+func createUpload(t *testing.T, base string, sess session, dest string, length int) string {
 	t.Helper()
 
 	// The wire splits the target into the destination directory and the leaf:
@@ -144,7 +144,7 @@ func createUpload(t *testing.T, base, token, dest string, length int) string {
 	// named. A test that sent only the joined path would be asking for a
 	// metadata shape no client sends.
 	dir, leaf := dest[:strings.LastIndex(dest, "/")+1], dest[strings.LastIndex(dest, "/")+1:]
-	status, header, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", token,
+	status, header, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", sess,
 		map[string]string{
 			"Tus-Resumable":   "1.0.0",
 			"Upload-Length":   strconv.Itoa(length),
@@ -164,13 +164,13 @@ func createUpload(t *testing.T, base, token, dest string, length int) string {
 // A resume asks where the server is and continues from there.
 func TestAnInterruptedUploadResumes(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
-	location := createUpload(t, base, token, "/"+share+"/resumed.bin", len(want))
+	location := createUpload(t, base, sess, "/"+share+"/resumed.bin", len(want))
 
 	// Half of it, then stop as though the client died.
 	half := len(want) / 2
-	if status, _, body := tusRequest(t, http.MethodPatch, base+location, token,
+	if status, _, body := tusRequest(t, http.MethodPatch, base+location, sess,
 		map[string]string{
 			"Tus-Resumable": "1.0.0",
 			"Upload-Offset": "0",
@@ -180,7 +180,7 @@ func TestAnInterruptedUploadResumes(t *testing.T) {
 	}
 
 	// A new client asks where to continue.
-	status, header, body := tusRequest(t, http.MethodHead, base+location, token,
+	status, header, body := tusRequest(t, http.MethodHead, base+location, sess,
 		map[string]string{"Tus-Resumable": "1.0.0"}, nil)
 	if status != http.StatusOK {
 		t.Fatalf("the status request answered %d: %s", status, body)
@@ -196,7 +196,7 @@ func TestAnInterruptedUploadResumes(t *testing.T) {
 		t.Errorf("the progress response is cacheable (%q), so a resume can read a stale offset", cc)
 	}
 
-	if status, _, body := tusRequest(t, http.MethodPatch, base+location, token,
+	if status, _, body := tusRequest(t, http.MethodPatch, base+location, sess,
 		map[string]string{
 			"Tus-Resumable": "1.0.0",
 			"Upload-Offset": offset,
@@ -205,7 +205,7 @@ func TestAnInterruptedUploadResumes(t *testing.T) {
 		t.Fatalf("the second half answered %d: %s", status, body)
 	}
 
-	code, _, read := download(t, base, token, "/"+share+"/resumed.bin", "")
+	code, _, read := download(t, base, sess, "/"+share+"/resumed.bin", "")
 	if code != http.StatusOK {
 		t.Fatalf("reading answered %d", code)
 	}
@@ -220,12 +220,12 @@ func TestAnInterruptedUploadResumes(t *testing.T) {
 // that results is corrupt with nothing reporting a failure.
 func TestAChunkAtTheWrongOffsetIsRefused(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
-	location := createUpload(t, base, token, "/"+share+"/wrong.bin", len(want))
+	location := createUpload(t, base, sess, "/"+share+"/wrong.bin", len(want))
 
 	for _, offset := range []string{"100", "999999"} {
-		status, _, body := tusRequest(t, http.MethodPatch, base+location, token,
+		status, _, body := tusRequest(t, http.MethodPatch, base+location, sess,
 			map[string]string{
 				"Tus-Resumable": "1.0.0",
 				"Upload-Offset": offset,
@@ -237,7 +237,7 @@ func TestAChunkAtTheWrongOffsetIsRefused(t *testing.T) {
 	}
 
 	// The session is untouched, so the client can still resume correctly.
-	_, header, _ := tusRequest(t, http.MethodHead, base+location, token,
+	_, header, _ := tusRequest(t, http.MethodHead, base+location, sess,
 		map[string]string{"Tus-Resumable": "1.0.0"}, nil)
 	if got := header.Get("Upload-Offset"); got != "0" {
 		t.Errorf("a refused chunk moved the offset to %q", got)
@@ -249,9 +249,9 @@ func TestAChunkAtTheWrongOffsetIsRefused(t *testing.T) {
 // The header is how a client says which contract its request is written
 // against. Guessing would mean serving a request whose meaning is unknown.
 func TestAnUploadWithoutTheVersionHeaderIsRefused(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
-	status, _, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", token,
+	status, _, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", sess,
 		map[string]string{
 			"Upload-Length":   "10",
 			"Upload-Metadata": metadataFor(map[string]string{"path": "/" + share + "/x.bin"}),
@@ -262,7 +262,7 @@ func TestAnUploadWithoutTheVersionHeaderIsRefused(t *testing.T) {
 
 	// And a wrong version too, which is a different mistake with the same
 	// answer: this server does not speak it.
-	status, _, body = tusRequest(t, http.MethodPost, base+"/api/v1/uploads", token,
+	status, _, body = tusRequest(t, http.MethodPost, base+"/api/v1/uploads", sess,
 		map[string]string{
 			"Tus-Resumable":   "2.0.0",
 			"Upload-Length":   "10",
@@ -279,14 +279,14 @@ func TestAnUploadWithoutTheVersionHeaderIsRefused(t *testing.T) {
 // than at the end, when the whole file has to be sent again.
 func TestAChunkWithABadChecksumIsRefused(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
-	location := createUpload(t, base, token, "/"+share+"/summed.bin", len(want))
+	location := createUpload(t, base, sess, "/"+share+"/summed.bin", len(want))
 
 	// The digest of something else entirely, in an algorithm the server
 	// actually offers.
 	wrong := crc32cOf([]byte("not what is being sent"))
-	status, _, body := tusRequest(t, http.MethodPatch, base+location, token,
+	status, _, body := tusRequest(t, http.MethodPatch, base+location, sess,
 		map[string]string{
 			"Tus-Resumable":   "1.0.0",
 			"Upload-Offset":   "0",
@@ -299,7 +299,7 @@ func TestAChunkWithABadChecksumIsRefused(t *testing.T) {
 
 	// Nothing landed, so the client resends the same chunk rather than
 	// discovering later that the file is wrong.
-	_, header, _ := tusRequest(t, http.MethodHead, base+location, token,
+	_, header, _ := tusRequest(t, http.MethodHead, base+location, sess,
 		map[string]string{"Tus-Resumable": "1.0.0"}, nil)
 	if got := header.Get("Upload-Offset"); got != "0" {
 		t.Errorf("a chunk with a bad digest moved the offset to %q", got)
@@ -309,11 +309,11 @@ func TestAChunkWithABadChecksumIsRefused(t *testing.T) {
 // A correct digest is accepted, so the check is not refusing everything.
 func TestAChunkWithAGoodChecksumIsAccepted(t *testing.T) {
 	want := payload()
-	base, token, share := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
-	location := createUpload(t, base, token, "/"+share+"/summed.bin", len(want))
+	location := createUpload(t, base, sess, "/"+share+"/summed.bin", len(want))
 
-	status, _, body := tusRequest(t, http.MethodPatch, base+location, token,
+	status, _, body := tusRequest(t, http.MethodPatch, base+location, sess,
 		map[string]string{
 			"Tus-Resumable":   "1.0.0",
 			"Upload-Offset":   "0",
@@ -328,18 +328,18 @@ func TestAChunkWithAGoodChecksumIsAccepted(t *testing.T) {
 // An upload needs a credential, and one account cannot touch another's
 // session.
 func TestAnUploadSessionBelongsToItsOwner(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
-	location := createUpload(t, base, token, "/"+share+"/owned.bin", 100)
+	location := createUpload(t, base, sess, "/"+share+"/owned.bin", 100)
 
 	// No credential at all.
-	status, _, _ := tusRequest(t, http.MethodHead, base+location, "",
+	status, _, _ := tusRequest(t, http.MethodHead, base+location, session{},
 		map[string]string{"Tus-Resumable": "1.0.0"}, nil)
 	if status == http.StatusOK {
 		t.Error("an unauthenticated request read a session's progress")
 	}
 
-	status, _, _ = tusRequest(t, http.MethodPatch, base+location, "",
+	status, _, _ = tusRequest(t, http.MethodPatch, base+location, session{},
 		map[string]string{
 			"Tus-Resumable": "1.0.0",
 			"Upload-Offset": "0",
@@ -352,25 +352,25 @@ func TestAnUploadSessionBelongsToItsOwner(t *testing.T) {
 
 // Aborting discards the session.
 func TestAbortingAnUpload(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
-	location := createUpload(t, base, token, "/"+share+"/abandoned.bin", 4096)
+	location := createUpload(t, base, sess, "/"+share+"/abandoned.bin", 4096)
 
-	status, _, body := tusRequest(t, http.MethodDelete, base+location, token,
+	status, _, body := tusRequest(t, http.MethodDelete, base+location, sess,
 		map[string]string{"Tus-Resumable": "1.0.0"}, nil)
 	if status != http.StatusNoContent {
 		t.Fatalf("aborting answered %d: %s", status, body)
 	}
 
 	// The session is gone, so a later chunk has nowhere to land.
-	status, _, _ = tusRequest(t, http.MethodHead, base+location, token,
+	status, _, _ = tusRequest(t, http.MethodHead, base+location, sess,
 		map[string]string{"Tus-Resumable": "1.0.0"}, nil)
 	if status == http.StatusOK {
 		t.Error("an aborted session still reports progress")
 	}
 
 	// And the destination was never created.
-	if code, _, _ := download(t, base, token, "/"+share+"/abandoned.bin", ""); code == http.StatusOK {
+	if code, _, _ := download(t, base, sess, "/"+share+"/abandoned.bin", ""); code == http.StatusOK {
 		t.Error("an aborted upload left a file at its destination")
 	}
 }
@@ -380,11 +380,11 @@ func TestAbortingAnUpload(t *testing.T) {
 // The protocol fixes the type, and a request describing different content
 // from what it carries is one whose framing cannot be trusted.
 func TestAChunkWithTheWrongContentTypeIsRefused(t *testing.T) {
-	base, token, share := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, share := contentShare(t, everyPerm(), []byte("unused"))
 
-	location := createUpload(t, base, token, "/"+share+"/typed.bin", 100)
+	location := createUpload(t, base, sess, "/"+share+"/typed.bin", 100)
 
-	status, _, body := tusRequest(t, http.MethodPatch, base+location, token,
+	status, _, body := tusRequest(t, http.MethodPatch, base+location, sess,
 		map[string]string{
 			"Tus-Resumable": "1.0.0",
 			"Upload-Offset": "0",
@@ -397,9 +397,9 @@ func TestAChunkWithTheWrongContentTypeIsRefused(t *testing.T) {
 
 // A session cannot be opened over a path the account may not write.
 func TestAnUploadNeedsWritePermission(t *testing.T) {
-	base, token, share := contentShare(t, acl.Read|acl.Download, []byte("unused"))
+	base, sess, share := contentShare(t, acl.Read|acl.Download, []byte("unused"))
 
-	status, _, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", token,
+	status, _, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", sess,
 		map[string]string{
 			"Tus-Resumable":   "1.0.0",
 			"Upload-Length":   "10",
@@ -412,10 +412,10 @@ func TestAnUploadNeedsWritePermission(t *testing.T) {
 
 // A session opened over an escaping path is refused, like every other route.
 func TestAnUploadPathCannotEscape(t *testing.T) {
-	base, token, _ := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, _ := contentShare(t, everyPerm(), []byte("unused"))
 
 	for _, path := range []string{"/../etc/passwd", "../etc", "/share/../../etc"} {
-		status, _, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", token,
+		status, _, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", sess,
 			map[string]string{
 				"Tus-Resumable":   "1.0.0",
 				"Upload-Length":   "10",
@@ -429,9 +429,9 @@ func TestAnUploadPathCannotEscape(t *testing.T) {
 
 // A create without a destination is refused rather than defaulting anywhere.
 func TestAnUploadWithoutADestinationIsRefused(t *testing.T) {
-	base, token, _ := contentShare(t, everyPerm(), []byte("unused"))
+	base, sess, _ := contentShare(t, everyPerm(), []byte("unused"))
 
-	status, _, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", token,
+	status, _, body := tusRequest(t, http.MethodPost, base+"/api/v1/uploads", sess,
 		map[string]string{"Tus-Resumable": "1.0.0", "Upload-Length": "10"}, nil)
 	if status == http.StatusCreated {
 		t.Errorf("a session was created with no destination: %s", body)
@@ -455,7 +455,7 @@ func crc32cOf(b []byte) []byte {
 func TestDiscoveryNamesTheChecksumAlgorithms(t *testing.T) {
 	base, _, _ := bootWithUser(t)
 
-	_, header, _ := tusRequest(t, http.MethodOptions, base+"/api/v1/uploads", "", nil, nil)
+	_, header, _ := tusRequest(t, http.MethodOptions, base+"/api/v1/uploads", session{}, nil, nil)
 	got := header.Get("Tus-Checksum-Algorithm")
 	if got == "" {
 		t.Fatal("no algorithms are advertised")

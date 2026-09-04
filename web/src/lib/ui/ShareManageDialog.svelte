@@ -1,14 +1,14 @@
 <script lang="ts">
-  // ShareManageDialog.svelte — owner-side share-link CRUD for one file/folder
-  // path ( `/api/shares[/:id]`). Creation
-  // is the only piece of this surface any part of the app touched before —
-  // in fact none did (`grep -rn "shares" web/src` before this change turned
+  // ShareManageDialog.svelte: owner-side share-link CRUD for one file/folder
+  // path (/api/shares[/:id]). Creation
+  // is the only piece of this surface any part of the app touched before.
   // up zero create/view/edit/revoke UI, only the unrelated public `/s/{token}`
   // viewer in `api/share.ts` and the admin storage report). `GET
   // /api/shares/{id}`, `PATCH /api/shares/{id}`, and `DELETE
   // /api/shares/{id}` existed and worked server-side with nothing in the
   // app ever calling them; this dialog is the first caller.
   import { api, ApiError, type PermsReq, type ShareLinkInfo } from '../api/client'
+  import { describeApiError } from '../api/error-text'
   import { formatDateNs, t } from '../i18n'
   import Button from './Button.svelte'
   import Checkbox from './Checkbox.svelte'
@@ -140,7 +140,7 @@
     try {
       links = await api.sharesList(path)
     } catch (err) {
-      loadError = err instanceof ApiError ? err.message : t('share.could_not_load_share_links')
+      loadError = describeApiError(err, t('share.could_not_load_share_links'))
     } finally {
       loading = false
     }
@@ -199,7 +199,7 @@
       creatingOpen = false
       await load()
     } catch (err) {
-      createError = err instanceof ApiError ? err.message : t('share.could_not_create_share_link')
+      createError = describeApiError(err, t('share.could_not_create_share_link'))
     } finally {
       creating = false
     }
@@ -250,7 +250,7 @@
       editingId = null
       await load()
     } catch (err) {
-      loadError = err instanceof ApiError ? err.message : t('share.could_not_update_share_link')
+      loadError = describeApiError(err, t('share.could_not_update_share_link'))
     } finally {
       saving = false
     }
@@ -264,7 +264,7 @@
       await api.shareDelete(id)
       await load()
     } catch (err) {
-      loadError = err instanceof ApiError ? err.message : t('share.could_not_revoke_share_link')
+      loadError = describeApiError(err, t('share.could_not_revoke_share_link'))
     }
   }
 </script>

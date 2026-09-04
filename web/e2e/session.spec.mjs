@@ -111,8 +111,11 @@ try {
 
   console.log('signing in')
   const noSession = await api(page, 'GET', '/api/v1/auth/session')
-  check('no credential is refused as required rather than invalid',
-    noSession.status === 401 && noSession.body?.error?.code === 'auth.required',
+  // Refused as an address that is not there. Every route but the public ones
+  // answers a credential-less request that way, so a stranger with a word
+  // list cannot tell a real route from one that was never mounted.
+  check('no credential is refused as a path that is not there',
+    noSession.status === 404 && noSession.body?.error === 'request_failed',
     JSON.stringify(noSession.body))
 
   // The wrong password first, while there is no session. Once one exists this
@@ -145,9 +148,10 @@ try {
   }
 
   console.log('browsing')
-  // A share grants nobody by design: access comes from an explicit grant, so
-  // creating one and reading it are two steps. The first run used to be a dead
-  // end here, and the grant below is what the admin screen sends.
+  // Registering a share grants its creator the whole tree under the share's
+  // own name, so the administrator can already read it here. A second grant
+  // naming the same subject, share, subpath and reach is refused as the
+  // duplicate it is, which is what this run proves before browsing.
   //
   // The label matters: it is the name the share is addressed by. Without one
   // the root projects the grant as share-<id>, so every path a person types
@@ -158,15 +162,16 @@ try {
   check('the share this run browses exists', docs !== undefined,
     JSON.stringify(shareRow).slice(0, 160))
   if (docs) {
-    const granted = await api(page, 'POST', '/api/v1/admin/grants', {
+    const again = await api(page, 'POST', '/api/v1/admin/grants', {
       user: String(session.body?.user?.id ?? 1),
       share: String(docs.id),
       allow: ['read', 'download', 'write', 'create', 'delete'],
       inherit: true,
       label: 'docs'
     }, csrf)
-    check('the grant is stored', granted.status === 201,
-      `status ${granted.status} ${JSON.stringify(granted.body).slice(0, 160)}`)
+    check('a second grant over the same target is refused',
+      again.status === 409 && again.body?.error?.detail?.reason_key === 'admin.grant_exists',
+      `status ${again.status} ${JSON.stringify(again.body).slice(0, 160)}`)
   }
 
   const list = await api(page, 'GET', '/api/v1/files/list?path=docs')
@@ -286,7 +291,9 @@ try {
   )
   check('signing out succeeds', out === 200 || out === 204, `status ${out}`)
   const after = await api(page, 'GET', '/api/v1/auth/session')
-  check('the session is gone afterwards', after.status === 401, `status ${after.status}`)
+  // The revoked session reaches nothing, and what it gets back is the same
+  // answer a stranger gets: the address is not there.
+  check('the session is gone afterwards', after.status === 404, `status ${after.status}`)
 } finally {
   await browser.close()
 }

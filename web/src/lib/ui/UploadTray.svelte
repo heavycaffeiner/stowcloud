@@ -3,6 +3,7 @@
   import { fly, slide } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import { uploadTray, type UploadItem } from '../state/upload-tray.svelte'
+  import { useRunesStore } from '../store/core/bridge.svelte'
   import { t } from '../i18n'
   import { formatBytes, formatEta, formatRate } from '../format/bytes'
   import IconButton from './IconButton.svelte'
@@ -10,7 +11,10 @@
   import { icons } from '../icons'
   import ProgressLinear from './ProgressLinear.svelte'
 
-  const totalActive = $derived(uploadTray.items.filter((i) => i.status === 'uploading' || i.status === 'paused').length)
+  const uploadState = useRunesStore(uploadTray.store)
+  const items = $derived(uploadState.current.items)
+  const isOpen = $derived(uploadState.current.open)
+  const totalActive = $derived(items.filter((i) => i.status === 'uploading' || i.status === 'paused').length)
 
   // --- Screen-reader announcements ------------------------------------------
   // used to list this as a known gap: Snackbar was the
@@ -78,7 +82,7 @@
     // message and silently overwrites it back to "uploading", so a screen
     // reader user never hears the file actually finished.
     const names = ids
-      .map((id) => uploadTray.items.find((i) => i.id === id))
+      .map((id) => items.find((i) => i.id === id))
       .filter((i): i is UploadItem => !!i && (i.status === 'uploading' || i.status === 'paused'))
       .map((i) => i.name)
     if (names.length === 0) return
@@ -92,7 +96,7 @@
 
   $effect(() => {
     const seenIds = new Set<string>()
-    for (const item of uploadTray.items) {
+    for (const item of items) {
       seenIds.add(item.id)
       const prev = lastStatus.get(item.id)
       if (prev === undefined) {
@@ -139,14 +143,14 @@
 <div class="sc-upload-tray__sr-only" role="status" aria-live="polite" aria-atomic="true">{politeMsg}</div>
 <div class="sc-upload-tray__sr-only" role="alert" aria-live="assertive" aria-atomic="true">{assertiveMsg}</div>
 
-{#if uploadTray.items.length > 0}
+{#if items.length > 0}
   <div
     class="sc-upload-tray"
-    class:sc-upload-tray--collapsed={!uploadTray.open}
+    class:sc-upload-tray--collapsed={!isOpen}
     transition:fly={{ y: 32, duration: trayDuration(), easing: cubicOut }}
   >
     <div class="sc-upload-tray__header">
-      <button class="sc-upload-tray__title" onclick={() => (uploadTray.open = !uploadTray.open)}>
+      <button class="sc-upload-tray__title" onclick={() => uploadTray.setOpen(!isOpen)}>
         <Icon icon={icons.upload} size={18} />
         {t('common.upload')} {totalActive > 0 ? `(${totalActive})` : t('common.done')}
       </button>
@@ -154,15 +158,15 @@
         <IconButton label={t('common.clear_finished_items')} onclick={() => uploadTray.clearFinished()}>
           <Icon icon={icons.check} size={18} />
         </IconButton>
-        <IconButton label={uploadTray.open ? t('common.collapse') : t('common.expand')} onclick={() => (uploadTray.open = !uploadTray.open)}>
-          <Icon icon={icons[uploadTray.open ? 'chevron-right' : 'chevron-left']} size={18} />
+        <IconButton label={isOpen ? t('common.collapse') : t('common.expand')} onclick={() => uploadTray.setOpen(!isOpen)}>
+          <Icon icon={icons[isOpen ? 'chevron-right' : 'chevron-left']} size={18} />
         </IconButton>
       </div>
     </div>
 
-    {#if uploadTray.open}
+    {#if isOpen}
       <ul class="sc-upload-tray__list">
-        {#each uploadTray.items as item (item.id)}
+        {#each items as item (item.id)}
           <li class="sc-upload-tray__item" transition:slide={{ duration: trayDuration(), easing: cubicOut }}>
             <div class="sc-upload-tray__row">
               <span class="sc-filename sc-upload-tray__name">{item.name}</span>

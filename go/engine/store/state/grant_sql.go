@@ -24,4 +24,21 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	// The cascade DeleteShare runs, in the same transaction as the share row
 	// it belongs to.
 	sqlDeleteGrantsForShare = `DELETE FROM "grant" WHERE share = ?`
+
+	// Every row that shares a subject, share, subpath and reach with another,
+	// ordered so the rows of one group arrive together with the earliest first.
+	// Read by the fold that step 13 runs before its unique index.
+	sqlDuplicateGrantRows = `
+SELECT g.id, g.allow, g.deny, g.label,
+       coalesce(g.user, -1), coalesce(g."group", -1), g.share, g.subpath, g.inherit
+FROM "grant" g
+JOIN (
+  SELECT coalesce(user, -1) AS ku, coalesce("group", -1) AS kg, share, subpath, inherit
+  FROM "grant"
+  GROUP BY ku, kg, share, subpath, inherit
+  HAVING count(*) > 1
+) d
+  ON coalesce(g.user, -1) = d.ku AND coalesce(g."group", -1) = d.kg
+ AND g.share = d.share AND g.subpath = d.subpath AND g.inherit = d.inherit
+ORDER BY d.ku, d.kg, g.share, g.subpath, g.inherit, g.id`
 )
