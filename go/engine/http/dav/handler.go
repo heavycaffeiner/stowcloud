@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
@@ -142,13 +143,31 @@ func (h *Handler) log(r *http.Request) *slog.Logger {
 }
 
 // fail writes the response for an error.
+//
+// A refused write is logged. A client shows whoever is holding it the status
+// phrase and nothing else, so without this an operator answering "the upload
+// says method not allowed" cannot see which request that was, or whether it
+// reached this server at all. Reads stay quiet: a sync client probes for
+// absent paths as a matter of course, and logging those buries the one line
+// that matters.
 func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
-	if status, _ := StatusOf(err); status >= http.StatusInternalServerError {
+	status, _ := StatusOf(err)
+	switch {
+	case status >= http.StatusInternalServerError:
 		h.log(r).Error("the request failed", "error", err)
+	case status >= http.StatusBadRequest && writes(r.Method):
+		h.log(r).Warn("the write was refused", "status", status, "error", err)
 	}
 	if werr := WriteError(w, err); werr != nil {
 		h.log(r).Warn("the refusal did not reach the client", "error", werr)
 	}
+}
+
+// writes reports whether a method changes something, which is what makes its
+// refusal worth a line in the log.
+func writes(method string) bool {
+	req, served := MethodRequirement(method)
+	return served && (req.Source&^acl.Read != 0 || req.HasDest())
 }
 
 // failAllowing writes the refusal, and states what the resource does accept
