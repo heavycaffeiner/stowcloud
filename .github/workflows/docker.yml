@@ -722,7 +722,13 @@ jobs:
           echo "$listed"
           echo "$listed" | grep -q 'proof.txt' \
             || { echo "the upload never reached the destination"; exit 1; }
-          got=$(curl -fsSk -b /tmp/jar "$base/api/v1/files/read?path=/files/proof.txt")
+          # The bytes are addressed by the row's own sealed reference rather
+          # than by a path: the read route takes a claim, and a client that
+          # composes a content URL out of a path is one that can compose it
+          # wrongly. The listing above is where the reference comes from.
+          claim=$(printf '%s' "$listed" | sed -n 's/.*"content":"\([^"]*\)".*/\1/p')
+          [ -n "$claim" ] || { echo "the listing carried no content reference"; exit 1; }
+          got=$(curl -fsSk -b /tmp/jar "$base/api/v1/files/read?claim=${claim}")
           [ "$got" = "uploaded by ci" ] \
             || { echo "read back ${got}, want the bytes that were sent"; exit 1; }
 

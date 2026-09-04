@@ -10,6 +10,7 @@ import tempfile
 import time
 import urllib.request
 import urllib.error
+import urllib.parse
 import ssl
 
 ctx = ssl.create_default_context()
@@ -524,11 +525,25 @@ def main():
             web_csrf = json.loads(resp.read().decode("utf-8")).get("csrf", "")
             assert cookie and web_csrf
 
-        # Test content endpoint for image
-        img_req = urllib.request.Request(
-            f"{base_url}/api/v1/files/read?path=/files/test.png",
+        # The read route takes each row's own sealed reference rather than a
+        # path: a client that composes a content URL out of a path is one that
+        # can compose it wrongly. The listing is where the reference comes from.
+        list_req = urllib.request.Request(
+            f"{base_url}/api/v1/files/list?path=/files",
             headers={"Cookie": cookie}
         )
+        with urllib.request.urlopen(list_req, context=ctx) as resp:
+            assert resp.status == 200
+            rows = json.loads(resp.read().decode("utf-8")).get("entries", [])
+        claims = {row["name"]: row.get("content", "") for row in rows}
+        for name in ("test.png", "test.mp4"):
+            assert claims.get(name), f"the listing carried no content reference for {name}: {rows}"
+
+        def content_url(name):
+            return f"{base_url}/api/v1/files/read?claim={urllib.parse.quote(claims[name])}"
+
+        # Test content endpoint for image
+        img_req = urllib.request.Request(content_url("test.png"), headers={"Cookie": cookie})
         with urllib.request.urlopen(img_req, context=ctx) as resp:
             assert resp.status == 200
             assert resp.headers.get("Content-Type") == "image/png"
@@ -536,10 +551,7 @@ def main():
             print("  WebUI image content endpoint OK.")
 
         # Test content endpoint for video
-        vid_req = urllib.request.Request(
-            f"{base_url}/api/v1/files/read?path=/files/test.mp4",
-            headers={"Cookie": cookie}
-        )
+        vid_req = urllib.request.Request(content_url("test.mp4"), headers={"Cookie": cookie})
         with urllib.request.urlopen(vid_req, context=ctx) as resp:
             assert resp.status == 200
             assert "video" in resp.headers.get("Content-Type", "")

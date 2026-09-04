@@ -355,17 +355,28 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   # identifier with a slash was assumed to be a file path, so a route path was
   # reported missing while sitting in the route table. Four of its six findings
   # were that bug.
-  run "speccheck (the phase documents match the engine)" bash -c '
-    cd go
-    fail=0
-    for area in foundation core auth oidc upload search preview settings smb http; do
-      refDir="../docs/internal/refactor/$area"
-      if [ ! -d "$refDir" ]; then refDir="../docs/refactor/$area"; fi
-      if [ -d "$refDir" ]; then
-        if ! go run ./tools/speccheck "$refDir" ./engine; then fail=1; fi
-      fi
-    done
-    exit $fail'
+  #
+  # The phase documents are internal and untracked, so a clone has none of
+  # them. The gate says so rather than passing on an empty loop: a check that
+  # silently watched nothing would read as a green one.
+  SPEC_ROOT=
+  for candidate in docs/internal/refactor docs/refactor; do
+    if [ -d "$candidate" ]; then SPEC_ROOT="../$candidate"; break; fi
+  done
+  if [ -n "$SPEC_ROOT" ]; then
+    run "speccheck (the phase documents match the engine)" bash -c '
+      cd go
+      fail=0
+      for area in foundation core auth oidc upload search preview settings smb http; do
+        [ -d "'"$SPEC_ROOT"'/$area" ] || continue
+        if ! go run ./tools/speccheck "'"$SPEC_ROOT"'/$area" ./engine; then fail=1; fi
+      done
+      exit $fail'
+  else
+    skipped "speccheck (the phase documents match the engine)" \
+            "the phase documents are internal and absent from this checkout" \
+            "${VERIFY_REQUIRE_SPECDOCS:-0}"
+  fi
   run "vetsecret (D12: no secret to a verb)"   ingo_host go run ./tools/vetsecret ./...
   run "koscan (D15: no Korean in Go source)"   ingo_host go run ./tools/koscan ./cmd ./tools ./engine
   # The tier rule over the rebuilt engine, by the import graph. A package's

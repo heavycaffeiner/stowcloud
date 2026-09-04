@@ -896,8 +896,13 @@
   .sc-logs__table-wrap {
     margin-top: 12px;
   }
+  /* Block rather than inline-block: an inline box leaves a line-box gap of
+     about a pixel above it, which reads as an uneven inset on a container
+     that has none. `fit-content` keeps the click target the width of the
+     text rather than the whole row. */
   .sc-logs__table-wrap summary {
-    display: inline-block;
+    display: block;
+    width: fit-content;
     padding: 4px 0;
     color: var(--m3c-primary);
     cursor: pointer;

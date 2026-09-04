@@ -215,6 +215,23 @@
       "selector": ".sc-tree-row",
       "reason": "A folder tree row indents by depth on the leading side only. Matching that on the trailing side would push the label out of the row instead of showing where it sits in the hierarchy.",
       "expires": "2027-08-10"
+    },
+    {
+      "id": "logs-chart-data-geometry",
+      "layer": "runtime",
+      "check": "*",
+      "selector": ".sc-logs__plot",
+      "subtree": true,
+      "reason": "Inside the plot every height is a percentage of a record count, so a bar segment lands wherever the data puts it. Snapping a segment to 4px would redraw the number it stands for; the plot box itself is 160px and stays on the grid.",
+      "expires": "2027-08-10"
+    },
+    {
+      "id": "m3-segmented-filter-internals",
+      "layer": "runtime",
+      "check": "spacing-scale",
+      "selector": ".sc-logs__sources .m3-container",
+      "reason": "m3-svelte's connected buttons draw a 2px seam between the segments of one control. We own neither the seam nor the segment box; the 8px between the two controls beside it is ours and is still checked.",
+      "expires": "2027-08-10"
     }
   ]
 }

@@ -256,7 +256,7 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
     total: entries.length,
     dirs: entries.filter((e) => e.kind === 'dir').length,
     cursor: next < entries.length ? String(next) : null,
-    entries: page.map(withRefs),
+    entries: page.map((e) => withRefs(e, dir)),
     dir_etag: etag,
     dir_etag_weak: true
   }
@@ -269,16 +269,21 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
 // the row's path, since there is nothing here to seal it with; what matters is
 // that it is produced at the same two places a listing and a stat produce it,
 // and read nowhere else.
-function withRefs(e: Entry): Entry {
+// The directory is a parameter because a seed entry's own `path` is its leaf
+// name: composing the reference from that alone produced "/meeting-notes.txt"
+// for a file two levels down, and the editor then read a path that resolves
+// to nothing.
+function withRefs(e: Entry, dir: string): Entry {
   if (e.kind === 'dir') return e
-  return { ...e, content: e.path.startsWith('/') ? e.path : `/${e.path}` }
+  return { ...e, content: normalizePath(`${dir}/${e.name}`) }
 }
 
 async function stat(path: string): Promise<Entry> {
   await delay(10)
-  const e = entryAt(path)
-  if (!e) throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { path } })
-  return withRefs(e)
+  const n = normalizePath(path)
+  const e = entryAt(n)
+  if (!e) throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { path: n } })
+  return withRefs(e, parentOf(n))
 }
 
 function defaultPerms(): Entry['perms'] {
