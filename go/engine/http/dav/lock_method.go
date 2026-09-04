@@ -69,7 +69,7 @@ var (
 // Lock answers LOCK, both a new lock and a refresh.
 func (h *Handler) Lock(w http.ResponseWriter, r *http.Request, res core.Resolved) {
 	if h.taker == nil {
-		h.fail(w, r, ErrNoLockTable)
+		h.failAllowing(w, r, res, ErrNoLockTable)
 		return
 	}
 	if err := res.Require(acl.Write); err != nil {
@@ -192,7 +192,7 @@ func (h *Handler) refresh(w http.ResponseWriter, r *http.Request, res core.Resol
 // Unlock answers UNLOCK.
 func (h *Handler) Unlock(w http.ResponseWriter, r *http.Request, res core.Resolved) {
 	if h.taker == nil {
-		h.fail(w, r, ErrNoLockTable)
+		h.failAllowing(w, r, res, ErrNoLockTable)
 		return
 	}
 

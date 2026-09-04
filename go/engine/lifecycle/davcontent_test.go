@@ -81,6 +81,36 @@ func TestGetOfACollectionIsRefused(t *testing.T) {
 	}
 }
 
+// A PUT onto a collection is refused, and the refusal says what the
+// collection does take.
+//
+// The reference client does not map 405 for a write: it shows the reason
+// phrase, so an upload whose target turned out to be a folder reports
+// "Method Not Allowed" to whoever is holding the phone. The header is what
+// tells them, and a proxy, that the method is the part that was wrong.
+func TestPutOntoACollectionNamesWhatItAccepts(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	f.mkdir(t, "Docs")
+
+	w := httptest.NewRecorder()
+	f.h.Put(w, request("PUT", "/files/Docs", "body", nil), f.resolve(t, "Docs"))
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("the response is %d, want 405", w.Code)
+	}
+	allow := w.Header().Get("Allow")
+	if allow == "" {
+		t.Fatal("a 405 named no alternative methods")
+	}
+	if !strings.Contains(allow, "PROPFIND") {
+		t.Errorf("Allow is %q, which does not name what a collection takes", allow)
+	}
+	if strings.Contains(allow, "PUT") {
+		t.Errorf("Allow is %q, which offers the method that was just refused", allow)
+	}
+}
+
 // If-None-Match answers 304 with no body, which is what makes a cache useful.
 func TestIfNoneMatchRevalidates(t *testing.T) {
 	t.Parallel()

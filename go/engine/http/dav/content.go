@@ -188,7 +188,7 @@ func (h *Handler) Put(w http.ResponseWriter, r *http.Request, res core.Resolved)
 		if st.Kind.IsDir() {
 			// Replacing a collection would mean removing it and everything
 			// under it, which the client did not ask for.
-			h.fail(w, r, core.ErrExists)
+			h.failAllowing(w, r, res, core.ErrExists)
 			return
 		}
 		existed = true

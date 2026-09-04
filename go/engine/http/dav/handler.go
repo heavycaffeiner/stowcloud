@@ -151,6 +151,22 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 	}
 }
 
+// failAllowing writes the refusal, and states what the resource does accept
+// when the answer is that this method is not one of them.
+//
+// A 405 without the header is incomplete: the reference client does not map
+// the status for a write, so it surfaces the reason phrase to whoever is
+// holding the phone, and neither they nor a proxy is told what the resource
+// would have taken.
+func (h *Handler) failAllowing(
+	w http.ResponseWriter, r *http.Request, res core.Resolved, err error,
+) {
+	if status, _ := StatusOf(err); status == http.StatusMethodNotAllowed {
+		w.Header().Set("Allow", h.allowFor(res))
+	}
+	h.fail(w, r, err)
+}
+
 // closing releases something whose close failure has nowhere to go.
 func (h *Handler) closing(r *http.Request, c io.Closer, what string) {
 	if err := c.Close(); err != nil {
