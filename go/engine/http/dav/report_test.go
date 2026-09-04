@@ -279,3 +279,64 @@ func TestParseReportIgnoresWhitespaceBetweenElements(t *testing.T) {
 		t.Errorf("the term carries %q, want %q", got.Leaves[0].Value, "1")
 	}
 }
+
+// Which prop set the body states first must not decide what either one is.
+//
+// One pair of variables tracks the open response set, and it is cleared when
+// that element closes. A filter's own DAV:prop opening or closing must not
+// clear it, and a response set stated after a filter must still be read as
+// one: the shapes do not fix the order, and a client that reorders them is
+// not sending a different query.
+func TestParseReportDoesNotDependOnTheOrderOfPropSets(t *testing.T) {
+	t.Parallel()
+
+	const whereClause = `<d:where><d:eq><d:prop><x:starred/></d:prop>` +
+		`<d:literal>yes</d:literal></d:eq></d:where>`
+	const selectClause = `<d:select><d:prop><d:getetag/><x:id/></d:prop></d:select>`
+
+	cases := map[string]string{
+		"search, select first": `<?xml version="1.0"?>
+<d:searchrequest xmlns:d="DAV:" xmlns:x="urn:example:query">
+  <d:basicsearch>` + selectClause + whereClause + `</d:basicsearch>
+</d:searchrequest>`,
+		"search, where first": `<?xml version="1.0"?>
+<d:searchrequest xmlns:d="DAV:" xmlns:x="urn:example:query">
+  <d:basicsearch>` + whereClause + selectClause + `</d:basicsearch>
+</d:searchrequest>`,
+		"report, prop first": `<?xml version="1.0"?>
+<x:filtered xmlns:d="DAV:" xmlns:x="urn:example:query">
+  <d:prop><d:getetag/><x:id/></d:prop>` + whereClause + `
+</x:filtered>`,
+		"report, where first": `<?xml version="1.0"?>
+<x:filtered xmlns:d="DAV:" xmlns:x="urn:example:query">
+  ` + whereClause + `<d:prop><d:getetag/><x:id/></d:prop>
+</x:filtered>`,
+	}
+
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got, err := ParseReport(strings.NewReader(body), DefaultLimits())
+			if err != nil {
+				t.Fatalf("ParseReport: %v", err)
+			}
+
+			props := namesOf(got.Props)
+			if len(props) != 2 || !has(props, "DAV: getetag") || !has(props, extNS+" id") {
+				t.Errorf("response props are %v, want the etag and the id", props)
+			}
+			leaves := leafNamesOf(got.Leaves)
+			if !has(leaves, extNS+" starred") {
+				t.Errorf("the filter term is missing; leaves=%v", leaves)
+			}
+			if has(props, extNS+" starred") {
+				t.Errorf("the filter term was read as a response property; props=%v", props)
+			}
+			for _, l := range got.Leaves {
+				if isDavName(l.Name, "literal") && l.Value != "yes" {
+					t.Errorf("the literal carries %q, want %q", l.Value, "yes")
+				}
+			}
+		})
+	}
+}

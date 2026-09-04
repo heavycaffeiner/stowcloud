@@ -57,12 +57,14 @@ type ReportBody struct {
 // can then only guess from the literal's text which one it was asked.
 //
 // stack holds the open elements, the innermost last, without the DAV:prop
-// itself.
+// itself, so its last entry is the parent. A stack of one means the parent is
+// the document element.
 func responsePropSet(stack []xml.Name) bool {
-	if len(stack) == 1 {
-		return true
+	if len(stack) == 0 {
+		return false
 	}
-	return len(stack) > 0 && isDavName(stack[len(stack)-1], "select")
+	parent := stack[len(stack)-1]
+	return len(stack) == 1 || isDavName(parent, "select")
 }
 
 // ParseReport reduces a report body to its root, its property list and its
