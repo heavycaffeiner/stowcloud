@@ -354,7 +354,7 @@ func (e *Engine) compatCreateShare(
 			expiresNs = exp
 		}
 
-		link, _, lerr := e.Core.CreateLink(ctx, r, core.LinkSpec{
+		link, tok, lerr := e.Core.CreateLink(ctx, r, core.LinkSpec{
 			Perms:    perms,
 			Password: pw,
 			Expires:  expiresNs,
@@ -364,6 +364,7 @@ func (e *Engine) compatCreateShare(
 		if lerr != nil {
 			return compat.Val{}, false, compat.ServerError(lerr.Error())
 		}
+		link.Token = &tok
 		return compat.FormatShare(e.formatLinkShare(ctx, c, link)), true, nil
 
 	case compat.ShareTypeUser, compat.ShareTypeGroup:

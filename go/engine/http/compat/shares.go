@@ -106,7 +106,7 @@ func FormatShare(s Share) Val {
 		P("stime", Int(s.CreatedS)),
 		P("parent", Empty()),
 		P("expiration", expirationVal(s.ExpiresS)),
-		P("token", optionalStr(emptyToNil(s.Token))),
+		P("token", Str(s.Token)),
 		P("uid_file_owner", Str(s.Owner)),
 		P("note", Str(s.Note)),
 		P("label", Str(s.Label)),
@@ -156,14 +156,11 @@ func FormatShare(s Share) Val {
 			P("share_with_displayname", Str("(Shared link)")),
 			P("password", password),
 			P("send_password_by_talk", Bool(false)),
-			P("url", optionalStr(emptyToNil(s.URL))),
+			P("url", Str(s.URL)),
 		)
 	}
 
 	hidden := int64(0)
-	if (s.Perms&SharePermRead != 0) && (s.Perms&SharePermAll == SharePermRead) {
-		hidden = 1
-	}
 	fields = append(fields,
 		P("mail_send", Int(0)),
 		P("hide_download", Int(hidden)),
@@ -174,25 +171,11 @@ func FormatShare(s Share) Val {
 
 func expirationVal(unixS *int64) Val {
 	if unixS == nil {
-		return Empty()
+		return Str("")
 	}
 	t := time.Unix(*unixS, 0).UTC()
 	return Str(fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d",
 		t.Year(), int(t.Month()), t.Day(), t.Hour(), t.Minute(), t.Second()))
-}
-
-func optionalStr(s *string) Val {
-	if s == nil {
-		return Empty()
-	}
-	return Str(*s)
-}
-
-func emptyToNil(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
 }
 
 // ShareRequest is a create or update request parsed from query or form.

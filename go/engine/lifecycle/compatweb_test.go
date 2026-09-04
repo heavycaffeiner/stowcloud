@@ -1247,6 +1247,9 @@ func TestNextcloudAndroidPostLoginFlow(t *testing.T) {
 	if shareCreated.OCS.Data.ID == "" {
 		t.Fatal("created share has empty ID")
 	}
+	if shareCreated.OCS.Data.URL == "" || !strings.Contains(shareCreated.OCS.Data.URL, "/s/") {
+		t.Fatalf("created share has invalid URL: %q", shareCreated.OCS.Data.URL)
+	}
 	if shareCreated.OCS.Data.Expiration == "" || strings.HasPrefix(shareCreated.OCS.Data.Expiration, "1970") {
 		t.Errorf("unexpected share expiration: %q", shareCreated.OCS.Data.Expiration)
 	}
