@@ -38,6 +38,7 @@
     e.preventDefault()
     currentError = null
     newError = null
+    formError = null
     success = false
 
     const validation = validatePasswordChange(currentPassword, newPassword, confirmPassword, MIN_LEN)
@@ -62,12 +63,13 @@
         const min = err.reasonNumber('min_length') ?? MIN_LEN
         newError = t('password.must_at_least_characters', { min })
       } else {
-        currentError = t('password.could_not_change_password_try')
+        formError = t('password.could_not_change_password_try')
       }
     } finally {
       submitting = false
     }
   }
+  let formError = $state<string | null>(null)
 </script>
 
 <form class="sc-password-form" onsubmit={submit}>
@@ -99,6 +101,9 @@
        absence, because it is believed. Signing another device out is done
        from the sessions list below, which really does it. -->
 
+  {#if formError}
+    <p class="sc-password-form__error" role="alert">{formError}</p>
+  {/if}
   {#if success}
     <p class="sc-password-form__success" role="status">{t('password.password_changed')}</p>
   {/if}
@@ -130,6 +135,11 @@
     flex: 0 0 auto;
     min-width: 48px;
     color: var(--m3c-on-surface-variant);
+    @apply --m3-body-small;
+  }
+  .sc-password-form__error {
+    margin: 0;
+    color: var(--m3c-error);
     @apply --m3-body-small;
   }
   .sc-password-form__success {

@@ -769,7 +769,6 @@
   "smb.remove_password_title": "SMB 전용 비밀번호 삭제",
   "smb.remove_reverts_to_account": "SMB는 다시 계정 비밀번호를 사용합니다.",
   "smb.remove_separate_password": "전용 비밀번호 삭제",
-  "smb.replaced_by_account_password": "SMB 전용 비밀번호를 삭제했습니다. SMB는 다시 계정 비밀번호를 사용합니다.",
   "smb.saved_but_not_applied": "여기에는 저장했습니다. {socket} 의 SMB 사이드카가 응답하지 않아 그쪽에는 아무것도 적용되지 않았습니다.",
   "smb.set_password_hint": "이 비밀번호는 SMB에서만 씁니다. 계정 비밀번호는 웹에서 계속 쓰이고, SMB에서는 더 이상 통하지 않습니다.",
   "smb.set_password_title": "SMB 전용 비밀번호 설정",

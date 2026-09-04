@@ -5,6 +5,7 @@ package lifecycle_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"image"
 	"image/color"
@@ -132,7 +133,20 @@ func thumbShare(t *testing.T, perms acl.Perms, img []byte) (base string, sess se
 func thumbnail(t *testing.T, base string, sess session, path, size string) (int, http.Header, []byte) {
 	t.Helper()
 
-	url := base + "/api/v1/files/thumbnail?path=" + urlEscape(path)
+	// The row's own preview reference, which is where a client gets it: the
+	// listing and stat seal one into every previewable file, and nothing
+	// composes a thumbnail URL out of a path any more.
+	return thumbnailClaim(t, base, sess, thumbRef(t, base, sess, path), size)
+}
+
+// thumbnailClaim fetches a thumbnail by a reference the caller supplies, for
+// the cases that drive a value the server did not mint.
+func thumbnailClaim(
+	t *testing.T, base string, sess session, claim, size string,
+) (int, http.Header, []byte) {
+	t.Helper()
+
+	url := base + "/api/v1/files/thumbnail?claim=" + urlEscape(claim)
 	if size != "" {
 		url += "&size=" + size
 	}
@@ -283,7 +297,15 @@ func TestAThumbnailNeedsTheFilesPermission(t *testing.T) {
 	}
 }
 
-// A thumbnail is not served for a path outside the share.
+// A path outside the share never becomes a reference, so there is nothing to
+// fetch a thumbnail of.
+//
+// The traversal is refused one step earlier than it used to be. The route
+// takes a sealed reference rather than a path, so a caller cannot express a
+// path at all: it can only present something the server minted, and the
+// server mints only for paths it resolved. What this checks is both halves of
+// that: the path yields no reference, and a value the server did not seal is
+// refused.
 func TestAThumbnailCannotEscapeTheShare(t *testing.T) {
 	base, sess, share, _ := thumbShare(t, everyPerm(), samplePNG(t, 64, 64))
 
@@ -292,9 +314,22 @@ func TestAThumbnailCannotEscapeTheShare(t *testing.T) {
 		"/" + share + "/%2e%2e%2f%2e%2e%2fetc%2fpasswd",
 		"/../etc/passwd",
 	} {
-		status, _, _ := thumbnail(t, base, sess, p, "")
+		status, raw := authed(t, http.MethodGet,
+			base+"/api/v1/files/stat?path="+urlEscape(p), sess)
 		if status == http.StatusOK {
-			t.Errorf("%q produced a thumbnail", p)
+			t.Errorf("%q was resolved, so a reference could be minted for it: %s", p, raw)
+		}
+	}
+
+	// And a value nobody sealed is refused, whatever it says.
+	for _, forged := range []string{
+		"not-a-claim",
+		"1.YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo",
+		urlEscape("../../etc/passwd"),
+	} {
+		status, _, _ := thumbnailClaim(t, base, sess, forged, "")
+		if status == http.StatusOK {
+			t.Errorf("a forged reference %q produced a thumbnail", forged)
 		}
 	}
 }
@@ -422,4 +457,29 @@ func TestThumbnailSettingCanBeToggledOff(t *testing.T) {
 	if statusAfter != http.StatusNotFound {
 		t.Errorf("thumbnail was served after being disabled: %d, want 404", statusAfter)
 	}
+}
+
+// thumbRef reads one row's preview reference from stat.
+//
+// An anonymous caller has no session to stat with, so it gets a value that
+// cannot open: the route has to refuse it, and refusing a well-formed claim
+// from the wrong caller is the property under test in that case.
+func thumbRef(t *testing.T, base string, sess session, path string) string {
+	t.Helper()
+	if sess.cookie == nil {
+		return "not-a-claim"
+	}
+
+	status, raw := authed(t, http.MethodGet,
+		base+"/api/v1/files/stat?path="+urlEscape(path), sess)
+	if status != http.StatusOK {
+		t.Fatalf("stat %q answered %d: %s", path, status, raw)
+	}
+	var entry struct {
+		Thumb string `json:"thumb"`
+	}
+	if err := json.Unmarshal(raw, &entry); err != nil {
+		t.Fatalf("decoding the stat of %q: %v\n%s", path, err, raw)
+	}
+	return entry.Thumb
 }

@@ -280,3 +280,42 @@ func TestCountsRunBesideWrites(t *testing.T) {
 		t.Errorf("the counts total %d, want %d", seen, writers*each)
 	}
 }
+
+// One store, one clock: a record is stamped by the store's clock and not by
+// the caller's wall clock.
+//
+// Both are the system clock in a deployment, so this is invisible there. It
+// is not invisible here, and the disagreement was a real defect rather than a
+// test inconvenience: the counting window is derived from the store's clock,
+// so a record stamped from another source can land after the window that was
+// meant to select it and vanish from the graph while the list still shows it.
+// It surfaced as a graph that intermittently lost its newest bar.
+func TestARecordIsStampedByTheStoresClock(t *testing.T) {
+	// A base nowhere near the wall clock, so a wall-clock stamp is obvious
+	// rather than plausible.
+	base := stepClockBase
+	clk := newStepClockAt(base)
+	s := open(t, logbook.Options{Clock: clk})
+
+	slog.New(s.Handler(slog.LevelDebug)).Error("failed", "subsystem", "dav")
+
+	page := query(t, s, logbook.Query{})
+	if len(page.Records) != 1 {
+		t.Fatalf("the store holds %d records", len(page.Records))
+	}
+	if got := page.Records[0].TSNs; got <= base || got > clk.peek() {
+		t.Fatalf("the record is stamped %d, which is outside the store's clock (%d..%d)",
+			got, base, clk.peek())
+	}
+
+	// And the window the same clock derives selects it, which is the property
+	// the stamp exists for.
+	buckets, _, _ := counts(t, s, logbook.Query{Subsystem: "dav", Levels: []string{"ERROR"}}, int64(time.Hour))
+	seen := 0
+	for _, b := range buckets {
+		seen += total(b)
+	}
+	if seen != 1 {
+		t.Errorf("the counts total %d, want the one record just written", seen)
+	}
+}

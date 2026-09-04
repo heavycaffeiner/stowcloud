@@ -122,8 +122,15 @@ func (e *Engine) compatDirect(
 	if err != nil {
 		return compat.Val{}, false, compat.ServerError("could not mint direct URL")
 	}
-
-	directURL := e.compatOriginOf(c) + "/remote.php/direct/" + token
+	baseOrigin := e.compatOriginOf(c)
+	if len(e.hosts().Content) > 0 {
+		scheme := "https"
+		if !c.Secure() && !e.isPeerTrusted(c) {
+			scheme = c.Protocol()
+		}
+		baseOrigin = scheme + "://" + e.hosts().Content[0]
+	}
+	directURL := baseOrigin + "/remote.php/direct/" + token
 	return compat.DirectURL(directURL), true, nil
 }
 
@@ -132,6 +139,11 @@ func (e *Engine) compatDirectStream(c *fiber.Ctx) error {
 	token := c.Params("claim")
 	if token == "" {
 		return c.SendStatus(fiber.StatusNotFound)
+	}
+	if len(e.hosts().Content) > 0 {
+		if origin, ok := c.Locals(string(middleware.KeyOrigin)).(middleware.Origin); ok && origin == middleware.OriginApp {
+			return c.SendStatus(fiber.StatusNotFound)
+		}
 	}
 
 	user, path, err := e.openDirectClaim(token)

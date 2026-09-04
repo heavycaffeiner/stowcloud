@@ -44,8 +44,9 @@ type Options struct {
 // handle is one session's part-file descriptor, opened lazily and guarded on
 // its own so a metadata write never waits for a disk write.
 type handle struct {
-	mu sync.Mutex
-	f  *vfs.File
+	mu     sync.Mutex
+	f      *vfs.File
+	active map[uint64]chan struct{}
 }
 
 // Engine is the upload state machine.
@@ -218,7 +219,7 @@ func (e *Engine) handleFor(root *vfs.ShareRoot, id SessionID, part vfs.SafePath)
 	e.handlesMu.Lock()
 	h, ok := e.handles[id]
 	if !ok {
-		h = &handle{}
+		h = &handle{active: make(map[uint64]chan struct{})}
 		e.handles[id] = h
 	}
 	e.handlesMu.Unlock()
@@ -236,6 +237,38 @@ func (e *Engine) handleFor(root *vfs.ShareRoot, id SessionID, part vfs.SafePath)
 	return f, nil
 }
 
+// lockChunk serializes concurrent writes targeting the same chunk offset within a session,
+// preventing interleaving multi-buffer pwrite calls while allowing disjoint offsets to proceed in parallel.
+func (e *Engine) lockChunk(id SessionID, off uint64) func() {
+	e.handlesMu.Lock()
+	h, ok := e.handles[id]
+	if !ok {
+		h = &handle{active: make(map[uint64]chan struct{})}
+		e.handles[id] = h
+	}
+	if h.active == nil {
+		h.active = make(map[uint64]chan struct{})
+	}
+	e.handlesMu.Unlock()
+
+	for {
+		h.mu.Lock()
+		waitCh, exists := h.active[off]
+		if !exists {
+			done := make(chan struct{})
+			h.active[off] = done
+			h.mu.Unlock()
+			return func() {
+				h.mu.Lock()
+				delete(h.active, off)
+				close(done)
+				h.mu.Unlock()
+			}
+		}
+		h.mu.Unlock()
+		<-waitCh
+	}
+}
 func (e *Engine) putHandle(id SessionID, f *vfs.File) {
 	e.handlesMu.Lock()
 	defer e.handlesMu.Unlock()

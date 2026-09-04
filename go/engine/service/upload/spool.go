@@ -36,6 +36,9 @@ func (e *Engine) PatchAt(
 	ctx context.Context, root *vfs.ShareRoot, id SessionID, user core.UserID,
 	off uint64, body io.Reader, sum *Checksum,
 ) (uint64, error) {
+	unlockChunk := e.lockChunk(id, off)
+	defer unlockChunk()
+
 	unlock := e.lockRow(id)
 	r, err := e.load(ctx, id)
 	if err != nil {

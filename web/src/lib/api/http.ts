@@ -97,9 +97,18 @@ export function setCsrfToken(t: string): void {
  */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await send(path, init)
-  const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw errorFrom(res, body)
-  return body as T
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw errorFrom(res, body)
+  }
+  try {
+    return (await res.json()) as T
+  } catch {
+    throw new ApiError(res.status, {
+      code: 'server.malformed_response',
+      message: 'The server answered with a body that could not be parsed as JSON'
+    })
+  }
 }
 
 /**
@@ -126,7 +135,8 @@ async function send(path: string, init: RequestInit): Promise<Response> {
   if (method !== 'GET' && method !== 'HEAD' && csrfToken) {
     headers.set('Sc-Csrf', csrfToken)
   }
-  return fetch(`${BASE}${path}`, { ...init, method, headers, credentials: 'include' })
+  const signal = init.signal ?? AbortSignal.timeout(30_000)
+  return fetch(`${BASE}${path}`, { ...init, method, headers, signal, credentials: 'include' })
 }
 
 /**
@@ -206,6 +216,8 @@ interface WireEntry {
   etag_weak: boolean
   perms: string[]
   preview?: { available: boolean }
+  content?: string
+  thumb?: string
 }
 
 interface WireListResponse {
@@ -238,11 +250,17 @@ function entryFromWire(w: WireEntry): Entry {
     etag: w.etag ?? '',
     etag_weak: w.etag_weak ?? false,
     perms: permsFromNames(w.perms),
-    // Dropping these two was invisible in the list, which reads neither, and
-    // total in the grid: no entry claimed a thumbnail, so no card ever asked
-    // for one and every image showed the generic type icon.
+    // Every optional field is named here, and each omission is invisible to
+    // the type checker: the app's field is optional too, so dropping one
+    // compiles and fails only on screen. Both of these have already been
+    // dropped once. `preview` and `btime_ns` went missing and every grid card
+    // showed a generic type icon, because no entry claimed a thumbnail so no
+    // card asked for one; then the two references went the same way, with the
+    // same symptom.
     ...(w.btime_ns === undefined ? {} : { btime_ns: w.btime_ns }),
-    ...(w.preview === undefined ? {} : { preview: { available: w.preview.available === true } })
+    ...(w.preview === undefined ? {} : { preview: { available: w.preview.available === true } }),
+    ...(w.content === undefined ? {} : { content: w.content }),
+    ...(w.thumb === undefined ? {} : { thumb: w.thumb })
   }
 }
 
@@ -597,16 +615,13 @@ async function archiveList(path: string): Promise<ArchiveListing> {
 }
 
 /**
- * `GET /api/v1/files/size` — one folder's recursive size, on demand.
+ * The URL for one row's preview: `GET /api/v1/files/thumbnail`, keyed by the
+ * reference that row carries.
  *
- * Deliberately not folded into `stat`, which every selection already calls:
- * a size column on a listing row would start one tree walk per row. A folder
- * containing a subtree this account is denied answers `403` with
- * `detail.reason = 'denies_below'` rather than a byte count covering data the
- * caller cannot read.
- */
-/**
- * `GET /api/v1/files/thumbnail` — the URL of a re-encoded thumbnail, by path.
+ * The claim, not the path. A grid composes one of these per visible tile, and
+ * a path the client joined itself is a path it can join wrongly: the tile then
+ * shows another file's picture, which is the least visible failure this
+ * interface has. Empty when the row has no preview to fetch.
  *
  * A URL rather than a fetch: the <img> does the loading, so nothing here holds
  * the bytes and the browser's own cache applies. Same origin, so the session
@@ -617,11 +632,31 @@ async function archiveList(path: string): Promise<ArchiveListing> {
  * into fixed boxes, and a caller naming arbitrary pixels would be asking for a
  * cache entry per layout.
  */
-function thumbUrl(path: string, dim: number): string {
+function thumbUrl(entry: Pick<Entry, 'thumb'>, dim: number): string {
+  if (!entry.thumb) return ''
   const size = dim <= 256 ? 'small' : dim <= 512 ? 'medium' : 'large'
-  return `${BASE}/files/thumbnail${qs({ path, size })}`
+  return `${BASE}/files/thumbnail${qs({ claim: entry.thumb, size })}`
 }
 
+/**
+ * The URL for one row's own bytes, inline: an `<img>`, a `<video>`, the
+ * editor's fetch. The claim, for the same reason as above. Empty on a
+ * directory, which has no bytes to serve.
+ */
+function contentUrl(entry: Pick<Entry, 'content'>): string {
+  if (!entry.content) return ''
+  return `${BASE}/files/read${qs({ claim: entry.content })}`
+}
+
+/**
+ * `GET /api/v1/files/size` — one folder's recursive size, on demand.
+ *
+ * Deliberately not folded into `stat`, which every selection already calls:
+ * a size column on a listing row would start one tree walk per row. A folder
+ * containing a subtree this account is denied answers `403` with
+ * `detail.reason = 'denies_below'` rather than a byte count covering data the
+ * caller cannot read.
+ */
 async function folderSize(path: string): Promise<FolderSize> {
   // Decimal strings, because a folder's rollup can exceed what a JavaScript
   // number holds exactly.
@@ -629,10 +664,6 @@ async function folderSize(path: string): Promise<FolderSize> {
   return { bytes: Number(w.size ?? 0), files: Number(w.count ?? 0) }
 }
 
-/**
- * `GET /api/v1/files/recent` — every file this account wrote through this server inside
- * the window, newest first. Exact: there is no walk to truncate.
- */
 /** One recent write as the wire sends it: a bare list, with the addressable
  *  path under `path` and the size as a decimal string. */
 interface WireRecent {
@@ -644,6 +675,10 @@ interface WireRecent {
   mtime_ns: string
 }
 
+/**
+ * `GET /api/v1/files/recent` — every file this account wrote through this server inside
+ * the window, newest first. Exact: there is no walk to truncate.
+ */
 async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }> {
   // `path` narrows to a subtree, which is what the server calls the scope.
   const rows = await request<WireRecent[]>(
@@ -829,13 +864,17 @@ async function shareDelete(id: number): Promise<void> {
  * and every open of the editor threw on the first byte of the file, and the
  * card showed its failure state for a file that had been read perfectly well.
  *
+ * Takes the row rather than a path, like every other byte-serving call: the
+ * editor and the preview both hold the entry they are showing, because both
+ * stat it before reading it.
+ *
  * Decoded as UTF-8 with replacement characters rather than refused, because
  * the caller is a text view: showing a file with a few replacement marks in it
  * is more use than refusing to show it at all, and the editor's own save path
  * is conditional, so nothing here can silently rewrite bytes it misread.
  */
-async function readFile(path: string): Promise<ReadFileResponse> {
-  const res = await fetch(`${BASE}/files/read${qs({ path })}`, { credentials: 'include' })
+async function readFile(entry: Pick<Entry, 'content'>): Promise<ReadFileResponse> {
+  const res = await fetch(contentUrl(entry), { credentials: 'include' })
   if (!res.ok) throw errorFrom(res, await res.json().catch(() => ({})))
   return { content: await res.text() }
 }
@@ -1072,8 +1111,11 @@ async function revokeSession(idHash: string): Promise<void> {
   await requestNoContent(`/account/sessions/${encodeURIComponent(idHash)}`, { method: 'DELETE' })
 }
 
-async function updateSmbSettings(optOut: boolean, enabled: boolean): Promise<void> {
-  await requestNoContent('/account/smb', { method: 'POST', body: JSON.stringify({ opt_out: optOut, enabled }) })
+async function updateSmbSettings(currentPassword: string, optOut: boolean, enabled: boolean): Promise<void> {
+  await requestNoContent('/account/smb', {
+    method: 'POST',
+    body: JSON.stringify({ current: currentPassword, opt_out: optOut, enabled })
+  })
 }
 
 /**
@@ -1871,6 +1913,7 @@ export const httpApi = {
   archiveList,
   folderSize,
   thumbUrl,
+  contentUrl,
   recentList,
   updateSmbSettings,
   setSmbPassword,

@@ -29,25 +29,34 @@ import (
 )
 
 // filesRead streams one file inline, for the surfaces that render bytes: the
-// editor, the previewer, an <img> src.
+// editor, the previewer, an <img> or a <video> src.
 //
-// It never sets a disposition. A download is the ticket pair below, so no
-// query parameter decides whether a response is a download and no client
-// builds a download URL out of a path it typed.
+// It takes the row's own sealed reference rather than a path. A client that
+// composes a content URL out of a path is a client that can compose it
+// wrongly, and one did: an account granted a folder inside a share joined its
+// own label onto a path that already carried it. The listing hands each row
+// the reference for its own bytes, so there is nothing left to join.
+//
+// It never sets a disposition either. A download is the ticket pair below, so
+// no query parameter decides whether a response is a download.
 func (e *Engine) filesRead(c *fiber.Ctx) error {
 	owner, ok := ownerOf(c)
 	if !ok {
 		return refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 	}
 
+	claim, ok := e.openBoundClaim(c, handler.PurposeContent, owner)
+	if !ok {
+		return fail(c, core.ErrNotFound)
+	}
+
+	// Resolved again rather than trusted from the claim: a grant revoked
+	// since the listing must refuse the bytes, not serve them on the strength
+	// of a seal minted while it still held.
+	//
 	// Download rather than Read: a drop-style grant that hands out bytes
 	// without letting the holder list the tree is a real configuration.
-	//
-	// Redundant, measured: OpenStream requires the same bit and refuses
-	// first, so weakening this to Read changes no answer. It is named here so
-	// the refusal happens before a descriptor is opened, and because the
-	// core's requirement is the core's to change.
-	r, err := e.resolve(owner, c.Query("path"), acl.Download)
+	r, err := e.resolve(owner, claim.Path, acl.Download)
 	if err != nil {
 		return fail(c, err)
 	}
@@ -229,9 +238,22 @@ func (e *Engine) sendStream(
 	// The name is quoted and escaped by the helper, and carried in the RFC 5987
 	// form as well: a header built by pasting a filename in is one a filename
 	// can break out of.
-	if attachAs != "" {
+	//
+	// When serving inline without an attachment, active content types that can
+	// execute script in a browser are forced to attachment under the file's own
+	// name to prevent stored cross-site scripting on the application origin.
+	// All inline responses additionally carry a sandboxing CSP.
+	if attachAs == "" {
+		if isExecutableMIME(contentType) {
+			attachAs = entry.Name
+			c.Set(fiber.HeaderContentDisposition, handler.ContentDisposition(attachAs))
+		} else {
+			c.Set(fiber.HeaderContentSecurityPolicy, "sandbox; default-src 'none'; base-uri 'none'; form-action 'none'")
+		}
+	} else {
 		c.Set(fiber.HeaderContentDisposition, handler.ContentDisposition(attachAs))
 	}
+	c.Set(fiber.HeaderXContentTypeOptions, "nosniff")
 
 	status := fiber.StatusOK
 	if ranged {
@@ -254,6 +276,21 @@ func (e *Engine) sendStream(
 		logger: e.logger,
 	}, int(length))
 	return nil
+}
+
+// isExecutableMIME reports whether a media type is executable by a browser as
+// active content or script.
+func isExecutableMIME(ct string) bool {
+	base, _, _ := strings.Cut(ct, ";")
+	base = strings.TrimSpace(strings.ToLower(base))
+	switch base {
+	case "text/html", "application/xhtml+xml", "image/svg+xml",
+		"text/javascript", "application/javascript", "application/x-javascript",
+		"text/ecmascript", "application/ecmascript",
+		"text/xml", "application/xml", "text/xsl", "application/xslt+xml":
+		return true
+	}
+	return false
 }
 
 // loggedStream reports a read that failed after the response was committed.
@@ -331,7 +368,7 @@ func (e *Engine) filesWrite(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeJSON(c, fiber.StatusOK, handler.EntryOf(entry, e.vpath(owner, r, entry)))
+	return writeJSON(c, fiber.StatusOK, e.entryView(owner, r, entry))
 }
 
 // ifMatchOf reads the change token a write is conditioned on.

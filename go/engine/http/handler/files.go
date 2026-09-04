@@ -44,6 +44,22 @@ type EntryView struct {
 	// re-encode it. Absent on everything else, which is what keeps a grid
 	// from requesting a thumbnail of every text file it lists.
 	Preview *PreviewView `json:"preview,omitempty"`
+
+	// Content and Thumb are the row's own opaque references to its bytes and
+	// to its preview. A client puts these in an <img> or a <video> rather
+	// than composing a URL out of the path beside them: a path a client joins
+	// is a path a client can join wrongly, and it did.
+	//
+	// Absent on a directory, and Thumb is absent on a file the decoder does
+	// not recognise.
+	Content string `json:"content,omitempty"`
+	Thumb   string `json:"thumb,omitempty"`
+}
+
+// EntryRefs are the sealed references one row carries.
+type EntryRefs struct {
+	Content string
+	Thumb   string
 }
 
 // PreviewView is the thumbnail hint for one entry.
@@ -96,7 +112,7 @@ type PageView struct {
 // listing said `Docs/readme.txt` for a file the caller has to ask for as
 // `Files/Docs/readme.txt`, so every row's own path was a 404 and download,
 // preview and stat all went through it.
-func EntryOf(e core.Entry, vpath string) EntryView {
+func EntryOf(e core.Entry, vpath string, refs EntryRefs) EntryView {
 	v := EntryView{
 		Name:     e.Name,
 		Path:     vpath,
@@ -115,14 +131,27 @@ func EntryOf(e core.Entry, vpath string) EntryView {
 	if !e.IsDir && previewable(e.Name) {
 		v.Preview = &PreviewView{Available: true}
 	}
+	v.Content, v.Thumb = refs.Content, refs.Thumb
 	return v
 }
+
+// Previewable reports whether this entry's name suggests the decoder can
+// re-encode it, which is what decides whether a row gets a thumbnail
+// reference.
+//
+// Exported because the reference is sealed outside this package, and a second
+// name table there would drift from the one the projection uses.
+func Previewable(e core.Entry) bool { return !e.IsDir && previewable(e.Name) }
 
 // PageOf projects one page of a listing.
 //
 // An empty page carries an empty list rather than null, so a client iterating
 // the entries does not have to test the field first.
-func PageOf(p core.Page, vpathOf func(core.Entry) string) PageView {
+func PageOf(
+	p core.Page,
+	vpathOf func(core.Entry) string,
+	refsOf func(core.Entry, string) EntryRefs,
+) PageView {
 	out := PageView{
 		Entries:     make([]EntryView, 0, len(p.Entries)),
 		Dirs:        p.Dirs,
@@ -135,7 +164,8 @@ func PageOf(p core.Page, vpathOf func(core.Entry) string) PageView {
 		out.Cursor = &cursor
 	}
 	for _, e := range p.Entries {
-		out.Entries = append(out.Entries, EntryOf(e, vpathOf(e)))
+		vpath := vpathOf(e)
+		out.Entries = append(out.Entries, EntryOf(e, vpath, refsOf(e, vpath)))
 	}
 	return out
 }

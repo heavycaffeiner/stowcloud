@@ -20,6 +20,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/archive"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
@@ -163,11 +165,14 @@ type Engine struct {
 
 	// The chain reads these per request, so an operator's settings change
 	// takes effect on the next request rather than at the next restart.
-	settingsMu sync.RWMutex
-	appHosts   middleware.Hosts
-	trusted    []netip.Prefix
-	csrf       []byte
-	claimKey   handler.ClaimKey
+	settingsMu    sync.RWMutex
+	appHosts      middleware.Hosts
+	trusted       []netip.Prefix
+	csrf          []byte
+	claimKey      handler.ClaimKey
+	linkLimiter   *linkLimiter
+	favCache      sync.Map
+	indexBuilding atomic.Bool
 	// The provider client, rebuilt when the settings change. Nil is off, and
 	// off is the ordinary state: a deployment without single sign-on is one
 	// where people use passwords.
@@ -535,6 +540,7 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		return fail(fmt.Errorf("generating direct claim key: %w", rerr))
 	}
 	e.claimKey = handler.ClaimKey{Version: 1, Key: claimBytes}
+	e.linkLimiter = newLinkLimiter(5*time.Minute, 10, clk.Nanos)
 
 	return e, nil
 }

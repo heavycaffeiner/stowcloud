@@ -176,17 +176,16 @@ func TestAWrongTypedListIsRefused(t *testing.T) {
 	}
 }
 
-// A proxy range covering everything lets any client claim any address through
-// a forwarded header, which decides what the limiter counts and what the audit
-// log records. Reported, not refused: it is what a deployment behind a mesh
-// with no stable range actually needs.
-func TestAProxyRangeCoveringEverythingIsReportedNotRefused(t *testing.T) {
+// A range covering 0.0.0.0/0 is refused: treating all network peers as trusted
+// proxies allows external callers to spoof client addresses and access private
+// or emergency endpoints.
+func TestAProxyRangeCoveringEverythingIsRefused(t *testing.T) {
 	got := Section(Input{
 		Section: "network",
 		Body:    map[string]any{"trusted_proxies": []any{"0.0.0.0/0"}},
 	})
-	if f := mustFind(t, got, keyProxyIsEverything); f.Blocking {
-		t.Error("a wide proxy range refused the save")
+	if f := mustFind(t, got, keyProxyIsEverything); !f.Blocking {
+		t.Error("a wide proxy range must refuse the save")
 	}
 }
 

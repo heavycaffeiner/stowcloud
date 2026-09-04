@@ -57,6 +57,24 @@ func (s *Service) Login(
 		return Session{}, err
 	}
 
+	// An account linked to an external single sign-on provider has its local
+	// password disabled: the provider is the credential that replaced it.
+	// Burn a decoy to prevent timing oracles.
+	if acct.PwHash == "" {
+		if derr := s.burnDecoy(ctx, req.Password); derr != nil {
+			return Session{}, derr
+		}
+		s.recordLoginFailure(ctx, &acct.ID, req)
+		return Session{}, ErrCredentials
+	}
+	if link, lerr := s.store.OIDCLinkOf(ctx, acct.ID); lerr == nil && link.Issuer != "" {
+		if derr := s.burnDecoy(ctx, req.Password); derr != nil {
+			return Session{}, derr
+		}
+		s.recordLoginFailure(ctx, &acct.ID, req)
+		return Session{}, ErrCredentials
+	}
+
 	ok, stale, err := s.Verify(ctx, acct.PwHash, req.Password)
 	if err != nil {
 		return Session{}, err
@@ -195,6 +213,25 @@ func (s *Service) VerifyPassword(ctx context.Context, name string, pw secret.Sec
 	}
 	if err != nil {
 		return Principal{}, err
+	}
+
+	if acct.PwHash == "" {
+		if derr := s.burnDecoy(ctx, pw); derr != nil {
+			return Principal{}, derr
+		}
+		if keyed {
+			s.cache.credStore(key, Outcome{}, gen)
+		}
+		return Principal{}, ErrCredentials
+	}
+	if link, lerr := s.store.OIDCLinkOf(ctx, acct.ID); lerr == nil && link.Issuer != "" {
+		if derr := s.burnDecoy(ctx, pw); derr != nil {
+			return Principal{}, derr
+		}
+		if keyed {
+			s.cache.credStore(key, Outcome{}, gen)
+		}
+		return Principal{}, ErrCredentials
 	}
 
 	ok, _, err := s.Verify(ctx, acct.PwHash, pw)

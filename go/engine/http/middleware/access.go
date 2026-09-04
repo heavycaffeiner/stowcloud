@@ -50,6 +50,16 @@ type AccessEvent struct {
 	// Credential names the kind that proved it, never the value.
 	Principal  int64
 	Credential CredentialKind
+
+	// Cause is the error text behind a 5xx, and empty for everything else.
+	//
+	// A refusal is the client's own doing and the status plus the body it
+	// already received describe it. A failure is this server's, and the
+	// message is the only record of what went wrong: a thumbnail answering
+	// 500 with nothing written anywhere leaves an operator with a status
+	// code and no next step. Measured: a decoder worker died on a new
+	// kernel and the log said "the request failed" and nothing else.
+	Cause string
 }
 
 // AccessSink receives the lines. Implemented by whatever writes them.
@@ -98,14 +108,19 @@ func RedactPath(path string) string {
 // Named arguments for the same reason the audit record has them: a field is
 // added by an edit here that shows up in a diff, not by a general rule that
 // copies whatever the request happened to carry.
+//
+// cause is read only for a 5xx. Below that the status is the whole story and
+// the error text is one the client already holds, so recording it would put
+// the same sentence in two places and grow the line on the common path.
 func AccessRecordFor(
 	trace, method, routeName, path string,
 	status int,
 	took time.Duration,
 	client netip.Addr,
 	principal Principal,
+	cause error,
 ) AccessEvent {
-	return AccessEvent{
+	e := AccessEvent{
 		Trace:      trace,
 		Method:     method,
 		Route:      routeName,
@@ -116,4 +131,8 @@ func AccessRecordFor(
 		Principal:  principal.UserID,
 		Credential: principal.Kind,
 	}
+	if status >= 500 && cause != nil {
+		e.Cause = cause.Error()
+	}
+	return e
 }

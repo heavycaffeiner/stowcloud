@@ -144,7 +144,11 @@
         submitting = false
         return
       }
-      await enter()
+      try {
+        await enter()
+      } catch {
+        doneButLoginFailed = true
+      }
     } catch (err) {
       errorMsg = messageFor(err)
     } finally {

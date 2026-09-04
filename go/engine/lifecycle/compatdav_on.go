@@ -18,6 +18,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -107,12 +108,11 @@ func (e *Engine) davVendorProps() func(
 		var dirSize *uint64
 		for _, w := range want {
 			if !isFav && (w.Local == "favorite" || w.Local == "is-favorite") {
-				if favs, ferr := e.State.Favorites(ctx, int64(res.User())); ferr == nil {
-					for _, f := range favs {
-						if f.Ident.Equal(entry.Ident) {
-							isFav = true
-							break
-						}
+				favs := e.favoritesOf(ctx, int64(res.User()))
+				for _, f := range favs {
+					if f.Ident.Equal(entry.Ident) {
+						isFav = true
+						break
 					}
 				}
 			}
@@ -136,6 +136,24 @@ func (e *Engine) davVendorProps() func(
 			Favorite:   isFav,
 		}, want)
 	}
+}
+
+// favoritesOf caches a user's favorites once per PROPFIND request context.
+func (e *Engine) favoritesOf(ctx context.Context, user int64) []state.Favorite {
+	if val, ok := e.favCache.Load(ctx); ok {
+		if favs, ok := val.([]state.Favorite); ok {
+			return favs
+		}
+	}
+	favs, err := e.State.Favorites(ctx, user)
+	if err != nil {
+		return nil
+	}
+	e.favCache.Store(ctx, favs)
+	context.AfterFunc(ctx, func() {
+		e.favCache.Delete(ctx)
+	})
+	return favs
 }
 
 func isPreviewable(name string) bool {

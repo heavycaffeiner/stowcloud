@@ -213,10 +213,13 @@ try {
   if (groupID !== undefined) {
     const renamed = await api('PATCH', `/api/v1/admin/groups/${groupID}`,
       { name: `e2e-renamed-${Date.now()}` }, csrf)
-    check('a group is renamed', renamed.status === 204,
+    check('a group is renamed', renamed.status === 200,
       `status ${renamed.status} ${JSON.stringify(renamed.body).slice(0, 120)}`)
-    // The rename answers no body, so the screen re-reads the list. What
-    // proves the write landed is the list, not the response.
+    check('the rename answers the group', renamed.body?.name?.startsWith('e2e-renamed-') === true,
+      JSON.stringify(renamed.body).slice(0, 160))
+    // The response is the row the screen re-renders, so the list below is a
+    // second check rather than the only one: a handler that answered success
+    // and stored nothing would pass the first and fail this.
     const afterRename = await api('GET', '/api/v1/admin/groups')
     const rows = Array.isArray(afterRename.body)
       ? afterRename.body

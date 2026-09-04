@@ -263,8 +263,9 @@ func TestEveryListedPathResolvesOnTheNextRequest(t *testing.T) {
 
 	var page struct {
 		Entries []struct {
-			Name string `json:"name"`
-			Path string `json:"path"`
+			Name    string `json:"name"`
+			Path    string `json:"path"`
+			Content string `json:"content"`
 		} `json:"entries"`
 	}
 	if err := json.Unmarshal(body, &page); err != nil {
@@ -275,18 +276,25 @@ func TestEveryListedPathResolvesOnTheNextRequest(t *testing.T) {
 	}
 
 	for _, entry := range page.Entries {
+		// The row's own reference, which is what a client uses: the listing
+		// seals one into every file it names, and nothing composes a content
+		// URL out of the path beside it.
+		if entry.Content == "" {
+			t.Errorf("the listing gave %q no content reference", entry.Name)
+			continue
+		}
 		st, rb := authed(t, http.MethodGet,
-			base+"/api/v1/files/read?path="+urlEscape(entry.Path), sess)
+			base+"/api/v1/files/read?claim="+urlEscape(entry.Content), sess)
 		if st != http.StatusOK {
-			t.Errorf("reading %q, the path the listing gave for %q, answered %d: %s",
+			t.Errorf("reading %q, the reference the listing gave for %q, answered %d: %s",
 				entry.Path, entry.Name, st, rb)
 		}
 	}
 }
 
-// Stat's path round-trips too. It is a separate projection call site, and the
-// one the details panel and the preview dialog address a file by.
-func TestStatsPathResolvesOnTheNextRequest(t *testing.T) {
+// Stat's own reference round-trips too. It is a separate projection call site,
+// and the one the details panel and the preview dialog address a file by.
+func TestStatsReferenceResolvesOnTheNextRequest(t *testing.T) {
 	base, sess, share := engineWithShare(t)
 
 	status, body := authed(t, http.MethodGet,
@@ -296,16 +304,20 @@ func TestStatsPathResolvesOnTheNextRequest(t *testing.T) {
 	}
 
 	var entry struct {
-		Path string `json:"path"`
+		Path    string `json:"path"`
+		Content string `json:"content"`
 	}
 	if err := json.Unmarshal(body, &entry); err != nil {
 		t.Fatalf("stat does not parse: %v\n%s", err, body)
 	}
+	if entry.Content == "" {
+		t.Fatalf("stat carries no content reference: %s", body)
+	}
 
 	st, rb := authed(t, http.MethodGet,
-		base+"/api/v1/files/read?path="+urlEscape(entry.Path), sess)
+		base+"/api/v1/files/read?claim="+urlEscape(entry.Content), sess)
 	if st != http.StatusOK {
-		t.Errorf("reading %q, the path stat gave, answered %d: %s", entry.Path, st, rb)
+		t.Errorf("reading the reference stat gave for %q answered %d: %s", entry.Path, st, rb)
 	}
 }
 

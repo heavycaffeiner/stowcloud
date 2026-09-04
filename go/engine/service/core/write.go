@@ -310,11 +310,19 @@ func (c *Core) deleteRecursive(ctx context.Context, r Resolved) error {
 // Stat is the one single-path read, which is why it sits beside the
 // mutations and shares their entry builder. A single named path is the
 // bounded case where minting a stable id is worth doing, which is what a
-// share-link target needs. A vanished target comes back as the skeleton
-// entry, which the caller detects by the zero kind.
+// share-link target needs.
+//
+// A path that is not there is the missing-file answer, not the skeleton row
+// the listing builder falls back to. The skeleton exists so one racing delete
+// does not fail a whole page; here the one path is the whole request, and a
+// zero-size, no-etag row describing a file that does not exist is a row a
+// client renders.
 func (c *Core) Stat(ctx context.Context, r Resolved) (Entry, error) {
 	if err := r.Require(acl.Read); err != nil {
 		return Entry{}, err
+	}
+	if _, err := r.root.Stat(r.path); err != nil {
+		return Entry{}, mapVFSErr(err)
 	}
 	return c.buildEntry(r, r.path.Name(), r.path), nil
 }

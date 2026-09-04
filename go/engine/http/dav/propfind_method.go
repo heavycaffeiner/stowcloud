@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
@@ -338,7 +339,7 @@ func (h *Handler) resolveChild(parent core.Resolved, e core.Entry) (core.Resolve
 	if err != nil {
 		return core.Resolved{}, err
 	}
-	return h.core.ResolveUnder(parent, p, 0)
+	return h.core.ResolveUnder(parent, p, acl.Read)
 }
 
 // closeMultistatus ends the document, reporting a failure it cannot answer.

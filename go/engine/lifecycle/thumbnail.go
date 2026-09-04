@@ -21,6 +21,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
@@ -49,15 +50,22 @@ func (e *Engine) filesThumbnail(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 	}
 
+	// The row's own sealed reference rather than a path. A grid composes one
+	// of these per visible tile, and a path it joined itself is a path it can
+	// join wrongly: the tile then shows another file's picture, which is the
+	// least visible failure this interface has.
+	//
 	// The same two bits the file itself needs. A thumbnail is made out of the
 	// bytes, so handing one to an account that cannot open the file hands it
 	// a downscaled copy of what it was refused.
-	//
-	// Redundant, measured: the service requires the same two bits and refuses
-	// first, so weakening this to Read alone changes no answer. It is named
-	// here so the refusal happens before a descriptor is opened, and because
-	// what the bytes require is not this handler's to decide.
-	r, err := e.resolve(owner, c.Query("path"), acl.Read|acl.Download)
+	claim, ok := e.openBoundClaim(c, handler.PurposeThumb, owner)
+	if !ok {
+		return fail(c, core.ErrNotFound)
+	}
+
+	// Resolved again rather than trusted from the claim: a grant revoked
+	// since the listing has to refuse the preview too.
+	r, err := e.resolve(owner, claim.Path, acl.Read|acl.Download)
 	if err != nil {
 		return fail(c, err)
 	}

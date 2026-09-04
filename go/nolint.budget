@@ -494,8 +494,15 @@
 # segment name this store either just generated or read back from its own
 # directory listing; nothing a request supplies reaches either call.
 #
+# 117: the durable log's graph and the access log's redaction table. G304
+# reads a variable path in the counting walk, which is a segment name from
+# this store's own directory listing, the same argument the two opens above
+# already make. gochecknoglobals reads the access log's list of path prefixes
+# whose next segment is a secret, read-only after init and the same shape as
+# the DAV method table and the compat prefix list.
+#
 # 24 (the old tree): the listener builder's close on a failed bind. errcheck
 # reads the discarded error; the bind already failed and the listener is going
 # away with it.
 24
-115
+117

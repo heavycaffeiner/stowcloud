@@ -315,7 +315,7 @@ func checkProxies(in Input) []Finding {
 		// counts and what the audit log records. An address names one host
 		// and can never be that range.
 		if p, perr := netip.ParsePrefix(entry); perr == nil && p.Bits() == 0 {
-			out = append(out, advisory(in.Section, "trusted_proxies", keyProxyIsEverything, "value", c))
+			out = append(out, blocking(in.Section, "trusted_proxies", keyProxyIsEverything, "value", c))
 		}
 	}
 	return out

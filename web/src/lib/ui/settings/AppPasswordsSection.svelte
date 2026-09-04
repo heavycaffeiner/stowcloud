@@ -92,13 +92,17 @@
     revokeTarget = p
   }
 
+  let actionError = $state<string | null>(null)
+
   function closeRevoke(): void {
     revokeTarget = null
+    actionError = null
   }
 
   async function confirmRevoke(): Promise<void> {
     if (!revokeTarget) return
     revoking = true
+    actionError = null
     try {
       await api.revokeAppPassword(revokeTarget.id)
       revokeTarget = null
@@ -109,6 +113,8 @@
       if (err instanceof ApiError && err.status === 404) {
         revokeTarget = null
         await load()
+      } else {
+        actionError = t('common.could_not_save_change')
       }
     } finally {
       revoking = false
@@ -121,11 +127,13 @@
 
   function closeWipe(): void {
     wipeTarget = null
+    actionError = null
   }
 
   async function confirmWipe(): Promise<void> {
     if (!wipeTarget) return
     wiping = true
+    actionError = null
     try {
       await api.wipeAppPassword(wipeTarget.id)
       wipeTarget = null
@@ -136,6 +144,8 @@
       if (err instanceof ApiError && err.status === 404) {
         wipeTarget = null
         await load()
+      } else {
+        actionError = t('common.could_not_save_change')
       }
     } finally {
       wiping = false
@@ -234,6 +244,9 @@
   <p>
     {t('app_password.everything_using_disconnected_at_once', { name: revokeTarget?.name ?? '' })}
   </p>
+  {#if actionError}
+    <p class="sc-app-passwords__error" role="alert">{actionError}</p>
+  {/if}
   {#snippet actions()}
     <Button variant="text" onclick={closeRevoke}>{t('common.cancel')}</Button>
     <Button variant="filled" onclick={confirmRevoke} loading={revoking}>{t('app_password.revoke_2')}</Button>
@@ -245,6 +258,9 @@
     {t('app_password.next_time_that_device_erase', { name: wipeTarget?.name ?? '' })}
   </p>
   {#snippet actions()}
+  {#if actionError}
+    <p class="sc-app-passwords__error" role="alert">{actionError}</p>
+  {/if}
     <Button variant="text" onclick={closeWipe}>{t('common.cancel')}</Button>
     <Button variant="filled" onclick={confirmWipe} loading={wiping}>{t('app_password.wipe_2')}</Button>
   {/snippet}

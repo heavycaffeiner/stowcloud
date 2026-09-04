@@ -23,24 +23,53 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// ClaimLifetime is the longest a claim stays openable.
+// ClaimLifetime is the longest an unauthenticated claim stays openable.
 //
-// Short because the claim travels in a URL, and a URL is written to browser
-// history, proxy logs and whatever the page was shared into. Five minutes is
-// enough for a page to load its thumbnails and short enough that the copy in a
-// log is useless.
+// Short because such a claim is the whole credential: it travels in a URL, and
+// a URL is written to browser history, proxy logs and whatever the page was
+// shared into. Five minutes is enough for a page to load and short enough that
+// the copy in a log is useless.
 const ClaimLifetime = 5 * time.Minute
+
+// ClaimLifetimeBound is the longest a claim that only narrows an authenticated
+// caller stays openable.
+//
+// Longer, because it is not a credential. The route that opens one refuses it
+// unless the account it names is the account already signed in, so a copy in a
+// browser history is worth nothing to anybody who does not already hold that
+// session. Long enough for a grid the reader scrolls for a while and a video
+// that seeks after twenty minutes, both of which broke at five.
+const ClaimLifetimeBound = 30 * time.Minute
 
 // ClaimPurpose is what a claim authorises. It is bound into the sealed value,
 // so a thumbnail claim cannot be opened as a download.
 type ClaimPurpose string
 
 const (
-	// PurposeThumb fetches a server-generated preview.
+	// PurposeThumb fetches a server-generated preview. Bound: the native
+	// route refuses it for any account but the one it names.
 	PurposeThumb ClaimPurpose = "thumb"
-	// PurposeDownload fetches the file's own bytes.
+	// PurposeContent fetches the file's own bytes inline, for the surfaces
+	// that render them. Bound, like PurposeThumb.
+	PurposeContent ClaimPurpose = "content"
+	// PurposeDownload fetches the file's own bytes with no session at all,
+	// which is what the compatibility layer's direct URL is.
 	PurposeDownload ClaimPurpose = "download"
 )
+
+// lifetimeOf is how long a claim for this purpose may live.
+//
+// Per purpose rather than one constant, because the two kinds are not the
+// same risk: a download claim stands alone and a bound one narrows a session
+// that already exists.
+func lifetimeOf(p ClaimPurpose) time.Duration {
+	switch p {
+	case PurposeThumb, PurposeContent:
+		return ClaimLifetimeBound
+	default:
+		return ClaimLifetime
+	}
+}
 
 // ClaimFormat is this build's claim format. It is bound into the AAD, so a
 // value written by another format cannot be opened here even under the right
@@ -95,12 +124,14 @@ func SealClaim(k ClaimKey, c Claim, nowNs int64) (string, error) {
 	if len(k.Key) != chacha20poly1305.KeySize {
 		return "", fmt.Errorf("%w: the key is %d bytes", ErrClaim, len(k.Key))
 	}
-	if c.Purpose != PurposeThumb && c.Purpose != PurposeDownload {
+	switch c.Purpose {
+	case PurposeThumb, PurposeContent, PurposeDownload:
+	default:
 		return "", fmt.Errorf("%w: %q is not a purpose", ErrClaim, c.Purpose)
 	}
 
 	c.IssuedNs = nowNs
-	c.ExpiresNs = nowNs + int64(ClaimLifetime)
+	c.ExpiresNs = nowNs + int64(lifetimeOf(c.Purpose))
 
 	plain, err := json.Marshal(c)
 	if err != nil {
@@ -180,7 +211,7 @@ func OpenClaim(keys map[uint32][]byte, want ClaimPurpose, value string, nowNs in
 	}
 	// A claim whose lifetime exceeds the bound was not minted by this server,
 	// whatever it says: the seal proves the key, and this proves the rule.
-	if c.ExpiresNs-c.IssuedNs > int64(ClaimLifetime) {
+	if c.ExpiresNs-c.IssuedNs > int64(lifetimeOf(c.Purpose)) {
 		return Claim{}, ErrClaim
 	}
 	return c, nil

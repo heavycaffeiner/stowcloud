@@ -383,3 +383,81 @@ describe('a refusal the server disguised as a missing address', () => {
     expect(authState.screen).toBe('browser')
   })
 })
+
+describe('the wire widener', () => {
+  // The widener names every field explicitly, and an omission is invisible to
+  // the type checker: the app's field is optional too, so dropping one
+  // compiles and fails only on screen. Two have already been dropped this
+  // way. `preview` went first and every grid card showed a generic type icon;
+  // then `content` and `thumb` went, with the same symptom and a broken
+  // preview dialog besides.
+  //
+  // A row's references are the only way to address its bytes, so a dropped
+  // one is not a cosmetic loss: nothing can fetch the file.
+  const wireEntry = {
+    name: 'photo.png',
+    path: 'media/photo.png',
+    kind: 'file' as const,
+    is_dir: false,
+    size: '7508',
+    mtime_ns: '1788537863904474873',
+    btime_ns: '1788537863904474000',
+    etag: 'abc',
+    etag_weak: true,
+    perms: ['read', 'download'],
+    preview: { available: true },
+    content: 'claim-for-the-bytes',
+    thumb: 'claim-for-the-preview'
+  }
+
+  it('carries every field the server sent', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, wireEntry)))
+
+    const got = await httpApi.stat('/media/photo.png')
+
+    expect(got.content).toBe('claim-for-the-bytes')
+    expect(got.thumb).toBe('claim-for-the-preview')
+    expect(got.preview?.available).toBe(true)
+    expect(got.btime_ns).toBe('1788537863904474000')
+    expect(got.size).toBe(7508)
+  })
+
+  // A listing goes through the same widener, and it is the one the grid reads.
+  it('carries them through a listing too', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          entries: [wireEntry],
+          dirs: 0,
+          total: 1,
+          dir_etag: 'd',
+          dir_etag_weak: true
+        })
+      )
+    )
+
+    const page = await httpApi.list('/media', {})
+
+    expect(page.entries[0].content).toBe('claim-for-the-bytes')
+    expect(page.entries[0].thumb).toBe('claim-for-the-preview')
+  })
+
+  // A directory carries neither, and an absent field stays absent rather than
+  // becoming an empty string: an empty src on an <img> resolves to the page
+  // itself, which renders as a broken image.
+  it('leaves an absent reference absent', async () => {
+    const { content, thumb, preview, btime_ns, ...bare } = wireEntry
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(200, { ...bare, kind: 'dir', is_dir: true }))
+    )
+
+    const got = await httpApi.stat('/media')
+
+    expect('content' in got).toBe(false)
+    expect('thumb' in got).toBe(false)
+    expect('preview' in got).toBe(false)
+    expect('btime_ns' in got).toBe(false)
+  })
+})

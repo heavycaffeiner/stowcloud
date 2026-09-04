@@ -75,6 +75,11 @@ func (a accessLog) Access(e middleware.AccessEvent) {
 	if e.Principal != 0 {
 		attrs = append(attrs, "account", e.Principal)
 	}
+	// Only a failure carries one, and a failure without it is a status code
+	// and no next step.
+	if e.Cause != "" {
+		attrs = append(attrs, "error", e.Cause)
+	}
 
 	log := a.e.log()
 	switch {

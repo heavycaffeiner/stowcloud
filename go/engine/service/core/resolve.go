@@ -207,12 +207,17 @@ func (c *Core) ResolveUnder(parent Resolved, p vfs.SafePath, need acl.Perms) (Re
 	if !parent.perms.Has(need) {
 		return Resolved{}, ErrDenied
 	}
+	at := acl.Vpath{Share: int64(parent.share), Path: aclPath(p)}
+	effective := c.acl.Effective(int64(parent.user), at) & parent.perms
+	if !effective.Has(need) {
+		return Resolved{}, ErrDenied
+	}
 	return Resolved{
 		user:  parent.user,
 		share: parent.share,
 		root:  parent.root,
 		path:  p,
-		perms: parent.perms,
+		perms: effective,
 	}, nil
 }
 

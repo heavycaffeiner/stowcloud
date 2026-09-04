@@ -70,6 +70,17 @@ export interface SymlinkInfo {
 
 export interface Entry {
   name: string
+  /** The row's own opaque reference to its bytes, and to its preview. Put
+   *  these in an `<img>` or a `<video>` src through `api.contentUrl` and
+   *  `api.thumbUrl`; never compose a content URL out of `path`. A client that
+   *  joined one itself joined it wrongly, and an account granted a folder
+   *  inside a share saw its own label twice.
+   *
+   *  `content` is absent on a directory. `thumb` is absent on a file the
+   *  decoder does not recognise, which is what keeps a grid from asking for a
+   *  preview of every text file. */
+  content?: string
+  thumb?: string
   /** The entry's own path, as the server addresses it: `{label}/rest`. Sent
    *  on every listing row, and what the read and stat endpoints take. The
    *  type omitted it while the server had always sent it, so the client

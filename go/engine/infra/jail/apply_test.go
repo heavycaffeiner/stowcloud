@@ -4,6 +4,7 @@ package jail
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -138,6 +139,45 @@ func TestAReexecedImageInheritsTheDomain(t *testing.T) {
 	}
 	if f.seccompCalls != 1 {
 		t.Errorf("seccomp ran %d times, want 1", f.seccompCalls)
+	}
+}
+
+// The domain grants the two paths the hardening sequence itself needs.
+//
+// Both fail far from where they are assembled. Without the binary's own path
+// the re-exec dies with EACCES at startup; without /dev/null every thumbnail
+// answers 500, because os/exec opens it for the decoder worker's stdio and
+// the request never names it.
+func TestTheDomainGrantsWhatTheSequenceItselfNeeds(t *testing.T) {
+	grants := mandatoryGrants("/usr/bin/whatever")
+
+	byPath := make(map[string]uint64, len(grants))
+	for _, g := range grants {
+		byPath[g.Path] = g.Access
+	}
+
+	self, ok := byPath["/usr/bin/whatever"]
+	if !ok {
+		t.Fatal("the binary's own path is not granted, so the re-exec cannot run")
+	}
+	if self&unix.LANDLOCK_ACCESS_FS_EXECUTE == 0 || self&unix.LANDLOCK_ACCESS_FS_READ_FILE == 0 {
+		t.Errorf("the binary is granted %#x, which does not cover reading and executing it", self)
+	}
+
+	// Skipped only on a host with no /dev/null, which this one has.
+	if _, serr := os.Stat(os.DevNull); serr != nil {
+		t.Skipf("this host has no %s", os.DevNull)
+	}
+	null, ok := byPath[os.DevNull]
+	if !ok {
+		t.Fatalf("%s is not granted, so no worker can be spawned", os.DevNull)
+	}
+	if null&unix.LANDLOCK_ACCESS_FS_READ_FILE == 0 || null&unix.LANDLOCK_ACCESS_FS_WRITE_FILE == 0 {
+		t.Errorf("%s is granted %#x, which does not cover both stdio directions", os.DevNull, null)
+	}
+	// And nothing more than the two directions: it is a discard, not a share.
+	if null&^discardDevice != 0 {
+		t.Errorf("%s is granted %#x, beyond reading and writing it", os.DevNull, null)
 	}
 }
 

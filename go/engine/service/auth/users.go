@@ -76,11 +76,10 @@ func (s *Service) createAccount(
 }
 
 // SetPassword rehashes, re-derives and re-seals the file-sharing credential,
-// invalidates every cached decision and republishes.
+// invalidates every cached decision, terminates all active sessions, and republishes.
 //
-// Sessions survive: a session is not a credential, and signing somebody out
-// of every device because they changed their own password is a surprise
-// rather than a security property.
+// Active sessions are terminated: a stolen session must not survive changing the
+// credential that authorized it.
 func (s *Service) SetPassword(ctx context.Context, userID int64, newPW secret.Secret) error {
 	if newPW.Len() < MinPasswordLen {
 		return ErrWeakPassword
@@ -97,6 +96,9 @@ func (s *Service) SetPassword(ctx context.Context, userID int64, newPW secret.Se
 		if errors.Is(err, state.ErrNoSuchAccount) {
 			return ErrCredentials
 		}
+		return err
+	}
+	if _, err := s.store.DeleteSessionsOf(ctx, userID); err != nil {
 		return err
 	}
 	s.bumpGeneration()

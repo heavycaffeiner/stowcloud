@@ -271,7 +271,7 @@ func (c *Core) walkArchive(ctx context.Context, r Resolved, rel string, visit fu
 		if jerr != nil {
 			continue
 		}
-		child, cerr := c.ResolveUnder(r, childPath, acl.Read)
+		child, cerr := c.ResolveUnder(r, childPath, 0)
 		if cerr != nil {
 			continue
 		}

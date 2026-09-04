@@ -15,14 +15,17 @@ package lifecycle
 import (
 	"bufio"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"github.com/gofiber/fiber/v2"
 	"io"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
-
-	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/archive"
@@ -84,23 +87,110 @@ func linkCookie(id int64) string {
 	return "sc_link_" + strconv.FormatInt(id, 10)
 }
 
-// linkUnlocked re-checks the password the visitor answered earlier.
+// linkUnlocked verifies the HMAC unlock ticket against the stored password hash.
 //
-// The cookie carries the password itself and is verified on every request
-// rather than trusted as a ticket. That keeps revocation immediate: changing
-// a link's password locks out the cookies already issued for it, with no
-// server-side list of open sessions to hunt through and expire.
+// Storing an HMAC ticket bound to the stored password hash avoids storing plaintext
+// passwords in cookies and prevents Argon2id permit exhaustion on subsequent requests.
+// Changing a link's password changes its stored hash, immediately invalidating all
+// outstanding tickets.
 func (e *Engine) linkUnlocked(c *fiber.Ctx, link core.Link) bool {
-	raw := c.Cookies(linkCookie(link.ID))
-	if raw == "" {
+	if !link.HasPassword {
+		return true
+	}
+	ticket := c.Cookies(linkCookie(link.ID))
+	if ticket == "" {
 		return false
 	}
-	plain, derr := base64.RawURLEncoding.DecodeString(raw)
-	if derr != nil {
+	hash, err := e.State.PasswordHash(c.UserContext(), link.ID)
+	if err != nil || hash == nil {
 		return false
 	}
-	ok, cerr := e.Core.LinkCheckPassword(c.UserContext(), link, string(plain))
-	return cerr == nil && ok
+	return verifyLinkTicket(e.claimKey.Key, link.ID, *hash, ticket, e.clk().Nanos())
+}
+
+func linkTicket(key []byte, linkID int64, storedHash string, expiresNs int64) string {
+	mac := hmac.New(sha256.New, key)
+	if _, err := fmt.Fprintf(mac, "%d:%s:%d", linkID, storedHash, expiresNs); err != nil {
+		return ""
+	}
+	sig := mac.Sum(nil)
+	payload := fmt.Sprintf("%d.%s", expiresNs, base64.RawURLEncoding.EncodeToString(sig))
+	return base64.RawURLEncoding.EncodeToString([]byte(payload))
+}
+
+func verifyLinkTicket(key []byte, linkID int64, storedHash string, rawTicket string, nowNs int64) bool {
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(rawTicket)
+	if err != nil {
+		return false
+	}
+	parts := strings.SplitN(string(payloadBytes), ".", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	expiresNs, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || expiresNs <= nowNs {
+		return false
+	}
+	gotSig, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return false
+	}
+	mac := hmac.New(sha256.New, key)
+	if _, err := fmt.Fprintf(mac, "%d:%s:%d", linkID, storedHash, expiresNs); err != nil {
+		return false
+	}
+	expectedSig := mac.Sum(nil)
+	return hmac.Equal(gotSig, expectedSig)
+}
+
+// linkLimiter enforces a sliding-window attempt budget on link unlocks.
+type linkLimiter struct {
+	mu     sync.Mutex
+	window time.Duration
+	max    int
+	now    func() int64
+	k      map[string]*linkLimitBucket
+	ord    []string
+}
+
+type linkLimitBucket struct {
+	count int
+	reset int64
+}
+
+const linkLimiterKeys = 65536
+
+func newLinkLimiter(window time.Duration, maxAttempts int, now func() int64) *linkLimiter {
+	return &linkLimiter{
+		window: window,
+		max:    maxAttempts,
+		now:    now,
+		k:      make(map[string]*linkLimitBucket),
+	}
+}
+
+func (l *linkLimiter) Allow(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := l.now()
+	b, ok := l.k[key]
+	if !ok || now >= b.reset {
+		if !ok {
+			if len(l.ord) >= linkLimiterKeys {
+				delete(l.k, l.ord[0])
+				l.ord = l.ord[1:]
+			}
+			l.ord = append(l.ord, key)
+		}
+		l.k[key] = &linkLimitBucket{count: 1, reset: now + l.window.Nanoseconds()}
+		return true
+	}
+	if b.count >= l.max {
+		return false
+	}
+	b.count++
+	return true
 }
 
 // linkLanding answers GET /s/{token}.
@@ -185,6 +275,12 @@ func (e *Engine) linkUnlock(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 
+	ip := c.IP()
+	limiterKey := ip + "/" + strconv.FormatInt(link.ID, 10)
+	if e.linkLimiter != nil && !e.linkLimiter.Allow(limiterKey) {
+		return refuse(c, apierr.Classified{Class: apierr.RateLimited, Key: "auth.rate_limited"})
+	}
+
 	var req struct {
 		Password string `json:"password"`
 	}
@@ -197,12 +293,35 @@ func (e *Engine) linkUnlock(c *fiber.Ctx) error {
 		return fail(c, cerr)
 	}
 	if !ok {
+		if e.Auth != nil {
+			if aerr := e.Auth.Audit(c.UserContext(), nil, "link.unlock", fmt.Sprintf("link:%d", link.ID), ip, c.Get(fiber.HeaderUserAgent), false); aerr != nil {
+				e.logger.Warn("recording link unlock failure to audit log failed", "error", aerr)
+			}
+		}
 		return refuse(c, linkPasswordRefusal())
 	}
 
+	if e.Auth != nil {
+		if aerr := e.Auth.Audit(c.UserContext(), nil, "link.unlock", fmt.Sprintf("link:%d", link.ID), ip, c.Get(fiber.HeaderUserAgent), true); aerr != nil {
+			e.logger.Warn("recording link unlock success to audit log failed", "error", aerr)
+		}
+	}
+	hash, herr := e.State.PasswordHash(c.UserContext(), link.ID)
+	if herr != nil || hash == nil {
+		return fail(c, core.ErrNotFound)
+	}
+
+	now := e.clk().Nanos()
+	expiresNs := now + int64(24*time.Hour)
+	if link.Expires > 0 && link.Expires < expiresNs {
+		expiresNs = link.Expires
+	}
+
+	ticket := linkTicket(e.claimKey.Key, link.ID, *hash, expiresNs)
+
 	c.Cookie(&fiber.Cookie{
 		Name:  linkCookie(link.ID),
-		Value: base64.RawURLEncoding.EncodeToString([]byte(req.Password)),
+		Value: ticket,
 		// Scoped to this link, so unlocking one sends the proof nowhere else.
 		Path:     PublicLinkPrefix + "/" + c.Params("token"),
 		HTTPOnly: true,

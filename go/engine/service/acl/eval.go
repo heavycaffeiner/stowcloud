@@ -177,6 +177,11 @@ func (e *Evaluator) evaluateLocked(user, share int64, path Path, want Perms) Dec
 			if g := findAnyAllow(level); g != nil {
 				return Decision{Allowed: true, By: g.ID}
 			}
+			for i := range level {
+				if !level[i].Deny.IsEmpty() {
+					return Decision{Allowed: false, By: 0}
+				}
+			}
 			continue
 		}
 		for i := range level {
@@ -250,10 +255,6 @@ func findDeny(level []Grant, want Perms) *Grant {
 	return nil
 }
 
-// findAnyAllow returns the first rule at this level that grants anything.
-//
-// For the ask that names no permission. A deny-only rule is not an answer to
-// it: it withholds a bit, it does not say the path is reachable.
 func findAnyAllow(level []Grant) *Grant {
 	for i := range level {
 		if !level[i].Allow.IsEmpty() {

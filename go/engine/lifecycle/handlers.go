@@ -138,6 +138,10 @@ func fail(c *fiber.Ctx, err error) error {
 	if errors.As(err, &full) && full.RetryAfterSeconds > 0 {
 		c.Set(fiber.HeaderRetryAfter, strconv.Itoa(full.RetryAfterSeconds))
 	}
+	// The classifier hides the message from the client on purpose. The access
+	// log still needs it: a 500 whose cause is written nowhere leaves an
+	// operator a status code and no next step.
+	middleware.SetCause(c, err)
 	return refuse(c, apierr.Classify(err, apierr.VisibilityHidden))
 }
 

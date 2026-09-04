@@ -218,7 +218,7 @@ func TestClearingASeparatePasswordReportsWhetherTheAccountPasswordTakesOver(t *t
 
 // A session is not a credential: signing somebody out of every device because
 // they changed their own password is a surprise rather than a property.
-func TestAPasswordChangeKeepsSessionsAndInvalidatesCachedDecisions(t *testing.T) {
+func TestAPasswordChangeInvalidatesSessionsAndCachedDecisions(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)
 	id := f.account(t, "alice")
@@ -235,8 +235,8 @@ func TestAPasswordChangeKeepsSessionsAndInvalidatesCachedDecisions(t *testing.T)
 	if err = f.svc.SetPassword(ctx, id, pw("the new password here")); err != nil {
 		t.Fatalf("SetPassword: %v", err)
 	}
-	if _, err = f.svc.LookupSession(ctx, sess.Token); err != nil {
-		t.Fatalf("the session did not survive a password change: %v", err)
+	if _, err = f.svc.LookupSession(ctx, sess.Token); !errors.Is(err, auth.ErrCredentials) {
+		t.Fatalf("the session survived a password change: %v", err)
 	}
 	if _, err = f.svc.VerifyPassword(ctx, "alice", pw("the new password here")); err != nil {
 		t.Fatalf("the cached refusal outlived the change: %v", err)

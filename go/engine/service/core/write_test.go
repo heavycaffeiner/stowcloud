@@ -478,15 +478,14 @@ func TestStatProjectsTheResolvedPath(t *testing.T) {
 		t.Fatalf("the stat entry is %+v", e)
 	}
 
-	// A vanished target comes back as the skeleton, detected by the zero
-	// kind rather than by an error.
+	// A vanished target is the missing-file answer. The listing builder's
+	// skeleton row exists so one racing delete does not fail a whole page;
+	// a single named path is the whole request, so there is nothing to
+	// salvage and a row describing a file that is not there is worse than
+	// the refusal.
 	missing := under(t, c, "Documents/absent.txt", acl.Read)
-	skeleton, serr := c.Stat(context.Background(), missing)
-	if serr != nil {
-		t.Fatalf("stating a missing path: %v", serr)
-	}
-	if skeleton.Kind != vfs.KindOther || skeleton.ETag != "" {
-		t.Fatalf("the skeleton entry is %+v", skeleton)
+	if _, serr := c.Stat(context.Background(), missing); !errors.Is(serr, ErrNotFound) {
+		t.Fatalf("stating a missing path = %v, want ErrNotFound", serr)
 	}
 
 	// A drop-style subtree: the caller may take the bytes but may not

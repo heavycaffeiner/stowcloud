@@ -370,8 +370,8 @@ func TestAbortingAnUpload(t *testing.T) {
 	}
 
 	// And the destination was never created.
-	if code, _, _ := download(t, base, sess, "/"+share+"/abandoned.bin", ""); code == http.StatusOK {
-		t.Error("an aborted upload left a file at its destination")
+	if code, _ := statPath(t, base, sess, "/"+share+"/abandoned.bin"); code != http.StatusNotFound {
+		t.Errorf("an aborted upload left a file at its destination: stat answered %d", code)
 	}
 }
 

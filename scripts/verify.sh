@@ -310,6 +310,32 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
   run "settingscheck (a stored setting is read)" \
       ingo_host go run ./tools/settingscheck \
         ../web/src/lib/api/types.ts ./engine/service/settings/runtimecfg/load.go
+  # And this keeps a byte-serving URL from being composed out of a path
+  # again. Both routes take the row's own sealed reference; the one client
+  # that joined a path itself joined it wrongly, and an account granted a
+  # folder inside a share saw its own label twice and every thumbnail in the
+  # grid broke. Nothing outside the API layer may name either route, and the
+  # API layer may name them only with a claim.
+  #
+  # The comment filter takes the path prefix as optional and all three
+  # openers. `grep -r` adds no prefix when the argument is one file rather
+  # than a directory, and a one-line `/** ... */` doc starts with neither `//`
+  # nor a bare `*`; between them, three doc comments read as violations.
+  no_comment() {
+    grep -vE '^([^:]+:)?[0-9]+:[[:space:]]*(//|/\*|\*)'
+  }
+  CONTENT_URL_HITS=$(
+    grep -rn 'files/\(read\|thumbnail\)' web/src \
+      --include='*.ts' --include='*.svelte' 2>/dev/null \
+      | grep -v '^web/src/lib/api/http\.ts:' | no_comment || true
+  )
+  # The API layer names them, and only with a claim.
+  CONTENT_URL_HITS="$CONTENT_URL_HITS$(
+    grep -n 'files/\(read\|thumbnail\)' web/src/lib/api/http.ts 2>/dev/null \
+      | grep -v 'claim:' | no_comment || true
+  )"
+  grep_gate "no content URL composed from a path" "$CONTENT_URL_HITS" \
+    "A row's bytes are addressed by its own reference: api.contentUrl(entry)."
   # freshscan keeps the engine's comments from being the old tree's. This keeps
   # the phase documents from describing a tree that moved on: each numbered
   # deliberate change names what it is about, and a rename leaves the prose

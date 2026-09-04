@@ -36,6 +36,11 @@ const (
 	KeyCredential contextKey = "sc.credential" //nolint:gosec // G101: a context key, not a credential.
 	// KeyTrace holds the request id.
 	KeyTrace contextKey = "sc.trace"
+	// KeyCause holds the error a handler classified into a status. A handler
+	// writes its refusal itself and returns nil, so the error is gone by the
+	// time the chain reads the status: without this a 5xx is recorded with no
+	// cause, which is a status code and no next step.
+	KeyCause contextKey = "sc.cause"
 )
 
 // Deps is what the chain needs from the rest of the process.
@@ -261,7 +266,7 @@ func auditHandler(c *fiber.Ctx, d Deps) error {
 	if d.Access != nil {
 		d.Access.Access(AccessRecordFor(
 			traceOf(c), c.Method(), name, c.Path(), status,
-			clk.Since(started), ClientOf(c), principalOf(c),
+			clk.Since(started), ClientOf(c), principalOf(c), causeOf(c, err),
 		))
 	}
 	return err
@@ -303,6 +308,27 @@ func traceOf(c *fiber.Ctx) string {
 		return v
 	}
 	return ""
+}
+
+// SetCause records the error a handler turned into a status, for the access
+// log to name on a failure. Called by the handler that classifies, since a
+// handler writes its own refusal and returns nil.
+func SetCause(c *fiber.Ctx, err error) {
+	if err != nil {
+		c.Locals(string(KeyCause), err)
+	}
+}
+
+// causeOf prefers the error the chain caught, and falls back to the one a
+// handler recorded on its way to writing a status itself.
+func causeOf(c *fiber.Ctx, err error) error {
+	if err != nil {
+		return err
+	}
+	if v, ok := c.Locals(string(KeyCause)).(error); ok {
+		return v
+	}
+	return nil
 }
 
 // bodyLimitHandler refuses a body past its route's class before a handler can

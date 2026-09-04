@@ -58,11 +58,7 @@ func RestrictAndReexec(spec Spec, marker string) error {
 		return fmt.Errorf("%w: this process has no argv to re-exec with", ErrNoProc)
 	}
 
-	// The binary's own path is granted here instead of being left to the caller.
-	// A domain lacking it causes the exec below to fail with EACCES and the
-	// process to die, and a sequence that can be assembled incorrectly in one
-	// place eventually will be.
-	spec.GrantBeneath = append(spec.GrantBeneath, Grant{Path: self, Access: readExecute})
+	spec.GrantBeneath = append(spec.GrantBeneath, mandatoryGrants(self)...)
 
 	if rerr := restrict(spec); rerr != nil {
 		return rerr
@@ -71,6 +67,29 @@ func RestrictAndReexec(spec Spec, marker string) error {
 	env := append(os.Environ(), marker+"=1")
 	// unix.Exec replaces the process image, so nothing following it executes.
 	return unix.Exec(self, os.Args, env)
+}
+
+// mandatoryGrants are the paths the sequence itself needs, granted here rather
+// than left to the caller. A sequence that can be assembled incorrectly in one
+// place eventually will be, and each of these fails somewhere far from the
+// assembly:
+//
+//   - The binary's own path. Without it the re-exec below fails with EACCES
+//     and the process dies at startup.
+//   - /dev/null, which os/exec opens for any child stream a caller left nil.
+//     The server spawns its decoder worker that way, so a domain without it
+//     answers every thumbnail 500 over a path no request named. Measured:
+//     "starting a worker: open /dev/null: permission denied". The grant
+//     confers nothing: a read gives EOF and a write is discarded.
+//
+// A host with no /dev/null is not this server's to fix and not worth refusing
+// to boot over, so the grant is skipped and a worker fails as it would have.
+func mandatoryGrants(self string) []Grant {
+	grants := []Grant{{Path: self, Access: readExecute}}
+	if _, err := os.Stat(os.DevNull); err == nil {
+		grants = append(grants, Grant{Path: os.DevNull, Access: discardDevice})
+	}
+	return grants
 }
 
 // SealDescriptors closes every descriptor above the worker's control socket.

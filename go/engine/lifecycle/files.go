@@ -51,7 +51,7 @@ func (e *Engine) filesList(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeJSON(c, fiber.StatusOK, handler.PageOf(page, e.vpathOf(owner, r)))
+	return writeJSON(c, fiber.StatusOK, handler.PageOf(page, e.vpathOf(owner, r), e.refsOf(owner)))
 }
 
 // filesStat answers one entry.
@@ -70,7 +70,7 @@ func (e *Engine) filesStat(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeJSON(c, fiber.StatusOK, handler.EntryOf(entry, e.vpath(owner, r, entry)))
+	return writeJSON(c, fiber.StatusOK, e.entryView(owner, r, entry))
 }
 
 // vpath addresses one entry the way the caller has to ask for it: the share's

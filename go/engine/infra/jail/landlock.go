@@ -102,6 +102,16 @@ func fsRights(abi int) uint64 {
 // itself, which the re-exec that makes the domain process-wide depends on.
 const readExecute = unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_EXECUTE
 
+// discardDevice covers /dev/null, which os/exec opens for a child's stdio
+// whenever the caller leaves it nil. The server spawns a decoder worker that
+// way, so a domain without this grant makes every thumbnail fail with
+// "permission denied" on a path the request never named.
+//
+// It grants nothing: a read gives EOF and a write is discarded. Reading and
+// writing both, because os/exec opens it for stdin as well as the two output
+// streams.
+const discardDevice = unix.LANDLOCK_ACCESS_FS_READ_FILE | unix.LANDLOCK_ACCESS_FS_WRITE_FILE
+
 // ReadOnly grants file reads and directory listings and nothing further. It
 // suits a path the server reads but must never write, such as the operator's own
 // configuration.

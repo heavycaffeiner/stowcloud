@@ -256,17 +256,29 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
     total: entries.length,
     dirs: entries.filter((e) => e.kind === 'dir').length,
     cursor: next < entries.length ? String(next) : null,
-    entries: page,
+    entries: page.map(withRefs),
     dir_etag: etag,
     dir_etag_weak: true
   }
+}
+
+// ── row references ──
+//
+// The server seals a row's own content and preview references into it as it
+// projects a page, and the client reads only those. The mock's reference is
+// the row's path, since there is nothing here to seal it with; what matters is
+// that it is produced at the same two places a listing and a stat produce it,
+// and read nowhere else.
+function withRefs(e: Entry): Entry {
+  if (e.kind === 'dir') return e
+  return { ...e, content: e.path.startsWith('/') ? e.path : `/${e.path}` }
 }
 
 async function stat(path: string): Promise<Entry> {
   await delay(10)
   const e = entryAt(path)
   if (!e) throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { path } })
-  return e
+  return withRefs(e)
 }
 
 function defaultPerms(): Entry['perms'] {
@@ -645,7 +657,16 @@ async function archiveList(path: string): Promise<ArchiveListing> {
  *  same tree lists. */
 /** No decoder in the mock, so every card falls back to its type icon. A data
  *  URL of a fake image would make the grid look right and prove nothing. */
-function thumbUrl(_path: string, _dim: number): string {
+// The mock runs no decoder, so a row carries no preview reference and this
+// answers nothing. An <img> with an empty src resolves to the page itself, so
+// every caller has to test the result, which is what the real client does too.
+function thumbUrl(_entry: Pick<Entry, 'thumb'>, _dim: number): string {
+  return ''
+}
+
+// The mock's own bytes are served by readFile, not by a URL, so there is no
+// content reference to hand out either.
+function contentUrl(_entry: Pick<Entry, 'content'>): string {
   return ''
 }
 
@@ -722,9 +743,15 @@ async function recentList(
 
 // ── text editor (`/edit/[...path]`) ──
 
-async function readFile(path: string): Promise<{ content: string }> {
+// The mock's reference is the path it stands for, since there is nothing here
+// to seal it with. Opaque to the caller either way: nothing outside this file
+// reads into it, which is the property the real client depends on.
+async function readFile(entry: Pick<Entry, 'content'>): Promise<{ content: string }> {
   await delay(20)
-  const n = normalizePath(path)
+  if (!entry.content) {
+    throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: {} })
+  }
+  const n = normalizePath(entry.content)
   const e = entryAt(n)
   if (!e) throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { path: n } })
   if (e.kind === 'dir') {
@@ -1218,8 +1245,11 @@ async function revokeSession(idHash: string): Promise<void> {
   }
 }
 
-async function updateSmbSettings(optOut: boolean, enabled: boolean): Promise<void> {
+async function updateSmbSettings(currentPassword: string, optOut: boolean, enabled: boolean): Promise<void> {
   await delay(30)
+  if (currentPassword !== mockAuthState.password) {
+    throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
+  }
   mockAuthState.smbOptOut = optOut
   mockAuthState.smbEnabled = enabled
 }
@@ -2682,6 +2712,7 @@ export const mockApi = {
   archiveList,
   folderSize,
   thumbUrl,
+  contentUrl,
   recentList,
   jobList,
   jobStatus,

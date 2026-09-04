@@ -58,7 +58,7 @@
         editorStore.dispatch({ type: 'LOAD_ERROR', message: t('editor.folder_cannot_opened_editor') })
         return
       }
-      const readRes = await api.readFile(p)
+      const readRes = await api.readFile(statRes)
       editorStore.dispatch({ type: 'LOAD_SUCCESS', entry: statRes, content: readRes.content })
     } catch (err) {
       editorStore.dispatch({

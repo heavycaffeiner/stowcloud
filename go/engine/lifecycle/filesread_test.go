@@ -87,7 +87,7 @@ func download(t *testing.T, base string, sess session, path, rangeHeader string)
 	t.Helper()
 
 	req, err := http.NewRequest(http.MethodGet,
-		base+"/api/v1/files/read?path="+urlEscape(path), nil)
+		base+"/api/v1/files/read?claim="+urlEscape(contentRef(t, base, sess, path)), nil)
 	if err != nil {
 		t.Fatalf("building: %v", err)
 	}
@@ -268,6 +268,67 @@ func TestADownloadTicketRefusesAnUnreachablePath(t *testing.T) {
 	}
 }
 
+// A content reference narrows a session; it never says who the session is.
+//
+// The compatibility layer's direct URL is opened with no session at all, so
+// the claim there is the whole credential. These are not that: the route
+// refuses a reference whose account is not the account already signed in.
+// Without that comparison any signed-in account could replay a reference it
+// found in a history or a screenshot and read another account's file.
+func TestAContentReferenceDoesNotCrossAccounts(t *testing.T) {
+	base, sess, share, _, e, _ := contentShareGrant(t, acl.Read|acl.Download, []byte("private"))
+	ref := contentRef(t, base, sess, "/"+share+"/doc.bin")
+
+	ctx := context.Background()
+	if _, cerr := e.Auth.CreateUser(ctx, "bob", "Bob", secret.New([]byte("another-long-password"))); cerr != nil {
+		t.Fatalf("creating the second account: %v", cerr)
+	}
+	stranger := signIn(t, base, "bob", "another-long-password")
+
+	status, body := authed(t, http.MethodGet,
+		base+"/api/v1/files/read?claim="+urlEscape(ref), stranger)
+	if status != http.StatusNotFound {
+		t.Errorf("another account read the reference: %d %s", status, body)
+	}
+
+	// And the owner's own reference still works, so the refusal above is the
+	// account comparison rather than a broken reference.
+	if code, _, _ := download(t, base, sess, "/"+share+"/doc.bin", ""); code != http.StatusOK {
+		t.Errorf("the owner's own reference answered %d", code)
+	}
+}
+
+// A value the server did not seal is refused, and so is one whose bytes were
+// changed in transit. Every refusal answers as a missing file, because telling
+// them apart tells a caller which part of a forged reference to fix.
+func TestAForgedContentReferenceIsRefused(t *testing.T) {
+	base, sess, share := contentShare(t, acl.Read|acl.Download, []byte("private"))
+	ref := contentRef(t, base, sess, "/"+share+"/doc.bin")
+
+	tampered := []rune(ref)
+	last := len(tampered) - 1
+	if tampered[last] == 'A' {
+		tampered[last] = 'B'
+	} else {
+		tampered[last] = 'A'
+	}
+
+	for name, value := range map[string]string{
+		"empty":      "",
+		"nonsense":   "not-a-claim",
+		"no version": "YWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo",
+		"tampered":   string(tampered),
+	} {
+		t.Run(name, func(t *testing.T) {
+			status, _ := authed(t, http.MethodGet,
+				base+"/api/v1/files/read?claim="+urlEscape(value), sess)
+			if status != http.StatusNotFound {
+				t.Errorf("the reference answered %d, want the missing-file answer", status)
+			}
+		})
+	}
+}
+
 // Without the parameter there is no attachment header: the same endpoint feeds
 // the text editor and the preview, which render rather than save.
 func TestAPlainReadIsNotAnAttachment(t *testing.T) {
@@ -289,7 +350,7 @@ func TestAPlainReadIsNotAnAttachment(t *testing.T) {
 func readWithQuery(t *testing.T, base string, sess session, path, extra string) (int, http.Header, []byte) {
 	t.Helper()
 
-	url := base + "/api/v1/files/read?path=" + urlEscape(path)
+	url := base + "/api/v1/files/read?claim=" + urlEscape(contentRef(t, base, sess, path))
 	if extra != "" {
 		url += "&" + extra
 	}
@@ -629,9 +690,11 @@ func TestMovingAFile(t *testing.T) {
 	}
 
 	// Both ends, because a move that copied without removing is a move that
-	// silently doubled the data.
-	if code, _, _ := download(t, base, sess, "/"+share+"/doc.bin", ""); code == http.StatusOK {
-		t.Error("the source still reads after a move")
+	// silently doubled the data. Absence is asked of stat: it is the one
+	// place a path becomes a content reference, so a path stat refuses is a
+	// path nothing can read.
+	if code, _ := statPath(t, base, sess, "/"+share+"/doc.bin"); code != http.StatusNotFound {
+		t.Errorf("the source still stats after a move: %d", code)
 	}
 	code, _, got := download(t, base, sess, "/"+share+"/sub/moved.bin", "")
 	if code != http.StatusOK {
@@ -1035,4 +1098,32 @@ func TestTheRecentLimitIsBounded(t *testing.T) {
 			t.Errorf("limit=%s returned %d rows", limit, len(hits))
 		}
 	}
+}
+
+// contentRef reads one row's own content reference, which is where a client
+// gets it: the listing and stat seal it into the row, and nothing composes a
+// content URL out of a path any more.
+func contentRef(t *testing.T, base string, sess session, path string) string {
+	t.Helper()
+
+	status, raw := statPath(t, base, sess, path)
+	if status != http.StatusOK {
+		t.Fatalf("stat %q answered %d: %s", path, status, raw)
+	}
+	var entry struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(raw, &entry); err != nil {
+		t.Fatalf("decoding the stat of %q: %v\n%s", path, err, raw)
+	}
+	if entry.Content == "" {
+		t.Fatalf("stat %q carries no content reference: %s", path, raw)
+	}
+	return entry.Content
+}
+
+// statPath asks the server about one path without requiring it to be there.
+func statPath(t *testing.T, base string, sess session, path string) (int, []byte) {
+	t.Helper()
+	return authed(t, http.MethodGet, base+"/api/v1/files/stat?path="+urlEscape(path), sess)
 }

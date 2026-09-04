@@ -151,15 +151,17 @@ func (e *Engine) adminIndexBuild(c *fiber.Ctx) error {
 	if !ok {
 		return written
 	}
-	if e.Search.HasIndex() {
-		// An index is open, so there is somewhere to build into.
-		return e.startIndexBuild(c, int64(owner))
+	if !e.Search.HasIndex() {
+		return refuse(c, apierr.Classified{
+			Class: apierr.SubsystemUnavailable, Key: "search.index_disabled",
+		})
 	}
-	// Refused rather than started: a build with no index writes nothing and
-	// would report a job that finished having done nothing at all.
-	return refuse(c, apierr.Classified{
-		Class: apierr.SubsystemUnavailable, Key: "search.index_disabled",
-	})
+	if !e.indexBuilding.CompareAndSwap(false, true) {
+		return refuse(c, apierr.Classified{
+			Class: apierr.Conflict, Key: "search.index_building",
+		})
+	}
+	return e.startIndexBuild(c, int64(owner))
 }
 
 // startIndexBuild records the job and runs the walk behind it.
@@ -168,6 +170,7 @@ func (e *Engine) startIndexBuild(c *fiber.Ctx, owner int64) error {
 	// paths and an interrupted one has none to hand back.
 	id, err := e.State.CreateOp(c.UserContext(), owner, state.OpIndexBuild, 0, e.clock.Nanos(), nil)
 	if err != nil {
+		e.indexBuilding.Store(false)
 		return failKnown(c, err)
 	}
 
@@ -182,6 +185,7 @@ func (e *Engine) startIndexBuild(c *fiber.Ctx, owner int64) error {
 	// it was handed rather than one this route spells only here.
 	op, rerr := e.Core.Operation(c.UserContext(), core.UserID(owner), core.OperationID(id))
 	if rerr != nil {
+		e.indexBuilding.Store(false)
 		return failKnown(c, rerr)
 	}
 	return writeJSON(c, fiber.StatusAccepted, handler.OperationOf(op))
@@ -189,6 +193,7 @@ func (e *Engine) startIndexBuild(c *fiber.Ctx, owner int64) error {
 
 // runIndexBuild is the walk, and the bookkeeping around it.
 func (e *Engine) runIndexBuild(ctx context.Context, id int64, sources []search.Source) {
+	defer e.indexBuilding.Store(false)
 	// The gate reads the operation row rather than a flag captured here, so a
 	// cancel reaches a build that is already running rather than only stopping
 	// one that has not started.

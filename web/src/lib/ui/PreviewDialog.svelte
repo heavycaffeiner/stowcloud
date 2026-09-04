@@ -143,17 +143,19 @@
     void (async () => {
       try {
         if (kind === 'image') {
+          // The row's own references, never a URL composed from its path: a
+          // path the client joins is a path it can join wrongly, and one did.
           const ext = extensionOf(target.name)
           if (target.preview?.available && ext !== 'svg') {
-            const url = api.thumbUrl(target.path, PREVIEW_DIM[0])
-            if (!cancelled) imageUrl = url
+            const url = api.thumbUrl(target, PREVIEW_DIM[0])
+            if (!cancelled) imageUrl = url || api.contentUrl(target)
           } else {
-            if (!cancelled) imageUrl = `/api/v1/files/read?path=${encodeURIComponent(vpath)}`
+            if (!cancelled) imageUrl = api.contentUrl(target)
           }
         } else if (kind === 'video') {
-          if (!cancelled) videoUrl = `/api/v1/files/read?path=${encodeURIComponent(vpath)}`
+          if (!cancelled) videoUrl = api.contentUrl(target)
         } else if (kind === 'text') {
-          const res = await api.readFile(vpath)
+          const res = await api.readFile(target)
           if (!cancelled) text = res.content
         } else if (kind === 'archive') {
           const res = await api.archiveList(vpath)
@@ -183,8 +185,12 @@
   })
 
   function onImageError(): void {
-    if (imageUrl && !imageUrl.includes('/api/v1/files/read')) {
-      imageUrl = `/api/v1/files/read?path=${encodeURIComponent(path)}`
+    // A preview that will not decode falls back to the file's own bytes,
+    // once. Both URLs come from the row's references, so the fallback is a
+    // different reference rather than a differently composed path.
+    const own = entry ? api.contentUrl(entry) : ''
+    if (imageUrl && own && imageUrl !== own) {
+      imageUrl = own
     } else {
       imageUrl = null
       failed = t('preview.cannot_preview')

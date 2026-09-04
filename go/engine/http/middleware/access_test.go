@@ -4,6 +4,7 @@
 package middleware
 
 import (
+	"errors"
 	"net/http/httptest"
 	"net/netip"
 	"reflect"
@@ -74,6 +75,75 @@ func TestTheAccessLineCannotHoldACredential(t *testing.T) {
 				t.Errorf("AccessEvent carries the field %s (%s)", f.Name, f.Type)
 			}
 		}
+	}
+}
+
+// A failure names its cause; a refusal does not.
+//
+// A 5xx is this server's own fault and the message is the only record of what
+// went wrong: a thumbnail answering 500 with nothing written anywhere leaves
+// an operator a status code and no next step, which is exactly what happened.
+// A 4xx is the client's doing and the status plus the body it already holds
+// describe it, so repeating the text would put one sentence in two places on
+// the common path.
+func TestOnlyAFailureRecordsItsCause(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		status int
+		want   string
+	}{
+		{"a failure", fiber.StatusInternalServerError, "the decoder worker died"},
+		{"a refusal", fiber.StatusNotFound, ""},
+		{"a success", fiber.StatusOK, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, rec := accessServer(t,
+				route.Requirement{Access: route.AccessPublic},
+				func(c *fiber.Ctx) error {
+					// The shape a handler that writes its own status has: the
+					// error is recorded and nil is returned, so the chain
+					// never sees it.
+					SetCause(c, errors.New("the decoder worker died"))
+					return c.SendStatus(tc.status)
+				})
+
+			req := httptest.NewRequest("GET", "http://app.example.test/files/read", nil)
+			if got := send(t, app, req).status; got != tc.status {
+				t.Fatalf("the request answered %d, want %d", got, tc.status)
+			}
+
+			lines := rec.all()
+			if len(lines) != 1 {
+				t.Fatalf("the request produced %d lines", len(lines))
+			}
+			if got := lines[0].Cause; got != tc.want {
+				t.Errorf("the line's cause is %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The error the chain caught wins over one a handler recorded, since it is the
+// one that actually decided the status.
+func TestTheChainsOwnErrorIsThePreferredCause(t *testing.T) {
+	app, rec := accessServer(t,
+		route.Requirement{Access: route.AccessPublic},
+		func(c *fiber.Ctx) error {
+			SetCause(c, errors.New("what the handler noticed"))
+			return errors.New("what the chain caught")
+		})
+
+	req := httptest.NewRequest("GET", "http://app.example.test/files/read", nil)
+	if got := send(t, app, req).status; got != fiber.StatusInternalServerError {
+		t.Fatalf("a returned error answered %d", got)
+	}
+
+	lines := rec.all()
+	if len(lines) != 1 {
+		t.Fatalf("the request produced %d lines", len(lines))
+	}
+	if got := lines[0].Cause; got != "what the chain caught" {
+		t.Errorf("the line's cause is %q", got)
 	}
 }
 

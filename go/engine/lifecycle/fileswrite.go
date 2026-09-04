@@ -15,7 +15,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
-	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/route"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
@@ -47,7 +46,7 @@ func (e *Engine) filesMkdir(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeJSON(c, fiber.StatusCreated, handler.EntryOf(entry, e.vpath(owner, r, entry)))
+	return writeJSON(c, fiber.StatusCreated, e.entryView(owner, r, entry))
 }
 
 // filesDelete removes one entry.
@@ -111,7 +110,7 @@ func (e *Engine) filesRename(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
-	return writeJSON(c, fiber.StatusOK, handler.EntryOf(entry, e.vpath(owner, r, entry)))
+	return writeJSON(c, fiber.StatusOK, e.entryView(owner, r, entry))
 }
 
 // decodeBody reads a JSON request body.

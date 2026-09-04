@@ -75,29 +75,50 @@
     return t('smb.unavailable_awaiting_sign_in')
   })
 
-  async function apply(nextOptOut: boolean, nextEnabled: boolean): Promise<void> {
-    saving = true
-    error = null
+  // ── toggle access switches (reconfirming with account password) ──
+  const toggleModal = createDialogStore()
+  const toggleSnap = useRunesStore(toggleModal)
+  let toggleCurrent = $state('')
+  let toggleError = $state<string | null>(null)
+  let pendingOptOut = $state(false)
+  let pendingEnabled = $state(false)
+
+  function openToggle(nextOptOut: boolean, nextEnabled: boolean): void {
+    pendingOptOut = nextOptOut
+    pendingEnabled = nextEnabled
+    toggleCurrent = ''
+    toggleError = null
+    toggleModal.open()
+  }
+
+  function closeToggle(): void {
+    toggleModal.close()
+  }
+
+  async function confirmToggle(): Promise<void> {
+    toggleError = null
+    toggleModal.submit()
     try {
-      await api.updateSmbSettings(nextOptOut, nextEnabled)
+      await api.updateSmbSettings(toggleCurrent, pendingOptOut, pendingEnabled)
+      toggleModal.succeed()
       onchanged?.()
-    } catch {
-      error = t('smb.could_not_save_setting_try')
-    } finally {
-      saving = false
+    } catch (err) {
+      toggleModal.fail('')
+      if (err instanceof ApiError && err.code === 'auth.invalid_credentials') {
+        toggleError = t('common.incorrect_password')
+      } else {
+        toggleError = t('smb.could_not_save_setting_try')
+      }
     }
   }
 
   function onToggleEnabled(checked: boolean): void {
-    void apply(optOut, checked)
+    openToggle(optOut, checked)
   }
 
   function onToggleOptOut(checked: boolean): void {
-    // Opting out removes any stored credential server-side. Publishing
-    // makes no sense on top of that, so reflect it locally too.
-    void apply(checked, checked ? false : enabled)
+    openToggle(checked, checked ? false : enabled)
   }
-
   // ── set a separate password ──
   const setModal = createDialogStore()
   const setSnap = useRunesStore(setModal)
@@ -238,6 +259,23 @@
     <Button variant="text" onclick={closeClear}>{t('common.cancel')}</Button>
     <Button variant="filled" disabled={!clearCurrent} loading={clearSnap.current.status === 'submitting'} onclick={confirmClear}>
       {t('common.remove_2')}
+    </Button>
+  {/snippet}
+</Dialog>
+
+<Dialog open={toggleSnap.current.isOpen} title={t('common.settings')} onclose={closeToggle}>
+  <p>{t('smb.set_password_hint')}</p>
+  <TextField
+    type="password"
+    label={t('common.current_password')}
+    bind:value={toggleCurrent}
+    error={toggleError}
+    autocomplete="current-password"
+  />
+  {#snippet actions()}
+    <Button variant="text" onclick={closeToggle}>{t('common.cancel')}</Button>
+    <Button variant="filled" disabled={!toggleCurrent} loading={toggleSnap.current.status === 'submitting'} onclick={confirmToggle}>
+      {t('common.save')}
     </Button>
   {/snippet}
 </Dialog>

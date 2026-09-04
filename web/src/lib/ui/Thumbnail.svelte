@@ -146,7 +146,11 @@
 
     if (isVid) {
       let cancelled = false
-      const readUrl = `/api/v1/files/read?path=${encodeURIComponent(entry.path)}`
+      const readUrl = api.contentUrl(entry)
+      if (!readUrl) {
+        url = null
+        return
+      }
       void extractVideoFrame(readUrl)
         .then((dataUrl) => {
           if (!cancelled && dataUrl) {
@@ -164,12 +168,14 @@
       }
     }
 
-    // Straight to the thumbnail route, which is same-origin and carries the
-    // session cookie, so there is nothing to mint and nothing to await: the
-    // <img> below does the fetching.
-    const next = api.thumbUrl(entry.path, dim)
-    // The mock has no decoder and answers with an empty string; an <img> with
-    // an empty src resolves to the page itself, which renders as broken.
+    // Straight to the thumbnail route with the reference this row already
+    // carries, so there is nothing to mint and nothing to await: the <img>
+    // below does the fetching. That is the property that rules out a
+    // per-tile ticket, since a grid mounts one of these per visible file.
+    const next = api.thumbUrl(entry, dim)
+    // Empty when the row carries no preview reference, and when the mock has
+    // no decoder. An <img> with an empty src resolves to the page itself,
+    // which renders as broken.
     if (!next) {
       url = null
       return
@@ -179,8 +185,10 @@
   })
 
   function onError(): void {
-    // A signed link outlives its usefulness eventually. Drop it so the next
-    // pass asks for a fresh one instead of showing a broken image forever.
+    // A reference outlives its usefulness eventually: it is sealed with a
+    // deadline, and a listing left open past it holds stale ones. Drop it so
+    // the next pass asks for a fresh one rather than showing a broken image
+    // forever.
     CACHE.delete(key)
     url = null
   }

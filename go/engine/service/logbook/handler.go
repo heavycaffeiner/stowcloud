@@ -41,13 +41,17 @@ func (h *sinkHandler) Enabled(_ context.Context, l slog.Level) bool {
 }
 
 func (h *sinkHandler) Handle(_ context.Context, r slog.Record) error {
+	// The store's own clock, not the record's. Both are the system clock in a
+	// deployment, so nothing moves; what changes is that one store has one
+	// source of time. Rotation and the counting window already read this
+	// clock, and a record stamped from somewhere else can sort against the
+	// segment it lands in and the window that selects it inconsistently: a
+	// window ending a moment before a record that was already written drops
+	// it, and the graph loses a bar the list still shows.
 	rec := Record{
-		TSNs:  r.Time.UnixNano(),
+		TSNs:  h.sink.clk.Nanos(),
 		Level: r.Level.String(),
 		Msg:   r.Message,
-	}
-	if r.Time.IsZero() {
-		rec.TSNs = h.sink.clk.Nanos()
 	}
 
 	// The handler's own attributes first, so a record's attribute of the

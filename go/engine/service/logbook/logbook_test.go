@@ -21,17 +21,28 @@ import (
 // stepClock advances a fixed amount per reading, so segment names and record
 // stamps are distinct and ordered without depending on the wall clock.
 //
-// It starts at the real epoch rather than at zero. slog stamps every record
-// with the wall clock, and a store whose notion of "now" sat at zero would
-// place every one of them a lifetime in the future, outside any window the
-// counting walk frames. The steps are fixed, so nothing here depends on the
-// absolute value.
+// The base is a fixed instant rather than the real one. It used to be the real
+// one, because slog stamped every record with the wall clock while the store
+// framed its counting window from this clock: a base anywhere else put the
+// records outside every window, and a base here that lagged the wall clock by
+// one step dropped the newest record intermittently. The store stamps records
+// from its own clock now, so both sides read this and the absolute value
+// stops mattering.
 type stepClock struct {
-	mu sync.Mutex
-	ns int64
+	mu   sync.Mutex
+	ns   int64
+	base int64
 }
 
-func newStepClock() *stepClock { return &stepClock{ns: time.Now().UnixNano()} }
+// stepClockBase is an arbitrary real instant, so a stamp taken from anywhere
+// else is obvious rather than plausible.
+const stepClockBase = int64(1_700_000_000) * 1e9
+
+func newStepClock() *stepClock { return newStepClockAt(stepClockBase) }
+
+func newStepClockAt(base int64) *stepClock {
+	return &stepClock{ns: base, base: base}
+}
 
 func (c *stepClock) Now() time.Time {
 	return time.Unix(0, c.Nanos())
@@ -45,6 +56,14 @@ func (c *stepClock) Nanos() int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.ns += int64(time.Millisecond)
+	return c.ns
+}
+
+// peek reads the clock without advancing it, for a test that has to bound
+// where a stamp could have come from.
+func (c *stepClock) peek() int64 {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	return c.ns
 }
 

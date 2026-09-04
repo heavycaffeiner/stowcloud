@@ -769,7 +769,6 @@
   "smb.remove_password_title": "Remove the separate SMB password",
   "smb.remove_reverts_to_account": "SMB will go back to your account password.",
   "smb.remove_separate_password": "Remove the separate password",
-  "smb.replaced_by_account_password": "Your separate SMB password was removed. SMB is back on your account password.",
   "smb.saved_but_not_applied": "Saved here. The SMB sidecar at {socket} did not answer, so nothing applied it over there.",
   "smb.set_password_hint": "This password is for SMB only. Your account password keeps working for the web UI and stops working over SMB.",
   "smb.set_password_title": "Set a separate SMB password",

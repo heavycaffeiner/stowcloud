@@ -45,7 +45,9 @@ func TestAClaimRoundTrips(t *testing.T) {
 	if got.Width != 256 || got.Height != 256 {
 		t.Errorf("the dimensions opened as %dx%d", got.Width, got.Height)
 	}
-	if got.ExpiresNs-got.IssuedNs != int64(ClaimLifetime) {
+	// A thumb claim only narrows a session, so it lives the longer of the two
+	// lifetimes: the route that opens one refuses it for any other account.
+	if got.ExpiresNs-got.IssuedNs != int64(ClaimLifetimeBound) {
 		t.Errorf("the lifetime is %v", time.Duration(got.ExpiresNs-got.IssuedNs))
 	}
 }
@@ -106,13 +108,58 @@ func TestAClaimExpires(t *testing.T) {
 		t.Fatalf("SealClaim: %v", err)
 	}
 
-	justBefore := claimNow + int64(ClaimLifetime) - 1
+	justBefore := claimNow + int64(ClaimLifetimeBound) - 1
 	if _, oerr := OpenClaim(keyring(k), PurposeThumb, sealed, justBefore); oerr != nil {
 		t.Fatalf("a claim inside its lifetime was refused: %v", oerr)
 	}
-	atExpiry := claimNow + int64(ClaimLifetime)
+	atExpiry := claimNow + int64(ClaimLifetimeBound)
 	if _, oerr := OpenClaim(keyring(k), PurposeThumb, sealed, atExpiry); !errors.Is(oerr, ErrClaim) {
 		t.Errorf("a claim at its expiry opened: %v", oerr)
+	}
+}
+
+// The unauthenticated purpose keeps the short lifetime. It stands alone as a
+// credential, so a copy in a log has to stop working quickly.
+func TestAnUnboundClaimExpiresSooner(t *testing.T) {
+	k := claimKey(1)
+	c := aThumb()
+	c.Purpose = PurposeDownload
+	sealed, err := SealClaim(k, c, claimNow)
+	if err != nil {
+		t.Fatalf("SealClaim: %v", err)
+	}
+
+	got, oerr := OpenClaim(keyring(k), PurposeDownload, sealed, claimNow)
+	if oerr != nil {
+		t.Fatalf("OpenClaim: %v", oerr)
+	}
+	if got.ExpiresNs-got.IssuedNs != int64(ClaimLifetime) {
+		t.Errorf("an unbound claim lives %v", time.Duration(got.ExpiresNs-got.IssuedNs))
+	}
+	atExpiry := claimNow + int64(ClaimLifetime)
+	if _, err := OpenClaim(keyring(k), PurposeDownload, sealed, atExpiry); !errors.Is(err, ErrClaim) {
+		t.Errorf("an unbound claim at its expiry opened: %v", err)
+	}
+}
+
+// A purpose is bound into the seal, so a claim minted for one route cannot be
+// spent on another.
+func TestAClaimDoesNotCrossPurposes(t *testing.T) {
+	k := claimKey(1)
+	c := aThumb()
+	c.Purpose = PurposeContent
+	sealed, err := SealClaim(k, c, claimNow)
+	if err != nil {
+		t.Fatalf("SealClaim: %v", err)
+	}
+
+	for _, other := range []ClaimPurpose{PurposeThumb, PurposeDownload} {
+		if _, oerr := OpenClaim(keyring(k), other, sealed, claimNow); !errors.Is(oerr, ErrClaim) {
+			t.Errorf("a content claim opened as %s: %v", other, oerr)
+		}
+	}
+	if _, oerr := OpenClaim(keyring(k), PurposeContent, sealed, claimNow); oerr != nil {
+		t.Errorf("a content claim did not open for its own purpose: %v", oerr)
 	}
 }
 
