@@ -3,6 +3,7 @@
 package dav
 
 import (
+	"bytes"
 	"errors"
 	"io"
 
@@ -31,17 +32,37 @@ type Leaf struct {
 	Value string
 }
 
-// ReportBody is what one report body said, in the two shapes every RFC 3253
-// report takes: the DAV:prop set naming the response properties, and the
-// elements outside it acting as filters.
+// ReportBody is what one report body said, in the two shapes a query body
+// takes: the DAV:prop set naming the response properties, and the elements
+// acting as filters.
 type ReportBody struct {
 	// Root is the document element's resolved name. The source claiming its
 	// namespace runs the query.
 	Root xml.Name
-	// Props are the DAV:prop children, the response properties asked for.
+	// Props are the response properties asked for.
 	Props []xml.Name
-	// Leaves are the filter terms outside DAV:prop, in the order they appear.
+	// Leaves are the filter terms, in the order they appear.
 	Leaves []Leaf
+}
+
+// responsePropSet reports whether a DAV:prop at this position names the
+// response properties rather than the property a filter tests.
+//
+// Both query bodies put the response set somewhere different: the RFC 3253
+// report puts DAV:prop directly under the document element, and the RFC 5323
+// search puts it under DAV:select. Everywhere else, a DAV:prop names what a
+// comparison is about, and its child is a filter term. Reading those as
+// response properties loses the term: a favourites search and a search by
+// name arrive as the same empty filter with a literal beside it, and a source
+// can then only guess from the literal's text which one it was asked.
+//
+// stack holds the open elements, the innermost last, without the DAV:prop
+// itself.
+func responsePropSet(stack []xml.Name) bool {
+	if len(stack) == 1 {
+		return true
+	}
+	return len(stack) > 0 && isDavName(stack[len(stack)-1], "select")
 }
 
 // ParseReport reduces a report body to its root, its property list and its
@@ -83,7 +104,7 @@ func ParseReport(body io.Reader, lim Limits) (ReportBody, error) {
 				stack = append(stack, t.Name)
 				continue
 			}
-			if isDavName(t.Name, "prop") && !inProp {
+			if isDavName(t.Name, "prop") && !inProp && responsePropSet(stack) {
 				inProp = true
 				propDepth = len(stack)
 				stack = append(stack, t.Name)
@@ -145,22 +166,29 @@ func ParseReport(body io.Reader, lim Limits) (ReportBody, error) {
 	return out, nil
 }
 
-// nextIsElement reports whether the scanner's next token opens an element.
+// nextIsElement reports whether the next significant token opens an element.
 //
 // The scanner reads ahead by one token, which is un-gettable, so the look is
-// recorded and the next Token call returns it. A CharData token consumes
-// nothing but the whitespace between elements, which is what a container
-// element puts there.
+// recorded and the next Token call returns it: the caller that decided on the
+// token still gets to process it. Replaying a start element does not count it
+// twice, because the accounting ran when it was first read.
+//
+// Whitespace between elements is dropped. It is a container's own text, and
+// reading it as a value makes every container in an indented body look like a
+// filter term whose value is its entire subtree.
 func nextIsElement(s *Scanner) bool {
-	tok, err := s.Token()
-	if err != nil {
-		return false
+	for {
+		tok, err := s.Token()
+		if err != nil {
+			return false
+		}
+		if chars, ok := tok.(xml.CharData); ok && len(bytes.TrimSpace(chars)) == 0 {
+			continue
+		}
+		s.pending, s.hasPending = tok, true
+		_, isStart := tok.(xml.StartElement)
+		return isStart
 	}
-	_, isStart := tok.(xml.StartElement)
-	// The token was consumed; replay it through the pending slot.
-	s.pending = tok
-	s.hasPending = !isStart
-	return isStart
 }
 
 func isDavName(n xml.Name, local string) bool {

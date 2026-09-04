@@ -12,9 +12,11 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/compat"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/search/svc"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/cache"
 	"net/http"
 	"path/filepath"
@@ -295,6 +297,84 @@ func (s *compatQuerySource) Namespaces() []string {
 	return []string{"DAV:", compat.NSOwnCloud, compat.NSNextcloudX, "http://nextcloud.com/ns"}
 }
 
+// davQuery is what a parsed filter asked for.
+//
+// A wire filter names a property and compares it against a literal. The two
+// arrive as separate terms, so the property decides which question this is
+// and the literals answer the follow-up: which media family, which name,
+// which cutoff.
+type davQuery struct {
+	favorites bool
+	media     bool
+	image     bool
+	video     bool
+	name      string
+	sinceNs   int64
+}
+
+// parseDavQuery reads the filter terms.
+//
+// Keyed on the property rather than on the literal's text, because the same
+// text means different things under different properties: a search for a file
+// named "yes" is not a request for the starred set.
+func parseDavQuery(leaves []dav.Leaf, want []xml.Name) davQuery {
+	var q davQuery
+	var literals []string
+	byName := false
+	byTime := false
+
+	for _, leaf := range leaves {
+		switch leaf.Name.Local {
+		case "favorite", "is-favorite":
+			q.favorites = true
+			// The report shape carries the answer in the term itself, and an
+			// explicit "0" asks for the unstarred set, which is not offered.
+			if leaf.Value == "0" {
+				q.favorites = false
+			}
+		case "getcontenttype":
+			q.media = true
+		case "displayname":
+			byName = true
+		case "getlastmodified":
+			byTime = true
+		case "literal":
+			literals = append(literals, leaf.Value)
+		}
+	}
+	// A property named in DAV:prop rather than as a term still selects the
+	// starred set: the report shape puts it there.
+	for _, prop := range want {
+		if prop.Local == "favorite" || prop.Local == "is-favorite" {
+			q.favorites = true
+		}
+	}
+	if q.favorites {
+		return q
+	}
+
+	for _, literal := range literals {
+		switch {
+		case q.media && strings.HasPrefix(literal, "image/"):
+			q.image = true
+		case q.media && strings.HasPrefix(literal, "video/"):
+			q.video = true
+		case byName && q.name == "":
+			q.name = strings.Trim(literal, "%")
+		case byTime && q.sinceNs == 0:
+			if t, err := time.Parse(time.RFC3339, literal); err == nil {
+				q.sinceNs = t.UnixNano()
+			}
+		}
+	}
+	// A content-type filter whose literal named neither family still asks
+	// about media, so it gets both rather than nothing.
+	if q.media && !q.image && !q.video {
+		q.image, q.video = true, true
+	}
+	return q
+}
+
 func (s *compatQuerySource) Query(
 	ctx context.Context, res core.Resolved, leaves []dav.Leaf, want []xml.Name,
 ) ([]core.Entry, error) {
@@ -303,99 +383,209 @@ func (s *compatQuerySource) Query(
 		return nil, nil
 	}
 
-	isFav := false
-	isMedia := false
-	for _, leaf := range leaves {
-		local := leaf.Name.Local
-		if local == "favorite" || local == "is-favorite" {
-			isFav = true
-			break
+	q := parseDavQuery(leaves, want)
+	switch {
+	case q.favorites:
+		return s.favoriteEntries(ctx, res, user), nil
+	case q.media:
+		return s.mediaEntries(ctx, res, user, q), nil
+	case q.name != "":
+		return s.namedEntries(ctx, res, user, q.name), nil
+	}
+	return s.recentEntries(ctx, res, user, q.sinceNs), nil
+}
+
+func (s *compatQuerySource) favoriteEntries(
+	ctx context.Context, res core.Resolved, user core.UserID,
+) []core.Entry {
+	favs, err := s.engine.State.Favorites(ctx, int64(user))
+	if err != nil {
+		return nil
+	}
+	var out []core.Entry
+	for _, f := range favs {
+		path := "/" + strings.TrimPrefix(f.Path, "/")
+		vp, perr := vfs.ParseVpath(path)
+		if perr != nil {
+			continue
 		}
-		if local == "getcontenttype" && (strings.HasPrefix(leaf.Value, "image/") || strings.HasPrefix(leaf.Value, "video/")) {
-			isMedia = true
+		r, rerr := s.engine.Core.Resolve(user, vp, acl.Read)
+		if rerr != nil {
+			continue
 		}
-		if local == "literal" {
-			if leaf.Value == "yes" || leaf.Value == "1" {
-				isFav = true
-			} else if strings.HasPrefix(leaf.Value, "image/") || strings.HasPrefix(leaf.Value, "video/") {
-				isMedia = true
-			}
+		if res.Share() != 0 && r.Share() != res.Share() {
+			continue
+		}
+		st, serr := r.Root().Stat(r.Path())
+		if serr != nil {
+			continue
+		}
+		out = append(out, s.engine.Core.EntryAt(r, st))
+	}
+	return out
+}
+
+// mediaExts are the names the gallery asks about.
+//
+// Extensions rather than sniffed types: the query has to find candidates
+// across the whole tree, and reading every file to classify it is not a
+// listing.
+func mediaExts(image, video bool) []string {
+	var out []string
+	if image {
+		out = append(out,
+			".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff",
+			".webp", ".svg", ".heic", ".heif", ".avif")
+	}
+	if video {
+		out = append(out,
+			".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v",
+			".3gp", ".mpeg", ".mpg", ".ogv", ".wmv", ".flv")
+	}
+	return out
+}
+
+func extIn(name string, exts []string) bool {
+	got := strings.ToLower(filepath.Ext(name))
+	for _, ext := range exts {
+		if got == ext {
+			return true
 		}
 	}
-	if !isFav && !isMedia {
-		for _, prop := range want {
-			if prop.Local == "favorite" || prop.Local == "is-favorite" {
-				isFav = true
+	return false
+}
+
+// mediaEntries answers a content-type filter.
+//
+// The name index supplies the candidates, because the client asks about the
+// whole subtree and a listing of the queried folder answers about one level
+// of it: a photo library keeps its photos in folders. Each extension is one
+// index query, and the real extension is checked afterwards, so a name that
+// merely contains one is not reported as media.
+func (s *compatQuerySource) mediaEntries(
+	ctx context.Context, res core.Resolved, user core.UserID, q davQuery,
+) []core.Entry {
+	wanted := mediaExts(q.image, q.video)
+	if s.engine.Search == nil {
+		// Without an index the queried scope is what can be answered
+		// cheaply. One level, and honestly one level.
+		page, err := s.engine.Core.List(ctx, res, "")
+		if err != nil {
+			return nil
+		}
+		var out []core.Entry
+		for _, entry := range page.Entries {
+			if !entry.IsDir && extIn(entry.Name, wanted) {
+				out = append(out, entry)
+			}
+		}
+		return out
+	}
+
+	sources := searchSourcesOf(s.engine.Core.UserScanSources(user), user, s.engine.Core)
+	seen := make(map[string]struct{})
+	var out []core.Entry
+	for _, ext := range wanted {
+		if len(out) >= limits.SearchResults {
+			break
+		}
+		results, err := s.engine.Search.Query(ctx, sources,
+			svc.QueryOptions{Query: ext, Limit: limits.SearchResults})
+		if err != nil {
+			continue
+		}
+		for _, hit := range results.Hits {
+			if !extIn(hit.Name, wanted) {
+				continue
+			}
+			path := "/" + strings.TrimPrefix(hit.Path, "/")
+			if _, dup := seen[path]; dup {
+				continue
+			}
+			entry, ok := s.entryAt(user, res, path)
+			if !ok {
+				continue
+			}
+			seen[path] = struct{}{}
+			out = append(out, entry)
+			if len(out) >= limits.SearchResults {
 				break
 			}
 		}
 	}
+	return out
+}
 
-	if isFav {
-		favs, err := s.engine.State.Favorites(ctx, int64(user))
-		if err != nil {
-			return nil, nil
-		}
-		var out []core.Entry
-		for _, f := range favs {
-			path := "/" + strings.TrimPrefix(f.Path, "/")
-			vp, perr := vfs.ParseVpath(path)
-			if perr != nil {
-				continue
-			}
-			r, rerr := s.engine.Core.Resolve(user, vp, acl.Read)
-			if rerr != nil {
-				continue
-			}
-			if res.Share() != 0 && r.Share() != res.Share() {
-				continue
-			}
-			st, serr := r.Root().Stat(r.Path())
-			if serr != nil {
-				continue
-			}
-			out = append(out, s.engine.Core.EntryAt(r, st))
-		}
-		return out, nil
+// namedEntries answers a display-name filter, which is the client's search
+// box: the same question the OCS unified search answers, over the same index.
+func (s *compatQuerySource) namedEntries(
+	ctx context.Context, res core.Resolved, user core.UserID, needle string,
+) []core.Entry {
+	if s.engine.Search == nil || needle == "" {
+		return nil
 	}
-
-	if isMedia {
-		page, err := s.engine.Core.List(ctx, res, "")
-		if err != nil {
-			return nil, nil
-		}
-		var out []core.Entry
-		for _, entry := range page.Entries {
-			if !entry.IsDir && isPreviewable(entry.Name) {
-				out = append(out, entry)
-			}
-		}
-		return out, nil
+	results, err := s.engine.Search.Query(ctx,
+		searchSourcesOf(s.engine.Core.UserScanSources(user), user, s.engine.Core),
+		svc.QueryOptions{Query: needle, Limit: limits.SearchResults})
+	if err != nil {
+		return nil
 	}
+	var out []core.Entry
+	for _, hit := range results.Hits {
+		entry, ok := s.entryAt(user, res, "/"+strings.TrimPrefix(hit.Path, "/"))
+		if !ok {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}
 
-	// Recent / filter-files query: list recent entries
-	now := s.engine.clk().Now()
-	since := now.Add(-14 * 24 * time.Hour).UnixNano()
+// recentEntries answers a modification-time filter, and is what an
+// unrecognised filter falls back to: the reference's own recent view.
+//
+// sinceNs of zero takes the default window, which is what a report shape with
+// no comparable literal asks for.
+func (s *compatQuerySource) recentEntries(
+	ctx context.Context, res core.Resolved, user core.UserID, sinceNs int64,
+) []core.Entry {
+	if sinceNs <= 0 {
+		sinceNs = s.engine.clk().Now().Add(-14 * 24 * time.Hour).UnixNano()
+	}
 	hits, err := s.engine.Core.Recent(ctx, user, core.RecentQuery{
-		SinceNs: since,
+		SinceNs: sinceNs,
 		Limit:   50,
 	})
-	var out []core.Entry
-	if err == nil && len(hits) > 0 {
-		for _, hit := range hits {
-			r, rerr := s.engine.resolve(user, hit.Vpath.String(), acl.Read)
-			if rerr != nil {
-				continue
-			}
-			if res.Share() != 0 && r.Share() != res.Share() {
-				continue
-			}
-			st, serr := r.Root().Stat(r.Path())
-			if serr != nil {
-				continue
-			}
-			out = append(out, s.engine.Core.EntryAt(r, st))
-		}
+	if err != nil {
+		return nil
 	}
-	return out, nil
+	var out []core.Entry
+	for _, hit := range hits {
+		entry, ok := s.entryAt(user, res, hit.Vpath.String())
+		if !ok {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+// entryAt resolves a virtual path for the caller and confines it to the
+// queried scope, which is what keeps one share's answer out of another's when
+// the root query runs a filter against every share in turn.
+func (s *compatQuerySource) entryAt(
+	user core.UserID, res core.Resolved, vpath string,
+) (core.Entry, bool) {
+	r, err := s.engine.resolve(user, vpath, acl.Read)
+	if err != nil {
+		return core.Entry{}, false
+	}
+	if res.Share() != 0 && r.Share() != res.Share() {
+		return core.Entry{}, false
+	}
+	st, serr := r.Root().Stat(r.Path())
+	if serr != nil {
+		return core.Entry{}, false
+	}
+	return s.engine.Core.EntryAt(r, st), true
 }

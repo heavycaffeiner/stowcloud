@@ -189,6 +189,192 @@ func TestCompatFavoriteToggleAndListing(t *testing.T) {
 	}
 }
 
+// Every filter kind the reference client sends, against the bodies it sends,
+// asserted on what came back rather than on the status.
+//
+// A 207 says the request was understood, not that it was answered: the photo
+// tab reading a list of recently changed text files gets exactly one status
+// code and the wrong screen. The filter's property is what selects the
+// question here, so a file named "yes" is a name and not the starred set.
+func TestCompatDavSearchAnswersEachFilterKind(t *testing.T) {
+	t.Parallel()
+	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	if openErr != nil {
+		t.Fatalf("opening engine: %v", openErr)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing engine: %v", cerr)
+		}
+	})
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	if rerr := e.Core.RegisterShare(ctx, core.ShareDef{
+		ID: 1, Name: "files", Host: dir, Policy: vfs.DefaultSharePolicy(),
+	}); rerr != nil {
+		t.Fatalf("registering share: %v", rerr)
+	}
+	uid, aerr := e.Auth.CreateAdmin(ctx, "alice", "Alice", pwOf(loginPassword))
+	if aerr != nil {
+		t.Fatalf("creating admin: %v", aerr)
+	}
+	if gerr := e.Core.GrantEveryShare(ctx, uid); gerr != nil {
+		t.Fatalf("granting: %v", gerr)
+	}
+	base := serveCompatEngine(t, e)
+	auth := davAuth(t, e, base, uid)
+
+	// A folder, so the media answer proves it reaches beyond the level the
+	// query names: a photo library keeps its photos in folders.
+	mkcol := newReq(t, "MKCOL", base+"/remote.php/webdav/files/album", nil)
+	mkcol.Header.Set("Authorization", auth)
+	mkcolResp, merr := compatClient().Do(mkcol)
+	if merr != nil || mkcolResp.StatusCode != http.StatusCreated {
+		t.Fatalf("MKCOL album: err=%v resp=%v", merr, mkcolResp)
+	}
+	closeRespBody(t, mkcolResp)
+
+	for path, content := range map[string]string{
+		"files/album/holiday.jpg": "jpeg-bytes",
+		"files/album/clip.mp4":    "mp4-bytes",
+		"files/notes.txt":         "text",
+		"files/yes":               "a file whose name is a favourite literal",
+	} {
+		put := newReq(t, http.MethodPut, base+"/remote.php/webdav/"+path, strings.NewReader(content))
+		put.Header.Set("Authorization", auth)
+		resp, perr := compatClient().Do(put)
+		if perr != nil || resp.StatusCode != http.StatusCreated {
+			t.Fatalf("PUT %s: err=%v resp=%v", path, perr, resp)
+		}
+		closeRespBody(t, resp)
+	}
+
+	// Star one file, so the favourites answer is a set of one and not a
+	// listing that happens to contain it.
+	const proppatchFav = `<?xml version="1.0"?>
+<d:propertyupdate xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <d:set><d:prop><oc:favorite>1</oc:favorite></d:prop></d:set>
+</d:propertyupdate>`
+	patch := newReq(t, "PROPPATCH", base+"/remote.php/webdav/files/notes.txt", strings.NewReader(proppatchFav))
+	patch.Header.Set("Authorization", auth)
+	patchResp, perr := compatClient().Do(patch)
+	if perr != nil || patchResp.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("PROPPATCH favourite: err=%v resp=%v", perr, patchResp)
+	}
+	closeRespBody(t, patchResp)
+
+	// The body shape NcSearchMethod builds: the response set under
+	// DAV:select, and the filter under DAV:where.
+	search := func(where string) string {
+		return `<?xml version="1.0" encoding="utf-8"?>
+<d:searchrequest xmlns:d="DAV:" xmlns:oc="http://nextcloud.com/ns">
+  <d:basicsearch>
+    <d:select><d:prop><d:getetag/><oc:id/><oc:size/></d:prop></d:select>
+    <d:from><d:scope><d:href>/files/alice</d:href><d:depth>infinity</d:depth></d:scope></d:from>
+    <d:where>` + where + `</d:where>
+  </d:basicsearch>
+</d:searchrequest>`
+	}
+	run := func(t *testing.T, body string) string {
+		t.Helper()
+		req := newReq(t, "SEARCH", base+"/remote.php/dav", strings.NewReader(body))
+		req.Header.Set("Authorization", auth)
+		req.Header.Set("Content-Type", "text/xml")
+		resp, rerr := compatClient().Do(req)
+		if rerr != nil || resp.StatusCode != http.StatusMultiStatus {
+			t.Fatalf("SEARCH: err=%v resp=%v", rerr, resp)
+		}
+		out := readAllBody(t, resp.Body)
+		closeRespBody(t, resp)
+		return string(out)
+	}
+
+	cases := []struct {
+		name  string
+		where string
+		// want and reject are name fragments the answer must and must not
+		// carry.
+		want   []string
+		reject []string
+	}{
+		{
+			name:   "favourites",
+			where:  `<d:eq><d:prop><oc:favorite/></d:prop><d:literal>yes</d:literal></d:eq>`,
+			want:   []string{"notes.txt"},
+			reject: []string{"holiday.jpg", "clip.mp4"},
+		},
+		{
+			name:   "photos",
+			where:  `<d:like><d:prop><d:getcontenttype/></d:prop><d:literal>image/%</d:literal></d:like>`,
+			want:   []string{"holiday.jpg"},
+			reject: []string{"notes.txt", "clip.mp4"},
+		},
+		{
+			name: "gallery",
+			where: `<d:or>` +
+				`<d:like><d:prop><d:getcontenttype/></d:prop><d:literal>image/%</d:literal></d:like>` +
+				`<d:like><d:prop><d:getcontenttype/></d:prop><d:literal>video/%</d:literal></d:like>` +
+				`</d:or>`,
+			want:   []string{"holiday.jpg", "clip.mp4"},
+			reject: []string{"notes.txt"},
+		},
+		{
+			name:   "by name",
+			where:  `<d:like><d:prop><d:displayname/></d:prop><d:literal>%holiday%</d:literal></d:like>`,
+			want:   []string{"holiday.jpg"},
+			reject: []string{"notes.txt", "clip.mp4"},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := run(t, search(c.where))
+			for _, want := range c.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("the answer omits %q: %s", want, got)
+				}
+			}
+			for _, unwanted := range c.reject {
+				if strings.Contains(got, unwanted) {
+					t.Errorf("the answer includes %q, which the filter excluded: %s", unwanted, got)
+				}
+			}
+		})
+	}
+
+	// A modification-time filter is the recent view, and the writes above are
+	// inside any window the client asks for.
+	recent := run(t, search(
+		`<d:gt><d:prop><d:getlastmodified/></d:prop>`+
+			`<d:literal>2020-01-01T00:00:00Z</d:literal></d:gt>`))
+	if !strings.Contains(recent, "notes.txt") {
+		t.Errorf("the recent answer omits a file just written: %s", recent)
+	}
+
+	// The favourites report shape, which carries no DAV:select at all.
+	report := newReq(t, "REPORT", base+"/remote.php/dav/files/alice//", strings.NewReader(
+		`<?xml version="1.0"?>
+<oc:filter-files xmlns:d="DAV:" xmlns:oc="http://nextcloud.org/ns">
+  <d:prop><d:getetag/></d:prop>
+  <oc:filter-rules><oc:favorite>1</oc:favorite></oc:filter-rules>
+</oc:filter-files>`))
+	report.Header.Set("Authorization", auth)
+	report.Header.Set("Content-Type", "application/xml; charset=utf-8")
+	reportResp, rerr := compatClient().Do(report)
+	if rerr != nil || reportResp.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("REPORT: err=%v resp=%v", rerr, reportResp)
+	}
+	reportBody := readAllBody(t, reportResp.Body)
+	closeRespBody(t, reportResp)
+	if !strings.Contains(string(reportBody), "notes.txt") {
+		t.Errorf("the filter-files report omits the starred file: %s", reportBody)
+	}
+	if strings.Contains(string(reportBody), "holiday.jpg") {
+		t.Errorf("the filter-files report returned an unstarred file: %s", reportBody)
+	}
+}
+
 func TestCompatSharesCRUD(t *testing.T) {
 	t.Parallel()
 	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})

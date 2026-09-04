@@ -155,6 +155,26 @@ starred set, and the DAV `oc:favorite` dead/vendor property (`0`/`1`) toggles
 the identity-backed favorite through the core seam. A tested helper with no
 live mount is not considered shipped.
 
+A query body names a property and compares it against a literal, and the
+property is what selects the question: the starred set, a media family, a
+name, or a modification cutoff. Dispatching on the literal instead makes a
+search for a file named `yes` a request for favourites, and it cannot tell a
+photo query from a video one. Both body shapes put the response property set
+somewhere different, so a `DAV:prop` counts as that set only directly under
+the document element or under `DAV:select`; anywhere else its child is the
+term a comparison tests. A filter nobody claims falls back to the recent
+view rather than to an empty answer, because an empty one teaches a client to
+show nothing.
+
+A media filter answers from the name index, so it reaches the whole subtree
+the client asked about: a photo library keeps its photos in folders, and a
+listing of the queried folder answers about one level of it. Candidates come
+from one index query per extension and the real extension is checked
+afterwards, so a name that merely contains one is not reported as media. With
+no index the queried level is what can be answered cheaply, and that is all
+it claims. A name filter is the same question the OCS unified search answers,
+over the same index.
+
 Preview endpoints never proxy bytes through the app origin. They resolve an
 id/path under the caller and redirect 302 to a private, no-store, short-lived
 `/c/{claim}` URL on the configured content host (03). Sizes default to 64 and

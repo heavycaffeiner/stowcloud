@@ -65,11 +65,14 @@ func (p *DavProps) SetProps(ctx context.Context, key dav.ResourceKey, ops []dav.
 			NS: o.NS, Name: o.Name, Value: o.Value, Remove: o.Remove,
 		})
 	}
+	// The mount prefix and nothing else. Stripping a "/dav/files/" prefix ate
+	// the first segment whenever a share was called "files", which is the
+	// name the setup form suggests: the favourite was then recorded against a
+	// path with no share in it, and the listing that resolves it found
+	// nothing.
 	favPath := ""
 	if pStr, ok := ctx.Value(keyDavPath).(string); ok {
-		favPath = strings.TrimPrefix(pStr, "/dav/files/")
-		favPath = strings.TrimPrefix(favPath, "/dav/")
-		favPath = strings.TrimPrefix(favPath, "/")
+		favPath = strings.TrimPrefix(strings.TrimPrefix(pStr, DavPrefix), "/")
 	}
 	if princ, pok := ctx.Value(middleware.KeyCredential).(middleware.Principal); pok && princ.UserID != 0 {
 		for _, o := range ops {

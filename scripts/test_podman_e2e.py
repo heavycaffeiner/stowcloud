@@ -446,6 +446,69 @@ def main():
         with urllib.request.urlopen(up_vid, context=ctx) as resp:
             assert resp.status in (200, 201, 204)
 
+        # 12b. The media and favourite filters must answer with the files the
+        # filter names, not merely with 207: the photo tab reading a list of
+        # text files gets the right status code and the wrong screen.
+        def dav_search(where):
+            body = f"""<?xml version="1.0" encoding="utf-8"?>
+<d:searchrequest xmlns:d="DAV:" xmlns:oc="http://nextcloud.com/ns">
+  <d:basicsearch>
+    <d:select><d:prop><d:getetag/><oc:id/><oc:size/></d:prop></d:select>
+    <d:from><d:scope><d:href>/files/{app_user}</d:href><d:depth>infinity</d:depth></d:scope></d:from>
+    <d:where>{where}</d:where>
+  </d:basicsearch>
+</d:searchrequest>"""
+            req = urllib.request.Request(
+                f"{base_url}/remote.php/dav", data=body.encode("utf-8"),
+                headers={"Authorization": auth_header, "Content-Type": "text/xml"},
+                method="SEARCH")
+            with urllib.request.urlopen(req, context=ctx) as resp:
+                assert resp.status == 207, f"SEARCH returned {resp.status}"
+                return resp.read().decode("utf-8")
+
+        print("Testing SEARCH photo filter answers with the images...")
+        photos = dav_search(
+            "<d:like><d:prop><d:getcontenttype/></d:prop><d:literal>image/%</d:literal></d:like>")
+        assert "test.png" in photos, f"photo search omits the image: {photos}"
+        assert "test.mp4" not in photos, f"photo search returned a video: {photos}"
+        assert "hello.txt" not in photos, f"photo search returned a text file: {photos}"
+        print("  photo filter OK.")
+
+        print("Testing SEARCH gallery filter answers with images and video...")
+        gallery = dav_search(
+            "<d:or>"
+            "<d:like><d:prop><d:getcontenttype/></d:prop><d:literal>image/%</d:literal></d:like>"
+            "<d:like><d:prop><d:getcontenttype/></d:prop><d:literal>video/%</d:literal></d:like>"
+            "</d:or>")
+        assert "test.png" in gallery and "test.mp4" in gallery, f"gallery search: {gallery}"
+        assert "hello.txt" not in gallery, f"gallery search returned a text file: {gallery}"
+        print("  gallery filter OK.")
+
+        print("Testing SEARCH name filter...")
+        named = dav_search(
+            "<d:like><d:prop><d:displayname/></d:prop><d:literal>%hello%</d:literal></d:like>")
+        assert "hello.txt" in named, f"name search omits the match: {named}"
+        assert "test.png" not in named, f"name search returned an unrelated file: {named}"
+        print("  name filter OK.")
+
+        print("Testing PROPPATCH favourite then SEARCH favourites...")
+        star_body = """<?xml version="1.0"?>
+<d:propertyupdate xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <d:set><d:prop><oc:favorite>1</oc:favorite></d:prop></d:set>
+</d:propertyupdate>"""
+        star_req = urllib.request.Request(
+            f"{base_url}/remote.php/dav/files/{app_user}/files/hello.txt",
+            data=star_body.encode("utf-8"),
+            headers={"Authorization": auth_header, "Content-Type": "text/xml"},
+            method="PROPPATCH")
+        with urllib.request.urlopen(star_req, context=ctx) as resp:
+            assert resp.status == 207, f"PROPPATCH returned {resp.status}"
+        favourites = dav_search(
+            "<d:eq><d:prop><oc:favorite/></d:prop><d:literal>yes</d:literal></d:eq>")
+        assert "hello.txt" in favourites, f"favourites search omits the starred file: {favourites}"
+        assert "test.png" not in favourites, f"favourites search returned an unstarred file: {favourites}"
+        print("  favourite filter OK.")
+
         # Get Web login session
         login_body = json.dumps({"login": "admin", "password": "Password123!"}).encode("utf-8")
         web_login = urllib.request.Request(
