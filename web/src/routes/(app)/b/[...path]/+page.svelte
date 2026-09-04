@@ -41,7 +41,7 @@
     supportsDirectoryPicker
   } from '../../../../lib/upload/directory-picker'
   import { formatBytes } from '../../../../lib/format/bytes'
-  import { triggerUrlDownload } from '../../../../lib/format/download'
+  import { downloadPath, triggerUrlDownload } from '../../../../lib/format/download'
   import { jobTray } from '../../../../lib/state/job-tray.svelte'
   import { JobFailedError } from '../../../../lib/state/jobs'
 
@@ -461,22 +461,18 @@
   }
 
   // ── download ──
-  // Single file: a plain navigation to `GET /api/v1/files/read?download=1`, which is
-  // what makes the server send Content-Disposition. Not a fetch: the browser
-  // saves the response itself and no blob has to be held in memory.
-  // Multi-selection (and any directory): `POST /api/fs/archive` streams the
-  // ZIP as its own response body. The server never stores one, so there is no
-  // job to track and nothing to fetch afterwards.
+  // Single file: `downloadPath` (format/download.ts) mints a ticket
+  // (`POST /api/v1/files/download`) and navigates the browser to its `url`.
+  // Multi-selection (and any directory): `POST /api/fs/archive` mints its own
+  // multi-path ticket the same way. Either way nothing is fetched here: the
+  // browser's own download manager owns the transfer once it is pointed at
+  // the ticket's URL, and no blob is ever held in the tab.
 
   async function downloadAsArchive(entries: Entry[]): Promise<void> {
     if (entries.length === 0) return
     const paths = entries.map((e) => joinPath(browse.path, e.name))
     const filename = entries.length === 1 ? `${entries[0].name}.zip` : 'archive.zip'
     try {
-      // A plain navigation, so the browser owns the transfer: bytes land as
-      // they arrive rather than collecting in the tab, and the download shows
-      // up in the browser's own list. Nothing is held server-side either; the
-      // fetch walks the selection into the response.
       const ticket = await api.archive(paths, filename)
       triggerUrlDownload(ticket.url, ticket.name)
     } catch (err) {
@@ -495,16 +491,11 @@
       await downloadAsArchive([entry])
       return
     }
-    // Straight from the read endpoint, by path. It used to demand `entry.id`,
-    // the fileid `/fs/link` takes, which the server allocates lazily and a
-    // plain listing therefore never carries: Download refused every file that
-    // had not already been shared, which was every file. Sharing a link is a
-    // separate action with its own button.
-    //
-    // `?download=1` is what makes the server send Content-Disposition, so the
-    // browser saves it instead of rendering it.
-    const url = `/api/v1/files/read?path=${encodeURIComponent(entry.path)}&download=1`
-    triggerUrlDownload(url, entry.name)
+    try {
+      await downloadPath(entry.path)
+    } catch (err) {
+      snackbarMsg = describeApiError(err, t('browse.download_failed'))
+    }
   }
 
   function downloadSelection(): void {

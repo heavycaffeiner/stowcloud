@@ -368,6 +368,54 @@ func TestTheGroupLifecycle(t *testing.T) {
 	}
 }
 
+// Renaming a group answers the group, as creating one does.
+//
+// The screen swaps the renamed row for what came back. Answering no content
+// left the client reading a field off nothing: it threw, its own catch
+// rendered "could not rename", and the name had in fact changed. This fails
+// against that.
+func TestRenamingAGroupAnswersTheWholeGroup(t *testing.T) {
+	base, cookie, csrf, _, _ := adminEngine(t)
+
+	status, created := mutate(t, http.MethodPost, base+"/api/v1/admin/groups", cookie, csrf,
+		map[string]string{"name": "editors"})
+	if status != http.StatusCreated {
+		t.Fatalf("creating answered %d: %v", status, created)
+	}
+	group := stringField(created, "id")
+
+	// A member, so the answer has something to lose if it were rebuilt from
+	// the request rather than read back.
+	user := accountID(t, base, cookie, loginName)
+	status, body := mutate(t, http.MethodPost,
+		fmt.Sprintf("%s/api/v1/admin/groups/%s/members", base, group), cookie, csrf,
+		map[string]string{"user": user})
+	if status != http.StatusNoContent {
+		t.Fatalf("adding a member answered %d: %v", status, body)
+	}
+
+	status, renamed := mutate(t, http.MethodPatch,
+		fmt.Sprintf("%s/api/v1/admin/groups/%s", base, group), cookie, csrf,
+		map[string]string{"name": "reviewers"})
+	if status != http.StatusOK {
+		t.Fatalf("renaming answered %d: %v", status, renamed)
+	}
+
+	if got := stringField(renamed, "id"); got != group {
+		t.Errorf("the response names group %q, want %q", got, group)
+	}
+	if got := stringField(renamed, "name"); got != "reviewers" {
+		t.Errorf("the response names %q, want the new name", got)
+	}
+	members, ok := renamed["members"].([]any)
+	if !ok {
+		t.Fatalf("the response's members is %T, want a list: %v", renamed["members"], renamed)
+	}
+	if len(members) != 1 {
+		t.Errorf("the renamed group reports %d members, want the one it has", len(members))
+	}
+}
+
 // listGroups reads the group listing.
 func listGroups(t *testing.T, base string, cookie *http.Cookie) []map[string]any {
 	t.Helper()

@@ -21,10 +21,11 @@
   // indicator with `nth-of-type(-n + 5)` rules, so a sixth tab would render
   // with no indicator at all. Another section means regrouping, not appending.
   //
-  // Which is what the server log did: the last tab is "Logs" and holds both
-  // the audit log (who did what) and the server log (what the server itself
-  // recorded). They are the two things an operator opens for the same reason,
-  // and a sixth tab was not available to give the second one.
+  // Which is what the server log did: the last tab is "Logs", and it holds
+  // one section covering both logs — the audit log (who did what) and the
+  // server log (what the server itself recorded) — under one filter bar with
+  // a graph over both. They are the two things an operator opens for the
+  // same reason, and a sixth tab was not available to give the second one.
   //
   // `VariableTabs`, not `Tabs`: the fixed variant gives every tab an equal
   // share of the width with a 5rem floor, so five of them need 400px and a
@@ -137,13 +138,6 @@
           </section>
         {/await}
       {:else}
-        {#await import('../../../lib/ui/admin/AuditLogSection.svelte') then mod}
-          {@const AuditLogSection = mod.default}
-          <section class="sc-admin__section">
-            <AuditLogSection />
-          </section>
-        {/await}
-
         {#await import('../../../lib/ui/admin/LogsSection.svelte') then mod}
           {@const LogsSection = mod.default}
           <section class="sc-admin__section">

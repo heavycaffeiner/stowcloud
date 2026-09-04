@@ -370,10 +370,15 @@ func (e *Engine) adminGrantsUpdate(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 	}
 
-	if err := e.Core.UpdateGrant(c.UserContext(), id, allow, deny, req.Inherit, req.Label); err != nil {
+	grant, err := e.Core.UpdateGrant(c.UserContext(), id, allow, deny, req.Inherit, req.Label)
+	if err != nil {
 		return fail(c, err)
 	}
-	return c.SendStatus(fiber.StatusNoContent)
+	// The whole grant, as the create route answers: the screen swaps the
+	// edited row for what came back, and every rendered row reads the
+	// permission arrays. Answering no content left it with nothing to swap
+	// in, and the change applied while the dialogue said it had not.
+	return writeJSON(c, fiber.StatusOK, handler.GrantOf(grant))
 }
 
 // adminGrantsDelete revokes one.

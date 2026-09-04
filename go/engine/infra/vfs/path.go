@@ -324,6 +324,18 @@ func (p SharePath) String() string { return p.raw }
 // IsRoot reports the share root itself: zero components below the share.
 func (p SharePath) IsRoot() bool { return p.raw == "" }
 
+// Components splits the path, for the one caller that has to compare it
+// against another path component by component. Nil at the share root.
+//
+// The components are already validated, since a SharePath cannot exist
+// without having passed the table, so this repeats no checking.
+func (p SharePath) Components() []string {
+	if p.raw == "" {
+		return nil
+	}
+	return strings.Split(p.raw, "/")
+}
+
 // Safe crosses into the one vocabulary this package's syscalls accept.
 func (p SharePath) Safe() (SafePath, error) {
 	comps, err := splitValidated(p.raw)

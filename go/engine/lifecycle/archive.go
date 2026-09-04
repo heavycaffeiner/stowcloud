@@ -88,11 +88,13 @@ func (e *Engine) filesArchive(c *fiber.Ctx) error {
 	if terr != nil {
 		return fail(c, terr)
 	}
-	if !e.Archives.Put(token, &archive.Ticket{Name: name, Paths: req.Paths, Owner: int64(owner)}) {
+	if !e.Archives.Put(token, &archive.Ticket{
+		Kind: archive.KindArchive, Name: name, Paths: req.Paths, Owner: int64(owner),
+	}) {
 		return refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
 	}
 
-	return writeJSON(c, fiber.StatusOK, handler.ArchiveTicketView{
+	return writeJSON(c, fiber.StatusOK, handler.TicketView{
 		Token: token,
 		Name:  name,
 		URL:   "/api/v1/files/archive/fetch?token=" + url.QueryEscape(token),
@@ -115,7 +117,7 @@ func (e *Engine) filesArchiveFetch(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 	}
 
-	t, ok := e.Archives.Get(c.Query("token"), int64(owner))
+	t, ok := e.Archives.Get(c.Query("token"), int64(owner), archive.KindArchive)
 	if !ok {
 		return refuse(c, apierr.Classified{Class: apierr.NotFound})
 	}

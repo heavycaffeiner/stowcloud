@@ -29,7 +29,11 @@ import {
   type RateSettingsReq,
   type AdminLogPage,
   type AdminLogQuery,
+  type AdminLogsTimeline,
+  type AdminLogsTimelineBucket,
+  type AdminLogsTimelineQuery,
   type AuditPage,
+  type DownloadTicket,
   type FolderSize,
   type RecentHit,
   type AuditQuery,
@@ -55,6 +59,7 @@ import {
   type MovePreflight,
   type MoveReq,
   type NetworkSettingsReq,
+  type Hop,
   type OidcSettingsReq,
   type Order,
   type SearchSettingsReq,
@@ -591,6 +596,24 @@ async function archive(paths: string[], name?: string): Promise<ArchiveTicket> {
   }
 }
 
+/** Mock counterpart of `http.ts`'s `download`. Mirrors the real refusals:
+ *  422 for a folder or an empty path, 404 for a path this account cannot
+ *  reach — the mock tree is one flat namespace, so "cannot reach" here means
+ *  "does not exist". */
+async function download(path: string): Promise<DownloadTicket> {
+  await delay(80)
+  if (!path.trim()) throw new ApiError(422, { code: 'fs.invalid_name', message: 'path must not be empty' })
+  const entry = entryAt(path)
+  if (!entry) throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
+  if (entry.kind === 'dir') throw new ApiError(422, { code: 'fs.invalid_name', message: 'cannot download a folder' })
+  const token = `mock-download-${entry.name}`
+  return {
+    token,
+    name: entry.name,
+    url: `/api/v1/files/download/fetch?token=${encodeURIComponent(token)}`
+  }
+}
+
 /** A fixed listing for any `.zip`, since the mock stores no archive bytes. */
 async function archiveList(path: string): Promise<ArchiveListing> {
   await delay(60)
@@ -948,7 +971,7 @@ async function oidcLinkStart(password: string, _returnTo?: string): Promise<{ au
   throw new ApiError(503, { code: 'oidc.provider_unavailable', message: 'no identity provider in the mock backend' })
 }
 
-async function oidcUnlink(password: string): Promise<{ smb_password_replaced: boolean }> {
+async function oidcUnlink(password: string): Promise<void> {
   await delay(80)
   if (password !== mockAuthState.password) {
     throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
@@ -961,7 +984,6 @@ async function oidcUnlink(password: string): Promise<{ smb_password_replaced: bo
   // one of them should not have to learn a second rule for the other.
   const replaced = mockAuthState.smbDedicated && !mockAuthState.totpEnabled && !mockAuthState.smbOptOut
   if (replaced) mockAuthState.smbDedicated = false
-  return { smb_password_replaced: replaced }
 }
 
 /** Which mock accounts have an identity attached. Keyed by the same ids
@@ -983,19 +1005,17 @@ async function adminGetUserOidc(id: number): Promise<AdminUserOidc> {
   }
 }
 
-async function adminUnlinkUserOidc(id: number): Promise<AdminOidcUnlinkResult> {
+async function adminUnlinkUserOidc(id: number): Promise<void> {
   await delay(60)
   if (!mockUserOidc.has(id)) {
     throw new ApiError(404, { code: 'oidc.not_linked', message: 'no linked identity' })
   }
   mockUserOidc.delete(id)
   if (id === 1) mockAuthState.oidcLinked = false
-  // `smb_nt_restored` is always false on this route, mock or not: an admin
-  // unlink has no plaintext password to re-derive the NT hash from (§4.3.6).
-  return {
-    smb_nt_restored: false,
-    oidc_sessions_revoked: 0
-  }
+  // Nothing comes back. The route answers no content, and the two fields this
+  // used to report were never sent by it: an admin unlink has no plaintext
+  // password to re-derive an NT hash from, and the session count was invented
+  // here rather than counted anywhere.
 }
 
 // ── settings ──
@@ -1093,7 +1113,7 @@ async function totpEnroll(password: string, secret: string, code: string): Promi
   return { recovery_codes: Array.from({ length: 10 }, (_, i) => `MOCK${i}CODE7X`) }
 }
 
-async function totpDisable(password: string): Promise<{ smb_password_replaced: boolean }> {
+async function totpDisable(password: string): Promise<void> {
   await delay(80)
   if (password !== mockAuthState.password) {
     throw new ApiError(401, { code: 'auth.invalid_credentials', message: 'invalid credentials' })
@@ -1104,7 +1124,6 @@ async function totpDisable(password: string): Promise<{ smb_password_replaced: b
   // to the account password.
   const replaced = mockAuthState.smbDedicated && !mockAuthState.oidcLinked && !mockAuthState.smbOptOut
   if (replaced) mockAuthState.smbDedicated = false
-  return { smb_password_replaced: replaced }
 }
 
 /** Mock counterpart of `http.ts`'s function of the same name. */
@@ -1348,6 +1367,20 @@ const mockServerSettings = {
  *  where something is overriding the file, and disabled again after a revert. */
 const mockOverriddenSections = new Set<SettingsSectionId>(['network', 'smb'])
 
+/** The misconfiguration the network hint exists to surface: a forwarding
+ *  header arrived from an address the operator hasn't trusted yet, so every
+ *  visitor behind it would be recorded as this one peer. Fixed rather than
+ *  derived from `mockServerSettings.network.trusted_proxies` — the point is
+ *  to always demonstrate the hint in dev mode, not to react to the operator
+ *  actually fixing it (a real server would flip `peer_trusted` on its next
+ *  request, which this mock has no request-scoped state to model). */
+const mockHop: Hop = {
+  peer: '172.19.0.1',
+  peer_trusted: false,
+  client: '172.19.0.1',
+  forwarded_seen: true
+}
+
 /** What each group falls back to when its override is dropped, standing in
  *  for the stored settings plus the environment. */
 const mockFileSettings = JSON.parse(JSON.stringify(mockServerSettings)) as typeof mockServerSettings
@@ -1503,7 +1536,8 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
       missing_paths: [],
       missing_passdb: [],
       detail: null
-    }
+    },
+    hop: mockHop
   }
 }
 
@@ -2213,10 +2247,11 @@ async function adminRemoveGroupMember(id: number, userId: number): Promise<void>
 }
 
 // ── admin: audit log ──
-// GET /api/admin/audit. A small fixed seed, newest first — enough for
-// `AuditLogSection.svelte` to have something realistic to filter/paginate
-// in dev mode. `actor_name` is resolved against `mockUsers` at read time
-// (not baked into the seed), same as the real server's join.
+// GET /api/admin/audit. A small fixed seed, newest first — enough to drive
+// the admin audit log and the logs timeline (both server records and audit
+// rows feed the same chart) realistically in dev mode. `actor_name` is
+// resolved against `mockUsers` at read time (not baked into the seed), same
+// as the real server's join.
 
 interface MockAuditRow {
   rowid: number
@@ -2275,7 +2310,9 @@ const mockAudit: MockAuditRow[] = [
 ]
 
 async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
-  await delay(20)
+  // Honoured the same way `adminListLogs` honours it, so a superseded audit
+  // request rejects rather than resolving into a store that has moved on.
+  await delay(20, query.signal)
   const limit = Math.min(Math.max(query.limit ?? 50, 1), 200)
   const filtered = mockAudit.filter((r) => {
     if (query.actor !== undefined && r.actor !== query.actor) return false
@@ -2418,6 +2455,65 @@ async function adminListLogs(query: AdminLogQuery = {}): Promise<AdminLogPage> {
     stored_bytes: mockLogStoredBytes.toString(),
     segments: mockLogSegments
   }
+}
+
+/** Mock counterpart of `http.ts`'s `adminLogsTimeline`. Buckets both
+ *  `mockLogs` and `mockAudit` over the same window, so the dev-mode chart
+ *  actually shows two stacked sources rather than one padded with zeros.
+ *  Bucket count is clamped: an operator-chosen `bucket_ns` far below the
+ *  window width would otherwise build an unbounded array, so past the cap
+ *  the response reports `truncated` the same way a real walk hitting its
+ *  deadline would. */
+const MOCK_TIMELINE_MAX_BUCKETS = 2000
+
+async function adminLogsTimeline(query: AdminLogsTimelineQuery = {}): Promise<AdminLogsTimeline> {
+  await delay(20, query.signal)
+  const bucketNs = query.bucket_ns ? BigInt(query.bucket_ns) : 60_000_000_000n
+  const oldestLog = mockLogs[mockLogs.length - 1].ts_ns
+  const newestLog = mockLogs[0].ts_ns
+  const oldestAudit = mockAudit[mockAudit.length - 1].ts_ns
+  const newestAudit = mockAudit[0].ts_ns
+  const since = query.since !== undefined ? BigInt(query.since) : oldestLog < oldestAudit ? oldestLog : oldestAudit
+  const until = query.until !== undefined ? BigInt(query.until) : newestLog > newestAudit ? newestLog : newestAudit
+
+  const levels = query.levels && query.levels.length > 0 ? query.levels : null
+  const filteredLogs = mockLogs.filter((r) => {
+    if (r.ts_ns < since || r.ts_ns > until) return false
+    if (levels && !levels.includes(r.level)) return false
+    if (query.subsystem !== undefined && query.subsystem !== '' && r.subsystem !== query.subsystem) return false
+    if (query.request_id !== undefined && query.request_id !== '' && r.request_id !== query.request_id) return false
+    if (query.text !== undefined && query.text !== '') {
+      const needle = query.text.toLowerCase()
+      const hay = [r.msg, ...Object.values(r.attrs)].join(' ').toLowerCase()
+      if (!hay.includes(needle)) return false
+    }
+    return true
+  })
+  const filteredAudit = mockAudit.filter((r) => r.ts_ns >= since && r.ts_ns <= until)
+
+  const span = until > since ? until - since : 0n
+  const wanted = Number(span / bucketNs) + 1
+  const bucketCount = Math.max(1, Math.min(wanted, MOCK_TIMELINE_MAX_BUCKETS))
+  const truncated = wanted > MOCK_TIMELINE_MAX_BUCKETS
+
+  const buckets: AdminLogsTimelineBucket[] = []
+  for (let i = 0; i < bucketCount; i++) {
+    const start = since + BigInt(i) * bucketNs
+    const end = start + bucketNs
+    const server: Record<string, number> = {}
+    for (const r of filteredLogs) {
+      if (r.ts_ns >= start && r.ts_ns < end) server[r.level] = (server[r.level] ?? 0) + 1
+    }
+    const audit: Record<string, number> = {}
+    for (const r of filteredAudit) {
+      if (r.ts_ns >= start && r.ts_ns < end) {
+        const key = r.ok ? 'ok' : 'failed'
+        audit[key] = (audit[key] ?? 0) + 1
+      }
+    }
+    buckets.push({ start_ns: start.toString(), server, audit })
+  }
+  return { bucket_ns: bucketNs.toString(), buckets, truncated }
 }
 
 // ── share links, owner side — mirrors
@@ -2582,6 +2678,7 @@ export const mockApi = {
   movePreflight,
   delete: del,
   archive,
+  download,
   archiveList,
   folderSize,
   thumbUrl,
@@ -2661,6 +2758,7 @@ export const mockApi = {
   adminRemoveGroupMember,
   adminListAudit,
   adminListLogs,
+  adminLogsTimeline,
   /** Called by the upload worker (via the browse UI) once a mock upload finalizes. */
   registerUploadedEntry(destDir: string, entry: Entry): void {
     addOverlayEntry(destDir, entry)

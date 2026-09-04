@@ -72,7 +72,6 @@
   let disconnecting = $state(false)
   /** This section's own live region, for the one thing disconnecting does that
    *  the user did not come here to do. */
-  let smbAnnouncement = $state('')
 
   function openConnect(): void {
     connectPassword = ''
@@ -122,9 +121,14 @@
     disconnectError = null
     disconnecting = true
     try {
-      const res = await api.oidcUnlink(disconnectPassword)
+      await api.oidcUnlink(disconnectPassword)
       disconnectOpen = false
-      smbAnnouncement = res.smb_password_replaced ? t('smb.replaced_by_account_password') : ''
+      // No announcement about the file-sharing password: the server does
+      // not report one, and it could not. Enrolling or disconnecting
+      // changes what is published, never what is stored, and a single
+      // row holds the hash whether it came from the account password or
+      // a separate one, so the two are indistinguishable afterwards. The
+      // sharing section below reads the real state.
       onchanged?.()
     } catch (err) {
       disconnectError = describeError(err, t('oidc.could_not_disconnect_try_again'))
@@ -181,7 +185,6 @@
   {:else if configured}
     <p class="sc-oidc__detail">{t('oidc.connect_sign_instead_your_account', { provider: providerLabel })}</p>
   {/if}
-  <p class="sc-oidc__detail" aria-live="polite">{smbAnnouncement}</p>
 </div>
 
 <Dialog open={connectOpen} title={t('oidc.connect_provider', { provider: providerLabel })} onclose={closeConnect}>

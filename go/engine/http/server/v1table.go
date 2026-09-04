@@ -172,6 +172,10 @@ func exceptions() map[string]exception {
 			route.Requirement{Access: route.AccessPerms, Perms: acl.Read | acl.Download},
 			"an archive streams the bytes out, which is a download",
 		},
+		"POST " + Base + "/files/download": {
+			route.Requirement{Access: route.AccessPerms, Perms: acl.Read | acl.Download},
+			"minting a download ticket is agreeing to hand over the bytes",
+		},
 
 		// Restoring and purging change the tree rather than reading it.
 		"POST " + Base + "/trash/restore": {
@@ -243,6 +247,8 @@ func Table() []route.Route {
 	add("POST", "/files/archive", "files.archive", route.BodyJSON)
 	add("GET", "/files/archive/fetch", "files.archive.fetch", route.BodyNone)
 	add("GET", "/files/archive/list", "files.archive.list", route.BodyNone)
+	add("POST", "/files/download", "files.download", route.BodyJSON)
+	add("GET", "/files/download/fetch", "files.download.fetch", route.BodyNone)
 	add("GET", "/files/recent", "files.recent", route.BodyNone)
 
 	// links: the caller's public share links.
@@ -296,6 +302,7 @@ func Table() []route.Route {
 	add("POST", "/admin/shares/{id}/retry", "admin.shares.retry", route.BodyNone)
 	add("GET", "/admin/audit", "admin.audit", route.BodyNone)
 	add("GET", "/admin/logs", "admin.logs.list", route.BodyNone)
+	add("GET", "/admin/logs/timeline", "admin.logs.timeline", route.BodyNone)
 	add("GET", "/admin/storage", "admin.storage", route.BodyNone)
 	add("POST", "/admin/smb/apply", "admin.smb.apply", route.BodyNone)
 	add("POST", "/admin/index/build", "admin.index.build", route.BodyJSON)

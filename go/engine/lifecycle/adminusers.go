@@ -261,10 +261,15 @@ func (e *Engine) adminGroupsUpdate(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.Malformed})
 	}
 
-	if err := e.Auth.RenameGroup(c.UserContext(), id, req.Name); err != nil {
+	group, err := e.Auth.RenameGroup(c.UserContext(), id, req.Name)
+	if err != nil {
 		return failKnown(c, err)
 	}
-	return c.SendStatus(fiber.StatusNoContent)
+	// The whole row, as the create route answers: the screen swaps the
+	// renamed group for what came back, members and all. Answering no content
+	// left it with nothing to swap in, and the rename applied while the
+	// dialogue said it had not.
+	return writeJSON(c, fiber.StatusOK, handler.GroupOf(group))
 }
 
 // adminGroupsDelete removes one.

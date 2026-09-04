@@ -13,6 +13,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/logbook"
 )
 
@@ -92,6 +93,74 @@ func logQueryOf(c *fiber.Ctx) (logbook.Query, bool) {
 		q.Limit = n
 	}
 	return q, true
+}
+
+// adminLogsTimeline answers the graph above the log list.
+//
+// Both logs, counted over one frame. The counts come from their own walks
+// rather than from the pages the list loaded: a page is a hundred rows and
+// the graph covers a window, so a chart added up from what the reader
+// scrolled to would rise and fall with the scrolling.
+func (e *Engine) adminLogsTimeline(c *fiber.Ctx) error {
+	if _, ok, written := e.admin(c); !ok {
+		return written
+	}
+	if e.Logs == nil {
+		return refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+	}
+
+	q, ok := logQueryOf(c)
+	if !ok {
+		return refuse(c, apierr.Classified{Class: apierr.Malformed})
+	}
+	width, ok := bucketNsOf(c)
+	if !ok {
+		return refuse(c, apierr.Classified{Class: apierr.Malformed})
+	}
+
+	// The server log decides the frame, because its walk is the one that
+	// picks a width the window divides into.
+	server, widthNs, truncated, err := e.Logs.Counts(c.UserContext(), q, width)
+	if err != nil {
+		if errors.Is(err, logbook.ErrBadCursor) {
+			return refuse(c, apierr.Classified{Class: apierr.Malformed})
+		}
+		return failKnown(c, err)
+	}
+
+	var audit []auth.AuditBucket
+	if len(server) > 0 {
+		var auditTruncated bool
+		audit, auditTruncated, err = e.Auth.AuditCounts(c.UserContext(),
+			auth.AuditFilter{SinceNs: q.Since, UntilNs: q.Until},
+			server[0].StartNs, widthNs, len(server))
+		if err != nil {
+			return failKnown(c, err)
+		}
+		// Either side stopping early makes the whole graph a prefix.
+		truncated = truncated || auditTruncated
+	}
+
+	return writeJSON(c, fiber.StatusOK,
+		handler.LogsTimelineOf(server, audit, widthNs, truncated))
+}
+
+// bucketNsOf reads the interval width a caller asked for.
+//
+// Refused rather than ignored when it is not a number or not positive, for
+// the reason the filter parameters are: a width a client asked for and did
+// not get is a graph whose bars mean something other than what the screen
+// says they do. Absent is fine and lets the store pick.
+func bucketNsOf(c *fiber.Ctx) (int64, bool) {
+	raw := c.Query("bucket_ns")
+	if raw == "" {
+		return 0, true
+	}
+	v, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || v <= 0 {
+		return 0, false
+	}
+	return v, true
 }
 
 // The page bounds the batch contract states: a default a screen shows without

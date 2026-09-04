@@ -47,6 +47,64 @@ func TestSavingASettingsSection(t *testing.T) {
 	}
 }
 
+// The settings answer says how the request reached the server.
+//
+// Behind a published container port every request arrives from the bridge
+// gateway, so an operator who has not trusted that address sees one address
+// for every visitor. Nothing on the screen said why, and this is what makes
+// it visible: the observed peer, whether it is trusted, and whether a
+// forwarding header arrived at all.
+func TestTheSettingsReportTheHopTheRequestArrivedOver(t *testing.T) {
+	base, cookie, _, _, _ := adminEngine(t)
+
+	req, err := http.NewRequest(http.MethodGet, base+"/api/v1/admin/settings", nil)
+	if err != nil {
+		t.Fatalf("building: %v", err)
+	}
+	req.AddCookie(cookie)
+	// A forwarding header from a peer nothing trusts, which is exactly the
+	// case an operator cannot otherwise diagnose.
+	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("requesting: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+	raw := readAll(t, resp)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("reading the settings answered %d: %s", resp.StatusCode, raw)
+	}
+
+	var doc struct {
+		Hop struct {
+			Peer          string `json:"peer"`
+			PeerTrusted   bool   `json:"peer_trusted"`
+			Client        string `json:"client"`
+			ForwardedSeen bool   `json:"forwarded_seen"`
+		} `json:"hop"`
+	}
+	if uerr := json.Unmarshal(raw, &doc); uerr != nil {
+		t.Fatalf("decoding %s: %v", raw, uerr)
+	}
+
+	switch {
+	case doc.Hop.Peer == "":
+		t.Error("the answer names no peer, so an operator has nothing to trust")
+	case doc.Hop.PeerTrusted:
+		t.Errorf("the peer %s reports itself trusted with no proxy configured", doc.Hop.Peer)
+	case !doc.Hop.ForwardedSeen:
+		t.Error("a request carrying X-Forwarded-For reports no forwarding header")
+	case doc.Hop.Client != doc.Hop.Peer:
+		t.Errorf("the client resolved to %s from an untrusted peer %s: the header was believed",
+			doc.Hop.Client, doc.Hop.Peer)
+	}
+}
+
 // describedFields indexes the settings answer by key.
 //
 // The route answers the described form rather than the stored document: the

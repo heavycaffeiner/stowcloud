@@ -11,6 +11,7 @@
 package handler
 
 import (
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/catalogue"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/check"
 )
 
@@ -25,6 +26,49 @@ type FindingView struct {
 	Reason   string            `json:"reason"`
 	Args     map[string]string `json:"args,omitempty"`
 	Blocking bool              `json:"blocking"`
+}
+
+// HopView describes how one request reached the server.
+//
+// Not a setting: it is what an operator needs in front of the trusted-proxy
+// field to know what to put there. Behind a published container port every
+// request arrives from the bridge gateway, so an untrusted peer means one
+// address for every visitor and nothing on the screen says why.
+type HopView struct {
+	// Peer is the address the transport reported, which is what the trust
+	// decision is made against. Empty when the transport gave none.
+	Peer string `json:"peer,omitempty"`
+
+	// PeerTrusted reports whether the peer falls inside the trusted list.
+	// False here with ForwardedSeen true is the misconfiguration: the headers
+	// arrived and were ignored.
+	PeerTrusted bool `json:"peer_trusted"`
+
+	// Client is what the chain resolved. Equal to Peer when no forwarding was
+	// believed.
+	Client string `json:"client"`
+
+	// ForwardedSeen reports whether the request carried a forwarding header at
+	// all, believed or not.
+	ForwardedSeen bool `json:"forwarded_seen"`
+}
+
+// SettingsView is the settings resource: every settable field, plus what the
+// server observed about the request that asked for them.
+type SettingsView struct {
+	Fields []catalogue.Field `json:"fields"`
+	Hop    HopView           `json:"hop"`
+}
+
+// SettingsOf projects the resource.
+func SettingsOf(snap catalogue.Snapshot, hop HopView) SettingsView {
+	fields := snap.Fields
+	if fields == nil {
+		// Never null: the screen iterates this, and a null is a third state it
+		// would have to test for before drawing an empty form.
+		fields = []catalogue.Field{}
+	}
+	return SettingsView{Fields: fields, Hop: hop}
 }
 
 // ApplyOutcomeView is what a save answers with.

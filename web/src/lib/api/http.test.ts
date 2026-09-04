@@ -155,6 +155,25 @@ describe('httpApi job wrappers', () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/files/archive')
   })
 
+  it('download() posts the path and answers the ticket without reading any bytes', async () => {
+    const ticket = { token: 't', name: 'a.txt', url: '/api/v1/files/download/fetch?token=t' }
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(ticket), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const got = await httpApi.download('/home/a.txt')
+
+    // One request: the bytes come from the navigation the ticket's `url`
+    // names, which the browser owns, not from a second fetch here.
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(String(url)).toContain('/files/download')
+    expect(JSON.parse(init.body as string)).toEqual({ path: '/home/a.txt' })
+    expect(got.url).toBe(ticket.url)
+    expect(got.name).toBe(ticket.name)
+  })
+
   it('jobList() fetches GET /api/jobs and returns its jobs array', async () => {
     const openJob = {
       id: 'J-3',

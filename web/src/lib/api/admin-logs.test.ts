@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { httpApi } from './http'
 import { mockApi } from './mock'
+import type { AdminLogsTimeline } from './types'
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -218,5 +219,140 @@ describe('mockApi.adminListLogs', () => {
     const controller = new AbortController()
     controller.abort()
     await expect(mockApi.adminListLogs({ signal: controller.signal })).rejects.toThrow()
+  })
+})
+
+describe('httpApi.adminLogsTimeline query', () => {
+  it('sends the same filters the log route takes, plus the bucket width', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { bucket_ns: '60000000000', buckets: [], truncated: false }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await httpApi.adminLogsTimeline({
+      since: '1788490917438300000',
+      until: '1788490999999999999',
+      levels: ['WARN', 'ERROR'],
+      text: 'refused',
+      subsystem: 'dav',
+      request_id: '01J000',
+      bucket_ns: '300000000000'
+    })
+
+    const q = requestedQuery(fetchMock)
+    expect(q.get('since')).toBe('1788490917438300000')
+    expect(q.get('until')).toBe('1788490999999999999')
+    // The level set crosses as one comma separated parameter, same as the
+    // log route, so the two calls filter the same window.
+    expect(q.get('level')).toBe('WARN,ERROR')
+    expect(q.get('text')).toBe('refused')
+    expect(q.get('subsystem')).toBe('dav')
+    expect(q.get('request_id')).toBe('01J000')
+    expect(q.get('bucket_ns')).toBe('300000000000')
+    // No paging: a timeline has no cursor.
+    expect(q.has('cursor')).toBe(false)
+    expect(q.has('limit')).toBe(false)
+  })
+
+  it('omits an unset filter and an empty level set', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { bucket_ns: '0', buckets: [], truncated: false }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await httpApi.adminLogsTimeline({ levels: [] })
+
+    const q = requestedQuery(fetchMock)
+    expect(q.has('level')).toBe(false)
+    expect(q.has('bucket_ns')).toBe(false)
+    expect(q.has('since')).toBe(false)
+  })
+
+  // The two nanosecond fields are past 2^53. Parsed as numbers they come
+  // back as different instants, and a bar would be labelled with a time no
+  // event in it happened at.
+  it('keeps bucket_ns and start_ns as the exact strings the server sent', async () => {
+    const bucketNs = '60000000001'
+    const startNs = '1788518100000000001'
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(200, {
+          bucket_ns: bucketNs,
+          buckets: [{ start_ns: startNs, server: { INFO: 12 }, audit: { ok: 2 } }],
+          truncated: false
+        })
+      )
+    )
+
+    const res = await httpApi.adminLogsTimeline()
+    expect(res.bucket_ns).toBe(bucketNs)
+    expect(res.buckets[0].start_ns).toBe(startNs)
+    expect(String(Number(startNs))).not.toBe(startNs)
+  })
+
+  it('reads a null bucket list as an empty, untruncated timeline', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(200, {})))
+
+    const res = await httpApi.adminLogsTimeline()
+    expect(res.buckets).toEqual([])
+    expect(res.truncated).toBe(false)
+  })
+})
+
+describe('mockApi.adminLogsTimeline', () => {
+  it('answers oldest first with no holes, counting both sources', async () => {
+    const res = await mockApi.adminLogsTimeline()
+
+    expect(res.buckets.length).toBeGreaterThan(1)
+    const starts = res.buckets.map((b) => BigInt(b.start_ns))
+    for (let i = 1; i < starts.length; i++) {
+      expect(starts[i]).toBeGreaterThan(starts[i - 1])
+      // Every step is exactly one bucket wide, which is what "no holes" means.
+      expect(starts[i] - starts[i - 1]).toBe(BigInt(res.bucket_ns))
+    }
+    // Both halves are represented, so the chart stacks two sources rather
+    // than one padded with zeros.
+    expect(res.buckets.some((b) => Object.keys(b.server).length > 0)).toBe(true)
+    expect(res.buckets.some((b) => Object.keys(b.audit).length > 0)).toBe(true)
+  })
+
+  it('honours the requested bucket width exactly', async () => {
+    const res = await mockApi.adminLogsTimeline({ bucket_ns: '300000000000' })
+    expect(res.bucket_ns).toBe('300000000000')
+  })
+
+  // The endpoint's rule, which the client mirrors: level, text, subsystem and
+  // request id narrow the server half only. An audit row carries none of
+  // those fields, so its counts stand for the whole window.
+  it('narrows the server half by level while leaving the audit half whole', async () => {
+    const all = await mockApi.adminLogsTimeline()
+    const errors = await mockApi.adminLogsTimeline({ levels: ['ERROR'] })
+
+    const serverTotal = (t: AdminLogsTimeline): number =>
+      t.buckets.reduce((n, b) => n + Object.values(b.server).reduce((m, c) => m + c, 0), 0)
+    const auditTotal = (t: AdminLogsTimeline): number =>
+      t.buckets.reduce((n, b) => n + Object.values(b.audit).reduce((m, c) => m + c, 0), 0)
+
+    expect(serverTotal(errors)).toBeGreaterThan(0)
+    expect(serverTotal(errors)).toBeLessThan(serverTotal(all))
+    expect(errors.buckets.every((b) => Object.keys(b.server).every((k) => k === 'ERROR'))).toBe(true)
+    expect(auditTotal(errors)).toBe(auditTotal(all))
+  })
+
+  it('narrows both halves by the time range', async () => {
+    const all = await mockApi.adminLogsTimeline()
+    const newest = BigInt(all.buckets[all.buckets.length - 1].start_ns)
+    const cut = (newest - 600n * 1_000_000_000n).toString()
+
+    const recent = await mockApi.adminLogsTimeline({ since: cut })
+    expect(recent.buckets.length).toBeLessThan(all.buckets.length)
+    expect(recent.buckets.every((b) => BigInt(b.start_ns) >= BigInt(cut))).toBe(true)
+  })
+
+  it('rejects an aborted request rather than resolving into a stale store', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    await expect(mockApi.adminLogsTimeline({ signal: controller.signal })).rejects.toThrow()
   })
 })

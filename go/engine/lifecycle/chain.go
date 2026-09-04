@@ -31,13 +31,59 @@ func (e *Engine) deps() middleware.Deps {
 		Hosts:     e.hosts,
 		Trusted:   e.trustedProxies,
 		Limiter:   e.limiter,
+		Clock:     e.clk(),
 		Principal: e.ResolvePrincipal,
 		CSRFKey:   e.csrfKey,
 		Audit:     nil,
+		Access:    accessLog{e},
 		// The interface's own inline bootstrap, admitted by hash. Empty in a
 		// build without the bundle, which keeps the policy as strict as a
 		// server with no pages to serve should be.
 		ScriptHashes: spa.InlineScriptHashList(),
+	}
+}
+
+// accessLog writes the chain's per-request line to the engine's logger, which
+// is where the durable log store already sits.
+type accessLog struct{ e *Engine }
+
+// Access records one request.
+//
+// The level is the answer's own class, so a dashboard filtered to warnings
+// shows refusals and one filtered to errors shows faults. A success is still
+// written: "every request that arrived" is the question an access log exists
+// to answer, and a log that holds only failures cannot say whether a client
+// ever reached the server at all.
+//
+// The route name and the redacted path both go in. The name is what a rule is
+// written against and the path is what an operator recognises, and neither
+// alone is enough to find a request somebody is reporting.
+func (a accessLog) Access(e middleware.AccessEvent) {
+	attrs := []any{
+		"subsystem", "api",
+		"request_id", e.Trace,
+		"method", e.Method,
+		"path", e.Path,
+		"status", e.Status,
+		"ms", e.Duration.Milliseconds(),
+		"client", e.Client.String(),
+		"credential", e.Credential.String(),
+	}
+	if e.Route != "" {
+		attrs = append(attrs, "route", e.Route)
+	}
+	if e.Principal != 0 {
+		attrs = append(attrs, "account", e.Principal)
+	}
+
+	log := a.e.log()
+	switch {
+	case e.Status >= 500:
+		log.Error("the request failed", attrs...)
+	case e.Status >= 400:
+		log.Warn("the request was refused", attrs...)
+	default:
+		log.Info("the request was served", attrs...)
 	}
 }
 

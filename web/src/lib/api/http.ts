@@ -21,8 +21,11 @@ import {
   type RateSettingsReq,
   type AdminLogPage,
   type AdminLogQuery,
+  type AdminLogsTimeline,
+  type AdminLogsTimelineQuery,
   type AuditPage,
   type AuditQuery,
+  type DownloadTicket,
   type BatchResult,
   type CreateGrantReq,
   type CreateGroupReq,
@@ -82,7 +85,39 @@ export function setCsrfToken(t: string): void {
   csrfToken = t
 }
 
+/**
+ * Sends a request and parses the document it answers with.
+ *
+ * A route that answers no content must not go through here. There would be
+ * nothing to return, and the only way to satisfy `Promise<T>` is to hand back
+ * `undefined` cast to `T`, which the type system then believes: a caller
+ * reading a field off it crashes, the surrounding `catch` renders an error,
+ * and a change the server applied is reported as failed. That happened to the
+ * ACL editor. `requestNoContent` below is the honest shape for those.
+ */
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await send(path, init)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw errorFrom(res, body)
+  return body as T
+}
+
+/**
+ * Sends a request to a route that answers no document.
+ *
+ * Returns nothing, so no caller can read a field off the result and no
+ * signature can promise one. A refusal still throws, because a 204 route can
+ * still refuse.
+ */
+async function requestNoContent(path: string, init: RequestInit = {}): Promise<void> {
+  const res = await send(path, init)
+  if (res.ok) return
+  const body = await res.json().catch(() => ({}))
+  throw errorFrom(res, body)
+}
+
+/** The transport both share: the headers, the CSRF token and the cookie. */
+async function send(path: string, init: RequestInit): Promise<Response> {
   const method = (init.method ?? 'GET').toUpperCase()
   const headers = new Headers(init.headers)
   if (!headers.has('Content-Type') && init.body && typeof init.body === 'string') {
@@ -91,12 +126,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (method !== 'GET' && method !== 'HEAD' && csrfToken) {
     headers.set('Sc-Csrf', csrfToken)
   }
-
-  const res = await fetch(`${BASE}${path}`, { ...init, method, headers, credentials: 'include' })
-  if (res.status === 204) return undefined as T
-  const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw errorFrom(res, body)
-  return body as T
+  return fetch(`${BASE}${path}`, { ...init, method, headers, credentials: 'include' })
 }
 
 /**
@@ -319,7 +349,7 @@ async function loginTotp(challenge: string, code: string): Promise<LoginResult> 
 }
 
 async function logout(): Promise<void> {
-  await request('/auth/logout', { method: 'POST' })
+  await requestNoContent('/auth/logout', { method: 'POST' })
 }
 
 /**
@@ -435,7 +465,7 @@ async function move(req: MoveReq): Promise<BatchResult> {
   const results: BatchItemResult[] = []
   for (const path of req.paths) {
     try {
-      await request('/files/move', {
+      await requestNoContent('/files/move', {
         method: 'POST',
         body: JSON.stringify({
           from: path,
@@ -483,7 +513,7 @@ async function del(paths: string[]): Promise<{ results: BatchItemResult[] }> {
   const results: BatchItemResult[] = []
   for (const path of paths) {
     try {
-      await request('/files/delete', { method: 'POST', body: JSON.stringify({ path }) })
+      await requestNoContent('/files/delete', { method: 'POST', body: JSON.stringify({ path }) })
       results.push({ path, ok: true })
     } catch (err) {
       results.push({
@@ -525,6 +555,18 @@ async function archive(paths: string[], name?: string): Promise<ArchiveTicket> {
     throw errorFrom(res, body)
   }
   return (await res.json()) as ArchiveTicket
+}
+
+/**
+ * `POST /api/v1/files/download` — the same two-step ticket as `archive`, for
+ * one file: this request cannot be the download itself for the identical
+ * reason (a POST carrying a CSRF header, not something a browser can
+ * navigate to), so it only names the file and hands back where to fetch it.
+ * The caller navigates the browser to the returned `url`; nothing here reads
+ * the bytes.
+ */
+async function download(path: string): Promise<DownloadTicket> {
+  return request<DownloadTicket>('/files/download', { method: 'POST', body: JSON.stringify({ path }) })
 }
 
 /**
@@ -686,7 +728,7 @@ async function jobStatus(id: string): Promise<JobStatus> {
 /** One spelling for a cancel: the DELETE alias is gone, and cancelling is an
  *  action on the job rather than a deletion of it. */
 async function jobCancel(id: string): Promise<void> {
-  await request(`/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
+  await requestNoContent(`/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST' })
 }
 
 // ── trash ──
@@ -776,7 +818,7 @@ async function shareUpdate(id: number, patch: ShareLinkPatchReq): Promise<ShareL
 }
 
 async function shareDelete(id: number): Promise<void> {
-  await request(`/links/${id}`, { method: 'DELETE' })
+  await requestNoContent(`/links/${id}`, { method: 'DELETE' })
 }
 
 // ── text editor (`/edit/[...path]`) ──
@@ -836,7 +878,7 @@ async function writeFile(path: string, content: string, ifMatch?: string): Promi
 // ── settings ──
 
 async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
-  await request('/account/password', {
+  await requestNoContent('/account/password', {
     method: 'POST',
     // `current` and `new`, which is what every route taking a password proof
     // decodes.
@@ -877,8 +919,8 @@ async function totpEnroll(password: string, secret: string, code: string): Promi
  * re-confirmed. Turning TOTP off is the exact undo of the event that closed
  * the account password as an SMB credential, so it restores what preceded it.
  */
-async function totpDisable(password: string): Promise<{ smb_password_replaced: boolean }> {
-  return request('/account/totp/disable', {
+async function totpDisable(password: string): Promise<void> {
+  return requestNoContent('/account/totp/disable', {
     method: 'POST',
     body: JSON.stringify({ current: password })
   })
@@ -979,7 +1021,7 @@ async function createScopedAppPassword(
 }
 
 async function revokeAppPassword(id: number): Promise<void> {
-  await request(`/account/app-passwords/${id}`, { method: 'DELETE' })
+  await requestNoContent(`/account/app-passwords/${id}`, { method: 'DELETE' })
 }
 
 /**
@@ -991,7 +1033,7 @@ async function revokeAppPassword(id: number): Promise<void> {
  * working until the device reports it is done, and the server retires it then.
  */
 async function wipeAppPassword(id: number): Promise<void> {
-  await request(`/account/app-passwords/${id}/wipe`, { method: 'POST' })
+  await requestNoContent(`/account/app-passwords/${id}/wipe`, { method: 'POST' })
 }
 
 /**
@@ -1027,11 +1069,11 @@ async function listSessions(): Promise<ActiveSession[]> {
 }
 
 async function revokeSession(idHash: string): Promise<void> {
-  await request(`/account/sessions/${encodeURIComponent(idHash)}`, { method: 'DELETE' })
+  await requestNoContent(`/account/sessions/${encodeURIComponent(idHash)}`, { method: 'DELETE' })
 }
 
 async function updateSmbSettings(optOut: boolean, enabled: boolean): Promise<void> {
-  await request('/account/smb', { method: 'POST', body: JSON.stringify({ opt_out: optOut, enabled }) })
+  await requestNoContent('/account/smb', { method: 'POST', body: JSON.stringify({ opt_out: optOut, enabled }) })
 }
 
 /**
@@ -1113,8 +1155,8 @@ async function oidcLinkStart(password: string, returnTo?: string): Promise<{ aut
  * the account password's NT hash, and the plaintext is the only thing that
  * can put it back, which is why the admin unlink cannot.
  */
-async function oidcUnlink(password: string): Promise<{ smb_password_replaced: boolean }> {
-  return request('/account/oidc-link', {
+async function oidcUnlink(password: string): Promise<void> {
+  return requestNoContent('/account/oidc-link', {
     method: 'DELETE',
     body: JSON.stringify({ current: password })
   })
@@ -1126,8 +1168,8 @@ async function adminGetUserOidc(id: number): Promise<AdminUserOidc> {
   return request(`/admin/users/${id}/oidc`)
 }
 
-async function adminUnlinkUserOidc(id: number): Promise<AdminOidcUnlinkResult> {
-  return request(`/admin/users/${id}/oidc`, { method: 'DELETE' })
+async function adminUnlinkUserOidc(id: number): Promise<void> {
+  return requestNoContent(`/admin/users/${id}/oidc`, { method: 'DELETE' })
 }
 
 /** Storage as the wire sends it: byte counts are decimal strings, because a
@@ -1180,7 +1222,7 @@ async function adminSetIndexSettings(nameEnabled: boolean): Promise<IndexSetting
   // reads it by. There is no `index` section: writing to one is refused, and
   // the field name differs too, so a save aimed at either would report success
   // and change nothing.
-  await request('/admin/settings/search', {
+  await requestNoContent('/admin/settings/search', {
     method: 'PATCH',
     body: JSON.stringify({ name_index_enabled: nameEnabled })
   })
@@ -1368,7 +1410,7 @@ async function adminSetUserQuota(id: number, quotaBytes: number | null): Promise
 }
 
 async function adminDeleteUser(id: number): Promise<void> {
-  await request(`/admin/users/${id}`, { method: 'DELETE' })
+  await requestNoContent(`/admin/users/${id}`, { method: 'DELETE' })
 }
 
 /** `PATCH /api/v1/admin/users/{id}` with a password. An administrator resetting an
@@ -1496,7 +1538,10 @@ async function adminListGrants(opts: { userId?: number; groupId?: number; share?
  *  happens here rather than in the component. */
 async function adminCreateGrant(req: CreateGrantReq): Promise<AdminGrant> {
   const { principal, share, label, ...rest } = req
-  return request('/admin/grants', {
+  // Through the same normalizer the listing uses. The wire omits an empty
+  // subpath and an absent label, and a row handed on raw would carry
+  // undefined where the app's own shape promises a string.
+  const row = await request<WireGrant>('/admin/grants', {
     method: 'POST',
     body: JSON.stringify({
       ...rest,
@@ -1505,14 +1550,19 @@ async function adminCreateGrant(req: CreateGrantReq): Promise<AdminGrant> {
       label: label ?? ''
     })
   })
+  return grantFromWire(row)
 }
 
 async function adminUpdateGrant(id: number, patch: UpdateGrantReq): Promise<AdminGrant> {
-  return request(`/admin/grants/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+  const row = await request<WireGrant>(`/admin/grants/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch)
+  })
+  return grantFromWire(row)
 }
 
 async function adminDeleteGrant(id: number): Promise<void> {
-  await request(`/admin/grants/${id}`, { method: 'DELETE' })
+  await requestNoContent(`/admin/grants/${id}`, { method: 'DELETE' })
 }
 
 // ── admin: group management ──
@@ -1545,7 +1595,7 @@ async function adminRenameGroup(id: number, patch: UpdateGroupReq): Promise<Admi
 }
 
 async function adminDeleteGroup(id: number): Promise<void> {
-  await request(`/admin/groups/${id}`, { method: 'DELETE' })
+  await requestNoContent(`/admin/groups/${id}`, { method: 'DELETE' })
 }
 
 async function adminAddGroupMember(id: number, userId: number): Promise<void> {
@@ -1553,14 +1603,14 @@ async function adminAddGroupMember(id: number, userId: number): Promise<void> {
   // decodes `user` as a string and parses it. Sending a JSON number was
   // refused as a malformed body, so adding somebody to a group answered 400
   // with nothing on screen naming the field.
-  await request(`/admin/groups/${id}/members`, {
+  await requestNoContent(`/admin/groups/${id}/members`, {
     method: 'POST',
     body: JSON.stringify({ user: String(userId) })
   })
 }
 
 async function adminRemoveGroupMember(id: number, userId: number): Promise<void> {
-  await request(`/admin/groups/${id}/members/${userId}`, { method: 'DELETE' })
+  await requestNoContent(`/admin/groups/${id}/members/${userId}`, { method: 'DELETE' })
 }
 
 /** `GET /api/v1/admin/audit[?actor=&event=&since_ns=&until_ns=&before=&limit=]`
@@ -1592,7 +1642,8 @@ async function adminListAudit(query: AuditQuery = {}): Promise<AuditPage> {
       until_ns: query.until_ns,
       before: query.before,
       limit: query.limit
-    })}`
+    })}`,
+    { signal: query.signal }
   )
   return {
     rows: (page.rows ?? []).map((w) => ({
@@ -1655,6 +1706,37 @@ async function adminListLogs(query: AdminLogQuery = {}): Promise<AdminLogPage> {
     cursor: page.cursor ?? '',
     stored_bytes: page.stored_bytes ?? '0',
     segments: page.segments ?? 0
+  }
+}
+
+/** `GET /api/v1/admin/logs/timeline[?since=&until=&level=&text=&subsystem=&request_id=&bucket_ns=]`
+ *  — the same filters as `adminListLogs`, minus paging, bucketed into
+ *  fixed-width windows for the dashboard's chart. Every count normalizes
+ *  defensively the same way `adminListLogs` does, because a bucket a build
+ *  newer than this one adds a field to should still render rather than
+ *  vanish behind a strict shape. */
+async function adminLogsTimeline(query: AdminLogsTimelineQuery = {}): Promise<AdminLogsTimeline> {
+  const level = query.levels && query.levels.length > 0 ? query.levels.join(',') : undefined
+  const timeline = await request<Partial<AdminLogsTimeline>>(
+    `/admin/logs/timeline${qs({
+      since: query.since,
+      until: query.until,
+      level,
+      text: query.text,
+      subsystem: query.subsystem,
+      request_id: query.request_id,
+      bucket_ns: query.bucket_ns
+    })}`,
+    { signal: query.signal }
+  )
+  return {
+    bucket_ns: timeline.bucket_ns ?? '0',
+    buckets: (timeline.buckets ?? []).map((b) => ({
+      start_ns: b.start_ns ?? '0',
+      server: b.server ?? {},
+      audit: b.audit ?? {}
+    })),
+    truncated: timeline.truncated ?? false
   }
 }
 
@@ -1759,6 +1841,7 @@ export const httpApi = {
   movePreflight,
   delete: del,
   archive,
+  download,
   jobList,
   jobStatus,
   jobCancel,
@@ -1838,6 +1921,7 @@ export const httpApi = {
   adminRemoveGroupMember,
   adminListAudit,
   adminListLogs,
+  adminLogsTimeline,
   registerUploadedEntry(): void {
     // no-op for the real backend: the server's own state is authoritative;
     // the browse UI calls refresh() after an upload completes instead.

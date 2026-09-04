@@ -14,11 +14,13 @@ import (
 	"io"
 	"log/slog"
 	"mime"
+	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/archive"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
@@ -26,7 +28,12 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
-// filesRead streams one file.
+// filesRead streams one file inline, for the surfaces that render bytes: the
+// editor, the previewer, an <img> src.
+//
+// It never sets a disposition. A download is the ticket pair below, so no
+// query parameter decides whether a response is a download and no client
+// builds a download URL out of a path it typed.
 func (e *Engine) filesRead(c *fiber.Ctx) error {
 	owner, ok := ownerOf(c)
 	if !ok {
@@ -44,10 +51,17 @@ func (e *Engine) filesRead(c *fiber.Ctx) error {
 	if err != nil {
 		return fail(c, err)
 	}
+	return e.streamFile(c, r, "")
+}
 
-	// Opened before the range is parsed, because the size a range is checked
-	// against has to be the size of the file about to be served. Statting
-	// separately would range against a size that can already be stale.
+// streamFile serves one resolved file, as an attachment when attachAs names
+// one and inline when it is empty.
+//
+// Everything that can refuse happens before the first byte, which is why the
+// range is parsed against the size of the file already open rather than a
+// separate stat: a size that can go stale between the two is a range checked
+// against a file that is no longer the one being served.
+func (e *Engine) streamFile(c *fiber.Ctx, r core.Resolved, attachAs string) error {
 	entry, stream, err := e.Core.OpenStream(c.UserContext(), r, nil)
 	if err != nil {
 		return fail(c, err)
@@ -91,13 +105,103 @@ func (e *Engine) filesRead(c *fiber.Ctx) error {
 		}
 	}
 
-	return e.sendStream(c, entry, stream, ranged, rng, size)
+	return e.sendStream(c, entry, stream, ranged, rng, size, attachAs)
+}
+
+// downloadRequest names one file to hand over.
+type downloadRequest struct {
+	Path string `json:"path"`
+}
+
+// filesDownload validates a path and answers where to fetch it.
+//
+// Two steps, for the reason the archive pair has two: the fetch has to be a
+// plain navigation the browser owns, so the bytes land in its own download
+// list and never pass through the tab. A POST cannot be that navigation.
+//
+// The path goes in the body and comes back as an opaque token, which is the
+// other half of the point. A download URL built from a path is a URL a client
+// composes, and a client composing one composed it wrong: an account granted
+// a folder inside a share saw its own label twice and downloaded nothing. The
+// server resolves the path here and the browser never sees one.
+func (e *Engine) filesDownload(c *fiber.Ctx) error {
+	owner, ok := ownerOf(c)
+	if !ok {
+		return refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+	}
+
+	var req downloadRequest
+	if err := decodeBody(c, &req); err != nil {
+		return refuse(c, apierr.Classified{Class: apierr.Malformed})
+	}
+	if strings.TrimSpace(req.Path) == "" {
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
+
+	// Resolved before a token exists, so an unreadable path is refused now
+	// rather than as a broken download later. The fetch resolves again.
+	r, err := e.resolve(owner, req.Path, acl.Read|acl.Download)
+	if err != nil {
+		return fail(c, err)
+	}
+	st, serr := r.Root().Stat(r.Path())
+	if serr != nil {
+		return fail(c, core.ErrNotFound)
+	}
+	if st.Kind.IsDir() {
+		// A folder is the archive pair's business, and answering here would
+		// hand back a ticket that streams nothing.
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
+
+	token, terr := archiveToken()
+	if terr != nil {
+		return fail(c, terr)
+	}
+	name := r.Path().Name()
+	if !e.Archives.Put(token, &archive.Ticket{
+		Kind: archive.KindFile, Name: name, Paths: []string{req.Path}, Owner: int64(owner),
+	}) {
+		return refuse(c, apierr.Classified{Class: apierr.LimitExceeded})
+	}
+
+	return writeJSON(c, fiber.StatusOK, handler.TicketView{
+		Token: token,
+		Name:  name,
+		URL:   "/api/v1/files/download/fetch?token=" + url.QueryEscape(token),
+	})
+}
+
+// filesDownloadFetch streams the file a ticket names.
+//
+// Re-resolved rather than trusting the mint: a grant revoked in between must
+// refuse the download rather than serve it on a check that passed a minute
+// ago. Ranges work, because this is the same stream the inline read serves.
+func (e *Engine) filesDownloadFetch(c *fiber.Ctx) error {
+	owner, ok := ownerOf(c)
+	if !ok {
+		return refuse(c, apierr.Classified{Class: apierr.AuthRequired})
+	}
+
+	t, ok := e.Archives.Get(c.Query("token"), int64(owner), archive.KindFile)
+	if !ok {
+		return refuse(c, apierr.Classified{Class: apierr.NotFound})
+	}
+	if len(t.Paths) != 1 {
+		return refuse(c, apierr.Classified{Class: apierr.NotFound})
+	}
+
+	r, err := e.resolve(owner, t.Paths[0], acl.Read|acl.Download)
+	if err != nil {
+		return fail(c, err)
+	}
+	return e.streamFile(c, r, t.Name)
 }
 
 // sendStream commits the response and copies the bytes.
 func (e *Engine) sendStream(
 	c *fiber.Ctx, entry core.FidEntry, stream *core.Stream,
-	ranged bool, rng handler.ByteRange, size int64,
+	ranged bool, rng handler.ByteRange, size int64, attachAs string,
 ) error {
 	length, lerr := num.Narrow[int64](stream.Remaining())
 	if lerr != nil {
@@ -118,15 +222,15 @@ func (e *Engine) sendStream(
 	}
 	c.Set(fiber.HeaderContentLength, strconv.FormatInt(length, 10))
 
-	// ?download=1 asks for the file as a download rather than as something to
-	// render. Without the header the browser navigates to the bytes and shows
-	// them, or offers a name taken from the URL, which here is "read".
+	// A name means the response is a download: the browser saves it under that
+	// name rather than rendering it or inventing one from the URL, which for a
+	// ticket fetch would be "fetch".
 	//
 	// The name is quoted and escaped by the helper, and carried in the RFC 5987
 	// form as well: a header built by pasting a filename in is one a filename
 	// can break out of.
-	if c.Query("download") == "1" {
-		c.Set(fiber.HeaderContentDisposition, handler.ContentDisposition(entry.Name))
+	if attachAs != "" {
+		c.Set(fiber.HeaderContentDisposition, handler.ContentDisposition(attachAs))
 	}
 
 	status := fiber.StatusOK

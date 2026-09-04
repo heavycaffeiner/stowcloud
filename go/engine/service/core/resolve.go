@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
@@ -238,25 +239,62 @@ func (c *Core) EntryAt(r Resolved, st vfs.Stat) Entry {
 
 // VpathFor is the crossing back out: a share-relative path in the form this
 // user's client sees it, under the label their own grant projects the share
-// as. It answers "what is the URL of this" for search hits, recent listings
-// and WebDAV hrefs.
+// as. It answers "what is the URL of this" for search hits, recent listings,
+// download links and WebDAV hrefs.
 //
 // A share the user cannot see is an error rather than a guessed label,
 // because a URL under a label they do not hold is a URL to nothing.
 //
-// Unlike Resolve, this does not strip the grant subpath: its callers pass
-// paths in the same projected coordinate space the label roots.
+// The grant subpath comes off the front. A path inside this package is always
+// share-relative and carries it; the projected space the label roots does not,
+// because the label is what stands for the subpath. Joining without stripping
+// produced "Game/Game/file" for an account granted one folder, which is a URL
+// to a file that does not exist, at whatever depth the grant sits.
+//
+// The deepest matching root wins. One account can hold two grants on one
+// share, each projected under its own label, and the answer for a path is the
+// one whose subpath actually contains it.
 func (c *Core) VpathFor(user UserID, share ShareID, p vfs.SharePath) (vfs.Vpath, error) {
+	comps := p.Components()
+
+	depth, label := -1, ""
 	for _, r := range c.labelledRoots(user) {
 		narrowed, err := num.Narrow[uint32](r.Share)
-		if err != nil {
+		if err != nil || ShareID(narrowed) != share {
 			continue
 		}
-		if ShareID(narrowed) == share {
-			return vfs.NewVpath(r.Label, p)
+		sub := r.Subpath.Components()
+		if len(sub) <= depth || !componentsPrefix(sub, comps) {
+			continue
+		}
+		depth, label = len(sub), r.Label
+	}
+	if depth < 0 {
+		return vfs.Vpath{}, errors.New("vpath for an unreadable share")
+	}
+
+	rest, err := vfs.ParseSharePath(strings.Join(comps[depth:], "/"))
+	if err != nil {
+		return vfs.Vpath{}, err
+	}
+	return vfs.NewVpath(label, rest)
+}
+
+// componentsPrefix reports whether sub names the first components of p.
+//
+// Component-wise, never a string prefix: "Gamera" starts with "Game" and is a
+// different folder, so a byte comparison would project a path under a label
+// that does not contain it.
+func componentsPrefix(sub, p []string) bool {
+	if len(sub) > len(p) {
+		return false
+	}
+	for i := range sub {
+		if sub[i] != p[i] {
+			return false
 		}
 	}
-	return vfs.Vpath{}, errors.New("vpath for an unreadable share")
+	return true
 }
 
 // pathExists stats a path and folds the missing answer to false. It is the

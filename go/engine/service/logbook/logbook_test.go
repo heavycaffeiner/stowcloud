@@ -20,10 +20,18 @@ import (
 
 // stepClock advances a fixed amount per reading, so segment names and record
 // stamps are distinct and ordered without depending on the wall clock.
+//
+// It starts at the real epoch rather than at zero. slog stamps every record
+// with the wall clock, and a store whose notion of "now" sat at zero would
+// place every one of them a lifetime in the future, outside any window the
+// counting walk frames. The steps are fixed, so nothing here depends on the
+// absolute value.
 type stepClock struct {
 	mu sync.Mutex
 	ns int64
 }
+
+func newStepClock() *stepClock { return &stepClock{ns: time.Now().UnixNano()} }
 
 func (c *stepClock) Now() time.Time {
 	return time.Unix(0, c.Nanos())
@@ -46,7 +54,7 @@ func open(t *testing.T, opt logbook.Options) *logbook.Sink {
 		opt.Dir = filepath.Join(t.TempDir(), "logs")
 	}
 	if opt.Clock == nil {
-		opt.Clock = &stepClock{}
+		opt.Clock = newStepClock()
 	}
 	s, err := logbook.Open(opt)
 	if err != nil {

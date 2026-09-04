@@ -566,11 +566,14 @@ func (e *Engine) compatUpdateShare(
 	if rawLabel := c.FormValue("label"); rawLabel != "" {
 		label = rawLabel
 	}
-	if uerr := e.Core.UpdateGrant(ctx, id, allow, acl.Perms(grant.Deny), grant.Inherit, label); uerr != nil {
+	// The stored row rather than the local copy patched by hand: the update
+	// reads it back, so the response describes what is on disk instead of
+	// what this function believes it wrote.
+	updated, uerr := e.Core.UpdateGrant(ctx, id, allow, acl.Perms(grant.Deny), grant.Inherit, label)
+	if uerr != nil {
 		return compat.Val{}, false, compat.ServerError("could not update share")
 	}
-	grant.Allow = uint16(allow)
-	grant.Label = label
+	grant = updated
 	groups, gerr := e.compatGroups(ctx, user)
 	if gerr != nil {
 		return compat.Val{}, false, compat.ServerError("could not read groups")

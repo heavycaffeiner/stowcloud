@@ -186,16 +186,22 @@ func ArchiveListingOf(l preview.ArchiveListing) ArchiveListingView {
 	return out
 }
 
-// ArchiveTicketView points a client at a selection it can fetch.
+// TicketView points a client at something it can fetch.
 //
-// No size and no length: nothing is built until the fetch asks, so there is no
-// figure to report and the download that follows declares none either.
-type ArchiveTicketView struct {
+// One shape for both kinds. An archive ticket names a selection to walk and a
+// file ticket names one file to stream, and a client does the same thing with
+// either: navigate to the URL and let the browser save what arrives.
+//
+// No size and no length: nothing is built until the fetch asks, so an archive
+// has no figure to report, and the URL is where the file's own length is
+// declared rather than here.
+type TicketView struct {
 	Token string `json:"token"`
 	Name  string `json:"name"`
 
 	// URL is where to get it, absolute from the site root. Built by the
-	// server so a client does not assemble the route itself and get it wrong.
+	// server so a client does not assemble the route itself and get it wrong,
+	// which is exactly what a path-built download URL did.
 	URL string `json:"url"`
 }
 

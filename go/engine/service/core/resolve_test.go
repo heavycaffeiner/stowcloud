@@ -452,6 +452,123 @@ func TestVpathForRoundTripsWithResolveAndRefusesAnInvisibleShare(t *testing.T) {
 	}
 }
 
+// grantSubpathRead persists a read grant over one folder inside a share, which
+// is what an account granted a subfolder rather than the whole share holds.
+func grantSubpathRead(
+	t *testing.T, c *Core, st *state.DB, user int64, share ShareID, subpath, label string,
+) {
+	t.Helper()
+	ctx := context.Background()
+	holder := user
+	if _, err := st.PersistGrant(ctx, state.GrantRow{
+		User:    &holder,
+		Share:   int64(share),
+		Subpath: subpath,
+		Allow:   uint16(acl.Read | acl.Download),
+		Inherit: true,
+		Label:   label,
+	}, 0); err != nil {
+		t.Fatalf("persisting a subpath grant: %v", err)
+	}
+	if err := c.ReloadGrants(ctx); err != nil {
+		t.Fatalf("reloading grants: %v", err)
+	}
+}
+
+// A grant over a folder inside a share projects that folder as the root the
+// client sees, so crossing back out must not put the subpath on the front
+// again. It did, and the URL for a file the account could see named a path
+// that does not exist: "Game/Game/file" for a grant over "Game".
+//
+// Two depths, because the bug is the subpath's length: one component and
+// three, and the second is what proves nothing is hard-coded to one level.
+func TestVpathForStripsTheGrantSubpathAtAnyDepth(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		subpath  string
+		label    string
+		relative string
+		want     string
+	}{
+		{"one level", "Game", "Game", "Game/save.dat", "Game/save.dat"},
+		{"one level, nested file", "Game", "Game", "Game/mods/a.pak", "Game/mods/a.pak"},
+		{"three levels", "a/b/c", "Deep", "a/b/c/file.txt", "Deep/file.txt"},
+		{"three levels, nested", "a/b/c", "Deep", "a/b/c/d/e.txt", "Deep/d/e.txt"},
+		// The granted folder itself, which is the projected root.
+		{"the folder itself", "Game", "Game", "Game", "Game"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, st := newCore(t)
+			seedUser(t, st, 1, "ada")
+			share(t, c, 10, "share")
+			grantSubpathRead(t, c, st, 1, 10, tc.subpath, tc.label)
+
+			rest, err := vfs.ParseSharePath(tc.relative)
+			if err != nil {
+				t.Fatalf("parsing the share path: %v", err)
+			}
+			got, err := c.VpathFor(1, 10, rest)
+			if err != nil {
+				t.Fatalf("VpathFor: %v", err)
+			}
+			if got.String() != tc.want {
+				t.Fatalf("VpathFor produced %q, want %q", got, tc.want)
+			}
+
+			// And the answer resolves back to the share-relative path it came
+			// from, which is what makes the URL fetch the file it names.
+			r, rerr := c.Resolve(1, got, acl.Read)
+			if rerr != nil {
+				t.Fatalf("resolving the produced vpath: %v", rerr)
+			}
+			if r.Path().String() != tc.relative {
+				t.Fatalf("the round trip landed at %q, want %q", r.Path(), tc.relative)
+			}
+		})
+	}
+}
+
+// Two grants on one share, each projected under its own label. The answer for
+// a path is the label whose subpath actually contains it, and where both
+// contain it the deeper one wins: that is the folder the client is looking at.
+func TestVpathForPicksTheDeepestGrantThatContainsThePath(t *testing.T) {
+	c, st := newCore(t)
+	seedUser(t, st, 1, "ada")
+	share(t, c, 10, "share")
+	grantSubpathRead(t, c, st, 1, 10, "team", "Team")
+	grantSubpathRead(t, c, st, 1, 10, "team/game", "Game")
+
+	for _, tc := range []struct {
+		relative, want string
+	}{
+		{"team/notes.txt", "Team/notes.txt"},
+		{"team/game/save.dat", "Game/save.dat"},
+		{"team/game", "Game"},
+	} {
+		rest, err := vfs.ParseSharePath(tc.relative)
+		if err != nil {
+			t.Fatalf("parsing %q: %v", tc.relative, err)
+		}
+		got, err := c.VpathFor(1, 10, rest)
+		if err != nil {
+			t.Fatalf("VpathFor(%q): %v", tc.relative, err)
+		}
+		if got.String() != tc.want {
+			t.Errorf("VpathFor(%q) = %q, want %q", tc.relative, got, tc.want)
+		}
+	}
+
+	// A path outside every grant on the share has no label to project it
+	// under, so there is no URL to hand back.
+	outside, err := vfs.ParseSharePath("elsewhere/secret.txt")
+	if err != nil {
+		t.Fatalf("parsing: %v", err)
+	}
+	if _, err := c.VpathFor(1, 10, outside); err == nil {
+		t.Error("VpathFor produced a path for a folder no grant covers")
+	}
+}
+
 func TestPathExistsFoldsMissingButNotARefusal(t *testing.T) {
 	c, _, host := readableShare(t)
 	r, err := c.Resolve(1, vpath(t, "Documents"), acl.Read)

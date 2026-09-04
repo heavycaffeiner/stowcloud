@@ -436,8 +436,14 @@ func TestGrantWrappersReloadTheEvaluator(t *testing.T) {
 		t.Fatalf("the new grant does not serve: %v", rerr)
 	}
 
-	if err := c.UpdateGrant(ctx, id, acl.Read|acl.Download, 0, true, "Documents"); err != nil {
-		t.Fatalf("UpdateGrant: %v", err)
+	// The update answers the stored row, which is what the admin screen
+	// re-renders, so the widened permissions are readable here too.
+	widened, uerr := c.UpdateGrant(ctx, id, acl.Read|acl.Download, 0, true, "Documents")
+	if uerr != nil {
+		t.Fatalf("UpdateGrant: %v", uerr)
+	}
+	if acl.Perms(widened.Allow) != acl.Read|acl.Download {
+		t.Errorf("the update answered allow %v, want the widened set", acl.Perms(widened.Allow))
 	}
 	if _, rerr := c.Resolve(2, vpath(t, "Documents/note.txt"), acl.Download); rerr != nil {
 		t.Fatalf("the widened grant does not serve: %v", rerr)

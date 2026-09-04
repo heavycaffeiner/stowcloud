@@ -24,8 +24,23 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 )
 
+// Kind says what a ticket is for. A ticket is a capability, and the route
+// that mints one is not the only route that could resolve it: naming the kind
+// is what keeps each route serving only its own.
+type Kind uint8
+
+const (
+	// KindArchive walks the selection into a zip.
+	KindArchive Kind = iota + 1
+	// KindFile streams one file as it is on disk.
+	KindFile
+)
+
 // Ticket is one validated selection waiting to be fetched.
 type Ticket struct {
+	// Kind decides which route may fetch it and what that route does.
+	Kind Kind
+
 	// Name is the download's filename, decided when the ticket was minted.
 	Name string
 
@@ -33,6 +48,8 @@ type Ticket struct {
 	// on fetch rather than stored resolved: a grant can be revoked between the
 	// two requests, and the fetch must answer to the permissions the account
 	// holds then rather than the ones it held when it clicked.
+	//
+	// A file ticket holds exactly one.
 	Paths []string
 
 	// Owner is the account that minted it. A ticket is a capability, and one
@@ -79,22 +96,27 @@ func (s *Tickets) Put(token string, t *Ticket) bool {
 	return true
 }
 
-// Get returns a live ticket for one owner.
+// Get returns a live ticket for one owner and one kind.
 //
 // The owner is compared here rather than by the caller: a ticket is a
 // capability, and the one place that resolves them is the one place that can
 // be sure the check is not skipped.
 //
-// A token that does not exist and one belonging to somebody else answer the
-// same, because distinguishing them would confirm that a guessed token names a
-// real download.
-func (s *Tickets) Get(token string, owner int64) (*Ticket, bool) {
+// The kind is compared for the same reason. A ticket minted for one file and
+// fetched through the archive route would zip a single file, which is not what
+// either side asked for, and a route serving a ticket it did not mint is a
+// seam nobody is checking.
+//
+// A token that does not exist, one belonging to somebody else, and one of the
+// wrong kind all answer the same, because distinguishing them would confirm
+// that a guessed token names a real download.
+func (s *Tickets) Get(token string, owner int64, want Kind) (*Ticket, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sweepLocked()
 
 	t, ok := s.byToken[token]
-	if !ok || t.Owner != owner {
+	if !ok || t.Owner != owner || t.Kind != want {
 		return nil, false
 	}
 	return t, true

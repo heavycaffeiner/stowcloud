@@ -406,6 +406,32 @@
     }
   }
 
+  // ── the hop this request arrived over ──
+  //
+  // `snapshot.hop` is what the server observed about the very request that
+  // fetched the settings, alongside the trusted-proxies list it is judged
+  // against. Absent on a build too old to send it.
+  const hop = $derived(snapshot?.hop ?? null)
+  const hopAddress = $derived(hop?.peer ?? hop?.client ?? '')
+
+  /** A bare address is not a valid `trusted_proxies` entry — the field is a
+   *  CIDR list, and the mock's own validator (mirroring the server's)
+   *  refuses anything without a `/`. Widening to a single-address range
+   *  keeps the filled value something Save can actually accept. */
+  function asCidr(address: string): string {
+    return address.includes(':') ? `${address}/128` : `${address}/32`
+  }
+
+  /** Fills, never saves: the operator still reviews and presses Save, same
+   *  as every other field on this screen. */
+  function addObservedAddressToTrusted(): void {
+    if (!hopAddress) return
+    const entry = asCidr(hopAddress)
+    const current = strToArr(netTrustedProxies)
+    if (current.includes(entry)) return
+    netTrustedProxies = [...current, entry].join(', ')
+  }
+
   // ── database size guard ──
 
   let dbSizeGuard = $state(false)
@@ -895,6 +921,20 @@
         <TextField label={t('server.trusted_proxies_comma_separated')} bind:value={netTrustedProxies} />
         {#if !netTrustedProxies.trim() && emptyNote('trusted_proxies')}
           <p class="sc-server-settings__empty-note">{emptyNote('trusted_proxies')}</p>
+        {/if}
+        {#if hop}
+          <p class="sc-admin-section__hint">
+            {t('server.requests_arriving_from', { address: hopAddress || t('server.unknown_address') })}
+            {hop.peer_trusted ? t('server.peer_trusted') : t('server.peer_not_trusted')}
+          </p>
+          {#if !hop.peer_trusted && hop.forwarded_seen}
+            <div class="sc-admin-section__warning" role="alert">
+              <p>{t('server.forwarding_headers_ignored_hint', { address: hopAddress })}</p>
+              <Button variant="text" onclick={addObservedAddressToTrusted} disabled={!hopAddress}>
+                {t('server.add_observed_address_to_trusted', { address: hopAddress })}
+              </Button>
+            </div>
+          {/if}
         {/if}
         <TextField label={t('server.bind_address')} bind:value={netBind} />
         <p class="sc-admin-section__hint">{t('server.bind_address_hint')}</p>

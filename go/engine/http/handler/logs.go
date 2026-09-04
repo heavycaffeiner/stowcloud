@@ -13,6 +13,7 @@ package handler
 import (
 	"strconv"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/logbook"
 )
 
@@ -74,6 +75,79 @@ func LogPageOf(p logbook.Page, stats logbook.Stats) LogPageView {
 	}
 	for _, r := range p.Records {
 		out.Records = append(out.Records, LogRecordOf(r))
+	}
+	return out
+}
+
+// LogsTimelineBucketView is one interval of the graph above the log list.
+//
+// Two maps rather than one flat set of keys: the server log is counted by
+// level and the audit log by outcome, and folding them together would make a
+// level called "ok" collide with an outcome.
+//
+// A key a bucket had none of is omitted rather than sent as zero. The
+// renderer already has to handle a series the whole window lacks, and sending
+// every level for every bucket triples the document for no information.
+type LogsTimelineBucketView struct {
+	// StartNs is a decimal string: a nanosecond timestamp loses exactness as
+	// a JavaScript number, which is why every other one on this path is too.
+	StartNs string `json:"start_ns"`
+
+	Server map[string]int `json:"server"`
+	Audit  map[string]int `json:"audit"`
+}
+
+// LogsTimelineView is the graph's whole answer.
+type LogsTimelineView struct {
+	// BucketNs is the interval width the server settled on, which is not
+	// always the one asked for: a window divided into more bars than a chart
+	// can carry gets a width that fits.
+	BucketNs string `json:"bucket_ns"`
+
+	// Buckets is oldest first, because a chart draws left to right, and
+	// covers the window with no holes: an empty interval is still an
+	// interval, so a renderer never has to tell a gap from a zero.
+	Buckets []LogsTimelineBucketView `json:"buckets"`
+
+	// Truncated says a walk stopped on its ceiling, so the graph is a prefix
+	// of the window rather than the whole of it. A screen that drew it
+	// without saying so would be presenting a partial count as a total.
+	Truncated bool `json:"truncated"`
+}
+
+// LogsTimelineOf merges the two walks into the graph's document.
+//
+// The two sides are counted separately and aligned here, on the frame the
+// caller decided: same start, same width, same count. Aligning anywhere else
+// would let the bars disagree about which hour they are.
+func LogsTimelineOf(
+	server []logbook.Bucket, audit []auth.AuditBucket, widthNs int64, truncated bool,
+) LogsTimelineView {
+	out := LogsTimelineView{
+		BucketNs:  strconv.FormatInt(widthNs, 10),
+		Buckets:   make([]LogsTimelineBucketView, 0, len(server)),
+		Truncated: truncated,
+	}
+	for i, b := range server {
+		bucket := LogsTimelineBucketView{
+			StartNs: strconv.FormatInt(b.StartNs, 10),
+			Server:  map[string]int{},
+			Audit:   map[string]int{},
+		}
+		for level, n := range b.Levels {
+			if n > 0 {
+				bucket.Server[level] = n
+			}
+		}
+		if i < len(audit) {
+			if audit[i].OK > 0 {
+				bucket.Audit["ok"] = audit[i].OK
+			}
+			if audit[i].Failed > 0 {
+				bucket.Audit["failed"] = audit[i].Failed
+			}
+		}
+		out.Buckets = append(out.Buckets, bucket)
 	}
 	return out
 }

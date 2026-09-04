@@ -365,3 +365,46 @@ func TestAnUntrustedPeerCannotClaimATrustedAddress(t *testing.T) {
 		t.Errorf("an untrusted peer's connecting-IP header resolved to %v, want the peer %v", got, peer)
 	}
 }
+
+// The shape a container deployment actually has, both ways round.
+//
+// A published port means every request arrives from the bridge gateway, so the
+// peer carries no information about who is calling: it is the same address for
+// everybody. Until that gateway is trusted, the forwarding headers are ignored
+// and every visitor is recorded as the gateway, which is the misconfiguration
+// an operator sees as "every session came from 172.19.0.1".
+//
+// Trusting it is the operator's decision and not a default, because believing
+// a header from an untrusted hop lets any caller claim any address, which the
+// rate limiter and the audit log both read.
+func TestAContainerGatewayIsTheClientUntilItIsTrusted(t *testing.T) {
+	gateway := mustAddr(t, "172.19.0.1")
+	visitor := "203.0.113.9"
+
+	// Nothing trusted: the headers are not believed, so the gateway is the
+	// client and one address stands for everyone behind it.
+	if got := ClientAddr(gateway, nil, "", visitor); got != gateway {
+		t.Errorf("with no trusted proxy the client is %v, want the gateway %v", got, gateway)
+	}
+	if got := ClientAddr(gateway, nil, visitor, ""); got != gateway {
+		t.Errorf("with no trusted proxy the connecting-IP header resolved to %v", got)
+	}
+
+	// The gateway's own network trusted: the header is believed and the real
+	// caller is recovered.
+	trusted := []netip.Prefix{mustPrefix(t, "172.19.0.0/16")}
+	want := mustAddr(t, visitor)
+	if got := ClientAddr(gateway, trusted, "", visitor); got != want {
+		t.Errorf("behind a trusted gateway the client is %v, want %v", got, want)
+	}
+	if got := ClientAddr(gateway, trusted, visitor, ""); got != want {
+		t.Errorf("behind a trusted gateway the connecting-IP header resolved to %v, want %v", got, want)
+	}
+
+	// A single-host entry is the other spelling an operator writes, and it has
+	// to work the same: the loader accepts a bare address as a /32.
+	single := []netip.Prefix{mustPrefix(t, "172.19.0.1/32")}
+	if got := ClientAddr(gateway, single, "", visitor); got != want {
+		t.Errorf("a bare gateway address resolved the client to %v, want %v", got, want)
+	}
+}

@@ -42,7 +42,6 @@
   let disableError = $state<string | null>(null)
   /** This section's own live region, for the one thing turning TOTP off does
    *  that the user did not come here to do. */
-  let smbAnnouncement = $state('')
 
   // ── recovery codes: remaining count + reissue ──
   let recoveryRemaining = $state<number | null>(null)
@@ -184,9 +183,14 @@
     disableError = null
     disableModal.submit()
     try {
-      const res = await api.totpDisable(disablePassword)
+      await api.totpDisable(disablePassword)
       disableModal.succeed()
-      smbAnnouncement = res.smb_password_replaced ? t('smb.replaced_by_account_password') : ''
+      // No announcement about the file-sharing password: the server does
+      // not report one, and it could not. Enrolling or disconnecting
+      // changes what is published, never what is stored, and a single
+      // row holds the hash whether it came from the account password or
+      // a separate one, so the two are indistinguishable afterwards. The
+      // sharing section below reads the real state.
       onchanged?.()
     } catch (err) {
       disableModal.fail('')
@@ -232,7 +236,6 @@
       <Button variant="outlined" onclick={openReissue}>{t('totp.reissue_recovery_codes')}</Button>
     </div>
   {/if}
-  <p class="sc-totp__announce" aria-live="polite">{smbAnnouncement}</p>
 </div>
 
 <Dialog open={enrollSnap.current.isOpen} title={t('totp.set_up_two_factor_authentication')} onclose={closeEnroll}>

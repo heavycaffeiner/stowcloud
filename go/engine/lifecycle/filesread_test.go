@@ -110,28 +110,161 @@ func download(t *testing.T, base string, sess session, path, rangeHeader string)
 	return resp.StatusCode, resp.Header, body
 }
 
-// A file asked for with ?download=1 comes back as an attachment named after
-// the file.
+// A download is a two-step ticket, and the fetch carries the attachment
+// header naming the file.
 //
-// The parameter is what the browse screen's Download action appends, and the
-// header is the whole difference between saving a file and navigating to its
-// bytes. Without it the browser renders what it can and otherwise offers to
-// save a file called "read", after the last path segment of the endpoint.
-func TestADownloadIsAnAttachmentNamedAfterTheFile(t *testing.T) {
+// The path goes in the POST body and comes back as an opaque token, so no
+// client composes a download URL out of a path. One that did composed it
+// wrong: an account granted a folder inside a share saw its own label twice.
+func TestADownloadTicketFetchesTheFileAsAnAttachment(t *testing.T) {
 	base, sess, share := contentShare(t, acl.Read|acl.Download, []byte("payload"))
 
-	status, header, _ := readWithQuery(t, base, sess,
-		"/"+share+"/doc.bin", "download=1")
+	status, body := post(t, base+"/api/v1/files/download", sess,
+		map[string]string{"path": "/" + share + "/doc.bin"})
 	if status != http.StatusOK {
-		t.Fatalf("the download answered %d", status)
+		t.Fatalf("minting a download answered %d: %s", status, body)
+	}
+	var ticket struct {
+		Token string `json:"token"`
+		Name  string `json:"name"`
+		URL   string `json:"url"`
+	}
+	if err := json.Unmarshal(body, &ticket); err != nil {
+		t.Fatalf("the ticket does not parse: %v\n%s", err, body)
+	}
+	switch {
+	case ticket.Token == "":
+		t.Fatal("the ticket carries no token")
+	case ticket.Name != "doc.bin":
+		t.Errorf("the ticket names %q, want doc.bin", ticket.Name)
+	case !strings.Contains(ticket.URL, ticket.Token):
+		t.Errorf("the ticket's URL %q does not carry its token", ticket.URL)
+	case strings.Contains(ticket.URL, "doc.bin") || strings.Contains(ticket.URL, "path="):
+		t.Errorf("the ticket's URL %q carries the file's path", ticket.URL)
 	}
 
-	got := header.Get("Content-Disposition")
-	if got == "" {
-		t.Fatal("a download carries no Content-Disposition, so the browser renders it instead of saving it")
+	code, header, got := fetchTicket(t, base, sess, ticket.URL)
+	if code != http.StatusOK {
+		t.Fatalf("fetching the ticket answered %d", code)
 	}
-	if !strings.Contains(got, `filename="doc.bin"`) {
-		t.Errorf("the disposition is %q, which does not name the file", got)
+	disposition := header.Get("Content-Disposition")
+	if disposition == "" {
+		t.Fatal("the fetch carries no Content-Disposition, so the browser renders it instead of saving it")
+	}
+	if !strings.Contains(disposition, `filename="doc.bin"`) {
+		t.Errorf("the disposition is %q, which does not name the file", disposition)
+	}
+	if string(got) != "payload" {
+		t.Errorf("the fetch returned %q", got)
+	}
+}
+
+// fetchTicket follows a ticket's own URL, which is what a browser navigating
+// to it does.
+func fetchTicket(t *testing.T, base string, sess session, ticketURL string) (int, http.Header, []byte) {
+	t.Helper()
+
+	req, err := http.NewRequest(http.MethodGet, base+ticketURL, nil)
+	if err != nil {
+		t.Fatalf("building the fetch: %v", err)
+	}
+	sess.attach(req)
+
+	resp, err := testClient().Do(req)
+	if err != nil {
+		t.Fatalf("fetching: %v", err)
+	}
+	defer func() {
+		if cerr := resp.Body.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	}()
+	return resp.StatusCode, resp.Header, readAll(t, resp)
+}
+
+// A ticket is a capability, so it belongs to the account that minted it and
+// answers a stranger the same way a token that never existed does.
+func TestADownloadTicketDoesNotCrossAccounts(t *testing.T) {
+	base, sess, share, _, e, _ := contentShareGrant(t, acl.Read|acl.Download, []byte("private"))
+
+	status, body := post(t, base+"/api/v1/files/download", sess,
+		map[string]string{"path": "/" + share + "/doc.bin"})
+	if status != http.StatusOK {
+		t.Fatalf("minting answered %d: %s", status, body)
+	}
+	var ticket struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(body, &ticket); err != nil {
+		t.Fatalf("the ticket does not parse: %v", err)
+	}
+
+	// A second account, signed in, with no grant over the share at all.
+	ctx := context.Background()
+	if _, cerr := e.Auth.CreateUser(ctx, "bob", "Bob", secret.New([]byte("another-long-password"))); cerr != nil {
+		t.Fatalf("creating the second account: %v", cerr)
+	}
+	stranger := signIn(t, base, "bob", "another-long-password")
+
+	if code, _, _ := fetchTicket(t, base, stranger, ticket.URL); code != http.StatusNotFound {
+		t.Errorf("another account fetched the ticket: %d", code)
+	}
+	// And a token nobody minted answers identically, so a guess learns
+	// nothing from the difference.
+	absent := "/api/v1/files/download/fetch?token=" + urlEscape("never-minted")
+	if code, _, _ := fetchTicket(t, base, sess, absent); code != http.StatusNotFound {
+		t.Errorf("a token that was never minted answered %d", code)
+	}
+}
+
+// The fetch resolves again rather than trusting the mint. A grant revoked
+// between the two requests has to refuse the download, not serve it on a
+// check that passed a moment ago.
+func TestADownloadTicketIsRefusedAfterTheGrantGoes(t *testing.T) {
+	base, sess, share, _, e, grant := contentShareGrant(t, acl.Read|acl.Download, []byte("private"))
+
+	status, body := post(t, base+"/api/v1/files/download", sess,
+		map[string]string{"path": "/" + share + "/doc.bin"})
+	if status != http.StatusOK {
+		t.Fatalf("minting answered %d: %s", status, body)
+	}
+	var ticket struct {
+		URL string `json:"url"`
+	}
+	if err := json.Unmarshal(body, &ticket); err != nil {
+		t.Fatalf("the ticket does not parse: %v", err)
+	}
+
+	if derr := e.Core.DeleteGrant(context.Background(), grant); derr != nil {
+		t.Fatalf("revoking the grant: %v", derr)
+	}
+
+	if code, _, _ := fetchTicket(t, base, sess, ticket.URL); code != http.StatusNotFound {
+		t.Errorf("the ticket still served the file after the grant went: %d", code)
+	}
+}
+
+// A folder is the archive pair's business. Minting a file ticket for one would
+// hand back a token that streams nothing.
+func TestADownloadTicketRefusesAFolder(t *testing.T) {
+	base, sess, share := contentShare(t, acl.Read|acl.Download, []byte("payload"))
+
+	status, body := post(t, base+"/api/v1/files/download", sess,
+		map[string]string{"path": "/" + share})
+	if status != http.StatusUnprocessableEntity {
+		t.Errorf("minting a ticket for a folder answered %d: %s", status, body)
+	}
+}
+
+// A path the account cannot reach answers as a missing one, which is the same
+// answer every other surface gives for a path outside every grant.
+func TestADownloadTicketRefusesAnUnreachablePath(t *testing.T) {
+	base, sess, _ := contentShare(t, acl.Read|acl.Download, []byte("payload"))
+
+	status, _ := post(t, base+"/api/v1/files/download", sess,
+		map[string]string{"path": "/nowhere/doc.bin"})
+	if status != http.StatusNotFound {
+		t.Errorf("minting a ticket for an unreachable path answered %d", status)
 	}
 }
 

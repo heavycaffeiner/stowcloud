@@ -151,6 +151,81 @@ func (s *Service) AuditPage(ctx context.Context, f AuditFilter) ([]AuditRow, *in
 	return rows, next, nil
 }
 
+// auditCountCeiling stops the counting walk. A window covering a busy month
+// would otherwise read the whole table to draw one screen.
+const auditCountCeiling = 200_000
+
+// AuditBucket is one interval's outcome counts.
+type AuditBucket struct {
+	StartNs int64
+	OK      int
+	Failed  int
+}
+
+// AuditCounts totals the log per interval, for the graph above the log list.
+//
+// Counts rather than rows, and its own walk rather than adding up a page: a
+// page is a hundred rows and a graph covers a window, so a chart drawn from
+// what the reader scrolled to would rise and fall with the scrolling.
+//
+// The frame is the caller's: since, until and the width are decided above
+// this, so the two logs' bars line up. Buckets come back oldest first,
+// covering the window with no holes, because a renderer that had to tell a
+// gap from a zero would guess. Truncated reports a walk that stopped on the
+// ceiling.
+func (s *Service) AuditCounts(
+	ctx context.Context, f AuditFilter, startNs, widthNs int64, count int,
+) (buckets []AuditBucket, truncated bool, err error) {
+	if widthNs <= 0 || count <= 0 {
+		return nil, false, nil
+	}
+
+	buckets = make([]AuditBucket, count)
+	for i := range buckets {
+		buckets[i].StartNs = startNs + int64(i)*widthNs
+	}
+
+	// The store pages newest first from the top, which is the only order it
+	// offers. The walk stops when it reaches rows older than the window, so a
+	// long log costs the window rather than its whole length.
+	var before int64
+	last := count - 1
+	for seen := 0; seen < auditCountCeiling; {
+		records, rerr := s.store.AuditPage(ctx, before, auditDefaultLimit*auditOverscan)
+		if rerr != nil {
+			return nil, false, rerr
+		}
+		if len(records) == 0 {
+			return buckets, false, nil
+		}
+		for _, rec := range records {
+			seen++
+			before = rec.RowID
+			if rec.TsNs < startNs {
+				// Past the window's oldest edge, and the walk is ordered, so
+				// nothing older can land in a bucket either.
+				return buckets, false, nil
+			}
+			if !auditMatches(rec, f) {
+				continue
+			}
+			at := int((rec.TsNs - startNs) / widthNs)
+			if at < 0 || at > last {
+				continue
+			}
+			if rec.OK {
+				buckets[at].OK++
+			} else {
+				buckets[at].Failed++
+			}
+		}
+		if ctx.Err() != nil {
+			return nil, false, ctx.Err()
+		}
+	}
+	return buckets, true, nil
+}
+
 // actorNames maps account ids to names for the page being rendered, read once
 // rather than per row: a page is a hundred rows and most share a handful of
 // actors.

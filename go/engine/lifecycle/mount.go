@@ -188,6 +188,10 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.filesArchiveFetch
 		case "files.archive.list":
 			out[r.Name] = e.filesArchiveList
+		case "files.download":
+			out[r.Name] = e.filesDownload
+		case "files.download.fetch":
+			out[r.Name] = e.filesDownloadFetch
 		case "links.list":
 			out[r.Name] = e.linksList
 		case "links.create":
@@ -238,6 +242,8 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminAudit
 		case "admin.logs.list":
 			out[r.Name] = e.adminLogsList
+		case "admin.logs.timeline":
+			out[r.Name] = e.adminLogsTimeline
 		case "admin.settings.get":
 			out[r.Name] = e.adminSettingsGet
 		case "admin.settings.patch":

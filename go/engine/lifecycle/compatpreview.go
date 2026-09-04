@@ -175,7 +175,9 @@ func (e *Engine) compatDirectStream(c *fiber.Ctx) error {
 		}
 	}
 
-	return e.sendStream(c, entry, stream, ranged, rng, size)
+	// Inline: a direct URL is what a media player opens, so a disposition
+	// would make the client save the file instead of playing it.
+	return e.sendStream(c, entry, stream, ranged, rng, size, "")
 }
 
 // compatPreview handles thumbnail and preview requests by fileId or path.

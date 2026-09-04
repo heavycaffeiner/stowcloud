@@ -122,7 +122,7 @@ below; the old spelling is the behavioral reference for the new one.
 | --- | --- | --- |
 | `GET /api/v1/files/list` | `GET /api/fs/list` | |
 | `GET /api/v1/files/stat` | `GET /api/fs/stat` | |
-| `GET /api/v1/files/read` | `GET /api/fs/read` | `?download=1` unchanged |
+| `GET /api/v1/files/read` | `GET /api/fs/read` | inline only; a download is the ticket pair |
 | `GET /api/v1/files/size` | `GET /api/fs/size` | the aggregate rollup |
 | `GET /api/v1/files/thumbnail` | `GET /api/fs/thumb` | renamed whole word |
 | `POST /api/v1/files/mkdir` | `POST /api/fs/mkdir` | |
@@ -134,6 +134,8 @@ below; the old spelling is the behavioral reference for the new one.
 | `POST /api/v1/files/archive` | `POST /api/fs/archive` | names a selection, holds no bytes |
 | `GET /api/v1/files/archive/fetch` | | new: streams the named selection |
 | `GET /api/v1/files/archive/list` | `GET /api/fs/archive/list` | zip listing |
+| `POST /api/v1/files/download` | | new: names one file, holds no bytes |
+| `GET /api/v1/files/download/fetch` | | new: streams the named file as a download |
 | `GET /api/v1/files/recent` | `GET /api/recent` | moved into its category |
 
 ### links: the caller's public share links (renamed resource)
@@ -214,6 +216,7 @@ half to match rather than the reverse.
 | `POST /api/v1/admin/shares/{id}/retry` | `POST /api/admin/shares/{id}/retry` | |
 | `GET /api/v1/admin/audit` | `GET /api/admin/audit` | |
 | `GET /api/v1/admin/logs` | none | durable log store, for the admin dashboard |
+| `GET /api/v1/admin/logs/timeline` | none | bucketed counts over both logs, for the graph |
 | `GET /api/v1/admin/storage` | `GET /api/admin/storage` | |
 | `POST /api/v1/admin/smb/apply` | `POST /api/admin/smb/apply` | operator's apply-now |
 | `POST /api/v1/admin/index/build` | `POST /api/admin/index/build` | |

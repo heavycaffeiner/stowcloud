@@ -10,10 +10,13 @@
 package lifecycle
 
 import (
+	"net/netip"
+
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/catalogue"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/check"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
@@ -29,6 +32,12 @@ import (
 // The values are the ones in force rather than the ones on disk. A stored
 // value outside its bound is clamped when it loads, and showing the raw stored
 // number would tell an operator the server is running on something it is not.
+//
+// The response also reports the hop this very request arrived over. Behind a
+// published container port every request arrives from the bridge gateway, so
+// an operator who has not trusted that address sees one address for every
+// visitor and no way to find out why. It is an observation about the request
+// rather than a settable field, so it sits beside the catalogue.
 func (e *Engine) adminSettingsGet(c *fiber.Ctx) error {
 	if _, ok, written := e.admin(c); !ok {
 		return written
@@ -45,7 +54,36 @@ func (e *Engine) adminSettingsGet(c *fiber.Ctx) error {
 	}
 
 	values := runtimecfg.Load(c.UserContext(), e.State, runtimecfg.Defaults(), e.logger)
-	return writeJSON(c, fiber.StatusOK, catalogue.Of(values, stored))
+	return writeJSON(c, fiber.StatusOK, handler.SettingsOf(
+		catalogue.Of(values, stored), e.hopOf(c)))
+}
+
+// hopOf describes how this request reached the server.
+//
+// The peer is the address the transport reports, which is what the trust
+// decision is made against. The client is what the chain concluded. When a
+// forwarding header arrived and the two are the same, the header was ignored
+// because the peer is not trusted, and that is the case an operator cannot
+// otherwise see.
+func (e *Engine) hopOf(c *fiber.Ctx) handler.HopView {
+	peer, perr := netip.ParseAddr(c.IP())
+	client := middleware.ClientOf(c)
+
+	hop := handler.HopView{
+		Client:        client.String(),
+		ForwardedSeen: c.Get("CF-Connecting-IP") != "" || c.Get(fiber.HeaderXForwardedFor) != "",
+	}
+	if perr != nil {
+		return hop
+	}
+	hop.Peer = peer.String()
+	for _, p := range e.trustedProxies() {
+		if p.Contains(peer) {
+			hop.PeerTrusted = true
+			break
+		}
+	}
+	return hop
 }
 
 // adminSettingsPatch replaces one section.

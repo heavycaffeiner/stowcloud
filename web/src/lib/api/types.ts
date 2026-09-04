@@ -298,6 +298,19 @@ export interface ArchiveTicket {
   url: string
 }
 
+/** `POST /api/v1/files/download` — the same two-step ticket as `archive`, for
+ *  a single file. The server refuses a folder or an empty path with 422, a
+ *  path the account cannot reach with 404, and a full ticket store with 413.
+ *  No size, for the same reason `ArchiveTicket` has none: the ticket names
+ *  the file, the fetch the `url` points at is what actually opens it. */
+export interface DownloadTicket {
+  token: string
+  name: string
+  /** Absolute from the site root, built by the server so a client does not
+   *  assemble the route and get it wrong. */
+  url: string
+}
+
 /** `PATCH /api/admin/upload-settings` — the
  *  admin-write half of `SessionInfo.limits.chunk_min`/`chunk_size`: this
  *  changes the server-global, persisted value every account's
@@ -505,10 +518,15 @@ export interface AuditRow {
 export interface AuditQuery {
   actor?: number
   event?: string
-  since_ns?: number
-  until_ns?: number
+  /** Unix nanoseconds as a decimal string, same 2^53 reason as
+   *  `AuditRow.ts_ns`: a range bound that rounds silently moves the window. */
+  since_ns?: string
+  until_ns?: string
   before?: number
   limit?: number
+  /** Cancels a request whose filters the caller has already moved past.
+   *  Same field, same purpose as `AdminLogQuery.signal`. */
+  signal?: AbortSignal
 }
 
 /** `GET /api/admin/audit` response shape. `next` is `rows[rows.length -
@@ -583,6 +601,44 @@ export interface AdminLogPage {
   cursor: string
   stored_bytes: string
   segments: number
+}
+
+/** `GET /api/v1/admin/logs/timeline` query — the same filters `AdminLogQuery`
+ *  takes, minus paging (a timeline has no cursor) plus `bucket_ns`, the
+ *  requested bucket width; the server picks one when it is omitted. */
+export interface AdminLogsTimelineQuery {
+  since?: string
+  until?: string
+  levels?: string[]
+  text?: string
+  subsystem?: string
+  request_id?: string
+  /** Decimal string, like every nanosecond field on this path. */
+  bucket_ns?: string
+  signal?: AbortSignal
+}
+
+/** One bucket of `GET /api/v1/admin/logs/timeline`. `server` is keyed by
+ *  level (`DEBUG`/`INFO`/`WARN`/`ERROR`, widened to `string` for the same
+ *  forward-compat reason as `AdminLogRecord.level`); `audit` by `'ok'`/
+ *  `'failed'`. Either object omits a key that bucket had none of, rather
+ *  than sending it as zero. */
+export interface AdminLogsTimelineBucket {
+  start_ns: string
+  server: Record<string, number>
+  audit: Record<string, number>
+}
+
+/** `GET /api/v1/admin/logs/timeline` response. `buckets` is oldest first and
+ *  covers the whole window with no gaps: an empty bucket is still a bucket,
+ *  never an absence, so a chart never has to guess whether a hole means zero
+ *  events or a bucket the server didn't bother sending. `truncated` mirrors
+ *  `SearchDone.truncated`: the walk hit its deadline, so what came back is a
+ *  prefix of the window rather than the whole thing. */
+export interface AdminLogsTimeline {
+  bucket_ns: string
+  buckets: AdminLogsTimelineBucket[]
+  truncated: boolean
 }
 
 /** One row of `GET /api/admin/grants` (not yet wired server-side — see
@@ -1163,6 +1219,29 @@ export interface SettingsFinding {
   blocking: boolean
 }
 
+/** `GET /api/v1/admin/settings`'s `hop` — what the server observed about
+ *  where this very request arrived from, alongside the `network.trusted_proxies`
+ *  field it is judged against.
+ *
+ *  `peer_trusted: false` with `forwarded_seen: true` is the misconfiguration
+ *  this exists to surface: a forwarding header arrived and was ignored
+ *  because `peer` isn't in the trusted list, so `client` fell back to `peer`
+ *  and every visitor behind that proxy is recorded as the same address. */
+export interface Hop {
+  /** The address the transport reported. Absent on a build too old to send
+   *  it, or a connection with no reportable remote address. */
+  peer?: string
+  /** Whether `peer` falls inside the saved `network.trusted_proxies` list —
+   *  the trust decision is made against this address, not `client`. */
+  peer_trusted: boolean
+  /** What the server concluded the caller's address is: `peer` when it is
+   *  untrusted or no forwarding header arrived, the forwarded address when
+   *  it is trusted and one did. */
+  client: string
+  /** Whether the request carried a forwarding header at all, trusted or not. */
+  forwarded_seen: boolean
+}
+
 export interface SettingsSnapshot {
   fields: SettingsField[]
   /** `go/internal/smb` — the same
@@ -1177,6 +1256,8 @@ export interface SettingsSnapshot {
    *  server. Everything in it is true of the machine smbd runs on, which is
    *  not the one that rendered the files. */
   smb_agent?: SmbAgentReport
+  /** Absent on a build too old to send it. */
+  hop?: Hop
 }
 
 /** One answer from `sc-smb-agent`. `key` is a catalogue key; `detail` is a

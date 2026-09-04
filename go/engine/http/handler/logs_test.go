@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/logbook"
 )
 
@@ -89,5 +90,71 @@ func TestAnExhaustedPageCarriesNoCursor(t *testing.T) {
 	v := LogPageOf(logbook.Page{Cursor: ""}, logbook.Stats{})
 	if v.Cursor != "" {
 		t.Errorf("an exhausted page carries cursor %q", v.Cursor)
+	}
+}
+
+// The graph's wire shape is exact for the same reason the page's is: a chart
+// built against this document draws nothing at all if a field name or a
+// string-typed number drifts.
+func TestATimelineMatchesTheWireContract(t *testing.T) {
+	server := []logbook.Bucket{
+		{StartNs: 1788518100000000000, Levels: map[string]int{"INFO": 12, "WARN": 3, "DEBUG": 0}},
+		{StartNs: 1788518160000000000, Levels: map[string]int{}},
+	}
+	audit := []auth.AuditBucket{
+		{StartNs: 1788518100000000000, OK: 2, Failed: 1},
+		{StartNs: 1788518160000000000},
+	}
+
+	raw, err := json.Marshal(LogsTimelineOf(server, audit, 60000000000, false))
+	if err != nil {
+		t.Fatalf("encoding: %v", err)
+	}
+	const want = `{"bucket_ns":"60000000000","buckets":[` +
+		`{"start_ns":"1788518100000000000","server":{"INFO":12,"WARN":3},"audit":{"failed":1,"ok":2}},` +
+		`{"start_ns":"1788518160000000000","server":{},"audit":{}}` +
+		`],"truncated":false}`
+	if string(raw) != want {
+		t.Errorf("the timeline encoded as:\n%s\nwant:\n%s", raw, want)
+	}
+}
+
+// A window holding nothing is an empty array, never null: a chart iterating a
+// null gets a runtime error rather than an empty axis.
+func TestAnEmptyTimelineEncodesAsAnArray(t *testing.T) {
+	raw, err := json.Marshal(LogsTimelineOf(nil, nil, 1000, false))
+	if err != nil {
+		t.Fatalf("encoding: %v", err)
+	}
+	const want = `{"bucket_ns":"1000","buckets":[],"truncated":false}`
+	if string(raw) != want {
+		t.Errorf("an empty timeline encoded as %s, want %s", raw, want)
+	}
+}
+
+// Either walk stopping early makes the whole graph a prefix, and the flag is
+// what lets a screen say so rather than presenting a partial count as a total.
+func TestTruncationSurvivesTheProjection(t *testing.T) {
+	v := LogsTimelineOf([]logbook.Bucket{{StartNs: 1, Levels: map[string]int{}}}, nil, 1000, true)
+	if !v.Truncated {
+		t.Error("a truncated walk projected as complete")
+	}
+}
+
+// The audit side is aligned by position on the frame the caller decided. A
+// shorter audit slice leaves its buckets empty rather than shifting the
+// counts onto the wrong intervals.
+func TestAShortAuditSliceDoesNotShiftTheCounts(t *testing.T) {
+	server := []logbook.Bucket{
+		{StartNs: 10, Levels: map[string]int{}},
+		{StartNs: 20, Levels: map[string]int{}},
+	}
+	v := LogsTimelineOf(server, []auth.AuditBucket{{StartNs: 10, OK: 5}}, 10, false)
+
+	if got := v.Buckets[0].Audit["ok"]; got != 5 {
+		t.Errorf("the first bucket counts %d, want the 5 the audit walk found", got)
+	}
+	if len(v.Buckets[1].Audit) != 0 {
+		t.Errorf("the second bucket carries %v, want nothing", v.Buckets[1].Audit)
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/route"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 )
 
 // contextKey is this package's key namespace on the request context. Typed so
@@ -47,6 +48,12 @@ type Deps struct {
 	Trusted func() []netip.Prefix
 	Limiter *Limiter
 
+	// Clock times the request for the access log. The chain reads no wall
+	// clock of its own: a duration measured against one that NTP stepped
+	// mid-request is a number nobody can act on. Nil takes the system clock,
+	// which is what a Deps assembled field by field in a test carries.
+	Clock clock.Clock
+
 	// ScriptHashes are the embedded hydration scripts' CSP hashes. Empty is a
 	// deployment with no inlined hydration, which the policy simply does not
 	// name.
@@ -64,6 +71,11 @@ type Deps struct {
 	// Audit receives one record per request. Nil records nothing, which is
 	// what a server with no log wired does.
 	Audit AuditSink
+
+	// Access receives one line per request, including the anonymous and the
+	// refused. Nil logs nothing, which is what a test with no sink wired
+	// does.
+	Access AccessSink
 }
 
 // Record is one entry in a replay: which step ran, and whether it passed the
@@ -222,21 +234,49 @@ func scopeHandler(c *fiber.Ctx) error {
 // The status is read after Next returns, which is why this step wraps the
 // error mapper rather than sitting inside it: a record taken before the mapper
 // runs holds a status that was never sent.
+//
+// Two sinks, one pass. The audit log takes accounts acting, the access log
+// takes every request including the anonymous ones, and both need the same
+// four facts this step is the only place to hold at once.
 func auditHandler(c *fiber.Ctx, d Deps) error {
+	clk := clockOf(d)
+	started := clk.Now()
 	err := c.Next()
 
-	if d.Audit == nil {
+	if d.Audit == nil && d.Access == nil {
 		return err
 	}
 	name := ""
 	if m, ok := metaOf(c); ok {
 		name = m.name
 	}
-	d.Audit.Record(AuditRecordFor(
-		traceOf(c), c.Method(), name, statusOf(c, err),
-		ClientOf(c), principalOf(c), originOf(c),
-	))
+	status := statusOf(c, err)
+
+	if d.Audit != nil {
+		d.Audit.Record(AuditRecordFor(
+			traceOf(c), c.Method(), name, status,
+			ClientOf(c), principalOf(c), originOf(c),
+		))
+	}
+	if d.Access != nil {
+		d.Access.Access(AccessRecordFor(
+			traceOf(c), c.Method(), name, c.Path(), status,
+			clk.Since(started), ClientOf(c), principalOf(c),
+		))
+	}
 	return err
+}
+
+// clockOf is the chain's clock.
+//
+// Defaulted rather than required, for the reason the engine's own accessor is
+// one: a Deps assembled field by field carries no clock, and timing a request
+// is not worth a panic on a path that is otherwise fine.
+func clockOf(d Deps) clock.Clock {
+	if d.Clock == nil {
+		return clock.System()
+	}
+	return d.Clock
 }
 
 // statusOf is the status this request will answer with.

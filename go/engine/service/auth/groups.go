@@ -59,11 +59,28 @@ func (s *Service) CreateGroup(ctx context.Context, name string) (int64, error) {
 
 // RenameGroup moves the label and touches no permission, which is the whole
 // point of a grant naming an id rather than a name.
-func (s *Service) RenameGroup(ctx context.Context, id int64, name string) error {
+//
+// The row is returned because the screen re-renders the group it just
+// renamed, members and all. Answering nothing left the client with no row to
+// swap in, and it reported the rename as failed while the name had changed.
+func (s *Service) RenameGroup(ctx context.Context, id int64, name string) (GroupRow, error) {
 	if err := s.store.RenameGroup(ctx, id, name); err != nil {
-		return mapGroupErr(err)
+		return GroupRow{}, mapGroupErr(err)
 	}
-	return nil
+
+	// Read back rather than assembled here: the members are the group's and
+	// this call did not touch them, so a row built from the argument alone
+	// would render a renamed group as one with nobody in it.
+	groups, err := s.ListGroups(ctx)
+	if err != nil {
+		return GroupRow{}, err
+	}
+	for _, g := range groups {
+		if g.ID == id {
+			return g, nil
+		}
+	}
+	return GroupRow{}, ErrNotFound
 }
 
 // DeleteGroup removes a group; its memberships and grants cascade with it.

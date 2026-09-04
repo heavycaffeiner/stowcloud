@@ -146,6 +146,68 @@ func TestCreatingAGrantAnswersTheWholeGrant(t *testing.T) {
 	}
 }
 
+// Editing a grant answers the grant, as creating one does.
+//
+// The screen swaps the edited row for what came back and every rendered row
+// reads the permission arrays. Answering no content left the client reading a
+// field off nothing: it threw, its own catch rendered "could not save", and
+// the permission had in fact been applied. This fails against that.
+func TestUpdatingAGrantAnswersTheWholeGrant(t *testing.T) {
+	base, cookie, csrf, _, _ := adminEngine(t)
+
+	host := t.TempDir()
+	status, created := mutate(t, http.MethodPost, base+"/api/v1/admin/shares", cookie, csrf,
+		map[string]string{"name": "docs", "host": host})
+	if status != http.StatusCreated {
+		t.Fatalf("creating a share answered %d: %v", status, created)
+	}
+	shareID := fmt.Sprint(created["id"])
+
+	status, made := mutate(t, http.MethodPost, base+"/api/v1/admin/grants", cookie, csrf,
+		map[string]any{
+			"user": "2", "share": shareID, "subpath": "",
+			"allow": []string{"read"}, "deny": []string{},
+			"inherit": true, "label": "docs",
+		})
+	if status != http.StatusCreated {
+		t.Fatalf("creating a grant answered %d: %v", status, made)
+	}
+	grantID := fmt.Sprint(made["id"])
+
+	status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/grants/"+grantID, cookie, csrf,
+		map[string]any{
+			"allow": []string{"read", "download"}, "deny": []string{},
+			"inherit": true, "label": "docs",
+		})
+	if status != http.StatusOK {
+		t.Fatalf("updating a grant answered %d: %v", status, body)
+	}
+
+	// The whole row, not an id: the fields the screen renders have to be
+	// there. An empty subpath and an absent label are omitted by design, and
+	// the client's own normalizer fills those in.
+	if got := fmt.Sprint(body["id"]); got != grantID {
+		t.Errorf("the response names grant %q, want %q", got, grantID)
+	}
+	for _, field := range []string{"allow", "deny", "share", "principal", "inherit"} {
+		if _, present := body[field]; !present {
+			t.Errorf("the response has no %q, which the screen reads: %v", field, body)
+		}
+	}
+	// And it describes what was just stored rather than what was there before.
+	allow, ok := body["allow"].([]any)
+	if !ok {
+		t.Fatalf("the response's allow is %T, want a list: %v", body["allow"], body)
+	}
+	names := make([]string, 0, len(allow))
+	for _, a := range allow {
+		names = append(names, fmt.Sprint(a))
+	}
+	if len(names) != 2 {
+		t.Errorf("the updated grant allows %v, want the two bits just saved", names)
+	}
+}
+
 // assertNoHostPath fails if a body carries the path or any component of it
 // that would disclose the server's layout.
 //
@@ -518,7 +580,9 @@ func TestNarrowingAGrantTakesEffectNow(t *testing.T) {
 	id := stringField(grantsFor(t, base, cookie, user)[0], "id")
 	if status, body := mutate(t, http.MethodPatch,
 		fmt.Sprintf("%s/api/v1/admin/grants/%s", base, id), cookie, csrf,
-		map[string]any{"allow": []string{}, "inherit": true, "label": "docs"}); status != http.StatusNoContent {
+		map[string]any{"allow": []string{}, "inherit": true, "label": "docs"}); status != http.StatusOK {
+		// The update answers the grant, as the create route does, so the
+		// screen can swap the row it just edited for what came back.
 		t.Fatalf("narrowing answered %d: %v", status, body)
 	}
 
@@ -563,7 +627,7 @@ func TestADeniedPermissionIsRemovedOnUpdate(t *testing.T) {
 			"deny":  []string{"read"},
 			"label": "docs", "inherit": true,
 		})
-	if status != http.StatusNoContent {
+	if status != http.StatusOK {
 		t.Fatalf("updating answered %d: %v", status, body)
 	}
 
