@@ -53,6 +53,9 @@ const (
 	// the alternative to a bound here is a bound nowhere.
 	maxSubscriptions = 1024
 
+	// maxConnsPerUser limits concurrent WebSocket connections per user to prevent
+	// descriptor exhaustion.
+	maxConnsPerUser = 5
 	// pongWait is how long a peer has to answer before its connection is
 	// closed. A half-open socket holds subscriptions and pins watches, so a
 	// peer that stopped answering has to be noticed rather than waited on.
@@ -125,8 +128,9 @@ type EventDeps struct {
 type EventHub struct {
 	deps EventDeps
 
-	mu    sync.Mutex
-	conns map[*eventConn]struct{}
+	mu        sync.Mutex
+	conns     map[*eventConn]struct{}
+	userConns map[int64]int
 	// closed stops a late upgrade from joining a hub that is shutting down,
 	// which would otherwise leave a connection nothing ever closes.
 	closed bool
@@ -144,7 +148,11 @@ func NewEventHub(ctx context.Context, deps EventDeps, events <-chan EventSource)
 	if deps.Logger == nil {
 		deps.Logger = slog.Default()
 	}
-	h := &EventHub{deps: deps, conns: map[*eventConn]struct{}{}}
+	h := &EventHub{
+		deps:      deps,
+		conns:     map[*eventConn]struct{}{},
+		userConns: map[int64]int{},
+	}
 	task.Go(ctx, "event fan-out", func() { h.fanOut(events) })
 	return h
 }
@@ -226,11 +234,18 @@ func (h *EventHub) serve(ws *websocket.Conn, user int64) {
 	}
 
 	h.mu.Lock()
-	if h.closed {
+	if h.closed || h.userConns[user] >= maxConnsPerUser {
 		h.mu.Unlock()
-		c.shut()
+		if err := ws.WriteMessage(websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "too many concurrent connections")); err != nil {
+			h.deps.Logger.Debug("closing rejected websocket", "error", err)
+		}
+		if err := ws.Close(); err != nil {
+			h.deps.Logger.Debug("closing rejected websocket socket", "error", err)
+		}
 		return
 	}
+	h.userConns[user]++
 	h.conns[c] = struct{}{}
 	h.mu.Unlock()
 
@@ -249,6 +264,10 @@ func (h *EventHub) serve(ws *websocket.Conn, user int64) {
 
 	h.mu.Lock()
 	delete(h.conns, c)
+	h.userConns[user]--
+	if h.userConns[user] <= 0 {
+		delete(h.userConns, user)
+	}
 	h.mu.Unlock()
 
 	// Every subscription this connection held, released. The old

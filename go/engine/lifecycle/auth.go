@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -121,6 +122,10 @@ func (e *Engine) loginTOTP(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
 	}
 
+	totpKey := clientAddr(c) + "/" + strconv.FormatInt(uid, 10)
+	if e.totpLimiter != nil && !e.totpLimiter.Allow(totpKey) {
+		return refuse(c, apierr.Classified{Class: apierr.RateLimited, Key: "auth.rate_limited"})
+	}
 	ok, err := e.acceptFactor(c, uid, req.Code)
 	if err != nil {
 		return failKnown(c, err)

@@ -60,6 +60,16 @@ func (r Resolved) Require(want acl.Perms) error {
 	return ErrDenied
 }
 
+// WithMask narrows the resolved permissions with an authority mask, which is
+// how an app-password scope applies without re-evaluating grants.
+func (r Resolved) WithMask(mask acl.Perms) Resolved {
+	if mask.IsEmpty() {
+		return r
+	}
+	r.perms &= mask
+	return r
+}
+
 // Resolve converts a client path into a share root, a validated path beneath it,
 // and the permissions the caller holds there. It is the sole gate: nothing else
 // in this package parses a virtual path, and no operation accepts one.

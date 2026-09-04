@@ -197,6 +197,10 @@ func (d *DB) CreateOIDCLink(ctx context.Context, user int64, issuer, subject str
 		if _, perr := tx.ExecContext(ctx, sqlUpdateAccountPassword, "", user); perr != nil {
 			return perr
 		}
+		// Also clears any stored SMB NT hash so stale credentials do not survive.
+		if _, serr := tx.ExecContext(ctx, sqlDeleteSMBSecret, user); serr != nil {
+			return serr
+		}
 		_, ierr := tx.ExecContext(ctx, sqlInsertOIDCLink, issuer, subject, user, nowNs)
 		return ierr
 	})

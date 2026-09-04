@@ -80,6 +80,9 @@ func (h *hotSet) registeredKeys() []key {
 // addSticky pins k, lifting it out of the recent half. The return value says
 // whether the caller must now register a kernel watch.
 func (h *hotSet) addSticky(k key) bool {
+	if _, ok := h.sticky[k]; !ok && len(h.sticky) >= h.cap {
+		return false
+	}
 	h.dropRecent(k)
 	h.sticky[k]++
 	return !h.isRegistered(k)

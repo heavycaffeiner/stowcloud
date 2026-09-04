@@ -17,12 +17,18 @@ import (
 // against, and a document that drifts is worse than none: it reads as
 // current. One commit message already carries a count that is wrong by three,
 // which is what this exists to stop happening again.
+func cutoverDocPath() string {
+	if _, err := os.Stat("../../../docs/internal/refactor/cutover.md"); err == nil {
+		return "../../../docs/internal/refactor/cutover.md"
+	}
+	return "../../../docs/refactor/cutover.md"
+}
+
 func TestTheCutoverDocumentMatchesTheTree(t *testing.T) {
-	doc, err := os.ReadFile("../../../docs/refactor/cutover.md")
+	doc, err := os.ReadFile(cutoverDocPath())
 	if err != nil {
 		t.Fatalf("reading the cutover document: %v", err)
 	}
-
 	table := len(server.Table())
 	bound := boundCount(t)
 
@@ -83,7 +89,7 @@ func namedRoutes(doc []byte) map[string]struct{} {
 // A list that named a bound route, or a name that does not exist, would read
 // as work still to do when it is already done or was never there.
 func TestTheDocumentsUnboundListIsAccurate(t *testing.T) {
-	doc, err := os.ReadFile("../../../docs/refactor/cutover.md")
+	doc, err := os.ReadFile(cutoverDocPath())
 	if err != nil {
 		t.Fatalf("reading the cutover document: %v", err)
 	}

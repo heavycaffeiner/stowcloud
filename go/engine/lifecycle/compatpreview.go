@@ -41,7 +41,13 @@ func (e *Engine) openDirectClaim(token string) (core.UserID, string, error) {
 }
 
 // locateCompatFile finds a virtual path for the user given a file id.
+// It relies on the indexed cache and never executes recursive filesystem walks.
 func (e *Engine) locateCompatFile(ctx context.Context, user core.UserID, fileID uint64) (vfs.Vpath, error) {
+	if val, ok := e.fileIDCache.Load(fileID); ok {
+		if vp, ok := val.(vfs.Vpath); ok {
+			return vp, nil
+		}
+	}
 	if e.Cache != nil {
 		if n, nerr := num.Narrow[int64](fileID); nerr == nil {
 			sID, sPath, err := e.Cache.Resolve(ctx, ident.FileID(n))
@@ -49,45 +55,6 @@ func (e *Engine) locateCompatFile(ctx context.Context, user core.UserID, fileID 
 				vp, verr := e.Core.VpathFor(user, sID, sPath)
 				if verr == nil {
 					return vp, nil
-				}
-			}
-		}
-	}
-
-	for _, rt := range e.Core.Roots(user) {
-		vp, verr := vfs.ParseVpath("/" + rt.Label)
-		if verr != nil {
-			continue
-		}
-		res, rerr := e.Core.Resolve(user, vp, acl.Read)
-		if rerr != nil {
-			continue
-		}
-		found, ferr := e.walkFindFileID(ctx, res, fileID)
-		if ferr == nil {
-			return found, nil
-		}
-	}
-
-	return vfs.Vpath{}, core.ErrNotFound
-}
-
-func (e *Engine) walkFindFileID(ctx context.Context, r core.Resolved, targetID uint64) (vfs.Vpath, error) {
-	page, err := e.Core.List(ctx, r, "")
-	if err != nil {
-		return vfs.Vpath{}, err
-	}
-	for _, entry := range page.Entries {
-		fid, ferr := e.compatFileID(ctx, entry)
-		vp, verr := e.Core.VpathFor(r.User(), r.Share(), entry.Path)
-		if ferr == nil && fid == targetID && verr == nil {
-			return vp, nil
-		}
-		if entry.IsDir && verr == nil {
-			childRes, cerr := e.Core.Resolve(r.User(), vp, acl.Read)
-			if cerr == nil {
-				if found, ferr := e.walkFindFileID(ctx, childRes, targetID); ferr == nil {
-					return found, nil
 				}
 			}
 		}
@@ -113,7 +80,7 @@ func (e *Engine) compatDirect(
 		return compat.Val{}, false, compat.NotFound("File not found")
 	}
 
-	_, err = e.resolve(user, vp.String(), acl.Read|acl.Download)
+	_, err = e.resolveCompat(c, user, vp.String(), acl.Read|acl.Download)
 	if err != nil {
 		return compat.Val{}, false, compat.NotFound("File not found")
 	}

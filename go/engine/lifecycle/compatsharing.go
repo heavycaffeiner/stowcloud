@@ -342,7 +342,7 @@ func (e *Engine) compatCreateShare(
 
 	ctx := c.UserContext()
 	cleanPath := compat.NormaliseClientPath(req.Path)
-	r, err := e.resolve(user, cleanPath, acl.Share)
+	r, err := e.resolveCompat(c, user, cleanPath, acl.Share)
 	if err != nil {
 		return compat.Val{}, false, compat.NotFound("File not found")
 	}
@@ -417,6 +417,9 @@ func (e *Engine) compatCreateShare(
 			if uerr != nil {
 				return compat.Val{}, false, compat.NotFound("user not found")
 			}
+			if targetUser == int64(user) {
+				return compat.Val{}, false, compat.BadRequest("cannot share with yourself")
+			}
 			holder := int64(targetUser)
 			spec.User = &holder
 		case compat.ShareTypeGroup:
@@ -436,7 +439,11 @@ func (e *Engine) compatCreateShare(
 		}
 		spec.Share = r.Share()
 		spec.Subpath = r.Path().String()
-		spec.Allow = permsFromShareMask(mask, isDir)
+		allow := permsFromShareMask(mask, isDir) & (r.Perms() &^ acl.Share)
+		if allow.IsEmpty() {
+			return compat.Val{}, false, compat.Forbidden("insufficient permissions to grant requested access")
+		}
+		spec.Allow = allow
 		spec.Inherit = isDir
 		spec.Label = req.Label
 
@@ -560,7 +567,18 @@ func (e *Engine) compatUpdateShare(
 		if perr != nil || mask <= 0 {
 			return compat.Val{}, false, compat.BadRequest("invalid permissions")
 		}
-		allow = permsFromShareMask(mask, false)
+		vp, verr := e.compatGrantVpath(user, grant)
+		if verr != nil {
+			return compat.Val{}, false, compat.NotFound("share not found")
+		}
+		r, rerr := e.resolve(user, vp.String(), acl.Share)
+		if rerr != nil {
+			return compat.Val{}, false, compat.Forbidden("insufficient permissions to manage share")
+		}
+		allow = permsFromShareMask(mask, false) & (r.Perms() &^ acl.Share)
+		if allow.IsEmpty() {
+			return compat.Val{}, false, compat.Forbidden("insufficient permissions to grant requested access")
+		}
 	}
 	label := grant.Label
 	if rawLabel := c.FormValue("label"); rawLabel != "" {

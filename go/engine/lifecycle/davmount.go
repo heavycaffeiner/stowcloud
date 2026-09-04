@@ -63,7 +63,10 @@ type DavAlias struct {
 // vendor property source, arrives through the hooks rather than here, so this
 // file stays out of the tag's business.
 func (e *Engine) newDavHandler() *dav.Handler {
-	locks := NewDavLocks(e.State, e.clock, e.logger)
+	if e.davLocks == nil {
+		e.davLocks = NewDavLocks(e.State, e.clock, e.logger)
+	}
+	locks := e.davLocks
 	return dav.New(dav.Options{
 		Core:            e.Core,
 		Locks:           locks,
@@ -79,6 +82,15 @@ func (e *Engine) newDavHandler() *dav.Handler {
 		InfinityEntries: davDefaultInfinity,
 		Logger:          e.logger,
 	})
+}
+
+// guardDavLock checks whether an active exclusive WebDAV lock covers the target path,
+// preventing cross-protocol overwrites and deletions.
+func (e *Engine) guardDavLock(ctx context.Context, share uint32, path string, principal int64) error {
+	if e.davLocks == nil {
+		return nil
+	}
+	return e.davLocks.Guard(ctx, share, path, principal, nil)
 }
 
 // davDefaultInfinity is the listing ceiling, a decision named rather than a
@@ -268,7 +280,7 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		// changes no answer: it only decides whether the refusal arrives from
 		// this line or from the operation. Reaching a share at all requires
 		// read, which is what makes this the honest gate.
-		res, err := e.resolveDav(user, path, acl.Read)
+		res, err := e.resolveDav(r, user, path, acl.Read)
 		if err != nil {
 			// Logged here as well as in the protocol handler: a write refused
 			// by resolution never reaches one, and an upload to a path that
@@ -403,7 +415,7 @@ func davAlias(urlPath string, aliases []DavAlias) (string, bool) {
 // here would be a second set of rules about what a path may contain, and the
 // weaker of the two would be the one that decides.
 func (e *Engine) resolveDav(
-	user core.UserID, urlPath string, want acl.Perms,
+	r *http.Request, user core.UserID, urlPath string, want acl.Perms,
 ) (core.Resolved, error) {
 	parts, err := dav.SplitPath(strings.TrimPrefix(urlPath, DavPrefix))
 	if err != nil {
@@ -414,7 +426,17 @@ func (e *Engine) resolveDav(
 	if perr != nil {
 		return core.Resolved{}, core.ErrNotFound
 	}
-	return e.Core.Resolve(user, vp, want)
+	res, rerr := e.Core.Resolve(user, vp, want)
+	if rerr != nil {
+		return res, rerr
+	}
+	if p, ok := r.Context().Value(middleware.KeyCredential).(middleware.Principal); ok && !p.Mask.IsEmpty() {
+		res = res.WithMask(p.Mask)
+		if !res.Has(want) {
+			return core.Resolved{}, core.ErrDenied
+		}
+	}
+	return res, nil
 }
 
 // davDestination resolves the header a MOVE or a COPY names its target with.
@@ -449,7 +471,7 @@ func (e *Engine) davDestination(
 
 	// Read here too, for the reason the request path uses it: the copy and the
 	// move check what they need against the resolution they are handed.
-	res, rerr := e.resolveDav(user, path, acl.Read)
+	res, rerr := e.resolveDav(r, user, path, acl.Read)
 	if rerr != nil {
 		return dav.Target{}, rerr
 	}

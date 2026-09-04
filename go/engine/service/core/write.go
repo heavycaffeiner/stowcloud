@@ -166,6 +166,17 @@ func (c *Core) CreateFile(
 		return Entry{}, mapVFSErr(err)
 	}
 
+	if newSt, err := r.root.Stat(r.path); err == nil {
+		if newSize, nerr := num.Narrow[int64](newSt.Size); nerr == nil {
+			delta := newSize
+			if serr == nil {
+				if oldSize, oerr := num.Narrow[int64](st.Size); oerr == nil {
+					delta = newSize - oldSize
+				}
+			}
+			c.chargeQuota(ctx, r.user, delta)
+		}
+	}
 	c.markDirty(ctx, r.share, r.path)
 	c.record(ctx, r, journal.OpUpload)
 	return c.buildEntry(r, r.path.Name(), r.path), nil

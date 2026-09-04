@@ -352,6 +352,9 @@ func (e *Engine) filesWrite(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 
+	if lerr := e.guardDavLock(c.UserContext(), uint32(r.Share()), r.Path().String(), int64(owner)); lerr != nil {
+		return refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
+	}
 	body := c.Body()
 	// The mode comes from the share's own policy rather than a constant here:
 	// a file this route creates has to be reachable on the same terms as one

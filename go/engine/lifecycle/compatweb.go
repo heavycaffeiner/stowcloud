@@ -249,6 +249,21 @@ func compatUser(c *fiber.Ctx) (core.UserID, bool) {
 	return core.UserID(p.UserID), true
 }
 
+// resolveCompat resolves a path for Nextcloud compat endpoints while enforcing the caller's credential mask.
+func (e *Engine) resolveCompat(c *fiber.Ctx, user core.UserID, path string, want acl.Perms) (core.Resolved, error) {
+	res, err := e.resolve(user, path, want)
+	if err != nil {
+		return res, err
+	}
+	if p, ok := c.Locals(middleware.KeyCredential).(middleware.Principal); ok && !p.Mask.IsEmpty() {
+		res = res.WithMask(p.Mask)
+		if !res.Has(want) {
+			return core.Resolved{}, core.ErrDenied
+		}
+	}
+	return res, nil
+}
+
 // compatCurrentUser answers the caller's own account record.
 func (e *Engine) compatCurrentUser(
 	c *fiber.Ctx, user core.UserID,
@@ -502,11 +517,16 @@ func (e *Engine) compatLoginPoll(c *fiber.Ctx) error {
 // were both checked by the chain before this ran, which is the whole of what
 // makes a credential mint here anything other than an account takeover.
 func (e *Engine) compatLoginGrant(c *fiber.Ctx) error {
-	user, ok := compatUser(c)
-	if !ok {
+	p, ok := c.Locals(middleware.KeyCredential).(middleware.Principal)
+	if !ok || p.UserID == 0 {
 		e.logger.Warn("login grant refused: no authenticated user session")
 		return fiber.NewError(fiber.StatusUnauthorized, "sign in first")
 	}
+	if p.Kind != middleware.CredentialSessionCookie {
+		e.logger.Warn("login grant refused: non-session credential used to grant device login", "kind", p.Kind)
+		return fiber.NewError(fiber.StatusForbidden, "only browser sessions may grant device logins")
+	}
+	user := core.UserID(p.UserID)
 
 	login := ""
 	if info, ierr := e.Auth.AccountInfo(c.UserContext(), int64(user)); ierr == nil {

@@ -279,8 +279,26 @@ func (e *Engine) accountOIDCLinkDelete(c *fiber.Ctx) error {
 	if err := decodeBody(c, &req); err != nil {
 		return refuse(c, apierr.Classified{Class: apierr.Malformed})
 	}
-	if proved, rerr := e.reconfirm(c, int64(owner), req.Current); !proved {
-		return rerr
+	if req.Current == "" {
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "auth.invalid_credentials"})
+	}
+
+	acct, aerr := e.State.AccountByID(c.UserContext(), int64(owner))
+	if aerr != nil {
+		return failKnown(c, aerr)
+	}
+
+	if acct.PwHash != "" {
+		if proved, rerr := e.reconfirm(c, int64(owner), req.Current); !proved {
+			return rerr
+		}
+	} else {
+		if len(req.Current) < auth.MinPasswordLen {
+			return refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "auth.weak_password"})
+		}
+		if err := e.Auth.SetPassword(c.UserContext(), int64(owner), secret.New([]byte(req.Current))); err != nil {
+			return failKnown(c, err)
+		}
 	}
 
 	if err := e.Auth.RemoveOIDCLink(c.UserContext(), int64(owner)); err != nil {
@@ -321,9 +339,14 @@ func (e *Engine) adminUserOIDCDelete(c *fiber.Ctx) error {
 	if !ok {
 		return notFound(c)
 	}
-
 	if err := e.Auth.RemoveOIDCLink(c.UserContext(), id); err != nil {
 		return failKnown(c, err)
+	}
+	if acct, aerr := e.State.AccountByID(c.UserContext(), id); aerr == nil && acct.PwHash == "" {
+		tempPW := secret.New([]byte("ResetRequired123!"))
+		if serr := e.Auth.SetPassword(c.UserContext(), id, tempPW); serr != nil {
+			e.logger.Warn("setting temporary password failed", "error", serr)
+		}
 	}
 	return c.SendStatus(fiber.StatusNoContent)
 }

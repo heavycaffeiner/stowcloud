@@ -76,10 +76,11 @@ func (e *Engine) searchStream(c *fiber.Ctx) error {
 	// the request is recycled by then. Reaching through the request inside
 	// the closure is a nil dereference, which is how the archive route
 	// panicked on its first run.
-	ctx := context.WithoutCancel(c.UserContext())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
-		e.writeSearchStream(ctx, w, sources, opt)
+		defer cancel()
+		e.writeSearchStream(ctx, cancel, w, sources, opt)
 	})
 	return nil
 }
@@ -90,12 +91,16 @@ const searchQueryMax = 512
 
 // writeSearchStream runs the query into a committed response.
 func (e *Engine) writeSearchStream(
-	ctx context.Context, w *bufio.Writer, sources []search.Source, opt svc.QueryOptions,
+	ctx context.Context, cancel context.CancelFunc, w *bufio.Writer, sources []search.Source, opt svc.QueryOptions,
 ) {
 	// An immediate comment, so the client and any proxy see an established
-	// stream before the first result exists. A walk that finds nothing for
-	// ten seconds otherwise looks like a connection that failed to open.
+	// stream before the first result exists. If the peer is already gone,
+	// cancel the search context immediately so worker slots are released.
 	writeSSE(w, handler.SSEComment(), e)
+	if err := w.Flush(); err != nil {
+		cancel()
+		return
+	}
 
 	results, err := e.Search.Query(ctx, sources, opt)
 	if err != nil {

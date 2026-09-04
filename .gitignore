@@ -52,3 +52,8 @@ web/.tmp-*
 *.db
 *.db-wal
 *.db-shm
+
+# Internal documentation storage: proposals, feature requirements, security
+# remediations, and engineering design notes. Only README-related documents
+# are committed under docs/.
+docs/internal/

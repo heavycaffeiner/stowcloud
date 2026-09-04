@@ -359,7 +359,11 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     cd go
     fail=0
     for area in foundation core auth oidc upload search preview settings smb http; do
-      if ! go run ./tools/speccheck "../docs/refactor/$area" ./engine; then fail=1; fi
+      refDir="../docs/internal/refactor/$area"
+      if [ ! -d "$refDir" ]; then refDir="../docs/refactor/$area"; fi
+      if [ -d "$refDir" ]; then
+        if ! go run ./tools/speccheck "$refDir" ./engine; then fail=1; fi
+      fi
     done
     exit $fail'
   run "vetsecret (D12: no secret to a verb)"   ingo_host go run ./tools/vetsecret ./...

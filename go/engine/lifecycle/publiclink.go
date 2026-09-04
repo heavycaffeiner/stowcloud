@@ -275,7 +275,7 @@ func (e *Engine) linkUnlock(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 
-	ip := c.IP()
+	ip := clientAddr(c)
 	limiterKey := ip + "/" + strconv.FormatInt(link.ID, 10)
 	if e.linkLimiter != nil && !e.linkLimiter.Allow(limiterKey) {
 		return refuse(c, apierr.Classified{Class: apierr.RateLimited, Key: "auth.rate_limited"})

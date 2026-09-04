@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 )
 
@@ -116,4 +117,24 @@ func magnitude(delta int64) int64 {
 		return math.MaxInt64
 	}
 	return -delta
+}
+
+// CheckQuota tests whether an account's quota ledger can accommodate bytes.
+func (c *Core) CheckQuota(ctx context.Context, user UserID, bytes uint64) error {
+	if c.quota == nil || bytes == 0 {
+		return nil
+	}
+	ok, err := c.quota.Reserve(ctx, int64(user), bytes)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrQuotaExceeded
+	}
+	if rel, nerr := num.Narrow[int64](bytes); nerr == nil {
+		if rerr := c.quota.Release(ctx, int64(user), rel); rerr != nil {
+			c.warn("releasing quota reservation failed", "error", rerr)
+		}
+	}
+	return nil
 }

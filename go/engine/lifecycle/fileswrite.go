@@ -70,6 +70,9 @@ func (e *Engine) filesDelete(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 
+	if lerr := e.guardDavLock(c.UserContext(), uint32(r.Share()), r.Path().String(), int64(owner)); lerr != nil {
+		return refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
+	}
 	if err := e.Core.Delete(c.UserContext(), r, false); err != nil {
 		return fail(c, err)
 	}
@@ -106,6 +109,9 @@ func (e *Engine) filesRename(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 
+	if lerr := e.guardDavLock(c.UserContext(), uint32(r.Share()), r.Path().String(), int64(owner)); lerr != nil {
+		return refuse(c, apierr.Classified{Class: apierr.Locked, Key: "dav.locked"})
+	}
 	entry, err := e.Core.Rename(c.UserContext(), r, req.Name, nil)
 	if err != nil {
 		return fail(c, err)

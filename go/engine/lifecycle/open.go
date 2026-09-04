@@ -171,8 +171,11 @@ type Engine struct {
 	csrf          []byte
 	claimKey      handler.ClaimKey
 	linkLimiter   *linkLimiter
+	totpLimiter   *linkLimiter
 	favCache      sync.Map
 	indexBuilding atomic.Bool
+	davLocks      *DavLocks
+	fileIDCache   sync.Map
 	// The provider client, rebuilt when the settings change. Nil is off, and
 	// off is the ordinary state: a deployment without single sign-on is one
 	// where people use passwords.
@@ -541,7 +544,8 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 	}
 	e.claimKey = handler.ClaimKey{Version: 1, Key: claimBytes}
 	e.linkLimiter = newLinkLimiter(5*time.Minute, 10, clk.Nanos)
-
+	e.totpLimiter = newLinkLimiter(5*time.Minute, 5, clk.Nanos)
+	e.davLocks = NewDavLocks(e.State, clk, e.logger)
 	return e, nil
 }
 

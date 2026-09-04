@@ -102,6 +102,10 @@ func (e *Engine) davVendorProps() func(
 		if ferr != nil {
 			e.logger.Warn("an entry reached property emission without a file id",
 				"name", entry.Name, "error", ferr)
+		} else {
+			if vp, verr := e.Core.VpathFor(res.User(), res.Share(), entry.Path); verr == nil {
+				e.fileIDCache.Store(fileID, vp)
+			}
 		}
 
 		isFav := false
@@ -150,9 +154,6 @@ func (e *Engine) favoritesOf(ctx context.Context, user int64) []state.Favorite {
 		return nil
 	}
 	e.favCache.Store(ctx, favs)
-	context.AfterFunc(ctx, func() {
-		e.favCache.Delete(ctx)
-	})
 	return favs
 }
 
