@@ -203,6 +203,9 @@ func (e *Engine) compatRouteOCS(
 	case c.Method() == fiber.MethodDelete && route == "/core/apppassword":
 		return e.compatRevokeAppPassword(c, user)
 
+	case c.Method() == fiber.MethodGet && route == "/apps/files_sharing/api/v1/sharees":
+		return e.compatSharees(c, user)
+
 	case c.Method() == fiber.MethodGet && route == "/apps/files_sharing/api/v1/shares":
 		return e.compatListShares(c, user)
 	case c.Method() == fiber.MethodPost && route == "/apps/files_sharing/api/v1/shares":

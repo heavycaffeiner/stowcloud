@@ -206,6 +206,20 @@ type Engine struct {
 	hardening jail.Policy
 }
 
+// clk is the engine's clock.
+//
+// An accessor rather than the field, because an Engine assembled field by
+// field, which the protocol tests do, carries no clock, and a handler that
+// stamps a response would panic on it. The default is the one construction
+// applies to a nil Options.Clock, so the two cannot disagree about what time
+// it is for a deployment that named none.
+func (e *Engine) clk() clock.Clock {
+	if e.clock == nil {
+		return clock.System()
+	}
+	return e.clock
+}
+
 // Open constructs the engine.
 //
 // The order is the dependency order and not a preference: the evaluator is

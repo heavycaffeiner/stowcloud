@@ -2,6 +2,7 @@
 import base64
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -349,6 +350,67 @@ def main():
             share_token = sdata["token"]
             assert share_id and share_url and share_token
             print(f"  Share created: id={share_id}, token={share_token}, url={share_url}")
+
+        # 11b. Share picker directory search: every array the client parses must exist
+        print("Testing OCS sharee directory search...")
+        sharees_req = urllib.request.Request(
+            f"{base_url}/ocs/v2.php/apps/files_sharing/api/v1/sharees"
+            f"?format=json&itemType=file&search=admin&page=1&perPage=50",
+            headers={"Authorization": auth_header, "OCS-APIRequest": "true"}
+        )
+        with urllib.request.urlopen(sharees_req, context=ctx) as resp:
+            assert resp.status == 200
+            sharee_data = json.loads(resp.read().decode("utf-8"))["ocs"]["data"]
+            for key in ("users", "groups", "remotes", "remote_groups", "emails"):
+                assert isinstance(sharee_data.get(key), list), f"sharees.{key} missing"
+                assert isinstance(sharee_data["exact"].get(key), list), f"sharees.exact.{key} missing"
+            # The caller is never offered as a target of their own share dialog.
+            assert all(u["value"]["shareWith"] != app_user
+                       for u in sharee_data["users"] + sharee_data["exact"]["users"])
+            print("  sharee document shape OK (all lists present, self excluded).")
+
+        # 11c. subfiles: the shares of a folder's children in one call
+        print("Testing OCS shares?subfiles=true...")
+        sub_req = urllib.request.Request(
+            f"{base_url}/ocs/v2.php/apps/files_sharing/api/v1/shares?path=files&subfiles=true&format=json",
+            headers={"Authorization": auth_header, "OCS-APIRequest": "true"}
+        )
+        with urllib.request.urlopen(sub_req, context=ctx) as resp:
+            assert resp.status == 200
+            sub_paths = [s["path"] for s in json.loads(resp.read().decode("utf-8"))["ocs"]["data"]]
+            assert any(p.endswith("hello.txt") for p in sub_paths), f"subfiles listing: {sub_paths}"
+            print(f"  subfiles listing OK: {sub_paths}")
+
+        exact_req = urllib.request.Request(
+            f"{base_url}/ocs/v2.php/apps/files_sharing/api/v1/shares?path=files&format=json",
+            headers={"Authorization": auth_header, "OCS-APIRequest": "true"}
+        )
+        with urllib.request.urlopen(exact_req, context=ctx) as resp:
+            assert resp.status == 200
+            exact_paths = [s["path"] for s in json.loads(resp.read().decode("utf-8"))["ocs"]["data"]]
+            assert not any(p.endswith("hello.txt") for p in exact_paths), f"child leaked: {exact_paths}"
+            print("  exact-path listing excludes children OK.")
+
+        # 11d. Folder size: oc:size must report the aggregate, not zero
+        print("Testing PROPFIND oc:size on a folder...")
+        size_body = """<?xml version="1.0"?>
+<d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">
+  <d:prop><oc:size/><d:getcontenttype/><oc:permissions/><oc:id/></d:prop>
+</d:propfind>"""
+        size_req = urllib.request.Request(
+            f"{base_url}/remote.php/dav/files/{app_user}/files",
+            data=size_body.encode("utf-8"),
+            headers={"Authorization": auth_header, "Depth": "0", "Content-Type": "text/xml"},
+            method="PROPFIND"
+        )
+        with urllib.request.urlopen(size_req, context=ctx) as resp:
+            assert resp.status == 207
+            size_xml = resp.read().decode("utf-8")
+        # The encoder picks its own namespace prefix, so match any of them.
+        sizes = re.findall(r"<(?:\w+:)?size>(\d+)</", size_xml)
+        assert sizes, f"no oc:size in PROPFIND response: {size_xml}"
+        assert int(sizes[0]) > 0, f"folder size reported as {sizes[0]}: {size_xml}"
+        print(f"  folder oc:size OK: {sizes[0]} bytes.")
 
         # Delete share
         del_share_req = urllib.request.Request(

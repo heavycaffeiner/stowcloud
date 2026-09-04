@@ -570,12 +570,20 @@ if [ -f go/go.mod ] && command -v go >/dev/null 2>&1; then
     # tag those files are not compiled at all, so a build that only checks the
     # stripped tree checks none of this phase's behaviour.
     #
+    # Both packages, because the vocabulary and the mount are tested in
+    # different places: `http/compat` holds the wire format and
+    # `lifecycle` holds the routes, the DAV aliases and the client flows that
+    # exercise them. Naming only the first left every mounted route untested,
+    # which is how an Engine assembled without a clock reached a released
+    # handler. The repeated untagged cases cost about a minute; a shipped
+    # surface with no gate costs more.
+    #
     # Only where the host is the shipping target. This layer is Linux-only,
     # like everything it wraps, so off Linux the pattern matches no packages
     # and go reports that as an error: a gate step failing because the code it
     # names does not exist on this OS says nothing about the code.
     if [ "$HOST" = linux ]; then
-      run "go test -tags compat_nc"    ingo_host go test -tags compat_nc ./engine/http/compat/...
+      run "go test -tags compat_nc"    ingo_host go test -tags compat_nc ./engine/http/compat/... ./engine/lifecycle/...
       run "fuzz seed corpus (compat)"  ingo_host go test -tags compat_nc -run '^Fuzz' -count=1 ./engine/...
     else
       skipped "go test -tags compat_nc" "the compat layer is Linux only" 0

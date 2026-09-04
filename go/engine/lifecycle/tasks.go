@@ -100,7 +100,7 @@ func (e *Engine) tasks() []server.PeriodicTask {
 }
 
 // now is the current time in nanoseconds, from the engine's clock.
-func (e *Engine) now() int64 { return e.clock.Now().UnixNano() }
+func (e *Engine) now() int64 { return e.clk().Now().UnixNano() }
 
 // sweepLoginFlows expires flows and the sealed credentials they carry.
 //

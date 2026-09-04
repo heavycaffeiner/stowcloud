@@ -269,3 +269,108 @@ func SharePermissions(p PermBits) int64 {
 	}
 	return bits
 }
+
+// Sharee is one candidate target of a share.
+type Sharee struct {
+	// Kind selects the wire share type.
+	Kind GranteeKind
+	// ID is the name a share names the target by.
+	ID string
+	// Display is what the picker shows.
+	Display string
+}
+
+// ShareeQuery is what a sharee search asked for.
+type ShareeQuery struct {
+	Search  string
+	Page    int
+	PerPage int
+}
+
+// ParseShareeQuery reads the sharee search parameters.
+//
+// A page or size that is absent, unparseable or out of range takes the
+// reference's default rather than refusing: the picker sends what its library
+// filled in, and a refusal there reads to a person as a server that cannot
+// list anybody.
+func ParseShareeQuery(get func(string) string) ShareeQuery {
+	q := ShareeQuery{Search: strings.TrimSpace(get("search")), Page: 1, PerPage: 200}
+	if n, err := strconv.Atoi(get("page")); err == nil && n > 0 {
+		q.Page = n
+	}
+	if n, err := strconv.Atoi(get("perPage")); err == nil && n > 0 {
+		q.PerPage = min(n, 500)
+	}
+	return q
+}
+
+// Matches reports whether a candidate answers the search.
+//
+// Case-insensitive on both the name and the label, because a person types the
+// display name they were shown and the reference matches either.
+func (q ShareeQuery) Matches(s Sharee) bool {
+	if q.Search == "" {
+		return true
+	}
+	needle := strings.ToLower(q.Search)
+	return strings.Contains(strings.ToLower(s.ID), needle) ||
+		strings.Contains(strings.ToLower(s.Display), needle)
+}
+
+// Exact reports whether a candidate is the thing named rather than a near miss.
+func (q ShareeQuery) Exact(s Sharee) bool {
+	return q.Search != "" &&
+		(strings.EqualFold(s.ID, q.Search) || strings.EqualFold(s.Display, q.Search))
+}
+
+// Window narrows a candidate list to the slice the query's page asked for.
+func (q ShareeQuery) Window(items []Val) []Val {
+	start := (q.Page - 1) * q.PerPage
+	if start >= len(items) {
+		return nil
+	}
+	return items[start:min(start+q.PerPage, len(items))]
+}
+
+// ShareeEntry renders one candidate.
+func ShareeEntry(s Sharee) Val {
+	return Map(
+		P("label", Str(s.Display)),
+		P("name", Str(s.ID)),
+		P("shareWithDisplayNameUnique", Str(s.ID)),
+		P("value", Map(
+			P("shareType", Int(ShareTypeOf(s.Kind))),
+			P("shareWith", Str(s.ID)),
+		)),
+	)
+}
+
+// ShareesPage renders the sharee search document.
+//
+// Every list the reference sends is present even when empty. The client reads
+// each array by name and aborts its parse when one is missing, so an omitted
+// empty list is a failed search rather than an empty one, and the person sees
+// an error where they should have seen "no matches".
+func ShareesPage(exactUsers, exactGroups, users, groups []Val) Val {
+	empty := func() Val { return ListOf(nil) }
+	return Map(
+		P("exact", Map(
+			P("users", ListOf(exactUsers)),
+			P("groups", ListOf(exactGroups)),
+			P("remotes", empty()),
+			P("remote_groups", empty()),
+			P("emails", empty()),
+			P("circles", empty()),
+			P("rooms", empty()),
+		)),
+		P("users", ListOf(users)),
+		P("groups", ListOf(groups)),
+		P("remotes", empty()),
+		P("remote_groups", empty()),
+		P("emails", empty()),
+		P("circles", empty()),
+		P("rooms", empty()),
+		P("lookup", empty()),
+		P("lookupEnabled", Bool(false)),
+	)
+}

@@ -23,6 +23,7 @@ accidental wiring gap. It ships this feature matrix:
 | preview redirects and direct download URLs | ship |
 | app-password revocation | ship |
 | OCS share list/create/get/update/delete | ship |
+| OCS sharee directory search | ship |
 | `/remote.php/webdav` and `/remote.php/dav/files/{user}` | ship |
 | chunked upload v2 | ship |
 | trash collection | ship |
@@ -97,6 +98,7 @@ at the prefix and internal dispatch for the protocol path. Exact routes:
 - `DELETE /core/apppassword`
 - `GET|POST /apps/files_sharing/api/v1/shares`
 - `GET|PUT|DELETE /apps/files_sharing/api/v1/shares/{id}`
+- `GET /apps/files_sharing/api/v1/sharees`
 - the required empty stubs already named by the old surface.
 
 Four known crash-triggering paths remain hard 404s before dispatch. Unknown
@@ -182,9 +184,21 @@ propagation rule from 03. Presentation never creates a grant row directly.
 
 Listing includes shares created by the actor and shares with the actor where
 the wire filter requests them. Path, reshares, subfiles and shared-with-me
-filters retain the reference's literal `"true"` rule. Create/update forms
-preserve absent versus empty fields. Public-link password values are never
-returned: null or literal `redacted` says whether one exists.
+filters retain the reference's literal `"true"` rule. A path filter selects
+that entry; with `subfiles` it selects the entries directly inside it, which
+is how a folder listing badges its children in one call instead of one call
+per child. Create/update forms preserve absent versus empty fields.
+Public-link password values are never returned: null or literal `redacted`
+says whether one exists.
+
+The sharee search backs the picker that names a target. Without it the
+advertised user and group types are unreachable, because a client has no way
+to ask for a name. Who appears is the account service's directory rule and
+not a second rule here: the caller, an administrator's full view, or an
+account sharing a group. Disabled accounts and the caller themselves are left
+out, a group the caller does not belong to is not offered, and every list the
+reference sends is present even when empty, because the client reads each by
+name and treats a missing one as a failed search rather than an empty result.
 
 `FormatShare` remains exact, including inconsistent field types, fixed field
 order, string id, reference date format, integer `mail_send`/`hide_download`,

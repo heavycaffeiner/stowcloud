@@ -214,11 +214,7 @@ func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop
 		}
 
 		etag := `"` + label + `"`
-		now := time.Now()
-		if e.clock != nil {
-			now = e.clock.Now()
-		}
-		mtime := now.UTC().Format(http.TimeFormat)
+		mtime := e.clk().Now().UTC().Format(http.TimeFormat)
 		permStr := "RGDNVCK"
 		fidStr := "0"
 		davID := compat.DavID(0, id)
@@ -265,10 +261,7 @@ func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop
 	}
 
 	rootDavID := compat.DavID(1, id)
-	rootMtime := time.Now().UTC().Format(http.TimeFormat)
-	if e.clock != nil {
-		rootMtime = e.clock.Now().UTC().Format(http.TimeFormat)
-	}
+	rootMtime := e.clk().Now().UTC().Format(http.TimeFormat)
 	baseProps := []dav.Prop{
 		{
 			Name:     xml.Name{Space: "DAV:", Local: "resourcetype"},
@@ -381,10 +374,7 @@ func (s *compatQuerySource) Query(
 	}
 
 	// Recent / filter-files query: list recent entries
-	now := time.Now()
-	if s.engine.clock != nil {
-		now = s.engine.clock.Now()
-	}
+	now := s.engine.clk().Now()
 	since := now.Add(-14 * 24 * time.Hour).UnixNano()
 	hits, err := s.engine.Core.Recent(ctx, user, core.RecentQuery{
 		SinceNs: since,

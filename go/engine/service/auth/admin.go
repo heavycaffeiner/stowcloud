@@ -204,41 +204,93 @@ func (s *Service) AccountInfoByLogin(
 	return info, true, nil
 }
 
-// visibleTo is the directory rule: yourself, anybody when you administer, and
-// anybody you share a group with. Two accounts with no group in common are
-// not in each other's directory.
-func (s *Service) visibleTo(ctx context.Context, caller, target int64) (bool, error) {
-	if caller == target {
-		return true, nil
-	}
+// viewer is the caller's half of the directory rule, resolved once. A listing
+// asks about many targets, and recomputing the caller's own groups for each of
+// them is one query per candidate for an answer that cannot change mid-call.
+type viewer struct {
+	id     int64
+	admin  bool
+	groups map[int64]struct{}
+}
+
+// viewerFor resolves who the caller is allowed to see people as.
+func (s *Service) viewerFor(ctx context.Context, caller int64) (viewer, error) {
 	admin, err := s.IsAdmin(ctx, caller)
 	if err != nil {
-		return false, err
+		return viewer{}, err
 	}
+	v := viewer{id: caller, admin: admin}
 	if admin {
-		return true, nil
+		return v, nil
 	}
 	mine, err := s.store.GroupIDsOf(ctx, caller)
 	if err != nil {
-		return false, err
+		return viewer{}, err
 	}
-	if len(mine) == 0 {
+	v.groups = make(map[int64]struct{}, len(mine))
+	for _, g := range mine {
+		v.groups[g] = struct{}{}
+	}
+	return v, nil
+}
+
+// sees is the directory rule: yourself, anybody when you administer, and
+// anybody you share a group with. Two accounts with no group in common are
+// not in each other's directory.
+func (s *Service) sees(ctx context.Context, v viewer, target int64) (bool, error) {
+	if v.id == target || v.admin {
+		return true, nil
+	}
+	if len(v.groups) == 0 {
 		return false, nil
 	}
 	theirs, err := s.store.GroupIDsOf(ctx, target)
 	if err != nil {
 		return false, err
 	}
-	in := make(map[int64]struct{}, len(mine))
-	for _, g := range mine {
-		in[g] = struct{}{}
-	}
 	for _, g := range theirs {
-		if _, shared := in[g]; shared {
+		if _, shared := v.groups[g]; shared {
 			return true, nil
 		}
 	}
 	return false, nil
+}
+
+// visibleTo answers the rule for a single target.
+func (s *Service) visibleTo(ctx context.Context, caller, target int64) (bool, error) {
+	v, err := s.viewerFor(ctx, caller)
+	if err != nil {
+		return false, err
+	}
+	return s.sees(ctx, v, target)
+}
+
+// VisibleAccounts yields every account in the caller's directory, in the same
+// shape as the administrative listing.
+//
+// The same rule AccountInfoByLogin applies to one name, applied to all of
+// them: a share dialog offering a name the caller cannot otherwise see would
+// be the directory the rule exists to withhold.
+func (s *Service) VisibleAccounts(ctx context.Context, caller int64) ([]UserRow, error) {
+	accounts, err := s.store.ListAccounts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	v, err := s.viewerFor(ctx, caller)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]UserRow, 0, len(accounts))
+	for _, a := range accounts {
+		visible, serr := s.sees(ctx, v, a.ID)
+		if serr != nil {
+			return nil, serr
+		}
+		if visible {
+			out = append(out, userRowOf(a))
+		}
+	}
+	return out, nil
 }
 
 // ResolveAccount resolves a login name to an id. Absence is reported rather

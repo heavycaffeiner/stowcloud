@@ -5,6 +5,7 @@ package lifecycle
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -259,8 +260,23 @@ func (e *Engine) compatListShares(
 		return compat.Val{}, false, compat.ServerError("could not read shares")
 	}
 
+	// Without a path every share the caller can see is wanted. With one, the
+	// query is either about that entry or, when subfiles is set, about the
+	// entries directly inside it: a folder listing badges its children from
+	// one call rather than one call per child.
 	matchesPath := func(s compat.Share) bool {
-		return filter.Path == "" || strings.TrimPrefix(s.Path, "/") == filter.Path
+		if filter.Path == "" {
+			return true
+		}
+		p := strings.TrimPrefix(s.Path, "/")
+		if !filter.Subfiles {
+			return p == filter.Path
+		}
+		parent := ""
+		if i := strings.LastIndexByte(p, '/'); i >= 0 {
+			parent = p[:i]
+		}
+		return parent == filter.Path
 	}
 	shares := make([]compat.Val, 0, len(grants))
 
@@ -561,4 +577,86 @@ func (e *Engine) compatDeleteShare(
 		return compat.Val{}, false, compat.ServerError("could not delete share")
 	}
 	return compat.Object(), true, nil
+}
+
+// compatSharees answers the share picker's directory search.
+//
+// Advertising user and group sharing without this endpoint leaves the feature
+// unreachable from a client: the picker has no way to name a target, so the
+// share it would create can never be asked for.
+//
+// Who appears is the account service's directory rule, not a rule of this
+// package: a name the caller could not look up one at a time does not become
+// visible by being searched for. Disabled accounts are left out because a
+// share with one grants nothing.
+func (e *Engine) compatSharees(
+	c *fiber.Ctx, user core.UserID,
+) (compat.Val, bool, *compat.OCSError) {
+	query := compat.ParseShareeQuery(func(k string) string { return c.Query(k) })
+	ctx := c.UserContext()
+
+	accounts, err := e.Auth.VisibleAccounts(ctx, int64(user))
+	if err != nil {
+		return compat.Val{}, false, compat.ServerError("could not read the directory")
+	}
+	groups, err := e.compatGroups(ctx, user)
+	if err != nil {
+		return compat.Val{}, false, compat.ServerError("could not read groups")
+	}
+	admin, err := e.Auth.IsAdmin(ctx, int64(user))
+	if err != nil {
+		return compat.Val{}, false, compat.ServerError("could not read the directory")
+	}
+
+	var exactUsers, partialUsers []compat.Val
+	for _, a := range accounts {
+		// Sharing with yourself is not an option the picker should offer.
+		if a.ID == int64(user) || a.Disabled {
+			continue
+		}
+		display := a.Display
+		if display == "" {
+			display = a.Name
+		}
+		candidate := compat.Sharee{Kind: compat.GranteeUser, ID: a.Name, Display: display}
+		if !query.Matches(candidate) {
+			continue
+		}
+		if query.Exact(candidate) {
+			exactUsers = append(exactUsers, compat.ShareeEntry(candidate))
+			continue
+		}
+		partialUsers = append(partialUsers, compat.ShareeEntry(candidate))
+	}
+
+	// Sorted, because Go iterates a map in random order and a picker whose
+	// entries move between two identical searches reads as a broken list.
+	names := make([]string, 0, len(groups.names))
+	for id, name := range groups.names {
+		// A group the caller does not belong to is not in their directory,
+		// for the reason an account they share no group with is not.
+		if _, member := groups.members[id]; !member && !admin {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var exactGroups, partialGroups []compat.Val
+	for _, name := range names {
+		candidate := compat.Sharee{Kind: compat.GranteeGroup, ID: name, Display: name}
+		if !query.Matches(candidate) {
+			continue
+		}
+		if query.Exact(candidate) {
+			exactGroups = append(exactGroups, compat.ShareeEntry(candidate))
+			continue
+		}
+		partialGroups = append(partialGroups, compat.ShareeEntry(candidate))
+	}
+
+	return compat.ShareesPage(
+		exactUsers, exactGroups,
+		query.Window(partialUsers), query.Window(partialGroups),
+	), true, nil
 }

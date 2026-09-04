@@ -382,6 +382,134 @@ func TestCompatGroupShareAndSearch(t *testing.T) {
 	if !strings.Contains(string(searchBody), "needle.txt") {
 		t.Fatalf("search does not include matching file: %s", searchBody)
 	}
+
+	// The share picker's directory search. Decoded into the exact shape the
+	// reference client's parser demands: it reads every array by name and
+	// treats a missing one as a failed search, so the assertion is on the
+	// structure and not only on the names inside it.
+	sharees := newReq(t, http.MethodGet,
+		base+"/ocs/v2.php/apps/files_sharing/api/v1/sharees?format=json&itemType=file&search=bob&page=1&perPage=50", nil)
+	sharees.Header.Set("Authorization", aliceAuth)
+	shareesResp, sherr := compatClient().Do(sharees)
+	if sherr != nil || shareesResp.StatusCode != http.StatusOK {
+		t.Fatalf("sharee search failed: %v", sherr)
+	}
+	shareesBody := readAllBody(t, shareesResp.Body)
+	closeRespBody(t, shareesResp)
+
+	type shareeValue struct {
+		ShareType int    `json:"shareType"`
+		ShareWith string `json:"shareWith"`
+	}
+	type shareeItem struct {
+		Label string      `json:"label"`
+		Name  string      `json:"name"`
+		Value shareeValue `json:"value"`
+	}
+	type shareeLists struct {
+		Users        *[]shareeItem `json:"users"`
+		Groups       *[]shareeItem `json:"groups"`
+		Remotes      *[]shareeItem `json:"remotes"`
+		RemoteGroups *[]shareeItem `json:"remote_groups"`
+		Emails       *[]shareeItem `json:"emails"`
+	}
+	var page struct {
+		OCS struct {
+			Data struct {
+				shareeLists
+				Exact *shareeLists `json:"exact"`
+			} `json:"data"`
+		} `json:"ocs"`
+	}
+	if derr := jsonDecode(shareesBody, &page); derr != nil {
+		t.Fatalf("decoding sharees: %v, raw: %s", derr, shareesBody)
+	}
+	data := page.OCS.Data
+	if data.Exact == nil {
+		t.Fatalf("the sharee document has no exact block: %s", shareesBody)
+	}
+	for name, list := range map[string]*[]shareeItem{
+		"users": data.Users, "groups": data.Groups,
+		"remotes": data.Remotes, "remote_groups": data.RemoteGroups,
+		"emails":      data.Emails,
+		"exact.users": data.Exact.Users, "exact.groups": data.Exact.Groups,
+		"exact.remotes": data.Exact.Remotes, "exact.remote_groups": data.Exact.RemoteGroups,
+		"exact.emails": data.Exact.Emails,
+	} {
+		if list == nil {
+			t.Errorf("the sharee document omits %q, which the client's parser requires: %s",
+				name, shareesBody)
+		}
+	}
+	if data.Exact.Users == nil || len(*data.Exact.Users) != 1 {
+		t.Fatalf("an exact search for bob did not return one user: %s", shareesBody)
+	}
+	if got := (*data.Exact.Users)[0]; got.Value.ShareWith != "bob" ||
+		got.Value.ShareType != 0 || got.Label != "Bob" {
+		t.Errorf("the exact user entry is %+v", got)
+	}
+	if data.Users != nil && len(*data.Users) != 0 {
+		t.Errorf("an exact match was also reported as partial: %s", shareesBody)
+	}
+
+	// The caller is never a target of their own share dialog.
+	self := newReq(t, http.MethodGet,
+		base+"/ocs/v2.php/apps/files_sharing/api/v1/sharees?format=json&itemType=file&search=alice", nil)
+	self.Header.Set("Authorization", aliceAuth)
+	selfResp, seerr := compatClient().Do(self)
+	if seerr != nil || selfResp.StatusCode != http.StatusOK {
+		t.Fatalf("self sharee search failed: %v", seerr)
+	}
+	selfBody := readAllBody(t, selfResp.Body)
+	closeRespBody(t, selfResp)
+	if strings.Contains(string(selfBody), `"shareWith":"alice"`) {
+		t.Errorf("the caller offered themselves as a share target: %s", selfBody)
+	}
+
+	// A group the caller may share with is found by name.
+	groupSearch := newReq(t, http.MethodGet,
+		base+"/ocs/v2.php/apps/files_sharing/api/v1/sharees?format=json&itemType=file&search=team", nil)
+	groupSearch.Header.Set("Authorization", aliceAuth)
+	groupResp, goerr := compatClient().Do(groupSearch)
+	if goerr != nil || groupResp.StatusCode != http.StatusOK {
+		t.Fatalf("group sharee search failed: %v", goerr)
+	}
+	groupBody := readAllBody(t, groupResp.Body)
+	closeRespBody(t, groupResp)
+	if !strings.Contains(string(groupBody), `"shareType":1`) ||
+		!strings.Contains(string(groupBody), `"shareWith":"team"`) {
+		t.Errorf("the group is not offered as a share target: %s", groupBody)
+	}
+
+	// subfiles asks for the shares of a folder's children, which is how a
+	// listing badges them without one call per entry.
+	subfiles := newReq(t, http.MethodGet,
+		base+"/ocs/v2.php/apps/files_sharing/api/v1/shares?path=files&subfiles=true&format=json", nil)
+	subfiles.Header.Set("Authorization", aliceAuth)
+	subResp, suerr := compatClient().Do(subfiles)
+	if suerr != nil || subResp.StatusCode != http.StatusOK {
+		t.Fatalf("subfiles share listing failed: %v", suerr)
+	}
+	subBody := readAllBody(t, subResp.Body)
+	closeRespBody(t, subResp)
+	if !strings.Contains(string(subBody), "needle.txt") {
+		t.Fatalf("subfiles listing omits the shared child: %s", subBody)
+	}
+
+	// The same listing without subfiles is about the folder itself, so the
+	// child's share does not belong in it.
+	exactPath := newReq(t, http.MethodGet,
+		base+"/ocs/v2.php/apps/files_sharing/api/v1/shares?path=files&format=json", nil)
+	exactPath.Header.Set("Authorization", aliceAuth)
+	exactResp, exerr := compatClient().Do(exactPath)
+	if exerr != nil || exactResp.StatusCode != http.StatusOK {
+		t.Fatalf("exact path share listing failed: %v", exerr)
+	}
+	exactBody := readAllBody(t, exactResp.Body)
+	closeRespBody(t, exactResp)
+	if strings.Contains(string(exactBody), "needle.txt") {
+		t.Fatalf("a child share leaked into the folder's own listing: %s", exactBody)
+	}
 }
 
 func TestCompatAppPasswordRevokeRevokesCaller(t *testing.T) {
