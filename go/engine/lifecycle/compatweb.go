@@ -85,6 +85,15 @@ func (e *Engine) mountCompatTagged(app *fiber.App) {
 	app.Get("/remote.php/direct/:claim", e.compatDirectStream)
 	app.Get("/index.php/remote.php/direct/:claim", e.compatDirectStream)
 
+	// The reference spells a public link both ways, and its clients build the
+	// "/index.php/s/" form from a token. Unmounted, that address fell through
+	// to the single-page application, so a link opened to a document instead
+	// of to the file it names.
+	app.Get("/index.php"+PublicLinkPrefix+"/:token", e.linkLanding)
+	app.Post("/index.php"+PublicLinkPrefix+"/:token/auth", e.linkUnlock)
+	app.Get("/index.php"+PublicLinkPrefix+"/:token/download", e.linkDownload)
+	app.Get("/index.php"+PublicLinkPrefix+"/:token/zip", e.linkZip)
+	app.Post("/index.php"+PublicLinkPrefix+"/:token/drop", e.linkDrop)
 	// Additional app stubs
 	emptyObj := func(c *fiber.Ctx) error { return c.Status(fiber.StatusOK).JSON(fiber.Map{}) }
 	app.All("/apps/richdocuments/assets", emptyObj)

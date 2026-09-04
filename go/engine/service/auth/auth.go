@@ -115,6 +115,13 @@ type Service struct {
 	sinkMu sync.RWMutex
 	sink   AccessChangeSink
 
+	// stampMu guards the last time each app password's use was written. A
+	// sync client makes many requests a minute and the stamp is read as a
+	// time, so one write a minute per credential says the same thing as one
+	// per request without a write on every read.
+	stampMu sync.Mutex
+	stamped map[int64]int64
+
 	onMembership func()
 
 	// decoy is the hash a login against an unknown account verifies against,

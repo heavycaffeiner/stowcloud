@@ -9,7 +9,10 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/compat"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
@@ -442,6 +445,220 @@ func TestCompatSharesCRUD(t *testing.T) {
 	if !strings.Contains(string(listBody), "shareme.txt") {
 		t.Fatalf("list shares does not contain shareme.txt: %s", string(listBody))
 	}
+}
+
+// What a client does with a share after creating it.
+//
+// Creating one and reading the response back says nothing about whether the
+// link resolves, whether the id names the object the client listed, or
+// whether the mount the account browses can be handed away. Each of those was
+// wrong in a way the response body looked fine for.
+func TestCompatShareLifecycleFromAClient(t *testing.T) {
+	t.Parallel()
+	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	if openErr != nil {
+		t.Fatalf("opening engine: %v", openErr)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing engine: %v", cerr)
+		}
+	})
+	ctx := context.Background()
+
+	dir := t.TempDir()
+	if rerr := e.Core.RegisterShare(ctx, core.ShareDef{
+		ID: 1, Name: "files", Host: dir, Policy: vfs.DefaultSharePolicy(),
+	}); rerr != nil {
+		t.Fatalf("registering share: %v", rerr)
+	}
+	alice, aerr := e.Auth.CreateAdmin(ctx, "alice", "Alice", pwOf(loginPassword))
+	if aerr != nil {
+		t.Fatalf("creating admin: %v", aerr)
+	}
+	bob, berr := e.Auth.CreateUser(ctx, "bob", "Bob", pwOf(loginPassword))
+	if berr != nil {
+		t.Fatalf("creating bob: %v", berr)
+	}
+	if gerr := e.Core.GrantEveryShare(ctx, alice); gerr != nil {
+		t.Fatalf("granting: %v", gerr)
+	}
+	base := serveCompatEngine(t, e)
+	auth := davAuth(t, e, base, alice)
+
+	put := newReq(t, http.MethodPut, base+"/remote.php/webdav/files/ok.txt", strings.NewReader("body"))
+	put.Header.Set("Authorization", auth)
+	putResp, perr := compatClient().Do(put)
+	if perr != nil || putResp.StatusCode != http.StatusCreated {
+		t.Fatalf("PUT: err=%v resp=%v", perr, putResp)
+	}
+	closeRespBody(t, putResp)
+
+	const sharesAPI = "/ocs/v2.php/apps/files_sharing/api/v1/shares"
+	post := func(t *testing.T, form url.Values) (int, string) {
+		t.Helper()
+		req := newReq(t, http.MethodPost, base+sharesAPI, strings.NewReader(form.Encode()))
+		req.Header.Set("Authorization", auth)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
+		resp, err := compatClient().Do(req)
+		if err != nil {
+			t.Fatalf("POST shares: %v", err)
+		}
+		body := readAllBody(t, resp.Body)
+		closeRespBody(t, resp)
+		return resp.StatusCode, string(body)
+	}
+	send := func(t *testing.T, method, target string) (int, string) {
+		t.Helper()
+		req := newReq(t, method, base+target, nil)
+		req.Header.Set("Authorization", auth)
+		req.Header.Set("Accept", "application/json")
+		resp, err := compatClient().Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, target, err)
+		}
+		body := readAllBody(t, resp.Body)
+		closeRespBody(t, resp)
+		return resp.StatusCode, string(body)
+	}
+
+	// A link the client creates has to resolve. The download cap is a real
+	// limit whose zero value is "none left", so a link created without one
+	// answered gone the first time anybody opened it.
+	status, body := post(t, url.Values{"path": {"files/ok.txt"}, "shareType": {"3"}})
+	if status != http.StatusOK {
+		t.Fatalf("creating a link answered %d: %s", status, body)
+	}
+	var created struct {
+		OCS struct {
+			Data struct {
+				ID    string `json:"id"`
+				Token string `json:"token"`
+				URL   string `json:"url"`
+			} `json:"data"`
+		} `json:"ocs"`
+	}
+	if derr := jsonDecode([]byte(body), &created); derr != nil {
+		t.Fatalf("decoding the link: %v, raw: %s", derr, body)
+	}
+	link := created.OCS.Data
+	if link.Token == "" || link.URL == "" {
+		t.Fatalf("the link carries no token or url: %s", body)
+	}
+	if !strings.HasSuffix(link.URL, "/s/"+link.Token) {
+		t.Errorf("the link url is %q, which does not address its own token", link.URL)
+	}
+
+	// Both spellings, because the reference's clients build the second one
+	// from the token and an unmounted address answers with the application
+	// document instead of the link.
+	for _, target := range []string{"/s/" + link.Token, "/index.php/s/" + link.Token} {
+		req := newReq(t, http.MethodGet, base+target, nil)
+		req.Header.Set("Accept", "application/json")
+		resp, err := compatClient().Do(req)
+		if err != nil {
+			t.Fatalf("GET %s: %v", target, err)
+		}
+		landing := readAllBody(t, resp.Body)
+		ctype := resp.Header.Get("Content-Type")
+		closeRespBody(t, resp)
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("%s answered %d: %s", target, resp.StatusCode, landing)
+		}
+		if !strings.Contains(ctype, "json") {
+			t.Errorf("%s answered %q rather than the link", target, ctype)
+		}
+	}
+
+	// A share is a mount the account browses, not a file it owns. Handing it
+	// away would publish the whole mount, and offering it in a client puts
+	// the caller's own access one tap from deletion.
+	for _, form := range []url.Values{
+		{"path": {"files"}, "shareType": {"3"}},
+		{"path": {"files"}, "shareType": {"0"}, "shareWith": {"bob"}},
+	} {
+		refused, refusal := post(t, form)
+		if refused != http.StatusForbidden {
+			t.Errorf("sharing the mount as type %s answered %d: %s",
+				form.Get("shareType"), refused, refusal)
+		}
+	}
+
+	// The grant that carries the caller's own access is neither offered nor
+	// withdrawn here. An administrator manages every grant, so nothing else
+	// would stop this.
+	grants, gerr := e.Core.ListGrants(ctx, core.GrantFilter{})
+	if gerr != nil {
+		t.Fatalf("listing grants: %v", gerr)
+	}
+	var ownID int64
+	for _, g := range grants {
+		if g.User != nil && *g.User == int64(alice) {
+			ownID = g.ID
+		}
+	}
+	if ownID == 0 {
+		t.Fatal("the administrator holds no grant of their own")
+	}
+	own := strconv.FormatInt(compat.GrantShareID(ownID), 10)
+	if refused, refusal := send(t, http.MethodDelete, sharesAPI+"/"+own); refused != http.StatusForbidden {
+		t.Errorf("withdrawing the caller's own access answered %d: %s", refused, refusal)
+	}
+	if after, aerr := e.Core.ListGrants(ctx, core.GrantFilter{}); aerr != nil {
+		t.Fatalf("listing grants: %v", aerr)
+	} else if len(after) != len(grants) {
+		t.Fatalf("a refused withdrawal removed a grant: %d of %d remain", len(after), len(grants))
+	}
+
+	status, body = send(t, http.MethodGet, sharesAPI)
+	if status != http.StatusOK {
+		t.Fatalf("listing shares answered %d: %s", status, body)
+	}
+	if strings.Contains(body, `"path":"/files"`) {
+		t.Errorf("the mount is listed as a share: %s", body)
+	}
+
+	// One id space per object kind, so the id a client listed names the
+	// object it listed. A link and a grant are numbered by their own tables,
+	// and a bare number was resolved as whichever the server looked at first.
+	shareForm := url.Values{"path": {"files/ok.txt"}, "shareType": {"0"}, "shareWith": {"bob"}}
+	status, body = post(t, shareForm)
+	if status != http.StatusOK {
+		t.Fatalf("sharing with bob answered %d: %s", status, body)
+	}
+	var withBob struct {
+		OCS struct {
+			Data struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		} `json:"ocs"`
+	}
+	if derr := jsonDecode([]byte(body), &withBob); derr != nil {
+		t.Fatalf("decoding the grant: %v, raw: %s", derr, body)
+	}
+	if withBob.OCS.Data.ID == link.ID {
+		t.Fatalf("a grant and a link share the id %q", link.ID)
+	}
+
+	status, body = send(t, http.MethodGet, sharesAPI+"/"+link.ID)
+	if status != http.StatusOK || !strings.Contains(body, `"share_type":3`) {
+		t.Errorf("the link id resolved to %d: %s", status, body)
+	}
+	status, body = send(t, http.MethodGet, sharesAPI+"/"+withBob.OCS.Data.ID)
+	if status != http.StatusOK || !strings.Contains(body, `"share_type":0`) {
+		t.Errorf("the grant id resolved to %d: %s", status, body)
+	}
+
+	// Deleting the grant leaves the link, which is the pair a colliding id
+	// space got wrong in whichever direction the server looked first.
+	if status, body := send(t, http.MethodDelete, sharesAPI+"/"+withBob.OCS.Data.ID); status != http.StatusOK {
+		t.Fatalf("deleting the grant answered %d: %s", status, body)
+	}
+	if status, body := send(t, http.MethodGet, sharesAPI+"/"+link.ID); status != http.StatusOK {
+		t.Errorf("deleting the grant took the link with it: %d %s", status, body)
+	}
+	_ = bob
 }
 
 func TestCompatGroupShareAndSearch(t *testing.T) {

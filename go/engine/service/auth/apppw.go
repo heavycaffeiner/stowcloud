@@ -20,6 +20,9 @@ import (
 // appPWTokenLen is the entropy of one token.
 const appPWTokenLen = 32
 
+// appPWStampInterval is how often one credential's use is written down.
+const appPWStampInterval = time.Minute
+
 // Scope bounds what an app password can reach: a permission bitmask together
 // with an optional set of share labels. An empty set means every share visible
 // to the account.
@@ -123,6 +126,7 @@ func (s *Service) VerifyAppPasswordID(ctx context.Context, token string) (Princi
 	hash := sha256.Sum256([]byte(folded))
 	gen := s.Generation()
 	if p, scope, id, ok := s.cache.tokenLookup(hash, gen); ok {
+		s.noteAppPasswordUse(ctx, id)
 		return p, scope, id, nil
 	}
 
@@ -154,7 +158,42 @@ func (s *Service) VerifyAppPasswordID(ctx context.Context, token string) (Princi
 	principal := principalOf(acct)
 	scope := Scope{Perms: row.ScopePerms, Shares: row.Shares}
 	s.cache.tokenStore(hash, principal, scope, row.ID, gen)
+	s.noteAppPasswordUse(ctx, row.ID)
 	return principal, scope, row.ID, nil
+}
+
+// noteAppPasswordUse records that a credential answered a request.
+//
+// Nothing wrote this before, so a client that had been syncing for a week
+// still showed as never used, and an owner deciding which credential to
+// revoke had nothing to decide on.
+//
+// The write is coalesced per credential, because the verification path runs
+// on every request and mostly answers from a cache. The address and the agent
+// stay empty: this layer resolves a token and has no request to read them
+// from.
+func (s *Service) noteAppPasswordUse(ctx context.Context, id int64) {
+	if id == 0 {
+		return
+	}
+	now := s.now()
+
+	s.stampMu.Lock()
+	if last, seen := s.stamped[id]; seen && now-last < appPWStampInterval.Nanoseconds() {
+		s.stampMu.Unlock()
+		return
+	}
+	if s.stamped == nil {
+		s.stamped = make(map[int64]int64)
+	}
+	s.stamped[id] = now
+	s.stampMu.Unlock()
+
+	if err := s.store.TouchAppPassword(ctx, id, now, "", ""); err != nil {
+		// The credential still verified; only its stamp is cold, and the next
+		// request past the interval writes it again.
+		s.warn("an app password's last-used stamp could not be updated", err)
+	}
 }
 
 // RevokeAppPassword destroys one and bumps the generation, so the bypass

@@ -61,6 +61,26 @@ func KindOfShareType(t int64) (GranteeKind, *OCSError) {
 	}
 }
 
+// GrantIDBase separates two id spaces the reference keeps in one.
+//
+// A link and a grant are numbered by their own tables here, so a bare id
+// names one of each and a client asking about "share 1" gets whichever the
+// server looks at first: an app deleting the share it listed could remove a
+// different one. Grants are offset past any id a link table will reach, and
+// the offset is a power of two so a reader can see which space an id is in.
+const GrantIDBase int64 = 1 << 40
+
+// GrantShareID renders a grant's id in the wire space.
+func GrantShareID(id int64) int64 { return id + GrantIDBase }
+
+// ShareIDOf reads a wire id back, reporting whether it names a grant.
+func ShareIDOf(wire int64) (int64, bool) {
+	if wire >= GrantIDBase {
+		return wire - GrantIDBase, true
+	}
+	return wire, false
+}
+
 // Share is one share record formatted for the OCS response.
 type Share struct {
 	ID             int64

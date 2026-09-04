@@ -1276,8 +1276,45 @@ func TestNextcloudAndroidPostLoginFlow(t *testing.T) {
 	}
 
 	// 11. Post-login: Share link creation, expiration check, and deletion
+	//
+	// On a file inside the share. The share itself is a mount the account
+	// browses, and the server refuses to hand it away: a client offering that
+	// puts the grant carrying the caller's own access one tap from deletion.
+	shareTargetReq, err := http.NewRequest(http.MethodPut,
+		delivery.Server+"/remote.php/dav/files/"+delivery.LoginName+"/files/linked.txt",
+		strings.NewReader("link me"))
+	if err != nil {
+		t.Fatalf("building the share target PUT: %v", err)
+	}
+	shareTargetReq.Header.Set("Authorization", basicAuth)
+	shareTargetResp, err := client.Do(shareTargetReq)
+	if err != nil || shareTargetResp.StatusCode != http.StatusCreated {
+		t.Fatalf("writing the share target: err=%v resp=%v", err, shareTargetResp)
+	}
+	if cerr := shareTargetResp.Body.Close(); cerr != nil {
+		t.Errorf("closing the share target response: %v", cerr)
+	}
+
+	mountForm := url.Values{"path": {"/files"}, "shareType": {"3"}}
+	mountReq, err := http.NewRequest(http.MethodPost,
+		delivery.Server+"/ocs/v2.php/apps/files_sharing/api/v1/shares?format=json",
+		strings.NewReader(mountForm.Encode()))
+	if err != nil {
+		t.Fatalf("building the mount share: %v", err)
+	}
+	mountReq.Header.Set("Authorization", basicAuth)
+	mountReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	mountReq.Header.Set("OCS-APIRequest", "true")
+	mountResp, err := client.Do(mountReq)
+	if err != nil || mountResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("sharing the mount: err=%v status=%d", err, mountResp.StatusCode)
+	}
+	if cerr := mountResp.Body.Close(); cerr != nil {
+		t.Errorf("closing the mount share response: %v", cerr)
+	}
+
 	shareForm := url.Values{
-		"path":       {"/files"},
+		"path":       {"/files/linked.txt"},
 		"shareType":  {"3"},
 		"expireDate": {"2026-12-31"},
 	}

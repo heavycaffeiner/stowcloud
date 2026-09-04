@@ -234,7 +234,7 @@ func (e *Engine) formatGrantShare(
 	}
 
 	return compat.Share{
-		ID:             g.ID,
+		ID:             compat.GrantShareID(g.ID),
 		Kind:           kind,
 		Perms:          compat.SharePermissions(permBitsOf(acl.Perms(g.Allow))),
 		CreatedS:       g.CreatedNs / 1e9,
@@ -280,9 +280,18 @@ func (e *Engine) compatListShares(
 	}
 	shares := make([]compat.Val, 0, len(grants))
 
+	// A grant over a share root is the caller's access to that mount, not a
+	// share of a file inside it. Reporting it makes a client draw the mount
+	// as shared and offer to withdraw it, and withdrawing it is the caller
+	// deleting their own access.
+	isMount := func(g core.Grant) bool {
+		p, perr := vfs.ParseSharePath(g.Subpath)
+		return perr != nil || p.IsRoot()
+	}
+
 	if filter.SharedWithMe {
 		for _, grant := range grants {
-			if !grantIsForUser(grant, user, groups) {
+			if !grantIsForUser(grant, user, groups) || isMount(grant) {
 				continue
 			}
 			share := e.formatGrantShare(ctx, user, grant, groups)
@@ -307,7 +316,8 @@ func (e *Engine) compatListShares(
 		}
 	}
 	for _, grant := range grants {
-		if grantIsForUser(grant, user, groups) || !e.compatCanManageGrant(user, grant) {
+		if grantIsForUser(grant, user, groups) || isMount(grant) ||
+			!e.compatCanManageGrant(user, grant) {
 			continue
 		}
 		share := e.formatGrantShare(ctx, user, grant, groups)
@@ -341,6 +351,14 @@ func (e *Engine) compatCreateShare(
 	if serr != nil {
 		return compat.Val{}, false, compat.NotFound("File not found")
 	}
+
+	// A functional share is a mount, not a file the caller owns. Handing out
+	// a link to it would publish the whole mount, and offering it in a client
+	// puts the grant that provides the caller's own access one tap from
+	// deletion. Its grants are administered where shares are administered.
+	if r.Path().IsRoot() {
+		return compat.Val{}, false, compat.Forbidden("a share cannot itself be shared")
+	}
 	isDir := st.Kind.IsDir()
 
 	shareType := int64(compat.ShareTypeUser)
@@ -370,10 +388,14 @@ func (e *Engine) compatCreateShare(
 			expiresNs = exp
 		}
 
+		// The cap has to be stated. Zero is a real limit that a link is born
+		// having reached, so leaving the field at its zero value produced a
+		// link the server answered as gone the first time anybody opened it.
 		link, tok, lerr := e.Core.CreateLink(ctx, r, core.LinkSpec{
 			Perms:    perms,
 			Password: pw,
 			Expires:  expiresNs,
+			MaxDown:  unlimitedDownloads,
 			Note:     req.Note,
 			Label:    req.Label,
 		})
@@ -432,20 +454,24 @@ func (e *Engine) compatCreateShare(
 func (e *Engine) compatGetShare(
 	c *fiber.Ctx, user core.UserID, idStr string,
 ) (compat.Val, bool, *compat.OCSError) {
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	wire, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		return compat.Val{}, false, compat.NotFound("invalid share id")
 	}
+	id, isGrant := compat.ShareIDOf(wire)
 
 	ctx := c.UserContext()
-	links, lerr := e.Core.ListLinks(ctx, user, nil)
-	if lerr != nil {
-		return compat.Val{}, false, compat.ServerError("could not read shares")
-	}
-	for _, link := range links {
-		if link.ID == id && link.Owner == user {
-			return compat.FormatShare(e.formatLinkShare(ctx, c, link)), true, nil
+	if !isGrant {
+		links, lerr := e.Core.ListLinks(ctx, user, nil)
+		if lerr != nil {
+			return compat.Val{}, false, compat.ServerError("could not read shares")
 		}
+		for _, link := range links {
+			if link.ID == id && link.Owner == user {
+				return compat.FormatShare(e.formatLinkShare(ctx, c, link)), true, nil
+			}
+		}
+		return compat.Val{}, false, compat.NotFound("share not found")
 	}
 
 	groups, gerr := e.compatGroups(ctx, user)
@@ -471,10 +497,11 @@ func (e *Engine) compatGetShare(
 func (e *Engine) compatUpdateShare(
 	c *fiber.Ctx, user core.UserID, idStr string,
 ) (compat.Val, bool, *compat.OCSError) {
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	wire, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		return compat.Val{}, false, compat.NotFound("invalid share id")
 	}
+	id, isGrant := compat.ShareIDOf(wire)
 
 	ctx := c.UserContext()
 	links, lerr := e.Core.ListLinks(ctx, user, nil)
@@ -482,7 +509,7 @@ func (e *Engine) compatUpdateShare(
 		return compat.Val{}, false, compat.ServerError("could not read shares")
 	}
 	for _, link := range links {
-		if link.ID != id || link.Owner != user {
+		if isGrant || link.ID != id || link.Owner != user {
 			continue
 		}
 		patch := core.LinkPatch{}
@@ -556,22 +583,42 @@ func (e *Engine) compatDeleteShare(
 ) (compat.Val, bool, *compat.OCSError) {
 	idStr = strings.Trim(idStr, "/ \t")
 	e.logger.Debug("compat delete share", "idStr", idStr, "user", user)
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	wire, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
 		return compat.Val{}, false, compat.NotFound("invalid share id")
 	}
+	id, isGrant := compat.ShareIDOf(wire)
 
 	ctx := c.UserContext()
-	if derr := e.Core.DeleteLink(ctx, user, id); derr == nil {
+	if !isGrant {
+		if derr := e.Core.DeleteLink(ctx, user, id); derr != nil {
+			return compat.Val{}, false, compat.NotFound("share not found")
+		}
 		return compat.Object(), true, nil
 	}
 
-	_, found, gerr := e.compatManagedGrant(ctx, user, id)
+	grant, found, gerr := e.compatManagedGrant(ctx, user, id)
 	if gerr != nil {
 		return compat.Val{}, false, compat.ServerError("could not read shares")
 	}
 	if !found {
 		return compat.Val{}, false, compat.NotFound("share not found")
+	}
+
+	// Two grants are refused rather than deleted, because deleting either is
+	// the caller taking something away from themselves: the grant that
+	// provides their own access, and a grant over a share root, which is a
+	// mount rather than a share of a file inside one. An administrator can
+	// manage every grant, so nothing else would stop this.
+	groups, ggerr := e.compatGroups(ctx, user)
+	if ggerr != nil {
+		return compat.Val{}, false, compat.ServerError("could not read groups")
+	}
+	if grantIsForUser(grant, user, groups) {
+		return compat.Val{}, false, compat.Forbidden("a grant that carries your own access is not withdrawn here")
+	}
+	if p, perr := vfs.ParseSharePath(grant.Subpath); perr != nil || p.IsRoot() {
+		return compat.Val{}, false, compat.Forbidden("a share is not itself a share")
 	}
 	if derr := e.Core.DeleteGrant(ctx, id); derr != nil {
 		return compat.Val{}, false, compat.ServerError("could not delete share")
