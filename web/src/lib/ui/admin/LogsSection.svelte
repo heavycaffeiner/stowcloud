@@ -77,8 +77,12 @@
   const timeline = createQuery(() => adminTimelineQuery(settled.current, true))
   const users = createQuery(() => adminUsersQuery())
 
-  const records = $derived(logs.data?.pages.flatMap((p) => p.records) ?? [])
-  const auditRows = $derived(audit.data?.pages.flatMap((p) => p.rows) ?? [])
+  // Gated on the mode, not only fetched under it. Switching a stream off
+  // disables its query, and a disabled query keeps whatever it last held, so
+  // reading `data` unconditionally left the rows of a stream the operator had
+  // just switched off on screen.
+  const records = $derived(includesServer ? (logs.data?.pages.flatMap((p) => p.records) ?? []) : [])
+  const auditRows = $derived(includesAudit ? (audit.data?.pages.flatMap((p) => p.rows) ?? []) : [])
   const items = $derived(pureInterleave(records, auditRows, MAX_RECORDS))
   const view = $derived(pureTimelineView(timeline.data ?? null, settled.current.sourceMode))
   const serverOnlyActive = $derived(pureServerOnlyFiltersActive(filters))
@@ -92,12 +96,12 @@
     (includesServer && logs.isFetchingNextPage) || (includesAudit && audit.isFetchingNextPage)
   )
   const failed = $derived((includesServer && logs.isError) || (includesAudit && audit.isError))
-  const hasMore = $derived(logs.hasNextPage || audit.hasNextPage)
+  const hasMore = $derived((includesServer && logs.hasNextPage) || (includesAudit && audit.hasNextPage))
   const truncated = $derived(items.length >= MAX_RECORDS && hasMore)
 
   function loadMore(): void {
-    if (logs.hasNextPage && !logs.isFetchingNextPage) void logs.fetchNextPage()
-    if (audit.hasNextPage && !audit.isFetchingNextPage) void audit.fetchNextPage()
+    if (includesServer && logs.hasNextPage && !logs.isFetchingNextPage) void logs.fetchNextPage()
+    if (includesAudit && audit.hasNextPage && !audit.isFetchingNextPage) void audit.fetchNextPage()
   }
 
   /** Stored size, formatted without ever holding the byte count in a number.
