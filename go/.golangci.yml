@@ -95,6 +95,17 @@ linters:
           - gosec
         text: "G101"
 
+      # A filesystem test proves this tree's own drivers against the host's
+      # formatters and checkers: mkfs.vfat, mkfs.exfat, fsck.exfat, mcopy.
+      # G204 taints whatever `exec.LookPath` returns, which is the only way
+      # to find those tools and is a path the developer's own PATH named.
+      # The arguments beside it are constants and paths under `t.TempDir`,
+      # and none of it is reachable from a request. Test files only.
+      - path: _test\.go
+        linters:
+          - gosec
+        text: "G204"
+
       # G117 reads a marshaled field's name, not what it holds, the same way
       # G101 reads an identifier. `Config.AccessKey` is the access key id: a
       # bucket-scoped identifier that is persisted verbatim in
@@ -108,6 +119,21 @@ linters:
         linters:
           - gosec
         text: "G117"
+
+      # SA1019 reports x/crypto/twofish's deprecation notice, which advises
+      # against Twofish for an application choosing a cipher. This driver is
+      # not choosing one: VeraCrypt offers Twofish and four cascades that
+      # include it, so a container already exists with those bytes in it and
+      # the only alternative to reading them is refusing to open the volume.
+      # The other four ciphers are in-tree because Go ships none of them;
+      # hand-writing a fifth to dodge a deprecation notice would be 350
+      # lines of key schedule and MDS matrix with nothing to gain, and
+      # `AGENTS.md` says cryptography is where a dependency is taken rather
+      # than reimplemented. Scoped to the one file that imports it.
+      - path: engine/infra/vault/algorithm\.go
+        linters:
+          - staticcheck
+        text: "SA1019"
 
 formatters:
   enable:
