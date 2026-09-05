@@ -10,9 +10,9 @@ package lifecycle
 import (
 	"bytes"
 	"errors"
+	"github.com/gofiber/fiber/v2"
 	"io"
 	"strconv"
-	"github.com/gofiber/fiber/v2"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"

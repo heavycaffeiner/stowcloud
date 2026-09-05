@@ -5,12 +5,12 @@ package core
 import (
 	"context"
 	"fmt"
-	"io"
-	"math"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/journal"
+	"io"
+	"math"
 )
 
 // Every mutation in this file runs the same six steps in the same order:

@@ -28,7 +28,7 @@ func (e *Engine) davVendorProps() func(
 ) []dav.Prop {
 	return nil
 }
-func (e *Engine) davSources() []dav.QuerySource                                         { return nil }
+func (e *Engine) davSources() []dav.QuerySource                                                  { return nil }
 func (e *Engine) serveDavTrash(http.ResponseWriter, *http.Request, middleware.Principal, string) {}
 
 func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop, []dav.RootChild) {

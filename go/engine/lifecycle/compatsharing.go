@@ -104,8 +104,8 @@ func (e *Engine) compatCanManageGrant(user core.UserID, g core.Grant) bool {
 		return false
 	}
 	if p, perr := vfs.ParseSharePath(g.Subpath); perr != nil || p.IsRoot() {
-		isAdmin, _ := e.Auth.IsAdmin(context.Background(), int64(user))
-		return isAdmin
+		isAdmin, aerr := e.Auth.IsAdmin(context.Background(), int64(user))
+		return aerr == nil && isAdmin
 	}
 	return true
 }

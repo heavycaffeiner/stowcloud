@@ -200,7 +200,9 @@ func (e *Engine) adminUsersDelete(c *fiber.Ctx) error {
 	if target == caller {
 		return refuse(c, apierr.Classified{Class: apierr.Denied})
 	}
-	_ = e.Core.CleanupHome(c.UserContext(), core.UserID(target))
+	if cerr := e.Core.CleanupHome(c.UserContext(), core.UserID(target)); cerr != nil {
+		e.logger.Warn("cleaning up deleted user home failed", "user", target, "error", cerr)
+	}
 	if err := e.Auth.DeleteUser(c.UserContext(), target); err != nil {
 		return failKnown(c, err)
 	}

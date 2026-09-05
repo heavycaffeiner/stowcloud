@@ -119,10 +119,9 @@ type Service struct {
 	// sync client makes many requests a minute and the stamp is read as a
 	// time, so one write a minute per credential says the same thing as one
 	// per request without a write on every read.
-	stampMu sync.Mutex
-	stamped map[int64]int64
+	stampMu  sync.Mutex
+	stamped  map[int64]int64
 	auditOps atomic.Int64
-
 
 	onMembership func()
 

@@ -304,10 +304,12 @@ func (e *Engine) accountTOTPEnroll(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
 	}
 
-	if err := e.Auth.EnrollTOTP(c.UserContext(), int64(owner), req.Secret); err != nil {
-		return failKnown(c, err)
+	if eerr := e.Auth.EnrollTOTP(c.UserContext(), int64(owner), req.Secret); eerr != nil {
+		return failKnown(c, eerr)
 	}
-	_, _ = e.Auth.VerifyTOTP(c.UserContext(), int64(owner), req.Code, e.clock.Nanos())
+	if _, verr := e.Auth.VerifyTOTP(c.UserContext(), int64(owner), req.Code, e.clock.Nanos()); verr != nil {
+		return failKnown(c, verr)
+	}
 
 	codes, err := e.Auth.GenerateRecoveryCodes(c.UserContext(), int64(owner), recoveryCodeCount)
 	if err != nil {

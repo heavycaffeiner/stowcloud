@@ -181,6 +181,7 @@ func (s *Service) ClearSMBPassword(ctx context.Context, userID int64) (revertibl
 	blocked := facts.TOTPEnrolled && s.totpPolicy() == TOTPBlock
 	return !facts.OptOut && !facts.ProviderLink && !blocked, nil
 }
+
 // SetSMBAccess writes both self-service switches. Opting out is the stronger
 // statement and forces the other off: a credential that is not stored cannot
 // be live.

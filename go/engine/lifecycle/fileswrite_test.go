@@ -171,7 +171,7 @@ func TestEachWriteRouteNeedsItsOwnPermission(t *testing.T) {
 
 // ACL permission denial on a known share returns 403 fs.denied.
 func TestWriteRoutesReturn403OnPermissionDenial(t *testing.T) {
-	base, sess, share := shareWith(t, everyPerm() &^ acl.Delete)
+	base, sess, share := shareWith(t, everyPerm()&^acl.Delete)
 	status, body := post(t, base+"/api/v1/files/delete", sess,
 		map[string]string{"path": "/" + share + "/existing.txt"})
 	if status != http.StatusForbidden {

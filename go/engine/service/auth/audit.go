@@ -70,7 +70,9 @@ func (s *Service) Audit(ctx context.Context, actor *int64, event, target, ip, ua
 	})
 	if err == nil {
 		if s.auditOps.Add(1)%1000 == 0 {
-			_, _ = s.store.PruneAudit(ctx, 0, limits.AuditRetentionMaxRows)
+			if _, perr := s.store.PruneAudit(ctx, 0, limits.AuditRetentionMaxRows); perr != nil {
+				s.log.Warn("pruning audit entries failed", "error", perr)
+			}
 		}
 	}
 	return err

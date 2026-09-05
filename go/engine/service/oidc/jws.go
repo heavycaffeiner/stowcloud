@@ -3,7 +3,6 @@ package oidc
 import (
 	"context"
 	"crypto"
-	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rsa"
@@ -354,13 +353,9 @@ func verifyES256(k jwk, digest, sig []byte) error {
 	// chose, and verifying against one leaks the private key of whoever is
 	// tricked into using it.
 	point := append([]byte{4}, append(x, y...)...)
-	if _, perr := ecdh.P256().NewPublicKey(point); perr != nil {
+	pub, perr := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), point)
+	if perr != nil {
 		return refuse("the key's point is not on the curve")
-	}
-	pub := &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     new(big.Int).SetBytes(x),
-		Y:     new(big.Int).SetBytes(y),
 	}
 	r := new(big.Int).SetBytes(sig[:coordBytes])
 	s := new(big.Int).SetBytes(sig[coordBytes:])

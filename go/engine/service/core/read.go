@@ -328,13 +328,6 @@ func (c *Core) walkArchive(ctx context.Context, r Resolved, rel string, visit fu
 	return nil
 }
 
-// canRead asks the evaluator about this exact path rather than trusting the
-// permissions the walk descended with.
-func (c *Core) canRead(r Resolved) bool {
-	at := acl.Vpath{Share: int64(r.share), Path: aclPath(r.path)}
-	return c.acl.Evaluate(int64(r.user), at, acl.Read).Allowed
-}
-
 // firstErr prefers the visitor's error over the close that followed it: the
 // visitor's is what the caller acts on, and a close failing after the bytes
 // were already delivered tells nobody anything.

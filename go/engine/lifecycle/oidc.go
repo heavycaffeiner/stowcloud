@@ -283,7 +283,6 @@ func (e *Engine) accountOIDCLinkDelete(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable, Key: "auth.invalid_credentials"})
 	}
 
-
 	if proved, rerr := e.reconfirm(c, int64(owner), req.Current); !proved {
 		return rerr
 	}
