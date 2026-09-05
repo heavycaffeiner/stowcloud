@@ -174,7 +174,7 @@
           say(
             'assertive',
             tp('job.job_was_interrupted_by_server', item.done, { kind: label }) +
-              (left > 0 ? ' ' + tp('job.left', left) : '')
+              (left > 0 ? ' ' + t('job.left', { count: left }) : '')
           )
         } else if (item.status === 'error') {
           say(
@@ -249,9 +249,9 @@
             {#if item.status === 'error' && item.message}
               <p class="sc-job-tray__message">{t(item.message, item.messageParams)}</p>
             {:else if item.status === 'cancelled'}
-              <p class="sc-job-tray__message">{tp('job.cancelled_completed', item.done)}</p>
+              <p class="sc-job-tray__message">{t('job.cancelled_completed', { count: item.done })}</p>
             {:else if item.status === 'interrupted'}
-              <p class="sc-job-tray__message">{tp('job.interrupted_by_server_restart_completed', item.done)}</p>
+              <p class="sc-job-tray__message">{t('job.interrupted_by_server_restart_completed', { count: item.done })}</p>
             {/if}
             {#if outstanding(item).length > 0}
               <!-- A job that stopped without finishing is only "not lost" if
