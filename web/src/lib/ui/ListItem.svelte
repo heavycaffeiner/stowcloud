@@ -18,8 +18,14 @@
   let { selected = false, onclick, leading, trailing, headline, supporting }: Props = $props()
 </script>
 
+<!-- The state layer is conditional: `m3-layer` tints on hover and on press,
+     and CSS hover reaches an ancestor, so a row carrying one lit up whenever
+     a button inside it was hovered or tapped. The row and the control both
+     tinted, one over the other, and moving between a row's controls kept
+     re-lighting the pair. A row that cannot be pressed has no state to show. -->
 <div
-  class="sc-list-item m3-layer sc-focus-ring"
+  class="sc-list-item sc-focus-ring"
+  class:m3-layer={onclick !== undefined}
   class:sc-list-item--selected={selected}
   {onclick}
   role="presentation"
@@ -93,6 +99,9 @@
     display: inline-flex;
     flex-wrap: wrap;
     align-items: center;
+    /* The group hangs off the right edge, so a control pushed onto a second
+       line belongs under the others rather than alone at the far left. */
+    justify-content: flex-end;
     gap: 8px;
     margin-left: auto;
     max-width: 100%;

@@ -32,6 +32,17 @@
   pointer-events: none;
 }
 
+/* A pressable container and a pressable control inside it each own a state
+   layer, and a CSS hover matches the container as well as the control, so
+   hovering one of a row's buttons lit both: two tints, one over the other,
+   re-lighting as the pointer moved from control to control. The container
+   yields while the pointer is on something inside it that has its own state.
+   Written with `:has()` rather than by dropping the container's layer, since
+   the row itself is pressable and does need one of its own. */
+.m3-layer:has(:is(button, input, a, [role='menuitem'], [role='tab']):hover)::after {
+  opacity: 0;
+}
+
 /* Upstream omission, not a knob of ours. Twelve m3-svelte components size
    themselves with `height: --m3-density(3.5rem)` and friends (Button, FAB,
    every TextField and Select, ListItem, MenuItem) but v7.2.0 ships no
