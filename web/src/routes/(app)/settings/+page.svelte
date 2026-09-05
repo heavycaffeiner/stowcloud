@@ -118,7 +118,13 @@
     <!-- The group name goes on a wrapper, not on `Tabs`: the component spreads
          its extra attributes onto every `<input type="radio">` it renders, so
          an `aria-label` there overrode each tab's own `<label>` and a screen
-         reader announced three radios all called "Settings sections". -->
+         reader announced three radios all called "Settings sections".
+
+         Those inputs carry `pointer-events: none` from the framework, so a
+         synthetic click aimed at the input itself does nothing. That is the
+         standard hidden-input pattern and the `<label>` is the real target:
+         a real pointer, a tap and the keyboard all work. Automation has to
+         click the label or set the value, not the input. -->
     <div class="sc-settings__head-inner" role="radiogroup" aria-label={t('settings.settings_sections')}>
       <Tabs bind:tab items={tabs} />
     </div>

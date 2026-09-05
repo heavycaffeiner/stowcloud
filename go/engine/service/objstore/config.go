@@ -120,6 +120,14 @@ func validateConfigPath(field, s string) error {
 // query or fragment on the endpoint is refused rather than silently joined
 // with the bucket and key later, since a silent join is exactly how a typo
 // here turns into every request going somewhere the admin did not type.
+//
+// Plain http is accepted, unlike the single sign-on issuer, and the two rules
+// differ because the traffic does. This endpoint is reached by the server
+// itself, typically a bucket on the same host or the same private network;
+// an OIDC issuer is reached by the person's browser and carries a token that
+// identifies them, so a plaintext hop there is a different exposure. The
+// screen says as much on the field rather than leaving the difference to be
+// discovered.
 func validateEndpoint(endpoint string) error {
 	u, err := url.Parse(endpoint)
 	if err != nil {

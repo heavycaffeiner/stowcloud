@@ -40,6 +40,13 @@ func BoundWatchFullThreshold() Bound { return Bound{Min: 64, Max: 10 << 20} }
 // and honoured rather than rejected.
 func BoundServiceGID() Bound { return Bound{Min: 1, Max: 1<<32 - 1} }
 
+// The database guard's two ceilings, in bytes. Zero is off for both, which is
+// why they start there rather than at one. The top is a pebibyte: past that
+// the guard is measuring a database no SQLite deployment this serves will
+// reach, and an unbounded field reads to assistive technology as a maximum of
+// zero.
+func BoundDBBytes() Bound { return Bound{Min: 0, Max: 1 << 50} }
+
 // The settings paths, declared in one place. The screen, the loader and the
 // checker each refer to the same field, and a typo in any separate copy yields
 // a setting that stores successfully and is never read back.
@@ -52,6 +59,8 @@ const (
 	FieldRatePerSec           = "rate.per_sec"
 	FieldRateBurst            = "rate.burst"
 	FieldSMBServiceGID        = "smb.service_gid"
+	FieldDBMaxBytes           = "db.max_bytes"
+	FieldDBMinFreeBytes       = "db.min_free_bytes"
 )
 
 // Bounds is every numeric field and its range, which the settings screen
@@ -71,6 +80,8 @@ func Bounds() map[string]Bound {
 		FieldRatePerSec:           BoundRatePerSec(),
 		FieldRateBurst:            BoundRateBurst(),
 		FieldSMBServiceGID:        BoundServiceGID(),
+		FieldDBMaxBytes:           BoundDBBytes(),
+		FieldDBMinFreeBytes:       BoundDBBytes(),
 	}
 }
 

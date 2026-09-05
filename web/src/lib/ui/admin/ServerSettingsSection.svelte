@@ -149,6 +149,15 @@
     const r = field(key)?.range
     return r && r.kind === 'int' ? { min: r.min, max: r.max } : {}
   }
+  /** The same bound in megabytes, for the two fields the operator enters in
+   *  megabytes and the wire carries in bytes. */
+  function mbRangeAttrs(key: string): { min?: number; max?: number } {
+    const r = intRangeAttrs(key)
+    return {
+      min: r.min === undefined ? undefined : Math.ceil(r.min / BYTES_PER_MB),
+      max: r.max === undefined ? undefined : Math.floor(r.max / BYTES_PER_MB)
+    }
+  }
 
   // ── moving focus to a failed save's own error ──
   //
@@ -923,8 +932,10 @@
       </div>
       <div class="sc-server-settings__form">
         <Switch checked={dbSizeGuard} onchange={(v) => (dbSizeGuard = v)} label={t('settings.db_size_guard')} />
-        <TextField label={t('settings.db_max_bytes')} bind:value={dbMaxBytesMb} type="number" min={0} />
-        <TextField label={t('settings.db_min_free_bytes')} bind:value={dbMinFreeBytesMb} type="number" min={0} />
+        <!-- The field is megabytes and the catalogue's bound is bytes, so the
+             bound is converted rather than applied as it stands. -->
+        <TextField label={t('settings.db_max_bytes')} bind:value={dbMaxBytesMb} type="number" {...mbRangeAttrs('db.max_bytes')} />
+        <TextField label={t('settings.db_min_free_bytes')} bind:value={dbMinFreeBytesMb} type="number" {...mbRangeAttrs('db.min_free_bytes')} />
         <Button variant="filled" onclick={saveDb} loading={dbMutation.isPending}>{t('common.save')}</Button>
         {#if dbError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={dbError}>{dbError}</p>{/if}
         {#if dbOutcome}

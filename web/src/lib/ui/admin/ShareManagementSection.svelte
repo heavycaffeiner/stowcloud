@@ -146,6 +146,12 @@
    *  a round trip. */
   const minVaultSizeMiB = 16
 
+  /** The largest container the server will make, in MiB: `vault.ParseConfig`
+   *  refuses anything above it. Stated here so the field has an upper bound
+   *  at all, since a number input with only a `min` reads to assistive
+   *  technology as a maximum of zero. */
+  const maxVaultSizeMiB = 1 << 20
+
   /** The ceiling `vault.Config.PIM` accepts. The multiplier becomes an
    *  iteration count on every open, so a value here that the server would
    *  refuse is worth catching before the round trip. */
@@ -172,6 +178,9 @@
     if (form.vaultPassword === '') return t('folder_share.enter_password')
     if (form.vaultCreate && !(Number(form.vaultSizeMiB) >= minVaultSizeMiB)) {
       return t('folder_share.size_at_least', { min: String(minVaultSizeMiB) })
+    }
+    if (form.vaultCreate && Number(form.vaultSizeMiB) > maxVaultSizeMiB) {
+      return t('folder_share.size_at_most', { max: String(maxVaultSizeMiB) })
     }
     if (form.vaultPIM !== '' && !(Number(form.vaultPIM) >= 0 && Number(form.vaultPIM) <= maxVaultPIM)) {
       return t('folder_share.pim_at_most', { max: String(maxVaultPIM) })
@@ -747,6 +756,9 @@
     placeholder={t('folder_share.e_g_s3_endpoint')}
     autocomplete="off"
   />
+  <!-- The rule differs from the single sign-on issuer's, so it is stated
+       rather than left to be discovered by a refusal. -->
+  <p class="sc-shares__field-hint">{t('folder_share.s3_endpoint_scheme_hint')}</p>
   <TextField
     label={t('folder_share.s3_bucket')}
     bind:value={form.s3Bucket}
@@ -814,6 +826,7 @@
         bind:value={form.vaultSizeMiB}
         type="number"
         min={minVaultSizeMiB}
+        max={maxVaultSizeMiB}
       />
     {/if}
   {:else}
