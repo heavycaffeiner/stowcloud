@@ -27,7 +27,7 @@ import (
 type Resolved struct {
 	user  UserID
 	share ShareID
-	root  *vfs.ShareRoot
+	root  vfs.Root
 	path  vfs.SafePath
 	perms acl.Perms
 }
@@ -39,7 +39,7 @@ func (r Resolved) User() UserID { return r.user }
 func (r Resolved) Share() ShareID { return r.share }
 
 // Root is the live share root.
-func (r Resolved) Root() *vfs.ShareRoot { return r.root }
+func (r Resolved) Root() vfs.Root { return r.root }
 
 // Path holds the validated share-relative path, prefixed by the grant subpath.
 func (r Resolved) Path() vfs.SafePath { return r.path }
@@ -315,7 +315,7 @@ func componentsPrefix(sub, p []string) bool {
 // pathExists stats a path and folds the missing answer to false. It is the
 // one way a mutation asks whether a destination is occupied without turning
 // a refusal into an answer: a permission error stays an error, never a "no".
-func pathExists(root *vfs.ShareRoot, p vfs.SafePath) (bool, error) {
+func pathExists(root vfs.Root, p vfs.SafePath) (bool, error) {
 	if _, err := root.Stat(p); err != nil {
 		if errors.Is(err, vfs.ErrNotFound) {
 			return false, nil
@@ -350,11 +350,11 @@ const uniqueNameBound = 10_000
 // counting from 2. It is what "keep both" resolves to and what a drop link
 // does with a colliding upload, so the suffix a person sees is the same
 // wherever this server had to invent a name.
-func (c *Core) uniqueSiblingName(root *vfs.ShareRoot, taken vfs.SafePath) (vfs.SafePath, error) {
+func (c *Core) uniqueSiblingName(root vfs.Root, taken vfs.SafePath) (vfs.SafePath, error) {
 	return c.uniqueSiblingNameWithin(root, taken, uniqueNameBound)
 }
 
-func (c *Core) uniqueSiblingNameWithin(root *vfs.ShareRoot, taken vfs.SafePath, bound int) (vfs.SafePath, error) {
+func (c *Core) uniqueSiblingNameWithin(root vfs.Root, taken vfs.SafePath, bound int) (vfs.SafePath, error) {
 	dir := taken.Parent()
 	name := taken.Name()
 	stem, ext := name, ""

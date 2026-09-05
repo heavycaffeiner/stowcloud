@@ -138,7 +138,7 @@ func (f *fixture) resolve(t *testing.T, name string) core.Resolved {
 }
 
 // root is the live share root, which the write paths take directly.
-func (f *fixture) root(t *testing.T) *vfs.ShareRoot {
+func (f *fixture) root(t *testing.T) vfs.Root {
 	t.Helper()
 	root, ok := f.core.ShareRoot(testShare)
 	if !ok {

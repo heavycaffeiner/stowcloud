@@ -144,7 +144,7 @@ func (e *Engine) newRow(
 }
 
 // createPart creates the part file and sparsely sizes it to a declared length.
-func (e *Engine) createPart(root *vfs.ShareRoot, part vfs.SafePath, total *uint64) (*vfs.File, error) {
+func (e *Engine) createPart(root vfs.Root, part vfs.SafePath, total *uint64) (*vfs.File, error) {
 	f, err := root.CreatePart(part)
 	if err != nil {
 		// A not-found here is the destination's directory, not a session: this
@@ -171,7 +171,7 @@ func (e *Engine) createPart(root *vfs.ShareRoot, part vfs.SafePath, total *uint6
 }
 
 // discardPart closes and deletes a part file left over from a failed creation.
-func (e *Engine) discardPart(root *vfs.ShareRoot, part vfs.SafePath, f *vfs.File) error {
+func (e *Engine) discardPart(root vfs.Root, part vfs.SafePath, f *vfs.File) error {
 	err := f.Close()
 	if uerr := root.Unlink(part); uerr != nil && !errors.Is(uerr, vfs.ErrNotFound) {
 		err = errors.Join(err, uerr)

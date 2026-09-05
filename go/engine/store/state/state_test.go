@@ -1,6 +1,7 @@
 package state_test
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -375,8 +376,113 @@ func TestSharesRoundTrip(t *testing.T) {
 		t.Fatalf("%d shares, want 1", len(got))
 	}
 	want.ID, want.Created = id, 4242
-	if got[0] != want {
-		t.Errorf("read back %+v, want %+v", got[0], want)
+	row := got[0]
+	if row.ID != want.ID || row.Name != want.Name || row.Host != want.Host ||
+		row.SharedExternally != want.SharedExternally || row.TrashEnabled != want.TrashEnabled ||
+		row.SymlinkPolicy != want.SymlinkPolicy || row.Created != want.Created ||
+		row.Backend != want.Backend || row.BackendConfig != want.BackendConfig ||
+		row.BackendSecretKeyVer != want.BackendSecretKeyVer ||
+		!bytes.Equal(row.BackendSecret, want.BackendSecret) {
+		t.Errorf("read back %+v, want %+v", row, want)
+	}
+}
+
+// UpdateShare must not touch the sealed credential: it is written by its
+// own statement, UpdateShareSecret, so that a caller patching an unrelated
+// field never has to resupply, and cannot accidentally clear, a share's
+// secret.
+func TestUpdateShareDoesNotClobberTheSecret(t *testing.T) {
+	ctx := context.Background()
+	d, _ := open(t)
+
+	rowid, err := d.InsertShare(ctx, state.ShareRow{
+		Name: "bucket", Backend: "s3", BackendConfig: `{"bucket":"b"}`, SymlinkPolicy: "deny",
+	}, 1)
+	if err != nil {
+		t.Fatalf("InsertShare: %v", err)
+	}
+	if err := d.UpdateShareSecret(ctx, rowid, []byte("sealed-bytes"), 3); err != nil {
+		t.Fatalf("UpdateShareSecret: %v", err)
+	}
+
+	if err := d.UpdateShare(ctx, rowid, state.ShareRow{
+		Name: "renamed", Backend: "s3", BackendConfig: `{"bucket":"b2"}`, SymlinkPolicy: "deny",
+	}); err != nil {
+		t.Fatalf("UpdateShare: %v", err)
+	}
+
+	rows, err := d.ListShares(ctx)
+	if err != nil {
+		t.Fatalf("ListShares: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("%d shares, want 1", len(rows))
+	}
+	row := rows[0]
+	if row.Name != "renamed" || row.BackendConfig != `{"bucket":"b2"}` {
+		t.Fatalf("the update did not apply: %+v", row)
+	}
+	if string(row.BackendSecret) != "sealed-bytes" || row.BackendSecretKeyVer != 3 {
+		t.Errorf("UpdateShare disturbed the secret: got %q key version %d",
+			row.BackendSecret, row.BackendSecretKeyVer)
+	}
+}
+
+// A share row written before backends existed reads as local, since that
+// is the only kind such a row could ever have named.
+func TestTheMigrationReadsAnOldShareRowAsLocal(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "state.db")
+
+	// One version short of the backend step (step 14), by absolute
+	// position rather than counted back from the current head: earlier
+	// steps are released and never move, so this stays correct as later
+	// steps are appended, which a relative count from the end does not.
+	spec := state.Spec(path)
+	spec.Migrations = spec.Migrations[:13]
+	old, err := dbfile.Open(ctx, spec)
+	if err != nil {
+		t.Fatalf("opening one version short of the backend step: %v", err)
+	}
+	if werr := old.Write(ctx, func(tx *sql.Tx) error {
+		_, xerr := tx.ExecContext(ctx,
+			`INSERT INTO share_definition(id, name, host_path, shared_externally, trash_enabled, symlink_policy, created_ns)
+			 VALUES (1, 'docs', '/srv/docs', 0, 0, 'deny', 1)`)
+		return xerr
+	}); werr != nil {
+		t.Fatalf("planting the pre-backend row: %v", werr)
+	}
+	if cerr := old.Close(); cerr != nil {
+		t.Fatalf("closing: %v", cerr)
+	}
+
+	f, err := dbfile.Open(ctx, state.Spec(path))
+	if err != nil {
+		t.Fatalf("the backend step did not let the database open: %v", err)
+	}
+	t.Cleanup(func() {
+		if cerr := f.Close(); cerr != nil {
+			t.Errorf("Close: %v", cerr)
+		}
+	})
+
+	rows, err := state.New(f).ListShares(ctx)
+	if err != nil {
+		t.Fatalf("ListShares: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("%d shares, want 1", len(rows))
+	}
+	row := rows[0]
+	if row.Backend != "local" {
+		t.Errorf("a pre-backend row migrated to backend %q, want local", row.Backend)
+	}
+	if row.BackendConfig != "" {
+		t.Errorf("a pre-backend row grew a config: %q", row.BackendConfig)
+	}
+	if row.BackendSecret != nil || row.BackendSecretKeyVer != 0 {
+		t.Errorf("a pre-backend row grew a credential: %q key version %d",
+			row.BackendSecret, row.BackendSecretKeyVer)
 	}
 }
 

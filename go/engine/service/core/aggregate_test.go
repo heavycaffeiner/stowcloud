@@ -272,7 +272,7 @@ func TestARootRollupIsCachedUnderTheSentinel(t *testing.T) {
 	}
 }
 
-func mustRoot(t *testing.T, c *Core, share ShareID) *vfs.ShareRoot {
+func mustRoot(t *testing.T, c *Core, share ShareID) vfs.Root {
 	t.Helper()
 	root, ok := c.ShareRoot(share)
 	if !ok {

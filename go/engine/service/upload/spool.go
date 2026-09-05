@@ -33,7 +33,7 @@ import (
 // and the chunk holding the lock cannot receive its own body. Every upload
 // stalled after its first chunk.
 func (e *Engine) PatchAt(
-	ctx context.Context, root *vfs.ShareRoot, id SessionID, user core.UserID,
+	ctx context.Context, root vfs.Root, id SessionID, user core.UserID,
 	off uint64, body io.Reader, sum *Checksum,
 ) (uint64, error) {
 	unlockChunk := e.lockChunk(id, off)

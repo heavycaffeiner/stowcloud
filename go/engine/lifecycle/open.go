@@ -394,9 +394,12 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 		// The share-link rows. Nil is allowed at construction and fails
 		// every link operation with a wiring error, which is what an
 		// unwired deployment got before this line existed.
-		Links:  e.State,
-		Clock:  clk,
-		Logger: logger,
+		Links: e.State,
+		// The real backend switch: a local directory, an S3 bucket or a
+		// VeraCrypt container, whichever a share's own Backend names.
+		Backend: backendOpener{dataDir: opt.DataDir, logger: logger},
+		Clock:   clk,
+		Logger:  logger,
 	})
 	if kerr != nil {
 		return fail(fmt.Errorf("constructing the core: %w", kerr))
@@ -440,6 +443,13 @@ func Open(ctx context.Context, opt Options) (*Engine, error) {
 			return ok, verr
 		},
 	)
+
+	// A non-local share's credential is sealed the same way the
+	// single-sign-on client secret is: e.Auth already implements the two
+	// methods this seam needs, so no second sealing path is built for it.
+	// Attached here, after the key opened, and before ReloadPersistedShares
+	// runs below, since reload is what opens every stored credential.
+	coreSvc.AttachShareSecretCrypto(e.Auth)
 
 	// The CSRF derivation key comes from the same ring. Derived rather than
 	// the key itself, so a token that leaked reveals nothing about what

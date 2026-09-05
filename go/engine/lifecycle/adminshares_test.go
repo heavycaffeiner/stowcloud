@@ -68,6 +68,58 @@ func TestTheAdminListingCarriesTheHostPath(t *testing.T) {
 	}
 }
 
+// An s3 object contradicts a request that names backend local, and the
+// whole request is refused rather than the s3 object being silently
+// ignored.
+func TestCreatingAShareRefusesAnS3ObjectWithBackendLocal(t *testing.T) {
+	base, cookie, csrf, _, _ := adminEngine(t)
+
+	status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/shares", cookie, csrf,
+		map[string]any{
+			"name":    "docs",
+			"host":    t.TempDir(),
+			"backend": "local",
+			"s3": map[string]any{
+				"endpoint":          "https://minio.example:9000",
+				"region":            "us-east-1",
+				"bucket":            "photos",
+				"access_key_id":     "AKIA",
+				"secret_access_key": "shh",
+			},
+		})
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("an s3 object against backend local answered %d: %v", status, body)
+	}
+
+	code, raw := withCookie(t, http.MethodGet, base+"/api/v1/admin/shares", cookie)
+	if code != http.StatusOK {
+		t.Fatalf("listing answered %d", code)
+	}
+	if strings.Contains(string(raw), "docs") {
+		t.Errorf("the refused share was stored anyway: %s", raw)
+	}
+}
+
+// A veracrypt object asking to create a container needs a password: this
+// server cannot open, let alone create, one without it.
+func TestCreatingAVeracryptShareWithNoPasswordIsRefused(t *testing.T) {
+	base, cookie, csrf, _, _ := adminEngine(t)
+
+	status, body := mutate(t, http.MethodPost, base+"/api/v1/admin/shares", cookie, csrf,
+		map[string]any{
+			"name":    "vault",
+			"backend": "veracrypt",
+			"veracrypt": map[string]any{
+				"container": filepath.Join(t.TempDir(), "vault.hc"),
+				"create":    true,
+				"size_mib":  256,
+			},
+		})
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("a veracrypt object with no password answered %d: %v", status, body)
+	}
+}
+
 // A share the administrator registers is one they can open.
 //
 // Registration and access are separate by design: everybody else still needs

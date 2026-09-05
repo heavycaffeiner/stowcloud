@@ -215,7 +215,7 @@ func (e *Engine) rowLockCount() int {
 // finalize to check the whole-file digest, which is precisely why the read-write
 // intent exists: a read-only reopen would fail the very verification it was
 // opened for.
-func (e *Engine) handleFor(root *vfs.ShareRoot, id SessionID, part vfs.SafePath) (*vfs.File, error) {
+func (e *Engine) handleFor(root vfs.Root, id SessionID, part vfs.SafePath) (*vfs.File, error) {
 	e.handlesMu.Lock()
 	h, ok := e.handles[id]
 	if !ok {
@@ -354,7 +354,7 @@ func (e *Engine) checkAccountLimits(ctx context.Context, user core.UserID, total
 //
 // A probe that fails to run is not itself a rejection: an unsupported statfs
 // describes the filesystem rather than justifying refusal of uploads.
-func (e *Engine) checkFreeSpace(root *vfs.ShareRoot, dir vfs.SafePath, total *uint64) error {
+func (e *Engine) checkFreeSpace(root vfs.Root, dir vfs.SafePath, total *uint64) error {
 	space, err := root.Space(dir)
 	if err != nil {
 		return nil //nolint:nilerr // a probe that could not run is not a refusal; see above.

@@ -12,7 +12,7 @@ import (
 // Source is one share to walk.
 type Source struct {
 	Share uint32
-	Root  *vfs.ShareRoot
+	Root  vfs.Root
 	// Base gives the starting point within the share.
 	Base vfs.SafePath
 	// Prefix is prepended to any reported path, so a hit identifies what the

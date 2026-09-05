@@ -70,6 +70,11 @@ func coreSentinels() []classifier {
 
 		{core.ErrPrecondition, Precondition, "fs.precondition_failed"},
 
+		// A well-formed request the target's own state refuses, which is
+		// neither a race nor a missing precondition header, so it takes
+		// Unprocessable rather than Conflict or Precondition.
+		{core.ErrUnprocessable, Unprocessable, "fs.unprocessable"},
+
 		{core.ErrQuotaExceeded, NoSpace, "fs.quota_exceeded"},
 		{core.ErrNoSpace, NoSpace, "fs.no_space"},
 

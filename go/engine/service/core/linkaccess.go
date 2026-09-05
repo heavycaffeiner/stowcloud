@@ -44,7 +44,7 @@ func (c *Core) linkLive(link Link) error {
 // The check runs against the link's own root rather than a subpath: a rename
 // of the shared folder kills the link, while a file moving inside the folder
 // is an ordinary change to what the folder contains.
-func (c *Core) linkBase(link Link) (*vfs.ShareRoot, vfs.SafePath, error) {
+func (c *Core) linkBase(link Link) (vfs.Root, vfs.SafePath, error) {
 	root, ok := c.ShareRoot(link.Share)
 	if !ok {
 		return nil, vfs.SafePath{}, ErrLinkExpired
@@ -69,7 +69,7 @@ func (c *Core) linkBase(link Link) (*vfs.ShareRoot, vfs.SafePath, error) {
 // Subpaths are parsed rather than concatenated as text. ParseSafePath rejects
 // "..", absolute paths and all reserved names, so a visitor cannot reference
 // anything outside the folder the link was created for.
-func (c *Core) linkTarget(link Link, sub string) (*vfs.ShareRoot, vfs.SafePath, error) {
+func (c *Core) linkTarget(link Link, sub string) (vfs.Root, vfs.SafePath, error) {
 	root, ok := c.ShareRoot(link.Share)
 	if !ok {
 		return nil, vfs.SafePath{}, ErrLinkExpired
@@ -99,7 +99,7 @@ func (c *Core) linkTarget(link Link, sub string) (*vfs.ShareRoot, vfs.SafePath, 
 
 // linkResolvedAt mints the resolution a link's permissions grant at a path.
 // It is the one place a bearer's capability is turned into a Resolved.
-func linkResolvedAt(link Link, root *vfs.ShareRoot, p vfs.SafePath, perms acl.Perms) Resolved {
+func linkResolvedAt(link Link, root vfs.Root, p vfs.SafePath, perms acl.Perms) Resolved {
 	return Resolved{user: link.Owner, share: link.Share, root: root, path: p, perms: perms}
 }
 
@@ -378,7 +378,7 @@ func (c *Core) linkWalkRec(
 
 // linkDropDir is the common preamble of both drop surfaces: a live link
 // carrying Create, whose own path is a directory.
-func (c *Core) linkDropDir(link Link) (*vfs.ShareRoot, vfs.SafePath, error) {
+func (c *Core) linkDropDir(link Link) (vfs.Root, vfs.SafePath, error) {
 	if !link.Perms.Has(acl.Create) {
 		return nil, vfs.SafePath{}, ErrDenied
 	}

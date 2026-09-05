@@ -9,16 +9,20 @@
 package lifecycle
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vault"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/objstore"
 )
 
 // adminSharesList answers every registered share.
@@ -33,13 +37,51 @@ func (e *Engine) adminSharesList(c *fiber.Ctx) error {
 	return writeJSON(c, fiber.StatusOK, handler.SharesOf(e.Core.Shares()))
 }
 
-// createShareRequest registers a directory.
+// createShareRequest registers a share, of whichever backend Backend names.
 type createShareRequest struct {
 	Name string `json:"name"`
 
 	// Host is where it lives on the server's disk. It arrives from an
-	// administrator and never goes back out.
+	// administrator and never goes back out. Meaningful only when Backend
+	// is BackendLocal, which is also what an absent Backend means.
 	Host string `json:"host"`
+
+	// Backend selects which package opens the share's storage. Absent or
+	// "" reads as local, so the first-run wizard and every client that
+	// predates backends keep working unchanged.
+	Backend string `json:"backend"`
+
+	// S3 configures an s3 backend. Refused unless Backend is "s3".
+	S3 *shareS3Request `json:"s3"`
+
+	// Veracrypt configures a veracrypt backend. Refused unless Backend is
+	// "veracrypt".
+	Veracrypt *shareVeracryptRequest `json:"veracrypt"`
+}
+
+// shareS3Request is the "s3" object of a share create or patch request.
+// Every field is a pointer, which on a patch is what separates leaving a
+// field alone from setting it: an absent secret_access_key leaves the
+// stored credential alone, and a present empty one is refused rather than
+// treated as clearing it, since a share with no credential cannot serve.
+type shareS3Request struct {
+	Endpoint        *string `json:"endpoint"`
+	Region          *string `json:"region"`
+	Bucket          *string `json:"bucket"`
+	Prefix          *string `json:"prefix"`
+	AccessKeyID     *string `json:"access_key_id"`
+	SecretAccessKey *string `json:"secret_access_key"`
+	PathStyle       *bool   `json:"path_style"`
+}
+
+// shareVeracryptRequest is the "veracrypt" object. Create and SizeMiB are
+// read only on creation, when a fresh container may be asked for; a patch
+// naming either is refused, since that path runs once, at creation.
+type shareVeracryptRequest struct {
+	Container *string `json:"container"`
+	Password  *string `json:"password"`
+	Create    *bool   `json:"create"`
+	SizeMiB   *uint64 `json:"size_mib"`
 }
 
 // adminSharesCreate registers one.
@@ -54,11 +96,22 @@ func (e *Engine) adminSharesCreate(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.Malformed})
 	}
 
-	share, err := e.Core.CreateShare(c.UserContext(), core.ShareSpec{
-		Name: req.Name,
-		Host: req.Host,
-	})
+	spec, verr := shareSpecOf(req)
+	if verr != nil {
+		return fail(c, verr)
+	}
+
+	share, err := e.Core.CreateShare(c.UserContext(), spec)
 	if err != nil {
+		// CreateShare calls a backend name it does not implement
+		// unprocessable, which shareSpecOf has already refused with its own
+		// reason; reaching here means the two disagree, so the general class
+		// is the honest answer.
+		if errors.Is(err, core.ErrUnprocessable) {
+			return refuse(c, apierr.Classified{
+				Class: apierr.Unprocessable, Key: "admin.share_backend_unknown",
+			})
+		}
 		return fail(c, err)
 	}
 	// The watcher learns about it now rather than at the next restart.
@@ -77,6 +130,149 @@ func (e *Engine) adminSharesCreate(c *fiber.Ctx) error {
 			"share", int64(share.ID), "error", gerr)
 	}
 	return writeJSON(c, fiber.StatusCreated, handler.ShareOf(share))
+}
+
+// unprocessable names a refusal about the request's own content, carrying
+// the catalogue key the screen renders. A bare class would answer 422 with
+// nothing saying which field of a seven-field form was wrong.
+func unprocessable(key string) error {
+	return apierr.AsClassified(apierr.Unprocessable, key)
+}
+
+// shareSpecOf validates a create request into a spec: the trust boundary
+// for which backend fields may even be present. An s3 object naming a
+// local share, or a veracrypt object with no password, refuses the whole
+// request rather than storing a share that cannot serve.
+func shareSpecOf(req createShareRequest) (core.ShareSpec, error) {
+	backend, berr := core.ParseBackend(req.Backend)
+	if berr != nil {
+		return core.ShareSpec{}, unprocessable("admin.share_backend_unknown")
+	}
+	spec := core.ShareSpec{Name: req.Name, Backend: backend}
+	switch backend {
+	case core.BackendLocal:
+		if req.S3 != nil || req.Veracrypt != nil {
+			return core.ShareSpec{}, unprocessable("admin.share_backend_extra_config")
+		}
+		if req.Host == "" {
+			return core.ShareSpec{}, unprocessable("admin.share_host_required")
+		}
+		spec.Host = req.Host
+	case core.BackendS3:
+		if req.Veracrypt != nil || req.Host != "" {
+			return core.ShareSpec{}, unprocessable("admin.share_backend_extra_config")
+		}
+		if req.S3 == nil {
+			return core.ShareSpec{}, unprocessable("admin.share_backend_config_missing")
+		}
+		cfg, plain, cerr := s3ConfigForCreate(req.S3)
+		if cerr != nil {
+			return core.ShareSpec{}, cerr
+		}
+		configBytes, secretVal, merr := marshalAndSealS3(cfg, plain)
+		if merr != nil {
+			return core.ShareSpec{}, merr
+		}
+		spec.Config, spec.Secret = configBytes, secretVal
+	case core.BackendVeracrypt:
+		if req.S3 != nil || req.Host != "" {
+			return core.ShareSpec{}, unprocessable("admin.share_backend_extra_config")
+		}
+		if req.Veracrypt == nil {
+			return core.ShareSpec{}, unprocessable("admin.share_backend_config_missing")
+		}
+		cfg, plain, cerr := vaultConfigForCreate(req.Veracrypt)
+		if cerr != nil {
+			return core.ShareSpec{}, cerr
+		}
+		configBytes, secretVal, merr := marshalAndSealVault(cfg, plain)
+		if merr != nil {
+			return core.ShareSpec{}, merr
+		}
+		spec.Config, spec.Secret = configBytes, secretVal
+	}
+	return spec, nil
+}
+
+// s3ConfigForCreate builds and requires every field an s3 backend needs
+// to be created with. Region is required too: objstore.ParseConfig refuses
+// an empty one, so leaving it optional here would only move the refusal
+// one line down with a worse message.
+func s3ConfigForCreate(req *shareS3Request) (objstore.Config, string, error) {
+	if req.Endpoint == nil || req.Region == nil || req.Bucket == nil || req.AccessKeyID == nil {
+		return objstore.Config{}, "", unprocessable("admin.share_s3_fields_required")
+	}
+	if req.SecretAccessKey == nil || *req.SecretAccessKey == "" {
+		return objstore.Config{}, "", unprocessable("admin.share_s3_secret_required")
+	}
+	cfg := objstore.Config{
+		Endpoint:  *req.Endpoint,
+		Region:    *req.Region,
+		Bucket:    *req.Bucket,
+		AccessKey: *req.AccessKeyID,
+	}
+	if req.Prefix != nil {
+		cfg.Prefix = *req.Prefix
+	}
+	if req.PathStyle != nil {
+		cfg.PathStyle = *req.PathStyle
+	}
+	return cfg, *req.SecretAccessKey, nil
+}
+
+// vaultConfigForCreate builds and requires every field a veracrypt backend
+// needs to be created with. A size is required exactly when create is
+// true and refused otherwise, since it is meaningless for a container that
+// must already exist.
+func vaultConfigForCreate(req *shareVeracryptRequest) (vault.Config, string, error) {
+	if req.Container == nil || *req.Container == "" {
+		return vault.Config{}, "", unprocessable("admin.share_vault_container_required")
+	}
+	if req.Password == nil || *req.Password == "" {
+		return vault.Config{}, "", unprocessable("admin.share_vault_password_required")
+	}
+	create := req.Create != nil && *req.Create
+	hasSize := req.SizeMiB != nil && *req.SizeMiB > 0
+	cfg := vault.Config{Container: *req.Container}
+	switch {
+	case create && !hasSize:
+		return vault.Config{}, "", unprocessable("admin.share_vault_size_required")
+	case !create && hasSize:
+		return vault.Config{}, "", unprocessable("admin.share_vault_size_unexpected")
+	case create:
+		cfg.CreateSizeMiB = *req.SizeMiB
+	}
+	return cfg, *req.Password, nil
+}
+
+// marshalAndSealS3 renders cfg through its own Marshal and validates the
+// result by parsing it back, so the stored shape is exactly what
+// objstore.ParseConfig will later accept.
+//
+// A config that will not parse back is the operator's own input failing
+// that package's own trust boundary, which is a refusal about the request
+// rather than a fault, so it carries a key rather than becoming a 500.
+func marshalAndSealS3(cfg objstore.Config, plain string) ([]byte, secret.Secret, error) {
+	b, err := cfg.Marshal()
+	if err != nil {
+		return nil, secret.Secret{}, err
+	}
+	if _, perr := objstore.ParseConfig(b); perr != nil {
+		return nil, secret.Secret{}, unprocessable("admin.share_config_invalid")
+	}
+	return b, secret.New([]byte(plain)), nil
+}
+
+// marshalAndSealVault is marshalAndSealS3 for the veracrypt backend.
+func marshalAndSealVault(cfg vault.Config, plain string) ([]byte, secret.Secret, error) {
+	b, err := cfg.Marshal()
+	if err != nil {
+		return nil, secret.Secret{}, err
+	}
+	if _, perr := vault.ParseConfig(b); perr != nil {
+		return nil, secret.Secret{}, unprocessable("admin.share_config_invalid")
+	}
+	return b, secret.New([]byte(plain)), nil
 }
 
 // grantShareTo gives one account full access to one share.
@@ -101,6 +297,22 @@ type updateShareRequest struct {
 	Name         *string `json:"name"`
 	Host         *string `json:"host"`
 	TrashEnabled *bool   `json:"trash_enabled"`
+
+	// Backend is accepted only so that naming a different one is refused
+	// with a reason. A share's backend is fixed at creation: every grant,
+	// share link and cached identity references data the old backend holds,
+	// and repointing the share would leave all of them naming something
+	// that is not there. Without the field the decoder would refuse the
+	// whole body as malformed and say nothing about why.
+	Backend *string `json:"backend"`
+
+	// S3 patches an s3 share's own fields. Refused unless the share's
+	// current backend is s3.
+	S3 *shareS3Request `json:"s3"`
+
+	// Veracrypt patches a veracrypt share's own fields. Refused unless the
+	// share's current backend is veracrypt.
+	Veracrypt *shareVeracryptRequest `json:"veracrypt"`
 }
 
 // adminSharesUpdate changes one.
@@ -118,15 +330,146 @@ func (e *Engine) adminSharesUpdate(c *fiber.Ctx) error {
 		return refuse(c, apierr.Classified{Class: apierr.Malformed})
 	}
 
-	share, err := e.Core.UpdateShare(c.UserContext(), id, core.SharePatch{
+	patch := core.SharePatch{
 		Name:         req.Name,
 		Host:         req.Host,
 		TrashEnabled: req.TrashEnabled,
-	})
+		Backend:      req.Backend,
+	}
+	if req.S3 != nil || req.Veracrypt != nil {
+		current, found := e.Core.Share(id)
+		if !found {
+			return notFound(c)
+		}
+		if perr := applyShareBackendPatch(&patch, current, req.S3, req.Veracrypt); perr != nil {
+			return fail(c, perr)
+		}
+	}
+
+	share, err := e.Core.UpdateShare(c.UserContext(), id, patch)
 	if err != nil {
+		// The only thing UpdateShare calls unprocessable is the patch naming
+		// a backend the share does not already have, so the refusal is
+		// reported as that rather than as the general class.
+		if errors.Is(err, core.ErrUnprocessable) {
+			return refuse(c, apierr.Classified{
+				Class: apierr.Unprocessable, Key: "admin.share_backend_immutable",
+			})
+		}
 		return fail(c, err)
 	}
 	return writeJSON(c, fiber.StatusOK, handler.ShareOf(share))
+}
+
+// applyShareBackendPatch validates the request's s3 and veracrypt objects
+// against the share's own current backend, and folds the change into
+// patch.
+//
+// A patch may carry only the object matching the share's own backend: an
+// s3 object against a veracrypt share, or either against a local one,
+// names a field the receiving backend does not have. current.Config is
+// parsed and only the fields the request actually names are overwritten,
+// so a patch that touches one field of an s3 share does not have to
+// repeat every other one.
+func applyShareBackendPatch(
+	patch *core.SharePatch, current core.ShareDef, s3 *shareS3Request, vc *shareVeracryptRequest,
+) error {
+	switch {
+	case s3 != nil && current.Backend != core.BackendS3,
+		vc != nil && current.Backend != core.BackendVeracrypt:
+		return unprocessable("admin.share_backend_extra_config")
+	case s3 == nil && vc == nil:
+		return nil
+	}
+
+	switch current.Backend {
+	case core.BackendS3:
+		cfg, perr := objstore.ParseConfig(current.Config)
+		if perr != nil {
+			return perr
+		}
+		plain, aerr := applyS3Patch(&cfg, s3)
+		if aerr != nil {
+			return aerr
+		}
+		b, sec, merr := marshalAndSealS3(cfg, plain)
+		if merr != nil {
+			return merr
+		}
+		patch.Config = &b
+		if plain != "" {
+			patch.Secret = &sec
+		}
+	case core.BackendVeracrypt:
+		cfg, perr := vault.ParseConfig(current.Config)
+		if perr != nil {
+			return perr
+		}
+		plain, aerr := applyVeracryptPatch(&cfg, vc)
+		if aerr != nil {
+			return aerr
+		}
+		b, sec, merr := marshalAndSealVault(cfg, plain)
+		if merr != nil {
+			return merr
+		}
+		patch.Config = &b
+		if plain != "" {
+			patch.Secret = &sec
+		}
+	}
+	return nil
+}
+
+// applyS3Patch overwrites cfg with whichever fields req names, and reports
+// the new credential, empty when the request left it alone.
+func applyS3Patch(cfg *objstore.Config, req *shareS3Request) (string, error) {
+	if req.Endpoint != nil {
+		cfg.Endpoint = *req.Endpoint
+	}
+	if req.Region != nil {
+		cfg.Region = *req.Region
+	}
+	if req.Bucket != nil {
+		cfg.Bucket = *req.Bucket
+	}
+	if req.Prefix != nil {
+		cfg.Prefix = *req.Prefix
+	}
+	if req.AccessKeyID != nil {
+		cfg.AccessKey = *req.AccessKeyID
+	}
+	if req.PathStyle != nil {
+		cfg.PathStyle = *req.PathStyle
+	}
+	if req.SecretAccessKey == nil {
+		return "", nil
+	}
+	if *req.SecretAccessKey == "" {
+		return "", unprocessable("admin.share_secret_not_clearable")
+	}
+	return *req.SecretAccessKey, nil
+}
+
+// applyVeracryptPatch is applyS3Patch for the veracrypt backend. Create and
+// SizeMiB are refused outright: that path runs once, at creation, and a
+// patch asking for it again would either try to recreate a container in
+// use or silently do nothing, neither of which is what the field name
+// promises.
+func applyVeracryptPatch(cfg *vault.Config, req *shareVeracryptRequest) (string, error) {
+	if req.Create != nil || req.SizeMiB != nil {
+		return "", unprocessable("admin.share_vault_create_immutable")
+	}
+	if req.Container != nil {
+		cfg.Container = *req.Container
+	}
+	if req.Password == nil {
+		return "", nil
+	}
+	if *req.Password == "" {
+		return "", unprocessable("admin.share_secret_not_clearable")
+	}
+	return *req.Password, nil
 }
 
 // adminSharesRetry re-opens a share whose backing was unavailable.

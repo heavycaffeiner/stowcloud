@@ -598,6 +598,19 @@ CREATE UNIQUE INDEX grant_subject_target ON "grant"(
 );
 `
 
+// Step 14 gives a share a backend other than a local directory. The
+// default folds every existing row onto BackendLocal, since that is the
+// only kind a row written before this step could ever have named. The
+// config is a string rather than a blob because it is JSON a screen may
+// one day want to read directly; the secret stays a blob because it never
+// is anything but sealed bytes.
+const schemaV14 = `
+ALTER TABLE share_definition ADD COLUMN backend TEXT NOT NULL DEFAULT 'local';
+ALTER TABLE share_definition ADD COLUMN backend_config TEXT NOT NULL DEFAULT '';
+ALTER TABLE share_definition ADD COLUMN backend_secret BLOB;
+ALTER TABLE share_definition ADD COLUMN backend_secret_keyver INTEGER NOT NULL DEFAULT 0;
+`
+
 // migrations is a function instead of a package-level slice so nothing can
 // reassign the list. Position determines version, so a released step is never
 // modified, renumbered or moved.
@@ -624,5 +637,6 @@ func migrations() []dbfile.Migration {
 			SQL:          schemaV13,
 			Precondition: foldDuplicateGrants,
 		},
+		{Name: "14: share backends", SQL: schemaV14},
 	}
 }

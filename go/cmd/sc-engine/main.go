@@ -33,9 +33,11 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/jail"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/mountinfo"
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vault"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview/worker"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/dbfile"
@@ -102,7 +104,7 @@ func run(addr, dataDir string, plain bool) error {
 	// because the sandbox is built from them: its domain has to name the data
 	// directory and every share's parent before the first file is opened, and
 	// a Landlock domain cannot be widened once it is installed.
-	values, shareHosts := bootSettings(abs, logger)
+	values, shareHosts, exactPaths := bootSettings(abs, logger)
 
 	// Read on the first pass only. The sandbox re-executes this binary to
 	// spread its domain across every thread, and the image it produces
@@ -123,7 +125,7 @@ func run(addr, dataDir string, plain bool) error {
 		logger.Info("discovered share roots", "roots", roots)
 	}
 
-	domain := jailSpec(values, abs, roots, shareHosts)
+	domain := jailSpec(values, abs, roots, shareHosts, exactPaths)
 	jailStatus, jerr := jail.Apply(values.Hardening, domain)
 	if jerr != nil {
 		code := jail.Refuse(os.Stderr, jailStatus)
@@ -245,18 +247,26 @@ func run(addr, dataDir string, plain bool) error {
 	return nil
 }
 
-// bootSettings reads the stored settings and the registered share hosts from
-// the state database, in one brief open that closes before the engine is
-// constructed. The sandbox is built from what it returns, which is why this
-// runs first: a Landlock domain cannot be widened after it is installed, so
-// the share hosts have to be known before the databases below are opened for
-// the engine proper.
-func bootSettings(dataDir string, log *slog.Logger) (runtimecfg.Values, []string) {
+// bootSettings reads the stored settings and every path a registered share
+// will make this process open, in one brief open that closes before the
+// engine is constructed. The sandbox is built from what it returns, which is
+// why this runs first: a Landlock domain cannot be widened after it is
+// installed, so every such path has to be known before the databases below
+// are opened for the engine proper.
+//
+// The two path lists are granted differently, which is why they are two
+// lists. A share host is a directory somebody may add a sibling folder
+// beside, so its parent is granted. A VeraCrypt container is one file, and
+// its parent is a directory holding the operator's other containers, which
+// this process has no reason to read.
+func bootSettings(dataDir string, log *slog.Logger) (
+	values runtimecfg.Values, shareHosts, exactPaths []string,
+) {
 	ctx := context.Background()
 
 	stateFile, err := dbfile.Open(ctx, state.Spec(filepath.Join(dataDir, "state.db")))
 	if err != nil {
-		return runtimecfg.Defaults(), nil
+		return runtimecfg.Defaults(), nil, nil
 	}
 	defer func() {
 		if cerr := stateFile.Close(); cerr != nil {
@@ -265,21 +275,39 @@ func bootSettings(dataDir string, log *slog.Logger) (runtimecfg.Values, []string
 	}()
 	st := state.New(stateFile)
 
-	values := runtimecfg.Load(ctx, st, runtimecfg.Defaults(), log)
+	values = runtimecfg.Load(ctx, st, runtimecfg.Defaults(), log)
 
-	var hosts []string
-	if rows, lerr := st.ListShares(ctx); lerr == nil {
-		for _, row := range rows {
-			hosts = append(hosts, row.Host)
+	rows, lerr := st.ListShares(ctx)
+	if lerr != nil {
+		return values, nil, nil
+	}
+	for _, row := range rows {
+		switch row.Backend {
+		case string(core.BackendVeracrypt):
+			cfg, perr := vault.ParseConfig([]byte(row.BackendConfig))
+			if perr != nil {
+				// A warning rather than a failure: the same configuration is
+				// read again by the registration below, and that is where an
+				// operator is told the share is broken.
+				log.Warn("a veracrypt share's configuration is unreadable, so its container is not granted",
+					"share", row.Name, "error", perr)
+				continue
+			}
+			exactPaths = append(exactPaths, cfg.Container)
+		case string(core.BackendS3):
+			// Everything an S3 share touches is scratch space under the data
+			// directory, which is granted already.
+		default:
+			shareHosts = append(shareHosts, row.Host)
 		}
 	}
-	return values, hosts
+	return values, shareHosts, exactPaths
 }
 
 // jailSpec builds the sandbox domain from what this process touches: the data
 // directory, the SMB sidecar's config directory and control socket when one
-// is configured, every discovered share root, and the parent directory of
-// every registered share.
+// is configured, every discovered share root, the parent directory of every
+// registered share, and every exact file a share names.
 //
 // A discovered share root is granted at the mount point itself, never its
 // parent: granting the parent of /mnt/photos would hand over all of /mnt,
@@ -288,9 +316,13 @@ func bootSettings(dataDir string, log *slog.Logger) (runtimecfg.Values, []string
 // resolved from the process, so the path is known reachable; the discovered
 // roots exist to admit a folder that has not been registered yet.
 //
+// An exact path is granted as itself and nothing around it. It is what a
+// VeraCrypt share needs: one container file, whose directory holds the
+// operator's other containers and is none of this process's business.
+//
 // "/" is never granted, which is the one thing this sandbox exists to
 // prevent.
-func jailSpec(values runtimecfg.Values, dataDir string, roots []string, shareHosts []string) jail.Spec {
+func jailSpec(values runtimecfg.Values, dataDir string, roots, shareHosts, exactPaths []string) jail.Spec {
 	spec := jail.Spec{ExceptExec: true}
 	spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: dataDir})
 
@@ -330,6 +362,11 @@ func jailSpec(values runtimecfg.Values, dataDir string, roots []string, shareHos
 			parent = clean
 		}
 		grant(parent)
+	}
+	for _, path := range exactPaths {
+		if path != "" {
+			grant(filepath.Clean(path))
+		}
 	}
 	return spec
 }

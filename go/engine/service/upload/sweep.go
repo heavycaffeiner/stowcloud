@@ -276,7 +276,7 @@ func claimedNames(live []state.UploadSession, share core.ShareID, dir vfs.SafePa
 // removeSpoolDir clears a spool directory and deletes it. Both steps are best
 // effort, since anything left behind stays unlistable and resurfaces on the next
 // sweep.
-func (e *Engine) removeSpoolDir(root *vfs.ShareRoot, dir vfs.SafePath) {
+func (e *Engine) removeSpoolDir(root vfs.Root, dir vfs.SafePath) {
 	var names []string
 	if err := root.ReadDirFunc(dir, vfs.IncludeReserved, func(entry vfs.DirEntry) bool {
 		names = append(names, entry.Name)

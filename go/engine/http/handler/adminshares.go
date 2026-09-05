@@ -28,8 +28,18 @@ type ShareView struct {
 	// Host is where the share lives on the server's disk. The administrator
 	// typed it and is the only one who can change it, and a screen that
 	// cannot show it cannot offer an edit: renaming a folder meant retyping a
-	// path from memory with nothing to check it against.
+	// path from memory with nothing to check it against. Empty for every
+	// backend but local, which has no host path to show.
 	Host string `json:"host"`
+
+	// Backend names which package serves this share: "local", "s3" or
+	// "veracrypt".
+	Backend string `json:"backend"`
+
+	// Source is the redacted, human-readable location this share serves
+	// from. It never carries a credential: the opener that renders it
+	// builds the string from the backend's own config, never the secret.
+	Source string `json:"source"`
 
 	// Trash says whether a delete in this share is undoable, which is what a
 	// confirmation dialogue needs in order to tell the truth.
@@ -45,12 +55,20 @@ type ShareView struct {
 	Broken string `json:"broken,omitempty"`
 }
 
-// ShareOf projects one share.
+// ShareOf projects one share. Never a credential: Share carries none of its
+// own fields here, and Source is built by the opener's Describe from the
+// backend's config alone, so there is no field to omit by mistake.
 func ShareOf(s core.Share) ShareView {
+	backend := s.Backend
+	if backend == "" {
+		backend = core.BackendLocal
+	}
 	return ShareView{
 		ID:               strconv.FormatInt(int64(s.ID), 10),
 		Name:             s.Name,
 		Host:             s.Host,
+		Backend:          backend,
+		Source:           s.Source,
 		Trash:            s.TrashEnabled,
 		SharedExternally: s.SharedExternally,
 		Broken:           s.BrokenReason,

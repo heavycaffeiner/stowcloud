@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 )
 
 // The persisted share registry. Every share an administrator created is a
@@ -28,6 +30,19 @@ type ShareRow struct {
 	// renumbering of the enum cannot silently change what a share does.
 	SymlinkPolicy string
 	Created       int64
+
+	// Backend names which package opens this share's storage. "local" for
+	// a row written before backends existed, since the column defaults to
+	// it.
+	Backend string
+	// BackendConfig is the backend's own JSON, secret-free, persisted
+	// verbatim. Empty for a local share.
+	BackendConfig string
+	// BackendSecret is the one credential a non-local backend needs,
+	// sealed under BackendSecretKeyVer. Nil for a local share. Written and
+	// read separately from the rest of the row; see UpdateShareSecret.
+	BackendSecret       []byte
+	BackendSecretKeyVer uint32
 }
 
 // ListShares yields all shares ordered by id.
@@ -52,17 +67,30 @@ func scanShare(row interface{ Scan(...any) error }) (ShareRow, error) {
 		r        ShareRow
 		external int64
 		trash    int64
+		keyVer   int64
 	)
 	if err := row.Scan(&r.ID, &r.Name, &r.Host, &external, &trash,
-		&r.SymlinkPolicy, &r.Created); err != nil {
+		&r.SymlinkPolicy, &r.Created, &r.Backend, &r.BackendConfig,
+		&r.BackendSecret, &keyVer); err != nil {
 		return ShareRow{}, err
 	}
 	r.SharedExternally = external != 0
 	r.TrashEnabled = trash != 0
+	v, err := num.Narrow[uint32](keyVer)
+	if err != nil {
+		return ShareRow{}, fmt.Errorf(
+			"share %d carries backend secret key version %d: %w", r.ID, keyVer, err)
+	}
+	r.BackendSecretKeyVer = v
 	return r, nil
 }
 
 // InsertShare stores a new share and returns its row id.
+//
+// BackendSecret and BackendSecretKeyVer are absent from this statement on
+// purpose: a fresh share's credential binds to the row id this insert has
+// not minted yet, so it is sealed and written afterwards, by
+// UpdateShareSecret.
 func (d *DB) InsertShare(ctx context.Context, s ShareRow, createdNs int64) (int64, error) {
 	// A new row is what grows the file.
 	if err := d.f.EnsureWritable(); err != nil {
@@ -72,7 +100,7 @@ func (d *DB) InsertShare(ctx context.Context, s ShareRow, createdNs int64) (int6
 	err := d.Write(ctx, func(tx *sql.Tx) error {
 		res, ierr := tx.ExecContext(ctx, sqlInsertShare,
 			s.Name, s.Host, boolInt(s.SharedExternally), boolInt(s.TrashEnabled),
-			s.SymlinkPolicy, createdNs)
+			s.SymlinkPolicy, createdNs, s.Backend, s.BackendConfig)
 		if ierr != nil {
 			return ierr
 		}
@@ -86,12 +114,30 @@ func (d *DB) InsertShare(ctx context.Context, s ShareRow, createdNs int64) (int6
 	return id, nil
 }
 
-// UpdateShare replaces a share's definition.
+// UpdateShare replaces a share's definition, except its credential: see
+// UpdateShareSecret.
 func (d *DB) UpdateShare(ctx context.Context, rowid int64, s ShareRow) error {
 	return d.Write(ctx, func(tx *sql.Tx) error {
 		_, ierr := tx.ExecContext(ctx, sqlUpdateShare,
 			s.Name, s.Host, boolInt(s.SharedExternally), boolInt(s.TrashEnabled),
-			s.SymlinkPolicy, rowid)
+			s.SymlinkPolicy, s.Backend, s.BackendConfig, rowid)
+		return ierr
+	})
+}
+
+// UpdateShareSecret replaces a share's sealed credential, in its own
+// statement rather than the general UpdateShare's.
+//
+// A caller that leaves a patch's secret unset must not touch the stored
+// one, and UpdateShare's single statement cannot express "leave this
+// column alone" against an unset value the way an absent SQL parameter
+// would need to. This is also where a fresh share's credential lands: its
+// at-rest binding names the row's id, which InsertShare's own statement
+// cannot yet supply because the id is what that statement is still
+// minting.
+func (d *DB) UpdateShareSecret(ctx context.Context, rowid int64, sealed []byte, keyVer uint32) error {
+	return d.Write(ctx, func(tx *sql.Tx) error {
+		_, ierr := tx.ExecContext(ctx, sqlUpdateShareSecret, sealed, int64(keyVer), rowid)
 		return ierr
 	})
 }

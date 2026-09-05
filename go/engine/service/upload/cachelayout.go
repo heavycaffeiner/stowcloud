@@ -30,7 +30,7 @@ const cacheFreeFraction = 20
 
 // cacheSpool is the spool directory and what is currently in it.
 type cacheSpool struct {
-	root *vfs.ShareRoot
+	root vfs.Root
 
 	// enabled is the administrative switch, read when a session is created
 	// and never afterwards: a session in flight keeps the mode it started in,

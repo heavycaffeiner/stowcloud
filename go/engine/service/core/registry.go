@@ -5,11 +5,13 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 )
 
@@ -19,7 +21,8 @@ type Share struct {
 	Name string
 
 	// Host is the on-disk path. Trusted server-side configuration; it must
-	// never reach a client response.
+	// never reach a client response. Meaningful only for BackendLocal; every
+	// other backend leaves it empty.
 	Host string
 
 	// Policy holds the symlink, mode and ownership decisions.
@@ -37,6 +40,28 @@ type Share struct {
 	// empty when it is servable. It draws on the health surface's vocabulary, so
 	// a screen and a probe asking the same question receive the same word.
 	BrokenReason string
+
+	// Backend names which package opens this share's storage: BackendLocal,
+	// BackendS3 or BackendVeracrypt. Empty reads as BackendLocal, so a row
+	// written before backends existed keeps meaning what it always meant.
+	Backend string
+
+	// Config is the backend's own JSON, secret-free, persisted verbatim.
+	// core never parses it; only the backend package that owns Backend
+	// does, through its own ParseConfig.
+	Config []byte
+
+	// Secret is the one credential a non-local backend needs to reach its
+	// storage. It is sealed at rest by the durable layer and travels through
+	// this type only long enough to open or reopen the backend; nothing in
+	// this package renders it.
+	Secret secret.Secret
+
+	// Source is the redacted, human-readable location this share serves
+	// from: a bucket and endpoint for s3, a container path for veracrypt,
+	// the host path for local. Filled from the opener's Describe by Share
+	// and Shares, never stored.
+	Source string
 }
 
 // ShareDef is the internal spelling of Share, kept a distinct name so the
@@ -48,8 +73,21 @@ type ShareSpec struct {
 	Name string
 
 	// Host is the on-disk path. Trusted server-side configuration; it must
-	// never reach a client response.
+	// never reach a client response. Required only for BackendLocal.
 	Host string
+
+	// Backend selects which package opens the new share's storage. Empty
+	// reads as BackendLocal. Validated by ParseBackend, the trust boundary
+	// for this string.
+	Backend string
+
+	// Config is the chosen backend's own JSON, already validated by that
+	// backend's ParseConfig. Empty for BackendLocal.
+	Config []byte
+
+	// Secret is the one credential the chosen backend needs. Empty for
+	// BackendLocal, which has none.
+	Secret secret.Secret
 }
 
 // SharePatch is what UpdateShare accepts. Pointers separate an absent field from
@@ -59,7 +97,75 @@ type SharePatch struct {
 	Name         *string
 	Host         *string
 	TrashEnabled *bool
+
+	// Backend, present, must equal the share's current backend: repointing
+	// a share at a different backend would leave every grant, share link
+	// and cached identity naming data that is no longer there, so
+	// UpdateShare refuses any other value with ErrUnprocessable.
+	Backend *string
+
+	// Config replaces the stored backend config wholesale when present.
+	Config *[]byte
+
+	// Secret replaces the stored credential when present. Absent leaves the
+	// stored one alone; there is no way to spell "clear it" here, because a
+	// non-local share with no credential cannot serve.
+	Secret *secret.Secret
 }
+
+// The three backends this server can open a share against.
+const (
+	BackendLocal     = "local"
+	BackendS3        = "s3"
+	BackendVeracrypt = "veracrypt"
+)
+
+// ParseBackend validates an untrusted backend name, the trust boundary for
+// every Backend string this package accepts from a spec, a patch or a
+// stored row. Empty reads as BackendLocal, so a share created before
+// backends existed and a client that omits the field both mean what they
+// always meant.
+func ParseBackend(s string) (string, error) {
+	switch s {
+	case "", BackendLocal:
+		return BackendLocal, nil
+	case BackendS3:
+		return BackendS3, nil
+	case BackendVeracrypt:
+		return BackendVeracrypt, nil
+	default:
+		return "", fmt.Errorf("%q is not a share backend this server knows", s)
+	}
+}
+
+// BackendOpener opens and describes a share's storage. core depends on this
+// interface rather than importing objstore or vault directly, so the
+// domain stays free of the HTTP client, the syscalls and the cryptography
+// a non-local backend needs, and this package gains a new backend without
+// a new import.
+type BackendOpener interface {
+	// Open brings up def's storage, or refuses. def.Secret carries the one
+	// credential a non-local backend needs, already unsealed; def.Config
+	// is that backend's own JSON.
+	Open(ctx context.Context, def ShareDef) (vfs.Root, vfs.Admission, error)
+
+	// Describe renders def's location for the admin screen, redacted: it
+	// never carries a credential.
+	Describe(def ShareDef) string
+}
+
+// localOpener treats every share as a local directory, which is every
+// share's kind before this package learned any other. It is what
+// Options.Backend defaults to when a caller supplies none, so every
+// deployment and every existing test that never wires a backend package
+// keeps working unchanged.
+type localOpener struct{}
+
+func (localOpener) Open(_ context.Context, def ShareDef) (vfs.Root, vfs.Admission, error) {
+	return vfs.RegisterShareRoot(def.ID, def.Host, def.Policy)
+}
+
+func (localOpener) Describe(def ShareDef) string { return def.Host }
 
 // shareEntry pairs a registered share's definition with its live root.
 //
@@ -69,20 +175,20 @@ type SharePatch struct {
 // account's roots, leaving only a line on a health endpoint.
 type shareEntry struct {
 	def       ShareDef
-	root      *vfs.ShareRoot
+	root      vfs.Root
 	brokenErr error
 }
 
-// RegisterShare opens the definition's host as a share root and remembers
-// it.
+// RegisterShare opens the definition's storage through the injected
+// BackendOpener and remembers it.
 //
-// The filesystem admission gate runs here, so a share this design cannot
+// The admission gate runs inside the opener, so a share this design cannot
 // hold its contracts on is refused at registration rather than at the first
 // operation that cannot keep them. Re-registering an id that is already
 // registered replaces the entry, which is what reload, retry and edit all
 // do.
 func (c *Core) RegisterShare(ctx context.Context, def ShareDef) error {
-	root, adm, err := vfs.RegisterShareRoot(def.ID, def.Host, def.Policy)
+	root, adm, err := c.backend.Open(ctx, def)
 	if err != nil {
 		return err
 	}
@@ -201,7 +307,7 @@ func (c *Core) UnregisterShare(id ShareID) {
 // ShareRoot is the live root for an id, and false when it is unregistered or
 // broken. A broken share hands out no root; handing out a nil one would move
 // the failure to whoever dereferenced it.
-func (c *Core) ShareRoot(id ShareID) (*vfs.ShareRoot, bool) {
+func (c *Core) ShareRoot(id ShareID) (vfs.Root, bool) {
 	c.sharesMu.RLock()
 	defer c.sharesMu.RUnlock()
 	e, ok := c.shares[id]
@@ -225,12 +331,14 @@ func (c *Core) shareEntry(id ShareID) (*shareEntry, bool) {
 // Share is the definition for a registered id, broken or not.
 func (c *Core) Share(id ShareID) (ShareDef, bool) {
 	c.sharesMu.RLock()
-	defer c.sharesMu.RUnlock()
 	e, ok := c.shares[id]
+	c.sharesMu.RUnlock()
 	if !ok {
 		return ShareDef{}, false
 	}
-	return e.def, true
+	def := e.def
+	def.Source = c.backend.Describe(def)
+	return def, true
 }
 
 // Shares lists every registered definition, broken included, by ascending
@@ -242,6 +350,10 @@ func (c *Core) Shares() []ShareDef {
 		out = append(out, e.def)
 	}
 	c.sharesMu.RUnlock()
+
+	for i := range out {
+		out[i].Source = c.backend.Describe(out[i])
+	}
 
 	slices.SortFunc(out, func(a, b ShareDef) int {
 		switch {

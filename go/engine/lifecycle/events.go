@@ -71,12 +71,15 @@ func (e *Engine) startEvents(ctx context.Context, cfg watchSettings) {
 //
 // A broken share is skipped: its backing did not open, so there is no
 // directory to watch. It is picked up whenever the disk comes back and the
-// share is re-registered.
+// share is re-registered. A non-local share is skipped for the same
+// outcome by a different route: it has no host path, since its bytes do
+// not live in this server's filesystem, so there is nothing here for
+// inotify to watch either.
 //
 // Safe to call with no watcher, which is a deployment whose kernel refused an
 // inotify descriptor. Every caller would otherwise repeat the same check.
 func (e *Engine) watchShare(def core.ShareDef) {
-	if e.watcher == nil || def.BrokenReason != "" {
+	if e.watcher == nil || def.BrokenReason != "" || def.Host == "" {
 		return
 	}
 	e.watcher.AddShare(def.ID, def.Host, false)

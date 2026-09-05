@@ -27,7 +27,7 @@ import (
 // own spooled file to wait, and each append drains whichever successors arrived
 // in the interim.
 func (e *Engine) PutNamed(
-	ctx context.Context, root *vfs.ShareRoot, id SessionID, user core.UserID,
+	ctx context.Context, root vfs.Root, id SessionID, user core.UserID,
 	name uint32, body io.Reader, sum *Checksum,
 ) error {
 	unlock := e.lockRow(id)
@@ -87,7 +87,7 @@ func (e *Engine) PutNamed(
 // appendToPart writes a chunk body at the current write head and moves it
 // forward.
 func (e *Engine) appendToPart(
-	root *vfs.ShareRoot, r *row, id SessionID, body io.Reader, sum *Checksum,
+	root vfs.Root, r *row, id SessionID, body io.Reader, sum *Checksum,
 ) error {
 	part, err := e.partPathOf(r)
 	if err != nil {
@@ -127,7 +127,7 @@ func (e *Engine) appendToPart(
 // the chunk carries identical bytes. Rejecting it would strand a client that
 // lost the response rather than the request.
 func (e *Engine) spoolChunk(
-	root *vfs.ShareRoot, r *row, name uint32, body io.Reader, sum *Checksum,
+	root vfs.Root, r *row, name uint32, body io.Reader, sum *Checksum,
 ) error {
 	dir, err := e.spoolDirOf(r)
 	if err != nil {
@@ -187,7 +187,7 @@ func (e *Engine) spoolChunk(
 // strict determines how a gap is treated. During an upload a missing name is
 // unremarkable: the chunk remains in flight and draining simply halts. At
 // assembly time it becomes a rejection, because nothing further is coming.
-func (e *Engine) drainSpool(ctx context.Context, root *vfs.ShareRoot, r *row, strict bool) error {
+func (e *Engine) drainSpool(ctx context.Context, root vfs.Root, r *row, strict bool) error {
 	for {
 		if len(r.sess.SpooledNames) == 0 {
 			return nil
@@ -227,7 +227,7 @@ func (e *Engine) drainSpool(ctx context.Context, root *vfs.ShareRoot, r *row, st
 // a stat rather than an oversized sentinel: some kernels refuse an
 // implausible length, and that refusal would be a real bug rather than a
 // portability gap.
-func (e *Engine) mergeChunk(root *vfs.ShareRoot, r *row, name uint32) error {
+func (e *Engine) mergeChunk(root vfs.Root, r *row, name uint32) error {
 	id, err := r.id()
 	if err != nil {
 		return err

@@ -46,16 +46,21 @@ const (
 	httpTier    = "http"
 )
 
-// outboundHTTP is the one package outside the presentation tier that may
-// import net/http, and only because what it makes is an outbound client.
+// outboundHTTP lists the packages outside the presentation tier that may
+// import net/http, and only because what each one makes is an outbound
+// client.
 //
 // The rule net/http is under is about serving: a package below the
 // presentation tier that can write a response is a package that can answer a
-// request from a layer that has no business knowing there is one. The single
-// sign-on relying party never serves; it dials an identity provider through a
-// guarded transport, and the alternative is a hand-rolled client speaking
-// TLS and HTTP to an untrusted peer, which is a worse trade than this line.
-const outboundHTTP = "service/oidc"
+// request from a layer that has no business knowing there is one. Neither
+// entry here ever serves. The single sign-on relying party dials an identity
+// provider; the object store backend dials an S3-compatible endpoint. For
+// both, the alternative is a hand-rolled client speaking TLS and HTTP to an
+// untrusted peer, which is a worse trade than these two lines.
+var outboundHTTP = map[string]bool{
+	"service/oidc":     true,
+	"service/objstore": true,
+}
 
 // tierAllowed lists, for each tier, the other tiers it may import. A tier
 // missing from this map, or a target tier missing from its list, is refused.
@@ -87,6 +92,12 @@ const topTier = "lifecycle"
 // the same tier it may import. Absence from this map, or from a listed
 // package's set, refuses the import.
 var sideways = map[string]map[string]bool{
+	// The VeraCrypt backend serves a share out of a container file, so it
+	// answers vfs.Root and speaks that package's paths, stats and handles.
+	// It is beside vfs rather than beneath it because what it holds is a
+	// filesystem of its own, decrypted in this process.
+	"infra/vault": {"infra/vfs": true},
+
 	"service/core":   {"service/acl": true},
 	"service/search": {"service/core": true},
 	// The upload engine sits on the core: it resolves a destination, takes
@@ -208,7 +219,7 @@ func evaluate(importerTier, importerSub, importPath string) (reason string, refu
 		return "engine packages do not import internal; the two trees cross only in cmd or a test file", true
 
 	case importPath == netHTTP:
-		if importerTier != httpTier && importerTier != topTier && importerSub != outboundHTTP {
+		if importerTier != httpTier && importerTier != topTier && !outboundHTTP[importerSub] {
 			return "only engine/http and the assembly may import net/http", true
 		}
 		return "", false

@@ -69,6 +69,41 @@ func TestCreateShareMintsDurablyAndRefusesADuplicateName(t *testing.T) {
 	}
 }
 
+// UpdateShare refuses a patch that names a different backend than the one
+// the share was created with. Repointing a share at a different backend
+// would leave every grant, share link and cached identity naming data that
+// is no longer there.
+func TestUpdateShareRefusesABackendChange(t *testing.T) {
+	c, _ := newCore(t)
+	ctx := context.Background()
+
+	got, err := c.CreateShare(ctx, ShareSpec{Name: "docs", Host: t.TempDir()})
+	if err != nil {
+		t.Fatalf("CreateShare: %v", err)
+	}
+	if got.Backend != BackendLocal {
+		t.Fatalf("a share created with no backend is %q, want %q", got.Backend, BackendLocal)
+	}
+
+	other := BackendS3
+	if _, err := c.UpdateShare(ctx, got.ID, SharePatch{Backend: &other}); !errors.Is(err, ErrUnprocessable) {
+		t.Fatalf("changing backend from %q to %q returned %v, want ErrUnprocessable",
+			BackendLocal, other, err)
+	}
+	// The refused patch changed nothing: the share is still local and still
+	// registered under its original root.
+	if def, ok := c.Share(got.ID); !ok || def.Backend != BackendLocal {
+		t.Fatalf("the share after a refused backend change is %+v", def)
+	}
+
+	// A patch naming the backend the share already has is not a change,
+	// and passes through.
+	same := BackendLocal
+	if _, err := c.UpdateShare(ctx, got.ID, SharePatch{Backend: &same}); err != nil {
+		t.Fatalf("a patch naming the current backend was refused: %v", err)
+	}
+}
+
 func TestAShareThatWillNotRegisterLeavesNoDanglingRow(t *testing.T) {
 	c, st := newCore(t)
 	ctx := context.Background()

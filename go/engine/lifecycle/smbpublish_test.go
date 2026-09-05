@@ -3,6 +3,7 @@
 package lifecycle
 
 import (
+	"log/slog"
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
@@ -22,9 +23,26 @@ func TestABrokenShareIsNotRendered(t *testing.T) {
 		{ID: 2, Name: "archive", Host: "/srv/archive", BrokenReason: "not_found"},
 	}
 
-	got := publishShares(defs)
+	got := publishShares(defs, slog.Default())
 	if len(got) != 1 {
 		t.Fatalf("got %d shares, want only the servable one: %+v", len(got), got)
+	}
+	if got[0].Name != "documents" {
+		t.Errorf("the rendered share is %q, want documents", got[0].Name)
+	}
+}
+
+// A non-local share has no host path for this format to render into a share
+// stanza, so it is excluded the same way a broken share is.
+func TestANonLocalShareIsNotRendered(t *testing.T) {
+	defs := []core.ShareDef{
+		{ID: 1, Name: "documents", Host: "/srv/documents"},
+		{ID: 2, Name: "bucket", Backend: core.BackendS3},
+	}
+
+	got := publishShares(defs, slog.Default())
+	if len(got) != 1 {
+		t.Fatalf("got %d shares, want only the local one: %+v", len(got), got)
 	}
 	if got[0].Name != "documents" {
 		t.Errorf("the rendered share is %q, want documents", got[0].Name)
@@ -38,7 +56,7 @@ func TestARenderedShareCarriesItsModes(t *testing.T) {
 		ID: 1, Name: "documents", Host: "/srv/documents",
 		Policy:           vfs.SharePolicy{ModeFile: 0o640, ModeDir: 0o750},
 		SharedExternally: true,
-	}})
+	}}, slog.Default())
 	if len(got) != 1 {
 		t.Fatalf("got %d shares, want 1", len(got))
 	}

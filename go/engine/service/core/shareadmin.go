@@ -8,6 +8,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
@@ -51,6 +52,13 @@ type RejectedShare struct {
 }
 
 // rowOf projects a definition onto the durable row shape.
+//
+// The secret is deliberately absent: it is written by its own statement,
+// UpdateShareSecret, either right after the insert that mints the id the
+// secret's binding needs, or on a later edit that supplies a new one. A
+// caller that leaves a patch's secret unset must never overwrite the
+// stored one with nothing, and this projection cannot enforce that from
+// inside a general update statement, so the column stays outside it.
 func rowOf(def ShareDef) state.ShareRow {
 	return state.ShareRow{
 		Name:             def.Name,
@@ -58,6 +66,8 @@ func rowOf(def ShareDef) state.ShareRow {
 		SharedExternally: def.SharedExternally,
 		TrashEnabled:     def.TrashEnabled,
 		SymlinkPolicy:    def.Policy.Symlink.String(),
+		Backend:          def.Backend,
+		BackendConfig:    string(def.Config),
 	}
 }
 
@@ -70,10 +80,17 @@ func (c *Core) CreateShare(ctx context.Context, spec ShareSpec) (Share, error) {
 		}
 	}
 
+	backend, berr := ParseBackend(spec.Backend)
+	if berr != nil {
+		return Share{}, errf(ErrUnprocessable, "%v", berr)
+	}
+
 	policy := vfs.DefaultSharePolicy()
 	row := state.ShareRow{
 		Name: spec.Name, Host: spec.Host,
 		SymlinkPolicy: policy.Symlink.String(),
+		Backend:       backend,
+		BackendConfig: string(spec.Config),
 	}
 	rowid, err := c.state.InsertShare(ctx, row, c.clk.Nanos())
 	if err != nil {
@@ -88,7 +105,24 @@ func (c *Core) CreateShare(ctx context.Context, spec ShareSpec) (Share, error) {
 		return Share{}, err
 	}
 
-	def := ShareDef{ID: id, Name: spec.Name, Host: spec.Host, Policy: policy}
+	// The secret's binding names the id, which did not exist until the
+	// insert above returned one, so it is sealed and stored only now.
+	if spec.Secret.Len() > 0 {
+		sealed, ver, serr := c.sealShareSecret(id, spec.Secret.Reveal())
+		if serr != nil {
+			c.rollbackShareRow(ctx, rowid, int64(id))
+			return Share{}, serr
+		}
+		if uerr := c.state.UpdateShareSecret(ctx, rowid, sealed, ver); uerr != nil {
+			c.rollbackShareRow(ctx, rowid, int64(id))
+			return Share{}, uerr
+		}
+	}
+
+	def := ShareDef{
+		ID: id, Name: spec.Name, Host: spec.Host, Policy: policy,
+		Backend: backend, Config: spec.Config, Secret: spec.Secret,
+	}
 	if rerr := c.RegisterShare(ctx, def); rerr != nil {
 		c.rollbackShareRow(ctx, rowid, int64(id))
 		// Named as a share problem rather than passed through raw. A refused
@@ -99,6 +133,7 @@ func (c *Core) CreateShare(ctx context.Context, spec ShareSpec) (Share, error) {
 			"name", spec.Name, "error", rerr)
 		return Share{}, &ShareBrokenError{Share: spec.Name, Reason: RejectionKind(rerr)}
 	}
+	def.Source = c.backend.Describe(def)
 	return def, nil
 }
 
@@ -116,10 +151,25 @@ func (c *Core) rollbackShareRow(ctx context.Context, rowid, shareID int64) {
 //
 // An in-flight request holding the old root finishes against it; every
 // request after sees the new one.
+//
+// A backend change is refused outright: repointing a share at a different
+// backend would leave every grant, share link and cached identity naming
+// data that is no longer there. A patch naming the backend the share
+// already has is not a change and passes through.
 func (c *Core) UpdateShare(ctx context.Context, id ShareID, patch SharePatch) (Share, error) {
 	def, ok := c.Share(id)
 	if !ok {
 		return Share{}, ErrNotFound
+	}
+	if patch.Backend != nil {
+		backend, berr := ParseBackend(*patch.Backend)
+		if berr != nil {
+			return Share{}, errf(ErrUnprocessable, "%v", berr)
+		}
+		if backend != def.Backend {
+			return Share{}, errf(ErrUnprocessable,
+				"share %q cannot change backend from %q to %q", def.Name, def.Backend, backend)
+		}
 	}
 	if patch.Name != nil {
 		def.Name = *patch.Name
@@ -130,9 +180,22 @@ func (c *Core) UpdateShare(ctx context.Context, id ShareID, patch SharePatch) (S
 	if patch.TrashEnabled != nil {
 		def.TrashEnabled = *patch.TrashEnabled
 	}
+	if patch.Config != nil {
+		def.Config = *patch.Config
+	}
 
 	if err := c.state.UpdateShare(ctx, rowIDOf(id), rowOf(def)); err != nil {
 		return Share{}, err
+	}
+	if patch.Secret != nil {
+		sealed, ver, serr := c.sealShareSecret(id, patch.Secret.Reveal())
+		if serr != nil {
+			return Share{}, serr
+		}
+		if uerr := c.state.UpdateShareSecret(ctx, rowIDOf(id), sealed, ver); uerr != nil {
+			return Share{}, uerr
+		}
+		def.Secret = *patch.Secret
 	}
 	if err := c.RegisterShare(ctx, def); err != nil {
 		// The row stays written. Dropping the entry would hide the edit that
@@ -143,6 +206,7 @@ func (c *Core) UpdateShare(ctx context.Context, id ShareID, patch SharePatch) (S
 		return Share{}, &ShareBrokenError{Share: def.Name, Reason: RejectionKind(err)}
 	}
 	def.BrokenReason = ""
+	def.Source = c.backend.Describe(def)
 	return def, nil
 }
 
@@ -210,9 +274,35 @@ func (c *Core) ReloadPersistedShares(ctx context.Context) ([]RejectedShare, erro
 			policy.Symlink = parsed
 		}
 
+		backend, berr := ParseBackend(row.Backend)
+		if berr != nil {
+			// Corruption of the same kind as an id that does not fit: the
+			// row names a backend this build no longer recognizes. Skipped
+			// rather than crashing the boot; it stays absent until an
+			// operator investigates the row.
+			rejected = append(rejected, RejectedShare{Name: row.Name, Kind: RejectionKind(berr), Err: berr})
+			c.logger.Error("a share's backend is unreadable; it will not register",
+				"share", row.Name, "stored", row.Backend, "error", berr)
+			continue
+		}
+
 		def := ShareDef{
 			ID: id, Name: row.Name, Host: row.Host, Policy: policy,
 			TrashEnabled: row.TrashEnabled, SharedExternally: row.SharedExternally,
+			Backend: backend, Config: []byte(row.BackendConfig),
+		}
+		if len(row.BackendSecret) > 0 {
+			plain, operr := c.openShareSecret(id, row.BackendSecret, row.BackendSecretKeyVer)
+			if operr != nil {
+				c.RegisterBroken(def, operr)
+				rejected = append(rejected, RejectedShare{
+					Name: row.Name, Kind: RejectionKind(operr), Err: operr,
+				})
+				c.logger.Error("a share's credential would not open and is marked broken",
+					"share", row.Name, "error", operr)
+				continue
+			}
+			def.Secret = secret.New(plain)
 		}
 		if rerr := c.RegisterShare(ctx, def); rerr != nil {
 			// A single unservable share does not take down all the others.
@@ -234,7 +324,7 @@ func (c *Core) ReloadPersistedShares(ctx context.Context) ([]RejectedShare, erro
 // dependency points that way.
 type ScanSource struct {
 	Share ShareID
-	Root  *vfs.ShareRoot
+	Root  vfs.Root
 	Base  vfs.SafePath
 	// Allow reports whether the caller may see a path. Nil means everything,
 	// which is the administrator-scoped form.

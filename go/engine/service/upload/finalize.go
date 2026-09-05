@@ -151,7 +151,7 @@ func (e *Engine) publish(
 
 // syncAndClose flushes the uploaded bytes to durable storage and releases the
 // descriptor.
-func (e *Engine) syncAndClose(root *vfs.ShareRoot, rw *row, part vfs.SafePath) error {
+func (e *Engine) syncAndClose(root vfs.Root, rw *row, part vfs.SafePath) error {
 	id, err := rw.id()
 	if err != nil {
 		return err
@@ -174,7 +174,7 @@ func (e *Engine) syncAndClose(root *vfs.ShareRoot, rw *row, part vfs.SafePath) e
 // instead of being a shortcut taken here: the token derives from metadata and is
 // always weak, and a weak validator cannot satisfy a strong comparison. Getting
 // past it requires an explicit unconditional retry.
-func (e *Engine) checkIfMatch(root *vfs.ShareRoot, dest vfs.SafePath, ifMatch string) error {
+func (e *Engine) checkIfMatch(root vfs.Root, dest vfs.SafePath, ifMatch string) error {
 	if ifMatch == "" {
 		return nil
 	}

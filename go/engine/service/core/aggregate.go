@@ -59,7 +59,7 @@ func (c *Core) Aggregate(ctx context.Context, share ShareID, p vfs.SafePath) (Ag
 // may duplicate work, which is accepted: the computation is idempotent and a
 // process-wide lock table would be shared mutable state serving a rare race.
 type aggWalk struct {
-	root   *vfs.ShareRoot
+	root   vfs.Root
 	share  ShareID
 	gen    uint64
 	guards map[ident.FileID]*sync.Mutex
@@ -82,7 +82,7 @@ func (w aggWalk) guard(id ident.FileID) *sync.Mutex {
 // anywhere else would grow the cache with rows nothing reads. The share root
 // is the sentinel, which has no row of its own.
 func (c *Core) ensureFileIDChain(
-	ctx context.Context, root *vfs.ShareRoot, share ShareID, p vfs.SafePath,
+	ctx context.Context, root vfs.Root, share ShareID, p vfs.SafePath,
 ) (ident.FileID, error) {
 	id := ident.RootID
 	cur := vfs.RootPath()

@@ -44,6 +44,13 @@ type Options struct {
 	// deployment that never wired it is told rather than crashing mid-mint.
 	Links LinkStore
 
+	// Backend opens and describes a share's storage. Nil installs a
+	// local-only opener that registers every share as a directory, which
+	// is exactly today's behaviour: every existing deployment and every
+	// existing test that never wires a backend package keeps working
+	// unchanged.
+	Backend BackendOpener
+
 	// Clock stamps rows and timestamps. Nil takes the system clock.
 	Clock clock.Clock
 
@@ -60,6 +67,16 @@ type Core struct {
 	acl     *acl.Evaluator
 	clk     clock.Clock
 	logger  *slog.Logger
+
+	// backend opens and describes a share's storage. Never nil: New
+	// installs localOpener when the caller supplies none.
+	backend BackendOpener
+
+	// secretCipher seals and opens a non-local share's credential, wired
+	// after construction because the master key loads later than the
+	// domain does. A zero value fails closed rather than storing a
+	// credential in the clear.
+	secretCipher ShareSecretCipher
 
 	// The link seams, wired after construction because the cipher needs a
 	// master key the server loads later. Each one fails closed when unwired.
@@ -114,6 +131,11 @@ func New(ctx context.Context, opt Options) (*Core, error) {
 		logger = slog.Default()
 	}
 
+	backend := opt.Backend
+	if backend == nil {
+		backend = localOpener{}
+	}
+
 	c := &Core{
 		state:   opt.State,
 		cache:   opt.Cache,
@@ -121,6 +143,7 @@ func New(ctx context.Context, opt Options) (*Core, error) {
 		acl:     opt.ACL,
 		clk:     clk,
 		logger:  logger,
+		backend: backend,
 		shares:  map[ShareID]*shareEntry{},
 	}
 	c.linkStore = opt.Links

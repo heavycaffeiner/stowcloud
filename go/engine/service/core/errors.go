@@ -96,6 +96,12 @@ var (
 	// somebody their folder does not exist sends them looking in the wrong
 	// place.
 	ErrShareBroken = errors.New("the folder this share points at is unavailable")
+
+	// ErrUnprocessable is a well-formed request this server will not honour
+	// given the target's current state, such as changing a share's backend
+	// after creation. It is not ErrConflict: nothing else raced the request,
+	// the request itself asks for something that cannot be done.
+	ErrUnprocessable = errors.New("unprocessable")
 )
 
 // ShareBrokenError names which share is broken and why, so the message a

@@ -8,7 +8,9 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/jail"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/mountinfo"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
 )
 
 // shareRoots is exercised against mountinfo.Mount values built by hand, never
@@ -162,5 +164,60 @@ func TestShareRootsDedupesMountAndNamedDir(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("shareRoots reported %s %d times, want exactly once: %v", namedDir, count, got)
+	}
+}
+
+// granted reports whether spec grants exactly path, which is a different
+// question from whether path is reachable: a grant on a parent makes the
+// child reachable too, and the point of an exact grant is that it does not.
+func granted(spec jail.Spec, path string) bool {
+	for _, g := range spec.GrantBeneath {
+		if g.Path == path {
+			return true
+		}
+	}
+	return false
+}
+
+// A VeraCrypt container is one file the engine opens, so it is granted as
+// itself. Granting its parent instead would hand over every other container
+// an operator keeps beside it, which is the mistake this pins.
+func TestJailSpecGrantsAContainerFileAndNotItsDirectory(t *testing.T) {
+	dir := t.TempDir()
+	container := filepath.Join(dir, "photos.hc")
+
+	spec := jailSpec(runtimecfg.Defaults(), t.TempDir(), nil, nil, []string{container})
+
+	if !granted(spec, container) {
+		t.Errorf("the container file is not granted: %v", spec.GrantBeneath)
+	}
+	if granted(spec, dir) {
+		t.Errorf("the container's directory is granted, which hands over every container beside it: %v", spec.GrantBeneath)
+	}
+}
+
+// A share host is a directory somebody adds folders beside, so its parent is
+// what gets granted.
+func TestJailSpecGrantsAShareHostsParent(t *testing.T) {
+	parent := t.TempDir()
+	host := filepath.Join(parent, "photos")
+
+	spec := jailSpec(runtimecfg.Defaults(), t.TempDir(), nil, []string{host}, nil)
+
+	if !granted(spec, parent) {
+		t.Errorf("the share host's parent is not granted: %v", spec.GrantBeneath)
+	}
+}
+
+// "/" is the one path this sandbox exists to withhold, so a share host
+// directly beneath it grants the host itself rather than the root.
+func TestJailSpecNeverGrantsTheRoot(t *testing.T) {
+	spec := jailSpec(runtimecfg.Defaults(), t.TempDir(), []string{"/"}, []string{"/srv"}, []string{"/"})
+
+	if granted(spec, "/") {
+		t.Errorf("the root is granted: %v", spec.GrantBeneath)
+	}
+	if !granted(spec, "/srv") {
+		t.Errorf("a share host directly beneath the root is not granted as itself: %v", spec.GrantBeneath)
 	}
 }

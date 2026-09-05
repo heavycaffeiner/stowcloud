@@ -492,9 +492,12 @@ func TestTheMigrationFoldsDuplicateGrants(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "state.db")
 
-	// One version short of the step, where the unique index does not exist.
+	// One version short of the fold step (step 13), by absolute position
+	// rather than counted back from the current head: steps 1-12 are
+	// released and never move, so this stays correct as later steps are
+	// appended, which a relative count from the end does not.
 	spec := state.Spec(path)
-	spec.Migrations = spec.Migrations[:len(spec.Migrations)-1]
+	spec.Migrations = spec.Migrations[:12]
 	old, err := dbfile.Open(ctx, spec)
 	if err != nil {
 		t.Fatalf("opening one version short of the fold: %v", err)

@@ -15,6 +15,7 @@ package lifecycle
 
 import (
 	"context"
+	"log/slog"
 	"path/filepath"
 	"sync"
 	"time"
@@ -127,7 +128,9 @@ func (p *smbPublisher) Publish(ctx context.Context) (agent.Report, error) {
 	p.engine.Auth.SetPassdbPath(passdbPathOf(s))
 
 	return publish.Publish(ctx, publish.Deps{
-		Shares:     func() []publish.Share { return publishShares(p.engine.Core.Shares()) },
+		Shares: func() []publish.Share {
+			return publishShares(p.engine.Core.Shares(), p.engine.logger)
+		},
 		Accounts:   p.engine.Auth,
 		Grants:     func(c context.Context) ([]publish.Grant, error) { return publishGrants(c, p.engine.State) },
 		Names:      p.engine.Auth.NameOf,
@@ -170,10 +173,21 @@ func (p *smbPublisher) AccessChanged(ctx context.Context) {
 // A broken share is left out. Its backing did not open, so rendering it would
 // publish a network name whose path does not resolve, which reads to a client
 // as a share that exists and refuses.
-func publishShares(defs []core.ShareDef) []publish.Share {
+//
+// A non-local share is left out too, and logged rather than silently
+// dropped: this format renders a path into a share stanza, and a
+// bucket or a container has none. An operator who expected it on the
+// network share list needs to see why it is not there rather than
+// conclude the publish is broken.
+func publishShares(defs []core.ShareDef, logger *slog.Logger) []publish.Share {
 	out := make([]publish.Share, 0, len(defs))
 	for _, d := range defs {
 		if d.BrokenReason != "" {
+			continue
+		}
+		if d.Backend != "" && d.Backend != core.BackendLocal {
+			logger.Warn("a share is not published over SMB because it has no local path",
+				"share", d.Name, "backend", d.Backend)
 			continue
 		}
 		out = append(out, publish.Share{

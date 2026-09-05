@@ -309,7 +309,7 @@ func nextMergeable(chunks []cacheChunk, frontier, committed uint64) (cacheChunk,
 // frontier and never below it. Everything below is already durable there and
 // belongs to the chunk writer rather than the merger.
 func (e *Engine) copyIntoPart(
-	root *vfs.ShareRoot, id SessionID, part vfs.SafePath, ch cacheChunk, frontier, end uint64,
+	root vfs.Root, id SessionID, part vfs.SafePath, ch cacheChunk, frontier, end uint64,
 ) (uint64, error) {
 	src, err := e.cache.root.OpenRead(ch.path, vfs.IntentRead)
 	if err != nil {
@@ -341,7 +341,7 @@ func (e *Engine) copyIntoPart(
 }
 
 // syncPart flushes the part file's contents to durable storage.
-func (e *Engine) syncPart(root *vfs.ShareRoot, id SessionID, part vfs.SafePath) error {
+func (e *Engine) syncPart(root vfs.Root, id SessionID, part vfs.SafePath) error {
 	f, err := e.handleFor(root, id, part)
 	if err != nil {
 		return err
@@ -355,7 +355,7 @@ func (e *Engine) syncPart(root *vfs.ShareRoot, id SessionID, part vfs.SafePath) 
 // patchCached is the cached path's half of the write: make room, write the
 // chunk to the spool, then ask the merger to drain it.
 func (e *Engine) patchCached(
-	ctx context.Context, root *vfs.ShareRoot, r *row, id SessionID,
+	ctx context.Context, root vfs.Root, r *row, id SessionID,
 	part vfs.SafePath, off uint64, body io.Reader, sum *Checksum,
 ) (uint64, []byte, error) {
 	m := e.mergerFor(id)

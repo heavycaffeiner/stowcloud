@@ -24,7 +24,7 @@ const rootStatMask = unix.STATX_BASIC_STATS | unix.STATX_BTIME
 // to the process working directory or opens anything by host path once a
 // root is registered.
 type ShareRoot struct {
-	ID ShareID
+	id ShareID
 
 	anchor   *os.File
 	policy   SharePolicy
@@ -128,7 +128,7 @@ func OpenShareRoot(id ShareID, host string, policy SharePolicy) (*ShareRoot, err
 	}
 
 	return &ShareRoot{
-		ID:       id,
+		id:       id,
 		anchor:   anchor,
 		policy:   policy,
 		dev:      unix.Mkdev(stx.Dev_major, stx.Dev_minor),
@@ -282,6 +282,9 @@ func (r *ShareRoot) admitDevice(dir *os.File, dev uint64, path string) error {
 // keeps an open file alive independent of the directory descriptor used to
 // reach it, but no new resolution through this root is possible afterward.
 func (r *ShareRoot) Close() error { return r.anchor.Close() }
+
+// ID is the share this root serves.
+func (r *ShareRoot) ID() ShareID { return r.id }
 
 func (r *ShareRoot) Policy() SharePolicy { return r.policy }
 
