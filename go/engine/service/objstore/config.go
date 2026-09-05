@@ -38,7 +38,7 @@ func validRegion(s string) bool {
 	}
 	for i := range s {
 		c := s[i]
-		if !(c >= 'a' && c <= 'z') && !(c >= '0' && c <= '9') && c != '-' {
+		if ((c < 'a' || c > 'z') && (c < '0' || c > '9')) && c != '-' {
 			return false
 		}
 	}

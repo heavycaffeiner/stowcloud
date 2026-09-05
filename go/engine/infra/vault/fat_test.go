@@ -6,8 +6,10 @@ import (
 	"io"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 )
 
 // memDevice is an in-memory Device, so the FAT driver is testable without a
@@ -55,10 +57,11 @@ func mustPath(t *testing.T, s string) vfs.SafePath {
 func newTestFS(t *testing.T, sizeBytes int64) (*FS, Device) {
 	t.Helper()
 	dev := newMemDevice(sizeBytes)
-	if err := Format(dev, uint64(sizeBytes)); err != nil {
+	size := mustNarrow[uint64](sizeBytes, "test volume size")
+	if err := Format(dev, size); err != nil {
 		t.Fatalf("Format: %v", err)
 	}
-	fsys, err := Mount(dev, uint64(sizeBytes))
+	fsys, err := Mount(dev, size, clock.Fixed(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)))
 	if err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -163,15 +166,15 @@ func TestTruncateShorterAndLonger(t *testing.T) {
 		t.Fatalf("size after shrink = %d, want 100", st.Size)
 	}
 	var buf bytes.Buffer
-	if err := fsys.ReadFile(p, &buf); err != nil {
-		t.Fatalf("ReadFile after shrink: %v", err)
+	if rerr := fsys.ReadFile(p, &buf); rerr != nil {
+		t.Fatalf("ReadFile after shrink: %v", rerr)
 	}
 	if !bytes.Equal(buf.Bytes(), content[:100]) {
 		t.Fatalf("content after shrink mismatch")
 	}
 
-	if err := fsys.Truncate(p, 5000); err != nil {
-		t.Fatalf("Truncate longer: %v", err)
+	if terr := fsys.Truncate(p, 5000); terr != nil {
+		t.Fatalf("Truncate longer: %v", terr)
 	}
 	st, err = fsys.Stat(p)
 	if err != nil {
@@ -423,8 +426,8 @@ func TestFileKeepsInodeAcrossRename(t *testing.T) {
 	if before.Ino == 0 {
 		t.Fatalf("non-empty file has zero inode")
 	}
-	if err := fsys.Rename(from, to, false); err != nil {
-		t.Fatalf("Rename: %v", err)
+	if rerr := fsys.Rename(from, to, false); rerr != nil {
+		t.Fatalf("Rename: %v", rerr)
 	}
 	after, err := fsys.Stat(to)
 	if err != nil {

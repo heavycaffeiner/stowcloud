@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -64,14 +65,14 @@ func (r *Root) newRequest(
 	req.URL = u
 	req.Host = host
 	req.ContentLength = size
-	r.signer.sign(req, payloadHashHex, time.Now())
+	r.signer.sign(req, payloadHashHex, r.clk.Now())
 	return req, nil
 }
 
 // listObjectsV2 issues one page of a bucket listing. maxKeys < 0 omits the
 // parameter, leaving the endpoint's own default in effect; maxKeys == 0 is
 // a valid, deliberate request (Alive's cheap probe) and is sent as such.
-func (r *Root) listObjectsV2(ctx context.Context, prefix, delimiter, continuationToken string, maxKeys int) (*listBucketResult, error) {
+func (r *Root) listObjectsV2(ctx context.Context, prefix, delimiter, continuationToken string, maxKeys int) (result *listBucketResult, err error) {
 	query := [][2]string{{"list-type", "2"}, {"prefix", prefix}}
 	if delimiter != "" {
 		query = append(query, [2]string{"delimiter", delimiter})
@@ -90,7 +91,7 @@ func (r *Root) listObjectsV2(ctx context.Context, prefix, delimiter, continuatio
 	if err != nil {
 		return nil, fmt.Errorf("objstore: list objects: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { err = errors.Join(err, res.Body.Close()) }()
 	body, err := readBounded(res.Body, maxListResponseBytes, "list response body")
 	if err != nil {
 		return nil, err
@@ -114,7 +115,7 @@ func (r *Root) headObject(ctx context.Context, key string) (found bool, size uin
 	if err != nil {
 		return false, 0, 0, fmt.Errorf("objstore: head object: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { err = errors.Join(err, res.Body.Close()) }()
 	if res.StatusCode == http.StatusNotFound {
 		return false, 0, 0, nil
 	}
@@ -194,7 +195,7 @@ func (r *Root) isDirectory(ctx context.Context, key string) (bool, int64, error)
 	return len(result.CommonPrefixes) > 0 || len(result.Contents) > 0, 0, nil
 }
 
-func (r *Root) deleteObjectForce(ctx context.Context, key string) error {
+func (r *Root) deleteObjectForce(ctx context.Context, key string) (err error) {
 	req, err := r.newRequest(ctx, http.MethodDelete, key, nil, nil, 0, emptyPayloadHash())
 	if err != nil {
 		return err
@@ -203,7 +204,7 @@ func (r *Root) deleteObjectForce(ctx context.Context, key string) error {
 	if err != nil {
 		return fmt.Errorf("objstore: delete object: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { err = errors.Join(err, res.Body.Close()) }()
 	body, err := readBounded(res.Body, maxMetadataBodyBytes, "delete response body")
 	if err != nil {
 		return err
@@ -219,7 +220,7 @@ func (r *Root) deleteObjectForce(ctx context.Context, key string) error {
 // signed-header set: it names an operation this package itself issues and
 // controls, so there is nothing an intermediary tampering with an unsigned
 // header here could make this package do that it would not already do.
-func (r *Root) copyObject(ctx context.Context, srcKey, destKey string) error {
+func (r *Root) copyObject(ctx context.Context, srcKey, destKey string) (err error) {
 	req, err := r.newRequest(ctx, http.MethodPut, destKey, nil, nil, 0, emptyPayloadHash())
 	if err != nil {
 		return err
@@ -229,7 +230,7 @@ func (r *Root) copyObject(ctx context.Context, srcKey, destKey string) error {
 	if err != nil {
 		return fmt.Errorf("objstore: copy object: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { err = errors.Join(err, res.Body.Close()) }()
 	body, err := readBounded(res.Body, maxMetadataBodyBytes, "copy response body")
 	if err != nil {
 		return err
@@ -277,12 +278,12 @@ func (r *Root) putObject(ctx context.Context, key string, f *vfs.File, size uint
 	return r.doPut(req)
 }
 
-func (r *Root) doPut(req *http.Request) error {
+func (r *Root) doPut(req *http.Request) (err error) {
 	res, err := r.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("objstore: put object: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { err = errors.Join(err, res.Body.Close()) }()
 	body, err := readBounded(res.Body, maxMetadataBodyBytes, "put response body")
 	if err != nil {
 		return err
@@ -305,7 +306,7 @@ func hashSection(f *os.File, size int64) (string, error) {
 // The download is bounded at maxObjectBodyBytes as a sanity ceiling; the
 // practical limit an operator experiences is scratch space filling up,
 // which surfaces as an ordinary write failure from the kernel.
-func (r *Root) getObject(ctx context.Context, key string, f *vfs.File) (int64, error) {
+func (r *Root) getObject(ctx context.Context, key string, f *vfs.File) (n int64, err error) {
 	req, err := r.newRequest(ctx, http.MethodGet, key, nil, nil, 0, emptyPayloadHash())
 	if err != nil {
 		return 0, err
@@ -314,7 +315,7 @@ func (r *Root) getObject(ctx context.Context, key string, f *vfs.File) (int64, e
 	if err != nil {
 		return 0, fmt.Errorf("objstore: get object: %w", err)
 	}
-	defer res.Body.Close()
+	defer func() { err = errors.Join(err, res.Body.Close()) }()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
 		body, berr := readBounded(res.Body, maxMetadataBodyBytes, "get response body")
 		if berr != nil {
@@ -322,7 +323,7 @@ func (r *Root) getObject(ctx context.Context, key string, f *vfs.File) (int64, e
 		}
 		return 0, classifyS3Error(res.StatusCode, body)
 	}
-	n, err := io.Copy(f.OSFile(), io.LimitReader(res.Body, maxObjectBodyBytes+1))
+	n, err = io.Copy(f.OSFile(), io.LimitReader(res.Body, maxObjectBodyBytes+1))
 	if err != nil {
 		return 0, fmt.Errorf("objstore: download body: %w", err)
 	}

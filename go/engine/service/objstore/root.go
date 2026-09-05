@@ -16,6 +16,7 @@ import (
 	"sync"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 )
@@ -45,6 +46,10 @@ type Options struct {
 	Policy     vfs.SharePolicy
 	Logger     *slog.Logger
 	Client     *http.Client
+
+	// Clock reads the time newRequest signs each request with. Nil takes
+	// the system clock.
+	Clock clock.Clock
 }
 
 // partHandle records where CreatePart staged one part, so PublishPart can
@@ -68,6 +73,7 @@ type Root struct {
 	logger *slog.Logger
 	http   *http.Client
 	signer *signer
+	clk    clock.Clock
 
 	endpointScheme string
 	endpointHost   string
@@ -107,6 +113,10 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	clk := opt.Clock
+	if clk == nil {
+		clk = clock.System()
+	}
 
 	r := &Root{
 		share:          opt.Share,
@@ -114,6 +124,7 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 		policy:         opt.Policy,
 		logger:         logger,
 		http:           client,
+		clk:            clk,
 		endpointScheme: endpoint.Scheme,
 		endpointHost:   endpoint.Host,
 		dev:            syntheticDevice(opt.Share),
@@ -129,7 +140,7 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 	probeCtx, cancel := context.WithTimeout(ctx, metadataRequestTimeout)
 	defer cancel()
 	if _, err := r.listObjectsV2(probeCtx, r.cfg.Prefix, "", "", 0); err != nil {
-		_ = scratch.Close()
+		err = errors.Join(err, scratch.Close())
 		return nil, fmt.Errorf("objstore: open %s: %w", opt.Config.Describe(), err)
 	}
 	return r, nil
@@ -162,7 +173,9 @@ func (r *Root) dirPrefix(p vfs.SafePath) string {
 
 func (r *Root) syntheticIno(key string) uint64 {
 	h := fnv.New64a()
-	_, _ = h.Write([]byte(key))
+	if _, err := h.Write([]byte(key)); err != nil {
+		panicInfallibleWrite(err)
+	}
 	return h.Sum64()
 }
 
@@ -376,13 +389,11 @@ func (r *Root) OpenRead(p vfs.SafePath, _ vfs.AccessIntent) (*vfs.File, error) {
 		return nil, err
 	}
 	if _, err := r.getObject(context.Background(), key, f); err != nil {
-		_ = r.scratch.Unlink(scratchPath)
-		_ = f.Close()
+		err = errors.Join(err, r.scratch.Unlink(scratchPath), f.Close())
 		return nil, fmt.Errorf("open read: %w", err)
 	}
 	if err := r.scratch.Unlink(scratchPath); err != nil {
-		_ = f.Close()
-		return nil, fmt.Errorf("open read: unlink scratch file: %w", err)
+		return nil, fmt.Errorf("open read: unlink scratch file: %w", errors.Join(err, f.Close()))
 	}
 	return f, nil
 }
@@ -410,7 +421,7 @@ func (r *Root) CreatePart(p vfs.SafePath) (*vfs.File, error) {
 // engine syncs and closes it before publishing, exactly as a local share
 // wants; reading it here answered "bad file descriptor" and lost every
 // upload into a bucket.
-func (r *Root) PublishPart(part, dest vfs.SafePath, replacing bool) (vfs.Durable, error) {
+func (r *Root) PublishPart(part, dest vfs.SafePath, replacing bool) (dur vfs.Durable, err error) {
 	r.mu.Lock()
 	ph, ok := r.parts[part.String()]
 	if ok {
@@ -420,13 +431,13 @@ func (r *Root) PublishPart(part, dest vfs.SafePath, replacing bool) (vfs.Durable
 	if !ok {
 		return vfs.Durable{}, fmt.Errorf("publish part: %w", vfs.ErrNotFound)
 	}
-	defer func() { _ = r.scratch.Unlink(ph.scratch) }()
+	defer func() { err = errors.Join(err, r.scratch.Unlink(ph.scratch)) }()
 
 	staged, err := r.scratch.OpenRead(ph.scratch, vfs.IntentRead)
 	if err != nil {
 		return vfs.Durable{}, fmt.Errorf("publish part: reopen the staged file: %w", err)
 	}
-	defer func() { _ = staged.Close() }()
+	defer func() { err = errors.Join(err, staged.Close()) }()
 
 	st, err := staged.Stat()
 	if err != nil {
@@ -443,7 +454,7 @@ func (r *Root) PublishPart(part, dest vfs.SafePath, replacing bool) (vfs.Durable
 	if existed && !replacing {
 		return vfs.Durable{}, fmt.Errorf("publish part: %w", vfs.ErrExists)
 	}
-	if err := r.putObject(context.Background(), key, staged, st.Size); err != nil {
+	if err = r.putObject(context.Background(), key, staged, st.Size); err != nil {
 		return vfs.Durable{}, fmt.Errorf("publish part: %w", err)
 	}
 	return vfs.Durable{Replaced: existed}, nil
@@ -453,20 +464,19 @@ func (r *Root) PublishPart(part, dest vfs.SafePath, replacing bool) (vfs.Durable
 // there is no atomic rename to fall back on against a bucket, so the
 // closest available guarantee is that a failed write or a failed upload
 // never touches the object write is replacing.
-func (r *Root) WriteDurable(p vfs.SafePath, opt vfs.DurableOpts, write func(*vfs.File) error) (vfs.Durable, error) {
+func (r *Root) WriteDurable(p vfs.SafePath, opt vfs.DurableOpts, write func(*vfs.File) error) (dur vfs.Durable, err error) {
 	f, scratchPath, err := r.newScratchFile()
 	if err != nil {
 		return vfs.Durable{}, err
 	}
 	defer func() {
-		_ = r.scratch.Unlink(scratchPath)
-		_ = f.Close()
+		err = errors.Join(err, r.scratch.Unlink(scratchPath), f.Close())
 	}()
 
-	if err := write(f); err != nil {
+	if err = write(f); err != nil {
 		return vfs.Durable{}, err
 	}
-	if err := f.SyncData(); err != nil {
+	if err = f.SyncData(); err != nil {
 		return vfs.Durable{}, fmt.Errorf("write durable: sync scratch file: %w", err)
 	}
 	st, err := f.Stat()
@@ -484,7 +494,7 @@ func (r *Root) WriteDurable(p vfs.SafePath, opt vfs.DurableOpts, write func(*vfs
 	if existed && opt.NoClobber {
 		return vfs.Durable{}, fmt.Errorf("write durable: %w", vfs.ErrExists)
 	}
-	if err := r.putObject(context.Background(), key, f, st.Size); err != nil {
+	if err = r.putObject(context.Background(), key, f, st.Size); err != nil {
 		return vfs.Durable{}, fmt.Errorf("write durable: %w", err)
 	}
 	return vfs.Durable{Replaced: existed}, nil

@@ -95,6 +95,20 @@ linters:
           - gosec
         text: "G101"
 
+      # G117 reads a marshaled field's name, not what it holds, the same way
+      # G101 reads an identifier. `Config.AccessKey` is the access key id: a
+      # bucket-scoped identifier that is persisted verbatim in
+      # share_definition.backend_config on purpose. The credential is
+      # `secret_access_key`, which travels as a `secret.Secret` and never
+      # enters this struct, and `vetsecret` is the gate that keeps it that
+      # way. The JSON key is a stored contract and cannot be renamed to dodge
+      # a pattern match. Scoped to the one file, so G117 still applies
+      # everywhere else.
+      - path: engine/service/objstore/config\.go
+        linters:
+          - gosec
+        text: "G117"
+
 formatters:
   enable:
     - gofmt

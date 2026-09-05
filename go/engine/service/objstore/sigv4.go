@@ -23,8 +23,19 @@ func emptyPayloadHash() string { return sha256Hex(nil) }
 
 func hmacSHA256(key []byte, data string) []byte {
 	h := hmac.New(sha256.New, key)
-	h.Write([]byte(data))
+	if _, err := h.Write([]byte(data)); err != nil {
+		panicInfallibleWrite(err)
+	}
 	return h.Sum(nil)
+}
+
+// panicInfallibleWrite stops the process when a write into a hash.Hash or a
+// strings.Builder fails. Both types document Write as never returning an
+// error, so a non-nil one here means that guarantee broke, and a signature
+// computed after silently discarding it would be over bytes that were
+// never actually written.
+func panicInfallibleWrite(err error) {
+	panic("objstore: an infallible write failed: " + err.Error())
 }
 
 func sha256Hex(b []byte) string {
@@ -51,10 +62,18 @@ func signingKey(secretKey, dateStamp, region, service string) []byte {
 func canonicalHeaderBlock(names []string, values map[string]string) string {
 	var b strings.Builder
 	for _, n := range names {
-		b.WriteString(n)
-		b.WriteByte(':')
-		b.WriteString(values[n])
-		b.WriteByte('\n')
+		if _, err := b.WriteString(n); err != nil {
+			panicInfallibleWrite(err)
+		}
+		if err := b.WriteByte(':'); err != nil {
+			panicInfallibleWrite(err)
+		}
+		if _, err := b.WriteString(values[n]); err != nil {
+			panicInfallibleWrite(err)
+		}
+		if err := b.WriteByte('\n'); err != nil {
+			panicInfallibleWrite(err)
+		}
 	}
 	return b.String()
 }
@@ -89,10 +108,14 @@ func awsURIEncode(s string, encodeSlash bool) string {
 	for i := range s {
 		c := s[i]
 		if isUnreservedByte(c) || (c == '/' && !encodeSlash) {
-			b.WriteByte(c)
+			if err := b.WriteByte(c); err != nil {
+				panicInfallibleWrite(err)
+			}
 			continue
 		}
-		fmt.Fprintf(&b, "%%%02X", c)
+		if _, err := fmt.Fprintf(&b, "%%%02X", c); err != nil {
+			panicInfallibleWrite(err)
+		}
 	}
 	return b.String()
 }

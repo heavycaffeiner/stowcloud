@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
+	"path/filepath"
 
 	"golang.org/x/crypto/xts"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 )
 
@@ -35,10 +38,18 @@ func openVolumeDevice(f *os.File, fields headerFields, keys [xtsKeySize]byte) (*
 	if err != nil {
 		return nil, fmt.Errorf("vault: build data area cipher: %w", err)
 	}
+	dataOffset, err := num.Narrow[int64](fields.dataAreaOffset)
+	if err != nil {
+		return nil, fmt.Errorf("%w: data area offset out of range: %v", ErrHeaderFieldsInvalid, err)
+	}
+	dataSize, err := num.Narrow[int64](fields.dataAreaSize)
+	if err != nil {
+		return nil, fmt.Errorf("%w: data area size out of range: %v", ErrHeaderFieldsInvalid, err)
+	}
 	return &volumeDevice{
 		f:          f,
-		dataOffset: int64(fields.dataAreaOffset),
-		dataSize:   int64(fields.dataAreaSize),
+		dataOffset: dataOffset,
+		dataSize:   dataSize,
 		cipher:     cipher,
 	}, nil
 }
@@ -75,7 +86,7 @@ func (v *volumeDevice) ReadAt(p []byte, off int64) (int, error) {
 	}
 	plainBuf := make([]byte, alignedLen)
 	units := alignedLen / dataUnitBytes
-	firstUnit := uint64(alignedOff / dataUnitBytes)
+	firstUnit := mustNarrow[uint64](alignedOff/dataUnitBytes, "XTS tweak unit")
 	for u := int64(0); u < units; u++ {
 		v.cipher.Decrypt(plainBuf[u*dataUnitBytes:(u+1)*dataUnitBytes], cipherBuf[u*dataUnitBytes:(u+1)*dataUnitBytes], firstUnit+uint64(u))
 	}
@@ -102,7 +113,7 @@ func (v *volumeDevice) WriteAt(p []byte, off int64) (int, error) {
 	}
 	alignedOff, alignedLen := unitRange(off, n)
 	units := alignedLen / dataUnitBytes
-	firstUnit := uint64(alignedOff / dataUnitBytes)
+	firstUnit := mustNarrow[uint64](alignedOff/dataUnitBytes, "XTS tweak unit")
 
 	plainBuf := make([]byte, alignedLen)
 	partial := off != alignedOff || off+n != alignedOff+alignedLen
@@ -152,16 +163,23 @@ func createContainer(path string, sizeMiB uint64, password secret.Secret) error 
 	dataSize := sizeMiB << 20
 	fileSize := headerRegionSize + dataSize + headerRegionSize
 
+	path = filepath.Clean(path)
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return fmt.Errorf("vault: create container file: %w", err)
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			slog.Default().Warn("vault: closing a container file after create", "path", path, "error", cerr)
+		}
+	}()
 
 	success := false
 	defer func() {
 		if !success {
-			_ = os.Remove(path)
+			if rerr := os.Remove(path); rerr != nil {
+				slog.Default().Warn("vault: removing a partially created container after a failed create", "path", path, "error", rerr)
+			}
 		}
 	}()
 
@@ -174,12 +192,12 @@ func createContainer(path string, sizeMiB uint64, password secret.Secret) error 
 		return err
 	}
 	var keys [xtsKeySize]byte
-	if _, err := rand.Read(keys[:]); err != nil {
-		return fmt.Errorf("vault: generate master keys: %w", err)
+	if _, rerr := rand.Read(keys[:]); rerr != nil {
+		return fmt.Errorf("vault: generate master keys: %w", rerr)
 	}
 	var padding [headerKeyAreaSize - xtsKeySize]byte
-	if _, err := rand.Read(padding[:]); err != nil {
-		return fmt.Errorf("vault: generate key area padding: %w", err)
+	if _, rerr := rand.Read(padding[:]); rerr != nil {
+		return fmt.Errorf("vault: generate key area padding: %w", rerr)
 	}
 
 	fields := headerFields{
@@ -249,7 +267,7 @@ func fillRandom(f *os.File, off, n uint64) error {
 		if _, err := rand.Read(buf[:size]); err != nil {
 			return fmt.Errorf("vault: read system randomness: %w", err)
 		}
-		if _, err := f.WriteAt(buf[:size], int64(off)); err != nil {
+		if _, err := f.WriteAt(buf[:size], mustNarrow[int64](off, "random-fill write offset")); err != nil {
 			return err
 		}
 		off += size
@@ -264,6 +282,7 @@ func fillRandom(f *os.File, off, n uint64) error {
 // Device this returns addresses only the data area, not the whole
 // container file.
 func openContainer(path string, password secret.Secret) (*volumeDevice, uint64, error) {
+	path = filepath.Clean(path)
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return nil, 0, fmt.Errorf("vault: open container file: %w", err)
@@ -271,7 +290,9 @@ func openContainer(path string, password secret.Secret) (*volumeDevice, uint64, 
 	success := false
 	defer func() {
 		if !success {
-			_ = f.Close()
+			if cerr := f.Close(); cerr != nil {
+				slog.Default().Warn("vault: closing a container file after a failed open", "path", path, "error", cerr)
+			}
 		}
 	}()
 
@@ -279,21 +300,21 @@ func openContainer(path string, password secret.Secret) (*volumeDevice, uint64, 
 	if err != nil {
 		return nil, 0, fmt.Errorf("vault: stat container file: %w", err)
 	}
-	size := uint64(stat.Size())
+	size := mustNarrow[uint64](stat.Size(), "container file size")
 	if size < headerRegionSize+minContainerDataMiB<<20+headerRegionSize {
 		return nil, 0, fmt.Errorf("%w: container file too small to hold a header", ErrHeaderFieldsInvalid)
 	}
 
 	record := make([]byte, headerRecordSize)
-	if _, err := f.ReadAt(record, 0); err != nil {
-		return nil, 0, fmt.Errorf("vault: read primary header: %w", err)
+	if _, rerr := f.ReadAt(record, 0); rerr != nil {
+		return nil, 0, fmt.Errorf("vault: read primary header: %w", rerr)
 	}
 	fields, keys, err := decryptHeaderRecord(record, password)
 	if err != nil {
 		return nil, 0, err
 	}
-	if err := validateHeaderFields(fields, size); err != nil {
-		return nil, 0, err
+	if verr := validateHeaderFields(fields, size); verr != nil {
+		return nil, 0, verr
 	}
 	dev, err := openVolumeDevice(f, fields, keys)
 	if err != nil {

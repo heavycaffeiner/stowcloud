@@ -41,12 +41,12 @@ func TestHeaderRoundTripAndWrongPasswordVsCorruption(t *testing.T) {
 	if dataSize != minContainerDataMiB<<20 {
 		t.Fatalf("data size = %d, want %d", dataSize, minContainerDataMiB<<20)
 	}
-	if err := dev.f.Close(); err != nil {
-		t.Fatalf("close: %v", err)
+	if cerr := dev.f.Close(); cerr != nil {
+		t.Fatalf("close: %v", cerr)
 	}
 
-	if _, _, err := openContainer(path, wrong); !errors.Is(err, ErrWrongPassword) {
-		t.Fatalf("open with wrong password: got %v, want ErrWrongPassword", err)
+	if _, _, werr := openContainer(path, wrong); !errors.Is(werr, ErrWrongPassword) {
+		t.Fatalf("open with wrong password: got %v, want ErrWrongPassword", werr)
 	}
 
 	// Flip a byte inside the reserved region (plaintext offset 96..111,
@@ -54,13 +54,20 @@ func TestHeaderRoundTripAndWrongPasswordVsCorruption(t *testing.T) {
 	// block. That block sits well after the block holding the "VERA" magic
 	// (header-record offset 64..79), so a correct password still decrypts a
 	// valid magic and only the header CRC-32 fails.
-	raw, err := os.ReadFile(path)
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
-		t.Fatalf("read container: %v", err)
+		t.Fatalf("open container: %v", err)
 	}
-	raw[164] ^= 0xFF
-	if err := os.WriteFile(path, raw, 0o600); err != nil {
-		t.Fatalf("write corrupted container: %v", err)
+	var flip [1]byte
+	if _, rerr := f.ReadAt(flip[:], 164); rerr != nil {
+		t.Fatalf("read byte 164: %v", rerr)
+	}
+	flip[0] ^= 0xFF
+	if _, werr := f.WriteAt(flip[:], 164); werr != nil {
+		t.Fatalf("corrupt byte 164: %v", werr)
+	}
+	if cerr := f.Close(); cerr != nil {
+		t.Fatalf("close corrupted container: %v", cerr)
 	}
 
 	_, _, err = openContainer(path, correct)
@@ -90,35 +97,39 @@ func TestXTSDataUnitNumbering(t *testing.T) {
 	interiorOff := int64(1536 + 37) // sector 3 of the data area, 37 bytes in
 	wantInterior := []byte("interior payload")
 
-	if _, err := dev.WriteAt(wantBoundary, boundaryOff); err != nil {
-		t.Fatalf("WriteAt boundary: %v", err)
+	if _, werr := dev.WriteAt(wantBoundary, boundaryOff); werr != nil {
+		t.Fatalf("WriteAt boundary: %v", werr)
 	}
-	if _, err := dev.WriteAt(wantInterior, interiorOff); err != nil {
-		t.Fatalf("WriteAt interior: %v", err)
+	if _, werr := dev.WriteAt(wantInterior, interiorOff); werr != nil {
+		t.Fatalf("WriteAt interior: %v", werr)
 	}
-	if err := dev.Sync(); err != nil {
-		t.Fatalf("Sync: %v", err)
+	if serr := dev.Sync(); serr != nil {
+		t.Fatalf("Sync: %v", serr)
 	}
-	if err := dev.f.Close(); err != nil {
-		t.Fatalf("close: %v", err)
+	if cerr := dev.f.Close(); cerr != nil {
+		t.Fatalf("close: %v", cerr)
 	}
 
 	dev2, _, err := openContainer(path, pw)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
-	defer func() { _ = dev2.f.Close() }()
+	defer func() {
+		if cerr := dev2.f.Close(); cerr != nil {
+			t.Errorf("closing dev2: %v", cerr)
+		}
+	}()
 
 	gotBoundary := make([]byte, len(wantBoundary))
-	if _, err := dev2.ReadAt(gotBoundary, boundaryOff); err != nil {
-		t.Fatalf("ReadAt boundary: %v", err)
+	if _, berr := dev2.ReadAt(gotBoundary, boundaryOff); berr != nil {
+		t.Fatalf("ReadAt boundary: %v", berr)
 	}
 	if !bytes.Equal(gotBoundary, wantBoundary) {
 		t.Fatalf("boundary sector: got %q, want %q", gotBoundary, wantBoundary)
 	}
 	gotInterior := make([]byte, len(wantInterior))
-	if _, err := dev2.ReadAt(gotInterior, interiorOff); err != nil {
-		t.Fatalf("ReadAt interior: %v", err)
+	if _, ierr := dev2.ReadAt(gotInterior, interiorOff); ierr != nil {
+		t.Fatalf("ReadAt interior: %v", ierr)
 	}
 	if !bytes.Equal(gotInterior, wantInterior) {
 		t.Fatalf("interior bytes: got %q, want %q", gotInterior, wantInterior)
@@ -132,10 +143,14 @@ func TestXTSDataUnitNumbering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open raw file: %v", err)
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		if cerr := f.Close(); cerr != nil {
+			t.Errorf("closing raw file: %v", cerr)
+		}
+	}()
 	record := make([]byte, headerRecordSize)
-	if _, err := f.ReadAt(record, 0); err != nil {
-		t.Fatalf("read header record: %v", err)
+	if _, rerr := f.ReadAt(record, 0); rerr != nil {
+		t.Fatalf("read header record: %v", rerr)
 	}
 	fields, keys, err := decryptHeaderRecord(record, pw)
 	if err != nil {
@@ -148,7 +163,7 @@ func TestXTSDataUnitNumbering(t *testing.T) {
 	sector := interiorOff / dataUnitBytes
 	within := interiorOff % dataUnitBytes
 	rawSector := make([]byte, dataUnitBytes)
-	if _, err := f.ReadAt(rawSector, int64(fields.dataAreaOffset)+sector*dataUnitBytes); err != nil {
+	if _, err := f.ReadAt(rawSector, mustNarrow[int64](fields.dataAreaOffset, "data area offset")+sector*dataUnitBytes); err != nil {
 		t.Fatalf("read raw data sector: %v", err)
 	}
 	plainSector := make([]byte, dataUnitBytes)

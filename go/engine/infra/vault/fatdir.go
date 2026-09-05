@@ -63,7 +63,8 @@ const inoHighBit = uint64(1) << 63
 // starts at cluster 2 or later), so it is reserved for the volume root's
 // own fixed identity.
 func deriveIno(dirCluster uint32, entryOffset int64) uint64 {
-	return inoHighBit | (uint64(entryOffset/32) << 28) | uint64(dirCluster&0x0FFFFFFF)
+	offset := mustNarrow[uint64](entryOffset, "directory entry offset")
+	return inoHighBit | (offset / 32 << 28) | uint64(dirCluster&0x0FFFFFFF)
 }
 
 // entryIno is the inode a resolved entry reports. An entry with content
@@ -86,16 +87,6 @@ func entryIno(firstCluster uint32, dirCluster uint32, entryOffset int64) uint64 
 		return uint64(firstCluster)
 	}
 	return deriveIno(dirCluster, entryOffset)
-}
-
-// bytesPerClusterOf is a free function so fatname.go's generator, which
-// knows nothing about FS, never needs to.
-func (fs *FS) clusterCount(start uint32) (int, error) {
-	clusters, err := fs.chainClusters(start)
-	if err != nil {
-		return 0, err
-	}
-	return len(clusters), nil
 }
 
 // ensureExtent grows the chain at *start, allocating it fresh if it is
@@ -250,7 +241,9 @@ func (fs *FS) scanDir(start uint32, fn func(direntInfo) bool) error {
 		if pendingStart >= 0 && lfnChecksum(shortKey) == lfnChecksumWant && len(lfnParts) > 0 {
 			var sb strings.Builder
 			for i := 1; i <= len(lfnParts); i++ {
-				sb.WriteString(lfnParts[i])
+				if _, err := sb.WriteString(lfnParts[i]); err != nil {
+					panicInfallibleWrite(err)
+				}
 			}
 			name = sb.String()
 			entryStart = pendingStart
@@ -271,10 +264,7 @@ func (fs *FS) scanDir(start uint32, fn func(direntInfo) bool) error {
 			entryStart:   entryStart,
 			shortOffset:  off,
 		}
-		if fn(info) {
-			return true
-		}
-		return false
+		return fn(info)
 	})
 	return err
 }
@@ -365,8 +355,8 @@ func (fs *FS) resolveParent(p vfs.SafePath) (parentCluster uint32, leaf string, 
 		return 0, "", fmt.Errorf("%w: the share root has no parent", vfs.ErrDenied)
 	}
 	leaf = p.Name()
-	if err := checkFATName(leaf); err != nil {
-		return 0, "", err
+	if nerr := checkFATName(leaf); nerr != nil {
+		return 0, "", nerr
 	}
 	parentInfo, err := fs.resolve(p.Parent())
 	if err != nil {
@@ -452,7 +442,7 @@ func buildEntry(shortName [11]byte, attr byte, cluster uint32, size uint32, mtim
 	binary.LittleEndian.PutUint16(e[20:22], uint16(cluster>>16))
 	binary.LittleEndian.PutUint16(e[22:24], tm)
 	binary.LittleEndian.PutUint16(e[24:26], date)
-	binary.LittleEndian.PutUint16(e[26:28], uint16(cluster))
+	binary.LittleEndian.PutUint16(e[26:28], uint16(cluster&0xFFFF))
 	binary.LittleEndian.PutUint32(e[28:32], size)
 	return e
 }
@@ -488,8 +478,14 @@ func nsToFATTime(ns int64) (date, tm uint16) {
 	if sec > 58 {
 		sec = 58
 	}
-	tm = uint16(t.Hour())<<11 | uint16(t.Minute())<<5 | uint16(sec/2)
-	date = uint16(t.Year()-1980)<<9 | uint16(t.Month())<<5 | uint16(t.Day())
+	hour := mustNarrow[uint16](t.Hour(), "hour")
+	minute := mustNarrow[uint16](t.Minute(), "minute")
+	halfSec := mustNarrow[uint16](sec/2, "half-second")
+	tm = hour<<11 | minute<<5 | halfSec
+	year := mustNarrow[uint16](t.Year()-1980, "FAT year")
+	month := mustNarrow[uint16](int(t.Month()), "month")
+	day := mustNarrow[uint16](t.Day(), "day")
+	date = year<<9 | month<<5 | day
 	return date, tm
 }
 
@@ -586,8 +582,8 @@ func (fs *FS) Mkdir(p vfs.SafePath) error {
 	if err != nil {
 		return err
 	}
-	if _, ok, err := fs.findEntry(parent, leaf); err != nil {
-		return err
+	if _, ok, ferr := fs.findEntry(parent, leaf); ferr != nil {
+		return ferr
 	} else if ok {
 		return fmt.Errorf("mkdir %q: %w", p.String(), vfs.ErrExists)
 	}
@@ -596,7 +592,7 @@ func (fs *FS) Mkdir(p vfs.SafePath) error {
 		return err
 	}
 	newCluster := clusters[0]
-	now := time.Now().UnixNano()
+	now := fs.clk.Nanos()
 	parentForDotDot := parent
 	if p.Parent().IsRoot() {
 		parentForDotDot = 0
@@ -681,7 +677,7 @@ func (fs *FS) CreateFile(p vfs.SafePath) error {
 	} else if ok {
 		return fmt.Errorf("create %q: %w", p.String(), vfs.ErrExists)
 	}
-	return fs.createEntry(parent, leaf, attrArchive, 0, 0, time.Now().UnixNano())
+	return fs.createEntry(parent, leaf, attrArchive, 0, 0, fs.clk.Nanos())
 }
 
 // Remove deletes a file. A directory at p is refused with ErrIsDirectory,
@@ -785,8 +781,8 @@ func (fs *FS) WriteFileStaged(dest vfs.SafePath, r io.Reader, noClobber bool, mt
 	}
 
 	stagingName := fmt.Sprintf(".stowstage-%x", stagingSuffix())
-	if err := fs.createEntry(parent, stagingName, attrArchive, 0, 0, mtimeNs); err != nil {
-		return false, err
+	if cerr := fs.createEntry(parent, stagingName, attrArchive, 0, 0, mtimeNs); cerr != nil {
+		return false, cerr
 	}
 	stagingEntry, ok, err := fs.findEntry(parent, stagingName)
 	if err != nil {
@@ -820,7 +816,7 @@ func (fs *FS) WriteFileStaged(dest vfs.SafePath, r io.Reader, noClobber bool, mt
 	}
 	if err := fs.updateShortEntry(parent, stagingEntry.shortOffset, func(e *rawDirEntry) {
 		setEntryCluster(e, cluster)
-		setEntrySize(e, uint32(written))
+		setEntrySize(e, mustNarrow[uint32](written, "staged file size"))
 		setEntryTime(e, mtimeNs)
 	}); err != nil {
 		return false, err
@@ -843,7 +839,7 @@ func (fs *FS) WriteFileStaged(dest vfs.SafePath, r io.Reader, noClobber bool, mt
 // setEntryCluster patches a short entry's first-cluster field in place.
 func setEntryCluster(e *rawDirEntry, cluster uint32) {
 	binary.LittleEndian.PutUint16(e[20:22], uint16(cluster>>16))
-	binary.LittleEndian.PutUint16(e[26:28], uint16(cluster))
+	binary.LittleEndian.PutUint16(e[26:28], uint16(cluster&0xFFFF))
 }
 
 // setEntrySize patches a short entry's file-size field in place.
@@ -924,7 +920,7 @@ func (fs *FS) Truncate(p vfs.SafePath, newSize uint64) error {
 		}
 		cluster = 0
 	case newSize < oldSize:
-		keep := int((newSize + clusterSize - 1) / clusterSize)
+		keep := mustNarrow[int]((newSize+clusterSize-1)/clusterSize, "cluster count after truncate")
 		if keep == 0 {
 			keep = 1
 		}
@@ -940,7 +936,7 @@ func (fs *FS) Truncate(p vfs.SafePath, newSize uint64) error {
 			if n > uint64(len(zeros)) {
 				n = uint64(len(zeros))
 			}
-			if err := fs.writeExtent(&cluster, int64(off), zeros[:n]); err != nil {
+			if err := fs.writeExtent(&cluster, mustNarrow[int64](off, "truncate write offset"), zeros[:n]); err != nil {
 				return err
 			}
 			off += n
@@ -948,7 +944,7 @@ func (fs *FS) Truncate(p vfs.SafePath, newSize uint64) error {
 	}
 	if err := fs.updateShortEntry(parent, entry.shortOffset, func(e *rawDirEntry) {
 		setEntryCluster(e, cluster)
-		setEntrySize(e, uint32(newSize))
+		setEntrySize(e, mustNarrow[uint32](newSize, "truncated file size"))
 	}); err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"encoding/binary"
 	"fmt"
 	"strconv"
 	"strings"
@@ -73,9 +74,13 @@ func cleanShortComponent(s string) string {
 			r -= 'a' - 'A'
 		}
 		if r < 0x80 && strings.ContainsRune(shortNameCharset, r) {
-			b.WriteRune(r)
+			if _, err := b.WriteRune(r); err != nil {
+				panicInfallibleWrite(err)
+			}
 		} else if r != ' ' && r != '.' {
-			b.WriteByte('_')
+			if err := b.WriteByte('_'); err != nil {
+				panicInfallibleWrite(err)
+			}
 		}
 	}
 	return b.String()
@@ -171,12 +176,6 @@ func encodeLFNUnits(name string) []uint16 {
 	return append(units, 0)
 }
 
-// lfnEntryCount is how many 32-byte long-name entries a name needs.
-func lfnEntryCount(name string) int {
-	n := len(encodeLFNUnits(name))
-	return (n + lfnUnitsPerEntry - 1) / lfnUnitsPerEntry
-}
-
 // buildLFNEntries lays out the long-name entries for name in the order they
 // belong on disk: the entry holding the tail of the name first, carrying the
 // last-logical-entry bit, down to ordinal 1 immediately before the short
@@ -219,8 +218,7 @@ func buildLFNEntries(name string, shortName [11]byte) []rawDirEntry {
 
 func putUTF16Field(dst []byte, units []uint16) {
 	for i, u := range units {
-		dst[2*i] = byte(u)
-		dst[2*i+1] = byte(u >> 8)
+		binary.LittleEndian.PutUint16(dst[2*i:2*i+2], u)
 	}
 }
 

@@ -16,9 +16,9 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 )
 
@@ -94,6 +94,10 @@ type Options struct {
 	ScratchDir string
 	Policy     vfs.SharePolicy
 	Logger     *slog.Logger
+
+	// Clock stamps a directory's own "." and ".." entries and a freshly
+	// created file's initial write time. Nil takes the system clock.
+	Clock clock.Clock
 }
 
 // Root serves one VeraCrypt container as a vfs.Root. Every method takes
@@ -108,6 +112,7 @@ type Root struct {
 	scratch      *vfs.ShareRoot
 	policy       vfs.SharePolicy
 	logger       *slog.Logger
+	clk          clock.Clock
 	syntheticDev uint64
 
 	partsMu sync.Mutex
@@ -129,6 +134,10 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 	logger := opt.Logger
 	if logger == nil {
 		logger = slog.Default()
+	}
+	clk := opt.Clock
+	if clk == nil {
+		clk = clock.System()
 	}
 
 	_, statErr := os.Stat(opt.Config.Container)
@@ -157,16 +166,18 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 	closeDev := true
 	defer func() {
 		if closeDev {
-			_ = dev.f.Close()
+			if cerr := dev.f.Close(); cerr != nil {
+				logger.Warn("vault: closing container after a failed open", "error", cerr)
+			}
 		}
 	}()
 
 	if missing && opt.Create {
-		if err := Format(dev, dataSize); err != nil {
-			return nil, fmt.Errorf("vault: format new container: %w", err)
+		if ferr := Format(dev, dataSize); ferr != nil {
+			return nil, fmt.Errorf("vault: format new container: %w", ferr)
 		}
 	}
-	fsys, err := Mount(dev, dataSize)
+	fsys, err := Mount(dev, dataSize, clk)
 	if err != nil {
 		return nil, err
 	}
@@ -185,6 +196,7 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 		scratch:      scratch,
 		policy:       opt.Policy,
 		logger:       logger,
+		clk:          clk,
 		syntheticDev: syntheticDevFor(opt.Config.Container),
 		parts:        map[string]vfs.SafePath{},
 	}, nil
@@ -197,7 +209,9 @@ func Open(ctx context.Context, opt Options) (*Root, error) {
 // carries.
 func syntheticDevFor(container string) uint64 {
 	h := fnv.New64a()
-	_, _ = h.Write([]byte(container))
+	if _, err := h.Write([]byte(container)); err != nil {
+		panicInfallibleWrite(err)
+	}
 	return h.Sum64() | (1 << 63)
 }
 
@@ -296,16 +310,24 @@ func (r *Root) OpenRead(p vfs.SafePath, intent vfs.AccessIntent) (*vfs.File, err
 		return nil, err
 	}
 	if err := r.fs.ReadFile(p, &fileWriterAt{f: f}); err != nil {
-		_ = f.Close()
-		_ = r.scratch.Unlink(scratchPath)
+		if cerr := f.Close(); cerr != nil {
+			r.logger.Warn("vault: closing a materialized read after a failed copy", "error", cerr)
+		}
+		if uerr := r.scratch.Unlink(scratchPath); uerr != nil {
+			r.logger.Warn("vault: unlinking a materialized read after a failed copy", "error", uerr)
+		}
 		return nil, err
 	}
 	if err := r.scratch.Unlink(scratchPath); err != nil {
-		_ = f.Close()
+		if cerr := f.Close(); cerr != nil {
+			r.logger.Warn("vault: closing a materialized read after a failed unlink", "error", cerr)
+		}
 		return nil, err
 	}
 	if _, err := f.OSFile().Seek(0, io.SeekStart); err != nil {
-		_ = f.Close()
+		if cerr := f.Close(); cerr != nil {
+			r.logger.Warn("vault: closing a materialized read after a failed rewind", "error", cerr)
+		}
 		return nil, fmt.Errorf("vault: rewind materialized read: %w", err)
 	}
 	return f, nil
@@ -379,17 +401,21 @@ func (r *Root) WriteDurable(p vfs.SafePath, opt vfs.DurableOpts, write func(*vfs
 		return vfs.Durable{}, err
 	}
 	defer func() {
-		_ = f.Close()
-		_ = r.scratch.Unlink(scratchPath)
+		if cerr := f.Close(); cerr != nil {
+			r.logger.Warn("vault: closing a durable write's scratch file", "error", cerr)
+		}
+		if uerr := r.scratch.Unlink(scratchPath); uerr != nil {
+			r.logger.Warn("vault: unlinking a durable write's scratch file", "error", uerr)
+		}
 	}()
 
-	if err := write(f); err != nil {
-		return vfs.Durable{}, err
+	if werr := write(f); werr != nil {
+		return vfs.Durable{}, werr
 	}
-	if err := f.SyncData(); err != nil {
-		return vfs.Durable{}, err
+	if serr := f.SyncData(); serr != nil {
+		return vfs.Durable{}, serr
 	}
-	replaced, err := r.fs.WriteFileStaged(p, &fileReaderAt{f: f}, opt.NoClobber, time.Now().UnixNano())
+	replaced, err := r.fs.WriteFileStaged(p, &fileReaderAt{f: f}, opt.NoClobber, r.clk.Nanos())
 	if err != nil {
 		return vfs.Durable{}, err
 	}
@@ -408,10 +434,14 @@ func (r *Root) PublishPart(part, dest vfs.SafePath, replacing bool) (vfs.Durable
 		return vfs.Durable{}, err
 	}
 	defer func() {
-		_ = f.Close()
-		_ = r.scratch.Unlink(scratchPath)
+		if cerr := f.Close(); cerr != nil {
+			r.logger.Warn("vault: closing a published part's scratch file", "error", cerr)
+		}
+		if uerr := r.scratch.Unlink(scratchPath); uerr != nil {
+			r.logger.Warn("vault: unlinking a published part's scratch file", "error", uerr)
+		}
 	}()
-	replaced, err := r.fs.WriteFileStaged(dest, &fileReaderAt{f: f}, !replacing, time.Now().UnixNano())
+	replaced, err := r.fs.WriteFileStaged(dest, &fileReaderAt{f: f}, !replacing, r.clk.Nanos())
 	if err != nil {
 		return vfs.Durable{}, err
 	}

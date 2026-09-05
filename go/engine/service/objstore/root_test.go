@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 )
 
@@ -30,10 +31,20 @@ type fakeBucket struct {
 	mu      sync.Mutex
 	objects map[string][]byte
 	mtimes  map[string]time.Time
+	clk     clock.Clock
 }
 
 func newFakeBucket() *fakeBucket {
-	return &fakeBucket{objects: map[string][]byte{}, mtimes: map[string]time.Time{}}
+	return &fakeBucket{objects: map[string][]byte{}, mtimes: map[string]time.Time{}, clk: fixedTestClock()}
+}
+
+// fixedTestClock pins the fake bucket's write timestamps and the Root's own
+// signing clock to one instant: these tests read a modification time back
+// out of the bucket and compare it against a value they set, and a real
+// wall clock would make that comparison depend on what second the test
+// happened to run in.
+func fixedTestClock() clock.Clock {
+	return clock.Fixed(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC))
 }
 
 func newFakeS3Server(t *testing.T, bucket string) (*httptest.Server, *fakeBucket) {
@@ -93,7 +104,9 @@ func (b *fakeBucket) handleList(w http.ResponseWriter, r *http.Request) {
 	delimiter := q.Get("delimiter")
 	maxKeys := -1
 	if v := q.Get("max-keys"); v != "" {
-		maxKeys, _ = strconv.Atoi(v)
+		if n, err := strconv.Atoi(v); err == nil {
+			maxKeys = n
+		}
 	}
 
 	keys := make([]string, 0, len(b.objects))
@@ -128,24 +141,45 @@ func (b *fakeBucket) handleList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body strings.Builder
-	body.WriteString(`<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><IsTruncated>false</IsTruncated>`)
+	if _, err := body.WriteString(`<?xml version="1.0" encoding="UTF-8"?><ListBucketResult><IsTruncated>false</IsTruncated>`); err != nil {
+		panicInfallibleWrite(err)
+	}
 	for _, k := range contents {
-		fmt.Fprintf(&body, "<Contents><Key>%s</Key><LastModified>%s</LastModified><Size>%d</Size><ETag>&quot;x&quot;</ETag></Contents>",
-			xmlEscape(k), b.mtimes[k].UTC().Format(time.RFC3339), len(b.objects[k]))
+		if _, err := fmt.Fprintf(&body, "<Contents><Key>%s</Key><LastModified>%s</LastModified><Size>%d</Size><ETag>&quot;x&quot;</ETag></Contents>",
+			xmlEscape(k), b.mtimes[k].UTC().Format(time.RFC3339), len(b.objects[k])); err != nil {
+			panicInfallibleWrite(err)
+		}
 	}
 	for _, cp := range commonPrefixes {
-		fmt.Fprintf(&body, "<CommonPrefixes><Prefix>%s</Prefix></CommonPrefixes>", xmlEscape(cp))
+		if _, err := fmt.Fprintf(&body, "<CommonPrefixes><Prefix>%s</Prefix></CommonPrefixes>", xmlEscape(cp)); err != nil {
+			panicInfallibleWrite(err)
+		}
 	}
-	body.WriteString(`</ListBucketResult>`)
+	if _, err := body.WriteString(`</ListBucketResult>`); err != nil {
+		panicInfallibleWrite(err)
+	}
 
 	w.Header().Set("Content-Type", "application/xml")
-	_, _ = w.Write([]byte(body.String()))
+	mustWriteTestResponse(w, []byte(body.String()))
 }
 
 func xmlEscape(s string) string {
 	var b strings.Builder
-	_ = xml.EscapeText(&b, []byte(s))
+	if err := xml.EscapeText(&b, []byte(s)); err != nil {
+		panicInfallibleWrite(err)
+	}
 	return b.String()
+}
+
+// mustWriteTestResponse panics if a write to a fake S3 response fails. This
+// server runs entirely in process over a loopback connection, so a failed
+// write means the test transport itself broke, not something a scenario
+// under test can trigger, and a silently truncated fixture response would
+// otherwise be far harder for a failing test to explain.
+func mustWriteTestResponse(w io.Writer, p []byte) {
+	if _, err := w.Write(p); err != nil {
+		panic("objstore: fakeBucket: writing test response: " + err.Error())
+	}
 }
 
 func (b *fakeBucket) handleHead(w http.ResponseWriter, key string) {
@@ -167,10 +201,10 @@ func (b *fakeBucket) handleGet(w http.ResponseWriter, key string) {
 	b.mu.Unlock()
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`<Error><Code>NoSuchKey</Code><Message>not found</Message></Error>`))
+		mustWriteTestResponse(w, []byte(`<Error><Code>NoSuchKey</Code><Message>not found</Message></Error>`))
 		return
 	}
-	_, _ = w.Write(content)
+	mustWriteTestResponse(w, content)
 }
 
 func (b *fakeBucket) handlePut(w http.ResponseWriter, r *http.Request, key string) {
@@ -181,7 +215,7 @@ func (b *fakeBucket) handlePut(w http.ResponseWriter, r *http.Request, key strin
 	}
 	b.mu.Lock()
 	b.objects[key] = data
-	b.mtimes[key] = time.Now()
+	b.mtimes[key] = b.clk.Now()
 	b.mu.Unlock()
 	w.Header().Set("ETag", `"x"`)
 	w.WriteHeader(http.StatusOK)
@@ -211,16 +245,16 @@ func (b *fakeBucket) handleCopy(w http.ResponseWriter, r *http.Request, destKey 
 	content, ok := b.objects[srcKey]
 	if ok {
 		b.objects[destKey] = content
-		b.mtimes[destKey] = time.Now()
+		b.mtimes[destKey] = b.clk.Now()
 	}
 	b.mu.Unlock()
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`<Error><Code>NoSuchKey</Code><Message>not found</Message></Error>`))
+		mustWriteTestResponse(w, []byte(`<Error><Code>NoSuchKey</Code><Message>not found</Message></Error>`))
 		return
 	}
 	w.Header().Set("Content-Type", "application/xml")
-	_, _ = w.Write([]byte(`<CopyObjectResult><ETag>"x"</ETag></CopyObjectResult>`))
+	mustWriteTestResponse(w, []byte(`<CopyObjectResult><ETag>"x"</ETag></CopyObjectResult>`))
 }
 
 func openTestRoot(t *testing.T, endpoint, bucket, prefix string) *Root {
@@ -238,11 +272,16 @@ func openTestRoot(t *testing.T, endpoint, bucket, prefix string) *Root {
 		Secret:     secret.New([]byte("supersecretkey")),
 		ScratchDir: t.TempDir(),
 		Policy:     vfs.DefaultSharePolicy(),
+		Clock:      fixedTestClock(),
 	})
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	t.Cleanup(func() { _ = root.Close() })
+	t.Cleanup(func() {
+		if cerr := root.Close(); cerr != nil {
+			t.Errorf("closing: %v", cerr)
+		}
+	})
 	return root
 }
 
@@ -279,11 +318,14 @@ func TestRootEndToEnd(t *testing.T) {
 		t.Fatalf("OpenRead: %v", err)
 	}
 	got := make([]byte, 64)
-	n, _ := rf.ReadAt(got, 0)
+	n, err := rf.ReadAt(got, 0)
+	if err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("ReadAt: %v", err)
+	}
 	if string(got[:n]) != "hello world" {
 		t.Fatalf("content = %q, want %q", got[:n], "hello world")
 	}
-	if err := rf.Close(); err != nil {
+	if err = rf.Close(); err != nil {
 		t.Fatalf("close read handle: %v", err)
 	}
 
@@ -396,7 +438,7 @@ func TestRootRmdirRefusesANonEmptyDirectory(t *testing.T) {
 func TestReadDirListsAPrefixWithChildrenButNoMarker(t *testing.T) {
 	srv, fb := newFakeS3Server(t, "bucket-nomarker")
 	fb.objects["a/b.txt"] = []byte("x")
-	fb.mtimes["a/b.txt"] = time.Now()
+	fb.mtimes["a/b.txt"] = fb.clk.Now()
 
 	root := openTestRoot(t, srv.URL, "bucket-nomarker", "")
 	entries, err := root.ReadDir(vfs.RootPath(), vfs.HideReserved)
@@ -413,9 +455,9 @@ func TestReadDirListsAPrefixWithChildrenButNoMarker(t *testing.T) {
 func TestReadDirHidesADirectoryMarkerFromItsParent(t *testing.T) {
 	srv, fb := newFakeS3Server(t, "bucket-marker")
 	fb.objects["a/"] = []byte{}
-	fb.mtimes["a/"] = time.Now()
+	fb.mtimes["a/"] = fb.clk.Now()
 	fb.objects["a/child.txt"] = []byte("x")
-	fb.mtimes["a/child.txt"] = time.Now()
+	fb.mtimes["a/child.txt"] = fb.clk.Now()
 
 	root := openTestRoot(t, srv.URL, "bucket-marker", "")
 	entries, err := root.ReadDir(vfs.RootPath(), vfs.HideReserved)
@@ -453,7 +495,7 @@ func TestStatReportsADirectoryTimeFromItsMarkerAndNoneWithout(t *testing.T) {
 	fb.objects["marked/"] = []byte{}
 	fb.mtimes["marked/"] = marked
 	fb.objects["bare/file.txt"] = []byte("x")
-	fb.mtimes["bare/file.txt"] = time.Now()
+	fb.mtimes["bare/file.txt"] = fb.clk.Now()
 
 	root := openTestRoot(t, srv.URL, "bucket-dirtime", "")
 

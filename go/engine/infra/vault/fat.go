@@ -16,7 +16,31 @@ import (
 	"fmt"
 	"io"
 	"sync"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/clock"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 )
+
+// panicInfallibleWrite stops the process when a write into a hash.Hash or a
+// strings.Builder fails. Both types document their Write methods as never
+// returning an error, so a non-nil one here means that guarantee broke, and
+// whatever this driver was building from the write would already be wrong.
+func panicInfallibleWrite(err error) {
+	panic("vault: an infallible write failed: " + err.Error())
+}
+
+// mustNarrow converts v to a narrower field this driver's own arithmetic
+// has already bounded, either by a clamp right above the call or by the
+// caller's documented range. A value that still did not fit is this
+// driver's own bookkeeping gone wrong, not input a caller could usefully
+// recover from.
+func mustNarrow[To, From num.Integer](v From, what string) To {
+	n, err := num.Narrow[To](v)
+	if err != nil {
+		panic("vault: " + what + " out of range: " + err.Error())
+	}
+	return n
+}
 
 // Device is the random-access byte space the FAT driver reads and writes.
 // A *volume satisfies it over a VeraCrypt container's decrypted data area;
@@ -93,6 +117,11 @@ type FS struct {
 
 	freeCount uint32
 	nextFree  uint32
+
+	// clk supplies the timestamps Mkdir and CreateFile stamp into a fresh
+	// entry when the caller does not already have one to hand (WriteFileStaged
+	// and Truncate take mtimeNs from their own caller instead).
+	clk clock.Clock
 }
 
 func (fs *FS) bytesPerCluster() uint32 { return fs.bpb.bytesPerSector * fs.bpb.sectorsPerCluster }
@@ -126,10 +155,6 @@ func (fs *FS) writeAt(p []byte, off int64) error {
 		return err
 	}
 	return io.ErrShortWrite
-}
-
-func (fs *FS) readCluster(c uint32, buf []byte) error {
-	return fs.readAt(buf, fs.clusterOffset(c))
 }
 
 func (fs *FS) writeCluster(c uint32, buf []byte) error {
@@ -235,7 +260,7 @@ func parseBPB(sector []byte, sizeBytes uint64) (bpb32, error) {
 // Mount reads and validates the boot sector of dev, sized sizeBytes, and
 // brings up the free-cluster accounting FSInfo carries (or, when FSInfo
 // reports "unknown," by scanning the FAT once).
-func Mount(dev Device, sizeBytes uint64) (*FS, error) {
+func Mount(dev Device, sizeBytes uint64, clk clock.Clock) (*FS, error) {
 	sector := make([]byte, 512)
 	if err := (&FS{dev: dev}).readAt(sector, 0); err != nil {
 		return nil, fmt.Errorf("vault: read boot sector: %w", err)
@@ -244,11 +269,15 @@ func Mount(dev Device, sizeBytes uint64) (*FS, error) {
 	if err != nil {
 		return nil, err
 	}
+	if clk == nil {
+		clk = clock.System()
+	}
 	fs := &FS{
 		dev:             dev,
 		bpb:             bpb,
 		dataStartSector: bpb.reservedSectors + bpb.numFATs*bpb.fatSize,
 		totalClusters:   (bpb.totalSectors - (bpb.reservedSectors + bpb.numFATs*bpb.fatSize)) / bpb.sectorsPerCluster,
+		clk:             clk,
 	}
 	if err := fs.loadFSInfo(); err != nil {
 		return nil, err
@@ -417,10 +446,13 @@ func (fs *FS) chainClusters(start uint32) ([]uint32, error) {
 	}
 	clusters := make([]uint32, 0, 8)
 	c := start
-	limit := fs.totalClusters + 2
+	limit, nerr := num.Narrow[int](fs.totalClusters + 2)
+	if nerr != nil {
+		return nil, fmt.Errorf("vault: volume cluster count out of range: %w", nerr)
+	}
 	for {
 		clusters = append(clusters, c)
-		if uint32(len(clusters)) > limit {
+		if len(clusters) > limit {
 			return nil, fmt.Errorf("vault: cluster chain longer than the volume, probably cyclic")
 		}
 		next, err := fs.getFATEntry(c)
@@ -445,7 +477,11 @@ func (fs *FS) allocateClusters(n int) ([]uint32, error) {
 	if n == 0 {
 		return nil, nil
 	}
-	if uint32(n) > fs.freeCount {
+	need, nerr := num.Narrow[uint32](n)
+	if nerr != nil {
+		return nil, fmt.Errorf("vault: allocate %d clusters: %w", n, nerr)
+	}
+	if need > fs.freeCount {
 		return nil, ErrNoSpaceOnVolume
 	}
 	found := make([]uint32, 0, n)
@@ -482,7 +518,7 @@ func (fs *FS) allocateClusters(n int) ([]uint32, error) {
 			return nil, err
 		}
 	}
-	fs.freeCount -= uint32(n)
+	fs.freeCount -= need
 	fs.nextFree = c
 	return found, nil
 }
@@ -522,7 +558,7 @@ func (fs *FS) freeChain(start uint32) error {
 			return err
 		}
 	}
-	fs.freeCount += uint32(len(clusters))
+	fs.freeCount += mustNarrow[uint32](len(clusters), "freed cluster count")
 	return nil
 }
 
@@ -648,15 +684,34 @@ func zeroRegion(dev Device, off int64, n int64) error {
 
 // encodeBootSector lays out the 512-byte FAT32 boot sector Format writes,
 // identically for the primary copy at sector 0 and the backup copy at
-// backupBootSector.
-func encodeBootSector(bpb bpb32) []byte {
+// backupBootSector. Every field narrower on disk than bpb's own uint32 is
+// bounded before it goes in: Format's own values always fit, but a value
+// that ever grew past the on-disk field's width would otherwise wrap into a
+// different, silently wrong geometry rather than being refused.
+func encodeBootSector(bpb bpb32) ([]byte, error) {
 	sector := make([]byte, 512)
 	sector[0], sector[1], sector[2] = 0xEB, 0x58, 0x90
 	copy(sector[3:11], "STOWFAT ")
-	binary.LittleEndian.PutUint16(sector[11:13], uint16(bpb.bytesPerSector))
-	sector[13] = byte(bpb.sectorsPerCluster)
-	binary.LittleEndian.PutUint16(sector[14:16], uint16(bpb.reservedSectors))
-	sector[16] = byte(bpb.numFATs)
+	bytesPerSector, err := num.Narrow[uint16](bpb.bytesPerSector)
+	if err != nil {
+		return nil, fmt.Errorf("vault: bytes per sector: %w", err)
+	}
+	binary.LittleEndian.PutUint16(sector[11:13], bytesPerSector)
+	sectorsPerCluster, err := num.Narrow[byte](bpb.sectorsPerCluster)
+	if err != nil {
+		return nil, fmt.Errorf("vault: sectors per cluster: %w", err)
+	}
+	sector[13] = sectorsPerCluster
+	reservedSectors, err := num.Narrow[uint16](bpb.reservedSectors)
+	if err != nil {
+		return nil, fmt.Errorf("vault: reserved sectors: %w", err)
+	}
+	binary.LittleEndian.PutUint16(sector[14:16], reservedSectors)
+	numFATs, err := num.Narrow[byte](bpb.numFATs)
+	if err != nil {
+		return nil, fmt.Errorf("vault: number of FATs: %w", err)
+	}
+	sector[16] = numFATs
 	// RootEntryCount, TotalSectors16 and FATSize16 all stay zero: that
 	// triple is what marks this a FAT32 BPB rather than FAT12/FAT16.
 	sector[21] = 0xF8 // fixed-disk media descriptor
@@ -665,15 +720,23 @@ func encodeBootSector(bpb bpb32) []byte {
 	binary.LittleEndian.PutUint32(sector[32:36], bpb.totalSectors)
 	binary.LittleEndian.PutUint32(sector[36:40], bpb.fatSize)
 	binary.LittleEndian.PutUint32(sector[44:48], bpb.rootCluster)
-	binary.LittleEndian.PutUint16(sector[48:50], uint16(bpb.fsInfoSector))
-	binary.LittleEndian.PutUint16(sector[50:52], uint16(bpb.backupBootSector))
+	fsInfoSector, err := num.Narrow[uint16](bpb.fsInfoSector)
+	if err != nil {
+		return nil, fmt.Errorf("vault: FSInfo sector: %w", err)
+	}
+	binary.LittleEndian.PutUint16(sector[48:50], fsInfoSector)
+	backupBootSector, err := num.Narrow[uint16](bpb.backupBootSector)
+	if err != nil {
+		return nil, fmt.Errorf("vault: backup boot sector: %w", err)
+	}
+	binary.LittleEndian.PutUint16(sector[50:52], backupBootSector)
 	sector[64] = 0x80 // fixed disk
 	sector[66] = 0x29 // boot signature, marks VolumeID/Label/FileSystemType present
 	binary.LittleEndian.PutUint32(sector[67:71], bpb.volumeID)
 	copy(sector[71:82], bpb.label[:])
 	copy(sector[82:90], "FAT32   ")
 	sector[510], sector[511] = 0x55, 0xAA
-	return sector
+	return sector, nil
 }
 
 // Format writes a fresh FAT32 filesystem into dev, sized sizeBytes: boot
@@ -700,8 +763,8 @@ func Format(dev Device, sizeBytes uint64) error {
 	}
 
 	var volumeID [4]byte
-	if _, err := rand.Read(volumeID[:]); err != nil {
-		return fmt.Errorf("vault: generate volume id: %w", err)
+	if _, rerr := rand.Read(volumeID[:]); rerr != nil {
+		return fmt.Errorf("vault: generate volume id: %w", rerr)
 	}
 
 	bpb := bpb32{
@@ -730,7 +793,10 @@ func Format(dev Device, sizeBytes uint64) error {
 		totalClusters:   totalClusters,
 	}
 
-	boot := encodeBootSector(bpb)
+	boot, err := encodeBootSector(bpb)
+	if err != nil {
+		return err
+	}
 	if err := fsys.writeAt(boot, fsys.sectorOffset(0)); err != nil {
 		return fmt.Errorf("vault: write boot sector: %w", err)
 	}

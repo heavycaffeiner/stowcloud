@@ -401,11 +401,11 @@ func TestUpdateShareDoesNotClobberTheSecret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InsertShare: %v", err)
 	}
-	if err := d.UpdateShareSecret(ctx, rowid, []byte("sealed-bytes"), 3); err != nil {
+	if err = d.UpdateShareSecret(ctx, rowid, []byte("sealed-bytes"), 3); err != nil {
 		t.Fatalf("UpdateShareSecret: %v", err)
 	}
 
-	if err := d.UpdateShare(ctx, rowid, state.ShareRow{
+	if err = d.UpdateShare(ctx, rowid, state.ShareRow{
 		Name: "renamed", Backend: "s3", BackendConfig: `{"bucket":"b2"}`, SymlinkPolicy: "deny",
 	}); err != nil {
 		t.Fatalf("UpdateShare: %v", err)

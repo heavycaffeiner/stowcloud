@@ -1,3 +1,5 @@
+//go:build linux
+
 package vault
 
 import (
@@ -52,8 +54,8 @@ func TestRootEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Join docs: %v", err)
 	}
-	if err := root.Mkdir(docsDir); err != nil {
-		t.Fatalf("Mkdir docs: %v", err)
+	if merr := root.Mkdir(docsDir); merr != nil {
+		t.Fatalf("Mkdir docs: %v", merr)
 	}
 	filePath, err := docsDir.Join("report.txt")
 	if err != nil {
@@ -61,8 +63,8 @@ func TestRootEndToEnd(t *testing.T) {
 	}
 	content := []byte("quarterly report content, written through vfs.Root")
 	durable, err := root.WriteDurable(filePath, vfs.DurableOpts{Mode: 0o664}, func(f *vfs.File) error {
-		_, err := f.WriteAt(content, 0)
-		return err
+		_, werr := f.WriteAt(content, 0)
+		return werr
 	})
 	if err != nil {
 		t.Fatalf("WriteDurable: %v", err)
@@ -93,11 +95,11 @@ func TestRootEndToEnd(t *testing.T) {
 		t.Fatalf("OpenRead: %v", err)
 	}
 	gotContent := make([]byte, len(content))
-	if _, err := io.ReadFull(readHandle.OSFile(), gotContent); err != nil {
-		t.Fatalf("read materialized file: %v", err)
+	if _, rerr := io.ReadFull(readHandle.OSFile(), gotContent); rerr != nil {
+		t.Fatalf("read materialized file: %v", rerr)
 	}
-	if err := readHandle.Close(); err != nil {
-		t.Fatalf("close materialized file: %v", err)
+	if cerr := readHandle.Close(); cerr != nil {
+		t.Fatalf("close materialized file: %v", cerr)
 	}
 	if !bytes.Equal(gotContent, content) {
 		t.Fatalf("materialized content = %q, want %q", gotContent, content)
@@ -111,8 +113,8 @@ func TestRootEndToEnd(t *testing.T) {
 		t.Fatalf("ReadDir docs = %+v, want exactly report.txt", entries)
 	}
 
-	if err := root.SetTimes(filePath, 1_600_000_000_000_000_000); err != nil {
-		t.Fatalf("SetTimes: %v", err)
+	if terr := root.SetTimes(filePath, 1_600_000_000_000_000_000); terr != nil {
+		t.Fatalf("SetTimes: %v", terr)
 	}
 	st, err = root.Stat(filePath)
 	if err != nil {
@@ -128,11 +130,11 @@ func TestRootEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Join moved.txt: %v", err)
 	}
-	if err := root.Rename(filePath, movedPath, true); err != nil {
-		t.Fatalf("Rename: %v", err)
+	if rnerr := root.Rename(filePath, movedPath, true); rnerr != nil {
+		t.Fatalf("Rename: %v", rnerr)
 	}
-	if _, err := root.Stat(filePath); !errors.Is(err, vfs.ErrNotFound) {
-		t.Fatalf("Stat(old path) after rename = %v, want ErrNotFound", err)
+	if _, serr := root.Stat(filePath); !errors.Is(serr, vfs.ErrNotFound) {
+		t.Fatalf("Stat(old path) after rename = %v, want ErrNotFound", serr)
 	}
 
 	// CreatePart / PublishPart: the upload engine's two-phase write.
@@ -145,28 +147,28 @@ func TestRootEndToEnd(t *testing.T) {
 		t.Fatalf("CreatePart: %v", err)
 	}
 	partContent := bytes.Repeat([]byte("part"), 4096)
-	if _, err := partHandle.WriteAt(partContent, 0); err != nil {
-		t.Fatalf("write part: %v", err)
+	if _, werr := partHandle.WriteAt(partContent, 0); werr != nil {
+		t.Fatalf("write part: %v", werr)
 	}
-	if err := partHandle.SyncData(); err != nil {
-		t.Fatalf("sync part: %v", err)
+	if serr := partHandle.SyncData(); serr != nil {
+		t.Fatalf("sync part: %v", serr)
 	}
-	if err := partHandle.Close(); err != nil {
-		t.Fatalf("close part: %v", err)
+	if cerr := partHandle.Close(); cerr != nil {
+		t.Fatalf("close part: %v", cerr)
 	}
-	if _, err := root.PublishPart(partDest, partDest, false); err != nil {
-		t.Fatalf("PublishPart: %v", err)
+	if _, perr := root.PublishPart(partDest, partDest, false); perr != nil {
+		t.Fatalf("PublishPart: %v", perr)
 	}
 	published, err := root.OpenRead(partDest, vfs.IntentRead)
 	if err != nil {
 		t.Fatalf("OpenRead published part: %v", err)
 	}
 	gotPart := make([]byte, len(partContent))
-	if _, err := io.ReadFull(published.OSFile(), gotPart); err != nil {
-		t.Fatalf("read published part: %v", err)
+	if _, rerr := io.ReadFull(published.OSFile(), gotPart); rerr != nil {
+		t.Fatalf("read published part: %v", rerr)
 	}
-	if err := published.Close(); err != nil {
-		t.Fatalf("close published part: %v", err)
+	if cerr := published.Close(); cerr != nil {
+		t.Fatalf("close published part: %v", cerr)
 	}
 	if !bytes.Equal(gotPart, partContent) {
 		t.Fatalf("published part content mismatch")
@@ -180,13 +182,17 @@ func TestRootEndToEnd(t *testing.T) {
 		t.Fatalf("Space = %+v, out of range", space)
 	}
 
-	if err := root.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
+	if cerr := root.Close(); cerr != nil {
+		t.Fatalf("Close: %v", cerr)
 	}
 
 	// Reopening without Create must find the same content still there.
 	root2 := openTestRoot(t, containerPath, false, 0)
-	defer func() { _ = root2.Close() }()
+	defer func() {
+		if cerr := root2.Close(); cerr != nil {
+			t.Errorf("closing reopened root: %v", cerr)
+		}
+	}()
 	st2, err := root2.Stat(movedPath)
 	if err != nil {
 		t.Fatalf("Stat(movedPath) after reopen: %v", err)

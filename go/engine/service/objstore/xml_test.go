@@ -103,11 +103,17 @@ func TestParseListBucketResultRefusesHostileResponses(t *testing.T) {
 
 func hostileManyKeysXML(n int) string {
 	var b strings.Builder
-	b.WriteString("<ListBucketResult>")
-	for i := 0; i < n; i++ {
-		b.WriteString("<Contents><Key>k</Key></Contents>")
+	if _, err := b.WriteString("<ListBucketResult>"); err != nil {
+		panicInfallibleWrite(err)
 	}
-	b.WriteString("</ListBucketResult>")
+	for range n {
+		if _, err := b.WriteString("<Contents><Key>k</Key></Contents>"); err != nil {
+			panicInfallibleWrite(err)
+		}
+	}
+	if _, err := b.WriteString("</ListBucketResult>"); err != nil {
+		panicInfallibleWrite(err)
+	}
 	return b.String()
 }
 

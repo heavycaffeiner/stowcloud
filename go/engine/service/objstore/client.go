@@ -122,7 +122,13 @@ type s3ErrorXML struct {
 // still resolves correctly against the other.
 func classifyS3Error(status int, body []byte) error {
 	var e s3ErrorXML
-	_ = xml.Unmarshal(body, &e)
+	if err := xml.Unmarshal(body, &e); err != nil {
+		// A body that fails to parse leaves e at its zero value: Code and
+		// Message stay empty, which the default case below still turns
+		// into a refusal, so a malformed error body from a broken endpoint
+		// is never mistaken for success.
+		e = s3ErrorXML{}
+	}
 	detail := describeS3Error(status, e)
 	switch {
 	case status == http.StatusNotFound, e.Code == "NoSuchKey", e.Code == "NoSuchBucket":
