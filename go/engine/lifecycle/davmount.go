@@ -270,7 +270,12 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 			return
 		}
 		if rest, ok := strings.CutPrefix(path, DavTrashPrefix); ok {
-			e.serveDavTrash(w, r, user, rest)
+			p, pok := r.Context().Value(middleware.KeyCredential).(middleware.Principal)
+			if !pok || p.UserID == 0 {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			e.serveDavTrash(w, r, p, rest)
 			return
 		}
 
@@ -430,10 +435,24 @@ func (e *Engine) resolveDav(
 	if rerr != nil {
 		return res, rerr
 	}
-	if p, ok := r.Context().Value(middleware.KeyCredential).(middleware.Principal); ok && !p.Mask.IsEmpty() {
-		res = res.WithMask(p.Mask)
-		if !res.Has(want) {
-			return core.Resolved{}, core.ErrDenied
+	if p, ok := r.Context().Value(middleware.KeyCredential).(middleware.Principal); ok {
+		if len(p.Shares) > 0 && len(parts) > 0 {
+			allowed := false
+			for _, s := range p.Shares {
+				if s == parts[0] {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				return core.Resolved{}, core.ErrNotFound
+			}
+		}
+		if !p.Mask.IsEmpty() {
+			res = res.WithMask(p.Mask)
+			if !res.Has(want) {
+				return core.Resolved{}, core.ErrDenied
+			}
 		}
 	}
 	return res, nil

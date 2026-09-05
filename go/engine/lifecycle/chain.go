@@ -165,6 +165,7 @@ func (e *Engine) ResolvePrincipal(c middleware.Credential) (middleware.Principal
 			UserID:        p.UserID,
 			Kind:          c.Kind,
 			Mask:          acl.Perms(scope.Perms),
+			Shares:        scope.Shares,
 			AppPasswordID: id,
 		}, true
 

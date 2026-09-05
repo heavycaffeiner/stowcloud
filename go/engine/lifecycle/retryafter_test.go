@@ -62,7 +62,7 @@ func TestASpoolRefusalCarriesItsOwnDelay(t *testing.T) {
 
 func httpGet(t *testing.T, path string) *http.Request {
 	t.Helper()
-	req, err := http.NewRequest(http.MethodGet, path, nil)
+	req, err := http.NewRequest(http.MethodGet, "http://localhost"+path, nil)
 	if err != nil {
 		t.Fatalf("building the request: %v", err)
 	}

@@ -36,6 +36,8 @@ type Principal struct {
 	// Mask is the app password's permission mask. A session has every bit,
 	// because a session is the account itself rather than a delegation of it.
 	Mask acl.Perms
+	// Shares is the app password's allowed root share labels. Empty means every share.
+	Shares []string
 	// AppPasswordID identifies the verified app password. Sessions leave it
 	// zero because no app credential issued the request.
 	AppPasswordID int64

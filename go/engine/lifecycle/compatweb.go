@@ -255,10 +255,27 @@ func (e *Engine) resolveCompat(c *fiber.Ctx, user core.UserID, path string, want
 	if err != nil {
 		return res, err
 	}
-	if p, ok := c.Locals(middleware.KeyCredential).(middleware.Principal); ok && !p.Mask.IsEmpty() {
-		res = res.WithMask(p.Mask)
-		if !res.Has(want) {
-			return core.Resolved{}, core.ErrDenied
+	if p, ok := c.Locals(middleware.KeyCredential).(middleware.Principal); ok {
+		if len(p.Shares) > 0 {
+			vp, perr := vfs.ParseVpath(path)
+			if perr == nil && vp.Label() != "" {
+				allowed := false
+				for _, s := range p.Shares {
+					if s == vp.Label() {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					return core.Resolved{}, core.ErrNotFound
+				}
+			}
+		}
+		if !p.Mask.IsEmpty() {
+			res = res.WithMask(p.Mask)
+			if !res.Has(want) {
+				return core.Resolved{}, core.ErrDenied
+			}
 		}
 	}
 	return res, nil

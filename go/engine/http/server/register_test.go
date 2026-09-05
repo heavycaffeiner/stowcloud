@@ -84,7 +84,9 @@ func TestEachRouteDispatchesToItsOwnHandler(t *testing.T) {
 			continue
 		}
 
-		res, err := app.Test(httptest.NewRequest(r.Method, "http://app.test"+concrete, nil), -1)
+		req := httptest.NewRequest(r.Method, "http://app.test"+concrete, nil)
+		req.RequestURI = ""
+		res, err := app.Test(req, -1)
 		if err != nil {
 			t.Fatalf("%s %s: %v", r.Method, concrete, err)
 		}
@@ -167,7 +169,9 @@ func TestEachRouteCarriesItsOwnMetadata(t *testing.T) {
 
 	for _, r := range []route.Route{public, session} {
 		concrete := concretePath(r.Path)
-		res, err := app.Test(httptest.NewRequest(r.Method, "http://app.test"+concrete, nil), -1)
+		req := httptest.NewRequest(r.Method, "http://app.test"+concrete, nil)
+		req.RequestURI = ""
+		res, err := app.Test(req, -1)
 		if err != nil {
 			t.Fatalf("%s: %v", r.Name, err)
 		}

@@ -206,7 +206,9 @@ func TestTheTraceHeaderIsOnEveryResponse(t *testing.T) {
 		{"a served request", "app.example.test"},
 		{"a refused host", "evil.example.test"},
 	} {
-		res, err := app.Test(httptest.NewRequest("GET", "http://"+c.host+"/x", nil), -1)
+		req := httptest.NewRequest("GET", "http://"+c.host+"/x", nil)
+		req.RequestURI = ""
+		res, err := app.Test(req, -1)
 		if err != nil {
 			t.Fatalf("Test: %v", err)
 		}

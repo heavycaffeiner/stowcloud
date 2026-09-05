@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
@@ -28,7 +29,7 @@ func (e *Engine) davVendorProps() func(
 	return nil
 }
 func (e *Engine) davSources() []dav.QuerySource                                         { return nil }
-func (e *Engine) serveDavTrash(http.ResponseWriter, *http.Request, core.UserID, string) {}
+func (e *Engine) serveDavTrash(http.ResponseWriter, *http.Request, middleware.Principal, string) {}
 
 func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop, []dav.RootChild) {
 	roots := e.Core.Roots(user)

@@ -192,11 +192,6 @@ func (d *DB) CreateOIDCLink(ctx context.Context, user int64, issuer, subject str
 		if _, derr := tx.ExecContext(ctx, sqlDeleteOIDCLinkByUser, user); derr != nil {
 			return derr
 		}
-		// Disables local password authentication for the account now that the
-		// external provider credential replaces it.
-		if _, perr := tx.ExecContext(ctx, sqlUpdateAccountPassword, "", user); perr != nil {
-			return perr
-		}
 		// Also clears any stored SMB NT hash so stale credentials do not survive.
 		if _, serr := tx.ExecContext(ctx, sqlDeleteSMBSecret, user); serr != nil {
 			return serr

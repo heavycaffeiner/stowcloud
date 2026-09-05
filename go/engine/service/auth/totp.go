@@ -154,6 +154,38 @@ func (s *Service) VerifyTOTP(ctx context.Context, userID int64, code string, now
 	return claimed, nil
 }
 
+// VerifyCandidateTOTP checks whether a candidate un-enrolled secret produces the
+// presented code without altering the stored factor.
+func (s *Service) VerifyCandidateTOTP(secretB32, code string, nowNs int64) (bool, error) {
+	if len(code) != totpDigits {
+		return false, nil
+	}
+	raw, err := totpEncoding().DecodeString(secretB32)
+	if err != nil {
+		return false, fmt.Errorf("the second-factor secret is not valid Base32: %w", err)
+	}
+	if len(raw) == 0 {
+		return false, errors.New("the second-factor secret is empty")
+	}
+	defer zero(raw)
+
+	nowStep := nowNs / (totpStepSeconds * 1e9)
+	for off := int64(-totpWindow); off <= totpWindow; off++ {
+		step := nowStep + off
+		if step < 0 {
+			continue
+		}
+		want, cerr := totpAt(raw, step)
+		if cerr != nil {
+			return false, cerr
+		}
+		if subtle.ConstantTimeCompare([]byte(want), []byte(code)) == 1 {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // totpAt computes the code for a secret at one step.
 func totpAt(secretBytes []byte, step int64) (string, error) {
 	counterValue, err := num.Narrow[uint64](step)

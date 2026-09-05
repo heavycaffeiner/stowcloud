@@ -44,7 +44,9 @@ func shellApp(t *testing.T) *fiber.App {
 // ask returns the status and body for a path.
 func ask(t *testing.T, app *fiber.App, path string) (int, string) {
 	t.Helper()
-	res, err := app.Test(httptest.NewRequest("GET", "http://app.test"+path, nil), -1)
+	req := httptest.NewRequest("GET", "http://app.test"+path, nil)
+	req.RequestURI = ""
+	res, err := app.Test(req, -1)
 	if err != nil {
 		t.Fatalf("Test %s: %v", path, err)
 	}

@@ -185,7 +185,8 @@ func (e *Engine) accountAppPasswordCreate(c *fiber.Ctx) error {
 	if req.Name == "" {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 	}
-	if req.ExpiresInDays < 0 {
+	const maxAppPasswordExpiryDays = 36500
+	if req.ExpiresInDays < 0 || req.ExpiresInDays > maxAppPasswordExpiryDays {
 		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 	}
 	scope, ok := scopeOf(req.Scope)
@@ -293,26 +294,20 @@ func (e *Engine) accountTOTPEnroll(c *fiber.Ctx) error {
 		return rerr
 	}
 
-	// The secret is enrolled first and checked second, because verification
-	// reads what is stored. A code that does not verify undoes the enrolment,
-	// so the account is never left holding a factor it cannot produce.
-	if err := e.Auth.EnrollTOTP(c.UserContext(), int64(owner), req.Secret); err != nil {
-		return failKnown(c, err)
-	}
-
-	accepted, err := e.Auth.VerifyTOTP(c.UserContext(), int64(owner), req.Code, e.clock.Nanos())
+	// Verify the candidate code against the candidate secret first, so an
+	// invalid code never touches or disables an existing enrolled factor.
+	accepted, err := e.Auth.VerifyCandidateTOTP(req.Secret, req.Code, e.clock.Nanos())
 	if err != nil {
 		return failKnown(c, err)
 	}
 	if !accepted {
-		if derr := e.Auth.DisableTOTP(c.UserContext(), int64(owner)); derr != nil {
-			// The enrolment stands and the code did not verify, which is the
-			// lockout this ordering exists to prevent. Reported rather than
-			// hidden behind the code refusal.
-			return failKnown(c, derr)
-		}
 		return refuse(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
 	}
+
+	if err := e.Auth.EnrollTOTP(c.UserContext(), int64(owner), req.Secret); err != nil {
+		return failKnown(c, err)
+	}
+	_, _ = e.Auth.VerifyTOTP(c.UserContext(), int64(owner), req.Code, e.clock.Nanos())
 
 	codes, err := e.Auth.GenerateRecoveryCodes(c.UserContext(), int64(owner), recoveryCodeCount)
 	if err != nil {

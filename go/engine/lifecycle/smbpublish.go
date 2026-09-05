@@ -200,31 +200,71 @@ func publishGrants(ctx context.Context, st *state.DB) ([]publish.Grant, error) {
 	if err != nil {
 		return nil, err
 	}
-	return grantsOf(rows), nil
+	memberships, err := st.Memberships(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return grantsOf(rows, memberships), nil
 }
 
 // grantsOf is the mapping itself, separated from the read so the collapse can
 // be checked without a database behind it.
-func grantsOf(rows []state.GrantRow) []publish.Grant {
+func grantsOf(rows []state.GrantRow, memberships ...[]state.MembershipRow) []publish.Grant {
+	groupUsers := make(map[int64][]int64)
+	if len(memberships) > 0 {
+		for _, m := range memberships[0] {
+			groupUsers[m.Group] = append(groupUsers[m.Group], m.User)
+		}
+	}
 	out := make([]publish.Grant, 0, len(rows))
 	for _, r := range rows {
-		var user int64
-		if r.User != nil {
-			user = *r.User
-		}
 		allow, deny := acl.Perms(r.Allow), acl.Perms(r.Deny)
-		out = append(out, publish.Grant{
-			User:       user,
-			Share:      r.Share,
-			WholeShare: r.Subpath == "",
-			// Reading over this protocol delivers the bytes, so a grant that
-			// admits looking without downloading admits neither here.
-			AllowRead:  allow.Has(acl.Read | acl.Download),
-			AllowWrite: allow.Intersects(acl.Write | acl.Create),
-			Denies:     !deny.IsEmpty(),
-		})
+		wholeShare := r.Subpath == ""
+		allowRead := allow.Has(acl.Read | acl.Download)
+		allowWrite := allow.Intersects(acl.Write | acl.Create)
+		denies := !deny.IsEmpty()
+
+		if r.User != nil {
+			out = append(out, publish.Grant{
+				User:       *r.User,
+				Share:      r.Share,
+				WholeShare: wholeShare,
+				AllowRead:  allowRead,
+				AllowWrite: allowWrite,
+				Denies:     denies,
+			})
+		}
+		if r.Group != nil {
+			users := groupUsers[*r.Group]
+			if len(users) == 0 {
+				out = append(out, publish.Grant{
+					User:       0,
+					Share:      r.Share,
+					WholeShare: wholeShare,
+					AllowRead:  allowRead,
+					AllowWrite: allowWrite,
+					Denies:     denies,
+				})
+			} else {
+				for _, u := range users {
+					out = append(out, publish.Grant{
+						User:       u,
+						Share:      r.Share,
+						WholeShare: wholeShare,
+						AllowRead:  allowRead,
+						AllowWrite: allowWrite,
+						Denies:     denies,
+					})
+				}
+			}
+		}
 	}
 	return out
+}
+
+// GrantsOf exports grantsOf for package callers and tests.
+func GrantsOf(rows []state.GrantRow, memberships ...[]state.MembershipRow) []publish.Grant {
+	return grantsOf(rows, memberships...)
 }
 
 // publishSMBAtBoot pushes once at startup.

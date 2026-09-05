@@ -173,7 +173,7 @@ func (e *Engine) trashPurge(c *fiber.Ctx) error {
 // not-found, identical to an id that never existed: the existence rule holds
 // for ids exactly as it does for paths.
 func (e *Engine) resolveTrashID(
-	owner core.UserID, raw string, need acl.Perms,
+	owner core.UserID, raw string, need acl.Perms, allowedShares ...string,
 ) (core.Resolved, string, error) {
 	share, id, ok := strings.Cut(raw, ":")
 	if !ok || id == "" {
@@ -185,6 +185,18 @@ func (e *Engine) resolveTrashID(
 	}
 
 	for _, root := range e.Core.Roots(owner) {
+		if len(allowedShares) > 0 {
+			allowed := false
+			for _, s := range allowedShares {
+				if s == root.Label {
+					allowed = true
+					break
+				}
+			}
+			if !allowed {
+				continue
+			}
+		}
 		narrowed, nerr := num.Narrow[uint32](root.Share)
 		if nerr != nil || uint64(narrowed) != n {
 			continue

@@ -6,8 +6,10 @@ import (
 	"encoding/xml"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
@@ -18,16 +20,24 @@ type trashEntryItem struct {
 	entry   core.TrashEntry
 }
 
-func (e *Engine) serveDavTrash(w http.ResponseWriter, r *http.Request, user core.UserID, rest string) {
+func (e *Engine) serveDavTrash(w http.ResponseWriter, r *http.Request, p middleware.Principal, rest string) {
 	rest = strings.TrimPrefix(rest, "/")
 	switch {
 	case rest == "trash" || rest == "trash/":
 		if r.Method == "PROPFIND" {
-			e.serveDavTrashList(w, r, user)
+			if !p.Mask.IsEmpty() && !p.Mask.Has(acl.Read) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			e.serveDavTrashList(w, r, p)
 			return
 		}
 		if r.Method == http.MethodDelete {
-			e.serveDavTrashEmpty(w, r, user)
+			if !p.Mask.IsEmpty() && !p.Mask.Has(acl.Delete) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			e.serveDavTrashEmpty(w, r, p)
 			return
 		}
 		w.Header().Set("Allow", "PROPFIND, DELETE")
@@ -37,11 +47,19 @@ func (e *Engine) serveDavTrash(w http.ResponseWriter, r *http.Request, user core
 	case strings.HasPrefix(rest, "trash/"):
 		rawID := strings.TrimPrefix(rest, "trash/")
 		if r.Method == http.MethodDelete {
-			e.serveDavTrashPurge(w, r, user, rawID)
+			if !p.Mask.IsEmpty() && !p.Mask.Has(acl.Delete) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			e.serveDavTrashPurge(w, r, p, rawID)
 			return
 		}
 		if r.Method == "MOVE" {
-			e.serveDavTrashRestore(w, r, user, rawID)
+			if !p.Mask.IsEmpty() && !p.Mask.Has(acl.Create) {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			e.serveDavTrashRestore(w, r, p, rawID)
 			return
 		}
 		w.Header().Set("Allow", "DELETE, MOVE")
@@ -53,10 +71,14 @@ func (e *Engine) serveDavTrash(w http.ResponseWriter, r *http.Request, user core
 	}
 }
 
-func (e *Engine) serveDavTrashList(w http.ResponseWriter, r *http.Request, user core.UserID) {
+func (e *Engine) serveDavTrashList(w http.ResponseWriter, r *http.Request, p middleware.Principal) {
+	user := core.UserID(p.UserID)
 	roots := e.Core.Roots(user)
 	var items []trashEntryItem
 	for _, rt := range roots {
+		if len(p.Shares) > 0 && !slices.Contains(p.Shares, rt.Label) {
+			continue
+		}
 		vp, verr := vfs.ParseVpath("/" + rt.Label)
 		if verr != nil {
 			continue
@@ -121,8 +143,12 @@ func (e *Engine) serveDavTrashList(w http.ResponseWriter, r *http.Request, user 
 	}
 }
 
-func (e *Engine) serveDavTrashEmpty(w http.ResponseWriter, r *http.Request, user core.UserID) {
+func (e *Engine) serveDavTrashEmpty(w http.ResponseWriter, r *http.Request, p middleware.Principal) {
+	user := core.UserID(p.UserID)
 	for _, rt := range e.Core.Roots(user) {
+		if len(p.Shares) > 0 && !slices.Contains(p.Shares, rt.Label) {
+			continue
+		}
 		vp, verr := vfs.ParseVpath("/" + rt.Label)
 		if verr != nil {
 			continue
@@ -136,8 +162,9 @@ func (e *Engine) serveDavTrashEmpty(w http.ResponseWriter, r *http.Request, user
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (e *Engine) serveDavTrashPurge(w http.ResponseWriter, r *http.Request, user core.UserID, rawID string) {
-	res, id, err := e.resolveTrashID(user, rawID, acl.Delete)
+func (e *Engine) serveDavTrashPurge(w http.ResponseWriter, r *http.Request, p middleware.Principal, rawID string) {
+	user := core.UserID(p.UserID)
+	res, id, err := e.resolveTrashID(user, rawID, acl.Delete, p.Shares...)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -149,8 +176,9 @@ func (e *Engine) serveDavTrashPurge(w http.ResponseWriter, r *http.Request, user
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (e *Engine) serveDavTrashRestore(w http.ResponseWriter, r *http.Request, user core.UserID, rawID string) {
-	res, id, err := e.resolveTrashID(user, rawID, acl.Create)
+func (e *Engine) serveDavTrashRestore(w http.ResponseWriter, r *http.Request, p middleware.Principal, rawID string) {
+	user := core.UserID(p.UserID)
+	res, id, err := e.resolveTrashID(user, rawID, acl.Create, p.Shares...)
 	if err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return

@@ -96,6 +96,7 @@ func (h *harness) do(t *testing.T, req *http.Request) answer {
 
 func send(t *testing.T, app *fiber.App, req *http.Request) answer {
 	t.Helper()
+	req.RequestURI = ""
 	res, err := app.Test(req, -1)
 	if err != nil {
 		t.Fatalf("Test: %v", err)

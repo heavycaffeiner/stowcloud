@@ -4,9 +4,9 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math"
-
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
@@ -346,7 +346,9 @@ func (c *Core) Stat(ctx context.Context, r Resolved) (Entry, error) {
 // through the durable write would be a second full write of a finished file,
 // and folding the two would instead grow CreateFile a flag that skips
 // durability, which is a footgun with a name.
-func (c *Core) PublishPart(ctx context.Context, r Resolved, part vfs.SafePath, size uint64) (Entry, error) {
+func (c *Core) PublishPart(
+	ctx context.Context, r Resolved, part vfs.SafePath, size uint64, ifMatch ...string,
+) (Entry, error) {
 	if err := r.Require(acl.Write | acl.Create); err != nil {
 		return Entry{}, err
 	}
@@ -367,6 +369,13 @@ func (c *Core) PublishPart(ctx context.Context, r Resolved, part vfs.SafePath, s
 	// rename below settles the race either way.
 	prior, serr := r.root.Stat(r.path)
 	replacing := serr == nil
+	if len(ifMatch) > 0 && ifMatch[0] != "" {
+		if !replacing {
+			return Entry{}, fmt.Errorf("%w: nothing is at the destination", ErrPrecondition)
+		}
+		cur, _ := FileETag(prior)
+		return Entry{}, fmt.Errorf("%w: the destination's current token is %s", ErrPrecondition, cur)
+	}
 	switch {
 	case replacing:
 		// No creation-table check: something else already wrote this name,

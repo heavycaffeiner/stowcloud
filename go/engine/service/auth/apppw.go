@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
@@ -88,8 +89,14 @@ func (s *Service) mintAppPassword(
 
 	var expiresNs *int64
 	if expires > 0 {
-		v := s.now() + expires.Nanoseconds()
-		expiresNs = &v
+		now := s.now()
+		if math.MaxInt64-expires.Nanoseconds() > now {
+			v := now + expires.Nanoseconds()
+			expiresNs = &v
+		} else {
+			v := int64(math.MaxInt64)
+			expiresNs = &v
+		}
 	}
 	id, err := s.store.CreateAppPassword(ctx, state.NewAppPassword{
 		TokenHash:  hash[:],

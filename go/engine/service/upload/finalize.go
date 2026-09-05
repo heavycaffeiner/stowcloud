@@ -146,7 +146,7 @@ func (e *Engine) publish(
 				"dest", rw.sess.Dest, "error", err)
 		}
 	}
-	return e.core.PublishPart(ctx, r, part, total)
+	return e.core.PublishPart(ctx, r, part, total, rw.sess.IfMatch)
 }
 
 // syncAndClose flushes the uploaded bytes to durable storage and releases the
