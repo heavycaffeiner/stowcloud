@@ -11,8 +11,12 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
+	"unicode/utf8"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/uniname"
+	"golang.org/x/text/encoding"
+	"golang.org/x/text/encoding/charmap"
 )
 
 // Archive listing: reporting a zip's contents without extracting them.
@@ -32,7 +36,19 @@ var ErrNotArchive = errors.New("preview: not a readable archive")
 
 // maxArchiveNameBytes bounds a member name before it is kept. A name is only
 // ever displayed, so this is a bound on what a client is asked to render.
+// Checked after decoding, not against the raw central-directory bytes: a
+// legacy code page can grow under decode (one CP949 byte pair becomes three
+// UTF-8 bytes), and the bound has to hold for what the client actually
+// receives.
 const maxArchiveNameBytes = 4096
+
+// maxArchiveNameSampleBytes bounds the detection sample built from entries
+// that need decoding, the same way maxListed bounds the entries kept: without
+// it, an archive of a million oddly-encoded entries would concatenate every
+// one of their names before the first Charset call. Detection accuracy
+// saturates after a few dozen bytes, so this is generous relative to what the
+// detector actually needs.
+const maxArchiveNameSampleBytes = 1 << 16
 
 // archiveMaxListed is the live bound on how many entries a listing keeps, an
 // operator's adjustment of the compiled-in default. A package-level atomic
@@ -88,6 +104,13 @@ func maxListed() int64 {
 	return limits.ArchiveEntriesListed
 }
 
+// archiveNameNeedsDecode reports whether a central directory entry's raw name
+// bytes are something other than UTF-8: either the UTF-8 flag was clear, or
+// Go's reader found the bytes not valid UTF-8 regardless of the flag.
+func archiveNameNeedsDecode(f *zip.File) bool {
+	return f.NonUTF8 || !utf8.ValidString(f.Name)
+}
+
 // ListArchive parses a zip's central directory.
 //
 // r is accessed via pread, so listing loads nothing: archive/zip seeks to the
@@ -99,6 +122,27 @@ func ListArchive(ctx context.Context, r io.ReaderAt, size int64) (ArchiveListing
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
 		return ArchiveListing{}, fmt.Errorf("%w: %w", ErrNotArchive, err)
+	}
+
+	// A first pass concatenates the raw name bytes of every entry that needs
+	// decoding into one sample, so the character encoding is identified once
+	// for the whole archive rather than once per name: chardet's accuracy
+	// scales with how much text it sees, and a lone entry name is close to the
+	// shortest input it can say anything about. An archive where every entry
+	// is already UTF-8 with its flag set, the ordinary case, builds no sample
+	// and calls no detector.
+	var sample []byte
+	for _, f := range zr.File {
+		if archiveNameNeedsDecode(f) && len(sample) < maxArchiveNameSampleBytes {
+			sample = append(sample, f.Name...)
+		}
+	}
+	var cs encoding.Encoding
+	if len(sample) > 0 {
+		// CP437 is the fallback because that is the encoding the zip format
+		// specifies for an entry without the UTF-8 flag; the detector exists
+		// only to catch the East Asian code pages that no zip header declares.
+		cs = uniname.Charset(sample, charmap.CodePage437)
 	}
 
 	var out ArchiveListing
@@ -117,7 +161,19 @@ func ListArchive(ctx context.Context, r io.ReaderAt, size int64) (ArchiveListing
 			break
 		}
 
-		name := f.Name
+		// An entry that needed decoding goes through the sample's detected
+		// encoding, or CP437 when the sample could not be placed; one that was
+		// already UTF-8 only gets normalized to NFC, so a macOS-made archive
+		// lists the same as everything else. Either way safeArchiveName runs on
+		// the decoded name: that is the display-safety filter's job, and the
+		// decoded name is what a client actually renders or forwards, not the
+		// raw central-directory bytes.
+		var name string
+		if archiveNameNeedsDecode(f) {
+			name = uniname.Decode([]byte(f.Name), cs)
+		} else {
+			name = uniname.Normalize(f.Name)
+		}
 		if !safeArchiveName(name) {
 			out.Skipped++
 			continue

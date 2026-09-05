@@ -4,11 +4,8 @@ package vfs
 
 // The storage seam.
 //
-// Every share used to be a directory on this machine, so every caller held a
-// *ShareRoot and the type was the contract. Two share kinds now are not
-// directories: an S3-compatible bucket and a VeraCrypt container file. Both
-// answer the same questions a directory does, so the questions became an
-// interface and the directory became one implementation of it.
+// A share's storage is not always a directory: a bucket or a container file
+// answers the same questions, so the questions became this interface.
 //
 // The handle type stayed concrete on purpose. A *File is a real descriptor on
 // a real filesystem, which is what lets a download use sendfile, a copy use

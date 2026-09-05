@@ -90,4 +90,25 @@ echo "==> the grant path, in a browser"
 echo "==> the surfaces that used to answer 501, in a browser"
 (cd web && node e2e/surfaces.spec.mjs https://localhost:18900)
 
+# chrome-devtools-mcp is a separate download from Playwright's own browser,
+# fetched over the network the first time this runs, and it needs a working
+# `pnpm dlx`. Either being unavailable skips this one spec rather than the
+# whole run: the WebDAV guide is one screen among many, and the rest of this
+# suite already proved the server itself is healthy.
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "SKIP: no pnpm; chrome-devtools-mcp is launched with pnpm dlx" >&2
+else
+  echo "==> the webdav connection guide, in a browser via chrome-devtools-mcp"
+  if (cd web && node e2e/webdav.spec.mjs https://localhost:18900 "$TOKEN" "$DIR/share"); then
+    :
+  else
+    status=$?
+    if [ "$status" -eq 2 ]; then
+      echo "SKIP: chrome-devtools-mcp did not come up; see the spec's own diagnostics above" >&2
+    else
+      exit "$status"
+    fi
+  fi
+fi
+
 echo "PASS: the shipped interface signs in and reaches every surface it calls"

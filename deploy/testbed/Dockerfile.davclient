@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1.7
+#
+# The WebDAV client scripts/test_webdav_e2e.py drives from a second
+# container, so the filename-encoding checks exercise this server's WebDAV
+# surface through a real client rather than through the same Go process that
+# implements it.
+#
+# rclone is the client: it speaks WebDAV natively through a `webdav` remote,
+# needs no FUSE mount or elevated privilege to move a single file the way a
+# kernel-level `mount.davfs` would, and takes --no-check-certificate for the
+# self-signed certificate the server mints on first run. curl stays alongside
+# it for the one check that wants a raw PROPFIND response rather than
+# rclone's own parsed view of it.
+#
+# Alpine, pinned by digest for the same reason the root Dockerfile pins its
+# own runtime base: a tag is a moving target, and this image's whole job is
+# to hold three packages steady across runs.
+#   index: sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+#   amd64: sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+#   arm64: sha256:e7a1a92a5bfeee40966aea60f0796b0e7917cc35591542701834f03a68fa3d18
+ARG ALPINE_DIGEST=sha256:79ff19e9084a00eece421b2523fb93e22d730e2c0e525905de047e848e56d95f
+
+FROM alpine:3.24@${ALPINE_DIGEST}
+
+# No ENTRYPOINT: the test script runs one full command per `podman run`
+# invocation (rclone configured entirely through RCLONE_CONFIG_SC_* env vars,
+# so no config file ever needs to exist in this image), and a fixed
+# entrypoint would only get in the way of that.
+RUN apk add --no-cache rclone curl ca-certificates \
+    && rm -rf /var/cache/apk/*

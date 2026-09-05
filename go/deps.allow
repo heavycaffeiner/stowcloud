@@ -19,8 +19,18 @@ golang.org/x/sys
 golang.org/x/crypto
 
 # NFC and NFD candidate spellings, so a name another program wrote in either
-# form is found as it is written. Arrived with Phase 1's path layer.
+# form is found as it is written. Arrived with Phase 1's path layer. The
+# encoding subpackages joined it for the legacy code pages a zip entry and an
+# older client can arrive in, which is a set of conversion tables rather than
+# anything a program should carry its own copy of.
 golang.org/x/text
+
+# ICU's character-set detector, ported. It answers the one question x/text
+# cannot: which of CP949, Shift_JIS, GBK and Big5 a name is written in, when
+# the format that carried it declares nothing. A zip entry without the UTF-8
+# flag is exactly that case, and statistical detection over the whole set of
+# names in one archive is what turns it into a decodable answer.
+github.com/gogs/chardet
 
 # SQLite, translated to Go rather than wrapped, which is what keeps
 # CGO_ENABLED=0 and with it the static binary and the toolchain-free cross

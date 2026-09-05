@@ -12,6 +12,8 @@ package dav
 import (
 	"errors"
 	"strings"
+
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/uniname"
 )
 
 // The refusals a caller distinguishes.
@@ -30,6 +32,14 @@ var (
 //
 // Empty segments are dropped, so "/a//b" and "/a/b" are the same path. The
 // result is never nil for a valid path; the root decodes to an empty slice.
+//
+// Each segment is normalized to NFC UTF-8 after it is decoded. EncodeHref
+// renders response hrefs from these same segments, so without this step a
+// macOS client's NFD request URL would come back as an NFD href even
+// though the file it named was created on disk in NFC by the vfs layer's
+// own normalization, and the two spellings would disagree in every
+// PROPFIND self-href. ParseDestination calls this function too, so COPY
+// and MOVE inherit the same normalization on their Destination header.
 func SplitPath(raw string) ([]string, error) {
 	raw = strings.TrimPrefix(raw, "/")
 
@@ -42,20 +52,46 @@ func SplitPath(raw string) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		switch {
-		case strings.Contains(decoded, "/"):
-			return nil, ErrEncodedSeparator
-		case strings.IndexByte(decoded, 0) >= 0:
-			return nil, ErrNUL
-		case decoded == "." || decoded == "..":
-			return nil, ErrDotSegment
+		if err := checkSegment(decoded); err != nil {
+			return nil, err
 		}
 		out = append(out, decoded)
 	}
 	if out == nil {
 		out = []string{}
 	}
+	// Normalizing before the structural checks fire would mean a decoder
+	// turning some byte into "/" or NUL was never caught above; normalizing
+	// after them, as done here, means the checks above still see exactly the
+	// bytes percent-decoding produced. The checks are re-run below so a
+	// normalized segment is held to the same rule, even though no code page
+	// this package's normalizer considers can decode a byte to "/" or NUL,
+	// and NFC composition cannot spell "." or ".." out of a longer run of
+	// runes; the second pass costs one loop and removes the need to prove
+	// that guarantee holds forever.
+	out = uniname.Components(out)
+	for _, seg := range out {
+		if err := checkSegment(seg); err != nil {
+			return nil, err
+		}
+	}
 	return out, nil
+}
+
+// checkSegment applies the structural refusals a single decoded segment
+// must pass, shared by both the pre-normalization and post-normalization
+// pass in SplitPath.
+func checkSegment(seg string) error {
+	switch {
+	case strings.Contains(seg, "/"):
+		return ErrEncodedSeparator
+	case strings.IndexByte(seg, 0) >= 0:
+		return ErrNUL
+	case seg == "." || seg == "..":
+		return ErrDotSegment
+	default:
+		return nil
+	}
 }
 
 // unescapeSegment decodes percent escapes in one segment.
@@ -108,7 +144,7 @@ func unhex(c byte) (byte, bool) {
 // member names to, a file's does not.
 //
 // The href a client can use is the one it just addressed. Deriving it from
-// the entry's share-relative path instead produced hrefs like "/a.txt" — a
+// the entry's share-relative path instead produced hrefs like "/a.txt", a
 // path that exists in no share and answers 404 to the very client that read
 // it.
 func HrefOf(p string, isDir bool) string {

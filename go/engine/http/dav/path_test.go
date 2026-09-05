@@ -194,6 +194,50 @@ func TestACollectionHrefEndsInASlash(t *testing.T) {
 	}
 }
 
+// The same visible name in two forms, exactly as the vfs package's own
+// fixture: precomposed and decomposed. Written with the literal bytes so an
+// editor that normalizes on save cannot collapse the difference these tests
+// depend on.
+const (
+	nfcSpelling = "caf\u00e9"
+	nfdSpelling = "cafe\u0301"
+)
+
+// TestSplitPathOfPercentEncodedNFDYieldsNFCSegments covers the same
+// trust-boundary claim as the vfs package's parsers, at this package's own
+// entry point: a macOS client's percent-encoded, decomposed request path
+// decodes to the precomposed spelling the vfs layer would have minted the
+// file under.
+func TestSplitPathOfPercentEncodedNFDYieldsNFCSegments(t *testing.T) {
+	raw := "/" + url.PathEscape(nfdSpelling)
+	got, err := SplitPath(raw)
+	if err != nil {
+		t.Fatalf("SplitPath(%q): %v", raw, err)
+	}
+	if len(got) != 1 || got[0] != nfcSpelling {
+		t.Fatalf("SplitPath(%q) = %q, want [%q]", raw, got, nfcSpelling)
+	}
+}
+
+// TestEncodeHrefOfNormalizedSegmentsRoundTrips proves the reason SplitPath
+// normalizes at all: EncodeHref renders the same segments SplitPath just
+// produced, so a client's NFD request and the href this server answers with
+// have to agree, not merely each be individually valid.
+func TestEncodeHrefOfNormalizedSegmentsRoundTrips(t *testing.T) {
+	raw := "/" + url.PathEscape(nfdSpelling)
+	segs, err := SplitPath(raw)
+	if err != nil {
+		t.Fatalf("SplitPath(%q): %v", raw, err)
+	}
+	got, err := SplitPath(EncodeHref(segs, false))
+	if err != nil {
+		t.Fatalf("round trip of %q: %v", segs, err)
+	}
+	if len(got) != 1 || got[0] != nfcSpelling {
+		t.Fatalf("round trip = %q, want [%q]", got, nfcSpelling)
+	}
+}
+
 // The decoder must not panic, allocate without bound, or return a segment
 // carrying a separator, a NUL or a dot spelling.
 func FuzzSplitPath(f *testing.F) {

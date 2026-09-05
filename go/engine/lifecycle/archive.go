@@ -76,8 +76,18 @@ func (e *Engine) filesArchive(c *fiber.Ctx) error {
 	// one unreadable entry is refused now rather than delivered as a partial
 	// archive the person believes is complete.
 	for _, p := range req.Paths {
-		if _, err := e.resolve(owner, p, acl.Read|acl.Download); err != nil {
+		r, err := e.resolve(owner, p, acl.Read|acl.Download)
+		if err != nil {
 			return fail(c, err)
+		}
+		// A server-built zip has to read every file's bytes to pack them.
+		// An encrypted share holds only ciphertext this server has no key
+		// for, so refuse before minting a ticket for a download that could
+		// never be assembled.
+		if enc, eerr := e.Core.ShareEncrypted(c.UserContext(), r.Share()); eerr != nil {
+			return fail(c, eerr)
+		} else if enc {
+			return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		}
 	}
 
@@ -132,6 +142,14 @@ func (e *Engine) filesArchiveFetch(c *fiber.Ctx) error {
 		r, err := e.resolve(owner, p, acl.Read|acl.Download)
 		if err != nil {
 			return fail(c, err)
+		}
+		// Re-checked here too: encryption can be turned on for a share
+		// between the mint and the fetch, and the walk below is the point
+		// that actually reads the bytes it would have to pack.
+		if enc, eerr := e.Core.ShareEncrypted(c.UserContext(), r.Share()); eerr != nil {
+			return fail(c, eerr)
+		} else if enc {
+			return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 		}
 		roots = append(roots, r)
 	}
@@ -294,6 +312,16 @@ func (e *Engine) filesArchiveList(c *fiber.Ctx) error {
 	r, err := e.resolve(owner, c.Query("path"), acl.Read|acl.Download)
 	if err != nil {
 		return fail(c, err)
+	}
+
+	// An encrypted share's central directory is ciphertext too: parsing it
+	// as a zip would only fail differently than the "not an archive" case
+	// below, and would do it after opening the file for random access.
+	// Refused first because there is nothing here worth opening at all.
+	if enc, eerr := e.Core.ShareEncrypted(c.UserContext(), r.Share()); eerr != nil {
+		return fail(c, eerr)
+	} else if enc {
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
 	}
 
 	entry, random, err := e.Core.OpenRandom(c.UserContext(), r)

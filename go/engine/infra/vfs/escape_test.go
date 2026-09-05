@@ -413,33 +413,6 @@ func mountBoundaryChild(t *testing.T) {
 	t.Log(mountBoundaryProved)
 }
 
-// Item 9. A name written under one Unicode normal form is found by a lookup
-// spelled in the other: the candidate loop finding what another program
-// wrote is not an escape, and belongs beside this suite because a
-// regression that turned it into a refusal would look like hardening.
-func TestTheOtherUnicodeFormIsFoundRatherThanRefused(t *testing.T) {
-	host := t.TempDir()
-	write(t, filepath.Join(host, nfdSpelling), "decomposed")
-	write(t, filepath.Join(host, nfcSpelling), "precomposed")
-
-	r := share(t, host, denyPolicy())
-
-	got, err := readAll(t, r, mustParse(t, nfcSpelling))
-	if err != nil {
-		t.Fatalf("reading the precomposed spelling: %v", err)
-	}
-	if got != "precomposed" {
-		t.Fatalf("read %q, want the file that spelling names", got)
-	}
-	got, err = readAll(t, r, mustParse(t, nfdSpelling))
-	if err != nil {
-		t.Fatalf("reading the decomposed spelling: %v", err)
-	}
-	if got != "decomposed" {
-		t.Fatalf("read %q, want the file that spelling names", got)
-	}
-}
-
 // Item 10. The complementary case: a name present under only its NFD
 // spelling is found by both an NFD and an NFC lookup.
 func TestOnlyOneSpellingOnDiskIsFoundByBoth(t *testing.T) {

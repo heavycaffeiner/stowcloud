@@ -19,10 +19,12 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/preview"
 )
 
 // buildJailedWorker compiles the shipped decoder once per test binary.
@@ -456,6 +458,48 @@ func TestThumbnailSettingCanBeToggledOff(t *testing.T) {
 	statusAfter, _, _ := thumbnail(t, base, sess, "/pics/photo.png", "")
 	if statusAfter != http.StatusNotFound {
 		t.Errorf("thumbnail was served after being disabled: %d, want 404", statusAfter)
+	}
+}
+
+// A thumbnail request against an encrypted share is refused before the
+// preview service is touched at all, so the refusal is never remembered as
+// a decode failure.
+//
+// The uploaded bytes are a genuine, decodable PNG rather than gibberish,
+// which is what makes the second half of this test meaningful: if the guard
+// had let this reach the negative cache before answering, a direct call to
+// the preview service for the same file would answer from that stale entry
+// instead of decoding a PNG that is actually sitting there. Only a guard
+// placed before every cache interaction passes both halves.
+func TestAnEncryptedThumbnailIsRefusedWithoutPoisoningTheNegativeCache(t *testing.T) {
+	worker := jailedWorker(t)
+	base, sess, share, e, owner := encryptedShare(t, everyPerm(), worker)
+
+	img := samplePNG(t, 200, 200)
+	if status, body := upload(t, base, sess, "/"+share+"/photo.png", img); status != http.StatusOK {
+		t.Fatalf("uploading answered %d: %s", status, body)
+	}
+
+	status, _, body := thumbnail(t, base, sess, "/"+share+"/photo.png", "")
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("thumbnailing an encrypted share answered %d, want 422: %s", status, body)
+	}
+
+	p, perr := vfs.ParseVpath("/" + share + "/photo.png")
+	if perr != nil {
+		t.Fatal(perr)
+	}
+	r, rerr := e.Core.Resolve(core.UserID(owner), p, acl.Read|acl.Download)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	thumb, terr := e.Preview.Get(context.Background(), r, preview.PresetSmall)
+	if terr != nil {
+		t.Fatalf("the preview service answered %v for a file the refused route never asked it to decode; "+
+			"a negative cache entry was written for the wrong reason", terr)
+	}
+	if cerr := thumb.Close(); cerr != nil {
+		t.Errorf("closing: %v", cerr)
 	}
 }
 

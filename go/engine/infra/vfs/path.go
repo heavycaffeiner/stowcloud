@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/uniname"
 )
 
 // Vpath is the wire form a client names a path by: "{share label}/{rest}".
@@ -221,35 +222,56 @@ func checkComponentCount(n int) error {
 	return nil
 }
 
-// splitValidated bounds, splits and validates a share-relative path string
-// against the existing-name table. The empty string is the root and yields
-// no components; anything starting with "/" is refused as an absolute path,
-// which is not this vocabulary's concern.
-func splitValidated(s string) ([]string, error) {
+// splitValidated bounds, splits, normalizes and validates a share-relative
+// path string against the existing-name table. The empty string is the
+// root and yields no components; anything starting with "/" is refused as
+// an absolute path, which is not this vocabulary's concern.
+//
+// Normalization runs after the split and before the per-component
+// validation, never the other way around: a decoder that turned some byte
+// sequence into "/" or a NUL is not a component boundary this package ever
+// looked at, so running validateExisting on the normalized components, not
+// the raw ones, is what turns that byte sequence into an ordinary refusal
+// instead of a bypass.
+//
+// The normalized path is returned as a freshly joined string rather than
+// the input, since a legacy code page can decode to more or fewer bytes
+// than it started as; the per-component limits.NameBytes bound inside
+// validateExisting is therefore checked against the bytes that actually
+// reach the kernel, not the bytes the client sent. When every component
+// was already normal, uniname.Components hands back the same slice it was
+// given, and this returns the input string unchanged rather than paying
+// for a join that would only reproduce it.
+func splitValidated(s string) (string, []string, error) {
 	if err := checkPathSize(s); err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	if strings.HasPrefix(s, "/") {
-		return nil, invalidName(s, "a share-relative path may not begin with '/'")
+		return "", nil, invalidName(s, "a share-relative path may not begin with '/'")
 	}
 	if s == "" {
-		return nil, nil
+		return "", nil, nil
 	}
 	if err := checkComponentCount(strings.Count(s, "/") + 1); err != nil {
-		return nil, err
+		return "", nil, err
 	}
 	comps := strings.Split(s, "/")
-	for _, c := range comps {
+	normalized := uniname.Components(comps)
+	for _, c := range normalized {
 		if err := validateExisting(c); err != nil {
-			return nil, err
+			return "", nil, err
 		}
 	}
-	return comps, nil
+	if &normalized[0] == &comps[0] {
+		return s, comps, nil
+	}
+	return strings.Join(normalized, "/"), normalized, nil
 }
 
 // ParseVpath is the trust boundary for a path that arrived over the wire.
 // It strips exactly one leading slash and validates what remains against
-// the existing-name table; nothing else about the input is repaired.
+// the existing-name table; nothing else about the input is repaired except
+// normalization.
 //
 // The leading slash is accepted because a client's own URL model is rooted
 // ("/label/rest"), while this package's is not, so "/documents/a.txt" and
@@ -262,12 +284,18 @@ func splitValidated(s string) ([]string, error) {
 //
 // The empty string, and "/" after the strip, both parse to the virtual
 // root: the one Vpath naming no share at all.
+//
+// The result is normalized to NFC UTF-8 here, at the point every protocol
+// this server speaks crosses into its own vocabulary, so no protocol layer
+// upstream (WebDAV, the HTTP API, anything added later) has to remember to
+// do it itself.
 func ParseVpath(s string) (Vpath, error) {
 	s = strings.TrimPrefix(s, "/")
-	if _, err := splitValidated(s); err != nil {
+	normalized, _, err := splitValidated(s)
+	if err != nil {
 		return Vpath{}, err
 	}
-	return Vpath{raw: s}, nil
+	return Vpath{raw: normalized}, nil
 }
 
 // NewVpath joins a share label back onto a SharePath, crossing out of the
@@ -312,11 +340,17 @@ func (p Vpath) Rest() SharePath {
 // ParseSharePath validates a path that is already inside one share, against
 // the same existing-name table ParseVpath uses, minus the label it no
 // longer carries.
+//
+// The result is normalized to NFC UTF-8 here, the same trust-boundary
+// reasoning as ParseVpath: a caller reaching this function directly, rather
+// than by way of ParseVpath, still deserves one normalized spelling rather
+// than having to remember to ask for it.
 func ParseSharePath(s string) (SharePath, error) {
-	if _, err := splitValidated(s); err != nil {
+	normalized, _, err := splitValidated(s)
+	if err != nil {
 		return SharePath{}, err
 	}
-	return SharePath{raw: s}, nil
+	return SharePath{raw: normalized}, nil
 }
 
 func (p SharePath) String() string { return p.raw }
@@ -337,8 +371,13 @@ func (p SharePath) Components() []string {
 }
 
 // Safe crosses into the one vocabulary this package's syscalls accept.
+//
+// p.raw already passed through splitValidated once, by way of
+// ParseSharePath or NewVpath, so this second pass only re-derives the
+// component slice; normalization is idempotent, so it costs nothing beyond
+// the split.
 func (p SharePath) Safe() (SafePath, error) {
-	comps, err := splitValidated(p.raw)
+	_, comps, err := splitValidated(p.raw)
 	if err != nil {
 		return SafePath{}, err
 	}
@@ -348,8 +387,13 @@ func (p SharePath) Safe() (SafePath, error) {
 // ParseSafePath validates a share-relative path such as "a/b/c" directly.
 // A leading slash is refused here, since accepting one would make a
 // filesystem-facing path look absolute.
+//
+// The result is normalized to NFC UTF-8 here, the same trust-boundary
+// reasoning as ParseVpath: this is another point where client-supplied
+// bytes cross into this package's own vocabulary, and every such crossing
+// normalizes so nothing downstream has to.
 func ParseSafePath(s string) (SafePath, error) {
-	comps, err := splitValidated(s)
+	_, comps, err := splitValidated(s)
 	if err != nil {
 		return SafePath{}, err
 	}
@@ -392,7 +436,20 @@ func (p SafePath) Parent() SafePath {
 
 // Join appends a component this package is about to mint, so the creation
 // table (Windows portability included) applies.
+//
+// The name is normalized to NFC UTF-8 before the table runs, for the same
+// trust-boundary reason splitValidated normalizes: a caller reaching Join
+// directly, rather than through ParseSafePath, is still minting a name a
+// client just typed, and it has to land on disk in the one spelling every
+// other entry point produces. JoinExisting and JoinControl do not
+// normalize, and for opposite reasons: JoinExisting reads a name out of a
+// real directory listing, and those exact bytes, not a normalized
+// approximation of them, are what the next syscall needs to find the entry
+// again; JoinControl mints this package's own ASCII-only control names,
+// where normalization is the identity, so skipping it costs nothing and
+// keeps JoinControl free of a dependency the other two already carry.
 func (p SafePath) Join(name string) (SafePath, error) {
+	name = uniname.Normalize(name)
 	if err := validateCreatable(name, true); err != nil {
 		return SafePath{}, err
 	}

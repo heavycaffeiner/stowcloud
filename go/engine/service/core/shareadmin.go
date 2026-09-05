@@ -239,12 +239,22 @@ func (c *Core) RetryShare(ctx context.Context, id ShareID) (Share, error) {
 // The store takes both ids: the row to delete and the external id whose
 // grants it cascades in the same transaction, so a dangling grant can no
 // longer outlive its share.
+//
+// The encryption row is dropped separately because it is keyed on the
+// external id and carries no foreign key, and its removal is best-effort for
+// the reason every post-commit step here is: the share is already gone, and
+// failing the caller over an orphaned row that names an id nothing serves
+// would report a completed delete as a failure.
 func (c *Core) DeleteShare(ctx context.Context, id ShareID) error {
 	if _, ok := c.Share(id); !ok {
 		return ErrNotFound
 	}
 	if err := c.state.DeleteShare(ctx, rowIDOf(id), int64(id)); err != nil {
 		return err
+	}
+	if err := c.state.DeleteShareEncryption(ctx, int64(id)); err != nil {
+		c.warn("a deleted share's encryption key material could not be removed",
+			"share", int64(id), "error", err)
 	}
 	c.UnregisterShare(id)
 	// The cascade removed grant rows, so the evaluator has to stop serving

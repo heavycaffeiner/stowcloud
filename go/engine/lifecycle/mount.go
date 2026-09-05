@@ -306,6 +306,12 @@ func (e *Engine) handlers(table []route.Route) server.Handlers {
 			out[r.Name] = e.adminGrantsUpdate
 		case "admin.grants.delete":
 			out[r.Name] = e.adminGrantsDelete
+		case "encryption.list":
+			out[r.Name] = e.shareEncryptionList
+		case "admin.encryption.enable":
+			out[r.Name] = e.shareEncryptionEnable
+		case "admin.encryption.disable":
+			out[r.Name] = e.shareEncryptionDisable
 
 		default:
 			// Every other route is named by the table and has no binding yet.

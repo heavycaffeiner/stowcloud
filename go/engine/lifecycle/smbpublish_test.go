@@ -23,9 +23,27 @@ func TestABrokenShareIsNotRendered(t *testing.T) {
 		{ID: 2, Name: "archive", Host: "/srv/archive", BrokenReason: "not_found"},
 	}
 
-	got := publishShares(defs, slog.Default())
+	got := publishShares(defs, nil, slog.Default())
 	if len(got) != 1 {
 		t.Fatalf("got %d shares, want only the servable one: %+v", len(got), got)
+	}
+	if got[0].Name != "documents" {
+		t.Errorf("the rendered share is %q, want documents", got[0].Name)
+	}
+}
+
+// An encrypted share is not rendered either. An SMB client cannot decrypt, so
+// exporting the share would hand out ciphertext under a name that looks like
+// an ordinary document.
+func TestAnEncryptedShareIsNotRendered(t *testing.T) {
+	defs := []core.ShareDef{
+		{ID: 1, Name: "documents", Host: "/srv/documents"},
+		{ID: 2, Name: "secrets", Host: "/srv/secrets"},
+	}
+
+	got := publishShares(defs, map[core.ShareID]bool{2: true}, slog.Default())
+	if len(got) != 1 {
+		t.Fatalf("got %d shares, want only the plain one: %+v", len(got), got)
 	}
 	if got[0].Name != "documents" {
 		t.Errorf("the rendered share is %q, want documents", got[0].Name)
@@ -40,7 +58,7 @@ func TestANonLocalShareIsNotRendered(t *testing.T) {
 		{ID: 2, Name: "bucket", Backend: core.BackendS3},
 	}
 
-	got := publishShares(defs, slog.Default())
+	got := publishShares(defs, nil, slog.Default())
 	if len(got) != 1 {
 		t.Fatalf("got %d shares, want only the local one: %+v", len(got), got)
 	}
@@ -56,7 +74,7 @@ func TestARenderedShareCarriesItsModes(t *testing.T) {
 		ID: 1, Name: "documents", Host: "/srv/documents",
 		Policy:           vfs.SharePolicy{ModeFile: 0o640, ModeDir: 0o750},
 		SharedExternally: true,
-	}}, slog.Default())
+	}}, nil, slog.Default())
 	if len(got) != 1 {
 		t.Fatalf("got %d shares, want 1", len(got))
 	}

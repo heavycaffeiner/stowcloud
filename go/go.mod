@@ -7,6 +7,7 @@ require golang.org/x/sys v0.47.0
 require (
 	github.com/gofiber/contrib/websocket v1.3.4
 	github.com/gofiber/fiber/v2 v2.52.15
+	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f
 	github.com/gorilla/websocket v1.5.3
 	github.com/klauspost/compress v1.20.0
 	golang.org/x/crypto v0.56.0

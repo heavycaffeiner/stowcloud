@@ -58,6 +58,10 @@ func defaultAccess() map[string]route.Requirement {
 		"jobs":   {Access: route.AccessAnyCredential},
 		"events": {Access: route.AccessAnyCredential},
 
+		// This category serves a share's salt and verifier, the two public
+		// values a client needs to derive and check a passphrase.
+		"encryption": {Access: route.AccessAnyCredential},
+
 		// The system category has no default worth having: health is public
 		// and setup has the setup gate's own rule, so both say so per route.
 		"system": {Access: route.AccessUnset},
@@ -186,6 +190,26 @@ func exceptions() map[string]exception {
 			route.Requirement{Access: route.AccessPerms, Perms: acl.Delete},
 			"a purge is the delete that cannot be undone",
 		},
+
+		// The verifier lets an offline attacker check passphrase guesses at
+		// rclone's fixed scrypt cost, so reading it demands the same browser
+		// session as the two mutations below rather than any app password.
+		"GET " + Base + "/encryption": {
+			route.Requirement{Access: route.AccessSession},
+			"the verifier is an offline dictionary-attack target, so only a browser session may read it",
+		},
+
+		// Turning a share's encryption on or off is a decision about the
+		// deployment's own share registry, the same class of decision every
+		// other admin/* mutation demands a browser session for.
+		"POST " + Base + "/encryption/{id}": {
+			route.Requirement{Access: route.AccessSession},
+			"enabling a share's encryption is administrative, and only a browser session authenticates one",
+		},
+		"DELETE " + Base + "/encryption/{id}": {
+			route.Requirement{Access: route.AccessSession},
+			"disabling carries the same administrative weight as enabling",
+		},
 	}
 }
 
@@ -277,6 +301,11 @@ func Table() []route.Route {
 
 	// search.
 	add("GET", "/search/stream", "search.stream", route.BodyNone)
+
+	// encryption: opt-in, zero-knowledge per-share content encryption.
+	add("GET", "/encryption", "encryption.list", route.BodyNone)
+	add("POST", "/encryption/{id}", "admin.encryption.enable", route.BodyJSON)
+	add("DELETE", "/encryption/{id}", "admin.encryption.disable", route.BodyNone)
 
 	// admin.
 	add("GET", "/admin/users", "admin.users.list", route.BodyNone)

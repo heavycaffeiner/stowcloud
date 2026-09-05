@@ -73,7 +73,7 @@ func (c *Core) Mkdir(ctx context.Context, r Resolved) (Entry, error) {
 		return Entry{}, err
 	}
 	if err := requireCreatableLeaf(r.path); err != nil {
-		return Entry{}, err
+		return Entry{}, mapVFSErr(err)
 	}
 	if err := r.root.Mkdir(r.path); err != nil {
 		return Entry{}, mapVFSErr(err)
@@ -156,7 +156,7 @@ func (c *Core) CreateFile(
 		}
 		// The name is about to be minted, so the creation table applies.
 		if cerr := requireCreatableLeaf(r.path); cerr != nil {
-			return Entry{}, cerr
+			return Entry{}, mapVFSErr(cerr)
 		}
 	default:
 		return Entry{}, mapVFSErr(serr)
@@ -382,7 +382,7 @@ func (c *Core) PublishPart(
 		// and refusing now would make it unwritable rather than unmakeable.
 	case mapVFSErr(serr) == ErrNotFound:
 		if cerr := requireCreatableLeaf(r.path); cerr != nil {
-			return Entry{}, cerr
+			return Entry{}, mapVFSErr(cerr)
 		}
 	default:
 		return Entry{}, mapVFSErr(serr)

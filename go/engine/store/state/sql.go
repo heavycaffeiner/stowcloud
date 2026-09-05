@@ -611,6 +611,38 @@ ALTER TABLE share_definition ADD COLUMN backend_secret BLOB;
 ALTER TABLE share_definition ADD COLUMN backend_secret_keyver INTEGER NOT NULL DEFAULT 0;
 `
 
+// Step 15 records that a share's file content is encrypted by its clients,
+// in rclone's crypt format, and the settings they need to agree on.
+//
+// Its own table rather than columns on share_definition, because every field
+// exists only for an encrypted share and the row's presence is then the
+// setting itself: there is no mode flag that can disagree with whether the
+// settings are stored.
+//
+// None of it is a secret. scheme names the on-disk format. salt is what the
+// client passes rclone as password2, which is shown to the user because they
+// type it into their own configuration, and which is public by construction.
+// verifier is a fixed known string encrypted under a key derived from a
+// passphrase this server never receives, so it proves a typed passphrase is
+// the right one without this server being able to read anything. Nothing
+// here is sealed under the master key, because nothing here is plaintext
+// this server was ever given.
+//
+// share holds the domain's own share id, not share_definition's row id, so
+// there is no foreign key here, exactly as dav_prop, favorite and "grant"
+// carry the same id without one. Deleting a share therefore drops this row
+// explicitly rather than by cascade, which is what DeleteShare already does
+// for grants.
+const schemaV15 = `
+CREATE TABLE share_encryption (
+  share      INTEGER PRIMARY KEY,
+  scheme     TEXT NOT NULL,
+  salt       TEXT NOT NULL,
+  verifier   BLOB NOT NULL,
+  created_ns INTEGER NOT NULL
+) WITHOUT ROWID;
+`
+
 // migrations is a function instead of a package-level slice so nothing can
 // reassign the list. Position determines version, so a released step is never
 // modified, renumbered or moved.
@@ -638,5 +670,6 @@ func migrations() []dbfile.Migration {
 			Precondition: foldDuplicateGrants,
 		},
 		{Name: "14: share backends", SQL: schemaV14},
+		{Name: "15: client-held share encryption", SQL: schemaV15},
 	}
 }

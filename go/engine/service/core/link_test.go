@@ -173,6 +173,19 @@ func TestCreateLinkRefusesWhatItMustNotMint(t *testing.T) {
 			t.Fatalf("a drop link on a file got %v, want ErrDenied", err)
 		}
 	})
+
+	t.Run("into an encrypted share", func(t *testing.T) {
+		c, _, _, root, _ := linkable(t)
+		if _, _, err := c.CreateLink(ctx, root, LinkSpec{Perms: acl.Read, MaxDown: -1}); err != nil {
+			t.Fatalf("minting into the plain share: %v", err)
+		}
+		if err := c.EnableEncryption(ctx, root.Share(), testEncryption()); err != nil {
+			t.Fatalf("enabling encryption: %v", err)
+		}
+		if _, _, err := c.CreateLink(ctx, root, LinkSpec{Perms: acl.Read, MaxDown: -1}); !errors.Is(err, ErrUnprocessable) {
+			t.Fatalf("a link into an encrypted share got %v, want ErrUnprocessable", err)
+		}
+	})
 }
 
 func TestCreateLinkHashesThePasswordBeforeItReachesTheRow(t *testing.T) {

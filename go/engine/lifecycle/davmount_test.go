@@ -11,6 +11,7 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
 // mounted builds the mount, optionally with aliases.
@@ -398,5 +399,64 @@ func TestAnUnreadablePathIsStillHidden(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("answered %d, want 404", w.Code)
+	}
+}
+
+// encryptionSettingsForTest is a shape valid enough to pass EnableEncryption's
+// checks. Nothing here is ever decrypted; only the shape is checked.
+func encryptionSettingsForTest() core.Encryption {
+	verifier := make([]byte, 32+16+19)
+	copy(verifier, "RCLONE\x00\x00")
+	return core.Encryption{
+		Scheme:   core.SchemeRcloneCrypt,
+		Salt:     "Zm9vYmFyYmF6cXV1eDEyMw",
+		Verifier: verifier,
+	}
+}
+
+// Encryption only stops this server from reading a share's own bytes; it
+// changes nothing about how the native mount serves them, which is what
+// rclone's crypt remote depends on.
+func TestNativeGetInsideAnEncryptedShareStillReturnsBytes(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	if err := f.core.EnableEncryption(context.Background(), testShare, encryptionSettingsForTest()); err != nil {
+		t.Fatalf("enabling encryption: %v", err)
+	}
+	f.write(t, "secret.bin", "ciphertext-bytes")
+
+	w := f.through(f.mounted(), http.MethodGet, "/dav/files/secret.bin", "")
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("answered %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if w.Body.String() != "ciphertext-bytes" {
+		t.Errorf("served %q", w.Body.String())
+	}
+}
+
+// A compatibility client must not be able to tell an encrypted share's path
+// apart from one that plain does not exist: hiding it from the root listing
+// is not enough on its own, since a client that mounted the share before
+// encryption was turned on still holds the path and keeps asking for it.
+func TestCompatPathIntoAnEncryptedShareAnswersLikeMissing(t *testing.T) {
+	t.Parallel()
+	f := newFixture(t)
+	if err := f.core.EnableEncryption(context.Background(), testShare, encryptionSettingsForTest()); err != nil {
+		t.Fatalf("enabling encryption: %v", err)
+	}
+	f.write(t, "secret.bin", "ciphertext-bytes")
+	m := f.mounted(lifecycle.DavAlias{Prefix: "/remote.php/dav/files", DropSegments: 1})
+
+	encrypted := f.through(m, http.MethodGet, "/remote.php/dav/files/me/files/secret.bin", "")
+	missing := f.through(m, http.MethodGet, "/remote.php/dav/files/me/files/does-not-exist.bin", "")
+
+	if encrypted.Code != missing.Code {
+		t.Fatalf("an encrypted-share path answered %d, a missing path answered %d, want the same",
+			encrypted.Code, missing.Code)
+	}
+	if encrypted.Body.String() != missing.Body.String() {
+		t.Errorf("an encrypted-share path and a missing path answered different bodies: %q vs %q",
+			encrypted.Body.String(), missing.Body.String())
 	}
 }

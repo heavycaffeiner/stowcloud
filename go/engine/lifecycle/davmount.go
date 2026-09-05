@@ -19,6 +19,7 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/dav"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
+	"github.com/heavycaffeiner/stowcloud/go/engine/kit/num"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
@@ -39,6 +40,12 @@ const DavTrashPrefix = "/dav-trash"
 type davContextKey string
 
 const keyDavPath davContextKey = "dav_path"
+
+// keyDavCompat carries whether the request arrived through a Nextcloud or
+// ownCloud compatibility prefix, alongside keyDavPath. Downstream code that
+// only holds a context by the time it asks reads this through davIsCompat
+// rather than re-deriving the answer from the URL.
+const keyDavCompat davContextKey = "dav_compat"
 
 // DavAlias is an alternative mount point addressing the same tree.
 type DavAlias struct {
@@ -157,6 +164,7 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 		}
 
 		r = r.WithContext(context.WithValue(r.Context(), keyDavPath, path))
+		r = r.WithContext(context.WithValue(r.Context(), keyDavCompat, isAliased))
 
 		// Nothing on disk corresponds to the virtual root, so resolution has
 		// client lists it to confirm the account it has just signed in as, and
@@ -169,8 +177,26 @@ func (e *Engine) DavHandler(h *dav.Handler, aliases []DavAlias) http.Handler {
 				return
 			}
 			if r.Method == "REPORT" || r.Method == "SEARCH" {
-				scopes := make([]dav.RootScope, 0, len(e.Core.Roots(user)))
-				for _, rt := range e.Core.Roots(user) {
+				roots := e.Core.Roots(user)
+				// A compatibility client must not find an encrypted share by
+				// searching for it either, so the same set that hides it from
+				// the root listing hides it here. A failure reading the set
+				// fails closed: every share is left out rather than risking
+				// one that is encrypted slipping through unfiltered.
+				var hidden map[core.ShareID]bool
+				if isAliased {
+					set, eerr := e.encryptedShareSet(r.Context())
+					if eerr != nil {
+						roots = nil
+					} else {
+						hidden = set
+					}
+				}
+				scopes := make([]dav.RootScope, 0, len(roots))
+				for _, rt := range roots {
+					if hidden != nil && hiddenShare(hidden, rt.Share) {
+						continue
+					}
 					vp, perr := vfs.ParseVpath("/" + rt.Label)
 					if perr != nil {
 						continue
@@ -349,6 +375,51 @@ func davUser(r *http.Request) (core.UserID, bool) {
 	return core.UserID(p.UserID), true
 }
 
+// davIsCompat reports whether a request arrived through a Nextcloud or
+// ownCloud compatibility prefix rather than this server's own mount.
+//
+// Carried in the context beside keyDavPath, so code that only holds a
+// context by the time it asks answers what the request means rather than
+// re-deriving it from the URL a second time.
+func davIsCompat(ctx context.Context) bool {
+	compat, ok := ctx.Value(keyDavCompat).(bool)
+	return ok && compat
+}
+
+// encryptedShareSet reads the whole encrypted-share set as a lookup.
+//
+// Read once per request rather than once per share: a compatibility
+// client's virtual-root listing and search both ask this question against
+// every share in one pass, and one query answers every share in it rather
+// than risking two different answers mid-listing.
+func (e *Engine) encryptedShareSet(ctx context.Context) (map[core.ShareID]bool, error) {
+	ids, err := e.Core.EncryptedShares(ctx)
+	if err != nil {
+		return nil, err
+	}
+	set := make(map[core.ShareID]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set, nil
+}
+
+// hiddenShare reports whether an int64 share id, as a store row carries it,
+// names a share in the given encrypted set.
+//
+// A row's share id is wider than ShareID because the column is a generic
+// foreign key; narrowing it here rather than at every call site keeps the
+// conversion and its failure mode in one place. An id too wide for ShareID
+// is a corrupt row, and it is treated as hidden: the safe side of not
+// knowing whether it is encrypted.
+func hiddenShare(hidden map[core.ShareID]bool, id int64) bool {
+	sid, err := num.Narrow[uint32](id)
+	if err != nil {
+		return true
+	}
+	return hidden[core.ShareID(sid)]
+}
+
 // davIsRoot reports whether a path names the virtual root.
 //
 // Two spellings are accepted. A client addressing a collection may append the
@@ -434,6 +505,19 @@ func (e *Engine) resolveDav(
 	res, rerr := e.Core.Resolve(user, vp, want)
 	if rerr != nil {
 		return res, rerr
+	}
+
+	// A compatibility client must not reach an encrypted share by path even
+	// after it disappears from the virtual root: a client that mounted the
+	// share before encryption was turned on still holds the path and keeps
+	// asking for it. Answered exactly like a path that is not there, so the
+	// two are indistinguishable to a client that already suspects one.
+	if davIsCompat(r.Context()) {
+		if enc, eerr := e.Core.ShareEncrypted(r.Context(), res.Share()); eerr != nil {
+			return core.Resolved{}, eerr
+		} else if enc {
+			return core.Resolved{}, core.ErrNotFound
+		}
 	}
 	if p, ok := r.Context().Value(middleware.KeyCredential).(middleware.Principal); ok {
 		if len(p.Shares) > 0 && len(parts) > 0 {

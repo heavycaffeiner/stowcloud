@@ -70,6 +70,19 @@ func (e *Engine) filesThumbnail(c *fiber.Ctx) error {
 		return fail(c, err)
 	}
 
+	// Checked before the preview service is touched at all, not inside it:
+	// a decode attempt against ciphertext would fail the same way a
+	// corrupt file does, and the preview service's negative cache would
+	// then remember that failure past the point someone turns encryption
+	// back off. The bytes behind an encrypted share are ciphertext this
+	// server holds no key for, so there is nothing to decode in the first
+	// place.
+	if enc, eerr := e.Core.ShareEncrypted(c.UserContext(), r.Share()); eerr != nil {
+		return fail(c, eerr)
+	} else if enc {
+		return refuse(c, apierr.Classified{Class: apierr.Unprocessable})
+	}
+
 	thumb, terr := e.Preview.Get(c.UserContext(), r, preset)
 	if terr != nil {
 		// Every preview condition is already classified, including a file

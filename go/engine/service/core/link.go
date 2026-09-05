@@ -213,6 +213,16 @@ func (c *Core) CreateLink(ctx context.Context, r Resolved, spec LinkSpec) (Link,
 	if err = r.Require(acl.Share); err != nil {
 		return Link{}, secret.Secret{}, err
 	}
+	// A link hands an anonymous visitor bytes with no passphrase, and every
+	// byte an encrypted share holds is ciphertext this server cannot turn
+	// back into anything readable. A link into one would be a link to
+	// nothing usable, so minting is refused here rather than left to fail
+	// silently for whoever opens it later.
+	if enc, eerr := c.ShareEncrypted(ctx, r.Share()); eerr != nil {
+		return Link{}, secret.Secret{}, eerr
+	} else if enc {
+		return Link{}, secret.Secret{}, errf(ErrUnprocessable, "the target share is encrypted")
+	}
 	if spec.Perms.IsEmpty() {
 		return Link{}, secret.Secret{}, errf(ErrDenied, "a share link must grant at least one permission")
 	}

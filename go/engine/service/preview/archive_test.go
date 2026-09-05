@@ -12,6 +12,10 @@ import (
 	"testing"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/limits"
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/encoding/japanese"
+	"golang.org/x/text/encoding/korean"
+	"golang.org/x/text/unicode/norm"
 )
 
 // zipOf builds an archive holding the named members. A name ending in a slash
@@ -28,6 +32,32 @@ func zipOf(t *testing.T, names ...string) []byte {
 		if !strings.HasSuffix(n, "/") {
 			if _, werr := f.Write([]byte("contents of " + n)); werr != nil {
 				t.Fatalf("writing %q: %v", n, werr)
+			}
+		}
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("closing the archive: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// zipRawEntries builds an archive whose members carry the given raw name
+// bytes directly rather than through zip.Writer's own encoding, with the
+// UTF-8 flag left clear: the shape a pre-Unicode zip tool produces. A name
+// ending in a slash gets no body, the same directory convention as zipOf.
+func zipRawEntries(t *testing.T, rawNames ...[]byte) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	w := zip.NewWriter(&buf)
+	for _, raw := range rawNames {
+		fh := &zip.FileHeader{Name: string(raw), Method: zip.Store, NonUTF8: true}
+		f, err := w.CreateHeader(fh)
+		if err != nil {
+			t.Fatalf("creating a raw entry for %v: %v", raw, err)
+		}
+		if !bytes.HasSuffix(raw, []byte("/")) {
+			if _, werr := f.Write([]byte("contents")); werr != nil {
+				t.Fatalf("writing a raw entry's body: %v", werr)
 			}
 		}
 	}
@@ -126,6 +156,149 @@ func TestUnsafeNamesAreCountedNotHidden(t *testing.T) {
 		if strings.Contains(e.Name, "..") || strings.HasPrefix(e.Name, "/") {
 			t.Errorf("an unsafe name was listed: %q", e.Name)
 		}
+	}
+}
+
+// A pre-Unicode Windows or Korean zip tool writes an entry's name in CP949
+// (registered under the IANA label EUC-KR, which is what chardet reports)
+// and leaves the UTF-8 flag clear. The names are listed together because
+// chardet's confidence climbs with the sample size, and any one of these
+// names alone is too short a sample for it to place.
+func TestCP949NamesWithTheFlagClearListAsKorean(t *testing.T) {
+	// Held as \u escapes because Go source carries no Korean; they decode to the same text.
+	names := []string{"\uc0c8\ub85c\uc6b4 \ud30c\uc77c \ubaa9\ub85d.txt", "\ubb38\uc11c \ud3f4\ub354 \uc548\uc758 \uc0ac\uc9c4.png", "\ub450\ubc88\uc9f8 \uc608\uc2dc \ud30c\uc77c \uc774\ub984.docx"}
+	raw := make([][]byte, len(names))
+	for i, n := range names {
+		enc, err := korean.EUCKR.NewEncoder().String(n)
+		if err != nil {
+			t.Fatalf("encoding %q as CP949: %v", n, err)
+		}
+		raw[i] = []byte(enc)
+	}
+	got := listOf(t, zipRawEntries(t, raw...))
+
+	if len(got.Entries) != len(names) {
+		t.Fatalf("listed %d entries, want %d: %+v", len(got.Entries), len(names), got.Entries)
+	}
+	listed := map[string]bool{}
+	for _, e := range got.Entries {
+		listed[e.Name] = true
+	}
+	for _, n := range names {
+		if !listed[n] {
+			t.Errorf("Korean name %q did not list correctly, got %+v", n, got.Entries)
+		}
+	}
+}
+
+// The same case as the CP949 test above, for a Japanese zip tool writing
+// Shift_JIS instead.
+func TestShiftJISNamesWithTheFlagClearListAsJapanese(t *testing.T) {
+	names := []string{"新しいファイルの一覧.txt", "資料フォルダの中の写真.png", "二番目のサンプルファイル名.docx"}
+	raw := make([][]byte, len(names))
+	for i, n := range names {
+		enc, err := japanese.ShiftJIS.NewEncoder().String(n)
+		if err != nil {
+			t.Fatalf("encoding %q as Shift_JIS: %v", n, err)
+		}
+		raw[i] = []byte(enc)
+	}
+	got := listOf(t, zipRawEntries(t, raw...))
+
+	if len(got.Entries) != len(names) {
+		t.Fatalf("listed %d entries, want %d: %+v", len(got.Entries), len(names), got.Entries)
+	}
+	listed := map[string]bool{}
+	for _, e := range got.Entries {
+		listed[e.Name] = true
+	}
+	for _, n := range names {
+		if !listed[n] {
+			t.Errorf("Japanese name %q did not list correctly, got %+v", n, got.Entries)
+		}
+	}
+}
+
+// An entry that already arrived as UTF-8 with its flag set, the ordinary
+// case, is not run through any decode: it lists with the exact bytes it was
+// written with.
+func TestAUTF8ArchiveWithTheFlagSetIsUnaffectedByteForByte(t *testing.T) {
+	// The Korean name is held as a \u escape because Go source carries no Korean; it decodes to the same text.
+	names := []string{"café.txt", "\uc548\ub155\ud558\uc138\uc694.txt", "readme.md"}
+	got := listOf(t, zipOf(t, names...))
+
+	if len(got.Entries) != len(names) {
+		t.Fatalf("listed %d entries, want %d: %+v", len(got.Entries), len(names), got.Entries)
+	}
+	listed := map[string]bool{}
+	for _, e := range got.Entries {
+		listed[e.Name] = true
+	}
+	for _, n := range names {
+		if !listed[n] {
+			t.Errorf("a UTF-8 name changed under listing: want %q among %+v", n, got.Entries)
+		}
+	}
+}
+
+// A macOS client writes a decomposed name even though the UTF-8 flag is set,
+// since the flag says nothing about normal form. The listing still composes
+// it, the same as every other name.
+func TestAnNFDNamedEntryListsInNFC(t *testing.T) {
+	nfd := norm.NFD.String("café.txt")
+	nfc := norm.NFC.String(nfd)
+	if nfd == nfc {
+		t.Fatal("the fixture name did not actually decompose, so this proves nothing")
+	}
+
+	got := listOf(t, zipOf(t, nfd))
+	if len(got.Entries) != 1 {
+		t.Fatalf("listed %d entries, want 1: %+v", len(got.Entries), got.Entries)
+	}
+	if name := got.Entries[0].Name; name != nfc {
+		t.Errorf("listed %q, want the composed %q", name, nfc)
+	}
+}
+
+// None of the code pages this build decodes can carry 0x2F as a trailing
+// byte, so a directory's trailing slash survives decoding and IsDir is still
+// derived from the decoded name correctly.
+func TestADirectoryNameKeepsItsTrailingSlashThroughDecode(t *testing.T) {
+	enc, err := charmap.CodePage437.NewEncoder().String("café")
+	if err != nil {
+		t.Fatalf("encoding the fixture name: %v", err)
+	}
+	raw := append([]byte(enc), '/')
+	got := listOf(t, zipRawEntries(t, raw))
+
+	if len(got.Entries) != 1 {
+		t.Fatalf("listed %d entries, want 1: %+v", len(got.Entries), got.Entries)
+	}
+	e := got.Entries[0]
+	if want := "café/"; e.Name != want {
+		t.Errorf("listed %q, want %q", e.Name, want)
+	}
+	if !e.IsDir {
+		t.Error("a decoded directory name lost its IsDir flag")
+	}
+}
+
+// A single entry is too short a sample for chardet to place with any
+// confidence, so a Western name in the format's own CP437 default decodes
+// through the caller's fallback instead of a wrong East Asian guess.
+func TestASingleWesternCP437NameDecodesThroughTheFallback(t *testing.T) {
+	const name = "café.txt"
+	enc, err := charmap.CodePage437.NewEncoder().String(name)
+	if err != nil {
+		t.Fatalf("encoding the fixture name: %v", err)
+	}
+	got := listOf(t, zipRawEntries(t, []byte(enc)))
+
+	if len(got.Entries) != 1 {
+		t.Fatalf("listed %d entries, want 1: %+v", len(got.Entries), got.Entries)
+	}
+	if listedName := got.Entries[0].Name; listedName != name {
+		t.Errorf("listed %q, want %q", listedName, name)
 	}
 }
 

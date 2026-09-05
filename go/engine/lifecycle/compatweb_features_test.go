@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -17,8 +19,11 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/vfs"
 	"github.com/heavycaffeiner/stowcloud/go/engine/lifecycle"
+	"github.com/heavycaffeiner/stowcloud/go/engine/service/acl"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/ident"
+	"github.com/heavycaffeiner/stowcloud/go/engine/store/state"
 )
 
 func closeRespBody(t *testing.T, resp *http.Response) {
@@ -1130,6 +1135,199 @@ func TestCompatTrashLifecycle(t *testing.T) {
 	closeRespBody(t, trashResp)
 	if !strings.Contains(string(trashBody), "trashme.txt") {
 		t.Fatalf("trash listing does not contain trashme.txt: %s", string(trashBody))
+	}
+}
+
+// A share pointing into an encrypted share is a link or a grant to nothing
+// usable, and the OCS listing must not offer one, even when it already
+// existed before the share was encrypted: a link minted while the share was
+// plain and left alone when it was switched is exactly the case this has to
+// catch.
+func TestCompatShareListingOmitsAnEncryptedShare(t *testing.T) {
+	t.Parallel()
+	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	if openErr != nil {
+		t.Fatalf("opening engine: %v", openErr)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing engine: %v", cerr)
+		}
+	})
+	ctx := context.Background()
+
+	plainDir := t.TempDir()
+	if rerr := e.Core.RegisterShare(ctx, core.ShareDef{
+		ID: 1, Name: "openshare", Host: plainDir, Policy: vfs.DefaultSharePolicy(),
+	}); rerr != nil {
+		t.Fatalf("registering the plain share: %v", rerr)
+	}
+	cryptDir := t.TempDir()
+	if rerr := e.Core.RegisterShare(ctx, core.ShareDef{
+		ID: 2, Name: "cryptshare", Host: cryptDir, Policy: vfs.DefaultSharePolicy(),
+	}); rerr != nil {
+		t.Fatalf("registering the encrypted share: %v", rerr)
+	}
+
+	uid, aerr := e.Auth.CreateAdmin(ctx, "alice", "Alice", pwOf(loginPassword))
+	if aerr != nil {
+		t.Fatalf("creating admin: %v", aerr)
+	}
+	if gerr := e.Core.GrantEveryShare(ctx, uid); gerr != nil {
+		t.Fatalf("granting: %v", gerr)
+	}
+
+	plainVp, pverr := vfs.ParseVpath("openshare")
+	if pverr != nil {
+		t.Fatalf("parsing the plain vpath: %v", pverr)
+	}
+	cryptVp, cverr := vfs.ParseVpath("cryptshare")
+	if cverr != nil {
+		t.Fatalf("parsing the encrypted vpath: %v", cverr)
+	}
+	plainRes, rerr := e.Core.Resolve(core.UserID(uid), plainVp, acl.Share)
+	if rerr != nil {
+		t.Fatalf("resolving the plain share: %v", rerr)
+	}
+	cryptRes, rerr := e.Core.Resolve(core.UserID(uid), cryptVp, acl.Share)
+	if rerr != nil {
+		t.Fatalf("resolving the encrypted share: %v", rerr)
+	}
+
+	// Both links are minted while both shares are still plain, then the
+	// second is encrypted afterward: this is the case the listing has to
+	// catch, not merely creation refusing a new one.
+	if _, _, lerr := e.Core.CreateLink(ctx, plainRes, core.LinkSpec{Perms: acl.Read, MaxDown: -1}); lerr != nil {
+		t.Fatalf("minting the plain share's link: %v", lerr)
+	}
+	if _, _, lerr := e.Core.CreateLink(ctx, cryptRes, core.LinkSpec{Perms: acl.Read, MaxDown: -1}); lerr != nil {
+		t.Fatalf("minting the encrypted share's link: %v", lerr)
+	}
+	if eerr := e.Core.EnableEncryption(ctx, 2, encryptionSettingsForTest()); eerr != nil {
+		t.Fatalf("enabling encryption: %v", eerr)
+	}
+
+	base := serveCompatEngine(t, e)
+	dav := davAuth(t, e, base, uid)
+
+	req := newReq(t, http.MethodGet, base+"/ocs/v2.php/apps/files_sharing/api/v1/shares", nil)
+	req.Header.Set("Authorization", dav)
+	req.Header.Set("Accept", "application/json")
+	resp, err := compatClient().Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET shares failed: %v", err)
+	}
+	body := readAllBody(t, resp.Body)
+	closeRespBody(t, resp)
+
+	if !strings.Contains(string(body), "openshare") {
+		t.Errorf("the plain share's link is missing: %s", body)
+	}
+	if strings.Contains(string(body), "cryptshare") {
+		t.Errorf("the encrypted share's link is listed: %s", body)
+	}
+}
+
+// A compatibility REPORT or SEARCH must not surface a hit inside an
+// encrypted share: the virtual root filters the scopes a query runs
+// against, so a client cannot find such a share by searching for it either.
+func TestCompatSearchOmitsAHitInsideAnEncryptedShare(t *testing.T) {
+	t.Parallel()
+	e, openErr := lifecycle.Open(context.Background(), lifecycle.Options{DataDir: t.TempDir()})
+	if openErr != nil {
+		t.Fatalf("opening engine: %v", openErr)
+	}
+	t.Cleanup(func() {
+		if cerr := e.Close(); cerr != nil {
+			t.Errorf("closing engine: %v", cerr)
+		}
+	})
+	ctx := context.Background()
+
+	plainDir := t.TempDir()
+	if rerr := e.Core.RegisterShare(ctx, core.ShareDef{
+		ID: 1, Name: "openshare", Host: plainDir, Policy: vfs.DefaultSharePolicy(),
+	}); rerr != nil {
+		t.Fatalf("registering the plain share: %v", rerr)
+	}
+	cryptDir := t.TempDir()
+	if rerr := e.Core.RegisterShare(ctx, core.ShareDef{
+		ID: 2, Name: "cryptshare", Host: cryptDir, Policy: vfs.DefaultSharePolicy(),
+	}); rerr != nil {
+		t.Fatalf("registering the encrypted share: %v", rerr)
+	}
+	if eerr := e.Core.EnableEncryption(ctx, 2, encryptionSettingsForTest()); eerr != nil {
+		t.Fatalf("enabling encryption: %v", eerr)
+	}
+
+	uid, aerr := e.Auth.CreateAdmin(ctx, "alice", "Alice", pwOf(loginPassword))
+	if aerr != nil {
+		t.Fatalf("creating admin: %v", aerr)
+	}
+	if gerr := e.Core.GrantEveryShare(ctx, uid); gerr != nil {
+		t.Fatalf("granting: %v", gerr)
+	}
+	base := serveCompatEngine(t, e)
+	auth := davAuth(t, e, base, uid)
+
+	// The plain share's file arrives through the ordinary compat PUT. The
+	// encrypted share's file is written directly to its host directory,
+	// standing in for what an rclone crypt remote would leave there: a
+	// compat PUT into an already-encrypted share is refused by the same
+	// existence rule the path-lookup test covers, so it cannot be used to
+	// seed this fixture.
+	put := newReq(t, http.MethodPut, base+"/remote.php/webdav/openshare/plain.txt", strings.NewReader("plain-bytes"))
+	put.Header.Set("Authorization", auth)
+	putResp, perr := compatClient().Do(put)
+	if perr != nil || putResp.StatusCode != http.StatusCreated {
+		t.Fatalf("PUT openshare/plain.txt: err=%v resp=%v", perr, putResp)
+	}
+	closeRespBody(t, putResp)
+	if werr := os.WriteFile(filepath.Join(cryptDir, "secret.txt"), []byte("cipher-bytes"), 0o644); werr != nil {
+		t.Fatalf("writing the encrypted share's file: %v", werr)
+	}
+
+	// Both files are starred directly, bypassing PROPPATCH: a compat write
+	// that would star the encrypted file goes through the same existence
+	// rule as the PUT above and is refused, so it cannot be used here either.
+	// The favorites query only ever stats the file live, so this proves the
+	// hiding happens at the scope the search runs against rather than at
+	// some index that would never have found a file written this way.
+	if ferr := e.State.SetFavorite(ctx, uid, state.Favorite{
+		Ident: ident.Ident{Share: 1, Dev: 1, Ino: 1}, Path: "openshare/plain.txt",
+	}, true); ferr != nil {
+		t.Fatalf("starring the plain file: %v", ferr)
+	}
+	if ferr := e.State.SetFavorite(ctx, uid, state.Favorite{
+		Ident: ident.Ident{Share: 2, Dev: 1, Ino: 1}, Path: "cryptshare/secret.txt",
+	}, true); ferr != nil {
+		t.Fatalf("starring the encrypted file: %v", ferr)
+	}
+
+	// The favourites report shape from the reference client.
+	searchBody := `<?xml version="1.0" encoding="utf-8"?>
+<d:searchrequest xmlns:d="DAV:" xmlns:oc="http://nextcloud.com/ns">
+  <d:basicsearch>
+    <d:select><d:prop><d:getetag/></d:prop></d:select>
+    <d:from><d:scope><d:href>/files/alice</d:href><d:depth>infinity</d:depth></d:scope></d:from>
+    <d:where><d:eq><d:prop><oc:favorite/></d:prop><d:literal>yes</d:literal></d:eq></d:where>
+  </d:basicsearch>
+</d:searchrequest>`
+	req := newReq(t, "SEARCH", base+"/remote.php/dav", strings.NewReader(searchBody))
+	req.Header.Set("Authorization", auth)
+	req.Header.Set("Content-Type", "text/xml")
+	resp, rerr := compatClient().Do(req)
+	if rerr != nil || resp.StatusCode != http.StatusMultiStatus {
+		t.Fatalf("SEARCH: err=%v resp=%v", rerr, resp)
+	}
+	got := string(readAllBody(t, resp.Body))
+	closeRespBody(t, resp)
+
+	if !strings.Contains(got, "plain.txt") {
+		t.Errorf("the search omits a file in the plain share: %s", got)
+	}
+	if strings.Contains(got, "secret.txt") {
+		t.Errorf("the search returned a hit inside the encrypted share: %s", got)
 	}
 }
 

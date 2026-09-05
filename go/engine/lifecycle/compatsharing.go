@@ -264,6 +264,14 @@ func (e *Engine) compatListShares(
 	if err != nil {
 		return compat.Val{}, false, compat.ServerError("could not read shares")
 	}
+	// A share pointing into an encrypted share is a link or a grant to
+	// nothing usable: a Nextcloud or ownCloud client can only ever pull
+	// ciphertext through it. Read once, for every share this call could
+	// otherwise list, rather than once per share.
+	hidden, err := e.encryptedShareSet(ctx)
+	if err != nil {
+		return compat.Val{}, false, compat.ServerError("could not read shares")
+	}
 
 	// Without a path every share the caller can see is wanted. With one, the
 	// query is either about that entry or, when subfiles is set, about the
@@ -296,7 +304,7 @@ func (e *Engine) compatListShares(
 
 	if filter.SharedWithMe {
 		for _, grant := range grants {
-			if !grantIsForUser(grant, user, groups) || isMount(grant) {
+			if !grantIsForUser(grant, user, groups) || isMount(grant) || hiddenShare(hidden, grant.Share) {
 				continue
 			}
 			share := e.formatGrantShare(ctx, user, grant, groups)
@@ -312,7 +320,7 @@ func (e *Engine) compatListShares(
 		return compat.Val{}, false, compat.ServerError("could not read shares")
 	}
 	for _, link := range links {
-		if link.Owner != user {
+		if link.Owner != user || hidden[link.Share] {
 			continue
 		}
 		share := e.formatLinkShare(ctx, c, link)
@@ -322,7 +330,7 @@ func (e *Engine) compatListShares(
 	}
 	for _, grant := range grants {
 		if grantIsForUser(grant, user, groups) || isMount(grant) ||
-			!e.compatCanManageGrant(user, grant) {
+			!e.compatCanManageGrant(user, grant) || hiddenShare(hidden, grant.Share) {
 			continue
 		}
 		share := e.formatGrantShare(ctx, user, grant, groups)

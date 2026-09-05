@@ -222,8 +222,29 @@ func (e *Engine) davRootProps(ctx context.Context, user core.UserID) ([]dav.Prop
 	}
 
 	roots := e.Core.Roots(user)
+
+	// The virtual root is where a compatibility client discovers what to
+	// mount, so an encrypted share must disappear here: showing it invites a
+	// Nextcloud or ownCloud sync client to fill a local folder with
+	// ciphertext it can never decrypt. A failure reading the encrypted set
+	// fails closed by hiding every share rather than risking one slipping
+	// through unfiltered.
+	var hidden map[core.ShareID]bool
+	hideAll := false
+	if davIsCompat(ctx) {
+		set, eerr := e.encryptedShareSet(ctx)
+		if eerr != nil {
+			hideAll = true
+		} else {
+			hidden = set
+		}
+	}
+
 	children := make([]dav.RootChild, 0, len(roots))
 	for _, rt := range roots {
+		if hideAll || (hidden != nil && hiddenShare(hidden, rt.Share)) {
+			continue
+		}
 		label := rt.Label
 		props := []dav.Prop{
 			{

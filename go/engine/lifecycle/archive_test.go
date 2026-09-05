@@ -581,3 +581,54 @@ func TestAnUnreadableEntryDoesNotLoseTheArchive(t *testing.T) {
 		t.Errorf("the archive holds %d of the 2 readable files", readable)
 	}
 }
+
+// A server-built zip has to read every file's bytes to pack them, and an
+// encrypted share holds only ciphertext this server has no key for. The
+// mint step refuses before any token exists, so the fetch below never runs.
+func TestAServerBuiltArchiveOfAnEncryptedShareIsRefused(t *testing.T) {
+	base, sess, share, _, _ := encryptedShare(t, everyPerm(), "")
+
+	if status, body := upload(t, base, sess, "/"+share+"/doc.txt", []byte("hello")); status != http.StatusOK {
+		t.Fatalf("uploading answered %d: %s", status, body)
+	}
+
+	status, _, body := fetchArchive(t, base, sess,
+		map[string]any{"paths": []string{"/" + share + "/doc.txt"}, "name": "bundle.zip"})
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("archiving an encrypted share answered %d, want 422: %s", status, body)
+	}
+}
+
+// Listing reads a zip's own central directory, which for an encrypted share
+// is ciphertext too: parsing it would only fail differently than the
+// "not an archive" case, and only after opening the file. The guard answers
+// before that open happens.
+func TestListingInsideAnEncryptedArchiveIsRefused(t *testing.T) {
+	base, sess, share, _, _ := encryptedShare(t, everyPerm(), "")
+
+	// A real zip, built with the standard library. What this test is about
+	// is that the request never reaches the parser, not whether the parser
+	// would have accepted it.
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create("readme.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, werr := w.Write([]byte("hello")); werr != nil {
+		t.Fatal(werr)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if status, body := upload(t, base, sess, "/"+share+"/bundle.zip", buf.Bytes()); status != http.StatusOK {
+		t.Fatalf("uploading the zip answered %d: %s", status, body)
+	}
+
+	status, body := authed(t, http.MethodGet,
+		base+"/api/v1/files/archive/list?path="+urlEscape("/"+share+"/bundle.zip"), sess)
+	if status != http.StatusUnprocessableEntity {
+		t.Fatalf("listing an encrypted archive answered %d, want 422: %s", status, body)
+	}
+}

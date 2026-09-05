@@ -15,6 +15,7 @@ package lifecycle
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"sync"
@@ -127,9 +128,24 @@ func (p *smbPublisher) Publish(ctx context.Context) (agent.Report, error) {
 	// having none.
 	p.engine.Auth.SetPassdbPath(passdbPathOf(s))
 
+	// Read once per push rather than per share: the alternative is asking the
+	// core inside the Shares closure below, once per candidate, for a fact
+	// that does not change between them. A failure here fails the whole push
+	// rather than falling back to an empty set, because an empty set would be
+	// read as "nothing is encrypted" and publish exactly the shares this
+	// exists to withhold.
+	encryptedIDs, eerr := p.engine.Core.EncryptedShares(ctx)
+	if eerr != nil {
+		return agent.Report{}, fmt.Errorf("smb publish: reading the encrypted share set: %w", eerr)
+	}
+	encrypted := make(map[core.ShareID]bool, len(encryptedIDs))
+	for _, id := range encryptedIDs {
+		encrypted[id] = true
+	}
+
 	return publish.Publish(ctx, publish.Deps{
 		Shares: func() []publish.Share {
-			return publishShares(p.engine.Core.Shares(), p.engine.logger)
+			return publishShares(p.engine.Core.Shares(), encrypted, p.engine.logger)
 		},
 		Accounts:   p.engine.Auth,
 		Grants:     func(c context.Context) ([]publish.Grant, error) { return publishGrants(c, p.engine.State) },
@@ -179,7 +195,14 @@ func (p *smbPublisher) AccessChanged(ctx context.Context) {
 // bucket or a container has none. An operator who expected it on the
 // network share list needs to see why it is not there rather than
 // conclude the publish is broken.
-func publishShares(defs []core.ShareDef, logger *slog.Logger) []publish.Share {
+//
+// An encrypted share is left out for a different reason: an SMB client has no
+// way to decrypt what it would read, so exporting it would hand out ciphertext
+// under a name that looks like an ordinary document. encrypted is the set the
+// caller read from the core just before this ran; a query rather than a flag
+// on ShareDef, since the registry knows nothing about encryption and this
+// package must not import sideways into the state layer to ask it directly.
+func publishShares(defs []core.ShareDef, encrypted map[core.ShareID]bool, logger *slog.Logger) []publish.Share {
 	out := make([]publish.Share, 0, len(defs))
 	for _, d := range defs {
 		if d.BrokenReason != "" {
@@ -188,6 +211,11 @@ func publishShares(defs []core.ShareDef, logger *slog.Logger) []publish.Share {
 		if d.Backend != "" && d.Backend != core.BackendLocal {
 			logger.Warn("a share is not published over SMB because it has no local path",
 				"share", d.Name, "backend", d.Backend)
+			continue
+		}
+		if encrypted[d.ID] {
+			logger.Warn("a share is not published over SMB because its content is end-to-end encrypted",
+				"share", d.Name)
 			continue
 		}
 		out = append(out, publish.Share{

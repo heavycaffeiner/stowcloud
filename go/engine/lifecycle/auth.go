@@ -288,10 +288,10 @@ func chunkBytes(v uint64) int64 {
 // featuresView says which screens lead somewhere on this deployment.
 func (e *Engine) featuresView() handler.FeaturesView {
 	return handler.FeaturesView{
-		// Both are surfaces this engine does not serve yet. Reported as absent
-		// rather than as present-and-broken: the interface hides the screen,
-		// which is honest, where drawing it would offer a route that 404s.
-		WebDAV: false,
+		// mountDav claims /dav, /dav-uploads, /dav-trash and every compat
+		// alias unconditionally, so the surface is always there to point a
+		// client at. SMB is conditional because it needs a publisher.
+		WebDAV: true,
 		SMB:    e.smbPublisherOf() != nil,
 
 		Preview: e.thumbnailEnabled(),
