@@ -58,17 +58,51 @@ type HopView struct {
 type SettingsView struct {
 	Fields []catalogue.Field `json:"fields"`
 	Hop    HopView           `json:"hop"`
+
+	// SMBAgent is what the sidecar said about the last push, absent when
+	// sharing is off or nothing has been pushed. Without it the screen shows
+	// SMB as simply on, which it did while the daemon was failing to bind on
+	// every start.
+	SMBAgent *SMBAgentView `json:"smb_agent,omitempty"`
+}
+
+// SMBAgentView is the sidecar's own answer, projected for the screen.
+//
+// A projection rather than the agent's struct: that type is the wire between
+// two processes this project ships, and widening its audience to the browser
+// would make every field of it a public contract.
+type SMBAgentView struct {
+	// Key is the message the screen renders, from the catalogue.
+	Key string `json:"key"`
+	// OK is whether the push landed with nothing an operator has to fix.
+	OK bool `json:"ok"`
+	// Shares is the section names the daemon is serving.
+	Shares []string `json:"shares"`
+	// Interfaces and HostsAllow are what it ended up bound to and admitting.
+	Interfaces string `json:"interfaces"`
+	HostsAllow string `json:"hosts_allow"`
+	// Smbd is what the last push did to the daemon: started, restarted,
+	// reloaded, unchanged, stopped, or failed.
+	Smbd string `json:"smbd"`
+	// MissingPaths are share paths absent where the daemon runs, and
+	// MissingPassdb are accounts with no credential it can authenticate.
+	MissingPaths  []string `json:"missing_paths"`
+	MissingPassdb []string `json:"missing_passdb"`
+	// Detail is the diagnostic from testparm, pdbedit or the agent itself.
+	// Shown verbatim rather than translated: it is the daemon's own words,
+	// which is what names the thing to fix.
+	Detail string `json:"detail,omitempty"`
 }
 
 // SettingsOf projects the resource.
-func SettingsOf(snap catalogue.Snapshot, hop HopView) SettingsView {
+func SettingsOf(snap catalogue.Snapshot, hop HopView, smb *SMBAgentView) SettingsView {
 	fields := snap.Fields
 	if fields == nil {
 		// Never null: the screen iterates this, and a null is a third state it
 		// would have to test for before drawing an empty form.
 		fields = []catalogue.Field{}
 	}
-	return SettingsView{Fields: fields, Hop: hop}
+	return SettingsView{Fields: fields, Hop: hop, SMBAgent: smb}
 }
 
 // ApplyOutcomeView is what a save answers with.

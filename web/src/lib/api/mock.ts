@@ -1580,7 +1580,10 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
     // The ordinary case: the agent answered and everything it checked was
     // fine. The interesting shapes to try by hand are a non-empty
     // `missing_paths` (a share mounted on this side and not on the file
-    // server's) and `key: 'smb.agent_unreachable'`.
+    // server's), `key: 'smb.agent_unreachable'`, and the one the nightly
+    // sweep found: `key: 'smb.agent_daemon_failed'` with `ok: false` and
+    // `smbd: 'failed'`, which is a daemon that exits on every start because
+    // it cannot bind its port.
     smb_agent: {
       key: 'smb.agent_applied',
       ok: true,

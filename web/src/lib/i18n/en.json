@@ -851,6 +851,8 @@
   "share_drop.uploaded_as": "uploaded as {name}",
   "share_drop.uploading": "Uploaded {done} of {total}",
   "smb.agent_applied": "The SMB service applied this: {shares} share(s), reachable on {interfaces} (smbd {smbd}).",
+  "smb.agent_applied_with_warnings": "The SMB service applied this with something to fix: {shares} shares, reachable on {interfaces} (smbd {smbd}).",
+  "smb.agent_daemon_failed": "File sharing is configured but the SMB daemon is not running: it exited on its last start. {error}",
   "smb.agent_missing_passdb": "These accounts have no SMB credential on the file server, so they cannot sign in over SMB: {users}.",
   "smb.agent_missing_paths": "These folders do not exist on the machine running the SMB service, so a client asking for them is told the network name is invalid: {paths}. Make them available there under the same paths.",
   "smb.agent_problem": "The SMB service could not fully apply this change.",

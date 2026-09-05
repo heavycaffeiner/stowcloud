@@ -851,6 +851,8 @@
   "share_drop.uploaded_as": "{name} 이름으로 저장됨",
   "share_drop.uploading": "{total}개 중 {done}개 업로드됨",
   "smb.agent_applied": "SMB 서비스가 반영했습니다. 공유 {shares}개, 접속 주소 {interfaces} (smbd {smbd}).",
+  "smb.agent_applied_with_warnings": "SMB 서비스가 적용했지만 확인할 사항이 있습니다: 공유 {shares}개, {interfaces}에서 접속 가능 (smbd {smbd}).",
+  "smb.agent_daemon_failed": "파일 공유가 설정되어 있지만 SMB 데몬이 실행 중이 아닙니다. 마지막 시작에서 즉시 종료되었습니다. {error}",
   "smb.agent_missing_passdb": "다음 계정은 파일 서버에 SMB 자격 증명이 없어 SMB로 로그인할 수 없습니다: {users}.",
   "smb.agent_missing_paths": "다음 폴더가 SMB 서비스가 도는 컴퓨터에 없습니다. 클라이언트가 접속하면 네트워크 이름이 올바르지 않다는 오류를 받습니다: {paths}. 같은 경로로 그쪽에서도 접근할 수 있게 하세요.",
   "smb.agent_problem": "SMB 서비스가 이 변경을 완전히 반영하지 못했습니다.",

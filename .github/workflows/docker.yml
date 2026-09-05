@@ -122,6 +122,7 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           build-args: |
             ALPINE_DIGEST=${{ matrix.alpine }}
+            SOURCE_REVISION=${{ github.sha }}
           load: true
           tags: sc:core-ci
           # Keyed by architecture: the two runners build different binaries from
@@ -145,6 +146,24 @@ jobs:
           got=$(docker image inspect sc:core-ci --format '{{.Architecture}}')
           echo "image architecture: ${got}"
           [ "$got" = "${{ matrix.arch }}" ] || { echo "expected ${{ matrix.arch }}"; exit 1; }
+
+      - name: The binary is built from the commit the label names
+        # A nightly shipped with a label naming a commit whose code was not in
+        # the binary: the label came from github.sha and the compiled layer
+        # came from a cache entry keyed only by architecture, so a new commit
+        # reused an older build. What that hid is worse than the bug it hid:
+        # any fix in that window may be absent from the published image.
+        #
+        # The binary answers with what it was stamped with, so the two cannot
+        # drift without this step saying so.
+        run: |
+          stamped=$(docker run --rm --entrypoint /stowcloud sc:core-ci version)
+          echo "binary revision: ${stamped}"
+          echo "commit:          ${{ github.sha }}"
+          [ "$stamped" = "${{ github.sha }}" ] || {
+            echo "the binary was built from a different commit than the one this run is publishing"
+            exit 1
+          }
 
       # The whole configuration, because there is no environment override: a
       # server whose settings come from two places is one where "what is it
@@ -409,6 +428,7 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           build-args: |
             ALPINE_DIGEST=${{ matrix.alpine }}
+            SOURCE_REVISION=${{ github.sha }}
           load: true
           tags: sc:smb-ci
           cache-from: type=gha,scope=smb-${{ matrix.arch }}
@@ -786,6 +806,7 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           build-args: |
             ALPINE_DIGEST=${{ matrix.alpine }}
+            SOURCE_REVISION=${{ github.sha }}
           labels: ${{ env.LABELS }}
           # No tag: `push-by-digest` uploads the manifest under its content
           # address only, so neither arch briefly owns `:core` on its own and
@@ -894,6 +915,7 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           build-args: |
             ALPINE_DIGEST=${{ matrix.alpine }}
+            SOURCE_REVISION=${{ github.sha }}
           labels: ${{ env.LABELS }}
           outputs: type=image,name=${{ env.SMB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=gha,scope=smb-${{ matrix.arch }}

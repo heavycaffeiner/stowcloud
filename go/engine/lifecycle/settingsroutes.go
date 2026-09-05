@@ -58,7 +58,7 @@ func (e *Engine) adminSettingsGet(c *fiber.Ctx) error {
 	// know it: the engine is the only thing that does.
 	values.DataDir = e.dataDir
 	return writeJSON(c, fiber.StatusOK, handler.SettingsOf(
-		catalogue.Of(values, stored), e.hopOf(c)))
+		catalogue.Of(values, stored), e.hopOf(c), e.smbAgentView()))
 }
 
 // hopOf describes how this request reached the server.

@@ -779,6 +779,8 @@
            The key comes from the server, so the extractor cannot see it at the
            call site:
                         /* i18n */ 'smb.agent_applied'
+                        /* i18n */ 'smb.agent_applied_with_warnings'
+                        /* i18n */ 'smb.agent_daemon_failed'
                         /* i18n */ 'smb.agent_problem'
                         /* i18n */ 'smb.agent_unreachable' -->
       {#if snapshot.smb_agent}
@@ -791,7 +793,8 @@
             {t(agent.key, {
               shares: agent.shares.length,
               interfaces: agent.interfaces,
-              smbd: agent.smbd
+              smbd: agent.smbd,
+              error: agent.detail ?? ''
             })}
           </p>
           {#if agent.missing_paths.length}

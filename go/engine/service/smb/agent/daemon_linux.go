@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 // Process lifecycle control for the daemon: the Daemon interface's
@@ -71,7 +72,18 @@ func (s *Smbd) Running() bool {
 	return alive(s.child)
 }
 
-// Start launches the daemon.
+// startSettle is how long Start waits before believing the daemon started.
+// A bind failure happens well inside it, and a healthy start pays it once
+// per start rather than per request.
+const startSettle = 300 * time.Millisecond
+
+// Start launches the daemon and waits to see it still running.
+//
+// A successful fork is not a started daemon. smbd exits within milliseconds
+// when it cannot bind its port, which is what happens in a rootless container
+// with no privileged ports: the agent reported "started" on every attempt
+// while the daemon died on every one, and the restart loop turned that into
+// a start every two seconds that read as success each time.
 func (s *Smbd) Start() error {
 	cmd := exec.Command("smbd", "--foreground", "--no-process-group")
 	// Output passes through intentionally: daemon diagnostics appear in
@@ -85,6 +97,16 @@ func (s *Smbd) Start() error {
 		return fmt.Errorf("starting the daemon: %w", err)
 	}
 	s.child = cmd
+
+	// Long enough for a bind failure to have happened, short enough that a
+	// healthy start is not delayed in any way an operator would notice. A
+	// daemon that dies later is caught by Running on the next poll; this
+	// covers the case that fails immediately and always.
+	time.Sleep(startSettle)
+	if !alive(cmd) {
+		s.child = nil
+		return fmt.Errorf("the daemon exited immediately after starting; its own output says why")
+	}
 	return nil
 }
 

@@ -63,6 +63,61 @@ type smbPublisher struct {
 	// two reads of the database, and whichever finished last would win
 	// regardless of which read the newer state.
 	mu sync.Mutex
+
+	// last is what the sidecar said about the most recent push, so the admin
+	// screen can show whether the daemon is actually serving. Without it the
+	// screen shows SMB as simply on, which is what it showed while smbd was
+	// dying on every start.
+	lastMu sync.RWMutex
+	last   *agent.Report
+}
+
+// lastReport is what the sidecar said about the most recent push, or nil when
+// nothing has been pushed yet.
+func (p *smbPublisher) lastReport() *agent.Report {
+	p.lastMu.RLock()
+	defer p.lastMu.RUnlock()
+	return p.last
+}
+
+func (p *smbPublisher) recordReport(r agent.Report) {
+	p.lastMu.Lock()
+	p.last = &r
+	p.lastMu.Unlock()
+}
+
+// smbAgentView projects the last push's report for the settings screen, or
+// nil when sharing is off or nothing has been pushed yet.
+//
+// The message key is chosen here rather than on the screen: what a report
+// means is this side's reading of it, and the screen's job is to render the
+// sentence that reading names.
+func (e *Engine) smbAgentView() *handler.SMBAgentView {
+	if e.smb == nil {
+		return nil
+	}
+	r := e.smb.lastReport()
+	if r == nil {
+		return nil
+	}
+	key := "smb.agent_applied"
+	switch {
+	case r.Smbd == agent.ActionFailed:
+		key = "smb.agent_daemon_failed"
+	case !r.OK:
+		key = "smb.agent_applied_with_warnings"
+	}
+	return &handler.SMBAgentView{
+		Key:           key,
+		OK:            r.OK && r.Smbd != agent.ActionFailed,
+		Shares:        r.Shares,
+		Interfaces:    r.Interfaces,
+		HostsAllow:    r.HostsAllow,
+		Smbd:          string(r.Smbd),
+		MissingPaths:  r.MissingPaths,
+		MissingPassdb: r.MissingPassdb,
+		Detail:        r.Error,
+	}
 }
 
 // smbSettings is what a push needs out of the settings document.
@@ -143,7 +198,7 @@ func (p *smbPublisher) Publish(ctx context.Context) (agent.Report, error) {
 		encrypted[id] = true
 	}
 
-	return publish.Publish(ctx, publish.Deps{
+	report, err := publish.Publish(ctx, publish.Deps{
 		Shares: func() []publish.Share {
 			return publishShares(p.engine.Core.Shares(), encrypted, p.engine.logger)
 		},
@@ -155,6 +210,10 @@ func (p *smbPublisher) Publish(ctx context.Context) (agent.Report, error) {
 		ServiceGID: s.GID,
 		Log:        p.engine.logger,
 	}, s.Config)
+	if err == nil {
+		p.recordReport(report)
+	}
+	return report, err
 }
 
 // AccessChanged is the sink auth calls once a credential change has committed.

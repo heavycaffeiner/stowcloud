@@ -144,11 +144,18 @@ RUN mkdir -p /staged/var/lib/stowcloud /staged/shares/files /staged/config/smb &
 # /status.php falls through to the SPA, an app asking for the server version
 # gets HTML, and the failure it reports is "malformed server configuration"
 # rather than anything about a missing route.
+#
+# SOURCE_REVISION is stamped into the binary so a deployment can be asked what
+# it is running and answer from the code rather than from a label. An image
+# whose label and binary disagree is one built from a cached layer of an older
+# commit, which shipped once: the label said a fix was in and the binary did
+# not contain it. The publish workflow compares the two.
+ARG SOURCE_REVISION=unknown
 RUN mkdir -p /out && \
     CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" \
       go build -tags "embed_ui compat_nc" \
         -trimpath \
-        -ldflags="-s -w -buildid=" \
+        -ldflags="-s -w -buildid= -X main.revision=${SOURCE_REVISION}" \
         -o /out/stowcloud ./cmd/sc-engine && \
     # A binary that turned out dynamic is a binary the runtime base cannot run,
     # and the failure would otherwise arrive as a missing-file error at start.
