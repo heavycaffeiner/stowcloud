@@ -46,6 +46,12 @@ web/.tmp-*
 /go/.tools/
 /go/.testbin/
 
+# CPython's bytecode cache, dropped beside a script the moment it is imported.
+# The e2e helpers under scripts/ are importable, so this appears from a plain
+# test run rather than from anything a developer did on purpose.
+__pycache__/
+*.pyc
+
 # SQLite files a hand-run server leaves wherever it was pointed. Three of these
 # reached a commit from a manual boot inside the package directory; the tests
 # themselves use temp dirs and never write here.
