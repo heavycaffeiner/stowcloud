@@ -235,13 +235,31 @@ func (c *Core) InvalidateShare(ctx context.Context, share ShareID) error {
 	})
 }
 
+// InvalidateDir marks a directory and its ancestors stale after a change this
+// process did not make: a write over the file-sharing protocol, a sync client,
+// or an operator editing the share on disk. The watcher reports which
+// directory moved and nothing else here knows the bytes did, so without this
+// a cached rollup stays stale until an API write happens to touch the same
+// chain. Listings are unaffected either way: they are read from disk.
+func (c *Core) InvalidateDir(ctx context.Context, share ShareID, dir vfs.SafePath) {
+	c.markChainDirty(ctx, share, dir)
+}
+
 // markDirty invalidates the ancestor chain of a path every mutation touched.
+//
+// The path is the entry that changed, so its parent is the shallowest
+// directory whose contents moved.
+func (c *Core) markDirty(ctx context.Context, share ShareID, p vfs.SafePath) {
+	c.markChainDirty(ctx, share, p.Parent())
+}
+
+// markChainDirty marks dir and every directory above it.
 //
 // Best-effort with a two-level fallback, because the filesystem write has
 // already committed: a failed marking falls back to invalidating the whole
 // share, which is correct and merely coarse, and a failure of that is logged
 // against the chance a later bump or recompute corrects it.
-func (c *Core) markDirty(ctx context.Context, share ShareID, p vfs.SafePath) {
+func (c *Core) markChainDirty(ctx context.Context, share ShareID, dir vfs.SafePath) {
 	root, ok := c.ShareRoot(share)
 	if !ok {
 		// The share went away under a racing admin action. There is
@@ -253,7 +271,7 @@ func (c *Core) markDirty(ctx context.Context, share ShareID, p vfs.SafePath) {
 	// aggregate covers a change anywhere in the share.
 	chain := []ident.FileID{ident.RootID}
 	cur := vfs.RootPath()
-	for _, comp := range p.Parent().Components() {
+	for _, comp := range dir.Components() {
 		next, jerr := cur.JoinExisting(comp)
 		if jerr != nil {
 			break

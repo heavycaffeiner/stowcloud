@@ -68,6 +68,23 @@ describe('selectionMeasure', () => {
     expect(selectionMeasure.state).toEqual({ kind: 'done', bytes: 1000, files: 5 })
   })
 
+  // A folder written into over the file-sharing protocol keeps its path and
+  // its selection, so only the directory token says the number is stale. The
+  // panel used to keep the first measurement for as long as it was open, and
+  // a refresh changed nothing.
+  it('measures again when the directory token moves', async () => {
+    folderSize.mockResolvedValue({ bytes: 1000, files: 5 })
+    selectionMeasure.retarget(['home/Documents'], { bytes: 0, files: 0 }, 'tag-1')
+    await vi.runAllTimersAsync()
+    expect(selectionMeasure.state).toEqual({ kind: 'done', bytes: 1000, files: 5 })
+
+    folderSize.mockResolvedValue({ bytes: 1721, files: 6 })
+    selectionMeasure.retarget(['home/Documents'], { bytes: 0, files: 0 }, 'tag-2')
+    await vi.runAllTimersAsync()
+    expect(selectionMeasure.state).toEqual({ kind: 'done', bytes: 1721, files: 6 })
+    expect(folderSize).toHaveBeenCalledTimes(2)
+  })
+
   // Arrowing through a listing changes the selection on every keypress. Only
   // where it stops is worth a walk.
   it('walks once for a selection that changed while it was settling', async () => {

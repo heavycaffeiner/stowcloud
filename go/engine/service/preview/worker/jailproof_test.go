@@ -38,6 +38,13 @@ var (
 // buildJailedWorker compiles the shipped worker, the one that applies the jail
 // before it reads its first message. Proving a sandbox against a stand-in
 // proves nothing about the one that ships.
+//
+// CGO_ENABLED=0, which is how the image builds it (the Dockerfile asserts it
+// of the result). With cgo on, the binary links glibc, and glibc's thread
+// bring-up issues clone3, rseq and set_robust_list: calls the shipped worker
+// never makes, and clone3 cannot be gated at all because its flags live in a
+// struct seccomp cannot read. Admitting them to satisfy a test build would
+// widen the real sandbox to cover a binary no deployment runs.
 func buildJailedWorker(t *testing.T) string {
 	t.Helper()
 	jailedOnce.Do(func() {
@@ -50,6 +57,7 @@ func buildJailedWorker(t *testing.T) string {
 		//nolint:gosec // G204: the arguments are this test's own constants.
 		cmd := exec.Command("go", "build", "-o", bin,
 			"github.com/heavycaffeiner/stowcloud/go/engine/service/preview/worker/jailedworker")
+		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 		if out, berr := cmd.CombinedOutput(); berr != nil {
 			jailedErr = errors.New(string(out))
 			return

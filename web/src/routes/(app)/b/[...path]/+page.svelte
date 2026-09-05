@@ -104,11 +104,16 @@
   // whether or not that panel exists.
   $effect(() => {
     const here = browse.path.replace(/^\/+/, '').replace(/\/+$/, '')
+    // The directory's own token, so a folder that changed underneath is
+    // measured again rather than keeping the number it was first given. A
+    // change made over the file-sharing protocol moves the token without
+    // changing the path or the selection.
+    const version = browse.dirEtag ?? ''
     // Nothing selected measures the folder being looked at, which is what the
     // details panel reports for a directory with no selection in it. The
     // virtual root is above every share and is not a folder to walk.
     if (browse.selected.length === 0) {
-      selectionMeasure.retarget(here ? [here] : [], { bytes: 0, files: 0 })
+      selectionMeasure.retarget(here ? [here] : [], { bytes: 0, files: 0 }, version)
       return
     }
     const folders = browse.selected.filter((e) => e.kind === 'dir')
@@ -117,7 +122,8 @@
       {
         bytes: browse.totalSelectedSize,
         files: browse.selected.length - browse.selectedFolderCount
-      }
+      },
+      version
     )
   })
 

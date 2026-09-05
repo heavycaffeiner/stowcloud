@@ -95,6 +95,14 @@ func (e *Engine) adaptEvents(ctx context.Context, in <-chan watch.InvalEvent) <-
 	task.Go(ctx, "event translation", func() {
 		defer close(out)
 		for ev := range in {
+			// The cache first. A change this server did not make still moved
+			// the bytes, and nothing else in the process knows: without this
+			// a folder written over the file-sharing protocol kept answering
+			// its old rollup, so the interface reported a folder full of
+			// files as empty and a sync client saw an unchanged directory
+			// token. Listings are read from disk and were never affected,
+			// which is what made the staleness look like a display bug.
+			e.invalidateCache(ctx, ev)
 			// Offered before the broker sees it: an update that lands the
 			// index sooner than the socket fan-out costs nothing, whereas the
 			// reverse would leave the index a step behind every client that
@@ -112,6 +120,31 @@ func (e *Engine) adaptEvents(ctx context.Context, in <-chan watch.InvalEvent) <-
 		}
 	})
 	return out
+}
+
+// invalidateCache clears the cached rollups one watcher event covers.
+//
+// A dropped batch names nothing, so the whole share's generation advances,
+// which is one row however much was missed. An event that does name a
+// directory marks that directory and its ancestors, leaving the rest of the
+// share's cache alone.
+func (e *Engine) invalidateCache(ctx context.Context, ev watch.InvalEvent) {
+	share := core.ShareID(ev.Share)
+	if ev.All {
+		if err := e.Core.InvalidateShare(ctx, share); err != nil {
+			e.logger.Warn("a share could not be invalidated after dropped events; folder sizes may read stale",
+				"share", uint64(share), "error", err)
+		}
+		return
+	}
+	dir, err := vfs.ParseSafePath(ev.Dir)
+	if err != nil {
+		// The kernel reported a name this server's rules refuse, which is
+		// nothing to mark: no cached row is keyed by a path that cannot be
+		// resolved.
+		return
+	}
+	e.Core.InvalidateDir(ctx, share, dir)
 }
 
 // resolveForEvents applies the caller's read permission to a path they named.

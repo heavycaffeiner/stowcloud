@@ -364,6 +364,68 @@ func TestAChangeUnderASubscribedPathIsDelivered(t *testing.T) {
 	}
 }
 
+// A change made outside this server invalidates the cached rollup it moved.
+//
+// The rollup is cached per directory and keyed on a dirty flag nothing but a
+// mutation through the core used to set, so a folder written over the
+// file-sharing protocol kept answering its old size and its old directory
+// token for as long as the process lived. The listing was always right, which
+// is what made this read as a display bug: the browser showed a folder full of
+// files whose total size was zero.
+func TestAnOutsideChangeInvalidatesTheCachedRollup(t *testing.T) {
+	base, cookie, _, e := eventsEngine(t)
+	defer closeEngine(t, e)
+	share, hostDir := watchedShare(t, base, cookie, "docs")
+
+	sizeOf := func() (string, string) {
+		t.Helper()
+		status, body := hostGet(t, base, "/api/v1/files/size?path="+share, cookie)
+		if status != http.StatusOK {
+			t.Fatalf("the rollup answered %d: %s", status, body)
+		}
+		var got struct {
+			ETag string `json:"etag"`
+			Size string `json:"size"`
+		}
+		if err := json.Unmarshal([]byte(body), &got); err != nil {
+			t.Fatalf("decoding %s: %v", body, err)
+		}
+		return got.ETag, got.Size
+	}
+
+	// A subscription is what pins the directory into the watcher's hot set,
+	// which is the shape this happens in: somebody is looking at the folder
+	// another protocol is writing into.
+	conn := dialEvents(t, base, cookie)
+	send(t, conn, frame{Type: "sub", Paths: []string{share}})
+	time.Sleep(300 * time.Millisecond)
+
+	// Cache the empty answer first: a rollup nobody asked for has no stale
+	// row to serve.
+	beforeTag, beforeSize := sizeOf()
+	if beforeSize != "0" {
+		t.Fatalf("a new share rolls up to %s bytes", beforeSize)
+	}
+
+	if err := os.WriteFile(filepath.Join(hostDir, "outside.txt"), []byte("written elsewhere"), 0o600); err != nil {
+		t.Fatalf("writing into the share: %v", err)
+	}
+
+	// The watcher delivers on its own goroutine, so the answer is polled
+	// rather than read once. A bounded count of sleeps rather than a deadline:
+	// the wall clock belongs to the clock package, and fifty is ten seconds
+	// either way.
+	for range 50 {
+		tag, size := sizeOf()
+		if size == "17" && tag != beforeTag {
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	tag, size := sizeOf()
+	t.Fatalf("the rollup still answers %s bytes under token %q", size, tag)
+}
+
 // A frame carries a path and nothing else.
 //
 // The client re-fetches, and that re-fetch is what applies the permission the

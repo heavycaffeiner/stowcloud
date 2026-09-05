@@ -26,12 +26,12 @@ class SelectionMeasure {
   }
 
 
-  retarget(paths: string[], base: { bytes: number; files: number }): void {
-    this.#store.retarget(paths, base)
+  retarget(paths: string[], base: { bytes: number; files: number }, version?: string): void {
+    this.#store.retarget(paths, base, version)
   }
 
-  retry(paths: string[], base: { bytes: number; files: number }): void {
-    this.#store.retry(paths, base)
+  retry(paths: string[], base: { bytes: number; files: number }, version?: string): void {
+    this.#store.retry(paths, base, version)
   }
 }
 

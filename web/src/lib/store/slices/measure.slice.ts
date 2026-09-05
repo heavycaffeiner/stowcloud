@@ -14,9 +14,13 @@ export interface MeasureSnapshot {
 
 const SETTLE_MS = 400
 
-export function buildMeasureKey(paths: readonly string[], base: { bytes: number; files: number }): string | null {
+export function buildMeasureKey(
+  paths: readonly string[],
+  base: { bytes: number; files: number },
+  version = ''
+): string | null {
   if (paths.length === 0 && base.files === 0) return null
-  return `${base.bytes}:${base.files}\u0000${paths.join('\u0000')}`
+  return `${version}\u0000${base.bytes}:${base.files}\u0000${paths.join('\u0000')}`
 }
 
 export function aggregateSizes(
@@ -30,8 +34,12 @@ export function aggregateSizes(
 }
 
 export interface MeasureStore extends StoreApi<MeasureSnapshot> {
-  retarget(paths: string[], base: { bytes: number; files: number }): void
-  retry(paths: string[], base: { bytes: number; files: number }): void
+  /** `version` is the directory token the measurement belongs to. A same-path
+   *  retarget with a new token re-measures: without it a folder written into
+   *  from outside kept the number it was first measured at, and a refresh was
+   *  a no-op because the key had not changed. */
+  retarget(paths: string[], base: { bytes: number; files: number }, version?: string): void
+  retry(paths: string[], base: { bytes: number; files: number }, version?: string): void
   cancel(): void
 }
 
@@ -73,8 +81,8 @@ export function createMeasureStore(): MeasureStore {
     }
   }
 
-  function retarget(paths: string[], base: { bytes: number; files: number }): void {
-    const key = buildMeasureKey(paths, base)
+  function retarget(paths: string[], base: { bytes: number; files: number }, version = ''): void {
+    const key = buildMeasureKey(paths, base, version)
     if (key === store.getState().key) return
 
     cancelTimer()
@@ -93,9 +101,9 @@ export function createMeasureStore(): MeasureStore {
     timer = window.setTimeout(() => void runWalk(paths, base, key), SETTLE_MS)
   }
 
-  function retry(paths: string[], base: { bytes: number; files: number }): void {
+  function retry(paths: string[], base: { bytes: number; files: number }, version = ''): void {
     store.setState((prev) => ({ ...prev, key: null }))
-    retarget(paths, base)
+    retarget(paths, base, version)
   }
 
   return {
