@@ -73,6 +73,9 @@ import {
   type SmbCredential,
   type SmbSettingsReq,
   type SmbUnavailableReason,
+  type ShareBackend,
+  type ShareS3Config,
+  type ShareVeracryptConfig,
   type SortKey,
   type StorageReport,
   type SystemHealth,
@@ -2023,14 +2026,37 @@ async function adminDeleteUser(id: number): Promise<void> {
  *  and session-only, and the screen cannot offer an edit for a path it cannot
  *  show. It stays off every surface an ordinary account reads. */
 let mockShares: AdminShare[] = [
-  { id: 1_000_001, name: 'Documents', host: '/srv/documents', trash_enabled: false },
-  { id: 1_000_002, name: 'Photos', host: '/srv/photos', trash_enabled: true },
-  { id: 1_000_003, name: 'Videos', host: '/srv/videos', trash_enabled: false },
-  { id: 1_000_004, name: 'Music', host: '/srv/music', trash_enabled: false },
-  { id: 1_000_005, name: 'Team', host: '/srv/team', trash_enabled: false },
-  { id: 1_000_006, name: 'Archive', host: '/srv/archive', trash_enabled: true }
+  { id: 1_000_001, name: 'Documents', host: '/srv/documents', backend: 'local', source: '/srv/documents', trash_enabled: false },
+  { id: 1_000_002, name: 'Photos', host: '/srv/photos', backend: 'local', source: '/srv/photos', trash_enabled: true },
+  { id: 1_000_003, name: 'Videos', host: '/srv/videos', backend: 'local', source: '/srv/videos', trash_enabled: false },
+  { id: 1_000_004, name: 'Music', host: '/srv/music', backend: 'local', source: '/srv/music', trash_enabled: false },
+  { id: 1_000_005, name: 'Team', host: '', backend: 's3', source: 's3://team/shared at https://s3.example.com:9000', trash_enabled: false },
+  { id: 1_000_006, name: 'Archive', host: '', backend: 'veracrypt', source: '/srv/vaults/archive.hc', trash_enabled: true }
 ]
 let nextShareId = 1_000_007 // mirrors `go/internal/core`'s share id base, past the seeded ones
+
+/** The redacted location the real server renders from a backend's own
+ *  configuration. Never the credential, exactly as the server never sends
+ *  one.
+ *
+ *  `previous` is what a patch that names none of the relevant fields keeps:
+ *  the server merges a patch into the stored config, so a rename does not
+ *  move the location. */
+function mockShareSource(
+  backend: ShareBackend,
+  body: { host?: string; s3?: ShareS3Config; veracrypt?: ShareVeracryptConfig },
+  previous: string
+): string {
+  if (backend === 's3') {
+    if (!body.s3) return previous
+    const prefix = body.s3.prefix ? `/${body.s3.prefix}` : ''
+    return `s3://${body.s3.bucket ?? ''}${prefix} at ${body.s3.endpoint ?? ''}`
+  }
+  if (backend === 'veracrypt') {
+    return body.veracrypt?.container ?? previous
+  }
+  return body.host ?? previous
+}
 
 // One grant of each shape the row can take: inherited against path-only, a
 // group principal against a user one, a long label against a bare share name.
@@ -2063,10 +2089,18 @@ async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
   if (mockShares.some((s) => s.name === name)) {
     throw new ApiError(422, { code: 'fs.invalid_name', message: `a share named '${name}' already exists` })
   }
-  if (mockShares.some((s) => s.host === req.host)) {
+  if (req.host !== undefined && req.host !== '' && mockShares.some((s) => s.host === req.host)) {
     throw new ApiError(422, { code: 'fs.invalid_name', message: `overlaps existing share` })
   }
-  const share: AdminShare = { id: nextShareId++, name, host: req.host, trash_enabled: false }
+  const backend = req.backend ?? 'local'
+  const share: AdminShare = {
+    id: nextShareId++,
+    name,
+    host: backend === 'local' ? (req.host ?? '') : '',
+    backend,
+    source: mockShareSource(backend, req, ''),
+    trash_enabled: false
+  }
   mockShares = [...mockShares, share]
   return share
 }
@@ -2079,6 +2113,13 @@ async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<Admi
   if (!share) {
     throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
   }
+  if (patch.backend !== undefined && patch.backend !== share.backend) {
+    throw new ApiError(422, {
+      code: 'fs.unprocessable',
+      message: 'a share cannot change backend',
+      detail: { reason_key: 'admin.share_backend_immutable' }
+    })
+  }
   const nextName = patch.name !== undefined ? patch.name.trim() : share.name
   if (nextName === '') {
     throw new ApiError(422, { code: 'fs.invalid_name', message: 'share name must not be empty' })
@@ -2089,7 +2130,8 @@ async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<Admi
   const updated: AdminShare = {
     ...share,
     name: nextName,
-    host: patch.host ?? share.host,
+    host: share.backend === 'local' ? (patch.host ?? share.host) : '',
+    source: mockShareSource(share.backend, patch, share.source),
     trash_enabled: patch.trash_enabled ?? share.trash_enabled
   }
   mockShares = mockShares.map((s) => (s.id === id ? updated : s))

@@ -45,6 +45,24 @@ const SERVER_KEYS = new Set<string>([
   /* i18n */ 'settings.must_be_a_string',
   /* i18n */ 'admin.share_rejected',
   /* i18n */ 'admin.chunk_below_floor',
+  // Registering or editing a share, refused for something about the request
+  // itself. Each names one field or one rule, because the add dialog has
+  // seven fields and a bare "unprocessable" leaves an operator guessing
+  // which of them the server meant.
+  /* i18n */ 'admin.share_backend_unknown',
+  /* i18n */ 'admin.share_backend_extra_config',
+  /* i18n */ 'admin.share_backend_config_missing',
+  /* i18n */ 'admin.share_backend_immutable',
+  /* i18n */ 'admin.share_config_invalid',
+  /* i18n */ 'admin.share_host_required',
+  /* i18n */ 'admin.share_s3_fields_required',
+  /* i18n */ 'admin.share_s3_secret_required',
+  /* i18n */ 'admin.share_secret_not_clearable',
+  /* i18n */ 'admin.share_vault_container_required',
+  /* i18n */ 'admin.share_vault_password_required',
+  /* i18n */ 'admin.share_vault_size_required',
+  /* i18n */ 'admin.share_vault_size_unexpected',
+  /* i18n */ 'admin.share_vault_create_immutable',
   // A folder whose backing disk is not there. It names the share and the
   // reason, because "not found" for a path that is perfectly good sends a
   // person looking in the wrong place.

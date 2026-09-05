@@ -409,8 +409,18 @@ export interface AdminShare {
   /** Where the share points on the server's disk. Sent only by the
    *  administrative routes, which are administrator-only and session-only, so
    *  an app password never sees it and neither does any surface an ordinary
-   *  account reads. */
+   *  account reads. Empty for every backend but `local`, which is the only
+   *  one with a host path to show. */
   host: string
+  /** Which storage serves this share. Fixed when the share is created:
+   *  every grant, share link and cached identity references data the old
+   *  backend holds, so the server refuses a patch that names a different
+   *  one. */
+  backend: ShareBackend
+  /** The redacted, human-readable location the share serves from: a host
+   *  path, a bucket and prefix with its endpoint, or a container file. Never
+   *  a credential. */
+  source: string
   /** Off by default for every share. */
   trash_enabled: boolean
   /** Why this share cannot be served right now, or absent when it can. A
@@ -422,6 +432,14 @@ export interface AdminShare {
    *  responses, and only when the deployment has a sidecar. */
   smb?: SMBOutcome
 }
+
+/** Which storage serves a share.
+ *
+ *  `local` is a directory on the server, which is what a bind mount or a
+ *  container volume arrives as. The other two are served in the engine
+ *  process: neither can be mounted, because the server refuses the mount
+ *  syscall outright and its filesystem gate refuses FUSE. */
+export type ShareBackend = 'local' | 's3' | 'veracrypt'
 
 /** What a republish to the SMB sidecar did, carried on the response of the
  *  write that triggered it.
@@ -464,22 +482,67 @@ export interface SmbApplyReport {
   message?: string
 }
 
+/** The `s3` object of a share create or patch body.
+ *
+ *  Every field is optional because the same shape serves both: on a create
+ *  the server requires endpoint, region, bucket, access key and secret, and
+ *  on a patch an absent field leaves the stored one alone. An empty
+ *  `secret_access_key` is refused rather than treated as clearing it, since
+ *  a share with no credential cannot serve. */
+export interface ShareS3Config {
+  endpoint?: string
+  region?: string
+  bucket?: string
+  prefix?: string
+  access_key_id?: string
+  /** Write-only. No response ever carries it back. */
+  secret_access_key?: string
+  /** Address the bucket as a path under the endpoint rather than as a
+   *  subdomain of it, which is what MinIO and most self-hosted stores need. */
+  path_style?: boolean
+}
+
+/** The `veracrypt` object of a share create or patch body.
+ *
+ *  `create` and `size_mib` are accepted only on a create: the container is
+ *  made once, and a patch asking for it again would either try to recreate
+ *  one in use or silently do nothing. */
+export interface ShareVeracryptConfig {
+  container?: string
+  /** Write-only. No response ever carries it back. */
+  password?: string
+  create?: boolean
+  size_mib?: number
+}
+
 /** `POST /api/admin/shares` body. */
 export interface CreateShareReq {
   name: string
-  /** Where the folder lives on the server's disk. The wire calls this `host`;
-   *  an earlier spelling of `host_path` was refused by the decoder, which does
-   *  not accept unknown fields, so no share could be created from the screen. */
-  host: string
+  /** Which storage to serve the share from. Absent reads as `local`, which
+   *  is what the first-run wizard sends. */
+  backend?: ShareBackend
+  /** Where the folder lives on the server's disk, for a `local` share only.
+   *  The wire calls this `host`; an earlier spelling of `host_path` was
+   *  refused by the decoder, which does not accept unknown fields, so no
+   *  share could be created from the screen. */
+  host?: string
+  s3?: ShareS3Config
+  veracrypt?: ShareVeracryptConfig
 }
 
 /** `PATCH /api/admin/shares/{id}` body — all fields optional, so a rename
  *  need not resend the host path and vice versa, and either can be sent
- *  together with or without a trash toggle. */
+ *  together with or without a trash toggle.
+ *
+ *  `backend` is here only so that naming a different one is refused with a
+ *  reason instead of the decoder rejecting the whole body as malformed. */
 export interface UpdateShareReq {
   name?: string
   host?: string
   trash_enabled?: boolean
+  backend?: ShareBackend
+  s3?: ShareS3Config
+  veracrypt?: ShareVeracryptConfig
 }
 
 /** Who a grant applies to — `go/internal/acl`/`Principal::User`,

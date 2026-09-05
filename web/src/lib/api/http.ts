@@ -57,6 +57,7 @@ import {
   type BatchItemResult,
   type CopyResult,
   type ShareLinkCreateReq,
+  type ShareBackend,
   type ShareLinkInfo,
   type ShareLinkPatchReq,
   type SmbSettingsReq,
@@ -1490,6 +1491,8 @@ interface WireAdminShare {
   id: string
   name: string
   host: string
+  backend: ShareBackend
+  source: string
   trash: boolean
   shared_externally?: boolean
   broken?: string
@@ -1501,6 +1504,11 @@ function adminShareFromWire(w: WireAdminShare): AdminShare {
     id: Number(w.id),
     name: w.name,
     host: w.host,
+    // A server that predates backends sends neither field. Reading an absent
+    // backend as local keeps the screen rendering rather than drawing an
+    // undefined chip, and the host path is the location such a share has.
+    backend: w.backend ?? 'local',
+    source: w.source ?? w.host,
     trash_enabled: w.trash,
     broken_reason: w.broken,
     smb: w.smb
