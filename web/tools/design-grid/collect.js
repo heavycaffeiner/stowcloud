@@ -1,4 +1,4 @@
-// tools/design-grid/collect.js — the runtime layer's in-page collector.
+// The runtime layer's in-page collector.
 //
 // `auditDocument` is serialized into the browser by audit.mjs, so it must be
 // self-contained: every helper is nested inside it and nothing outside the
@@ -32,7 +32,7 @@ export function auditDocument(input) {
   const selectorErrors = []
   let unchecked = 0
 
-  // ── scroll normalization ────────────────────────────────────────────────
+  // scroll normalization
   // getBoundingClientRect is viewport-relative, so with every scroll port at
   // origin the coordinates it returns are absolute page coordinates. Without
   // this a scrolled list reports every row as off-grid by the scroll remainder.
@@ -45,7 +45,7 @@ export function auditDocument(input) {
     if (el.scrollLeft) el.scrollLeft = 0
   }
 
-  // ── waiver index ────────────────────────────────────────────────────────
+  // waiver index
   const waived = new Map() // Element -> Map<check, waiverId>
 
   const addWaiver = (el, check, id) => {
@@ -76,13 +76,13 @@ export function auditDocument(input) {
     return m.get(check) ?? m.get('*') ?? null
   }
 
-  // ── geometry predicates ─────────────────────────────────────────────────
+  // geometry predicates
   const onGrid = (v) => Math.abs(v - gridUnit * Math.round(v / gridUnit)) <= tolerancePx
   const onScale = (v) => spacingScale.some((s) => Math.abs(v - s) <= tolerancePx)
   const near = (a, b) => Math.abs(a - b) <= tolerancePx
   const round2 = (v) => Math.round(v * 100) / 100
 
-  // ── selector paths, for a message a human can act on ────────────────────
+  // selector paths, for a message a human can act on
   // Per-component style scopes: Svelte's own `svelte-xxxx` and the `s-XXXX`
   // form m3-svelte ships. Both rehash whenever that component's CSS changes,
   // so keeping them would make every path in every message churn on edits that
@@ -133,7 +133,7 @@ export function auditDocument(input) {
     violations.push({ layer: 'runtime', check, selector: pathOf(owner), ...detail })
   }
 
-  // ── collection ──────────────────────────────────────────────────────────
+  // collection
   const boxes = []
   const vw = window.innerWidth
   const vh = window.innerHeight
@@ -200,7 +200,7 @@ export function auditDocument(input) {
 
   walk(document.body, -1)
 
-  // ── check 1: grid snap ──────────────────────────────────────────────────
+  // check 1: grid snap
   //
   // Two narrowings, both about whose decision the number is.
   //
@@ -283,7 +283,7 @@ export function auditDocument(input) {
     }
   }
 
-  // ── checks 2 to 4: relations between siblings ───────────────────────────
+  // checks 2 to 4: relations between siblings
   const isGrid = (b) => b.display === 'grid' || b.display === 'inline-grid'
 
   const mainAxisOf = (b) => {
@@ -327,7 +327,7 @@ export function auditDocument(input) {
   for (const parent of boxes) {
     if (parent.zeroArea) continue
 
-    // ── check 3a: padding symmetry. Used values, so the comparison is exact.
+    // check 3a: padding symmetry. Used values, so the comparison is exact.
     if (parent.padLeft !== parent.padRight) {
       record(parent.el, 'padding-asymmetry', {
         actual: `padding-left ${parent.padLeft}px vs padding-right ${parent.padRight}px`,
@@ -355,7 +355,7 @@ export function auditDocument(input) {
       // the gap arithmetic below and nothing else.
       const solid = ordered.filter((k) => !k.zeroArea)
 
-      // ── check 2: cross-axis edge coherence ──
+      // check 2: cross-axis edge coherence
       if (BASELINE.has(parent.alignItems)) {
         // Measuring a first-line baseline from script needs a probe injected
         // into the layout being measured, which changes it. Counted, not guessed.
@@ -391,7 +391,7 @@ export function auditDocument(input) {
         }
       }
 
-      // ── check 4: inter-sibling gaps against the spacing scale ──
+      // check 4: inter-sibling gaps against the spacing scale
       // space-* distributes free space, so its gaps are computed, not authored.
       if (FREE_SPACE.has(parent.justifyContent)) continue
       for (let i = 1; i < ordered.length; i += 1) {
@@ -415,7 +415,7 @@ export function auditDocument(input) {
       }
     }
 
-    // ── check 3b: the leading inset is not paid twice ──
+    // check 3b: the leading inset is not paid twice
     //
     // Only the leading gap, never lead-against-trail. A container is routinely
     // larger than its content -- a nav rail is as tall as the window -- so the
@@ -442,7 +442,7 @@ export function auditDocument(input) {
     }
   }
 
-  // ── check 5: a lone child sits centred in the box it was given ──────────
+  // check 5: a lone child sits centred in the box it was given
   //
   // Checks 2 to 4 all start with `kids.length < 2` and walk away, so nothing
   // ever asked whether a single child is centred in its parent. That is where
@@ -478,7 +478,7 @@ export function auditDocument(input) {
     }
   }
 
-  // ── check 6: controls in a row share the row's centre ───────────────────
+  // check 6: controls in a row share the row's centre
   //
   // A row's own children can agree with each other and still stagger, because
   // a control nested one level deeper is nobody's sibling. The admin user row
@@ -558,7 +558,7 @@ export function auditDocument(input) {
       : Math.max(...rects.map((r) => r.bottom))
   }
 
-  // ── check 7: stacked text blocks are not flush against each other ───────
+  // check 7: stacked text blocks are not flush against each other
   //
   // `spacing-scale` accepts 0, because two boxes really are meant to touch in
   // a bordered list or a segmented control. It therefore says nothing about a
@@ -617,7 +617,7 @@ export function auditDocument(input) {
     }
   }
 
-  // ── check 8: column coherence across repeated rows ──────────────────────
+  // check 8: column coherence across repeated rows
   //
   // The one a person points at first. In a list of repeated rows, the same
   // control has to sit in the same column on every row; when one row drops an

@@ -1,4 +1,4 @@
-// tools/design-grid/waivers.mjs — ESM face of waivers.cjs. See policy.mjs.
+// ESM face of waivers.cjs. See policy.mjs.
 
 import { createRequire } from 'node:module'
 

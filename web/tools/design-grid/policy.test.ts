@@ -1,5 +1,5 @@
 // @vitest-environment node
-// tools/design-grid/policy.test.ts — pins the predicates every layer shares.
+// Pins the predicates every layer shares.
 import { describe, expect, it } from 'vitest'
 import { classifyProperty, isAllowed, loadPolicy, onGrid, onScale, checksFor } from './policy.mjs'
 

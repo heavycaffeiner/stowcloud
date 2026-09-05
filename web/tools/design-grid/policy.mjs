@@ -1,4 +1,4 @@
-// tools/design-grid/policy.mjs — ESM face of policy.cjs. No logic of its own:
+// ESM face of policy.cjs. No logic of its own:
 // the audit driver and the component tests must answer "is this legal?" the
 // same way the stylelint plugin does.
 

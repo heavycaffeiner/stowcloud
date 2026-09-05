@@ -1,10 +1,10 @@
-// tools/no-download-url.test.ts — the download ticket
+// The download ticket
 // (`POST /api/v1/files/download`, mirrored by `format/download.ts`'s
 // `downloadPath`) replaced every hand-built download URL in the app.
 // `GET /api/v1/files/read` no longer honours `?download=1`; it renders the
 // file instead of saving it, so a surviving call site would be a silent
 // regression from "download" to "open in the tab". This walks the real
-// source tree — not a fixture — so a future download button that reaches
+// source tree (not a fixture), so a future download button that reaches
 // back for the old shortcut fails here rather than shipping.
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'

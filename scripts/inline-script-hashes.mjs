@@ -3,7 +3,7 @@
 // `<script>` in an HTML file, one space-joined line: 'sha256-xxx' 'sha256-yyy'
 //
 // This must byte-for-byte match `inline_script_bodies` /
-// `inline_script_csp_sources` in crates/sc-http/src/lib.rs — it exists so
+// `inline_script_csp_sources` in crates/sc-http/src/lib.rs; it exists so
 // `scripts/deploy.sh` can compute the same hash from outside the server
 // process and compare it against what the server actually advertises. A
 // mismatch there is exactly the incident this check exists for: filenames

@@ -1,16 +1,16 @@
-// web/tools/i18n-check.mjs — CI gate for the catalogues in src/lib/i18n.
+// CI gate for the catalogues in src/lib/i18n.
 // Walks every `t('…')` call site and fails the build on any drift:
 //
-//   * a key missing from a catalogue — that language would render the raw key;
-//   * a catalogue entry no call site uses — dead copy, or a renamed key;
-//   * `{placeholder}` sets that disagree between languages — a dropped hole
+//   * a key missing from a catalogue: that language would render the raw key;
+//   * a catalogue entry no call site uses: dead copy, or a renamed key;
+//   * `{placeholder}` sets that disagree between languages: a dropped hole
 //     renders as a missing word, an invented one renders literally;
-//   * a `t()` argument that is not a dotted key at all — the fingerprint of
+//   * a `t()` argument that is not a dotted key at all: the fingerprint of
 //     someone passing display text straight into `t()`.
 //
-// Strings that cross a thread or module boundary as data — the upload worker
+// Strings that cross a thread or module boundary as data (the upload worker
 // posts a key because it has no locale state, `job-tray.svelte.ts` stores one
-// for `JobTray.svelte` to render — are not `t()` calls at their source. They
+// for `JobTray.svelte` to render) are not `t()` calls at their source. They
 // are marked `/* i18n */` at the literal and collected here too.
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -80,7 +80,7 @@ const report = (title, lines) => {
   for (const l of lines) console.error(l)
 }
 
-report('Not a catalogue key — display text passed to t()?', malformed)
+report('Not a catalogue key: display text passed to t()?', malformed)
 report('Key missing from a catalogue', missing)
 report('Placeholders disagree between languages', mismatched)
 report('Catalogue entry with no call site', orphaned)

@@ -4,7 +4,7 @@
 // browser actually downloads.
 //
 // "Scroll frame drops (100k rows): 0" (the §8 table's third row) is not
-// checked here — that's a runtime Core Web Vitals measurement, not a build
+// checked here: that's a runtime Core Web Vitals measurement, not a build
 // artifact, and needs a real browser trace (Lighthouse/Playwright) to
 // produce at all. Deliberately not wired into CI: a GitHub-hosted runner's
 // CPU/IO throughput varies run to run enough that a frame-timing gate would
@@ -50,7 +50,7 @@ for (const [label, p] of [
   ['.svelte-kit/output/server/manifest-full.js', serverManifestPath]
 ]) {
   if (!existsSync(p)) {
-    console.error(`check-bundle-size: ${label} not found — run \`npm run build\` first.`)
+    console.error(`check-bundle-size: ${label} not found: run \`npm run build\` first.`)
     process.exit(1)
   }
 }
@@ -60,30 +60,30 @@ function gzipSize(relFile) {
   return gzipSync(bytes, { level: 9 }).length
 }
 
-// ── Initial JS: every module the SPA shell preloads before any route code
-// runs (`build/index.html`'s own <link rel="modulepreload"> list) — the same
+// Initial JS: every module the SPA shell preloads before any route code
+// runs (`build/index.html`'s own <link rel="modulepreload"> list), the same
 // bytes on every URL, since this is a single-fallback SPA (one build/*.html,
-// no per-route prerender). ──
+// no per-route prerender).
 const html = readFileSync(indexHtmlPath, 'utf8')
 const initialFiles = [...html.matchAll(/rel="modulepreload"[^>]*href="([^"]+)"|href="([^"]+)"[^>]*rel="modulepreload"/g)]
   .map((m) => (m[1] ?? m[2]).replace(/^\//, ''))
   .filter((f) => f.endsWith('.js'))
 
 if (initialFiles.length === 0) {
-  console.error('check-bundle-size: found no modulepreload <link> in build/index.html — did the SvelteKit output shape change?')
+  console.error('check-bundle-size: found no modulepreload <link> in build/index.html: did the SvelteKit output shape change?')
   process.exit(1)
 }
 
 const initialBytes = initialFiles.reduce((sum, f) => sum + gzipSize(f), 0)
 
-// ── Share-link page JS: the marginal JS `/s/[token]` adds on top of the
-// initial shell — its leaf node's own module graph, walked via the client
-// build manifest, minus whatever the initial shell already paid for. ──
+// Share-link page JS: the marginal JS `/s/[token]` adds on top of the
+// initial shell: its leaf node's own module graph, walked via the client
+// build manifest, minus whatever the initial shell already paid for.
 const clientManifest = JSON.parse(readFileSync(clientManifestPath, 'utf8'))
 const { manifest: serverManifest } = await import(pathToFileUrl(serverManifestPath))
 const shareRoute = serverManifest._.routes.find((r) => r.id === '/s/[token]')
 if (!shareRoute) {
-  console.error('check-bundle-size: no "/s/[token]" route in the server manifest — did the share-link route move or get renamed?')
+  console.error('check-bundle-size: no "/s/[token]" route in the server manifest: did the share-link route move or get renamed?')
   process.exit(1)
 }
 

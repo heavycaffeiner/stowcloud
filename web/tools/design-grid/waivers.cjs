@@ -1,4 +1,4 @@
-// tools/design-grid/waivers.cjs — loads, validates and tracks web/design-waivers.json.
+// Loads, validates and tracks web/design-waivers.json.
 //
 // The design gate fails hard, so this file is the only way past it. Two rules
 // keep it from turning into a mute button: every entry needs a reason and an

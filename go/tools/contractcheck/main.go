@@ -115,10 +115,10 @@ func sendPairs() []sendPair {
 
 		// Absent, because the client rewrites the field names before sending:
 		//
-		//   CreateGrantReq — adminCreateGrant turns a `{kind, id}` principal
+		//   CreateGrantReq: adminCreateGrant turns a `{kind, id}` principal
 		//   into the wire's `user` or `group` string and stringifies share.
 		//
-		//   MoveReq — copy() and move() send one `{from, to, on_conflict}`
+		//   MoveReq: copy() and move() send one `{from, to, on_conflict}`
 		//   per path rather than the batch the type describes.
 		//
 		// A pair for either would compare the shape before the translation.

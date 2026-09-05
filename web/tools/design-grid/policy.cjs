@@ -1,4 +1,4 @@
-// tools/design-grid/policy.cjs — the one implementation of the grid policy.
+// The one implementation of the grid policy.
 // policy.mjs re-exports this through createRequire rather than restating it,
 // because a static rule and a runtime audit that disagree about what is legal
 // are worse than no check at all.

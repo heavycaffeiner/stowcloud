@@ -1,4 +1,4 @@
-// tools/design-grid/vite.audit.config.ts — the app's dev config with the API
+// The app's dev config with the API
 // proxy removed, used only by the runtime audit.
 //
 // vite.config.ts proxies `^/api`, `^/dav`, `^/c/`, `^/s/`, `^/ocs`,

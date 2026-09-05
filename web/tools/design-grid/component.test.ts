@@ -1,4 +1,4 @@
-// tools/design-grid/component.test.ts — the design gate's component layer.
+// The design gate's component layer.
 //
 // jsdom computes no layout, so nothing here measures geometry. It covers the
 // three things it genuinely can, all of which are invisible to the other two

@@ -1,4 +1,4 @@
-// tools/design-grid/audit.mjs — the runtime layer's driver.
+// The runtime layer's driver.
 //
 // Starts `vite dev` (mode development, so .env.development applies and
 // VITE_API_MOCK=1 selects the in-memory backend), drives Chromium over
@@ -115,7 +115,7 @@ async function mapLimit(items, limit, fn) {
   return results
 }
 
-// ── dev server ────────────────────────────────────────────────────────────
+// dev server
 
 const PID_FILE = path.join(WEB_ROOT, 'node_modules', '.cache', 'design-grid-vite.pid')
 
@@ -270,7 +270,7 @@ function killTree(child) {
   return Promise.race([exited, giveUp]).then(release)
 }
 
-// ── one page audit ────────────────────────────────────────────────────────
+// one page audit
 
 async function auditOne(page, spec, policy, runtimeWaivers, t) {
   const { pageSpec, viewport, theme, locale, baseUrl } = spec
@@ -401,7 +401,7 @@ async function settle(page) {
   ).catch(() => {})
 }
 
-// ── the run ───────────────────────────────────────────────────────────────
+// the run
 
 /**
  * Runs the whole matrix.
@@ -601,7 +601,7 @@ function reportRuntime({ violations, unchecked, audits, dead, partial }) {
   return violations.length > 0 ? EXIT.VIOLATIONS : EXIT.OK
 }
 
-// ── CLI ───────────────────────────────────────────────────────────────────
+// CLI
 
 if (import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2)

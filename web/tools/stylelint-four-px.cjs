@@ -1,4 +1,4 @@
-// tools/stylelint-four-px.cjs — custom stylelint plugin, the static layer of
+// Custom stylelint plugin, the static layer of
 // the design grid gate. The 4 px grid is enforced, not a convention.
 //
 // Four things are checked, all driven by tools/design-grid/policy.json:

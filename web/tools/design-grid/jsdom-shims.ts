@@ -1,4 +1,4 @@
-// tools/design-grid/jsdom-shims.ts — imported first by component.test.ts.
+// Imported first by component.test.ts.
 //
 // jsdom ships no window.matchMedia, and svelte/motion evaluates a
 // prefers-reduced-motion MediaQuery at module scope. m3-svelte's Slider pulls

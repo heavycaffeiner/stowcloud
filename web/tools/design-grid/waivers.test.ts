@@ -1,5 +1,5 @@
 // @vitest-environment node
-// tools/design-grid/waivers.test.ts — every path that must fail the build with
+// Every path that must fail the build with
 // a configuration error, plus the dead-waiver sweep.
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

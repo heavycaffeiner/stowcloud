@@ -1,4 +1,4 @@
-// tools/design-grid/check.mjs — the design gate's one entry point.
+// The design gate's one entry point.
 //
 // Runs the three layers and owns the exit-code contract, so `npm run
 // check:design` says the same thing whichever layer failed:
@@ -29,10 +29,10 @@ import { deadWaivers, sharedWaivers, WaiverConfigError } from './waivers.mjs'
 const WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 function heading(name) {
-  console.log(`\n── ${name} ${'─'.repeat(Math.max(0, 60 - name.length))}`)
+  console.log(`\n-- ${name} ${'-'.repeat(Math.max(0, 60 - name.length))}`)
 }
 
-// ── layer 1: static ───────────────────────────────────────────────────────
+// layer 1: static
 
 async function runStatic() {
   heading('static (stylelint sc/four-px-grid)')
@@ -60,7 +60,7 @@ async function runStatic() {
   return count > 0 ? EXIT.VIOLATIONS : EXIT.OK
 }
 
-// ── layer 2: component ────────────────────────────────────────────────────
+// layer 2: component
 
 function runComponent() {
   heading('component (vitest, jsdom)')
@@ -82,7 +82,7 @@ function runComponent() {
   })
 }
 
-// ── the gate ──────────────────────────────────────────────────────────────
+// the gate
 
 export async function checkDesign() {
   try {

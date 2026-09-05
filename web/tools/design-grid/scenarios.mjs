@@ -1,4 +1,4 @@
-// tools/design-grid/scenarios.mjs — the states no URL reaches.
+// The states no URL reaches.
 //
 // A dialog, a menu and a tray are where alignment goes wrong most often and
 // where a route-only audit is blindest: navigating to /b/home renders none of

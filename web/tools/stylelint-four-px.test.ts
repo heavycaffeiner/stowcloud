@@ -1,5 +1,5 @@
 // @vitest-environment node
-// tools/stylelint-four-px.test.ts — exercises the custom sc/four-px-grid
+// Exercises the custom sc/four-px-grid
 // stylelint rule directly: the 4 px grid is enforced, not a convention.
 // Runs in the `node` environment (not jsdom): stylelint's environment
 // detection mis-fires under jsdom because a global `document` exists

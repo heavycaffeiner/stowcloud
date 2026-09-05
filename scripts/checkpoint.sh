@@ -15,7 +15,7 @@ if bash scripts/verify.sh "$@"; then
 elif [ "$FORCE" = 1 ]; then
   STATUS="WIP (verification failing)"
 else
-  echo "verification failed — not committing.  re-run with --force to snapshot anyway." >&2
+  echo "verification failed; not committing.  re-run with --force to snapshot anyway." >&2
   exit 1
 fi
 
