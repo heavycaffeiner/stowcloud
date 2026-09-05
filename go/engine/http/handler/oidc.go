@@ -28,24 +28,46 @@ type OIDCStartView struct {
 	AuthorizeURL string `json:"authorize_url"`
 }
 
-// OIDCCallbackView is what a completed flow answers.
+// SessionOidcView is the caller's own provider link, as `GET /auth/session`
+// reports it to the account holder.
 //
-// One shape for both flows, distinguished by which field is set: a sign-in
-// carries the identity it established, a link carries only that it linked.
-// A client reading the wrong one gets a zero value rather than a wrong
-// answer.
-type OIDCCallbackView struct {
-	// Linked marks the account-linking flow. A sign-in leaves it false and
-	// carries an identity instead.
-	Linked bool `json:"linked,omitempty"`
+// Smaller than OIDCLinkView on purpose: an administrator's dedicated view
+// carries the full subject because diagnosing a sign-in needs the exact
+// string to compare against what the provider shows, but the account's own
+// screen only ever asks "is something connected", so a hint is enough and a
+// full identifier is one less thing this response discloses to whoever is
+// reading it in a browser's network tab.
+type SessionOidcView struct {
+	Linked bool `json:"linked"`
 
-	// Identity is the session that was established, absent on a link.
-	Identity IdentityView `json:"identity,omitzero"`
+	// SubjectHint is enough to recognise which identity is attached and
+	// never the whole subject.
+	SubjectHint string `json:"subject_hint,omitempty"`
+	LinkedNs    string `json:"linked_ns,omitempty"`
+}
 
-	// ReturnTo is where the client navigates next. It came from the request
-	// that began the flow and was validated then, so a client following it is
-	// following a path this server already accepted.
-	ReturnTo string `json:"return_to,omitempty"`
+// SessionOidcOf projects a link into what the account holder may see about
+// their own identity.
+func SessionOidcOf(l auth.OIDCLink) SessionOidcView {
+	return SessionOidcView{
+		Linked:      true,
+		SubjectHint: oidcSubjectHint(l.Subject),
+		LinkedNs:    strconv.FormatInt(l.LinkedNs, 10),
+	}
+}
+
+// oidcSubjectHint keeps four characters from each end of a subject and
+// replaces the rest, so the screen can say which identity is attached
+// without ever printing the whole of it. Runes, not bytes: a subject a
+// provider chose is not guaranteed to be ASCII, and slicing bytes could cut
+// a multi-byte character in half.
+func oidcSubjectHint(subject string) string {
+	r := []rune(subject)
+	const edge = 4
+	if len(r) <= edge*2 {
+		return subject
+	}
+	return string(r[:edge]) + "..." + string(r[len(r)-edge:])
 }
 
 // OIDCLinkView is one account's provider link, as an administrator sees it.

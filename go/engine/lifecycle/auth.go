@@ -213,6 +213,17 @@ func (e *Engine) session(c *fiber.Ctx) error {
 		return failKnown(c, err)
 	}
 
+	// Absent is the ordinary case, not a failure: most accounts hold no
+	// provider link, and the view still reports {"linked": false} for one
+	// rather than an empty struct silently reading as unlinked either way.
+	oidcView := handler.SessionOidcView{}
+	switch link, lerr := e.Auth.OIDCLinkOf(c.UserContext(), int64(owner)); {
+	case lerr == nil:
+		oidcView = handler.SessionOidcOf(link)
+	case !errors.Is(lerr, auth.ErrNoOIDCLink):
+		return failKnown(c, lerr)
+	}
+
 	view := handler.WhoAmIView{
 		IdentityView: handler.IdentityViewOf(
 			int64(owner), info.LoginName, info.DisplayName, admin, csrf,
@@ -221,6 +232,7 @@ func (e *Engine) session(c *fiber.Ctx) error {
 		SMBOptOut:     smb.OptOut,
 		SMBEnabled:    smb.Enabled,
 		SMBCredential: string(smb.Credential),
+		Oidc:          oidcView,
 		Roots:         e.rootViews(owner),
 		Limits:        e.limitsView(),
 		Features:      e.featuresView(),

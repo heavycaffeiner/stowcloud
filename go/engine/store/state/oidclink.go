@@ -59,6 +59,20 @@ type NewOIDCFlow struct {
 	CreatedNs     int64
 }
 
+// nullableUser converts the zero sentinel, a sign-on flow that has not
+// resolved an account yet, to SQL NULL.
+//
+// oidc_flow.user carries a foreign key to user(id), and SQLite exempts a NULL
+// column from that check rather than requiring it to name a row. Storing the
+// literal 0 instead would require an account with that id to exist, and none
+// ever does: ids start at one. Writing it that way made every sign-in
+// attempt fail before a redirect could even be issued, which a flow that
+// already knows its account (an account-linking attempt) never triggers,
+// since its id is never zero.
+func nullableUser(id int64) sql.NullInt64 {
+	return sql.NullInt64{Int64: id, Valid: id != 0}
+}
+
 // StartOIDCFlow records a flow and sweeps the expired ones in the same
 // transaction. Sweeping here rather than on a timer means a deployment nobody
 // links on accumulates nothing, and there is no timer to forget.
@@ -71,7 +85,7 @@ func (d *DB) StartOIDCFlow(ctx context.Context, in NewOIDCFlow, cutoffNs int64) 
 			return serr
 		}
 		_, ierr := tx.ExecContext(ctx, sqlInsertOIDCFlow,
-			in.StateDigest, in.User, in.Nonce, in.BindingDigest,
+			in.StateDigest, nullableUser(in.User), in.Nonce, in.BindingDigest,
 			in.CodeVerifier, in.RedirectURI, in.ReturnTo, in.CreatedNs)
 		return ierr
 	}); err != nil {
@@ -90,9 +104,10 @@ func (d *DB) StartOIDCFlow(ctx context.Context, in NewOIDCFlow, cutoffNs int64) 
 // redeemable.
 func (d *DB) TakeOIDCFlow(ctx context.Context, stateDigest []byte, cutoffNs int64) (OIDCFlow, error) {
 	var f OIDCFlow
+	var user sql.NullInt64
 	err := d.Write(ctx, func(tx *sql.Tx) error {
 		serr := tx.QueryRowContext(ctx, sqlSelectOIDCFlow, stateDigest, cutoffNs).Scan(
-			&f.User, &f.Nonce, &f.BindingDigest, &f.CodeVerifier,
+			&user, &f.Nonce, &f.BindingDigest, &f.CodeVerifier,
 			&f.RedirectURI, &f.ReturnTo, &f.CreatedNs)
 		if errors.Is(serr, sql.ErrNoRows) {
 			// Still deleted: an expired row found here is one nobody will
@@ -113,6 +128,9 @@ func (d *DB) TakeOIDCFlow(ctx context.Context, stateDigest []byte, cutoffNs int6
 	}
 	if err != nil {
 		return OIDCFlow{}, fmt.Errorf("consuming a single-sign-on flow: %w", err)
+	}
+	if user.Valid {
+		f.User = user.Int64
 	}
 	return f, nil
 }

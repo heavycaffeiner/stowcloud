@@ -96,6 +96,9 @@ describe('startOidcLogin', () => {
 
   it('percent-encodes returnTo so a path with a query survives the round trip', () => {
     const href = captureNavigation(() => startOidcLogin('/b/Docs?sort=name&order=desc'))
-    expect(href).toBe('/api/v1/auth/oidc/start?returnTo=%2Fb%2FDocs%3Fsort%3Dname%26order%3Ddesc')
+    // `return_to`, not `returnTo`: the server decodes `c.Query("return_to")`
+    // (go/engine/lifecycle/oidc.go's authOIDCStart), snake_case like every
+    // other field this API reads off the wire.
+    expect(href).toBe('/api/v1/auth/oidc/start?return_to=%2Fb%2FDocs%3Fsort%3Dname%26order%3Ddesc')
   })
 })

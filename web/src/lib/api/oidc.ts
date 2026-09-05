@@ -64,7 +64,14 @@ export async function fetchOidcConfig(): Promise<OidcConfig> {
  * header), and quietly substitutes its default when the value fails.
  */
 export function startOidcLogin(returnTo?: string | null): void {
-  const q = returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''
+  // The wire key is `return_to`, snake_case like every other field this API
+  // decodes; `returnTo` is only this app's own client-side query parameter
+  // (the compat consent bounce `/login?returnTo=` reads that one directly,
+  // never sends it anywhere). Sending the wrong spelling here answered
+  // `c.Query("return_to")` with nothing, so the server always fell back to
+  // its own default and every sign-in landed on the file browser regardless
+  // of where the person actually started.
+  const q = returnTo ? `?return_to=${encodeURIComponent(returnTo)}` : ''
   window.location.href = `${BASE}/auth/oidc/start${q}`
 }
 

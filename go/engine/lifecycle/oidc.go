@@ -11,6 +11,7 @@ package lifecycle
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 
@@ -18,7 +19,6 @@ import (
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/apierr"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/handler"
-	"github.com/heavycaffeiner/stowcloud/go/engine/http/middleware"
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
 	"github.com/heavycaffeiner/stowcloud/go/engine/kit/secret"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/auth"
@@ -152,15 +152,81 @@ func (e *Engine) beginOIDCFlow(
 	return writeJSON(c, fiber.StatusOK, handler.OIDCStartView{AuthorizeURL: target})
 }
 
+// oidcLoginPath is where a failed sign-on attempt (and a successful one with
+// no return_to) lands. It is a route the SPA owns unconditionally, unlike
+// the account's own screen, which needs a session to render at all.
+const oidcLoginPath = "/login"
+
+// oidcLinkErrorPath is the fixed landing page for a failed account-linking
+// attempt. A successful one goes to the returnTo the flow was started with;
+// a failed one may have no flow to read a returnTo from at all (an unknown
+// or expired state carries nothing), so this is the one address the client
+// always has a route for (`/settings/security` rewrites to the settings
+// screen's own security tab).
+const oidcLinkErrorPath = "/settings/security"
+
+// The wire tokens a failed flow's redirect carries in ?oidc_error=. The
+// client's oidcErrorMessage is the other half of this table: a code minted
+// here that is not a case there falls through to a generic sentence rather
+// than failing to render, so the two are free to drift without breaking
+// anything more than the specific wording shown.
+const (
+	oidcErrDisabled             = "oidc.disabled"
+	oidcErrBadRequest           = "oidc.bad_request"
+	oidcErrBadState             = "oidc.bad_state"
+	oidcErrNotLinked            = "oidc.not_linked"
+	oidcErrProviderUnavailable  = "oidc.provider_unavailable"
+	oidcErrAccessDenied         = "oidc.access_denied"
+	oidcErrLinkSessionChanged   = "oidc.link_session_changed"
+	oidcErrSubjectAlreadyLinked = "oidc.subject_already_linked"
+	// oidcErrInternal never gets its own sentence: the client's default case
+	// covers it. Naming it rather than reusing a table code keeps a genuine
+	// server fault from being reported to the person as something they can
+	// fix by trying again with different credentials.
+	oidcErrInternal = "internal"
+)
+
+// oidcRedirect sends the browser on, the only answer this callback ever
+// gives: it was reached by a full navigation the provider issued, not a
+// script that could read a JSON body, so anything else this handler wrote
+// would render as a raw document instead of returning control to the app.
+func oidcRedirect(c *fiber.Ctx, target string) error {
+	return c.Redirect(target, fiber.StatusFound)
+}
+
+// oidcRedirectError sends the browser to target carrying the failure code
+// the landing screen's oidcErrorMessage translates.
+func oidcRedirectError(c *fiber.Ctx, target, code string) error {
+	return oidcRedirect(c, target+"?oidc_error="+url.QueryEscape(code))
+}
+
+// oidcAmbiguousErrorPath picks a landing page for a failure that has no flow
+// to consult: an unknown or expired state, a malformed callback, or the
+// provider's own error carry nothing saying which of the two flows this was
+// an attempt at. A session already on the request is the signal instead,
+// since only the account-linking flow ever begins with one.
+func (e *Engine) oidcAmbiguousErrorPath(c *fiber.Ctx) string {
+	if _, ok := ownerOf(c); ok {
+		return oidcLinkErrorPath
+	}
+	return oidcLoginPath
+}
+
 // authOIDCCallback completes whichever flow the state names.
 //
 // The provider sends the browser here with no credential of ours, so every
 // decision comes from the stored flow: who it belongs to, where it returns
 // to, and which redirect URI the exchange has to repeat.
+//
+// Every path out of this handler is a redirect, never a JSON body: the
+// browser arrived by a full navigation the provider issued, and a script
+// reading fetch's response is not what is on the other end of it. A JSON
+// answer here used to leave the raw document on screen and the sign-on
+// silently going nowhere, on every attempt, success or failure alike.
 func (e *Engine) authOIDCCallback(c *fiber.Ctx) error {
 	client := e.oidc()
 	if client == nil {
-		return refuse(c, apierr.Classified{Class: apierr.SubsystemUnavailable})
+		return oidcRedirectError(c, e.oidcAmbiguousErrorPath(c), oidcErrDisabled)
 	}
 
 	if desc := c.Query("error"); desc != "" {
@@ -168,12 +234,12 @@ func (e *Engine) authOIDCCallback(c *fiber.Ctx) error {
 		// nothing here failed, and the person needs to know the other end
 		// declined.
 		e.logger.Info("the provider refused a sign-on", "error", desc)
-		return refuse(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		return oidcRedirectError(c, e.oidcAmbiguousErrorPath(c), oidcErrAccessDenied)
 	}
 
-	code, oidcState := c.Query("code"), c.Query("state")
-	if code == "" || oidcState == "" {
-		return refuse(c, apierr.Classified{Class: apierr.Malformed})
+	authCode, oidcState := c.Query("code"), c.Query("state")
+	if authCode == "" || oidcState == "" {
+		return oidcRedirectError(c, e.oidcAmbiguousErrorPath(c), oidcErrBadRequest)
 	}
 
 	// The binding is consumed whatever happens next: a flow whose callback
@@ -186,22 +252,31 @@ func (e *Engine) authOIDCCallback(c *fiber.Ctx) error {
 		// An unknown state, an expired one and a binding that did not match
 		// are one answer. Telling them apart says which half of a stolen pair
 		// is still worth having.
-		return refuse(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		return oidcRedirectError(c, e.oidcAmbiguousErrorPath(c), oidcErrBadState)
 	}
 
-	rawToken, err := client.Exchange(c.UserContext(), code, flow.RedirectURI, oidc.FlowSecrets{
+	// Known from here on: the flow row says definitively which of the two
+	// this attempt is, so every failure past this point lands on the
+	// specific screen that flow belongs to rather than guessing from the
+	// session.
+	landing := oidcLoginPath
+	if flow.User != 0 {
+		landing = oidcLinkErrorPath
+	}
+
+	rawToken, err := client.Exchange(c.UserContext(), authCode, flow.RedirectURI, oidc.FlowSecrets{
 		Nonce:        flow.Nonce,
 		CodeVerifier: flow.CodeVerifier,
 	})
 	if err != nil {
 		e.logger.Warn("the token exchange failed", "error", err)
-		return refuse(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		return oidcRedirectError(c, landing, oidcErrProviderUnavailable)
 	}
 
 	claims, err := client.VerifyIDToken(c.UserContext(), rawToken, flow.Nonce)
 	if err != nil {
 		e.logger.Warn("an identity token did not verify", "error", err)
-		return refuse(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		return oidcRedirectError(c, landing, oidcErrProviderUnavailable)
 	}
 
 	if flow.User != 0 {
@@ -212,13 +287,26 @@ func (e *Engine) authOIDCCallback(c *fiber.Ctx) error {
 
 // completeOIDCLink attaches the identity to the account that started the flow.
 func (e *Engine) completeOIDCLink(c *fiber.Ctx, flow auth.OIDCFlow, claims *oidc.Claims) error {
-	if err := e.Auth.CreateOIDCLink(c.UserContext(), flow.User, claims.Issuer, claims.Subject); err != nil {
-		return failKnown(c, err)
+	// The flow names who started it, but the browser completing it must still
+	// be that same person's session: between the redirect out and the
+	// redirect back, the account could have signed out, or somebody else
+	// could have signed in on the same browser. Linking to flow.User
+	// regardless would attach whoever is here now to somebody else's
+	// account, which is exactly what starting the flow required a
+	// reconfirmed password to prevent in the first place.
+	owner, ok := ownerOf(c)
+	if !ok || int64(owner) != flow.User {
+		return oidcRedirectError(c, oidcLinkErrorPath, oidcErrLinkSessionChanged)
 	}
-	return writeJSON(c, fiber.StatusOK, handler.OIDCCallbackView{
-		Linked:   true,
-		ReturnTo: flow.ReturnTo,
-	})
+
+	if err := e.Auth.CreateOIDCLink(c.UserContext(), flow.User, claims.Issuer, claims.Subject); err != nil {
+		if errors.Is(err, auth.ErrOIDCLinkTaken) {
+			return oidcRedirectError(c, oidcLinkErrorPath, oidcErrSubjectAlreadyLinked)
+		}
+		e.logger.Error("attaching a single-sign-on identity failed", "error", err)
+		return oidcRedirectError(c, oidcLinkErrorPath, oidcErrInternal)
+	}
+	return oidcRedirect(c, flow.ReturnTo)
 }
 
 // completeOIDCSignIn issues a session for the account holding this identity.
@@ -231,32 +319,26 @@ func (e *Engine) completeOIDCSignIn(c *fiber.Ctx, flow auth.OIDCFlow, claims *oi
 	if err != nil {
 		e.logger.Info("a provider identity is not linked to any account",
 			"issuer", claims.Issuer)
-		return refuse(c, apierr.Classify(auth.ErrCredentials, apierr.VisibilityKnown))
+		return oidcRedirectError(c, oidcLoginPath, oidcErrNotLinked)
 	}
 
 	sess, err := e.Auth.CreateSession(c.UserContext(), user,
 		clientAddr(c), string(c.Request().Header.UserAgent()), amrProvider, oidcSessionTTL)
 	if err != nil {
-		return failKnown(c, err)
+		e.logger.Error("establishing a single-sign-on session failed", "error", err)
+		return oidcRedirectError(c, oidcLoginPath, oidcErrInternal)
 	}
 
-	printable := printableToken(sess.Token)
-	e.setSessionCookie(c, printable)
-
-	info, err := e.Auth.AccountInfo(c.UserContext(), user)
-	if err != nil {
-		return failKnown(c, err)
-	}
-	admin, err := e.Auth.IsAdmin(c.UserContext(), user)
-	if err != nil {
-		return failKnown(c, err)
+	// Best effort, by TouchOIDCLink's own contract: the session above already
+	// succeeded, and an administrator auditing this identity should see it
+	// was just used rather than "never", which is what an account signing in
+	// every day reported before this call existed.
+	if terr := e.Auth.TouchOIDCLink(c.UserContext(), claims.Issuer, claims.Subject); terr != nil {
+		e.logger.Warn("stamping a single-sign-on link's last use failed", "error", terr)
 	}
 
-	return writeJSON(c, fiber.StatusOK, handler.OIDCCallbackView{
-		ReturnTo: flow.ReturnTo,
-		Identity: handler.IdentityViewOf(user, info.LoginName, info.DisplayName, admin,
-			middleware.CSRFToken(e.csrfKey(), printable)),
-	})
+	e.setSessionCookie(c, printableToken(sess.Token))
+	return oidcRedirect(c, flow.ReturnTo)
 }
 
 // amrProvider records that a session was established by the provider rather

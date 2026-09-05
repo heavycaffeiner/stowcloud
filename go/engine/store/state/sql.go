@@ -643,6 +643,36 @@ CREATE TABLE share_encryption (
 ) WITHOUT ROWID;
 `
 
+// Step 16 lets oidc_flow.user go unset. A sign-in attempt has not resolved an
+// account when the flow starts, only an account-linking attempt has one, and
+// the column's foreign key required a row to exist for either: step 7 stored
+// the sentinel 0 for "none yet", which named an account that was never
+// there, and starting a sign-in flow failed before the redirect it was
+// supposed to produce. NULL is exempt from a foreign key rather than a value
+// that must satisfy it, which is what a flow without an account yet needs to
+// store.
+//
+// SQLite has no way to drop a column's constraint in place, so the table is
+// rebuilt. Every row still live is at most oidcFlowWindow old and would have
+// expired within minutes regardless, so carrying them across costs nothing
+// this rebuild does not already pay for.
+const schemaV16 = `
+CREATE TABLE oidc_flow_v16 (
+  state_digest    BLOB PRIMARY KEY,
+  user            INTEGER REFERENCES user(id) ON DELETE CASCADE,
+  nonce           TEXT NOT NULL,
+  binding_digest  BLOB NOT NULL,
+  code_verifier   TEXT NOT NULL,
+  redirect_uri    TEXT NOT NULL,
+  return_to       TEXT NOT NULL DEFAULT '',
+  created_ns      INTEGER NOT NULL
+) WITHOUT ROWID;
+INSERT INTO oidc_flow_v16 SELECT * FROM oidc_flow WHERE user != 0;
+DROP TABLE oidc_flow;
+ALTER TABLE oidc_flow_v16 RENAME TO oidc_flow;
+CREATE INDEX oidc_flow_created ON oidc_flow(created_ns);
+`
+
 // migrations is a function instead of a package-level slice so nothing can
 // reassign the list. Position determines version, so a released step is never
 // modified, renumbered or moved.
@@ -671,5 +701,6 @@ func migrations() []dbfile.Migration {
 		},
 		{Name: "14: share backends", SQL: schemaV14},
 		{Name: "15: client-held share encryption", SQL: schemaV15},
+		{Name: "16: a single-sign-on flow may have no account yet", SQL: schemaV16},
 	}
 }

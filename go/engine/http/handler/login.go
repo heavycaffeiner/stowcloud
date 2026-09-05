@@ -119,6 +119,12 @@ type WhoAmIView struct {
 	// is the state the interface reports as "no folders yet".
 	Roots []RootView `json:"roots"`
 
+	// Oidc is the caller's own provider link, never absent: an account with
+	// none reports {"linked": false} rather than omitting the key, so a
+	// screen reading it does not have to treat "no field" and "not linked" as
+	// two different states.
+	Oidc SessionOidcView `json:"oidc"`
+
 	Limits   LimitsView   `json:"limits"`
 	Features FeaturesView `json:"features"`
 }
