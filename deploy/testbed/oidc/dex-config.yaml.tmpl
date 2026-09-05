@@ -1,0 +1,49 @@
+# Dex configuration template for scripts/test_oidc_e2e.py.
+#
+# Dex was picked over ghcr.io/navikt/mock-oauth2-server and quay.io/keycloak/keycloak
+# for this harness: its TLS listener takes plain PEM files (`tlsCert`/`tlsKey`)
+# where mock-oauth2-server needs a Java keystore built from them first, and
+# its `enablePasswordDB` connector serves a real HTML login form a script can
+# parse and POST credentials to, rather than requiring a browser-rendered
+# realm console the way Keycloak's `start-dev` does. It also starts in
+# under a second with one static file, against Keycloak's multi-second JVM
+# boot. Readiness is a real HTTP poll of its own discovery document, never a
+# sleep.
+#
+# The whole thing but for the client redirect URI, the listen port, the
+# issuer host and the salted password hashes (all of which vary per test
+# run) lives in this one file, substituted by the harness at __TOKEN__
+# markers rather than templated by a library: the file stays valid YAML on
+# its own and diff-able as one.
+issuer: __ISSUER__
+
+storage:
+  type: memory
+
+web:
+  https: 0.0.0.0:__PORT__
+  tlsCert: /etc/dex/tls/tls.crt
+  tlsKey: /etc/dex/tls/tls.key
+
+# skipApprovalScreen: this harness authenticates as the resource owner, not
+# as a person clicking through a consent screen; the consent step belongs to
+# a UI test, not to a check that the authorization-code exchange and token
+# validation are wired correctly.
+#
+# passwordConnector: local selects the built-in password database as the
+# only sign-in method, so GET /auth lands straight on the login form instead
+# of a connector-selection screen with one entry on it.
+oauth2:
+  skipApprovalScreen: true
+  passwordConnector: local
+
+staticClients:
+  - id: __CLIENT_ID__
+    name: Stowcloud OIDC e2e test client
+    secret: __CLIENT_SECRET__
+    redirectURIs:
+      - __REDIRECT_URI__
+
+enablePasswordDB: true
+staticPasswords:
+__STATIC_PASSWORDS__
