@@ -54,6 +54,9 @@ func (e *Engine) adminSettingsGet(c *fiber.Ctx) error {
 	}
 
 	values := runtimecfg.Load(c.UserContext(), e.State, runtimecfg.Defaults(), e.logger)
+	// A process argument rather than a stored setting, so the loader cannot
+	// know it: the engine is the only thing that does.
+	values.DataDir = e.dataDir
 	return writeJSON(c, fiber.StatusOK, handler.SettingsOf(
 		catalogue.Of(values, stored), e.hopOf(c)))
 }

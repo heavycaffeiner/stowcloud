@@ -48,7 +48,8 @@ const (
 	keySMBDirUnavailable   = "settings.smb_config_dir_unavailable"
 	keyAboveWatchLimit     = "settings.above_kernel_watch_limit"
 	keyWithinWatchLimit    = "settings.within_kernel_watch_limit"
-	keyOIDCSecretRequired  = "settings.oidc_client_secret_required"
+	//nolint:gosec // G101 reads the name: this is an i18n key, not a credential.
+	keyOIDCSecretRequired = "settings.oidc_client_secret_required"
 )
 
 // watchLimitFile is where the kernel reports what it will actually grant. It is
@@ -178,16 +179,14 @@ func checkOIDC(in Input) []Finding {
 		}
 	}
 
-	// A key the body does not carry reads as its zero value, which is the
-	// right answer for both: an absent `public_client` is not public, and an
-	// absent `client_secret` supplies nothing.
+	// A key the body does not carry reads as its zero value: an absent
+	// `public_client` is not public, and an absent `client_secret` supplies
+	// nothing. Read the way every other field in this file is read.
 	public, isPublic := in.Body["public_client"].(bool)
-	suppliedInBody, hasField := in.Body["client_secret"].(string)
-	public = isPublic && public
-	if !hasField {
-		suppliedInBody = ""
-	}
-	if !public && !in.HasSecret && strings.TrimSpace(suppliedInBody) == "" {
+	supplied, hasSecretField := in.Body["client_secret"].(string)
+	declaredPublic := isPublic && public
+	suppliedNow := hasSecretField && strings.TrimSpace(supplied) != ""
+	if !declaredPublic && !in.HasSecret && !suppliedNow {
 		out = append(out, blocking(in.Section, "client_secret", keyOIDCSecretRequired))
 	}
 	return out

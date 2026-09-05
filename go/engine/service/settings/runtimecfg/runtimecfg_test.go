@@ -400,10 +400,13 @@ func TestSetWithoutACallback(t *testing.T) {
 // rather than a list, so a field added later is caught here.
 func TestEveryValuesFieldIsReachable(t *testing.T) {
 	// The fields that are deliberately not loaded from the document: they are
-	// derived or set by the wiring rather than stored.
+	// derived or set by the wiring rather than stored. DataDir is a process
+	// argument the engine fills in, which is why it is reported and never
+	// editable.
 	derived := map[string]bool{
 		"SMBConfigured":   true,
 		"OIDCDisplayName": true,
+		"DataDir":         true,
 	}
 
 	rt := reflect.TypeOf(Values{})

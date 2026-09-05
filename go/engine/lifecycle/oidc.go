@@ -186,6 +186,7 @@ const (
 	// exchange the provider refused): defect 15's no-kid case is a token
 	// that arrived and could not be trusted, not a provider that could not
 	// be reached.
+	//nolint:gosec // G101 reads the name: this is an i18n key, not a credential.
 	oidcErrInvalidToken = "auth.invalid_credentials"
 	// oidcErrInternal never gets its own sentence: the client's default case
 	// covers it. Naming it rather than reusing a table code keeps a genuine

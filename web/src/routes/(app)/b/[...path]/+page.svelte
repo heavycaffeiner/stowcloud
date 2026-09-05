@@ -60,7 +60,7 @@
   import { downloadPath, triggerUrlDownload } from '../../../../lib/format/download'
   import { downloadEncryptedFile, downloadEncryptedFolder } from '../../../../lib/crypto/download-sw'
   import { encryptionForLabel, shareLabelOf } from '../../../../lib/crypto/encrypted-shares'
-  import { FileTooLargeError, LockedSessionError } from '../../../../lib/crypto/e2ee'
+  import { FileTooLargeError, LockedSessionError, isUnlocked } from '../../../../lib/crypto/e2ee'
   import UnlockShareDialog from '../../../../lib/ui/UnlockShareDialog.svelte'
 
   const session = createSession()
@@ -115,6 +115,27 @@
   // file's own size overstates every file by the crypt framing.
   const shareEncryption = createQuery(() => shareEncryptionQuery(path))
   const encrypted = $derived(shareEncryption.data != null)
+
+  // Whether the session holds this share's key. `isUnlocked` is a plain read,
+  // so the events `crypto/e2ee.ts` dispatches on unlock and lock are what
+  // make it reactive here.
+  let unlockTick = $state(0)
+  $effect(() => {
+    const bump = (): void => {
+      unlockTick += 1
+    }
+    window.addEventListener('sc:unlock', bump)
+    window.addEventListener('sc:lock', bump)
+    return () => {
+      window.removeEventListener('sc:unlock', bump)
+      window.removeEventListener('sc:lock', bump)
+    }
+  })
+  const shareUnlocked = $derived.by(() => {
+    unlockTick
+    const salt = shareEncryption.data?.salt
+    return salt !== undefined && isUnlocked(salt)
+  })
 
   /** The selection resolved against what is listed. A name the selection
    *  still holds for a row that has since gone simply matches nothing, which
@@ -580,6 +601,18 @@
 
   function openUnlockFor(encryption: { salt: string; verifier: string }, retry: () => void): void {
     unlockTarget = { salt: encryption.salt, verifier: encryption.verifier, retry }
+  }
+
+  /** Unlock this share with nothing else to go on.
+   *
+   *  Every other route into the passphrase prompt starts from an action that
+   *  failed: a download, a preview. An empty encrypted share has no file to
+   *  fail on, so uploads were refused as locked and there was no way to reach
+   *  the prompt at all. */
+  function unlockThisShare(): void {
+    const enc = shareEncryption.data
+    if (!enc) return
+    openUnlockFor(enc, () => {})
   }
 
   function encryptedDownloadFailureMessage(err: unknown, fallback: string): string {
@@ -1165,7 +1198,7 @@
           {t('common.shared_with_other_services')}
         </span>
       {/if}
-      {#if encrypted}
+      {#if encrypted && shareUnlocked}
         <!-- Nothing else on this screen says the share is encrypted, and the
              difference is load-bearing: the sizes shown are derived from
              ciphertext, and the server holds no key for this content. -->
@@ -1173,6 +1206,15 @@
           <Icon icon={icons.lock} size={14} />
           {t('browse.encrypted_badge')}
         </span>
+      {:else if encrypted}
+        <!-- The only way into the passphrase prompt that does not start from
+             a failed action. An empty encrypted share has no file to fail on,
+             so without this there is no way forward at all: uploads are
+             refused as locked and there is nothing to download. -->
+        <button type="button" class="sc-browse__encrypted-badge sc-browse__encrypted-badge--locked" onclick={unlockThisShare}>
+          <Icon icon={icons.lock} size={14} />
+          {t('browse.encrypted_locked_badge')}
+        </button>
       {/if}
       {#if rootBroken}
         <!-- The badge is on the folder rather than only in the failed
@@ -1715,6 +1757,15 @@
     color: var(--m3c-on-error-container);
     @apply --m3-label-small;
     white-space: nowrap;
+  }
+  /* The locked form is a real button: it is the only way into the passphrase
+     prompt on a share with no file to fail on. */
+  .sc-browse__encrypted-badge--locked {
+    border: none;
+    cursor: pointer;
+    background: var(--m3c-secondary-container);
+    color: var(--m3c-on-secondary-container);
+    font: inherit;
   }
   /* A property of the folder rather than a warning about it, so the neutral
      surface container rather than the error or tertiary one. */

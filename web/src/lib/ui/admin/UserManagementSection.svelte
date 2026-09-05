@@ -335,7 +335,9 @@
   </form>
   {#snippet actions()}
     <Button variant="text" onclick={closeCreate} disabled={creating}>{t('common.cancel')}</Button>
-    <Button variant="filled" onclick={() => submitCreate()} disabled={!newName || !newPassword} loading={creating}>
+    <!-- The same floor the dialog states and the server enforces, so the
+         button does not offer a click that is refused on arrival. -->
+    <Button variant="filled" onclick={() => submitCreate()} disabled={!newName || newPassword.length < MIN_PASSWORD_LEN} loading={creating}>
       {t('common.add')}
     </Button>
   {/snippet}

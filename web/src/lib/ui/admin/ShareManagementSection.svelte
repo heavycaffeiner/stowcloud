@@ -29,7 +29,7 @@
   import { describeApiError } from '../../api/error-text'
   import { adminShareMutation, adminSharesQuery } from '../../query/admin'
   import { queryClient } from '../../query/client'
-  import { generateSalt, deriveKeys, makeVerifier, type DerivedKeys } from '../../crypto/e2ee'
+  import { generateSalt, deriveKeys, makeVerifier, unlock, type DerivedKeys } from '../../crypto/e2ee'
   import { invalidateEncryptedShares } from '../../crypto/encrypted-shares'
   import { clean } from '@noble/ciphers/utils.js'
   import Button from '../Button.svelte'
@@ -542,6 +542,11 @@
       // turned encryption on and switches to the file browser would see
       // plaintext still flow.
       invalidateEncryptedShares()
+      // The passphrase was just typed, so the session holds it: unlocking
+      // here rather than making the operator type it again at the first
+      // upload. Without it, enabling encryption and switching to the browse
+      // screen lands on a locked share with nothing to unlock it from.
+      await unlock(encPassphrase, salt, verifier)
       encAnnouncement = t('encryption.enabled_for', { name: target.name })
       encEnableTarget = null
       encPassphrase = ''

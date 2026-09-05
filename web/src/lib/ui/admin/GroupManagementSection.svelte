@@ -5,7 +5,7 @@
   // GET/POST /api/admin/groups, PATCH/DELETE /api/admin/groups/{id},
   // POST /api/admin/groups/{id}/members, DELETE .../members/{user}.
   import { createMutation, createQuery } from '@tanstack/svelte-query'
-  import { t } from '../../i18n'
+  import { t, tp } from '../../i18n'
   import { ApiError, type AdminGroup } from '../../api/client'
   import { describeApiError } from '../../api/error-text'
   import { adminGroupMutation, adminGroupsQuery, adminUsersQuery } from '../../query/admin'
@@ -239,7 +239,7 @@
           <ListItem>
             {#snippet headline()}
               <span class="sc-group-mgmt__name">{g.name}</span>
-              <Chip variant="assist">{t('group.members', { count: g.members.length })}</Chip>
+              <Chip variant="assist">{tp('group.members', g.members.length)}</Chip>
             {/snippet}
             {#snippet trailing()}
               <IconButton label={t('group.manage_members', { name: g.name })} onclick={() => openMembers(g)}>
@@ -306,7 +306,7 @@
         <ul class="sc-group-mgmt__chips">
           {#each membersTarget.members as uid (uid)}
             <li>
-              <Chip onremove={() => removeMember(uid)}>
+              <Chip onremove={() => removeMember(uid)} ariaLabel={t('group.remove_member', { name: userName(uid) })}>
                 {memberBusyId === uid ? '...' : userName(uid)}
               </Chip>
             </li>

@@ -89,6 +89,11 @@ type Values struct {
 	SMBSocket     string
 	SMBConfigured bool
 
+	// DataDir is where the process was pointed at startup. Reported, never
+	// configured: it holds the database this document lives in, so a screen
+	// that could edit it would be editing where its own answer came from.
+	DataDir string
+
 	// Listen is the TLS bind address, consulted while constructing the listener.
 	Listen string
 

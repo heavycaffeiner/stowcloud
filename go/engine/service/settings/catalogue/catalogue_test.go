@@ -47,6 +47,13 @@ func TestTheCatalogueDescribesEveryFieldTheLoaderReads(t *testing.T) {
 		if key == "oidc.smb_policy" {
 			continue
 		}
+		// data_dir is a process argument the engine fills in, reported so an
+		// operator can see where this deployment keeps its state. There is no
+		// loader side by construction: a document cannot name the directory
+		// the document itself is read from.
+		if key == "data_dir" {
+			continue
+		}
 		// The network fields are described by their bare names, which is what
 		// the screen addresses them by, and stored under the network section.
 		if !loaded[key] && !loaded["network."+key] {

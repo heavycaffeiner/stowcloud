@@ -22,10 +22,14 @@
     selected?: boolean
     onclick?: (e: MouseEvent) => void
     onremove?: () => void
+    /** What activating this chip does. The chip's own text names the thing;
+     *  without this a remove chip announces as just "viewer" and the action
+     *  is never spoken. */
+    ariaLabel?: string
     children: Snippet
   }
 
-  let { variant = 'assist', selected = false, onclick, onremove, children }: Props = $props()
+  let { variant = 'assist', selected = false, onclick, onremove, ariaLabel, children }: Props = $props()
 
   // m3-svelte folds filter and suggestion into one `general` variant.
   const M3_VARIANT = { assist: 'assist', filter: 'general', input: 'input' } as const
@@ -33,7 +37,13 @@
 </script>
 
 {#if action}
-  <Chip variant={M3_VARIANT[variant]} {selected} trailingIcon={onremove ? icons.close : undefined} onclick={action}>
+  <Chip
+    variant={M3_VARIANT[variant]}
+    {selected}
+    trailingIcon={onremove ? icons.close : undefined}
+    onclick={action}
+    aria-label={ariaLabel}
+  >
     {@render children()}
   </Chip>
 {:else}

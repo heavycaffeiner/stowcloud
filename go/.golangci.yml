@@ -103,22 +103,6 @@ linters:
           - gosec
         text: "G101"
 
-      # A message key is a name the client looks up to find a sentence, not a
-      # value that opens anything. G101 reads the identifier, so a key named
-      # for the refusal it explains (invalid_credentials, secret_required)
-      # matches on the word rather than on what the constant holds. Both of
-      # these sit beside their siblings in a block of catalogue keys, and the
-      # strings they name are in web/src/lib/i18n.
-      - path: engine/lifecycle/oidc\.go
-        linters:
-          - gosec
-        text: "G101"
-
-      - path: engine/service/settings/check/check\.go
-        linters:
-          - gosec
-        text: "G101"
-
       # A filesystem test proves this tree's own drivers against the host's
       # formatters and checkers: mkfs.vfat, mkfs.exfat, fsck.exfat, mcopy.
       # G204 taints whatever `exec.LookPath` returns, which is the only way

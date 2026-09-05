@@ -235,6 +235,10 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 		// document fresh on each call rather than holding a value from
 		// startup.
 		str("smb.config_dir", values.SMBConfigDir, false, ""),
+		// The process argument, reported so an operator can see where this
+		// deployment keeps its state without reading the unit file. It has
+		// never been a catalogue field a save could change.
+		str("data_dir", values.DataDir, false, ""),
 		str("smb.agent_socket", values.SMBSocket, false, ""),
 		// The policy reaches the auth service directly. Two values, and an
 		// unrecognised one is read as blocking: the names are the contract
