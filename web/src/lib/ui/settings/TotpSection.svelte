@@ -4,7 +4,7 @@
   // re-login or a password reset: the session stays alive and the modal
   // only asks for one password field.
   import { createMutation, createQuery } from '@tanstack/svelte-query'
-  import { t } from '../../i18n'
+  import { t, tp } from '../../i18n'
   import { ApiError } from '../../api/client'
   import { describeApiError } from '../../api/error-text'
   import Button from '../Button.svelte'
@@ -200,7 +200,7 @@
       {#if recovery.data}
         <p class="sc-totp__recovery-count" class:sc-totp__recovery-count--low={recovery.data.remaining <= 3}>
           {#if recovery.data.remaining <= 3}<Icon icon={icons.warning} size={16} />{/if}
-          {t('totp.recovery_codes_left', { count: recovery.data.remaining })}
+          {tp('totp.recovery_codes_left', recovery.data.remaining)}
           {#if recovery.data.remaining <= 3}
             {t('totp.running_low_reissue_them_now')}
           {/if}

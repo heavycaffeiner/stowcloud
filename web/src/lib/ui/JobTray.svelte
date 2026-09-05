@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { t } from '../i18n'
+  import { t, tp } from '../i18n'
   import { fly, slide } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import { createQuery, createQueries, createMutation, type CreateQueryResult } from '@tanstack/svelte-query'
@@ -166,15 +166,15 @@
         void queryClient.invalidateQueries({ queryKey: ['path'] })
         const label = kindLabel(item.kind)
         if (item.status === 'done') {
-          say('polite', t('job.job_finished_items_processed', { kind: label, count: item.total }))
+          say('polite', tp('job.job_finished_items_processed', item.total, { kind: label }))
         } else if (item.status === 'cancelled') {
-          say('polite', t('job.job_cancelled_items_completed', { kind: label, count: item.done }))
+          say('polite', tp('job.job_cancelled_items_completed', item.done, { kind: label }))
         } else if (item.status === 'interrupted') {
           const left = outstanding(item).length
           say(
             'assertive',
-            t('job.job_was_interrupted_by_server', { kind: label, count: item.done }) +
-              (left > 0 ? ' ' + t('job.left', { count: left }) : '')
+            tp('job.job_was_interrupted_by_server', item.done, { kind: label }) +
+              (left > 0 ? ' ' + tp('job.left', left) : '')
           )
         } else if (item.status === 'error') {
           say(
@@ -249,9 +249,9 @@
             {#if item.status === 'error' && item.message}
               <p class="sc-job-tray__message">{t(item.message, item.messageParams)}</p>
             {:else if item.status === 'cancelled'}
-              <p class="sc-job-tray__message">{t('job.cancelled_completed', { count: item.done })}</p>
+              <p class="sc-job-tray__message">{tp('job.cancelled_completed', item.done)}</p>
             {:else if item.status === 'interrupted'}
-              <p class="sc-job-tray__message">{t('job.interrupted_by_server_restart_completed', { count: item.done })}</p>
+              <p class="sc-job-tray__message">{tp('job.interrupted_by_server_restart_completed', item.done)}</p>
             {/if}
             {#if outstanding(item).length > 0}
               <!-- A job that stopped without finishing is only "not lost" if

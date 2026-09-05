@@ -10,7 +10,7 @@
   import { createQuery, createMutation } from '@tanstack/svelte-query'
   import { trashQuery, trashRestoreMutation, trashPurgeMutation } from '../../../lib/query/files'
   import { describeApiError } from '../../../lib/api/error-text'
-  import { formatDateNs, t } from '../../../lib/i18n'
+  import { formatDateNs, t, tp } from '../../../lib/i18n'
   import { formatBytes } from '../../../lib/format/bytes'
   import { selection } from '../../../lib/store/selection.store'
   import Button from '../../../lib/ui/Button.svelte'
@@ -59,7 +59,7 @@
   /** Summarizes a batch OpResult array with total and failure counts. */
   function summarize(results: { ok: boolean }[], verb: string): string {
     const failed = results.filter((r) => !r.ok).length
-    if (failed === 0) return t('trash.items', { count: results.length, verb })
+    if (failed === 0) return tp('trash.items', results.length, { verb })
     const ok = results.length - failed
     return t('trash.succeeded_failed', { verb, ok, failed })
   }

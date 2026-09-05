@@ -42,7 +42,7 @@
   import { icons } from '../../icons'
   import ProgressCircular from '../ProgressCircular.svelte'
   import TextField from '../TextField.svelte'
-  import { formatDateNs, formatDuration, formatNumber, t } from '../../i18n'
+  import { formatDateNs, formatDuration, formatNumber, t, tp } from '../../i18n'
   import {
     DEBOUNCE_MS,
     MAX_RECORDS,
@@ -208,7 +208,7 @@
       start: formatDateNs(bar.startNs),
       end: formatDateNs(bar.endNs)
     })
-    const total = t('logs.event_count', { count: formatNumber(bar.total) })
+    const total = tp('logs.event_count', bar.total, { count: formatNumber(bar.total) })
     if (bar.segments.length === 0) return `${range}. ${total}`
     const parts = bar.segments.map((s) =>
       t('logs.series_count', {
@@ -561,7 +561,7 @@
     {:else if items.length === 0}
       {t('logs.no_records_match')}
     {:else}
-      {t('logs.showing_records', { count: items.length })}
+      {tp('logs.showing_records', items.length)}
     {/if}
   </p>
 
@@ -607,7 +607,7 @@
               >
                 {@render serverContent(item.record)}
                 <span class="sc-logs__disclose">
-                  {t('logs.attribute_count', { count: attrs.length })}
+                  {tp('logs.attribute_count', attrs.length)}
                   <span class="sc-logs__chevron" class:sc-logs__chevron--open={open}>
                     <Icon icon={icons['chevron-right']} size={18} />
                   </span>
@@ -634,7 +634,7 @@
 
     {#if truncated}
       <p class="sc-logs__note" role="status">
-        {t('logs.reached_the_cap', { count: formatNumber(items.length) })}
+        {tp('logs.reached_the_cap', items.length, { count: formatNumber(items.length) })}
       </p>
     {:else if hasMore}
       <div class="sc-logs__more">
