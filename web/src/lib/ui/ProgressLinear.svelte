@@ -1,8 +1,8 @@
 <script lang="ts">
   // Adapter over m3-svelte's LinearProgress.
   //
-  // The framework ships no indeterminate *linear* bar — `LoadingIndicator` is
-  // its only indeterminate affordance — so a null value renders that instead.
+  // The framework ships no indeterminate *linear* bar (`LoadingIndicator` is
+  // its only indeterminate affordance) so a null value renders that instead.
   // Only JobTray reaches it, for the moment between a job being enqueued and
   // its total being counted; a 0%-wide bar there would claim progress we do
   // not have.

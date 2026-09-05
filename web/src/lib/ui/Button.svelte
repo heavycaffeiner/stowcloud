@@ -5,7 +5,7 @@
   // about.
   //
   // `loading` keeps the label in the layout (`visibility: hidden`, not
-  // removed) so the button's box stays exactly its resting width — swapping
+  // removed) so the button's box stays exactly its resting width: swapping
   // the label for a spinner is what used to make buttons jump width mid-click.
   //
   // `danger` remaps the colour roles rather than adding a variant, so the
@@ -21,8 +21,8 @@
     /** MD3 error-role colouring for a destructive action (permanent purge,
      *  revoking a share link). */
     danger?: boolean
-    /** MD3's reduced corner radius, for a segment inside `ConnectedButtons`
-     *  — the group owns the outer rounding, the segments must not. */
+    /** MD3's reduced corner radius, for a segment inside `ConnectedButtons`:
+     *  the group owns the outer rounding, the segments must not. */
     square?: boolean
     /** Toggle semantics. A filled-vs-outlined variant swap conveys the
      *  selected state to sighted users only; without this a screen reader
@@ -31,6 +31,10 @@
     disabled?: boolean
     loading?: boolean
     type?: 'button' | 'submit'
+    /** Overrides the accessible name where the visible label is too short to
+     *  say what the button acts on: several rows of "Copy" have to announce
+     *  which value each one copies. */
+    ariaLabel?: string
     onclick?: (e: MouseEvent) => void
     children: Snippet
     icon?: Snippet
@@ -44,6 +48,7 @@
     disabled = false,
     loading = false,
     type = 'button',
+    ariaLabel,
     onclick,
     children,
     icon
@@ -66,6 +71,7 @@
   style={danger ? DANGER_ROLES : undefined}
   aria-busy={loading || undefined}
   aria-pressed={pressed}
+  aria-label={ariaLabel}
 >
   {#if icon}{@render icon()}{/if}
   <span class:hidden={loading}>{@render children()}</span>

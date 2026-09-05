@@ -2,8 +2,8 @@
   // Active sessions: IP/UA are display-only
   // records, not an authentication condition. Individual sessions can be
   // revoked, and the current session gets a badge.
-  import { onMount } from 'svelte'
-  import { api, ApiError, type ActiveSession } from '../../api/client'
+  import { createMutation, createQuery } from '@tanstack/svelte-query'
+  import { ApiError, type ActiveSession } from '../../api/client'
   import { formatDateNs, t } from '../../i18n'
   import { describeUserAgent } from '../../format/user-agent'
   import Button from '../Button.svelte'
@@ -13,26 +13,13 @@
   import { Icon } from 'm3-svelte'
   import { icons } from '../../icons'
   import ProgressCircular from '../ProgressCircular.svelte'
+  import { activeSessionsQuery, revokeSessionMutation } from '../../query/account'
 
-  let sessions = $state<ActiveSession[]>([])
-  let loading = $state(true)
-  let loadError = $state<string | null>(null)
+  const list = createQuery(() => activeSessionsQuery())
+  const sessions = $derived(list.data ?? [])
+
   let revokeTarget = $state<ActiveSession | null>(null)
-  let revoking = $state(false)
-
-  async function load(): Promise<void> {
-    loading = true
-    loadError = null
-    try {
-      sessions = await api.listSessions()
-    } catch {
-      loadError = t('common.could_not_load_list')
-    } finally {
-      loading = false
-    }
-  }
-
-  onMount(load)
+  const revoke = createMutation(() => revokeSessionMutation())
 
   function askRevoke(s: ActiveSession): void {
     revokeTarget = s
@@ -42,29 +29,29 @@
     revokeTarget = null
   }
 
-  async function confirmRevoke(): Promise<void> {
+  function confirmRevoke(): void {
     if (!revokeTarget) return
-    revoking = true
-    try {
-      await api.revokeSession(revokeTarget.id_hash)
-      revokeTarget = null
-      await load()
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
+    revoke.mutate(revokeTarget.id_hash, {
+      onSuccess: () => {
         revokeTarget = null
-        await load()
+      },
+      onError: (err) => {
+        // 404 just means it's already gone (e.g. revoked from another tab):
+        // refresh the list silently instead of leaving a stale row on screen.
+        if (err instanceof ApiError && err.status === 404) {
+          revokeTarget = null
+          void list.refetch()
+        }
       }
-    } finally {
-      revoking = false
-    }
+    })
   }
 </script>
 
 <div class="sc-sessions">
-  {#if loading}
+  {#if list.isPending}
     <ProgressCircular />
-  {:else if loadError}
-    <p class="sc-sessions__error">{loadError}</p>
+  {:else if list.isError}
+    <p class="sc-sessions__error">{t('common.could_not_load_list')}</p>
   {:else}
     <ul class="sc-sessions__list">
       {#each sessions as s (s.id_hash)}
@@ -94,7 +81,7 @@
   <p>{t('session.device_signed_out_immediately', { where: revokeTarget?.ip_first ?? t('session.unknown_location') })}</p>
   {#snippet actions()}
     <Button variant="text" onclick={closeRevoke}>{t('common.cancel')}</Button>
-    <Button variant="filled" onclick={confirmRevoke} loading={revoking}>{t('common.sign_out')}</Button>
+    <Button variant="filled" onclick={confirmRevoke} loading={revoke.isPending}>{t('common.sign_out')}</Button>
   {/snippet}
 </Dialog>
 

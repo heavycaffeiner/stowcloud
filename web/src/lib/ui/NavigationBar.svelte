@@ -1,6 +1,6 @@
 <script lang="ts">
   // MD3 bottom navigation bar. The items are m3-svelte's `NavCMLXItem` in its
-  // `compact` variant — that variant *is* the bottom bar's item (4rem tall,
+  // `compact` variant: that variant *is* the bottom bar's item (4rem tall,
   // vertical, animated `secondary-container` pill), so the indicator, motion,
   // state layer and type scale all come from the framework.
   //
@@ -33,7 +33,7 @@
          (it spreads rest props after that attribute, so this wins). MD3
          disables the current destination because re-tapping it does nothing;
          here "Files" is not a destination but the root drawer's opener, and
-         it is selected on every `/b/` page — disabled would make the drawer
+         it is selected on every `/b/` page: disabled would make the drawer
          unreachable from the one screen it matters on. -->
     <NavCMLXItem
       variant="compact"

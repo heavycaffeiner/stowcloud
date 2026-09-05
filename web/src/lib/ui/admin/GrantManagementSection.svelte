@@ -1,9 +1,9 @@
 <script lang="ts">
-  // Folder permission management — the only screen that actually operates the
+  // Folder permission management: the only screen that actually operates the
   // product's first requirement (deny by default: users see no folders
   // except the ones an admin explicitly granted). Reachable
   // by picking a user in `UserManagementSection` or a group in
-  // `GroupManagementSection` and opening this component — the `principal`
+  // `GroupManagementSection` and opening this component: the `principal`
   // prop pins which one, so there's no principal-selection UI inside this
   // screen itself.
   //
@@ -13,20 +13,23 @@
   // Virtual root: what this creates is an independent
   // rule, not a checkbox in a folder tree. Grant permissions on `Photos/a`
   // and `Photos/b` separately and the user sees two top-level items, `a` and
-  // `b` — they never learn `Photos` exists; the hint text beside the subpath
+  // `b`. They never learn `Photos` exists; the hint text beside the subpath
   // input below says so. Showing a folder tree with checkboxes would give
   // the opposite impression: that a real tree exists underneath.
   //
   // Deny beats allow (DENY wins at equal depth):
   // checking the same permission in both allow and deny within one rule
-  // still saves as-is — the server doesn't normalize it (see the
+  // still saves as-is: the server doesn't normalize it (see the
   // `admin_grants` test `a_bit_present_in_both_allow_and_deny_round_trips_unmodified`
-  // in `go/internal/httpapi/handler`) — but deny wins at evaluation time.
+  // in `go/internal/httpapi/handler`), but deny wins at evaluation time.
   // The table below shows that state plainly, with a warning, rather than
   // hiding it.
+  import { createMutation, createQuery } from '@tanstack/svelte-query'
   import { t } from '../../i18n'
-  import { api, ApiError, type AdminGrant, type AdminShare, type GrantPermName, type GrantPrincipal } from '../../api/client'
+  import { ApiError, type AdminGrant, type GrantPermName, type GrantPrincipal } from '../../api/client'
   import { ALL_GRANT_PERMS } from '../../api/client'
+  import { describeApiError } from '../../api/error-text'
+  import { adminGrantMutation, adminGrantsQuery, adminSharesQuery } from '../../query/admin'
   import Button from '../Button.svelte'
   import Checkbox from '../Checkbox.svelte'
   import Chip from '../Chip.svelte'
@@ -39,9 +42,9 @@
   import TextField from '../TextField.svelte'
 
   interface Props {
-    /** Who these grants belong to — a user id or a group id, never both. */
+    /** Who these grants belong to: a user id or a group id, never both. */
     principal: GrantPrincipal
-    /** Display name for the hint/dialog copy below — the caller already has
+    /** Display name for the hint/dialog copy below: the caller already has
      *  it (`AdminUser.display_name`/`AdminGroup.name`), so this screen
      *  doesn't need its own user-vs-group lookup just to render a label. */
     label: string
@@ -59,29 +62,17 @@
     download: t('common.download')
   }
 
-  let shares = $state<AdminShare[]>([])
-  let grants = $state<AdminGrant[]>([])
-  let loading = $state(true)
-  let loadError = $state<string | null>(null)
-
-  async function load(): Promise<void> {
-    loading = true
-    loadError = null
-    try {
-      const [s, g] = await Promise.all([
-        api.adminListShares(),
-        api.adminListGrants(principal.kind === 'user' ? { userId: principal.id } : { groupId: principal.id })
-      ])
-      shares = s
-      grants = g
-    } catch {
-      loadError = t('grant.could_not_load_permission_list')
-    } finally {
-      loading = false
-    }
-  }
-
-  load()
+  const scope = $derived(principal.kind === 'user' ? { userId: principal.id } : { groupId: principal.id })
+  const sharesQuery = createQuery(() => adminSharesQuery())
+  const grantsQuery = createQuery(() => adminGrantsQuery(scope))
+  const shares = $derived(sharesQuery.data ?? [])
+  const grants = $derived(grantsQuery.data ?? [])
+  const loading = $derived(sharesQuery.isPending || grantsQuery.isPending)
+  const loadError = $derived(
+    sharesQuery.error || grantsQuery.error
+      ? describeApiError(sharesQuery.error ?? grantsQuery.error, t('grant.could_not_load_permission_list'))
+      : null
+  )
 
   function shareName(id: number): string {
     return shares.find((s) => s.id === id)?.name ?? t('grant.share', { id })
@@ -90,7 +81,7 @@
   // Permission detail (8 chips × allow/deny) is collapsed by default. At just
   // 12 grants that's 96 chips, doubling the screen's scroll length, and a
   // one-line summary already answers most of the question ("what can this
-  // person do in this folder?") — expand only when the exact bit combination
+  // person do in this folder?"): expand only when the exact bit combination
   // matters.
   let expandedIds = $state<Set<number>>(new Set())
 
@@ -101,15 +92,15 @@
     expandedIds = next
   }
 
-  /** One-line summary — e.g. "Read · Download", or "Full permissions" when
+  /** One-line summary: e.g. "Read - Download", or "Full permissions" when
    *  all 8 bits are on. */
   function allowSummary(g: AdminGrant): string {
     if (g.allow.length === 0) return t('grant.no_permissions_granted')
     if (g.allow.length === ALL_GRANT_PERMS.length) return t('grant.full_permissions')
-    return g.allow.map((p) => PERM_LABEL[p]).join('·')
+    return g.allow.map((p) => PERM_LABEL[p]).join(' - ')
   }
 
-  // ── add folder ──
+  // add folder
 
   let addOpen = $state(false)
   // m3-svelte's Select is a real `<select>`, so its value is a string; the
@@ -121,8 +112,18 @@
   let addDeny = $state<Set<GrantPermName>>(new Set())
   let addInherit = $state(true)
   let addLabel = $state('')
-  let addError = $state<string | null>(null)
-  let adding = $state(false)
+  let addValidation = $state<string | null>(null)
+
+  const addMut = createMutation(() => adminGrantMutation())
+  const adding = $derived(addMut.isPending)
+  const addError = $derived.by(() => {
+    if (addValidation) return addValidation
+    const err = addMut.error
+    if (!err) return null
+    if (err instanceof ApiError && err.code === 'fs.invalid_name') return t('grant.select_at_least_one_permission')
+    if (err instanceof ApiError && err.code === 'fs.not_found') return t('common.share_no_longer_exists')
+    return describeApiError(err, t('common.could_not_add_folder'))
+  })
 
   function openAdd(): void {
     addShareId = shares[0] ? String(shares[0].id) : ''
@@ -131,7 +132,8 @@
     addDeny = new Set()
     addInherit = true
     addLabel = ''
-    addError = null
+    addValidation = null
+    addMut.reset()
     addOpen = true
   }
 
@@ -141,38 +143,31 @@
   }
 
   async function submitAdd(): Promise<void> {
-    addError = null
+    addValidation = null
     if (addShareId === '') {
-      addError = t('grant.select_share')
+      addValidation = t('grant.select_share')
       return
     }
     if (addAllow.size === 0 && addDeny.size === 0) {
-      addError = t('grant.select_at_least_one_permission')
+      addValidation = t('grant.select_at_least_one_permission')
       return
     }
-    adding = true
     try {
-      const created = await api.adminCreateGrant({
-        principal,
-        share: Number(addShareId),
-        subpath: addSubpath.trim(),
-        allow: [...addAllow],
-        deny: [...addDeny],
-        inherit: addInherit,
-        label: addLabel.trim() || undefined
+      await addMut.mutateAsync({
+        kind: 'create',
+        req: {
+          principal,
+          share: Number(addShareId),
+          subpath: addSubpath.trim(),
+          allow: [...addAllow],
+          deny: [...addDeny],
+          inherit: addInherit,
+          label: addLabel.trim() || undefined
+        }
       })
-      grants = [...grants, created]
       addOpen = false
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'fs.invalid_name') {
-        addError = t('grant.select_at_least_one_permission')
-      } else if (err instanceof ApiError && err.code === 'fs.not_found') {
-        addError = t('common.share_no_longer_exists')
-      } else {
-        addError = t('common.could_not_add_folder')
-      }
-    } finally {
-      adding = false
+    } catch {
+      // addError above reads the failure straight off addMut.error
     }
   }
 
@@ -183,8 +178,17 @@
   let editDeny = $state<Set<GrantPermName>>(new Set())
   let editInherit = $state(true)
   let editLabel = $state('')
-  let editError = $state<string | null>(null)
-  let editing = $state(false)
+  let editValidation = $state<string | null>(null)
+
+  const editMut = createMutation(() => adminGrantMutation())
+  const editing = $derived(editMut.isPending)
+  const editError = $derived.by(() => {
+    if (editValidation) return editValidation
+    const err = editMut.error
+    if (!err) return null
+    if (err instanceof ApiError && err.code === 'fs.invalid_name') return t('grant.select_at_least_one_permission')
+    return describeApiError(err, t('common.could_not_save_change'))
+  })
 
   function openEdit(g: AdminGrant): void {
     editTarget = g
@@ -192,7 +196,8 @@
     editDeny = new Set(g.deny)
     editInherit = g.inherit
     editLabel = g.label ?? ''
-    editError = null
+    editValidation = null
+    editMut.reset()
   }
 
   function closeEdit(): void {
@@ -202,40 +207,38 @@
 
   async function submitEdit(): Promise<void> {
     if (!editTarget) return
-    editError = null
+    editValidation = null
     if (editAllow.size === 0 && editDeny.size === 0) {
-      editError = t('grant.select_at_least_one_permission')
+      editValidation = t('grant.select_at_least_one_permission')
       return
     }
-    editing = true
     try {
-      const updated = await api.adminUpdateGrant(editTarget.id, {
-        allow: [...editAllow],
-        deny: [...editDeny],
-        inherit: editInherit,
-        label: editLabel.trim() || null
+      await editMut.mutateAsync({
+        kind: 'update',
+        id: editTarget.id,
+        patch: {
+          allow: [...editAllow],
+          deny: [...editDeny],
+          inherit: editInherit,
+          label: editLabel.trim() || null
+        }
       })
-      grants = grants.map((g) => (g.id === updated.id ? updated : g))
       editTarget = null
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'fs.invalid_name') {
-        editError = t('grant.select_at_least_one_permission')
-      } else {
-        editError = t('common.could_not_save_change')
-      }
-    } finally {
-      editing = false
+    } catch {
+      // editError above reads the failure straight off editMut.error
     }
   }
 
   // ── remove folder ──
 
   let deleteTarget = $state<AdminGrant | null>(null)
-  let deleting = $state(false)
-  let deleteError = $state<string | null>(null)
+
+  const deleteMut = createMutation(() => adminGrantMutation())
+  const deleting = $derived(deleteMut.isPending)
+  const deleteError = $derived(deleteMut.error ? describeApiError(deleteMut.error, t('common.could_not_remove')) : null)
 
   function askDelete(g: AdminGrant): void {
-    deleteError = null
+    deleteMut.reset()
     deleteTarget = g
   }
 
@@ -246,16 +249,11 @@
 
   async function confirmDelete(): Promise<void> {
     if (!deleteTarget) return
-    deleting = true
-    deleteError = null
     try {
-      await api.adminDeleteGrant(deleteTarget.id)
-      grants = grants.filter((g) => g.id !== deleteTarget!.id)
+      await deleteMut.mutateAsync({ kind: 'delete', id: deleteTarget.id })
       deleteTarget = null
     } catch {
-      deleteError = t('common.could_not_remove')
-    } finally {
-      deleting = false
+      // deleteError above reads the failure straight off deleteMut.error
     }
   }
 
@@ -298,7 +296,7 @@
                 <span class="sc-grants__summary">
                   {allowSummary(g)}
                   {#if g.deny.length > 0}<span class="sc-grants__summary-deny">
-                      · {t('grant.denied', { perms: g.deny.map((p) => PERM_LABEL[p]).join(', ') })}</span>{/if}
+                      - {t('grant.denied', { perms: g.deny.map((p) => PERM_LABEL[p]).join(', ') })}</span>{/if}
                 </span>
                 {#if overlap.length > 0}
                   <span class="sc-grants__warning">

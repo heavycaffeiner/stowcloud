@@ -1,4 +1,4 @@
-// web/src/lib/upload/worker.ts — dedicated upload Worker.
+// Dedicated upload Worker.
 // Slicing + hashing on the main thread would jank the
 // virtual-scrolled table, so every byte-pushing step happens here instead.
 import {

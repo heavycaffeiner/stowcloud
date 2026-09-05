@@ -7,11 +7,12 @@
   // `ApplyOutcome.restart_required`.
   //
   // After confirming, the socket is expected to drop while the process
-  // re-execs itself — a failed `GET /api/v1/system/health` mid-wait is the
+  // re-execs itself, a failed `GET /api/v1/system/health` mid-wait is the
   // signal to keep polling, not a failure to report. Only the poll running
   // past its own bounded budget is worth surfacing.
   import { t } from '../../i18n'
-  import { api } from '../../api/client'
+  import { createMutation, createQuery } from '@tanstack/svelte-query'
+  import { adminRestartMutation, systemHealthQuery } from '../../query/admin'
   import { describeApiError } from '../../api/error-text'
   import type { ApplyOutcome } from '../../api/types'
   import Button from '../Button.svelte'
@@ -21,7 +22,7 @@
   interface Props {
     open: boolean
     /** The save that triggered this. `null`, or an outcome that did not need
-     *  a restart, both render nothing — the caller is not trusted to gate
+     *  a restart, both render nothing, the caller is not trusted to gate
      *  `open` correctly on its own. */
     outcome: ApplyOutcome | null
     /** Cancel, Escape, backdrop, or the dialog dismissing itself once the
@@ -36,7 +37,6 @@
 
   type Phase = 'confirm' | 'submitting' | 'waiting' | 'timeout' | 'success'
   let phase = $state<Phase>('confirm')
-  let submitError = $state<string | null>(null)
 
   const POLL_INTERVAL_MS = 1_500
   const WAIT_BUDGET_MS = 45_000
@@ -45,76 +45,88 @@
   const activeUploads = $derived(outcome?.active_uploads ?? 0)
   const activeJobs = $derived(outcome?.active_jobs ?? 0)
 
+  const restartMutation = createMutation(() => adminRestartMutation())
+  const submitError = $derived(
+    restartMutation.error ? describeApiError(restartMutation.error, t('restart.could_not_start')) : null
+  )
+
+  // The wait budget this poll is bounded by. `pollMs` is what actually
+  // drives the query's `refetchInterval`; it goes false the moment the
+  // server answers or the budget runs out, which is what stops the polling.
+  // `waitStartedAt` guards against a stale success: this query already ran
+  // once on mount (before any restart was ever asked for), so a plain
+  // `isSuccess` check would treat that leftover healthy answer as the
+  // server having already come back, without ever actually re-checking it.
+  let deadline = $state<number | null>(null)
+  let waitStartedAt = $state<number | null>(null)
+  let pollMs = $state<number | false>(false)
+  const health = createQuery(() => systemHealthQuery(pollMs))
+
+  function beginWaiting(): void {
+    waitStartedAt = Date.now()
+    deadline = Date.now() + WAIT_BUDGET_MS
+    phase = 'waiting'
+    pollMs = POLL_INTERVAL_MS
+    void health.refetch()
+  }
+
+  $effect(() => {
+    if (phase !== 'waiting' || !open) return
+    // Both timestamps are read unconditionally so this effect re-runs on
+    // every poll tick, success or failure, not only the first of either.
+    const succeededAt = health.dataUpdatedAt
+    void health.errorUpdatedAt
+    if (health.isSuccess && waitStartedAt !== null && succeededAt >= waitStartedAt) {
+      pollMs = false
+      phase = 'success'
+      onrestarted()
+      const timer = setTimeout(() => {
+        if (phase === 'success') onclose()
+      }, 900)
+      return () => clearTimeout(timer)
+    }
+    if (deadline !== null && Date.now() >= deadline) {
+      pollMs = false
+      phase = 'timeout'
+      return
+    }
+    pollMs = POLL_INTERVAL_MS
+  })
+
   // A fresh open resets to the confirm step; closing (by any route) stops
-  // whatever poll loop is running rather than leaving it ticking in the
+  // whatever polling is running rather than leaving it ticking in the
   // background for a dialog nobody is looking at.
   let wasOpen = $state(false)
   $effect(() => {
     if (open && !wasOpen) {
       phase = 'confirm'
-      submitError = null
+      restartMutation.reset()
     }
-    if (!open) stopPolling()
+    if (!open) pollMs = false
     wasOpen = open
   })
-  $effect(() => () => stopPolling())
 
-  // Incremented every time polling should stop, current or future: a loop
-  // reads its own snapshot back before each step and quits the moment it no
-  // longer matches, which is what lets `stopPolling` cancel a loop already
-  // in flight without a separate cancellation flag to thread through it.
-  let pollToken = 0
-  function stopPolling(): void {
-    pollToken++
-  }
-
-  async function startWaiting(): Promise<void> {
-    phase = 'waiting'
-    const token = ++pollToken
-    const startedAt = Date.now()
-    while (token === pollToken) {
-      try {
-        await api.systemHealth()
-        if (token === pollToken) {
-          phase = 'success'
-          onrestarted()
-          setTimeout(() => {
-            if (token === pollToken) onclose()
-          }, 900)
-        }
-        return
-      } catch {
-        // Expected while the process is mid-drain or mid-exec: the socket is
-        // down for a stretch on purpose. Only running out of budget below is
-        // worth telling the operator about.
-      }
-      if (Date.now() - startedAt >= WAIT_BUDGET_MS) {
-        if (token === pollToken) phase = 'timeout'
-        return
-      }
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS))
-    }
-  }
-
-  async function confirmRestart(): Promise<void> {
-    submitError = null
+  function confirmRestart(): void {
+    restartMutation.reset()
     phase = 'submitting'
-    try {
-      await api.adminSystemRestart()
-      // The restart is already underway server-side by the time this
-      // resolves: closing here cannot undo it. It only decides whether this
-      // component keeps watching for it, which a dismissed dialog should not.
-      if (!open) return
-      void startWaiting()
-    } catch (err) {
-      if (!open) return
-      phase = 'confirm'
-      submitError = describeApiError(err, t('restart.could_not_start'))
-    }
+    restartMutation.mutate(undefined, {
+      onSuccess: () => {
+        // The restart is already underway server-side by the time this
+        // resolves: closing here cannot undo it. It only decides whether
+        // this component keeps watching for it, which a dismissed dialog
+        // should not.
+        if (!open) return
+        beginWaiting()
+      },
+      onError: () => {
+        if (!open) return
+        phase = 'confirm'
+      }
+    })
   }
 
   function retryWaiting(): void {
-    void startWaiting()
+    beginWaiting()
   }
 </script>
 

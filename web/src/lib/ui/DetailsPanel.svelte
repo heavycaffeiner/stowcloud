@@ -13,13 +13,13 @@
   // breakpoint there is no room for a column, so it becomes a sheet over the
   // listing, and a thing that covers the page has to behave like a dialog:
   // focus goes in, Tab stays in, Escape closes.
+  import { createQueries } from '@tanstack/svelte-query'
   import { formatDateNs, t } from '../i18n'
   import { formatBytes } from '../format/bytes'
-  import type { Entry } from '../api/client'
-  import type { BrowseState } from '../state/browse.svelte'
-  import { selectionMeasure } from '../state/measure.svelte'
-  import { useRunesStore } from '../store/core/bridge.svelte'
-  import { uiState } from '../state/ui.svelte'
+  import { ApiError, type Entry } from '../api/client'
+  import { joinPath } from '../api/path-utils'
+  import { folderSizeQuery } from '../query/files'
+  import { ui } from '../store/ui.store'
   import { Icon } from 'm3-svelte'
   import { icons } from '../icons'
   import Button from './Button.svelte'
@@ -27,29 +27,34 @@
   import ProgressCircular from './ProgressCircular.svelte'
 
   interface Props {
-    browse: BrowseState
+    /** Absolute vpath of the directory being browsed. */
+    path: string
+    /** The loaded rows the selection resolves against; empty when nothing is
+     *  selected. Only ever holds rows the page has actually fetched, same as
+     *  the old `browse.selected`. */
+    selected: readonly Entry[]
+    /** Rows in the whole directory, for the zero-selection folder summary. */
+    total: number
+    /** How many of those rows are folders. */
+    dirs: number
     onclose: () => void
   }
 
-  let { browse, onclose }: Props = $props()
+  let { path, selected, total, dirs, onclose }: Props = $props()
 
   let panelEl: HTMLElement | undefined = $state()
 
-  /** Which of the three shapes the panel is showing. `selected` only resolves
-   *  rows that are loaded, so a range reaching into an unfetched gap reports
-   *  what it can see rather than a count it cannot back up. */
-  const selection = $derived(browse.selected)
-  const one = $derived(selection.length === 1 ? selection[0] : null)
-  const many = $derived(selection.length > 1)
+  const one = $derived(selected.length === 1 ? selected[0] : null)
+  const many = $derived(selected.length > 1)
 
   const folderName = $derived.by((): string => {
-    const parts = browse.path.split('/').filter(Boolean)
+    const parts = path.split('/').filter(Boolean)
     return parts.length > 0 ? parts[parts.length - 1] : t('browse.home')
   })
 
   /** The directory holding a single selected entry, which is the directory
    *  being browsed. Shown with a leading slash so it reads as a path. */
-  const location = $derived(browse.path.startsWith('/') ? browse.path : `/${browse.path}`)
+  const location = $derived(path.startsWith('/') ? path : `/${path}`)
 
   interface Field {
     key: string
@@ -73,7 +78,7 @@
       // selection holds a folder. Two rows would be two answers to one
       // question, and the subtotal would be the wrong one.
       return [
-        { key: 'count', label: t('details.items'), value: String(selection.length) },
+        { key: 'count', label: t('details.items'), value: String(selected.length) },
         { key: 'location', label: t('details.location'), value: location }
       ]
     }
@@ -92,52 +97,92 @@
     }
     return [
       { key: 'type', label: t('details.type'), value: t('details.folder') },
-      { key: 'folders', label: t('grid.folders'), value: String(browse.dirs) },
-      { key: 'files', label: t('grid.files'), value: String(Math.max(0, browse.total - browse.dirs)) },
+      { key: 'folders', label: t('grid.folders'), value: String(dirs) },
+      { key: 'files', label: t('grid.files'), value: String(Math.max(0, total - dirs)) },
       { key: 'location', label: t('details.location'), value: location }
     ]
   })
 
   // ── recursive folder size ──
   //
-  // Held in shared state and driven by the browse page, which is mounted
-  // whether or not this panel is: the selection toolbar shows the same number.
-  // Two drivers would alternate keys on every selection change and cancel each
-  // other's pending walk.
-  //
-  // These two describe the same target the page targeted, and exist only so
-  // the retry button has something to re-run.
+  // One `folderSizeQuery` per selected folder (or the browsed folder itself,
+  // when nothing is selected), combined into one figure. The cache is shared
+  // with the selection toolbar on the browse page, so a second reader of the
+  // same folder costs nothing and a walk already running is never repeated.
+  // Absolute paths, the same spelling the listing and the selection toolbar
+  // use, so the two readers share one cache entry per folder and a change
+  // reported for that folder invalidates this measurement too.
   const sizeTargets = $derived.by((): string[] => {
-    const here = location.replace(/^\/+/, '').replace(/\/+$/, '')
-    if (selection.length === 0) return here ? [here] : []
-    return selection.filter((e) => e.kind === 'dir').map((e) => (here ? `${here}/${e.name}` : e.name))
+    if (selected.length === 0) return path === '/' ? [] : [path]
+    return selected.filter((e) => e.kind === 'dir').map((e) => joinPath(path, e.name))
   })
 
   /** What the folders' sizes are added to: the files in the same selection,
    *  whose sizes the listing already carries. */
-  const sizeBase = $derived(
-    many
-      ? { bytes: browse.totalSelectedSize, files: selection.length - browse.selectedFolderCount }
-      : { bytes: 0, files: 0 }
-  )
+  const sizeBase = $derived.by((): { bytes: number; files: number } => {
+    if (!many) return { bytes: 0, files: 0 }
+    let bytes = 0
+    let files = 0
+    for (const e of selected) {
+      if (e.kind !== 'dir') {
+        bytes += e.size
+        files += 1
+      }
+    }
+    return { bytes, files }
+  })
 
-  const measureHandle = useRunesStore(selectionMeasure.store)
-  const measured = $derived(measureHandle.current.state)
+  type Measured =
+    | { kind: 'idle' }
+    | { kind: 'measuring' }
+    | { kind: 'done'; bytes: number; files: number }
+    | { kind: 'failed'; reason: 'denied' | 'other' }
 
-  const title = $derived(many ? t('details.multiple_selected', { count: selection.length }) : (one?.name ?? folderName))
+  /** Captured by the last `combine` run, purely so the retry button has
+   *  something to call: `createQueries` returns the combined value, not the
+   *  per-query handles, and refetching is the one thing combining loses. */
+  let lastResults: { refetch: () => void }[] = []
+
+  const measured = createQueries(() => ({
+    queries: sizeTargets.map((p) => folderSizeQuery(p)),
+    combine: (results): Measured => {
+      lastResults = results
+      if (results.length === 0) {
+        return sizeBase.bytes > 0 || sizeBase.files > 0 ? { kind: 'done', ...sizeBase } : { kind: 'idle' }
+      }
+      const failed = results.find((r) => r.isError)
+      if (failed) {
+        const denied =
+          failed.error instanceof ApiError && (failed.error.code === 'acl.denied' || failed.error.code === 'fs.denied')
+        return { kind: 'failed', reason: denied ? 'denied' : 'other' }
+      }
+      if (results.some((r) => r.isPending)) return { kind: 'measuring' }
+      const totals = results.reduce(
+        (acc, r) => ({ bytes: acc.bytes + (r.data?.bytes ?? 0), files: acc.files + (r.data?.files ?? 0) }),
+        sizeBase
+      )
+      return { kind: 'done', ...totals }
+    }
+  }))
+
+  function retryMeasure(): void {
+    for (const r of lastResults) void r.refetch()
+  }
+
+  const title = $derived(many ? t('details.multiple_selected', { count: selected.length }) : (one?.name ?? folderName))
   const titleIcon = $derived(many ? icons.check : one ? (one.kind === 'dir' ? icons.folder : icons.file) : icons.folder)
 
   // Sheet mode only. A column that steals focus the moment it opens would
   // take the keyboard away from the grid the user is still navigating.
   $effect(() => {
-    if (!uiState.compact || !panelEl) return
+    if (!ui.state.compact || !panelEl) return
     const previous = document.activeElement as HTMLElement | null
     panelEl.querySelector<HTMLElement>('button')?.focus()
     return () => previous?.focus()
   })
 
   function onKeydown(e: KeyboardEvent): void {
-    if (!uiState.compact) return
+    if (!ui.state.compact) return
     if (e.key === 'Escape') {
       e.stopPropagation()
       onclose()
@@ -164,9 +209,9 @@
 <aside
   bind:this={panelEl}
   class="sc-details"
-  class:sc-details--sheet={uiState.compact}
-  role={uiState.compact ? 'dialog' : 'complementary'}
-  aria-modal={uiState.compact ? 'true' : undefined}
+  class:sc-details--sheet={ui.state.compact}
+  role={ui.state.compact ? 'dialog' : 'complementary'}
+  aria-modal={ui.state.compact ? 'true' : undefined}
   aria-label={t('details.title')}
   onkeydown={onKeydown}
 >
@@ -204,7 +249,7 @@
               ? t('details.size_hidden_by_permissions')
               : t('details.could_not_measure')}
           </span>
-          <Button variant="text" onclick={() => selectionMeasure.retry(sizeTargets, sizeBase)}>
+          <Button variant="text" onclick={retryMeasure}>
             {t('common.retry')}
           </Button>
         {:else}

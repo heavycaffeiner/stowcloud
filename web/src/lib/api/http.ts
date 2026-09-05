@@ -1,6 +1,6 @@
-// web/src/lib/api/http.ts — real HTTP implementation of the same surface as
+// web/src/lib/api/http.ts: real HTTP implementation of the same surface as
 // mock.ts. Talks to the real server. This module is only
-// ever exercised once VITE_API_MOCK is unset/0 — it is untested against a
+// ever exercised once VITE_API_MOCK is unset/0; it is untested against a
 // live server here (the backend does not exist yet) but the shape mirrors
 // exactly so swapping the flag is the only integration step.
 import {
@@ -58,6 +58,7 @@ import {
   type CopyResult,
   type ShareLinkCreateReq,
   type ShareBackend,
+  type ShareEncryption,
   type ShareLinkInfo,
   type ShareLinkPatchReq,
   type SmbSettingsReq,
@@ -76,8 +77,9 @@ import {
   permNamesOf
 } from './types'
 import type { ListOpts, SearchDone, SearchHit } from './mock'
-import { noteUnauthorized } from '../state/auth.svelte'
 import { normalizePath } from './path-utils'
+import { decryptDownload, encryptForUpload } from '../crypto/e2ee'
+import { encryptionForLabel, shareLabelOf } from '../crypto/encrypted-shares'
 
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 
@@ -144,33 +146,12 @@ async function send(path: string, init: RequestInit): Promise<Response> {
  * Turns a failed response into the error every caller expects.
  *
  * Split out of `request` so the calls that read a body other than JSON, like
- * the file read, refuse the same way: the same `ApiError`, and the same 401
- * handling, which is the one place a dead session becomes the login screen.
+ * the file read, refuse the same way. Which failures mean "the session is
+ * gone" is classified by `isSessionDead` and acted on by the query client's
+ * cache-wide error handler; this layer only reports what the server said.
  */
 function errorFrom(res: Response, body: unknown): ApiError {
-  const err = new ApiError(res.status, classifiedOf(body, res.statusText))
-  // Every call goes through this one function, so this is the single place a
-  // dead or missing session turns into "show the login screen" instead of an
-  // inline error string bubbling up into whatever list or table happened to
-  // be rendering.
-  //
-  // Gated on `code`, not just `status`: `auth.invalid_credentials` is also a
-  // 401, but it means "this specific re-confirmation was wrong" (a bad
-  // current password on `/account/password`, a bad TOTP code on
-  // `/account/totp/enroll`), not "the session cookie is gone". The settings
-  // screens for those actions need that error to stay a rejected promise they
-  // show inline. Bouncing the whole app to the login screen because someone
-  // mistyped their current password while already signed in would be a silent
-  // failure of its own.
-  if (res.status === 401 && err.code === 'auth.required') noteUnauthorized()
-  // The server hides a route this credential may not reach: it answers as if
-  // the address did not exist, with the chain's unexplained refusal rather
-  // than a reason of its own. Every path this module calls is fixed at build
-  // time and does exist, so the address being absent means the session no
-  // longer reaches it. A real missing file is a different answer, and it
-  // carries a reason key like `fs.not_found`.
-  if (res.status === 404 && err.code === 'request_failed') noteUnauthorized()
-  return err
+  return new ApiError(res.status, classifiedOf(body, res.statusText))
 }
 
 /**
@@ -581,7 +562,7 @@ async function archive(paths: string[], name?: string): Promise<ArchiveTicket> {
 }
 
 /**
- * `POST /api/v1/files/download` — the same two-step ticket as `archive`, for
+ * `POST /api/v1/files/download`: the same two-step ticket as `archive`, for
  * one file: this request cannot be the download itself for the identical
  * reason (a POST carrying a CSRF header, not something a browser can
  * navigate to), so it only names the file and hands back where to fetch it.
@@ -593,7 +574,7 @@ async function download(path: string): Promise<DownloadTicket> {
 }
 
 /**
- * `GET /api/v1/files/archive/list` — every entry in a ZIP archive.
+ * `GET /api/v1/files/archive/list`: every entry in a ZIP archive.
  *
  * Nothing in the result is openable: opening an entry means extraction, which
  * this server does not do. A path the caller cannot list and a file that is
@@ -654,7 +635,7 @@ function contentUrl(entry: Pick<Entry, 'content'>): string {
 }
 
 /**
- * `GET /api/v1/files/size` — one folder's recursive size, on demand.
+ * `GET /api/v1/files/size`: one folder's recursive size, on demand.
  *
  * Deliberately not folded into `stat`, which every selection already calls:
  * a size column on a listing row would start one tree walk per row. A folder
@@ -681,7 +662,7 @@ interface WireRecent {
 }
 
 /**
- * `GET /api/v1/files/recent` — every file this account wrote through this server inside
+ * `GET /api/v1/files/recent`: every file this account wrote through this server inside
  * the window, newest first. Exact: there is no walk to truncate.
  */
 async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }> {
@@ -712,11 +693,10 @@ async function recentList(opts: RecentQuery = {}): Promise<{ hits: RecentHit[] }
 // ── long-running jobs ──
 // A copy, a delete over the inline threshold and an index build answer
 // `202 { job }`; a move and an archive finish in the request itself.
-// `state/job-tray.svelte.ts` is the one caller that wraps
-// `state/jobs.ts::pollJob` (REST poll plus the WS `job` push) to show live
-// progress and calls `jobCancel` on user request.
+// `query/jobs.ts` is the one caller: `jobQuery` polls one job to a terminal
+// state, and `jobCancelMutation` calls `jobCancel` on user request.
 
-/** `GET /api/v1/jobs` — every non-terminal job the caller owns. `JobTray` calls
+/** `GET /api/v1/jobs`: every non-terminal job the caller owns. `JobTray` calls
  *  this once on mount to re-attach across a refresh or a server restart
  *  (`go/internal/httpapi/handler/admin_ops.go`). */
 /**
@@ -890,11 +870,27 @@ async function shareDelete(id: number): Promise<void> {
  * the caller is a text view: showing a file with a few replacement marks in it
  * is more use than refusing to show it at all, and the editor's own save path
  * is conditional, so nothing here can silently rewrite bytes it misread.
+ *
+ * For an encrypted share, the bytes leaving the fetch are rclone-crypt
+ * ciphertext, not the file's own content: `res.text()` would UTF-8-decode
+ * the ciphertext itself into replacement-character garbage before this ever
+ * got a chance to decrypt it. So the encryption check runs first and, when
+ * the label is encrypted, the response is read as an `ArrayBuffer` and
+ * decrypted before the UTF-8 decode this function has always done. A plain
+ * share's path is untouched: still `res.text()`, still no encryption lookup
+ * beyond the one label check.
  */
-async function readFile(entry: Pick<Entry, 'content'>): Promise<ReadFileResponse> {
+
+async function readFile(entry: Pick<Entry, 'content' | 'path'>): Promise<ReadFileResponse> {
   const res = await fetch(contentUrl(entry), { credentials: 'include' })
   if (!res.ok) throw errorFrom(res, await res.json().catch(() => ({})))
-  return { content: await res.text() }
+
+  const encryption = await encryptionForLabel(shareLabelOf(entry.path))
+  if (!encryption) {
+    return { content: await res.text() }
+  }
+  const plaintext = await decryptDownload(await res.arrayBuffer(), encryption.salt)
+  return { content: new TextDecoder().decode(plaintext) }
 }
 
 /**
@@ -907,8 +903,27 @@ async function readFile(entry: Pick<Entry, 'content'>): Promise<ReadFileResponse
  * which made the editor's save button impossible to use. The editor detects a
  * concurrent change by comparing the token it loaded against a fresh `stat`
  * instead, which is what a weak token can actually answer.
+ *
+ * For an encrypted share, the body posted is the whole file encrypted as one
+ * rclone-crypt file, not the plaintext the editor holds: the server's
+ * recorded `Entry.size` is then the ciphertext's length, the same "recorded
+ * size is ciphertext size" rule the upload path already lives by.
  */
 async function writeFile(path: string, content: string): Promise<Entry> {
+  const encryption = await encryptionForLabel(shareLabelOf(path))
+  let body: BodyInit = content
+  if (encryption) {
+    const encrypted = await encryptForUpload(new TextEncoder().encode(content), encryption.salt)
+    // Copied into a fresh, concrete ArrayBuffer rather than passed as the
+    // Uint8Array itself: fetch's BodyInit accepts a typed array, but this
+    // lib's typing only accepts one backed by a plain ArrayBuffer, which
+    // nothing here can promise the noble ciphers library's own return value
+    // is backed by.
+    const buf = new ArrayBuffer(encrypted.byteLength)
+    new Uint8Array(buf).set(encrypted)
+    body = buf
+  }
+
   // The body is the file itself and the path is a query parameter. A JSON
   // envelope holding both would carry the whole file in memory twice, once
   // encoded and once not.
@@ -919,7 +934,7 @@ async function writeFile(path: string, content: string): Promise<Entry> {
     method: 'POST',
     credentials: 'include',
     headers,
-    body: content
+    body
   })
   if (!res.ok) throw errorFrom(res, await res.json().catch(() => ({})))
   return entryFromWire((await res.json()) as WireEntry)
@@ -979,8 +994,8 @@ async function totpDisable(password: string): Promise<void> {
 /**
  * how many of the 10 recovery codes minted at
  * enrollment (or at the last reissue) are still unused. Not a secret from
- * the account's own owner — unlike the codes themselves, which are never
- * returned again after the moment they're minted — so this is a plain `GET`
+ * the account's own owner (unlike the codes themselves, which are never
+ * returned again after the moment they're minted), so this is a plain `GET`
  * with no re-confirmation, the same as `session()` above.
  */
 async function recoveryCodesRemaining(): Promise<{ remaining: number }> {
@@ -989,7 +1004,7 @@ async function recoveryCodesRemaining(): Promise<{ remaining: number }> {
 
 /**
  * Re-confirms `password`, then replaces every recovery code on the account
- * with a fresh set of 10 — the old list stops working the instant this
+ * with a fresh set of 10; the old list stops working the instant this
  * resolves. Returned exactly once, same handling as `totpEnroll`'s
  * `recovery_codes`: the caller must show them now, there is no way to fetch
  * them again later (only `recoveryCodesRemaining`'s count survives).
@@ -1039,11 +1054,11 @@ async function createAppPassword(name: string, currentPassword: string): Promise
 }
 
 /**
- * Scoped app passwords — This is the only place in the
+ * Scoped app passwords: this is the only place in the
  * frontend that knows the request shape.
  *
  * The server takes a `scope` object: `perms` is the same permission-flag shape
- * as a share link's, and `shares` is a list of **root labels** — the very
+ * as a share link's, and `shares` is a list of **root labels**: the very
  * strings `GET /auth/session` hands back as `roots[].label`. Omitting `scope`
  * means unrestricted, which is what `createAppPassword` above does, so the two
  * differ only by this field.
@@ -1294,14 +1309,14 @@ async function adminBuildIndex(): Promise<JobStatus> {
   return jobFromWire(await request<WireJob>('/admin/index/build', { method: 'POST' }))
 }
 
-/** `PATCH /api/v1/admin/settings/upload` — sets the
+/** `PATCH /api/v1/admin/settings/upload`: sets the
  *  server-global chunk floor/default every account's `GET /api/v1/auth/session`
  *  reads, persisted across restarts. */
 async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSettingsResp> {
   return request('/admin/settings/upload', { method: 'PATCH', body: JSON.stringify(req) })
 }
 
-// ── admin: server settings (`go/internal/httpapi/handler/settings.go`) — parity
+// ── admin: server settings (`go/internal/httpapi/handler/settings.go`): parity
 // with every operator-settable field, live-apply where possible,
 // restart-required where not. ──
 
@@ -1315,7 +1330,7 @@ async function adminGetServerSettings(): Promise<SettingsSnapshot> {
  * false, `findings` naming what refused it), not the wire error envelope
  * `request()` otherwise expects. Routed around `request()` so that body
  * reaches the caller as data instead of being discarded for a generic
- * "internal error" — a refusal a screen cannot render is a refusal the
+ * "internal error"; a refusal a screen cannot render is a refusal the
  * operator cannot act on. Any other non-2xx is still a real failure and
  * throws the ordinary way.
  */
@@ -1394,7 +1409,7 @@ async function adminSystemRestart(): Promise<SystemRestartResult> {
   return request('/admin/system/restart', { method: 'POST' })
 }
 
-/** `GET /api/v1/system/health` — the unauthenticated container probe, reused
+/** `GET /api/v1/system/health`: the unauthenticated container probe, reused
  *  here to detect the process answering again after a restart. Not routed
  *  through `request()`: that helper's non-2xx path expects the wire error
  *  envelope, and a health probe answering `503 degraded` is still a real
@@ -1520,7 +1535,7 @@ async function adminListShares(): Promise<AdminShare[]> {
   return (rows ?? []).map(adminShareFromWire)
 }
 
-/** `POST /api/v1/admin/shares` — register a new folder share ("there is no setting to add folders"). */
+/** `POST /api/v1/admin/shares`: register a new folder share ("there is no setting to add folders"). */
 async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
   return adminShareFromWire(
     await request<WireAdminShare>('/admin/shares', { method: 'POST', body: JSON.stringify(req) })
@@ -1561,7 +1576,7 @@ async function adminDeleteShare(id: number): Promise<{ smb?: SMBOutcome }> {
   }
 }
 
-/** `POST /api/v1/admin/shares/{id}/retry` — re-open a share whose disk came
+/** `POST /api/v1/admin/shares/{id}/retry`: re-open a share whose disk came
  *  back. Its own route because the ordinary repair is a remount that changes
  *  nothing about the share: making somebody retype a path that was always
  *  right, to prove it, is a screen built around the implementation. */
@@ -1792,8 +1807,8 @@ async function adminListLogs(query: AdminLogQuery = {}): Promise<AdminLogPage> {
   }
 }
 
-/** `GET /api/v1/admin/logs/timeline[?since=&until=&level=&text=&subsystem=&request_id=&bucket_ns=]`
- *  — the same filters as `adminListLogs`, minus paging, bucketed into
+/** `GET /api/v1/admin/logs/timeline[?since=&until=&level=&text=&subsystem=&request_id=&bucket_ns=]`:
+ *  the same filters as `adminListLogs`, minus paging, bucketed into
  *  fixed-width windows for the dashboard's chart. Every count normalizes
  *  defensively the same way `adminListLogs` does, because a bucket a build
  *  newer than this one adds a field to should still render rather than
@@ -1869,7 +1884,7 @@ function toSearchHit(raw: RawSearchHit): SearchHit {
       etag_weak: true,
       perms: { read: true, write: false, create: false, delete: false, rename: false, move: false, share: false, download: false },
       // No numeric fid in the wire shape (see this file's header comment on
-      // `RawSearchHit`) — left `undefined` rather than guessed, same as a
+      // `RawSearchHit`), left `undefined` rather than guessed, same as a
       // plain `list`/`stat` result with no allocated fileid. A download
       // action reached from a search result degrades the same honest way it
       // does everywhere else `entry.id` is missing.
@@ -1908,6 +1923,58 @@ function searchStream(query: string, onHit: (hit: SearchHit) => void, onDone: (d
     onDone({ truncated: true })
   }
   return () => es.close()
+}
+
+// share encryption (opt-in, zero-knowledge, per-share content encryption): go/engine/lifecycle/shareenc.go
+
+/** `GET /api/v1/encryption`'s wire shape, before `created_ns` is widened
+ *  into the app's `createdNs`. Every other field is already the shape the
+ *  app reads: `salt` is the exact string the user types into rclone, and
+ *  `verifier` is already standard base64. */
+interface WireShareEncryption {
+  share: number
+  labels: string[]
+  scheme: string
+  salt: string
+  verifier: string
+  created_ns: number
+}
+
+function shareEncryptionFromWire(w: WireShareEncryption): ShareEncryption {
+  return {
+    share: w.share,
+    labels: w.labels,
+    scheme: w.scheme,
+    salt: w.salt,
+    verifier: w.verifier,
+    createdNs: w.created_ns
+  }
+}
+
+/** `GET /api/v1/encryption`: every share with encryption on that the
+ *  caller holds a grant on. Any authenticated caller, not admin-only: an
+ *  upload client has to know a share is encrypted before it ever writes a
+ *  byte, not only an administrator configuring it. */
+async function shareEncryptionList(): Promise<{ shares: ShareEncryption[] }> {
+  const wire = await request<{ shares: WireShareEncryption[] }>('/encryption')
+  return { shares: wire.shares.map(shareEncryptionFromWire) }
+}
+
+/** `POST /api/v1/encryption/{id}`: admin only. `scheme`/`salt`/`verifier`
+ *  are exactly what the browser's rclone-crypt module derived and verified
+ *  against itself; the server can only check their shape, never whether
+ *  they came from a real passphrase, since the passphrase never reaches it. */
+async function adminEnableShareEncryption(
+  shareId: number,
+  req: { scheme: string; salt: string; verifier: string }
+): Promise<void> {
+  await requestNoContent(`/encryption/${shareId}`, { method: 'POST', body: JSON.stringify(req) })
+}
+
+/** `DELETE /api/v1/encryption/{id}`: admin only. Idempotent: a share that
+ *  was never encrypted, or already turned off, both answer success. */
+async function adminDisableShareEncryption(shareId: number): Promise<void> {
+  await requestNoContent(`/encryption/${shareId}`, { method: 'DELETE' })
 }
 
 export const httpApi = {
@@ -2006,6 +2073,9 @@ export const httpApi = {
   adminListAudit,
   adminListLogs,
   adminLogsTimeline,
+  shareEncryptionList,
+  adminEnableShareEncryption,
+  adminDisableShareEncryption,
   registerUploadedEntry(): void {
     // no-op for the real backend: the server's own state is authoritative;
     // the browse UI calls refresh() after an upload completes instead.

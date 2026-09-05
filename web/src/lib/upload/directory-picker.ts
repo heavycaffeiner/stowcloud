@@ -41,7 +41,7 @@ export async function pickDirectory(): Promise<PickedFile[]> {
   return out
 }
 
-/** Fallback: <input type="file" webkitdirectory> — files carry webkitRelativePath already. */
+/** Fallback: <input type="file" webkitdirectory>; files carry webkitRelativePath already. */
 export function filesFromWebkitDirectoryInput(input: HTMLInputElement): PickedFile[] {
   const out: PickedFile[] = []
   const list = input.files
@@ -115,7 +115,7 @@ export async function pickedFilesFromDataTransfer(dt: DataTransfer): Promise<Pic
 
     // lib.dom now declares `webkitGetAsEntry(): FileSystemEntry | null`, whose
     // FileSystemEntry has neither `file()` nor `createReader()`. Cast the
-    // result, not the method — intersecting a narrower signature onto
+    // result, not the method: intersecting a narrower signature onto
     // DataTransferItem no longer wins overload resolution.
     const entry = item.webkitGetAsEntry?.() as WebkitEntry | null
     if (entry) {

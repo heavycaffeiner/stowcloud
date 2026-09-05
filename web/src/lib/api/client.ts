@@ -1,7 +1,8 @@
-// web/src/lib/api/client.ts — the ONE flip switch between the mock backend
+// The ONE flip switch between the mock backend
 // and the real server. `VITE_API_MOCK=1` lives in `.env.development`,
 // which `npm run dev` applies and `npm run build` does not. Nothing else in
 // the app imports mock.ts or http.ts directly.
+import { setEncryptedSharesSource } from '../crypto/encrypted-shares'
 import { httpApi } from './http'
 import { mockApi } from './mock'
 
@@ -16,11 +17,18 @@ export const isMock = import.meta.env.VITE_API_MOCK === '1'
 if (import.meta.env.PROD && isMock) {
   throw new Error(
     'VITE_API_MOCK=1 in a production build. The mock backend must never be embedded ' +
-      'in the server binary — move the flag to web/.env.development.'
+      'in the server binary. Move the flag to web/.env.development.'
   )
 }
 
 export const api = isMock ? mockApi : httpApi
+
+// The encrypted-share cache reads through whichever backend was just
+// chosen. Pushed in from here rather than imported there, because
+// `api/http.ts` reads that module's own label logic and an import back the
+// other way would close a cycle through this file, whose eager `api` const
+// would then be captured undefined.
+setEncryptedSharesSource(() => api.shareEncryptionList().then((r) => r.shares))
 
 export type {
   SMBOutcome,
@@ -60,6 +68,7 @@ export type {
   ShareLinkPatchReq,
   PermsReq,
   AdminShare,
+  ShareEncryption,
   CreateShareReq,
   UpdateShareReq,
   ShareBackend,

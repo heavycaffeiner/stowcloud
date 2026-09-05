@@ -1,15 +1,17 @@
 <script lang="ts">
-  // First-run admin bootstrap screen — Top-level route
+  // First-run admin bootstrap screen: top-level route
   // (not under `(app)`), reachable automatically when session bootstrapping
   // decides `first-run` (see (app)/+layout.svelte) and always reachable
   // manually via the link on /login, since the auto-detection depends on a
   // guessed error code from the not-yet-landed backend (see
-  // lib/state/auth.svelte.ts).
+  // lib/query/session.ts's `screenOf`).
   import { t } from '../../lib/i18n'
   import { goto } from '$app/navigation'
+  import { createMutation, mutationOptions, useQueryClient } from '@tanstack/svelte-query'
   import { createInitialAdmin, type SetupFinding } from '../../lib/api/setup'
-  import { api, ApiError, isMock } from '../../lib/api/client'
-  import { completeLogin } from '../../lib/state/auth-bootstrap'
+  import { ApiError, isMock } from '../../lib/api/client'
+  import { keys } from '../../lib/query/keys'
+  import { loginMutation } from '../../lib/query/session'
   import { scorePasswordStrength } from '../../lib/format/password-strength'
   import Button from '../../lib/ui/Button.svelte'
   import ProgressLinear from '../../lib/ui/ProgressLinear.svelte'
@@ -21,7 +23,6 @@
   let username = $state('')
   let password = $state('')
   let passwordConfirm = $state('')
-  let submitting = $state(false)
   let errorMsg = $state<string | null>(null)
   let doneButLoginFailed = $state(false)
 
@@ -68,8 +69,14 @@
     if (passwordConfirm !== password) return t('setup.passwords_do_not_match')
     return null
   })
+
+  const queryClient = useQueryClient()
+  const setup = createMutation(() => mutationOptions({ mutationFn: createInitialAdmin }))
+  const login = createMutation(() => loginMutation())
+
   const canSubmit = $derived(
-    !submitting &&
+    !setup.isPending &&
+      !login.isPending &&
       token.trim().length > 0 &&
       username.trim().length > 0 &&
       password.length >= MIN_PASSWORD_LENGTH &&
@@ -86,9 +93,8 @@
    *  account was just created with these exact credentials, so this is one
    *  step rather than a bounce through the login screen. */
   async function enter(): Promise<void> {
-    const login = await api.login(username.trim(), password)
-    if (login.required !== 'totp') {
-      await completeLogin()
+    const result = await login.mutateAsync({ username: username.trim(), password })
+    if (result.required !== 'totp') {
       await goto('/b/')
       return
     }
@@ -121,9 +127,8 @@
     if (!canSubmit) return
     errorMsg = null
     doneButLoginFailed = false
-    submitting = true
     try {
-      const result = await createInitialAdmin({
+      const result = await setup.mutateAsync({
         token: token.trim(),
         username: username.trim(),
         password,
@@ -134,16 +139,19 @@
       })
       warnings = result.warnings
       bindFailed = result.bind_failed === true
+      // The account now exists: a session check that used to answer
+      // "no account here" would answer "sign in" instead, and the layout's
+      // own session query needs to stop believing the cached "not signed in
+      // yet" answer too.
+      void queryClient.invalidateQueries({ queryKey: keys.session() })
+      void queryClient.invalidateQueries({ queryKey: keys.setupRequired() })
       // Something worth reading before the page navigates away from it. The
       // one that matters is a host list that does not name where this page is
       // being read from: correct behind a proxy, and a lockout otherwise, and
       // nothing here can tell which. Landing straight on the file browser
       // would put the person one refused request away from a message they
       // never saw.
-      if (warnings.length > 0 || bindFailed) {
-        submitting = false
-        return
-      }
+      if (warnings.length > 0 || bindFailed) return
       try {
         await enter()
       } catch {
@@ -151,8 +159,6 @@
       }
     } catch (err) {
       errorMsg = messageFor(err)
-    } finally {
-      submitting = false
     }
   }
 </script>
@@ -221,9 +227,9 @@
 
       <div class="sc-auth-card__actions">
         {#if warnings.length > 0 || bindFailed}
-          <Button variant="filled" onclick={enter} loading={submitting}>{t('setup.continue_anyway')}</Button>
+          <Button variant="filled" onclick={enter} loading={login.isPending}>{t('setup.continue_anyway')}</Button>
         {:else}
-          <Button variant="filled" type="submit" disabled={!canSubmit} loading={submitting}>
+          <Button variant="filled" type="submit" disabled={!canSubmit} loading={setup.isPending || login.isPending}>
             {t('setup.create_administrator_account')}
           </Button>
         {/if}
@@ -251,7 +257,7 @@
     flex-direction: column;
     gap: 16px;
     width: min(440px, 100%);
-    /* See login/+page.svelte — card padding is MD3's 24dp, independent of the
+    /* See login/+page.svelte: card padding is MD3's 24dp, independent of the
        page margin the two of them used to double up on. */
     padding: 24px;
     border-radius: var(--m3-shape-large);

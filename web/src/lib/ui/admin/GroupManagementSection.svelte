@@ -1,11 +1,14 @@
 <script lang="ts">
-  // Group management — create/rename/delete groups and
+  // Group management: create/rename/delete groups and
   // manage membership, then hand a group principal to `GrantManagementSection`
   // the exact same way `UserManagementSection` hands it a user principal.
   // GET/POST /api/admin/groups, PATCH/DELETE /api/admin/groups/{id},
   // POST /api/admin/groups/{id}/members, DELETE .../members/{user}.
+  import { createMutation, createQuery } from '@tanstack/svelte-query'
   import { t } from '../../i18n'
-  import { api, ApiError, type AdminGroup, type AdminUser } from '../../api/client'
+  import { ApiError, type AdminGroup } from '../../api/client'
+  import { describeApiError } from '../../api/error-text'
+  import { adminGroupMutation, adminGroupsQuery, adminUsersQuery } from '../../query/admin'
   import Button from '../Button.svelte'
   import Chip from '../Chip.svelte'
   import Dialog from '../Dialog.svelte'
@@ -17,26 +20,16 @@
   import TextField from '../TextField.svelte'
   import GrantManagementSection from './GrantManagementSection.svelte'
 
-  let groups = $state<AdminGroup[]>([])
-  let users = $state<AdminUser[]>([])
-  let loading = $state(true)
-  let loadError = $state<string | null>(null)
-
-  async function load(): Promise<void> {
-    loading = true
-    loadError = null
-    try {
-      const [g, u] = await Promise.all([api.adminListGroups(), api.adminListUsers()])
-      groups = g
-      users = u
-    } catch {
-      loadError = t('group.could_not_load_group_list')
-    } finally {
-      loading = false
-    }
-  }
-
-  load()
+  const groupsQuery = createQuery(() => adminGroupsQuery())
+  const usersQuery = createQuery(() => adminUsersQuery())
+  const groups = $derived(groupsQuery.data ?? [])
+  const users = $derived(usersQuery.data ?? [])
+  const loading = $derived(groupsQuery.isPending || usersQuery.isPending)
+  const loadError = $derived(
+    groupsQuery.error || usersQuery.error
+      ? describeApiError(groupsQuery.error ?? usersQuery.error, t('group.could_not_load_group_list'))
+      : null
+  )
 
   function userName(id: number): string {
     const u = users.find((u) => u.id === id)
@@ -47,12 +40,22 @@
 
   let createOpen = $state(false)
   let newName = $state('')
-  let createError = $state<string | null>(null)
-  let creating = $state(false)
+  let createValidation = $state<string | null>(null)
+
+  const createMut = createMutation(() => adminGroupMutation())
+  const creating = $derived(createMut.isPending)
+  const createError = $derived.by(() => {
+    if (createValidation) return createValidation
+    const err = createMut.error
+    if (!err) return null
+    if (err instanceof ApiError && err.code === 'fs.conflict') return t('common.name_already_taken')
+    return describeApiError(err, t('group.could_not_create_group'))
+  })
 
   function openCreate(): void {
     newName = ''
-    createError = null
+    createValidation = null
+    createMut.reset()
     createOpen = true
   }
 
@@ -63,24 +66,16 @@
 
   async function submitCreate(e?: SubmitEvent): Promise<void> {
     e?.preventDefault()
-    createError = null
+    createValidation = null
     if (!newName.trim()) {
-      createError = t('group.enter_group_name')
+      createValidation = t('group.enter_group_name')
       return
     }
-    creating = true
     try {
-      const created = await api.adminCreateGroup({ name: newName.trim() })
-      groups = [...groups, created]
+      await createMut.mutateAsync({ kind: 'create', req: { name: newName.trim() } })
       createOpen = false
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'fs.conflict') {
-        createError = t('common.name_already_taken')
-      } else {
-        createError = t('group.could_not_create_group')
-      }
-    } finally {
-      creating = false
+    } catch {
+      // createError above reads the failure straight off createMut.error
     }
   }
 
@@ -88,13 +83,23 @@
 
   let renameTarget = $state<AdminGroup | null>(null)
   let renameName = $state('')
-  let renameError = $state<string | null>(null)
-  let renaming = $state(false)
+  let renameValidation = $state<string | null>(null)
+
+  const renameMut = createMutation(() => adminGroupMutation())
+  const renaming = $derived(renameMut.isPending)
+  const renameError = $derived.by(() => {
+    if (renameValidation) return renameValidation
+    const err = renameMut.error
+    if (!err) return null
+    if (err instanceof ApiError && err.code === 'fs.conflict') return t('common.name_already_taken')
+    return describeApiError(err, t('common.could_not_rename'))
+  })
 
   function openRename(g: AdminGroup): void {
     renameTarget = g
     renameName = g.name
-    renameError = null
+    renameValidation = null
+    renameMut.reset()
   }
 
   function closeRename(): void {
@@ -105,35 +110,29 @@
   async function submitRename(e?: SubmitEvent): Promise<void> {
     e?.preventDefault()
     if (!renameTarget) return
-    renameError = null
+    renameValidation = null
     if (!renameName.trim()) {
-      renameError = t('group.enter_group_name')
+      renameValidation = t('group.enter_group_name')
       return
     }
-    renaming = true
     try {
-      const updated = await api.adminRenameGroup(renameTarget.id, { name: renameName.trim() })
-      groups = groups.map((g) => (g.id === updated.id ? updated : g))
+      await renameMut.mutateAsync({ kind: 'rename', id: renameTarget.id, patch: { name: renameName.trim() } })
       renameTarget = null
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'fs.conflict') {
-        renameError = t('common.name_already_taken')
-      } else {
-        renameError = t('common.could_not_rename')
-      }
-    } finally {
-      renaming = false
+    } catch {
+      // renameError above reads the failure straight off renameMut.error
     }
   }
 
   // ── delete ──
 
   let deleteTarget = $state<AdminGroup | null>(null)
-  let deleting = $state(false)
-  let deleteError = $state<string | null>(null)
+
+  const deleteMut = createMutation(() => adminGroupMutation())
+  const deleting = $derived(deleteMut.isPending)
+  const deleteError = $derived(deleteMut.error ? describeApiError(deleteMut.error, t('common.could_not_delete')) : null)
 
   function askDelete(g: AdminGroup): void {
-    deleteError = null
+    deleteMut.reset()
     deleteTarget = g
   }
 
@@ -144,75 +143,60 @@
 
   async function confirmDelete(): Promise<void> {
     if (!deleteTarget) return
-    deleting = true
-    deleteError = null
     try {
-      await api.adminDeleteGroup(deleteTarget.id)
-      groups = groups.filter((g) => g.id !== deleteTarget!.id)
+      await deleteMut.mutateAsync({ kind: 'delete', id: deleteTarget.id })
       deleteTarget = null
     } catch {
-      deleteError = t('common.could_not_delete')
-    } finally {
-      deleting = false
+      // deleteError above reads the failure straight off deleteMut.error
     }
   }
 
   // ── members ──
 
-  let membersTarget = $state<AdminGroup | null>(null)
-  let memberError = $state<string | null>(null)
-  let memberBusyId = $state<number | null>(null)
+  let membersTargetId = $state<number | null>(null)
+  // The group re-read from the query cache on every render, so an add/remove
+  // that invalidates the group list is reflected here without local splicing.
+  const membersTarget = $derived(groups.find((g) => g.id === membersTargetId) ?? null)
   // String-valued: m3-svelte's Select is a real `<select>`. '' = nothing picked.
   let addMemberId = $state('')
 
-  /** Accounts not already in this group — the only ones the add picker offers. */
+  /** Accounts not already in this group: the only ones the add picker offers. */
   const availableUsers = $derived(users.filter((u) => !membersTarget?.members.includes(u.id)))
-  const memberOptions = $derived(
-    availableUsers.map((u) => ({ value: String(u.id), text: u.display_name || u.name }))
-  )
+  const memberOptions = $derived(availableUsers.map((u) => ({ value: String(u.id), text: u.display_name || u.name })))
+
+  const addMemberMut = createMutation(() => adminGroupMutation())
+  const removeMemberMut = createMutation(() => adminGroupMutation())
+  const memberBusyId = $derived.by(() => {
+    if (addMemberMut.isPending && addMemberMut.variables?.kind === 'add-member') return addMemberMut.variables.userId
+    if (removeMemberMut.isPending && removeMemberMut.variables?.kind === 'remove-member') return removeMemberMut.variables.userId
+    return null
+  })
+  const memberError = $derived.by(() => {
+    if (addMemberMut.error) return describeApiError(addMemberMut.error, t('group.could_not_add'))
+    if (removeMemberMut.error) return describeApiError(removeMemberMut.error, t('common.could_not_remove'))
+    return null
+  })
 
   function openMembers(g: AdminGroup): void {
-    membersTarget = g
-    memberError = null
+    membersTargetId = g.id
     addMemberId = ''
+    addMemberMut.reset()
+    removeMemberMut.reset()
   }
 
   function closeMembers(): void {
-    membersTarget = null
+    membersTargetId = null
   }
 
-  async function addMember(): Promise<void> {
+  function addMember(): void {
     if (!membersTarget || addMemberId === '') return
-    memberError = null
-    const id = Number(addMemberId)
-    memberBusyId = id
-    try {
-      await api.adminAddGroupMember(membersTarget.id, id)
-      const updated: AdminGroup = { ...membersTarget, members: [...membersTarget.members, id] }
-      groups = groups.map((g) => (g.id === updated.id ? updated : g))
-      membersTarget = updated
-      addMemberId = ''
-    } catch {
-      memberError = t('group.could_not_add')
-    } finally {
-      memberBusyId = null
-    }
+    const userId = Number(addMemberId)
+    addMemberMut.mutate({ kind: 'add-member', id: membersTarget.id, userId }, { onSuccess: () => (addMemberId = '') })
   }
 
-  async function removeMember(userId: number): Promise<void> {
+  function removeMember(userId: number): void {
     if (!membersTarget) return
-    memberError = null
-    memberBusyId = userId
-    try {
-      await api.adminRemoveGroupMember(membersTarget.id, userId)
-      const updated: AdminGroup = { ...membersTarget, members: membersTarget.members.filter((m) => m !== userId) }
-      groups = groups.map((g) => (g.id === updated.id ? updated : g))
-      membersTarget = updated
-    } catch {
-      memberError = t('common.could_not_remove')
-    } finally {
-      memberBusyId = null
-    }
+    removeMemberMut.mutate({ kind: 'remove-member', id: membersTarget.id, userId })
   }
 
   // ── grants ──
@@ -457,7 +441,7 @@
     align-items: center;
     gap: 8px;
   }
-  /* `:has(> select)`, not bare `.m3-container` — m3-svelte gives that class to
+  /* `:has(> select)`, not bare `.m3-container`: m3-svelte gives that class to
      the Button next to the picker too, so the unqualified rule let the button
      grow and take half the row. */
   .sc-group-mgmt__addmember-row :global(.m3-container:has(> select)) {

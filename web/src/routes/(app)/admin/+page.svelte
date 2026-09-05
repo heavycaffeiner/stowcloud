@@ -1,17 +1,17 @@
 <script lang="ts">
-  // Admin-only screen — requires `/admin/*` to "never
+  // Admin-only screen: requires `/admin/*` to "never
   // load at all" for a non-admin. This thin gate component may still load
   // (route entry itself can't be blocked), so the requirement is kept by
   // wrapping the subcomponents that touch real data in `{#await import(...)}`
-  // so the fetch itself never fires — the same pattern `/settings` uses.
+  // so the fetch itself never fires (the same pattern `/settings` uses).
   //
   // API-side access control is separate and done by the server (`sc-http`'s
-  // `require_admin` — hiding this screen doesn't mean the API allows it).
+  // `require_admin`: hiding this screen doesn't mean the API allows it).
   // What happens here is UX only.
   //
   // The seven sections used to render as one flat scroll, which meant all
   // seven `import()`s resolved and all seven sections fetched the moment an
-  // administrator opened the screen — share list, user list, group list,
+  // administrator opened the screen: share list, user list, group list,
   // storage estimate, upload settings, server settings and the audit log,
   // whichever one they had actually come for. They are grouped into five tabs
   // now, so only the open tab loads and fetches; the rest cost nothing until
@@ -22,8 +22,8 @@
   // with no indicator at all. Another section means regrouping, not appending.
   //
   // Which is what the server log did: the last tab is "Logs", and it holds
-  // one section covering both logs — the audit log (who did what) and the
-  // server log (what the server itself recorded) — under one filter bar with
+  // one section covering both logs, the audit log (who did what) and the
+  // server log (what the server itself recorded), under one filter bar with
   // a graph over both. They are the two things an operator opens for the
   // same reason, and a sixth tab was not available to give the second one.
   //
@@ -37,9 +37,10 @@
   import { page } from '$app/state'
   import { Tabs } from 'm3-svelte'
   import { icons } from '../../../lib/icons'
-  import { authState } from '../../../lib/state/auth.svelte'
-  import { syncTabHash } from '../../../lib/state/tab-hash'
-  const user = $derived(authState.session?.user ?? null)
+  import { createSession } from '../../../lib/query/session'
+  import { syncTabHash } from '../../../lib/ui/tab-hash'
+  const session = createSession()
+  const user = $derived(session.data?.user ?? null)
   const isAdmin = $derived(user?.is_admin ?? false)
 
   const tabs = [
@@ -77,7 +78,7 @@
   </div>
 
   {#if !user}
-    <!-- Confirming session — the instant before layout draws the `browser`
+    <!-- Confirming session: the instant before layout draws the `browser`
          screen. Renders nothing. -->
   {:else if !isAdmin}
     <div class="sc-admin__inner">
@@ -153,11 +154,11 @@
   /* Same restructuring as web/src/routes/(app)/settings/+page.svelte, same
    * root cause: this used to be one element carrying both the max-width
    * cap *and* `overflow-y: auto`, with `margin-inline` left at its default
-   * of 0 — so the capped column sat flush against the nav rail instead of
+   * of 0, so the capped column sat flush against the nav rail instead of
    * centered, leaving the rest of a wide window as dead space with the
    * scrollbar rendered mid-window instead of at its edge. `.sc-admin`
-   * (outer) is now just the full-width scroll owner — free width via
-   * `.sc-app-shell__main`'s `align-items: stretch` — and `.sc-admin__inner`
+   * (outer) is now just the full-width scroll owner (free width via
+   * `.sc-app-shell__main`'s `align-items: stretch`) and `.sc-admin__inner`
    * is the capped, centered, padded column. Cap widened 720 -> ~960 too:
    * this page's user table benefits from the extra width same as
    * `/settings`' rows do. */
@@ -175,7 +176,7 @@
   .sc-admin__title {
     padding-block: var(--sc-page-pad) 0;
   }
-  /* Title scrolls, tabs pin — see the twin rule in `/settings` for why the
+  /* Title scrolls, tabs pin: see the twin rule in `/settings` for why the
    * sticky and the background sit on the full-width band rather than on the
    * capped column inside it. */
   .sc-admin__head {
@@ -194,7 +195,7 @@
   /* Same fix as web/src/routes/(app)/settings/+page.svelte: global.css zeroes
    * heading margins but never sets font-size/line-height, so an unstyled h1
    * renders at the UA default font-size (~32px) inside a line box sized by
-   * the inherited body line-height (24px) — the glyphs overflow their own
+   * the inherited body line-height (24px). The glyphs overflow their own
    * box. This page's h1 wasn't visibly colliding with anything only because
    * the first section already carries a 32px margin-top big enough to clear
    * the overflow; it had the same underlying defect as Settings/Theme on the

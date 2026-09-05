@@ -1,5 +1,5 @@
 <script lang="ts">
-  // FileTreeItem.svelte — one lazily-expandable node of FileTree.svelte.
+  // One lazily-expandable node of FileTree.svelte.
   // Recursion is via self-import (Svelte 5 dropped `<svelte:self>`).
   //
   // Deliberately NOT virtualized like FileTable/FileGrid: a directory tree's
@@ -9,8 +9,10 @@
   // plain native tab stop for the same reason (a small tree is not the "100k
   // tab stops" case §9 warns about).
   import { t } from '../i18n'
-  import { api, type Entry } from '../api/client'
+  import { createInfiniteQuery } from '@tanstack/svelte-query'
   import { joinPath } from '../api/path-utils'
+  import { dirListQuery, dirViewOf } from '../query/files'
+  import type { Sort } from '../query/keys'
   import { Icon } from 'm3-svelte'
   import { icons } from '../icons'
   import FileTreeItem from './FileTreeItem.svelte'
@@ -25,9 +27,6 @@
   let { path, name, depth, currentPath, onnavigate }: Props = $props()
 
   let expanded = $state(false)
-  let children = $state<Entry[] | null>(null)
-  let loading = $state(false)
-  let errored = $state(false)
 
   const isActive = $derived(currentPath === path)
   // Highlights ancestors of the active folder too, so the tree gives context
@@ -35,43 +34,35 @@
   const isAncestor = $derived(!isActive && (currentPath === path || currentPath.startsWith(`${path}/`)))
   const indent = $derived(depth * 16 + 8)
 
+  // Name-ascending: the tree wants a stable alphabetical order, and asking
+  // the server for it up front means there is nothing left to re-sort here.
+  const TREE_SORT: Sort = { key: 'name', order: 'asc' }
+
+  // `enabled` in the thunk is what makes this lazy: a collapsed node's query
+  // never runs, and toggling `expanded` is the only thing that turns it on.
+  const listing = createInfiniteQuery(() => ({ ...dirListQuery(path, TREE_SORT), enabled: expanded }))
+  // 200 (`PAGE_LIMIT`) rows is a lazy-tree pragmatic cap, not a hard backend
+  // limit -- a folder with more subfolders than that just shows its first
+  // page; nothing here ever calls `fetchNextPage`. There is no "list
+  // directories only" endpoint, so this filters a normal listing page down
+  // to dirs after the fact.
+  const children = $derived(
+    listing.data ? dirViewOf(listing.data.pages).entries.filter((e) => e.kind === 'dir') : null
+  )
+
   // Auto-expand ancestors of the active path so navigating via the file table
   // or breadcrumbs immediately reveals the folder's position in the tree.
   $effect(() => {
-    if (isAncestor && !expanded) {
-      expanded = true
-      void loadChildren()
-    }
+    if (isAncestor && !expanded) expanded = true
   })
-  async function loadChildren(): Promise<void> {
-    if (children !== null || loading) return
-    loading = true
-    errored = false
-    try {
-      // 500 is a lazy-tree pragmatic cap, not a hard backend limit -- a
-      // folder with more subfolders than that just shows its first 500.
-      // There is no "list directories only" endpoint, so this filters a
-      // normal listing page down to dirs after the fact.
-      const res = await api.list(path, { limit: 500 })
-      children = res.entries.filter((e) => e.kind === 'dir').sort((a, b) => a.name.localeCompare(b.name))
-    } catch {
-      errored = true
-    } finally {
-      loading = false
-    }
-  }
 
   function toggle(): void {
     expanded = !expanded
-    if (expanded) void loadChildren()
   }
 
   function open(): void {
     onnavigate(path)
-    if (!expanded) {
-      expanded = true
-      void loadChildren()
-    }
+    expanded = true
   }
 </script>
 
@@ -93,9 +84,9 @@
     </button>
   </div>
   {#if expanded}
-    {#if loading}
+    {#if listing.isPending}
       <p class="sc-tree-row__status" style:padding-inline-start="{indent + 16}px">{t('common.loading')}</p>
-    {:else if errored}
+    {:else if listing.isError}
       <p class="sc-tree-row__status sc-tree-row__status--error" style:padding-inline-start="{indent + 16}px">
         {t('tree.could_not_load_subfolders')}
       </p>

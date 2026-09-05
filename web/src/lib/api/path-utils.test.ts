@@ -1,4 +1,4 @@
-// web/src/lib/api/path-utils.test.ts — the destination guard behind
+// The destination guard behind
 // `DestinationPickerDialog`. The server rejects an illegal move too, but only
 // after the user has committed to it and waited for a job to fail; these rules
 // are what let the picker grey the button out and say why instead.

@@ -64,7 +64,7 @@ async function mockCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
   try {
     sessionStorage.setItem(MOCK_SETUP_ADMIN_KEY, JSON.stringify({ username: req.username, password: req.password }))
   } catch {
-    /* private browsing etc. — the mock auto-login after setup just won't work; non-fatal */
+    /* private browsing etc.: the mock auto-login after setup just won't work; non-fatal */
   }
   // The one warning a browser can work out for itself, which is also the one
   // that matters: the list does not name where this page is being read from.
@@ -101,7 +101,7 @@ async function httpCreateAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
   throw new ApiError(res.status, err)
 }
 
-/** THE SEAM — see file header. */
+/** THE SEAM: see file header. */
 export function createInitialAdmin(req: SetupCreateAdminReq): Promise<SetupResult> {
   return IS_MOCK ? mockCreateAdmin(req) : httpCreateAdmin(req)
 }
@@ -113,12 +113,12 @@ export function createInitialAdmin(req: SetupCreateAdminReq): Promise<SetupResul
  * once the first account is created.
  *
  * This is how the app tells "nobody has ever logged in here" apart from "your
- * session expired" — the two produce the same `401` on `GET /api/auth/session`
+ * session expired"; the two produce the same `401` on `GET /api/auth/session`
  * and want completely different screens.
  *
  * Never throws: if this call fails we cannot conclude the server needs
  * setting up, and guessing wrong sends a normal user to a create-admin form.
- * Failure means `false`, which lands on the login screen — and that screen
+ * Failure means `false`, which lands on the login screen, and that screen
  * carries a manual `/setup` link for the case where we guessed wrong.
  */
 export async function setupRequired(): Promise<boolean> {

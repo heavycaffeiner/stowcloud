@@ -1,7 +1,7 @@
 <script lang="ts">
   // Adapter over m3-svelte's Checkbox, which is a decoration drawn *around* a
   // real `<input type="checkbox">` the caller supplies and must be wrapped in
-  // a `<label>` — so the input, its labelling, keyboard and AT behaviour stay
+  // a `<label>`, so the input, its labelling, keyboard and AT behaviour stay
   // native. `indeterminate` is a DOM property, not an attribute, hence the
   // effect.
   import { Checkbox } from 'm3-svelte'

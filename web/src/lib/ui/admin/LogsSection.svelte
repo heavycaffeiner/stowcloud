@@ -6,15 +6,14 @@
   //
   // The two resources stay separate on the server. They have different
   // retention, different volume and different meaning, and each keeps its own
-  // cursor. The merge is a screen decision, made here and in the slice.
+  // cursor. The merge is a screen decision, made in `admin/log-view.ts`.
   //
-  // No logic lives in this file. Filters, page accumulation, the merge, the
-  // bucket maths and request bookkeeping are `store/slices/logs.slice.ts`;
-  // this subscribes through the runes bridge with a selector and dispatches
-  // actions. The slice holds the debounce, the AbortController and the
-  // generation counter that drops a response arriving for a filter the
-  // operator has already moved past, and all three now span both streams and
-  // the graph fetch.
+  // Filters are client state (`logsForm`, in `store/logs.store.ts`): what the
+  // operator has typed. `debounced` settles that into the value the three
+  // queries key on, so a keystroke is not a request. A filter change becomes
+  // a new query key rather than something this file has to cancel and
+  // reconcile: the old key's answer, if it is still in flight, lands where
+  // nothing observes it any more.
   //
   // Display decisions the contract forces:
   //
@@ -35,6 +34,7 @@
   // The subsystem filter is a text field with suggestions, not a `<select>`.
   // Only `dav` is instrumented today and more arrive one subsystem at a time,
   // so a closed list would refuse a value the server is already sending.
+  import { createInfiniteQuery, createQuery } from '@tanstack/svelte-query'
   import { ALL_LOG_LEVELS, type AdminLogRecord, type AuditRow } from '../../api/client'
   import Button from '../Button.svelte'
   import Checkbox from '../Checkbox.svelte'
@@ -43,46 +43,77 @@
   import ProgressCircular from '../ProgressCircular.svelte'
   import TextField from '../TextField.svelte'
   import { formatDateNs, formatDuration, formatNumber, t } from '../../i18n'
-  import { useRunesStore } from '../../store/core/bridge.svelte'
   import {
-    createLogsStore,
+    DEBOUNCE_MS,
+    MAX_RECORDS,
     pureActorLabel,
+    pureIncludesAudit,
+    pureIncludesServer,
     pureInterleave,
     pureKnownSubsystems,
     pureServerOnlyFiltersActive,
     pureTimelineView,
     type LogSourceMode,
-    type LogsAction,
     type TimelineBar,
     type TimelineSeries,
     type UnifiedLogItem
-  } from '../../store/slices/logs.slice'
+  } from '../../admin/log-view'
+  import { adminUsersQuery } from '../../query/admin'
+  import { debounced } from '../../query/debounce.svelte'
+  import { adminAuditQuery, adminLogsQuery, adminTimelineQuery } from '../../query/logs'
+  import { logsForm } from '../../store/logs.store'
 
-  const store = createLogsStore()
+  // The fields on screen track the live value; the three queries key on the
+  // settled one, so typing updates the form at once and the network only
+  // once the operator pauses.
+  const filters = $derived(logsForm.state.filters)
+  const settled = debounced(() => logsForm.state.filters, DEBOUNCE_MS)
 
-  // One selector over the whole snapshot: every field below is read on each
-  // render anyway, so a narrower one would only add comparisons. What keeps
-  // this cheap is that the reducer returns the same arrays and sets when
-  // nothing changed, so an unrelated update is reference-equal.
-  const handle = useRunesStore(store)
-  const snap = $derived(handle.current)
+  const includesServer = $derived(pureIncludesServer(settled.current.sourceMode))
+  const includesAudit = $derived(pureIncludesAudit(settled.current.sourceMode))
 
-  const filters = $derived(snap.filters)
-  const knownSubsystems = $derived(pureKnownSubsystems(snap.records))
-  const items = $derived(pureInterleave(snap.records, snap.auditRows))
-  const view = $derived(pureTimelineView(snap.timeline, filters.sourceMode))
+  const logs = createInfiniteQuery(() => adminLogsQuery(settled.current, includesServer))
+  const audit = createInfiniteQuery(() => adminAuditQuery(settled.current, includesAudit))
+  const timeline = createQuery(() => adminTimelineQuery(settled.current, true))
+  const users = createQuery(() => adminUsersQuery())
+
+  const records = $derived(logs.data?.pages.flatMap((p) => p.records) ?? [])
+  const auditRows = $derived(audit.data?.pages.flatMap((p) => p.rows) ?? [])
+  const items = $derived(pureInterleave(records, auditRows, MAX_RECORDS))
+  const view = $derived(pureTimelineView(timeline.data ?? null, settled.current.sourceMode))
   const serverOnlyActive = $derived(pureServerOnlyFiltersActive(filters))
+  const knownSubsystems = $derived(pureKnownSubsystems(records))
+
+  // A stream the mode has switched off is a disabled query: it never fetched,
+  // so its own flags would say "pending" forever. Gated on the same mode the
+  // query itself is enabled with.
+  const loading = $derived((includesServer && logs.isPending) || (includesAudit && audit.isPending))
+  const loadingMore = $derived(
+    (includesServer && logs.isFetchingNextPage) || (includesAudit && audit.isFetchingNextPage)
+  )
+  const failed = $derived((includesServer && logs.isError) || (includesAudit && audit.isError))
+  const hasMore = $derived(logs.hasNextPage || audit.hasNextPage)
+  const truncated = $derived(items.length >= MAX_RECORDS && hasMore)
+
+  function loadMore(): void {
+    if (logs.hasNextPage && !logs.isFetchingNextPage) void logs.fetchNextPage()
+    if (audit.hasNextPage && !audit.isFetchingNextPage) void audit.fetchNextPage()
+  }
 
   /** Stored size, formatted without ever holding the byte count in a number.
    *  BigInt divides to whole mebibytes first; what reaches `formatNumber` is
    *  small enough to be exact. Below a mebibyte it says so rather than
-   *  rounding to zero, which would read as "nothing is stored". */
+   *  rounding to zero, which would read as "nothing is stored". The figure is
+   *  server-wide, and every page repeats the value as of its own request, so
+   *  the most recently answered page is the one to read it from. */
+  const newestPage = $derived(logs.data?.pages.at(-1))
   const storedLabel = $derived.by(() => {
-    const mib = BigInt(snap.storedBytes) / 1_048_576n
+    const mib = BigInt(newestPage?.stored_bytes ?? '0') / 1_048_576n
     return mib === 0n
       ? t('logs.under_one_mb')
       : t('logs.megabytes', { size: formatNumber(Number(mib)) })
   })
+  const segments = $derived(newestPage?.segments ?? 0)
 
   const LEVEL_KEY: Record<string, string> = {
     DEBUG: /* i18n */ 'logs.level_debug',
@@ -120,12 +151,6 @@
     { mode: 'audit', key: /* i18n */ 'common.audit_log' }
   ]
 
-  /** Filters refetch after the slice's settling window, so a keystroke is not
-   *  a request and the requests in flight for the previous value are aborted. */
-  function changeFilter(action: LogsAction): void {
-    store.changeFilter(action)
-  }
-
   // ── the graph's roving tab stop ──
   //
   // One tab stop for the whole plot, arrows within it. Forty-eight buckets as
@@ -138,7 +163,7 @@
   // the last one.
   const barCount = $derived(view?.bars.length ?? 0)
   const activeBucket = $derived(
-    barCount === 0 ? -1 : Math.min(snap.focusedBucket ?? barCount - 1, barCount - 1)
+    barCount === 0 ? -1 : Math.min(logsForm.state.focusedBucket ?? barCount - 1, barCount - 1)
   )
   const activeBar = $derived(activeBucket < 0 ? null : (view?.bars[activeBucket] ?? null))
 
@@ -147,7 +172,7 @@
   function moveFocus(to: number): void {
     if (barCount === 0) return
     const next = Math.max(0, Math.min(to, barCount - 1))
-    store.dispatch({ type: 'FOCUS_BUCKET', index: next })
+    logsForm.focusBucket(next)
     // The element has to be told to take focus: the roving index moves the
     // tabbability, and without this the reader's focus stays on the bar they
     // arrowed away from.
@@ -205,10 +230,10 @@
 
   // ── the list ──
 
-  /** The account an audit row is attributed to. The slice picks the source;
-   *  this only translates the two cases that have no name of their own. */
+  /** The account an audit row is attributed to. Best effort: a failure to
+   *  load the user list costs a name, not the row. */
   function actorText(row: AuditRow): string {
-    const label = pureActorLabel(row, snap.users)
+    const label = pureActorLabel(row, users.data ?? [])
     if (label.kind === 'system') return t('common.system')
     if (label.kind === 'name') return label.name
     return t('common.user', { id: label.id })
@@ -227,12 +252,6 @@
   function itemKey(item: UnifiedLogItem): string {
     return item.key
   }
-
-  store.refresh()
-
-  // A dashboard left behind stops costing the server: the timer is cancelled
-  // and the requests in flight aborted when this section goes away.
-  $effect(() => () => store.dispose())
 </script>
 
 <section class="sc-logs">
@@ -246,20 +265,14 @@
     </div>
     <div>
       <dt>{t('logs.segments')}</dt>
-      <dd>{formatNumber(snap.segments)}</dd>
+      <dd>{formatNumber(segments)}</dd>
     </div>
   </dl>
 
-  <!-- `onsubmit` rather than a click handler on the button: Enter in any
-       field is then the same action, and the slice's `refresh` skips the
-       settling window because a submit is already a deliberate commit. -->
-  <form
-    class="sc-logs__filters"
-    onsubmit={(e) => {
-      e.preventDefault()
-      store.refresh()
-    }}
-  >
+  <!-- `onsubmit` only to stop Enter from reloading the page: every field
+       already writes straight to `logsForm`, and the debounced value the
+       queries key on settles a moment later on its own. -->
+  <form class="sc-logs__filters" onsubmit={(e) => e.preventDefault()}>
     <div class="sc-logs__sources">
       <span class="sc-logs__group-label" id="sc-logs-source-label">{t('logs.source')}</span>
       <!-- Three states, not two checkboxes. Two checkboxes have a both-off
@@ -272,7 +285,7 @@
             square
             variant={filters.sourceMode === option.mode ? 'filled' : 'tonal'}
             pressed={filters.sourceMode === option.mode}
-            onclick={() => changeFilter({ type: 'SET_SOURCE_MODE', mode: option.mode })}
+            onclick={() => logsForm.patch({ sourceMode: option.mode })}
           >
             {t(option.key)}
           </Button>
@@ -289,7 +302,7 @@
           <Checkbox
             checked={filters.levels.has(level)}
             label={t(LEVEL_KEY[level])}
-            onchange={() => changeFilter({ type: 'TOGGLE_LEVEL', level })}
+            onchange={() => logsForm.toggleLevel(level)}
           />
         {/each}
       </div>
@@ -301,7 +314,7 @@
         placeholder={t('logs.e_g_refused')}
         type="search"
         value={filters.text}
-        oninput={(v) => changeFilter({ type: 'SET_TEXT', text: v })}
+        oninput={(v) => logsForm.patch({ text: v })}
         autocomplete="off"
       />
       <TextField
@@ -309,7 +322,7 @@
         placeholder={t('logs.e_g_dav')}
         list="sc-logs-subsystems"
         value={filters.subsystem}
-        oninput={(v) => changeFilter({ type: 'SET_SUBSYSTEM', subsystem: v })}
+        oninput={(v) => logsForm.patch({ subsystem: v })}
         autocomplete="off"
       />
       <!-- Suggestions, not a closed set: any subsystem string is accepted. -->
@@ -320,20 +333,20 @@
         label={t('logs.request_id')}
         placeholder={t('logs.e_g_request_id')}
         value={filters.requestId}
-        oninput={(v) => changeFilter({ type: 'SET_REQUEST_ID', requestId: v })}
+        oninput={(v) => logsForm.patch({ requestId: v })}
         autocomplete="off"
       />
       <TextField
         label={t('logs.from')}
         type="datetime-local"
         value={filters.since}
-        oninput={(v) => changeFilter({ type: 'SET_SINCE', since: v })}
+        oninput={(v) => logsForm.patch({ since: v })}
       />
       <TextField
         label={t('logs.to')}
         type="datetime-local"
         value={filters.until}
-        oninput={(v) => changeFilter({ type: 'SET_UNTIL', until: v })}
+        oninput={(v) => logsForm.patch({ until: v })}
       />
     </div>
 
@@ -363,9 +376,9 @@
       <p class="sc-logs__hint">{t('logs.timeline_description')}</p>
     </div>
 
-    {#if snap.loading && view === null}
+    {#if timeline.isPending && view === null}
       <ProgressCircular label={t('logs.loading_timeline')} />
-    {:else if snap.timelineFailed && view === null}
+    {:else if timeline.isError && view === null}
       <p class="sc-logs__note" role="status">{t('logs.could_not_load_timeline')}</p>
     {:else if view !== null}
       {#if view.truncated}
@@ -411,8 +424,8 @@
         >
           {#each view.bars as bar, i (bar.startNs)}
             <!-- One tab stop for the plot, arrows within it. The bar is a
-                 real `<button>`, so its accessible name — the bucket's span
-                 and every count in it — is what a reader hears on arrival,
+                 real `<button>`, so its accessible name (the bucket's span
+                 and every count in it) is what a reader hears on arrival,
                  without a mouse and without reading a colour. -->
             <button
               type="button"
@@ -422,8 +435,8 @@
               aria-label={barName(bar)}
               aria-current={i === activeBucket ? 'true' : undefined}
               bind:this={barEls[i]}
-              onclick={() => store.dispatch({ type: 'FOCUS_BUCKET', index: i })}
-              onfocus={() => store.dispatch({ type: 'FOCUS_BUCKET', index: i })}
+              onclick={() => logsForm.focusBucket(i)}
+              onfocus={() => logsForm.focusBucket(i)}
               onkeydown={(e) => onPlotKeydown(e, i)}
             >
               <span class="sc-logs__stack">
@@ -537,9 +550,9 @@
        change for the reader to observe. Polite, because none of this
        interrupts what the reader is doing. -->
   <p class="sc-sr-only" role="status" aria-live="polite">
-    {#if snap.loading}
+    {#if loading}
       {t('logs.loading_logs')}
-    {:else if snap.failed}
+    {:else if failed}
       {t('logs.could_not_load_logs')}
     {:else if items.length === 0}
       {t('logs.no_records_match')}
@@ -548,9 +561,9 @@
     {/if}
   </p>
 
-  {#if snap.loading}
+  {#if loading}
     <ProgressCircular label={t('logs.loading_logs')} />
-  {:else if snap.failed}
+  {:else if failed}
     <p class="sc-logs__error" role="alert">{t('logs.could_not_load_logs')}</p>
   {:else if items.length === 0}
     <div class="sc-logs__empty">
@@ -568,7 +581,7 @@
             <div class="sc-logs__row">{@render auditContent(item.row)}</div>
           {:else}
             {@const attrs = Object.entries(item.record.attrs)}
-            {@const open = snap.expandedKey === item.key}
+            {@const open = logsForm.state.expanded.has(item.key)}
             <!-- The whole row is the disclosure control, so a record is one
                  tab stop and Enter/Space opens it: a real `<button>`, not a
                  div with a click handler and a role bolted on. A record with
@@ -586,7 +599,7 @@
                 class="sc-logs__row sc-logs__row--button m3-layer sc-focus-ring"
                 aria-expanded={open}
                 aria-controls={`sc-log-attrs-${item.key}`}
-                onclick={() => store.dispatch({ type: 'TOGGLE_EXPANDED', key: item.key })}
+                onclick={() => logsForm.toggleExpanded(item.key)}
               >
                 {@render serverContent(item.record)}
                 <span class="sc-logs__disclose">
@@ -615,13 +628,13 @@
       {/each}
     </ul>
 
-    {#if snap.truncated}
+    {#if truncated}
       <p class="sc-logs__note" role="status">
         {t('logs.reached_the_cap', { count: formatNumber(items.length) })}
       </p>
-    {:else if snap.cursor !== '' || snap.auditNext !== null}
+    {:else if hasMore}
       <div class="sc-logs__more">
-        <Button variant="text" onclick={() => store.loadMore()} loading={snap.loadingMore}>
+        <Button variant="text" onclick={loadMore} loading={loadingMore}>
           {t('logs.load_more')}
         </Button>
       </div>

@@ -9,10 +9,11 @@
   // Five bodies, decided per file: an image, a video, text, an archive listing, or
   // neither. "Neither" is a real state with its own screen rather than an empty
   // box.
-  import { untrack } from 'svelte'
+  import { createQuery } from '@tanstack/svelte-query'
   import { api, type Entry } from '../api/client'
-  import { ApiError, type ArchiveEntry } from '../api/types'
+  import { ApiError, type ArchiveEntry, type ArchiveListing, type ShareEncryption } from '../api/types'
   import { describeApiError } from '../api/error-text'
+  import { fileContentQuery, archiveEntriesQuery } from '../query/files'
   import { formatBytes } from '../format/bytes'
   import { t } from '../i18n'
   import { Icon } from 'm3-svelte'
@@ -20,6 +21,12 @@
   import IconButton from './IconButton.svelte'
   import Button from './Button.svelte'
   import ProgressCircular from './ProgressCircular.svelte'
+  import UnlockShareDialog from './UnlockShareDialog.svelte'
+  import { IMAGE_EXT, VIDEO_EXT, extensionOf, mimeTypeOf } from './media-utils'
+  import { registerMediaSource, releaseMediaSource, swReady } from '../crypto/download-sw'
+  import { decryptDownload, isUnlocked, LockedSessionError, MAX_ENCRYPTABLE_BYTES } from '../crypto/e2ee'
+  import { encryptionForLabel, shareLabelOf } from '../crypto/encrypted-shares'
+  import { listEncryptedArchive } from '../crypto/zip-listing'
 
   interface Props {
     open: boolean
@@ -45,14 +52,6 @@
     go: true, py: true, rb: true, php: true, java: true, kt: true, c: true, h: true, cpp: true, hpp: true, cs: true, sh: true, bash: true, zsh: true,
     sql: true, env: true, gitignore: true, dockerfile: true, makefile: true
   }
-  const IMAGE_EXT: Record<string, true> = {
-    jpg: true, jpeg: true, png: true, gif: true, webp: true, svg: true,
-    bmp: true, ico: true, avif: true, tif: true, tiff: true
-  }
-  const VIDEO_EXT: Record<string, true> = {
-    mp4: true, webm: true, ogg: true, mov: true, mkv: true, avi: true,
-    m4v: true, flv: true, wmv: true, '3gp': true
-  }
   /** Text is loaded into the browser whole, so it needs a ceiling. Past this
    *  the viewer offers the editor instead, which is the thing that already
    *  knows how to open something large. */
@@ -60,11 +59,6 @@
   /** Long edge to ask the thumbnailer for. Sized for a full-screen viewer on a
    *  normal display rather than for the row icons the same endpoint feeds. */
   const PREVIEW_DIM: [number, number] = [1600, 1600]
-
-  function extensionOf(name: string): string {
-    const i = name.lastIndexOf('.')
-    return i <= 0 ? name.toLowerCase() : name.slice(i + 1).toLowerCase()
-  }
 
   type Body =
     | { kind: 'image' }
@@ -86,120 +80,257 @@
     return entry.size > TEXT_MAX_BYTES ? { kind: 'too-large-text' } : { kind: 'text' }
   })
 
-  let imageUrl = $state<string | null>(null)
-  let videoUrl = $state<string | null>(null)
+  // Text and archive bodies are real reads; the key follows what is actually
+  // shown, so switching to an image never keeps a stale text fetch running,
+  // and each is disabled outright while the dialog is closed.
+  const textQuery = createQuery(() => ({ ...fileContentQuery(entry), enabled: open && body.kind === 'text' }))
+
+  // Whether the current entry's own share is end-to-end encrypted, resolved
+  // once (encryptedShares(), encrypted-shares.ts, caches the whole set for
+  // the session) before anything below decides how to fetch this entry's
+  // bytes. `encryption` reads as `null` both while this is still pending and
+  // once it resolves "not encrypted": every branch below that cares about
+  // the difference also checks `encryptionPending`.
+  const encryptionQuery = createQuery(() => ({
+    queryKey: ['preview-encryption', entry?.path ?? ''],
+    queryFn: () => encryptionForLabel(shareLabelOf((entry as Entry).path)),
+    enabled: open && !!entry,
+    staleTime: Infinity
+  }))
+  const encryption = $derived((encryptionQuery.data ?? null) as ShareEncryption | null)
+  const encryptionPending = $derived(open && !!entry && encryptionQuery.isPending)
+
+  /** Bumped after a successful unlock so `unlocked` re-reads `isUnlocked`,
+   *  which is a plain function call rather than a reactive source Svelte
+   *  would otherwise know to recompute on. */
+  let unlockGeneration = $state(0)
+  const unlocked = $derived.by((): boolean => {
+    void unlockGeneration
+    return encryption === null || isUnlocked(encryption.salt)
+  })
+
+  // Plain-share archive listing is disabled outright once this entry is
+  // known to be encrypted, rather than left to run and 422: the server
+  // holds no key for it. The encrypted counterpart is keyed on `unlocked`
+  // too, so unlocking mid-preview refetches it instead of leaving a stale
+  // LockedSessionError on screen.
+  const archiveQuery = createQuery(() =>
+    archiveEntriesQuery(path, open && body.kind === 'archive' && !encryptionPending && encryption === null)
+  )
+  const encryptedArchiveQuery = createQuery(() => ({
+    queryKey: ['preview-encrypted-archive', entry?.path ?? '', unlocked],
+    queryFn: () => listEncryptedArchive(entry as Entry, (encryption as ShareEncryption).salt),
+    enabled: open && body.kind === 'archive' && encryption !== null && unlocked,
+    staleTime: Infinity
+  }))
+  const archiveListing = $derived.by((): ArchiveListing | null => {
+    if (body.kind !== 'archive') return null
+    return (encryption ? encryptedArchiveQuery.data : archiveQuery.data) ?? null
+  })
+  const archiveError = $derived(encryption ? encryptedArchiveQuery.error : archiveQuery.error)
+  const archivePending = $derived(encryption ? encryptedArchiveQuery.isPending : archiveQuery.isPending)
+
+  /** The body needs bytes only the passphrase can decrypt, and does not
+   *  have it yet. Rendering a broken `<img>`/`<video>` or an archive error
+   *  here would be wrong (the file is not broken or missing, it is locked),
+   *  so this is its own state rather than folding into `failed`. */
+  const locked = $derived(
+    !!entry &&
+      encryption !== null &&
+      !unlocked &&
+      (body.kind === 'image' || body.kind === 'video' || body.kind === 'archive')
+  )
+
+  /** Raised automatically the moment a body turns out to be locked, the
+   *  same proactive prompt a locked download raises
+   *  (routes/(app)/b/[...path]/+page.svelte's own `openUnlockFor`), rather
+   *  than waiting for the person to notice and ask for it. Left closed if
+   *  they dismiss it without unlocking; the fallback card below offers a
+   *  button to reopen it. */
+  let unlockDialogOpen = $state(false)
+  $effect(() => {
+    if (locked) unlockDialogOpen = true
+  })
+
+  /** What identifies the body currently on screen, independent of object
+   *  identity: what the image-fallback and archive-drilldown state below
+   *  resets on. */
+  const previewKey = $derived(open && entry ? `${body.kind}\x00${path}\x00${entry.id ?? ''}\x00${entry.size}` : null)
+
   let videoEl = $state<HTMLVideoElement | null>(null)
-  let text = $state<string | null>(null)
-  /** Every entry in the archive, flat, exactly as the server read it out of
-   *  the central directory. What gets rendered is one directory of it at a
-   *  time: see `level`. */
-  let archive = $state<ArchiveEntry[] | null>(null)
+  /** Set once a preview URL fails to decode. Distinct from a fetch failure:
+   *  nothing here is a query, since constructing the URL never round-trips. */
+  let imageOverride = $state<string | null>(null)
+  let imageGaveUp = $state(false)
+  let videoGaveUp = $state(false)
   /** Where inside the archive the listing is, without a trailing slash. */
   let cwd = $state('')
-  /** How many entries the server left out of the listing because their names
-   *  are not safe to hand out. Usually zero. */
-  let skipped = $state(0)
-  let loading = $state(false)
-  let failed = $state<string | null>(null)
-  /** The server's own words, when it had any. Not translated. */
-  let failedDetail = $state<string | null>(null)
-
-  /** What identifies the body to load, as a string. */
-  const loadKey = $derived(
-    open && entry ? `${body.kind}\x00${path}\x00${entry.id ?? ''}\x00${entry.size}` : null
-  )
-  /** Plain, not `$state`: this is the effect's own bookkeeping, and making it
-   *  reactive would make the effect depend on what it writes. */
-  let loadedKey: string | null = null
+  /** The encrypted image/video's own source, and how it was obtained:
+   *  `mediaUrl` is a `/sc-media/<token>` Service Worker URL when one could
+   *  be registered, or a `Blob` object URL for the buffered fallback below
+   *  when it could not. `null`/`'idle'` for a plain share, where `imageUrl`/
+   *  `videoUrl` read `api.*` directly instead. */
+  let mediaUrl = $state<string | null>(null)
+  let mediaKind = $state<'idle' | 'loading' | 'ready' | 'too-large' | 'no-worker-video' | 'failed'>('idle')
 
   $effect(() => {
-    const key = loadKey
-    if (key === loadedKey) return
-    loadedKey = key
-
-    // Everything below is read untracked. `loadKey` is the only dependency
-    // this effect is allowed to have; reading `entry` or `body` here would
-    // reintroduce the object identity the key exists to avoid.
-    const { target, kind, vpath } = untrack(() => ({
-      target: entry,
-      kind: body.kind,
-      vpath: path
-    }))
-
-    imageUrl = null
-    videoUrl = null
-    text = null
-    archive = null
+    // The only dependency this effect is allowed to have: a change of
+    // object identity with the same logical body must not reset anything.
+    void previewKey
+    imageOverride = null
+    imageGaveUp = false
+    videoGaveUp = false
     cwd = ''
-    skipped = 0
-    failed = null
-    failedDetail = null
-    // `loadKey` is null exactly when there is nothing to show, so this is the
-    // closed case and the no-entry case at once, without reading either back.
-    if (key === null || !target) return
-
-    let cancelled = false
-    loading = kind === 'image' || kind === 'video' || kind === 'text' || kind === 'archive'
-    void (async () => {
-      try {
-        if (kind === 'image') {
-          // The row's own references, never a URL composed from its path: a
-          // path the client joins is a path it can join wrongly, and one did.
-          const ext = extensionOf(target.name)
-          if (target.preview?.available && ext !== 'svg') {
-            const url = api.thumbUrl(target, PREVIEW_DIM[0])
-            if (!cancelled) imageUrl = url || api.contentUrl(target)
-          } else {
-            if (!cancelled) imageUrl = api.contentUrl(target)
-          }
-        } else if (kind === 'video') {
-          if (!cancelled) videoUrl = api.contentUrl(target)
-        } else if (kind === 'text') {
-          const res = await api.readFile(target)
-          if (!cancelled) text = res.content
-        } else if (kind === 'archive') {
-          const res = await api.archiveList(vpath)
-          if (!cancelled) {
-            archive = res.entries
-            skipped = res.skipped ?? 0
-          }
-        }
-      } catch (err) {
-        if (!cancelled) {
-          failed = describeApiError(err, t('preview.failed'))
-          failedDetail =
-            err instanceof ApiError && typeof err.detail?.reason === 'string'
-              ? err.detail.reason
-              : null
-        }
-      } finally {
-        if (!cancelled) loading = false
-      }
-    })()
+    unlockDialogOpen = false
     return () => {
-      cancelled = true
-      if (videoEl) {
-        videoEl.pause()
-      }
+      videoEl?.pause()
     }
   })
 
+  /**
+   * Resolves `mediaUrl` for an encrypted image or video: registers a
+   * reusable Range-capable Service Worker source when the worker is
+   * available (`swReady()`, download-sw.ts) (the only path that can seek,
+   * which a video needs), or, when it is not (this browser refused to run
+   * it, which Chromium does for a self-signed certificate regardless of the
+   * page's own settings), falls back to decrypting the whole file into a
+   * `Blob` for an image under `MAX_ENCRYPTABLE_BYTES`. A video gets no such
+   * fallback: without Range there is nothing to seek with, so this offers no
+   * player at all rather than one that stalls on the first seek.
+   */
+  $effect(() => {
+    void previewKey
+    const currentEntry = entry
+    mediaUrl = null
+    mediaKind = 'idle'
+    if (!currentEntry || (body.kind !== 'image' && body.kind !== 'video')) return
+    if (encryptionPending) {
+      mediaKind = 'loading'
+      return
+    }
+    if (encryption === null || !unlocked) return // plain share, or the locked card above owns this
+
+    let cancelled = false
+    let token: string | null = null
+    let objectUrl: string | null = null
+    mediaKind = 'loading'
+    const salt = encryption.salt
+    const kind = body.kind
+
+    void (async () => {
+      const contentType = mimeTypeOf(currentEntry.name) ?? 'application/octet-stream'
+      const reg = await swReady()
+      if (cancelled) return
+      if (reg?.active) {
+        const registered = registerMediaSource(currentEntry, salt, contentType)
+        token = registered.token
+        mediaUrl = registered.url
+        mediaKind = 'ready'
+        return
+      }
+      if (kind === 'video') {
+        mediaKind = 'no-worker-video'
+        return
+      }
+      if (currentEntry.size > MAX_ENCRYPTABLE_BYTES) {
+        mediaKind = 'too-large'
+        return
+      }
+      try {
+        const res = await fetch(api.contentUrl(currentEntry))
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const bytes = new Uint8Array(await res.arrayBuffer())
+        const plaintext = await decryptDownload(bytes, salt)
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(new Blob([plaintext] as BlobPart[], { type: contentType }))
+        mediaUrl = objectUrl
+        mediaKind = 'ready'
+      } catch {
+        if (!cancelled) mediaKind = 'failed'
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      if (token) releaseMediaSource(token)
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  })
+
+  const loading = $derived(
+    (body.kind === 'text' && textQuery.isPending) ||
+      (body.kind === 'archive' && !locked && (encryptionPending || archivePending)) ||
+      ((body.kind === 'image' || body.kind === 'video') &&
+        !locked &&
+        encryption !== null &&
+        (encryptionPending || mediaKind === 'loading'))
+  )
+
+  const imageUrl = $derived.by((): string | null => {
+    if (!entry || body.kind !== 'image' || imageGaveUp) return null
+    if (imageOverride) return imageOverride
+    if (encryption !== null) return mediaKind === 'ready' ? mediaUrl : null
+    // The row's own references, never a URL composed from its path: a
+    // path the client joins is a path it can join wrongly, and one did.
+    const ext = extensionOf(entry.name)
+    if (entry.preview?.available && ext !== 'svg') {
+      const url = api.thumbUrl(entry, PREVIEW_DIM[0])
+      return url || api.contentUrl(entry)
+    }
+    return api.contentUrl(entry)
+  })
+
+  const videoUrl = $derived.by((): string | null => {
+    if (!entry || body.kind !== 'video' || videoGaveUp) return null
+    if (encryption !== null) return mediaKind === 'ready' ? mediaUrl : null
+    return api.contentUrl(entry)
+  })
+
+  const text = $derived(body.kind === 'text' ? (textQuery.data?.content ?? null) : null)
+  const archive = $derived(archiveListing?.entries ?? null)
+  const skipped = $derived(archiveListing?.skipped ?? 0)
+  const truncated = $derived(archiveListing?.truncated ?? false)
+
+  const failed = $derived.by((): string | null => {
+    if (body.kind === 'image' && imageGaveUp) return t('preview.cannot_preview')
+    if (body.kind === 'video' && videoGaveUp) return t('preview.cannot_preview')
+    if ((body.kind === 'image' || body.kind === 'video') && encryption !== null && !locked) {
+      if (mediaKind === 'too-large') return t('preview.encrypted_too_large_to_buffer')
+      if (mediaKind === 'no-worker-video') return t('preview.encrypted_video_needs_worker')
+      if (mediaKind === 'failed') return t('preview.cannot_preview')
+    }
+    if (body.kind === 'text' && textQuery.error) return describeApiError(textQuery.error, t('preview.failed'))
+    if (body.kind === 'archive' && !locked && archiveError) return describeApiError(archiveError, t('preview.failed'))
+    return null
+  })
+
+  /** The server's own words, when it had any. Not translated. */
+  const failedDetail = $derived.by((): string | null => {
+    const err = body.kind === 'text' ? textQuery.error : body.kind === 'archive' ? archiveError : null
+    return err instanceof ApiError && typeof err.detail?.reason === 'string' ? err.detail.reason : null
+  })
+
   function onImageError(): void {
+    if (encryption !== null) {
+      // The media URL (or the decrypted Blob URL) already is the file's
+      // real bytes, not a thumbnail with a full-content URL to fall back
+      // to next: there is only the one reference for an encrypted entry.
+      imageGaveUp = true
+      return
+    }
     // A preview that will not decode falls back to the file's own bytes,
-    // once. Both URLs come from the row's references, so the fallback is a
-    // different reference rather than a differently composed path.
+    // once. Both URLs come from the row's own references, so the fallback is
+    // a different reference rather than a differently composed path.
     const own = entry ? api.contentUrl(entry) : ''
     if (imageUrl && own && imageUrl !== own) {
-      imageUrl = own
+      imageOverride = own
     } else {
-      imageUrl = null
-      failed = t('preview.cannot_preview')
+      imageGaveUp = true
     }
   }
 
   function onVideoError(): void {
-    videoUrl = null
-    failed = t('preview.cannot_preview')
+    videoGaveUp = true
   }
 
   /** One row of the archive at the directory currently open. */
@@ -333,6 +464,11 @@
                   {t('preview.archive_skipped', { count: skipped })}
                 </span>
               {/if}
+              {#if truncated && archiveListing}
+                <span class="sc-preview__archive-skipped">
+                  {t('preview.archive_truncated', { limit: archiveListing.limit })}
+                </span>
+              {/if}
             </p>
             <nav class="sc-preview__crumbs" aria-label={t('preview.archive_location')}>
               <button
@@ -395,9 +531,13 @@
           </div>
         {:else}
           <div class="sc-preview__card" role={failed ? 'alert' : undefined}>
-            <p class="sc-preview__card-title">{t('preview.cannot_preview')}</p>
+            <p class="sc-preview__card-title">
+              {locked ? t('preview.locked_title') : t('preview.cannot_preview')}
+            </p>
             <p class="sc-preview__card-reason">
-              {#if failed}
+              {#if locked}
+                {t('preview.locked_reason')}
+              {:else if failed}
                 {failed}
               {:else if body.kind === 'too-large-text'}
                 {t('preview.too_large_for_text')}
@@ -409,14 +549,20 @@
               <p class="sc-preview__card-detail">{failedDetail}</p>
             {/if}
             <div class="sc-preview__card-actions">
-              <Button variant="filled" onclick={() => ondownload(entry)}>
-                <Icon icon={icons.download} size={18} />
-                {t('common.download')}
-              </Button>
-              {#if body.kind === 'too-large-text'}
-                <Button variant="outlined" onclick={() => onedit(entry)}>
-                  {t('browse.open_text_editor')}
+              {#if locked}
+                <Button variant="filled" onclick={() => (unlockDialogOpen = true)}>
+                  {t('encryption.unlock')}
                 </Button>
+              {:else}
+                <Button variant="filled" onclick={() => ondownload(entry)}>
+                  <Icon icon={icons.download} size={18} />
+                  {t('common.download')}
+                </Button>
+                {#if body.kind === 'too-large-text'}
+                  <Button variant="outlined" onclick={() => onedit(entry)}>
+                    {t('browse.open_text_editor')}
+                  </Button>
+                {/if}
               {/if}
             </div>
           </div>
@@ -431,6 +577,17 @@
     </div>
   </div>
 {/if}
+
+<UnlockShareDialog
+  open={unlockDialogOpen}
+  salt={encryption?.salt ?? ''}
+  verifier={encryption?.verifier ?? ''}
+  onunlock={() => {
+    unlockDialogOpen = false
+    unlockGeneration++
+  }}
+  onclose={() => (unlockDialogOpen = false)}
+/>
 
 <style>
   .sc-preview {

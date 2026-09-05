@@ -2,8 +2,8 @@
   import { onDestroy } from 'svelte'
   import { fly, slide } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
-  import { uploadTray, type UploadItem } from '../state/upload-tray.svelte'
-  import { useRunesStore } from '../store/core/bridge.svelte'
+  import { uploads, type UploadItem } from '../store/upload.store'
+  import { pauseUpload, resumeUpload, cancelUpload } from '../upload/queue'
   import { t } from '../i18n'
   import { formatBytes, formatEta, formatRate } from '../format/bytes'
   import IconButton from './IconButton.svelte'
@@ -11,9 +11,8 @@
   import { icons } from '../icons'
   import ProgressLinear from './ProgressLinear.svelte'
 
-  const uploadState = useRunesStore(uploadTray.store)
-  const items = $derived(uploadState.current.items)
-  const isOpen = $derived(uploadState.current.open)
+  const items = $derived(uploads.state.items)
+  const isOpen = $derived(uploads.state.open)
   const totalActive = $derived(items.filter((i) => i.status === 'uploading' || i.status === 'paused').length)
   // A tray with nothing in flight used to read "Upload done" whatever the rows
   // said, so a batch that was refused outright announced itself as finished.
@@ -30,7 +29,7 @@
   // upload survives navigation (§6). Piping upload announcements through
   // whichever page's Snackbar happens to be mounted right now would make them
   // go silent the moment the user navigates away from the page they started
-  // the upload on — the exact thing "survives route changes" exists to avoid.
+  // the upload on: the exact thing "survives route changes" exists to avoid.
   // A second live region is the correct outcome here, not a shortcut.
   //
   // Two regions, polite and assertive, not one that swaps its own aria-live
@@ -40,14 +39,14 @@
   // flipped to assertive can silently stay polite from then on.
   //
   // What gets announced, and why progress doesn't: sent/rate/etaSec repaint
-  // up to 10 Hz (upload/worker.ts's PROGRESS_HZ_MS) — a live region that
+  // up to 10 Hz (upload/worker.ts's PROGRESS_HZ_MS): a live region that
   // spoke on every tick would re-interrupt itself faster than any sentence
   // could finish. Only status *transitions* are announced: queued→uploading
-  // (batched — a folder drop queues dozens in the same tick, and announcing
+  // (batched: a folder drop queues dozens in the same tick, and announcing
   // each by name would still be mid-list when the batch had already
   // finished), →done, and →error. A transient retry (worker.ts posts an
   // 'error' with `retryIn` and keeps status 'uploading') is deliberately not
-  // announced — only the terminal error state is, since a screen-reader user
+  // announced: only the terminal error state is, since a screen-reader user
   // can't act on "retrying" and doesn't need to be told about attempt 2 of 5.
   let politeMsg = $state('')
   let assertiveMsg = $state('')
@@ -62,7 +61,7 @@
     // Clear, then set on the next tick: two files finishing with the same
     // resulting sentence (e.g. two uploads both named "IMG_0001.jpg") would
     // otherwise assign identical text twice in a row, which is not a DOM
-    // mutation and so is silent the second time — aria-live fires on content
+    // mutation and so is silent the second time: aria-live fires on content
     // *change*, not on assignment.
     if (target === 'polite') {
       politeMsg = ''
@@ -79,7 +78,7 @@
     pendingStartIds.clear()
     // Only announce "started" for files still actually in flight once the
     // batch window closes. A small file can finish (and already have
-    // announced its own completion) inside the 150ms window — found live
+    // announced its own completion) inside the 150ms window: found live
     // against the dev server with a 28-byte file, which regularly beat the
     // timer. Without this filter, the batch fires *after* the completion
     // message and silently overwrites it back to "uploading", so a screen
@@ -108,7 +107,7 @@
       } else if (prev !== 'done' && item.status === 'done') {
         say('polite', t('upload.finished_uploading', { name: item.name }))
       } else if (prev !== 'error' && item.status === 'error') {
-        // Which file, and why — "upload failed" alone is useless with several
+        // Which file, and why: "upload failed" alone is useless with several
         // files in flight. `item.message` is a catalogue key the worker posted
         // (it runs off-thread with no locale state of its own), so the lookup
         // happens here.
@@ -153,7 +152,7 @@
     transition:fly={{ y: 32, duration: trayDuration(), easing: cubicOut }}
   >
     <div class="sc-upload-tray__header">
-      <button class="sc-upload-tray__title" onclick={() => uploadTray.setOpen(!isOpen)}>
+      <button class="sc-upload-tray__title" onclick={() => uploads.setOpen(!isOpen)}>
         <Icon icon={icons.upload} size={18} />
         {t('common.upload')}
         {totalActive > 0
@@ -163,10 +162,10 @@
             : t('common.done')}
       </button>
       <div class="sc-upload-tray__actions">
-        <IconButton label={t('common.clear_finished_items')} onclick={() => uploadTray.clearFinished()}>
+        <IconButton label={t('common.clear_finished_items')} onclick={() => uploads.clearFinished()}>
           <Icon icon={icons.check} size={18} />
         </IconButton>
-        <IconButton label={isOpen ? t('common.collapse') : t('common.expand')} onclick={() => uploadTray.setOpen(!isOpen)}>
+        <IconButton label={isOpen ? t('common.collapse') : t('common.expand')} onclick={() => uploads.setOpen(!isOpen)}>
           <Icon icon={icons[isOpen ? 'chevron-right' : 'chevron-left']} size={18} />
         </IconButton>
       </div>
@@ -180,13 +179,13 @@
               <span class="sc-filename sc-upload-tray__name">{item.name}</span>
               <span class="sc-upload-tray__meta">
                 {formatBytes(item.sent)} / {formatBytes(item.total)}
-                {#if item.status === 'uploading'} · {formatRate(item.rate)} · {formatEta(item.etaSec)}{/if}
+                {#if item.status === 'uploading'} - {formatRate(item.rate)} - {formatEta(item.etaSec)}{/if}
                 <!-- A cancelled row read as a stalled one: it showed the bytes
                      it had reached and nothing that said it had stopped on
                      purpose. The state is named now, in text rather than by
                      the absence of a rate. -->
-                {#if item.status === 'canceled'} · {t('upload.canceled')}{/if}
-                {#if item.status === 'paused'} · {t('upload.paused')}{/if}
+                {#if item.status === 'canceled'} - {t('upload.canceled')}{/if}
+                {#if item.status === 'paused'} - {t('upload.paused')}{/if}
               </span>
             </div>
             <ProgressLinear value={item.total > 0 ? item.sent / item.total : 0} label={item.name} />
@@ -196,18 +195,18 @@
                    so the only way to tell them apart was the accessible name.
                    Each has its own now. -->
               {#if item.status === 'uploading'}
-                <IconButton label={t('upload.pause')} onclick={() => uploadTray.pause(item.id)}><Icon icon={icons.pause} size={16} /></IconButton>
+                <IconButton label={t('upload.pause')} onclick={() => pauseUpload(item.id)}><Icon icon={icons.pause} size={16} /></IconButton>
               {:else if item.status === 'paused'}
-                <IconButton label={t('upload.resume')} onclick={() => uploadTray.resume(item.id)}><Icon icon={icons.resume} size={16} /></IconButton>
+                <IconButton label={t('upload.resume')} onclick={() => resumeUpload(item.id)}><Icon icon={icons.resume} size={16} /></IconButton>
               {/if}
               <!-- A failed row is terminal too, and it offered "cancel": a
                    button for a transfer that had already stopped. It clears,
                    one row at a time, while the sweep above leaves failures
                    alone so the reason survives a stray click. -->
               {#if item.status === 'done' || item.status === 'canceled' || item.status === 'error'}
-                <IconButton label={t('common.clear')} onclick={() => uploadTray.dismiss(item.id)}><Icon icon={icons.close} size={16} /></IconButton>
+                <IconButton label={t('common.clear')} onclick={() => uploads.dismiss(item.id)}><Icon icon={icons.close} size={16} /></IconButton>
               {:else}
-                <IconButton label={t('common.cancel')} onclick={() => uploadTray.cancel(item.id)}><Icon icon={icons.close} size={16} /></IconButton>
+                <IconButton label={t('common.cancel')} onclick={() => cancelUpload(item.id)}><Icon icon={icons.close} size={16} /></IconButton>
               {/if}
             </div>
           </li>

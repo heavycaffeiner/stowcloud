@@ -3,7 +3,7 @@
   // reachable from this one screen (`go/engine/service/settings/catalogue`).
   // There is no config file, so this is the only place a deployment is
   // configured. Most groups apply live; homes, single sign-on's provider,
-  // the sandbox policy and SMB's own on/off switch used to need a restart —
+  // the sandbox policy and SMB's own on/off switch used to need a restart,
   // per this batch's field decisions only `security.hardening` still does
   // (Landlock/seccomp cannot be undone by the process that installed them),
   // handled by mounting `RestartDialog` whenever a save's own outcome says so.
@@ -11,17 +11,17 @@
   // `snapshot.fields` is one flat, dotted-key list keyed by section and
   // field. This component groups by an explicit key set per form below
   // (`EDITABLE_KEYS`); anything left over renders read-only at the bottom
-  // with whatever reason it carries, rather than being silently dropped —
+  // with whatever reason it carries, rather than being silently dropped,
   // a field this screen cannot edit is still visible, never invisible.
   import { t } from '../../i18n'
-  import { api } from '../../api/client'
+  import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query'
+  import { adminSettingsMutation, adminSettingsQuery } from '../../query/admin'
+  import { keys } from '../../query/keys'
   import { describeApiError, serverKeyText } from '../../api/error-text'
   import { BYTES_PER_MB, bytesToMb } from '../../format/bytes'
   import type {
-    SettingsSnapshot,
     SettingsField,
     SettingsFinding,
-    SettingsSectionId,
     ApplyOutcome,
     SmbSettingsReq,
     SearchSettingsReq,
@@ -38,7 +38,6 @@
   import Button from '../Button.svelte'
   import TextField from '../TextField.svelte'
   import Switch from '../Switch.svelte'
-  import ConfirmDialog from '../ConfirmDialog.svelte'
   import ProgressCircular from '../ProgressCircular.svelte'
   import RestartDialog from './RestartDialog.svelte'
 
@@ -47,9 +46,11 @@
     { value: 'block', text: t('server.smb_not_allowed') }
   ]
 
-  let snapshot = $state<SettingsSnapshot | null>(null)
-  let loading = $state(true)
-  let loadError = $state<string | null>(null)
+  const queryClient = useQueryClient()
+  const settingsResult = createQuery(() => adminSettingsQuery())
+  const snapshot = $derived(settingsResult.data ?? null)
+  const loading = $derived(settingsResult.isPending)
+  const loadError = $derived(settingsResult.isError ? t('server.could_not_load_server_settings') : null)
 
   function field(key: string): SettingsField | undefined {
     return snapshot?.fields.find((f) => f.key === key)
@@ -124,7 +125,7 @@
   // whether it worked. A blocking finding refused the save outright; an
   // advisory one saved anyway and is worth reading. `settings.check_passed`
   // is the checker's "nothing to say" filler and carries no field of its
-  // own — showing it adds nothing a blank list didn't already say, so it is
+  // own, showing it adds nothing a blank list didn't already say, so it is
   // the one reason filtered out here.
   function findingsOf(o: ApplyOutcome | null): SettingsFinding[] {
     return (o?.findings ?? []).filter((f) => f.reason !== 'settings.check_passed')
@@ -134,7 +135,7 @@
   //
   // `SettingsField.range` carries the same bounds the server checks at save
   // time. Reading it here means a value outside the bound is refused before
-  // the round trip, not after — the server-side check stays, this is only
+  // the round trip, not after, the server-side check stays, this is only
   // for the operator's benefit.
   function rangeError(key: string, raw: string): string | null {
     const r = field(key)?.range
@@ -157,7 +158,7 @@
   // is left exactly where they were, with no indication anything happened
   // unless they go looking. `tabindex="-1"` makes the paragraph a valid
   // focus target without adding it to the tab order, and the action moves
-  // focus to it whenever the message actually changes — not on every
+  // focus to it whenever the message actually changes, not on every
   // re-render, so retrying with the identical refusal does not steal focus
   // a second time from whatever the operator has since done.
   function focusOnError(node: HTMLElement, error: string | null) {
@@ -211,31 +212,34 @@
   // ── the restart a save needs ──
   //
   // Only `security.hardening` needs one now; every other section this
-  // screen edits applies live. When a save's own `ApplyOutcome` reports
-  // `restart_required`, `RestartDialog` (owned by `FrontendRestart`) is
-  // opened with that outcome — it offers the restart itself, polls health
-  // until the process answers again, and calls back here to reload.
+  // screen edits applies live, but the outcome is checked uniformly below
+  // so a future section that starts needing one is covered for free. When a
+  // save's own `ApplyOutcome` reports `restart_required`, `RestartDialog`
+  // (owned by `FrontendRestart`) is opened with that outcome, it offers the
+  // restart itself and polls health until the process answers again.
 
   let restartOutcome = $state<ApplyOutcome | null>(null)
   let restartOpen = $state(false)
 
-  /** Runs a save and offers a restart when the outcome needs one. */
-  async function saving(
-    run: () => Promise<ApplyOutcome>,
-    fallback: string,
-    set: (o: ApplyOutcome | null, err: string | null) => void
-  ): Promise<void> {
-    try {
-      const outcome = await run()
-      set(outcome, null)
-      if (outcome.restart_required) {
-        restartOutcome = outcome
-        restartOpen = true
-      }
-      await load()
-    } catch (err) {
-      set(null, describeApiError(err, fallback))
+  function onSettingsSaved(outcome: ApplyOutcome): void {
+    if (outcome.restart_required) {
+      restartOutcome = outcome
+      restartOpen = true
     }
+  }
+
+  /** A save's displayed error is either a local validation refusal (checked
+   *  before the request ever went out) or the mutation's own rejection, in
+   *  that order, never both at once. */
+  function groupError(validation: string | null, error: unknown, fallback: string): string | null {
+    if (validation) return validation
+    return error ? describeApiError(error, fallback) : null
+  }
+
+  /** A validation refusal hides the previous save's outcome rather than
+   *  showing a stale success beside the new complaint. */
+  function groupOutcome(validation: string | null, outcome: ApplyOutcome | undefined): ApplyOutcome | null {
+    return validation ? null : (outcome ?? null)
   }
 
   // ── SMB ──
@@ -248,20 +252,20 @@
   let smbTotpPolicy = $state<'require_separate' | 'block'>('require_separate')
   let smbServiceGid = $state('')
   let smbInterfaces = $state('')
-  let smbSaving = $state(false)
-  let smbError = $state<string | null>(null)
-  let smbOutcome = $state<ApplyOutcome | null>(null)
+  let smbValidationError = $state<string | null>(null)
+  const smbMutation = createMutation(() => adminSettingsMutation())
+  const smbError = $derived(groupError(smbValidationError, smbMutation.error, t('server.could_not_save_smb_settings')))
+  const smbOutcome = $derived(groupOutcome(smbValidationError, smbMutation.data))
 
-  async function saveSmb(): Promise<void> {
-    smbError = null
-    smbOutcome = null
+  function saveSmb(): void {
+    smbValidationError = null
     const gid = Number(smbServiceGid)
     if (!Number.isInteger(gid) || gid < 0) {
-      smbError = t('server.gid_must_integer_0')
+      smbValidationError = t('server.gid_must_integer_0')
       return
     }
     if (!smbWorkgroup.trim() || !smbServiceUser.trim() || !smbServerName.trim()) {
-      smbError = t('server.enter_workgroup_server_name_service_account')
+      smbValidationError = t('server.enter_workgroup_server_name_service_account')
       return
     }
     const req: SmbSettingsReq = {
@@ -274,95 +278,70 @@
       service_gid: gid,
       interfaces: strToArr(smbInterfaces)
     }
-    smbSaving = true
-    await saving(
-      () => api.adminSetSmbSettings(req),
-      t('server.could_not_save_smb_settings'),
-      (o, e) => ((smbOutcome = o), (smbError = e))
-    )
-    smbSaving = false
+    smbMutation.mutate({ section: 'smb', req }, { onSuccess: onSettingsSaved })
   }
 
   // ── search ── (both fields fully live)
 
   let searchMaxFast = $state('')
   let searchDeadlineFast = $state('')
-  let searchSaving = $state(false)
-  let searchError = $state<string | null>(null)
-  let searchOutcome = $state<ApplyOutcome | null>(null)
+  let searchValidationError = $state<string | null>(null)
+  const searchMutation = createMutation(() => adminSettingsMutation())
+  const searchError = $derived(groupError(searchValidationError, searchMutation.error, t('server.could_not_save_search_settings')))
+  const searchOutcome = $derived(groupOutcome(searchValidationError, searchMutation.data))
 
-  async function saveSearch(): Promise<void> {
-    searchError = null
-    searchOutcome = null
+  function saveSearch(): void {
+    searchValidationError = null
     const maxErr = rangeError('search.max_concurrent_fast', searchMaxFast)
     const deadlineErr = rangeError('search.walk_deadline_fast_ms', searchDeadlineFast)
     if (maxErr || deadlineErr) {
-      searchError = maxErr ?? deadlineErr
+      searchValidationError = maxErr ?? deadlineErr
       return
     }
     const req: SearchSettingsReq = {
       max_concurrent_fast: Number(searchMaxFast),
       walk_deadline_fast_ms: Number(searchDeadlineFast)
     }
-    searchSaving = true
-    try {
-      searchOutcome = await api.adminSetSearchSettings(req)
-      await load()
-    } catch (err) {
-      searchError = describeApiError(err, t('server.could_not_save_search_settings'))
-    } finally {
-      searchSaving = false
-    }
+    searchMutation.mutate({ section: 'search', req }, { onSuccess: onSettingsSaved })
   }
 
   // ── thumbnails ──
 
   let thumbnailEnabled = $state(true)
   let thumbnailDir = $state('')
-  let thumbnailSaving = $state(false)
-  let thumbnailError = $state<string | null>(null)
-  let thumbnailOutcome = $state<ApplyOutcome | null>(null)
+  let thumbnailValidationError = $state<string | null>(null)
+  const thumbnailMutation = createMutation(() => adminSettingsMutation())
+  const thumbnailError = $derived(
+    groupError(thumbnailValidationError, thumbnailMutation.error, t('server.could_not_save_thumbnail_settings'))
+  )
+  const thumbnailOutcome = $derived(groupOutcome(thumbnailValidationError, thumbnailMutation.data))
 
-  async function saveThumbnail(): Promise<void> {
-    thumbnailError = null
-    thumbnailOutcome = null
+  function saveThumbnail(): void {
+    thumbnailValidationError = null
     const req: ThumbnailSettingsReq = {
       enabled: thumbnailEnabled,
       dir: thumbnailDir.trim() || undefined
     }
-    thumbnailSaving = true
-    await saving(
-      () => api.adminSetThumbnailSettings(req),
-      t('server.could_not_save_thumbnail_settings'),
-      (o, e) => ((thumbnailOutcome = o), (thumbnailError = e))
-    )
-    thumbnailSaving = false
+    thumbnailMutation.mutate({ section: 'thumbnail', req }, { onSuccess: onSettingsSaved })
   }
 
   // ── archive ──
 
   let archiveMax = $state('')
-  let archiveSaving = $state(false)
-  let archiveError = $state<string | null>(null)
-  let archiveOutcome = $state<ApplyOutcome | null>(null)
+  let archiveValidationError = $state<string | null>(null)
+  const archiveMutation = createMutation(() => adminSettingsMutation())
+  const archiveError = $derived(groupError(archiveValidationError, archiveMutation.error, t('server.could_not_save_archive_settings')))
+  const archiveOutcome = $derived(groupOutcome(archiveValidationError, archiveMutation.data))
 
-  async function saveArchive(): Promise<void> {
-    archiveError = null
-    archiveOutcome = null
+  function saveArchive(): void {
+    archiveValidationError = null
     const rerr = rangeError('archive.max_concurrent', archiveMax)
     if (rerr) {
-      archiveError = rerr
+      archiveValidationError = rerr
       return
     }
-    archiveSaving = true
-    try {
-      archiveOutcome = await api.adminSetArchiveSettings({ max_concurrent: Number(archiveMax) })
-      await load()
-    } catch (err) {
-      archiveError = describeApiError(err, t('server.could_not_save_archive_settings'))
-    } finally {
-      archiveSaving = false
-    }
+    const req: ArchiveSettingsReq = { max_concurrent: Number(archiveMax) }
+    archiveMutation.mutate({ section: 'archive', req }, { onSuccess: onSettingsSaved })
   }
 
   // ── network ──
@@ -373,19 +352,19 @@
   let netCanonicalUrl = $state('')
   let netTrustedProxies = $state('')
   let netBind = $state('')
-  let netSaving = $state(false)
-  let netError = $state<string | null>(null)
-  let netOutcome = $state<ApplyOutcome | null>(null)
+  let netValidationError = $state<string | null>(null)
+  const netMutation = createMutation(() => adminSettingsMutation())
+  const netError = $derived(groupError(netValidationError, netMutation.error, t('server.could_not_save_network_settings')))
+  const netOutcome = $derived(groupOutcome(netValidationError, netMutation.data))
 
-  async function saveNetwork(): Promise<void> {
-    netError = null
-    netOutcome = null
+  function saveNetwork(): void {
+    netValidationError = null
     const hosts = strToArr(netAppHosts)
     if (hosts.length === 0) {
       // The host list is the origin check. An empty one is a server that
       // admits nothing, and it is refused here rather than saved and
       // discovered on the next request.
-      netError = t('server.enter_at_least_one_app_host')
+      netValidationError = t('server.enter_at_least_one_app_host')
       return
     }
     const req: NetworkSettingsReq = {
@@ -396,15 +375,7 @@
       trusted_proxies: strToArr(netTrustedProxies),
       bind: netBind.trim() || undefined
     }
-    netSaving = true
-    try {
-      netOutcome = await api.adminSetNetworkSettings(req)
-      await load()
-    } catch (err) {
-      netError = describeApiError(err, t('server.could_not_save_network_settings'))
-    } finally {
-      netSaving = false
-    }
+    netMutation.mutate({ section: 'network', req }, { onSuccess: onSettingsSaved })
   }
 
   // ── the hop this request arrived over ──
@@ -415,7 +386,7 @@
   const hop = $derived(snapshot?.hop ?? null)
   const hopAddress = $derived(hop?.peer ?? hop?.client ?? '')
 
-  /** A bare address is not a valid `trusted_proxies` entry — the field is a
+  /** A bare address is not a valid `trusted_proxies` entry, the field is a
    *  CIDR list, and the mock's own validator (mirroring the server's)
    *  refuses anything without a `/`. Widening to a single-address range
    *  keeps the filled value something Save can actually accept. */
@@ -438,17 +409,17 @@
   let dbSizeGuard = $state(false)
   let dbMaxBytesMb = $state('')
   let dbMinFreeBytesMb = $state('')
-  let dbSaving = $state(false)
-  let dbError = $state<string | null>(null)
-  let dbOutcome = $state<ApplyOutcome | null>(null)
+  let dbValidationError = $state<string | null>(null)
+  const dbMutation = createMutation(() => adminSettingsMutation())
+  const dbError = $derived(groupError(dbValidationError, dbMutation.error, t('server.could_not_save_db_settings')))
+  const dbOutcome = $derived(groupOutcome(dbValidationError, dbMutation.data))
 
-  async function saveDb(): Promise<void> {
-    dbError = null
-    dbOutcome = null
+  function saveDb(): void {
+    dbValidationError = null
     const maxMb = Number(dbMaxBytesMb)
     const minMb = Number(dbMinFreeBytesMb)
     if (!Number.isFinite(maxMb) || maxMb < 0 || !Number.isFinite(minMb) || minMb < 0) {
-      dbError = t('server.every_value_must_integer_0')
+      dbValidationError = t('server.every_value_must_integer_0')
       return
     }
     const req: DbSettingsReq = {
@@ -456,103 +427,77 @@
       max_bytes: Math.round(maxMb * BYTES_PER_MB),
       min_free_bytes: Math.round(minMb * BYTES_PER_MB)
     }
-    dbSaving = true
-    await saving(
-      () => api.adminSetDbSettings(req),
-      t('server.could_not_save_db_settings'),
-      (o, e) => ((dbOutcome = o), (dbError = e))
-    )
-    dbSaving = false
+    dbMutation.mutate({ section: 'db', req }, { onSuccess: onSettingsSaved })
   }
 
   // ── home folders ──
 
   let homesEnabled = $state(false)
   let homesRoot = $state('')
-  let homesSaving = $state(false)
-  let homesError = $state<string | null>(null)
-  let homesOutcome = $state<ApplyOutcome | null>(null)
+  let homesValidationError = $state<string | null>(null)
+  const homesMutation = createMutation(() => adminSettingsMutation())
+  const homesError = $derived(groupError(homesValidationError, homesMutation.error, t('server.could_not_save_home_folder')))
+  const homesOutcome = $derived(groupOutcome(homesValidationError, homesMutation.data))
 
-  async function saveHomes(): Promise<void> {
-    homesError = null
-    homesOutcome = null
+  function saveHomes(): void {
+    homesValidationError = null
     if (homesEnabled && !homesRoot.trim()) {
-      homesError = t('server.enter_root_path_enable_home')
+      homesValidationError = t('server.enter_root_path_enable_home')
       return
     }
     const req: HomesSettingsReq = { enabled: homesEnabled, root: homesRoot.trim() || null }
-    homesSaving = true
-    await saving(
-      () => api.adminSetHomesSettings(req),
-      t('server.could_not_save_home_folder'),
-      (o, e) => ((homesOutcome = o), (homesError = e))
-    )
-    homesSaving = false
+    homesMutation.mutate({ section: 'homes', req }, { onSuccess: onSettingsSaved })
   }
 
   // ── file watching ── (both bounds fully live)
 
   let watchHotSetMax = $state('')
   let watchFullThreshold = $state('')
-  let watchSaving = $state(false)
-  let watchError = $state<string | null>(null)
-  let watchOutcome = $state<ApplyOutcome | null>(null)
+  let watchValidationError = $state<string | null>(null)
+  const watchMutation = createMutation(() => adminSettingsMutation())
+  const watchError = $derived(groupError(watchValidationError, watchMutation.error, t('server.could_not_save_file_watch')))
+  const watchOutcome = $derived(groupOutcome(watchValidationError, watchMutation.data))
 
-  async function saveWatch(): Promise<void> {
-    watchError = null
-    watchOutcome = null
+  function saveWatch(): void {
+    watchValidationError = null
     const hot = Number(watchHotSetMax)
     const full = Number(watchFullThreshold)
     if (!Number.isInteger(hot) || hot < 1 || !Number.isInteger(full) || full < 1) {
-      watchError = t('server.watch_limit_must_integer_1')
+      watchValidationError = t('server.watch_limit_must_integer_1')
       return
     }
     const req: WatchSettingsReq = { hot_set_max: hot, full_threshold: full }
-    watchSaving = true
-    await saving(
-      () => api.adminSetWatchSettings(req),
-      t('server.could_not_save_file_watch'),
-      (o, e) => ((watchOutcome = o), (watchError = e))
-    )
-    watchSaving = false
+    watchMutation.mutate({ section: 'watch', req }, { onSuccess: onSettingsSaved })
   }
 
   // ── request rate ──
 
   let ratePerSec = $state('')
   let rateBurst = $state('')
-  let rateSaving = $state(false)
-  let rateError = $state<string | null>(null)
-  let rateOutcome = $state<ApplyOutcome | null>(null)
+  let rateValidationError = $state<string | null>(null)
+  const rateMutation = createMutation(() => adminSettingsMutation())
+  const rateError = $derived(groupError(rateValidationError, rateMutation.error, t('server.could_not_save_rate_settings')))
+  const rateOutcome = $derived(groupOutcome(rateValidationError, rateMutation.data))
 
-  async function saveRate(): Promise<void> {
-    rateError = null
-    rateOutcome = null
+  function saveRate(): void {
+    rateValidationError = null
     const perSec = Number(ratePerSec)
     const burst = Number(rateBurst)
     // Zero is not a low limit, it is an off switch: every request from every
     // visitor answers 429 the moment it applies. The server refuses it too.
     if (!Number.isInteger(perSec) || perSec < 1 || !Number.isInteger(burst) || burst < 1) {
-      rateError = t('server.must_integer_1_or_more')
+      rateValidationError = t('server.must_integer_1_or_more')
       return
     }
-    rateSaving = true
-    try {
-      rateOutcome = await api.adminSetRateSettings({ per_sec: perSec, burst })
-      await load()
-    } catch (err) {
-      rateError = describeApiError(err, t('server.could_not_save_rate_settings'))
-    } finally {
-      rateSaving = false
-    }
+    rateMutation.mutate({ section: 'rate', req: { per_sec: perSec, burst } }, { onSuccess: onSettingsSaved })
   }
 
   // ── single sign-on (OIDC) ──
   //
   // Applies live: the provider is rebuilt the next time settings load,
-  // which this save triggers itself. `client_secret` is write-only — the
-  // server never echoes it back, so an empty box here means "leave the
-  // stored one alone", not "there is none".
+  // which the mutation's own invalidation triggers itself. `client_secret`
+  // is write-only, the server never echoes it back, so an empty box here
+  // means "leave the stored one alone", not "there is none".
 
   let oidcEnabled = $state(false)
   let oidcIssuer = $state('')
@@ -562,15 +507,15 @@
   let oidcScopes = $state('')
   let oidcDisplayName = $state('')
   let oidcAllowPrivateEndpoints = $state(false)
-  let oidcSaving = $state(false)
-  let oidcError = $state<string | null>(null)
-  let oidcOutcome = $state<ApplyOutcome | null>(null)
+  let oidcValidationError = $state<string | null>(null)
+  const oidcMutation = createMutation(() => adminSettingsMutation())
+  const oidcError = $derived(groupError(oidcValidationError, oidcMutation.error, t('server.could_not_save_oidc_settings')))
+  const oidcOutcome = $derived(groupOutcome(oidcValidationError, oidcMutation.data))
 
-  async function saveOidc(): Promise<void> {
-    oidcError = null
-    oidcOutcome = null
+  function saveOidc(): void {
+    oidcValidationError = null
     if (oidcEnabled && (!oidcIssuer.trim() || !oidcClientId.trim())) {
-      oidcError = t('server.enter_workgroup_server_name_service_account')
+      oidcValidationError = t('server.enter_workgroup_server_name_service_account')
       return
     }
     const req: OidcSettingsReq & { client_secret?: string } = {
@@ -584,17 +529,18 @@
       smb_policy: 'block'
     }
     if (oidcClientSecret.trim()) req.client_secret = oidcClientSecret.trim()
-    oidcSaving = true
-    await saving(
-      () => api.adminSetOidcSettings(req),
-      t('server.could_not_save_oidc_settings'),
-      (o, e) => ((oidcOutcome = o), (oidcError = e))
+    oidcMutation.mutate(
+      { section: 'oidc', req },
+      {
+        onSuccess: (outcome) => {
+          onSettingsSaved(outcome)
+          oidcClientSecret = ''
+        }
+      }
     )
-    if (!oidcError) oidcClientSecret = ''
-    oidcSaving = false
   }
 
-  // ── everything else this screen doesn't have a dedicated control for —
+  // ── everything else this screen doesn't have a dedicated control for,
   // always read-only (the server never leaves an editable field
   // out of the groups above), shown with its reason rather than hidden. ──
 
@@ -658,63 +604,57 @@
     )
   )
 
-  async function load(): Promise<void> {
-    loading = true
-    loadError = null
-    try {
-      snapshot = await api.adminGetServerSettings()
-      smbEnabled = Boolean(field('smb.enabled')?.value)
-      smbWorkgroup = String(field('smb.workgroup')?.value ?? '')
-      smbServerName = String(field('smb.server_name')?.value ?? '')
-      smbServiceUser = String(field('smb.service_user')?.value ?? '')
-      smbAllowPublicBind = Boolean(field('smb.allow_public_bind')?.value)
-      smbTotpPolicy = (field('smb.totp_policy')?.value as 'require_separate' | 'block') ?? 'require_separate'
-      smbServiceGid = String(field('smb.service_gid')?.value ?? '1000')
-      smbInterfaces = arrToStr(field('smb.interfaces')?.value)
+  // Every form field re-seeds from the latest snapshot: on first load, and
+  // again whenever a save's own invalidation (or any other refetch) brings
+  // a new one in, so a field this screen didn't just save still tracks
+  // what the server actually has.
+  $effect(() => {
+    if (!snapshot) return
+    smbEnabled = Boolean(field('smb.enabled')?.value)
+    smbWorkgroup = String(field('smb.workgroup')?.value ?? '')
+    smbServerName = String(field('smb.server_name')?.value ?? '')
+    smbServiceUser = String(field('smb.service_user')?.value ?? '')
+    smbAllowPublicBind = Boolean(field('smb.allow_public_bind')?.value)
+    smbTotpPolicy = (field('smb.totp_policy')?.value as 'require_separate' | 'block') ?? 'require_separate'
+    smbServiceGid = String(field('smb.service_gid')?.value ?? '1000')
+    smbInterfaces = arrToStr(field('smb.interfaces')?.value)
 
-      searchMaxFast = String(field('search.max_concurrent_fast')?.value ?? '')
-      searchDeadlineFast = String(field('search.walk_deadline_fast_ms')?.value ?? '')
+    searchMaxFast = String(field('search.max_concurrent_fast')?.value ?? '')
+    searchDeadlineFast = String(field('search.walk_deadline_fast_ms')?.value ?? '')
 
-      archiveMax = String(field('archive.max_concurrent')?.value ?? '')
+    archiveMax = String(field('archive.max_concurrent')?.value ?? '')
 
-      thumbnailEnabled = field('thumbnail.enabled')?.value !== false
-      thumbnailDir = String(field('thumbnail.dir')?.value ?? '')
+    thumbnailEnabled = field('thumbnail.enabled')?.value !== false
+    thumbnailDir = String(field('thumbnail.dir')?.value ?? '')
 
-      ratePerSec = String(field('rate.per_sec')?.value ?? '')
-      rateBurst = String(field('rate.burst')?.value ?? '')
+    ratePerSec = String(field('rate.per_sec')?.value ?? '')
+    rateBurst = String(field('rate.burst')?.value ?? '')
 
-      netAppHosts = arrToStr(field('app_hosts')?.value)
-      netContentHosts = arrToStr(field('content_hosts')?.value)
-      netAllowedOrigins = arrToStr(field('allowed_origins')?.value)
-      netCanonicalUrl = String(field('compat_canonical_url')?.value ?? '')
-      netTrustedProxies = arrToStr(field('trusted_proxies')?.value)
-      netBind = String(field('bind')?.value ?? '')
+    netAppHosts = arrToStr(field('app_hosts')?.value)
+    netContentHosts = arrToStr(field('content_hosts')?.value)
+    netAllowedOrigins = arrToStr(field('allowed_origins')?.value)
+    netCanonicalUrl = String(field('compat_canonical_url')?.value ?? '')
+    netTrustedProxies = arrToStr(field('trusted_proxies')?.value)
+    netBind = String(field('bind')?.value ?? '')
 
-      dbSizeGuard = Boolean(field('db.size_guard')?.value)
-      dbMaxBytesMb = String(bytesToMb(Number(field('db.max_bytes')?.value ?? 0)))
-      dbMinFreeBytesMb = String(bytesToMb(Number(field('db.min_free_bytes')?.value ?? 0)))
+    dbSizeGuard = Boolean(field('db.size_guard')?.value)
+    dbMaxBytesMb = String(bytesToMb(Number(field('db.max_bytes')?.value ?? 0)))
+    dbMinFreeBytesMb = String(bytesToMb(Number(field('db.min_free_bytes')?.value ?? 0)))
 
-      homesEnabled = Boolean(field('homes.enabled')?.value)
-      homesRoot = String(field('homes.root')?.value ?? '')
+    homesEnabled = Boolean(field('homes.enabled')?.value)
+    homesRoot = String(field('homes.root')?.value ?? '')
 
-      watchHotSetMax = String(field('watch.hot_set_max')?.value ?? '')
-      watchFullThreshold = String(field('watch.full_threshold')?.value ?? '')
+    watchHotSetMax = String(field('watch.hot_set_max')?.value ?? '')
+    watchFullThreshold = String(field('watch.full_threshold')?.value ?? '')
 
-      oidcEnabled = Boolean(field('oidc.enabled')?.value)
-      oidcIssuer = String(field('oidc.issuer')?.value ?? '')
-      oidcClientId = String(field('oidc.client_id')?.value ?? '')
-      oidcRedirectUris = arrToStr(field('oidc.redirect_uris')?.value)
-      oidcScopes = arrToStr(field('oidc.scopes')?.value)
-      oidcDisplayName = String(field('oidc.display_name')?.value ?? '')
-      oidcAllowPrivateEndpoints = Boolean(field('oidc.allow_private_endpoints')?.value)
-    } catch {
-      loadError = t('server.could_not_load_server_settings')
-    } finally {
-      loading = false
-    }
-  }
-
-  load()
+    oidcEnabled = Boolean(field('oidc.enabled')?.value)
+    oidcIssuer = String(field('oidc.issuer')?.value ?? '')
+    oidcClientId = String(field('oidc.client_id')?.value ?? '')
+    oidcRedirectUris = arrToStr(field('oidc.redirect_uris')?.value)
+    oidcScopes = arrToStr(field('oidc.scopes')?.value)
+    oidcDisplayName = String(field('oidc.display_name')?.value ?? '')
+    oidcAllowPrivateEndpoints = Boolean(field('oidc.allow_private_endpoints')?.value)
+  })
 </script>
 
 {#snippet findingsList(o: ApplyOutcome | null)}
@@ -759,7 +699,7 @@
          says. Listed per grant rather than as one sentence: an admin has to
          know which share and which account to go and look at.
          The key comes from the server (`SmbOvergrant::kind_key`), so the
-         extractor cannot see it at the call site below — these are the two
+         extractor cannot see it at the call site below: these are the two
          it can send: /* i18n */ 'smb.write_list_grants_more'
                       /* i18n */ 'smb.deny_below_root_ignored' -->
     {#if snapshot.smb_overgrants?.length}
@@ -797,7 +737,7 @@
         <TextField label={t('server.service_account_gid')} bind:value={smbServiceGid} type="number" {...intRangeAttrs('smb.service_gid')} />
         <TextField label={t('settings.smb_interfaces')} bind:value={smbInterfaces} />
         <p class="sc-admin-section__hint">{t('settings.smb_interfaces_hint')}</p>
-        <Button variant="filled" onclick={saveSmb} loading={smbSaving}>{t('common.save')}</Button>
+        <Button variant="filled" onclick={saveSmb} loading={smbMutation.isPending}>{t('common.save')}</Button>
         {#if smbError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={smbError}>{smbError}</p>{/if}
         {#if smbOutcome}
           <p class="sc-admin-section__saved" role="status">{outcomeText(smbOutcome)}</p>
@@ -850,7 +790,7 @@
       <div class="sc-server-settings__form">
         <TextField label={t('server.concurrent_fast_searches')} bind:value={searchMaxFast} type="number" {...intRangeAttrs('search.max_concurrent_fast')} />
         <TextField label={t('server.fast_search_timeout_ms')} bind:value={searchDeadlineFast} type="number" {...intRangeAttrs('search.walk_deadline_fast_ms')} />
-        <Button variant="filled" onclick={saveSearch} loading={searchSaving}>{t('common.save')}</Button>
+        <Button variant="filled" onclick={saveSearch} loading={searchMutation.isPending}>{t('common.save')}</Button>
         {#if searchError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={searchError}>{searchError}</p>{/if}
         {#if searchOutcome}
           <p class="sc-admin-section__saved" role="status">{outcomeText(searchOutcome)}</p>
@@ -872,7 +812,7 @@
       </div>
       <div class="sc-server-settings__form">
         <TextField label={t('server.concurrent_zip_streams')} bind:value={archiveMax} type="number" {...intRangeAttrs('archive.max_concurrent')} />
-        <Button variant="filled" onclick={saveArchive} loading={archiveSaving}>{t('common.save')}</Button>
+        <Button variant="filled" onclick={saveArchive} loading={archiveMutation.isPending}>{t('common.save')}</Button>
         {#if archiveError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={archiveError}>{archiveError}</p>{/if}
         {#if archiveOutcome}
           <p class="sc-admin-section__saved" role="status">{outcomeText(archiveOutcome)}</p>
@@ -896,7 +836,7 @@
         <Switch checked={thumbnailEnabled} onchange={(v) => (thumbnailEnabled = v)} label={t('server.thumbnail_enabled')} />
         <TextField label={t('server.thumbnail_storage_dir')} bind:value={thumbnailDir} />
         <p class="sc-admin-section__hint">{t('server.thumbnail_storage_dir_description')}</p>
-        <Button variant="filled" onclick={saveThumbnail} loading={thumbnailSaving}>{t('common.save')}</Button>
+        <Button variant="filled" onclick={saveThumbnail} loading={thumbnailMutation.isPending}>{t('common.save')}</Button>
         {#if thumbnailError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={thumbnailError}>{thumbnailError}</p>{/if}
         {#if thumbnailOutcome}
           <p class="sc-admin-section__saved" role="status">{outcomeText(thumbnailOutcome)}</p>
@@ -939,7 +879,7 @@
         {/if}
         <TextField label={t('server.bind_address')} bind:value={netBind} />
         <p class="sc-admin-section__hint">{t('server.bind_address_hint')}</p>
-        <Button variant="filled" onclick={saveNetwork} loading={netSaving}>{t('common.save')}</Button>
+        <Button variant="filled" onclick={saveNetwork} loading={netMutation.isPending}>{t('common.save')}</Button>
         {#if netError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={netError}>{netError}</p>{/if}
         {#if netOutcome}
           <p class="sc-admin-section__saved" role="status">{outcomeText(netOutcome)}</p>
@@ -963,7 +903,7 @@
         <Switch checked={dbSizeGuard} onchange={(v) => (dbSizeGuard = v)} label={t('settings.db_size_guard')} />
         <TextField label={t('settings.db_max_bytes')} bind:value={dbMaxBytesMb} type="number" min={0} />
         <TextField label={t('settings.db_min_free_bytes')} bind:value={dbMinFreeBytesMb} type="number" min={0} />
-        <Button variant="filled" onclick={saveDb} loading={dbSaving}>{t('common.save')}</Button>
+        <Button variant="filled" onclick={saveDb} loading={dbMutation.isPending}>{t('common.save')}</Button>
         {#if dbError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={dbError}>{dbError}</p>{/if}
         {#if dbOutcome}
           <p class="sc-admin-section__saved" role="status">{outcomeText(dbOutcome)}</p>
@@ -986,7 +926,7 @@
       <div class="sc-server-settings__form">
         <Switch checked={homesEnabled} onchange={(v) => (homesEnabled = v)} label={t('server.enable_home_folders')} />
         <TextField label={t('server.homes_root_path')} bind:value={homesRoot} />
-        <Button variant="filled" onclick={saveHomes} loading={homesSaving}>{t('common.save')}</Button>
+        <Button variant="filled" onclick={saveHomes} loading={homesMutation.isPending}>{t('common.save')}</Button>
         {#if homesError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={homesError}>{homesError}</p>{/if}
         {#if homesOutcome}
           <p class="sc-admin-section__saved" role="status">{outcomeText(homesOutcome)}</p>
@@ -1009,7 +949,7 @@
       <div class="sc-server-settings__form">
         <TextField label={t('server.requests_per_second')} bind:value={ratePerSec} type="number" {...intRangeAttrs('rate.per_sec')} />
         <TextField label={t('server.burst_allowance')} bind:value={rateBurst} type="number" {...intRangeAttrs('rate.burst')} />
-        <Button variant="filled" onclick={saveRate} loading={rateSaving}>{t('common.save')}</Button>
+        <Button variant="filled" onclick={saveRate} loading={rateMutation.isPending}>{t('common.save')}</Button>
         {#if rateError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={rateError}>{rateError}</p>{/if}
         {#if rateOutcome}
           <p class="sc-admin-section__saved" role="status">{outcomeText(rateOutcome)}</p>
@@ -1032,7 +972,7 @@
       <div class="sc-server-settings__form">
         <TextField label={t('server.maximum_folders_watched_at_once')} bind:value={watchHotSetMax} type="number" {...intRangeAttrs('watch.hot_set_max')} />
         <TextField label={t('server.changes_before_a_full_rescan')} bind:value={watchFullThreshold} type="number" {...intRangeAttrs('watch.full_threshold')} />
-        <Button variant="filled" onclick={saveWatch} loading={watchSaving}>{t('common.save')}</Button>
+        <Button variant="filled" onclick={saveWatch} loading={watchMutation.isPending}>{t('common.save')}</Button>
         {#if watchError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={watchError}>{watchError}</p>{/if}
         {#if watchOutcome}
           <p class="sc-admin-section__saved" role="status">{outcomeText(watchOutcome)}</p>
@@ -1062,7 +1002,7 @@
         <TextField label={t('settings.oidc_display_name')} bind:value={oidcDisplayName} />
         <Switch checked={oidcAllowPrivateEndpoints} onchange={(v) => (oidcAllowPrivateEndpoints = v)} label={t('settings.oidc_allow_private_endpoints')} />
         <p class="sc-admin-section__hint">{t('server.connected_accounts_cannot_use_smb')}</p>
-        <Button variant="filled" onclick={saveOidc} loading={oidcSaving}>{t('common.save')}</Button>
+        <Button variant="filled" onclick={saveOidc} loading={oidcMutation.isPending}>{t('common.save')}</Button>
         {#if oidcError}<p class="sc-admin-section__error" role="alert" tabindex="-1" use:focusOnError={oidcError}>{oidcError}</p>{/if}
         {#if oidcOutcome}
           <p class="sc-admin-section__saved" role="status">{outcomeText(oidcOutcome)}</p>
@@ -1124,7 +1064,7 @@
   onclose={() => (restartOpen = false)}
   onrestarted={() => {
     restartOpen = false
-    load()
+    queryClient.invalidateQueries({ queryKey: keys.adminSettings() })
   }}
 />
 
@@ -1229,7 +1169,7 @@
   .sc-server-settings__form > .sc-admin-section__hint {
     margin: 0;
   }
-  /* `.field`, not `.sc-field` — see UploadSettingsSection for the same
+  /* `.field`, not `.sc-field`: see UploadSettingsSection for the same
      migration leftover. */
   .sc-server-settings__form :global(.field) {
     width: 100%;

@@ -1,4 +1,4 @@
-// web/src/lib/api/types.ts — shapes mirroring.
+// web/src/lib/api/types.ts: shapes mirroring.
 
 export type Kind = 'file' | 'dir' | 'symlink' | 'other'
 
@@ -115,17 +115,17 @@ export interface Entry {
   perms: Perms
   /**
    * The stable fileid `POST /api/fs/link` needs as `fid`. **Absent far more
-   * often than not** — `go/internal/core/ops.go` only ever
+   * often than not**: `go/internal/core/ops.go` only ever
    * *looks up* an existing id (`MetaStore::lookup_fileid`, never
    * `MetaStore::fileid`, the allocating one); `go/internal/store/state`
    * own doc comment says a fileid is allocated lazily, only by "consumers
    * that actually need a stable id" (DAV rename tracking, share-link
-   * creation) — "a web-UI-only deployment... creates zero rows". A plain
+   * creation): "a web-UI-only deployment... creates zero rows". A plain
    * `list`/`stat` on a file nobody has ever shared or touched over WebDAV
    * comes back with no `id` at all (confirmed live: `GET /api/fs/stat`
    * omits the field entirely rather than sending a null). The UI has to
    * treat this as a
-   * real, common case — not a shape bug to paper over — and tell the user
+   * real, common case (not a shape bug to paper over), and tell the user
    * why a download button doesn't work rather than send `fid: undefined`
    * to a handler that requires it.
    */
@@ -213,6 +213,23 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * True when an error means "this session no longer exists", as opposed to
+ * "this particular request was refused".
+ *
+ * Gated on `code`, not just `status`: `auth.invalid_credentials` is also a 401,
+ * but it means a re-confirmation was wrong (a mistyped current password on the
+ * settings screen), and bouncing the whole app to the login screen over that
+ * would be a silent failure of its own. The 404 case is the server hiding a
+ * route this credential may not reach: every path this app calls exists, so an
+ * unexplained absence means the session no longer reaches it.
+ */
+export function isSessionDead(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false
+  if (error.status === 401) return error.code === 'auth.required'
+  return error.status === 404 && error.code === 'request_failed'
+}
+
 export interface UserInfo {
   id: number
   name: string
@@ -220,7 +237,7 @@ export interface UserInfo {
   is_admin: boolean
   /**: whether TOTP 2FA is currently active on this account. */
   totp_enabled: boolean
-  /** — the two self-service SMB toggles. */
+  /** The two self-service SMB toggles. */
   smb_opt_out: boolean
   smb_enabled: boolean
   /**
@@ -257,7 +274,7 @@ export interface AppPasswordInfo {
 }
 
 /** One row of `GET /api/auth/sessions`. Named `ActiveSession`, not
- *  `SessionInfo` — that name is already `SessionInfo` above (the whole
+ *  `SessionInfo`: that name is already `SessionInfo` above (the whole
  *  `GET /api/auth/session` envelope), and this is one *row* of the separate
  *  "your other devices" list. */
 export interface ActiveSession {
@@ -277,7 +294,7 @@ export interface StorageShareUsage {
 }
 
 /** `GET /api/admin/storage`. The server today
- *  answers only `db_bytes`/`shares` — the richer shape in the design doc
+ *  answers only `db_bytes`/`shares`: the richer shape in the design doc
  *  (breakdown, growth, guard state, preview cache) isn't wired yet; see the
  *  admin settings section's own comment for how it degrades. */
 export interface StorageReport {
@@ -285,7 +302,7 @@ export interface StorageReport {
   shares: StorageShareUsage[]
 }
 
-/** `GET/POST /api/admin/index/estimate` — the
+/** `GET/POST /api/admin/index/estimate`: the
  *  projected cost of turning the (off-by-default) name index on. */
 export interface IndexEstimate {
   files: number
@@ -293,12 +310,12 @@ export interface IndexEstimate {
   /** Processor time. A real build runs only while the server is otherwise
    *  idle, so it finishes later than this. */
   build_secs: number
-  /** `high` | `medium` | `low` — how much of the corpus was measured rather
+  /** `high` | `medium` | `low`: how much of the corpus was measured rather
    *  than extrapolated. A code, so the screen picks the wording. */
   confidence: string
 }
 
-/** `GET`/`PATCH /api/admin/index/settings` — the
+/** `GET`/`PATCH /api/admin/index/settings`: the
  *  persisted (survives-restart, `index.db`-backed) runtime override for the
  *  off-by-default name index, independent of the stored `[index]
  *  name_enabled`. */
@@ -306,7 +323,7 @@ export interface IndexSettings {
   name_enabled: boolean
 }
 
-/** `POST /api/v1/files/archive` — where to fetch a selection.
+/** `POST /api/v1/files/archive`: where to fetch a selection.
  *
  *  No size: nothing is built until the fetch asks for it, so there is no
  *  figure to report and the download declares no length either. */
@@ -318,7 +335,7 @@ export interface ArchiveTicket {
   url: string
 }
 
-/** `POST /api/v1/files/download` — the same two-step ticket as `archive`, for
+/** `POST /api/v1/files/download`: the same two-step ticket as `archive`, for
  *  a single file. The server refuses a folder or an empty path with 422, a
  *  path the account cannot reach with 404, and a full ticket store with 413.
  *  No size, for the same reason `ArchiveTicket` has none: the ticket names
@@ -331,7 +348,7 @@ export interface DownloadTicket {
   url: string
 }
 
-/** `PATCH /api/admin/upload-settings` — the
+/** `PATCH /api/admin/upload-settings`: the
  *  admin-write half of `SessionInfo.limits.chunk_min`/`chunk_size`: this
  *  changes the server-global, persisted value every account's
  *  `GET /api/auth/session` reads, not just this browser's own upload
@@ -354,7 +371,7 @@ export interface UploadSettingsResp {
   cache_available: boolean
 }
 
-/** One row of `GET /api/admin/users` — every account on
+/** One row of `GET /api/admin/users`: every account on
  *  the deployment, from the admin's point of view. Never carries a password
  *  hash, a TOTP secret, or anything from the SMB secret table; the server
  *  structurally cannot serialize those into this shape
@@ -368,18 +385,18 @@ export interface AdminUser {
   totp_enabled: boolean
   smb_enabled: boolean
   created_ns: string
-  /** Per-user quota cap in bytes, as a string (2^53 precision — same
+  /** Per-user quota cap in bytes, as a string (2^53 precision, same
    *  reason `created_ns` is a string). `null` means unlimited
    *. */
   quota_bytes: string | null
   /** Running usage ledger, as a string (same 2^53 reason). Not a live
-   *  filesystem recomputation — see `go/internal/core/quota.go`'s module doc for how
+   *  filesystem recomputation: see `go/internal/core/quota.go`'s module doc for how
    *  it's charged. */
   usage_bytes: string
 }
 
 /** One of the eight bits `go/internal/acl` defines (`sc-core::acl_store::PERM_NAMES`),
- *  spelled the way the (forthcoming) admin grant API sends and accepts them —
+ *  spelled the way the (forthcoming) admin grant API sends and accepts them:
  *  lowercase, one word, always this exact set of eight. Kept as a union
  *  rather than a bare `string` so a typo in a literal (`"raed"`) is a
  *  compile-time error in this file, not a silent no-op grant. */
@@ -396,9 +413,9 @@ export const ALL_GRANT_PERMS: GrantPermName[] = [
   'download'
 ]
 
-/** A share this deployment has registered (`go/internal/core`) —
+/** A share this deployment has registered (`go/internal/core`):
  *  used both by the grant-creation screen's picker (which only reads
- *  `id`/`name`) and by the share management screen, which is why the host path is here — an admin adding/editing a
+ *  `id`/`name`) and by the share management screen, which is why the host path is here; an admin adding/editing a
  *  folder share has to see and set where it points on the host. This is a
  *  deliberate, narrow exception to `sc-vfs`'s "never leak a host path" rule:
  *  that rule is about request-handling responses/errors/logs to non-admins,
@@ -530,7 +547,7 @@ export interface CreateShareReq {
   veracrypt?: ShareVeracryptConfig
 }
 
-/** `PATCH /api/admin/shares/{id}` body — all fields optional, so a rename
+/** `PATCH /api/admin/shares/{id}` body: all fields optional, so a rename
  *  need not resend the host path and vice versa, and either can be sent
  *  together with or without a trash toggle.
  *
@@ -545,7 +562,7 @@ export interface UpdateShareReq {
   veracrypt?: ShareVeracryptConfig
 }
 
-/** Who a grant applies to — `go/internal/acl`/`Principal::User`,
+/** Who a grant applies to: `go/internal/acl`/`Principal::User`,
  *  the same union `GrantManagementSection.svelte` renders regardless of
  *  which one is reached from (`UserManagementSection`'s per-user entry point
  *  or `GroupManagementSection`'s per-group one). */
@@ -555,7 +572,7 @@ export interface GrantPrincipal {
 }
 
 /** One row of `GET /api/admin/groups` (`go/internal/httpapi/handler/admin_users.go`). `members` is a plain id
- *  list, not full `AdminUser` rows — the group screen resolves names against
+ *  list, not full `AdminUser` rows: the group screen resolves names against
  *  the user list it already loaded, same as `AdminGrant.share` is an id
  *  resolved against `AdminShare[]` rather than embedded. */
 export interface AdminGroup {
@@ -569,7 +586,7 @@ export interface CreateGroupReq {
   name: string
 }
 
-/** `PATCH /api/admin/groups/{id}` body — rename only; membership goes
+/** `PATCH /api/admin/groups/{id}` body: rename only; membership goes
  *  through the `/members` sub-routes instead (`addGroupMember`/
  *  `removeGroupMember`). */
 export interface UpdateGroupReq {
@@ -582,7 +599,7 @@ export interface UpdateGroupReq {
  *  a since-deleted account too. */
 export interface AuditRow {
   rowid: number
-  /** Nanosecond timestamp, as a string (2^53 precision — same reason
+  /** Nanosecond timestamp, as a string (2^53 precision, same reason
    *  `AdminUser.created_ns` is a string). */
   ts_ns: string
   actor: number | null
@@ -594,7 +611,7 @@ export interface AuditRow {
   detail: string | null
 }
 
-/** `GET /api/admin/audit` query — every field optional/unfiltered when
+/** `GET /api/admin/audit` query: every field optional/unfiltered when
  *  omitted. `before` is the previous page's last `rowid` (exclusive),
  *  cursor-style rather than offset so a page boundary stays correct even
  *  while new rows keep landing ahead of it. */
@@ -613,7 +630,7 @@ export interface AuditQuery {
 }
 
 /** `GET /api/admin/audit` response shape. `next` is `rows[rows.length -
- *  1].rowid`, present only when the page came back full — pass it as
+ *  1].rowid`, present only when the page came back full; pass it as
  *  `before` to fetch the next page; its absence means there is nothing
  *  older left. */
 export interface AuditPage {
@@ -686,7 +703,7 @@ export interface AdminLogPage {
   segments: number
 }
 
-/** `GET /api/v1/admin/logs/timeline` query — the same filters `AdminLogQuery`
+/** `GET /api/v1/admin/logs/timeline` query: the same filters `AdminLogQuery`
  *  takes, minus paging (a timeline has no cursor) plus `bucket_ns`, the
  *  requested bucket width; the server picks one when it is omitted. */
 export interface AdminLogsTimelineQuery {
@@ -724,13 +741,13 @@ export interface AdminLogsTimeline {
   truncated: boolean
 }
 
-/** One row of `GET /api/admin/grants` (not yet wired server-side — see
+/** One row of `GET /api/admin/grants` (not yet wired server-side, see
  *  `GrantManagementSection.svelte`'s top comment for the exact contract this
  *  type mirrors, `go/internal/acl` for the server shape it
  *  comes from). `sc-acl`'s depth-first evaluation
  * is keyed on exactly these fields: which
  *  `share`/`subpath` this rule covers, whether it `inherit`s to
- *  descendants, and which bits it `allow`s/`deny`s — same-depth `deny`
+ *  descendants, and which bits it `allow`s/`deny`s: same-depth `deny`
  *  always wins over `allow`. */
 export interface AdminGrant {
   id: number
@@ -756,7 +773,7 @@ export interface CreateGrantReq {
   label?: string | null
 }
 
-/** `PATCH /api/admin/grants/{id}` body — every field optional, so only what
+/** `PATCH /api/admin/grants/{id}` body: every field optional, so only what
  *  actually changed needs to be sent. `label: null` explicitly clears it
  *  back to the subpath-basename fallback; omitting the key leaves it alone
  *  (mirrors `go/internal/acl`'s `Option<Option<String>>`). */
@@ -858,7 +875,7 @@ export interface AdminOidcUnlinkResult {
 
 // ── auth ──
 
-/** The minimal user object `POST /api/auth/login[/totp]` returns — NOT the
+/** The minimal user object `POST /api/auth/login[/totp]` returns: NOT the
  *  same shape as `SessionInfo.user` above (which carries `display_name`/
  *  `is_admin`). The login response is deliberately thin; the app re-fetches
  *  `GET /api/auth/session` right after a successful login to get the rest. */
@@ -905,16 +922,16 @@ export type LoginResult =
  */
 export type OnConflict = 'fail' | 'rename' | 'overwrite' | 'skip'
 
-/** `go/internal/httpapi/handler/ops.go` — the one per-item result shape
+/** `go/internal/httpapi/handler/ops.go`: the one per-item result shape
  *  `/fs/delete`, `/fs/move`, `/fs/copy`, `/trash/restore` and `/trash/purge`
  *  all share, sent as `{"results": [...]}`. This used to be
- *  declared as `{ path, status: 'ok' | 'error', error? }` — a shape nothing
+ *  declared as `{ path, status: 'ok' | 'error', error? }`: a shape nothing
  *  on the server has ever sent; the real field is `ok: boolean`, confirmed
  *  live (`{"results":[{"ok":true,"path":"..."}]}` /
  *  `{"results":[{"error":{"message":"not found"},"ok":false,"path":"..."}]}`).
  *  `(app)/b/[...path]/+page.svelte`'s `duplicate()` checked
  *  `item.status === 'error'` to decide whether to open the conflict-resolve
- *  dialog — against the real backend that was always `undefined === 'error'`
+ *  dialog; against the real backend that was always `undefined === 'error'`
  *  (false), so a copy conflict never opened the dialog it exists for. Fixed
  *  alongside this type. */
 export interface BatchItemResult {
@@ -922,7 +939,7 @@ export interface BatchItemResult {
   ok: boolean
   error?: ApiErrorBody['error']
   /** Only ever `true` (server omits the key otherwise, `skip_serializing_if
-   *  = "std::ops::Not::not"`) — `CoreError::CrossDevice`'s cheap same-call
+   *  = "std::ops::Not::not"`): `CoreError::CrossDevice`'s cheap same-call
    *  signal that a move degraded into a copy. */
   will_copy?: boolean
   /** The destination was taken and `on_conflict: 'skip'` left it alone. Rides
@@ -954,7 +971,7 @@ export interface CopyResult {
 // ── trash ──
 
 /** One row of `GET /api/trash` (`go/internal/httpapi/handler/trash.go`).
- *  `id` is an opaque string (`"{share}:{uuid}"` — `go/internal/httpapi/handler/trash.go`
+ *  `id` is an opaque string (`"{share}:{uuid}"`, from `go/internal/httpapi/handler/trash.go`'s
  *  `trash_list`), never a `FileId`: a trashed item has no live fileid to be
  *  addressed by, so it must be round-tripped verbatim to `/trash/restore`
  *  and `/trash/purge` rather than parsed. */
@@ -1062,15 +1079,15 @@ export interface RecentHit {
 // ── share links, owner side ──
 
 /** `POST/PATCH /api/shares[/:id]` request body's `perms` field
- *  (`go/internal/httpapi/handler/shares.go`) — every key optional/defaults
+ *  (`go/internal/httpapi/handler/shares.go`): every key optional/defaults
  *  to `false` server-side, so only the bits actually being granted need to be
- *  sent. Deliberately not reusing `Perms` (whose 8 keys are all required) —
+ *  sent. Deliberately not reusing `Perms` (whose 8 keys are all required):
  *  a share link request is a sparse grant, not a full permission snapshot. */
 export type PermsReq = Partial<Perms>
 
 /** One share link as its owner sees it (`GET/POST/PATCH /api/shares[/:id]`,
  *  `go/internal/httpapi/handler/shares.go`). `token`/`url` are only
- *  ever populated on the response to the `POST` that created it — the
+ *  ever populated on the response to the `POST` that created it: the
  *  plaintext token is generated once and never persisted, so no later `GET`
  *  can produce it again. */
 export interface ShareLinkInfo {
@@ -1102,8 +1119,8 @@ export interface ShareLinkCreateReq {
  * `PATCH /api/shares/{id}` body (`ShareLinkPatch`). Every field is a
  * *double* option server-side (`Option<Option<T>>`): the key being **absent**
  * means "leave alone", present with a value means "set it", present as
- * `null` means "clear it". `JSON.stringify` already gives this for free —
- * an `undefined` value drops the key, a `null` value keeps it — so callers
+ * `null` means "clear it". `JSON.stringify` already gives this for free:
+ * an `undefined` value drops the key, a `null` value keeps it; so callers
  * just leave a field `undefined` to not touch it and pass `null` to clear
  * `password`/`expires_ns`/`max_downloads`/`label`.
  */
@@ -1125,7 +1142,7 @@ export interface MoveReq {
 /**
  * What `POST /api/fs/move` answers when `dry_run` is
  * set (`go/internal/httpapi/handler/fs.go`). A move whose source and
- * destination sit on different filesystems cannot be a rename — the server
+ * destination sit on different filesystems cannot be a rename: the server
  * falls back to copy-then-delete, which reads and rewrites every byte and
  * bills the copy against quota until the source is gone. That turns an
  * instant operation into a minutes-long job, so the picker asks first and
@@ -1151,7 +1168,7 @@ export type JobKindWire = 'copy' | 'move' | 'delete' | 'archive' | 'index_build'
  *  started `POST /api/v1/files/copy` names by `id`. No route wraps it in a
  *  `{ job }` envelope, whatever an earlier version of this comment claimed:
  *  the index build was read that way and polled `/jobs/undefined`.
- *  `pollJob` (`state/jobs.ts`) is the piece that follows one to a terminal
+ *  `jobQuery` (`query/jobs.ts`) is the piece that follows one to a terminal
  *  state. */
 export interface JobStatus {
   id: string
@@ -1162,12 +1179,12 @@ export interface JobStatus {
   current: string | null
   errors: string[]
   /** Same per-item shape the synchronous copy/move/delete endpoints used to
-   *  return inline — populated once `state` is terminal. */
+   *  return inline: populated once `state` is terminal. */
   results: BatchItemResult[]
   /** Paths `begin_result` recorded but the process never reached
-   *  `finish_result` for — only ever non-empty on an `interrupted` job. */
+   *  `finish_result` for, only ever non-empty on an `interrupted` job. */
   attempting: string[]
-  /** Paths recorded when the job was created that the runner never reached —
+  /** Paths recorded when the job was created that the runner never reached:
    *  non-empty on an `interrupted` or `cancelled` job. `results` +
    *  `attempting` + `pending` accounts for every path the request asked for,
    *  which is what lets the tray say *what* is left to redo rather than only
@@ -1175,17 +1192,17 @@ export interface JobStatus {
   pending: string[]
 }
 
-/** `GET /api/jobs` (`go/internal/httpapi/handler/ops.go`) — every
+/** `GET /api/jobs` (`go/internal/httpapi/handler/ops.go`): every
  *  non-terminal job (`running`/`interrupted`) the caller owns. `JobTray`
  *  fetches this once on mount to re-attach across a browser refresh *or* a
- *  server restart (a Docker cutover), since `jobs.db` — not the browser — is
+ *  server restart (a Docker cutover), since `jobs.db` (not the browser) is
  *  the durable record. */
 export interface JobListResponse {
   jobs: JobStatus[]
 }
 
 // ── live change notifications (`GET /api/events`,,
-// `go/internal/httpapi/ws/ws.go`) — a WebSocket, not SSE,
+// `go/internal/httpapi/ws/ws.go`): a WebSocket, not SSE,
 // despite `search/stream` above using SSE for a superficially similar
 // "server pushes named events" shape: this one is bidirectional (the client
 // sends `sub`/`unsub`/`ping`), which SSE cannot do. ──
@@ -1212,7 +1229,7 @@ export interface ReadFileResponse {
   content: string
 }
 
-// ── server settings (`go/internal/httpapi/handler/settings.go`) — the admin
+// ── server settings (`go/internal/httpapi/handler/settings.go`): the admin
 // screen's parity with every operator-settable field. One flat
 // field list, keyed with the same dotted path the store uses, so
 // an operator can cross-reference the two; each field carries where its
@@ -1223,7 +1240,7 @@ export type SettingsSource = 'builtin_default' | 'admin_override'
 
 /** One row of `GET /api/admin/server-settings`. A field this screen can't
  *  safely change is still listed, never hidden; `readonly_reason_key` is then
- *  a catalogue key (`api/error-text.ts`'s allowlist), not display text — the
+ *  a catalogue key (`api/error-text.ts`'s allowlist), not display text: the
  *  server has no idea which language the reader picked. */
 /**
  * The declared range of a settable field, discriminated by the kind of value
@@ -1302,7 +1319,7 @@ export interface SettingsFinding {
   blocking: boolean
 }
 
-/** `GET /api/v1/admin/settings`'s `hop` — what the server observed about
+/** `GET /api/v1/admin/settings`'s `hop`: what the server observed about
  *  where this very request arrived from, alongside the `network.trusted_proxies`
  *  field it is judged against.
  *
@@ -1314,7 +1331,7 @@ export interface Hop {
   /** The address the transport reported. Absent on a build too old to send
    *  it, or a connection with no reportable remote address. */
   peer?: string
-  /** Whether `peer` falls inside the saved `network.trusted_proxies` list —
+  /** Whether `peer` falls inside the saved `network.trusted_proxies` list:
    *  the trust decision is made against this address, not `client`. */
   peer_trusted: boolean
   /** What the server concluded the caller's address is: `peer` when it is
@@ -1327,7 +1344,7 @@ export interface Hop {
 
 export interface SettingsSnapshot {
   fields: SettingsField[]
-  /** `go/internal/smb` — the same
+  /** `go/internal/smb`: the same
    *  permanent banner `smb-sync`'s own log line describes. */
   smb_public_bind_warning: boolean
   /** Grants Samba was handed more permissively than they were written here,
@@ -1365,7 +1382,7 @@ export interface SmbAgentReport {
   detail?: string | null
 }
 
-/** `key` is a catalogue key, `detail` its placeholders — the server never
+/** `key` is a catalogue key, `detail` its placeholders: the server never
  *  sends the sentence. */
 export interface SmbOvergrant {
   share: string
@@ -1394,7 +1411,7 @@ export interface ApplyOutcome {
   findings: SettingsFinding[]
 }
 
-/** `GET /api/v1/system/health` — the container probe's own projection.
+/** `GET /api/v1/system/health`: the container probe's own projection.
  *  Unauthenticated and unauthenticated-safe: a fixed status plus a fixed
  *  vocabulary of reason tokens, nothing that names a path or an account.
  *  Polled by the restart dialog because the socket is expected to drop and
@@ -1406,7 +1423,7 @@ export interface SystemHealth {
 
 /** `POST /api/v1/admin/system/restart` response. `202` before the process
  *  goes down, so the counts describe what is already being interrupted by
- *  the time this is read, not a preview to decide against — the decision
+ *  the time this is read, not a preview to decide against: the decision
  *  already happened at the confirm dialog. */
 export interface SystemRestartResult {
   restarting: boolean
@@ -1434,14 +1451,14 @@ export interface SmbSettingsReq {
   interfaces: string[]
 }
 
-/** `PATCH /api/admin/server-settings/search` body (`SearchPatch`) — fully
+/** `PATCH /api/admin/server-settings/search` body (`SearchPatch`): fully
  *  live. */
 export interface SearchSettingsReq {
   max_concurrent_fast: number
   walk_deadline_fast_ms: number
 }
 
-/** `PATCH /api/admin/server-settings/archive` body (`ArchivePatch`) — fully
+/** `PATCH /api/admin/server-settings/archive` body (`ArchivePatch`): fully
  *  live. */
 export interface ArchiveSettingsReq {
   max_concurrent: number
@@ -1554,3 +1571,28 @@ export interface OidcSettingsReq {
 // `/admin/settings/paths` is accepted, stored, and read by nothing. Both
 // stay reported read-only, under `PATH_KEYS` in
 // `ui/admin/ServerSettingsSection.svelte`.
+
+// share encryption (opt-in, zero-knowledge, per-share content encryption in rclone's own `crypt` format)
+
+/** One share's encryption parameters. The server holds no key and no
+ *  passphrase; every field here is public by construction or is exactly
+ *  what the user types into `rclone config`.
+ *
+ *  `labels` is a list, not one string: an account can hold two grants on
+ *  the same share under two different subpaths, each projected under its
+ *  own label, and a client keys an upload's encryption decision off the
+ *  label it is about to write under. It is a per-caller projection, not a
+ *  stored column (two different accounts see two different `labels` for
+ *  the very same share), so it must never be cached across accounts.
+ *
+ *  `verifier` is standard base64 of 67 bytes; `salt` is the plain
+ *  22-character string itself, not base64 of anything, because the user
+ *  types it verbatim into rclone as `password2`. */
+export interface ShareEncryption {
+  share: number
+  labels: string[]
+  scheme: string
+  salt: string
+  verifier: string
+  createdNs: number
+}

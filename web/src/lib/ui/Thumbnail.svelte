@@ -39,7 +39,10 @@
   import { api, type Entry } from '../api/client'
   import { Icon } from 'm3-svelte'
   import { icons, type IconName } from '../icons'
-  import { isVideoFile } from './media-utils'
+  import { isVideoFile, mimeTypeOf } from './media-utils'
+  import { registerMediaSource, releaseMediaSource, swReady } from '../crypto/download-sw'
+  import { decryptDownload, isUnlocked } from '../crypto/e2ee'
+  import { encryptionForLabel, shareLabelOf } from '../crypto/encrypted-shares'
 
   interface Props {
     entry: Entry
@@ -63,6 +66,21 @@
    * Videos extract a representative frame client-side using offscreen canvas.
    */
   const eligible = $derived(entry.kind !== 'dir' && (entry.preview?.available === true || isVid))
+
+  /** Bound on decrypting a whole source image just to draw one grid tile.
+   *  There is no server-side thumbnail cache for an encrypted share (the
+   *  server holds no key), so every tile above the fallback icon pays this
+   *  file's full decrypt cost on every mount, not once. No byte-size preview
+   *  cap exists to reuse here: `ClientLimits.max_file_size`
+   *  (api/types.ts) is the upload ceiling, not a preview source bound, and
+   *  the server's own preview decode limits
+   *  (`go/engine/service/preview/decode.go`'s `DefaultDecodeLimits`) bound
+   *  pixels, not bytes, and are unreachable here anyway since this path
+   *  never touches the Go decoder. 8 MiB comfortably covers an ordinary
+   *  compressed photo (a 24 MP JPEG is typically 4-10 MB) while refusing a
+   *  raw scan or an uncompressed TIFF, which would cost real seconds to
+   *  decrypt and decode for a tile nobody can see the detail of. */
+  const ENCRYPTED_THUMB_MAX_BYTES = 8 * 1024 * 1024
 
   function extractVideoFrame(src: string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -168,20 +186,71 @@
       }
     }
 
-    // Straight to the thumbnail route with the reference this row already
-    // carries, so there is nothing to mint and nothing to await: the <img>
-    // below does the fetching. That is the property that rules out a
-    // per-tile ticket, since a grid mounts one of these per visible file.
-    const next = api.thumbUrl(entry, dim)
-    // Empty when the row carries no preview reference, and when the mock has
-    // no decoder. An <img> with an empty src resolves to the page itself,
-    // which renders as broken.
-    if (!next) {
-      url = null
-      return
+    // Not a video: an image candidate. The server's thumbnail route 422s
+    // for an encrypted share (it holds no key), so this checks the share
+    // first and, only when it is encrypted, decrypts the file itself
+    // instead of asking the server.
+    let cancelled = false
+    let token: string | null = null
+    let objectUrl: string | null = null
+
+    void (async () => {
+      const encryption = await encryptionForLabel(shareLabelOf(entry.path)).catch(() => null)
+      if (cancelled) return
+      if (!encryption) {
+        // Straight to the thumbnail route with the reference this row
+        // already carries, so there is nothing to mint and nothing to
+        // await beyond the encryption check itself: the <img> below does
+        // the fetching. That is the property that rules out a per-tile
+        // ticket, since a grid mounts one of these per visible file.
+        const next = api.thumbUrl(entry, dim)
+        // Empty when the row carries no preview reference, and when the
+        // mock has no decoder. An <img> with an empty src resolves to the
+        // page itself, which renders as broken.
+        if (!next) {
+          url = null
+          return
+        }
+        cachePut(k, next)
+        url = next
+        return
+      }
+      // Encrypted: no shared cache. A Blob URL or a registered media
+      // token is a real resource this LRU has no eviction hook to
+      // release, and no attempt at all past the size bound or while
+      // locked. The fallback icon is the right answer for either, same as
+      // a file with no preview reference at all.
+      if (!isUnlocked(encryption.salt) || entry.size > ENCRYPTED_THUMB_MAX_BYTES) {
+        url = null
+        return
+      }
+      const contentType = mimeTypeOf(entry.name) ?? 'application/octet-stream'
+      const reg = await swReady()
+      if (cancelled) return
+      if (reg?.active) {
+        const registered = registerMediaSource(entry, encryption.salt, contentType)
+        token = registered.token
+        url = registered.url
+        return
+      }
+      try {
+        const res = await fetch(api.contentUrl(entry))
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const bytes = new Uint8Array(await res.arrayBuffer())
+        const plaintext = await decryptDownload(bytes, encryption.salt)
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(new Blob([plaintext] as BlobPart[], { type: contentType }))
+        url = objectUrl
+      } catch {
+        if (!cancelled) url = null
+      }
+    })()
+
+    return () => {
+      cancelled = true
+      if (token) releaseMediaSource(token)
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-    cachePut(k, next)
-    url = next
   })
 
   function onError(): void {

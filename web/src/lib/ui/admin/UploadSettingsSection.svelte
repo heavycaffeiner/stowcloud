@@ -1,22 +1,21 @@
 <script lang="ts">
-  // Upload/chunk settings — admin-only, same mounting pattern as
+  // Upload/chunk settings, admin-only, same mounting pattern as
   // StorageIndexSection (`/admin` page, is_admin-gated).
   //
   // Two independent knobs, kept visually separate so their scope is never
   // ambiguous:
   //  1. Server-global chunk floor/default (`PATCH /api/admin/upload-settings`,
-  // ) — persisted in upload.db, changes what every
+  // ): persisted in upload.db, changes what every
   //     account's GET /api/auth/session reports and what a NEW upload session
   //     uses, on the whole server, immediately, without a restart.
   //  2. This browser's own 413 shrink-adaptation seed
   //     (`chunk-planner.ts`'s `CHUNK_SIZE_STORAGE_KEY`,
-  //     `localStorage['sc.chunk_size']`) — the same value `worker.ts` already
+  //     `localStorage['sc.chunk_size']`): the same value `worker.ts` already
   //     reads/writes. It only affects the chunk size a *new* upload session
   //     starts at on this one browser and can never go below the server floor.
   import { t } from '../../i18n'
-  import { untrack } from 'svelte'
-  import { authState, setAuthenticated } from '../../state/auth.svelte'
-  import { api } from '../../api/client'
+  import { createMutation, createQuery } from '@tanstack/svelte-query'
+  import { adminSettingsQuery, adminUploadSettingsMutation } from '../../query/admin'
   import { describeApiError } from '../../api/error-text'
   import { BYTES_PER_MB, bytesToMb, formatBytes } from '../../format/bytes'
   import {
@@ -27,22 +26,38 @@
     MAX_CONCURRENCY,
     MIN_CONCURRENCY
   } from '../../upload/chunk-planner'
-  import { uploadTray } from '../../state/upload-tray.svelte'
+  import { setUploadConcurrency } from '../../upload/queue'
   import Button from '../Button.svelte'
   import Checkbox from '../Checkbox.svelte'
   import TextField from '../TextField.svelte'
 
-  const serverMin = $derived(authState.session?.limits.chunk_min ?? CHUNK_SIZE_MIN)
-  const serverDefault = $derived(authState.session?.limits.chunk_size ?? CHUNK_SIZE_MIN * 2)
-
   // ── server-global (admin write) ──
 
-  // Seeded once from the current server value, then edited independently —
-  // `untrack` marks that as deliberate (not a missed-reactivity bug).
-  let minMb = $state(untrack(() => String(bytesToMb(serverMin))))
-  let defaultMb = $state(untrack(() => String(bytesToMb(serverDefault))))
-  let serverError = $state<string | null>(null)
-  let serverSaving = $state(false)
+  const settingsResult = createQuery(() => adminSettingsQuery())
+  function settingsField(key: string): unknown {
+    return settingsResult.data?.fields.find((f) => f.key === key)?.value
+  }
+  const serverMin = $derived(Number(settingsField('upload.chunk_min_bytes') ?? CHUNK_SIZE_MIN))
+  const serverDefault = $derived(Number(settingsField('upload.chunk_default_bytes') ?? CHUNK_SIZE_MIN * 2))
+
+  // Seeded once, the first time the snapshot arrives, then edited
+  // independently, same as the browser-only override below.
+  let minMb = $state(String(bytesToMb(CHUNK_SIZE_MIN)))
+  let defaultMb = $state(String(bytesToMb(CHUNK_SIZE_MIN * 2)))
+  let seededServerValues = false
+  $effect(() => {
+    if (seededServerValues || !settingsResult.data) return
+    minMb = String(bytesToMb(serverMin))
+    defaultMb = String(bytesToMb(serverDefault))
+    seededServerValues = true
+  })
+
+  let serverValidationError = $state<string | null>(null)
+  const serverMutation = createMutation(() => adminUploadSettingsMutation())
+  const serverError = $derived(
+    serverValidationError ??
+      (serverMutation.error ? describeApiError(serverMutation.error, t('common.could_not_save')) : null)
+  )
   let serverSaved = $state(false)
 
   // The cache spool switch. Its current value only arrives in a save
@@ -51,53 +66,38 @@
   let cacheEnabled = $state(false)
   let cacheAvailable = $state(true)
 
-  async function saveServerSettings(): Promise<void> {
-    serverError = null
+  function saveServerSettings(): void {
+    serverValidationError = null
     serverSaved = false
     const minVal = Number(minMb)
     const defaultVal = Number(defaultMb)
     if (!Number.isFinite(minVal) || !Number.isFinite(defaultVal) || minVal <= 0 || defaultVal <= 0) {
-      serverError = t('upload_settings.enter_valid_number')
+      serverValidationError = t('upload_settings.enter_valid_number')
       return
     }
     const minBytes = Math.round(minVal * BYTES_PER_MB)
     const defaultBytes = Math.round(defaultVal * BYTES_PER_MB)
-    // Same rules the server enforces (`UploadEngine::set_chunk_settings`) —
+    // Same rules the server enforces (`UploadEngine::set_chunk_settings`),
     // checked here first so the common mistake gets a specific Korean
     // message instead of the server's generic one.
     if (minBytes < CHUNK_SIZE_MIN) {
-      serverError = t('upload_settings.minimum_must_at_least', { min: formatBytes(CHUNK_SIZE_MIN) })
+      serverValidationError = t('upload_settings.minimum_must_at_least', { min: formatBytes(CHUNK_SIZE_MIN) })
       return
     }
     if (defaultBytes < minBytes) {
-      serverError = t('upload_settings.default_cannot_smaller_than_minimum')
+      serverValidationError = t('upload_settings.default_cannot_smaller_than_minimum')
       return
     }
-    serverSaving = true
-    try {
-      const resp = await api.adminSetUploadSettings({
-        chunk_min: minBytes,
-        chunk_default: defaultBytes,
-        cache_enabled: cacheEnabled
-      })
-      if (authState.session) {
-        setAuthenticated({
-          ...authState.session,
-          limits: { ...authState.session.limits, chunk_min: resp.chunk_min, chunk_size: resp.chunk_default }
-        })
+    serverMutation.mutate(
+      { chunk_min: minBytes, chunk_default: defaultBytes, cache_enabled: cacheEnabled },
+      {
+        onSuccess: (resp) => {
+          cacheEnabled = resp.cache_enabled
+          cacheAvailable = resp.cache_available
+          serverSaved = true
+        }
       }
-      cacheEnabled = resp.cache_enabled
-      cacheAvailable = resp.cache_available
-      serverSaved = true
-    } catch (err) {
-      // `describeApiError` renders `admin.chunk_below_floor` (the server's
-      // real refusal for a chunk_min under its floor) when the response
-      // carries that key, and falls back to the generic save failure for
-      // anything else.
-      serverError = describeApiError(err, t('common.could_not_save'))
-    } finally {
-      serverSaving = false
-    }
+    )
   }
 
   // ── this browser's override ──
@@ -164,13 +164,13 @@
       concurrencyError = t('upload_settings.concurrency_must_between', { min: MIN_CONCURRENCY, max: MAX_CONCURRENCY })
       return
     }
-    uploadTray.setConcurrency(n)
+    setUploadConcurrency(n)
     activeConcurrency = n
     concurrencySaved = true
   }
 
   function resetConcurrency(): void {
-    uploadTray.setConcurrency(DEFAULT_CONCURRENCY)
+    setUploadConcurrency(DEFAULT_CONCURRENCY)
     activeConcurrency = DEFAULT_CONCURRENCY
     concurrencyInput = String(DEFAULT_CONCURRENCY)
     concurrencyError = null
@@ -188,7 +188,7 @@
   <div class="sc-admin-section__upload-form">
     <TextField label={t('upload_settings.minimum_chunk_size_mb')} bind:value={minMb} placeholder={String(bytesToMb(serverMin))} />
     <TextField label={t('upload_settings.default_chunk_size_mb')} bind:value={defaultMb} placeholder={String(bytesToMb(serverDefault))} />
-    <Button variant="filled" onclick={saveServerSettings} loading={serverSaving}>{t('common.save')}</Button>
+    <Button variant="filled" onclick={saveServerSettings} loading={serverMutation.isPending}>{t('common.save')}</Button>
   </div>
   {#if serverError}
     <p class="sc-admin-section__upload-error" role="alert">{serverError}</p>
@@ -293,7 +293,7 @@
     gap: 16px;
     max-width: 480px;
   }
-  /* The wrapper TextField.svelte renders is `.field`, not `.sc-field` — the
+  /* The wrapper TextField.svelte renders is `.field`, not `.sc-field`: the
      selector was left behind when that component became an m3-svelte adapter,
      so the fields kept their intrinsic width instead of sharing the row. */
   .sc-admin-section__upload-form :global(.field) {

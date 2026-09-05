@@ -1,5 +1,5 @@
 <script lang="ts">
-  // User management — admin-only screen built on top of's
+  // User management: admin-only screen built on top of's
   // role model (§8, `user.role`). GET/POST /api/admin/users, PATCH/DELETE
   // /api/admin/users/{id}.
   //
@@ -8,8 +8,11 @@
   // two things, neither of which replaces the server-side defense: shows
   // that failure clearly, and pre-disables the toggle/delete buttons when
   // only one active admin remains, to cut down on accidental clicks.
+  import { createMutation, createQuery } from '@tanstack/svelte-query'
   import { t } from '../../i18n'
-  import { api, ApiError, type AdminUser } from '../../api/client'
+  import { ApiError, type AdminUser } from '../../api/client'
+  import { describeApiError } from '../../api/error-text'
+  import { adminUserMutation, adminUsersQuery } from '../../query/admin'
   import { BYTES_PER_MB, bytesToMb, formatBytes } from '../../format/bytes'
   import { scorePasswordStrength } from '../../format/password-strength'
   import Button from '../Button.svelte'
@@ -28,26 +31,23 @@
 
   const MIN_PASSWORD_LEN = 10
 
-  let users = $state<AdminUser[]>([])
-  let loading = $state(true)
-  let loadError = $state<string | null>(null)
+  const usersQuery = createQuery(() => adminUsersQuery())
+  const users = $derived(usersQuery.data ?? [])
+  const loading = $derived(usersQuery.isPending)
+  const loadError = $derived(usersQuery.error ? describeApiError(usersQuery.error, t('user.could_not_load_user_list')) : null)
 
-  let createOpen = $state(false)
-  let newName = $state('')
-  let newPassword = $state('')
-  let createError = $state<string | null>(null)
-  let creating = $state(false)
+  const activeAdminCount = $derived(users.filter((u) => u.is_admin && !u.disabled).length)
 
-  let deleteTarget = $state<AdminUser | null>(null)
-  let deleting = $state(false)
-  let deleteError = $state<string | null>(null)
-
-  let togglingId = $state<number | null>(null)
-  let toggleError = $state<string | null>(null)
+  /** Would disabling/deleting this account leave zero active admins? The
+   *  server has final say, but there's no reason to let anyone press a
+   *  button that's guaranteed to be rejected. */
+  function isLastActiveAdmin(u: AdminUser): boolean {
+    return u.is_admin && !u.disabled && activeAdminCount <= 1
+  }
 
   // Dialog that sets which folders a just-created (or picked-from-the-list)
   // user can see. "Create a user" has to lead straight into "and decide what
-  // they see" — an account with zero grants just shows a blank screen on
+  // they see": an account with zero grants just shows a blank screen on
   // login, which reads as a broken server, not a state anyone chose on
   // purpose.
   let grantsTarget = $state<AdminUser | null>(null)
@@ -74,14 +74,123 @@
     oidcTarget = null
   }
 
-  // Per-user quota: `quota_bytes` is the cap, enforced
-  // on upload/copy/write against the running `usage_bytes` ledger
-  // (`go/internal/core/quota.go`) — a write that would exceed it is
-  // refused with `507 quota.exceeded`, not just reported to NC clients.
+  // ── create ──
+
+  let createOpen = $state(false)
+  let newName = $state('')
+  let newPassword = $state('')
+  let createValidation = $state<string | null>(null)
+  const newPasswordStrength = $derived(scorePasswordStrength(newPassword))
+
+  const createMut = createMutation(() => adminUserMutation())
+  const creating = $derived(createMut.isPending)
+  const createError = $derived.by(() => {
+    if (createValidation) return createValidation
+    const err = createMut.error
+    if (!err) return null
+    if (err instanceof ApiError && err.code === 'fs.conflict') return t('common.name_already_taken')
+    if (err instanceof ApiError && err.code === 'auth.weak_password') {
+      const min = err.reasonNumber('min_length') ?? MIN_PASSWORD_LEN
+      return t('user.password_must_at_least_characters', { min })
+    }
+    return describeApiError(err, t('user.could_not_create_user'))
+  })
+
+  function openCreate(): void {
+    newName = ''
+    newPassword = ''
+    createValidation = null
+    createMut.reset()
+    createOpen = true
+  }
+
+  function closeCreate(): void {
+    if (creating) return
+    createOpen = false
+  }
+
+  async function submitCreate(e?: SubmitEvent): Promise<void> {
+    e?.preventDefault()
+    createValidation = null
+    if (newPassword.length < MIN_PASSWORD_LEN) {
+      createValidation = t('user.password_must_at_least_characters', { min: MIN_PASSWORD_LEN })
+      return
+    }
+    try {
+      const created = (await createMut.mutateAsync({ kind: 'create', name: newName, password: newPassword })) as AdminUser
+      createOpen = false
+      openGrants(created)
+    } catch {
+      // createError above reads the failure straight off createMut.error
+    }
+  }
+
+  // ── enable/disable ──
+
+  const toggleMut = createMutation(() => adminUserMutation())
+  const togglingId = $derived(toggleMut.isPending && toggleMut.variables?.kind === 'disable' ? toggleMut.variables.id : null)
+  const toggleError = $derived.by(() => {
+    const err = toggleMut.error
+    if (!err) return null
+    if (err instanceof ApiError && err.code === 'admin.last_admin') return t('user.last_administrator_cannot_deactivated')
+    return describeApiError(err, t('common.could_not_save_change'))
+  })
+
+  function toggleDisabled(u: AdminUser, disabled: boolean): void {
+    toggleMut.mutate({ kind: 'disable', id: u.id, disabled })
+  }
+
+  // ── delete ──
+
+  const deleteMut = createMutation(() => adminUserMutation())
+  const deleting = $derived(deleteMut.isPending)
+  const deleteError = $derived.by(() => {
+    const err = deleteMut.error
+    if (!err) return null
+    if (err instanceof ApiError && err.code === 'admin.last_admin') return t('user.last_administrator_cannot_deleted')
+    return describeApiError(err, t('common.could_not_delete'))
+  })
+
+  let deleteTarget = $state<AdminUser | null>(null)
+
+  function askDelete(u: AdminUser): void {
+    deleteMut.reset()
+    deleteTarget = u
+  }
+
+  function closeDelete(): void {
+    if (deleting) return
+    deleteTarget = null
+  }
+
+  async function confirmDelete(): Promise<void> {
+    if (!deleteTarget) return
+    try {
+      await deleteMut.mutateAsync({ kind: 'delete', id: deleteTarget.id })
+      deleteTarget = null
+    } catch {
+      // deleteError above reads the failure straight off deleteMut.error
+    }
+  }
+
+  // ── quota ──
+  //
+  // `quota_bytes` is the cap, enforced on upload/copy/write against the
+  // running `usage_bytes` ledger (`go/internal/core/quota.go`). A write
+  // that would exceed it is refused with `507 quota.exceeded`, not just
+  // reported to NC clients.
+  const quotaMut = createMutation(() => adminUserMutation())
+  const quotaSaving = $derived(quotaMut.isPending)
   let quotaTarget = $state<AdminUser | null>(null)
   let quotaInput = $state('')
-  let quotaError = $state<string | null>(null)
-  let quotaSaving = $state(false)
+  let quotaValidation = $state<string | null>(null)
+  const quotaError = $derived.by(() => {
+    if (quotaValidation) return quotaValidation
+    const err = quotaMut.error
+    if (!err) return null
+    if (err instanceof ApiError && err.code === 'admin.invalid_quota') return t('user.enter_number_greater_than_0')
+    return describeApiError(err, t('common.could_not_save'))
+  })
 
   /** Chip text: "1.2 GB / 5 GB" when capped, "1.2 GB used" (unlimited) otherwise. */
   function quotaLabel(u: AdminUser): string {
@@ -91,7 +200,8 @@
   }
 
   function openQuota(u: AdminUser): void {
-    quotaError = null
+    quotaValidation = null
+    quotaMut.reset()
     quotaInput = u.quota_bytes ? String(bytesToMb(Number(BigInt(u.quota_bytes)))) : ''
     quotaTarget = u
   }
@@ -104,142 +214,22 @@
   async function submitQuota(e?: SubmitEvent): Promise<void> {
     e?.preventDefault()
     if (!quotaTarget) return
-    quotaError = null
+    quotaValidation = null
     const trimmed = quotaInput.trim()
     let bytes: number | null = null
     if (trimmed) {
       const mb = Number(trimmed)
       if (!Number.isFinite(mb) || mb <= 0) {
-        quotaError = t('user.enter_number_greater_than_0')
+        quotaValidation = t('user.enter_number_greater_than_0')
         return
       }
       bytes = Math.round(mb * BYTES_PER_MB)
     }
-    quotaSaving = true
     try {
-      const updated = await api.adminSetUserQuota(quotaTarget.id, bytes)
-      users = users.map((x) => (x.id === updated.id ? updated : x))
+      await quotaMut.mutateAsync({ kind: 'quota', id: quotaTarget.id, quotaBytes: bytes })
       quotaTarget = null
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'admin.invalid_quota') {
-        quotaError = t('user.enter_number_greater_than_0')
-      } else {
-        quotaError = t('common.could_not_save')
-      }
-    } finally {
-      quotaSaving = false
-    }
-  }
-
-  const newPasswordStrength = $derived(scorePasswordStrength(newPassword))
-
-  async function load(): Promise<void> {
-    loading = true
-    loadError = null
-    try {
-      users = await api.adminListUsers()
     } catch {
-      loadError = t('user.could_not_load_user_list')
-    } finally {
-      loading = false
-    }
-  }
-
-  load()
-
-  const activeAdminCount = $derived(users.filter((u) => u.is_admin && !u.disabled).length)
-
-  /** Would disabling/deleting this account leave zero active admins? The
-   *  server has final say, but there's no reason to let anyone press a
-   *  button that's guaranteed to be rejected. */
-  function isLastActiveAdmin(u: AdminUser): boolean {
-    return u.is_admin && !u.disabled && activeAdminCount <= 1
-  }
-
-  function openCreate(): void {
-    newName = ''
-    newPassword = ''
-    createError = null
-    createOpen = true
-  }
-
-  function closeCreate(): void {
-    if (creating) return
-    createOpen = false
-  }
-
-  async function submitCreate(e?: SubmitEvent): Promise<void> {
-    e?.preventDefault()
-    createError = null
-    if (newPassword.length < MIN_PASSWORD_LEN) {
-      createError = t('user.password_must_at_least_characters', { min: MIN_PASSWORD_LEN })
-      return
-    }
-    creating = true
-    try {
-      const created = await api.adminCreateUser(newName, newPassword)
-      users = [...users, created]
-      createOpen = false
-      // A new account has zero access by default — flow straight into the
-      // screen that decides which folders it sees.
-      openGrants(created)
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'fs.conflict') {
-        createError = t('common.name_already_taken')
-      } else if (err instanceof ApiError && err.code === 'auth.weak_password') {
-        const min = err.reasonNumber('min_length') ?? MIN_PASSWORD_LEN
-        createError = t('user.password_must_at_least_characters', { min })
-      } else {
-        createError = t('user.could_not_create_user')
-      }
-    } finally {
-      creating = false
-    }
-  }
-
-  async function toggleDisabled(u: AdminUser, disabled: boolean): Promise<void> {
-    toggleError = null
-    togglingId = u.id
-    try {
-      const updated = await api.adminSetUserDisabled(u.id, disabled)
-      users = users.map((x) => (x.id === u.id ? updated : x))
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'admin.last_admin') {
-        toggleError = t('user.last_administrator_cannot_deactivated')
-      } else {
-        toggleError = t('common.could_not_save_change')
-      }
-    } finally {
-      togglingId = null
-    }
-  }
-
-  function askDelete(u: AdminUser): void {
-    deleteError = null
-    deleteTarget = u
-  }
-
-  function closeDelete(): void {
-    if (deleting) return
-    deleteTarget = null
-  }
-
-  async function confirmDelete(): Promise<void> {
-    if (!deleteTarget) return
-    deleting = true
-    deleteError = null
-    try {
-      await api.adminDeleteUser(deleteTarget.id)
-      users = users.filter((x) => x.id !== deleteTarget!.id)
-      deleteTarget = null
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'admin.last_admin') {
-        deleteError = t('user.last_administrator_cannot_deleted')
-      } else {
-        deleteError = t('common.could_not_delete')
-      }
-    } finally {
-      deleting = false
+      // quotaError above reads the failure straight off quotaMut.error
     }
   }
 </script>
@@ -402,7 +392,7 @@
 
 <style>
   /* Named container so the header can respond to the space it actually has
-   * (this section's own width) rather than the viewport — consistent with
+   * (this section's own width) rather than the viewport, consistent with
    * how FileTable/FileTree already do compact-width layout switches
    * ( window-size classes via container queries). */
   .sc-user-mgmt {
@@ -418,7 +408,7 @@
   }
   /* Compact (<600px): a row that fits the button
    * beside 3-4 lines of body text at 1280px does not have to survive at
-   * 390px — stack instead of squeezing the hint into a 6-line, half-width
+   * 390px: stack instead of squeezing the hint into a 6-line, half-width
    * column next to the button. */
   @container sc-user-mgmt (max-width: 599.98px) {
     .sc-user-mgmt__header {
@@ -451,7 +441,7 @@
   .sc-user-mgmt__list li + li {
     border-top: 1px solid var(--m3c-outline-variant);
   }
-  /* The name is the one flex child that should give up space — Korean text
+  /* The name is the one flex child that should give up space: Korean text
    * has a line-break opportunity after every syllable, so without an
    * explicit min-width:0 + nowrap it doesn't overflow, it *wraps*
    * character-by-character inside whatever sliver of width it's squeezed

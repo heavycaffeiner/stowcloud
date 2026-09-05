@@ -1,6 +1,6 @@
-// web/src/lib/api/setup.test.ts — mock branch of the
+// Mock branch of the
 // first-run seam (createInitialAdmin). This is the ONE function that will
-// need retargeting once the real /setup route lands — these tests pin down
+// need retargeting once the real /setup route lands; these tests pin down
 // its current (mock) behavior so that change is visible in a diff.
 //
 // The mock branch is forced here rather than inherited from `web/.env`.

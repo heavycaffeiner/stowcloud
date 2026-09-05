@@ -1,4 +1,4 @@
-// web/src/lib/api/recovery-codes.test.ts — mockApi's recovery-code surface:
+// mockApi's recovery-code surface:
 // the remaining-count read, and the reissue that must
 // invalidate every old code. Kept in its own file for the same reason
 // auth.test.ts is: vitest gives each test file its own module instance, so

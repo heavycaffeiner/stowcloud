@@ -1,11 +1,11 @@
 <script lang="ts">
-  // FileTree.svelte — collapsible folder-tree side panel (
+  // Collapsible folder-tree side panel (
   // §3 component inventory lists `FileTree` alongside `FileTable`/`FileGrid`
   // under "app-specific"). One root node per share the session grants
   // (`/` is not a real directory), each lazily
   // expandable via FileTreeItem.
   import { t } from '../i18n'
-  import { authState } from '../state/auth.svelte'
+  import { createSession } from '../query/session'
   import FileTreeItem from './FileTreeItem.svelte'
   import IconButton from './IconButton.svelte'
   import { Icon } from 'm3-svelte'
@@ -17,7 +17,7 @@
     /** MD3 compact window class (<905px): a
      *  docked 200px side panel next to the file table leaves too little room
      *  for the name column to stay readable (it was measured collapsing to a
-     *  handful of pixels — icon and all — at 360px). Below that breakpoint the
+     *  handful of pixels, icon and all, at 360px). Below that breakpoint the
      *  tree renders as a modal drawer instead of a flex sibling: a native
      *  `<dialog>` gives free light-dismiss, Escape-to-close and focus
      *  trapping, the same primitive Dialog.svelte already relies on. */
@@ -26,14 +26,15 @@
   }
   let { currentPath, onnavigate, overlay = false, onclose }: Props = $props()
 
-  const roots = $derived((authState.session?.roots ?? []).map((r) => ({ path: `/${r.label}`, name: r.label })))
+  const session = createSession()
+  const roots = $derived((session.data?.roots ?? []).map((r) => ({ path: `/${r.label}`, name: r.label })))
 
   let dialogEl: HTMLDialogElement | undefined = $state()
 
   $effect(() => {
     if (!overlay || !dialogEl) return
     // `showModal()` moves focus inside (to the close button, since nothing
-    // has `autofocus`) but never restores it — that's on the caller. Without
+    // has `autofocus`) but never restores it; that's on the caller. Without
     // this, closing the drawer drops keyboard focus to `<body>` and a Tab
     // press starts back at the top of the page instead of picking up where
     // the user was (the toolbar's tree toggle).
@@ -112,7 +113,7 @@
     position: fixed;
     top: 0;
     /* Stop above the bottom NavigationBar rather than running the full height
-       behind it. Same signal (`uiState.compact`) renders both, so whenever
+       behind it. Same signal (`ui.state.compact`) renders both, so whenever
        this overlay exists the bar does too, and a `<dialog>` paints in the top
        layer -- a full-height panel therefore covered the bar's left 320px
        while leaving the rest of its row visible, so the bottom strip of the
@@ -131,7 +132,7 @@
     padding: 0;
     /* A `<dialog>` ships a UA-default border (Chrome: 3px solid `currentColor`,
        so near-white in dark theme). Only `border-right` was overridden here, so
-       the other three sides kept painting it — the white outline the folder
+       the other three sides kept painting it: the white outline the folder
        tree showed. Same bug NavigationDrawer.svelte already fixed. */
     border: none;
     box-shadow: var(--m3-elevation-2);

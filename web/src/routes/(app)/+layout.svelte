@@ -1,12 +1,13 @@
 <script lang="ts">
   // (app) route group: the authenticated shell (nav rail/bar + upload tray).
   // Kept OUT of the true root layout so /s/[token] (outside this group)
-  // never pulls this chunk in — the "separate lightweight
+  // never pulls this chunk in: the "separate lightweight
   // bundle" for the public share page.
   import { t } from '../../lib/i18n'
   import type { Snippet } from 'svelte'
   import { page } from '$app/state'
   import { goto } from '$app/navigation'
+  import { createQuery } from '@tanstack/svelte-query'
   import { Snackbar as M3Snackbar } from 'm3-svelte'
   import { icons } from '../../lib/icons'
   import NavigationBar from '../../lib/ui/NavigationBar.svelte'
@@ -14,14 +15,30 @@
   import ProgressCircular from '../../lib/ui/ProgressCircular.svelte'
   import UploadTray from '../../lib/ui/UploadTray.svelte'
   import JobTray from '../../lib/ui/JobTray.svelte'
-  import { setDrawer, uiState, watchViewport } from '../../lib/state/ui.svelte'
-  import { authState } from '../../lib/state/auth.svelte'
-  import { bootstrapAuth } from '../../lib/state/auth-bootstrap'
+  import { createSession, screenOf, setupRequiredQuery } from '../../lib/query/session'
+  import { startLiveInvalidation } from '../../lib/query/live'
+  import { swReady } from '../../lib/crypto/download-sw'
+  import { COMPACT_MAX_PX, ui } from '../../lib/store/ui.store'
 
   interface Props {
     children: Snippet
   }
   let { children }: Props = $props()
+
+  // The session, and the one follow-up question ("has this server ever had
+  // an account?") that turns a failed session into either "login" or
+  // "first-run" -- see `screenOf`'s own doc comment for why the two can't be
+  // told apart from the 401 alone.
+  const session = createSession()
+  const setup = createQuery(() => setupRequiredQuery(session.isError))
+  const screen = $derived(
+    screenOf({
+      hasSession: session.data !== undefined,
+      sessionFailed: session.isError,
+      setupPending: session.isError && setup.isPending,
+      setupRequired: setup.data === true
+    })
+  )
 
   // Used to list one nav entry per root (": what a user
   // sees as their root is a projection of their grant list") -- fixed a real
@@ -41,14 +58,14 @@
   // where the fix for "every root must stay reachable" lives now -- see its
   // own doc comment for the modal (phone) vs. standard (rail) split.
   const rootItems = $derived(
-    (authState.session?.roots ?? []).map((r) => ({
+    (session.data?.roots ?? []).map((r) => ({
       id: r.label,
       label: r.label,
       icon: icons.folder
     }))
   )
 
-  // Admin nav item only for an administrator — a hidden nav entry is not
+  // Admin nav item only for an administrator: a hidden nav entry is not
   // access control (the server's `require_admin` still gates the API), but
   // there is no reason to draw a link into a screen a non-admin would only
   // get an "Only administrators can see this screen" message from.
@@ -61,7 +78,7 @@
     { id: 'files', label: t('nav.files'), icon: icons.home },
     { id: 'recent', label: t('nav.recent'), icon: icons.recent, href: '/recent' },
     { id: 'trash', label: t('common.trash'), icon: icons.trash, href: '/trash' },
-    ...(authState.session?.user.is_admin
+    ...(session.data?.user.is_admin
       // `nav.admin`, not `common.administrator`: the rail gives a label a
       // 56px box, and "Administrator" needs 83 of them.
       ? [{ id: 'admin', label: t('nav.admin'), icon: icons.admin, href: '/admin' }]
@@ -69,7 +86,7 @@
     { id: 'settings', label: t('common.settings'), icon: icons.settings, href: '/settings' }
   ])
 
-  // "Files" stays highlighted for every root, not just the first one — it
+  // "Files" stays highlighted for every root, not just the first one: it
   // represents the section, not any single grant.
   const activeNav = $derived.by(() => {
     const p = page.url.pathname
@@ -95,7 +112,7 @@
   //
   // `drawerDefaultApplied` makes that a *default*, applied once, rather
   // than a rule re-enforced on every render: without it, this effect's
-  // dependency on `uiState.compact` meant crossing the compact/standard
+  // dependency on `ui.state.compact` meant crossing the compact/standard
   // breakpoint in either direction re-ran it, and re-entering standard
   // width forced `drawerOpen` back to `true` even after a user had
   // deliberately collapsed it -- resize the window (or rotate a tablet)
@@ -110,16 +127,17 @@
   //
   // `drawerDefaultApplied` is a plain `let`, so it only survives a resize --
   // a refresh reset it and the default fired again, which is why a drawer
-  // closed on one load was open on the next. `uiState.drawer` (localStorage,
-  // same shape as `sc.theme`) carries the choice across loads; `null` means
-  // there is no choice yet and the width default still applies.
+  // closed on one load was open on the next. `ui.state.drawer`
+  // (`'open'|'closed'|'unset'`, persisted) carries the choice across loads;
+  // `'unset'` means there is no choice yet and the width default still
+  // applies.
   let drawerOpen = $state(false)
   let drawerDefaultApplied = false
   $effect(() => {
-    if (uiState.compact) {
+    if (ui.state.compact) {
       drawerOpen = false
-    } else if (!drawerDefaultApplied && authState.session) {
-      drawerOpen = uiState.drawer ?? true
+    } else if (!drawerDefaultApplied && session.data) {
+      drawerOpen = ui.state.drawer === 'unset' ? true : ui.state.drawer === 'open'
       drawerDefaultApplied = true
     }
   })
@@ -127,33 +145,59 @@
   // Only standard width records a preference. Compact's drawer is a modal:
   // opening it is a step in "switch root", and closing it is dismissing a
   // dialog -- neither says anything about how the desktop layout should
-  // start, and `uiState.compact` closes it on entry anyway.
+  // start, and `ui.state.compact` closes it on entry anyway.
   function setDrawerOpen(open: boolean) {
     drawerOpen = open
-    if (!uiState.compact) setDrawer(open)
+    if (!ui.state.compact) ui.setDrawer(open)
   }
 
-  $effect(() => watchViewport())
-
-  // Session bootstrapping (task #4): consult GET /api/auth/session exactly
-  // once on load to decide file browser vs. login vs. first-run. Every
-  // subsequent 401 (task #3) flips the same `authState.screen` from
-  // http.ts's request() — the effect below reacts to that too, so a session
-  // dying mid-browse bounces here just like a fresh unauthenticated load.
-  let bootstrapped = false
+  // MD3 window class breakpoint: rail versus bar plus drawer. Plain
+  // `resize` listener rather than a store action, because this is a
+  // property of the viewport the component is rendered in, not a user
+  // choice -- nothing outside this shell needs to read it as it changes.
   $effect(() => {
-    if (authState.screen === 'loading' && !bootstrapped) {
-      bootstrapped = true
-      void bootstrapAuth()
+    function onResize(): void {
+      ui.setCompact(window.innerWidth < COMPACT_MAX_PX)
     }
+    window.addEventListener('resize', onResize)
+    onResize()
+    return () => window.removeEventListener('resize', onResize)
   })
+
+  // Screen redirects: `createSession()`/`setupRequiredQuery` fetch
+  // themselves the moment they mount, so there is nothing left to
+  // bootstrap by hand. A dead session found later (task #3's 401 handling,
+  // now inside `query/client.ts`) invalidates `keys.session()`, which
+  // reruns this same derivation and bounces here exactly like a fresh
+  // unauthenticated load would.
   $effect(() => {
-    if (authState.screen === 'login') void goto('/login', { replaceState: true })
-    else if (authState.screen === 'first-run') void goto('/setup', { replaceState: true })
+    if (screen === 'login') void goto('/login', { replaceState: true })
+    else if (screen === 'first-run') void goto('/setup', { replaceState: true })
   })
+
+  // The live socket needs the same session cookie the rest of the API does,
+  // so it only makes sense while `screen` says the shell is showing the
+  // file browser -- opened on entry, closed the moment that stops being
+  // true (session end or the shell itself unmounting).
+  $effect(() => {
+    if (screen !== 'browser') return
+    return startLiveInvalidation()
+  })
+
+  // Registered once the shell actually shows the file browser, same gate as
+  // the live socket above: nothing here is useful before there is a session
+  // to download anything under. `swReady` never throws: a browser with no
+  // Service Worker support, or one where registration itself fails, just
+  // resolves null and every download falls back to buffering, so this
+  // fires and forgets rather than needing its own error state.
+  $effect(() => {
+    if (screen !== 'browser') return
+    void swReady()
+  })
+
   function navigateTo(id: string) {
     if (id === 'files') {
-      if (uiState.compact) {
+      if (ui.state.compact) {
         setDrawerOpen(!drawerOpen)
         return
       }
@@ -205,13 +249,13 @@
     // it same as any other modal on selection. Standard (rail) drawer: it
     // stays open, matching how the rail always kept every root visible
     // before this change -- switching again shouldn't cost a re-open.
-    if (uiState.compact) drawerOpen = false
+    if (ui.state.compact) drawerOpen = false
   }
 </script>
 
-{#if authState.screen === 'browser'}
-  <div class="sc-app-shell" class:sc-app-shell--compact={uiState.compact}>
-    {#if !uiState.compact}
+{#if screen === 'browser'}
+  <div class="sc-app-shell" class:sc-app-shell--compact={ui.state.compact}>
+    {#if !ui.state.compact}
       <NavigationDrawer
         {navItems}
         {activeNav}
@@ -223,11 +267,11 @@
     {/if}
     <main
       class="sc-app-shell__main"
-      class:sc-app-shell__main--drawer={!uiState.compact}
+      class:sc-app-shell__main--drawer={!ui.state.compact}
     >
       {@render children()}
     </main>
-    {#if uiState.compact}
+    {#if ui.state.compact}
       <NavigationBar items={navItems} active={activeNav} onselect={navigateTo} />
       {#if drawerOpen}
         <NavigationDrawer
@@ -247,7 +291,7 @@
        started on one page (and the upload tray, unrelated but the same
        bottom-right spot) never fight over the same fixed coordinates --
        see UploadTray.svelte's `.sc-upload-tray` comment. -->
-  <div bind:this={trayStackEl} class="sc-tray-stack" class:sc-tray-stack--compact={uiState.compact}>
+  <div bind:this={trayStackEl} class="sc-tray-stack" class:sc-tray-stack--compact={ui.state.compact}>
     <JobTray />
     <UploadTray />
   </div>

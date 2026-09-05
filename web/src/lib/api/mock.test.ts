@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mockApi } from './mock'
 
 describe('mockApi', () => {
-  // The seed tree hangs off `/home`, not `/` — the mock mirrors a real
+  // The seed tree hangs off `/home`, not `/`: the mock mirrors a real
   // deployment where the share root is a directory, not the filesystem root.
   it('lists the seed root directory', async () => {
     const res = await mockApi.list('/home', {})
@@ -159,7 +159,7 @@ describe('mockApi admin user management', () => {
 })
 
 describe('mockApi admin share management', () => {
-  // `ShareManagementSection.svelte` — the screen that fixes "there is no
+  // `ShareManagementSection.svelte`: the screen that fixes "there is no
   // setting to add folders".
 
   it('creates a share and it appears in the list', async () => {
@@ -219,7 +219,7 @@ describe('mockApi admin share management', () => {
 })
 
 describe('mockApi admin grant management', () => {
-  // The mock's own contract for `GET /api/admin/shares`/`/admin/grants*` —
+  // The mock's own contract for `GET /api/admin/shares`/`/admin/grants*`:
   // `GrantManagementSection.svelte` is built against exactly this. These
   // once existed in mock.ts without being added to the exported `mockApi`
   // object, so nothing could reach them at all; the tests pin them reachable.
@@ -344,7 +344,7 @@ describe('mockApi admin grant management', () => {
 })
 
 describe('mockApi admin group management', () => {
-  // `GroupManagementSection.svelte` — group CRUD plus
+  // `GroupManagementSection.svelte`: group CRUD plus
   // membership, then a group principal is handed to the same
   // `GrantManagementSection` the user screen already uses.
 
@@ -443,7 +443,7 @@ describe('mockApi trash', () => {
     expect((await mockApi.trashList()).some((t) => t.id === row!.id)).toBe(false)
   })
 
-  it('purge is permanent — the item never comes back', async () => {
+  it('purge is permanent; the item never comes back', async () => {
     await mockApi.mkdir('/home/Documents/trash-purge-me')
     await mockApi.delete(['/home/Documents/trash-purge-me'])
     const row = (await mockApi.trashList()).find((t) => t.name === 'trash-purge-me')!
@@ -498,7 +498,7 @@ describe('mockApi share links', () => {
     expect(created.perms.read).toBe(true)
     expect(created.perms.download).toBe(true)
 
-    // Never echoed back on a list read (there is no client-side `shareGet` —
+    // Never echoed back on a list read (there is no client-side `shareGet`,
     // deleted along with the rest of the dead client API surface).
     const [listed] = await mockApi.sharesList('/home/Photos/휴가-2026-07-01.jpg')
     expect(listed.token).toBeUndefined()
@@ -516,7 +516,7 @@ describe('mockApi share links', () => {
     const created = await mockApi.shareCreate({ path: '/home/Photos/가족사진.png', label: '원본 라벨', max_downloads: 5 })
     const patched = await mockApi.shareUpdate(created.id, { label: null })
     expect(patched.label).toBeNull()
-    expect(patched.max_downloads).toBe(5) // untouched — key was never sent
+    expect(patched.max_downloads).toBe(5) // untouched: key was never sent
   })
 
   it('revoking a link removes it from the list', async () => {
@@ -528,7 +528,7 @@ describe('mockApi share links', () => {
 })
 
 // `copy` and `move` share one implementation whose only difference is whether
-// the source survives — which is exactly the part a caller notices, so both
+// the source survives, which is exactly the part a caller notices, so both
 // halves are pinned here.
 describe('mockApi transfer', () => {
   it('copy leaves the source where it was', async () => {
@@ -558,14 +558,14 @@ describe('mockApi transfer', () => {
     const { results } = await mockApi.move({ paths: ['/home/Documents/clash'], dest: '/home/Photos', on_conflict: 'fail' })
     expect(results[0].ok).toBe(false)
     expect(results[0].error?.code).toBe('fs.conflict')
-    // The source has to still be there — a conflict must not consume it.
+    // The source has to still be there; a conflict must not consume it.
     const src = await mockApi.list('/home/Documents', {})
     expect(src.entries.some((e) => e.name === 'clash')).toBe(true)
   })
 })
 
 // See `JobStatus`'s doc comment in `types.ts`: no server operation issues a
-// job id yet, mock included — both of these pin down the one honest thing
+// job id yet, mock included; both of these pin down the one honest thing
 // there is to say about an id nobody issued, matching what `http.ts` gets
 // back from a real server for the same request.
 describe('mockApi jobs', () => {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  // FileTable.svelte — virtual-scrolled directory table., §9.
+  // Virtual-scrolled directory table., §9.
   //
   // Accessibility note: a11y spec asks for a "roving tabindex" so the whole
   // 100k-row grid is a single tab stop. With virtualization, rows that are
@@ -8,12 +8,14 @@
   // widgets (per WAI-ARIA APG) is: the grid container itself is the one tab
   // stop (tabindex=0), a `focusedName` cursor tracks the "virtually focused"
   // row, and `aria-activedescendant` points at that row's id once it is
-  // scrolled into view and rendered. Net effect for the user is identical —
-  // one Tab stop, arrow keys move — with a virtualization-safe mechanism.
+  // scrolled into view and rendered. Net effect for the user is identical,
+  // one Tab stop, arrow keys move, with a virtualization-safe mechanism.
   import { t } from '../i18n'
   import type { Entry } from '../api/client'
-  import type { BrowseState } from '../state/browse.svelte'
-  import { uiState } from '../state/ui.svelte'
+  import type { Perms } from '../api/types'
+  import { ui } from '../store/ui.store'
+  import { selection } from '../store/selection.store'
+  import { view } from '../store/view.store'
   import {
     computeScaleMapping,
     computeWindow,
@@ -26,7 +28,13 @@
   import { indicesInRect, type Rect } from './marquee'
 
   interface Props {
-    browse: BrowseState
+    entries: readonly Entry[]
+    total: number
+    dirs: number
+    loading: boolean
+    loadingMore: boolean
+    requestMore: () => void
+    perms: Perms
     onopen: (entry: Entry) => void
     oncontextmenu: (entry: Entry, e: MouseEvent) => void
     onrename?: () => void
@@ -34,11 +42,10 @@
     onsearchfocus?: () => void
   }
 
-  let { browse, onopen, oncontextmenu, onrename, ondelete, onsearchfocus }: Props = $props()
+  let { entries, total, loading, loadingMore, requestMore, onopen, oncontextmenu, onrename, ondelete, onsearchfocus }: Props =
+    $props()
 
-  const ROW_HEIGHT = $derived(
-    { compact: 40, comfortable: 48, spacious: 56 }[browse.density]
-  )
+  const ROW_HEIGHT = $derived({ compact: 40, comfortable: 48, spacious: 56 }[view.state.density])
   const OVERSCAN = 8
 
   // The address bar on a phone only collapses on scroll when *the document*
@@ -89,25 +96,27 @@
   })
 
   $effect(() => {
-    // Re-measure on mount and whenever the directory changes: content above
-    // this element (breadcrumbs wrapping, the search-results panel, the
-    // selection bar) can change height between folders without the window
-    // itself scrolling or resizing, which would otherwise leave a stale
-    // document-top offset behind until the next real scroll/resize event.
-    browse.path
+    // Re-measure on mount and whenever the loaded rows change (a fresh
+    // directory's entries are a new array, not just a longer one): content
+    // above this element (breadcrumbs wrapping, the search-results panel,
+    // the selection bar) can change height between folders without the
+    // window itself scrolling or resizing, which would otherwise leave a
+    // stale document-top offset behind until the next real scroll/resize
+    // event.
+    entries
     measure()
   })
 
   // The spacer (and therefore the scrollbar) is sized
   // from the directory's *total* row count, not from how many rows happen
-  // to be loaded — that is what lets the scrollbar tell the truth (and a
+  // to be loaded: that is what lets the scrollbar tell the truth (and a
   // drag-to-50% jump land near row 50,000) from the very first render.
   const win = $derived(
     computeWindow({
       scrollTop,
       viewportHeight: viewportH,
       rowHeight: ROW_HEIGHT,
-      itemCount: browse.total,
+      itemCount: total,
       overscan: OVERSCAN
     })
   )
@@ -119,7 +128,7 @@
   /** Loaded rows render normally; not-yet-loaded indices render as a FileRowSkeleton placeholder. */
   const slice = $derived.by((): Row[] => {
     const out: Row[] = []
-    for (let i = win.start; i < win.end; i++) out.push({ index: i, entry: browse.rowAt(i) })
+    for (let i = win.start; i < win.end; i++) out.push({ index: i, entry: entries[i] })
     return out
   })
 
@@ -128,10 +137,18 @@
   }
 
   $effect(() => {
-    // Fetch the window the user is actually looking at (debounced inside
-    // scheduleWindow), not the next sequential page — task requirement #2.
-    browse.scheduleWindow(win.start, win.end)
+    // Listings are a forward-only cursor walk now: "load the window I am
+    // looking at" means "keep asking for the next page until it covers this
+    // window". Guarded on `loadingMore` so a scroll does not spam requests
+    // while one is already in flight.
+    if (!loadingMore && win.end > entries.length) requestMore()
   })
+
+  /** Rows the range/all/extend actions can name: only what has actually
+   *  loaded, same limit `selection.range` itself documents. */
+  const loadedNames = $derived(entries.map((e) => e.name))
+
+  const focusedName = $derived(entries[selection.state.focused ?? -1]?.name ?? null)
 
   function scrollRowIntoView(index: number): void {
     if (!viewportEl) return
@@ -141,9 +158,9 @@
     // element's own local scroll coordinates (same as `scrollTop` above);
     // the document scrolls now, so reaching them means scrolling the
     // *window* to `viewportDocumentTop + <local offset>`, not setting
-    // `viewportEl.scrollTop` (which no longer does anything — the element
+    // `viewportEl.scrollTop` (which no longer does anything; the element
     // isn't a scroll container anymore).
-    const mapping = computeScaleMapping(browse.total, ROW_HEIGHT)
+    const mapping = computeScaleMapping(total, ROW_HEIGHT)
     const rowTop = rowIndexToScrollTop(index, mapping, ROW_HEIGHT)
     const rowBottom = rowIndexToScrollTop(index + 1, mapping, ROW_HEIGHT)
     if (rowTop < scrollTop) {
@@ -160,7 +177,7 @@
    * space below this element.
    *
    * Only loaded rows can be named, so a rectangle thrown across an unfetched
-   * gap picks up whatever is in memory. Same limit as `selectRangeTo`.
+   * gap picks up whatever is in memory. Same limit as `selection.range`.
    */
   export function entriesInRect(rect: Rect): Entry[] {
     const out: Entry[] = []
@@ -172,21 +189,21 @@
       cellWidth: 0,
       columns: 1,
       startIndex: 0,
-      count: browse.total
+      count: total
     })) {
-      const entry = browse.rowAt(i)
+      const entry = entries[i]
       if (entry) out.push(entry)
     }
     return out
   }
 
-  function onRowClick(e: MouseEvent, entry: Entry): void {
+  function onRowClick(e: MouseEvent, entry: Entry, index: number): void {
     if (e.shiftKey) {
-      browse.selectRangeTo(entry)
+      selection.range(loadedNames, entry.name)
       return
     }
     if (e.ctrlKey || e.metaKey) {
-      browse.toggle(entry)
+      selection.toggle(entry.name, index)
       return
     }
     // A plain click selects; a double click opens. Same as a desktop file
@@ -195,25 +212,36 @@
     // Shift and ctrl/cmd above are the range and the toggle, unchanged: they
     // have no other meaning here and a mouse user reaching for a range
     // expects them.
-    browse.selectOnly(entry)
+    selection.only(entry.name, index)
+  }
+
+  /** Moves the roving cursor and, only when extending, ranges to it. A plain
+   *  arrow press moves the cursor without changing the selection. */
+  function moveFocus(delta: number, extend: boolean): void {
+    const next = Math.min(Math.max((selection.state.focused ?? 0) + delta, 0), total - 1)
+    selection.focus(next)
+    if (extend) {
+      const name = entries[next]?.name
+      if (name) selection.range(loadedNames, name)
+    }
   }
 
   function onKeydown(e: KeyboardEvent): void {
-    if (browse.total === 0) return
+    if (total === 0) return
 
     switch (e.key) {
       case 'ArrowDown':
       case 'ArrowUp': {
         e.preventDefault()
-        browse.moveFocus(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey)
-        scrollRowIntoView(browse.focusedIndex ?? 0)
+        moveFocus(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey)
+        scrollRowIntoView(selection.state.focused ?? 0)
         break
       }
       case ' ': {
         e.preventDefault()
-        if (browse.focusedIndex !== null) {
-          const entry = browse.rowAt(browse.focusedIndex)
-          if (entry) browse.toggle(entry)
+        if (selection.state.focused !== null) {
+          const entry = entries[selection.state.focused]
+          if (entry) selection.toggle(entry.name, selection.state.focused)
         }
         break
       }
@@ -221,11 +249,11 @@
       case 'A':
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault()
-          browse.selectAll()
+          selection.all(loadedNames)
         }
         break
       case 'Enter': {
-        const entry = browse.focusedIndex !== null ? browse.rowAt(browse.focusedIndex) : undefined
+        const entry = selection.state.focused !== null ? entries[selection.state.focused] : undefined
         if (entry) onopen(entry)
         break
       }
@@ -235,9 +263,9 @@
         break
       case 'Escape':
         // Keyboard counterpart of clicking the blank area below the listing.
-        if (browse.selection.size > 0) {
+        if (selection.state.names.size > 0) {
           e.preventDefault()
-          browse.clearSelection()
+          selection.clear()
         }
         break
       case 'Delete':
@@ -252,28 +280,26 @@
   }
 
   const activeDescendant = $derived(
-    browse.focusedName && slice.some((r) => r.entry?.name === browse.focusedName)
-      ? domId(browse.focusedName)
-      : undefined
+    focusedName && slice.some((r) => r.entry?.name === focusedName) ? domId(focusedName) : undefined
   )
 </script>
 
 <div
   bind:this={viewportEl}
   class="sc-file-table"
-  class:sc-file-table--reserve-bar={uiState.compact}
-  class:sc-file-table--reserve-selection={browse.selection.size > 0}
-  data-density={browse.density}
+  class:sc-file-table--reserve-bar={ui.state.compact}
+  class:sc-file-table--reserve-selection={selection.state.names.size > 0}
+  data-density={view.state.density}
   role="grid"
   aria-multiselectable="true"
-  aria-rowcount={browse.total}
+  aria-rowcount={total}
   aria-label={t('table.file_list')}
   aria-activedescendant={activeDescendant}
-  aria-busy={browse.loadingWindow}
+  aria-busy={loadingMore}
   tabindex="0"
   onkeydown={onKeydown}
 >
-  {#if browse.total === 0 && !browse.loading}
+  {#if total === 0 && !loading}
     <p class="sc-file-table__empty">{t('common.folder_empty')}</p>
   {:else}
     <div class="sc-file-table__spacer" style:height="{win.totalHeight}px">
@@ -283,10 +309,10 @@
             <FileRow
               entry={row.entry}
               rowIndex={row.index + 1}
-              selected={browse.selection.has(row.entry.name)}
-              focused={browse.focusedName === row.entry.name}
+              selected={selection.state.names.has(row.entry.name)}
+              focused={focusedName === row.entry.name}
               domId={domId(row.entry.name)}
-              onclick={(e) => onRowClick(e, row.entry as Entry)}
+              onclick={(e) => onRowClick(e, row.entry as Entry, row.index)}
               ondblclick={() => onopen(row.entry as Entry)}
               oncontextmenu={(e) => {
                 e.preventDefault()
@@ -296,7 +322,7 @@
                 e.stopPropagation()
                 oncontextmenu(row.entry as Entry, e)
               }}
-              ontogglecheck={() => browse.toggle(row.entry as Entry)}
+              ontogglecheck={() => selection.toggle((row.entry as Entry).name, row.index)}
             />
           {:else}
             <FileRowSkeleton rowIndex={row.index + 1} />

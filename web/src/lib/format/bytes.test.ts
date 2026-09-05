@@ -45,9 +45,9 @@ describe('formatRate', () => {
     expect(formatRate(5 * 1024 * 1024)).toBe('5 MB/s')
   })
 
-  it('returns an em dash for zero or invalid rates', () => {
-    expect(formatRate(0)).toBe('—')
-    expect(formatRate(Number.NaN)).toBe('—')
+  it('returns a hyphen for zero or invalid rates', () => {
+    expect(formatRate(0)).toBe('-')
+    expect(formatRate(Number.NaN)).toBe('-')
   })
 })
 
@@ -68,7 +68,7 @@ describe('formatEta', () => {
     expect(formatEta(0.4)).toBe('<1s')
   })
 
-  it('returns an em dash for invalid input', () => {
-    expect(formatEta(-5)).toBe('—')
+  it('returns a hyphen for invalid input', () => {
+    expect(formatEta(-5)).toBe('-')
   })
 })

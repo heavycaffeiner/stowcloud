@@ -7,8 +7,10 @@
   // /api/shares/{id}`, `PATCH /api/shares/{id}`, and `DELETE
   // /api/shares/{id}` existed and worked server-side with nothing in the
   // app ever calling them; this dialog is the first caller.
-  import { api, ApiError, type PermsReq, type ShareLinkInfo } from '../api/client'
+  import { createMutation, createQuery } from '@tanstack/svelte-query'
+  import { type PermsReq, type ShareLinkInfo } from '../api/client'
   import { describeApiError } from '../api/error-text'
+  import { shareCreateMutation, shareDeleteMutation, shareLinksQuery, shareUpdateMutation } from '../query/shares'
   import { formatDateNs, t } from '../i18n'
   import Button from './Button.svelte'
   import Checkbox from './Checkbox.svelte'
@@ -40,9 +42,13 @@
     return link.perms.create && !link.perms.read && !link.perms.download
   }
 
-  let links = $state<ShareLinkInfo[]>([])
-  let loading = $state(false)
-  let loadError = $state<string | null>(null)
+  const sharesQuery = createQuery(() => shareLinksQuery(path, open))
+  const links = $derived(sharesQuery.data ?? [])
+  const loading = $derived(sharesQuery.isPending)
+
+  const createMut = createMutation(() => shareCreateMutation())
+  const updateMut = createMutation(() => shareUpdateMutation())
+  const deleteMut = createMutation(() => shareDeleteMutation())
 
   const PRESET_DAYS: Record<string, number> = { '1d': 1, '7d': 7, '30d': 30 }
 
@@ -77,7 +83,7 @@
     return String(BigInt(Date.now() + PRESET_DAYS[choice] * 86_400_000) * 1_000_000n)
   }
 
-  /** A date already past would create a link that is dead on arrival — the
+  /** A date already past would create a link that is dead on arrival: the
    *  server takes it, it just never opens. */
   function expiryUnusable(choice: string, iso: string): boolean {
     if (choice !== 'custom') return false
@@ -109,9 +115,15 @@
   const newExpiryBad = $derived(expiryUnusable(newExpiry, newExpiryDate))
   let newMaxDownloads = $state('')
   let newLabel = $state('')
-  let creating = $state(false)
-  let createError = $state<string | null>(null)
-  /** The one moment the plaintext token/url are ever available — the server
+  /** Client-side validation the mutation itself never sees, e.g. a
+   *  non-integer download limit. Distinct from `createMut.error`, which is
+   *  the server's own refusal. */
+  let createValidation = $state<string | null>(null)
+  const creating = $derived(createMut.isPending)
+  const createError = $derived(
+    createValidation ?? (createMut.error ? describeApiError(createMut.error, t('share.could_not_create_share_link')) : null)
+  )
+  /** The one moment the plaintext token/url are ever available: the server
    *  never returns them again after this response ("plaintext is not stored"), so this has to be shown now or lost, same
    *  rule the app-password/recovery-code create flows already follow. */
   let justCreated = $state<ShareLinkInfo | null>(null)
@@ -127,31 +139,31 @@
   const editExpiryBad = $derived(expiryUnusable(editExpiry, editExpiryDate))
   let editMaxDownloads = $state('')
   let editLabel = $state('')
-  let saving = $state(false)
+  const saving = $derived(updateMut.isPending)
 
   // ── revoke confirm ──
   let revokeTarget = $state<ShareLinkInfo | null>(null)
 
   let copiedId = $state<number | null>(null)
 
-  async function load(): Promise<void> {
-    loading = true
-    loadError = null
-    try {
-      links = await api.sharesList(path)
-    } catch (err) {
-      loadError = describeApiError(err, t('share.could_not_load_share_links'))
-    } finally {
-      loading = false
-    }
-  }
+  // The banner above the list doubles as the "could not read" state and the
+  // "an edit or a revoke just failed" state, same slot the old imperative
+  // `load()` reported every one of those failures through.
+  const loadError = $derived(
+    sharesQuery.error
+      ? describeApiError(sharesQuery.error, t('share.could_not_load_share_links'))
+      : updateMut.error
+        ? describeApiError(updateMut.error, t('share.could_not_update_share_link'))
+        : deleteMut.error
+          ? describeApiError(deleteMut.error, t('share.could_not_revoke_share_link'))
+          : null
+  )
 
   $effect(() => {
     if (open) {
       justCreated = null
       creatingOpen = false
       editingId = null
-      void load()
     }
   })
 
@@ -164,7 +176,8 @@
     newExpiryDate = ''
     newMaxDownloads = ''
     newLabel = ''
-    createError = null
+    createValidation = null
+    createMut.reset()
   }
 
   function openCreate(): void {
@@ -173,21 +186,19 @@
   }
 
   async function submitCreate(): Promise<void> {
-    creating = true
-    createError = null
+    createValidation = null
+    // A drop link is exactly `create` without `read` or `download`, the
+    // shape `ShareLink::is_drop` tests for. Granting read alongside it would
+    // silently turn it back into an ordinary link.
+    const isDrop = newKind === 'drop'
+    const perms: PermsReq = isDrop ? { create: true } : { read: newRead, download: newDownload }
+    const maxDownloads = !isDrop && newMaxDownloads.trim() ? Number(newMaxDownloads.trim()) : undefined
+    if (maxDownloads !== undefined && (!Number.isInteger(maxDownloads) || maxDownloads <= 0)) {
+      createValidation = t('share.download_limit_must_integer_1')
+      return
+    }
     try {
-      // A drop link is exactly `create` without `read` or `download` — the
-      // shape `ShareLink::is_drop` tests for. Granting read alongside it would
-      // silently turn it back into an ordinary link.
-      const isDrop = newKind === 'drop'
-      const perms: PermsReq = isDrop ? { create: true } : { read: newRead, download: newDownload }
-      const maxDownloads = !isDrop && newMaxDownloads.trim() ? Number(newMaxDownloads.trim()) : undefined
-      if (maxDownloads !== undefined && (!Number.isInteger(maxDownloads) || maxDownloads <= 0)) {
-        createError = t('share.download_limit_must_integer_1')
-        creating = false
-        return
-      }
-      const created = await api.shareCreate({
+      const created = await createMut.mutateAsync({
         path,
         perms,
         password: newPassword.trim() || undefined,
@@ -197,11 +208,8 @@
       })
       justCreated = created
       creatingOpen = false
-      await load()
-    } catch (err) {
-      createError = describeApiError(err, t('share.could_not_create_share_link'))
-    } finally {
-      creating = false
+    } catch {
+      // `createError` reads `createMut.error`; the form stays open to retry.
     }
   }
 
@@ -213,7 +221,7 @@
         if (copiedId === id) copiedId = null
       }, 2000)
     } catch {
-      // clipboard API unavailable — the value is still selectable as text
+      // clipboard API unavailable, the value is still selectable as text
     }
   }
 
@@ -227,6 +235,7 @@
     editExpiryDate = ''
     editMaxDownloads = link.max_downloads !== null ? String(link.max_downloads) : ''
     editLabel = link.label ?? ''
+    updateMut.reset()
   }
 
   function closeEdit(): void {
@@ -234,25 +243,24 @@
   }
 
   async function submitEdit(link: ShareLinkInfo): Promise<void> {
-    saving = true
+    const maxDownloads = editMaxDownloads.trim() ? Number(editMaxDownloads.trim()) : null
     try {
-      const maxDownloads = editMaxDownloads.trim() ? Number(editMaxDownloads.trim()) : null
-      await api.shareUpdate(link.id, {
-        perms: { read: editRead, download: editDownload },
-        // Absent (`undefined`) leaves the password alone; `null` clears it;
-        // a non-empty value replaces it. `JSON.stringify` drops `undefined`
-        // keys on its own — see `ShareLinkPatchReq`'s doc comment.
-        password: editClearPassword ? null : editNewPassword.trim() || undefined,
-        expires_ns: editExpiry === 'keep' ? undefined : expiryToNs(editExpiry, editExpiryDate) ?? null,
-        max_downloads: maxDownloads,
-        label: editLabel.trim() || null
+      await updateMut.mutateAsync({
+        id: link.id,
+        patch: {
+          perms: { read: editRead, download: editDownload },
+          // Absent (`undefined`) leaves the password alone; `null` clears it;
+          // a non-empty value replaces it. `JSON.stringify` drops `undefined`
+          // keys on its own; see `ShareLinkPatchReq`'s doc comment.
+          password: editClearPassword ? null : editNewPassword.trim() || undefined,
+          expires_ns: editExpiry === 'keep' ? undefined : (expiryToNs(editExpiry, editExpiryDate) ?? null),
+          max_downloads: maxDownloads,
+          label: editLabel.trim() || null
+        }
       })
       editingId = null
-      await load()
-    } catch (err) {
-      loadError = describeApiError(err, t('share.could_not_update_share_link'))
-    } finally {
-      saving = false
+    } catch {
+      // `loadError` reads `updateMut.error`; the form stays open to retry.
     }
   }
 
@@ -264,10 +272,9 @@
     // link is revoked, so it goes with it.
     if (justCreated?.id === id) justCreated = null
     try {
-      await api.shareDelete(id)
-      await load()
-    } catch (err) {
-      loadError = describeApiError(err, t('share.could_not_revoke_share_link'))
+      await deleteMut.mutateAsync(id)
+    } catch {
+      // `loadError` reads `deleteMut.error`.
     }
   }
 </script>
@@ -338,10 +345,10 @@
                     <!-- No download count: this link can't serve one. -->
                     {t('share.kind_drop')}
                   {:else}
-                    {link.perms.read ? t('common.read') : ''}{link.perms.read && link.perms.download ? ' · ' : ''}{link.perms.download ? t('common.download') : ''}
-                  · {t('share.used_times', { count: link.max_downloads ? `${link.downloads}/${link.max_downloads}` : link.downloads })}
+                    {link.perms.read ? t('common.read') : ''}{link.perms.read && link.perms.download ? ' - ' : ''}{link.perms.download ? t('common.download') : ''}
+                  - {t('share.used_times', { count: link.max_downloads ? `${link.downloads}/${link.max_downloads}` : link.downloads })}
                   {/if}
-                  {#if link.expires_ns}· {t('share.expires', { date: formatDateNs(link.expires_ns) })}{:else}· {t('share.never_expires')}{/if}
+                  {#if link.expires_ns}- {t('share.expires', { date: formatDateNs(link.expires_ns) })}{:else}- {t('share.never_expires')}{/if}
                 </span>
                 <span class="sc-share__item-meta">{t('share.created', { date: formatDateNs(link.created_ns) })}</span>
               </div>

@@ -1,9 +1,9 @@
-// web/src/lib/api/events-transport.ts — WebSocket transport for
+// WebSocket transport for
 // `GET /api/v1/events` (`go/internal/httpapi/ws/ws.go`). Split out
 // from `state/events.ts` the same way `upload/transport.ts` is split from
 // `state/upload-tray.svelte.ts`: this file only knows how to open a socket
 // and shuttle JSON frames. Reconnection policy, which paths are "wanted",
-// and what an `inval` should do about it belong one layer up — this never
+// and what an `inval` should do about it belong one layer up; this never
 // reconnects on its own, so the caller's backoff is the only backoff.
 import { isMock } from './client'
 import type { ClientMsg, ServerMsg } from './types'
@@ -12,7 +12,7 @@ export interface EventsTransport {
   /** Opens (or re-opens) the socket. `onMessage` fires per decoded frame;
    *  `onOpen`/`onClose` bracket the connection's lifetime. A frame that
    *  fails to parse is dropped rather than torn down as a connection
-   *  error — a malformed frame from a server this client already
+   *  error: a malformed frame from a server this client already
    *  authenticated to is a server-side bug, not a reason to lose an
    *  otherwise-healthy socket and everyone's live subscriptions with it. */
   connect(onMessage: (msg: ServerMsg) => void, onOpen: () => void, onClose: () => void): void
@@ -54,7 +54,7 @@ class WsEventsTransport implements EventsTransport {
     ws.addEventListener('close', onClose)
     // A connection-level error is always followed by a `close` event too
     // (part of the WebSocket spec), so `onClose` alone drives the caller's
-    // reconnect — a separate `error` listener would just be a second path
+    // reconnect: a separate `error` listener would just be a second path
     // to the same decision, so this exists only to stop the browser from
     // logging an "uncaught" event for something the `close` handler already
     // deals with.
@@ -66,7 +66,7 @@ class WsEventsTransport implements EventsTransport {
   }
 
   close(): void {
-    // A close the caller asked for, not the server — drop the listeners
+    // A close the caller asked for, not the server: drop the listeners
     // first so this doesn't fire the caller's own `onClose` and trigger a
     // reconnect for a socket it just told to go away.
     if (this.#ws) {
@@ -81,7 +81,7 @@ class WsEventsTransport implements EventsTransport {
  *  comment) and there is no multi-client scenario to simulate within one
  *  browser tab, so this is a deliberate no-op rather than a fake event
  *  source: `onOpen` never fires, `send` is inert, and `EventsHub` built
- *  against it just permanently believes it's still connecting — which is
+ *  against it just permanently believes it's still connecting, which is
  *  the correct mock-mode behavior (nothing calls it a live connection that
  *  isn't one). */
 class NullEventsTransport implements EventsTransport {

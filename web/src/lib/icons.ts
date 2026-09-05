@@ -1,9 +1,8 @@
 // Every icon the app uses, in one place.
 //
-// These come from Material Symbols (shipped with m3-svelte, so no extra
-// dependency) rather than the 33 hand-drawn SVG paths this file replaced.
-// Each icon is its own module, so the bundler drops the ~36k we don't touch —
-// the initial-JS budget in still holds.
+// These come from Material Symbols, shipped with m3-svelte so there is no
+// extra dependency. Each icon is its own module, so the bundler drops the
+// roughly 36k this app does not touch and the initial-JS budget still holds.
 //
 // The keyed record exists because several call sites pick an icon at runtime
 // (`icons[iconName(entry)]`); import the named export directly when the icon

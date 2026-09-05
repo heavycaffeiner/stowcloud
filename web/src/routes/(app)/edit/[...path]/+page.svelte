@@ -13,8 +13,11 @@
   import { t } from '../../../../lib/i18n'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
-  import { api, type Entry } from '../../../../lib/api/client'
+  import { createQuery, createMutation } from '@tanstack/svelte-query'
   import { normalizePath, parentOf } from '../../../../lib/api/path-utils'
+  import { queryClient } from '../../../../lib/query/client'
+  import { keys } from '../../../../lib/query/keys'
+  import { statQuery, fileContentQuery, writeFileMutation } from '../../../../lib/query/files'
   import Button from '../../../../lib/ui/Button.svelte'
   import CodeEditor from '../../../../lib/ui/CodeEditor.svelte'
   import EditConflictDialog from '../../../../lib/ui/EditConflictDialog.svelte'
@@ -25,75 +28,62 @@
   import Snackbar from '../../../../lib/ui/Snackbar.svelte'
   import { formatBytes } from '../../../../lib/format/bytes'
   import { describeApiError } from '../../../../lib/api/error-text'
-  import { createEditorStore, isDirty, canSave } from '../../../../lib/store/slices/editor.slice'
-  import { useRunesStore } from '../../../../lib/store/core/bridge.svelte'
 
   const rawPath = $derived(page.params.path ?? '')
   const path = $derived(normalizePath(`/${rawPath}`))
   const fileName = $derived(path.slice(path.lastIndexOf('/') + 1) || path)
   const parentPath = $derived(parentOf(path))
 
-  const editorStore = createEditorStore()
-  const snap = useRunesStore(editorStore)
+  const meta = createQuery(() => statQuery(path))
+  const isDir = $derived(meta.data?.kind === 'dir')
+  const file = createQuery(() => fileContentQuery(isDir ? null : meta.data))
 
-  const entry = $derived(snap.current.entry)
-  const content = $derived(snap.current.content)
-  const loading = $derived(snap.current.status === 'loading')
-  const loadError = $derived(snap.current.errorMessage)
-  const saving = $derived(snap.current.isSaving)
-  const dirty = $derived(isDirty(snap.current))
+  const entry = $derived(isDir ? null : (meta.data ?? null))
   const readOnly = $derived(entry ? !entry.perms.write : true)
-  const conflict = $derived(snap.current.conflict)
-  let snackbarMsg = $state<string | null>(null)
-  let loadedPath = ''
-  $effect(() => {
-    if (path !== loadedPath) {
-      loadedPath = path
-      void load(path)
-    }
-  })
+  const loading = $derived(meta.isPending || (!isDir && file.isPending))
+  const loadError = $derived(
+    isDir
+      ? t('editor.folder_cannot_opened_editor')
+      : meta.error
+        ? describeApiError(meta.error, t('editor.could_not_load_file'))
+        : file.error
+          ? describeApiError(file.error, t('editor.could_not_load_file'))
+          : null
+  )
 
-  async function load(p: string): Promise<void> {
-    editorStore.dispatch({ type: 'LOAD_START' })
-    try {
-      const statRes = await api.stat(p)
-      if (statRes.kind === 'dir') {
-        editorStore.dispatch({ type: 'LOAD_ERROR', message: t('editor.folder_cannot_opened_editor') })
-        return
-      }
-      const readRes = await api.readFile(statRes)
-      editorStore.dispatch({ type: 'LOAD_SUCCESS', entry: statRes, content: readRes.content })
-    } catch (err) {
-      editorStore.dispatch({
-        type: 'LOAD_ERROR',
-        message: describeApiError(err, t('editor.could_not_load_file'))
-      })
-    }
-  }
+  // The unsaved buffer. `null` means "no local edits": the editor shows the
+  // query's own content, which is the baseline a save compares against.
+  let draft = $state<string | null>(null)
+  const content = $derived(draft ?? file.data?.content ?? '')
+  const dirty = $derived(draft !== null && draft !== (file.data?.content ?? ''))
+
+  const saveMutation = createMutation(() => writeFileMutation())
+  const saving = $derived(saveMutation.isPending)
+  const canSave = $derived(dirty && !saving && entry?.perms.write === true)
+
+  let snackbarMsg = $state<string | null>(null)
+  let conflictOpen = $state(false)
+  let conflictWeak = $state(false)
 
   function onContentChange(text: string): void {
-    editorStore.dispatch({ type: 'SET_CONTENT', content: text })
+    draft = text
   }
+
   async function save(): Promise<void> {
-    if (!canSave(snap.current)) return
-    editorStore.dispatch({ type: 'SAVE_START' })
+    if (!canSave) return
     try {
-      const latest = await api.stat(path)
-      if (snap.current.etag !== null && latest.etag !== snap.current.etag) {
-        editorStore.dispatch({
-          type: 'SAVE_CONFLICT',
-          currentEtag: latest.etag,
-          isWeak: latest.etag_weak
-        })
+      const latest = await queryClient.fetchQuery(statQuery(path))
+      if (meta.data && latest.etag !== meta.data.etag) {
+        conflictWeak = latest.etag_weak
+        conflictOpen = true
         return
       }
-      const updated = await api.writeFile(path, snap.current.content)
-      editorStore.dispatch({ type: 'SAVE_SUCCESS', updated, content: snap.current.content })
+      const updated = await saveMutation.mutateAsync({ path, content })
+      queryClient.setQueryData(keys.pathStat(path), updated)
+      draft = null
       snackbarMsg = t('common.saved')
     } catch (err) {
-      const msg = describeApiError(err, t('common.could_not_save'))
-      editorStore.dispatch({ type: 'SAVE_ERROR', message: msg })
-      snackbarMsg = msg
+      snackbarMsg = describeApiError(err, t('common.could_not_save'))
     }
   }
 
@@ -101,23 +91,22 @@
    *  change. The token comparison is skipped rather than repeated: it already
    *  said the file moved, and somebody read that and asked for this. */
   async function overwriteAfterConflict(): Promise<void> {
-    editorStore.dispatch({ type: 'DISMISS_CONFLICT' })
-    editorStore.dispatch({ type: 'SAVE_START' })
+    conflictOpen = false
     try {
-      const updated = await api.writeFile(path, snap.current.content)
-      editorStore.dispatch({ type: 'SAVE_SUCCESS', updated, content: snap.current.content })
+      const updated = await saveMutation.mutateAsync({ path, content })
+      queryClient.setQueryData(keys.pathStat(path), updated)
+      draft = null
       snackbarMsg = t('editor.overwritten')
     } catch (err) {
-      const msg = describeApiError(err, t('common.could_not_save'))
-      editorStore.dispatch({ type: 'SAVE_ERROR', message: msg })
-      snackbarMsg = msg
+      snackbarMsg = describeApiError(err, t('common.could_not_save'))
     }
   }
 
   /** EditConflictDialog: discard my edits, adopt the latest content+etag. */
   async function reloadAfterConflict(): Promise<void> {
-    editorStore.dispatch({ type: 'DISMISS_CONFLICT' })
-    await load(path)
+    conflictOpen = false
+    draft = null
+    await Promise.all([meta.refetch(), file.refetch()])
     snackbarMsg = t('editor.reloaded_newer_version')
   }
 
@@ -168,10 +157,10 @@
 </div>
 
 <EditConflictDialog
-  weak={conflict?.isWeak ?? false}
-  open={conflict !== null}
+  weak={conflictWeak}
+  open={conflictOpen}
   name={fileName}
-  onclose={() => editorStore.dispatch({ type: 'DISMISS_CONFLICT' })}
+  onclose={() => (conflictOpen = false)}
   onreload={reloadAfterConflict}
   onoverwrite={overwriteAfterConflict}
 />

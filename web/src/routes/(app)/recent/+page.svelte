@@ -13,9 +13,10 @@
   // preview would cost a stat round trip per row for the full Entry the
   // dialog needs.
   import { goto } from '$app/navigation'
-  import { api, ApiError } from '../../../lib/api/client'
-  import { describeApiError } from '../../../lib/api/error-text'
+  import { createQuery } from '@tanstack/svelte-query'
+  import { recentQuery } from '../../../lib/query/files'
   import type { RecentHit } from '../../../lib/api/types'
+  import { describeApiError } from '../../../lib/api/error-text'
   import { formatDateNs, t } from '../../../lib/i18n'
   import { formatBytes } from '../../../lib/format/bytes'
   import { Icon } from 'm3-svelte'
@@ -23,29 +24,10 @@
   import IconButton from '../../../lib/ui/IconButton.svelte'
   import ProgressCircular from '../../../lib/ui/ProgressCircular.svelte'
 
-  let hits = $state<RecentHit[]>([])
-  let loading = $state(true)
-  let loadError = $state<string | null>(null)
-
-  async function load(): Promise<void> {
-    loading = true
-    loadError = null
-    try {
-      const res = await api.recentList()
-      hits = res.hits
-    } catch (err) {
-      loadError = describeApiError(err, t('recent.could_not_load'))
-    } finally {
-      loading = false
-    }
-  }
-
-  // On mount and on an explicit refresh only. The hot-set watcher is capped at
-  // `hot_set_max` directories and watches what is subscribed or recently
-  // touched, so "everything, everywhere" is not a subscription it can serve.
-  $effect(() => {
-    void load()
-  })
+  const recent = createQuery(() => recentQuery())
+  const hits = $derived(recent.data?.hits ?? [])
+  const loading = $derived(recent.isPending)
+  const loadError = $derived(recent.error ? describeApiError(recent.error, t('recent.could_not_load')) : null)
 
   /** The folder holding a hit, as a browse path. */
   function parentOfVpath(vpath: string): string {
@@ -91,7 +73,7 @@
         <Icon icon={icons['chevron-left']} />
       </IconButton>
       <h1>{t('nav.recent')}</h1>
-      <IconButton label={t('common.refresh')} onclick={() => load()}><Icon icon={icons.refresh} /></IconButton>
+      <IconButton label={t('common.refresh')} onclick={() => recent.refetch()}><Icon icon={icons.refresh} /></IconButton>
     </header>
 
     {#if loading}

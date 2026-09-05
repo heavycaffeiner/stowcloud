@@ -1,7 +1,7 @@
 <script lang="ts">
   // Shim onto m3-svelte's snackbar, which is a global singleton driven by a
   // `snackbar(...)` call plus one `<Snackbar />` host mounted in
-  // `(app)/+layout.svelte` — not a per-message component. Pages here still own a
+  // `(app)/+layout.svelte`: not a per-message component. Pages here still own a
   // `snackbarMsg` string, so this forwards it and hands the lifetime
   // (timeout, dismissal, stacking) to the framework, which is why `ondismiss`
   // fires immediately: from that point the message is no longer ours.

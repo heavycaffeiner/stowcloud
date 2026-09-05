@@ -68,7 +68,7 @@ describe('computeWindow', () => {
   })
 
   describe('scale-factor fallback (> ~15M px natural height)', () => {
-    const ITEM_COUNT = 1_000_000 // 1M rows * 48px = 48M px natural — well past the threshold
+    const ITEM_COUNT = 1_000_000 // 1M rows * 48px = 48M px natural, well past the threshold
     const ROW_HEIGHT = 48
 
     it('activates once natural height exceeds the threshold', () => {

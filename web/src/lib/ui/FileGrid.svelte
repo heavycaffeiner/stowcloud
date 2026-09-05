@@ -24,9 +24,9 @@
   // scroll offset from it. A section entirely off-screen renders nothing and
   // asks for nothing.
   //
-  // The split point comes from the server (`browse.dirs`). It cannot be found
-  // client-side: rows load in windows, so the entries either side of the seam
-  // are usually not in memory.
+  // The split point comes from the server (the `dirs` prop). It cannot be
+  // found client-side: rows load in windows, so the entries either side of
+  // the seam are usually not in memory.
   //
   // Same accessibility contract as FileTable: one tab stop (`tabindex=0` on
   // the grid container), `aria-activedescendant` tracks the "virtually
@@ -36,8 +36,10 @@
   // with the Menu key or Shift+F10 on the focused card.
   import { t } from '../i18n'
   import type { Entry } from '../api/client'
-  import type { BrowseState } from '../state/browse.svelte'
-  import { uiState } from '../state/ui.svelte'
+  import type { Perms } from '../api/types'
+  import { ui } from '../store/ui.store'
+  import { selection } from '../store/selection.store'
+  import { view } from '../store/view.store'
   import { formatBytes } from '../format/bytes'
   import {
     computeScaleMapping,
@@ -54,7 +56,13 @@
   import { indicesInRect, type Rect } from './marquee'
 
   interface Props {
-    browse: BrowseState
+    entries: readonly Entry[]
+    total: number
+    dirs: number
+    loading: boolean
+    loadingMore: boolean
+    requestMore: () => void
+    perms: Perms
     onopen: (entry: Entry) => void
     oncontextmenu: (entry: Entry, e: MouseEvent) => void
     onrename?: () => void
@@ -62,7 +70,8 @@
     onsearchfocus?: () => void
   }
 
-  let { browse, onopen, oncontextmenu, onrename, ondelete, onsearchfocus }: Props = $props()
+  let { entries, total, dirs, loading, loadingMore, requestMore, onopen, oncontextmenu, onrename, ondelete, onsearchfocus }: Props =
+    $props()
 
   // 4px-grid card metrics, keyed by the same density control that drives
   // FileTable's row height. Both card types share a width so the two sections
@@ -73,7 +82,7 @@
       compact: { w: 192, folderH: 44, fileH: 176, gap: 8 },
       comfortable: { w: 224, folderH: 52, fileH: 208, gap: 12 },
       spacious: { w: 256, folderH: 60, fileH: 244, gap: 16 }
-    }[browse.density]
+    }[view.state.density]
   )
   const OVERSCAN = 3 // rows, not cells
 
@@ -120,8 +129,8 @@
   }
 
   function topVisibleIndex(): number {
-    if (browse.total === 0) return 0
-    const last = browse.total - 1
+    if (total === 0) return 0
+    const last = total - 1
     if (fileCount > 0 && filesTop > 0 && scrollY >= filesTop) {
       const row = Math.floor((scrollY - filesTop) / fileRowH)
       return Math.min(folderCount + row * columns, last)
@@ -144,8 +153,8 @@
   const availableW = $derived(Math.max(CARD.w, viewportW - 32))
   const columns = $derived(Math.max(1, Math.floor((availableW + CARD.gap) / (CARD.w + CARD.gap))))
   const cardW = $derived(Math.max(120, Math.floor((availableW - (columns - 1) * CARD.gap) / columns)))
-  const folderCount = $derived(Math.min(browse.dirs, browse.total))
-  const fileCount = $derived(Math.max(0, browse.total - folderCount))
+  const folderCount = $derived(Math.min(dirs, total))
+  const fileCount = $derived(Math.max(0, total - folderCount))
   const folderRowH = $derived(CARD.folderH + CARD.gap)
   const fileRowH = $derived(CARD.fileH + CARD.gap)
   const folderRowCount = $derived(sectionRows(folderCount, columns))
@@ -154,10 +163,11 @@
   $effect(() => {
     // Anything that moves one section relative to the other invalidates the
     // measured tops, and none of it arrives as a scroll or resize event:
-    // changing folder shifts the whole grid, changing density or column count
-    // changes the folder section's height and so where the file section
-    // starts. Reading `filesTop` here would loop; these are the inputs.
-    browse.path
+    // a fresh directory's entries are a new array (not just a longer one),
+    // changing density or column count changes the folder section's height
+    // and so where the file section starts. Reading `filesTop` here would
+    // loop; these are the inputs.
+    entries
     folderRowCount
     fileRowCount
     folderRowH
@@ -236,7 +246,7 @@
       for (let c = 0; c < columns; c++) {
         if (base + c >= count) break
         const index = offset + base + c
-        cells.push({ index, entry: browse.rowAt(index) })
+        cells.push({ index, entry: entries[index] })
       }
       out.push({ key: `${prefix}${r}`, ariaRow: ariaBase + r + 1, cells })
     }
@@ -257,21 +267,15 @@
   $effect(() => {
     // One range per section rather than one range spanning both: once the
     // folder section is behind us the two are nowhere near each other, and
-    // their union would be a request for every row in between.
-    const ranges: Array<{ start: number; end: number }> = []
-    if (foldersActive) {
-      ranges.push({
-        start: folderWin.start * columns,
-        end: Math.min(folderCount, folderWin.end * columns)
-      })
-    }
-    if (filesActive) {
-      ranges.push({
-        start: folderCount + fileWin.start * columns,
-        end: Math.min(browse.total, folderCount + fileWin.end * columns)
-      })
-    }
-    browse.scheduleWindows(ranges)
+    // their union would be a request for every row in between. Listings are
+    // a forward-only cursor walk now, so "load the window I am looking at"
+    // becomes "keep asking for the next page until it covers the furthest
+    // range end", guarded on `loadingMore` so a scroll does not spam it.
+    const ends: number[] = []
+    if (foldersActive) ends.push(Math.min(folderCount, folderWin.end * columns))
+    if (filesActive) ends.push(Math.min(total, folderCount + fileWin.end * columns))
+    const furthestEnd = ends.length > 0 ? Math.max(...ends) : 0
+    if (!loadingMore && furthestEnd > entries.length) requestMore()
   })
 
   /** Document Y of the top of the row holding `index`. */
@@ -314,7 +318,7 @@
    * is the same reason they get a window each.
    *
    * Only loaded rows can be named, so a rectangle thrown across an unfetched
-   * gap picks up whatever is in memory. Same limit as `selectRangeTo`.
+   * gap picks up whatever is in memory. Same limit as `selection.range`.
    */
   export function entriesInRect(rect: Rect): Entry[] {
     // 16px of `padding-inline` on `.sc-file-grid__window`, and the cards are
@@ -339,33 +343,39 @@
     ]
     const out: Entry[] = []
     for (const i of hits) {
-      const entry = browse.rowAt(i)
+      const entry = entries[i]
       if (entry) out.push(entry)
     }
     return out
   }
 
-  function onCardClick(e: MouseEvent, entry: Entry): void {
+  /** Rows the range/all/extend actions can name: only what has actually
+   *  loaded, same limit `selection.range` itself documents. */
+  const loadedNames = $derived(entries.map((e) => e.name))
+
+  const focusedName = $derived(entries[selection.state.focused ?? -1]?.name ?? null)
+
+  function onCardClick(e: MouseEvent, entry: Entry, index: number): void {
     if (e.shiftKey) {
-      browse.selectRangeTo(entry)
+      selection.range(loadedNames, entry.name)
       return
     }
     if (e.ctrlKey || e.metaKey) {
-      browse.toggle(entry)
+      selection.toggle(entry.name, index)
       return
     }
     // A plain click selects, a double click opens. Same rule as
     // `FileTable.svelte`'s `onRowClick`, so the two views answer the same
     // gesture the same way.
-    browse.selectOnly(entry)
+    selection.only(entry.name, index)
   }
 
   // Same reasoning as FileRow.svelte's checkbox: without an independent
   // toggle target a touch user has no way to build a multi-selection at all,
   // there being no modifier key to hold on a phone.
-  function onCheckboxClick(e: MouseEvent, entry: Entry): void {
+  function onCheckboxClick(e: MouseEvent, entry: Entry, index: number): void {
     e.stopPropagation()
-    browse.toggle(entry)
+    selection.toggle(entry.name, index)
   }
 
   /** The kebab opens the same menu a right-click does, aimed at the same
@@ -375,13 +385,24 @@
     oncontextmenu(entry, e)
   }
 
+  /** Moves the roving cursor and, only when extending, ranges to it. A plain
+   *  arrow press moves the cursor without changing the selection. */
+  function moveFocus(delta: number, extend: boolean): void {
+    const next = Math.min(Math.max((selection.state.focused ?? 0) + delta, 0), total - 1)
+    selection.focus(next)
+    if (extend) {
+      const name = entries[next]?.name
+      if (name) selection.range(loadedNames, name)
+    }
+  }
+
   /** Menu key / Shift+F10 on the focused card. The card's kebab is not a tab
    *  stop, so this is how a keyboard reaches the menu; it is positioned from
    *  the card's own box since there is no pointer to position it at. */
   function openMenuForFocused(): void {
-    const index = browse.focusedIndex
+    const index = selection.state.focused
     if (index === null) return
-    const entry = browse.rowAt(index)
+    const entry = entries[index]
     if (!entry) return
     const el = document.getElementById(domId(entry.name))
     if (!el) return
@@ -396,30 +417,30 @@
   }
 
   function onKeydown(e: KeyboardEvent): void {
-    if (browse.total === 0) return
+    if (total === 0) return
 
     switch (e.key) {
       case 'ArrowDown':
       case 'ArrowUp': {
         e.preventDefault()
-        const from = browse.focusedIndex ?? 0
-        const to = verticalTarget(from, e.key === 'ArrowDown' ? 1 : -1, folderCount, browse.total, columns)
-        browse.moveFocus(to - from, e.shiftKey)
-        scrollIndexIntoView(browse.focusedIndex ?? 0)
+        const from = selection.state.focused ?? 0
+        const to = verticalTarget(from, e.key === 'ArrowDown' ? 1 : -1, folderCount, total, columns)
+        moveFocus(to - from, e.shiftKey)
+        scrollIndexIntoView(selection.state.focused ?? 0)
         break
       }
       case 'ArrowRight':
       case 'ArrowLeft': {
         e.preventDefault()
-        browse.moveFocus(e.key === 'ArrowRight' ? 1 : -1, e.shiftKey)
-        scrollIndexIntoView(browse.focusedIndex ?? 0)
+        moveFocus(e.key === 'ArrowRight' ? 1 : -1, e.shiftKey)
+        scrollIndexIntoView(selection.state.focused ?? 0)
         break
       }
       case ' ': {
         e.preventDefault()
-        if (browse.focusedIndex !== null) {
-          const entry = browse.rowAt(browse.focusedIndex)
-          if (entry) browse.toggle(entry)
+        if (selection.state.focused !== null) {
+          const entry = entries[selection.state.focused]
+          if (entry) selection.toggle(entry.name, selection.state.focused)
         }
         break
       }
@@ -427,11 +448,11 @@
       case 'A':
         if (e.ctrlKey || e.metaKey) {
           e.preventDefault()
-          browse.selectAll()
+          selection.all(loadedNames)
         }
         break
       case 'Enter': {
-        const entry = browse.focusedIndex !== null ? browse.rowAt(browse.focusedIndex) : undefined
+        const entry = selection.state.focused !== null ? entries[selection.state.focused] : undefined
         if (entry) onopen(entry)
         break
       }
@@ -451,9 +472,9 @@
         break
       case 'Escape':
         // Keyboard counterpart of clicking the blank area below the listing.
-        if (browse.selection.size > 0) {
+        if (selection.state.names.size > 0) {
           e.preventDefault()
-          browse.clearSelection()
+          selection.clear()
         }
         break
       case 'Delete':
@@ -475,7 +496,7 @@
     )
   )
   const activeDescendant = $derived(
-    browse.focusedName && renderedNames.has(browse.focusedName) ? domId(browse.focusedName) : undefined
+    focusedName && renderedNames.has(focusedName) ? domId(focusedName) : undefined
   )
 
   function iconName(entry: Entry): IconName {
@@ -492,20 +513,20 @@
   bind:this={viewportEl}
   bind:clientWidth={viewportW}
   class="sc-file-grid"
-  class:sc-file-grid--reserve-bar={uiState.compact}
-  class:sc-file-grid--reserve-selection={browse.selection.size > 0}
-  data-density={browse.density}
+  class:sc-file-grid--reserve-bar={ui.state.compact}
+  class:sc-file-grid--reserve-selection={selection.state.names.size > 0}
+  data-density={view.state.density}
   role="grid"
   aria-multiselectable="true"
   aria-rowcount={folderRowCount + fileRowCount}
   aria-colcount={columns}
   aria-label={t('grid.file_grid')}
   aria-activedescendant={activeDescendant}
-  aria-busy={browse.loadingWindow}
+  aria-busy={loadingMore}
   tabindex="0"
   onkeydown={onKeydown}
 >
-  {#if browse.total === 0 && !browse.loading}
+  {#if total === 0 && !loading}
     <p class="sc-file-grid__empty">{t('common.folder_empty')}</p>
   {:else}
     {#if folderCount > 0}
@@ -538,13 +559,13 @@
                   <div
                     id={domId(entry.name)}
                     class="sc-file-grid__card sc-file-grid__card--folder m3-layer"
-                    class:sc-file-grid__card--selected={browse.selection.has(entry.name)}
-                    class:sc-file-grid__card--focused={browse.focusedName === entry.name}
+                    class:sc-file-grid__card--selected={selection.state.names.has(entry.name)}
+                    class:sc-file-grid__card--focused={focusedName === entry.name}
                     role="gridcell"
                     aria-colindex={col + 1}
-                    aria-selected={browse.selection.has(entry.name)}
+                    aria-selected={selection.state.names.has(entry.name)}
                     style:width="{cardW}px"
-                    onclick={(e) => onCardClick(e, entry)}
+                    onclick={(e) => onCardClick(e, entry, cell.index)}
                     ondblclick={() => onopen(entry)}
                     oncontextmenu={(e) => {
                       e.preventDefault()
@@ -554,12 +575,12 @@
                     }}
                   >
                     <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-                    <span class="sc-file-grid__check sc-touch-target" onclick={(e) => onCheckboxClick(e, entry)} ondblclick={(e) => e.stopPropagation()}>
+                    <span class="sc-file-grid__check sc-touch-target" onclick={(e) => onCheckboxClick(e, entry, cell.index)} ondblclick={(e) => e.stopPropagation()}>
                       <!-- Inert input, click owned by the card (see FileRow). -->
                       <Checkbox>
                         <input
                           type="checkbox"
-                          checked={browse.selection.has(entry.name)}
+                          checked={selection.state.names.has(entry.name)}
                           tabindex="-1"
                           aria-label={t('common.select', { name: entry.name })}
                           onchange={() => {}}
@@ -630,13 +651,13 @@
                   <div
                     id={domId(entry.name)}
                     class="sc-file-grid__card sc-file-grid__card--file m3-layer"
-                    class:sc-file-grid__card--selected={browse.selection.has(entry.name)}
-                    class:sc-file-grid__card--focused={browse.focusedName === entry.name}
+                    class:sc-file-grid__card--selected={selection.state.names.has(entry.name)}
+                    class:sc-file-grid__card--focused={focusedName === entry.name}
                     role="gridcell"
                     aria-colindex={col + 1}
-                    aria-selected={browse.selection.has(entry.name)}
+                    aria-selected={selection.state.names.has(entry.name)}
                     style:width="{cardW}px"
-                    onclick={(e) => onCardClick(e, entry)}
+                    onclick={(e) => onCardClick(e, entry, cell.index)}
                     ondblclick={() => onopen(entry)}
                     oncontextmenu={(e) => {
                       e.preventDefault()
@@ -646,11 +667,11 @@
                   >
                     <div class="sc-file-grid__head">
                       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-                      <span class="sc-file-grid__check sc-touch-target" onclick={(e) => onCheckboxClick(e, entry)} ondblclick={(e) => e.stopPropagation()}>
+                      <span class="sc-file-grid__check sc-touch-target" onclick={(e) => onCheckboxClick(e, entry, cell.index)} ondblclick={(e) => e.stopPropagation()}>
                         <Checkbox>
                           <input
                             type="checkbox"
-                            checked={browse.selection.has(entry.name)}
+                            checked={selection.state.names.has(entry.name)}
                             tabindex="-1"
                             aria-label={t('common.select', { name: entry.name })}
                             onchange={() => {}}

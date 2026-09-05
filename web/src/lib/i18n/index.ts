@@ -1,12 +1,11 @@
-// web/src/lib/i18n/index.ts —
-// ko default + en, Intl for dates/relative-time/numbers.
+// Korean by default plus English, with Intl for dates, relative time and
+// numbers.
 //
 // A call site names a key (`t('nav.files')`); the Korean and English text
 // both live in catalogues, and neither language is privileged in the code.
-// The alternative — using the Korean source string as its own key — was
-// tried and removed: it makes `t()` a substitution table over one hard-coded
-// language, so a Korean copy edit silently orphans its English, and the
-// source language can never be swapped out.
+// Using the Korean source string as its own key makes `t()` a substitution
+// table over one hard-coded language, so a Korean copy edit silently orphans
+// its English and the source language can never be swapped out.
 //
 // `web/tools/i18n-check.mjs` fails the build when a key used at a call site
 // is missing from either catalogue, when a catalogue holds a key nothing
@@ -28,9 +27,9 @@ export function currentLocale(): Locale {
  * `key` is a dotted catalogue key. `params` substitutes `{name}` holes, which
  * must appear in every language's text for that key.
  *
- * The fallback chain is locale → ko → the key itself. For a literal key the
- * checker refuses a build where either fallback would be reached; the last
- * hop only ever fires for a key that reaches `t()` through a variable — a
+ * The fallback chain is locale, then ko, then the key itself. For a literal
+ * key the checker refuses a build where either fallback would be reached; the
+ * last hop only ever fires for a key that reaches `t()` through a variable, a
  * server-sent `reason_key` this build has never heard of, say, which means
  * the client is older than the server and rendering the key is the honest
  * answer.
@@ -43,7 +42,7 @@ export function t(key: string, params?: Record<string, string | number>): string
   return s
 }
 
-/** BCP 47 tag for the current locale — what `Intl` takes, and what the root
+/** BCP 47 tag for the current locale: what `Intl` takes, and what the root
  *  layout writes into `<html lang>`. */
 export function localeTag(): string {
   return i18nState.locale === 'ko' ? 'ko-KR' : 'en-US'
@@ -80,8 +79,8 @@ export function formatNumber(n: number): string {
 }
 
 /**
- * A rough duration in the unit a person would say out loud — "3 minutes",
- * "2.5 hours", "45초" — for estimates, where a stopwatch reading like
+ * A rough duration in the unit a person would say out loud ("3 minutes",
+ * "2.5 hours", "45초") for estimates, where a stopwatch reading like
  * "1h 12m 04s" implies a precision the number does not have.
  *
  * `Intl` supplies both the unit word and its plural, so this needs no
@@ -89,7 +88,7 @@ export function formatNumber(n: number): string {
  * plural forms at all.
  */
 export function formatDuration(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return '—'
+  if (!Number.isFinite(seconds) || seconds < 0) return '-'
   const [unit, value] =
     seconds < 60
       ? (['second', Math.max(1, Math.round(seconds))] as const)

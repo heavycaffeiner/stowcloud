@@ -14,127 +14,110 @@
   // Disconnecting needs the plaintext for a second reason: linking deletes the
   // SMB NT hash derived from the account password (§4.3.6), and the password is
   // the only thing that can derive it again.
+  import { createMutation, createQuery } from '@tanstack/svelte-query'
   import { formatDateNs, t } from '../../i18n'
   import { page } from '$app/state'
-  import { api, ApiError } from '../../api/client'
+  import { ApiError } from '../../api/client'
+  import { describeApiError } from '../../api/error-text'
   import { oidcErrorMessage } from '../../api/oidc'
   import Button from '../Button.svelte'
   import Dialog from '../Dialog.svelte'
   import TextField from '../TextField.svelte'
   import { Icon } from 'm3-svelte'
   import { icons } from '../../icons'
+  import { createSession, oidcConfigQuery } from '../../query/session'
+  import { oidcLinkStartMutation, oidcUnlinkMutation } from '../../query/account'
 
-  interface Props {
-    /** `GET /api/auth/oidc/config`'s `enabled`. False with `linked` true is a
-     *  real state, not a contradiction: an account stays attached to a
-     *  provider the deployment has since switched off, and that is exactly
-     *  when being able to disconnect matters. */
-    configured: boolean
-    /** `display_name`. An administrator types it and may leave it empty, so no
-     *  message may assume it is there. */
-    providerName: string
-    /** From `GET /api/auth/session`'s `oidc` object. */
-    linked: boolean
-    subjectHint?: string
-    linkedNs?: string
-    /** Whether this account holds a separate SMB-only password. Disconnecting
-     *  is the exact undo of the link that closed the account password as an
-     *  SMB credential, so it replaces one, and a credential the user set is
-     *  never removed in silence. */
-    smbDedicated?: boolean
-    onchanged?: () => void
-  }
-  let {
-    configured,
-    providerName,
-    linked,
-    subjectHint,
-    linkedNs,
-    smbDedicated = false,
-    onchanged
-  }: Props = $props()
+  const session = createSession()
+  const oidcConfig = createQuery(() => oidcConfigQuery())
+
+  /** `GET /api/auth/oidc/config`'s `enabled`. False with `linked` true is a
+   *  real state, not a contradiction: an account stays attached to a
+   *  provider the deployment has since switched off, and that is exactly
+   *  when being able to disconnect matters. */
+  const configured = $derived(oidcConfig.data?.enabled ?? false)
+  /** An administrator types `display_name` and may leave it empty, so no
+   *  message may assume it is there. */
+  const providerLabel = $derived(oidcConfig.data?.display_name || t('oidc.identity_provider'))
+
+  /** From `GET /api/auth/session`'s `oidc` object. */
+  const linked = $derived(session.data?.oidc.linked ?? false)
+  const subjectHint = $derived(session.data?.oidc.subject_hint)
+  const linkedNs = $derived(session.data?.oidc.linked_ns)
+  /** Whether this account holds a separate SMB-only password. Disconnecting
+   *  is the exact undo of the link that closed the account password as an
+   *  SMB credential, so it replaces one, and a credential the user set is
+   *  never removed in silence. */
+  const smbDedicated = $derived(session.data?.user.smb_credential === 'dedicated')
 
   // §5-2 table B: a link-mode callback that failed redirects here with the
   // code in the query string. `+page.svelte`'s tab sync leaves the query alone,
   // so this survives the hash rewrite that lands on the security tab.
   const flowError = $derived(oidcErrorMessage(page.url.searchParams.get('oidc_error')))
 
-  const providerLabel = $derived(providerName || t('oidc.identity_provider'))
-
   let connectOpen = $state(false)
   let connectPassword = $state('')
-  let connectError = $state<string | null>(null)
-  let connecting = $state(false)
+  const link = createMutation(() => oidcLinkStartMutation())
+  const connectError = $derived(link.error ? describeError(link.error, t('oidc.could_not_start_connection_try')) : null)
 
   let disconnectOpen = $state(false)
   let disconnectPassword = $state('')
-  let disconnectError = $state<string | null>(null)
-  let disconnecting = $state(false)
-  /** This section's own live region, for the one thing disconnecting does that
-   *  the user did not come here to do. */
+  const unlink = createMutation(() => oidcUnlinkMutation())
+  const disconnectError = $derived(unlink.error ? describeError(unlink.error, t('oidc.could_not_disconnect_try_again')) : null)
 
   function openConnect(): void {
     connectPassword = ''
-    connectError = null
+    link.reset()
     connectOpen = true
   }
 
   function closeConnect(): void {
-    if (connecting) return
+    if (link.isPending) return
     connectOpen = false
     connectPassword = ''
-    connectError = null
   }
 
-  async function confirmConnect(): Promise<void> {
-    connectError = null
-    connecting = true
-    try {
+  function confirmConnect(): void {
+    link.mutate(
       // Where the finished flow should land. Named explicitly, because the
       // server's default is the root: without it, connecting a provider from
       // the settings screen dropped the user on the file browser.
-      const { authorize_url } = await api.oidcLinkStart(connectPassword, window.location.pathname)
-      // The browser has to actually arrive at the provider's login page, so
-      // this is a full navigation. `authorize_url` comes from the server's own
-      // URL builder, never from anything typed here.
-      window.location.href = authorize_url
-    } catch (err) {
-      connectError = describeError(err, t('oidc.could_not_start_connection_try'))
-      connecting = false
-    }
+      { password: connectPassword, returnTo: window.location.pathname },
+      {
+        onSuccess: ({ authorize_url }) => {
+          // The browser has to actually arrive at the provider's login page,
+          // so this is a full navigation. `authorize_url` comes from the
+          // server's own URL builder, never from anything typed here.
+          window.location.href = authorize_url
+        }
+      }
+    )
   }
 
   function openDisconnect(): void {
     disconnectPassword = ''
-    disconnectError = null
+    unlink.reset()
     disconnectOpen = true
   }
 
   function closeDisconnect(): void {
-    if (disconnecting) return
+    if (unlink.isPending) return
     disconnectOpen = false
     disconnectPassword = ''
-    disconnectError = null
   }
 
-  async function confirmDisconnect(): Promise<void> {
-    disconnectError = null
-    disconnecting = true
-    try {
-      await api.oidcUnlink(disconnectPassword)
-      disconnectOpen = false
-      // No announcement about the file-sharing password: the server does
-      // not report one, and it could not. Enrolling or disconnecting
-      // changes what is published, never what is stored, and a single
-      // row holds the hash whether it came from the account password or
-      // a separate one, so the two are indistinguishable afterwards. The
-      // sharing section below reads the real state.
-      onchanged?.()
-    } catch (err) {
-      disconnectError = describeError(err, t('oidc.could_not_disconnect_try_again'))
-    } finally {
-      disconnecting = false
-    }
+  function confirmDisconnect(): void {
+    unlink.mutate(disconnectPassword, {
+      onSuccess: () => {
+        disconnectOpen = false
+        // No announcement about the file-sharing password: the server does
+        // not report one, and it could not. Enrolling or disconnecting
+        // changes what is published, never what is stored, and a single
+        // row holds the hash whether it came from the account password or
+        // a separate one, so the two are indistinguishable afterwards. The
+        // sharing section below reads the real state.
+      }
+    })
   }
 
   function describeError(err: unknown, fallback: string): string {
@@ -150,7 +133,7 @@
           return t('oidc.account_has_no_connected_identity')
       }
     }
-    return fallback
+    return describeApiError(err, fallback)
   }
 </script>
 
@@ -201,8 +184,8 @@
     autocomplete="current-password"
   />
   {#snippet actions()}
-    <Button variant="text" onclick={closeConnect} disabled={connecting}>{t('common.cancel')}</Button>
-    <Button variant="filled" disabled={!connectPassword} loading={connecting} onclick={confirmConnect}>
+    <Button variant="text" onclick={closeConnect} disabled={link.isPending}>{t('common.cancel')}</Button>
+    <Button variant="filled" disabled={!connectPassword} loading={link.isPending} onclick={confirmConnect}>
       {t('common.continue')}
     </Button>
   {/snippet}
@@ -225,8 +208,8 @@
     autocomplete="current-password"
   />
   {#snippet actions()}
-    <Button variant="text" onclick={closeDisconnect} disabled={disconnecting}>{t('common.cancel')}</Button>
-    <Button variant="filled" disabled={!disconnectPassword} loading={disconnecting} onclick={confirmDisconnect}>
+    <Button variant="text" onclick={closeDisconnect} disabled={unlink.isPending}>{t('common.cancel')}</Button>
+    <Button variant="filled" disabled={!disconnectPassword} loading={unlink.isPending} onclick={confirmDisconnect}>
       {t('oidc.disconnect')}
     </Button>
   {/snippet}

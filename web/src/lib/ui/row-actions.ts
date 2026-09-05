@@ -1,4 +1,4 @@
-// row-actions.ts — the one definition of "what can be done to the selected
+// The one definition of "what can be done to the selected
 // rows", shared by the right-click menu and the selection bar.
 //
 // It lives in its own module rather than inside the browse page so that the

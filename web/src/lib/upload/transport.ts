@@ -1,4 +1,4 @@
-// web/src/lib/upload/transport.ts — TUS 1.0.0 + Sc-Random-Access transport.
+// TUS 1.0.0 + Sc-Random-Access transport.
 // Runs inside the dedicated upload Worker. Picks mock
 // vs real the same way api/client.ts does, via VITE_API_MOCK, so the worker
 // never needs a live backend during frontend development either.
@@ -9,7 +9,7 @@ const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
 const BASE = (import.meta.env.VITE_API_BASE ?? '') + '/api/v1'
 
 // The session cookie is `__Host-sc_sid` (auth) and state-changing requests
-// additionally need the `Sc-Csrf` header — the same
+// additionally need the `Sc-Csrf` header: the same
 // requirement `api/http.ts` satisfies for every other endpoint. This module
 // runs inside the dedicated upload Worker though, a separate module realm
 // from `http.ts`'s module-scoped `csrfToken`, so the token can't just be
@@ -101,7 +101,7 @@ export interface Transport {
   createSession(p: CreateSessionParams): Promise<CreatedSession>
   patchChunk(id: string, offset: number, body: Blob, signal?: AbortSignal): Promise<{ offset: number }>
   /** `chunkSize` is the session's server-fixed chunk size (`Sc-Chunk-Size`,
-   * ) — undefined only if the backend predates the
+   * ): undefined only if the backend predates the
    *  header, in which case the caller falls back to its own remembered
    *  value. */
   headSession(id: string): Promise<{ offset: number; totalSize: number; chunkSize?: number }>
@@ -221,7 +221,7 @@ interface MockSession {
   chunkSize: number // fixed at creation, mirrors the real session's server-fixed value
   received: number // contiguous prefix length; sufficient since real-world chunk
   // completion order is near-sequential and out-of-order gaps are rare in the
-  // mock (no IntervalSet needed client-side either — see chunk-planner.ts).
+  // mock (no IntervalSet needed client-side either, see chunk-planner.ts).
   gaps: Map<number, number> // offset -> length, for out-of-order chunks awaiting the gap to close
 }
 

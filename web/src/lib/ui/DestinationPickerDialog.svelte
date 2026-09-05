@@ -1,18 +1,19 @@
 <script lang="ts">
-  // DestinationPickerDialog — picks the folder a selection is moved or copied
+  // DestinationPickerDialog: picks the folder a selection is moved or copied
   // into. Both operations share one dialog because they share the whole
   // interaction: the only difference is whether the source survives, which is
   // a choice better made *after* seeing where the files are going than before
   // opening two near-identical pickers from two menu entries.
   //
   // The folder list is `FileTreeItem`, the same lazily-expanding node the
-  // browse sidebar uses — a picker with its own tree implementation would be a
+  // browse sidebar uses: a picker with its own tree implementation would be a
   // second thing to keep agreeing with's "/ is not a
   // directory" projection.
-  import { api, type MovePreflight, type Perms } from '../api/client'
+  import { createQuery } from '@tanstack/svelte-query'
   import { destinationProblem, type DestinationProblem } from '../api/path-utils'
+  import { statQuery } from '../query/files'
+  import { createSession } from '../query/session'
   import { t } from '../i18n'
-  import { authState } from '../state/auth.svelte'
   import Button from './Button.svelte'
   import Dialog from './Dialog.svelte'
   import FileTreeItem from './FileTreeItem.svelte'
@@ -26,18 +27,18 @@
   }
   let { open, sources, onclose, onpick }: Props = $props()
 
-  const roots = $derived((authState.session?.roots ?? []).map((r) => ({ path: `/${r.label}`, name: r.label })))
+  const session = createSession()
+  const roots = $derived((session.data?.roots ?? []).map((r) => ({ path: `/${r.label}`, name: r.label })))
 
   let selected = $state<string | null>(null)
-  let preflight = $state<MovePreflight | null>(null)
-  /** What the account may do to the folder that was picked. A destination it
-   *  cannot create in refuses both transfers, and the dialogue used to offer
-   *  them anyway and report the refusal afterwards. */
-  let destPerms = $state<Perms | null>(null)
 
-  // Any item crossing a device turns the whole batch into a copy-then-delete,
-  // so one warning covers the selection.
-  const willCopy = $derived(preflight?.results.some((r) => r.will_copy) ?? false)
+  // What the picked folder allows. Stat rather than a field on the tree node:
+  // the tree navigates by path and carries no rights, and the answer decides
+  // whether either transfer button is live. Guarded by `selected !== null`
+  // rather than trusting the query's own `enabled`, so a `''` cache entry
+  // from somewhere else in the app can never read as this folder's rights.
+  const destStat = createQuery(() => ({ ...statQuery(selected ?? ''), enabled: open && selected !== null }))
+  const destPerms = $derived(selected !== null ? (destStat.data?.perms ?? null) : null)
 
   const problem = $derived<DestinationProblem | null>(selected ? destinationProblem(selected, sources) : null)
   const canWriteDest = $derived(destPerms?.create ?? false)
@@ -47,56 +48,7 @@
   const canCopy = $derived(selected !== null && problem !== 'into_itself' && canWriteDest)
 
   $effect(() => {
-    if (!open) {
-      selected = null
-      preflight = null
-      destPerms = null
-    }
-  })
-
-  // What the picked folder allows. Stat rather than a field on the tree node:
-  // the tree navigates by path and carries no rights, and the answer decides
-  // whether either transfer button is live.
-  $effect(() => {
-    const dest = selected
-    destPerms = null
-    if (!dest) return
-    let live = true
-    api
-      .stat(dest)
-      .then((e) => {
-        if (live) destPerms = e.perms
-      })
-      .catch(() => {
-        // Unreadable is also unwritable, so the buttons stay disabled and the
-        // status line says the folder cannot be written.
-      })
-    return () => {
-      live = false
-    }
-  })
-
-  // Asks the server whether this move is a rename or a cross-device
-  // copy-then-delete *before* the user commits — see `MovePreflight`. Each
-  // answer is claimed by the selection that asked for it, so a slow reply for
-  // a folder the user has already moved on from cannot overwrite a newer one.
-  $effect(() => {
-    const dest = selected
-    preflight = null
-    if (!dest || !canMove) return
-    let live = true
-    api
-      .movePreflight({ paths: sources, dest, on_conflict: 'fail' })
-      .then((p) => {
-        if (live) preflight = p
-      })
-      .catch(() => {
-        // The notice is an extra courtesy; a server that will not answer it
-        // still answers the move itself, and its errors belong there.
-      })
-    return () => {
-      live = false
-    }
+    if (!open) selected = null
   })
 </script>
 
@@ -116,9 +68,9 @@
         {/each}
       </ul>
     </div>
-    <!-- `aria-live`: the selection, the reason a button is disabled and the
-         cross-device warning all appear here without moving focus, so a screen
-         reader user gets nothing at all unless the region announces itself. -->
+    <!-- `aria-live`: the selection and the reason a button is disabled both
+         appear here without moving focus, so a screen reader user gets
+         nothing at all unless the region announces itself. -->
     <p
       class="sc-dest__status"
       class:sc-dest__status--warn={problem !== null || (selected !== null && destPerms !== null && !canWriteDest)}
@@ -136,11 +88,6 @@
         {t('dest.no_folder_chosen')}
       {/if}
     </p>
-    {#if willCopy}
-      <p class="sc-dest__status sc-dest__status--notice">
-        {t('dest.cross_device_move_rewrites')}
-      </p>
-    {/if}
   </div>
   {#snippet actions()}
     <Button variant="text" onclick={onclose}>{t('common.cancel')}</Button>
@@ -189,11 +136,5 @@
   }
   .sc-dest__status--warn {
     color: var(--m3c-error);
-  }
-  /* The cross-device notice is a caution, not a refusal — the move is still
-     allowed, it will just take real time. Error red would read as "this
-     failed" for something the user is about to be allowed to do. */
-  .sc-dest__status--notice {
-    color: var(--m3c-tertiary);
   }
 </style>

@@ -1,8 +1,8 @@
-// web/src/lib/upload/chunk-planner.ts — pure upload-chunk planning.
+// Pure upload-chunk planning.
 // /, §8.
 //
 // Deliberately does not use an IntervalSet: a client only ever resumes from
-// a single contiguous prefix (the value HEAD returns, per — "HEAD always returns the 0-based contiguous run end"), so planning
+// a single contiguous prefix (the value HEAD returns, per: "HEAD always returns the 0-based contiguous run end"), so planning
 // is just "list fixed-size chunks from resumeOffset to totalSize". No
 // merge/overlap bookkeeping is needed on the client.
 
@@ -90,7 +90,7 @@ interface TrackedFile extends FileTask {
 /**
  * Hands out chunk work across many concurrently-uploading files under a
  * single GLOBAL concurrency cap ("parallel by chunk,
- * not by file" — one large file alone still gets full parallelism).
+ * not by file": one large file alone still gets full parallelism).
  * Round-robins across files so no single huge file starves the others.
  */
 export class ChunkScheduler {

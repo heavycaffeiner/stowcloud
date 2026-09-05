@@ -1,9 +1,9 @@
 <script lang="ts">
-  // CodeEditor.svelte — CodeMirror 6 wrapper for `/edit/[...path]`.
+  // CodeMirror 6 wrapper for `/edit/[...path]`.
   //
   // CodeMirror 6 is dynamically imported, never in the initial bundle. Every
   // `codemirror`/`@codemirror/*` import below is inside `onMount`'s async
-  // callback, not at module top level — Vite/Rollup only pulls those chunks
+  // callback, not at module top level: Vite/Rollup only pulls those chunks
   // in once this component actually mounts (i.e. once the `/edit` route is
   // navigated to and past its own permission/load gate), never as part of
   // the `/b` browse route's bundle.
@@ -12,13 +12,13 @@
   import type { EditorView } from '@codemirror/view'
 
   interface Props {
-    /** Authoritative external value — e.g. the freshly-fetched content after
+    /** Authoritative external value, e.g. the freshly-fetched content after
      *  a reload following a save conflict. Changing this
      *  after mount replaces the live document; the component's own edits
      *  (via `onchange`) don't count as an external change (see `lastEcho`). */
     value: string
     /** Used only for language auto-detection by extension (`@codemirror/language-data`'s
-     *  `LanguageDescription.matchFilename`) — never sent anywhere. */
+     *  `LanguageDescription.matchFilename`), never sent anywhere. */
     filename: string
     readOnly?: boolean
     onchange: (text: string) => void

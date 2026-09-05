@@ -1,5 +1,5 @@
 <script lang="ts">
-  // ConflictDialog — If-Match mismatch on move/copy/rename.
+  // If-Match mismatch on move/copy/rename.
   import { t } from '../i18n'
   import Button from './Button.svelte'
   import Dialog from './Dialog.svelte'

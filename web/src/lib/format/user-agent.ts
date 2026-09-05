@@ -1,8 +1,8 @@
-// web/src/lib/format/user-agent.ts — turns a raw `User-Agent` header into a
-// short "OS · Browser" label for the active-sessions list (settings' §3.2,
+// Turns a raw `User-Agent` header into a
+// short "OS - Browser" label for the active-sessions list (settings' §3.2,
 // ). The raw string just started arriving for real (the backend
-// previously never recorded it, so this column always read "unknown device")
-// — but a 100+ character UA string wrapped across several lines is not
+// previously never recorded it, so this column always read "unknown device"),
+// but a 100+ character UA string wrapped across several lines is not
 // actually more useful to a user than the placeholder was.
 //
 // A regex-based best-effort, not a full UA-parser dependency: this is
@@ -41,7 +41,7 @@ export function describeUserAgent(raw: string | null | undefined): string {
   if (!raw || !raw.trim()) return t('session.unknown_device')
   const os = detectOs(raw)
   const browser = detectBrowser(raw)
-  if (os && browser) return `${os} · ${browser}`
+  if (os && browser) return `${os} - ${browser}`
   if (os) return os
   if (browser) return browser
   return raw

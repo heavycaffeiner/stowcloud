@@ -1,9 +1,9 @@
-// web/src/lib/api/error-text.ts — the one place a server-reported failure
+// The one place a server-reported failure
 // turns into a sentence.
 //
 // The server never sends prose meant for a screen. A refusal travels as the
-// stable `code` of's envelope, plus — for the validation
-// refusals that need to name a path or a field — a catalogue key and its
+// stable `code` of's envelope, plus (for the validation
+// refusals that need to name a path or a field) a catalogue key and its
 // placeholders in `detail.reason_key` / `detail.reason_params`
 // (`AppError::invalid_keyed`). This module renders that into whatever
 // language the reader picked.
@@ -63,6 +63,10 @@ const SERVER_KEYS = new Set<string>([
   /* i18n */ 'admin.share_vault_size_required',
   /* i18n */ 'admin.share_vault_size_unexpected',
   /* i18n */ 'admin.share_vault_create_immutable',
+  // A share refused to change its encryption setting because it still holds
+  // content: enabling or disabling both require an empty share, since this
+  // server never holds a key that could read what is already stored.
+  /* i18n */ 'encryption.share_not_empty',
   // A folder whose backing disk is not there. It names the share and the
   // reason, because "not found" for a path that is perfectly good sends a
   // person looking in the wrong place.
@@ -124,7 +128,7 @@ function params(detail: Record<string, unknown> | undefined): Record<string, str
 }
 
 /** The catalogue key for one wire error, or `null` if it carries neither a
- *  known `reason_key` nor a known `code` — the caller then says what *it*
+ *  known `reason_key` nor a known `code`; the caller then says what *it*
  *  was trying to do, which is more use than a generic "an error occurred". */
 function keyFor(code: string, detail: Record<string, unknown> | undefined): string | null {
   const reasonKey = detail?.reason_key
@@ -147,14 +151,14 @@ export function describeApiError(err: unknown, fallback: string): string {
 }
 
 /** A `SettingsField.readonly_reason_key` from the settings snapshot. An
- *  unknown key renders as itself — visibly odd, which is the right signal for
+ *  unknown key renders as itself, visibly odd, which is the right signal for
  *  a client older than the server it is talking to, and better than leaving a
  *  field the admin cannot edit with no explanation next to it. */
 export function serverKeyText(key: string): string {
   return SERVER_KEYS.has(key) ? t(key) : key
 }
 
-/** Same, for a per-item batch/job failure — the `{code, message, detail}`
+/** Same, for a per-item batch/job failure: the `{code, message, detail}`
  *  object `OpResult.error` carries (`go/internal/httpapi/handler/ops.go` renders it
  *  with the identical `AppError::to_wire` the envelope uses). Returns a
  *  catalogue key and its placeholders rather than text, because the job tray

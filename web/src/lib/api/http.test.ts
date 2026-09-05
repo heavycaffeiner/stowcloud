@@ -1,34 +1,18 @@
-// web/src/lib/api/http.test.ts — httpApi's job wrappers. Every
+// httpApi's job wrappers. Every
 // `fs_move`/`fs_copy`/`fs_delete`/`fs_archive` request always answers
-// `202 { job }` (`go/internal/httpapi/handler`) — there is no synchronous
+// `202 { job }` (`go/internal/httpapi/handler`): there is no synchronous
 // fallback, so `copy`/`del`/`archive` (http.ts) hand that envelope straight
-// back to the caller rather than polling it internally. `state/job-tray
-// .svelte.ts` (via `state/jobs.ts::pollJob`) is the one that tracks it and
-// shows the user live progress instead of the UI just hanging.
+// back to the caller rather than polling it internally. `query/jobs.ts` is
+// what tracks it and shows the user live progress instead of the UI just
+// hanging.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { httpApi } from './http'
-import { ApiError, type SessionInfo } from './types'
-import { authState, setAuthenticated } from '../state/auth.svelte'
+import { ApiError, isSessionDead } from './types'
 import { t } from '../i18n'
 import { batchErrorKey, describeApiError } from './error-text'
+import { invalidateEncryptedShares, setEncryptedSharesSource } from '../crypto/encrypted-shares'
 
-/** A signed-in account, so a refusal has a live session to end. */
-const fakeSession: SessionInfo = {
-  user: {
-    id: 1,
-    name: 'demo',
-    display_name: 'demo account',
-    is_admin: true,
-    totp_enabled: false,
-    smb_opt_out: false,
-    smb_enabled: true
-  },
-  roots: [],
-  csrf: 'csrf-token',
-  limits: { chunk_size: 1, chunk_min: 1, max_file_size: null, parallel: 1 },
-  features: { webdav: true, smb: false, preview: true, trash: true, shares: true, search: 'name' },
-  oidc: { linked: false }
-}
+
 
 /** A 204, which carries no body: the Response constructor refuses one. */
 function noContent(): Response {
@@ -41,6 +25,12 @@ function jsonResponse(status: number, body: unknown): Response {
 
 beforeEach(() => {
   vi.useFakeTimers()
+  // http.ts asks whether a path's share is encrypted before it reads or
+  // writes a file body. These cases are all about the plain path, so the
+  // set is installed empty rather than mocked away: an uninstalled source
+  // fails closed, which is the behaviour a real caller depends on.
+  setEncryptedSharesSource(() => Promise.resolve([]))
+  invalidateEncryptedShares()
 })
 
 afterEach(() => {
@@ -215,11 +205,16 @@ describe('httpApi job wrappers', () => {
 // the editor's save button: the client asks for no condition at all.
 describe('writeFile', () => {
   it('sends the file as the body and never a condition', async () => {
+    // One call, not two: the encryption set is installed in beforeEach, so
+    // asking whether the share is encrypted costs no request here. Pinning
+    // the write to `calls[0]` keeps this case about the write rather than
+    // about how that set happens to be fetched.
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { name: 'a.txt' }))
     vi.stubGlobal('fetch', fetchMock)
 
     await httpApi.writeFile('/s/a.txt', 'hello')
 
+    expect(fetchMock).toHaveBeenCalledTimes(1)
     const init = fetchMock.mock.calls[0][1] as RequestInit
     expect(new Headers(init.headers).has('If-Match')).toBe(false)
     // The body is the file itself, not an envelope around it.
@@ -330,15 +325,14 @@ describe('the listing cursor', () => {
 // The server hides a route the caller may not reach: a refused API request
 // answers 404 with the chain's unexplained `request_failed`, exactly as an
 // address that does not exist would. Every path this client calls does exist,
-// so that answer means the session is gone and the login screen is the honest
-// thing to show.
+// so that answer means the session is gone. The transport reports it and
+// `isSessionDead` classifies it; the query client is what acts on it.
 describe('a refusal the server disguised as a missing address', () => {
-  it('flips a live session to the login screen', async () => {
-    setAuthenticated(fakeSession)
+  it('is classified as a dead session', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(jsonResponse(404, { error: 'request_failed' })))
 
-    await expect(httpApi.list('/Files', {})).rejects.toThrow()
-    expect(authState.screen).toBe('login')
+    const err = await httpApi.list('/Files', {}).catch((e: unknown) => e)
+    expect(isSessionDead(err)).toBe(true)
   })
 
   it('reads the bare string body as a code rather than losing it', async () => {
@@ -353,14 +347,31 @@ describe('a refusal the server disguised as a missing address', () => {
   // the screen showing it must keep the error inline instead of signing the
   // account out from under a mistyped path.
   it('leaves a genuine not-found alone', async () => {
-    setAuthenticated(fakeSession)
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValueOnce(jsonResponse(404, { error: { code: 'fs.not_found', message: 'not found' } }))
     )
 
-    await expect(httpApi.list('/Files', {})).rejects.toThrow()
-    expect(authState.screen).toBe('browser')
+    const err = await httpApi.list('/Files', {}).catch((e: unknown) => e)
+    expect(isSessionDead(err)).toBe(false)
+  })
+
+  // A 401 that means "this re-confirmation was wrong" is not a dead session:
+  // a mistyped current password on the settings screen must stay inline.
+  it('separates an expired session from a rejected re-confirmation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(jsonResponse(401, { error: { code: 'auth.invalid_credentials', message: 'no' } }))
+    )
+    const rejected = await httpApi.list('/Files', {}).catch((e: unknown) => e)
+    expect(isSessionDead(rejected)).toBe(false)
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValueOnce(jsonResponse(401, { error: { code: 'auth.required', message: 'no' } }))
+    )
+    const expired = await httpApi.list('/Files', {}).catch((e: unknown) => e)
+    expect(isSessionDead(expired)).toBe(true)
   })
 })
 

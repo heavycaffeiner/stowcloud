@@ -1,4 +1,4 @@
-// web/src/lib/api/path-utils.ts — small virtual-path helpers shared by the
+// Small virtual-path helpers shared by the
 // mock backend.: all path params are virtual paths
 // (`/{label}/sub/path`); there is no real filesystem path here.
 
@@ -48,7 +48,7 @@ export function isWithin(p: string, ancestor: string): boolean {
  * which rule the choice broke, rather than letting the user commit and
  * reading the answer back as a failed job.
  *
- * `into_itself` is fatal for both move and copy — a folder cannot become its
+ * `into_itself` is fatal for both move and copy: a folder cannot become its
  * own descendant. `same_folder` only blocks a move (it would be a no-op); a
  * copy into the source's own folder is the ordinary "duplicate" case and the
  * conflict dialog already covers it, so the caller decides that one.

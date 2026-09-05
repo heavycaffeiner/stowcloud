@@ -12,8 +12,10 @@
   // Unlike the account's own screen, this shows the *whole* subject. Somebody
   // working out why a person cannot sign in needs the exact string to compare
   // against what the provider shows.
+  import { createMutation, createQuery } from '@tanstack/svelte-query'
   import { formatDateNs, t } from '../../i18n'
-  import { api, ApiError, type AdminUser, type AdminUserOidc } from '../../api/client'
+  import { ApiError, type AdminUser } from '../../api/client'
+  import { adminUnlinkOidcMutation, adminUserOidcQuery } from '../../query/admin'
   import Button from '../Button.svelte'
   import Dialog from '../Dialog.svelte'
   import ProgressCircular from '../ProgressCircular.svelte'
@@ -26,47 +28,6 @@
     onclose: () => void
   }
   let { user, onclose }: Props = $props()
-
-  // Named `link`, not `state`: a variable called `state` shadows the `$state`
-  // rune for the rest of the file.
-  let link = $state<AdminUserOidc | null>(null)
-  let loading = $state(false)
-  let loadError = $state<string | null>(null)
-
-
-  let confirmUnlink = $state(false)
-  let unlinking = $state(false)
-  let unlinkError = $state<string | null>(null)
-  /** Set once an unlink has succeeded, so the SMB consequence stays on screen
-   *  after the dialog stops offering the button that caused it. */
-  let unlinked = $state(false)
-
-  // Reloads whenever a different account is opened. Keyed on the id rather
-  // than on the object so reopening the same account after a change in the
-  // list behind it does not refetch for no reason.
-  let loadedFor = $state<number | null>(null)
-  $effect(() => {
-    const id = user?.id ?? null
-    if (id === null || id === loadedFor) return
-    loadedFor = id
-    void load(id)
-  })
-
-  async function load(id: number): Promise<void> {
-    loading = true
-    loadError = null
-    unlinkError = null
-    confirmUnlink = false
-    unlinked = false
-    try {
-      link = await api.adminGetUserOidc(id)
-    } catch (err) {
-      link = null
-      loadError = describeError(err, t('oidc.could_not_load_connection_status'))
-    } finally {
-      loading = false
-    }
-  }
 
   function describeError(err: unknown, fallback: string): string {
     if (err instanceof ApiError) {
@@ -84,20 +45,37 @@
     return fallback
   }
 
-  async function submitUnlink(): Promise<void> {
+  const linkQuery = createQuery(() => adminUserOidcQuery(user?.id ?? null))
+  const link = $derived(linkQuery.data ?? null)
+  const loading = $derived(linkQuery.isPending)
+  const loadError = $derived(linkQuery.error ? describeError(linkQuery.error, t('oidc.could_not_load_connection_status')) : null)
+
+  // Named `link`, not `state`: a variable called `state` shadows the `$state`
+  // rune for the rest of the file.
+  let confirmUnlink = $state(false)
+
+  const unlinkMut = createMutation(() => adminUnlinkOidcMutation())
+  const unlinking = $derived(unlinkMut.isPending)
+  const unlinkError = $derived(unlinkMut.error ? describeError(unlinkMut.error, t('oidc.could_not_disconnect_try_again')) : null)
+  /** True once an unlink has succeeded, so the SMB consequence stays on screen
+   *  after the dialog stops offering the button that caused it. */
+  const unlinked = $derived(unlinkMut.isSuccess)
+
+  // Resets the per-account bits whenever a different account is opened. Keyed
+  // on the id rather than the object so reopening the same account after a
+  // change in the list behind it does not drop what is on screen.
+  let openFor = $state<number | null>(null)
+  $effect(() => {
+    const id = user?.id ?? null
+    if (id === openFor) return
+    openFor = id
+    confirmUnlink = false
+    unlinkMut.reset()
+  })
+
+  function submitUnlink(): void {
     if (!user) return
-    unlinkError = null
-    unlinking = true
-    try {
-      await api.adminUnlinkUserOidc(user.id)
-      link = { linked: false, issuer: null, subject: null, linked_ns: null, last_login_ns: null }
-      confirmUnlink = false
-      unlinked = true
-    } catch (err) {
-      unlinkError = describeError(err, t('oidc.could_not_disconnect_try_again'))
-    } finally {
-      unlinking = false
-    }
+    unlinkMut.mutate(user.id, { onSuccess: () => (confirmUnlink = false) })
   }
 </script>
 

@@ -1,40 +1,31 @@
 <script lang="ts">
-  // Storage usage and the optional file-name search index — admin-only,
+  // Storage usage and the optional file-name search index, admin-only,
   // rendered by `/admin` after it has checked `is_admin`.
   // GET /api/admin/storage, GET/POST /api/admin/index/estimate,
   // GET/PATCH /api/admin/index/settings.
   //
   // The index switch is a persisted runtime override, not a config-file edit:
   // it survives a restart on its own, the same way the upload chunk size does.
+  // Its current value comes off the same settings snapshot
+  // `ServerSettingsSection` reads (`adminSettingsQuery`), under the key the
+  // server stores it by, since there is no endpoint for this one field alone
+  // (`api.adminIndexSettings` used to parse the identical response); the two
+  // screens share the one cache entry, so a build here or a save there
+  // invalidate each other correctly.
   //
   // The cost figures are deliberately three numbers and one sentence. The
   // estimator can also derive them term by term, but that derivation is
-  // written to the server log — on screen it read as noise to everyone who
+  // written to the server log: on screen it read as noise to everyone who
   // had not written the estimator.
+  import { createMutation, createQuery } from '@tanstack/svelte-query'
   import { formatDuration, formatNumber, t } from '../../i18n'
-  import { api } from '../../api/client'
+  import { describeApiError } from '../../api/error-text'
   import { formatBytes } from '../../format/bytes'
-  import { jobTray } from '../../state/job-tray.svelte'
+  import { adminBuildIndexMutation, adminIndexEstimateQuery, adminIndexSettingsMutation, adminSettingsQuery, adminStorageQuery } from '../../query/admin'
+  import { jobTray } from '../../store/jobs.store'
   import Button from '../Button.svelte'
   import ProgressCircular from '../ProgressCircular.svelte'
   import Switch from '../Switch.svelte'
-  import type { StorageReport, IndexEstimate, IndexSettings } from '../../api/types'
-
-  let storage = $state<StorageReport | null>(null)
-  let storageLoading = $state(true)
-  let storageError = $state<string | null>(null)
-
-  let estimate = $state<IndexEstimate | null>(null)
-  let estimateLoading = $state(false)
-  let estimateError = $state<string | null>(null)
-
-  let settings = $state<IndexSettings | null>(null)
-  let settingsLoading = $state(true)
-  let settingsSaving = $state(false)
-  let settingsError = $state<string | null>(null)
-
-  let buildRunning = $state(false)
-  let buildError = $state<string | null>(null)
 
   /** How much of the folder tree the estimate actually counted, in a sentence.
    *  The server sends a code so that this screen owns the wording; an unknown
@@ -50,72 +41,52 @@
     modelled: /* i18n */ 'storage.accuracy_counted_a_sample'
   }
 
-  async function loadStorage(): Promise<void> {
-    storageLoading = true
-    storageError = null
-    try {
-      storage = await api.adminStorage()
-    } catch {
-      storageError = t('storage.could_not_load_storage_information')
-    } finally {
-      storageLoading = false
-    }
+  const storageQuery = createQuery(() => adminStorageQuery())
+  const storage = $derived(storageQuery.data ?? null)
+  const storageLoading = $derived(storageQuery.isPending)
+  const storageError = $derived(storageQuery.error ? describeApiError(storageQuery.error, t('storage.could_not_load_storage_information')) : null)
+
+  // The estimate is deliberately not fetched until asked: it walks every
+  // shared folder, so it stays a button rather than something this screen
+  // does on load. `enabled` flips true on the first click; every click after
+  // that is a plain refetch of the same query.
+  let estimateRequested = $state(false)
+  const estimateQuery = createQuery(() => ({ ...adminIndexEstimateQuery(), enabled: estimateRequested }))
+  const estimate = $derived(estimateQuery.data ?? null)
+  const estimateLoading = $derived(estimateQuery.isFetching)
+  const estimateError = $derived(estimateQuery.error ? describeApiError(estimateQuery.error, t('storage.could_not_compute_estimate')) : null)
+
+  function runEstimate(): void {
+    if (!estimateRequested) estimateRequested = true
+    else void estimateQuery.refetch()
   }
 
-  async function runEstimate(): Promise<void> {
-    estimateLoading = true
-    estimateError = null
-    try {
-      estimate = await api.adminIndexEstimate()
-    } catch {
-      estimateError = t('storage.could_not_compute_estimate')
-    } finally {
-      estimateLoading = false
-    }
-  }
+  const settingsQuery = createQuery(() => adminSettingsQuery())
+  const nameEnabled = $derived(settingsQuery.data?.fields.find((f) => f.key === 'search.name_index_enabled')?.value === true)
+  const settingsLoading = $derived(settingsQuery.isPending)
 
-  async function loadSettings(): Promise<void> {
-    settingsLoading = true
-    settingsError = null
-    try {
-      settings = await api.adminIndexSettings()
-    } catch {
-      settingsError = t('storage.could_not_load_index_settings')
-    } finally {
-      settingsLoading = false
-    }
-  }
+  const toggleMut = createMutation(() => adminIndexSettingsMutation())
+  const settingsSaving = $derived(toggleMut.isPending)
+  const settingsError = $derived.by(() => {
+    if (toggleMut.error) return describeApiError(toggleMut.error, t('common.could_not_save_settings'))
+    if (settingsQuery.error) return describeApiError(settingsQuery.error, t('storage.could_not_load_index_settings'))
+    return null
+  })
 
-  async function onToggleEnabled(checked: boolean): Promise<void> {
-    settingsSaving = true
-    settingsError = null
-    try {
-      settings = await api.adminSetIndexSettings(checked)
-    } catch {
-      settingsError = t('common.could_not_save_settings')
-    } finally {
-      settingsSaving = false
-    }
+  function onToggleEnabled(checked: boolean): void {
+    toggleMut.mutate(checked)
   }
 
   // Fire-and-forget through the shared job queue (`JobTray`, mounted once at
-  // the app layout) — same pattern as `downloadAsArchive`'s `jobTray.track`
+  // the app layout): same pattern as `downloadAsArchive`'s `jobTray.track`
   // call, not a second progress mechanism just for this button.
-  async function startBuild(): Promise<void> {
-    buildError = null
-    buildRunning = true
-    try {
-      const job = await api.adminBuildIndex()
-      await jobTray.track(job.id, 'index')
-    } catch {
-      buildError = t('storage.could_not_start_index_build')
-    } finally {
-      buildRunning = false
-    }
-  }
+  const buildMut = createMutation(() => adminBuildIndexMutation())
+  const buildRunning = $derived(buildMut.isPending)
+  const buildError = $derived(buildMut.error ? describeApiError(buildMut.error, t('storage.could_not_start_index_build')) : null)
 
-  loadStorage()
-  loadSettings()
+  function startBuild(): void {
+    buildMut.mutate(undefined, { onSuccess: (job) => jobTray.track(job.id) })
+  }
 </script>
 
 <section class="sc-admin-section">
@@ -151,7 +122,7 @@
   {:else}
     <div class="sc-admin-section__row">
       <Switch
-        checked={settings?.name_enabled ?? false}
+        checked={nameEnabled}
         label={t('storage.enable_name_index')}
         onchange={onToggleEnabled}
       />
@@ -194,14 +165,14 @@
       <Button
         variant="outlined"
         loading={buildRunning}
-        disabled={!settings?.name_enabled}
+        disabled={!nameEnabled}
         onclick={startBuild}
       >
         {t('storage.start_index_build')}
       </Button>
     </div>
     <p class="sc-admin-section__note">
-      {settings?.name_enabled ? t('storage.first_build_is_manual') : t('storage.turn_it_on_before_building')}
+      {nameEnabled ? t('storage.first_build_is_manual') : t('storage.turn_it_on_before_building')}
     </p>
     {#if buildError}<p class="sc-admin-section__error">{buildError}</p>{/if}
 
@@ -284,7 +255,7 @@
   .sc-admin-section__figures {
     display: grid;
     /* Three figures side by side where there is room, stacked where there is
-       not — a fixed three-column grid put "about 42 seconds" on two lines on a
+       not: a fixed three-column grid put "about 42 seconds" on two lines on a
        phone. */
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 16px;

@@ -17,7 +17,7 @@
     /** Opens. A double click is what enters a folder or shows a file. */
     ondblclick?: () => void
     oncontextmenu: (e: MouseEvent) => void
-    /** Checkbox tap/click — always toggles this row into/out of the
+    /** Checkbox tap/click: always toggles this row into/out of the
      *  selection, independent of shift/ctrl. See the checkbox's own comment
      *  below for why this exists as a separate handler from `onclick`. */
     ontogglecheck: () => void
@@ -34,7 +34,7 @@
           : 'file'
   )
 
-  // Rows are intentionally NOT individually focusable — FileTable.svelte owns
+  // Rows are intentionally NOT individually focusable: FileTable.svelte owns
   // the single tab stop and roving "virtual focus" via aria-activedescendant
   // (see the comment at the top of FileTable.svelte). Per-row tabindex would
   // give a 100k-row directory 100k tab stops, which
@@ -50,7 +50,7 @@
     // replaced it. Verified live: two taps on two different rows' checkboxes
     // on a real touch emulation left exactly one row selected, not two. Desktop
     // multi-select still has shift/ctrl+click; touch has no modifier keys at
-    // all, so the checkbox has to be a real, independent toggle target — the
+    // all, so the checkbox has to be a real, independent toggle target: the
     // one touch-reachable way to build a multi-selection.
     // `dblclick` is stopped in the markup for the same reason: it is a
     // separate event from the two clicks that make it, so without that guard
@@ -83,11 +83,11 @@
     <!-- m3-svelte's Checkbox is normally wrapped in a `<label>` so the label
          forwards the click to the visually hidden input. Not here: the cell
          above owns the click (it toggles the row's selection, not the input's
-         own state) and the input is deliberately inert — `tabindex="-1"`
+         own state) and the input is deliberately inert: `tabindex="-1"`
          because the grid has one tab stop, no-op `onchange` because selection
-         lives in `browse`. The framework's visuals key off the input's
-         `:checked`/`:disabled` state via sibling selectors, so they still
-         work without the label. -->
+         lives in the selection store, driven from the row's own props. The
+         framework's visuals key off the input's `:checked`/`:disabled` state
+         via sibling selectors, so they still work without the label. -->
     <Checkbox>
       <input
         type="checkbox"
@@ -110,7 +110,7 @@
     {/if}
   </span>
   <span class="sc-row__cell sc-row__cell--size" role="gridcell">
-    {entry.kind === 'dir' ? '—' : formatBytes(entry.size)}
+    {entry.kind === 'dir' ? '-' : formatBytes(entry.size)}
   </span>
   <span class="sc-row__cell sc-row__cell--mtime" role="gridcell">{formatDateNs(entry.mtime_ns)}</span>
 </div>
@@ -142,7 +142,7 @@
   .sc-row__cell--select {
     flex: 0 0 32px;
     /* Overrides the base `.sc-row__cell` rule's `overflow: hidden` (there for
-       the name cell's ellipsis, not needed here — a checkbox never overflows
+       the name cell's ellipsis, not needed here: a checkbox never overflows
        its own cell) so `.sc-touch-target`'s enlarged hit area isn't clipped
        back down to the visible 32px box it's meant to expand past. */
     overflow: visible;

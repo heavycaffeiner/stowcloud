@@ -1,22 +1,59 @@
 <script lang="ts">
   import { t } from '../i18n'
-  import { onMount } from 'svelte'
   import { fly, slide } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
-  import { jobTray, type JobItem, type JobKind } from '../state/job-tray.svelte'
+  import { createQuery, createQueries, createMutation, type CreateQueryResult } from '@tanstack/svelte-query'
+  import type { JobKindWire, JobStatus } from '../api/client'
+  import { batchErrorKey } from '../api/error-text'
+  import { queryClient } from '../query/client'
+  import { jobListQuery, jobQuery, jobCancelMutation } from '../query/jobs'
+  import { jobTray } from '../store/jobs.store'
   import IconButton from './IconButton.svelte'
   import { Icon } from 'm3-svelte'
   import { icons, type IconName } from '../icons'
   import ProgressLinear from './ProgressLinear.svelte'
 
-  const totalActive = $derived(jobTray.items.filter((i) => i.status === 'running').length)
+  type JobKind = 'delete' | 'copy' | 'index'
+  type JobItemStatus = 'running' | 'done' | 'error' | 'cancelled' | 'interrupted'
 
-  // Re-attach to whatever `jobs.db` still has open — a browser refresh or a
-  // server restart (Docker cutover) both leave nothing else to go on, per
-  // `attachOpenJobs()`'s doc.
-  onMount(() => {
-    void jobTray.attachOpenJobs()
-  })
+  interface JobRow {
+    id: string
+    kind: JobKind
+    done: number
+    total: number
+    status: JobItemStatus
+    /** A catalogue key, never text: the first server-reported failure's, or
+     *  the row's own timed-out-fetch note. Resolved at render time, in the
+     *  reader's language. */
+    message?: string
+    messageParams?: Record<string, string>
+    /** Paths the server started but never recorded an outcome for -- the
+     *  process died between `begin_result` and `finish_result`, so whether
+     *  the file was moved/copied/deleted is genuinely unknown and only a
+     *  look at the destination can settle it. At most one entry in
+     *  practice. */
+    attempting: string[]
+    /** Paths the job was asked for but never reached. Untouched on disk, so
+     *  re-running the same operation on exactly these is safe. */
+    pending: string[]
+  }
+
+  // The only place the frontend's own `JobKind` (tray icon/label lookup) and
+  // the backend's wire `JobKindWire` (`"index_build"` vs `"index"`) diverge.
+  // A kind this build has no tray row for still has to land somewhere: an
+  // archive streams and a move finishes inline, so neither creates a job
+  // here, but an older server's rows are still readable and shown as a copy
+  // rather than dropped.
+  function frontendKind(kind: JobKindWire): JobKind {
+    switch (kind) {
+      case 'index_build':
+        return 'index'
+      case 'delete':
+        return 'delete'
+      default:
+        return 'copy'
+    }
+  }
 
   function kindLabel(kind: JobKind): string {
     return kind === 'delete' ? t('common.delete') : kind === 'copy' ? t('common.copy') : t('job.index_build')
@@ -28,8 +65,76 @@
   /** Everything the job was asked to do and did not finish: the item whose
    *  outcome nobody can know (`attempting`) plus the ones it never started
    *  (`pending`). Empty for a job that ran to completion. */
-  function outstanding(item: JobItem): string[] {
-    return [...(item.attempting ?? []), ...(item.pending ?? [])]
+  function outstanding(item: JobRow): string[] {
+    return [...item.attempting, ...item.pending]
+  }
+
+  /** One tray row, built from a job's live status query. `result.isError`
+   *  is what the old poll loop's timeout note covered: this row's own fetch
+   *  failed (most often a 404 -- the job was already garbage-collected
+   *  server-side) and there is nothing left to poll. */
+  function rowFor(id: string, result: CreateQueryResult<JobStatus, Error> | undefined): JobRow {
+    // `result` is momentarily undefined the instant `jobTray.state.ids`
+    // gains an id but `createQueries`' own query list hasn't re-synced yet
+    // -- same "nothing to show yet" placeholder as a query that is still
+    // loading its first response.
+    if (!result || result.isError) {
+      return {
+        id,
+        kind: 'copy',
+        done: 0,
+        total: 0,
+        status: result?.isError ? 'error' : 'running',
+        message: result?.isError ? /* i18n */ 'job.could_not_check_job_status' : undefined,
+        attempting: [],
+        pending: []
+      }
+    }
+    const status = result.data
+    if (!status) {
+      return { id, kind: 'copy', done: 0, total: 0, status: 'running', attempting: [], pending: [] }
+    }
+    const kind = frontendKind(status.kind)
+    if (status.state === 'error') {
+      const first = batchErrorKey(status.results.find((r) => !r.ok)?.error)
+      return {
+        id,
+        kind,
+        done: status.done,
+        total: status.total,
+        status: 'error',
+        message: first?.key,
+        messageParams: first?.params,
+        attempting: status.attempting,
+        pending: status.pending
+      }
+    }
+    // `cancelled` (a user asked to stop) and `interrupted` (the process
+    // hosting the runner died mid-job) are different facts from a plain
+    // failure and are named apart here too, straight off the wire state.
+    return { id, kind, done: status.done, total: status.total, status: status.state, attempting: status.attempting, pending: status.pending }
+  }
+
+  // Re-attaches to whatever `jobs.db` still has open -- a browser refresh or
+  // a server restart (Docker cutover) both leave nothing else to go on.
+  // Polls itself (`jobListQuery`'s `refetchInterval`) while anything is
+  // running, so a job started in another tab shows up here too.
+  const list = createQuery(() => jobListQuery())
+  $effect(() => {
+    jobTray.track(...(list.data?.jobs ?? []).map((job) => job.id))
+  })
+
+  // One live `JobStatus` per tray row. Each stops polling by itself
+  // (`jobQuery`'s `refetchInterval`) once its own status is terminal.
+  const statuses = createQueries(() => ({ queries: jobTray.state.ids.map((id) => jobQuery(id)) }))
+  const items = $derived(jobTray.state.ids.map((id, i) => rowFor(id, statuses[i])))
+
+  const totalActive = $derived(items.filter((i) => i.status === 'running').length)
+
+  const cancelJob = createMutation(() => jobCancelMutation())
+
+  function clearFinished(): void {
+    jobTray.forget(...items.filter((i) => i.status !== 'running').map((i) => i.id))
   }
 
   // Same two-region pattern as UploadTray.svelte (see its comment for the
@@ -37,7 +142,7 @@
   // one, is mounted once at the app root and outlives route navigation.
   let politeMsg = $state('')
   let assertiveMsg = $state('')
-  const lastStatus = new Map<string, JobItem['status']>()
+  const lastStatus = new Map<string, JobItemStatus>()
 
   function say(target: 'polite' | 'assertive', text: string): void {
     if (target === 'polite') {
@@ -51,10 +156,14 @@
 
   $effect(() => {
     const seenIds = new Set<string>()
-    for (const item of jobTray.items) {
+    for (const item of items) {
       seenIds.add(item.id)
       const prev = lastStatus.get(item.id)
       if (prev !== undefined && prev !== item.status) {
+        // The job wrote somewhere. Its status does not say which listings it
+        // touched, and a listing is only ever invalidated by an event or a
+        // write, so re-checking every path read is the honest answer.
+        void queryClient.invalidateQueries({ queryKey: ['path'] })
         const label = kindLabel(item.kind)
         if (item.status === 'done') {
           say('polite', t('job.job_finished_items_processed', { kind: label, count: item.total }))
@@ -92,27 +201,27 @@
 <div class="sc-job-tray__sr-only" role="status" aria-live="polite" aria-atomic="true">{politeMsg}</div>
 <div class="sc-job-tray__sr-only" role="alert" aria-live="assertive" aria-atomic="true">{assertiveMsg}</div>
 
-{#if jobTray.items.length > 0 || jobTray.stale}
+{#if items.length > 0 || list.isError}
   <div
     class="sc-job-tray"
-    class:sc-job-tray--collapsed={!jobTray.open}
+    class:sc-job-tray--collapsed={!jobTray.state.open}
     transition:fly={{ y: 32, duration: trayDuration(), easing: cubicOut }}
   >
     <div class="sc-job-tray__header">
-      <button class="sc-job-tray__title" onclick={() => (jobTray.open = !jobTray.open)}>
+      <button class="sc-job-tray__title" onclick={() => jobTray.setOpen(!jobTray.state.open)}>
         <Icon icon={icons.refresh} size={18} />
         {t('job.jobs')} {totalActive > 0 ? `(${totalActive})` : t('common.done')}
       </button>
       <div class="sc-job-tray__actions">
-        <IconButton label={t('common.clear_finished_items')} onclick={() => jobTray.clearFinished()}>
+        <IconButton label={t('common.clear_finished_items')} onclick={clearFinished}>
           <Icon icon={icons.check} size={18} />
         </IconButton>
-        <IconButton label={jobTray.open ? t('common.collapse') : t('common.expand')} onclick={() => (jobTray.open = !jobTray.open)}>
-          <Icon icon={icons[jobTray.open ? 'chevron-right' : 'chevron-left']} size={18} />
+        <IconButton label={jobTray.state.open ? t('common.collapse') : t('common.expand')} onclick={() => jobTray.setOpen(!jobTray.state.open)}>
+          <Icon icon={icons[jobTray.state.open ? 'chevron-right' : 'chevron-left']} size={18} />
         </IconButton>
       </div>
     </div>
-    {#if jobTray.stale}
+    {#if list.isError}
       <!-- `GET /api/jobs` re-attach couldn't reach the server (mid-restart,
            e.g. a Docker cutover) -- the list below is whatever was last
            confirmed, not necessarily current. Never hidden by `open`, same
@@ -121,9 +230,9 @@
       <p class="sc-job-tray__stale">{t('job.server_unreachable_so_may_not')}</p>
     {/if}
 
-    {#if jobTray.open}
+    {#if jobTray.state.open}
       <ul class="sc-job-tray__list">
-        {#each jobTray.items as item (item.id)}
+        {#each items as item (item.id)}
           <li class="sc-job-tray__item" transition:slide={{ duration: trayDuration(), easing: cubicOut }}>
             <div class="sc-job-tray__row">
               <span class="sc-job-tray__name">
@@ -154,14 +263,14 @@
               <details class="sc-job-tray__outstanding">
                 <summary>{t('job.items_left', { count: outstanding(item).length })}</summary>
                 <ul>
-                  {#each item.attempting ?? [] as path (path)}
+                  {#each item.attempting as path (path)}
                     <li><span class="sc-job-tray__tag sc-job-tray__tag--check">{t('job.needs_checking')}</span>{path}</li>
                   {/each}
-                  {#each item.pending ?? [] as path (path)}
+                  {#each item.pending as path (path)}
                     <li><span class="sc-job-tray__tag">{t('job.not_started')}</span>{path}</li>
                   {/each}
                 </ul>
-                {#if (item.attempting ?? []).length > 0}
+                {#if item.attempting.length > 0}
                   <p class="sc-job-tray__message">
                     {t('job.server_stopped_mid_item_anything')}
                   </p>
@@ -171,11 +280,11 @@
             {/if}
             <div class="sc-job-tray__controls">
               {#if item.status === 'running'}
-                <IconButton label={t('job.cancel_job')} onclick={() => jobTray.cancel(item.id)}>
+                <IconButton label={t('job.cancel_job')} onclick={() => cancelJob.mutate(item.id)}>
                   <Icon icon={icons.close} size={16} />
                 </IconButton>
               {:else}
-                <IconButton label={t('common.clear')} onclick={() => jobTray.dismiss(item.id)}>
+                <IconButton label={t('common.clear')} onclick={() => jobTray.forget(item.id)}>
                   <Icon icon={icons.close} size={16} />
                 </IconButton>
               {/if}

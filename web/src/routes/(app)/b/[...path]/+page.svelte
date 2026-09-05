@@ -2,15 +2,30 @@
   import { fade } from 'svelte/transition'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
-  import { api, ApiError, type BatchItemResult, type Entry, type OnConflict } from '../../../../lib/api/client'
+  import { createInfiniteQuery, createMutation, createQueries } from '@tanstack/svelte-query'
+  import { ApiError, type BatchItemResult, type Entry, type OnConflict } from '../../../../lib/api/types'
+  import { api } from '../../../../lib/api/client'
   import { baseName, joinPath, normalizePath, parentOf } from '../../../../lib/api/path-utils'
   import { batchErrorKey, describeApiError } from '../../../../lib/api/error-text'
-  import { authState } from '../../../../lib/state/auth.svelte'
-  import { browse } from '../../../../lib/state/browse.svelte'
-  import { setDetails, uiState } from '../../../../lib/state/ui.svelte'
-  import { selectionMeasure } from '../../../../lib/state/measure.svelte'
+  import {
+    archiveTicketMutation,
+    copyMutation,
+    deleteMutation,
+    dirListQuery,
+    dirViewOf,
+    folderSizeQuery,
+    invalidateDirs,
+    mkdirMutation,
+    moveMutation,
+    renameMutation
+  } from '../../../../lib/query/files'
+  import { createSession } from '../../../../lib/query/session'
+  import { jobTray } from '../../../../lib/store/jobs.store'
+  import { selection } from '../../../../lib/store/selection.store'
+  import { ui } from '../../../../lib/store/ui.store'
+  import { view } from '../../../../lib/store/view.store'
+  import { addEntries, addFiles } from '../../../../lib/upload/queue'
   import { t } from '../../../../lib/i18n'
-  import { uploadTray } from '../../../../lib/state/upload-tray.svelte'
   import Breadcrumb from '../../../../lib/ui/Breadcrumb.svelte'
   import Button from '../../../../lib/ui/Button.svelte'
   import ConflictDialog from '../../../../lib/ui/ConflictDialog.svelte'
@@ -22,7 +37,7 @@
   import FileTree from '../../../../lib/ui/FileTree.svelte'
   import { FAB, Icon, MenuItem } from 'm3-svelte'
   import { icons } from '../../../../lib/icons'
-  import type { Order, SortKey } from '../../../../lib/api/client'
+  import type { Order, SortKey } from '../../../../lib/api/types'
   import IconButton from '../../../../lib/ui/IconButton.svelte'
   import Menu from '../../../../lib/ui/Menu.svelte'
   import NewFolderDialog from '../../../../lib/ui/NewFolderDialog.svelte'
@@ -42,9 +57,12 @@
   } from '../../../../lib/upload/directory-picker'
   import { formatBytes } from '../../../../lib/format/bytes'
   import { downloadPath, triggerUrlDownload } from '../../../../lib/format/download'
-  import { jobTray } from '../../../../lib/state/job-tray.svelte'
-  import { JobFailedError } from '../../../../lib/state/jobs'
+  import { downloadEncryptedFile, downloadEncryptedFolder } from '../../../../lib/crypto/download-sw'
+  import { encryptionForLabel, shareLabelOf } from '../../../../lib/crypto/encrypted-shares'
+  import { FileTooLargeError, LockedSessionError } from '../../../../lib/crypto/e2ee'
+  import UnlockShareDialog from '../../../../lib/ui/UnlockShareDialog.svelte'
 
+  const session = createSession()
   const rawPath = $derived(page.params.path ?? '')
   const path = $derived(normalizePath(`/${rawPath}`))
 
@@ -55,77 +73,99 @@
   // That was never implemented because the mock answered `list('/')` with the
   // roots, so the home screen appeared to work; against the real server it is
   // a 404 rendered as "not found" on the first screen after login.
-  const firstRoot = $derived(authState.session?.roots?.[0]?.label ?? null)
+  const firstRoot = $derived(session.data?.roots?.[0]?.label ?? null)
 
   // No root at all is a deployment nobody has given this account a folder in,
   // which on a fresh install is every account including the first
   // administrator. The redirect above has nowhere to go, so this screen is
   // where they stay and it has to say something useful.
-  const noShares = $derived((authState.session?.roots ?? []).length === 0)
+  const noShares = $derived((session.data?.roots ?? []).length === 0)
+
+  const currentRootLabel = $derived(path.split('/').filter(Boolean)[0] ?? null)
+  const currentRoot = $derived((session.data?.roots ?? []).find((r) => r.label === currentRootLabel))
 
   // A folder that is listed and cannot be opened, because the disk under it is
   // not there right now. It is in the root list on purpose: dropping it made a
   // drive that did not come back look exactly like a share somebody deleted.
-  const rootBroken = $derived(
-    (authState.session?.roots ?? []).find((r) => r.label === currentRootLabel)?.broken_reason ?? ''
-  )
+  const rootBroken = $derived(currentRoot?.broken_reason ?? '')
 
   // item 133: a root marked `shared_externally` is read/written by another
   // service (Jellyfin, SMB) outside this app -- true for every path under
   // it, not just the root listing itself, since `RootEntry.shared_externally`
   // is a share-wide flag ('s SELinux `:z` caveat is the same
   // sharing relationship this warns about).
-  const currentRootLabel = $derived(path.split('/').filter(Boolean)[0] ?? null)
-  const rootShared = $derived(
-    (authState.session?.roots ?? []).find((r) => r.label === currentRootLabel)?.shared_externally ?? false
-  )
-  const rootTrash = $derived(
-    (authState.session?.roots ?? []).find((r) => r.label === currentRootLabel)?.trash_enabled ?? false
-  )
+  const rootShared = $derived(currentRoot?.shared_externally ?? false)
+  const rootTrash = $derived(currentRoot?.trash_enabled ?? false)
 
-  let lastOpened = ''
+  // ── the listing ──
+  //
+  // One infinite query per path and sort order. Both are in the key, so
+  // navigating or re-sorting is a different query rather than a re-fetch this
+  // page has to sequence, and a change reported over the WebSocket
+  // (`query/live.ts`) invalidates it without anybody subscribing here.
+  const sort = $derived({ key: view.state.sortKey, order: view.state.sortOrder })
+  const listing = createInfiniteQuery(() => dirListQuery(path, sort))
+  const dir = $derived(dirViewOf(listing.data?.pages))
+  const entries = $derived(dir.entries)
+  const names = $derived(new Set(entries.map((e) => e.name)))
+
+  /** The selection resolved against what is listed. A name the selection
+   *  still holds for a row that has since gone simply matches nothing, which
+   *  is why nothing has to prune it. */
+  const selected = $derived(entries.filter((e) => selection.state.names.has(e.name)))
+  const selectedFolders = $derived(selected.filter((e) => e.kind === 'dir'))
+  /** Files only. A directory entry's own size is the bytes its inode spends on
+   *  the listing, a number that says nothing about what is inside, so adding
+   *  it to a total reads as a wrong answer rather than a partial one. */
+  const selectedFileBytes = $derived(selected.reduce((a, e) => (e.kind === 'dir' ? a : a + e.size), 0))
+
   $effect(() => {
     if (path === '/' && firstRoot) {
       void goto(`/b/${encodeURIComponent(firstRoot)}`, { replaceState: true })
-      return
-    }
-    if (path !== lastOpened) {
-      lastOpened = path
-      browse.open(path)
     }
   })
 
-  uploadTray.onFileDone((dest) => {
-    if (normalizePath(dest) === browse.path) void browse.refresh()
-  })
-
-  // Driven here rather than inside the details panel, which is mounted only
-  // while it is open: the selection toolbar shows the same number and needs it
-  // whether or not that panel exists.
+  // A selection is a set of names in one directory, and those names mean
+  // something else in the next one.
   $effect(() => {
-    const here = browse.path.replace(/^\/+/, '').replace(/\/+$/, '')
-    // The directory's own token, so a folder that changed underneath is
-    // measured again rather than keeping the number it was first given. A
-    // change made over the file-sharing protocol moves the token without
-    // changing the path or the selection.
-    const version = browse.dirEtag ?? ''
-    // Nothing selected measures the folder being looked at, which is what the
-    // details panel reports for a directory with no selection in it. The
-    // virtual root is above every share and is not a folder to walk.
-    if (browse.selected.length === 0) {
-      selectionMeasure.retarget(here ? [here] : [], { bytes: 0, files: 0 }, version)
-      return
-    }
-    const folders = browse.selected.filter((e) => e.kind === 'dir')
-    selectionMeasure.retarget(
-      folders.map((e) => (here ? `${here}/${e.name}` : e.name)),
-      {
-        bytes: browse.totalSelectedSize,
-        files: browse.selected.length - browse.selectedFolderCount
-      },
-      version
-    )
+    void path
+    selection.reset()
   })
+
+  function refresh(): void {
+    invalidateDirs([path])
+  }
+
+  /** The rendered window has reached past what is loaded. Listings are a
+   *  forward-only cursor walk, so the answer is always "ask for the next
+   *  page"; the query itself drops a duplicate request. */
+  function requestMore(): void {
+    if (listing.hasNextPage && !listing.isFetchingNextPage) void listing.fetchNextPage()
+  }
+
+  // ── what a selection holds ──
+  //
+  // One query per folder, so re-selecting a folder is instant and a walk is
+  // never repeated. Nothing selected measures the folder being looked at,
+  // which is what the details panel reports for a directory with no selection
+  // in it. The virtual root is above every share and is not a folder to walk.
+  const measured = $derived(
+    selected.length === 0
+      ? path === '/'
+        ? []
+        : [path]
+      : selectedFolders.map((e) => joinPath(path, e.name))
+  )
+  const folderSizes = createQueries(() => ({
+    queries: measured.map((p) => folderSizeQuery(p)),
+    combine: (results) => ({
+      pending: results.some((r) => r.isPending),
+      failed: results.some((r) => r.isError),
+      bytes: results.reduce((sum, r) => sum + (r.data?.bytes ?? 0), 0),
+      files: results.reduce((sum, r) => sum + (r.data?.files ?? 0), 0)
+    })
+  }))
+  const selectionBytes = $derived(selectedFileBytes + folderSizes.bytes)
 
   interface Crumb {
     label: string
@@ -148,13 +188,13 @@
 
   function onOpen(entry: Entry): void {
     if (entry.kind === 'dir') {
-      goto(`/b${joinPath(browse.path, entry.name)}`)
+      goto(`/b${joinPath(path, entry.name)}`)
       return
     }
     // Looking, not committing. A click used to download, which writes to the
     // user's disk to answer "what is this"; the viewer answers it without
     // touching anything, and keeps Download a button away.
-    previewIndex = browse.indexOf(entry)
+    previewIndex = entries.indexOf(entry)
     previewOpen = true
   }
 
@@ -164,8 +204,8 @@
    *  arrows can walk the folder without the dialog holding a stale copy of a
    *  row that has since been re-fetched. */
   let previewIndex = $state(-1)
-  const previewEntry = $derived(previewIndex >= 0 ? (browse.rowAt(previewIndex) ?? null) : null)
-  const previewPath = $derived(previewEntry ? joinPath(browse.path, previewEntry.name) : '')
+  const previewEntry = $derived(previewIndex >= 0 ? (entries[previewIndex] ?? null) : null)
+  const previewPath = $derived(previewEntry ? joinPath(path, previewEntry.name) : '')
 
   /** Step to the next/previous file, skipping directories: the viewer has
    *  nothing to show for one, and stopping the arrows dead at every folder in
@@ -173,8 +213,8 @@
    *  (`sc-core`'s listing), so in practice this skips the run at the top once. */
   function stepPreview(delta: number): void {
     let i = previewIndex + delta
-    while (i >= 0 && i < browse.total) {
-      const candidate = browse.rowAt(i)
+    while (i >= 0 && i < dir.total) {
+      const candidate = entries[i]
       // An unloaded row is a window that has not arrived yet. Stop rather than
       // skipping past it, or a fast arrow key would walk over files silently.
       if (!candidate) return
@@ -187,8 +227,8 @@
   }
   const hasPreviewNeighbour = (delta: number): boolean => {
     let i = previewIndex + delta
-    while (i >= 0 && i < browse.total) {
-      const candidate = browse.rowAt(i)
+    while (i >= 0 && i < dir.total) {
+      const candidate = entries[i]
       if (!candidate) return false
       if (candidate.kind !== 'dir') return true
       i += delta
@@ -220,7 +260,7 @@
   let dragBase: string[] = []
   let dragFrame = 0
 
-  const activeView = $derived(browse.view === 'grid' ? gridView : tableView)
+  const activeView = $derived(view.state.mode === 'grid' ? gridView : tableView)
 
   /** Controls own their own gestures. Rows and cards are not on this list: a
    *  drag may start on one, because it only becomes a marquee once it has
@@ -236,7 +276,7 @@
 
     dragOrigin = { x: e.clientX + window.scrollX, y: e.clientY + window.scrollY }
     dragPointer = { x: e.clientX, y: e.clientY }
-    dragBase = e.shiftKey || e.ctrlKey || e.metaKey ? [...browse.selection] : []
+    dragBase = e.shiftKey || e.ctrlKey || e.metaKey ? [...selection.state.names] : []
     window.addEventListener('pointermove', onMarqueePointerMove)
     window.addEventListener('pointerup', endMarquee)
     window.addEventListener('keydown', onMarqueeKeydown)
@@ -270,7 +310,7 @@
     )
     marqueeRect = rect
     const hits = activeView?.entriesInRect(rect) ?? []
-    browse.replaceSelection([...dragBase, ...hits.map((entry) => entry.name)])
+    selection.replace([...dragBase, ...hits.map((entry) => entry.name)])
   }
 
   function autoScrollTick(): void {
@@ -285,7 +325,7 @@
 
   function onMarqueeKeydown(e: KeyboardEvent): void {
     if (e.key !== 'Escape') return
-    browse.replaceSelection(dragBase)
+    selection.replace(dragBase)
     endMarquee()
   }
 
@@ -322,7 +362,7 @@
    */
   function onEmptyAreaClick(e: MouseEvent): void {
     if ((e.target as HTMLElement).closest(CONTENT_SELECTOR)) return
-    browse.clearSelection()
+    selection.clear()
   }
 
   // ── toolbar state ──
@@ -385,7 +425,7 @@
     // against different targets at once, showing different actions for the same
     // gesture. A right-click *inside* the selection leaves it alone, so
     // right-clicking one of five selected files still acts on all five.
-    if (!browse.selection.has(entry.name)) browse.selectOnly(entry)
+    if (!selection.state.names.has(entry.name)) selection.only(entry.name, entries.indexOf(entry))
     contextEntry = entry
     emptyMenuOpen = false
     menuX = e.clientX
@@ -399,7 +439,7 @@
    *  sitting there describing rows this menu cannot act on. */
   function openEmptyMenu(e: MouseEvent): void {
     e.preventDefault()
-    browse.clearSelection()
+    selection.clear()
     contextEntry = null
     menuOpen = false
     menuX = e.clientX
@@ -416,7 +456,7 @@
    *  render this list now, so they cannot drift apart again.
    *
    *  `target` is what the per-item predicates read. The handlers themselves
-   *  already resolve `contextEntry ?? browse.selected[0]`, so they work from
+   *  already resolve `contextEntry ?? selected[0]`, so they work from
    *  either surface unchanged. "Select all" and "clear selection" are
    *  deliberately not here: they manage the selection rather than act on it,
    *  and there is nothing for them to do in a right-click menu. */
@@ -428,7 +468,7 @@
    *  account holding read alone is not offered four ways to be refused. The
    *  virtual root answers no perms at all, which is right: a share is not
    *  created by uploading into the list of them. */
-  const canCreateHere = $derived(browse.dirPerms.create)
+  const canCreateHere = $derived(dir.perms.create)
 
   /** One list, one target set, rendered by both the right-click menu and the
    *  selection bar. They cannot show different actions because there is only
@@ -437,7 +477,7 @@
    *  the rules deciding what appears. */
   const actions = $derived(
     rowActions(
-      browse.selected,
+      selected,
       {
         openInEditor,
         download: downloadSelection,
@@ -464,14 +504,25 @@
    *  raised while nothing is selected.
    */
   function actionTarget(): Entry | null {
-    return browse.selected[0] ?? contextEntry
+    return selected[0] ?? contextEntry
   }
+
+  // ── writes ──
+  //
+  // Each mutation invalidates what it changed, so none of these re-lists by
+  // hand. What is on screen updates because the listing query was invalidated,
+  // not because this page asked for it again.
+  const mkdir = createMutation(() => mkdirMutation())
+  const rename = createMutation(() => renameMutation())
+  const remove = createMutation(() => deleteMutation())
+  const move = createMutation(() => moveMutation())
+  const copy = createMutation(() => copyMutation())
+  const archive = createMutation(() => archiveTicketMutation())
 
   async function createFolder(name: string): Promise<void> {
     newFolderOpen = false
     try {
-      await api.mkdir(joinPath(browse.path, name))
-      await browse.refresh()
+      await mkdir.mutateAsync({ parent: path, name })
     } catch (err) {
       snackbarMsg = describeApiError(err, t('browse.could_not_create_folder'))
     }
@@ -489,8 +540,7 @@
     if (!renameTarget) return
     renameOpen = false
     try {
-      await api.rename(joinPath(browse.path, renameTarget.name), newName)
-      await browse.refresh()
+      await rename.mutateAsync({ path: joinPath(path, renameTarget.name), newName })
     } catch (err) {
       snackbarMsg = describeApiError(err, t('common.could_not_rename'))
     }
@@ -498,24 +548,61 @@
 
   function requestDelete(): void {
     menuOpen = false
-    if (browse.selected.length === 0 && contextEntry) browse.selectOnly(contextEntry)
+    if (selected.length === 0 && contextEntry) selection.only(contextEntry.name, entries.indexOf(contextEntry))
     deleteOpen = true
   }
 
   // ── download ──
-  // Single file: `downloadPath` (format/download.ts) mints a ticket
-  // (`POST /api/v1/files/download`) and navigates the browser to its `url`.
-  // Multi-selection (and any directory): `POST /api/fs/archive` mints its own
-  // multi-path ticket the same way. Either way nothing is fetched here: the
-  // browser's own download manager owns the transfer once it is pointed at
-  // the ticket's URL, and no blob is ever held in the tab.
+  // Single file, plain share: `downloadPath` (format/download.ts) mints a
+  // ticket (`POST /api/v1/files/download`) and navigates the browser to its
+  // `url`. Multi-selection or a folder, plain share: `POST /api/fs/archive`
+  // mints its own multi-path ticket the same way. Either way nothing is
+  // fetched here: the browser's own download manager owns the transfer once
+  // it is pointed at the ticket's URL, and no blob is ever held in the tab.
+  //
+  // An encrypted share has no server-built ticket to ask for at all (the
+  // server holds no key), so both cases instead route through
+  // `downloadEncryptedFile`/`downloadEncryptedFolder`
+  // (crypto/download-sw.ts), which fetch the ciphertext and decrypt it in
+  // the browser on the way to the same Service Worker download. A
+  // `LockedSessionError` from either opens `UnlockShareDialog` and retries
+  // the same action once the passphrase checks out.
+  let unlockTarget = $state<{ salt: string; verifier: string; retry: () => void } | null>(null)
 
-  async function downloadAsArchive(entries: Entry[]): Promise<void> {
-    if (entries.length === 0) return
-    const paths = entries.map((e) => joinPath(browse.path, e.name))
-    const filename = entries.length === 1 ? `${entries[0].name}.zip` : 'archive.zip'
+  function openUnlockFor(encryption: { salt: string; verifier: string }, retry: () => void): void {
+    unlockTarget = { salt: encryption.salt, verifier: encryption.verifier, retry }
+  }
+
+  function encryptedDownloadFailureMessage(err: unknown, fallback: string): string {
+    if (err instanceof FileTooLargeError) return t('browse.download_too_large_to_buffer')
+    return describeApiError(err, fallback)
+  }
+
+  async function downloadAsArchive(targets: Entry[]): Promise<void> {
+    if (targets.length === 0) return
+    const encryption = await encryptionForLabel(shareLabelOf(path))
+    if (encryption) {
+      try {
+        for (const target of targets) {
+          if (target.kind === 'dir') {
+            await downloadEncryptedFolder(target.path)
+          } else {
+            await downloadEncryptedFile(target)
+          }
+        }
+      } catch (err) {
+        if (err instanceof LockedSessionError) {
+          openUnlockFor(encryption, () => void downloadAsArchive(targets))
+        } else {
+          snackbarMsg = encryptedDownloadFailureMessage(err, t('browse.zip_download_failed'))
+        }
+      }
+      return
+    }
+    const paths = targets.map((e) => joinPath(path, e.name))
+    const filename = targets.length === 1 ? `${targets[0].name}.zip` : 'archive.zip'
     try {
-      const ticket = await api.archive(paths, filename)
+      const ticket = await archive.mutateAsync({ paths, name: filename })
       triggerUrlDownload(ticket.url, ticket.name)
     } catch (err) {
       if (err instanceof ApiError && err.code === 'rate.limited') {
@@ -536,13 +623,20 @@
     try {
       await downloadPath(entry.path)
     } catch (err) {
-      snackbarMsg = describeApiError(err, t('browse.download_failed'))
+      if (err instanceof LockedSessionError) {
+        const encryption = await encryptionForLabel(shareLabelOf(entry.path))
+        if (encryption) {
+          openUnlockFor(encryption, () => void downloadEntry(entry))
+          return
+        }
+      }
+      snackbarMsg = encryptedDownloadFailureMessage(err, t('browse.download_failed'))
     }
   }
 
   function downloadSelection(): void {
     menuOpen = false
-    const sel = browse.selected.length > 0 ? browse.selected : contextEntry ? [contextEntry] : []
+    const sel = selected.length > 0 ? selected : contextEntry ? [contextEntry] : []
     if (sel.length === 0) return
     if (sel.length === 1 && sel[0].kind === 'file') {
       void downloadEntry(sel[0])
@@ -562,20 +656,17 @@
 
   async function doDelete(): Promise<void> {
     deleteOpen = false
-    const targets = browse.selected.length > 0 ? browse.selected : contextEntry ? [contextEntry] : []
-    const paths = targets.map((e) => joinPath(browse.path, e.name))
-    browse.clearSelection()
+    const targets = selected.length > 0 ? selected : contextEntry ? [contextEntry] : []
+    const paths = targets.map((e) => joinPath(path, e.name))
+    selection.clear()
     try {
-      // The server answers with one result per path, not a job. This read a
-      // `job` that was never sent and handed `undefined` to the tracker, which
-      // then polled `/api/jobs/undefined` in a loop for a 400 each time.
-      const { results } = await api.delete(paths)
+      // The server answers with one result per path, not a job.
+      const { results } = await remove.mutateAsync(paths)
       const failed = results.filter((r) => !r.ok)
       if (failed.length > 0) {
         const bKey = batchErrorKey(failed[0].error)
         snackbarMsg = bKey ? t(bKey.key, bKey.params) : t('browse.delete_failed')
       }
-      browse.refresh()
     } catch (err) {
       snackbarMsg = describeApiError(err, t('browse.delete_failed'))
     }
@@ -594,9 +685,9 @@
 
   function requestTransfer(): void {
     menuOpen = false
-    const targets = browse.selected.length > 0 ? browse.selected : contextEntry ? [contextEntry] : []
+    const targets = selected.length > 0 ? selected : contextEntry ? [contextEntry] : []
     if (targets.length === 0) return
-    destSources = targets.map((e) => joinPath(browse.path, e.name))
+    destSources = targets.map((e) => joinPath(path, e.name))
     destOpen = true
   }
 
@@ -615,7 +706,7 @@
     // `contextEntry` meant the selection bar's own button did nothing on the
     // menu path and sent an empty name on the bar path, which the server took
     // as the folder itself and duplicated into a file called " (2)".
-    const targets = browse.selected.length > 0 ? browse.selected : contextEntry ? [contextEntry] : []
+    const targets = selected.length > 0 ? selected : contextEntry ? [contextEntry] : []
     if (targets.length === 0) return
     // The one menu action that forgot this. `Menu` only dismisses on a click
     // *outside* itself, so an item's own click leaves it open -- and duplicate
@@ -626,8 +717,8 @@
     // Captured now, not read back off `contextEntry` once the job settles --
     // the context menu can be pointed at a different entry by then, since
     // this doesn't await the job.
-    const paths = targets.map((e) => joinPath(browse.path, e.name))
-    void transfer(paths, browse.path, 'copy', onConflict)
+    const paths = targets.map((e) => joinPath(path, e.name))
+    void transfer(paths, path, 'copy', onConflict)
   }
 
   /** Says how many items were left alone because their destination was taken.
@@ -647,91 +738,51 @@
     const failMsg = mode === 'move' ? t('browse.move_job_failed') : t('browse.copy_job_failed')
     const quotaMsg =
       mode === 'move' ? t('browse.not_enough_storage_space_move') : t('browse.not_enough_storage_space_copy')
-    try {
-      const req = { paths, dest, on_conflict: onConflict }
-      // A move finishes in the request: it is a rename, and only the
-      // cross-device case rewrites bytes, which the server reports per item.
-      // A copy is a durable job, because it always rewrites them.
-      if (mode === 'move') {
-        const { results } = await api.move(req)
-        const conflicted = results.find((r) => r.error?.code === 'fs.conflict')
-        if (conflicted) {
-          conflictName = baseName(conflicted.path)
-          conflictOpen = true
-          return
-        }
-        const failed = results.find((r) => !r.ok)
-        if (failed) {
-          const bKey = batchErrorKey(failed.error)
-          snackbarMsg = failed.error?.code === 'quota.exceeded'
-            ? quotaMsg
-            : bKey
-              ? t(bKey.key, bKey.params)
-              : failMsg
-          return
-        }
-        conflictOpen = false
-        browse.clearSelection()
-        browse.refresh()
-        noteSkipped(results)
-        return
-      }
-      // The destination is now checked before any job is created, so a
-      // conflict, a denial or a quota refusal is in this response rather than
-      // minutes later in a job that already started.
-      const { results, job } = await api.copy(req)
+
+    /** The first refusal in a batch decides the message. A conflict opens the
+     *  dialog instead, because it has three answers rather than one. */
+    function reportBatch(results: BatchItemResult[]): 'conflict' | 'failed' | 'ok' {
       const conflicted = results.find((r) => r.error?.code === 'fs.conflict')
       if (conflicted) {
         // The first conflicting item names the dialog. The answer then applies
         // to the whole batch, because `on_conflict` is a property of the
-        // request and not of an item -- asking once per name would mean one
+        // request and not of an item: asking once per name would mean one
         // dialog per file for a selection that mostly collides.
         conflictName = baseName(conflicted.path)
         conflictOpen = true
-        return
+        return 'conflict'
       }
       const refused = results.find((r) => !r.ok)
       if (refused) {
         const bKey = batchErrorKey(refused.error)
-        snackbarMsg = refused.error?.code === 'quota.exceeded'
-          ? quotaMsg
-          : bKey
-            ? t(bKey.key, bKey.params)
-            : failMsg
-        return
+        snackbarMsg =
+          refused.error?.code === 'quota.exceeded' ? quotaMsg : bKey ? t(bKey.key, bKey.params) : failMsg
+        return 'failed'
       }
+      return 'ok'
+    }
+
+    try {
+      const vars = { paths, dest, onConflict }
+      // A move finishes in the request: it is a rename, and only the
+      // cross-device case rewrites bytes, which the server reports per item.
+      // A copy large enough becomes a durable job, because it always rewrites
+      // them; the destination is checked before that job exists, so a
+      // conflict, a denial or a quota refusal is in this response rather than
+      // minutes later.
+      const { results, job } =
+        mode === 'move' ? { ...(await move.mutateAsync(vars)), job: undefined } : await copy.mutateAsync(vars)
+      if (reportBatch(results) !== 'ok') return
       conflictOpen = false
+      if (mode === 'move') selection.clear()
       noteSkipped(results)
-      if (job === undefined) {
-        // Nothing to poll: every item was skipped because its destination was
-        // taken and the answer was to leave it alone. Handing `undefined` to
-        // the tray is what used to poll `/api/jobs/undefined` once a second
-        // until the client's own twenty-minute timeout.
-        browse.refresh()
-        return
-      }
-      jobTray
-        .track(job, mode)
-        .then(() => {
-          browse.refresh()
-        })
-        .catch((err) => {
-          const failures = err instanceof JobFailedError ? err.status.results : []
-          const quota = failures.some((r) => r.error?.code === 'quota.exceeded')
-          const firstFail = failures.find((r) => !r.ok)?.error
-          const bKey = batchErrorKey(firstFail)
-          snackbarMsg =
-            quota || (err instanceof ApiError && err.code === 'quota.exceeded')
-              ? quotaMsg
-              : bKey
-                ? t(bKey.key, bKey.params)
-                : describeApiError(err, failMsg)
-        })
+      // A job reports its own progress and its own failure in the tray. What
+      // it writes arrives here as an invalidation over the WebSocket, so
+      // there is nothing to wait for on this screen.
+      if (job !== undefined) jobTray.track(job)
     } catch (err) {
       snackbarMsg =
-        err instanceof ApiError && err.code === 'quota.exceeded'
-          ? quotaMsg
-          : describeApiError(err, failMsg)
+        err instanceof ApiError && err.code === 'quota.exceeded' ? quotaMsg : describeApiError(err, failMsg)
     }
   }
 
@@ -754,9 +805,9 @@
     const rawFiles = Array.from(fileList)
     if (rawFiles.length === 0) return
 
-    const conflicts = rawFiles.filter((f) => browse.hasEntry(f.name))
+    const conflicts = rawFiles.filter((f) => names.has(f.name))
     if (conflicts.length === 0) {
-      uploadTray.addFiles(rawFiles, browse.path)
+      addFiles(rawFiles, path)
       return
     }
 
@@ -764,30 +815,30 @@
     conflictRetry = (action: OnConflict) => {
       conflictOpen = false
       if (action === 'overwrite') {
-        uploadTray.addFiles(rawFiles, browse.path)
+        addFiles(rawFiles, path)
       } else if (action === 'skip') {
         const conflictNames = new Set(conflicts.map((c) => c.name))
         const remaining = rawFiles.filter((f) => !conflictNames.has(f.name))
-        if (remaining.length > 0) uploadTray.addFiles(remaining, browse.path)
+        if (remaining.length > 0) addFiles(remaining, path)
       } else if (action === 'rename') {
         const taken = new Set<string>()
         const renamed = rawFiles.map((f) => {
-          if (!browse.hasEntry(f.name)) return f
-          const newName = getUniqueUploadName(f.name, (n) => browse.hasEntry(n) || taken.has(n))
+          if (!names.has(f.name)) return f
+          const newName = getUniqueUploadName(f.name, (n) => names.has(n) || taken.has(n))
           taken.add(newName)
           return new File([f], newName, { type: f.type, lastModified: f.lastModified })
         })
-        uploadTray.addFiles(renamed, browse.path)
+        addFiles(renamed, path)
       }
     }
     conflictOpen = true
   }
 
-  function handleUploadEntries(entries: { file: File; relativePath: string }[]): void {
-    if (entries.length === 0) return
-    const conflicts = entries.filter((e) => !e.relativePath && browse.hasEntry(e.file.name))
+  function handleUploadEntries(picked: { file: File; relativePath: string }[]): void {
+    if (picked.length === 0) return
+    const conflicts = picked.filter((e) => !e.relativePath && names.has(e.file.name))
     if (conflicts.length === 0) {
-      uploadTray.addEntries(entries, browse.path)
+      addEntries(picked, path)
       return
     }
 
@@ -795,23 +846,23 @@
     conflictRetry = (action: OnConflict) => {
       conflictOpen = false
       if (action === 'overwrite') {
-        uploadTray.addEntries(entries, browse.path)
+        addEntries(picked, path)
       } else if (action === 'skip') {
         const conflictNames = new Set(conflicts.map((c) => c.file.name))
-        const remaining = entries.filter((e) => e.relativePath || !conflictNames.has(e.file.name))
-        if (remaining.length > 0) uploadTray.addEntries(remaining, browse.path)
+        const remaining = picked.filter((e) => e.relativePath || !conflictNames.has(e.file.name))
+        if (remaining.length > 0) addEntries(remaining, path)
       } else if (action === 'rename') {
         const taken = new Set<string>()
-        const renamed = entries.map((e) => {
-          if (e.relativePath || !browse.hasEntry(e.file.name)) return e
-          const newName = getUniqueUploadName(e.file.name, (n) => browse.hasEntry(n) || taken.has(n))
+        const renamed = picked.map((e) => {
+          if (e.relativePath || !names.has(e.file.name)) return e
+          const newName = getUniqueUploadName(e.file.name, (n) => names.has(n) || taken.has(n))
           taken.add(newName)
           return {
             file: new File([e.file], newName, { type: e.file.type, lastModified: e.file.lastModified }),
             relativePath: e.relativePath
           }
         })
-        uploadTray.addEntries(renamed, browse.path)
+        addEntries(renamed, path)
       }
     }
     conflictOpen = true
@@ -901,7 +952,7 @@
   }
 
   function toggleView(): void {
-    browse.view = browse.view === 'list' ? 'grid' : 'list'
+    view.setMode(view.state.mode === 'list' ? 'grid' : 'list')
   }
   // MD3 "fade through" for the list/grid view switch (§ motion): the two
   // views are structurally unrelated (table vs. grid), so a shared-axis
@@ -916,7 +967,7 @@
   }
   function cycleDensity(): void {
     const order = ['compact', 'comfortable', 'spacious'] as const
-    browse.density = order[(order.indexOf(browse.density) + 1) % order.length]
+    view.setDensity(order[(order.indexOf(view.state.density) + 1) % order.length])
   }
   function toggleTree(): void {
     treeOpen = !treeOpen
@@ -991,8 +1042,8 @@
   // Picking the key already in use flips the direction, which is what a file
   // manager's column header does and what makes one menu enough for both.
   function chooseSort(key: SortKey): void {
-    const order: Order = browse.sort.key === key && browse.sort.order === 'asc' ? 'desc' : 'asc'
-    browse.resort({ key, order })
+    const order: Order = sort.key === key && sort.order === 'asc' ? 'desc' : 'asc'
+    view.setSort(key, order)
     closeSort()
   }
 
@@ -1042,12 +1093,12 @@
     const target = actionTarget()
     if (!target || target.kind === 'dir') return
     menuOpen = false
-    goto(`/edit${joinPath(browse.path, target.name)}`)
+    goto(`/edit${joinPath(path, target.name)}`)
   }
 </script>
 
 <svelte:head>
-  <title>{crumbs.at(-1)?.label ?? 'Stowcloud'} · Stowcloud</title>
+  <title>{crumbs.at(-1)?.label ?? 'Stowcloud'} - Stowcloud</title>
 </svelte:head>
 
 <div
@@ -1088,7 +1139,7 @@
        that cannot be clicked or tabbed to are worse than hidden ones. -->
   <header
     class="sc-browse__toolbar"
-    class:sc-browse__toolbar--compact={uiState.compact}
+    class:sc-browse__toolbar--compact={ui.state.compact}
   >
     <div class="sc-browse__title">
       <Breadcrumb {crumbs} onnavigate={onNavigate} />
@@ -1119,8 +1170,8 @@
         </div>
       {:else}
         <IconButton label={t('common.search')} onclick={focusSearch}><Icon icon={icons.search} /></IconButton>
-        {#if !uiState.compact}
-          <IconButton label={t('common.refresh')} onclick={() => browse.refresh()}><Icon icon={icons.refresh} /></IconButton>
+        {#if !ui.state.compact}
+          <IconButton label={t('common.refresh')} onclick={refresh}><Icon icon={icons.refresh} /></IconButton>
           <IconButton label={treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')} selected={treeOpen} onclick={toggleTree}>
             <Icon icon={icons['folder-tree']} />
           </IconButton>
@@ -1131,20 +1182,20 @@
              were one of them. The icon shows what you would switch *to*, which
              is what the label says too. -->
         <IconButton
-          label={browse.view === 'list' ? t('browse.grid_view') : t('browse.list_view')}
+          label={view.state.mode === 'list' ? t('browse.grid_view') : t('browse.list_view')}
           onclick={toggleView}
         >
-          <Icon icon={browse.view === 'list' ? icons.grid : icons.list} />
+          <Icon icon={view.state.mode === 'list' ? icons.grid : icons.list} />
         </IconButton>
         <IconButton
-          label={uiState.details ? t('details.hide') : t('details.show')}
-          expanded={uiState.details}
-          onclick={() => setDetails(!uiState.details)}
+          label={ui.state.details ? t('details.hide') : t('details.show')}
+          expanded={ui.state.details}
+          onclick={() => ui.setDetails(!ui.state.details)}
         >
           <Icon icon={icons.info} />
         </IconButton>
         <IconButton
-          label={t('browse.sort_by', { key: sortKeyLabel(browse.sort.key) })}
+          label={t('browse.sort_by', { key: sortKeyLabel(sort.key) })}
           selected={sortOpen}
           expanded={sortOpen}
           onclick={openSort}
@@ -1152,7 +1203,7 @@
           <Icon icon={icons.sort} />
         </IconButton>
         <IconButton label={t('browse.more')} selected={overflowOpen} expanded={overflowOpen} onclick={openOverflow}><Icon icon={icons['more-vert']} /></IconButton>
-        {#if !uiState.compact && canCreateHere}
+        {#if !ui.state.compact && canCreateHere}
           <Button variant="text" onclick={onUploadFolderClick}>
             {#snippet icon()}<Icon icon={icons['upload-folder']} size={18} />{/snippet}
             {t('browse.upload_folder')}
@@ -1187,12 +1238,12 @@
     above or below moves, at any scroll position. The list reserves room at its
     own bottom so the last rows can still be scrolled clear of the bar.
   -->
-  {#if browse.selection.size > 0}
+  {#if selected.length > 0}
   <div class="sc-browse__selection-bar">
     <div class="sc-browse__selection-bar-inner">
       <!-- Ctrl/Cmd+A already covers Select all (FileTable.svelte's onKeydown),
-           but that needs a physical keyboard — a phone has none, so it has to
-           be reachable here too.
+           but that needs a physical keyboard, and a phone has none, so it has
+           to be reachable here too.
            Icons at every width, one layout. The text version needed 642px of
            a 390px bar, so at compact width three of the five buttons sat
            off-screen behind a horizontal scroll nothing announced; that is
@@ -1202,28 +1253,25 @@
            on keyboard focus, so nothing is lost by dropping the text.
            Clear selection leads as the close affordance, matching how every
            other modal-ish surface in this app dismisses. -->
-      <IconButton label={t('browse.clear_selection')} onclick={() => browse.clearSelection()}>
+      <IconButton label={t('browse.clear_selection')} onclick={() => selection.clear()}>
         <Icon icon={icons.close} />
       </IconButton>
       <span class="sc-browse__selection-count">
-        {#if uiState.compact}
-          {t('common.item_count', { count: browse.selection.size })}
-        {:else if selectionMeasure.state.kind === 'done'}
-          {t('browse.selected', {
-            count: browse.selection.size,
-            size: formatBytes(selectionMeasure.state.bytes)
-          })}
-        {:else if selectionMeasure.state.kind === 'measuring'}
+        {#if ui.state.compact}
+          {t('common.item_count', { count: selected.length })}
+        {:else if folderSizes.pending}
           <!-- A folder's total needs a walk, and a cold one takes long enough
                that a bare count would read as the answer. -->
-          {t('common.item_count', { count: browse.selection.size })}
+          {t('common.item_count', { count: selected.length })}
           <span class="sc-browse__selection-measuring" role="status">{t('details.measuring')}</span>
+        {:else if folderSizes.failed}
+          {t('common.item_count', { count: selected.length })}
         {:else}
-          {t('common.item_count', { count: browse.selection.size })}
+          {t('browse.selected', { count: selected.length, size: formatBytes(selectionBytes) })}
         {/if}
       </span>
       <span class="sc-browse__selection-gap"></span>
-      <IconButton label={t('browse.select_all')} onclick={() => browse.selectAll()}>
+      <IconButton label={t('browse.select_all')} onclick={() => selection.all(entries.map((e) => e.name))}>
         <Icon icon={icons.check} />
       </IconButton>
       {#each actions as action (action.key)}
@@ -1238,10 +1286,10 @@
     <div bind:this={sortMenuEl} role="none">
       {#each sortKeys as s (s.key)}
         <MenuItem onclick={() => chooseSort(s.key)}>
-          {browse.sort.key === s.key
+          {sort.key === s.key
             ? t('browse.sort_selected', {
                 label: s.label(),
-                direction: browse.sort.order === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')
+                direction: sort.order === 'asc' ? t('browse.sort_ascending') : t('browse.sort_descending')
               })
             : s.label()}
         </MenuItem>
@@ -1251,16 +1299,16 @@
 
   <Menu open={overflowOpen} onclose={closeOverflow} x={overflowLeft} y={overflowTop} align="end">
       <div bind:this={overflowMenuEl} role="none" onkeydown={onOverflowKeydown}>
-        {#if uiState.compact}
-          <MenuItem onclick={() => { browse.refresh(); closeOverflow() }}>{t('common.refresh')}</MenuItem>
+        {#if ui.state.compact}
+          <MenuItem onclick={() => { refresh(); closeOverflow() }}>{t('common.refresh')}</MenuItem>
           <MenuItem onclick={() => { toggleTree(); closeOverflow() }}>
             {treeOpen ? t('browse.hide_folder_tree') : t('browse.show_folder_tree')}
           </MenuItem>
         {/if}
         <MenuItem onclick={() => { cycleDensity(); closeOverflow() }}>
-          {t('browse.density', { density: densityLabel(browse.density) })}
+          {t('browse.density', { density: densityLabel(view.state.density) })}
         </MenuItem>
-        {#if uiState.compact && canCreateHere}
+        {#if ui.state.compact && canCreateHere}
           <MenuItem onclick={() => { onUploadFolderClick(); closeOverflow() }}>{t('browse.upload_folder')}</MenuItem>
           <MenuItem onclick={() => { newFolderOpen = true; closeOverflow() }}>{t('common.new_folder')}</MenuItem>
         {/if}
@@ -1328,7 +1376,7 @@
              screen the person who can say it lands on. -->
         <div class="sc-browse__nothing">
           <h2 class="sc-browse__nothing-title">{t('browse.nothing_here')}</h2>
-          {#if authState.session?.user.is_admin}
+          {#if session.data?.user.is_admin}
             <p class="sc-browse__nothing-hint">{t('browse.press_this_button_to_set_up_your_first_folder')}</p>
             <Button variant="filled" onclick={() => goto('/admin#shares')}>
               {#snippet icon()}<Icon icon={icons.add} size={18} />{/snippet}
@@ -1341,17 +1389,17 @@
             <p class="sc-browse__nothing-hint">{t('browse.ask_an_administrator_for_a_folder')}</p>
           {/if}
         </div>
-      {:else if browse.loading}
+      {:else if listing.isPending}
         <div class="sc-browse__loading"><ProgressCircular /></div>
-      {:else if browse.error}
+      {:else if listing.error}
         <!-- The server's own answer in the reader's language, not the wire
              message. A folder whose disk did not come back says so and names
              the folder, which is a different thing to act on from a path that
              is genuinely not there. -->
         <p class="sc-browse__error" role="alert">
-          {describeApiError(browse.error, t('browse.this_folder_could_not_be_opened'))}
+          {describeApiError(listing.error, t('browse.this_folder_could_not_be_opened'))}
         </p>
-      {:else if browse.view === 'grid'}
+      {:else if view.state.mode === 'grid'}
         <div
           class="sc-browse__view"
           in:fade={{ duration: viewSwitchDuration() }}
@@ -1359,7 +1407,13 @@
         >
           <FileGrid
             bind:this={gridView}
-            {browse}
+            {entries}
+            total={dir.total}
+            dirs={dir.dirs}
+            loading={listing.isPending}
+            loadingMore={listing.isFetchingNextPage}
+            perms={dir.perms}
+            {requestMore}
             onopen={onOpen}
             oncontextmenu={openContextMenu}
             onrename={requestRename}
@@ -1375,7 +1429,13 @@
         >
           <FileTable
             bind:this={tableView}
-            {browse}
+            {entries}
+            total={dir.total}
+            dirs={dir.dirs}
+            loading={listing.isPending}
+            loadingMore={listing.isFetchingNextPage}
+            perms={dir.perms}
+            {requestMore}
             onopen={onOpen}
             oncontextmenu={openContextMenu}
             onrename={requestRename}
@@ -1400,12 +1460,12 @@
         style:height="{marqueeRect.bottom - marqueeRect.top}px"
       ></div>
     {/if}
-    {#if uiState.details}
-      <DetailsPanel {browse} onclose={() => setDetails(false)} />
+    {#if ui.state.details}
+      <DetailsPanel {path} {selected} total={dir.total} dirs={dir.dirs} onclose={() => ui.setDetails(false)} />
     {/if}
   </div>
 
-  {#if uiState.compact && browse.selection.size === 0 && canCreateHere}
+  {#if ui.state.compact && selected.length === 0 && canCreateHere}
     <!--
       The one primary action a phone-width toolbar gets a dedicated control
       for. Upload over New folder: a folder is created rarely,
@@ -1474,7 +1534,7 @@
 />
 <DeleteDialog
   open={deleteOpen}
-  count={browse.selected.length || (contextEntry ? 1 : 0)}
+  count={selected.length || (contextEntry ? 1 : 0)}
   externalShare={rootShared}
   trashEnabled={rootTrash}
   onclose={() => (deleteOpen = false)}
@@ -1494,6 +1554,17 @@
   onoverwrite={() => conflictRetry?.('overwrite')}
   onskip={() => conflictRetry?.('skip')}
 />
+<UnlockShareDialog
+  open={unlockTarget !== null}
+  salt={unlockTarget?.salt ?? ''}
+  verifier={unlockTarget?.verifier ?? ''}
+  onunlock={() => {
+    const retry = unlockTarget?.retry
+    unlockTarget = null
+    retry?.()
+  }}
+  onclose={() => (unlockTarget = null)}
+/>
 <PreviewDialog
   open={previewOpen && previewEntry !== null}
   entry={previewEntry}
@@ -1504,13 +1575,13 @@
   onprev={() => stepPreview(-1)}
   onnext={() => stepPreview(1)}
   ondownload={(e) => void downloadEntry(e)}
-  onedit={(e) => goto(`/edit${joinPath(browse.path, e.name)}`)}
+  onedit={(e) => goto(`/edit${joinPath(path, e.name)}`)}
 />
 
 {#if shareTarget}
   <ShareManageDialog
     open={shareOpen}
-    path={joinPath(browse.path, shareTarget.name)}
+    path={joinPath(path, shareTarget.name)}
     targetName={shareTarget.name}
     targetIsDir={shareTarget.kind === 'dir'}
     onclose={() => (shareOpen = false)}

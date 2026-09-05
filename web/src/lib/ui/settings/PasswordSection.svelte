@@ -2,31 +2,29 @@
   // Password change: minimum 10 characters. On
   // change, the Argon2 hash and the NT hash (SMB) are re-derived together
   // (server side, sc-auth::change_password).
+  import { createMutation } from '@tanstack/svelte-query'
   import { t } from '../../i18n'
-  import { api, ApiError } from '../../api/client'
+  import { ApiError } from '../../api/client'
+  import { describeApiError } from '../../api/error-text'
   import { scorePasswordStrength } from '../../format/password-strength'
-  import { isErr } from '../../store/core/fp'
-  import { validatePasswordChange } from '../../store/slices/settings.slice'
+  import { validatePasswordChange } from '../../format/password-change'
+  import { changePasswordMutation } from '../../query/account'
   import Button from '../Button.svelte'
   import TextField from '../TextField.svelte'
   import ProgressLinear from '../ProgressLinear.svelte'
 
-  interface Props {
-    onchanged?: () => void
-  }
-  let { onchanged }: Props = $props()
-
   let currentPassword = $state('')
   let newPassword = $state('')
   let confirmPassword = $state('')
-  let submitting = $state(false)
   let currentError = $state<string | null>(null)
   let newError = $state<string | null>(null)
+  let formError = $state<string | null>(null)
   let success = $state(false)
 
   const MIN_LEN = 10
 
   const strength = $derived(scorePasswordStrength(newPassword))
+  const save = createMutation(() => changePasswordMutation())
 
   function reset(): void {
     currentPassword = ''
@@ -41,21 +39,18 @@
     formError = null
     success = false
 
-    const validation = validatePasswordChange(currentPassword, newPassword, confirmPassword, MIN_LEN)
-    if (isErr(validation)) {
-      if (validation.error.type === 'too_short') {
-        newError = t('password.must_at_least_characters', { min: validation.error.min })
-      } else {
-        newError = t('password.new_passwords_do_not_match')
-      }
+    const problem = validatePasswordChange(newPassword, confirmPassword, MIN_LEN)
+    if (problem) {
+      newError =
+        problem.kind === 'too_short'
+          ? t('password.must_at_least_characters', { min: problem.min })
+          : t('password.new_passwords_do_not_match')
       return
     }
-    submitting = true
     try {
-      await api.changePassword(currentPassword, newPassword)
+      await save.mutateAsync({ current: currentPassword, next: newPassword })
       success = true
       reset()
-      onchanged?.()
     } catch (err) {
       if (err instanceof ApiError && err.code === 'auth.invalid_credentials') {
         currentError = t('password.current_password_incorrect')
@@ -63,13 +58,10 @@
         const min = err.reasonNumber('min_length') ?? MIN_LEN
         newError = t('password.must_at_least_characters', { min })
       } else {
-        formError = t('password.could_not_change_password_try')
+        formError = describeApiError(err, t('password.could_not_change_password_try'))
       }
-    } finally {
-      submitting = false
     }
   }
-  let formError = $state<string | null>(null)
 </script>
 
 <form class="sc-password-form" onsubmit={submit}>
@@ -109,7 +101,7 @@
   {/if}
 
   <div class="sc-password-form__actions">
-    <Button type="submit" variant="filled" disabled={!currentPassword || !newPassword} loading={submitting}>
+    <Button type="submit" variant="filled" disabled={!currentPassword || !newPassword} loading={save.isPending}>
       {t('password.change_password')}
     </Button>
   </div>

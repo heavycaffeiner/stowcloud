@@ -60,11 +60,26 @@ const page = await context.newPage()
 // failed request and not a bad status: it is a console line and nothing else,
 // so without collecting these a blank page looks like a healthy one.
 const violations = []
+
+// The one exception, and it is the harness rather than the product: this run
+// serves a certificate it minted itself, and Chromium refuses to fetch a
+// Service Worker script over an untrusted certificate whatever the page-level
+// override says. The app already treats a failed registration as "no worker",
+// falling back to a buffered download, so the refusal is the expected
+// behaviour here and not a content-policy violation. Matched narrowly, by
+// both the registration and the certificate, so a real worker error still
+// fails this check.
+const isSelfSignedWorkerRefusal = (text) =>
+  /register a ServiceWorker/i.test(text) && /certificate/i.test(text)
+
 page.on('console', m => {
   const t = m.text()
   if (m.type() === 'error' && /Content Security Policy/i.test(t)) violations.push(t)
 })
-page.on('pageerror', e => violations.push('pageerror: ' + e.message))
+page.on('pageerror', e => {
+  if (isSelfSignedWorkerRefusal(e.message)) return
+  violations.push('pageerror: ' + e.message)
+})
 
 try {
   console.log('the interface loads')

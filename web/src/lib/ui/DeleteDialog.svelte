@@ -31,7 +31,7 @@
   {#if externalShare}
     <p class="sc-delete-dialog__external-warning">
       <Icon icon={icons.warning} size={16} />
-      {t('common.shared_with_other_services')} — {t('delete.another_service_may_reading_folder')}
+      {t('common.shared_with_other_services')}: {t('delete.another_service_may_reading_folder')}
     </p>
   {/if}
   {#snippet actions()}

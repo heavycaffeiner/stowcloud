@@ -1,14 +1,14 @@
-// web/src/lib/api/auth.test.ts — mockApi's login/session/logout surface,
+// mockApi's login/session/logout surface,
 // same pattern as mock.test.ts. Kept in its own file
 // (rather than appended to mock.test.ts) so a logged-out state produced
-// partway through never leaks into the unrelated fs tests there — vitest
+// partway through never leaks into the unrelated fs tests there; vitest
 // gives each test *file* its own module instance by default, so mock.ts's
 // module-scoped auth state starts fresh here.
 import { beforeEach, describe, expect, it } from 'vitest'
 import { mockApi } from './mock'
 
 describe('mockApi auth', () => {
-  it('is logged in out of the box — existing dev workflows are unaffected', async () => {
+  it('is logged in out of the box: existing dev workflows are unaffected', async () => {
     const s = await mockApi.session()
     expect(s.user.name).toBe('demo')
   })

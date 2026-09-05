@@ -9,7 +9,7 @@
   import { fade, scale } from 'svelte/transition'
   import { cubicOut } from 'svelte/easing'
   import { Menu } from 'm3-svelte'
-  import { uiState } from '../state/ui.svelte'
+  import { ui } from '../store/ui.store'
 
   interface Props {
     open: boolean
@@ -55,7 +55,7 @@
 
   // Mobile BottomSheet modal dialog lifecycle in browser top-layer
   $effect(() => {
-    if (!open || !uiState.compact || !sheetDialogEl) return
+    if (!open || !ui.state.compact || !sheetDialogEl) return
     const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
     sheetDialogEl.showModal?.()
     return () => {
@@ -72,7 +72,7 @@
 
   // Desktop outside-click listener (capture phase)
   $effect(() => {
-    if (!open || uiState.compact) return
+    if (!open || ui.state.compact) return
     function onPointerDownCapture(e: PointerEvent) {
       const target = e.target as Element | null
       if (el && el.contains(target as Node)) return
@@ -86,14 +86,14 @@
   })
 
   function onWindowKeydown(e: KeyboardEvent) {
-    if (open && !uiState.compact && e.key === 'Escape') onclose()
+    if (open && !ui.state.compact && e.key === 'Escape') onclose()
   }
 </script>
 
 <svelte:window onkeydown={onWindowKeydown} />
 
 {#if open}
-  {#if uiState.compact}
+  {#if ui.state.compact}
     <!-- Mobile Material 3 Bottom Sheet Modal Dialog (Top-Layer) -->
     <dialog
       bind:this={sheetDialogEl}

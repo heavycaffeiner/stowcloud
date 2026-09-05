@@ -1,4 +1,4 @@
-// web/src/lib/api/share.test.ts — mock branch of the public share page's
+// Mock branch of the public share page's
 // client. `VITE_API_MOCK` is forced here the same way setup.test.ts does
 // (see that file's header comment): the const is read at import time, so
 // ambient `.env` state must not decide whether these pass.

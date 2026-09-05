@@ -1,5 +1,5 @@
 <script lang="ts">
-  // FileRowSkeleton.svelte — placeholder for a row index whose window hasn't
+  // Placeholder for a row index whose window hasn't
   // loaded yet. task requirement #3: fast scrolling
   // must show skeletons, not blank space or a layout jump. Same height as a
   // real row so the windowing maths never has to special-case it.

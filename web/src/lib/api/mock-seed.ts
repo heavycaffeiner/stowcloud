@@ -1,4 +1,4 @@
-// web/src/lib/api/mock-seed.ts — deterministic, storage-free generation of a
+// Deterministic, storage-free generation of a
 // 100,000-entry directory so the virtual scroll has something real to
 // exercise (task requirement: "Seed it with a 100,000-entry directory").
 // Entries are computed from an index rather than materialized/stored, so
@@ -11,7 +11,7 @@ const WORDS = [
   'presentation', 'notes', '계약서', '영수증', 'photo', 'export', 'render'
 ]
 
-// Small mixing hash — deterministic per index, good enough distribution for fixture data.
+// Small mixing hash: deterministic per index, good enough distribution for fixture data.
 function mix(i: number): number {
   let x = i + 0x9e3779b9
   x = Math.imul(x ^ (x >>> 16), 0x21f0aaad)
@@ -21,7 +21,7 @@ function mix(i: number): number {
 
 // Every API path is `/{root-label}/...` and the mock
 // session hands out exactly one root, `home`. The seed used to hang off `/`,
-// which no screen ever asks for — `/b/home` lists `/home`, so the browser was
+// which no screen ever asks for. `/b/home` lists `/home`, so the browser was
 // empty in mock mode and the file list couldn't be looked at during dev.
 const ROOT = '/home'
 
@@ -95,7 +95,7 @@ export interface SeedDir {
   entries: Entry[]
 }
 
-// Low, fixed range for the static seed's own entries — clear of `/bench`'s
+// Low, fixed range for the static seed's own entries, clear of `/bench`'s
 // `100_000 +` range and `mock.ts`'s runtime-allocated `1_000_000 +` range.
 let nextSeedId = 1
 

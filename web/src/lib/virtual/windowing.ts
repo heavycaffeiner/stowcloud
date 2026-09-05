@@ -1,4 +1,4 @@
-// web/src/lib/virtual/windowing.ts — pure virtual-scroll windowing maths.
+// Pure virtual-scroll windowing maths.
 // Kept out of the Svelte component so it is testable
 // without a DOM and so the maths that must "stay bounded at 100k rows" can
 // be asserted directly.
@@ -23,7 +23,7 @@ export interface WindowResult {
 
 /**
  * Browser scroll-height ceilings: Chrome ~33.5M px, Firefox ~17.8M px.
- * Recorded for reference — the mapping itself kicks
+ * Recorded for reference: the mapping itself kicks
  * in earlier, at SCALE_MAPPING_THRESHOLD_PX, so there is headroom below the
  * tighter (Firefox) ceiling even for browsers we haven't measured.
  */
@@ -104,7 +104,7 @@ export function computeWindow(params: {
   const count = Math.max(0, Math.min(rawCount, itemCount - start))
 
   // Clamp so the rendered window's bottom edge never sits past the
-  // (possibly compressed) spacer height — otherwise the last rows would
+  // (possibly compressed) spacer height: otherwise the last rows would
   // render beyond the scrollable area once the scale-factor fallback is active.
   const naturalPadTop = start * rowHeight
   const rawPadTop = mapping.active ? naturalPadTop * mapping.scale : naturalPadTop
@@ -128,11 +128,11 @@ export function exceedsSafeScrollHeight(itemCount: number, rowHeight: number): b
 
 /**
  * FileTable/FileGrid used to be their own `overflow: auto` scroll container
- * and read `scrollTop`/`clientHeight` straight off the scroll event — see
+ * and read `scrollTop`/`clientHeight` straight off the scroll event: see
  * the note above `.sc-file-table` in FileTable.svelte. A browser only
  * collapses its address bar chrome when *the document* scrolls, and this
  * app's document never did (the shell clipped everything with
- * `overflow: hidden` and scrolled an inner box instead) — so the address
+ * `overflow: hidden` and scrolled an inner box instead), so the address
  * bar permanently ate ~56px of every phone screen. Fixing that means the
  * document has to become the scroller, which turns `computeWindow`'s two
  * inputs into a call-site problem rather than an algorithm problem: the
@@ -146,14 +146,14 @@ export function exceedsSafeScrollHeight(itemCount: number, rowHeight: number): b
  * `scrollTop` in document-scroll terms: how far the *viewport element's own
  * top edge* has scrolled past the top of the window, clamped at 0 for the
  * (normal, if the viewport sits below other page content) case where the
- * element hasn't reached the top of the screen yet — `computeWindow` treats
+ * element hasn't reached the top of the screen yet: `computeWindow` treats
  * a negative scrollTop as "nothing scrolled" and this keeps callers from
  * having to reason about that themselves.
  *
  * @param windowScrollY `window.scrollY` at read time.
  * @param viewportDocumentTop The viewport element's own top edge, in
  *   document coordinates (`getBoundingClientRect().top + window.scrollY`,
- *   captured before scrollY moves it) — not `offsetTop`, which is relative
+ *   captured before scrollY moves it), not `offsetTop`, which is relative
  *   to the nearest *positioned* ancestor and would silently give the wrong
  *   number the day something between here and the shell gets
  *   `position: relative` for an unrelated reason.

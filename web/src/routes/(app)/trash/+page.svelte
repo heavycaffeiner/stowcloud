@@ -7,10 +7,12 @@
   // No virtualization: a trash listing is a flat directory read,
   // not the 100k-row directory the browse view handles.
   import { goto } from '$app/navigation'
-  import { api, ApiError, type TrashEntry } from '../../../lib/api/client'
+  import { createQuery, createMutation } from '@tanstack/svelte-query'
+  import { trashQuery, trashRestoreMutation, trashPurgeMutation } from '../../../lib/query/files'
   import { describeApiError } from '../../../lib/api/error-text'
   import { formatDateNs, t } from '../../../lib/i18n'
   import { formatBytes } from '../../../lib/format/bytes'
+  import { selection } from '../../../lib/store/selection.store'
   import Button from '../../../lib/ui/Button.svelte'
   import Checkbox from '../../../lib/ui/Checkbox.svelte'
   import ConfirmDialog from '../../../lib/ui/ConfirmDialog.svelte'
@@ -19,47 +21,39 @@
   import IconButton from '../../../lib/ui/IconButton.svelte'
   import ProgressCircular from '../../../lib/ui/ProgressCircular.svelte'
   import Snackbar from '../../../lib/ui/Snackbar.svelte'
-  import { pureClear, pureSelectAll, pureToggle } from '../../../lib/store/slices/selection.slice'
 
+  selection.reset()
 
-  let entries = $state<TrashEntry[]>([])
-  let loading = $state(true)
-  let loadError = $state<string | null>(null)
-  let selected = $state<Set<string>>(new Set())
+  const trash = createQuery(() => trashQuery())
+  const entries = $derived(trash.data ?? [])
+  const loading = $derived(trash.isPending)
+  const loadError = $derived(trash.error ? describeApiError(trash.error, t('trash.could_not_load_trash')) : null)
+  const selected = $derived(selection.state.names)
+
+  // A second tab restoring or purging a row shows up here as a refetch: drop
+  // any selected id the fresh list no longer carries.
+  $effect(() => {
+    const known = new Set(entries.map((e) => e.id))
+    const pruned = new Set([...selected].filter((id) => known.has(id)))
+    if (pruned.size !== selected.size) selection.replace(pruned)
+  })
+
+  const restoreMutation = createMutation(() => trashRestoreMutation())
+  const purgeMutation = createMutation(() => trashPurgeMutation())
+  const busy = $derived(restoreMutation.isPending || purgeMutation.isPending)
+
   let snackbarMsg = $state<string | null>(null)
   let purgeOpen = $state(false)
   // null means purge whatever is selected: set to single id when opened from row
   let purgeSingle = $state<string | null>(null)
-  let busy = $state(false)
-
-  async function load(): Promise<void> {
-    loading = true
-    loadError = null
-    try {
-      entries = await api.trashList()
-      // Drop selection entries whose row no longer exists (e.g. a second
-      // tab already restored/purged them).
-      const known = new Set(entries.map((e) => e.id))
-      selected = new Set([...selected].filter((id) => known.has(id)))
-    } catch (err) {
-      loadError = describeApiError(err, t('trash.could_not_load_trash'))
-    } finally {
-      loading = false
-    }
-  }
-
-  $effect(() => {
-    void load()
-  })
 
   function toggle(id: string): void {
-    selected = pureToggle(selected, id) as Set<string>
+    selection.toggle(id)
   }
 
   function selectAll(): void {
-    selected = (entries.length === selected.size
-      ? pureClear()
-      : pureSelectAll(entries.map((e) => e.id))) as Set<string>
+    if (entries.length > 0 && selected.size === entries.length) selection.clear()
+    else selection.all(entries.map((e) => e.id))
   }
 
   /** Summarizes a batch OpResult array with total and failure counts. */
@@ -72,16 +66,12 @@
 
   async function restore(ids: string[]): Promise<void> {
     if (ids.length === 0) return
-    busy = true
     try {
-      const res = await api.trashRestore(ids)
+      const res = await restoreMutation.mutateAsync(ids)
       snackbarMsg = summarize(res.results, t('trash.restored'))
-      selected = new Set([...selected].filter((id) => !ids.includes(id)))
-      await load()
+      selection.replace([...selected].filter((id) => !ids.includes(id)))
     } catch (err) {
       snackbarMsg = describeApiError(err, t('trash.could_not_restore'))
-    } finally {
-      busy = false
     }
   }
 
@@ -94,16 +84,13 @@
     const ids = purgeSingle ? [purgeSingle] : [...selected]
     purgeOpen = false
     if (ids.length === 0) return
-    busy = true
     try {
-      const res = await api.trashPurge(ids)
+      const res = await purgeMutation.mutateAsync(ids)
       snackbarMsg = summarize(res.results, t('trash.deleted_permanently'))
-      selected = new Set([...selected].filter((id) => !ids.includes(id)))
-      await load()
+      selection.replace([...selected].filter((id) => !ids.includes(id)))
     } catch (err) {
       snackbarMsg = describeApiError(err, t('trash.could_not_delete_permanently'))
     } finally {
-      busy = false
       purgeSingle = null
     }
   }
@@ -118,7 +105,7 @@
     <header class="sc-trash__header">
       <IconButton label={t('trash.go_back')} onclick={() => goto('/b')}><Icon icon={icons['chevron-left']} /></IconButton>
       <h1>{t('common.trash')}</h1>
-      <IconButton label={t('common.refresh')} onclick={() => load()}><Icon icon={icons.refresh} /></IconButton>
+      <IconButton label={t('common.refresh')} onclick={() => trash.refetch()}><Icon icon={icons.refresh} /></IconButton>
     </header>
 
     {#if entries.length > 0}
@@ -279,7 +266,7 @@
 
   /* 360px no-horizontal-overflow: the row's fixed-width meta columns must be
      free to disappear before the name is squeezed into per-character
-     wrapping — same rule the browse list/grid passes already established. */
+     wrapping (the same rule the browse list/grid passes already established). */
   @media (max-width: 480px) {
     .sc-trash__meta {
       display: none;

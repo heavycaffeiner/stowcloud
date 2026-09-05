@@ -1,9 +1,9 @@
-// web/src/lib/format/password-strength.ts — advisory-only client-side
+// Advisory-only client-side
 // feedback while typing a new password (settings' PasswordSection, the
 // first-run /setup form, and admin user creation all want the same signal).
 //
 // This is a length + character-class heuristic, not zxcvbn or any other
-// dictionary/pattern-aware scorer — deliberately: the actual floor is
+// dictionary/pattern-aware scorer, deliberately: the actual floor is
 // `auth.weak_password` enforced server-side (sc-auth, currently a bare
 // minimum length), and this bar exists only to nudge a user past that floor
 // before they submit, not to replace the server's judgment. Pulling in a

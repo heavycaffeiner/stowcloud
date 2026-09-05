@@ -13,7 +13,7 @@
     variant?: 'filled' | 'outlined'
     error?: string | null
     /** `date` binds `YYYY-MM-DD` and draws the browser's own calendar, which
-     *  is localised for free — m3-svelte ships a `DateField` instead, but its
+     *  is localised for free: m3-svelte ships a `DateField` instead, but its
      *  docked picker hardcodes English ("Clear/Cancel/OK", an `SMTWTFS`
      *  weekday row) with nothing to translate it through.
      *  `datetime-local` is the same control with a time beside the date, for
@@ -59,7 +59,7 @@
   }: Props = $props()
 
   // The framework renders (and owns the id of) the `<input>`, so autofocus has
-  // to reach it through the DOM rather than an attribute — which also avoids
+  // to reach it through the DOM rather than an attribute: which also avoids
   // the `autofocus` attribute's a11y warning for the callers that don't want
   // it.
   function focusInput(node: HTMLElement, enabled: boolean) {
@@ -69,7 +69,7 @@
   // The framework floats its label on `:focus` or `:not(:placeholder-shown)`,
   // and the label carries the opaque background it needs to straddle the top
   // border. So a real placeholder pins the label *inside* the box, where that
-  // background paints as a grey pill across the field — which is what the
+  // background paints as a grey pill across the field: which is what the
   // download-limit and label fields of the share dialog looked like. MD3 shows
   // a placeholder only once the label is out of the way, so hand it over only
   // then; the value still shows normally, the hint waits its turn.
@@ -117,7 +117,7 @@
     width: 100%;
   }
   /* The floating label has no wrap guard, and in the raised position its top
-     half sits *above* its own field — it also carries an opaque background, to
+     half sits *above* its own field; it also carries an opaque background, to
      straddle the top border. So a label long enough to wrap paints over the
      field above it, which is a translation away for any label ("New password
      (optional; empty leaves it unchanged)" wrapped to 2 lines at 390px and
@@ -130,7 +130,7 @@
     max-width: 100%;
   }
   /* MD3 supporting text. m3-svelte's field takes `error` as a boolean and
-     draws no message, so the line itself is ours — built from the framework's
+     draws no message, so the line itself is ours: built from the framework's
      own type mixin and error role, not a bespoke style. */
   .error {
     margin: 0.25rem 1rem 0;

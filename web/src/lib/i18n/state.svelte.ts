@@ -1,5 +1,5 @@
-// web/src/lib/i18n/state.svelte.ts — current-locale rune. Kept in its own
-// `.svelte.ts` file so plain `.ts` consumers (index.ts) can re-export from it.
+// The current-locale rune. Kept in its own `.svelte.ts` file so plain `.ts`
+// consumers (index.ts) can re-export from it.
 export type Locale = 'ko' | 'en'
 
 function detect(): Locale {

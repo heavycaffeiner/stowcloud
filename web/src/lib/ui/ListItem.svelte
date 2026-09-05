@@ -2,7 +2,7 @@
   // Not an adapter over m3-svelte's ListItem: that one takes `headline` and
   // `supporting` as plain strings, and every call site here puts markup in
   // them (chips, buttons, a 37-line block in GrantManagementSection). So this
-  // stays an app composition — but built out of the framework's own state
+  // stays an app composition, but built out of the framework's own state
   // layer, focus ring, colour roles and type mixins rather than its own.
   import type { Snippet } from 'svelte'
 
@@ -38,7 +38,7 @@
    * `flex-shrink: 0` (it holds switches and 40px icon buttons, none of which
    * can give up width), so on a 360px screen the admin user row's four
    * controls took ~280px of the 328px available and the name column was
-   * squeezed to a ~50px sliver — the user's name rendered on top of the
+   * squeezed to a ~50px sliver: the user's name rendered on top of the
    * Admin chip and the switch. Giving the text a 12rem basis it cannot shrink below
    * means that, when the two groups no longer fit side by side, the trailing
    * group wraps onto its own line instead of eating the name. */
@@ -76,7 +76,7 @@
   }
   /* A headline is a row, not a line of text: nearly every caller puts a chip
    * or a badge beside the name. A chip is a flex box, so inside an inline
-   * headline it became block-level and spanned the full row width — four
+   * headline it became block-level and spanned the full row width: four
    * callers had each rediscovered that and pasted this same override back. */
   .sc-list-item__headline {
     display: flex;

@@ -1,10 +1,10 @@
-/* web/src/app.css — the entire stylesheet. m3-svelte owns the design system
+/* The entire stylesheet. m3-svelte owns the design system
    (tokens, typography, elevation, shapes, motion); this file only imports it,
    pins the brand colour, and sets the font stack.
 
    There is deliberately no hand-rolled token layer here. The previous one
    (styles/tokens.css, styles/tokens.generated.css, tools/gen-tokens.mjs) was
-   deleted — it duplicated what the framework already ships. */
+   deleted: it duplicated what the framework already ships. */
 
 @import 'm3-svelte/etc/styles.css';
 @import 'm3-svelte/etc/recommended-styles.css';
@@ -15,8 +15,8 @@
    imports that. Components apply the class but ship no rule for it, so
    without it every framework control has no hover/focus/press feedback. */
 
-/* That stylesheet also paints a `::before` across every `.m3-layer` element —
-   square, `inset: 0`, pointer events on — so a click in the corner of a
+/* That stylesheet also paints a `::before` across every `.m3-layer` element
+   (square, `inset: 0`, pointer events on) so a click in the corner of a
    rounded control still counts. Right for the leaf controls m3-svelte ships,
    which take the click on the host itself; wrong for the four places we put
    the class on a container. An absolutely-positioned pseudo-element paints
@@ -24,7 +24,7 @@
    the folder tree lost both of its buttons (nothing expanded, nothing
    selected) and the file list's 48px checkbox targets shrank to the 18px box
    m3-svelte positions itself. The hosts keep their own click and their hover
-   tint — only the hitbox stops eating what is inside them. */
+   tint; only the hitbox stops eating what is inside them. */
 .sc-row::before,
 .sc-file-grid__cell::before,
 .sc-list-item::before,
@@ -33,14 +33,14 @@
 }
 
 /* Upstream omission, not a knob of ours. Twelve m3-svelte components size
-   themselves with `height: --m3-density(3.5rem)` and friends — Button, FAB,
-   every TextField and Select, ListItem, MenuItem — but v7.2.0 ships no
+   themselves with `height: --m3-density(3.5rem)` and friends (Button, FAB,
+   every TextField and Select, ListItem, MenuItem) but v7.2.0 ships no
    `@function --m3-density`. An unresolved custom function leaves the call
    text in place, which makes the declaration invalid, so the browser drops
    the height entirely: buttons collapse to their content and text fields
    lose their 56dp box. Identity restores the framework's intended sizes;
    MD3's density scale (0 to -3) isn't wired up because nothing here asks for
-   it — our own density toggle drives the file list's `--sc-row-height`. */
+   it; our own density toggle drives the file list's `--sc-row-height`. */
 @function --m3-density(--size) {
   result: var(--size);
 }
@@ -120,7 +120,7 @@
    --------------------------------------------------------------------------- */
 
 /* `genCSS` emits every colour as `light-dark(...)`, so the theme toggle is
-   just `color-scheme` — no second copy of the token table. Set by
+   just `color-scheme`: no second copy of the token table. Set by
    `state/ui.svelte.ts`; absent means follow the OS. */
 :root[data-theme='light'] {
   color-scheme: light;
@@ -131,7 +131,7 @@
 
 /* Unlayered, so it wins over the framework's `@layer tokens` default without
    having to restate the layer. Every m3-svelte type mixin reads `--m3-font`,
-   so overriding it here is enough to fix the whole type scale at once —
+   so overriding it here is enough to fix the whole type scale at once:
    Google Sans Flex carries no Hangul, and Pretendard/Noto Sans KR do. */
 :root {
   --m3-font: 'Google Sans Flex Variable', 'Pretendard Variable', 'Noto Sans KR', system-ui,
@@ -151,7 +151,7 @@
 }
 
 /* Row height for the file list. Density is a product decision the framework
-   has no token for — its own `--m3-density()` only shrinks its components. */
+   has no token for: its own `--m3-density()` only shrinks its components. */
 :root {
   --sc-row-height: 48px;
 
@@ -234,7 +234,7 @@ a {
 
 /* The framework's focus indicator, reachable from our own compositions.
    m3-svelte exposes it as a mixin its components `@apply` internally and ships
-   no class, so this is the one place that turns it into one — the second
+   no class, so this is the one place that turns it into one: the second
    selector draws it on an ancestor for the cases where the focusable element
    is the wrong box to outline. */
 .sc-focus-ring:focus-visible,
@@ -284,11 +284,11 @@ a {
 }
 
 /* `SelectOutlined` draws its dropdown arrow with `select::picker-icon`, which
-   only exists under `appearance: base-select` — Chrome 135+. Everywhere else
+   only exists under `appearance: base-select` (Chrome 135+). Everywhere else
    (Firefox, Safari, older Chrome) that declaration is dropped as invalid, the
    `appearance: none` before it holds, and the control keeps the outline and
    the floating label but loses the one mark that says it opens a list. It
-   still works — the native picker is untouched — it just stops looking like a
+   still works (the native picker is untouched); it just stops looking like a
    select, which on the settings screen puts it a pixel away from a text field.
    Drawn back here rather than in a wrapper component because the framework
    gives no hook for it and there is nothing to wrap: eight call sites use

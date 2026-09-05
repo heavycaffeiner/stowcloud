@@ -1,8 +1,9 @@
 <script lang="ts">
   // App passwords: List, issue, and revoke.
   // GET/POST/DELETE /api/auth/app-passwords[/:id].
-  import { onMount } from 'svelte'
-  import { api, ApiError, type AppPasswordInfo } from '../../api/client'
+  import { createMutation, createQuery } from '@tanstack/svelte-query'
+  import { ApiError, type AppPasswordInfo } from '../../api/client'
+  import { describeApiError } from '../../api/error-text'
   import { formatDateNs, t } from '../../i18n'
   import Button from '../Button.svelte'
   import TextField from '../TextField.svelte'
@@ -14,26 +15,28 @@
   import { icons } from '../../icons'
   import Chip from '../Chip.svelte'
   import ProgressCircular from '../ProgressCircular.svelte'
-  import { useRunesStore } from '../../store/core/bridge.svelte'
-  import { createDialogStore } from '../../store/slices/settings.slice'
+  import { appPasswordsQuery, createAppPasswordMutation, revokeAppPasswordMutation } from '../../query/account'
 
+  const list = createQuery(() => appPasswordsQuery())
+  const passwords = $derived(list.data ?? [])
 
-  let passwords = $state<AppPasswordInfo[]>([])
-  let loading = $state(true)
-  let loadError = $state<string | null>(null)
-
-  const createModal = createDialogStore()
-  const createSnap = useRunesStore(createModal)
+  let createOpen = $state(false)
   let newName = $state('')
   let newReadOnly = $state(false)
   let newCurrent = $state('')
   let issuedToken = $state<string | null>(null)
+  const create = createMutation(() => createAppPasswordMutation())
+  const createError = $derived(
+    create.error ? describeApiError(create.error, t('app_password.could_not_create_app_password')) : null
+  )
 
   let revokeTarget = $state<AppPasswordInfo | null>(null)
-  let revoking = $state(false)
+  const revoke = createMutation(() => revokeAppPasswordMutation())
 
   let wipeTarget = $state<AppPasswordInfo | null>(null)
-  let wiping = $state(false)
+  const wipe = createMutation(() => revokeAppPasswordMutation())
+
+  let actionError = $state<string | null>(null)
 
   /** Whether a credential's expiry has passed. The server writes epoch zero
    *  when a wipe is requested, which is how a wiped device reads as revoked
@@ -43,44 +46,29 @@
     return Number(p.expires_ns) / 1e6 <= Date.now()
   }
 
-  async function load(): Promise<void> {
-    loading = true
-    loadError = null
-    try {
-      passwords = await api.listAppPasswords()
-    } catch {
-      loadError = t('common.could_not_load_list')
-    } finally {
-      loading = false
-    }
-  }
-  onMount(load)
-
-
   function openCreate(): void {
     newName = ''
     newReadOnly = false
     newCurrent = ''
-    createModal.open()
+    create.reset()
+    createOpen = true
   }
 
   function closeCreate(): void {
-    createModal.close()
+    createOpen = false
   }
 
-  async function confirmCreate(): Promise<void> {
+  function confirmCreate(): void {
     if (!newName.trim() || !newCurrent) return
-    createModal.submit()
-    try {
-      const res = newReadOnly
-        ? await api.createScopedAppPassword(newName.trim(), newCurrent, { readOnly: true })
-        : await api.createAppPassword(newName.trim(), newCurrent)
-      issuedToken = res.token
-      createModal.succeed()
-      await load()
-    } catch {
-      createModal.fail(t('app_password.could_not_create_app_password'))
-    }
+    create.mutate(
+      { name: newName.trim(), currentPassword: newCurrent, scope: newReadOnly ? { readOnly: true } : undefined },
+      {
+        onSuccess: (res) => {
+          issuedToken = res.token
+          createOpen = false
+        }
+      }
+    )
   }
 
   function closeIssued(): void {
@@ -97,39 +85,40 @@
   }
 
   function askRevoke(p: AppPasswordInfo): void {
+    actionError = null
     revokeTarget = p
   }
-
-  let actionError = $state<string | null>(null)
 
   function closeRevoke(): void {
     revokeTarget = null
     actionError = null
   }
 
-  async function confirmRevoke(): Promise<void> {
+  function confirmRevoke(): void {
     if (!revokeTarget) return
-    revoking = true
     actionError = null
-    try {
-      await api.revokeAppPassword(revokeTarget.id)
-      revokeTarget = null
-      await load()
-    } catch (err) {
-      // 404 just means it's already gone (e.g. revoked from another tab):
-      // refresh silently instead of leaving a stale row on screen.
-      if (err instanceof ApiError && err.status === 404) {
-        revokeTarget = null
-        await load()
-      } else {
-        actionError = t('common.could_not_save_change')
+    revoke.mutate(
+      { id: revokeTarget.id, wipe: false },
+      {
+        onSuccess: () => {
+          revokeTarget = null
+        },
+        onError: (err) => {
+          // 404 just means it's already gone (e.g. revoked from another
+          // tab): refresh the list silently instead of leaving a stale row.
+          if (err instanceof ApiError && err.status === 404) {
+            revokeTarget = null
+            void list.refetch()
+          } else {
+            actionError = describeApiError(err, t('common.could_not_save_change'))
+          }
+        }
       }
-    } finally {
-      revoking = false
-    }
+    )
   }
 
   function askWipe(p: AppPasswordInfo): void {
+    actionError = null
     wipeTarget = p
   }
 
@@ -138,34 +127,35 @@
     actionError = null
   }
 
-  async function confirmWipe(): Promise<void> {
+  function confirmWipe(): void {
     if (!wipeTarget) return
-    wiping = true
     actionError = null
-    try {
-      await api.wipeAppPassword(wipeTarget.id)
-      wipeTarget = null
-      await load()
-    } catch (err) {
-      // Already gone (revoked from another tab): the device can no longer
-      // reach us at all, so there is nothing left to ask it to do.
-      if (err instanceof ApiError && err.status === 404) {
-        wipeTarget = null
-        await load()
-      } else {
-        actionError = t('common.could_not_save_change')
+    wipe.mutate(
+      { id: wipeTarget.id, wipe: true },
+      {
+        onSuccess: () => {
+          wipeTarget = null
+        },
+        onError: (err) => {
+          // Already gone (revoked from another tab): the device can no
+          // longer reach us at all, so there is nothing left to ask it to do.
+          if (err instanceof ApiError && err.status === 404) {
+            wipeTarget = null
+            void list.refetch()
+          } else {
+            actionError = describeApiError(err, t('common.could_not_save_change'))
+          }
+        }
       }
-    } finally {
-      wiping = false
-    }
+    )
   }
 </script>
 
 <div class="sc-app-passwords">
-  {#if loading}
+  {#if list.isPending}
     <ProgressCircular />
-  {:else if loadError}
-    <p class="sc-app-passwords__error">{loadError}</p>
+  {:else if list.isError}
+    <p class="sc-app-passwords__error">{t('common.could_not_load_list')}</p>
   {:else if passwords.length === 0}
     <p class="sc-app-passwords__empty">{t('app_password.no_app_passwords_issued_yet')}</p>
   {:else}
@@ -207,9 +197,9 @@
     </Button>
   </div>
 </div>
-<Dialog open={createSnap.current.isOpen} title={t('app_password.new_app_password')} onclose={closeCreate}>
-  {#if createSnap.current.error}
-    <p class="sc-app-passwords__error">{createSnap.current.error}</p>
+<Dialog open={createOpen} title={t('app_password.new_app_password')} onclose={closeCreate}>
+  {#if createError}
+    <p class="sc-app-passwords__error">{createError}</p>
   {/if}
   <p>{t('app_password.use_one_where_your_account')}</p>
   <TextField
@@ -235,7 +225,7 @@
     <Button
       variant="filled"
       disabled={!newName.trim() || !newCurrent}
-      loading={createSnap.current.status === 'submitting'}
+      loading={create.isPending}
       onclick={confirmCreate}
     >
       {t('common.create')}
@@ -266,7 +256,7 @@
   {/if}
   {#snippet actions()}
     <Button variant="text" onclick={closeRevoke}>{t('common.cancel')}</Button>
-    <Button variant="filled" onclick={confirmRevoke} loading={revoking}>{t('app_password.revoke_2')}</Button>
+    <Button variant="filled" onclick={confirmRevoke} loading={revoke.isPending}>{t('app_password.revoke_2')}</Button>
   {/snippet}
 </Dialog>
 
@@ -279,7 +269,7 @@
     <p class="sc-app-passwords__error" role="alert">{actionError}</p>
   {/if}
     <Button variant="text" onclick={closeWipe}>{t('common.cancel')}</Button>
-    <Button variant="filled" onclick={confirmWipe} loading={wiping}>{t('app_password.wipe_2')}</Button>
+    <Button variant="filled" onclick={confirmWipe} loading={wipe.isPending}>{t('app_password.wipe_2')}</Button>
   {/snippet}
 </Dialog>
 

@@ -14,3 +14,6 @@ overrides:
 # pnpm refuses to run any dependency's install script until it is named here.
 allowBuilds:
   esbuild: true
+
+minimumReleaseAgeExclude:
+  - '@zip.js/zip.js@2.11.1'

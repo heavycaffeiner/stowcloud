@@ -101,6 +101,7 @@
       { "id": "settings", "path": "/settings", "ready": ".sc-settings__inner", "minElements": 30 },
       { "id": "settings-security", "path": "/settings#security", "ready": ".sc-settings__inner", "minElements": 30 },
       { "id": "settings-appearance", "path": "/settings#appearance", "ready": ".sc-settings__inner", "minElements": 25 },
+      { "id": "settings-connections", "path": "/settings#connections", "ready": ".sc-webdav", "minElements": 25 },
       { "id": "admin", "path": "/admin", "ready": ".sc-admin__section", "minElements": 30 },
       { "id": "admin-shares", "path": "/admin#shares", "ready": ".sc-shares__name", "minElements": 40 },
       { "id": "admin-storage", "path": "/admin#storage", "ready": ".sc-admin__section", "minElements": 20 },

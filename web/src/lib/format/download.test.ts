@@ -1,26 +1,44 @@
-// web/src/lib/format/download.test.ts — the two-step download is the only
-// path left to trigger a file download: mint a ticket by path, then hand its
-// `url` to the browser's own navigation. No client code may compose a
-// download URL from a path directly. `downloadPath` calls the client's
-// `download()` with the path and navigates to the ticket's own `url`; the
-// source-tree scan for a surviving hand-built download URL lives in
-// `tools/no-download-url.test.ts` (outside `tsconfig.json`'s checked set,
-// same as `tools/stylelint-four-px.test.ts`, since it needs `node:fs`).
+// web/src/lib/format/download.test.ts: the two-step download is the only
+// path left to trigger a plain-share file download: mint a ticket by path,
+// then hand its `url` to the browser's own navigation. No client code may
+// compose a download URL from a path directly. `downloadPath` calls the
+// client's `download()` with the path and navigates to the ticket's own
+// `url`; the source-tree scan for a surviving hand-built download URL lives
+// in `tools/no-download-url.test.ts` (outside `tsconfig.json`'s checked
+// set, same as `tools/stylelint-four-px.test.ts`, since it needs `node:fs`).
+// An encrypted path skips the ticket and routes through
+// `downloadEncryptedFile` instead: covered here only at the routing
+// boundary; the decrypt/Service-Worker pipeline itself is
+// `crypto/download-sw.test.ts`'s job.
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 const download = vi.fn()
+const stat = vi.fn()
+const shareEncryptionList = vi.fn()
 vi.mock('../api/client', () => ({
-  api: { download: (p: string) => download(p) }
+  api: {
+    download: (p: string) => download(p),
+    stat: (p: string) => stat(p),
+    shareEncryptionList: () => shareEncryptionList()
+  }
 }))
 
+const downloadEncryptedFile = vi.fn()
+vi.mock('../crypto/download-sw', () => ({
+  downloadEncryptedFile: (entry: unknown) => downloadEncryptedFile(entry)
+}))
+
+import { invalidateEncryptedShares, setEncryptedSharesSource } from '../crypto/encrypted-shares'
 import { downloadPath, triggerUrlDownload } from './download'
 
 beforeEach(() => {
   download.mockReset()
-})
-
-afterEach(() => {
-  document.body.innerHTML = ''
+  stat.mockReset()
+  downloadEncryptedFile.mockReset()
+  shareEncryptionList.mockReset()
+  shareEncryptionList.mockResolvedValue({ shares: [] })
+  setEncryptedSharesSource(() => shareEncryptionList().then((r: { shares: unknown[] }) => r.shares))
+  invalidateEncryptedShares()
 })
 
 describe('downloadPath', () => {
@@ -58,6 +76,20 @@ describe('downloadPath', () => {
     expect(clickSpy).not.toHaveBeenCalled()
 
     clickSpy.mockRestore()
+  })
+
+  it('routes an encrypted path through downloadEncryptedFile instead of minting a ticket', async () => {
+    shareEncryptionList.mockResolvedValue({
+      shares: [{ share: 1, labels: ['home'], scheme: 'rclone-crypt-v1', salt: 's'.repeat(22), verifier: 'v', createdNs: 0 }]
+    })
+    const entry = { name: 'report.pdf', path: '/home/report.pdf', kind: 'file', size: 10, content: 'claim' }
+    stat.mockResolvedValue(entry)
+
+    await downloadPath('/home/report.pdf')
+
+    expect(stat).toHaveBeenCalledWith('/home/report.pdf')
+    expect(downloadEncryptedFile).toHaveBeenCalledWith(entry)
+    expect(download).not.toHaveBeenCalled()
   })
 })
 

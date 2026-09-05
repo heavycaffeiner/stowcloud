@@ -1,7 +1,7 @@
-// web/src/lib/api/mock.ts — in-memory mock of, swapped in via
+// web/src/lib/api/mock.ts: in-memory mock of, swapped in via
 // VITE_API_MOCK=1 (see client.ts). Implements listing sessions + cursor
-// pagination exactly like the real server so FileTable/BrowseState code
-// never has to know which backend it's talking to.
+// pagination exactly like the real server so the browse screen never has to
+// know which backend it's talking to.
 import {
   BENCH_COUNT,
   BENCH_DIR,
@@ -68,6 +68,7 @@ import {
   type SettingsSnapshot,
   type SettingsSectionId,
   type ShareLinkCreateReq,
+  type ShareEncryption,
   type ShareLinkInfo,
   type ShareLinkPatchReq,
   type SmbCredential,
@@ -112,12 +113,12 @@ function randomId(prefix: string): string {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-/** Numeric fileids for entries created at runtime (`mkdir`/`writeFile`) —
+/** Numeric fileids for entries created at runtime (`mkdir`/`writeFile`):
  *  `Entry.id` is `number | undefined` (mirrors the real `fid`, see that
  *  field's doc comment in `types.ts`), so the old `randomId('id')` string
  *  no longer type-checks. Starts well above `mock-seed.ts`'s own ranges
  *  (static seed: low fixed numbers; `/bench`: index-based) so nothing
- *  collides. Unlike the real backend, every mock entry gets one — the mock
+ *  collides. Unlike the real backend, every mock entry gets one: the mock
  *  represents the intended contract ('s whole
  *  content-origin design assumes a visible entry has a usable fid), not the
  *  real server's current allocation gap, so download is fully exercisable
@@ -335,7 +336,7 @@ async function rename(path: string, newName: string): Promise<Entry> {
   return renamed
 }
 
-/** Backs both `copy()` and `move()` — the two differ only in whether the
+/** Backs both `copy()` and `move()`: the two differ only in whether the
  *  source survives, so the conflict and rename-suffix behaviour
  *  they must agree on lives here once.
  *
@@ -422,7 +423,7 @@ async function del(paths: string[], permanent = false): Promise<{ results: Batch
       continue
     }
     removeEntry(parent, name)
-    // `permanent: false` (the default — `DeleteDialog.svelte`'s "this moves
+    // `permanent: false` (the default, `DeleteDialog.svelte`'s "this moves
     // it to trash") lands in the mock
     // trash store instead of vanishing outright, so `/trash` has something
     // real to list/restore in `VITE_API_MOCK=1` mode too.
@@ -435,13 +436,13 @@ async function del(paths: string[], permanent = false): Promise<{ results: Batch
   return { results }
 }
 
-// ── long-running jobs — the real server always answers
+// ── long-running jobs: the real server always answers
 // `202 { job }`, never a synchronous result, so this mock must too for UI
 // code-path parity. Unlike the real backend, this mock's file operations
 // above already ran to completion synchronously by the time `{ job }` is
 // handed back (there is no mock filesystem large enough for a fake delay to
-// mean anything) — `makeMockJob` just records the already-known outcome
-// under a fresh id so `jobStatus`/`pollJob` see a normal `done` job on the
+// mean anything): `makeMockJob` just records the already-known outcome
+// under a fresh id so `jobStatus` sees a normal `done` job on the
 // very first poll, same shape a real terminal job has. ──
 
 interface MockJobRow {
@@ -457,11 +458,10 @@ const mockJobs = new Map<string, MockJobRow>()
 function makeMockJob(kind: JobKindWire, total: number, results: BatchItemResult[]): string {
   const id = randomId('job')
   // A single failed item ends the whole job in `error` on the real server
-  // (`go/internal/httpapi/handler/ops.go`). This
-  // used to be a hardcoded `done`, which made the mock report a rejected
-  // conflict as a success: the UI's conflict dialog hangs off `pollJob`
-  // rejecting, so against the mock it could never open and the whole
-  // conflict path looked implemented and untested at the same time.
+  // (`go/internal/httpapi/handler/ops.go`). A hardcoded `done` here made the
+  // mock report a rejected conflict as a success: the tray reads a job's
+  // failure off `jobStatus`, so against the mock the conflict path looked
+  // implemented and untested at the same time.
   const state: JobState = results.every((r) => r.ok) ? 'done' : 'error'
   mockJobs.set(id, { kind, state, done: total, total, results })
   return id
@@ -470,7 +470,7 @@ function makeMockJob(kind: JobKindWire, total: number, results: BatchItemResult[
 async function jobList(): Promise<JobListResponse> {
   await delay(10)
   // Every mock job is already `done` by the time it exists (see
-  // `makeMockJob`'s comment) — `list_open` on the real server only ever
+  // `makeMockJob`'s comment): `list_open` on the real server only ever
   // returns `running`/`interrupted` jobs, so there is never anything here
   // to re-attach to. An empty list is the honest mock answer, not a stub.
   return { jobs: [] }
@@ -516,7 +516,7 @@ async function jobStatus(id: string): Promise<JobStatus> {
 async function jobCancel(id: string): Promise<void> {
   await delay(10)
   // Every mock job is already `done` by the time its id exists (see
-  // `makeMockJob`) — there is never anything still running to cancel.
+  // `makeMockJob`): there is never anything still running to cancel.
   throw new ApiError(404, { code: 'fs.not_found', message: 'not found', detail: { id } })
 }
 
@@ -588,7 +588,7 @@ async function trashPurge(ids: string[]): Promise<BatchResult> {
 // ── content links & archive download (§8) ──
 // Every mock entry carries a numeric `id` (see `newMockFileId`'s comment),
 // so unlike the real backend today, `link()` never has to refuse for lack
-// of a fid — it always resolves to *some* entry (falling back to a generic
+// of a fid: it always resolves to *some* entry (falling back to a generic
 // placeholder name if the id doesn't match anything still in the tree,
 // which is enough for the UI's own "does this resolve" path to exercise).
 
@@ -621,7 +621,7 @@ async function archive(paths: string[], name?: string): Promise<ArchiveTicket> {
 
 /** Mock counterpart of `http.ts`'s `download`. Mirrors the real refusals:
  *  422 for a folder or an empty path, 404 for a path this account cannot
- *  reach — the mock tree is one flat namespace, so "cannot reach" here means
+ *  reach: the mock tree is one flat namespace, so "cannot reach" here means
  *  "does not exist". */
 async function download(path: string): Promise<DownloadTicket> {
   await delay(80)
@@ -800,7 +800,7 @@ async function writeFile(path: string, content: string): Promise<Entry> {
   return updated
 }
 
-// ── auth (login/session/logout) — ──
+// ── auth (login/session/logout) ──
 // Defaults to "already logged in" so every existing dev workflow (and every
 // other test in this file) is unaffected; only an explicit logout() flips
 // it, which is how the login screen becomes reachable in mock mode without
@@ -808,7 +808,7 @@ async function writeFile(path: string, content: string): Promise<Entry> {
 const DEMO_USER = { name: 'demo', password: 'password12' }
 const DEMO_TOTP_USER = { name: 'totp-demo', password: 'password12', code: '123456' }
 
-/** sessionStorage key shared (by convention, not by import — see
+/** sessionStorage key shared (by convention, not by import, see
  *  api/setup.ts's header comment) with the mock branch of
  *  `setup.ts::createInitialAdmin`, so a dev-mode first-run account can log
  *  back in with the exact credentials it was created with. */
@@ -822,15 +822,15 @@ const mockAuthState: {
   smbOptOut: boolean
   smbEnabled: boolean
   pendingTotpSecret: string | null
-  /** — unused recovery codes left. Zero while TOTP is
+  /** Unused recovery codes left. Zero while TOTP is
    *  off (mirrors the server: `totp_disable` deletes every row), reset to 10
    *  by `totpEnroll`/`reissueRecoveryCodes`. */
   recoveryCodesRemaining: number
-  /** Server-global chunk floor/default (`PATCH /api/admin/upload-settings`) — mirrors the real server's
+  /** Server-global chunk floor/default (`PATCH /api/admin/upload-settings`): mirrors the real server's
    *  `upload.db`-persisted value read by every `session()` call. */
   chunkMin: number
   chunkDefault: number
-  /** — the name index's persisted runtime override,
+  /** The name index's persisted runtime override,
    *  off by default same as the real server. */
   indexNameEnabled: boolean
   /** The demo account starts *linked* (`docs/proposals/stowcloud-0-oidc-login.md`
@@ -1042,7 +1042,7 @@ async function adminUnlinkUserOidc(id: number): Promise<void> {
 
 // ── settings ──
 // Mirrors http.ts's real-server surface so the settings screens behave
-// identically under `VITE_API_MOCK=1` and against the real backend — the
+// identically under `VITE_API_MOCK=1` and against the real backend: the
 // same convention as every other function in this file.
 
 // Scoped against unscoped, used against never used, expiring against not: the
@@ -1111,7 +1111,7 @@ async function changePassword(currentPassword: string, newPassword: string): Pro
 async function totpSetup(_currentPassword: string): Promise<{ secret: string; uri: string }> {
   await delay(30)
   // A real base32 secret so a user who copies it into an authenticator app
-  // gets a working (if mock-unverified) entry — only the *server-side*
+  // gets a working (if mock-unverified) entry: only the *server-side*
   // check is stubbed out below.
   const secret = 'JBSWY3DPEHPK3PXP'
   mockAuthState.pendingTotpSecret = secret
@@ -1154,7 +1154,7 @@ async function recoveryCodesRemaining(): Promise<{ remaining: number }> {
   return { remaining: mockAuthState.recoveryCodesRemaining }
 }
 
-/** Mock counterpart of `http.ts`'s function of the same name — same
+/** Mock counterpart of `http.ts`'s function of the same name: same
  *  password re-confirmation, same "replaces the whole set" semantics. */
 async function reissueRecoveryCodes(password: string): Promise<{ recovery_codes: string[] }> {
   await delay(80)
@@ -1184,7 +1184,7 @@ async function createAppPassword(name: string): Promise<{ id: number; token: str
   return { id, token: `stow_mock-${id}-${randomId('tok')}` }
 }
 
-/** Mock counterpart of http.ts's seam of the same name — see that file for
+/** Mock counterpart of http.ts's seam of the same name: see that file for
  *  why this exists and what will change once the real endpoint lands. */
 async function createScopedAppPassword(name: string): Promise<{ id: number; token: string }> {
   await delay(50)
@@ -1302,7 +1302,7 @@ async function adminSetThumbnailSettings(_req: ThumbnailSettingsReq): Promise<Ap
   return { stored: true, applied: true, restart_required: false, findings: [] }
 }
 
-/** `PATCH /api/admin/upload-settings` — mirrors
+/** `PATCH /api/admin/upload-settings`: mirrors
  *  `UploadEngine::set_chunk_settings`'s validation: floor at `CHUNK_SIZE_MIN`,
  *  default must not be below min. Mutates `mockAuthState` so every
  *  subsequent `session()` call (any tab, since this is one shared module
@@ -1339,7 +1339,7 @@ async function adminSetUploadSettings(req: UploadSettingsReq): Promise<UploadSet
 /** The cache spool switch, which the real server keeps in `upload_cache_settings`. */
 let mockUploadCacheEnabled = false
 
-// ── server settings (`go/internal/httpapi/handler/settings.go`) — mirrors
+// ── server settings (`go/internal/httpapi/handler/settings.go`): mirrors
 // `http.ts`'s real-server surface, same convention as every other section of
 // this file. Field keys match `go/internal/runtimecfg`'s dotted paths
 // exactly, since `ServerSettingsSection.svelte` groups by those literal
@@ -1395,7 +1395,7 @@ const mockOverriddenSections = new Set<SettingsSectionId>(['network', 'smb'])
 /** The misconfiguration the network hint exists to surface: a forwarding
  *  header arrived from an address the operator hasn't trusted yet, so every
  *  visitor behind it would be recorded as this one peer. Fixed rather than
- *  derived from `mockServerSettings.network.trusted_proxies` — the point is
+ *  derived from `mockServerSettings.network.trusted_proxies`: the point is
  *  to always demonstrate the hint in dev mode, not to react to the operator
  *  actually fixing it (a real server would flip `peer_trusted` on its next
  *  request, which this mock has no request-scoped state to model). */
@@ -1812,7 +1812,7 @@ async function adminSetIndexSettings(nameEnabled: boolean): Promise<IndexSetting
   return { name_enabled: nameEnabled }
 }
 
-/** One fixed id, unlike the real server which mints a fresh one per build —
+/** One fixed id, unlike the real server which mints a fresh one per build:
  *  this mock only ever has one build in flight (`StorageIndexSection.svelte`
  *  disables the button while `jobTray` already tracks it), and `jobStatus`
  *  below needs a stable id to recognize. Progress is a function of elapsed
@@ -1961,8 +1961,8 @@ async function adminSetUserPassword(id: number, password: string): Promise<Admin
   return { ...user }
 }
 
-/** Mirrors the real `422 admin.invalid_quota` refusal for `0`
- * — `0` reads as unlimited downstream, so it is
+/** Mirrors the real `422 admin.invalid_quota` refusal for `0`:
+ *  `0` reads as unlimited downstream, so it is
  *  rejected rather than silently accepted. */
 async function adminSetUserQuota(id: number, quotaBytes: number | null): Promise<AdminUser> {
   await delay(40)
@@ -2003,7 +2003,7 @@ async function adminDeleteUser(id: number): Promise<void> {
 // `PATCH/DELETE /api/admin/grants/{id}`) ── Mirrors `go/internal/acl` closely enough to drive the admin UI in dev mode:
 // no-access-by-default, a grant needs at least one `allow` or `deny` bit,
 // `subpath`/`share`/`principal` are immutable once created (delete and
-// recreate instead — same rule `go/internal/acl` enforces
+// recreate instead: same rule `go/internal/acl` enforces
 // server-side).
 // The real endpoints now exist
 // (`go/internal/httpapi/handler/shares.go` (
@@ -2014,7 +2014,7 @@ async function adminDeleteUser(id: number): Promise<void> {
 // identically against either backend.
 
 // The mock backend models one flat virtual tree (`STATIC_SEED`'s `/` listing),
-// not the real server's per-share roots — there is no mock equivalent of
+// not the real server's per-share roots: there is no mock equivalent of
 // `go/internal/core` to derive this from. A small fixed list
 // matching the top-level folders `STATIC_SEED` already seeds is enough to
 // demo the grant-creation screen's share picker.
@@ -2077,7 +2077,7 @@ async function adminListShares(): Promise<AdminShare[]> {
 
 /** No real filesystem to check `host` against in mock mode, so this
  *  only reproduces the checks that don't need one: empty/duplicate name and
- *  an overlapping host path — the real backend's nonexistent-path/
+ *  an overlapping host path: the real backend's nonexistent-path/
  *  not-a-directory/unreadable checks (`go/internal/core/root.go`)
  *  have no mock equivalent. */
 async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
@@ -2180,7 +2180,7 @@ async function adminCreateGrant(req: CreateGrantReq): Promise<AdminGrant> {
       // Matches the real backend's code for this refusal exactly
       // (`go/internal/core` invalid-path errors
       // -> `ErrorCode::FsInvalidName` -> `"fs.invalid_name"`,
-      // `go/internal/httpapi/handler`) — this used to say
+      // `go/internal/httpapi/handler`): this used to say
       // `fs.invalid_path`, a code the server has never actually sent, which
       // nothing caught because the real endpoint didn't exist yet either.
       code: 'fs.invalid_name',
@@ -2324,7 +2324,7 @@ async function adminRemoveGroupMember(id: number, userId: number): Promise<void>
 }
 
 // ── admin: audit log ──
-// GET /api/admin/audit. A small fixed seed, newest first — enough to drive
+// GET /api/admin/audit. A small fixed seed, newest first: enough to drive
 // the admin audit log and the logs timeline (both server records and audit
 // rows feed the same chart) realistically in dev mode. `actor_name` is
 // resolved against `mockUsers` at read time (not baked into the seed), same
@@ -2593,7 +2593,7 @@ async function adminLogsTimeline(query: AdminLogsTimelineQuery = {}): Promise<Ad
   return { bucket_ns: bucketNs.toString(), buckets, truncated }
 }
 
-// ── share links, owner side — mirrors
+// ── share links, owner side: mirrors
 // `go/internal/httpapi/handler/shares.go` (
 // `ShareLinkPatch` closely enough to drive the manage-links UI in dev mode:
 // a link's `perms` defaults to read+download when the caller doesn't specify
@@ -2620,7 +2620,7 @@ function fullPerms(p?: Partial<Entry['perms']>): Entry['perms'] {
 async function sharesList(path?: string): Promise<ShareLinkInfo[]> {
   await delay(20)
   const scoped = path ? mockShareLinks.filter((l) => normalizePath(l.path) === normalizePath(path)) : mockShareLinks
-  // Never echo the one-time `token` back on a list/get read — same rule the
+  // Never echo the one-time `token` back on a list/get read: same rule the
   // real server follows (`ShareLinkInfo.token` only populated on create).
   return scoped.map(({ token: _token, url: _url, ...rest }) => ({ ...rest }))
 }
@@ -2741,6 +2741,92 @@ function searchStream(query: string, onHit: (hit: SearchHit) => void, onDone: (d
   }
 }
 
+// share encryption (opt-in, zero-knowledge, per-share content encryption in rclone's own crypt format): go/engine/lifecycle/shareenc.go
+//
+// The real backend also refuses enabling or disabling over a non-empty
+// share; this mock has no filesystem to check that against, the same
+// reason `adminCreateShare` above skips the real backend's own host-path
+// checks, so here enabling only ever fails the one thing this mock can
+// check the same way the real server does: the shape of scheme/salt/
+// verifier. Every mock share starts unencrypted; there is no seeded row,
+// so exercising the admin dialog's "already on" state means enabling one
+// first.
+
+let mockShareEncryption: Record<number, { scheme: string; salt: string; verifier: string; createdNs: number }> = {}
+
+/** Decodes standard base64 leniently: `undefined` for input `atob` cannot
+ *  parse at all, rather than throwing, so a malformed verifier is a 422 like
+ *  the real server sends rather than an uncaught exception in the mock. */
+function decodeBase64(s: string): Uint8Array | undefined {
+  try {
+    const bin = atob(s)
+    const out = new Uint8Array(bin.length)
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+    return out
+  } catch {
+    return undefined
+  }
+}
+
+const RCLONE_CRYPT_VERIFIER_MAGIC = [0x52, 0x43, 0x4c, 0x4f, 0x4e, 0x45, 0x00, 0x00] // "RCLONE\0\0"
+
+async function shareEncryptionList(): Promise<{ shares: ShareEncryption[] }> {
+  await delay(15)
+  const shares: ShareEncryption[] = []
+  for (const share of mockShares) {
+    const row = mockShareEncryption[share.id]
+    if (!row) continue
+    shares.push({ share: share.id, labels: [share.name], scheme: row.scheme, salt: row.salt, verifier: row.verifier, createdNs: row.createdNs })
+  }
+  return { shares }
+}
+
+async function adminEnableShareEncryption(
+  shareId: number,
+  req: { scheme: string; salt: string; verifier: string }
+): Promise<void> {
+  await delay(30)
+  if (!mockShares.some((s) => s.id === shareId)) {
+    throw new ApiError(404, { code: 'fs.not_found', message: 'not found' })
+  }
+  if (req.scheme !== 'rclone-crypt-v1') {
+    throw new ApiError(422, {
+      code: 'unprocessable',
+      message: 'unsupported encryption scheme',
+      detail: { reason_key: 'encryption.invalid_scheme' }
+    })
+  }
+  if (!/^[A-Za-z0-9_-]{22}$/.test(req.salt)) {
+    throw new ApiError(422, {
+      code: 'unprocessable',
+      message: 'malformed salt',
+      detail: { reason_key: 'encryption.invalid_salt' }
+    })
+  }
+  const verifier = decodeBase64(req.verifier)
+  const validVerifier =
+    verifier !== undefined &&
+    verifier.length === 67 &&
+    RCLONE_CRYPT_VERIFIER_MAGIC.every((b, i) => verifier[i] === b)
+  if (!validVerifier) {
+    throw new ApiError(422, {
+      code: 'unprocessable',
+      message: 'malformed verifier',
+      detail: { reason_key: 'encryption.invalid_verifier' }
+    })
+  }
+  mockShareEncryption = {
+    ...mockShareEncryption,
+    [shareId]: { scheme: req.scheme, salt: req.salt, verifier: req.verifier, createdNs: Date.now() * 1_000_000 }
+  }
+}
+
+async function adminDisableShareEncryption(shareId: number): Promise<void> {
+  await delay(25)
+  const { [shareId]: _removed, ...rest } = mockShareEncryption
+  mockShareEncryption = rest
+}
+
 export const mockApi = {
   session,
   login,
@@ -2837,6 +2923,9 @@ export const mockApi = {
   adminListAudit,
   adminListLogs,
   adminLogsTimeline,
+  shareEncryptionList,
+  adminEnableShareEncryption,
+  adminDisableShareEncryption,
   /** Called by the upload worker (via the browse UI) once a mock upload finalizes. */
   registerUploadedEntry(destDir: string, entry: Entry): void {
     addOverlayEntry(destDir, entry)

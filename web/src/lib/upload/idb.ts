@@ -1,4 +1,4 @@
-// web/src/lib/upload/idb.ts — client-side resume index.
+// Client-side resume index.
 // /: "Persist session ids in
 // IndexedDB keyed by (name, size, lastModified) so a page reload resumes."
 // Runs inside the upload Worker (IndexedDB is available there too).

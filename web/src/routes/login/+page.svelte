@@ -1,20 +1,21 @@
 <script lang="ts">
   // Top-level route (sibling of `(app)` and `s/[token]`), not inside the
-  // `(app)` group on purpose — its nav rail/upload tray
+  // `(app)` group on purpose: its nav rail/upload tray
   // shell has no business existing before the user is authenticated.
   import { t } from '../../lib/i18n'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
-  import { api, ApiError } from '../../lib/api/client'
-  import { fetchOidcConfig, oidcErrorMessage, startOidcLogin } from '../../lib/api/oidc'
-  import { completeLogin } from '../../lib/state/auth-bootstrap'
+  import { createMutation, createQuery } from '@tanstack/svelte-query'
+  import { ApiError } from '../../lib/api/client'
+  import { oidcErrorMessage, startOidcLogin } from '../../lib/api/oidc'
+  import { loginMutation, loginTotpMutation, oidcConfigQuery } from '../../lib/query/session'
   import Button from '../../lib/ui/Button.svelte'
   import TextField from '../../lib/ui/TextField.svelte'
 
   // AGPL §13: a network service built from modified
   // source must offer that source to everyone who reaches it, not just to
   // whoever received the binary. This URL has to serve the tree the running
-  // build came from — **if you modify Stowcloud and run it for anyone but
+  // build came from: **if you modify Stowcloud and run it for anyone but
   // yourself, repoint this at your own source.** Left as-is, a modified
   // deployment's offer points at code it is not running, which is worse than
   // no offer at all.
@@ -22,15 +23,15 @@
 
   // Login Flow v2's `returnTo` (`sc-compat-nc::login_flow::LoginFlowService::
   // login_redirect`): an unauthenticated visit to
-  // `/index.php/login/v2/flow/<token>` — the URL a compat-protocol mobile app
-  // opens in the system browser — bounces here with `?returnTo=` pointing
+  // `/index.php/login/v2/flow/<token>`, the URL a compat-protocol mobile app
+  // opens in the system browser, bounces here with `?returnTo=` pointing
   // back at that same flow URL so the human lands on the consent screen
   // ("Grant access") after signing in, instead of the file browser.
   //
   // Before this existed, a device's very first login always failed: the app
   // opens the login URL, gets redirected here (fresh browser, no session
   // cookie yet), the human authenticates, and this page unconditionally sent
-  // them to `/b/` — dropping `returnTo` on the floor. The consent screen was
+  // them to `/b/`, dropping `returnTo` on the floor. The consent screen was
   // never reached, `grant` was never called, and the app's poll loop sat on
   // 404 until Login Flow v2's ~20-minute expiry. Only a session that was
   // *already* authenticated when the flow URL was first opened (e.g. a
@@ -39,8 +40,8 @@
   // `returnTo` is reflected off a query parameter a client can set to
   // anything, so it is validated before use: it must be a same-origin,
   // single-leading-slash path. Rejecting `//host/...` and `/\host/...`
-  // matters because browsers treat both as protocol-relative URLs — i.e. an
-  // open redirect to an attacker's host — and a bare scheme
+  // matters because browsers treat both as protocol-relative URLs (i.e. an
+  // open redirect to an attacker's host) and a bare scheme
   // (`https://evil`) never starts with `/` at all.
   function safeReturnTo(raw: string | null): string | null {
     if (!raw) return null
@@ -51,15 +52,17 @@
 
   const returnTo = $derived(safeReturnTo(page.url.searchParams.get('returnTo')))
 
-  // The consent screen lives outside the SPA — it is rendered server-side by
-  // `sc-compat-nc` — so this is a full navigation (`goto()` would try to
+  // The consent screen lives outside the SPA: it is rendered server-side by
+  // `sc-compat-nc`, so this is a full navigation (`goto()` would try to
   // resolve it as a client-side route and 404 against the SvelteKit router).
+  // Nothing to await beyond that: the mutations below already invalidate
+  // `keys.session()`, so the `(app)` layout's own session query picks up the
+  // fresh signed-in state the moment it refetches.
   async function afterLogin(): Promise<void> {
     if (returnTo) {
       window.location.href = returnTo
       return
     }
-    await completeLogin()
     await goto('/b/')
   }
 
@@ -69,20 +72,17 @@
   let password = $state('')
   let code = $state('')
   let challenge = ''
-  let submitting = $state(false)
   let errorMsg = $state<string | null>(null)
 
   // Single sign-on (`docs/proposals/stowcloud-0-oidc-login.md` §5-1).
   //
-  // Fetched rather than assumed, and only the two things this screen is
+  // Queried rather than assumed, and only the two things this screen is
   // allowed to know: whether a provider is configured, and what to write on
-  // the button. Failure means no button, so a deployment without an IdP (or
-  // one whose config route is unreachable) shows exactly the password form it
-  // showed before any of this existed.
-  let ssoName = $state<string | null>(null)
-  fetchOidcConfig().then((cfg) => {
-    if (cfg.enabled) ssoName = cfg.display_name
-  })
+  // the button. `oidcConfigQuery` never throws (see its own module), so a
+  // deployment without an IdP (or one whose config route is unreachable)
+  // shows exactly the password form it showed before any of this existed.
+  const oidcConfig = createQuery(() => oidcConfigQuery())
+  const ssoName = $derived(oidcConfig.data?.enabled ? oidcConfig.data.display_name : null)
 
   // §5-2 table B. The callback answers a person's browser with a redirect, not
   // JSON, so a failed sign-in arrives back here as `?oidc_error=<code>` and
@@ -107,7 +107,7 @@
         case 'rate.limited':
           return t('login.too_many_sign_attempts_try')
         default:
-          // Deliberately not surfacing err.message here — it may be a raw,
+          // Deliberately not surfacing err.message here: it may be a raw,
           // untranslated string from the server and this UI is Korean-only.
           return t('login.could_not_sign_try_again')
       }
@@ -115,13 +115,15 @@
     return t('login.could_not_sign_check_your')
   }
 
+  const login = createMutation(() => loginMutation())
+  const loginTotp = createMutation(() => loginTotpMutation())
+
   async function submitCredentials(e: SubmitEvent): Promise<void> {
     e.preventDefault()
-    if (submitting || !username.trim() || !password) return
+    if (login.isPending || !username.trim() || !password) return
     errorMsg = null
-    submitting = true
     try {
-      const result = await api.login(username.trim(), password)
+      const result = await login.mutateAsync({ username: username.trim(), password })
       if (result.required === 'totp') {
         challenge = result.challenge
         step = 'totp'
@@ -130,25 +132,20 @@
       }
     } catch (err) {
       errorMsg = messageFor(err)
-    } finally {
-      submitting = false
     }
   }
 
   async function submitTotp(e: SubmitEvent): Promise<void> {
     e.preventDefault()
-    if (submitting || code.trim().length === 0) return
+    if (loginTotp.isPending || code.trim().length === 0) return
     errorMsg = null
-    submitting = true
     try {
       // The code step answers with the session itself. Nothing else reaches
       // here: a wrong code throws, which the catch below renders.
-      await api.loginTotp(challenge, code.trim())
+      await loginTotp.mutateAsync({ challenge, code: code.trim() })
       await afterLogin()
     } catch (err) {
       errorMsg = messageFor(err)
-    } finally {
-      submitting = false
     }
   }
 
@@ -192,7 +189,7 @@
       {#if step === 'totp'}
         <Button variant="text" type="button" onclick={backToCredentials}>{t('login.back')}</Button>
       {/if}
-      <Button variant="filled" type="submit" loading={submitting}>
+      <Button variant="filled" type="submit" loading={step === 'credentials' ? login.isPending : loginTotp.isPending}>
         {step === 'credentials' ? t('login.sign') : t('common.ok')}
       </Button>
     </div>
@@ -218,7 +215,7 @@
          prominent. The licence identifier is an SPDX string, not prose, so it
          is not translated. -->
     <p class="sc-auth-card__licence">
-      AGPL-3.0-or-later ·
+      AGPL-3.0-or-later -
       <a class="sc-focus-ring" href={SOURCE_URL} target="_blank" rel="noreferrer">{t('login.source')}</a>
     </p>
   </form>

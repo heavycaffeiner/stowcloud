@@ -1,14 +1,14 @@
-// web/src/lib/api/share.ts — standalone client for the public share page.
+// Standalone client for the public share page.
 // Deliberately does NOT import ./client, ./mock, or ./http: those pull in
 // the full fs mock (100k-row generator) and admin-adjacent surface. The
 // public share bundle must stay small and must not
 // ship code the anonymous visitor has no use for.
 //
-// Talks to `GET/POST /s/{token}[...]` — NOT `/api/shares/{id}`. That second
+// Talks to `GET/POST /s/{token}[...]`, not `/api/shares/{id}`. That second
 // path exists too, but it's the *owner's* authenticated CRUD surface for
 // managing their own share links, keyed by numeric id and
 // gated by session cookie + CSRF. An anonymous visitor opening a share link
-// has neither, so calling it here always 401'd — this page never actually
+// has neither, so calling it here always 401'd; this page never actually
 // worked against the real backend until this fixed the endpoint. The public,
 // unauthenticated read is `GET /s/{token}` (`sc-http::routes::public_link_get`).
 
@@ -27,7 +27,7 @@ export interface ShareInfo {
   /** A file-drop link: uploads-only, never lists or serves its contents. */
   isDrop: boolean
   /** Largest single upload the server will accept, in bytes. Only sent for a
-   *  drop link — `null` everywhere else, because nothing else here uploads.
+   *  drop link: `null` everywhere else, because nothing else here uploads.
    *  This page can't ask `/api/capabilities` (that lives behind `./client`,
    *  which the header comment forbids importing), so without this field the
    *  only way to find the ceiling is to hit it. */
@@ -50,7 +50,7 @@ export class SharePathGoneError extends Error {}
 
 export class ShareNotFoundError extends Error {}
 /** A drop upload the server refused for size. Its own class so the page can
- *  say "too large" rather than the generic failure — the client-side check
+ *  say "too large" rather than the generic failure; the client-side check
  *  against `maxUploadBytes` catches this first, but not if the operator
  *  lowered the limit between page load and upload. */
 export class ShareTooLargeError extends Error {}
@@ -60,11 +60,11 @@ export class ShareTooLargeError extends Error {}
 export class SharePasswordRequiredError extends Error {}
 
 const IS_MOCK = import.meta.env.VITE_API_MOCK === '1'
-// Deliberately NOT `/api` — see header comment. `/s/...` is a top-level
+// Deliberately NOT `/api`: see header comment. `/s/...` is a top-level
 // route, same reasoning `vite.config.ts`'s proxy list keys off of.
 const ORIGIN = import.meta.env.VITE_API_BASE ?? ''
 
-/** The mock drop link's ceiling — `HttpConfig::body_limit_bytes`'s own
+/** The mock drop link's ceiling: `HttpConfig::body_limit_bytes`'s own
  *  default, so the mock refuses exactly what the server would. */
 const MOCK_DROP_LIMIT = 16 * 1024 * 1024
 /** Names the mock drop box already holds, so a repeat upload demonstrates the
@@ -148,7 +148,7 @@ async function httpGetShare(token: string, path: string): Promise<ShareInfo> {
   if (!res.ok) throw new Error(`share lookup failed: ${res.status}`)
   const body: RawLinkGetResponse = await res.json()
   // A password-protected link the visitor hasn't unlocked yet answers with
-  // ONLY `{"protected": true}` — none of the other fields (`sc-http`'s
+  // ONLY `{"protected": true}`: none of the other fields (`sc-http`'s
   // `public_link_get` returns early, before even checking `is_dir`).
   if (body.protected && body.name === undefined) {
     throw new SharePasswordRequiredError(token)
@@ -182,7 +182,7 @@ async function mockUnlockShare(token: string, password: string): Promise<boolean
 }
 
 /** `POST /s/{token}/auth`. On success the server sets an HttpOnly,
- *  `Path=/s/{token}`-scoped cookie (`Secure` — requires HTTPS, so this
+ *  `Path=/s/{token}`-scoped cookie (`Secure`, requires HTTPS, so this
  *  never succeeds over a plain-`http://` dev origin even with the right
  *  password; that's a real constraint of testing this locally, not a bug),
  *  so a following `getShare(token)` call sees through the lock. */
@@ -196,7 +196,7 @@ export function unlockShare(token: string, password: string): Promise<boolean> {
   }).then((res) => res.ok)
 }
 
-/** `GET /s/{token}/download?path=…` — one file under the link.
+/** `GET /s/{token}/download?path=…`: one file under the link.
  *
  *  A plain navigation, like the zip: the response is the bytes themselves,
  *  with `Content-Disposition: attachment`. There is no URL to mint first, and
@@ -206,7 +206,7 @@ export function shareDownloadUrl(token: string, path = ''): string {
   return `${ORIGIN}/s/${encodeURIComponent(token)}/download${shareQuery(path)}`
 }
 
-/** `GET /s/{token}/zip?path=…` — the streamed archive of one folder under the
+/** `GET /s/{token}/zip?path=…`: the streamed archive of one folder under the
  *  link. A plain navigation rather than a `fetch`: the response is the bytes
  *  themselves, with `Content-Disposition: attachment`, and there is no signed
  *  URL to fetch first. */
@@ -233,7 +233,7 @@ async function mockDropUpload(file: File): Promise<string> {
   return stored
 }
 
-/** `POST /s/{token}/drop?name=…` — upload one file through a file-drop link.
+/** `POST /s/{token}/drop?name=…`: upload one file through a file-drop link.
  *  Resolves to the name the file was **stored** under, which is not always
  *  `file.name`: the core never overwrites, so a collision comes back renamed
  * and the uploader has to be told which one is
@@ -242,7 +242,7 @@ async function mockDropUpload(file: File): Promise<string> {
  *  No `Sc-Csrf` header, deliberately: `/s/**` is a public path, so
  *  `middleware::auth` returns before inserting `SessionToken` and
  *  `middleware::csrf` only enforces when that extension exists. Sending one
- *  would be ceremony — and this bundle has no session to read it from
+ *  would be ceremony, and this bundle has no session to read it from
  *  anyway. */
 export function dropUpload(token: string, file: File): Promise<string> {
   if (IS_MOCK) return mockDropUpload(file)
