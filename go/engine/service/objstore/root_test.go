@@ -441,6 +441,86 @@ func TestReadDirHidesADirectoryMarkerFromItsParent(t *testing.T) {
 	}
 }
 
+// A directory this server created has a marker object, and the marker's own
+// modification time is the directory's: without it every folder in an S3
+// share renders as the epoch, which reads as a broken row rather than as
+// "object storage has no directory timestamps". A prefix that exists only
+// because something wrote a file beneath it genuinely has no time of its
+// own, and inventing one would be worse than reporting none.
+func TestStatReportsADirectoryTimeFromItsMarkerAndNoneWithout(t *testing.T) {
+	srv, fb := newFakeS3Server(t, "bucket-dirtime")
+	marked := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	fb.objects["marked/"] = []byte{}
+	fb.mtimes["marked/"] = marked
+	fb.objects["bare/file.txt"] = []byte("x")
+	fb.mtimes["bare/file.txt"] = time.Now()
+
+	root := openTestRoot(t, srv.URL, "bucket-dirtime", "")
+
+	st, err := root.Stat(mustSafePath(t, "marked"))
+	if err != nil {
+		t.Fatalf("Stat(marked): %v", err)
+	}
+	if !st.Kind.IsDir() {
+		t.Fatalf("Stat(marked) reported kind %v", st.Kind)
+	}
+	if st.MtimeNs != marked.UnixNano() {
+		t.Errorf("Stat(marked) reported mtime %d, want the marker's %d", st.MtimeNs, marked.UnixNano())
+	}
+
+	bare, err := root.Stat(mustSafePath(t, "bare"))
+	if err != nil {
+		t.Fatalf("Stat(bare): %v", err)
+	}
+	if !bare.Kind.IsDir() {
+		t.Fatalf("Stat(bare) reported kind %v", bare.Kind)
+	}
+	if bare.MtimeNs != 0 {
+		t.Errorf("Stat(bare) invented mtime %d for a markerless prefix", bare.MtimeNs)
+	}
+}
+
+// The upload engine syncs and closes the descriptor CreatePart handed it
+// before it publishes, which is exactly what a local share wants: a publish
+// there is a rename by name. Reading the staged bytes back through that
+// closed descriptor answered "bad file descriptor" and lost every upload
+// into a bucket, with the client told the transfer had succeeded.
+func TestPublishPartWorksAfterTheCallerClosesItsHandle(t *testing.T) {
+	srv, fb := newFakeS3Server(t, "bucket-publish")
+	root := openTestRoot(t, srv.URL, "bucket-publish", "team")
+
+	part := mustSafePath(t, ".sc-upload-part")
+	f, err := root.CreatePart(part)
+	if err != nil {
+		t.Fatalf("CreatePart: %v", err)
+	}
+	body := []byte("staged bytes")
+	if _, err := f.WriteAt(body, 0); err != nil {
+		t.Fatalf("WriteAt: %v", err)
+	}
+	if err := f.SyncData(); err != nil {
+		t.Fatalf("SyncData: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	dest := mustSafePath(t, "published.txt")
+	if _, err := root.PublishPart(part, dest, false); err != nil {
+		t.Fatalf("PublishPart after the handle closed: %v", err)
+	}
+
+	fb.mu.Lock()
+	stored, ok := fb.objects["team/published.txt"]
+	fb.mu.Unlock()
+	if !ok {
+		t.Fatalf("the published object is not in the bucket")
+	}
+	if string(stored) != string(body) {
+		t.Errorf("the published object is %q, want %q", stored, body)
+	}
+}
+
 func hasEntry(entries []vfs.DirEntry, name string, kind vfs.Kind) bool {
 	for _, e := range entries {
 		if e.Name == name && e.Kind == kind {

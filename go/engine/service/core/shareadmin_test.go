@@ -256,8 +256,20 @@ func TestRetryShareHealsAFixedPathAndRefusesAStillBrokenOne(t *testing.T) {
 	def := ShareDef{ID: 1_000_001, Name: "documents", Host: host, Policy: vfs.DefaultSharePolicy()}
 	c.RegisterBroken(def, errors.New("the disk was not there"))
 
-	if _, err := c.RetryShare(ctx, def.ID); err == nil {
+	// The refusal has to name the share as broken rather than pass the
+	// registration error through raw. Nothing above this layer classifies an
+	// admission verdict, so a raw error made the retry button answer an
+	// internal error about the very condition it was offered for.
+	_, err := c.RetryShare(ctx, def.ID)
+	if err == nil {
 		t.Fatal("retrying a still-missing path succeeded")
+	}
+	var broken *ShareBrokenError
+	if !errors.As(err, &broken) {
+		t.Fatalf("a failed retry returned %v, want a ShareBrokenError", err)
+	}
+	if broken.Reason == "" {
+		t.Error("the refusal carries no reason for the screen to render")
 	}
 	if c.ShareBroken(def.ID) == nil {
 		t.Fatal("a failed retry left the share unmarked")

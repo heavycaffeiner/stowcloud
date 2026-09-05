@@ -1538,8 +1538,27 @@ async function adminUpdateShare(id: number, patch: UpdateShareReq): Promise<Admi
 
 async function adminDeleteShare(id: number): Promise<{ smb?: SMBOutcome }> {
   // A delete answers with the republish outcome when there is a sidecar and
-  // 204 when there is not, so the body may legitimately be absent.
-  return (await request<{ smb?: SMBOutcome } | undefined>(`/admin/shares/${id}`, { method: 'DELETE' })) ?? {}
+  // 204 with no body at all when there is not. `request` reads every
+  // response as JSON and refuses an empty one, so routing this through it
+  // reported "the server answered with a body that could not be parsed" for
+  // a delete that had just succeeded: the row vanished from the screen and
+  // an error sat beside the empty space.
+  const res = await send(`/admin/shares/${id}`, { method: 'DELETE' })
+  if (!res.ok) {
+    throw errorFrom(res, await res.json().catch(() => ({})))
+  }
+  const text = await res.text()
+  if (text.trim() === '') return {}
+  try {
+    return JSON.parse(text) as { smb?: SMBOutcome }
+  } catch {
+    // A body that is present and unreadable is worth reporting, since the
+    // republish outcome is what the screen was going to show.
+    throw new ApiError(res.status, {
+      code: 'server.malformed_response',
+      message: 'The server answered with a body that could not be parsed as JSON'
+    })
+  }
 }
 
 /** `POST /api/v1/admin/shares/{id}/retry` — re-open a share whose disk came

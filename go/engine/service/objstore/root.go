@@ -47,10 +47,13 @@ type Options struct {
 	Client     *http.Client
 }
 
-// partHandle is a CreatePart file this Root remembers until PublishPart
-// asks for it by the same SafePath the caller created it under.
+// partHandle records where CreatePart staged one part, so PublishPart can
+// find it by the same SafePath the caller created it under.
+//
+// The descriptor is deliberately absent: it belongs to the caller, which
+// closes it before publishing, so the only durable handle on the staged
+// bytes is their name in scratch space.
 type partHandle struct {
-	file    *vfs.File
 	scratch vfs.SafePath
 }
 
@@ -270,14 +273,17 @@ func (r *Root) Stat(p vfs.SafePath) (vfs.Stat, error) {
 			Kind: vfs.KindFile, Mode: r.policy.ModeFile, Nlink: 1,
 		}, nil
 	}
-	isDir, err := r.isDirectory(ctx, key)
+	isDir, dirMtimeNs, err := r.isDirectory(ctx, key)
 	if err != nil {
 		return vfs.Stat{}, fmt.Errorf("stat: %w", err)
 	}
 	if !isDir {
 		return vfs.Stat{}, fmt.Errorf("stat: %w", vfs.ErrNotFound)
 	}
-	return vfs.Stat{Dev: r.dev, Ino: r.syntheticIno(key + "/"), Kind: vfs.KindDir, Mode: r.policy.ModeDir, Nlink: 1}, nil
+	return vfs.Stat{
+		Dev: r.dev, Ino: r.syntheticIno(key + "/"), MtimeNs: dirMtimeNs,
+		Kind: vfs.KindDir, Mode: r.policy.ModeDir, Nlink: 1,
+	}, nil
 }
 
 // ReadDirFunc merges one prefix's CommonPrefixes and Contents into the
@@ -390,7 +396,7 @@ func (r *Root) CreatePart(p vfs.SafePath) (*vfs.File, error) {
 		return nil, err
 	}
 	r.mu.Lock()
-	r.parts[p.String()] = partHandle{file: f, scratch: scratchPath}
+	r.parts[p.String()] = partHandle{scratch: scratchPath}
 	r.mu.Unlock()
 	return f, nil
 }
@@ -398,6 +404,12 @@ func (r *Root) CreatePart(p vfs.SafePath) (*vfs.File, error) {
 // PublishPart uploads the part file CreatePart(part) produced as dest, then
 // discards the scratch file: there is nothing left to publish a second way,
 // unlike a local share where the same file is renamed into place.
+//
+// The scratch file is reopened by name rather than read through the handle
+// CreatePart returned. That handle belongs to the caller, and the upload
+// engine syncs and closes it before publishing, exactly as a local share
+// wants; reading it here answered "bad file descriptor" and lost every
+// upload into a bucket.
 func (r *Root) PublishPart(part, dest vfs.SafePath, replacing bool) (vfs.Durable, error) {
 	r.mu.Lock()
 	ph, ok := r.parts[part.String()]
@@ -408,15 +420,15 @@ func (r *Root) PublishPart(part, dest vfs.SafePath, replacing bool) (vfs.Durable
 	if !ok {
 		return vfs.Durable{}, fmt.Errorf("publish part: %w", vfs.ErrNotFound)
 	}
-	defer func() {
-		_ = r.scratch.Unlink(ph.scratch)
-		_ = ph.file.Close()
-	}()
+	defer func() { _ = r.scratch.Unlink(ph.scratch) }()
 
-	if err := ph.file.SyncData(); err != nil {
-		return vfs.Durable{}, fmt.Errorf("publish part: sync scratch file: %w", err)
+	staged, err := r.scratch.OpenRead(ph.scratch, vfs.IntentRead)
+	if err != nil {
+		return vfs.Durable{}, fmt.Errorf("publish part: reopen the staged file: %w", err)
 	}
-	st, err := ph.file.Stat()
+	defer func() { _ = staged.Close() }()
+
+	st, err := staged.Stat()
 	if err != nil {
 		return vfs.Durable{}, fmt.Errorf("publish part: %w", err)
 	}
@@ -431,7 +443,7 @@ func (r *Root) PublishPart(part, dest vfs.SafePath, replacing bool) (vfs.Durable
 	if existed && !replacing {
 		return vfs.Durable{}, fmt.Errorf("publish part: %w", vfs.ErrExists)
 	}
-	if err := r.putObject(context.Background(), key, ph.file, st.Size); err != nil {
+	if err := r.putObject(context.Background(), key, staged, st.Size); err != nil {
 		return vfs.Durable{}, fmt.Errorf("publish part: %w", err)
 	}
 	return vfs.Durable{Replaced: existed}, nil
@@ -553,7 +565,7 @@ func (r *Root) Unlink(p vfs.SafePath) error {
 		return fmt.Errorf("unlink: %w", err)
 	}
 	if !found {
-		isDir, err := r.isDirectory(ctx, key)
+		isDir, _, err := r.isDirectory(ctx, key)
 		if err != nil {
 			return fmt.Errorf("unlink: %w", err)
 		}
@@ -611,7 +623,7 @@ func (r *Root) renameDir(from, to vfs.SafePath, noReplace bool) error {
 	fromPrefix, toPrefix := r.dirPrefix(from), r.dirPrefix(to)
 
 	if noReplace {
-		destExists, err := r.isDirectory(ctx, r.objectKey(to))
+		destExists, _, err := r.isDirectory(ctx, r.objectKey(to))
 		if err != nil {
 			return fmt.Errorf("rename: %w", err)
 		}

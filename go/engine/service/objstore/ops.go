@@ -139,10 +139,24 @@ func parseContentLength(v string) uint64 {
 	return n
 }
 
-// parseLastModified is equally forgiving: an endpoint that sends a
-// malformed timestamp gets a zero modification time, not a crash.
+// parseLastModified reads the HTTP Last-Modified header, which is an
+// HTTP-date. It is equally forgiving: an endpoint that sends a malformed
+// timestamp gets a zero modification time, not a crash.
 func parseLastModified(v string) int64 {
 	t, err := http.ParseTime(v)
+	if err != nil {
+		return 0
+	}
+	return t.UnixNano()
+}
+
+// parseListedTime reads a listing's own LastModified element, which S3
+// spells as RFC 3339 rather than as an HTTP-date. The two are different
+// formats for the same fact, which is why they are different functions: the
+// header parser silently returns zero for an RFC 3339 value, and reusing it
+// here made every directory in a bucket report the epoch.
+func parseListedTime(v string) int64 {
+	t, err := time.Parse(time.RFC3339, v)
 	if err != nil {
 		return 0
 	}
@@ -157,12 +171,27 @@ func (r *Root) exists(ctx context.Context, key string) (bool, error) {
 // isDirectory reports whether key names a prefix with at least one child or
 // marker, without assuming a marker object exists: another tool writing
 // "a/b.txt" with no "a/" marker still makes "a" a directory.
-func (r *Root) isDirectory(ctx context.Context, key string) (bool, error) {
-	result, err := r.listObjectsV2(ctx, key+"/", "/", "", 1)
+//
+// The second return is the marker object's own modification time when this
+// listing contained it, and zero otherwise. It comes free: the marker's key
+// is exactly the prefix being listed, so a directory this server created has
+// its time in the page already, and asking for it separately would be a
+// second round trip for a value this one carries. A prefix that exists only
+// because something wrote a file beneath it has no marker and therefore no
+// time of its own, which is a fact about object storage rather than a value
+// worth inventing.
+func (r *Root) isDirectory(ctx context.Context, key string) (bool, int64, error) {
+	prefix := key + "/"
+	result, err := r.listObjectsV2(ctx, prefix, "/", "", 1)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
-	return len(result.CommonPrefixes) > 0 || len(result.Contents) > 0, nil
+	for _, c := range result.Contents {
+		if c.Key == prefix {
+			return true, parseListedTime(c.LastModified), nil
+		}
+	}
+	return len(result.CommonPrefixes) > 0 || len(result.Contents) > 0, 0, nil
 }
 
 func (r *Root) deleteObjectForce(ctx context.Context, key string) error {

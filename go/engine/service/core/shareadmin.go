@@ -213,6 +213,13 @@ func (c *Core) UpdateShare(ctx context.Context, id ShareID, patch SharePatch) (S
 // RetryShare re-runs the full registration a fixed path needs, so the
 // admission gate runs again: a path that came back on a filesystem this
 // server refuses stays broken.
+//
+// A retry that fails answers the same way an edit that leaves a share
+// unservable does. Returning the registration error raw made the retry
+// button, whose whole purpose is to be pressed while a share is broken,
+// answer an internal error: nothing above this classifies an admission
+// verdict, so the screen said "internal error" about the very condition it
+// was showing.
 func (c *Core) RetryShare(ctx context.Context, id ShareID) (Share, error) {
 	def, ok := c.Share(id)
 	if !ok {
@@ -220,9 +227,10 @@ func (c *Core) RetryShare(ctx context.Context, id ShareID) (Share, error) {
 	}
 	if err := c.RegisterShare(ctx, def); err != nil {
 		c.RegisterBroken(def, err)
-		return Share{}, err
+		return Share{}, &ShareBrokenError{Share: def.Name, Reason: RejectionKind(err)}
 	}
 	def.BrokenReason = ""
+	def.Source = c.backend.Describe(def)
 	return def, nil
 }
 

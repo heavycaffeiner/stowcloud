@@ -264,9 +264,15 @@ func (e *Engine) uploadsPatch(c *fiber.Ctx) error {
 	// nobody can reach: every chunk succeeds, the offset reaches the length,
 	// and the destination does not exist. The protocol has no separate
 	// finish request, so the arrival of the final byte is the signal.
+	//
+	// A refused publish returns here rather than falling through. It used to
+	// be checked as `if err := publish(); err != nil`, and the refusal helpers
+	// answer nil once they have written the response, so a publish that failed
+	// wrote its own 4xx and then had 204 written over it: the client was told
+	// the upload succeeded and the file was not there.
 	if sess.TotalLen != nil && next >= *sess.TotalLen {
-		if ferr := e.publishUpload(c, engine, sess, id, owner); ferr != nil {
-			return ferr
+		if ok, written := e.publishUpload(c, engine, sess, id, owner); !ok {
+			return written
 		}
 	}
 
@@ -274,7 +280,12 @@ func (e *Engine) uploadsPatch(c *fiber.Ctx) error {
 	return c.SendStatus(fiber.StatusNoContent)
 }
 
-// publishUpload moves a completed session to its destination.
+// publishUpload moves a completed session to its destination, reporting
+// whether it did and, when it did not, the already-written response.
+//
+// The two returns follow the shape every guard in this package uses: the
+// refusal helpers write the response and answer nil, so an outcome cannot be
+// carried by the error alone.
 //
 // The destination is resolved fresh rather than carried from the create: the
 // account's access is checked at the moment of the write, so a grant revoked
@@ -282,24 +293,24 @@ func (e *Engine) uploadsPatch(c *fiber.Ctx) error {
 func (e *Engine) publishUpload(
 	c *fiber.Ctx, engine *upload.Engine, sess upload.Session,
 	id upload.SessionID, owner core.UserID,
-) error {
+) (ok bool, written error) {
 	// The destination is the vpath under the label the caller's own grant
 	// projects the share as, not the share's registered name: the two differ
 	// whenever a grant is labeled, and resolving under the registered name
 	// answers not-found for the very upload the client just completed.
 	dest, err := e.Core.VpathFor(owner, sess.Share, sess.Dest.Share())
 	if err != nil {
-		return fail(c, core.ErrNotFound)
+		return false, fail(c, core.ErrNotFound)
 	}
 
 	r, err := e.Core.Resolve(owner, dest, acl.Write|acl.Create)
 	if err != nil {
-		return fail(c, err)
+		return false, fail(c, err)
 	}
 	if _, ferr := engine.Finalize(c.UserContext(), r, id); ferr != nil {
-		return fail(c, ferr)
+		return false, fail(c, ferr)
 	}
-	return nil
+	return true, nil
 }
 
 // tusChunkType is the one body type a chunk may carry.

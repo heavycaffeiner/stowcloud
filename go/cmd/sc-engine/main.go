@@ -29,6 +29,7 @@ import (
 	"syscall"
 
 	"github.com/gofiber/fiber/v2"
+	"golang.org/x/sys/unix"
 
 	"github.com/heavycaffeiner/stowcloud/go/engine/http/server"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/jail"
@@ -337,6 +338,7 @@ func jailSpec(values runtimecfg.Values, dataDir string, roots, shareHosts, exact
 	if values.ThumbnailDir != "" {
 		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{Path: filepath.Clean(values.ThumbnailDir)})
 	}
+	spec.GrantBeneath = append(spec.GrantBeneath, outboundGrants()...)
 
 	seen := map[string]bool{}
 	grant := func(dir string) {
@@ -364,11 +366,63 @@ func jailSpec(values runtimecfg.Values, dataDir string, roots, shareHosts, exact
 		grant(parent)
 	}
 	for _, path := range exactPaths {
-		if path != "" {
-			grant(filepath.Clean(path))
+		if path == "" || seen[path] {
+			continue
 		}
+		clean := filepath.Clean(path)
+		if clean == "/" || clean == "." || seen[clean] {
+			continue
+		}
+		seen[clean] = true
+		// A rule on a regular file may only carry rights that apply to one.
+		// Landlock answers EINVAL for a directory-only right such as
+		// read-dir, and the whole domain then fails to install, which under
+		// the required policy is a server that will not start.
+		spec.GrantBeneath = append(spec.GrantBeneath, jail.Grant{
+			Path: clean,
+			Access: uint64(unix.LANDLOCK_ACCESS_FS_READ_FILE |
+				unix.LANDLOCK_ACCESS_FS_WRITE_FILE |
+				unix.LANDLOCK_ACCESS_FS_TRUNCATE),
+		})
 	}
 	return spec
+}
+
+// outboundGrants are the read-only files this process must reach to dial a
+// host by name over TLS: the resolver's configuration and the system trust
+// store.
+//
+// Without them a domain that grants only the served data leaves the Go
+// resolver unable to read /etc/resolv.conf, so it falls back to a nameserver
+// on localhost that nothing answers, and every outbound connection fails
+// with a DNS error naming a server the operator never configured. That is
+// what registering an S3-compatible share did, and what single sign-on
+// against an external provider would do.
+//
+// Read-only, and never the whole of /etc: these are world-readable files
+// holding no secret, which this process could already read before the domain
+// existed. A missing one is skipped rather than fatal, since Landlock
+// refuses a rule whose path does not resolve and an image laid out
+// differently must still start.
+func outboundGrants() []jail.Grant {
+	const readFile = uint64(unix.LANDLOCK_ACCESS_FS_READ_FILE)
+	const readDir = readFile | uint64(unix.LANDLOCK_ACCESS_FS_READ_DIR)
+
+	candidates := []jail.Grant{
+		{Path: "/etc/resolv.conf", Access: readFile},
+		{Path: "/etc/hosts", Access: readFile},
+		{Path: "/etc/nsswitch.conf", Access: readFile},
+		{Path: "/etc/ssl/certs", Access: readDir},
+		{Path: "/etc/pki/tls/certs", Access: readDir},
+	}
+	out := make([]jail.Grant, 0, len(candidates))
+	for _, g := range candidates {
+		if _, err := os.Stat(g.Path); err != nil {
+			continue
+		}
+		out = append(out, g)
+	}
+	return out
 }
 
 // namedShareDirs are the directories a deployment puts served data in when

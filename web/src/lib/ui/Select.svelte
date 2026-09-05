@@ -68,6 +68,15 @@
     min-width: 0;
     width: 100%;
   }
+  /* The framework floats its label absolutely at the top of the box and
+     leaves the select 8px of top padding, so in Chrome's base-select
+     rendering the label and the chosen value paint over each other. Pushing
+     the value clear of the label's own line is what a filled MD3 select does
+     anyway; the 56px box height is unchanged. */
+  .field :global(.m3-container > select) {
+    padding-top: 1.5rem;
+    padding-bottom: 0.5rem;
+  }
   /* MD3 supporting text, built from the framework's own type mixin and error
      role rather than a bespoke style. */
   .error {

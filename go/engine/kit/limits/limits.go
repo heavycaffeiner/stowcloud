@@ -119,6 +119,17 @@ const (
 	// must leave on the destination filesystem. Refuses with 507.
 	UploadFreeSpaceMargin = 2 << 30
 
+	// UploadFreeSpaceMarginDivisor bounds that margin on a filesystem too
+	// small to spare it: the margin is at most this fraction of the
+	// destination's total size.
+	//
+	// A share used to be a directory on a disk, where two spare gigabytes
+	// cost nothing. A share can now be a VeraCrypt container, and a 64 MiB
+	// one is an ordinary thing to make; against a flat margin every upload
+	// into it was refused as a momentarily exhausted resource, which is a
+	// message nobody can act on about a container that is simply small.
+	UploadFreeSpaceMarginDivisor = 20
+
 	// UploadsInFlightPerUser and UploadSessionsPerUser both refuse with 429
 	// once an account crosses them.
 	UploadsInFlightPerUser = 32

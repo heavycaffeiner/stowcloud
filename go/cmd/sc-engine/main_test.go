@@ -8,6 +8,8 @@ import (
 	"slices"
 	"testing"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/jail"
 	"github.com/heavycaffeiner/stowcloud/go/engine/infra/mountinfo"
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/settings/runtimecfg"
@@ -182,17 +184,42 @@ func granted(spec jail.Spec, path string) bool {
 // A VeraCrypt container is one file the engine opens, so it is granted as
 // itself. Granting its parent instead would hand over every other container
 // an operator keeps beside it, which is the mistake this pins.
+//
+// The rights matter as much as the path. Landlock refuses a rule on a
+// regular file that carries a directory-only right, and refusing the rule
+// fails the whole domain: under the required policy that is a server which
+// will not start once anybody registers a container.
 func TestJailSpecGrantsAContainerFileAndNotItsDirectory(t *testing.T) {
 	dir := t.TempDir()
 	container := filepath.Join(dir, "photos.hc")
 
 	spec := jailSpec(runtimecfg.Defaults(), t.TempDir(), nil, nil, []string{container})
 
-	if !granted(spec, container) {
-		t.Errorf("the container file is not granted: %v", spec.GrantBeneath)
+	var found *jail.Grant
+	for i, g := range spec.GrantBeneath {
+		if g.Path == container {
+			found = &spec.GrantBeneath[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("the container file is not granted: %v", spec.GrantBeneath)
 	}
 	if granted(spec, dir) {
 		t.Errorf("the container's directory is granted, which hands over every container beside it: %v", spec.GrantBeneath)
+	}
+	dirOnly := uint64(unix.LANDLOCK_ACCESS_FS_READ_DIR |
+		unix.LANDLOCK_ACCESS_FS_MAKE_DIR |
+		unix.LANDLOCK_ACCESS_FS_MAKE_REG |
+		unix.LANDLOCK_ACCESS_FS_REMOVE_DIR |
+		unix.LANDLOCK_ACCESS_FS_REMOVE_FILE)
+	if found.Access == 0 {
+		t.Fatal("the container grant confers every handled right, which includes directory-only ones")
+	}
+	if found.Access&dirOnly != 0 {
+		t.Errorf("the container grant carries directory-only rights: %#x", found.Access&dirOnly)
+	}
+	if found.Access&uint64(unix.LANDLOCK_ACCESS_FS_WRITE_FILE) == 0 {
+		t.Error("the container grant cannot write, so a share could be read but never written")
 	}
 }
 
@@ -219,5 +246,32 @@ func TestJailSpecNeverGrantsTheRoot(t *testing.T) {
 	}
 	if !granted(spec, "/srv") {
 		t.Errorf("a share host directly beneath the root is not granted as itself: %v", spec.GrantBeneath)
+	}
+}
+
+// Dialing a host by name needs the resolver's own configuration, and a domain
+// that granted only the served data left the Go resolver reading nothing and
+// falling back to a nameserver on localhost. The grant is read-only and names
+// individual files: /etc as a whole is not the sandbox's to hand over.
+func TestJailSpecGrantsTheResolverReadOnly(t *testing.T) {
+	if _, err := os.Stat("/etc/resolv.conf"); err != nil {
+		t.Skip("this host has no /etc/resolv.conf to grant")
+	}
+	spec := jailSpec(runtimecfg.Defaults(), t.TempDir(), nil, nil, nil)
+
+	var found *jail.Grant
+	for i, g := range spec.GrantBeneath {
+		if g.Path == "/etc/resolv.conf" {
+			found = &spec.GrantBeneath[i]
+		}
+		if g.Path == "/etc" {
+			t.Fatalf("the whole of /etc is granted: %v", spec.GrantBeneath)
+		}
+	}
+	if found == nil {
+		t.Fatalf("/etc/resolv.conf is not granted: %v", spec.GrantBeneath)
+	}
+	if found.Access != uint64(unix.LANDLOCK_ACCESS_FS_READ_FILE) {
+		t.Errorf("the resolver grant carries access %#x, want read-file alone", found.Access)
 	}
 }

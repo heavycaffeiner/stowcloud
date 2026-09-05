@@ -300,3 +300,35 @@ func TestAnAliasRoundTripsAndRefusesAHostileTransferID(t *testing.T) {
 		}
 	}
 }
+
+// The free-space margin is what an upload must leave behind. A flat two
+// gigabytes is what a disk holding a share can spare, and it is not what a
+// small filesystem can: a share may be a VeraCrypt container sized to its
+// contents, and against the flat figure a 64 MiB one refused every upload as
+// a momentarily exhausted resource, which says nothing an operator can act
+// on about a container that is merely small.
+func TestFreeSpaceMarginShrinksWithASmallFilesystem(t *testing.T) {
+	flat := uint64(limits.UploadFreeSpaceMargin)
+
+	if got := freeSpaceMargin(1 << 40); got != flat {
+		t.Errorf("a terabyte filesystem takes margin %d, want the flat %d", got, flat)
+	}
+	// A probe that reported nothing gets the conservative answer rather than
+	// a margin of zero.
+	if got := freeSpaceMargin(0); got != flat {
+		t.Errorf("an unmeasured filesystem takes margin %d, want the flat %d", got, flat)
+	}
+
+	const container = 64 << 20
+	got := freeSpaceMargin(container)
+	if got >= flat {
+		t.Fatalf("a %d-byte container takes margin %d, which is not smaller than the flat %d",
+			container, got, flat)
+	}
+	if got == 0 {
+		t.Fatal("the margin collapsed to zero, so an upload may fill the destination completely")
+	}
+	if got != container/limits.UploadFreeSpaceMarginDivisor {
+		t.Errorf("the margin is %d, want a %dth of the total", got, limits.UploadFreeSpaceMarginDivisor)
+	}
+}

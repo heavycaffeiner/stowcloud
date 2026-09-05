@@ -359,7 +359,7 @@ func (e *Engine) checkFreeSpace(root vfs.Root, dir vfs.SafePath, total *uint64) 
 	if err != nil {
 		return nil //nolint:nilerr // a probe that could not run is not a refusal; see above.
 	}
-	need := uint64(limits.UploadFreeSpaceMargin)
+	need := freeSpaceMargin(space.Total)
 	if total != nil {
 		need += *total
 	}
@@ -370,6 +370,25 @@ func (e *Engine) checkFreeSpace(root vfs.Root, dir vfs.SafePath, total *uint64) 
 		return &ExhaustedError{Limit: "free space on the destination filesystem"}
 	}
 	return nil
+}
+
+// freeSpaceMargin is the headroom an upload must leave, bounded by a
+// fraction of the destination's own size.
+//
+// The flat margin is what a disk holding a share can spare. It is not what a
+// small filesystem can: a share can now be a VeraCrypt container sized to
+// its contents, and against the flat figure a 64 MiB one refused every
+// upload as an exhausted resource. A total of zero means the probe reported
+// nothing useful, and the flat margin is the safe answer there.
+func freeSpaceMargin(total uint64) uint64 {
+	margin := uint64(limits.UploadFreeSpaceMargin)
+	if total == 0 {
+		return margin
+	}
+	if scaled := total / limits.UploadFreeSpaceMarginDivisor; scaled < margin {
+		return scaled
+	}
+	return margin
 }
 
 // validateOffset enforces the ordering rule for non-random-access sessions,
