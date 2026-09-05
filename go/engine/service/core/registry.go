@@ -203,8 +203,15 @@ func (c *Core) RegisterShare(ctx context.Context, def ShareDef) error {
 
 // RegisterBroken remembers a share whose root would not open, marked with
 // why.
+//
+// The cause is logged here because this is the only place that still holds
+// it: the health surface carries the kind alone, so without this line the
+// driver's own sentence about a wrong passphrase or a filesystem it cannot
+// read reached nobody.
 func (c *Core) RegisterBroken(def ShareDef, cause error) {
 	def.BrokenReason = RejectionKind(cause)
+	c.warn("a share would not open",
+		slog.String("share", def.Name), slog.String("reason", def.BrokenReason), slog.Any("error", cause))
 	c.replaceEntry(&shareEntry{def: def, brokenErr: cause})
 }
 
@@ -435,8 +442,11 @@ func (c *Core) labelledRoots(user UserID) []acl.RootEntry {
 // directory being genuinely unreadable. Folding the two together told an
 // operator to check a mode and an owner that were already fine.
 func RejectionKind(err error) string {
+	var rej *RejectedError
 	var adm *vfs.AdmissionError
 	switch {
+	case errors.As(err, &rej):
+		return rej.Kind
 	case errors.As(err, &adm):
 		return adm.Type.String()
 	case errors.Is(err, vfs.ErrNotFound):
@@ -449,3 +459,17 @@ func RejectionKind(err error) string {
 		return "unavailable"
 	}
 }
+
+// RejectedError is how a backend names its own rejection. The registry
+// cannot classify a driver's refusals without importing the driver, and a
+// container refused for its filesystem, its passphrase or a damaged header
+// are three different things to go fix; collapsing them into "unavailable"
+// told an operator to check a disk that was mounted all along.
+type RejectedError struct {
+	Kind string
+	Err  error
+}
+
+func (e *RejectedError) Error() string { return e.Err.Error() }
+
+func (e *RejectedError) Unwrap() error { return e.Err }

@@ -87,6 +87,10 @@ type shareVeracryptRequest struct {
 	Password  *string `json:"password"`
 	Create    *bool   `json:"create"`
 	SizeMiB   *uint64 `json:"size_mib"`
+	// PIM is VeraCrypt's Personal Iterations Multiplier. Optional on both
+	// create and patch: absent means the container carries none, and
+	// vault.ParseConfig is what actually bounds it.
+	PIM *uint32 `json:"pim"`
 }
 
 // adminSharesCreate registers one.
@@ -239,6 +243,9 @@ func vaultConfigForCreate(req *shareVeracryptRequest) (vault.Config, string, err
 	create := req.Create != nil && *req.Create
 	hasSize := req.SizeMiB != nil && *req.SizeMiB > 0
 	cfg := vault.Config{Container: *req.Container}
+	if req.PIM != nil {
+		cfg.PIM = *req.PIM
+	}
 	switch {
 	case create && !hasSize:
 		return vault.Config{}, "", unprocessable("admin.share_vault_size_required")
@@ -467,6 +474,9 @@ func applyVeracryptPatch(cfg *vault.Config, req *shareVeracryptRequest) (string,
 	}
 	if req.Container != nil {
 		cfg.Container = *req.Container
+	}
+	if req.PIM != nil {
+		cfg.PIM = *req.PIM
 	}
 	if req.Password == nil {
 		return "", nil

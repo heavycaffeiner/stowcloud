@@ -7,6 +7,7 @@ package lifecycle
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -150,7 +151,26 @@ func (o backendOpener) openVault(ctx context.Context, def core.ShareDef) (vfs.Ro
 		Logger:     o.logger,
 	})
 	if err != nil {
-		return nil, vfs.Admission{}, err
+		return nil, vfs.Admission{}, classifyVaultOpen(err)
 	}
 	return root, vfs.Admission{OK: true, Warn: warnVault}, nil
+}
+
+// classifyVaultOpen names the ways a container refuses to open, so the
+// admin screen can print the fix rather than the registry's catch-all guess
+// that a disk went missing. Anything else, including a container file that
+// really is absent, keeps the sentinel it already carries.
+func classifyVaultOpen(err error) error {
+	switch {
+	case errors.Is(err, vault.ErrWrongPassword):
+		return &core.RejectedError{Kind: "passphrase", Err: err}
+	case errors.Is(err, vault.ErrUnsupportedVolume):
+		return &core.RejectedError{Kind: "container_unsupported", Err: err}
+	case errors.Is(err, vault.ErrHeaderCorrupt), errors.Is(err, vault.ErrHeaderFieldsInvalid):
+		return &core.RejectedError{Kind: "container_corrupt", Err: err}
+	case errors.Is(err, vault.ErrUnsupportedFilesystem):
+		return &core.RejectedError{Kind: "container_filesystem", Err: err}
+	default:
+		return err
+	}
 }

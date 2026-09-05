@@ -115,6 +115,7 @@
     vaultPassword: string
     vaultCreate: boolean
     vaultSizeMiB: string
+    vaultPIM: string
   }
 
   function emptyBackendForm(): BackendForm {
@@ -134,7 +135,8 @@
       vaultContainer: '',
       vaultPassword: '',
       vaultCreate: true,
-      vaultSizeMiB: '256'
+      vaultSizeMiB: '256',
+      vaultPIM: ''
     }
   }
 
@@ -143,6 +145,11 @@
    *  refuses; refusing it here too means the operator hears about it without
    *  a round trip. */
   const minVaultSizeMiB = 16
+
+  /** The ceiling `vault.Config.PIM` accepts. The multiplier becomes an
+   *  iteration count on every open, so a value here that the server would
+   *  refuse is worth catching before the round trip. */
+  const maxVaultPIM = 10000
 
   /** What is wrong with `form` for `backend`, or null when nothing is.
    *
@@ -165,6 +172,9 @@
     if (form.vaultPassword === '') return t('folder_share.enter_password')
     if (form.vaultCreate && !(Number(form.vaultSizeMiB) >= minVaultSizeMiB)) {
       return t('folder_share.size_at_least', { min: String(minVaultSizeMiB) })
+    }
+    if (form.vaultPIM !== '' && !(Number(form.vaultPIM) >= 0 && Number(form.vaultPIM) <= maxVaultPIM)) {
+      return t('folder_share.pim_at_most', { max: String(maxVaultPIM) })
     }
     return null
   }
@@ -189,6 +199,7 @@
     }
     // Only meaningful when creating, and the server refuses it otherwise.
     if (form.vaultCreate) cfg.size_mib = Number(form.vaultSizeMiB)
+    if (form.vaultPIM !== '') cfg.pim = Number(form.vaultPIM)
     return cfg
   }
 
@@ -312,6 +323,7 @@
     const cfg: ShareVeracryptConfig = {}
     if (form.vaultContainer.trim() !== '') cfg.container = form.vaultContainer.trim()
     if (form.vaultPassword !== '') cfg.password = form.vaultPassword
+    if (form.vaultPIM !== '') cfg.pim = Number(form.vaultPIM)
     return Object.keys(cfg).length > 0 ? cfg : null
   }
 
@@ -386,12 +398,24 @@
   /* i18n */ 'folder_share.broken_missing'
   /* i18n */ 'folder_share.broken_unreadable'
   /* i18n */ 'folder_share.broken_unavailable'
+  /* i18n */ 'folder_share.broken_passphrase'
+  /* i18n */ 'folder_share.broken_container_corrupt'
+  /* i18n */ 'folder_share.broken_container_filesystem'
+  /* i18n */ 'folder_share.broken_container_unsupported'
   function brokenText(reason: string): string {
     switch (reason) {
       case 'missing':
         return t('folder_share.broken_missing')
       case 'unreadable':
         return t('folder_share.broken_unreadable')
+      case 'passphrase':
+        return t('folder_share.broken_passphrase')
+      case 'container_corrupt':
+        return t('folder_share.broken_container_corrupt')
+      case 'container_filesystem':
+        return t('folder_share.broken_container_filesystem')
+      case 'container_unsupported':
+        return t('folder_share.broken_container_unsupported')
       default:
         return t('folder_share.broken_unavailable')
     }
@@ -759,6 +783,14 @@
     placeholder={t('folder_share.e_g_vault_container')}
     autocomplete="off"
   />
+  <TextField
+    label={t('folder_share.vault_pim')}
+    bind:value={form.vaultPIM}
+    type="number"
+    min={0}
+    max={maxVaultPIM}
+  />
+  <p class="sc-shares__field-hint">{t('folder_share.vault_pim_hint')}</p>
   <TextField
     label={t('folder_share.vault_password')}
     bind:value={form.vaultPassword}

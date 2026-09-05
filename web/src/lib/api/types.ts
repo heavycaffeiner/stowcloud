@@ -535,6 +535,9 @@ export interface ShareVeracryptConfig {
   password?: string
   create?: boolean
   size_mib?: number
+  /** VeraCrypt's Personal Iterations Multiplier. Absent means the
+   *  container carries none, which is the default. */
+  pim?: number
 }
 
 /** `POST /api/admin/shares` body. */
