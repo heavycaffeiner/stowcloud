@@ -165,10 +165,12 @@ port that is safe only as long as nobody publishes it is a footgun worth not
 shipping.
 
 > **Before anyone outside your network can reach it,** put a reverse proxy with
-> a real certificate in front, and set the trusted-proxy ranges on the admin
-> settings screen to that proxy's addresses. Without that last part every visitor looks like the
-> proxy, so the login rate limit and the audit log collapse onto one address and
-> a single attacker can lock out everyone.
+> a real certificate in front. A proxy that is not itself on the internet is
+> trusted by default, so the address it forwards is the one the login rate limit
+> and the audit log record. Name its ranges in the trusted-proxy field on the
+> admin settings screen when you want that decided exactly rather than by that
+> default: a list, once set, is the whole rule, and a proxy left out of it is
+> not believed.
 >
 > The proxy talks HTTPS to this server and skips verifying the self-signed
 > certificate, which is fine over loopback. In Caddy:

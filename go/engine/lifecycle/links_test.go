@@ -23,6 +23,110 @@ func mintLink(t *testing.T, base string, sess session, share string) []byte {
 	return body
 }
 
+// The body the interface actually sends, field for field.
+//
+// Every other test here posts the minimum, so a field the screen fills and
+// the route refuses is invisible to them: a 64-bit expiry travels as a decimal
+// string, the permissions travel as names, and a drop link is the same request
+// with create alone over a directory.
+func TestTheCreateBodyTheInterfaceSendsMintsALink(t *testing.T) {
+	base, sess, share := shareWith(t, everyPerm())
+
+	// A fixed instant in 2100, the same spelling the patch tests use. The
+	// wall clock is not this test's to read, and any future value proves the
+	// route accepts a 64-bit expiry as a decimal string.
+	const expires = "4102444800000000000"
+	status, body := post(t, base+"/api/v1/links", sess, map[string]any{
+		"path":       "/" + share + "/existing.txt",
+		"perms":      []any{"read", "download"},
+		"expires_ns": expires,
+		"label":      "shared",
+	})
+	if status != http.StatusCreated {
+		t.Fatalf("the interface's own body answered %d: %s", status, body)
+	}
+
+	var minted struct {
+		Link struct {
+			ID        string   `json:"id"`
+			Perms     []string `json:"perms"`
+			ExpiresNs string   `json:"expires_ns"`
+		} `json:"link"`
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(body, &minted); err != nil {
+		t.Fatalf("decoding %s: %v", body, err)
+	}
+	switch {
+	case minted.Token == "":
+		t.Error("the response carries no token, so the screen has no link to show")
+	case minted.Link.ID == "":
+		t.Error("the response carries no id")
+	case minted.Link.ExpiresNs != expires:
+		t.Errorf("the expiry came back as %q, want %q", minted.Link.ExpiresNs, expires)
+	}
+
+	// A drop link: create alone, over the share root, which is a directory.
+	dropStatus, dropBody := post(t, base+"/api/v1/links", sess, map[string]any{
+		"path":  "/" + share,
+		"perms": []any{"create"},
+	})
+	if dropStatus != http.StatusCreated {
+		t.Fatalf("a drop link answered %d: %s", dropStatus, dropBody)
+	}
+}
+
+// The listing answers about the path the caller named.
+//
+// The screen that manages one item's links asks for that item. The route
+// dropped the filter, so every item's dialogue listed every link the account
+// held: opening it on a folder showed the link belonging to a file shared
+// earlier, under a heading naming the folder.
+func TestTheLinkListingIsNarrowedToThePathAsked(t *testing.T) {
+	base, sess, share := shareWith(t, everyPerm())
+
+	if status, body := post(t, base+"/api/v1/links", sess,
+		map[string]any{"path": "/" + share + "/existing.txt"}); status != http.StatusCreated {
+		t.Fatalf("minting over the file answered %d: %s", status, body)
+	}
+
+	read := func(path string) []map[string]any {
+		t.Helper()
+		status, body := authed(t, http.MethodGet,
+			base+"/api/v1/links?path="+urlEscape(path), sess)
+		if status != http.StatusOK {
+			t.Fatalf("the listing for %q answered %d: %s", path, status, body)
+		}
+		var rows []map[string]any
+		if err := json.Unmarshal(body, &rows); err != nil {
+			t.Fatalf("decoding %s: %v", body, err)
+		}
+		return rows
+	}
+
+	if rows := read("/" + share + "/existing.txt"); len(rows) != 1 {
+		t.Errorf("the file's own listing holds %d links, want its one", len(rows))
+	}
+	// The share root is a different target, and it has no link of its own.
+	if rows := read("/" + share); len(rows) != 0 {
+		t.Errorf("a path with no link of its own listed %d: %v", len(rows), rows)
+	}
+
+	// No path named is still every link the account holds, which is what the
+	// account-wide listing is for.
+	status, body := authed(t, http.MethodGet, base+"/api/v1/links", sess)
+	if status != http.StatusOK {
+		t.Fatalf("the unfiltered listing answered %d: %s", status, body)
+	}
+	var all []map[string]any
+	if err := json.Unmarshal(body, &all); err != nil {
+		t.Fatalf("decoding %s: %v", body, err)
+	}
+	if len(all) != 1 {
+		t.Errorf("the unfiltered listing holds %d links, want 1", len(all))
+	}
+}
+
 // A link token is returned once and never again. It is a credential in a URL:
 // anyone holding it reaches the file, so a listing that carried it would put
 // every link's secret behind one read of the listing.

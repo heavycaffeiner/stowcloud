@@ -7,6 +7,7 @@
 // renders as a placeholder until its window is fetched.
 import { SvelteMap, SvelteSet } from 'svelte/reactivity'
 import { api, ApiError, type Entry, type Order, type SortKey } from '../api/client'
+import { permsFromNames, type Perms } from '../api/types'
 import { events } from './events'
 import { reconcile, selectAll as selAll, selectOnly as selOnly, selectRange as selRange, toggle as selToggle } from './selection'
 import {
@@ -64,6 +65,11 @@ export class BrowseState {
    *  and cannot derive this from the sparse row cache. */
   dirs = $state(0)
   dirEtag = $state<string | null>(null)
+  /** What this account may do to the directory being looked at, straight from
+   *  the listing. The toolbar reads it so an action the server would refuse is
+   *  not offered: nothing in the rows answers "may I create a file here", and
+   *  guessing left an account with read alone looking at an upload button. */
+  dirPerms = $state<Perms>(permsFromNames([]))
   sort = $state<Sort>({ key: 'name', order: 'asc' })
   loading = $state(false)
   /** True while a windowed fetch (scroll-driven) is in flight. */
@@ -207,6 +213,7 @@ export class BrowseState {
       this.total = res.total
       this.dirs = clampDirs(res.dirs, res.total)
       this.dirEtag = res.dir_etag
+      this.dirPerms = permsFromNames(res.dir_perms)
       this.#nextCursor = res.cursor
       this.#walkComplete = res.cursor === null
       this.#walked = res.entries.length
@@ -308,6 +315,7 @@ export class BrowseState {
         this.total = res.total
         this.dirs = clampDirs(res.dirs, res.total)
         this.dirEtag = res.dir_etag
+        this.dirPerms = permsFromNames(res.dir_perms)
         this.#applyPage(this.#walked, res.entries)
         this.#walked += res.entries.length
         this.#nextCursor = res.cursor
@@ -357,6 +365,7 @@ export class BrowseState {
       this.total = res.total
       this.dirs = clampDirs(res.dirs, res.total)
       this.dirEtag = res.dir_etag
+      this.dirPerms = permsFromNames(res.dir_perms)
       this.#nextCursor = res.cursor
       this.#walkComplete = res.cursor === null
       // The refresh re-reads from the front, so the walk restarts there too.

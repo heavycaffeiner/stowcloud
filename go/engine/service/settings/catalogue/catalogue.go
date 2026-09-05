@@ -220,7 +220,8 @@ func Of(values runtimecfg.Values, stored map[string]any) Snapshot {
 		// acts on the switch: on starts the daemon, off stops it and prunes
 		// the credentials. So they apply without a restart.
 		boolean("smb.enabled", values.SMB.Enabled, false),
-		str("smb.server_name", values.SMB.ServerName, false, ""),
+		str("smb.server_name", values.SMB.ServerName, false,
+			"settings.empty_disables_netbios_name"),
 		str("smb.workgroup", values.SMB.Workgroup, false, ""),
 		boolean("smb.allow_public_bind", values.SMB.AllowPublicBind, false),
 		str("smb.service_user", values.SMB.ServiceUser, false, ""),

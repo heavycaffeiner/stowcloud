@@ -97,6 +97,12 @@ type PageView struct {
 	DirETag     string `json:"dir_etag"`
 	DirETagWeak bool   `json:"dir_etag_weak"`
 
+	// DirPerms is what the caller may do to the directory itself, by name.
+	// The rows cannot answer it: a folder full of read-only files says
+	// nothing about whether a new one may be created beside them, and a
+	// client that guesses offers an action the server then refuses.
+	DirPerms []string `json:"dir_perms"`
+
 	// Cursor is the next page's cursor, and it is null rather than absent on
 	// the final page: the client's pager reads null as "stop", and an absent
 	// field would decode to undefined, which is a third state the pager does
@@ -158,6 +164,7 @@ func PageOf(
 		Total:       p.Total,
 		DirETag:     p.DirEtag,
 		DirETagWeak: p.DirEtagWeak,
+		DirPerms:    core.PermNames(p.DirPerms),
 	}
 	if p.Next != "" {
 		cursor := string(p.Next)

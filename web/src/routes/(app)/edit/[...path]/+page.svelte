@@ -1,16 +1,19 @@
 <script lang="ts">
-  // /edit/[...path]: CodeMirror behind a dynamic
-  // import (see CodeEditor.svelte), backed by GET /api/fs/read (size-capped)
-  // and PUT /api/fs/write with If-Match.
+  // /edit/[...path]: CodeMirror behind a dynamic import (see
+  // CodeEditor.svelte), backed by GET /api/v1/files/read (size-capped) and
+  // POST /api/v1/files/write.
   //
-  // `If-Match` is the point, not a detail: this page always sends the etag
-  // of the version it actually has open, and a `412 fs.precondition` (two
-  // people editing the same file) opens EditConflictDialog with a real
-  // choice, never a swallowed error.
+  // Concurrent-edit detection lives here rather than in an `If-Match` header.
+  // The server's change tokens are metadata-derived and weak, and it refuses
+  // every conditional write against one, so a save that sent the condition
+  // could never succeed. Comparing the token this page loaded against a fresh
+  // `stat` taken at save time is the check a weak token can answer: it opens
+  // EditConflictDialog with a real choice, and the dialog says the check is
+  // advisory because it is.
   import { t } from '../../../../lib/i18n'
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
-  import { api, ApiError, type Entry } from '../../../../lib/api/client'
+  import { api, type Entry } from '../../../../lib/api/client'
   import { normalizePath, parentOf } from '../../../../lib/api/path-utils'
   import Button from '../../../../lib/ui/Button.svelte'
   import CodeEditor from '../../../../lib/ui/CodeEditor.svelte'
@@ -75,37 +78,28 @@
     if (!canSave(snap.current)) return
     editorStore.dispatch({ type: 'SAVE_START' })
     try {
-      const updated = await api.writeFile(path, snap.current.content, snap.current.etag ?? undefined)
+      const latest = await api.stat(path)
+      if (snap.current.etag !== null && latest.etag !== snap.current.etag) {
+        editorStore.dispatch({
+          type: 'SAVE_CONFLICT',
+          currentEtag: latest.etag,
+          isWeak: latest.etag_weak
+        })
+        return
+      }
+      const updated = await api.writeFile(path, snap.current.content)
       editorStore.dispatch({ type: 'SAVE_SUCCESS', updated, content: snap.current.content })
       snackbarMsg = t('common.saved')
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'fs.precondition') {
-        editorStore.dispatch({
-          type: 'SAVE_CONFLICT',
-          currentEtag: String(err.detail?.current_etag ?? ''),
-          isWeak: entry?.etag_weak ?? false
-        })
-      } else {
-        const msg = describeApiError(err, t('common.could_not_save'))
-        editorStore.dispatch({
-          type: 'SAVE_ERROR',
-          message: msg
-        })
-        snackbarMsg = msg
-      }
+      const msg = describeApiError(err, t('common.could_not_save'))
+      editorStore.dispatch({ type: 'SAVE_ERROR', message: msg })
+      snackbarMsg = msg
     }
   }
 
   /** EditConflictDialog: keep my edits and overwrite the other writer's
-   *  change.
-   *
-   *  Deliberately unconditional. The token this server derives for a file
-   *  comes from metadata and is advisory, and the server refuses a conditional
-   *  write against one rather than pretending otherwise, so sending either the
-   *  original token or the one the refusal returned can never succeed: it
-   *  loops, and whoever clicked overwrite watches the same dialog reappear.
-   *  This is the only request in the editor that omits the condition, and it
-   *  is sent only because somebody asked for it. */
+   *  change. The token comparison is skipped rather than repeated: it already
+   *  said the file moved, and somebody read that and asked for this. */
   async function overwriteAfterConflict(): Promise<void> {
     editorStore.dispatch({ type: 'DISMISS_CONFLICT' })
     editorStore.dispatch({ type: 'SAVE_START' })
@@ -114,20 +108,9 @@
       editorStore.dispatch({ type: 'SAVE_SUCCESS', updated, content: snap.current.content })
       snackbarMsg = t('editor.overwritten')
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'fs.precondition') {
-        editorStore.dispatch({
-          type: 'SAVE_CONFLICT',
-          currentEtag: String(err.detail?.current_etag ?? ''),
-          isWeak: false
-        })
-      } else {
-        const msg = describeApiError(err, t('common.could_not_save'))
-        editorStore.dispatch({
-          type: 'SAVE_ERROR',
-          message: msg
-        })
-        snackbarMsg = msg
-      }
+      const msg = describeApiError(err, t('common.could_not_save'))
+      editorStore.dispatch({ type: 'SAVE_ERROR', message: msg })
+      snackbarMsg = msg
     }
   }
 

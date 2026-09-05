@@ -9,7 +9,7 @@
   // browse sidebar uses — a picker with its own tree implementation would be a
   // second thing to keep agreeing with's "/ is not a
   // directory" projection.
-  import { api, type MovePreflight } from '../api/client'
+  import { api, type MovePreflight, type Perms } from '../api/client'
   import { destinationProblem, type DestinationProblem } from '../api/path-utils'
   import { t } from '../i18n'
   import { authState } from '../state/auth.svelte'
@@ -30,21 +30,49 @@
 
   let selected = $state<string | null>(null)
   let preflight = $state<MovePreflight | null>(null)
+  /** What the account may do to the folder that was picked. A destination it
+   *  cannot create in refuses both transfers, and the dialogue used to offer
+   *  them anyway and report the refusal afterwards. */
+  let destPerms = $state<Perms | null>(null)
 
   // Any item crossing a device turns the whole batch into a copy-then-delete,
   // so one warning covers the selection.
   const willCopy = $derived(preflight?.results.some((r) => r.will_copy) ?? false)
 
   const problem = $derived<DestinationProblem | null>(selected ? destinationProblem(selected, sources) : null)
+  const canWriteDest = $derived(destPerms?.create ?? false)
   // A copy into the source's own folder is the ordinary duplicate case, so
   // only `into_itself` disqualifies it; a move there would be a no-op.
-  const canMove = $derived(selected !== null && problem === null)
-  const canCopy = $derived(selected !== null && problem !== 'into_itself')
+  const canMove = $derived(selected !== null && problem === null && canWriteDest)
+  const canCopy = $derived(selected !== null && problem !== 'into_itself' && canWriteDest)
 
   $effect(() => {
     if (!open) {
       selected = null
       preflight = null
+      destPerms = null
+    }
+  })
+
+  // What the picked folder allows. Stat rather than a field on the tree node:
+  // the tree navigates by path and carries no rights, and the answer decides
+  // whether either transfer button is live.
+  $effect(() => {
+    const dest = selected
+    destPerms = null
+    if (!dest) return
+    let live = true
+    api
+      .stat(dest)
+      .then((e) => {
+        if (live) destPerms = e.perms
+      })
+      .catch(() => {
+        // Unreadable is also unwritable, so the buttons stay disabled and the
+        // status line says the folder cannot be written.
+      })
+    return () => {
+      live = false
     }
   })
 
@@ -91,11 +119,17 @@
     <!-- `aria-live`: the selection, the reason a button is disabled and the
          cross-device warning all appear here without moving focus, so a screen
          reader user gets nothing at all unless the region announces itself. -->
-    <p class="sc-dest__status" class:sc-dest__status--warn={problem !== null} aria-live="polite">
+    <p
+      class="sc-dest__status"
+      class:sc-dest__status--warn={problem !== null || (selected !== null && destPerms !== null && !canWriteDest)}
+      aria-live="polite"
+    >
       {#if problem === 'into_itself'}
         {t('dest.cannot_move_folder_into_itself')}
       {:else if problem === 'same_folder'}
         {t('dest.already_in_this_folder')}
+      {:else if selected !== null && destPerms !== null && !canWriteDest}
+        {t('dest.cannot_write_into_folder')}
       {:else if selected}
         {selected}
       {:else}

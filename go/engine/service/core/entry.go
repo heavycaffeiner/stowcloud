@@ -87,6 +87,12 @@ type Page struct {
 	DirEtag     string
 	DirEtagWeak bool
 
+	// DirPerms is what the caller may do to the directory itself, which is
+	// not derivable from the rows: a listing that names no writable child
+	// says nothing about whether the caller may create one. A client that
+	// has to guess offers actions the server then refuses.
+	DirPerms acl.Perms
+
 	// Next is empty on the final page.
 	Next Cursor
 

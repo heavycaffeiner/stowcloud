@@ -258,7 +258,10 @@ async function list(path: string, opts: ListOpts): Promise<ListResponse> {
     cursor: next < entries.length ? String(next) : null,
     entries: page.map((e) => withRefs(e, dir)),
     dir_etag: etag,
-    dir_etag_weak: true
+    dir_etag_weak: true,
+    // The mock account is an administrator with a full grant, and the virtual
+    // root is the one place with nothing to do: no share may be created there.
+    dir_perms: dir === '/' ? [] : ['read', 'write', 'create', 'delete', 'rename', 'move', 'share', 'download']
   }
 }
 
@@ -766,31 +769,15 @@ async function readFile(entry: Pick<Entry, 'content'>): Promise<{ content: strin
   return { content: `${e.name}\n\n(목업 백엔드: 실제 파일 내용이 없어 예시 텍스트를 보여줍니다.)\n` }
 }
 
-/** Mirrors `go/internal/core/ops.go`: an existing file demands
- *  a matching `if_match`, a not-yet-existing one demands none at all. Either
- *  mismatch is a `412 fs.precondition` carrying the server's current etag,
- *  exactly like the real backend. */
-async function writeFile(path: string, content: string, ifMatch?: string): Promise<Entry> {
+/** Unconditional, the same as the real route the app calls: the server
+ *  refuses every conditional write because its change tokens are weak, so no
+ *  caller sends a condition and this mock has none to check. */
+async function writeFile(path: string, content: string): Promise<Entry> {
   await delay(30)
   const n = normalizePath(path)
   const parent = parentOf(n)
   const name = baseName(n)
   const existing = resolveDirEntries(parent).find((e) => e.name === name)
-  if (existing) {
-    if (ifMatch !== existing.etag) {
-      throw new ApiError(412, {
-        code: 'fs.precondition',
-        message: 'If-Match precondition failed',
-        detail: { current_etag: existing.etag }
-      })
-    }
-  } else if (ifMatch) {
-    throw new ApiError(412, {
-      code: 'fs.precondition',
-      message: 'If-Match precondition failed',
-      detail: { current_etag: '' }
-    })
-  }
   const nowNs = (BigInt(Date.now()) * 1_000_000n).toString()
   const updated: Entry = existing
     ? { ...existing, etag: randomId('e'), size: content.length, mtime_ns: nowNs }
@@ -1833,13 +1820,26 @@ const MOCK_INDEX_BUILD_SHARES = 3
 const MOCK_INDEX_BUILD_MS_PER_SHARE = 900
 let mockIndexBuildStartedAt = 0
 
-async function adminBuildIndex(): Promise<{ job: string }> {
+async function adminBuildIndex(): Promise<JobStatus> {
   await delay(20)
   if (!mockAuthState.indexNameEnabled) {
     throw new ApiError(501, { code: 'not_implemented', message: 'not implemented yet' })
   }
   mockIndexBuildStartedAt = Date.now()
-  return { job: MOCK_INDEX_BUILD_JOB }
+  // The job itself, which is what the real route answers. Returning a
+  // `{ job }` wrapper here is what let the app read a field no server sends.
+  return {
+    id: MOCK_INDEX_BUILD_JOB,
+    kind: 'index_build',
+    state: 'running',
+    done: 0,
+    total: MOCK_INDEX_BUILD_SHARES,
+    current: null,
+    errors: [],
+    results: [],
+    attempting: [],
+    pending: []
+  }
 }
 
 // ── admin: user management ──

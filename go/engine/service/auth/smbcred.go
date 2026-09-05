@@ -131,6 +131,40 @@ func (s *Service) SMBStateOf(ctx context.Context, userID int64) (SMBState, error
 	return out, nil
 }
 
+// backfillSMBSecret seals the account password as the protocol credential for
+// an account that is eligible for one and holds none.
+//
+// A sign-in is the only moment the plaintext exists, and several ordinary
+// events leave an eligible account with no credential row: enrolling a second
+// factor drops it, withdrawing from the protocol erases it, and an account
+// created before the credential existed never had one. Without this the
+// account is told to sign in again and signing in changes nothing.
+//
+// An enrolled second factor is skipped, because dropping the credential is
+// what keeps the account password from bypassing that factor over a protocol
+// whose authentication cannot be strengthened to match. A stored credential is
+// never overwritten: a separate password the account set is not the account
+// password, and this must not quietly replace it.
+func (s *Service) backfillSMBSecret(ctx context.Context, acct state.Account, pw secret.Secret) error {
+	if acct.SMBOptOut || acct.TOTPEnrolled {
+		return nil
+	}
+	if _, err := s.store.SMBSecretOf(ctx, acct.ID); err == nil {
+		return nil
+	} else if !errors.Is(err, state.ErrNoSMBSecret) {
+		return err
+	}
+	sealed, err := s.sealNTFor(acct.ID, pw)
+	if err != nil {
+		return err
+	}
+	if err := s.store.PutSMBSecret(ctx, acct.ID, sealed); err != nil {
+		return err
+	}
+	s.bumpGeneration()
+	return s.republishCredentials(ctx)
+}
+
 // SetSMBPassword records a protocol credential distinct from the account
 // password.
 //

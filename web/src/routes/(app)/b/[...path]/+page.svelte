@@ -346,6 +346,12 @@
   let dragOver = $state(false)
   let searchCancel: (() => void) | null = null
   let shareOpen = $state(false)
+  /** The entries the share and rename dialogs are pointed at, captured when
+   *  the action starts. They are separate from `contextEntry` because that one
+   *  belongs to the right-click menu and outlives it, which is how both
+   *  dialogs used to open on the previously right-clicked row. */
+  let shareTarget = $state<Entry | null>(null)
+  let renameTarget = $state<Entry | null>(null)
   /** component inventory: `FileTree` alongside
    *  `FileTable`/`FileGrid`. Off by default -- most of the time the
    *  breadcrumb + table is all a user needs, and a 240px side panel is a
@@ -408,22 +414,52 @@
    *  either surface unchanged. "Select all" and "clear selection" are
    *  deliberately not here: they manage the selection rather than act on it,
    *  and there is nothing for them to do in a right-click menu. */
+  /** Whether anything may be put into the directory on screen.
+   *
+   *  The listing says so (`dir_perms`), and nothing in the rows does: a folder
+   *  of read-only files says nothing about creating one beside them. Upload,
+   *  folder upload, "new folder" and the drop target all hang off this, so an
+   *  account holding read alone is not offered four ways to be refused. The
+   *  virtual root answers no perms at all, which is right: a share is not
+   *  created by uploading into the list of them. */
+  const canCreateHere = $derived(browse.dirPerms.create)
+
   /** One list, one target set, rendered by both the right-click menu and the
    *  selection bar. They cannot show different actions because there is only
    *  one array; `openContextMenu` makes the right-clicked row the selection so
    *  that "the target set" is unambiguous for both. See `row-actions.ts` for
    *  the rules deciding what appears. */
   const actions = $derived(
-    rowActions(browse.selected, {
-      openInEditor,
-      download: downloadSelection,
-      share: requestShare,
-      rename: requestRename,
-      transfer: requestTransfer,
-      duplicate: () => duplicate(),
-      remove: requestDelete
-    })
+    rowActions(
+      browse.selected,
+      {
+        openInEditor,
+        download: downloadSelection,
+        share: requestShare,
+        rename: requestRename,
+        transfer: requestTransfer,
+        duplicate: () => duplicate(),
+        remove: requestDelete
+      },
+      canCreateHere
+    )
   )
+
+  /** The entry a single-item action applies to.
+   *
+   *  The selection decides: `openContextMenu` makes the right-clicked row the
+   *  selection, so the menu and the selection bar always aim at the same rows.
+   *  `contextEntry` outlives the menu that set it, because the dialogs it
+   *  opens keep reading it, so consulting it first meant an action started
+   *  from the toolbar acted on whatever row had been right-clicked earlier:
+   *  select another file, open its share links, and the previous file's links
+   *  came up and a link created there was minted over the wrong path. It stays
+   *  as the fallback for the one case the selection cannot answer, a menu
+   *  raised while nothing is selected.
+   */
+  function actionTarget(): Entry | null {
+    return browse.selected[0] ?? contextEntry
+  }
 
   async function createFolder(name: string): Promise<void> {
     newFolderOpen = false
@@ -436,18 +472,18 @@
   }
 
   function requestRename(): void {
-    const target = contextEntry ?? browse.selected[0]
+    const target = actionTarget()
     if (!target) return
-    contextEntry = target
+    renameTarget = target
     menuOpen = false
     renameOpen = true
   }
 
   async function doRename(newName: string): Promise<void> {
-    if (!contextEntry) return
+    if (!renameTarget) return
     renameOpen = false
     try {
-      await api.rename(joinPath(browse.path, contextEntry.name), newName)
+      await api.rename(joinPath(browse.path, renameTarget.name), newName)
       await browse.refresh()
     } catch (err) {
       snackbarMsg = describeApiError(err, t('common.could_not_rename'))
@@ -511,9 +547,9 @@
 
   // ── share links ──
   function requestShare(): void {
-    const target = contextEntry ?? browse.selected[0]
+    const target = actionTarget()
     if (!target) return
-    contextEntry = target
+    shareTarget = target
     menuOpen = false
     shareOpen = true
   }
@@ -573,7 +609,7 @@
     // `contextEntry` meant the selection bar's own button did nothing on the
     // menu path and sent an empty name on the bar path, which the server took
     // as the folder itself and duplicated into a file called " (2)".
-    const targets = contextEntry ? [contextEntry] : browse.selected
+    const targets = browse.selected.length > 0 ? browse.selected : contextEntry ? [contextEntry] : []
     if (targets.length === 0) return
     // The one menu action that forgot this. `Menu` only dismisses on a click
     // *outside* itself, so an item's own click leaves it open -- and duplicate
@@ -803,6 +839,13 @@
     e.preventDefault()
     dragOver = false
     if (!e.dataTransfer) return
+    // A drop is an upload, so it needs the same right the upload button does.
+    // Without this the one way in stayed open on a folder the account may
+    // only read, and every dropped file failed in the tray.
+    if (!canCreateHere) {
+      snackbarMsg = t('error.acl_denied')
+      return
+    }
     try {
       const files = await pickedFilesFromDataTransfer(e.dataTransfer)
       handleUploadEntries(files)
@@ -988,10 +1031,9 @@
     items[next]?.focus()
   }
   function openInEditor(): void {
-    // The right-clicked row when there is one, the selection otherwise: the
-    // same rule the other actions here follow. Reading only `contextEntry`
-    // meant the selection bar's own button did nothing at all.
-    const target = contextEntry ?? browse.selected[0]
+    // The selection decides, the right-clicked row is the fallback: the same
+    // rule `actionTarget` states once for every single-item action here.
+    const target = actionTarget()
     if (!target || target.kind === 'dir') return
     menuOpen = false
     goto(`/edit${joinPath(browse.path, target.name)}`)
@@ -1008,7 +1050,9 @@
   aria-label={t('browse.file_browser')}
   ondragover={(e) => {
     e.preventDefault()
-    dragOver = true
+    // No highlight where nothing may be created: the outline and its "drop to
+    // upload" overlay are a promise the server would break.
+    dragOver = canCreateHere
   }}
   ondragleave={() => (dragOver = false)}
   ondrop={onDrop}
@@ -1102,7 +1146,7 @@
           <Icon icon={icons.sort} />
         </IconButton>
         <IconButton label={t('browse.more')} selected={overflowOpen} expanded={overflowOpen} onclick={openOverflow}><Icon icon={icons['more-vert']} /></IconButton>
-        {#if !uiState.compact}
+        {#if !uiState.compact && canCreateHere}
           <Button variant="text" onclick={onUploadFolderClick}>
             {#snippet icon()}<Icon icon={icons['upload-folder']} size={18} />{/snippet}
             {t('browse.upload_folder')}
@@ -1210,7 +1254,7 @@
         <MenuItem onclick={() => { cycleDensity(); closeOverflow() }}>
           {t('browse.density', { density: densityLabel(browse.density) })}
         </MenuItem>
-        {#if uiState.compact}
+        {#if uiState.compact && canCreateHere}
           <MenuItem onclick={() => { onUploadFolderClick(); closeOverflow() }}>{t('browse.upload_folder')}</MenuItem>
           <MenuItem onclick={() => { newFolderOpen = true; closeOverflow() }}>{t('common.new_folder')}</MenuItem>
         {/if}
@@ -1355,7 +1399,7 @@
     {/if}
   </div>
 
-  {#if uiState.compact && browse.selection.size === 0}
+  {#if uiState.compact && browse.selection.size === 0 && canCreateHere}
     <!--
       The one primary action a phone-width toolbar gets a dedicated control
       for. Upload over New folder: a folder is created rarely,
@@ -1408,15 +1452,17 @@
      act on. The three handlers and the three labels are the toolbar's own, not
      copies. -->
 <Menu open={emptyMenuOpen} onclose={() => (emptyMenuOpen = false)} x={menuX} y={menuY}>
-    <MenuItem onclick={() => { emptyMenuOpen = false; newFolderOpen = true }}>{t('common.new_folder')}</MenuItem>
-    <MenuItem onclick={() => { emptyMenuOpen = false; onUploadClick() }}>{t('common.upload')}</MenuItem>
-    <MenuItem onclick={() => { emptyMenuOpen = false; onUploadFolderClick() }}>{t('browse.upload_folder')}</MenuItem>
+    {#if canCreateHere}
+      <MenuItem onclick={() => { emptyMenuOpen = false; newFolderOpen = true }}>{t('common.new_folder')}</MenuItem>
+      <MenuItem onclick={() => { emptyMenuOpen = false; onUploadClick() }}>{t('common.upload')}</MenuItem>
+      <MenuItem onclick={() => { emptyMenuOpen = false; onUploadFolderClick() }}>{t('browse.upload_folder')}</MenuItem>
+    {/if}
 </Menu>
 
 <NewFolderDialog open={newFolderOpen} onclose={() => (newFolderOpen = false)} oncreate={createFolder} />
 <RenameDialog
   open={renameOpen}
-  currentName={contextEntry?.name ?? ''}
+  currentName={renameTarget?.name ?? ''}
   onclose={() => (renameOpen = false)}
   onrename={doRename}
 />
@@ -1455,12 +1501,12 @@
   onedit={(e) => goto(`/edit${joinPath(browse.path, e.name)}`)}
 />
 
-{#if contextEntry}
+{#if shareTarget}
   <ShareManageDialog
     open={shareOpen}
-    path={joinPath(browse.path, contextEntry.name)}
-    targetName={contextEntry.name}
-    targetIsDir={contextEntry.kind === 'dir'}
+    path={joinPath(browse.path, shareTarget.name)}
+    targetName={shareTarget.name}
+    targetIsDir={shareTarget.kind === 'dir'}
     onclose={() => (shareOpen = false)}
   />
 {/if}

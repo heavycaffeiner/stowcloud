@@ -104,6 +104,7 @@ func (c *Core) ListSorted(ctx context.Context, r Resolved, cur Cursor, opt ListO
 		Dirs:        dirs,
 		DirEtag:     etag,
 		DirEtagWeak: weak,
+		DirPerms:    r.perms,
 		Total:       len(rows),
 	}
 	if end < page.Total {

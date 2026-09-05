@@ -76,10 +76,11 @@
     return label === name ? key : label
   }
 
-  // What the server says an empty value means, for the two fields where empty
-  // is a setting rather than a gap. Nothing renders when it sent no key.
+  // What the server says an empty value means, for the fields where empty is a
+  // setting rather than a gap. Nothing renders when it sent no key.
   // The keys the server can send that no call site here shows literally:
-  //   /* i18n */ 'settings.empty_trusts_no_proxy'
+  //   /* i18n */ 'settings.empty_app_hosts_first_boot'
+  //   /* i18n */ 'settings.empty_trusted_proxies'
   //   /* i18n */ 'settings.empty_disables_netbios_name'
   //   /* i18n */ 'settings.empty_default_thumbs_dir'
   function emptyNote(key: string): string | null {

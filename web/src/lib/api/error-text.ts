@@ -65,26 +65,39 @@ const SERVER_KEYS = new Set<string>([
   /* i18n */ 'settings.above_kernel_watch_limit'
 ])
 
-/** `go/internal/apierr/map.go`'s codes → catalogue key. Only
- *  the codes a per-item batch failure can carry are here; a whole-request
- *  failure is reported by the screen that made the request, in its own
- *  words. `internal` has no dot and so cannot be a catalogue key itself,
- *  which is the other reason this mapping is explicit rather than derived. */
+/** A wire `code` → catalogue key, and a `reason_key` → catalogue key for the
+ *  refusals whose reason is narrower than their code.
+ *
+ *  Both are spelled exactly as `go/engine/http/apierr` sends them
+ *  (`restTable` for the codes, `sentinels` for the reason keys). They drifted
+ *  once already: this map still named `fs.precondition`, `quota.exceeded` and
+ *  `share.broken`, none of which the server has ever sent, so a refused save
+ *  or a full disk rendered as the caller's generic fallback and the editor's
+ *  conflict branch never ran. A code with no entry is not a bug; the screen
+ *  that made the request then says what it was doing, which is more use than
+ *  a generic "an error occurred". */
 const CODE_KEYS: Record<string, string> = {
   'fs.not_found': /* i18n */ 'error.fs_not_found',
+  'fs.denied': /* i18n */ 'error.acl_denied',
   'fs.conflict': /* i18n */ 'error.fs_conflict',
   'fs.exists': /* i18n */ 'error.fs_conflict',
   'fs.not_empty': /* i18n */ 'error.fs_conflict',
-  'fs.precondition': /* i18n */ 'error.fs_precondition',
-  'fs.invalid_name': /* i18n */ 'error.fs_invalid_name',
-  'fs.gone': /* i18n */ 'error.fs_gone',
-  'fs.denied': /* i18n */ 'error.acl_denied',
-  'acl.denied': /* i18n */ 'error.acl_denied',
-  'quota.exceeded': /* i18n */ 'error.quota_exceeded',
-  'share.broken': /* i18n */ 'error.share_broken',
-  'share.unavailable': /* i18n */ 'error.share_broken',
+  'fs.precondition_failed': /* i18n */ 'error.fs_precondition',
+  'fs.locked': /* i18n */ 'error.fs_locked',
+  'fs.no_space': /* i18n */ 'error.quota_exceeded',
+  'fs.share_unavailable': /* i18n */ 'error.share_broken',
+  'link.expired': /* i18n */ 'error.fs_gone',
   'internal': /* i18n */ 'error.internal',
-  'internal.not_implemented': /* i18n */ 'error.not_implemented'
+  'not_implemented': /* i18n */ 'error.not_implemented'
+}
+
+/** The reason keys worth naming on their own. `fs.invalid_name` arrives under
+ *  the generic `unprocessable` code, and a rejected name is the one refusal a
+ *  rename dialog can act on. */
+const REASON_KEYS: Record<string, string> = {
+  'fs.invalid_name': /* i18n */ 'error.fs_invalid_name',
+  'fs.quota_exceeded': /* i18n */ 'error.quota_exceeded',
+  'dav.locked': /* i18n */ 'error.fs_locked'
 }
 
 function params(detail: Record<string, unknown> | undefined): Record<string, string> | undefined {
@@ -97,7 +110,10 @@ function params(detail: Record<string, unknown> | undefined): Record<string, str
  *  was trying to do, which is more use than a generic "an error occurred". */
 function keyFor(code: string, detail: Record<string, unknown> | undefined): string | null {
   const reasonKey = detail?.reason_key
-  if (typeof reasonKey === 'string' && SERVER_KEYS.has(reasonKey)) return reasonKey
+  if (typeof reasonKey === 'string') {
+    if (SERVER_KEYS.has(reasonKey)) return reasonKey
+    if (REASON_KEYS[reasonKey]) return REASON_KEYS[reasonKey]
+  }
   return CODE_KEYS[code] ?? null
 }
 

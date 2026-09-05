@@ -20,14 +20,34 @@ import (
 	"github.com/heavycaffeiner/stowcloud/go/engine/service/core"
 )
 
-// linksList answers the caller's own links.
+// linksList answers the caller's own links, narrowed to one path when the
+// caller names one.
+//
+// The screen that manages an item's links asks for that item, and the filter
+// was dropped on the way to the service: every item's dialogue then listed
+// every link the account holds, so opening it on one folder showed the links
+// of whatever had been shared before it.
+//
+// Read rather than Share on the resolution: listing the links over a path is
+// reading about it, and an account that may see the path may see what it has
+// published there. A path it cannot reach answers not-found from resolution
+// rather than an empty list.
 func (e *Engine) linksList(c *fiber.Ctx) error {
 	owner, ok := ownerOf(c)
 	if !ok {
 		return refuse(c, apierr.Classified{Class: apierr.AuthRequired})
 	}
 
-	links, err := e.Core.ListLinks(c.UserContext(), owner, nil)
+	var at *core.Resolved
+	if raw := c.Query("path"); raw != "" {
+		r, rerr := e.resolve(owner, raw, acl.Read)
+		if rerr != nil {
+			return fail(c, rerr)
+		}
+		at = &r
+	}
+
+	links, err := e.Core.ListLinks(c.UserContext(), owner, at)
 	if err != nil {
 		return fail(c, err)
 	}

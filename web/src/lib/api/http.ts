@@ -230,6 +230,7 @@ interface WireListResponse {
   // undefined, so the pager stopped after the first page of every directory
   // larger than one page.
   cursor?: string
+  dir_perms?: string[]
 }
 
 /**
@@ -274,7 +275,10 @@ function listFromWire(w: WireListResponse): ListResponse {
     // walk is a null rather than an empty string that reads as a real cursor.
     cursor: w.cursor ? w.cursor : null,
     dir_etag: w.dir_etag ?? '',
-    dir_etag_weak: w.dir_etag_weak ?? false
+    dir_etag_weak: w.dir_etag_weak ?? false,
+    // Absent means nothing may be done to the directory itself, which is what
+    // the virtual root answers: it is a projection of grants, not a folder.
+    dir_perms: w.dir_perms ?? []
   }
 }
 
@@ -808,6 +812,15 @@ interface WireLink {
   created_ns: string
 }
 
+/** Where a link's own public page lives. Built here rather than sent by the
+ *  server: the token is the whole of the address, and a caller that has just
+ *  been handed one should not have to know the route. Without it the dialogue
+ *  showed an empty box after creating a link and copied an empty string. */
+function shareLinkURL(token: string): string {
+  const origin = (import.meta.env.VITE_API_BASE ?? '') || (typeof location !== 'undefined' ? location.origin : '')
+  return `${origin}/s/${encodeURIComponent(token)}`
+}
+
 function linkFromWire(w: WireLink, token?: string): ShareLinkInfo {
   return {
     id: Number(w.id),
@@ -821,7 +834,11 @@ function linkFromWire(w: WireLink, token?: string): ShareLinkInfo {
     label: w.label ?? null,
     has_password: w.has_password,
     created_ns: w.created_ns,
-    token
+    token,
+    // Only a freshly minted link has a token, and only it can carry a URL:
+    // the server keeps no plaintext token, so a listed link has no address to
+    // show and the screen offers no copy button for one.
+    url: token ? shareLinkURL(token) : undefined
   }
 }
 
@@ -882,27 +899,20 @@ async function readFile(entry: Pick<Entry, 'content'>): Promise<ReadFileResponse
 /**
  * `POST /api/v1/files/write`.
  *
- * Omitting `ifMatch` writes without a condition. Two callers do it, and both
- * on purpose: a brand-new file has no version to condition on, and the
- * editor's overwrite action deliberately drops the condition after a refusal.
- *
- * That second one matters. This server derives a file's change token from
- * metadata, which cannot be exact, and it refuses a conditional write against
- * an inexact token rather than accepting one it cannot honour. Retrying with
- * either the original token or the one the refusal returned is refused again,
- * every time, so the only way past it is a request that asks for no condition
- * at all, made because somebody chose to.
+ * Unconditional, always. This server derives a file's change token from
+ * metadata, so every token it mints is weak, and it refuses a conditional
+ * write against a weak token rather than accepting a comparison it cannot
+ * honour. A request carrying `If-Match` therefore fails whatever the value,
+ * which made the editor's save button impossible to use. The editor detects a
+ * concurrent change by comparing the token it loaded against a fresh `stat`
+ * instead, which is what a weak token can actually answer.
  */
-async function writeFile(path: string, content: string, ifMatch?: string): Promise<Entry> {
+async function writeFile(path: string, content: string): Promise<Entry> {
   // The body is the file itself and the path is a query parameter. A JSON
   // envelope holding both would carry the whole file in memory twice, once
   // encoded and once not.
-  //
-  // The condition travels as If-Match, where a conditional write belongs, so
-  // nothing has to invent a field name for it.
   const headers = new Headers({ 'Content-Type': 'application/octet-stream' })
   if (csrfToken) headers.set('Sc-Csrf', csrfToken)
-  if (ifMatch) headers.set('If-Match', ifMatch)
 
   const res = await fetch(`${BASE}/files/write${qs({ path })}`, {
     method: 'POST',
@@ -1271,12 +1281,16 @@ async function adminSetIndexSettings(nameEnabled: boolean): Promise<IndexSetting
   return { name_enabled: nameEnabled }
 }
 
-/** `POST /api/v1/admin/index/build` — always crosses the
- *  job threshold (a build walks the whole share by design, `go/internal/search`'s
- *  `CrawlThrottle`), so unlike `copy`/`del`/`archive` there is no inline-result
- *  branch here: the server answers `202 { job }` every time. */
-async function adminBuildIndex(): Promise<{ job: string }> {
-  return request('/admin/index/build', { method: 'POST' })
+/** `POST /api/v1/admin/index/build`. Always crosses the job threshold (a build
+ *  walks every share by design), so there is no inline-result branch here: the
+ *  server answers `202` with the job itself, in the same shape `GET /jobs/{id}`
+ *  returns.
+ *
+ *  It used to be read as `{ job: string }`, which no route sends. The id came
+ *  back undefined, the tray then polled `/jobs/undefined` for a 404, and the
+ *  screen reported that the build had failed to start while it was running. */
+async function adminBuildIndex(): Promise<JobStatus> {
+  return jobFromWire(await request<WireJob>('/admin/index/build', { method: 'POST' }))
 }
 
 /** `PATCH /api/v1/admin/settings/upload` — sets the

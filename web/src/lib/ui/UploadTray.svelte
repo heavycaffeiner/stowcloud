@@ -15,6 +15,9 @@
   const items = $derived(uploadState.current.items)
   const isOpen = $derived(uploadState.current.open)
   const totalActive = $derived(items.filter((i) => i.status === 'uploading' || i.status === 'paused').length)
+  // A tray with nothing in flight used to read "Upload done" whatever the rows
+  // said, so a batch that was refused outright announced itself as finished.
+  const totalFailed = $derived(items.filter((i) => i.status === 'error').length)
 
   // --- Screen-reader announcements ------------------------------------------
   // used to list this as a known gap: Snackbar was the
@@ -152,7 +155,12 @@
     <div class="sc-upload-tray__header">
       <button class="sc-upload-tray__title" onclick={() => uploadTray.setOpen(!isOpen)}>
         <Icon icon={icons.upload} size={18} />
-        {t('common.upload')} {totalActive > 0 ? `(${totalActive})` : t('common.done')}
+        {t('common.upload')}
+        {totalActive > 0
+          ? `(${totalActive})`
+          : totalFailed > 0
+            ? t('upload.failed_count', { count: totalFailed })
+            : t('common.done')}
       </button>
       <div class="sc-upload-tray__actions">
         <IconButton label={t('common.clear_finished_items')} onclick={() => uploadTray.clearFinished()}>
@@ -192,7 +200,11 @@
               {:else if item.status === 'paused'}
                 <IconButton label={t('upload.resume')} onclick={() => uploadTray.resume(item.id)}><Icon icon={icons.resume} size={16} /></IconButton>
               {/if}
-              {#if item.status === 'done' || item.status === 'canceled'}
+              <!-- A failed row is terminal too, and it offered "cancel": a
+                   button for a transfer that had already stopped. It clears,
+                   one row at a time, while the sweep above leaves failures
+                   alone so the reason survives a stray click. -->
+              {#if item.status === 'done' || item.status === 'canceled' || item.status === 'error'}
                 <IconButton label={t('common.clear')} onclick={() => uploadTray.dismiss(item.id)}><Icon icon={icons.close} size={16} /></IconButton>
               {:else}
                 <IconButton label={t('common.cancel')} onclick={() => uploadTray.cancel(item.id)}><Icon icon={icons.close} size={16} /></IconButton>

@@ -209,44 +209,22 @@ describe('httpApi job wrappers', () => {
   })
 })
 
-// A conditional write against an inexact change token is refused by the
-// server, correctly. What matters here is what the client does next: retrying
-// with the same token, or with the one the refusal returned, is refused again
-// every time, so the overwrite has to ask for no condition at all.
-describe('writeFile and the advisory change token', () => {
-  function bodyOf(fetchMock: ReturnType<typeof vi.fn>): Record<string, unknown> {
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
-    return JSON.parse(String(init.body)) as Record<string, unknown>
-  }
-
-  it('sends the condition as If-Match when it is given one', async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { name: 'a.txt' }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    await httpApi.writeFile('/s/a.txt', 'hello', 'W/"abc"')
-
-    const init = fetchMock.mock.calls[0][1] as RequestInit
-    expect(new Headers(init.headers).get('If-Match')).toBe('W/"abc"')
-    // The body is the file itself, not an envelope around it.
-    expect(init.body).toBe('hello')
-  })
-
-  it('omits the condition entirely when it is not given one', async () => {
+// The server refuses every conditional write, because the change token it
+// mints for a file is weak and a weak validator cannot satisfy If-Match. A
+// save that sent the condition could therefore never land, which is what broke
+// the editor's save button: the client asks for no condition at all.
+describe('writeFile', () => {
+  it('sends the file as the body and never a condition', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { name: 'a.txt' }))
     vi.stubGlobal('fetch', fetchMock)
 
     await httpApi.writeFile('/s/a.txt', 'hello')
 
-    // Absent rather than empty: an empty condition is still a condition, and
-    // the server would refuse it.
     const init = fetchMock.mock.calls[0][1] as RequestInit
     expect(new Headers(init.headers).has('If-Match')).toBe(false)
+    // The body is the file itself, not an envelope around it.
+    expect(init.body).toBe('hello')
   })
-
-  function init0(fetchMock: ReturnType<typeof vi.fn>): string {
-    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
-    return String(init.body)
-  }
 })
 
 // The widening drops anything it does not name. That is silent by

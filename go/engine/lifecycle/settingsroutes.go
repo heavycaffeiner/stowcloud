@@ -64,7 +64,8 @@ func (e *Engine) adminSettingsGet(c *fiber.Ctx) error {
 // decision is made against. The client is what the chain concluded. When a
 // forwarding header arrived and the two are the same, the header was ignored
 // because the peer is not trusted, and that is the case an operator cannot
-// otherwise see.
+// otherwise see: with no list configured a private peer is trusted, so this
+// only happens to a configured list that leaves the real proxy out.
 func (e *Engine) hopOf(c *fiber.Ctx) handler.HopView {
 	peer, perr := netip.ParseAddr(c.IP())
 	client := middleware.ClientOf(c)
@@ -77,12 +78,7 @@ func (e *Engine) hopOf(c *fiber.Ctx) handler.HopView {
 		return hop
 	}
 	hop.Peer = peer.String()
-	for _, p := range e.trustedProxies() {
-		if p.Contains(peer) {
-			hop.PeerTrusted = true
-			break
-		}
-	}
+	hop.PeerTrusted = middleware.PeerTrusted(peer, e.trustedProxies())
 	return hop
 }
 

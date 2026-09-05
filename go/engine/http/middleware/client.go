@@ -52,7 +52,31 @@ func ClientAddr(peer netip.Addr, trusted []netip.Prefix, cfConnecting, forwarded
 		return addr
 	}
 
-	return walkForwarded(peer, trusted, forwarded)
+	return walkForwarded(peer, walkSet(peer, trusted), forwarded)
+}
+
+// walkSet is the hop set the forwarded walk crosses.
+//
+// With a configured list it is that list. With none it is the peer alone, so
+// the walk crosses exactly the proxy that reached the server and stops at the
+// address that proxy received the request from. Reusing the private-range
+// fallback here instead would cross every private hop, and a local proxy
+// forwarding for a local client would then resolve to no client at all.
+func walkSet(peer netip.Addr, trusted []netip.Prefix) []netip.Prefix {
+	if len(trusted) > 0 {
+		return trusted
+	}
+	a := unmap(peer)
+	return []netip.Prefix{netip.PrefixFrom(a, a.BitLen())}
+}
+
+// PeerTrusted reports whether this peer's forwarding headers are believed
+// under this list, the private-peer fallback of an empty list included.
+//
+// Exported so a diagnostics screen answers with the rule the chain applied
+// rather than with a second reading of the list that can disagree with it.
+func PeerTrusted(peer netip.Addr, trusted []netip.Prefix) bool {
+	return trustedPeer(peer, trusted)
 }
 
 // walkForwarded reads X-Forwarded-For right to left, crossing trusted hops
@@ -82,8 +106,24 @@ func walkForwarded(peer netip.Addr, trusted []netip.Prefix, forwarded string) ne
 	return Unroutable()
 }
 
+// trustedPeer reports whether this peer may speak for someone else.
+//
+// An empty list falls back to "any peer that is not on the internet", which is
+// what a deployment behind a tunnel or a sidecar proxy looks like: the peer is
+// a container address the operator cannot know in advance, and reading it as
+// the client records one address for every visitor. It is also the safer
+// reading of the two for the private-client gates: behind such a proxy the
+// peer is private, so treating it as the client admits the whole internet to a
+// screen meant for the local network, while resolving the forwarded address
+// refuses them.
+//
+// A peer reaching the server directly from the internet is never trusted this
+// way, so no caller can name their own address by sending a header.
 func trustedPeer(addr netip.Addr, trusted []netip.Prefix) bool {
 	a := unmap(addr)
+	if len(trusted) == 0 {
+		return netzone.IsPrivate(a)
+	}
 	for _, p := range trusted {
 		if p.Contains(a) {
 			return true

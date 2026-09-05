@@ -260,6 +260,9 @@
     if (!revokeTarget) return
     const id = revokeTarget.id
     revokeTarget = null
+    // The banner offers to copy a link that no longer exists once its own
+    // link is revoked, so it goes with it.
+    if (justCreated?.id === id) justCreated = null
     try {
       await api.shareDelete(id)
       await load()

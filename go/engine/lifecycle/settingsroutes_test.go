@@ -49,59 +49,83 @@ func TestSavingASettingsSection(t *testing.T) {
 
 // The settings answer says how the request reached the server.
 //
-// Behind a published container port every request arrives from the bridge
-// gateway, so an operator who has not trusted that address sees one address
-// for every visitor. Nothing on the screen said why, and this is what makes
-// it visible: the observed peer, whether it is trusted, and whether a
-// forwarding header arrived at all.
+// Behind a published container port, a sidecar proxy or a tunnel daemon every
+// request arrives from an address on the container network. With no list
+// configured such a peer is trusted, because it is not on the internet, and
+// the forwarded address is what gets recorded. What an operator still cannot
+// otherwise diagnose is a configured list that leaves their real proxy out,
+// and this is what makes both visible: the observed peer, whether it is
+// trusted, and whether a forwarding header arrived at all.
 func TestTheSettingsReportTheHopTheRequestArrivedOver(t *testing.T) {
-	base, cookie, _, _, _ := adminEngine(t)
+	base, cookie, csrf, _, _ := adminEngine(t)
 
-	req, err := http.NewRequest(http.MethodGet, base+"/api/v1/admin/settings", nil)
-	if err != nil {
-		t.Fatalf("building: %v", err)
-	}
-	req.AddCookie(cookie)
-	// A forwarding header from a peer nothing trusts, which is exactly the
-	// case an operator cannot otherwise diagnose.
-	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+	// A private forwarded address, so the answer is about the hop rather than
+	// about the boundary refusing an internet client on a deployment that has
+	// named no host yet.
+	const forwarded = "192.168.0.7"
 
-	resp, err := testClient().Do(req)
-	if err != nil {
-		t.Fatalf("requesting: %v", err)
-	}
-	defer func() {
-		if cerr := resp.Body.Close(); cerr != nil {
-			t.Errorf("closing: %v", cerr)
+	hop := func() (peer string, peerTrusted bool, client string, forwardedSeen bool) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, base+"/api/v1/admin/settings", nil)
+		if err != nil {
+			t.Fatalf("building: %v", err)
 		}
-	}()
-	raw := readAll(t, resp)
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("reading the settings answered %d: %s", resp.StatusCode, raw)
+		req.AddCookie(cookie)
+		req.Header.Set("X-Forwarded-For", forwarded)
+
+		resp, err := testClient().Do(req)
+		if err != nil {
+			t.Fatalf("requesting: %v", err)
+		}
+		defer func() {
+			if cerr := resp.Body.Close(); cerr != nil {
+				t.Errorf("closing: %v", cerr)
+			}
+		}()
+		raw := readAll(t, resp)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("reading the settings answered %d: %s", resp.StatusCode, raw)
+		}
+		var doc struct {
+			Hop struct {
+				Peer          string `json:"peer"`
+				PeerTrusted   bool   `json:"peer_trusted"`
+				Client        string `json:"client"`
+				ForwardedSeen bool   `json:"forwarded_seen"`
+			} `json:"hop"`
+		}
+		if uerr := json.Unmarshal(raw, &doc); uerr != nil {
+			t.Fatalf("decoding %s: %v", raw, uerr)
+		}
+		return doc.Hop.Peer, doc.Hop.PeerTrusted, doc.Hop.Client, doc.Hop.ForwardedSeen
 	}
 
-	var doc struct {
-		Hop struct {
-			Peer          string `json:"peer"`
-			PeerTrusted   bool   `json:"peer_trusted"`
-			Client        string `json:"client"`
-			ForwardedSeen bool   `json:"forwarded_seen"`
-		} `json:"hop"`
-	}
-	if uerr := json.Unmarshal(raw, &doc); uerr != nil {
-		t.Fatalf("decoding %s: %v", raw, uerr)
-	}
-
+	peer, peerTrusted, client, forwardedSeen := hop()
 	switch {
-	case doc.Hop.Peer == "":
+	case peer == "":
 		t.Error("the answer names no peer, so an operator has nothing to trust")
-	case doc.Hop.PeerTrusted:
-		t.Errorf("the peer %s reports itself trusted with no proxy configured", doc.Hop.Peer)
-	case !doc.Hop.ForwardedSeen:
+	case !forwardedSeen:
 		t.Error("a request carrying X-Forwarded-For reports no forwarding header")
-	case doc.Hop.Client != doc.Hop.Peer:
-		t.Errorf("the client resolved to %s from an untrusted peer %s: the header was believed",
-			doc.Hop.Client, doc.Hop.Peer)
+	case !peerTrusted:
+		t.Errorf("the loopback peer %s reports itself untrusted with no list configured", peer)
+	case client != forwarded:
+		t.Errorf("the client resolved to %s, want the forwarded address %s", client, forwarded)
+	}
+
+	// A list that leaves the real proxy out is the misconfiguration that
+	// survives the fallback: the operator's list is then the whole rule, so
+	// the header is ignored and every visitor is recorded as the peer.
+	if status, body := mutate(t, http.MethodPatch, base+"/api/v1/admin/settings/network",
+		cookie, csrf, map[string]any{"trusted_proxies": []any{"10.0.0.0/8"}}); status != http.StatusOK {
+		t.Fatalf("saving the proxy list answered %d: %v", status, body)
+	}
+
+	peer, peerTrusted, client, _ = hop()
+	switch {
+	case peerTrusted:
+		t.Errorf("the peer %s reports itself trusted while outside the saved list", peer)
+	case client != peer:
+		t.Errorf("the client resolved to %s from a peer outside the saved list: the header was believed", client)
 	}
 }
 

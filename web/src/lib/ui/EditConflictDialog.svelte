@@ -1,11 +1,11 @@
 <script lang="ts">
-  // EditConflictDialog.svelte — `/edit` save conflict (`412 fs.precondition`,
-  // `go/internal/apierr`'s precondition code). Distinct from
+  // EditConflictDialog.svelte - the `/edit` save conflict. Distinct from
   // ConflictDialog.svelte, which is the move/copy/rename "name already
-  // exists" prompt (Fail/Rename/Overwrite/Skip) — this is "someone else's
-  // write landed between your last load and your save", so the only
-  // sensible choices are keep mine (overwrite their change) or take theirs
-  // (reload, discard mine).
+  // exists" prompt (Fail/Rename/Overwrite/Skip): this is "someone else's
+  // write landed between your last load and your save", found by comparing
+  // the change token the page loaded against a fresh one taken at save time,
+  // so the only sensible choices are keep mine (overwrite their change) or
+  // take theirs (reload, discard mine).
   import { t } from '../i18n'
   import Button from './Button.svelte'
   import Dialog from './Dialog.svelte'

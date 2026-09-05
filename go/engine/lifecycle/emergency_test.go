@@ -74,25 +74,31 @@ func doorRequest(t *testing.T, method, url string, body []byte, forwarded string
 	return resp.StatusCode, out
 }
 
-// A forwarded header cannot move the caller off the loopback.
+// A forwarded header from a peer that is not on the internet moves the caller.
 //
-// The door admits private addresses. A header claiming a public one has to be
-// ignored, because the peer is not a trusted proxy: honouring it would let
-// anyone reaching this port change what address the guard sees. The test
-// asserts the direction that is safe to assert from a loopback client, which
-// is that the answer does not change.
-func TestTheDoorIgnoresAnUntrustedForwardedHeader(t *testing.T) {
+// The door admits private addresses only. With no proxy list configured a
+// private peer is trusted, which is what a tunnel daemon or a sidecar proxy
+// looks like: the visitor behind it is the address in the header, and a public
+// one has to be refused. Reading the peer instead would put the repair door in
+// front of the whole internet on every such deployment.
+func TestTheDoorRefusesAnInternetVisitorBehindALocalProxy(t *testing.T) {
 	base := boot(t)
 
-	plain, plainBody := doorRequest(t, http.MethodGet, base+"/emergency/api/state", nil, "")
-	forged, forgedBody := doorRequest(t, http.MethodGet, base+"/emergency/api/state", nil, "203.0.113.7")
-
-	if plain != forged {
-		t.Errorf("a forwarded header changed the answer from %d to %d, so the header is being trusted",
-			plain, forged)
+	plain, _ := doorRequest(t, http.MethodGet, base+"/emergency/api/state", nil, "")
+	if plain != http.StatusOK {
+		t.Fatalf("the loopback caller answered %d", plain)
 	}
-	if string(plainBody) != string(forgedBody) {
-		t.Error("a forwarded header changed the response body")
+
+	public, _ := doorRequest(t, http.MethodGet, base+"/emergency/api/state", nil, "203.0.113.7")
+	if public == http.StatusOK {
+		t.Error("an internet visitor forwarded by a local proxy reached the door")
+	}
+
+	// A private visitor behind that same proxy is still on the local network,
+	// so the door stays open to them.
+	private, _ := doorRequest(t, http.MethodGet, base+"/emergency/api/state", nil, "192.168.0.7")
+	if private != http.StatusOK {
+		t.Errorf("a private visitor behind a local proxy answered %d", private)
 	}
 }
 

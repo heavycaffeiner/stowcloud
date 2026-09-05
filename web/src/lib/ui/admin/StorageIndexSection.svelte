@@ -105,8 +105,8 @@
     buildError = null
     buildRunning = true
     try {
-      const { job } = await api.adminBuildIndex()
-      await jobTray.track(job, 'index')
+      const job = await api.adminBuildIndex()
+      await jobTray.track(job.id, 'index')
     } catch {
       buildError = t('storage.could_not_start_index_build')
     } finally {

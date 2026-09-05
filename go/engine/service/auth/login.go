@@ -115,6 +115,13 @@ func (s *Service) Login(
 		}
 	}
 
+	// The credential the protocol needs is derived from this plaintext, which
+	// exists nowhere else. Best effort: a deployment with no sidecar, or a
+	// write that fails, must not refuse a sign-in that has already verified.
+	if berr := s.backfillSMBSecret(ctx, acct, req.Password); berr != nil {
+		s.warn("the SMB credential could not be restored on sign-in", berr)
+	}
+
 	sess, err := s.CreateSession(ctx, acct.ID, req.IP, req.UA, req.AMR, sessionTTL)
 	if err != nil {
 		return Session{}, err

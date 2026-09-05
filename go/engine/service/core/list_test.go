@@ -380,6 +380,23 @@ func TestThePageCarriesTheDirectoryInodesOwnToken(t *testing.T) {
 	}
 }
 
+// The page reports what the caller may do to the directory itself. Nothing in
+// the rows answers it: a folder whose every file is read-only says nothing
+// about creating one beside them, and a client that guessed offered upload and
+// "new folder" to an account holding read alone.
+func TestThePageCarriesWhatTheCallerMayDoToTheDirectory(t *testing.T) {
+	c, _, host, r := listable(t)
+	writeFile(t, host, "a.txt", "x")
+
+	p := mustList(t, c, r, "", ListOptions{})
+	if p.DirPerms != acl.Read|acl.Download {
+		t.Fatalf("the page reports %v, want the resolution's own read and download", p.DirPerms)
+	}
+	if p.DirPerms.Has(acl.Create) {
+		t.Fatal("a read-only grant listed as able to create")
+	}
+}
+
 func TestCursorOffsetParsing(t *testing.T) {
 	cases := []struct {
 		in      Cursor

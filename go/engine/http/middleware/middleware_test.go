@@ -368,32 +368,49 @@ func TestAnUntrustedPeerCannotClaimATrustedAddress(t *testing.T) {
 
 // The shape a container deployment actually has, both ways round.
 //
-// A published port means every request arrives from the bridge gateway, so the
-// peer carries no information about who is calling: it is the same address for
-// everybody. Until that gateway is trusted, the forwarding headers are ignored
-// and every visitor is recorded as the gateway, which is the misconfiguration
-// an operator sees as "every session came from 172.19.0.1".
+// A published port, a sidecar proxy or a tunnel daemon means every request
+// arrives from an address on the container network, which the operator cannot
+// know in advance and which carries no information about who is calling. With
+// no list configured that peer is trusted, because it is not on the internet:
+// resolving the forwarded address is what records the visitor rather than one
+// gateway address for everybody, and it is what keeps a screen gated on a
+// private client from admitting the whole internet through such a proxy.
 //
-// Trusting it is the operator's decision and not a default, because believing
-// a header from an untrusted hop lets any caller claim any address, which the
-// rate limiter and the audit log both read.
-func TestAContainerGatewayIsTheClientUntilItIsTrusted(t *testing.T) {
+// A configured list replaces that fallback entirely, so an operator who names
+// their proxies decides on their own terms.
+func TestAPrivateGatewayNamesItsVisitorAndAPublicPeerCannot(t *testing.T) {
 	gateway := mustAddr(t, "172.19.0.1")
 	visitor := "203.0.113.9"
+	want := mustAddr(t, visitor)
 
-	// Nothing trusted: the headers are not believed, so the gateway is the
-	// client and one address stands for everyone behind it.
-	if got := ClientAddr(gateway, nil, "", visitor); got != gateway {
-		t.Errorf("with no trusted proxy the client is %v, want the gateway %v", got, gateway)
+	// Nothing configured: the gateway is private, so its headers are believed.
+	if got := ClientAddr(gateway, nil, "", visitor); got != want {
+		t.Errorf("a private gateway's forwarded header resolved to %v, want %v", got, want)
 	}
-	if got := ClientAddr(gateway, nil, visitor, ""); got != gateway {
-		t.Errorf("with no trusted proxy the connecting-IP header resolved to %v", got)
+	if got := ClientAddr(gateway, nil, visitor, ""); got != want {
+		t.Errorf("a private gateway's connecting-IP header resolved to %v, want %v", got, want)
+	}
+
+	// A peer arriving straight off the internet is never trusted this way, so
+	// nobody can name their own address by sending a header.
+	public := mustAddr(t, "198.51.100.7")
+	if got := ClientAddr(public, nil, "", visitor); got != public {
+		t.Errorf("a public peer's forwarded header resolved to %v, want the peer %v", got, public)
+	}
+	if got := ClientAddr(public, nil, visitor, ""); got != public {
+		t.Errorf("a public peer's connecting-IP header resolved to %v, want the peer %v", got, public)
+	}
+
+	// A local proxy forwarding for a local client resolves to that client
+	// rather than to no client at all: the fallback crosses the peer alone.
+	lanClient := mustAddr(t, "192.168.1.50")
+	if got := ClientAddr(gateway, nil, "", lanClient.String()); got != lanClient {
+		t.Errorf("a local client behind a local proxy resolved to %v, want %v", got, lanClient)
 	}
 
 	// The gateway's own network trusted: the header is believed and the real
 	// caller is recovered.
 	trusted := []netip.Prefix{mustPrefix(t, "172.19.0.0/16")}
-	want := mustAddr(t, visitor)
 	if got := ClientAddr(gateway, trusted, "", visitor); got != want {
 		t.Errorf("behind a trusted gateway the client is %v, want %v", got, want)
 	}
@@ -406,5 +423,12 @@ func TestAContainerGatewayIsTheClientUntilItIsTrusted(t *testing.T) {
 	single := []netip.Prefix{mustPrefix(t, "172.19.0.1/32")}
 	if got := ClientAddr(gateway, single, "", visitor); got != want {
 		t.Errorf("a bare gateway address resolved the client to %v, want %v", got, want)
+	}
+
+	// A configured list that does not contain the peer is not widened by the
+	// private fallback: the operator's list is the whole rule.
+	elsewhere := []netip.Prefix{mustPrefix(t, "10.0.0.0/8")}
+	if got := ClientAddr(gateway, elsewhere, "", visitor); got != gateway {
+		t.Errorf("a peer outside the configured list resolved to %v, want the peer %v", got, gateway)
 	}
 }

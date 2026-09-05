@@ -164,6 +164,15 @@ export interface ListResponse {
   dir_etag: string
   /** The same advisory rule as `Entry.etag_weak`, for the directory token. */
   dir_etag_weak: boolean
+  /**
+   * What the caller may do to the directory itself, by name.
+   *
+   * The rows cannot answer it: a folder whose files are all read-only says
+   * nothing about whether a new file may be created beside them. Without it
+   * the toolbar offered upload and "new folder" to an account holding read
+   * alone, and the refusal arrived as a snackbar after the click.
+   */
+  dir_perms: string[]
 }
 
 export interface ApiErrorBody {
@@ -1073,13 +1082,14 @@ export type JobState = 'running' | 'done' | 'error' | 'cancelled' | 'interrupted
 /** Wire values of `go/internal/httpapi/handler/admin_ops.go`. */
 export type JobKindWire = 'copy' | 'move' | 'delete' | 'archive' | 'index_build'
 
-/** `GET /api/jobs/{id}` (`go/internal/httpapi/handler/admin_ops.go`,
- *  `JobStatus::done_total_json`). Every `fs_move`/`fs_copy`/`fs_delete`/
- *  `fs_archive` request always answers `202 { "job": "J-…" }` — there is no
- *  synchronous fallback, so this envelope is the *only* shape a caller of
- *  those endpoints ever sees. `http.ts`'s wrappers hand the id straight to
- *  `jobTray.track()`; `pollJob` (`state/jobs.ts`) is the lower-level piece
- *  that actually polls this endpoint until a terminal state. */
+/** `GET /api/v1/jobs/{id}`.
+ *
+ *  Also what `POST /api/v1/admin/index/build` answers directly, and what a
+ *  started `POST /api/v1/files/copy` names by `id`. No route wraps it in a
+ *  `{ job }` envelope, whatever an earlier version of this comment claimed:
+ *  the index build was read that way and polled `/jobs/undefined`.
+ *  `pollJob` (`state/jobs.ts`) is the piece that follows one to a terminal
+ *  state. */
 export interface JobStatus {
   id: string
   kind: JobKindWire
@@ -1132,10 +1142,9 @@ export type ClientMsg = { t: 'sub'; paths: string[] } | { t: 'unsub'; paths: str
 
 // ── text editor (`/edit/[...path]`) ──
 
-/** `GET /api/v1/files/read` response shape. No etag on purpose — the server
- *  derives it fresh from `stat` at write time (`AppError::precondition`), so
- *  the editor calls `api.stat(path)` alongside this to get one to send back
- *  as `If-Match`. */
+/** `GET /api/v1/files/read` response shape. No etag on purpose: the editor
+ *  gets its change token from `api.stat(path)`, and takes a second one there
+ *  at save time to see whether the file moved underneath it. */
 export interface ReadFileResponse {
   content: string
 }

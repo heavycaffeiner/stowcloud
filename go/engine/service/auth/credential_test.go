@@ -258,6 +258,78 @@ func TestEnrollingASecondFactorDropsTheStoredSMBCredential(t *testing.T) {
 	}
 }
 
+// A sign-in restores a credential the account is eligible for and has lost.
+//
+// The interface tells such an account that signing in again makes SMB work
+// with the account password. Nothing did that, so the credential stayed
+// missing however often they signed in and the screen kept saying the same
+// thing. The password verified here is the only place the plaintext exists.
+func TestSigningInRestoresAMissingSMBCredential(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	id := f.account(t, "alice")
+
+	if _, err := f.svc.ClearSMBPassword(ctx, id); err != nil {
+		t.Fatalf("ClearSMBPassword: %v", err)
+	}
+	gone, err := f.svc.SMBStateOf(ctx, id)
+	if err != nil {
+		t.Fatalf("SMBStateOf: %v", err)
+	}
+	if gone.Credential != auth.SMBCredentialNone {
+		t.Fatalf("the credential survived being cleared: %+v", gone)
+	}
+
+	if _, lerr := f.svc.Login(ctx, auth.LoginRequest{
+		Name: "alice", Password: pw(testPassword), IP: "192.0.2.1",
+	}, 0); lerr != nil {
+		t.Fatalf("Login: %v", lerr)
+	}
+
+	back, err := f.svc.SMBStateOf(ctx, id)
+	if err != nil {
+		t.Fatalf("SMBStateOf: %v", err)
+	}
+	if back.Credential != auth.SMBCredentialAccount {
+		t.Fatalf("signing in did not restore the credential: %+v", back)
+	}
+}
+
+// Signing in must not reinstate the credential the second factor closed.
+//
+// Enrolment drops it precisely so the account password stops working over a
+// protocol whose authentication cannot be strengthened to match. A restore on
+// the next sign-in would undo that silently.
+func TestSigningInDoesNotRestoreTheCredentialASecondFactorClosed(t *testing.T) {
+	ctx := context.Background()
+	f := newFixture(t)
+	id := f.account(t, "alice")
+
+	secretB32, err := f.svc.GenerateTOTPSecret()
+	if err != nil {
+		t.Fatalf("GenerateTOTPSecret: %v", err)
+	}
+	if eerr := f.svc.EnrollTOTP(ctx, id, secretB32); eerr != nil {
+		t.Fatalf("EnrollTOTP: %v", eerr)
+	}
+
+	// The password alone cannot complete this sign-in, and the attempt must
+	// not leave a credential behind either.
+	if _, lerr := f.svc.Login(ctx, auth.LoginRequest{
+		Name: "alice", Password: pw(testPassword), IP: "192.0.2.2",
+	}, 0); lerr == nil {
+		t.Fatal("a password-only sign-in succeeded for an enrolled account")
+	}
+
+	state, err := f.svc.SMBStateOf(ctx, id)
+	if err != nil {
+		t.Fatalf("SMBStateOf: %v", err)
+	}
+	if state.Credential != auth.SMBCredentialNone {
+		t.Fatalf("a sign-in reinstated the credential enrolment closed: %+v", state)
+	}
+}
+
 func TestRecoveryCodesAreSingleUseAndCountDown(t *testing.T) {
 	ctx := context.Background()
 	f := newFixture(t)

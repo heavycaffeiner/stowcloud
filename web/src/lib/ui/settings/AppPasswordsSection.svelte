@@ -35,6 +35,14 @@
   let wipeTarget = $state<AppPasswordInfo | null>(null)
   let wiping = $state(false)
 
+  /** Whether a credential's expiry has passed. The server writes epoch zero
+   *  when a wipe is requested, which is how a wiped device reads as revoked
+   *  rather than merely asked. Nanoseconds on the wire, milliseconds here. */
+  function isExpired(p: AppPasswordInfo): boolean {
+    if (!p.expires_ns) return false
+    return Number(p.expires_ns) / 1e6 <= Date.now()
+  }
+
   async function load(): Promise<void> {
     loading = true
     loadError = null
@@ -172,9 +180,18 @@
             {#snippet supporting()}
               {t('app_password.issued', { date: formatDateNs(p.created_ns) })}
               {#if p.last_used_ns}- {t('app_password.last_used', { date: formatDateNs(p.last_used_ns) })}{:else}- {t('app_password.never_used')}{/if}
+              <!-- A requested wipe revokes the credential in the same
+                   statement (the server moves its expiry to the epoch), so a
+                   row that said nothing about expiry read as live after the
+                   device had already been cut off. -->
+              {#if isExpired(p)}- {t('app_password.expired')}{:else if p.expires_ns}- {t('app_password.expires', { date: formatDateNs(p.expires_ns) })}{/if}
             {/snippet}
             {#snippet trailing()}
-              <IconButton label={t('app_password.wipe', { name: p.name })} onclick={() => askWipe(p)}><Icon icon={icons.warning} size={18} /></IconButton>
+              <!-- Nothing to ask of a credential that can no longer connect,
+                   so the wipe request goes; revoking still clears the row. -->
+              {#if !isExpired(p)}
+                <IconButton label={t('app_password.wipe', { name: p.name })} onclick={() => askWipe(p)}><Icon icon={icons.warning} size={18} /></IconButton>
+              {/if}
               <IconButton label={t('app_password.revoke', { name: p.name })} onclick={() => askRevoke(p)}><Icon icon={icons.delete} size={18} /></IconButton>
             {/snippet}
           </ListItem>

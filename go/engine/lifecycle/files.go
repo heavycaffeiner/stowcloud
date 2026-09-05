@@ -135,5 +135,7 @@ func rootPage(roots []acl.RootEntry) handler.PageView {
 			IsDir: true,
 		})
 	}
+	// No dir_perms: the root is a projection of grants rather than a
+	// directory, so nothing may be created, renamed or deleted in it.
 	return handler.PageView{Entries: entries}
 }
