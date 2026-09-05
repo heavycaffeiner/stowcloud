@@ -10,7 +10,9 @@ import type { Mock } from 'vitest'
 import { ZipWriter, Uint8ArrayWriter, Uint8ArrayReader } from '@zip.js/zip.js'
 import type { Entry } from '../api/types'
 
-const contentUrl = vi.fn((entry: { content?: string }) => `/api/v1/files/read?claim=${entry.content}`)
+// Deliberately not the real route: only the api layer may spell that, and a
+// double only has to be a distinguishable address the fetch stub recognises.
+const contentUrl = vi.fn((entry: { content?: string }) => `https://stub.invalid/content/${entry.content}`)
 vi.mock('../api/client', () => ({
   api: { contentUrl: (entry: { content?: string }) => contentUrl(entry) }
 }))

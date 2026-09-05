@@ -9,7 +9,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Entry, ShareEncryption } from '../api/types'
 
-const contentUrl = vi.fn((entry: { content?: string }) => `/api/v1/files/read?claim=${entry.content}`)
+// Deliberately not the real route: only the api layer may spell that, and a
+// double only has to be a distinguishable address the fetch stub recognises.
+const contentUrl = vi.fn((entry: { content?: string }) => `https://stub.invalid/content/${entry.content}`)
 const list = vi.fn()
 vi.mock('../api/client', () => ({
   api: {
