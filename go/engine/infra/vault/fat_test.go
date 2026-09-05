@@ -2,8 +2,14 @@ package vault
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -99,15 +105,15 @@ func TestCreateFileAndReadBack(t *testing.T) {
 		t.Fatalf("WriteFileStaged: %v", err)
 	}
 	var buf bytes.Buffer
-	if err := fsys.ReadFile(p, &buf); err != nil {
-		t.Fatalf("ReadFile: %v", err)
+	if rerr := fsys.ReadFile(p, &buf); rerr != nil {
+		t.Fatalf("ReadFile: %v", rerr)
 	}
 	if !bytes.Equal(buf.Bytes(), content) {
 		t.Fatalf("read back %d bytes, want %d, mismatch", buf.Len(), len(content))
 	}
-	st, err := fsys.Stat(p)
-	if err != nil {
-		t.Fatalf("Stat: %v", err)
+	st, serr := fsys.Stat(p)
+	if serr != nil {
+		t.Fatalf("Stat: %v", serr)
 	}
 	if st.Size != uint64(len(content)) {
 		t.Fatalf("Stat size = %d, want %d", st.Size, len(content))
@@ -158,9 +164,9 @@ func TestTruncateShorterAndLonger(t *testing.T) {
 	if err := fsys.Truncate(p, 100); err != nil {
 		t.Fatalf("Truncate shorter: %v", err)
 	}
-	st, err := fsys.Stat(p)
-	if err != nil {
-		t.Fatalf("Stat: %v", err)
+	st, serr := fsys.Stat(p)
+	if serr != nil {
+		t.Fatalf("Stat: %v", serr)
 	}
 	if st.Size != 100 {
 		t.Fatalf("size after shrink = %d, want 100", st.Size)
@@ -176,16 +182,16 @@ func TestTruncateShorterAndLonger(t *testing.T) {
 	if terr := fsys.Truncate(p, 5000); terr != nil {
 		t.Fatalf("Truncate longer: %v", terr)
 	}
-	st, err = fsys.Stat(p)
-	if err != nil {
-		t.Fatalf("Stat: %v", err)
+	st, serr = fsys.Stat(p)
+	if serr != nil {
+		t.Fatalf("Stat: %v", serr)
 	}
 	if st.Size != 5000 {
 		t.Fatalf("size after grow = %d, want 5000", st.Size)
 	}
 	buf.Reset()
-	if err := fsys.ReadFile(p, &buf); err != nil {
-		t.Fatalf("ReadFile after grow: %v", err)
+	if rerr := fsys.ReadFile(p, &buf); rerr != nil {
+		t.Fatalf("ReadFile after grow: %v", rerr)
 	}
 	grown := buf.Bytes()
 	if !bytes.Equal(grown[:100], content[:100]) {
@@ -436,4 +442,316 @@ func TestFileKeepsInodeAcrossRename(t *testing.T) {
 	if after.Ino != before.Ino {
 		t.Fatalf("inode changed across rename: before=%d after=%d", before.Ino, after.Ino)
 	}
+}
+
+// buildFAT1216Image lays out a minimal, self-consistent FAT12 or FAT16 boot
+// sector, FAT tables and fixed root region directly onto dev. Format only
+// ever writes FAT32, so exercising the other two widths means constructing
+// the geometry by hand instead of round-tripping through this driver's own
+// writer: the fixed point search for fatSize mirrors computeFATSize's own
+// approach, just against the FAT12/FAT16 entry width instead of FAT32's.
+func buildFAT1216Image(t *testing.T, dev Device, sizeBytes int64, kind fatKind, rootEntryCount uint32) {
+	t.Helper()
+	const bps = 512
+	const reserved = 1
+	const numFATs = 2
+	const spc = 1
+
+	entriesPerSector := uint32(bps / 2)
+	if kind == fat12 {
+		entriesPerSector = bps * 2 / 3
+	}
+	totalSectors := mustNarrow[uint32](sizeBytes/bps, "test image sectors")
+	rootDirSectors := (rootEntryCount*32 + bps - 1) / bps
+
+	fatSize := uint32(1)
+	var totalClusters uint32
+	for {
+		dataSectors := totalSectors - reserved - numFATs*fatSize - rootDirSectors
+		totalClusters = dataSectors / spc
+		needed := (totalClusters + 2 + entriesPerSector - 1) / entriesPerSector
+		if needed <= fatSize {
+			break
+		}
+		fatSize = needed
+	}
+
+	sector := make([]byte, bps)
+	sector[0], sector[1], sector[2] = 0xEB, 0x3C, 0x90
+	copy(sector[3:11], "STOWTEST")
+	binary.LittleEndian.PutUint16(sector[11:13], bps)
+	sector[13] = spc
+	binary.LittleEndian.PutUint16(sector[14:16], reserved)
+	sector[16] = numFATs
+	binary.LittleEndian.PutUint16(sector[17:19], mustNarrow[uint16](rootEntryCount, "test root entry count"))
+	binary.LittleEndian.PutUint16(sector[19:21], mustNarrow[uint16](totalSectors, "test total sectors"))
+	sector[21] = 0xF8
+	binary.LittleEndian.PutUint16(sector[22:24], mustNarrow[uint16](fatSize, "test FAT size"))
+	binary.LittleEndian.PutUint16(sector[24:26], 0x3F)
+	binary.LittleEndian.PutUint16(sector[26:28], 0xFF)
+	sector[36] = 0x80
+	sector[38] = 0x29
+	binary.LittleEndian.PutUint32(sector[39:43], 0xC0FFEE)
+	copy(sector[43:54], "NO NAME    ")
+	if kind == fat12 {
+		copy(sector[54:62], "FAT12   ")
+	} else {
+		copy(sector[54:62], "FAT16   ")
+	}
+	sector[510], sector[511] = 0x55, 0xAA
+
+	if _, err := dev.WriteAt(sector, 0); err != nil {
+		t.Fatalf("write boot sector: %v", err)
+	}
+}
+
+// newFAT1216TestFS builds and mounts a hand-built FAT12 or FAT16 image of
+// sizeBytes with rootEntryCount slots in its fixed root directory, and
+// confirms this driver classified it the same way it was built.
+func newFAT1216TestFS(t *testing.T, kind fatKind, sizeBytes int64, rootEntryCount uint32) *FS {
+	t.Helper()
+	dev := newMemDevice(sizeBytes)
+	buildFAT1216Image(t, dev, sizeBytes, kind, rootEntryCount)
+	fsys, err := Mount(dev, mustNarrow[uint64](sizeBytes, "test volume size"), clock.Fixed(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)))
+	if err != nil {
+		t.Fatalf("Mount: %v", err)
+	}
+	if fsys.bpb.kind != kind {
+		t.Fatalf("Mount classified the image as kind %v, want %v", fsys.bpb.kind, kind)
+	}
+	return fsys
+}
+
+// testFAT1216ReadWriteDeleteExtend covers a FAT12 or FAT16 volume's read and
+// write path end to end: a directory listing, a file's bytes, growing an
+// existing file's chain across a cluster boundary, and deleting it.
+func testFAT1216ReadWriteDeleteExtend(t *testing.T, kind fatKind, sizeBytes int64, rootEntryCount uint32) {
+	t.Helper()
+	fsys := newFAT1216TestFS(t, kind, sizeBytes, rootEntryCount)
+	root := mustPath(t, "")
+
+	entries, derr := fsys.ReadDir(root)
+	if derr != nil {
+		t.Fatalf("ReadDir empty root: %v", derr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("fresh root has %d entries, want 0", len(entries))
+	}
+
+	p := mustPath(t, "hello.txt")
+	if cerr := fsys.CreateFile(p); cerr != nil {
+		t.Fatalf("CreateFile: %v", cerr)
+	}
+	small := bytes.Repeat([]byte{0xAB}, 100) // well under one 512B cluster
+	if _, werr := fsys.WriteFileStaged(p, bytes.NewReader(small), false, 0); werr != nil {
+		t.Fatalf("WriteFileStaged: %v", werr)
+	}
+
+	entries, derr = fsys.ReadDir(root)
+	if derr != nil {
+		t.Fatalf("ReadDir after create: %v", derr)
+	}
+	if len(entries) != 1 || entries[0].Name != "hello.txt" || entries[0].IsDir {
+		t.Fatalf("ReadDir = %+v, want one file named hello.txt", entries)
+	}
+
+	var buf bytes.Buffer
+	if rerr := fsys.ReadFile(p, &buf); rerr != nil {
+		t.Fatalf("ReadFile: %v", rerr)
+	}
+	if !bytes.Equal(buf.Bytes(), small) {
+		t.Fatalf("read back %d bytes, want %d matching bytes", buf.Len(), len(small))
+	}
+
+	// Grow the same file past a cluster boundary: this exercises
+	// ensureExtent's chain growth path on an already allocated chain, not
+	// just a bigger fresh write.
+	const grownSize = 1500 // spans 3 clusters at 512B/cluster
+	if terr := fsys.Truncate(p, grownSize); terr != nil {
+		t.Fatalf("Truncate grow: %v", terr)
+	}
+	st, serr := fsys.Stat(p)
+	if serr != nil {
+		t.Fatalf("Stat after grow: %v", serr)
+	}
+	if st.Size != grownSize {
+		t.Fatalf("size after grow = %d, want %d", st.Size, grownSize)
+	}
+	buf.Reset()
+	if err := fsys.ReadFile(p, &buf); err != nil {
+		t.Fatalf("ReadFile after grow: %v", err)
+	}
+	grown := buf.Bytes()
+	if !bytes.Equal(grown[:len(small)], small) {
+		t.Fatalf("original bytes changed after growing across a cluster boundary")
+	}
+	for i, b := range grown[len(small):] {
+		if b != 0 {
+			t.Fatalf("byte %d after grow = %#x, want zero fill", len(small)+i, b)
+		}
+	}
+
+	if err := fsys.Remove(p); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if _, ok, err := fsys.findEntry(fsys.rootDirStart(), "hello.txt"); err != nil {
+		t.Fatalf("findEntry after delete: %v", err)
+	} else if ok {
+		t.Fatalf("hello.txt still found after delete")
+	}
+	entries, derr = fsys.ReadDir(root)
+	if derr != nil {
+		t.Fatalf("ReadDir after delete: %v", derr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("root has %d entries after delete, want 0", len(entries))
+	}
+}
+
+func TestFAT12ReadWriteDeleteExtend(t *testing.T) {
+	testFAT1216ReadWriteDeleteExtend(t, fat12, 1<<20, 224)
+}
+
+func TestFAT16ReadWriteDeleteExtend(t *testing.T) {
+	testFAT1216ReadWriteDeleteExtend(t, fat16, 16<<20, 512)
+}
+
+// testFAT1216FixedRootFillsUp fills a FAT12/FAT16 fixed root directory to
+// its slot limit and confirms the next create is refused cleanly, the same
+// error a full disk gives, rather than spilling entries into the data area
+// that starts immediately after the fixed root region.
+func testFAT1216FixedRootFillsUp(t *testing.T, kind fatKind) {
+	t.Helper()
+	// A one sector (16 slot) root fills after only a handful of short,
+	// already 8.3-compatible names, keeping the test fast.
+	const rootEntryCount = 16
+	sizeBytes := int64(1 << 20)
+	if kind == fat16 {
+		sizeBytes = 16 << 20
+	}
+	fsys := newFAT1216TestFS(t, kind, sizeBytes, rootEntryCount)
+
+	created := 0
+	var lastErr error
+	for i := range rootEntryCount {
+		name := fmt.Sprintf("f%d.txt", i)
+		if err := fsys.CreateFile(mustPath(t, name)); err != nil {
+			lastErr = err
+			break
+		}
+		created++
+	}
+	if lastErr == nil {
+		t.Fatalf("filled the fixed root without ever running out of room (created %d entries)", created)
+	}
+	if !errors.Is(lastErr, ErrNoSpaceOnVolume) {
+		t.Fatalf("create after the root filled up: got %v, want ErrNoSpaceOnVolume", lastErr)
+	}
+
+	// The region itself is intact: every entry created before the
+	// refusal is still there, in a clean listing, with nothing left over
+	// from a partially written batch.
+	entries, err := fsys.ReadDir(mustPath(t, ""))
+	if err != nil {
+		t.Fatalf("ReadDir after filling the root: %v", err)
+	}
+	if len(entries) != created {
+		t.Fatalf("ReadDir reports %d entries, want the %d that were actually created", len(entries), created)
+	}
+	seen := map[string]bool{}
+	for _, e := range entries {
+		seen[e.Name] = true
+	}
+	for i := range created {
+		name := fmt.Sprintf("f%d.txt", i)
+		if !seen[name] {
+			t.Fatalf("entry %q missing from a full root's listing", name)
+		}
+	}
+}
+
+func TestFAT12FixedRootFillsUp(t *testing.T) { testFAT1216FixedRootFillsUp(t, fat12) }
+
+func TestFAT16FixedRootFillsUp(t *testing.T) { testFAT1216FixedRootFillsUp(t, fat16) }
+
+// testRealFormatterImage formats an image with the real mkfs.vfat, the only
+// thing that proves this driver's BPB parse against a formatter other than
+// its own writer, then, when mtools is also available, writes a file into
+// it with mcopy and reads it back through this driver.
+func testRealFormatterImage(t *testing.T, wantKind fatKind, fatBits int, blocks int) {
+	mkfsPath, err := exec.LookPath("mkfs.vfat")
+	if err != nil {
+		t.Skip("mkfs.vfat not available")
+	}
+
+	dir := t.TempDir()
+	imgPath := filepath.Join(dir, "real.img")
+	if out, cerr := mkfsVfat(mkfsPath, strconv.Itoa(fatBits), imgPath, strconv.Itoa(blocks)); cerr != nil {
+		t.Fatalf("mkfs.vfat: %v\n%s", cerr, out)
+	}
+
+	content := []byte("real formatter round trip\n")
+	mcopyPath, mcopyErr := exec.LookPath("mcopy")
+	if mcopyErr == nil {
+		srcPath := filepath.Join(dir, "hello.txt")
+		if werr := os.WriteFile(srcPath, content, 0o600); werr != nil {
+			t.Fatalf("write source file: %v", werr)
+		}
+		if out, cerr := mcopyInto(mcopyPath, imgPath, srcPath); cerr != nil {
+			t.Fatalf("mcopy: %v\n%s", cerr, out)
+		}
+	} else {
+		t.Log("mtools not available, only verifying the BPB parse and cluster count")
+	}
+
+	raw, rerr := os.ReadFile(imgPath)
+	if rerr != nil {
+		t.Fatalf("read formatted image: %v", rerr)
+	}
+	dev := newMemDevice(int64(len(raw)))
+	if _, werr := dev.WriteAt(raw, 0); werr != nil {
+		t.Fatalf("load image into device: %v", werr)
+	}
+
+	fsys, merr := Mount(dev, mustNarrow[uint64](len(raw), "real image size"), clock.Fixed(time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)))
+	if merr != nil {
+		t.Fatalf("Mount a real mkfs.vfat -F %d image: %v", fatBits, merr)
+	}
+	if fsys.bpb.kind != wantKind {
+		t.Fatalf("Mount classified a real mkfs.vfat -F %d image as kind %v, want %v", fatBits, fsys.bpb.kind, wantKind)
+	}
+	if fsys.totalClusters == 0 {
+		t.Fatalf("Mount reported zero data clusters for a real image")
+	}
+
+	if mcopyErr == nil {
+		var buf bytes.Buffer
+		if ferr := fsys.ReadFile(mustPath(t, "hello.txt"), &buf); ferr != nil {
+			t.Fatalf("ReadFile a real image's mtools-written file: %v", ferr)
+		}
+		if !bytes.Equal(buf.Bytes(), content) {
+			t.Fatalf("content mismatch reading mtools-written file: got %q, want %q", buf.Bytes(), content)
+		}
+	}
+}
+
+func TestFAT12RealFormatterImage(t *testing.T) {
+	testRealFormatterImage(t, fat12, 12, 1024) // 1024 * 1024 bytes = 1 MiB
+}
+
+func TestFAT16RealFormatterImage(t *testing.T) {
+	testRealFormatterImage(t, fat16, 16, 16384) // 16384 * 1024 bytes = 16 MiB
+}
+
+// mkfsVfat and mcopyInto launch the host's own FAT tools. The tool path is
+// a function parameter, so it names what exec.LookPath resolved at the
+// point exec.Command reads it, and the paths are under t.TempDir.
+func mkfsVfat(tool, bits, imgPath, blocks string) ([]byte, error) {
+	return exec.Command(tool, "-F", bits, "-C", imgPath, blocks).CombinedOutput()
+}
+
+func mcopyInto(tool, imgPath, srcPath string) ([]byte, error) {
+	cmd := exec.Command(tool, "-i", imgPath, srcPath, "::hello.txt")
+	cmd.Env = append(os.Environ(), "MTOOLS_SKIP_CHECK=1")
+	return cmd.CombinedOutput()
 }

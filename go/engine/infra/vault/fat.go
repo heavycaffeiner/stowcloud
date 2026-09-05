@@ -84,17 +84,33 @@ const fatEOC = 0x0FFFFFFF
 // one during allocation, but has to recognize one if a foreign image has it.
 const fatBad = 0x0FFFFFF7
 
-// bpb32 is this driver's parsed view of the FAT32 BIOS Parameter Block.
+// fatKind is the FAT entry width this driver determined from the volume's
+// own data cluster count, per the FAT specification's algorithm: the
+// BS_FilSysType label is a hint nobody updates reliably and is never
+// trusted on its own.
+type fatKind uint8
+
+const (
+	fat32 fatKind = iota
+	fat16
+	fat12
+)
+
+// bpb32 is this driver's parsed view of a FAT BIOS Parameter Block: FAT12,
+// FAT16 or FAT32.
 type bpb32 struct {
+	kind              fatKind
 	bytesPerSector    uint32
 	sectorsPerCluster uint32
 	reservedSectors   uint32
 	numFATs           uint32
 	fatSize           uint32 // sectors per one copy of the FAT
 	totalSectors      uint32
-	rootCluster       uint32
-	fsInfoSector      uint32
-	backupBootSector  uint32
+	rootCluster       uint32 // FAT32 only: the root's own cluster chain start
+	rootEntryCount    uint32 // FAT12/FAT16 only: fixed root directory slot count
+	rootDirSectors    uint32 // FAT12/FAT16 only: sectors the fixed root occupies
+	fsInfoSector      uint32 // FAT32 only
+	backupBootSector  uint32 // FAT32 only
 	volumeID          uint32
 	label             [11]byte
 }
@@ -115,6 +131,11 @@ type FS struct {
 	dataStartSector uint32
 	totalClusters   uint32
 
+	// rootDirStartSector is the first sector of the fixed root directory
+	// region, valid only when bpb.kind is not fat32: FAT32's root is an
+	// ordinary cluster chain and has no fixed region to speak of.
+	rootDirStartSector uint32
+
 	freeCount uint32
 	nextFree  uint32
 
@@ -133,6 +154,34 @@ func (fs *FS) sectorOffset(sector uint32) int64 { return int64(sector) * int64(f
 // FAT entries.
 func (fs *FS) clusterOffset(c uint32) int64 {
 	return fs.sectorOffset(fs.dataStartSector + (c-2)*fs.bpb.sectorsPerCluster)
+}
+
+// fatFixedRoot stands in for a cluster number wherever this driver
+// addresses "the directory at cluster X" and the directory in question is
+// actually the FAT12/FAT16 fixed root region rather than a real cluster
+// chain. No genuine cluster ever reaches this value: the largest one this
+// driver accepts is bounded by maxTotalClusters, far below it.
+const fatFixedRoot = ^uint32(0)
+
+// rootDirStart is the value this driver threads through every directory
+// operation to mean "the volume's root": the root cluster on FAT32, or the
+// fatFixedRoot sentinel on FAT12/FAT16, where the root is not a cluster
+// chain at all.
+func (fs *FS) rootDirStart() uint32 {
+	if fs.bpb.kind == fat32 {
+		return fs.bpb.rootCluster
+	}
+	return fatFixedRoot
+}
+
+// fixedRootOffset is the byte offset of the FAT12/FAT16 fixed root region.
+func (fs *FS) fixedRootOffset() int64 { return fs.sectorOffset(fs.rootDirStartSector) }
+
+// fixedRootSize is the fixed root region's byte size. It never grows: a
+// write that would cross it must fail rather than spill into the data area
+// that starts immediately after it.
+func (fs *FS) fixedRootSize() int64 {
+	return int64(fs.bpb.rootDirSectors) * int64(fs.bpb.bytesPerSector)
 }
 
 func (fs *FS) readAt(p []byte, off int64) error {
@@ -161,11 +210,12 @@ func (fs *FS) writeCluster(c uint32, buf []byte) error {
 	return fs.writeAt(buf, fs.clusterOffset(c))
 }
 
-// parseBPB validates and decodes the first sector of a candidate FAT32
-// volume. sizeBytes is the actual size of the device backing it, so every
-// count the header claims is checked against ground truth rather than
-// trusted outright: this content arrived either from a container file this
-// process did not write, or from a header field an attacker fully controls.
+// parseBPB validates and decodes the first sector of a candidate FAT12,
+// FAT16 or FAT32 volume. sizeBytes is the actual size of the device backing
+// it, so every count the header claims is checked against ground truth
+// rather than trusted outright: this content arrived either from a
+// container file this process did not write, or from a header field an
+// attacker fully controls.
 func parseBPB(sector []byte, sizeBytes uint64) (bpb32, error) {
 	if len(sector) < 90 {
 		return bpb32{}, fmt.Errorf("%w: boot sector too short", ErrUnsupportedFilesystem)
@@ -189,16 +239,25 @@ func parseBPB(sector []byte, sizeBytes uint64) (bpb32, error) {
 	if numFATs < minFATCopies || numFATs > maxFATCopies {
 		return bpb32{}, fmt.Errorf("%w: %d FAT copies", ErrUnsupportedFilesystem, numFATs)
 	}
-	rootEntryCount := binary.LittleEndian.Uint16(sector[17:19])
-	fatSize16 := binary.LittleEndian.Uint16(sector[22:24])
-	if fatSize16 != 0 || rootEntryCount != 0 {
-		return bpb32{}, fmt.Errorf("%w: FAT12/FAT16 boot sector, not FAT32", ErrUnsupportedFilesystem)
-	}
-	totalSectors16 := binary.LittleEndian.Uint16(sector[19:21])
+	rootEntryCount := uint32(binary.LittleEndian.Uint16(sector[17:19]))
+	fatSize16 := uint32(binary.LittleEndian.Uint16(sector[22:24]))
+	totalSectors16 := uint32(binary.LittleEndian.Uint16(sector[19:21]))
 	totalSectors32 := binary.LittleEndian.Uint32(sector[32:36])
-	totalSectors := totalSectors32
-	if totalSectors16 != 0 {
-		totalSectors = uint32(totalSectors16)
+	// FATSz32 only means anything when FATSz16 is zero: that field lives
+	// at this same offset in the FAT32 layout, and reading it here to
+	// decide the FAT size never commits to the rest of that layout.
+	fatSize32 := binary.LittleEndian.Uint32(sector[36:40])
+
+	fatSize := fatSize16
+	if fatSize == 0 {
+		fatSize = fatSize32
+	}
+	if fatSize == 0 {
+		return bpb32{}, fmt.Errorf("%w: zero FAT size", ErrUnsupportedFilesystem)
+	}
+	totalSectors := totalSectors16
+	if totalSectors == 0 {
+		totalSectors = totalSectors32
 	}
 	if totalSectors == 0 {
 		return bpb32{}, fmt.Errorf("%w: zero total sectors", ErrUnsupportedFilesystem)
@@ -207,54 +266,90 @@ func parseBPB(sector []byte, sizeBytes uint64) (bpb32, error) {
 		return bpb32{}, fmt.Errorf("%w: boot sector claims %d sectors, device holds %d bytes",
 			ErrUnsupportedFilesystem, totalSectors, sizeBytes)
 	}
-	fatSize := binary.LittleEndian.Uint32(sector[36:40])
-	if fatSize == 0 {
-		return bpb32{}, fmt.Errorf("%w: zero FAT size", ErrUnsupportedFilesystem)
-	}
 	if uint64(fatSize)*uint64(numFATs)+uint64(reserved) > uint64(totalSectors) {
 		return bpb32{}, fmt.Errorf("%w: FAT tables larger than the volume", ErrUnsupportedFilesystem)
 	}
-	rootCluster := binary.LittleEndian.Uint32(sector[44:48])
-	if rootCluster < 2 {
-		return bpb32{}, fmt.Errorf("%w: root cluster %d", ErrUnsupportedFilesystem, rootCluster)
-	}
-	fsInfoSector := uint32(binary.LittleEndian.Uint16(sector[48:50]))
-	if fsInfoSector != 0 && fsInfoSector >= reserved {
-		return bpb32{}, fmt.Errorf("%w: FSInfo sector outside the reserved area", ErrUnsupportedFilesystem)
-	}
-	backupBootSector := uint32(binary.LittleEndian.Uint16(sector[50:52]))
-	if backupBootSector != 0 && backupBootSector >= reserved {
-		return bpb32{}, fmt.Errorf("%w: backup boot sector outside the reserved area", ErrUnsupportedFilesystem)
-	}
-	volumeID := binary.LittleEndian.Uint32(sector[67:71])
-	var label [11]byte
-	copy(label[:], sector[71:82])
 
-	dataStartSector := reserved + numFATs*fatSize
+	// RootDirSectors is 0 on FAT32, where the root is an ordinary cluster
+	// chain rather than a fixed region between the FAT tables and the
+	// data area.
+	rootDirSectors := (rootEntryCount*32 + bps - 1) / bps
+	dataStartSector := reserved + numFATs*fatSize + rootDirSectors
 	if uint64(dataStartSector) > uint64(totalSectors) {
 		return bpb32{}, fmt.Errorf("%w: no room left for a data area", ErrUnsupportedFilesystem)
 	}
 	totalClusters := (totalSectors - dataStartSector) / spc
-	if totalClusters < minTotalClusters || totalClusters > maxTotalClusters {
+	if totalClusters < minTotalClusters {
 		return bpb32{}, fmt.Errorf("%w: %d data clusters", ErrUnsupportedFilesystem, totalClusters)
 	}
-	if uint64(rootCluster) >= uint64(totalClusters)+2 {
-		return bpb32{}, fmt.Errorf("%w: root cluster %d beyond the volume", ErrUnsupportedFilesystem, rootCluster)
+
+	// A FAT32 BPB zeroes FATSz16 and RootEntCnt to signal the FAT32
+	// struct at offset 36 instead of the FAT12/FAT16 one: that is a
+	// structural fact, not a label, and this driver's own Format relies
+	// on it exactly the way any FAT32 volume does. FATSz16 nonzero always
+	// means a FAT12/FAT16 layout, and only there does the data cluster
+	// count decide which of the two: the specification's own algorithm,
+	// not the BS_FilSysType string nobody updates reliably.
+	var kind fatKind
+	switch {
+	case fatSize16 == 0:
+		kind = fat32
+	case totalClusters < 4085:
+		kind = fat12
+	case totalClusters < 65525:
+		kind = fat16
+	default:
+		return bpb32{}, fmt.Errorf("%w: FAT12/FAT16 layout with %d data clusters", ErrUnsupportedFilesystem, totalClusters)
 	}
 
-	return bpb32{
+	bpb := bpb32{
+		kind:              kind,
 		bytesPerSector:    bps,
 		sectorsPerCluster: spc,
 		reservedSectors:   reserved,
 		numFATs:           numFATs,
 		fatSize:           fatSize,
 		totalSectors:      totalSectors,
-		rootCluster:       rootCluster,
-		fsInfoSector:      fsInfoSector,
-		backupBootSector:  backupBootSector,
-		volumeID:          volumeID,
-		label:             label,
-	}, nil
+		rootEntryCount:    rootEntryCount,
+		rootDirSectors:    rootDirSectors,
+	}
+
+	if kind == fat32 {
+		if rootEntryCount != 0 {
+			return bpb32{}, fmt.Errorf("%w: FAT32 layout with a nonzero root entry count", ErrUnsupportedFilesystem)
+		}
+		if totalClusters > maxTotalClusters {
+			return bpb32{}, fmt.Errorf("%w: %d data clusters", ErrUnsupportedFilesystem, totalClusters)
+		}
+		rootCluster := binary.LittleEndian.Uint32(sector[44:48])
+		if rootCluster < 2 {
+			return bpb32{}, fmt.Errorf("%w: root cluster %d", ErrUnsupportedFilesystem, rootCluster)
+		}
+		if uint64(rootCluster) >= uint64(totalClusters)+2 {
+			return bpb32{}, fmt.Errorf("%w: root cluster %d beyond the volume", ErrUnsupportedFilesystem, rootCluster)
+		}
+		fsInfoSector := uint32(binary.LittleEndian.Uint16(sector[48:50]))
+		if fsInfoSector != 0 && fsInfoSector >= reserved {
+			return bpb32{}, fmt.Errorf("%w: FSInfo sector outside the reserved area", ErrUnsupportedFilesystem)
+		}
+		backupBootSector := uint32(binary.LittleEndian.Uint16(sector[50:52]))
+		if backupBootSector != 0 && backupBootSector >= reserved {
+			return bpb32{}, fmt.Errorf("%w: backup boot sector outside the reserved area", ErrUnsupportedFilesystem)
+		}
+		bpb.rootCluster = rootCluster
+		bpb.fsInfoSector = fsInfoSector
+		bpb.backupBootSector = backupBootSector
+		bpb.volumeID = binary.LittleEndian.Uint32(sector[67:71])
+		copy(bpb.label[:], sector[71:82])
+		return bpb, nil
+	}
+
+	if rootEntryCount == 0 {
+		return bpb32{}, fmt.Errorf("%w: zero root directory entries", ErrUnsupportedFilesystem)
+	}
+	bpb.volumeID = binary.LittleEndian.Uint32(sector[39:43])
+	copy(bpb.label[:], sector[43:54])
+	return bpb, nil
 }
 
 // Mount reads and validates the boot sector of dev, sized sizeBytes, and
@@ -273,11 +368,15 @@ func Mount(dev Device, sizeBytes uint64, clk clock.Clock) (*FS, error) {
 		clk = clock.System()
 	}
 	fs := &FS{
-		dev:             dev,
-		bpb:             bpb,
-		dataStartSector: bpb.reservedSectors + bpb.numFATs*bpb.fatSize,
-		totalClusters:   (bpb.totalSectors - (bpb.reservedSectors + bpb.numFATs*bpb.fatSize)) / bpb.sectorsPerCluster,
-		clk:             clk,
+		dev: dev,
+		bpb: bpb,
+		// rootDirSectors is 0 on FAT32, so this is the same formula that
+		// ran before FAT12/FAT16 support existed there; on FAT12/FAT16 it
+		// also skips past the fixed root region to the data area.
+		dataStartSector:    bpb.reservedSectors + bpb.numFATs*bpb.fatSize + bpb.rootDirSectors,
+		totalClusters:      (bpb.totalSectors - (bpb.reservedSectors + bpb.numFATs*bpb.fatSize + bpb.rootDirSectors)) / bpb.sectorsPerCluster,
+		rootDirStartSector: bpb.reservedSectors + bpb.numFATs*bpb.fatSize,
+		clk:                clk,
 	}
 	if err := fs.loadFSInfo(); err != nil {
 		return nil, err
@@ -400,42 +499,136 @@ func (fs *FS) flushFSInfo() error {
 	return nil
 }
 
-// fatEntryOffset is the byte offset of cluster c's 4-byte entry in FAT copy
-// index.
-func (fs *FS) fatEntryOffset(index uint32, c uint32) int64 {
-	return fs.sectorOffset(fs.bpb.reservedSectors+index*fs.bpb.fatSize) + int64(c)*4
-}
-
-// getFATEntry reads cluster c's entry from the first FAT copy, masked to the
-// 28 bits FAT32 actually uses.
-func (fs *FS) getFATEntry(c uint32) (uint32, error) {
-	var buf [4]byte
-	if err := fs.readAt(buf[:], fs.fatEntryOffset(0, c)); err != nil {
-		return 0, fmt.Errorf("vault: read FAT entry %d: %w", c, err)
+// fatEntryByteOffset is the byte offset of cluster c's entry in FAT copy
+// index. FAT32 entries are 4 bytes wide, FAT16 entries are 2, and a FAT12
+// entry is 12 bits packed into a shared byte with its neighbor, addressed
+// by the byte its bits start in.
+func (fs *FS) fatEntryByteOffset(index uint32, c uint32) int64 {
+	base := fs.sectorOffset(fs.bpb.reservedSectors + index*fs.bpb.fatSize)
+	switch fs.bpb.kind {
+	case fat12:
+		return base + int64(c) + int64(c)/2
+	case fat16:
+		return base + int64(c)*2
+	default:
+		return base + int64(c)*4
 	}
-	return binary.LittleEndian.Uint32(buf[:]) & 0x0FFFFFFF, nil
 }
 
-// setFATEntry writes cluster c's entry to every FAT copy, preserving each
-// copy's own reserved top 4 bits rather than assuming they are zero.
-func (fs *FS) setFATEntry(c uint32, value uint32) error {
-	for i := range fs.bpb.numFATs {
-		off := fs.fatEntryOffset(i, c)
+// getFATEntry reads cluster c's entry from the first FAT copy: FAT32 masked
+// to the 28 bits it actually uses, FAT16 a plain 16-bit value, and FAT12 the
+// 12 bits sharing a byte with cluster c's neighbor.
+func (fs *FS) getFATEntry(c uint32) (uint32, error) {
+	off := fs.fatEntryByteOffset(0, c)
+	switch fs.bpb.kind {
+	case fat12:
+		var buf [2]byte
+		if err := fs.readAt(buf[:], off); err != nil {
+			return 0, fmt.Errorf("vault: read FAT entry %d: %w", c, err)
+		}
+		v := binary.LittleEndian.Uint16(buf[:])
+		if c%2 == 0 {
+			return uint32(v & 0x0FFF), nil
+		}
+		return uint32(v >> 4), nil
+	case fat16:
+		var buf [2]byte
+		if err := fs.readAt(buf[:], off); err != nil {
+			return 0, fmt.Errorf("vault: read FAT entry %d: %w", c, err)
+		}
+		return uint32(binary.LittleEndian.Uint16(buf[:])), nil
+	default:
 		var buf [4]byte
 		if err := fs.readAt(buf[:], off); err != nil {
-			return fmt.Errorf("vault: read FAT entry %d for update: %w", c, err)
+			return 0, fmt.Errorf("vault: read FAT entry %d: %w", c, err)
 		}
-		top := binary.LittleEndian.Uint32(buf[:]) & 0xF0000000
-		binary.LittleEndian.PutUint32(buf[:], top|(value&0x0FFFFFFF))
-		if err := fs.writeAt(buf[:], off); err != nil {
-			return fmt.Errorf("vault: write FAT entry %d: %w", c, err)
+		return binary.LittleEndian.Uint32(buf[:]) & 0x0FFFFFFF, nil
+	}
+}
+
+// setFATEntry writes cluster c's entry to every FAT copy. FAT32 preserves
+// each copy's own reserved top 4 bits rather than assuming they are zero;
+// FAT12 has to preserve its neighbor's half of the shared byte instead,
+// since two entries live in the same 3 bytes.
+func (fs *FS) setFATEntry(c uint32, value uint32) error {
+	for i := range fs.bpb.numFATs {
+		off := fs.fatEntryByteOffset(i, c)
+		switch fs.bpb.kind {
+		case fat12:
+			var buf [2]byte
+			if err := fs.readAt(buf[:], off); err != nil {
+				return fmt.Errorf("vault: read FAT entry %d for update: %w", c, err)
+			}
+			v := binary.LittleEndian.Uint16(buf[:])
+			nibble := uint16(value & 0x0FFF)
+			if c%2 == 0 {
+				v = (v & 0xF000) | nibble
+			} else {
+				v = (v & 0x000F) | (nibble << 4)
+			}
+			binary.LittleEndian.PutUint16(buf[:], v)
+			if err := fs.writeAt(buf[:], off); err != nil {
+				return fmt.Errorf("vault: write FAT entry %d: %w", c, err)
+			}
+		case fat16:
+			var buf [2]byte
+			binary.LittleEndian.PutUint16(buf[:], uint16(value&0xFFFF))
+			if err := fs.writeAt(buf[:], off); err != nil {
+				return fmt.Errorf("vault: write FAT entry %d: %w", c, err)
+			}
+		default:
+			var buf [4]byte
+			if err := fs.readAt(buf[:], off); err != nil {
+				return fmt.Errorf("vault: read FAT entry %d for update: %w", c, err)
+			}
+			top := binary.LittleEndian.Uint32(buf[:]) & 0xF0000000
+			binary.LittleEndian.PutUint32(buf[:], top|(value&0x0FFFFFFF))
+			if err := fs.writeAt(buf[:], off); err != nil {
+				return fmt.Errorf("vault: write FAT entry %d: %w", c, err)
+			}
 		}
 	}
 	return nil
 }
 
 // isEOC reports whether a FAT entry value marks the end of a cluster chain.
-func isEOC(v uint32) bool { return v >= 0x0FFFFFF8 }
+// The sentinel value's width tracks the FAT entry width.
+func (fs *FS) isEOC(v uint32) bool {
+	switch fs.bpb.kind {
+	case fat12:
+		return v >= 0x0FF8
+	case fat16:
+		return v >= 0xFFF8
+	default:
+		return v >= 0x0FFFFFF8
+	}
+}
+
+// eocValue is the end-of-chain marker this driver writes, at this volume's
+// FAT entry width.
+func (fs *FS) eocValue() uint32 {
+	switch fs.bpb.kind {
+	case fat12:
+		return 0x0FFF
+	case fat16:
+		return 0xFFFF
+	default:
+		return fatEOC
+	}
+}
+
+// badValue is the bad-cluster marker a foreign formatter may have left, at
+// this volume's FAT entry width.
+func (fs *FS) badValue() uint32 {
+	switch fs.bpb.kind {
+	case fat12:
+		return 0x0FF7
+	case fat16:
+		return 0xFFF7
+	default:
+		return fatBad
+	}
+}
 
 // chainClusters lists every cluster in the chain starting at start, bounded
 // by the volume's own cluster count so a corrupt or cyclic FAT cannot spin
@@ -459,10 +652,10 @@ func (fs *FS) chainClusters(start uint32) ([]uint32, error) {
 		if err != nil {
 			return nil, err
 		}
-		if isEOC(next) {
+		if fs.isEOC(next) {
 			return clusters, nil
 		}
-		if next == 0 || next == fatBad || next >= fs.totalClusters+2 {
+		if next == 0 || next == fs.badValue() || next >= fs.totalClusters+2 {
 			return nil, fmt.Errorf("vault: cluster chain references invalid cluster %d", next)
 		}
 		c = next
@@ -510,7 +703,7 @@ func (fs *FS) allocateClusters(n int) ([]uint32, error) {
 		return nil, ErrNoSpaceOnVolume
 	}
 	for i, cluster := range found {
-		value := uint32(fatEOC)
+		value := fs.eocValue()
 		if i+1 < len(found) {
 			value = found[i+1]
 		}
@@ -573,7 +766,7 @@ func (fs *FS) truncateChainAfter(start uint32, keep int) error {
 	if keep >= len(clusters) {
 		return nil
 	}
-	if err := fs.setFATEntry(clusters[keep-1], fatEOC); err != nil {
+	if err := fs.setFATEntry(clusters[keep-1], fs.eocValue()); err != nil {
 		return err
 	}
 	freed := uint32(0)
@@ -768,6 +961,7 @@ func Format(dev Device, sizeBytes uint64) error {
 	}
 
 	bpb := bpb32{
+		kind:              fat32,
 		bytesPerSector:    bps,
 		sectorsPerCluster: spc,
 		reservedSectors:   reserved,

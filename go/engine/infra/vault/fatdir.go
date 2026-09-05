@@ -183,6 +183,47 @@ func (fs *FS) readExtent(start uint32, off int64, buf []byte) error {
 	return nil
 }
 
+// dirRegionSize is the byte size of the directory at dir: the FAT12/FAT16
+// fixed root's constant size, or a cluster chain's current length times the
+// cluster size.
+func (fs *FS) dirRegionSize(dir uint32) (int64, error) {
+	if dir == fatFixedRoot {
+		return fs.fixedRootSize(), nil
+	}
+	clusters, err := fs.chainClusters(dir)
+	if err != nil {
+		return 0, err
+	}
+	return int64(len(clusters)) * int64(fs.bytesPerCluster()), nil
+}
+
+// dirReadAt reads len(buf) bytes at byte offset off within the directory at
+// dir, taking the fixed root's own addressing when dir is fatFixedRoot.
+func (fs *FS) dirReadAt(dir uint32, off int64, buf []byte) error {
+	if dir == fatFixedRoot {
+		if off+int64(len(buf)) > fs.fixedRootSize() {
+			return io.ErrUnexpectedEOF
+		}
+		return fs.readAt(buf, fs.fixedRootOffset()+off)
+	}
+	return fs.readExtent(dir, off, buf)
+}
+
+// dirWriteAt writes buf at byte offset off within the directory at *dir. A
+// write past the fixed root's constant size is refused with
+// ErrNoSpaceOnVolume rather than spilling into the data area that starts
+// immediately after it; a cluster-chain directory grows instead, exactly as
+// writeExtent already does.
+func (fs *FS) dirWriteAt(dir *uint32, off int64, buf []byte) error {
+	if *dir == fatFixedRoot {
+		if off+int64(len(buf)) > fs.fixedRootSize() {
+			return ErrNoSpaceOnVolume
+		}
+		return fs.writeAt(buf, fs.fixedRootOffset()+off)
+	}
+	return fs.writeExtent(dir, off, buf)
+}
+
 // scanRawEntries walks every 32-byte slot of the directory at start,
 // including free, deleted and long-name slots, calling fn with each and its
 // byte offset. It stops when fn returns true or the allocated area is
@@ -190,14 +231,13 @@ func (fs *FS) readExtent(start uint32, off int64, buf []byte) error {
 // own, since callers that need the insertion point ask for exactly that
 // slot.
 func (fs *FS) scanRawEntries(start uint32, fn func(e rawDirEntry, off int64) bool) error {
-	clusters, err := fs.chainClusters(start)
+	total, err := fs.dirRegionSize(start)
 	if err != nil {
 		return err
 	}
-	total := int64(len(clusters)) * int64(fs.bytesPerCluster())
 	for off := int64(0); off < total; off += 32 {
 		var e rawDirEntry
-		if err := fs.readExtent(start, off, e[:]); err != nil {
+		if err := fs.dirReadAt(start, off, e[:]); err != nil {
 			return err
 		}
 		if fn(e, off) {
@@ -320,11 +360,11 @@ func (fs *FS) resolve(p vfs.SafePath) (direntInfo, error) {
 		return direntInfo{
 			name:         "",
 			attr:         attrDirectory,
-			firstCluster: fs.bpb.rootCluster,
+			firstCluster: fs.rootDirStart(),
 			ino:          deriveIno(0, 0),
 		}, nil
 	}
-	dir := fs.bpb.rootCluster
+	dir := fs.rootDirStart()
 	var info direntInfo
 	for i, name := range comps {
 		if err := checkFATName(name); err != nil {
@@ -365,7 +405,7 @@ func (fs *FS) resolveParent(p vfs.SafePath) (parentCluster uint32, leaf string, 
 	if !parentInfo.isDir() && !p.Parent().IsRoot() {
 		return 0, "", fmt.Errorf("resolve %q: %w", p.String(), vfs.ErrNotFound)
 	}
-	cluster := fs.bpb.rootCluster
+	cluster := fs.rootDirStart()
 	if !p.Parent().IsRoot() {
 		cluster = parentInfo.firstCluster
 	}
@@ -373,7 +413,7 @@ func (fs *FS) resolveParent(p vfs.SafePath) (parentCluster uint32, leaf string, 
 }
 
 // findInsertPoint is the byte offset of the first free (0x00) slot in dir,
-// or the byte just past the end of its current chain if every slot is in
+// or the byte just past the end of its current region if every slot is in
 // use.
 func (fs *FS) findInsertPoint(dir uint32) (int64, error) {
 	pos := int64(-1)
@@ -390,27 +430,35 @@ func (fs *FS) findInsertPoint(dir uint32) (int64, error) {
 	if pos >= 0 {
 		return pos, nil
 	}
-	clusters, err := fs.chainClusters(dir)
-	if err != nil {
-		return 0, err
-	}
-	return int64(len(clusters)) * int64(fs.bytesPerCluster()), nil
+	return fs.dirRegionSize(dir)
 }
 
 // appendEntries writes entries into dir starting at the current insertion
-// point and re-terminates the directory with a fresh end marker.
+// point and re-terminates the directory with a fresh end marker. The whole
+// batch's room is secured before any byte is written: a cluster-chain
+// directory grows to fit in one step, and the FAT12/FAT16 fixed root is
+// refused outright with ErrNoSpaceOnVolume rather than left with a
+// half-written entry run when it does not fit.
 func (fs *FS) appendEntries(dir *uint32, entries []rawDirEntry) (int64, error) {
 	insertAt, err := fs.findInsertPoint(*dir)
 	if err != nil {
 		return 0, err
 	}
+	need := int64(len(entries)+1) * 32
+	if *dir == fatFixedRoot {
+		if insertAt+need > fs.fixedRootSize() {
+			return 0, ErrNoSpaceOnVolume
+		}
+	} else if _, err := fs.ensureExtent(dir, insertAt+need); err != nil {
+		return 0, err
+	}
 	for i, e := range entries {
-		if err := fs.writeExtent(dir, insertAt+int64(i)*32, e[:]); err != nil {
+		if err := fs.dirWriteAt(dir, insertAt+int64(i)*32, e[:]); err != nil {
 			return 0, err
 		}
 	}
 	var marker rawDirEntry
-	if err := fs.writeExtent(dir, insertAt+int64(len(entries))*32, marker[:]); err != nil {
+	if err := fs.dirWriteAt(dir, insertAt+int64(len(entries))*32, marker[:]); err != nil {
 		return 0, err
 	}
 	return insertAt, nil
@@ -422,7 +470,7 @@ func (fs *FS) deleteEntries(dir uint32, entryStart, entryEnd int64) error {
 	for off := entryStart; off < entryEnd; off += 32 {
 		var b [1]byte
 		b[0] = direntDeleted
-		if err := fs.writeExtent(&dir, off, b[:]); err != nil {
+		if err := fs.dirWriteAt(&dir, off, b[:]); err != nil {
 			return err
 		}
 	}
@@ -553,7 +601,7 @@ func (fs *FS) ReadDir(p vfs.SafePath) ([]Dirent, error) {
 	if !info.isDir() {
 		return nil, fmt.Errorf("read dir %q: %w", p.String(), vfs.ErrNotFound)
 	}
-	dir := fs.bpb.rootCluster
+	dir := fs.rootDirStart()
 	if !p.IsRoot() {
 		dir = info.firstCluster
 	}
@@ -857,12 +905,12 @@ func setEntryTime(e *rawDirEntry, mtimeNs int64) {
 // updateShortEntry rewrites the 32 bytes at entryOff in dir through patch.
 func (fs *FS) updateShortEntry(dir uint32, entryOff int64, patch func(e *rawDirEntry)) error {
 	var e rawDirEntry
-	if err := fs.readExtent(dir, entryOff, e[:]); err != nil {
+	if err := fs.dirReadAt(dir, entryOff, e[:]); err != nil {
 		return err
 	}
 	patch(&e)
 	d := dir
-	return fs.writeExtent(&d, entryOff, e[:])
+	return fs.dirWriteAt(&d, entryOff, e[:])
 }
 
 // SetModTime patches p's write time.
@@ -978,7 +1026,7 @@ func (fs *FS) renameEntry(fromDir uint32, fromName string, toDir uint32, toName 
 // cluster 0 meaning the volume root, matching Mkdir's own convention.
 func (fs *FS) fixDotDot(dirCluster uint32, newParent uint32) error {
 	target := newParent
-	if newParent == fs.bpb.rootCluster {
+	if newParent == fs.rootDirStart() {
 		target = 0
 	}
 	dotDotName := packShortName("..", "")
