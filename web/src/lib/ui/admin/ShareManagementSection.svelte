@@ -614,15 +614,41 @@
                        look like. -->
                   <span class="sc-shares__broken">{brokenText(s.broken_reason)}</span>
                 {/if}
+                {#if encQuery.data}
+                  <!-- The toggle sits here rather than beside the switch: it
+                       is offered only on an empty share, and a control that
+                       appears on some rows and not others pushes the switch
+                       and the icon buttons out of line down the list. It also
+                       reads better next to the state it changes. -->
+                  <span class="sc-shares__enc" data-testid="share-encryption">
+                    {#if encByShare.get(s.id)}
+                      <span class="sc-shares__enc-note">
+                        <Icon icon={icons.lock} size={14} />
+                        {t('encryption.encrypted_note')}
+                      </span>
+                      <Button
+                        variant="text"
+                        ariaLabel={t('encryption.disable_title', { name: s.name })}
+                        onclick={() => openEncDisable(s)}
+                      >
+                        {t('encryption.disable')}
+                      </Button>
+                    {:else if s.empty}
+                      <Button
+                        variant="text"
+                        ariaLabel={t('encryption.enable_title', { name: s.name })}
+                        onclick={() => openEncEnable(s)}
+                      >
+                        {t('encryption.enable')}
+                      </Button>
+                    {/if}
+                  </span>
+                {/if}
                 {#if encByShare.get(s.id)}
                   <!-- Persistent, not a one-time reveal: the salt is public
                        by construction and has to stay readable for as long
                        as the share is encrypted, since it is the value an
                        admin types into rclone as `password2`. -->
-                  <span class="sc-shares__enc-note">
-                    <Icon icon={icons.lock} size={14} />
-                    {t('encryption.encrypted_note')}
-                  </span>
                   <span class="sc-shares__enc-salt-row">
                     <span class="sc-shares__enc-salt-label">{t('encryption.salt_label')}</span>
                     <code class="sc-shares__enc-salt" data-testid="share-encryption-salt">{encByShare.get(s.id)?.salt}</code>
@@ -637,14 +663,6 @@
                 {/if}
               {/snippet}
               {#snippet trailing()}
-                <!-- Where the share came from is a fact about the row, like the
-                     trash switch beside it, so it belongs on the row's line. On
-                     the headline it sat 8px above every control here, because a
-                     two-line list item centres its controls on the row and its
-                     headline on the first line. No placeholder is needed on the
-                     rows that lack it: this group is right-aligned, so dropping
-                     its leading item shortens the group from the left and moves
-                     nothing else. -->
                 <!-- The visible word beside the switch is the short label; the
                      switch keeps the longer, per-share sentence as its own
                      accessible name, since a screen reader needs to know which
@@ -658,27 +676,6 @@
                     onchange={(checked) => toggleTrash(s, checked)}
                   />
                 </span>
-                {#if encQuery.data}
-                  <span class="sc-shares__enc" data-testid="share-encryption">
-                    {#if encByShare.get(s.id)}
-                      <Button
-                        variant="text"
-                        ariaLabel={t('encryption.disable_title', { name: s.name })}
-                        onclick={() => openEncDisable(s)}
-                      >
-                        {t('encryption.disable')}
-                      </Button>
-                    {:else}
-                      <Button
-                        variant="text"
-                        ariaLabel={t('encryption.enable_title', { name: s.name })}
-                        onclick={() => openEncEnable(s)}
-                      >
-                        {t('encryption.enable')}
-                      </Button>
-                    {/if}
-                  </span>
-                {/if}
                 {#if s.broken_reason}
                   <Button variant="tonal" onclick={() => retry(s)} loading={retryingId === s.id}>
                     {t('folder_share.retry')}
@@ -873,25 +870,27 @@
   onclose={closeEncEnable}
 >
   {#if encEnableTarget}
-    <p>{t('encryption.enable_hint')}</p>
-    <p class="sc-shares__enc-warning">{t('encryption.passphrase_warning')}</p>
-    <p class="sc-shares__enc-hint">{t('encryption.verifier_note')}</p>
-    <form class="sc-shares__form" onsubmit={(e) => (e.preventDefault(), submitEncEnable())}>
-      <TextField
-        type="password"
-        label={t('encryption.passphrase')}
-        bind:value={encPassphrase}
-        autocomplete="new-password"
-      />
-      <TextField
-        type="password"
-        label={t('encryption.confirm_passphrase')}
-        bind:value={encPassphraseConfirm}
-        error={encMismatch ? t('encryption.passphrases_do_not_match') : null}
-        autocomplete="new-password"
-      />
-      {#if encEnableError}<p class="sc-shares__error" role="alert">{encEnableError}</p>{/if}
-    </form>
+    <div class="sc-shares__enc-body">
+      <p>{t('encryption.enable_hint')}</p>
+      <p class="sc-shares__enc-warning">{t('encryption.passphrase_warning')}</p>
+      <p class="sc-shares__enc-hint">{t('encryption.verifier_note')}</p>
+      <form class="sc-shares__form" onsubmit={(e) => (e.preventDefault(), submitEncEnable())}>
+        <TextField
+          type="password"
+          label={t('encryption.passphrase')}
+          bind:value={encPassphrase}
+          autocomplete="new-password"
+        />
+        <TextField
+          type="password"
+          label={t('encryption.confirm_passphrase')}
+          bind:value={encPassphraseConfirm}
+          error={encMismatch ? t('encryption.passphrases_do_not_match') : null}
+          autocomplete="new-password"
+        />
+        {#if encEnableError}<p class="sc-shares__error" role="alert">{encEnableError}</p>{/if}
+      </form>
+    </div>
   {/if}
   {#snippet actions()}
     <Button variant="text" onclick={closeEncEnable} disabled={encGenerating || encEnableMut.isPending}>
@@ -1022,6 +1021,14 @@
     color: var(--m3c-on-surface-variant);
     @apply --m3-body-small;
   }
+  /* The state and the button that changes it read as one line, and wrap
+     together on a phone rather than the button dropping alone. */
+  .sc-shares__enc {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
   /* Same layout and token styling as `.sc-webdav__token-row` /
      `.sc-webdav__token` (`WebdavSection.svelte`): a labelled value plus a
      copy button is the one idiom this tree already has for "the user must
@@ -1044,6 +1051,18 @@
     @apply --m3-body-medium;
     overflow-wrap: anywhere;
     user-select: all;
+  }
+  /* Every block in this dialog zeroes its own margins, which left the
+     paragraphs flush against each other and the first field's floating label
+     drawn over the line of text above it. One rhythm on the wrapper instead
+     of four sets of margins that have to agree. */
+  .sc-shares__enc-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .sc-shares__enc-body p {
+    margin: 0;
   }
   /* Same colours as `.sc-admin-section__warning` (`ServerSettingsSection.svelte`):
      a passphrase this server can never recover gets the loud treatment, not
@@ -1084,16 +1103,9 @@
     white-space: nowrap;
     @apply --m3-label-large;
   }
-  /* The trailing group cannot shrink -- it holds a switch and 40px icon
-     buttons -- so on a 360px screen it took more room than the row had
-     and ran past the card's edge. The word goes; the switch keeps the whole
-     per-share sentence as its accessible name, so nothing is lost to a screen
-     reader and the visible label returns as soon as there is room for it. */
-  @media (max-width: 599px) {
-    .sc-shares__trash-label {
-      display: none;
-    }
-  }
+  /* The trailing group wraps (`ListItem`'s own rule), so on a phone it sits
+     on its own line under the name with the full card width to spend. The
+     switch alone reads as an unlabelled toggle there, so the word stays. */
   .sc-shares__error {
     margin: 0;
     color: var(--m3c-error);

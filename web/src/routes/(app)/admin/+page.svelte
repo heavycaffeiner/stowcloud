@@ -189,6 +189,16 @@
     padding-inline: 0;
     overflow-x: auto;
   }
+  /* The framework gives a tab an 80px floor and 16px of inline padding, which
+     is 400px for five of them: ten past a 390px phone and a scrollbar under a
+     bar that is meant to show every destination at once. The floor goes and
+     the padding shrinks, so the five divide the width they have. */
+  @media (max-width: 599px) {
+    .sc-admin__head-inner :global(label) {
+      min-width: 0;
+      padding-inline: 4px;
+    }
+  }
   .sc-admin__inner {
     padding-block: 0 var(--sc-page-pad);
   }
