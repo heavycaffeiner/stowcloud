@@ -2025,13 +2025,16 @@ async function adminDeleteUser(id: number): Promise<void> {
  *  The host path is part of the answer: those routes are administrator-only
  *  and session-only, and the screen cannot offer an edit for a path it cannot
  *  show. It stays off every surface an ordinary account reads. */
+// `empty` mirrors what the real listing walks for: the four local shares have
+// content in the seeded tree, and the two that carry none are the ones whose
+// encryption may still be turned on.
 let mockShares: AdminShare[] = [
-  { id: 1_000_001, name: 'Documents', host: '/srv/documents', backend: 'local', source: '/srv/documents', trash_enabled: false },
-  { id: 1_000_002, name: 'Photos', host: '/srv/photos', backend: 'local', source: '/srv/photos', trash_enabled: true },
-  { id: 1_000_003, name: 'Videos', host: '/srv/videos', backend: 'local', source: '/srv/videos', trash_enabled: false },
-  { id: 1_000_004, name: 'Music', host: '/srv/music', backend: 'local', source: '/srv/music', trash_enabled: false },
-  { id: 1_000_005, name: 'Team', host: '', backend: 's3', source: 's3://team/shared at https://s3.example.com:9000', trash_enabled: false },
-  { id: 1_000_006, name: 'Archive', host: '', backend: 'veracrypt', source: '/srv/vaults/archive.hc', trash_enabled: true }
+  { id: 1_000_001, name: 'Documents', host: '/srv/documents', backend: 'local', source: '/srv/documents', trash_enabled: false, empty: false },
+  { id: 1_000_002, name: 'Photos', host: '/srv/photos', backend: 'local', source: '/srv/photos', trash_enabled: true, empty: false },
+  { id: 1_000_003, name: 'Videos', host: '/srv/videos', backend: 'local', source: '/srv/videos', trash_enabled: false, empty: false },
+  { id: 1_000_004, name: 'Music', host: '/srv/music', backend: 'local', source: '/srv/music', trash_enabled: false, empty: false },
+  { id: 1_000_005, name: 'Team', host: '', backend: 's3', source: 's3://team/shared at https://s3.example.com:9000', trash_enabled: false, empty: true },
+  { id: 1_000_006, name: 'Archive', host: '', backend: 'veracrypt', source: '/srv/vaults/archive.hc', trash_enabled: true, empty: true }
 ]
 let nextShareId = 1_000_007 // mirrors `go/internal/core`'s share id base, past the seeded ones
 
@@ -2099,7 +2102,9 @@ async function adminCreateShare(req: CreateShareReq): Promise<AdminShare> {
     host: backend === 'local' ? (req.host ?? '') : '',
     backend,
     source: mockShareSource(backend, req, ''),
-    trash_enabled: false
+    trash_enabled: false,
+    // Nothing has been written into it yet, so its encryption may be set.
+    empty: true
   }
   mockShares = [...mockShares, share]
   return share

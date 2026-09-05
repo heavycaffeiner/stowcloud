@@ -241,3 +241,13 @@ func (c *Core) requireEmptyShare(ctx context.Context, id ShareID) error {
 	}
 	return nil
 }
+
+// ShareEmpty answers whether a share holds nothing, trash included.
+//
+// The admin screen offers the encryption toggle only where it would be
+// accepted, so it needs the same answer requireEmptyShare decides on rather
+// than a button that reports a refusal after the click. A broken share is not
+// empty: nothing can be read to say either way.
+func (c *Core) ShareEmpty(ctx context.Context, id ShareID) bool {
+	return c.requireEmptyShare(ctx, id) == nil
+}

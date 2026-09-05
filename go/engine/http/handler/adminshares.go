@@ -53,6 +53,14 @@ type ShareView struct {
 	// share whose disk never came back stays registered and stays listed:
 	// dropping it made an unreachable share look exactly like a deleted one.
 	Broken string `json:"broken,omitempty"`
+
+	// Empty says the share holds nothing, trash included, which is the one
+	// condition under which its encryption may still be turned on or off.
+	// The screen reads it to offer the toggle only where it would be
+	// accepted, instead of reporting the refusal after the click. Absent on
+	// a write response, which answers with the row it just changed and does
+	// not walk the storage to say.
+	Empty bool `json:"empty,omitempty"`
 }
 
 // ShareOf projects one share. Never a credential: Share carries none of its
@@ -75,11 +83,15 @@ func ShareOf(s core.Share) ShareView {
 	}
 }
 
-// SharesOf projects a listing.
-func SharesOf(shares []core.ShareDef) []ShareView {
+// SharesOf projects a listing. `empty` answers whether each share holds
+// nothing; the caller supplies it, since only it has the context to walk the
+// storage with.
+func SharesOf(shares []core.ShareDef, empty func(core.ShareID) bool) []ShareView {
 	out := make([]ShareView, 0, len(shares))
 	for _, s := range shares {
-		out = append(out, ShareOf(s))
+		v := ShareOf(s)
+		v.Empty = empty(s.ID)
+		out = append(out, v)
 	}
 	return out
 }

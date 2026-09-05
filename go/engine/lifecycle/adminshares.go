@@ -34,7 +34,12 @@ func (e *Engine) adminSharesList(c *fiber.Ctx) error {
 	if _, ok, written := e.admin(c); !ok {
 		return written
 	}
-	return writeJSON(c, fiber.StatusOK, handler.SharesOf(e.Core.Shares()))
+	// One storage walk per share, bounded: the walk stops at the first entry
+	// it finds, so an occupied share costs one readdir and an empty one costs
+	// two (the tree and its trash).
+	ctx := c.UserContext()
+	empty := func(id core.ShareID) bool { return e.Core.ShareEmpty(ctx, id) }
+	return writeJSON(c, fiber.StatusOK, handler.SharesOf(e.Core.Shares(), empty))
 }
 
 // createShareRequest registers a share, of whichever backend Backend names.

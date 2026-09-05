@@ -1511,6 +1511,7 @@ interface WireAdminShare {
   trash: boolean
   shared_externally?: boolean
   broken?: string
+  empty?: boolean
   smb?: AdminShare['smb']
 }
 
@@ -1526,6 +1527,7 @@ function adminShareFromWire(w: WireAdminShare): AdminShare {
     source: w.source ?? w.host,
     trash_enabled: w.trash,
     broken_reason: w.broken,
+    empty: w.empty,
     smb: w.smb
   }
 }

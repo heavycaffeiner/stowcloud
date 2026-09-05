@@ -186,7 +186,7 @@ func TestATrashedFileBlocksBothEncryptionToggles(t *testing.T) {
 	}
 
 	c2, id2, host2 := encryptedShare(t)
-	if err := c2.EnableEncryption(ctx, id2, testEncryption()); err != nil {
+	if err = c2.EnableEncryption(ctx, id2, testEncryption()); err != nil {
 		t.Fatalf("EnableEncryption on an empty share: %v", err)
 	}
 	seedTrash(t, host2)

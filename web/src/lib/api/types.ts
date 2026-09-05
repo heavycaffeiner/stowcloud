@@ -445,6 +445,11 @@ export interface AdminShare {
    *  back look exactly like a share somebody had deleted, with the only trace
    *  a line on the health endpoint. */
   broken_reason?: string
+  /** The share holds nothing, trash included, which is the one condition
+   *  under which its encryption may still be turned on or off. Absent on a
+   *  write response, which answers with the row it changed without walking
+   *  the storage to say. */
+  empty?: boolean
   /** What the SMB republish this write triggered did. Only on write
    *  responses, and only when the deployment has a sidecar. */
   smb?: SMBOutcome

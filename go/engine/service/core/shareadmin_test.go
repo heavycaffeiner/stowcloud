@@ -275,7 +275,7 @@ func TestRetryShareHealsAFixedPathAndRefusesAStillBrokenOne(t *testing.T) {
 		t.Fatal("a failed retry left the share unmarked")
 	}
 
-	if err := os.MkdirAll(host, 0o755); err != nil {
+	if err = os.MkdirAll(host, 0o755); err != nil {
 		t.Fatalf("restoring the path: %v", err)
 	}
 	got, err := c.RetryShare(ctx, def.ID)
